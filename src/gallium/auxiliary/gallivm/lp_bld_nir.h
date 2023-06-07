@@ -111,16 +111,17 @@ struct lp_build_nir_context
    /* for SSBO and shared memory */
    void (*load_mem)(struct lp_build_nir_context *bld_base,
                     unsigned nc, unsigned bit_size,
-                    bool index_and_offset_are_uniform,
+                    bool index_and_offset_are_uniform, bool payload,
                     LLVMValueRef index, LLVMValueRef offset, LLVMValueRef result[NIR_MAX_VEC_COMPONENTS]);
    void (*store_mem)(struct lp_build_nir_context *bld_base,
                      unsigned writemask, unsigned nc, unsigned bit_size,
-                     bool index_and_offset_are_uniform,
+                     bool index_and_offset_are_uniform, bool payload,
                      LLVMValueRef index, LLVMValueRef offset, LLVMValueRef dst);
 
    void (*atomic_mem)(struct lp_build_nir_context *bld_base,
                       nir_atomic_op op,
                       unsigned bit_size,
+                      bool payload,
                       LLVMValueRef index, LLVMValueRef offset,
                       LLVMValueRef val, LLVMValueRef val2,
                       LLVMValueRef *result);
@@ -230,6 +231,11 @@ struct lp_build_nir_context
                      unsigned const_index,
                      LLVMValueRef indir_index,
                      LLVMValueRef offsets[2], LLVMValueRef dst[4]);
+   void (*set_vertex_and_primitive_count)(struct lp_build_nir_context *bld_base,
+                                               LLVMValueRef vert_count,
+                                               LLVMValueRef prim_count);
+   void (*launch_mesh_workgroups)(struct lp_build_nir_context *bld_base,
+                                  LLVMValueRef launch_grid);
 //   LLVMValueRef main_function
 };
 
@@ -254,6 +260,7 @@ struct lp_build_nir_soa_context
    LLVMValueRef ssbo_ptr;
 
    LLVMValueRef shared_ptr;
+   LLVMValueRef payload_ptr;
    LLVMValueRef scratch_ptr;
    unsigned scratch_size;
 
@@ -266,6 +273,8 @@ struct lp_build_nir_soa_context
    const struct lp_build_tcs_iface *tcs_iface;
    const struct lp_build_tes_iface *tes_iface;
    const struct lp_build_fs_iface *fs_iface;
+   const struct lp_build_mesh_iface *mesh_iface;
+
    LLVMValueRef emitted_prims_vec_ptr[PIPE_MAX_VERTEX_STREAMS];
    LLVMValueRef total_emitted_vertices_vec_ptr[PIPE_MAX_VERTEX_STREAMS];
    LLVMValueRef emitted_vertices_vec_ptr[PIPE_MAX_VERTEX_STREAMS];

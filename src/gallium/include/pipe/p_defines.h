@@ -31,6 +31,7 @@
 #include "p_compiler.h"
 
 #include "compiler/shader_enums.h"
+#include "util/os_time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -559,28 +560,6 @@ enum pipe_resource_usage {
 };
 
 /**
- * Primitive types:
- */
-enum PACKED pipe_prim_type {
-   PIPE_PRIM_POINTS,
-   PIPE_PRIM_LINES,
-   PIPE_PRIM_LINE_LOOP,
-   PIPE_PRIM_LINE_STRIP,
-   PIPE_PRIM_TRIANGLES,
-   PIPE_PRIM_TRIANGLE_STRIP,
-   PIPE_PRIM_TRIANGLE_FAN,
-   PIPE_PRIM_QUADS,
-   PIPE_PRIM_QUAD_STRIP,
-   PIPE_PRIM_POLYGON,
-   PIPE_PRIM_LINES_ADJACENCY,
-   PIPE_PRIM_LINE_STRIP_ADJACENCY,
-   PIPE_PRIM_TRIANGLES_ADJACENCY,
-   PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY,
-   PIPE_PRIM_PATCHES,
-   PIPE_PRIM_MAX,
-};
-
-/**
  * Tessellator spacing types
  */
 enum pipe_tess_spacing {
@@ -627,6 +606,8 @@ enum pipe_statistics_query_index {
    PIPE_STAT_QUERY_HS_INVOCATIONS,
    PIPE_STAT_QUERY_DS_INVOCATIONS,
    PIPE_STAT_QUERY_CS_INVOCATIONS,
+   PIPE_STAT_QUERY_TS_INVOCATIONS,
+   PIPE_STAT_QUERY_MS_INVOCATIONS,
 };
 
 /**
@@ -674,9 +655,6 @@ enum pipe_viewport_swizzle {
    PIPE_VIEWPORT_SWIZZLE_POSITIVE_W,
    PIPE_VIEWPORT_SWIZZLE_NEGATIVE_W,
 };
-
-#define PIPE_TIMEOUT_INFINITE 0xffffffffffffffffull
-
 
 /**
  * Device reset status.
@@ -1236,8 +1214,10 @@ struct pipe_query_data_pipeline_statistics
          uint64_t hs_invocations; /**< Num hull shader invocations. */
          uint64_t ds_invocations; /**< Num domain shader invocations. */
          uint64_t cs_invocations; /**< Num compute shader invocations. */
+         uint64_t ts_invocations; /**< Num task shader invocations. */
+         uint64_t ms_invocations; /**< Num mesh shader invocations. */
       };
-      uint64_t counters[11];
+      uint64_t counters[13];
    };
 };
 

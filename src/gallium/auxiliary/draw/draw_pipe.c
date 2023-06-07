@@ -206,7 +206,7 @@ do_triangle(struct draw_context *draw,
 #define FUNC pipe_run_elts
 #define FUNC_VARS                               \
    struct draw_context *draw,                  \
-   enum pipe_prim_type prim,                   \
+   enum mesa_prim prim,                   \
    unsigned prim_flags,                        \
    struct vertex_header *vertices,             \
    unsigned stride,                            \
@@ -304,7 +304,7 @@ draw_pipeline_run(struct draw_context *draw,
 #define FUNC pipe_run_linear
 #define FUNC_VARS                     \
    struct draw_context *draw,         \
-   enum pipe_prim_type prim,          \
+   enum mesa_prim prim,          \
    unsigned prim_flags,               \
    struct vertex_header *vertices,    \
    unsigned stride,                   \

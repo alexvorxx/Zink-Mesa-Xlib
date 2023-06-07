@@ -79,6 +79,8 @@ anv_cmd_state_reset(struct anv_cmd_buffer *cmd_buffer)
 {
    anv_cmd_state_finish(cmd_buffer);
    anv_cmd_state_init(cmd_buffer);
+
+   cmd_buffer->last_compute_walker = NULL;
 }
 
 static VkResult
@@ -124,6 +126,8 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
                          &device->dynamic_state_pool, 16384);
    anv_state_stream_init(&cmd_buffer->general_state_stream,
                          &device->general_state_pool, 16384);
+   anv_state_stream_init(&cmd_buffer->push_descriptor_stream,
+                         &device->push_descriptor_pool, 4096);
 
    int success = u_vector_init_pow2(&cmd_buffer->dynamic_bos, 8,
                                     sizeof(struct anv_bo *));
@@ -135,6 +139,8 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
    cmd_buffer->generation_jump_addr = ANV_NULL_ADDRESS;
    cmd_buffer->generation_return_addr = ANV_NULL_ADDRESS;
    cmd_buffer->generation_bt_state = ANV_STATE_NULL;
+
+   cmd_buffer->last_compute_walker = NULL;
 
    anv_cmd_state_init(cmd_buffer);
 
@@ -171,6 +177,7 @@ anv_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
    anv_state_stream_finish(&cmd_buffer->surface_state_stream);
    anv_state_stream_finish(&cmd_buffer->dynamic_state_stream);
    anv_state_stream_finish(&cmd_buffer->general_state_stream);
+   anv_state_stream_finish(&cmd_buffer->push_descriptor_stream);
 
    while (u_vector_length(&cmd_buffer->dynamic_bos) > 0) {
       struct anv_bo **bo = u_vector_remove(&cmd_buffer->dynamic_bos);
@@ -215,6 +222,10 @@ anv_cmd_buffer_reset(struct vk_command_buffer *vk_cmd_buffer,
    anv_state_stream_finish(&cmd_buffer->general_state_stream);
    anv_state_stream_init(&cmd_buffer->general_state_stream,
                          &cmd_buffer->device->general_state_pool, 16384);
+
+   anv_state_stream_finish(&cmd_buffer->push_descriptor_stream);
+   anv_state_stream_init(&cmd_buffer->push_descriptor_stream,
+                         &cmd_buffer->device->push_descriptor_pool, 4096);
 
    while (u_vector_length(&cmd_buffer->dynamic_bos) > 0) {
       struct anv_bo **bo = u_vector_remove(&cmd_buffer->dynamic_bos);
@@ -395,6 +406,7 @@ void anv_CmdBindPipeline(
       if (cmd_buffer->state.compute.pipeline == compute_pipeline)
          return;
 
+      cmd_buffer->state.compute.base.pipeline = pipeline;
       cmd_buffer->state.compute.pipeline = compute_pipeline;
       cmd_buffer->state.compute.pipeline_dirty = true;
       set_dirty_for_bind_map(cmd_buffer, MESA_SHADER_COMPUTE,
@@ -411,10 +423,11 @@ void anv_CmdBindPipeline(
       if (cmd_buffer->state.gfx.pipeline == gfx_pipeline)
          return;
 
+      cmd_buffer->state.gfx.base.pipeline = pipeline;
       cmd_buffer->state.gfx.pipeline = gfx_pipeline;
       cmd_buffer->state.gfx.dirty |= ANV_CMD_DIRTY_PIPELINE;
 
-      anv_foreach_stage(stage, gfx_pipeline->base.active_stages) {
+      anv_foreach_stage(stage, gfx_pipeline->base.base.active_stages) {
          set_dirty_for_bind_map(cmd_buffer, stage,
                                 &gfx_pipeline->base.shaders[stage]->bind_map);
       }
@@ -424,7 +437,8 @@ void anv_CmdBindPipeline(
                                         &gfx_pipeline->dynamic_state);
 
       state = &cmd_buffer->state.gfx.base;
-      stages = gfx_pipeline->base.active_stages;
+      stages = gfx_pipeline->base.base.active_stages;
+
 
       /* When the pipeline is using independent states and dynamic buffers,
        * this will trigger an update of anv_push_constants::dynamic_base_index
@@ -441,10 +455,10 @@ void anv_CmdBindPipeline(
 
             assert(layout->set[s].dynamic_offset_start < MAX_DYNAMIC_BUFFERS);
             if (layout->set[s].layout->dynamic_offset_count > 0 &&
-                (push->desc_sets[s] & ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK) != layout->set[s].dynamic_offset_start) {
-               push->desc_sets[s] &= ~ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK;
-               push->desc_sets[s] |= (layout->set[s].dynamic_offset_start &
-                                      ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK);
+                (push->desc_offsets[s] & ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK) != layout->set[s].dynamic_offset_start) {
+               push->desc_offsets[s] &= ~ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK;
+               push->desc_offsets[s] |= (layout->set[s].dynamic_offset_start &
+                                         ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK);
                modified = true;
             }
          }
@@ -453,9 +467,13 @@ void anv_CmdBindPipeline(
       }
 
       if ((gfx_pipeline->fs_msaa_flags & BRW_WM_MSAA_FLAG_ENABLE_DYNAMIC) &&
-          push->fs.msaa_flags != gfx_pipeline->fs_msaa_flags) {
-         push->fs.msaa_flags = gfx_pipeline->fs_msaa_flags;
+          push->gfx.fs_msaa_flags != gfx_pipeline->fs_msaa_flags) {
+         push->gfx.fs_msaa_flags = gfx_pipeline->fs_msaa_flags;
          cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_FRAGMENT_BIT;
+      }
+      if (gfx_pipeline->dynamic_patch_control_points) {
+         cmd_buffer->state.push_constants_dirty |=
+            VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
       }
       break;
    }
@@ -466,6 +484,7 @@ void anv_CmdBindPipeline(
       if (cmd_buffer->state.rt.pipeline == rt_pipeline)
          return;
 
+      cmd_buffer->state.rt.base.pipeline = pipeline;
       cmd_buffer->state.rt.pipeline = rt_pipeline;
       cmd_buffer->state.rt.pipeline_dirty = true;
 
@@ -551,31 +570,45 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
          anv_descriptor_set_is_push(set)) {
       pipe_state->descriptors[set_index] = set;
 
-      /* Those stages don't have access to HW binding tables.
-       * This means that we have to upload the descriptor set
-       * as an 64-bit address in the push constants.
+      /* When using indirect descriptors, stages that have access to the HW
+       * binding tables, never need to access the
+       * anv_push_constants::desc_offsets fields, because any data they need
+       * from the descriptor buffer is accessible through a binding table
+       * entry. For stages that are "bindless" (Mesh/Task/RT), we need to
+       * provide anv_push_constants::desc_offsets matching the bound
+       * descriptor so that shaders can access the descriptor buffer through
+       * A64 messages.
+       *
+       * With direct descriptors, the shaders can use the
+       * anv_push_constants::desc_offsets to build bindless offsets. So it's
+       * we always need to update the push constant data.
        */
-      bool update_desc_sets = stages & (VK_SHADER_STAGE_TASK_BIT_EXT |
-                                        VK_SHADER_STAGE_MESH_BIT_EXT |
-                                        VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                                        VK_SHADER_STAGE_ANY_HIT_BIT_KHR |
-                                        VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-                                        VK_SHADER_STAGE_MISS_BIT_KHR |
-                                        VK_SHADER_STAGE_INTERSECTION_BIT_KHR |
-                                        VK_SHADER_STAGE_CALLABLE_BIT_KHR);
+      bool update_desc_sets =
+         !cmd_buffer->device->physical->indirect_descriptors ||
+         (stages & (VK_SHADER_STAGE_TASK_BIT_EXT |
+                    VK_SHADER_STAGE_MESH_BIT_EXT |
+                    VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                    VK_SHADER_STAGE_ANY_HIT_BIT_KHR |
+                    VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+                    VK_SHADER_STAGE_MISS_BIT_KHR |
+                    VK_SHADER_STAGE_INTERSECTION_BIT_KHR |
+                    VK_SHADER_STAGE_CALLABLE_BIT_KHR));
 
       if (update_desc_sets) {
          struct anv_push_constants *push = &pipe_state->push_constants;
 
-         struct anv_address addr = anv_descriptor_set_address(set);
-         push->desc_sets[set_index] &= ~ANV_DESCRIPTOR_SET_ADDRESS_MASK;
-         push->desc_sets[set_index] |= (anv_address_physical(addr) &
-                                        ANV_DESCRIPTOR_SET_ADDRESS_MASK);
+         struct anv_address set_addr = anv_descriptor_set_address(set);
+         uint64_t offset =
+            anv_address_physical(set_addr) -
+            cmd_buffer->device->physical->va.binding_table_pool.addr;
+         assert((offset & ~ANV_DESCRIPTOR_SET_OFFSET_MASK) == 0);
+         push->desc_offsets[set_index] &= ~ANV_DESCRIPTOR_SET_OFFSET_MASK;
+         push->desc_offsets[set_index] |= offset;
 
-         if (addr.bo) {
+         if (set_addr.bo) {
             anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
                                   cmd_buffer->batch.alloc,
-                                  addr.bo);
+                                  set_addr.bo);
          }
       }
 
@@ -927,6 +960,7 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
          anv_descriptor_set_layout_unref(cmd_buffer->device, set->layout);
       anv_descriptor_set_layout_ref(layout);
       set->layout = layout;
+      set->generate_surface_states = 0;
    }
    set->is_push = true;
    set->size = anv_descriptor_set_layout_size(layout, false /* host_only */, 0);
@@ -937,11 +971,20 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
    if (layout->descriptor_buffer_size &&
        ((*push_set)->set_used_on_gpu ||
         set->desc_mem.alloc_size < layout->descriptor_buffer_size)) {
+      struct anv_physical_device *pdevice = cmd_buffer->device->physical;
+      struct anv_state_stream *push_stream =
+         pdevice->indirect_descriptors ?
+         &cmd_buffer->push_descriptor_stream :
+         &cmd_buffer->surface_state_stream;
+      uint64_t push_base_address = pdevice->indirect_descriptors ?
+         pdevice->va.push_descriptor_pool.addr :
+         pdevice->va.internal_surface_state_pool.addr;
+
       /* The previous buffer is either actively used by some GPU command (so
        * we can't modify it) or is too small.  Allocate a new one.
        */
       struct anv_state desc_mem =
-         anv_state_stream_alloc(&cmd_buffer->dynamic_state_stream,
+         anv_state_stream_alloc(push_stream,
                                 anv_descriptor_set_layout_descriptor_buffer_size(layout, 0),
                                 ANV_UBO_ALIGNMENT);
       if (set->desc_mem.alloc_size) {
@@ -951,10 +994,11 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
       }
       set->desc_mem = desc_mem;
 
-      set->desc_addr = (struct anv_address) {
-         .bo = cmd_buffer->dynamic_state_stream.state_pool->block_pool.bo,
-         .offset = set->desc_mem.offset,
-      };
+      set->desc_addr = anv_state_pool_state_address(
+         push_stream->state_pool,
+         set->desc_mem);
+      set->desc_offset = anv_address_physical(set->desc_addr) -
+                         push_base_address;
    }
 
    return set;

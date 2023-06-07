@@ -116,9 +116,9 @@ initialise_coverage_var(struct lower_line_smooth_state *state,
                          nir_fmul(&b,
                                   nir_imm_float(&b, 1.0f / M_SQRT2),
                                   nir_fsub(&b, pixels_from_center,
-                                           nir_fmul(&b,
-                                                    line_width,
-                                                    nir_imm_float(&b, 0.5f)))));
+                                           nir_fmul_imm(&b,
+                                                        line_width,
+                                                        0.5f))));
 
         /* Discard fragments that aren’t covered at all by the line */
         nir_ssa_def *outside = nir_fge(&b, nir_imm_float(&b, 0.0f), coverage);

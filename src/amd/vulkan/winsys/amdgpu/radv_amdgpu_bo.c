@@ -1008,6 +1008,14 @@ radv_amdgpu_bo_va_compare(const void *a, const void *b)
    return bo_a->base.va < bo_b->base.va ? -1 : bo_a->base.va > bo_b->base.va ? 1 : 0;
 }
 
+static uint64_t radv_amdgpu_canonicalize_va(uint64_t va)
+{
+   /* Would be less hardcoded to use addr32_hi (0xffff8000) to generate a mask,
+    * but there are confusing differences between page fault reports from kernel where
+    * it seems to report the top 48 bits, where addr32_hi has 47-bits. */
+   return va & ((1ull << 48) - 1);
+}
+
 static void
 radv_amdgpu_dump_bo_log(struct radeon_winsys *_ws, FILE *file)
 {
@@ -1020,8 +1028,9 @@ radv_amdgpu_dump_bo_log(struct radeon_winsys *_ws, FILE *file)
    u_rwlock_rdlock(&ws->log_bo_list_lock);
    LIST_FOR_EACH_ENTRY (bo_log, &ws->log_bo_list, list) {
       fprintf(file, "timestamp=%llu, VA=%.16llx-%.16llx, destroyed=%d, is_virtual=%d\n",
-              (long long)bo_log->timestamp, (long long)bo_log->va,
-              (long long)(bo_log->va + bo_log->size), bo_log->destroyed, bo_log->is_virtual);
+              (long long)bo_log->timestamp, (long long)radv_amdgpu_canonicalize_va(bo_log->va),
+              (long long)radv_amdgpu_canonicalize_va(bo_log->va + bo_log->size),
+              bo_log->destroyed, bo_log->is_virtual);
    }
    u_rwlock_rdunlock(&ws->log_bo_list_lock);
 }
@@ -1048,9 +1057,10 @@ radv_amdgpu_dump_bo_ranges(struct radeon_winsys *_ws, FILE *file)
       qsort(bos, ws->global_bo_list.count, sizeof(bos[0]), radv_amdgpu_bo_va_compare);
 
       for (i = 0; i < ws->global_bo_list.count; ++i) {
-         fprintf(file, "  VA=%.16llx-%.16llx, handle=%d%s\n", (long long)bos[i]->base.va,
-                 (long long)(bos[i]->base.va + bos[i]->size), bos[i]->bo_handle,
-                 bos[i]->is_virtual ? " sparse" : "");
+         fprintf(file, "  VA=%.16llx-%.16llx, handle=%d%s\n",
+                 (long long)radv_amdgpu_canonicalize_va(bos[i]->base.va),
+                 (long long)radv_amdgpu_canonicalize_va(bos[i]->base.va + bos[i]->size),
+                 bos[i]->bo_handle, bos[i]->is_virtual ? " sparse" : "");
       }
       free(bos);
       u_rwlock_rdunlock(&ws->global_bo_list.lock);

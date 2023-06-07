@@ -408,7 +408,7 @@ struct pipe_screen {
     *
     * In all other cases, the ctx parameter has no effect.
     *
-    * \param timeout  in nanoseconds (may be PIPE_TIMEOUT_INFINITE).
+    * \param timeout  in nanoseconds (may be OS_TIMEOUT_INFINITE).
     */
    bool (*fence_finish)(struct pipe_screen *screen,
                         struct pipe_context *ctx,

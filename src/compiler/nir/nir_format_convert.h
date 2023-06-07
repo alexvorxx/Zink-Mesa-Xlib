@@ -40,7 +40,7 @@ static inline nir_ssa_def *
 nir_shift(nir_builder *b, nir_ssa_def *value, nir_ssa_def *left_shift)
 {
    return nir_bcsel(b,
-                    nir_ige(b, left_shift, nir_imm_int(b, 0)),
+                    nir_ige_imm(b, left_shift, 0),
                     nir_ishl(b, value, left_shift),
                     nir_ushr(b, value, nir_ineg(b, left_shift)));
 }
@@ -301,13 +301,13 @@ nir_format_float_to_half(nir_builder *b, nir_ssa_def *f)
 static inline nir_ssa_def *
 nir_format_linear_to_srgb(nir_builder *b, nir_ssa_def *c)
 {
-   nir_ssa_def *linear = nir_fmul(b, c, nir_imm_float(b, 12.92f));
+   nir_ssa_def *linear = nir_fmul_imm(b, c, 12.92f);
    nir_ssa_def *curved =
-      nir_fsub(b, nir_fmul(b, nir_imm_float(b, 1.055f),
-                              nir_fpow(b, c, nir_imm_float(b, 1.0 / 2.4))),
-                  nir_imm_float(b, 0.055f));
+      nir_fadd_imm(b, nir_fmul_imm(b, nir_fpow(b, c, nir_imm_float(b, 1.0 / 2.4)),
+                                      1.055f),
+                      -0.055f);
 
-   return nir_fsat(b, nir_bcsel(b, nir_flt(b, c, nir_imm_float(b, 0.0031308f)),
+   return nir_fsat(b, nir_bcsel(b, nir_flt_imm(b, c, 0.0031308f),
                                    linear, curved));
 }
 
@@ -316,8 +316,8 @@ nir_format_srgb_to_linear(nir_builder *b, nir_ssa_def *c)
 {
    nir_ssa_def *linear = nir_fdiv(b, c, nir_imm_float(b, 12.92f));
    nir_ssa_def *curved =
-      nir_fpow(b, nir_fdiv(b, nir_fadd(b, c, nir_imm_float(b, 0.055f)),
-                              nir_imm_float(b, 1.055f)),
+      nir_fpow(b, nir_fmul_imm(b, nir_fadd_imm(b, c, 0.055f),
+                                  1.0 / 1.055f),
                   nir_imm_float(b, 2.4f));
 
    return nir_fsat(b, nir_bcsel(b, nir_fge(b, nir_imm_float(b, 0.04045f), c),

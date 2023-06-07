@@ -20,14 +20,12 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include "tgsi/tgsi_from_mesa.h"
 #include "st_nir.h"
 #include "st_program.h"
 
 #include "compiler/nir/nir_builder.h"
 #include "compiler/glsl/gl_nir.h"
 #include "compiler/glsl/gl_nir_linker.h"
-#include "tgsi/tgsi_parse.h"
 
 void
 st_nir_finish_builtin_nir(struct st_context *st, nir_shader *nir)

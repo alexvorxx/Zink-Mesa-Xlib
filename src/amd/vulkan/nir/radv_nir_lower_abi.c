@@ -30,6 +30,9 @@
 #include "radv_shader.h"
 #include "radv_shader_args.h"
 
+#define GET_SGPR_FIELD_NIR(arg, field) \
+   ac_nir_unpack_arg(b, &s->args->ac, arg, field##__SHIFT, util_bitcount(field##__MASK))
+
 typedef struct {
    enum amd_gfx_level gfx_level;
    const struct radv_shader_args *args;
@@ -97,8 +100,8 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_tcs_num_patches_amd:
       if (s->pl_key->dynamic_patch_control_points) {
          if (stage == MESA_SHADER_TESS_CTRL) {
-            nir_ssa_def *arg = ac_nir_load_arg(b, &s->args->ac, s->args->tcs_offchip_layout);
-            replacement = nir_ubfe_imm(b, arg, 6, 8);
+            replacement = GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout,
+                                             TCS_OFFCHIP_LAYOUT_NUM_PATCHES);
          } else {
             replacement = ac_nir_load_arg(b, &s->args->ac, s->args->tes_num_patches);
          }
@@ -163,8 +166,8 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_patch_vertices_in:
       if (stage == MESA_SHADER_TESS_CTRL) {
          if (s->pl_key->dynamic_patch_control_points) {
-            nir_ssa_def *arg = ac_nir_load_arg(b, &s->args->ac, s->args->tcs_offchip_layout);
-            replacement = nir_ubfe_imm(b, arg, 0, 6);
+            replacement = GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout,
+                                             TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS);
          } else {
             replacement = nir_imm_int(b, s->pl_key->tcs.tess_input_vertices);
          }
@@ -298,8 +301,8 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
          nir_ssa_def *num_patches;
 
          if (stage == MESA_SHADER_TESS_CTRL) {
-            nir_ssa_def *arg = ac_nir_load_arg(b, &s->args->ac, s->args->tcs_offchip_layout);
-            num_patches = nir_ubfe_imm(b, arg, 6, 8);
+            num_patches = GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout,
+                                             TCS_OFFCHIP_LAYOUT_NUM_PATCHES);
          } else {
             num_patches = ac_nir_load_arg(b, &s->args->ac, s->args->tes_num_patches);
          }
@@ -331,7 +334,7 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    }
    case nir_intrinsic_load_rasterization_samples_amd:
       if (s->pl_key->dynamic_rasterization_samples) {
-         replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ps_num_samples);
+         replacement = GET_SGPR_FIELD_NIR(s->args->ps_state, PS_STATE_NUM_SAMPLES);
       } else {
          replacement = nir_imm_int(b, s->pl_key->ps.num_samples);
       }
@@ -425,13 +428,13 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       } else {
          assert(stage == MESA_SHADER_GEOMETRY);
          switch (s->info->gs.output_prim) {
-         case SHADER_PRIM_POINTS:
+         case MESA_PRIM_POINTS:
             num_vertices = 1;
             break;
-         case SHADER_PRIM_LINE_STRIP:
+         case MESA_PRIM_LINE_STRIP:
             num_vertices = 2;
             break;
-         case SHADER_PRIM_TRIANGLE_STRIP:
+         case MESA_PRIM_TRIANGLE_STRIP:
             num_vertices = 3;
             break;
          default:
@@ -443,8 +446,7 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       break;
    }
    case nir_intrinsic_load_ordered_id_amd:
-      replacement =
-         nir_ubfe_imm(b, ac_nir_load_arg(b, &s->args->ac, s->args->ac.gs_tg_info), 0, 12);
+      replacement = ac_nir_unpack_arg(b, &s->args->ac, s->args->ac.gs_tg_info, 0, 12);
       break;
    case nir_intrinsic_load_force_vrs_rates_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.force_vrs_rates);
@@ -457,9 +459,22 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_barycentric_optimize_amd: {
       nir_ssa_def *prim_mask = ac_nir_load_arg(b, &s->args->ac, s->args->ac.prim_mask);
       /* enabled when bit 31 is set */
-      replacement = nir_ilt(b, prim_mask, nir_imm_int(b, 0));
+      replacement = nir_ilt_imm(b, prim_mask, 0);
       break;
    }
+   case nir_intrinsic_load_poly_line_smooth_enabled:
+      if (s->pl_key->dynamic_line_rast_mode) {
+         nir_ssa_def *line_rast_mode =
+            GET_SGPR_FIELD_NIR(s->args->ps_state, PS_STATE_LINE_RAST_MODE);
+         replacement =
+            nir_ieq_imm(b, line_rast_mode, VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT);
+      } else {
+         replacement = nir_imm_bool(b, s->pl_key->ps.line_smooth_enabled);
+      }
+      break;
+   case nir_intrinsic_load_initial_edgeflags_amd:
+      replacement = nir_imm_int(b, 0);
+      break;
    default:
       progress = false;
       break;

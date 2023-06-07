@@ -186,10 +186,13 @@ vlVaHandleVAEncSequenceParameterBufferTypeH264(vlVaDriver *drv, vlVaContext *con
       getEncParamPresetH264(context);
    }
 
-   context->gop_coeff = ((1024 + h264->intra_idr_period - 1) / h264->intra_idr_period + 1) / 2 * 2;
+   context->desc.h264enc.intra_idr_period =
+      h264->intra_idr_period != 0 ? h264->intra_idr_period : PIPE_DEFAULT_INTRA_IDR_PERIOD;
+   context->gop_coeff = ((1024 + context->desc.h264enc.intra_idr_period - 1) /
+                        context->desc.h264enc.intra_idr_period + 1) / 2 * 2;
    if (context->gop_coeff > VL_VA_ENC_GOP_COEFF)
       context->gop_coeff = VL_VA_ENC_GOP_COEFF;
-   context->desc.h264enc.gop_size = h264->intra_idr_period * context->gop_coeff;
+   context->desc.h264enc.gop_size = context->desc.h264enc.intra_idr_period * context->gop_coeff;
    context->desc.h264enc.seq.pic_order_cnt_type = h264->seq_fields.bits.pic_order_cnt_type;
    context->desc.h264enc.seq.vui_parameters_present_flag = h264->vui_parameters_present_flag;
    if (h264->vui_parameters_present_flag) {
@@ -215,7 +218,6 @@ vlVaHandleVAEncSequenceParameterBufferTypeH264(vlVaDriver *drv, vlVaContext *con
    context->desc.h264enc.seq.time_scale = time_scale;
    context->desc.h264enc.rate_ctrl[0].frame_rate_num = time_scale / 2;
    context->desc.h264enc.rate_ctrl[0].frame_rate_den = num_units_in_tick;
-   context->desc.h264enc.intra_idr_period = h264->intra_idr_period;
 
    if (h264->frame_cropping_flag) {
       context->desc.h264enc.seq.enc_frame_cropping_flag = h264->frame_cropping_flag;

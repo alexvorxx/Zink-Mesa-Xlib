@@ -244,7 +244,12 @@ with_imagination_srv = get_option('imagination-srv')
 with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
 with_any_vk = _vulkan_drivers.length() != 0
 
-with_any_broadcom = with_gallium_vc4 or with_gallium_v3d or with_broadcom_vk
+with_any_broadcom = [
+  with_gallium_vc4,
+  with_gallium_v3d,
+  with_broadcom_vk,
+].contains(true)
+
 with_any_intel = [
   with_gallium_crocus,
   with_gallium_i915,

@@ -277,7 +277,7 @@ update_draw_stats(struct fd_context *ctx, const struct pipe_draw_info *info,
        * so keep the count accurate for non-patch geometry.
        */
       unsigned prims = 0;
-      if ((info->mode != PIPE_PRIM_PATCHES) && (info->mode != PIPE_PRIM_MAX)) {
+      if ((info->mode != MESA_PRIM_PATCHES) && (info->mode != MESA_PRIM_COUNT)) {
          for (unsigned i = 0; i < num_draws; i++) {
             prims += u_reduced_prims_for_vertices(info->mode, draws[i].count);
          }
@@ -287,7 +287,7 @@ update_draw_stats(struct fd_context *ctx, const struct pipe_draw_info *info,
 
       if (ctx->streamout.num_targets > 0) {
          /* Clip the prims we're writing to the size of the SO buffers. */
-         enum pipe_prim_type tf_prim = u_decomposed_prim(info->mode);
+         enum mesa_prim tf_prim = u_decomposed_prim(info->mode);
          unsigned verts_written = u_vertices_for_prims(tf_prim, prims);
          unsigned remaining_vert_space =
             ctx->streamout.max_tf_vtx - ctx->streamout.verts_written;
@@ -571,6 +571,11 @@ fd_launch_grid(struct pipe_context *pctx,
    fd_batch_reference(&save_batch, ctx->batch);
    fd_batch_reference(&ctx->batch, batch);
 
+   /* NOTE: needs to be before resource_written(batch->query_buf), otherwise
+    * query_buf may not be created yet.
+    */
+   fd_batch_update_queries(batch);
+
    fd_screen_lock(ctx->screen);
 
    /* Mark SSBOs */
@@ -604,6 +609,10 @@ fd_launch_grid(struct pipe_context *pctx,
 
    if (info->indirect)
       resource_read(batch, info->indirect);
+
+   list_for_each_entry (struct fd_acc_query, aq, &ctx->acc_active_queries, node) {
+      resource_written(batch, aq->prsc);
+   }
 
    /* If the saved batch has been flushed during the resource tracking,
     * don't re-install it:

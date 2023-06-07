@@ -1548,6 +1548,9 @@ validate_var_decl(nir_variable *var, nir_variable_mode valid_modes,
       validate_assert(state, glsl_type_is_image(glsl_without_array(var->type)));
    }
 
+   if (var->data.per_vertex)
+      validate_assert(state, state->shader->info.stage == MESA_SHADER_FRAGMENT);
+
    /*
     * TODO validate some things ir_validate.cpp does (requires more GLSL type
     * support)

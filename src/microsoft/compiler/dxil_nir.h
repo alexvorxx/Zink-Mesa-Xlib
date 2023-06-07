@@ -88,6 +88,7 @@ bool dxil_nir_move_consts(nir_shader *s);
 
 struct dxil_module;
 bool dxil_nir_analyze_io_dependencies(struct dxil_module *mod, nir_shader *s);
+bool dxil_nir_guess_image_formats(nir_shader *s);
 
 #ifdef __cplusplus
 }

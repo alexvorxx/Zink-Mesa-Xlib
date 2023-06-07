@@ -499,7 +499,7 @@ schedule_node::set_latency_gfx7(bool is_haswell)
          break;
 
       case HSW_SFID_DATAPORT_DATA_CACHE_1:
-         switch ((inst->desc >> 14) & 0x1f) {
+         switch (brw_dp_desc_msg_type(isa->devinfo, inst->desc)) {
          case HSW_DATAPORT_DC_PORT1_UNTYPED_SURFACE_READ:
          case HSW_DATAPORT_DC_PORT1_UNTYPED_SURFACE_WRITE:
          case HSW_DATAPORT_DC_PORT1_TYPED_SURFACE_READ:

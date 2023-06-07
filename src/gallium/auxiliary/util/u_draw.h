@@ -50,7 +50,7 @@ util_draw_init_info(struct pipe_draw_info *info)
 
 static inline void
 util_draw_arrays(struct pipe_context *pipe,
-                 enum pipe_prim_type mode,
+                 enum mesa_prim mode,
                  uint start,
                  uint count)
 {
@@ -73,7 +73,7 @@ static inline void
 util_draw_elements(struct pipe_context *pipe,
                    void *indices,
                    unsigned index_size,
-                   int index_bias, enum pipe_prim_type mode,
+                   int index_bias, enum mesa_prim mode,
                    uint start,
                    uint count)
 {
@@ -95,7 +95,7 @@ util_draw_elements(struct pipe_context *pipe,
 
 static inline void
 util_draw_arrays_instanced(struct pipe_context *pipe,
-                           enum pipe_prim_type mode,
+                           enum mesa_prim mode,
                            uint start,
                            uint count,
                            uint start_instance,
@@ -124,7 +124,7 @@ util_draw_elements_instanced(struct pipe_context *pipe,
                              void *indices,
                              unsigned index_size,
                              int index_bias,
-                             enum pipe_prim_type mode,
+                             enum mesa_prim mode,
                              uint start,
                              uint count,
                              uint start_instance,

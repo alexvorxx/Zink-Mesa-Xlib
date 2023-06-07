@@ -1826,7 +1826,7 @@ dri2_blit_image(__DRIcontext *context, __DRIimage *dst, __DRIimage *src,
       screen = ctx->screen->base.screen;
       pipe->flush_resource(pipe, dst->texture);
       st_context_flush(ctx->st, 0, &fence, NULL, NULL);
-      (void) screen->fence_finish(screen, NULL, fence, PIPE_TIMEOUT_INFINITE);
+      (void) screen->fence_finish(screen, NULL, fence, OS_TIMEOUT_INFINITE);
       screen->fence_reference(screen, &fence, NULL);
    }
 }

@@ -274,6 +274,7 @@ block_add_normal_succs(nir_block *block)
          nir_block *next_block = nir_cf_node_as_block(next);
 
          link_blocks(block, next_block, NULL);
+         nir_insert_phi_undef(next_block, block);
       } else if (parent->type == nir_cf_node_loop) {
          nir_loop *loop = nir_cf_node_as_loop(parent);
 
@@ -300,6 +301,8 @@ block_add_normal_succs(nir_block *block)
          nir_block *first_else_block = nir_if_first_else_block(next_if);
 
          link_blocks(block, first_then_block, first_else_block);
+         nir_insert_phi_undef(first_then_block, block);
+         nir_insert_phi_undef(first_else_block, block);
       } else if (next->type == nir_cf_node_loop) {
          nir_loop *next_loop = nir_cf_node_as_loop(next);
 

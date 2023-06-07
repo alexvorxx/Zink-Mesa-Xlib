@@ -63,8 +63,8 @@
     <value name="Triangles" value="6"/>
     <value name="Triangle strip" value="9"/>
     <value name="Triangle fan" value="10"/>
-    <value name="Quads" value="14"/> <!-- guess, confirm with piglit later XXX -->
-    <value name="Quad strip" value="15"/> <!-- guess, confirm with piglit later XXX -->
+    <value name="Quads" value="14"/>
+    <value name="Quad strip" value="15"/>
   </enum>
 
   <enum name="Object Type">

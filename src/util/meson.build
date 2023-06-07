@@ -135,6 +135,7 @@ files_mesa_util = files(
   'u_debug_refcnt.h',
   'u_dl.c',
   'u_dl.h',
+  'u_dynarray.c',
   'u_dynarray.h',
   'u_endian.h',
   'u_hash_table.c',

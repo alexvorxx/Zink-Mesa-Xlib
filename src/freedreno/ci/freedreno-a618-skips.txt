@@ -19,7 +19,7 @@ spill-dEQP-VK.graphicsfuzz.cov-nested-loop-undefined-smoothstep-never-executed
 
 # 60s timeout
 KHR-GLES31.core.tessellation_shader.tessellation_control_to_tessellation_evaluation.gl_MaxPatchVertices_Position_PointSize
-KHR-GL45.copy_image.functional
+KHR-GL46.copy_image.functional
 
 # These take most of a minute to run
 spec@!opengl 3.0@clearbuffer-depth-cs-probe

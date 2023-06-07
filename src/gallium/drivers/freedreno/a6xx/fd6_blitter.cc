@@ -38,6 +38,7 @@
 #include "freedreno_resource.h"
 #include "freedreno_tracepoints.h"
 
+#include "fd6_barrier.h"
 #include "fd6_blitter.h"
 #include "fd6_emit.h"
 #include "fd6_pack.h"
@@ -252,10 +253,11 @@ emit_setup(struct fd_batch *batch)
    struct fd_ringbuffer *ring = batch->draw;
    struct fd_screen *screen = batch->ctx->screen;
 
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_DEPTH_TS, true);
-   fd6_event_write(batch, ring, PC_CCU_INVALIDATE_COLOR, false);
-   fd6_event_write(batch, ring, PC_CCU_INVALIDATE_DEPTH, false);
+   fd6_emit_flushes(batch->ctx, ring,
+                    FD6_FLUSH_CCU_COLOR |
+                    FD6_INVALIDATE_CCU_COLOR |
+                    FD6_FLUSH_CCU_DEPTH |
+                    FD6_INVALIDATE_CCU_DEPTH);
 
    /* normal BLIT_OP_SCALE operation needs bypass RB_CCU_CNTL */
    OUT_WFI5(ring);
@@ -541,11 +543,10 @@ fd6_clear_ubwc(struct fd_batch *batch, struct fd_resource *rsc) assert_dt
       size -= w * h;
    }
 
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_DEPTH_TS, true);
-   fd6_event_write(batch, ring, CACHE_FLUSH_TS, true);
-   fd_wfi(batch, ring);
-   fd6_cache_inv(batch, ring);
+   fd6_emit_flushes(batch->ctx, ring,
+                    FD6_FLUSH_CCU_COLOR |
+                    FD6_FLUSH_CCU_DEPTH |
+                    FD6_FLUSH_CACHE);
 }
 
 static void
@@ -1002,11 +1003,10 @@ fd6_clear_texture(struct pipe_context *pctx, struct pipe_resource *prsc,
 
    fd6_clear_surface<CHIP>(ctx, batch->draw, &surf, box, &color, 0);
 
-   fd6_event_write(batch, batch->draw, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, batch->draw, PC_CCU_FLUSH_DEPTH_TS, true);
-   fd6_event_write(batch, batch->draw, CACHE_FLUSH_TS, true);
-   fd_wfi(batch, batch->draw);
-   fd6_cache_inv(batch, batch->draw);
+   fd6_emit_flushes(batch->ctx, batch->draw,
+                    FD6_FLUSH_CCU_COLOR |
+                    FD6_FLUSH_CCU_DEPTH |
+                    FD6_FLUSH_CACHE);
 
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);
@@ -1084,7 +1084,7 @@ fd6_resolve_tile(struct fd_batch *batch, struct fd_ringbuffer *ring,
    fd6_cache_inv(batch, ring);
 
    /* Wait for CACHE_INVALIDATE to land */
-   fd_wfi(batch, ring);
+   OUT_WFI5(ring);
 
    OUT_PKT7(ring, CP_BLIT, 1);
    OUT_RING(ring, CP_BLIT_0_OP(BLIT_OP_SCALE));
@@ -1095,8 +1095,7 @@ fd6_resolve_tile(struct fd_batch *batch, struct fd_ringbuffer *ring,
     * sysmem, and we generally assume that GMEM renderpasses leave their
     * results in sysmem, so we need to flush manually here.
     */
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
-   fd_wfi(batch, ring);
+   fd6_emit_flushes(batch->ctx, ring, FD6_FLUSH_CCU_COLOR);
 }
 
 template void fd6_resolve_tile<A6XX>(struct fd_batch *batch, struct fd_ringbuffer *ring,
@@ -1162,11 +1161,10 @@ handle_rgba_blit(struct fd_context *ctx,
 
    trace_end_blit(&batch->trace, batch->draw);
 
-   fd6_event_write(batch, batch->draw, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, batch->draw, PC_CCU_FLUSH_DEPTH_TS, true);
-   fd6_event_write(batch, batch->draw, CACHE_FLUSH_TS, true);
-   fd_wfi(batch, batch->draw);
-   fd6_cache_inv(batch, batch->draw);
+   fd6_emit_flushes(batch->ctx, batch->draw,
+                    FD6_FLUSH_CCU_COLOR |
+                    FD6_FLUSH_CCU_DEPTH |
+                    FD6_FLUSH_CACHE);
 
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);

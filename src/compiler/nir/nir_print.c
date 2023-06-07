@@ -933,7 +933,6 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
 
    for (unsigned i = 0; i < info->num_indices; i++) {
       unsigned idx = info->indices[i];
-      bool print_raw = true;
       if (i != 0)
          fprintf(fp, ", ");
       switch (idx) {
@@ -956,7 +955,6 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
       case NIR_INTRINSIC_ATOMIC_OP: {
          nir_atomic_op atomic_op = nir_intrinsic_atomic_op(instr);
          fprintf(fp, "atomic_op=");
-         print_raw = false;
 
          switch (atomic_op) {
          case nir_atomic_op_iadd:     fprintf(fp, "iadd"); break;
@@ -1060,6 +1058,8 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
       case NIR_INTRINSIC_MEMORY_MODES: {
          fprintf(fp, "mem_modes=");
          unsigned int modes = nir_intrinsic_memory_modes(instr);
+         if (modes == 0)
+            fputc('0', fp);
          while (modes) {
             nir_variable_mode m = u_bit_scan(&modes);
             fprintf(fp, "%s%s", get_variable_mode_str(1 << m, true), modes ? "|" : "");
@@ -1093,6 +1093,8 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
          switch (instr->intrinsic) {
          case nir_intrinsic_load_input:
          case nir_intrinsic_load_interpolated_input:
+         case nir_intrinsic_load_per_vertex_input:
+         case nir_intrinsic_load_input_vertex:
             mode = nir_var_shader_in;
             break;
 
@@ -1224,15 +1226,32 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
          break;
       }
 
+      case NIR_INTRINSIC_RESOURCE_ACCESS_INTEL: {
+         fprintf(fp, "resource_intel=");
+         unsigned int modes = nir_intrinsic_resource_access_intel(instr);
+         if (modes == 0)
+            fputc('0', fp);
+         while (modes) {
+            nir_resource_data_intel i = 1u << u_bit_scan(&modes);
+            switch (i) {
+            case nir_resource_intel_bindless: fprintf(fp, "bindless"); break;
+            case nir_resource_intel_pushable: fprintf(fp, "pushable"); break;
+            case nir_resource_intel_sampler:  fprintf(fp, "sampler"); break;
+            case nir_resource_intel_non_uniform:
+                                              fprintf(fp, "non-uniform"); break;
+            default:                          fprintf(fp, "unknown"); break;
+            }
+            fprintf(fp, "%s", modes ? "|" : "");
+         }
+         break;
+      }
+
       default: {
          unsigned off = info->index_map[idx] - 1;
          fprintf(fp, "%s=%d", nir_intrinsic_index_names[idx], instr->const_index[off]);
-         print_raw = false;
          break;
       }
       }
-      if (print_raw)
-         fprintf(fp, " /*%d*/", instr->const_index[i]);
    }
    fprintf(fp, ")");
 
@@ -1790,7 +1809,7 @@ destroy_print_state(print_state *state)
 static const char *
 primitive_name(unsigned primitive)
 {
-#define PRIM(X) case SHADER_PRIM_ ## X : return #X
+#define PRIM(X) case MESA_PRIM_ ## X : return #X
    switch (primitive) {
    PRIM(POINTS);
    PRIM(LINES);

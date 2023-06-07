@@ -125,7 +125,7 @@ lp_setup_unmap_vertices(struct vbuf_render *vbr,
 
 
 static void
-lp_setup_set_primitive(struct vbuf_render *vbr, enum pipe_prim_type prim)
+lp_setup_set_primitive(struct vbuf_render *vbr, enum mesa_prim prim)
 {
    lp_setup_context(vbr)->prim = prim;
 }
@@ -186,14 +186,14 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       setup->setup.variant->key.uses_constant_interp;
 
    switch (setup->prim) {
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       for (i = 0; i < nr; i++) {
          setup->point(setup,
                       get_vert(vertex_buffer, indices[i-0], stride));
       }
       break;
 
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       for (i = 1; i < nr; i += 2) {
          setup->line(setup,
                      get_vert(vertex_buffer, indices[i-1], stride),
@@ -201,7 +201,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       for (i = 1; i < nr; i ++) {
          setup->line(setup,
                      get_vert(vertex_buffer, indices[i-1], stride),
@@ -209,7 +209,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       for (i = 1; i < nr; i ++) {
          setup->line(setup,
                      get_vert(vertex_buffer, indices[i-1], stride),
@@ -222,7 +222,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       if (nr % 6 == 0 && !uses_constant_interp) {
          for (i = 5; i < nr; i += 6) {
             rect(setup,
@@ -243,7 +243,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       if (flatshade_first) {
          for (i = 2; i < nr; i += 1) {
             /* emit first triangle vertex as first triangle vertex */
@@ -264,7 +264,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLE_FAN:
+   case MESA_PRIM_TRIANGLE_FAN:
       if (flatshade_first) {
          for (i = 2; i < nr; i += 1) {
             /* emit first non-spoke vertex as first vertex */
@@ -284,7 +284,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       /* GL quads don't follow provoking vertex convention */
       if (flatshade_first) {
          /* emit last quad vertex as first triangle vertex */
@@ -315,7 +315,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       /* GL quad strips don't follow provoking vertex convention */
       if (flatshade_first) {
          /* emit last quad vertex as first triangle vertex */
@@ -344,7 +344,7 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
       }
       break;
 
-   case PIPE_PRIM_POLYGON:
+   case MESA_PRIM_POLYGON:
       /* Almost same as tri fan but the _first_ vertex specifies the flat
        * shading color.
        */
@@ -394,14 +394,14 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       setup->setup.variant->key.uses_constant_interp;
 
    switch (setup->prim) {
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       for (i = 0; i < nr; i++) {
          setup->point(setup,
                       get_vert(vertex_buffer, i-0, stride));
       }
       break;
 
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       for (i = 1; i < nr; i += 2) {
          setup->line(setup,
                      get_vert(vertex_buffer, i-1, stride),
@@ -409,7 +409,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       for (i = 1; i < nr; i ++) {
          setup->line(setup,
                      get_vert(vertex_buffer, i-1, stride),
@@ -417,7 +417,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       for (i = 1; i < nr; i ++) {
          setup->line(setup,
                      get_vert(vertex_buffer, i-1, stride),
@@ -430,7 +430,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       if (nr % 6 == 0 && !uses_constant_interp) {
          for (i = 5; i < nr; i += 6) {
             rect(setup,
@@ -456,7 +456,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       if (flatshade_first) {
          if (!uses_constant_interp) {
             int j;
@@ -508,7 +508,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_TRIANGLE_FAN:
+   case MESA_PRIM_TRIANGLE_FAN:
       if (nr == 4 && !uses_constant_interp) {
          rect(setup,
                       get_vert(vertex_buffer, 0, stride),
@@ -536,7 +536,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       /* GL quads don't follow provoking vertex convention */
       if (flatshade_first) {
          /* emit last quad vertex as first triangle vertex */
@@ -577,7 +577,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       /* GL quad strips don't follow provoking vertex convention */
       if (flatshade_first) {
          /* emit last quad vertex as first triangle vertex */
@@ -606,7 +606,7 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
       }
       break;
 
-   case PIPE_PRIM_POLYGON:
+   case MESA_PRIM_POLYGON:
       /* Almost same as tri fan but the _first_ vertex specifies the flat
        * shading color.
        */

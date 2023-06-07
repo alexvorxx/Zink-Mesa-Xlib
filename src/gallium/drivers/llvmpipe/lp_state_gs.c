@@ -35,8 +35,6 @@
 #include "util/u_inlines.h"
 #include "draw/draw_context.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_scan.h"
-#include "tgsi/tgsi_parse.h"
 
 
 static void *

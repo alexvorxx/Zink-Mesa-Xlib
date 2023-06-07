@@ -79,7 +79,7 @@ build_idiv(nir_builder *b, nir_ssa_def *n, int64_t d)
       return nir_ineg(b, n);
    } else if (util_is_power_of_two_or_zero64(abs_d)) {
       nir_ssa_def *uq = nir_ushr_imm(b, nir_iabs(b, n), util_logbase2_64(abs_d));
-      nir_ssa_def *n_neg = nir_ilt(b, n, nir_imm_intN_t(b, 0, n->bit_size));
+      nir_ssa_def *n_neg = nir_ilt_imm(b, n, 0);
       nir_ssa_def *neg = d < 0 ? nir_inot(b, n_neg) : n_neg;
       return nir_bcsel(b, neg, nir_ineg(b, uq), uq);
    } else {
@@ -111,7 +111,7 @@ build_irem(nir_builder *b, nir_ssa_def *n, int64_t d)
    } else {
       d = d < 0 ? -d : d;
       if (util_is_power_of_two_or_zero64(d)) {
-         nir_ssa_def *tmp = nir_bcsel(b, nir_ilt(b, n, nir_imm_intN_t(b, 0, n->bit_size)),
+         nir_ssa_def *tmp = nir_bcsel(b, nir_ilt_imm(b, n, 0),
                                       nir_iadd_imm(b, n, d - 1), n);
          return nir_isub(b, n, nir_iand_imm(b, tmp, -d));
       } else {

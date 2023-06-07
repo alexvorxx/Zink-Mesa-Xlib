@@ -340,7 +340,7 @@ st_DrawTex(struct gl_context *ctx, GLfloat x, GLfloat y, GLfloat z,
 
    util_draw_vertex_buffer(pipe, cso, vbuffer, 0,
                            offset,  /* offset */
-                           PIPE_PRIM_TRIANGLE_FAN,
+                           MESA_PRIM_TRIANGLE_FAN,
                            4,  /* verts */
                            numAttribs); /* attribs/vert */
    st->last_num_vbuffers = MAX2(st->last_num_vbuffers, 1);

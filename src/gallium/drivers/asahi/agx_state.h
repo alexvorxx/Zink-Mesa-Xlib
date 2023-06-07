@@ -56,7 +56,7 @@ struct agx_xfb_key {
    uint8_t index_size;
 
    /* The primitive mode for unrolling the vertex ID */
-   enum pipe_prim_type mode;
+   enum mesa_prim mode;
 
    /* Use first vertex as the provoking vertex for flat shading */
    bool flatshade_first;
@@ -123,6 +123,12 @@ struct PACKED agx_draw_uniforms {
       struct {
          /* Blend constant if any */
          float blend_constant[4];
+
+         /* Value of the ppp_multisamplectl control register */
+         uint32_t ppp_multisamplectl;
+
+         /* glSampleMask */
+         uint16_t sample_mask;
       } fs;
    };
 };
@@ -219,10 +225,15 @@ struct agx_batch {
    unsigned clear_stencil;
 
    /* Whether we're drawing points, lines, or triangles */
-   enum pipe_prim_type reduced_prim;
+   enum mesa_prim reduced_prim;
 
    /* Current varyings linkage structures */
    uint32_t varyings;
+
+   /* Value of the multisample control register, containing sample positions in
+    * each byte (x in low nibble, y in high nibble).
+    */
+   uint32_t ppp_multisamplectl;
 
    /* Resource list requirements, represented as a bit set indexed by BO
     * handles (GEM handles on Linux, or IOGPU's equivalent on macOS)
@@ -267,6 +278,8 @@ struct agx_blend {
 
    /* PIPE_CLEAR_* bitmask corresponding to this blend state */
    uint32_t store;
+
+   bool alpha_to_coverage, alpha_to_one;
 };
 
 struct asahi_vs_shader_key {
@@ -281,7 +294,14 @@ struct asahi_fs_shader_key {
    /* From rasterizer state, to lower point sprites */
    uint16_t sprite_coord_enable;
 
+   /* Set if glSampleMask() is used with a mask other than all-1s. If not, we
+    * don't want to emit lowering code for it, since it would disable early-Z.
+    */
+   bool api_sample_mask;
+
    uint8_t clip_plane_enable;
+   uint8_t nr_samples;
+   bool multisample;
    enum pipe_format rt_formats[PIPE_MAX_COLOR_BUFS];
 };
 
@@ -311,6 +331,7 @@ enum agx_dirty {
    AGX_DIRTY_BLEND = BITFIELD_BIT(12),
    AGX_DIRTY_QUERY = BITFIELD_BIT(13),
    AGX_DIRTY_XFB = BITFIELD_BIT(14),
+   AGX_DIRTY_SAMPLE_MASK = BITFIELD_BIT(15),
 };
 
 /* Maximum number of in-progress + under-construction GPU batches.
@@ -528,7 +549,6 @@ struct agx_sampler_view {
 struct agx_screen {
    struct pipe_screen pscreen;
    struct agx_device dev;
-   struct sw_winsys *winsys;
    struct disk_cache *disk_cache;
 };
 
@@ -564,10 +584,6 @@ struct agx_resource {
 
    /* Hardware backing */
    struct agx_bo *bo;
-
-   /* Software backing (XXX) */
-   struct sw_displaytarget *dt;
-   unsigned dt_stride;
 
    struct renderonly_scanout *scanout;
 
@@ -617,6 +633,9 @@ agx_map_texture_gpu(struct agx_resource *rsrc, unsigned z)
    return rsrc->bo->ptr.gpu +
           (uint64_t)ail_get_layer_offset_B(&rsrc->layout, z);
 }
+
+void agx_decompress(struct agx_context *ctx, struct agx_resource *rsrc,
+                    const char *reason);
 
 struct agx_transfer {
    struct pipe_transfer base;

@@ -31,7 +31,7 @@
         section_end ccache_before
       fi
   after_script:
-    - if test -x /usr/bin/ccache; then ccache --show-stats | grep "cache hit rate"; fi
+    - if test -x /usr/bin/ccache; then ccache --show-stats | grep "Hits:"; fi
     - !reference [default, after_script]
 
 .build-windows:
@@ -49,17 +49,17 @@
 .meson-build:
   extends:
     - .build-linux
-    - .use-debian/x86_build
+    - .use-debian/x86_64_build
   stage: build-x86_64
   variables:
-    LLVM_VERSION: 11
+    LLVM_VERSION: 15
   script:
     - .gitlab-ci/meson/build.sh
 
 .meson-build_mingw:
   extends:
     - .build-linux
-    - .use-debian/x86_build_mingw
+    - .use-debian/x86_64_build_mingw
     - .use-wine
   stage: build-x86_64
   script:
@@ -87,8 +87,8 @@ debian-testing:
       -D valgrind=disabled
       -D perfetto=true
       -D tools=drm-shim
-    MINIO_ARTIFACT_NAME: mesa-amd64
-    LLVM_VERSION: "13"
+    MINIO_ARTIFACT_NAME: mesa-x86_64
+    LLVM_VERSION: 15
   script:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh
@@ -110,6 +110,8 @@ debian-testing-asan:
     ARTIFACTS_DEBUG_SYMBOLS: 1
 
 debian-testing-msan:
+  # https://github.com/google/sanitizers/wiki/MemorySanitizerLibcxxHowTo
+  # msan cannot fully work until it's used together with msan libc
   extends:
     - debian-clang
   variables:
@@ -122,9 +124,8 @@ debian-testing-msan:
     # Don't run all the tests yet:
     # GLSL has some issues in sexpression reading.
     # gtest has issues in its test initialization.
-    MESON_TEST_ARGS: "--suite glcpp --suite gallium  --suite format"
-    # Freedreno dropped because freedreno tools fail at msan.
-    GALLIUM_DRIVERS: "iris,nouveau,kmsro,r300,r600,swrast,svga,v3d,vc4,virgl,etnaviv,panfrost,lima,zink,radeonsi,tegra,d3d12,crocus"
+    MESON_TEST_ARGS: "--suite glcpp --suite format"
+    GALLIUM_DRIVERS: "freedreno,iris,nouveau,kmsro,r300,r600,swrast,svga,v3d,vc4,virgl,etnaviv,panfrost,lima,zink,radeonsi,tegra,d3d12,crocus"
     VULKAN_DRIVERS: intel,amd,broadcom,virtio
 
 .debian-cl-testing:
@@ -132,7 +133,7 @@ debian-testing-msan:
     - .meson-build
     - .ci-deqp-artifacts
   variables:
-    LLVM_VERSION: "13"
+    LLVM_VERSION: 15
     UNWIND: "enabled"
     DRI_LOADERS: >
       -D glx=disabled
@@ -189,7 +190,7 @@ debian-build-testing:
       -D osmesa=true
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,intel-ui,nir,nouveau,lima,panfrost,asahi
       -D b_lto=true
-    LLVM_VERSION: 13
+    LLVM_VERSION: 15
   script: |
     section_start lava-pytest "lava-pytest"
     .gitlab-ci/lava/lava-pytest.sh
@@ -206,8 +207,10 @@ debian-build-testing:
 debian-release:
   extends: .meson-build
   variables:
-    LLVM_VERSION: "13"
+    LLVM_VERSION: 15
     UNWIND: "enabled"
+    C_ARGS: >
+      -Wno-error=stringop-overread
     DRI_LOADERS: >
       -D glx=dri
       -D gbm=enabled
@@ -233,7 +236,7 @@ debian-release:
       -D intel-clc=enabled
       -D imagination-srv=true
     BUILDTYPE: "release"
-    MINIO_ARTIFACT_NAME: "mesa-amd64-${BUILDTYPE}"
+    MINIO_ARTIFACT_NAME: "mesa-x86_64-${BUILDTYPE}"
   script:
     - .gitlab-ci/meson/build.sh
     - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
@@ -241,7 +244,7 @@ debian-release:
 alpine-build-testing:
   extends:
     - .meson-build
-    - .use-alpine/x86_build
+    - .use-alpine/x86_64_build
   stage: build-x86_64
   variables:
     BUILDTYPE: "release"
@@ -279,7 +282,7 @@ alpine-build-testing:
 fedora-release:
   extends:
     - .meson-build
-    - .use-fedora/x86_build
+    - .use-fedora/x86_64_build
   variables:
     BUILDTYPE: "release"
     C_LINK_ARGS: >
@@ -403,9 +406,9 @@ debian-android:
 .meson-arm:
   extends:
     - .meson-cross
-    - .use-debian/arm_build
+    - .use-debian/arm64_build
   needs:
-    - debian/arm_build
+    - debian/arm64_build
   variables:
     VULKAN_DRIVERS: freedreno,broadcom
     GALLIUM_DRIVERS: "etnaviv,freedreno,kmsro,lima,nouveau,panfrost,swrast,tegra,v3d,vc4,zink"
@@ -413,7 +416,7 @@ debian-android:
   tags:
     - aarch64
 
-debian-armhf:
+debian-arm32:
   extends:
     - .meson-arm
     - .ci-deqp-artifacts
@@ -422,7 +425,7 @@ debian-armhf:
     EXTRA_OPTION: >
       -D llvm=disabled
       -D valgrind=disabled
-    MINIO_ARTIFACT_NAME: mesa-armhf
+    MINIO_ARTIFACT_NAME: mesa-arm32
     # The strip command segfaults, failing to strip the binary and leaving
     # tempfiles in our artifacts.
     ARTIFACTS_DEBUG_SYMBOLS: 1
@@ -435,6 +438,9 @@ debian-arm64:
     - .meson-arm
     - .ci-deqp-artifacts
   variables:
+    C_ARGS: >
+      -Wno-error=array-bounds
+      -Wno-error=stringop-truncation
     VULKAN_DRIVERS: "freedreno,broadcom,panfrost,imagination-experimental"
     EXTRA_OPTION: >
       -D llvm=disabled
@@ -477,7 +483,9 @@ debian-arm64-release:
     BUILDTYPE: release
     MINIO_ARTIFACT_NAME: mesa-arm64-${BUILDTYPE}
     C_ARGS: >
+      -Wno-error=array-bounds
       -Wno-error=stringop-truncation
+      -Wno-error=stringop-overread
   script:
     - .gitlab-ci/meson/build.sh
     - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
@@ -485,7 +493,7 @@ debian-arm64-release:
 debian-clang:
   extends: .meson-build
   variables:
-    LLVM_VERSION: "13"
+    LLVM_VERSION: 15
     UNWIND: "enabled"
     GALLIUM_DUMP_CPU: "true"
     C_ARGS: >
@@ -518,7 +526,7 @@ debian-clang:
       -D gles1=enabled
       -D gles2=enabled
       -D llvm=enabled
-      -D microsoft-clc=enabled
+      -D microsoft-clc=disabled
       -D shared-llvm=enabled
       -D opencl-spirv=true
     GALLIUM_DRIVERS: "iris,nouveau,kmsro,r300,r600,freedreno,swrast,svga,v3d,vc4,virgl,etnaviv,panfrost,lima,zink,radeonsi,tegra,d3d12,crocus,i915,asahi"
@@ -532,8 +540,8 @@ debian-clang:
       -D build-aco-tests=true
       -D intel-clc=enabled
       -D imagination-srv=true
-    CC: clang
-    CXX: clang++
+    CC: clang-${LLVM_VERSION}
+    CXX: clang++-${LLVM_VERSION}
 
 debian-clang-release:
   extends: debian-clang
@@ -559,7 +567,7 @@ windows-vs2019:
 .debian-cl:
   extends: .meson-build
   variables:
-    LLVM_VERSION: "13"
+    LLVM_VERSION: 15
     UNWIND: "enabled"
     DRI_LOADERS: >
       -D glx=disabled
@@ -600,7 +608,7 @@ debian-rusticl:
 debian-vulkan:
   extends: .meson-build
   variables:
-    LLVM_VERSION: "13"
+    LLVM_VERSION: 15
     UNWIND: "disabled"
     DRI_LOADERS: >
       -D glx=disabled
@@ -628,15 +636,15 @@ debian-vulkan:
       -D intel-clc=disabled
       -D imagination-srv=true
 
-debian-i386:
+debian-x86_32:
   extends:
     - .meson-cross
-    - .use-debian/i386_build
+    - .use-debian/x86_32_build
   variables:
     CROSS: i386
     VULKAN_DRIVERS: intel,amd,swrast,virtio
     GALLIUM_DRIVERS: "iris,nouveau,r300,r600,radeonsi,swrast,virgl,zink,crocus"
-    LLVM_VERSION: 13
+    LLVM_VERSION: 15
     EXTRA_OPTION: >
       -D vulkan-layers=device-select,overlay
 
@@ -650,7 +658,7 @@ debian-s390x:
   variables:
     CROSS: s390x
     GALLIUM_DRIVERS: "swrast,zink"
-    LLVM_VERSION: 13
+    LLVM_VERSION: 15
     VULKAN_DRIVERS: "swrast"
 
 debian-ppc64el:
@@ -686,6 +694,7 @@ debian-ppc64el:
       -D opencl-spirv=true
       -D microsoft-clc=enabled
       -D static-libclc=all
+      -D opencl-external-clang-headers=disabled
       -D llvm=enabled
       -D gallium-va=enabled
       -D video-codecs=h264dec,h264enc,h265dec,h265enc,vc1dec

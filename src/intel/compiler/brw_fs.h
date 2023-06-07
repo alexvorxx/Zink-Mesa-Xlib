@@ -175,6 +175,14 @@ struct bs_thread_payload : public thread_payload {
    void load_shader_type(const brw::fs_builder &bld, fs_reg &dest) const;
 };
 
+struct brw_fs_bind_info {
+   bool valid;
+   bool bindless;
+   unsigned block;
+   unsigned set;
+   unsigned binding;
+};
+
 /**
  * The fragment shader front-end.
  *
@@ -206,7 +214,8 @@ public:
 
    void VARYING_PULL_CONSTANT_LOAD(const brw::fs_builder &bld,
                                    const fs_reg &dst,
-                                   const fs_reg &surf_index,
+                                   const fs_reg &surface,
+                                   const fs_reg &surface_handle,
                                    const fs_reg &varying_offset,
                                    uint32_t const_offset,
                                    uint8_t alignment);
@@ -353,8 +362,8 @@ public:
                                      nir_intrinsic_instr *instr);
    fs_reg get_nir_image_intrinsic_image(const brw::fs_builder &bld,
                                         nir_intrinsic_instr *instr);
-   fs_reg get_nir_ssbo_intrinsic_index(const brw::fs_builder &bld,
-                                       nir_intrinsic_instr *instr);
+   fs_reg get_nir_buffer_intrinsic_index(const brw::fs_builder &bld,
+                                         nir_intrinsic_instr *instr);
    fs_reg swizzle_nir_scratch_addr(const brw::fs_builder &bld,
                                    const fs_reg &addr,
                                    bool in_dwords);
@@ -371,9 +380,14 @@ public:
                          nir_tex_instr *instr);
    void nir_emit_jump(const brw::fs_builder &bld,
                       nir_jump_instr *instr);
+   bool get_nir_src_bindless(const nir_src &src);
+   unsigned get_nir_src_block(const nir_src &src);
    fs_reg get_nir_src(const nir_src &src);
    fs_reg get_nir_src_imm(const nir_src &src);
    fs_reg get_nir_dest(const nir_dest &dest);
+   fs_reg get_resource_nir_src(const nir_src &src);
+   fs_reg try_rebuild_resource(const brw::fs_builder &bld,
+                               nir_ssa_def *resource_def);
    fs_reg get_indirect_offset(nir_intrinsic_instr *instr);
    fs_reg get_tcs_single_patch_icp_handle(const brw::fs_builder &bld,
                                           nir_intrinsic_instr *instr);
@@ -464,6 +478,9 @@ public:
 
    fs_reg *nir_locals;
    fs_reg *nir_ssa_values;
+   fs_inst **nir_resource_insts;
+   struct brw_fs_bind_info *nir_ssa_bind_infos;
+   fs_reg *nir_resource_values;
    fs_reg *nir_system_values;
 
    bool failed;
@@ -615,9 +632,6 @@ private:
    void generate_tex(fs_inst *inst, struct brw_reg dst,
                      struct brw_reg surface_index,
                      struct brw_reg sampler_index);
-   void generate_get_buffer_size(fs_inst *inst, struct brw_reg dst,
-                                 struct brw_reg src,
-                                 struct brw_reg surf_index);
    void generate_ddx(const fs_inst *inst,
                      struct brw_reg dst, struct brw_reg src);
    void generate_ddy(const fs_inst *inst,

@@ -1,10 +1,3 @@
-# Several bugs in WARP's 64-bit wave ops. Fixes incoming
-dEQP-VK.subgroups.*int64_t.*
-dEQP-VK.subgroups.*double.*
-dEQP-VK.subgroups.*i64vec.*
-dEQP-VK.subgroups.*u64vec.*
-dEQP-VK.subgroups.*dvec.*
-
 # If the Windows runner becomes sluggish due to external load, such as
 # gstreamer, it can cause the tests to exceed their time limit.
 dEQP-VK.api.object_management.multithreaded_per_thread_resources.device_group

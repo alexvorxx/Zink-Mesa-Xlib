@@ -63,6 +63,7 @@ struct spirv_supported_capabilities {
    bool float64_atomic_add;
    bool float64_atomic_min_max;
    bool float64;
+   bool fragment_barycentric;
    bool fragment_density;
    bool fragment_fully_covered;
    bool fragment_shader_pixel_interlock;

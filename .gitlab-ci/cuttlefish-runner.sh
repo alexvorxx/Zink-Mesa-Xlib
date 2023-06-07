@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086 # we want word splitting
+
 section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
@@ -26,6 +28,7 @@ ADB="adb -s vsock:3:5555"
 $ADB root
 sleep 1
 $ADB shell echo Hi from Android
+# shellcheck disable=SC2035
 $ADB logcat dEQP:D *:S &
 
 # overlay vendor
@@ -97,7 +100,7 @@ $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f
     --flakes /data/$GPU_VERSION-flakes.txt \
     --testlog-to-xml /deqp/executor/testlog-to-xml \
     --fraction-start $CI_NODE_INDEX \
-    --fraction `expr $CI_NODE_TOTAL \* ${DEQP_FRACTION:-1}` \
+    --fraction $(( CI_NODE_TOTAL * ${DEQP_FRACTION:-1})) \
     --jobs ${FDO_CI_CONCURRENT:-4} \
     $DEQP_RUNNER_OPTIONS"
 

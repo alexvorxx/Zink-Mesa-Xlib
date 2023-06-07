@@ -119,7 +119,6 @@ glx@glx_ext_import_context@query context info,Fail
 glx@glx-buffer-age,Fail
 glx@glx-buffer-age vblank_mode=0,Fail
 
-glx@glx-multi-window-single-context,Crash
 glx@glx-swap-pixmap-bad,Fail
 glx@glx-tfp,Crash
 
@@ -703,3 +702,8 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode ful
 # New CTS failures in 1.3.5.0
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
+
+# since Debian 12 (bookworm) uprev
+spec@arb_viewport_array@display-list,Fail
+glx@glx-multi-window-single-context,Fail
+spec@arb_timer_query@timestamp-get,Fail

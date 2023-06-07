@@ -53,10 +53,9 @@ blorp_nir_txf_ms_mcs(nir_builder *b, nir_ssa_def *xy_pos, nir_ssa_def *layer)
    } else {
       tex->is_array = false;
       tex->coord_components = 2;
-      coord = nir_channels(b, xy_pos, 0x3);
+      coord = nir_trim_vector(b, xy_pos, 2);
    }
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(coord);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
 
    /* Blorp only has one texture and it's bound at unit 0 */
    tex->texture_index = 0;

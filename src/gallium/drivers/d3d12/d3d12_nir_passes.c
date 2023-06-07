@@ -46,17 +46,9 @@ d3d12_get_state_var(nir_builder *b,
 {
    const gl_state_index16 tokens[STATE_LENGTH] = { STATE_INTERNAL_DRIVER, var_enum };
    if (*out_var == NULL) {
-      nir_variable *var = nir_variable_create(b->shader,
-                                              nir_var_uniform,
-                                              var_type,
-                                              var_name);
-
-      var->num_state_slots = 1;
-      var->state_slots = ralloc_array(var, nir_state_slot, 1);
-      memcpy(var->state_slots[0].tokens, tokens,
-             sizeof(var->state_slots[0].tokens));
+      nir_variable *var = nir_state_variable_create(b->shader, var_type,
+                                                    var_name, tokens);
       var->data.how_declared = nir_var_hidden;
-      b->shader->num_uniforms++;
       *out_var = var;
    }
    return nir_load_var(b, *out_var);
@@ -243,7 +235,7 @@ lower_uint_color_write(nir_builder *b, struct nir_instr *instr, bool is_signed)
    nir_ssa_def *def = is_signed ? nir_format_float_to_snorm(b, col, bits) :
                                   nir_format_float_to_unorm(b, col, bits);
    if (is_signed)
-      def = nir_bcsel(b, nir_ilt(b, def, nir_imm_int(b, 0)),
+      def = nir_bcsel(b, nir_ilt_imm(b, def, 0),
                       nir_iadd(b, def, nir_imm_int(b, 1 << NUM_BITS)),
                       def);
    nir_instr_rewrite_src(&intr->instr, intr->src + 1, nir_src_for_ssa(def));

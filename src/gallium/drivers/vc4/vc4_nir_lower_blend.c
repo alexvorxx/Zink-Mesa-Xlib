@@ -83,9 +83,8 @@ vc4_blend_channel_f(nir_builder *b,
                 if (channel != 3) {
                         return nir_fmin(b,
                                         src[3],
-                                        nir_fsub(b,
-                                                 nir_imm_float(b, 1.0),
-                                                 dst[3]));
+                                        nir_fsub_imm(b, 1.0,
+                                                     dst[3]));
                 } else {
                         return nir_imm_float(b, 1.0);
                 }
@@ -99,22 +98,22 @@ vc4_blend_channel_f(nir_builder *b,
         case PIPE_BLENDFACTOR_ZERO:
                 return nir_imm_float(b, 0.0);
         case PIPE_BLENDFACTOR_INV_SRC_COLOR:
-                return nir_fsub(b, nir_imm_float(b, 1.0), src[channel]);
+                return nir_fsub_imm(b, 1.0, src[channel]);
         case PIPE_BLENDFACTOR_INV_SRC_ALPHA:
-                return nir_fsub(b, nir_imm_float(b, 1.0), src[3]);
+                return nir_fsub_imm(b, 1.0, src[3]);
         case PIPE_BLENDFACTOR_INV_DST_ALPHA:
-                return nir_fsub(b, nir_imm_float(b, 1.0), dst[3]);
+                return nir_fsub_imm(b, 1.0, dst[3]);
         case PIPE_BLENDFACTOR_INV_DST_COLOR:
-                return nir_fsub(b, nir_imm_float(b, 1.0), dst[channel]);
+                return nir_fsub_imm(b, 1.0, dst[channel]);
         case PIPE_BLENDFACTOR_INV_CONST_COLOR:
-                return nir_fsub(b, nir_imm_float(b, 1.0),
-                                nir_load_system_value(b,
-                                                      nir_intrinsic_load_blend_const_color_r_float +
-                                                      channel,
-                                                      0, 1, 32));
+                return nir_fsub_imm(b, 1.0,
+                                    nir_load_system_value(b,
+                                                          nir_intrinsic_load_blend_const_color_r_float +
+                                                          channel,
+                                                          0, 1, 32));
         case PIPE_BLENDFACTOR_INV_CONST_ALPHA:
-                return nir_fsub(b, nir_imm_float(b, 1.0),
-                                nir_load_blend_const_color_a_float(b));
+                return nir_fsub_imm(b, 1.0,
+                                    nir_load_blend_const_color_a_float(b));
 
         default:
         case PIPE_BLENDFACTOR_SRC1_COLOR:

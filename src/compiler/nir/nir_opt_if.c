@@ -270,26 +270,6 @@ opt_peel_loop_initial_if(nir_loop *loop)
 }
 
 static bool
-alu_instr_is_comparison(const nir_alu_instr *alu)
-{
-   switch (alu->op) {
-   case nir_op_flt32:
-   case nir_op_fge32:
-   case nir_op_feq32:
-   case nir_op_fneu32:
-   case nir_op_ilt32:
-   case nir_op_ult32:
-   case nir_op_ige32:
-   case nir_op_uge32:
-   case nir_op_ieq32:
-   case nir_op_ine32:
-      return true;
-   default:
-      return nir_alu_instr_is_comparison(alu);
-   }
-}
-
-static bool
 alu_instr_is_type_conversion(const nir_alu_instr *alu)
 {
    return nir_op_infos[alu->op].num_inputs == 1 &&
@@ -423,7 +403,7 @@ opt_split_alu_of_phi(nir_builder *b, nir_loop *loop)
        * conversions also lead to regressions.
        */
       if (nir_op_is_vec(alu->op) ||
-          alu_instr_is_comparison(alu) ||
+          nir_alu_instr_is_comparison(alu) ||
           alu_instr_is_type_conversion(alu))
          continue;
 

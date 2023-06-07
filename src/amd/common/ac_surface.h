@@ -1,26 +1,7 @@
 /*
  * Copyright © 2017 Advanced Micro Devices, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, AUTHORS
- * AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
- * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef AC_SURFACE_H
@@ -457,7 +438,8 @@ void ac_surface_compute_umd_metadata(const struct radeon_info *info, struct rade
                                      bool include_tool_md);
 
 bool ac_surface_override_offset_stride(const struct radeon_info *info, struct radeon_surf *surf,
-                                       unsigned num_mipmap_levels, uint64_t offset, unsigned pitch);
+                                       unsigned num_layers, unsigned num_mipmap_levels,
+                                       uint64_t offset, unsigned pitch);
 
 struct ac_modifier_options {
 	bool dcc; /* Whether to allow DCC. */
@@ -504,6 +486,8 @@ void ac_surface_print_info(FILE *out, const struct radeon_info *info,
 
 bool ac_surface_supports_dcc_image_stores(enum amd_gfx_level gfx_level,
                                           const struct radeon_surf *surf);
+unsigned ac_get_cb_number_type(enum pipe_format format);
+unsigned ac_get_cb_format(enum amd_gfx_level gfx_level, enum pipe_format format);
 
 #ifdef AC_SURFACE_INCLUDE_NIR
 nir_ssa_def *ac_nir_dcc_addr_from_coord(nir_builder *b, const struct radeon_info *info,

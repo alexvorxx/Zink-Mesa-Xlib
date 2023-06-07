@@ -1,25 +1,7 @@
 /*
  * Copyright 2023 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "nir_builder.h"
@@ -50,8 +32,7 @@ fast_udiv_nuw(nir_builder *b, nir_ssa_def *num, nir_ssa_def *divisor)
 
    num = nir_ushr(b, num, pre_shift);
    num = nir_iadd_nuw(b, num, increment);
-   num = nir_imul(b, nir_u2u64(b, num), nir_u2u64(b, multiplier));
-   num = nir_unpack_64_2x32_split_y(b, num);
+   num = nir_umul_high(b, num, multiplier);
    return nir_ushr(b, num, post_shift);
 }
 
@@ -217,10 +198,10 @@ ufN_to_float(nir_builder *b, nir_ssa_def *src, unsigned exp_bits, unsigned mant_
    denormal = nir_iadd(b, denormal, nir_ishl_imm(b, tmp, 23));
 
    /* Select the final result. */
-   nir_ssa_def *cond = nir_uge(b, src, nir_imm_int(b, ((1ULL << exp_bits) - 1) << mant_bits));
+   nir_ssa_def *cond = nir_uge_imm(b, src, ((1ULL << exp_bits) - 1) << mant_bits);
    nir_ssa_def *result = nir_bcsel(b, cond, naninf, normal);
 
-   cond = nir_uge(b, src, nir_imm_int(b, 1ULL << mant_bits));
+   cond = nir_uge_imm(b, src, 1ULL << mant_bits);
    result = nir_bcsel(b, cond, result, denormal);
 
    cond = nir_ine_imm(b, src, 0);

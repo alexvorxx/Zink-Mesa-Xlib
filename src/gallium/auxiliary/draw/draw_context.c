@@ -44,6 +44,7 @@
 #include "draw_vs.h"
 #include "draw_gs.h"
 #include "draw_tess.h"
+#include "draw_mesh.h"
 
 #ifdef DRAW_LLVM_AVAILABLE
 #include "gallivm/lp_bld_init.h"
@@ -626,7 +627,9 @@ draw_remove_extra_vertex_attribs(struct draw_context *draw)
 struct tgsi_shader_info *
 draw_get_shader_info(const struct draw_context *draw)
 {
-   if (draw->gs.geometry_shader) {
+   if (draw->ms.mesh_shader) {
+      return &draw->ms.mesh_shader->info;
+   } else if (draw->gs.geometry_shader) {
       return &draw->gs.geometry_shader->info;
    } else if (draw->tes.tess_eval_shader) {
       return &draw->tes.tess_eval_shader->info;
@@ -921,6 +924,8 @@ void draw_do_flush(struct draw_context *draw, unsigned flags)
 uint
 draw_current_shader_outputs(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.num_ms_outputs;
    if (draw->gs.geometry_shader)
       return draw->gs.num_gs_outputs;
    if (draw->tes.tess_eval_shader)
@@ -936,6 +941,8 @@ draw_current_shader_outputs(const struct draw_context *draw)
 uint
 draw_current_shader_position_output(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.position_output;
    if (draw->gs.geometry_shader)
       return draw->gs.position_output;
    if (draw->tes.tess_eval_shader)
@@ -951,6 +958,8 @@ draw_current_shader_position_output(const struct draw_context *draw)
 uint
 draw_current_shader_viewport_index_output(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.mesh_shader->viewport_index_output;
    if (draw->gs.geometry_shader)
       return draw->gs.geometry_shader->viewport_index_output;
    else if (draw->tes.tess_eval_shader)
@@ -966,6 +975,8 @@ draw_current_shader_viewport_index_output(const struct draw_context *draw)
 boolean
 draw_current_shader_uses_viewport_index(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.mesh_shader->info.writes_viewport_index;
    if (draw->gs.geometry_shader)
       return draw->gs.geometry_shader->info.writes_viewport_index;
    else if (draw->tes.tess_eval_shader)
@@ -983,6 +994,8 @@ draw_current_shader_uses_viewport_index(const struct draw_context *draw)
 uint
 draw_current_shader_clipvertex_output(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.clipvertex_output;
    if (draw->gs.geometry_shader)
       return draw->gs.clipvertex_output;
    if (draw->tes.tess_eval_shader)
@@ -995,6 +1008,8 @@ uint
 draw_current_shader_ccdistance_output(const struct draw_context *draw, int index)
 {
    assert(index < PIPE_MAX_CLIP_OR_CULL_DISTANCE_ELEMENT_COUNT);
+   if (draw->ms.mesh_shader)
+      return draw->ms.mesh_shader->ccdistance_output[index];
    if (draw->gs.geometry_shader)
       return draw->gs.geometry_shader->ccdistance_output[index];
    if (draw->tes.tess_eval_shader)
@@ -1006,6 +1021,8 @@ draw_current_shader_ccdistance_output(const struct draw_context *draw, int index
 uint
 draw_current_shader_num_written_clipdistances(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.mesh_shader->info.num_written_clipdistance;
    if (draw->gs.geometry_shader)
       return draw->gs.geometry_shader->info.num_written_clipdistance;
    if (draw->tes.tess_eval_shader)
@@ -1016,6 +1033,8 @@ draw_current_shader_num_written_clipdistances(const struct draw_context *draw)
 uint
 draw_current_shader_num_written_culldistances(const struct draw_context *draw)
 {
+   if (draw->ms.mesh_shader)
+      return draw->ms.mesh_shader->info.num_written_culldistance;
    if (draw->gs.geometry_shader)
       return draw->gs.geometry_shader->info.num_written_culldistance;
    if (draw->tes.tess_eval_shader)
@@ -1301,7 +1320,7 @@ draw_will_inject_frontface(const struct draw_context *draw)
    unsigned reduced_prim = u_reduced_prim(draw->pt.prim);
    const struct pipe_rasterizer_state *rast = draw->rasterizer;
 
-   if (reduced_prim != PIPE_PRIM_TRIANGLES) {
+   if (reduced_prim != MESA_PRIM_TRIANGLES) {
       return FALSE;
    }
 

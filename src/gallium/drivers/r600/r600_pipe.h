@@ -357,7 +357,7 @@ struct r600_pipe_shader_selector {
         enum pipe_shader_ir ir_type;
 
 	/* geometry shader properties */
-	enum pipe_prim_type	gs_output_prim;
+	enum mesa_prim	gs_output_prim;
 	unsigned		gs_max_out_vertices;
 	unsigned		gs_num_invocations;
 
@@ -590,9 +590,9 @@ struct r600_context {
 	struct list_head		texture_buffers;
 
 	/* Last draw state (-1 = unset). */
-	enum pipe_prim_type		last_primitive_type; /* Last primitive type used in draw_vbo. */
-	enum pipe_prim_type		current_rast_prim; /* primitive type after TES, GS */
-	enum pipe_prim_type		last_rast_prim;
+	enum mesa_prim		last_primitive_type; /* Last primitive type used in draw_vbo. */
+	enum mesa_prim		current_rast_prim; /* primitive type after TES, GS */
+	enum mesa_prim		last_rast_prim;
 	unsigned			last_start_instance;
 
 	void				*sb_context;

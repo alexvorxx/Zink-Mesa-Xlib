@@ -45,7 +45,6 @@
 #include "tgsi/tgsi_dump.h"
 #include "tgsi/tgsi_info.h"
 #include "tgsi/tgsi_parse.h"
-#include "tgsi/tgsi_util.h"
 #include "tgsi/tgsi_scan.h"
 #include "lp_bld_type.h"
 #include "lp_bld_const.h"

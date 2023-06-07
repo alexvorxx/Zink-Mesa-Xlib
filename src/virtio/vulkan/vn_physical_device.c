@@ -192,6 +192,7 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
    VN_ADD_PNEXT_EXT(feats2, CUSTOM_BORDER_COLOR_FEATURES_EXT, feats->custom_border_color, exts->EXT_custom_border_color);
    VN_ADD_PNEXT_EXT(feats2, DEPTH_CLIP_CONTROL_FEATURES_EXT, feats->depth_clip_control, exts->EXT_depth_clip_control);
    VN_ADD_PNEXT_EXT(feats2, DEPTH_CLIP_ENABLE_FEATURES_EXT, feats->depth_clip_enable, exts->EXT_depth_clip_enable);
+   VN_ADD_PNEXT_EXT(feats2, IMAGE_2D_VIEW_OF_3D_FEATURES_EXT, feats->image_2d_view_of_3d, exts->EXT_image_2d_view_of_3d);
    VN_ADD_PNEXT_EXT(feats2, IMAGE_VIEW_MIN_LOD_FEATURES_EXT, feats->image_view_min_lod, exts->EXT_image_view_min_lod);
    VN_ADD_PNEXT_EXT(feats2, INDEX_TYPE_UINT8_FEATURES_EXT, feats->index_type_uint8, exts->EXT_index_type_uint8);
    VN_ADD_PNEXT_EXT(feats2, LINE_RASTERIZATION_FEATURES_EXT, feats->line_rasterization, exts->EXT_line_rasterization);
@@ -1044,6 +1045,7 @@ vn_physical_device_get_native_extensions(
    exts->EXT_physical_device_drm = true;
    /* use common implementation */
    exts->EXT_tooling_info = true;
+   exts->EXT_device_memory_report = true;
 }
 
 static void
@@ -1147,12 +1149,14 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_custom_border_color = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
+      .EXT_image_2d_view_of_3d = true,
       .EXT_image_drm_format_modifier = true,
       .EXT_image_view_min_lod = true,
       .EXT_index_type_uint8 = true,
       .EXT_line_rasterization = true,
       .EXT_load_store_op_none = true,
-      .EXT_memory_budget = true,
+      /* TODO: re-enable after generic app compat issues are resolved */
+      .EXT_memory_budget = false,
       .EXT_multi_draw = true,
       .EXT_mutable_descriptor_type = true,
       .EXT_primitive_topology_list_restart = true,
@@ -1497,7 +1501,7 @@ enumerate_physical_devices(struct vn_instance *instance,
    VkPhysicalDevice *handles = NULL;
    VkResult result;
 
-   uint32_t count;
+   uint32_t count = 0;
    result = vn_call_vkEnumeratePhysicalDevices(
       instance, vn_instance_to_handle(instance), &count, NULL);
    if (result != VK_SUCCESS || !count)
@@ -1788,6 +1792,7 @@ vn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       CASE(CUSTOM_BORDER_COLOR_FEATURES_EXT, custom_border_color);
       CASE(DEPTH_CLIP_CONTROL_FEATURES_EXT, depth_clip_control);
       CASE(DEPTH_CLIP_ENABLE_FEATURES_EXT, depth_clip_enable);
+      CASE(IMAGE_2D_VIEW_OF_3D_FEATURES_EXT, image_2d_view_of_3d);
       CASE(IMAGE_VIEW_MIN_LOD_FEATURES_EXT, image_view_min_lod);
       CASE(INDEX_TYPE_UINT8_FEATURES_EXT, index_type_uint8);
       CASE(LINE_RASTERIZATION_FEATURES_EXT, line_rasterization);
@@ -1803,6 +1808,10 @@ vn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
 
          /* clang-format on */
 
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_MEMORY_REPORT_FEATURES_EXT:
+         ((VkPhysicalDeviceDeviceMemoryReportFeaturesEXT *)out)
+            ->deviceMemoryReport = VK_TRUE;
+         break;
       default:
          break;
 #undef CASE

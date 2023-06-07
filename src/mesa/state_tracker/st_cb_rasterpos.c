@@ -210,7 +210,7 @@ new_draw_rastpos_stage(struct gl_context *ctx, struct draw_context *draw)
                              GL_RGBA, GL_FALSE, GL_FALSE, GL_FALSE, 0);
    _mesa_enable_vertex_array_attrib(ctx, rs->VAO, 0);
 
-   rs->info.mode = PIPE_PRIM_POINTS;
+   rs->info.mode = MESA_PRIM_POINTS;
    rs->info.instance_count = 1;
    rs->draw.count = 1;
 

@@ -560,7 +560,7 @@ get_viewport_prescale(struct svga_context *svga,
           * adjustments for VGPU10.  But when we draw wide points with
           * a GS we need an X adjustment in order to be conformant.
           */
-         if (svga->curr.reduced_prim == PIPE_PRIM_POINTS &&
+         if (svga->curr.reduced_prim == MESA_PRIM_POINTS &&
              svga->curr.rast->pointsize > 1.0f) {
             adjust_x = 0.5;
          }

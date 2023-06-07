@@ -356,7 +356,7 @@ static VkResult pvr_pds_vertex_attrib_program_create_and_upload(
          device->vk.enabled_features.robustBufferAccess);
    struct pvr_pds_upload *const program = &program_out->program;
    struct pvr_pds_info *const info = &program_out->info;
-   struct pvr_const_map_entry *entries_buffer;
+   struct pvr_const_map_entry *new_entries;
    ASSERTED uint32_t code_size_in_dwords;
    size_t staging_buffer_size;
    uint32_t *staging_buffer;
@@ -364,15 +364,16 @@ static VkResult pvr_pds_vertex_attrib_program_create_and_upload(
 
    memset(info, 0, sizeof(*info));
 
-   entries_buffer = vk_alloc2(&device->vk.alloc,
-                              allocator,
-                              const_entries_size_in_bytes,
-                              8,
-                              VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!entries_buffer)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   info->entries = vk_alloc2(&device->vk.alloc,
+                             allocator,
+                             const_entries_size_in_bytes,
+                             8,
+                             VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (!info->entries) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_out;
+   }
 
-   info->entries = entries_buffer;
    info->entries_size_in_bytes = const_entries_size_in_bytes;
 
    pvr_pds_generate_vertex_primary_program(
@@ -391,8 +392,8 @@ static VkResult pvr_pds_vertex_attrib_program_create_and_upload(
                               8,
                               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!staging_buffer) {
-      vk_free2(&device->vk.alloc, allocator, entries_buffer);
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_free_entries;
    }
 
    /* This also fills in info->entries. */
@@ -406,17 +407,17 @@ static VkResult pvr_pds_vertex_attrib_program_create_and_upload(
    assert(info->code_size_in_dwords <= code_size_in_dwords);
 
    /* FIXME: Add a vk_realloc2() ? */
-   entries_buffer = vk_realloc((!allocator) ? &device->vk.alloc : allocator,
-                               entries_buffer,
-                               info->entries_written_size_in_bytes,
-                               8,
-                               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!entries_buffer) {
-      vk_free2(&device->vk.alloc, allocator, staging_buffer);
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   new_entries = vk_realloc((!allocator) ? &device->vk.alloc : allocator,
+                            info->entries,
+                            info->entries_written_size_in_bytes,
+                            8,
+                            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (!new_entries) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_free_staging_buffer;
    }
 
-   info->entries = entries_buffer;
+   info->entries = new_entries;
    info->entries_size_in_bytes = info->entries_written_size_in_bytes;
 
    /* FIXME: Figure out the define for alignment of 16. */
@@ -429,15 +430,21 @@ static VkResult pvr_pds_vertex_attrib_program_create_and_upload(
                                16,
                                16,
                                program);
-   if (result != VK_SUCCESS) {
-      vk_free2(&device->vk.alloc, allocator, entries_buffer);
-      vk_free2(&device->vk.alloc, allocator, staging_buffer);
-      return result;
-   }
+   if (result != VK_SUCCESS)
+      goto err_free_staging_buffer;
 
    vk_free2(&device->vk.alloc, allocator, staging_buffer);
 
    return VK_SUCCESS;
+
+err_free_staging_buffer:
+   vk_free2(&device->vk.alloc, allocator, staging_buffer);
+
+err_free_entries:
+   vk_free2(&device->vk.alloc, allocator, info->entries);
+
+err_out:
+   return result;
 }
 
 static inline void pvr_pds_vertex_attrib_program_destroy(
@@ -721,7 +728,7 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
       pvr_pds_get_max_descriptor_upload_const_map_size_in_bytes();
    struct pvr_pds_info *const pds_info = &descriptor_state->pds_info;
    struct pvr_pds_descriptor_program_input program = { 0 };
-   struct pvr_const_map_entry *entries_buffer;
+   struct pvr_const_map_entry *new_entries;
    ASSERTED uint32_t code_size_in_dwords;
    uint32_t staging_buffer_size;
    uint32_t *staging_buffer;
@@ -807,18 +814,16 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
       program.addr_literal_count = addr_literals;
    }
 
-   entries_buffer = vk_alloc2(&device->vk.alloc,
-                              allocator,
-                              const_entries_size_in_bytes,
-                              8,
-                              VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!entries_buffer) {
-      pvr_bo_suballoc_free(descriptor_state->static_consts);
-
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   pds_info->entries = vk_alloc2(&device->vk.alloc,
+                                 allocator,
+                                 const_entries_size_in_bytes,
+                                 8,
+                                 VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (!pds_info->entries) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_free_static_consts;
    }
 
-   pds_info->entries = entries_buffer;
    pds_info->entries_size_in_bytes = const_entries_size_in_bytes;
 
    pvr_pds_generate_descriptor_upload_program(&program, NULL, pds_info);
@@ -827,7 +832,7 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
    staging_buffer_size = PVR_DW_TO_BYTES(pds_info->code_size_in_dwords);
 
    if (!staging_buffer_size) {
-      vk_free2(&device->vk.alloc, allocator, entries_buffer);
+      vk_free2(&device->vk.alloc, allocator, pds_info->entries);
 
       *descriptor_state = (struct pvr_stage_allocation_descriptor_state){ 0 };
 
@@ -840,10 +845,8 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
                               8,
                               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!staging_buffer) {
-      pvr_bo_suballoc_free(descriptor_state->static_consts);
-      vk_free2(&device->vk.alloc, allocator, entries_buffer);
-
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_free_entries;
    }
 
    pvr_pds_generate_descriptor_upload_program(&program,
@@ -853,19 +856,17 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
    assert(pds_info->code_size_in_dwords <= code_size_in_dwords);
 
    /* FIXME: use vk_realloc2() ? */
-   entries_buffer = vk_realloc((!allocator) ? &device->vk.alloc : allocator,
-                               entries_buffer,
-                               pds_info->entries_written_size_in_bytes,
-                               8,
-                               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!entries_buffer) {
-      pvr_bo_suballoc_free(descriptor_state->static_consts);
-      vk_free2(&device->vk.alloc, allocator, staging_buffer);
-
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   new_entries = vk_realloc((!allocator) ? &device->vk.alloc : allocator,
+                            pds_info->entries,
+                            pds_info->entries_written_size_in_bytes,
+                            8,
+                            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (!new_entries) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_free_staging_buffer;
    }
 
-   pds_info->entries = entries_buffer;
+   pds_info->entries = new_entries;
    pds_info->entries_size_in_bytes = pds_info->entries_written_size_in_bytes;
 
    /* FIXME: Figure out the define for alignment of 16. */
@@ -878,17 +879,23 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
                                16,
                                16,
                                &descriptor_state->pds_code);
-   if (result != VK_SUCCESS) {
-      pvr_bo_suballoc_free(descriptor_state->static_consts);
-      vk_free2(&device->vk.alloc, allocator, entries_buffer);
-      vk_free2(&device->vk.alloc, allocator, staging_buffer);
-
-      return result;
-   }
+   if (result != VK_SUCCESS)
+      goto err_free_staging_buffer;
 
    vk_free2(&device->vk.alloc, allocator, staging_buffer);
 
    return VK_SUCCESS;
+
+err_free_staging_buffer:
+   vk_free2(&device->vk.alloc, allocator, staging_buffer);
+
+err_free_entries:
+   vk_free2(&device->vk.alloc, allocator, pds_info->entries);
+
+err_free_static_consts:
+   pvr_bo_suballoc_free(descriptor_state->static_consts);
+
+   return result;
 }
 
 static void pvr_pds_descriptor_program_destroy(
@@ -1324,7 +1331,9 @@ err_destroy_compute_program:
                                    &compute_pipeline->primary_program_info);
 
 err_free_descriptor_program:
-   pvr_bo_suballoc_free(compute_pipeline->descriptor_state.pds_code.pvr_bo);
+   pvr_pds_descriptor_program_destroy(device,
+                                      allocator,
+                                      &compute_pipeline->descriptor_state);
 
 err_free_shader:
    pvr_bo_suballoc_free(compute_pipeline->shader_state.bo);
@@ -2159,7 +2168,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
       &special_vars_layout,
       &gfx_pipeline->shader_state.vertex.pds_attrib_programs);
    if (result != VK_SUCCESS)
-      goto err_free_vertex_descriptor_program;
+      goto err_free_frag_descriptor_program;
 
    result = pvr_pds_descriptor_program_create_and_upload(
       device,
@@ -2196,11 +2205,11 @@ err_free_vertex_attrib_program:
 
       pvr_pds_vertex_attrib_program_destroy(device, allocator, attrib_program);
    }
-err_free_vertex_descriptor_program:
+err_free_frag_descriptor_program:
    pvr_pds_descriptor_program_destroy(
       device,
       allocator,
-      &gfx_pipeline->shader_state.vertex.descriptor_state);
+      &gfx_pipeline->shader_state.fragment.descriptor_state);
 err_free_frag_program:
    pvr_bo_suballoc_free(
       gfx_pipeline->shader_state.fragment.pds_fragment_program.pvr_bo);

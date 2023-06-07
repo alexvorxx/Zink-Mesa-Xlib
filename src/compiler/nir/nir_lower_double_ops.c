@@ -99,12 +99,11 @@ fix_inv_result(nir_builder *b, nir_ssa_def *res, nir_ssa_def *src,
     * zeros, but GLSL doesn't require it.
     */
    res = nir_bcsel(b, nir_ior(b, nir_ige(b, nir_imm_int(b, 0), exp),
-                              nir_feq(b, nir_fabs(b, src),
-                                      nir_imm_double(b, INFINITY))),
+                              nir_feq_imm(b, nir_fabs(b, src), INFINITY)),
                    nir_imm_double(b, 0.0f), res);
 
    /* If the original input was 0, generate the correctly-signed infinity */
-   res = nir_bcsel(b, nir_fneu(b, src, nir_imm_double(b, 0.0f)),
+   res = nir_bcsel(b, nir_fneu_imm(b, src, 0.0f),
                    res, get_signed_inf(b, src));
 
    return res;
@@ -146,8 +145,8 @@ lower_rcp(nir_builder *b, nir_ssa_def *src)
     * See https://en.wikipedia.org/wiki/Division_algorithm for more details.
     */
 
-   ra = nir_ffma(b, nir_fneg(b, ra), nir_ffma(b, ra, src, nir_imm_double(b, -1)), ra);
-   ra = nir_ffma(b, nir_fneg(b, ra), nir_ffma(b, ra, src, nir_imm_double(b, -1)), ra);
+   ra = nir_ffma(b, nir_fneg(b, ra), nir_ffma_imm2(b, ra, src, -1), ra);
+   ra = nir_ffma(b, nir_fneg(b, ra), nir_ffma_imm2(b, ra, src, -1), ra);
 
    return fix_inv_result(b, ra, src, new_exp);
 }
@@ -299,13 +298,12 @@ lower_sqrt_rsq(nir_builder *b, nir_ssa_def *src, bool sqrt)
       nir_ssa_def *src_flushed = src;
       if (!preserve_denorms) {
          src_flushed = nir_bcsel(b,
-                                 nir_flt(b, nir_fabs(b, src),
-                                         nir_imm_double(b, DBL_MIN)),
+                                 nir_flt_imm(b, nir_fabs(b, src), DBL_MIN),
                                  nir_imm_double(b, 0.0),
                                  src);
       }
-      res = nir_bcsel(b, nir_ior(b, nir_feq(b, src_flushed, nir_imm_double(b, 0.0)),
-                                 nir_feq(b, src, nir_imm_double(b, INFINITY))),
+      res = nir_bcsel(b, nir_ior(b, nir_feq_imm(b, src_flushed, 0.0),
+                                 nir_feq_imm(b, src, INFINITY)),
                                  src_flushed, res);
    } else {
       res = fix_inv_result(b, res, src, new_exp);
@@ -340,13 +338,13 @@ lower_trunc(nir_builder *b, nir_ssa_def *src)
    /* Compute "~0 << frac_bits" in terms of hi/lo 32-bit integer math */
    nir_ssa_def *mask_lo =
       nir_bcsel(b,
-                nir_ige(b, frac_bits, nir_imm_int(b, 32)),
+                nir_ige_imm(b, frac_bits, 32),
                 nir_imm_int(b, 0),
                 nir_ishl(b, nir_imm_int(b, ~0), frac_bits));
 
    nir_ssa_def *mask_hi =
       nir_bcsel(b,
-                nir_ilt(b, frac_bits, nir_imm_int(b, 33)),
+                nir_ilt_imm(b, frac_bits, 33),
                 nir_imm_int(b, ~0),
                 nir_ishl(b,
                          nir_imm_int(b, ~0),
@@ -357,9 +355,9 @@ lower_trunc(nir_builder *b, nir_ssa_def *src)
 
    return
       nir_bcsel(b,
-                nir_ilt(b, unbiased_exp, nir_imm_int(b, 0)),
+                nir_ilt_imm(b, unbiased_exp, 0),
                 nir_imm_double(b, 0.0),
-                nir_bcsel(b, nir_ige(b, unbiased_exp, nir_imm_int(b, 53)),
+                nir_bcsel(b, nir_ige_imm(b, unbiased_exp, 53),
                           src,
                           nir_pack_64_2x32_split(b,
                                                  nir_iand(b, mask_lo, src_lo),
@@ -376,11 +374,11 @@ lower_floor(nir_builder *b, nir_ssa_def *src)
     *    - otherwise, floor(x) = trunc(x) - 1
     */
    nir_ssa_def *tr = nir_ftrunc(b, src);
-   nir_ssa_def *positive = nir_fge(b, src, nir_imm_double(b, 0.0));
+   nir_ssa_def *positive = nir_fge_imm(b, src, 0.0);
    return nir_bcsel(b,
                     nir_ior(b, positive, nir_feq(b, src, tr)),
                     tr,
-                    nir_fsub(b, tr, nir_imm_double(b, 1.0)));
+                    nir_fadd_imm(b, tr, -1.0));
 }
 
 static nir_ssa_def *
@@ -391,7 +389,7 @@ lower_ceil(nir_builder *b, nir_ssa_def *src)
     * else,                        ceil(x) = trunc(x) + 1
     */
    nir_ssa_def *tr = nir_ftrunc(b, src);
-   nir_ssa_def *negative = nir_flt(b, src, nir_imm_double(b, 0.0));
+   nir_ssa_def *negative = nir_flt_imm(b, src, 0.0);
    return nir_bcsel(b,
                     nir_ior(b, negative, nir_feq(b, src, tr)),
                     tr,

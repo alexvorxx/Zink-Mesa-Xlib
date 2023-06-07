@@ -47,6 +47,35 @@
 
 #include "fd6_pack.h"
 
+enum draw_type {
+   DRAW_DIRECT_OP_NORMAL,
+   DRAW_DIRECT_OP_INDEXED,
+   DRAW_INDIRECT_OP_XFB,
+   DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED,
+   DRAW_INDIRECT_OP_INDIRECT_COUNT,
+   DRAW_INDIRECT_OP_INDEXED,
+   DRAW_INDIRECT_OP_NORMAL,
+};
+
+static inline bool
+is_indirect(enum draw_type type)
+{
+   return type >= DRAW_INDIRECT_OP_XFB;
+}
+
+static inline bool
+is_indexed(enum draw_type type)
+{
+   switch (type) {
+   case DRAW_DIRECT_OP_INDEXED:
+   case DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED:
+   case DRAW_INDIRECT_OP_INDEXED:
+      return true;
+   default:
+      return false;
+   }
+}
+
 static void
 draw_emit_xfb(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
               const struct pipe_draw_info *info,
@@ -55,13 +84,6 @@ draw_emit_xfb(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
    struct fd_stream_output_target *target =
       fd_stream_output_target(indirect->count_from_stream_output);
    struct fd_resource *offset = fd_resource(target->offset_buf);
-
-   /* All known firmware versions do not wait for WFI's with CP_DRAW_AUTO.
-    * Plus, for the common case where the counter buffer is written by
-    * vkCmdEndTransformFeedback, we need to wait for the CP_WAIT_MEM_WRITES to
-    * complete which means we need a WAIT_FOR_ME anyway.
-    */
-   OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
 
    OUT_PKT7(ring, CP_DRAW_AUTO, 6);
    OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
@@ -73,6 +95,27 @@ draw_emit_xfb(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
    OUT_RING(ring, target->stride);
 }
 
+static inline unsigned
+max_indices(const struct pipe_draw_info *info, unsigned index_offset)
+{
+   struct pipe_resource *idx = info->index.resource;
+
+   assert((info->index_size == 1) ||
+          (info->index_size == 2) ||
+          (info->index_size == 4));
+
+   /* Conceptually we divide by the index_size.  But if we had
+    * log2(index_size) we could convert that into a right-shift
+    * instead.  Conveniently the index_size will only be 1, 2,
+    * or 4.  And dividing by two (right-shift by one) gives us
+    * the same answer for those three values.  So instead of
+    * divide we can do two right-shifts.
+    */
+   unsigned index_size_shift = info->index_size >> 1;
+   return (idx->width0 - index_offset) >> index_size_shift;
+}
+
+template <draw_type DRAW>
 static void
 draw_emit_indirect(struct fd_context *ctx,
                    struct fd_ringbuffer *ring,
@@ -83,11 +126,7 @@ draw_emit_indirect(struct fd_context *ctx,
 {
    struct fd_resource *ind = fd_resource(indirect->buffer);
 
-   if (indirect->indirect_draw_count && info->index_size) {
-      //On some firmwares CP_DRAW_INDIRECT_MULTI waits for WFIs before
-      //reading the draw parameters but after reading the count, so commands
-      //that use indirect draw count need a WFM anyway.
-      OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
+   if (DRAW == DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED) {
       OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 11);
       OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
       OUT_RING(ring,
@@ -95,30 +134,27 @@ draw_emit_indirect(struct fd_context *ctx,
          | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
       struct fd_resource *count_buf = fd_resource(indirect->indirect_draw_count);
       struct pipe_resource *idx = info->index.resource;
-      unsigned max_indices = (idx->width0 - index_offset) / info->index_size;
       OUT_RING(ring, indirect->draw_count);
       OUT_RELOC(ring, fd_resource(idx)->bo, index_offset, 0, 0);
-      OUT_RING(ring, max_indices);
+      OUT_RING(ring, max_indices(info, index_offset));
       OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
       OUT_RELOC(ring, count_buf->bo, indirect->indirect_draw_count_offset, 0, 0);
       OUT_RING(ring, indirect->stride);
-   } else if (info->index_size) {
+   } else if (DRAW == DRAW_INDIRECT_OP_INDEXED) {
       OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 9);
       OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
       OUT_RING(ring,
          (A6XX_CP_DRAW_INDIRECT_MULTI_1_OPCODE(INDIRECT_OP_INDEXED)
          | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
       struct pipe_resource *idx = info->index.resource;
-      unsigned max_indices = (idx->width0 - index_offset) / info->index_size;
       OUT_RING(ring, indirect->draw_count);
       //index va
       OUT_RELOC(ring, fd_resource(idx)->bo, index_offset, 0, 0);
       //max indices
-      OUT_RING(ring, max_indices);
+      OUT_RING(ring, max_indices(info, index_offset));
       OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
       OUT_RING(ring, indirect->stride);
-   }  else if(indirect->indirect_draw_count) {
-      OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
+   }  else if(DRAW == DRAW_INDIRECT_OP_INDIRECT_COUNT) {
       OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 8);
       OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
       OUT_RING(ring,
@@ -129,7 +165,7 @@ draw_emit_indirect(struct fd_context *ctx,
       OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
       OUT_RELOC(ring, count_buf->bo, indirect->indirect_draw_count_offset, 0, 0);
       OUT_RING(ring, indirect->stride);
-   } else {
+   } else if (DRAW == DRAW_INDIRECT_OP_NORMAL) {
       OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 6);
       OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
       OUT_RING(ring,
@@ -141,17 +177,16 @@ draw_emit_indirect(struct fd_context *ctx,
    }
 }
 
+template <draw_type DRAW>
 static void
 draw_emit(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
           const struct pipe_draw_info *info,
           const struct pipe_draw_start_count_bias *draw, unsigned index_offset)
 {
-   if (info->index_size) {
+   if (DRAW == DRAW_DIRECT_OP_INDEXED) {
       assert(!info->has_user_indices);
 
       struct pipe_resource *idx_buffer = info->index.resource;
-      unsigned max_indices =
-         (idx_buffer->width0 - index_offset) / info->index_size;
 
       OUT_PKT(ring, CP_DRAW_INDX_OFFSET, pack_CP_DRAW_INDX_OFFSET_0(*draw0),
               CP_DRAW_INDX_OFFSET_1(.num_instances = info->instance_count),
@@ -159,8 +194,8 @@ draw_emit(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
               CP_DRAW_INDX_OFFSET_3(.first_indx = draw->start),
               A5XX_CP_DRAW_INDX_OFFSET_INDX_BASE(fd_resource(idx_buffer)->bo,
                                                  index_offset),
-              A5XX_CP_DRAW_INDX_OFFSET_6(.max_indices = max_indices));
-   } else {
+              A5XX_CP_DRAW_INDX_OFFSET_6(.max_indices = max_indices(info, index_offset)));
+   } else if (DRAW == DRAW_DIRECT_OP_NORMAL) {
       OUT_PKT(ring, CP_DRAW_INDX_OFFSET, pack_CP_DRAW_INDX_OFFSET_0(*draw0),
               CP_DRAW_INDX_OFFSET_1(.num_instances = info->instance_count),
               CP_DRAW_INDX_OFFSET_2(.num_indices = draw->count));
@@ -178,6 +213,7 @@ fixup_draw_state(struct fd_context *ctx, struct fd6_emit *emit) assert_dt
    }
 }
 
+template <fd6_pipeline_type PIPELINE>
 static const struct fd6_program_state *
 get_program_state(struct fd_context *ctx, const struct pipe_draw_info *info)
    assert_dt
@@ -199,25 +235,27 @@ get_program_state(struct fd_context *ctx, const struct pipe_draw_info *info)
    key.key.msaa = (ctx->framebuffer.samples > 1);
    key.key.rasterflat = ctx->rasterizer->flatshade;
 
-   if (info->mode == PIPE_PRIM_PATCHES) {
-      struct shader_info *gs_info =
-            ir3_get_shader_info((struct ir3_shader_state *)ctx->prog.gs);
+   if (PIPELINE == HAS_TESS_GS) {
+      if (info->mode == MESA_PRIM_PATCHES) {
+         struct shader_info *gs_info =
+               ir3_get_shader_info((struct ir3_shader_state *)ctx->prog.gs);
 
-      key.hs = (struct ir3_shader_state *)ctx->prog.hs;
-      key.ds = (struct ir3_shader_state *)ctx->prog.ds;
+         key.hs = (struct ir3_shader_state *)ctx->prog.hs;
+         key.ds = (struct ir3_shader_state *)ctx->prog.ds;
 
-      struct shader_info *ds_info = ir3_get_shader_info(key.ds);
-      key.key.tessellation = ir3_tess_mode(ds_info->tess._primitive_mode);
+         struct shader_info *ds_info = ir3_get_shader_info(key.ds);
+         key.key.tessellation = ir3_tess_mode(ds_info->tess._primitive_mode);
 
-      struct shader_info *fs_info = ir3_get_shader_info(key.fs);
-      key.key.tcs_store_primid =
-         BITSET_TEST(ds_info->system_values_read, SYSTEM_VALUE_PRIMITIVE_ID) ||
-         (gs_info && BITSET_TEST(gs_info->system_values_read, SYSTEM_VALUE_PRIMITIVE_ID)) ||
-         (fs_info && (fs_info->inputs_read & (1ull << VARYING_SLOT_PRIMITIVE_ID)));
-   }
+         struct shader_info *fs_info = ir3_get_shader_info(key.fs);
+         key.key.tcs_store_primid =
+               BITSET_TEST(ds_info->system_values_read, SYSTEM_VALUE_PRIMITIVE_ID) ||
+               (gs_info && BITSET_TEST(gs_info->system_values_read, SYSTEM_VALUE_PRIMITIVE_ID)) ||
+               (fs_info && (fs_info->inputs_read & (1ull << VARYING_SLOT_PRIMITIVE_ID)));
+      }
 
-   if (key.gs) {
-      key.key.has_gs = true;
+      if (key.gs) {
+         key.key.has_gs = true;
+      }
    }
 
    ir3_fixup_shader_state(&ctx->base, &key.key);
@@ -248,14 +286,14 @@ flush_streamout(struct fd_context *ctx, struct fd6_emit *emit)
    }
 }
 
-template <chip CHIP>
+template <chip CHIP, fd6_pipeline_type PIPELINE, draw_type DRAW>
 static void
-fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
-              unsigned drawid_offset,
-              const struct pipe_draw_indirect_info *indirect,
-              const struct pipe_draw_start_count_bias *draws,
-              unsigned num_draws,
-              unsigned index_offset)
+draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
+          unsigned drawid_offset,
+          const struct pipe_draw_indirect_info *indirect,
+          const struct pipe_draw_start_count_bias *draws,
+          unsigned num_draws,
+          unsigned index_offset)
    assert_dt
 {
    struct fd6_context *fd6_ctx = fd6_context(ctx);
@@ -268,7 +306,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.rasterflat = ctx->rasterizer->flatshade;
    emit.sprite_coord_enable = ctx->rasterizer->sprite_coord_enable;
    emit.sprite_coord_mode = ctx->rasterizer->sprite_coord_mode;
-   emit.primitive_restart = info->primitive_restart && info->index_size;
+   emit.primitive_restart = info->primitive_restart && is_indexed(DRAW);
    emit.state.num_groups = 0;
    emit.streamout_mask = 0;
    emit.prog = NULL;
@@ -277,9 +315,13 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    if (!(ctx->prog.vs && ctx->prog.fs))
       return;
 
-   if ((info->mode == PIPE_PRIM_PATCHES) || ctx->prog.gs) {
-      ctx->gen_dirty |= BIT(FD6_GROUP_PRIMITIVE_PARAMS);
-   } else if (!indirect) {
+   if (PIPELINE == HAS_TESS_GS) {
+      if ((info->mode == MESA_PRIM_PATCHES) || ctx->prog.gs) {
+         ctx->gen_dirty |= BIT(FD6_GROUP_PRIMITIVE_PARAMS);
+      }
+   }
+
+   if ((PIPELINE == NO_TESS_GS) && !is_indirect(DRAW)) {
       fd6_vsc_update_sizes(ctx->batch, info, &draws[0]);
    }
 
@@ -289,7 +331,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
     * Otherwise we can just use the previous prog state.
     */
    if (unlikely(ctx->gen_dirty & BIT(FD6_GROUP_PROG_KEY))) {
-      emit.prog = get_program_state(ctx, info);
+      emit.prog = get_program_state<PIPELINE>(ctx, info);
    } else {
       emit.prog = fd6_ctx->prog;
    }
@@ -304,9 +346,11 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.dirty_groups = ctx->gen_dirty;
 
    emit.vs = fd6_emit_get_prog(&emit)->vs;
-   emit.hs = fd6_emit_get_prog(&emit)->hs;
-   emit.ds = fd6_emit_get_prog(&emit)->ds;
-   emit.gs = fd6_emit_get_prog(&emit)->gs;
+   if (PIPELINE == HAS_TESS_GS) {
+      emit.hs = fd6_emit_get_prog(&emit)->hs;
+      emit.ds = fd6_emit_get_prog(&emit)->ds;
+      emit.gs = fd6_emit_get_prog(&emit)->gs;
+   }
    emit.fs = fd6_emit_get_prog(&emit)->fs;
 
    if (emit.prog->num_driver_params || fd6_ctx->has_dp_state) {
@@ -334,16 +378,18 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
       .gs_enable = !!ctx->prog.gs,
    };
 
-   if (indirect && indirect->count_from_stream_output) {
+   if (DRAW == DRAW_INDIRECT_OP_XFB) {
       draw0.source_select = DI_SRC_SEL_AUTO_XFB;
-   } else if (info->index_size) {
+   } else if (DRAW == DRAW_DIRECT_OP_INDEXED ||
+              DRAW == DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED ||
+              DRAW == DRAW_INDIRECT_OP_INDEXED) {
       draw0.source_select = DI_SRC_SEL_DMA;
       draw0.index_size = fd4_size2indextype(info->index_size);
    } else {
       draw0.source_select = DI_SRC_SEL_AUTO_INDEX;
    }
 
-   if (info->mode == PIPE_PRIM_PATCHES) {
+   if ((PIPELINE == HAS_TESS_GS) && (info->mode == MESA_PRIM_PATCHES)) {
       struct shader_info *ds_info =
             ir3_get_shader_info((struct ir3_shader_state *)ctx->prog.ds);
       unsigned tessellation = ir3_tess_mode(ds_info->tess._primitive_mode);
@@ -370,7 +416,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
       ctx->batch->tessellation = true;
    }
 
-   uint32_t index_start = info->index_size ? draws[0].index_bias : draws[0].start;
+   uint32_t index_start = is_indexed(DRAW) ? draws[0].index_bias : draws[0].start;
    if (ctx->last.dirty || (ctx->last.index_start != index_start)) {
       OUT_PKT4(ring, REG_A6XX_VFD_INDEX_OFFSET, 1);
       OUT_RING(ring, index_start); /* VFD_INDEX_OFFSET */
@@ -392,7 +438,21 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    }
 
    if (emit.dirty_groups)
-      fd6_emit_3d_state<CHIP>(ring, &emit);
+      fd6_emit_3d_state<CHIP, PIPELINE>(ring, &emit);
+
+   /* All known firmware versions do not wait for WFI's with CP_DRAW_AUTO.
+    * Plus, for the common case where the counter buffer is written by
+    * vkCmdEndTransformFeedback, we need to wait for the CP_WAIT_MEM_WRITES to
+    * complete which means we need a WAIT_FOR_ME anyway.
+    *
+    * Also, on some firmwares CP_DRAW_INDIRECT_MULTI waits for WFIs before
+    * reading the draw parameters but after reading the count, so commands
+    * that use indirect draw count need a WFM anyway.
+    */
+   if (DRAW == DRAW_INDIRECT_OP_XFB ||
+       DRAW == DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED ||
+       DRAW == DRAW_INDIRECT_OP_INDIRECT_COUNT)
+      ctx->batch->barrier |= FD6_WAIT_FOR_ME;
 
    if (ctx->batch->barrier)
       fd6_barrier_flush(ctx->batch);
@@ -405,9 +465,9 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
     */
    emit_marker6(ring, 7);
 
-   if (indirect) {
+   if (is_indirect(DRAW)) {
       assert(num_draws == 1);  /* only >1 for direct draws */
-      if (indirect->count_from_stream_output) {
+      if (DRAW == DRAW_INDIRECT_OP_XFB) {
          draw_emit_xfb(ring, &draw0, info, indirect);
       } else {
          const struct ir3_const_state *const_state = ir3_const_state(emit.vs);
@@ -417,10 +477,10 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
          if (dst_offset_dp > emit.vs->constlen)
             dst_offset_dp = 0;
 
-         draw_emit_indirect(ctx, ring, &draw0, info, indirect, index_offset, dst_offset_dp);
+         draw_emit_indirect<DRAW>(ctx, ring, &draw0, info, indirect, index_offset, dst_offset_dp);
       }
    } else {
-      draw_emit(ring, &draw0, info, &draws[0], index_offset);
+      draw_emit<DRAW>(ring, &draw0, info, &draws[0], index_offset);
 
       if (unlikely(num_draws > 1)) {
 
@@ -443,7 +503,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
 
             fd6_vsc_update_sizes(ctx->batch, info, &draws[i]);
 
-            uint32_t index_start = info->index_size ? draws[i].index_bias : draws[i].start;
+            uint32_t index_start = is_indexed(DRAW) ? draws[i].index_bias : draws[i].start;
             if (last_index_start != index_start) {
                OUT_PKT4(ring, REG_A6XX_VFD_INDEX_OFFSET, 1);
                OUT_RING(ring, index_start); /* VFD_INDEX_OFFSET */
@@ -454,12 +514,12 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
                emit.state.num_groups = 0;
                emit.draw = &draws[i];
                emit.draw_id = info->increment_draw_id ? i : 0;
-               fd6_emit_3d_state<CHIP>(ring, &emit);
+               fd6_emit_3d_state<CHIP, PIPELINE>(ring, &emit);
             }
 
             assert(!index_offset); /* handled by util_draw_multi() */
 
-            draw_emit(ring, &draw0, info, &draws[i], 0);
+            draw_emit<DRAW>(ring, &draw0, info, &draws[i], 0);
          }
 
          ctx->last.index_start = last_index_start;
@@ -467,11 +527,61 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    }
 
    emit_marker6(ring, 7);
-   fd_reset_wfi(ctx->batch);
 
    flush_streamout(ctx, &emit);
 
    fd_context_all_clean(ctx);
+}
+
+template <chip CHIP, fd6_pipeline_type PIPELINE>
+static void
+fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
+              unsigned drawid_offset,
+              const struct pipe_draw_indirect_info *indirect,
+              const struct pipe_draw_start_count_bias *draws,
+              unsigned num_draws,
+              unsigned index_offset)
+   assert_dt
+{
+   /* Non-indirect case is where we are more likely to see a high draw rate: */
+   if (likely(!indirect)) {
+      if (info->index_size) {
+         draw_vbos<CHIP, PIPELINE, DRAW_DIRECT_OP_INDEXED>(
+               ctx, info, drawid_offset, NULL, draws, num_draws, index_offset);
+      } else {
+         draw_vbos<CHIP, PIPELINE, DRAW_DIRECT_OP_NORMAL>(
+               ctx, info, drawid_offset, NULL, draws, num_draws, index_offset);
+      }
+   } else if (indirect->count_from_stream_output) {
+      draw_vbos<CHIP, PIPELINE, DRAW_INDIRECT_OP_XFB>(
+            ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+   } else if (indirect->indirect_draw_count && info->index_size) {
+      draw_vbos<CHIP, PIPELINE, DRAW_INDIRECT_OP_INDIRECT_COUNT_INDEXED>(
+            ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+   } else if (indirect->indirect_draw_count) {
+      draw_vbos<CHIP, PIPELINE, DRAW_INDIRECT_OP_INDIRECT_COUNT>(
+            ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+   } else if (info->index_size) {
+      draw_vbos<CHIP, PIPELINE, DRAW_INDIRECT_OP_INDEXED>(
+            ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+   } else {
+      draw_vbos<CHIP, PIPELINE, DRAW_INDIRECT_OP_NORMAL>(
+            ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+   }
+}
+
+template <chip CHIP>
+static void
+fd6_update_draw(struct fd_context *ctx)
+{
+   const uint32_t gs_tess_stages = BIT(MESA_SHADER_TESS_CTRL) |
+         BIT(MESA_SHADER_TESS_EVAL) | BIT(MESA_SHADER_GEOMETRY);
+
+   if (ctx->bound_shader_stages & gs_tess_stages) {
+      ctx->draw_vbos = fd6_draw_vbos<CHIP, HAS_TESS_GS>;
+   } else {
+      ctx->draw_vbos = fd6_draw_vbos<CHIP, NO_TESS_GS>;
+   }
 }
 
 static bool
@@ -566,7 +676,8 @@ fd6_draw_init(struct pipe_context *pctx)
 {
    struct fd_context *ctx = fd_context(pctx);
    ctx->clear = fd6_clear;
-   ctx->draw_vbos = fd6_draw_vbos<CHIP>;
+   ctx->update_draw = fd6_update_draw<CHIP>;
+   fd6_update_draw<CHIP>(ctx);
 }
 
 /* Teach the compiler about needed variants: */

@@ -31,6 +31,7 @@ agx_write_registers(const agx_instr *I, unsigned d)
 
    switch (I->op) {
    case AGX_OPCODE_ITER:
+   case AGX_OPCODE_ITERPROJ:
       assert(1 <= I->channels && I->channels <= 4);
       return I->channels * size;
 

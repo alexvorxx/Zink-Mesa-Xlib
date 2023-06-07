@@ -27,8 +27,8 @@ static inline void
 util_split_prim_init(struct util_split_prim *s,
                   unsigned mode, unsigned start, unsigned count)
 {
-   if (mode == PIPE_PRIM_LINE_LOOP) {
-      s->mode = PIPE_PRIM_LINE_STRIP;
+   if (mode == MESA_PRIM_LINE_LOOP) {
+      s->mode = MESA_PRIM_LINE_STRIP;
       s->close_first = 1;
    } else {
       s->mode = mode;
@@ -63,13 +63,13 @@ util_split_prim_next(struct util_split_prim *s, unsigned max_verts)
    }
 
    switch (s->mode) {
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       max_verts &= ~1;
       break;
-   case PIPE_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       repeat = 1;
       break;
-   case PIPE_PRIM_POLYGON:
+   case MESA_PRIM_POLYGON:
       max_verts--;
       s->emit(s->priv, s->p_start, max_verts);
       s->edge(s->priv, FALSE);
@@ -78,28 +78,28 @@ util_split_prim_next(struct util_split_prim *s, unsigned max_verts)
       s->repeat_first = TRUE;
       s->edgeflag_off = TRUE;
       return FALSE;
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       max_verts = max_verts - (max_verts % 3);
       break;
-   case PIPE_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       /* to ensure winding stays correct, always split
        * on an even number of generated triangles
        */
       max_verts = max_verts & ~1;
       repeat = 2;
       break;
-   case PIPE_PRIM_TRIANGLE_FAN:
+   case MESA_PRIM_TRIANGLE_FAN:
       s->repeat_first = TRUE;
       repeat = 1;
       break;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       max_verts &= ~3;
       break;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       max_verts &= ~1;
       repeat = 2;
       break;
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       break;
    default:
       /* TODO: implement adjacency primitives */

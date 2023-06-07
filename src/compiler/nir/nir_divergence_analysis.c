@@ -209,6 +209,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_ssbo_uniform_block_intel:
    case nir_intrinsic_load_shared_uniform_block_intel:
    case nir_intrinsic_load_barycentric_optimize_amd:
+   case nir_intrinsic_load_poly_line_smooth_enabled:
       is_divergent = false;
       break;
 
@@ -369,6 +370,13 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
                      instr->src[1].ssa->divergent;
       break;
 
+   case nir_intrinsic_image_texel_address:
+   case nir_intrinsic_image_deref_texel_address:
+   case nir_intrinsic_bindless_image_texel_address:
+      is_divergent = (instr->src[0].ssa->divergent && (nir_intrinsic_access(instr) & ACCESS_NON_UNIFORM)) ||
+                     instr->src[1].ssa->divergent || instr->src[2].ssa->divergent;
+      break;
+
    case nir_intrinsic_image_load:
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_bindless_image_load:
@@ -419,6 +427,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_image_descriptor_amd:
    case nir_intrinsic_image_deref_descriptor_amd:
    case nir_intrinsic_bindless_image_descriptor_amd:
+   case nir_intrinsic_strict_wqm_coord_amd:
    case nir_intrinsic_copy_deref:
    case nir_intrinsic_vulkan_resource_index:
    case nir_intrinsic_vulkan_resource_reindex:
@@ -437,7 +446,8 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_desc_set_address_intel:
    case nir_intrinsic_load_desc_set_dynamic_index_intel:
    case nir_intrinsic_load_global_constant_bounded:
-   case nir_intrinsic_load_global_constant_offset: {
+   case nir_intrinsic_load_global_constant_offset:
+   case nir_intrinsic_resource_intel: {
       unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
       for (unsigned i = 0; i < num_srcs; i++) {
          if (instr->src[i].ssa->divergent) {
@@ -468,6 +478,11 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_barycentric_model:
    case nir_intrinsic_load_barycentric_at_sample:
    case nir_intrinsic_load_barycentric_at_offset:
+   case nir_intrinsic_load_barycentric_coord_pixel:
+   case nir_intrinsic_load_barycentric_coord_centroid:
+   case nir_intrinsic_load_barycentric_coord_sample:
+   case nir_intrinsic_load_barycentric_coord_at_sample:
+   case nir_intrinsic_load_barycentric_coord_at_offset:
    case nir_intrinsic_interp_deref_at_offset:
    case nir_intrinsic_interp_deref_at_sample:
    case nir_intrinsic_interp_deref_at_centroid:
@@ -548,7 +563,6 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_packed_passthrough_primitive_amd:
    case nir_intrinsic_load_initial_edgeflags_amd:
    case nir_intrinsic_gds_atomic_add_amd:
-   case nir_intrinsic_buffer_atomic_add_amd:
    case nir_intrinsic_load_rt_arg_scratch_offset_amd:
    case nir_intrinsic_load_intersection_opaque_amd:
    case nir_intrinsic_load_vector_arg_amd:

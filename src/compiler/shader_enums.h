@@ -32,6 +32,10 @@
 
 /* Project-wide (GL and Vulkan) maximum. */
 #define MAX_DRAW_BUFFERS 8
+/* Size of an atomic counter in bytes according to ARB_shader_atomic_counters */
+#define ATOMIC_COUNTER_SIZE 4
+/** For GL_ARB_gpu_shader5 */
+#define MAX_VERTEX_STREAMS 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +67,11 @@ typedef enum pipe_shader_type
    PIPE_SHADER_TYPES = (PIPE_SHADER_COMPUTE + 1),
    /* Vulkan-only stages. */
    MESA_SHADER_TASK         = 6,
+   PIPE_SHADER_TASK = MESA_SHADER_TASK,
    MESA_SHADER_MESH         = 7,
+   PIPE_SHADER_MESH = MESA_SHADER_MESH,
+   PIPE_SHADER_MESH_TYPES = (PIPE_SHADER_MESH + 1),
+
    MESA_SHADER_RAYGEN       = 8,
    MESA_SHADER_ANY_HIT      = 9,
    MESA_SHADER_CLOSEST_HIT  = 10,
@@ -822,6 +830,14 @@ typedef enum
    SYSTEM_VALUE_BARYCENTRIC_PULL_MODEL,
 
    /**
+    * \name VK_KHR_fragment_shader_barycentric
+    */
+   /*@{*/
+   SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD,
+   SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD,
+   /*@}*/
+
+   /**
     * \name Ray tracing shader system values
     */
    /*@{*/
@@ -1138,26 +1154,29 @@ enum tess_primitive_mode
    TESS_PRIMITIVE_ISOLINES,
 };
 
-/* these also map directly to GL and gallium prim types. */
-enum shader_prim
+/**
+ * Mesa primitive types for both GL and Vulkan:
+ */
+enum PACKED mesa_prim
 {
-   SHADER_PRIM_POINTS,
-   SHADER_PRIM_LINES,
-   SHADER_PRIM_LINE_LOOP,
-   SHADER_PRIM_LINE_STRIP,
-   SHADER_PRIM_TRIANGLES,
-   SHADER_PRIM_TRIANGLE_STRIP,
-   SHADER_PRIM_TRIANGLE_FAN,
-   SHADER_PRIM_QUADS,
-   SHADER_PRIM_QUAD_STRIP,
-   SHADER_PRIM_POLYGON,
-   SHADER_PRIM_LINES_ADJACENCY,
-   SHADER_PRIM_LINE_STRIP_ADJACENCY,
-   SHADER_PRIM_TRIANGLES_ADJACENCY,
-   SHADER_PRIM_TRIANGLE_STRIP_ADJACENCY,
-   SHADER_PRIM_PATCHES,
-   SHADER_PRIM_MAX = SHADER_PRIM_PATCHES,
-   SHADER_PRIM_UNKNOWN = (SHADER_PRIM_MAX * 2),
+   MESA_PRIM_POINTS,
+   MESA_PRIM_LINES,
+   MESA_PRIM_LINE_LOOP,
+   MESA_PRIM_LINE_STRIP,
+   MESA_PRIM_TRIANGLES,
+   MESA_PRIM_TRIANGLE_STRIP,
+   MESA_PRIM_TRIANGLE_FAN,
+   MESA_PRIM_QUADS,
+   MESA_PRIM_QUAD_STRIP,
+   MESA_PRIM_POLYGON,
+   MESA_PRIM_LINES_ADJACENCY,
+   MESA_PRIM_LINE_STRIP_ADJACENCY,
+   MESA_PRIM_TRIANGLES_ADJACENCY,
+   MESA_PRIM_TRIANGLE_STRIP_ADJACENCY,
+   MESA_PRIM_PATCHES,
+   MESA_PRIM_MAX = MESA_PRIM_PATCHES,
+   MESA_PRIM_COUNT = MESA_PRIM_MAX +1,
+   MESA_PRIM_UNKNOWN = (MESA_PRIM_MAX * 2),
 };
 
 /**
@@ -1334,6 +1353,28 @@ enum PACKED gl_subgroup_size
    SUBGROUP_SIZE_REQUIRE_64  = 64,  /**< VK_EXT_subgroup_size_control */
    SUBGROUP_SIZE_REQUIRE_128 = 128, /**< VK_EXT_subgroup_size_control */
 };
+
+/**
+ * An index for each type of texture object.  These correspond to the GL
+ * texture target enums, such as GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP, etc.
+ * Note: the order is from highest priority to lowest priority.
+ */
+typedef enum
+{
+   TEXTURE_2D_MULTISAMPLE_INDEX,
+   TEXTURE_2D_MULTISAMPLE_ARRAY_INDEX,
+   TEXTURE_CUBE_ARRAY_INDEX,
+   TEXTURE_BUFFER_INDEX,
+   TEXTURE_2D_ARRAY_INDEX,
+   TEXTURE_1D_ARRAY_INDEX,
+   TEXTURE_EXTERNAL_INDEX,
+   TEXTURE_CUBE_INDEX,
+   TEXTURE_3D_INDEX,
+   TEXTURE_RECT_INDEX,
+   TEXTURE_2D_INDEX,
+   TEXTURE_1D_INDEX,
+   NUM_TEXTURE_TARGETS
+} gl_texture_index;
 
 #ifdef __cplusplus
 } /* extern "C" */

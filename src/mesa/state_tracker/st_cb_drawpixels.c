@@ -125,14 +125,14 @@ sample_via_nir(nir_builder *b, nir_variable *texcoord,
    tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
    tex->coord_components = 2;
    tex->dest_type = alu_type;
-   tex->src[0].src_type = nir_tex_src_texture_deref;
-   tex->src[0].src = nir_src_for_ssa(&deref->dest.ssa);
-   tex->src[1].src_type = nir_tex_src_sampler_deref;
-   tex->src[1].src = nir_src_for_ssa(&deref->dest.ssa);
-   tex->src[2].src_type = nir_tex_src_coord;
-   tex->src[2].src =
-      nir_src_for_ssa(nir_channels(b, nir_load_var(b, texcoord),
-                                   (1 << tex->coord_components) - 1));
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                     &deref->dest.ssa);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref,
+                                     &deref->dest.ssa);
+   tex->src[2] =
+      nir_tex_src_for_ssa(nir_tex_src_coord,
+                          nir_trim_vector(b, nir_load_var(b, texcoord),
+                                             tex->coord_components));
 
    nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);

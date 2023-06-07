@@ -61,7 +61,7 @@ struct llvmpipe_context {
    struct list_head list;
    /** Constant state objects */
    const struct pipe_blend_state *blend;
-   struct pipe_sampler_state *samplers[PIPE_SHADER_TYPES][PIPE_MAX_SAMPLERS];
+   struct pipe_sampler_state *samplers[PIPE_SHADER_MESH_TYPES][PIPE_MAX_SAMPLERS];
 
    const struct pipe_depth_stencil_alpha_state *depth_stencil;
    const struct pipe_rasterizer_state *rasterizer;
@@ -74,27 +74,30 @@ struct llvmpipe_context {
    const struct lp_velems_state *velems;
    const struct lp_so_state *so;
 
+   struct lp_compute_shader *tss;
+   struct lp_compute_shader *mhs;
+
    /** Other rendering state */
    unsigned sample_mask;
    unsigned min_samples;
    struct pipe_blend_color blend_color;
    struct pipe_stencil_ref stencil_ref;
    struct pipe_clip_state clip;
-   struct pipe_constant_buffer constants[PIPE_SHADER_TYPES][LP_MAX_TGSI_CONST_BUFFERS];
+   struct pipe_constant_buffer constants[PIPE_SHADER_MESH_TYPES][LP_MAX_TGSI_CONST_BUFFERS];
    struct pipe_framebuffer_state framebuffer;
    struct pipe_poly_stipple poly_stipple;
    struct pipe_scissor_state scissors[PIPE_MAX_VIEWPORTS];
-   struct pipe_sampler_view *sampler_views[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
+   struct pipe_sampler_view *sampler_views[PIPE_SHADER_MESH_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
 
    struct pipe_viewport_state viewports[PIPE_MAX_VIEWPORTS];
    struct pipe_vertex_buffer vertex_buffer[PIPE_MAX_ATTRIBS];
 
-   struct pipe_shader_buffer ssbos[PIPE_SHADER_TYPES][LP_MAX_TGSI_SHADER_BUFFERS];
-   struct pipe_image_view images[PIPE_SHADER_TYPES][LP_MAX_TGSI_SHADER_IMAGES];
+   struct pipe_shader_buffer ssbos[PIPE_SHADER_MESH_TYPES][LP_MAX_TGSI_SHADER_BUFFERS];
+   struct pipe_image_view images[PIPE_SHADER_MESH_TYPES][LP_MAX_TGSI_SHADER_IMAGES];
    uint32_t fs_ssbo_write_mask;
-   unsigned num_samplers[PIPE_SHADER_TYPES];
-   unsigned num_sampler_views[PIPE_SHADER_TYPES];
-   unsigned num_images[PIPE_SHADER_TYPES];
+   unsigned num_samplers[PIPE_SHADER_MESH_TYPES];
+   unsigned num_sampler_views[PIPE_SHADER_MESH_TYPES];
+   unsigned num_images[PIPE_SHADER_MESH_TYPES];
 
    unsigned num_vertex_buffers;
 
@@ -111,7 +114,7 @@ struct llvmpipe_context {
 
    bool queries_disabled;
 
-   unsigned dirty; /**< Mask of LP_NEW_x flags */
+   uint64_t dirty; /**< Mask of LP_NEW_x flags */
    unsigned cs_dirty; /**< Mask of LP_CSNEW_x flags */
    /** Mapped vertex buffers */
    ubyte *mapped_vbuffer[PIPE_MAX_ATTRIBS];
@@ -170,6 +173,9 @@ struct llvmpipe_context {
    unsigned nr_cs_variants;
    unsigned nr_cs_instrs;
    struct lp_cs_context *csctx;
+
+   struct lp_cs_context *task_ctx;
+   struct lp_cs_context *mesh_ctx;
 
    /** Conditional query object and mode */
    struct pipe_query *render_cond_query;

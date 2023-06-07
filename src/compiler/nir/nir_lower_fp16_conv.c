@@ -108,7 +108,7 @@ float_to_half_impl(nir_builder *b, nir_ssa_def *src, nir_rounding_mode mode)
 
    nir_ssa_def *zero = nir_imm_int(b, 0);
 
-   nir_push_if(b, nir_ige(b, abs, nir_imm_int(b, 113 << 23)));
+   nir_push_if(b, nir_ige_imm(b, abs, 113 << 23));
 
    /* FP16 will be normal */
    nir_ssa_def *value = nir_ior(b,
@@ -123,7 +123,7 @@ float_to_half_impl(nir_builder *b, nir_ssa_def *src, nir_rounding_mode mode)
    nir_ssa_def *normal_fp16 = half_rounded(b, value, guard, sticky, sign, mode);
 
    nir_push_else(b, NULL);
-   nir_push_if(b, nir_ige(b, abs, nir_imm_int(b, 102 << 23)));
+   nir_push_if(b, nir_ige_imm(b, abs, 102 << 23));
 
    /* FP16 will be denormal */
    nir_ssa_def *i = nir_isub(b, nir_imm_int(b, 125), nir_ushr(b, abs, nir_imm_int(b, 23)));

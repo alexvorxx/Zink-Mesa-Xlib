@@ -136,10 +136,16 @@ nir_is_arrayed_io(const nir_variable *var, gl_shader_stage stage)
          return var->data.per_primitive;
    }
 
-   if (var->data.mode == nir_var_shader_in)
+   if (var->data.mode == nir_var_shader_in) {
+      if (var->data.per_vertex) {
+         assert(stage == MESA_SHADER_FRAGMENT);
+         return true;
+      }
+
       return stage == MESA_SHADER_GEOMETRY ||
              stage == MESA_SHADER_TESS_CTRL ||
              stage == MESA_SHADER_TESS_EVAL;
+   }
 
    if (var->data.mode == nir_var_shader_out)
       return stage == MESA_SHADER_TESS_CTRL ||
@@ -254,7 +260,8 @@ emit_load(struct lower_io_state *state,
           nir->options->use_interpolated_input_intrinsics &&
           var->data.interpolation != INTERP_MODE_FLAT &&
           !var->data.per_primitive) {
-         if (var->data.interpolation == INTERP_MODE_EXPLICIT) {
+         if (var->data.interpolation == INTERP_MODE_EXPLICIT ||
+             var->data.per_vertex) {
             assert(array_index != NULL);
             op = nir_intrinsic_load_input_vertex;
          } else {
@@ -766,11 +773,11 @@ type_scalar_size_bytes(const struct glsl_type *type)
    return glsl_type_is_boolean(type) ? 4 : glsl_get_bit_size(type) / 8;
 }
 
-static nir_ssa_def *
-build_addr_iadd(nir_builder *b, nir_ssa_def *addr,
-                nir_address_format addr_format,
-                nir_variable_mode modes,
-                nir_ssa_def *offset)
+nir_ssa_def *
+nir_build_addr_iadd(nir_builder *b, nir_ssa_def *addr,
+                    nir_address_format addr_format,
+                    nir_variable_mode modes,
+                    nir_ssa_def *offset)
 {
    assert(offset->num_components == 1);
 
@@ -853,18 +860,19 @@ addr_get_offset_bit_size(nir_ssa_def *addr, nir_address_format addr_format)
    return addr->bit_size;
 }
 
-static nir_ssa_def *
-build_addr_iadd_imm(nir_builder *b, nir_ssa_def *addr,
-                    nir_address_format addr_format,
-                    nir_variable_mode modes,
-                    int64_t offset)
+nir_ssa_def *
+nir_build_addr_iadd_imm(nir_builder *b, nir_ssa_def *addr,
+                        nir_address_format addr_format,
+                        nir_variable_mode modes,
+                        int64_t offset)
 {
    if (!offset)
       return addr;
 
-   return build_addr_iadd(b, addr, addr_format, modes,
-                             nir_imm_intN_t(b, offset,
-                                            addr_get_offset_bit_size(addr, addr_format)));
+   return nir_build_addr_iadd(
+      b, addr, addr_format, modes,
+      nir_imm_intN_t(b, offset,
+                     addr_get_offset_bit_size(addr, addr_format)));
 }
 
 static nir_ssa_def *
@@ -910,8 +918,8 @@ build_addr_for_var(nir_builder *b, nir_variable *var,
          unreachable("Unsupported variable mode");
       }
 
-      return build_addr_iadd_imm(b, base_addr, addr_format, var->data.mode,
-                                    var->data.driver_location);
+      return nir_build_addr_iadd_imm(b, base_addr, addr_format, var->data.mode,
+                                     var->data.driver_location);
    }
 
    case nir_address_format_32bit_offset:
@@ -1031,7 +1039,7 @@ addr_to_index(nir_builder *b, nir_ssa_def *addr,
       return nir_unpack_64_2x32_split_y(b, addr);
    case nir_address_format_vec2_index_32bit_offset:
       assert(addr->num_components == 3);
-      return nir_channels(b, addr, 0x3);
+      return nir_trim_vector(b, addr, 2);
    default: unreachable("Invalid address format");
    }
 }
@@ -1103,7 +1111,7 @@ addr_to_global(nir_builder *b, nir_ssa_def *addr,
    case nir_address_format_64bit_global_32bit_offset:
    case nir_address_format_64bit_bounded_global:
       assert(addr->num_components == 4);
-      return nir_iadd(b, nir_pack_64_2x32(b, nir_channels(b, addr, 0x3)),
+      return nir_iadd(b, nir_pack_64_2x32(b, nir_trim_vector(b, addr, 2)),
                          nir_u2u64(b, nir_channel(b, addr, 3)));
 
    case nir_address_format_32bit_index_offset:
@@ -1421,12 +1429,12 @@ build_explicit_io_load(nir_builder *b, nir_intrinsic_instr *intrin,
    if (op == nir_intrinsic_load_global_constant_offset) {
       assert(addr_format == nir_address_format_64bit_global_32bit_offset);
       load->src[0] = nir_src_for_ssa(
-         nir_pack_64_2x32(b, nir_channels(b, addr, 0x3)));
+         nir_pack_64_2x32(b, nir_trim_vector(b, addr, 2)));
       load->src[1] = nir_src_for_ssa(nir_channel(b, addr, 3));
    } else if (op == nir_intrinsic_load_global_constant_bounded) {
       assert(addr_format == nir_address_format_64bit_bounded_global);
       load->src[0] = nir_src_for_ssa(
-         nir_pack_64_2x32(b, nir_channels(b, addr, 0x3)));
+         nir_pack_64_2x32(b, nir_trim_vector(b, addr, 2)));
       load->src[1] = nir_src_for_ssa(nir_channel(b, addr, 3));
       load->src[2] = nir_src_for_ssa(nir_channel(b, addr, 2));
    } else if (addr_format_is_global(addr_format, mode)) {
@@ -1835,7 +1843,8 @@ nir_explicit_io_address_from_deref(nir_builder *b, nir_deref_instr *deref,
          offset = nir_amul_imm(b, index, stride);
       }
 
-      return build_addr_iadd(b, base_addr, addr_format, deref->modes, offset);
+      return nir_build_addr_iadd(b, base_addr, addr_format,
+                                 deref->modes, offset);
    }
 
    case nir_deref_type_array_wildcard:
@@ -1847,8 +1856,8 @@ nir_explicit_io_address_from_deref(nir_builder *b, nir_deref_instr *deref,
       int offset = glsl_get_struct_field_offset(parent->type,
                                                 deref->strct.index);
       assert(offset >= 0);
-      return build_addr_iadd_imm(b, base_addr, addr_format,
-                                 deref->modes, offset);
+      return nir_build_addr_iadd_imm(b, base_addr, addr_format,
+                                     deref->modes, offset);
    }
 
    case nir_deref_type_cast:
@@ -1887,9 +1896,9 @@ nir_lower_explicit_io_instr(nir_builder *b,
          nir_ssa_def *comps[NIR_MAX_VEC_COMPONENTS] = { NULL, };
          for (unsigned i = 0; i < intrin->num_components; i++) {
             unsigned comp_offset = i * vec_stride;
-            nir_ssa_def *comp_addr = build_addr_iadd_imm(b, addr, addr_format,
-                                                         deref->modes,
-                                                         comp_offset);
+            nir_ssa_def *comp_addr = nir_build_addr_iadd_imm(b, addr, addr_format,
+                                                             deref->modes,
+                                                             comp_offset);
             comps[i] = build_explicit_io_load(b, intrin, comp_addr,
                                               addr_format, deref->modes,
                                               align_mul,
@@ -1917,9 +1926,9 @@ nir_lower_explicit_io_instr(nir_builder *b,
                continue;
 
             unsigned comp_offset = i * vec_stride;
-            nir_ssa_def *comp_addr = build_addr_iadd_imm(b, addr, addr_format,
-                                                         deref->modes,
-                                                         comp_offset);
+            nir_ssa_def *comp_addr = nir_build_addr_iadd_imm(b, addr, addr_format,
+                                                             deref->modes,
+                                                             comp_offset);
             build_explicit_io_store(b, intrin, comp_addr, addr_format,
                                     deref->modes, align_mul,
                                     (align_offset + comp_offset) % align_mul,
@@ -2769,6 +2778,7 @@ static bool
 is_input(nir_intrinsic_instr *intrin)
 {
    return intrin->intrinsic == nir_intrinsic_load_input ||
+          intrin->intrinsic == nir_intrinsic_load_input_vertex ||
           intrin->intrinsic == nir_intrinsic_load_per_vertex_input ||
           intrin->intrinsic == nir_intrinsic_load_interpolated_input ||
           intrin->intrinsic == nir_intrinsic_load_fs_input_interp_deltas;

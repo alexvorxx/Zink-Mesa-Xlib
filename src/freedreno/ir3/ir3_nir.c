@@ -310,7 +310,7 @@ ir3_nir_lower_array_sampler_cb(struct nir_builder *b, nir_instr *instr, void *_d
 
    assume(ncomp >= 1);
    nir_ssa_def *ai = nir_channel(b, src, ncomp - 1);
-   ai = nir_fadd(b, ai, nir_imm_floatN_t(b, 0.5, src->bit_size));
+   ai = nir_fadd_imm(b, ai, 0.5);
    nir_instr_rewrite_src(&tex->instr, &tex->src[coord_idx].src,
                          nir_src_for_ssa(nir_vector_insert_imm(b, src, ai, ncomp - 1)));
    return true;
@@ -356,7 +356,6 @@ ir3_finalize_nir(struct ir3_compiler *compiler, nir_shader *s)
    NIR_PASS_V(s, nir_lower_frexp);
    NIR_PASS_V(s, nir_lower_amul, ir3_glsl_type_size);
 
-   OPT_V(s, nir_lower_regs_to_ssa);
    OPT_V(s, nir_lower_wrmasks, should_split_wrmask, s);
 
    OPT_V(s, nir_lower_tex, &tex_options);

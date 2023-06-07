@@ -92,15 +92,6 @@ initialise_varying_info(struct varying_info *info, nir_variable_mode mode,
    memset(info->backcolor, 0, sizeof(info->backcolor));
 }
 
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
-
 static void
 gather_info_on_varying_deref(struct varying_info *info, nir_deref_instr *deref)
 {

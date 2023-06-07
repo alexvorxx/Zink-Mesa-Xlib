@@ -280,7 +280,8 @@ BlockScheduler::BlockScheduler(r600_chip_class chip_class,
     m_last_pixel(nullptr),
     m_last_param(nullptr),
     m_current_block(nullptr),
-    m_chip_class(chip_class)
+    m_chip_class(chip_class),
+    m_chip_family(chip_family)
 {
    m_nop_after_rel_dest = chip_family == CHIP_RV770;
 

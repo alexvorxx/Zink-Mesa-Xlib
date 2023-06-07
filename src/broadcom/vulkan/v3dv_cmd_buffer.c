@@ -2161,7 +2161,7 @@ v3dv_viewport_compute_xform(const VkViewport *viewport,
     */
    const float min_abs_scale = 0.000009f;
    if (fabs(scale[2]) < min_abs_scale)
-      scale[2] = min_abs_scale * (scale[2] < 0 ? -1.0f : 1.0f);
+      scale[2] = scale[2] < 0 ? -min_abs_scale : min_abs_scale;
 }
 
 /* Considers the pipeline's negative_one_to_one state and applies it to the
@@ -3873,7 +3873,7 @@ v3dv_cmd_buffer_rewrite_indirect_csd_job(
       /* Make sure the GPU is not currently accessing the indirect CL for this
        * job, since we are about to overwrite some of the uniform data.
        */
-      v3dv_bo_wait(job->device, job->indirect.bo, PIPE_TIMEOUT_INFINITE);
+      v3dv_bo_wait(job->device, job->indirect.bo, OS_TIMEOUT_INFINITE);
 
       for (uint32_t i = 0; i < 3; i++) {
          if (info->wg_uniform_offsets[i]) {

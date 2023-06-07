@@ -68,7 +68,7 @@ fetch_pipeline_middle_end(struct draw_pt_middle_end *middle)
  */
 static void
 fetch_pipeline_prepare(struct draw_pt_middle_end *middle,
-                       enum pipe_prim_type prim,
+                       enum mesa_prim prim,
                        unsigned opt,
                        unsigned *max_vertices)
 {
@@ -83,8 +83,8 @@ fetch_pipeline_prepare(struct draw_pt_middle_end *middle,
    unsigned nr = MAX2(vs->info.num_inputs, nr_vs_outputs);
    unsigned point_line_clip = draw->rasterizer->fill_front == PIPE_POLYGON_MODE_POINT ||
                               draw->rasterizer->fill_front == PIPE_POLYGON_MODE_LINE ||
-                              gs_out_prim == PIPE_PRIM_POINTS ||
-                              gs_out_prim == PIPE_PRIM_LINE_STRIP;
+                              gs_out_prim == MESA_PRIM_POINTS ||
+                              gs_out_prim == MESA_PRIM_LINE_STRIP;
 
    if (gs) {
       nr = MAX2(nr, gs->info.num_outputs + 1);
@@ -372,7 +372,7 @@ static inline unsigned
 prim_type(unsigned prim, unsigned flags)
 {
    if (flags & DRAW_LINE_LOOP_AS_STRIP)
-      return PIPE_PRIM_LINE_STRIP;
+      return MESA_PRIM_LINE_STRIP;
    else
       return prim;
 }

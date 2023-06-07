@@ -1,8 +1,9 @@
-#!/bin/sh
+#!/usr/bin/env bash
+# shellcheck disable=SC2035 # FIXME glob
 
 set -ex
 
-if [ "x$VK_DRIVER" = "x" ]; then
+if [[ -z "$VK_DRIVER" ]]; then
     exit 1
 fi
 
@@ -19,7 +20,7 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$INSTALL/lib/:/vkd3d-proton-tests/x64/"
 
 # Sanity check to ensure that our environment is sufficient to make our tests
 # run against the Mesa built by CI, rather than any installed distro version.
-MESA_VERSION=$(cat "$INSTALL/VERSION" | sed 's/\./\\./g')
+MESA_VERSION=$(sed 's/\./\\./g' "$INSTALL/VERSION")
 
 # Set the Vulkan driver to use.
 export VK_ICD_FILENAMES="$INSTALL/share/vulkan/icd.d/${VK_DRIVER}_icd.x86_64.json"
@@ -29,14 +30,6 @@ export WINEDEBUG="-all"
 export WINEPREFIX="/vkd3d-proton-wine64"
 export WINEESYNC=1
 
-print_red() {
-    RED='\033[0;31m'
-    NC='\033[0m' # No Color
-    printf "${RED}"
-    "$@"
-    printf "${NC}"
-}
-
 # wrapper to supress +x to avoid spamming the log
 quiet() {
     set +x
@@ -45,9 +38,8 @@ quiet() {
 }
 
 set +e
-vulkaninfo | tee /tmp/version.txt | grep \"Mesa $MESA_VERSION\(\s\|$\)\"
-
-if [ $? -ne 0 ]; then
+if ! vulkaninfo | tee /tmp/version.txt | grep "\"Mesa $MESA_VERSION\(\s\|$\)\"";
+then
     printf "%s\n" "Found $(cat /tmp/version.txt), expected $MESA_VERSION"
 fi
 set -e
@@ -61,10 +53,9 @@ fi
 quiet printf "%s\n" "Running vkd3d-proton testsuite..."
 
 set +e
-/vkd3d-proton-tests/x64/bin/d3d12 > $RESULTS/vkd3d-proton.log
-
-if [ $? != 0 ]; then
-    quiet print_red printf "%s\n" "Failed, see vkd3d-proton.log!"
+if ! /vkd3d-proton-tests/x64/bin/d3d12 > "$RESULTS/vkd3d-proton.log";
+then
+    error printf "%s\n" "Failed, see vkd3d-proton.log!"
 
     # Collect all the failures
     VKD3D_PROTON_RESULTS="${VKD3D_PROTON_RESULTS:-vkd3d-proton-results}"
@@ -82,7 +73,7 @@ if [ $? != 0 ]; then
 
     # Make sure that the failures found in this run match the current expectation
     if ! diff -q ".gitlab-ci/vkd3d-proton/$VKD3D_PROTON_RESULTS.txt.baseline" "$RESULTSFILE"; then
-        quiet print_red printf "%s\n" "Changes found, see vkd3d-proton.log!"
+        error printf "%s\n" "Changes found, see vkd3d-proton.log!"
         quiet diff --color=always -u ".gitlab-ci/vkd3d-proton/$VKD3D_PROTON_RESULTS.txt.baseline" "$RESULTSFILE"
     fi
 

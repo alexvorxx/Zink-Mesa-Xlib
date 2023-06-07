@@ -38,8 +38,6 @@
 #include "pipe/p_shader_tokens.h"
 #include "draw/draw_context.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_scan.h"
-#include "tgsi/tgsi_parse.h"
 #include "gallivm/lp_bld_type.h"
 #include "gallivm/lp_bld_const.h"
 #include "gallivm/lp_bld_conv.h"

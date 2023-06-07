@@ -184,6 +184,13 @@ option(
 )
 
 option(
+  'opencl-external-clang-headers',
+  type : 'feature',
+  description : 'Use system Clang headers at runtime for OpenCL kernel ' +
+                'compilation.',
+)
+
+option(
   'd3d-drivers-path',
   type : 'string',
   value : '',

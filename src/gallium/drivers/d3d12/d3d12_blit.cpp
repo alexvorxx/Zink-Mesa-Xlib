@@ -676,8 +676,7 @@ get_stencil_resolve_fs(struct d3d12_context *ctx, bool no_flip)
       nir_tex_instr *txs = nir_tex_instr_create(b.shader, 1);
       txs->op = nir_texop_txs;
       txs->sampler_dim = GLSL_SAMPLER_DIM_MS;
-      txs->src[0].src_type = nir_tex_src_texture_deref;
-      txs->src[0].src = nir_src_for_ssa(tex_deref);
+      txs->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref, tex_deref);
       txs->is_array = false;
       txs->dest_type = nir_type_int;
 
@@ -699,12 +698,10 @@ get_stencil_resolve_fs(struct d3d12_context *ctx, bool no_flip)
    nir_tex_instr *tex = nir_tex_instr_create(b.shader, 3);
    tex->sampler_dim = GLSL_SAMPLER_DIM_MS;
    tex->op = nir_texop_txf_ms;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(nir_channels(&b, nir_f2i32(&b, pos_src), 0x3));
-   tex->src[1].src_type = nir_tex_src_ms_index;
-   tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0)); /* just use first sample */
-   tex->src[2].src_type = nir_tex_src_texture_deref;
-   tex->src[2].src = nir_src_for_ssa(tex_deref);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                     nir_trim_vector(&b, nir_f2i32(&b, pos_src), 2));
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index, nir_imm_int(&b, 0)); /* just use first sample */
+   tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_texture_deref, tex_deref);
    tex->dest_type = nir_type_uint32;
    tex->is_array = false;
    tex->coord_components = 2;

@@ -49,12 +49,6 @@ struct llvm_geometry_shader;
 struct llvm_tess_ctrl_shader;
 struct llvm_tess_eval_shader;
 
-enum {
-   DRAW_JIT_VERTEX_VERTEX_ID = 0,
-   DRAW_JIT_VERTEX_CLIP_POS,
-   DRAW_JIT_VERTEX_DATA
-};
-
 /**
  * This structure is passed directly to the generated vertex shader.
  *
@@ -83,16 +77,6 @@ enum {
 
 #define draw_jit_context_viewports(_variant, _ptr) \
    lp_build_struct_get2(_variant->gallivm, _variant->context_type, _ptr, DRAW_JIT_CTX_VIEWPORT, "viewports")
-
-
-#define draw_jit_header_id(_gallivm, _type, _ptr)              \
-   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_VERTEX_VERTEX_ID, "id")
-
-#define draw_jit_header_clip_pos(_gallivm, _type, _ptr) \
-   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_VERTEX_CLIP_POS, "clip_pos")
-
-#define draw_jit_header_data(_gallivm, _type, _ptr)            \
-   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_VERTEX_DATA, "data")
 
 
 #define draw_jit_vbuffer_stride(_gallivm, _type, _ptr)         \
@@ -696,4 +680,17 @@ draw_llvm_set_mapped_image(struct draw_context *draw,
                            uint32_t img_stride,
                            uint32_t num_samples,
                            uint32_t sample_stride);
+
+void
+draw_store_aos_array(struct gallivm_state *gallivm,
+                     struct lp_type soa_type,
+                     LLVMTypeRef io_type,
+                     LLVMValueRef io_ptr,
+                     LLVMValueRef *indices,
+                     LLVMValueRef* aos,
+                     int attrib,
+                     LLVMValueRef clipmask,
+                     boolean need_edgeflag,
+                     bool per_prim);
+
 #endif

@@ -268,7 +268,7 @@ static void draw(struct program *p)
 
 	util_draw_vertex_buffer(p->pipe, p->cso,
 	                        p->vbuf, 0, 0,
-	                        PIPE_PRIM_TRIANGLES,
+	                        MESA_PRIM_TRIANGLES,
 	                        3,  /* verts */
 	                        2); /* attribs/vert */
 

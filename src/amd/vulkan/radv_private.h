@@ -376,6 +376,8 @@ struct radv_physical_device {
    } vid_dec_reg;
    enum amd_ip_type vid_decode_ip;
    uint32_t vid_addr_gfx_mode;
+   uint32_t stream_handle_base;
+   uint32_t stream_handle_counter;
 };
 
 uint32_t radv_find_memory_index(const struct radv_physical_device *pdevice, VkMemoryPropertyFlags flags);
@@ -1099,6 +1101,9 @@ struct radv_device {
 
    bool uses_device_generated_commands;
 
+   /* Whether smooth lines is enabled. */
+   bool smooth_lines;
+
    bool uses_shadow_regs;
 
    struct hash_table *rt_handles;
@@ -1459,8 +1464,6 @@ const char *radv_get_debug_option_name(int id);
 
 const char *radv_get_perftest_option_name(int id);
 
-int radv_get_int_debug_option(const char *name, int default_value);
-
 struct radv_color_buffer_info {
    uint64_t cb_color_base;
    uint64_t cb_color_cmask;
@@ -1641,6 +1644,7 @@ struct radv_cmd_state {
 
    uint32_t last_num_instances;
    uint32_t last_first_instance;
+   bool last_vertex_offset_valid;
    uint32_t last_vertex_offset;
    uint32_t last_drawid;
    uint32_t last_subpass_color_count;
@@ -1673,6 +1677,7 @@ struct radv_cmd_state {
    uint32_t current_event_type;
    uint32_t num_events;
    uint32_t num_layout_transitions;
+   bool in_barrier;
    bool pending_sqtt_barrier_end;
    enum rgp_flush_bits sqtt_flush_bits;
 
@@ -1913,6 +1918,19 @@ void si_cs_emit_write_event_eop(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx
                                 unsigned event, unsigned event_flags, unsigned dst_sel,
                                 unsigned data_sel, uint64_t va, uint32_t new_fence,
                                 uint64_t gfx9_eop_bug_va);
+
+struct radv_vgt_shader_key {
+   uint8_t tess : 1;
+   uint8_t gs : 1;
+   uint8_t mesh_scratch_ring : 1;
+   uint8_t mesh : 1;
+   uint8_t ngg_passthrough : 1;
+   uint8_t ngg : 1;       /* gfx10+ */
+   uint8_t streamout : 1; /* only used with NGG */
+   uint8_t hs_wave32 : 1;
+   uint8_t gs_wave32 : 1;
+   uint8_t vs_wave32 : 1;
+};
 
 void radv_cp_wait_mem(struct radeon_cmdbuf *cs, uint32_t op, uint64_t va, uint32_t ref,
                       uint32_t mask);
@@ -2312,6 +2330,8 @@ struct radv_ray_tracing_stage {
    struct vk_pipeline_cache_object *shader;
    gl_shader_stage stage;
    uint32_t stack_size;
+
+   uint8_t sha1[SHA1_DIGEST_LENGTH];
 };
 
 struct radv_ray_tracing_pipeline {
@@ -2461,9 +2481,6 @@ uint32_t radv_translate_buffer_dataformat(const struct util_format_description *
 uint32_t radv_translate_buffer_numformat(const struct util_format_description *desc,
                                          int first_non_void);
 bool radv_is_buffer_format_supported(VkFormat format, bool *scaled);
-uint32_t radv_translate_colorformat(VkFormat format);
-uint32_t radv_translate_color_numformat(VkFormat format, const struct util_format_description *desc,
-                                        int first_non_void);
 uint32_t radv_colorformat_endian_swap(uint32_t colorformat);
 unsigned radv_translate_colorswap(VkFormat format, bool do_endian_swap);
 uint32_t radv_translate_dbformat(VkFormat format);
@@ -2838,6 +2855,7 @@ struct radv_image_create_info {
 VkResult
 radv_image_create_layout(struct radv_device *device, struct radv_image_create_info create_info,
                          const struct VkImageDrmFormatModifierExplicitCreateInfoEXT *mod_info,
+                         const struct VkVideoProfileListInfoKHR *profile_list,
                          struct radv_image *image);
 
 VkResult radv_image_create(VkDevice _device, const struct radv_image_create_info *info,

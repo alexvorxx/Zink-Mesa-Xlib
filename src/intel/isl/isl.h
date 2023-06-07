@@ -2211,6 +2211,13 @@ isl_aux_usage_has_ccs(enum isl_aux_usage usage)
 }
 
 static inline bool
+isl_aux_usage_has_ccs_e(enum isl_aux_usage usage)
+{
+   return usage == ISL_AUX_USAGE_CCS_E ||
+          usage == ISL_AUX_USAGE_GFX12_CCS_E;
+}
+
+static inline bool
 isl_aux_state_has_valid_primary(enum isl_aux_state state)
 {
    return state == ISL_AUX_STATE_RESOLVED ||

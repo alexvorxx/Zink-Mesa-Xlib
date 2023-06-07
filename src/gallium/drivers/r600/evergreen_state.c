@@ -2682,13 +2682,13 @@ static void evergreen_emit_shader_stages(struct r600_context *rctx, struct r600_
 		bool tes_vertex_order_cw = info->properties[TGSI_PROPERTY_TES_VERTEX_ORDER_CW];
 		bool tes_point_mode = info->properties[TGSI_PROPERTY_TES_POINT_MODE];
 		switch (tes_prim_mode) {
-		case PIPE_PRIM_LINES:
+		case MESA_PRIM_LINES:
 			type = V_028B6C_TESS_ISOLINE;
 			break;
-		case PIPE_PRIM_TRIANGLES:
+		case MESA_PRIM_TRIANGLES:
 			type = V_028B6C_TESS_TRIANGLE;
 			break;
-		case PIPE_PRIM_QUADS:
+		case MESA_PRIM_QUADS:
 			type = V_028B6C_TESS_QUAD;
 			break;
 		default:
@@ -2713,7 +2713,7 @@ static void evergreen_emit_shader_stages(struct r600_context *rctx, struct r600_
 
 		if (tes_point_mode)
 			topology = V_028B6C_OUTPUT_POINT;
-		else if (tes_prim_mode == PIPE_PRIM_LINES)
+		else if (tes_prim_mode == MESA_PRIM_LINES)
 			topology = V_028B6C_OUTPUT_LINE;
 		else if (tes_vertex_order_cw)
 			/* XXX follow radeonsi and invert */

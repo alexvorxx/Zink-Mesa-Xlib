@@ -77,8 +77,5 @@ program@execute@calls-struct@small struct in regs,Fail
 program@execute@global-offset,Fail
 program@execute@global-offset@3d- input dependent,Fail
 
-# InvalidModule: Invalid SPIR-V module: vloada_half should be of a half vector type
-program@execute@vload@vloada_half-float-constant,Crash
-program@execute@vload@vloada_half-float-global,Crash
-program@execute@vload@vloada_half-float-local,Crash
-program@execute@vload@vloada_half-float-private,Crash
+# Debian bookworm fails
+program@build@vector-data-types,Fail

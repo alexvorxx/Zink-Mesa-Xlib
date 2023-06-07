@@ -38,7 +38,6 @@
 #include "program/prog_parameter.h"
 #include "program/prog_print.h"
 #include "program/prog_to_nir.h"
-#include "program/programopt.h"
 
 #include "compiler/glsl/gl_nir.h"
 #include "compiler/glsl/gl_nir_linker.h"
@@ -53,6 +52,7 @@
 #include "tgsi/tgsi_dump.h"
 #include "tgsi/tgsi_parse.h"
 #include "tgsi/tgsi_ureg.h"
+#include "nir_builder.h"
 #include "nir/nir_to_tgsi.h"
 
 #include "util/u_memory.h"
@@ -419,8 +419,6 @@ st_translate_prog_to_nir(struct st_context *st, struct gl_program *prog,
    /* Translate to NIR */
    nir_shader *nir = prog_to_nir(st->ctx, prog, options);
 
-   st_prog_to_nir_postprocess(st, nir, prog);
-
    return nir;
 }
 
@@ -584,10 +582,6 @@ static bool
 st_translate_vertex_program(struct st_context *st,
                             struct gl_program *prog)
 {
-   /* ARB_vp: */
-   if (prog->arb.IsPositionInvariant)
-      _mesa_insert_mvp_code(st->ctx, prog);
-
    /* This determines which states will be updated when the assembly
       * shader is bound.
       */
@@ -610,8 +604,7 @@ st_translate_vertex_program(struct st_context *st,
    if (prog->arb.Instructions)
       prog->nir = st_translate_prog_to_nir(st, prog,
                                            MESA_SHADER_VERTEX);
-   else
-      st_prog_to_nir_postprocess(st, prog->nir, prog);
+   st_prog_to_nir_postprocess(st, prog->nir, prog);
    prog->info = prog->nir->info;
 
    st_prepare_vertex_program(prog);
@@ -863,23 +856,35 @@ st_translate_fragment_program(struct st_context *st,
                                   ST_NEW_FS_SAMPLERS;
    }
 
-   /* Translate to NIR.  ATI_fs translates at variant time. */
-   if (!prog->ati_fs) {
-      if (prog->nir && prog->arb.Instructions)
-         ralloc_free(prog->nir);
+   /* Translate to NIR. */
+   if (prog->nir && prog->arb.Instructions)
+      ralloc_free(prog->nir);
 
-      if (prog->serialized_nir) {
-         free(prog->serialized_nir);
-         prog->serialized_nir = NULL;
-      }
+   if (prog->serialized_nir) {
+      free(prog->serialized_nir);
+      prog->serialized_nir = NULL;
+   }
 
-      prog->state.type = PIPE_SHADER_IR_NIR;
-      if (prog->arb.Instructions)
-         prog->nir = st_translate_prog_to_nir(st, prog,
-                                             MESA_SHADER_FRAGMENT);
-      else
-         st_prog_to_nir_postprocess(st, prog->nir, prog);
-      prog->info = prog->nir->info;
+   prog->state.type = PIPE_SHADER_IR_NIR;
+   if (prog->arb.Instructions) {
+      prog->nir = st_translate_prog_to_nir(st, prog,
+                                          MESA_SHADER_FRAGMENT);
+   } else if (prog->ati_fs) {
+      const struct nir_shader_compiler_options *options =
+         st_get_nir_compiler_options(st, MESA_SHADER_FRAGMENT);
+
+      assert(!prog->nir);
+      prog->nir = st_translate_atifs_program(prog->ati_fs, prog, options);
+   }
+   st_prog_to_nir_postprocess(st, prog->nir, prog);
+
+   prog->info = prog->nir->info;
+   if (prog->ati_fs) {
+      /* ATI_fs will lower fixed function fog at variant time, after the FF vertex
+       * prog has been generated.  So we have to always declare a read of FOGC so
+       * that FF vp feeds it to us just in case.
+       */
+      prog->info.inputs_read |= VARYING_BIT_FOGC;
    }
 
    return true;
@@ -910,21 +915,24 @@ st_create_fp_variant(struct st_context *st,
    /* Translate ATI_fs to NIR at variant time because that's when we have the
     * texture types.
     */
-   if (fp->ati_fs) {
-      const struct nir_shader_compiler_options *options =
-         st_get_nir_compiler_options(st, MESA_SHADER_FRAGMENT);
-
-      nir_shader *s = st_translate_atifs_program(fp->ati_fs, key, fp, options);
-
-      st_prog_to_nir_postprocess(st, s, fp);
-
-      state.ir.nir = s;
-   } else {
-      state.ir.nir = get_nir_shader(st, fp);
-   }
+   state.ir.nir = get_nir_shader(st, fp);
    state.type = PIPE_SHADER_IR_NIR;
 
    bool finalize = false;
+
+   if (fp->ati_fs) {
+      if (key->fog) {
+         NIR_PASS_V(state.ir.nir, st_nir_lower_fog, key->fog, fp->Parameters);
+         NIR_PASS_V(state.ir.nir, nir_lower_io_to_temporaries,
+            nir_shader_get_entrypoint(state.ir.nir),
+            true, false);
+         nir_lower_global_vars_to_local(state.ir.nir);
+      }
+
+      NIR_PASS_V(state.ir.nir, st_nir_lower_atifs_samplers, key->texture_index);
+
+      finalize = true;
+   }
 
    if (key->clamp_color) {
       NIR_PASS_V(state.ir.nir, nir_lower_clamp_color_outputs);
@@ -1416,13 +1424,6 @@ st_program_string_notify( struct gl_context *ctx,
 
    if (target == GL_FRAGMENT_PROGRAM_ARB ||
        target == GL_FRAGMENT_SHADER_ATI) {
-      if (target == GL_FRAGMENT_SHADER_ATI) {
-         assert(prog->ati_fs);
-         assert(prog->ati_fs->Program == prog);
-
-         st_init_atifs_prog(ctx, prog);
-      }
-
       if (!st_translate_fragment_program(st, prog))
          return false;
    } else if (target == GL_VERTEX_PROGRAM_ARB) {

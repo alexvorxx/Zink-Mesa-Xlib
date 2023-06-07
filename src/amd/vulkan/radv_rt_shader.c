@@ -832,7 +832,6 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
 
    NIR_PASS_V(shader, lower_rt_instructions, &src_vars, call_idx_base);
 
-   NIR_PASS(_, shader, nir_opt_remove_phis);
    NIR_PASS(_, shader, nir_lower_returns);
    NIR_PASS(_, shader, nir_opt_dce);
 
@@ -1471,7 +1470,7 @@ build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_stage
 
    nir_store_var(&b, trav_vars.bvh_base, root_bvh_base, 1);
 
-   nir_ssa_def *vec3ones = nir_channels(&b, nir_imm_vec4(&b, 1.0, 1.0, 1.0, 1.0), 0x7);
+   nir_ssa_def *vec3ones = nir_imm_vec3(&b, 1.0, 1.0, 1.0);
 
    nir_store_var(&b, trav_vars.origin, nir_load_var(&b, vars.origin), 7);
    nir_store_var(&b, trav_vars.dir, nir_load_var(&b, vars.direction), 7);

@@ -39,30 +39,3 @@ dEQP-VK.glsl.texture_functions.textureprojgradoffset.sampler2dshadow_fragment,Fa
 dEQP-VK.glsl.texture_functions.textureprojgradoffset.sampler2dshadow_vertex,Fail
 dEQP-VK.glsl.texture_functions.textureprojoffset.sampler1dshadow_bias_fragment,Fail
 dEQP-VK.glsl.texture_functions.textureprojoffset.sampler2dshadow_bias_fragment,Fail
-
-# WARP/DXC bug, some phi/control flow lowering caused incorrect values to be loaded after the loop.
-# Fix incoming: https://github.com/microsoft/DirectXShaderCompiler/pull/5180
-dEQP-VK.glsl.loops.generic.do_while_dynamic_iterations.basic_highp_float_fragment,Fail
-dEQP-VK.glsl.loops.generic.do_while_dynamic_iterations.basic_highp_float_vertex,Fail
-dEQP-VK.glsl.loops.generic.do_while_dynamic_iterations.basic_mediump_float_fragment,Fail
-dEQP-VK.glsl.loops.generic.do_while_dynamic_iterations.basic_mediump_float_vertex,Fail
-dEQP-VK.glsl.loops.generic.do_while_uniform_iterations.basic_highp_float_fragment,Fail
-dEQP-VK.glsl.loops.generic.do_while_uniform_iterations.basic_highp_float_vertex,Fail
-dEQP-VK.glsl.loops.generic.do_while_uniform_iterations.basic_mediump_float_fragment,Fail
-dEQP-VK.glsl.loops.generic.do_while_uniform_iterations.basic_mediump_float_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.dowhile_trap_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.dowhile_trap_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.nested_sequence_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.nested_sequence_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.sequence_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.sequence_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.vector_counter_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_dynamic_iterations.vector_counter_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.dowhile_trap_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.dowhile_trap_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.nested_sequence_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.nested_sequence_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.sequence_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.sequence_vertex,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.vector_counter_fragment,Fail
-dEQP-VK.glsl.loops.special.do_while_uniform_iterations.vector_counter_vertex,Fail

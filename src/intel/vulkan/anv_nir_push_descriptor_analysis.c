@@ -23,6 +23,8 @@
 
 #include "anv_nir.h"
 
+#include "compiler/brw_nir.h"
+
 const struct anv_descriptor_set_layout *
 anv_pipeline_layout_get_push_set(const struct anv_pipeline_sets_layout *layout,
                                  uint8_t *set_idx)
@@ -191,12 +193,11 @@ anv_nir_push_desc_ubo_fully_promoted(nir_shader *nir,
             if (intrin->intrinsic != nir_intrinsic_load_ubo)
                continue;
 
-            const nir_const_value *const_bt_idx =
-               nir_src_as_const_value(intrin->src[0]);
-            if (const_bt_idx == NULL)
+            if (!brw_nir_ubo_surface_index_is_pushable(intrin->src[0]))
                continue;
 
-            const unsigned bt_idx = const_bt_idx[0].u32;
+            const unsigned bt_idx =
+               brw_nir_ubo_surface_index_get_bti(intrin->src[0]);
 
             /* Skip if this isn't a load from push descriptor buffer. */
             const struct anv_pipeline_binding *binding =

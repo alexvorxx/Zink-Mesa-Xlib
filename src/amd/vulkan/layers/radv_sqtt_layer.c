@@ -463,8 +463,14 @@ radv_describe_barrier_start(struct radv_cmd_buffer *cmd_buffer, enum rgp_barrier
    if (likely(!cmd_buffer->device->sqtt.bo))
       return;
 
+   if (cmd_buffer->state.in_barrier) {
+      assert(!"attempted to start a barrier while already in a barrier");
+      return;
+   }
+
    radv_describe_barrier_end_delayed(cmd_buffer);
    cmd_buffer->state.sqtt_flush_bits = 0;
+   cmd_buffer->state.in_barrier = true;
 
    marker.identifier = RGP_SQTT_MARKER_IDENTIFIER_BARRIER_START;
    marker.cb_id = cmd_buffer->sqtt_cb_id;
@@ -476,6 +482,7 @@ radv_describe_barrier_start(struct radv_cmd_buffer *cmd_buffer, enum rgp_barrier
 void
 radv_describe_barrier_end(struct radv_cmd_buffer *cmd_buffer)
 {
+   cmd_buffer->state.in_barrier = false;
    cmd_buffer->state.pending_sqtt_barrier_end = true;
 }
 
@@ -487,6 +494,11 @@ radv_describe_layout_transition(struct radv_cmd_buffer *cmd_buffer,
 
    if (likely(!cmd_buffer->device->sqtt.bo))
       return;
+
+   if (!cmd_buffer->state.in_barrier) {
+      assert(!"layout transition marker should be only emitted inside a barrier marker");
+      return;
+   }
 
    marker.identifier = RGP_SQTT_MARKER_IDENTIFIER_LAYOUT_TRANSITION;
    marker.depth_stencil_expand = barrier->layout_transitions.depth_stencil_expand;

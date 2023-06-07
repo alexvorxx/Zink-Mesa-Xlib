@@ -598,6 +598,12 @@ gather_varying_component_info(nir_shader *producer, nir_shader *consumer,
          if (in_var->data.location < VARYING_SLOT_VAR0)
             continue;
 
+         /* Do not remap per-vertex shader inputs because it's an array of
+          * 3-elements and this isn't supported.
+          */
+         if (in_var->data.per_vertex)
+            continue;
+
          unsigned location = in_var->data.location - VARYING_SLOT_VAR0;
          if (location >= MAX_VARYINGS_INCL_PATCH)
             continue;
@@ -1119,7 +1125,8 @@ replace_duplicate_input(nir_shader *shader, nir_variable *input_var,
 
          if (!does_varying_match(dup_out_var, in_var) ||
              in_var->data.interpolation != input_var->data.interpolation ||
-             get_interp_loc(in_var) != get_interp_loc(input_var))
+             get_interp_loc(in_var) != get_interp_loc(input_var) ||
+             in_var->data.per_vertex)
             continue;
 
          b.cursor = nir_before_instr(instr);

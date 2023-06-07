@@ -136,6 +136,21 @@ enum bperm_swiz {
    bperm_255 = 13,
 };
 
+enum class alu_delay_wait {
+   NO_DEP = 0,
+   VALU_DEP_1 = 1,
+   VALU_DEP_2 = 2,
+   VALU_DEP_3 = 3,
+   VALU_DEP_4 = 4,
+   TRANS32_DEP_1 = 5,
+   TRANS32_DEP_2 = 6,
+   TRANS32_DEP_3 = 7,
+   FMA_ACCUM_CYCLE_1 = 8,
+   SALU_CYCLE_1 = 9,
+   SALU_CYCLE_2 = 10,
+   SALU_CYCLE_3 = 11,
+};
+
 class Builder {
 public:
    struct Result {

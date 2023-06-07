@@ -43,6 +43,7 @@ extern "C" {
 #define PIPE_H265_MAX_REFERENCES      15
 #define PIPE_DEFAULT_FRAME_RATE_DEN   1
 #define PIPE_DEFAULT_FRAME_RATE_NUM   30
+#define PIPE_DEFAULT_INTRA_IDR_PERIOD 30
 #define PIPE_H2645_EXTENDED_SAR       255
 #define PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS 1000000000
 
@@ -375,10 +376,6 @@ struct pipe_h264_pps
    int8_t   second_chroma_qp_index_offset;
 };
 
-struct h264_private {
-   struct pipe_video_buffer *past_ref[16];
-};
-
 struct pipe_h264_picture_desc
 {
    struct pipe_picture_desc base;
@@ -404,9 +401,6 @@ struct pipe_h264_picture_desc
    uint32_t frame_num_list[16];
 
    struct pipe_video_buffer *ref[16];
-
-   /* using private as a parameter name conflicts with C++ keywords */
-   void    *priv;
 
    struct
    {

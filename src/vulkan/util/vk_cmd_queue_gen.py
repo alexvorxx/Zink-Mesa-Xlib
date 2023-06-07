@@ -97,6 +97,7 @@ enum vk_cmd_type {
 };
 
 extern const char *vk_cmd_queue_type_names[];
+extern size_t vk_cmd_queue_type_sizes[];
 
 % for c in commands:
 % if len(c.params) <= 1:             # Avoid "error C2016: C requires that a struct or union have at least one member"
@@ -115,9 +116,24 @@ struct ${to_struct_name(c.name)} {
 % endif
 % endfor
 
+struct vk_cmd_queue_entry;
+
+/* this ordering must match vk_cmd_queue_entry */
+struct vk_cmd_queue_entry_base {
+   struct list_head cmd_link;
+   enum vk_cmd_type type;
+   void *driver_data;
+   void (*driver_free_cb)(struct vk_cmd_queue *queue,
+                          struct vk_cmd_queue_entry *cmd);
+};
+
+/* this ordering must match vk_cmd_queue_entry_base */
 struct vk_cmd_queue_entry {
    struct list_head cmd_link;
    enum vk_cmd_type type;
+   void *driver_data;
+   void (*driver_free_cb)(struct vk_cmd_queue *queue,
+                          struct vk_cmd_queue_entry *cmd);
    union {
 % for c in commands:
 % if len(c.params) <= 1:
@@ -132,9 +148,6 @@ struct vk_cmd_queue_entry {
 % endif
 % endfor
    } u;
-   void *driver_data;
-   void (*driver_free_cb)(struct vk_cmd_queue *queue,
-                          struct vk_cmd_queue_entry *cmd);
 };
 
 % for c in commands:
@@ -216,6 +229,21 @@ const char *vk_cmd_queue_type_names[] = {
 % endfor
 };
 
+size_t vk_cmd_queue_type_sizes[] = {
+% for c in commands:
+% if c.guard is not None:
+#ifdef ${c.guard}
+% endif
+% if len(c.params) > 1:
+   sizeof(struct ${to_struct_name(c.name)}) +
+% endif
+   sizeof(struct vk_cmd_queue_entry_base),
+% if c.guard is not None:
+#endif // ${c.guard}
+% endif
+% endfor
+};
+
 % for c in commands:
 % if c.guard is not None:
 #ifdef ${c.guard}
@@ -246,8 +274,7 @@ VkResult vk_enqueue_${to_underscore(c.name)}(struct vk_cmd_queue *queue
 % endfor
 )
 {
-   struct vk_cmd_queue_entry *cmd = vk_zalloc(queue->alloc,
-                                              sizeof(*cmd), 8,
+   struct vk_cmd_queue_entry *cmd = vk_zalloc(queue->alloc, vk_cmd_queue_type_sizes[${to_enum_name(c.name)}], 8,
                                               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (!cmd) return VK_ERROR_OUT_OF_HOST_MEMORY;
 

@@ -35,6 +35,7 @@
 #include "list.h"
 #include "ir_visitor.h"
 #include "ir_hierarchical_visitor.h"
+#include "util/glheader.h"
 
 #ifdef __cplusplus
 
@@ -2488,15 +2489,6 @@ prototype_string(const glsl_type *return_type, const char *name,
 
 const char *
 mode_string(const ir_variable *var);
-
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static inline bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
 
 extern "C" {
 #endif /* __cplusplus */

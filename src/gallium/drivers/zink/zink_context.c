@@ -103,8 +103,8 @@ check_resource_for_batch_ref(struct zink_context *ctx, struct zink_resource *res
        * - if tracking will be added here, also reapply usage to avoid dangling usage once tracking is removed
        * TODO: somehow fix this for perf because it's an extra hash lookup
        */
-      if (!res->obj->dt && (res->obj->bo->reads || res->obj->bo->writes))
-         zink_batch_reference_resource_rw(&ctx->batch, res, !!res->obj->bo->writes);
+      if (!res->obj->dt && zink_resource_has_usage(res))
+         zink_batch_reference_resource_rw(&ctx->batch, res, !!res->obj->bo->writes.u);
       else
          zink_batch_reference_resource(&ctx->batch, res);
    }
@@ -2825,6 +2825,14 @@ zink_batch_rp(struct zink_context *ctx)
       if (ctx->render_condition.query)
          zink_start_conditional_render(ctx);
       zink_clear_framebuffer(ctx, clear_buffers);
+      if (ctx->pipeline_changed[0]) {
+         for (unsigned i = 0; i < ctx->fb_state.nr_cbufs; i++) {
+            if (ctx->fb_state.cbufs[i])
+               zink_batch_reference_resource(&ctx->batch, zink_resource(ctx->fb_state.cbufs[i]->texture));
+         }
+         if (ctx->fb_state.zsbuf)
+            zink_batch_reference_resource(&ctx->batch, zink_resource(ctx->fb_state.zsbuf->texture));
+      }
    }
    /* unable to previously determine that queries didn't split renderpasses: ensure queries start inside renderpass */
    if (!ctx->queries_disabled && maybe_has_query_ends) {
@@ -3026,7 +3034,7 @@ zink_evaluate_depth_buffer(struct pipe_context *pctx)
 static void
 sync_flush(struct zink_context *ctx, struct zink_batch_state *bs)
 {
-   if (zink_screen(ctx->base.screen)->threaded)
+   if (zink_screen(ctx->base.screen)->threaded_submit)
       util_queue_fence_wait(&bs->flush_completed);
 }
 
@@ -3097,12 +3105,6 @@ zink_update_descriptor_refs(struct zink_context *ctx, bool compute)
       if (ctx->curr_compute)
          zink_batch_reference_program(batch, &ctx->curr_compute->base);
    } else {
-      for (unsigned i = 0; i < ctx->fb_state.nr_cbufs; i++) {
-         if (ctx->fb_state.cbufs[i])
-            zink_batch_reference_resource(&ctx->batch, zink_resource(ctx->fb_state.cbufs[i]->texture));
-      }
-      if (ctx->fb_state.zsbuf)
-         zink_batch_reference_resource(&ctx->batch, zink_resource(ctx->fb_state.zsbuf->texture));
       for (unsigned i = 0; i < ZINK_GFX_SHADER_COUNT; i++)
          update_resource_refs_for_stage(ctx, i);
       unsigned vertex_buffers_enabled_mask = ctx->gfx_pipeline_state.vertex_buffers_enabled_mask;
@@ -3152,7 +3154,7 @@ stall(struct zink_context *ctx)
 {
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    sync_flush(ctx, zink_batch_state(ctx->last_fence));
-   zink_screen_timeline_wait(screen, ctx->last_fence->batch_id, PIPE_TIMEOUT_INFINITE);
+   zink_screen_timeline_wait(screen, ctx->last_fence->batch_id, OS_TIMEOUT_INFINITE);
    zink_batch_reset_all(ctx);
 }
 
@@ -3622,11 +3624,11 @@ zink_flush(struct pipe_context *pctx,
                 check_device_lost(ctx);
           }
        }
-       if (ctx->tc && !screen->driver_workarounds.track_renderpasses)
+       if (ctx->tc && !ctx->track_renderpasses)
          tc_driver_internal_flush_notify(ctx->tc);
    } else {
       fence = &batch->state->fence;
-      submit_count = batch->state->submit_count;
+      submit_count = batch->state->usage.submit_count;
       if (deferred && !(flags & PIPE_FLUSH_FENCE_FD) && pfence)
          deferred_fence = true;
       else
@@ -4373,8 +4375,16 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
       }
       zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
    }
-   if (needs_present_readback)
+   if (needs_present_readback) {
+      if (buf2img) {
+         img->obj->unordered_write = false;
+         buf->obj->unordered_read = false;
+      } else {
+         img->obj->unordered_read = false;
+         buf->obj->unordered_write = false;
+      }
       zink_kopper_present_readback(ctx, img);
+   }
 
    if (ctx->oom_flush && !ctx->batch.in_rp && !ctx->unordered_blitting)
       flush_batch(ctx, false);
@@ -4796,7 +4806,7 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    ctx->compute_pipeline_state.dirty = true;
    ctx->fb_changed = ctx->rp_changed = true;
    ctx->sample_mask_changed = true;
-   ctx->gfx_pipeline_state.gfx_prim_mode = PIPE_PRIM_MAX;
+   ctx->gfx_pipeline_state.gfx_prim_mode = MESA_PRIM_COUNT;
 
    zink_init_draw_functions(ctx, screen);
    zink_init_grid_functions(ctx);

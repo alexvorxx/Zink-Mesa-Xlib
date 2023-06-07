@@ -35,8 +35,6 @@
 #include "vl/vl_decoder.h"
 #include "vl/vl_video_buffer.h"
 
-#include "tgsi/tgsi_exec.h"
-
 #include "virgl_screen.h"
 #include "virgl_resource.h"
 #include "virgl_public.h"
@@ -134,9 +132,9 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MAX_STREAM_OUTPUT_INTERLEAVED_COMPONENTS:
       return 16*4;
    case PIPE_CAP_SUPPORTED_PRIM_MODES:
-      return BITFIELD_MASK(PIPE_PRIM_MAX) &
-            ~BITFIELD_BIT(PIPE_PRIM_QUADS) &
-            ~BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
+      return BITFIELD_MASK(MESA_PRIM_COUNT) &
+            ~BITFIELD_BIT(MESA_PRIM_QUADS) &
+            ~BITFIELD_BIT(MESA_PRIM_QUAD_STRIP);
    case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
       return vscreen->caps.caps.v1.bset.primitive_restart;
@@ -223,9 +221,10 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
       return vscreen->caps.caps.v1.max_tbo_size;
    case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
-   case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
    case PIPE_CAP_ENDIANNESS:
       return 0;
+   case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
+      return !!(vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_PIPELINE_STATISTICS_QUERY);
    case PIPE_CAP_MIXED_FRAMEBUFFER_SIZES:
    case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
       return 1;
@@ -356,7 +355,12 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
        return vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_STRING_MARKER;
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
        return vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_IMPLICIT_MSAA;
+   case PIPE_CAP_DRAW_PARAMETERS:
+      return !!(vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_DRAW_PARAMETERS);
+   case PIPE_CAP_SHADER_GROUP_VOTE:
+      return !!(vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_GROUP_VOTE);
    case PIPE_CAP_IMAGE_STORE_FORMATTED:
+   case PIPE_CAP_GL_SPIRV:
       return 1;
    case PIPE_CAP_MAX_CONSTANT_BUFFER_SIZE_UINT:
       if (vscreen->caps.caps.v2.host_feature_check_version >= 13)

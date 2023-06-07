@@ -411,7 +411,7 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
    genX(emit_urb_setup)(pipeline->base.base.device,
                         &pipeline->base.base.batch,
                         pipeline->base.base.l3_config,
-                        pipeline->base.active_stages, entry_size,
+                        pipeline->base.base.active_stages, entry_size,
                         deref_block_size);
 }
 
@@ -602,11 +602,11 @@ genX(raster_polygon_mode)(struct anv_graphics_pipeline *pipeline,
 {
    if (anv_pipeline_is_mesh(pipeline)) {
       switch (get_mesh_prog_data(pipeline)->primitive_type) {
-      case SHADER_PRIM_POINTS:
+      case MESA_PRIM_POINTS:
          return VK_POLYGON_MODE_POINT;
-      case SHADER_PRIM_LINES:
+      case MESA_PRIM_LINES:
          return VK_POLYGON_MODE_LINE;
-      case SHADER_PRIM_TRIANGLES:
+      case MESA_PRIM_TRIANGLES:
          return polygon_mode;
       default:
          unreachable("invalid primitive type for mesh");
@@ -791,7 +791,7 @@ emit_rs_state(struct anv_graphics_pipeline *pipeline,
    raster.ScissorRectangleEnable = true;
 
    raster.ConservativeRasterizationEnable =
-      rs->conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT;
+      rs && rs->conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT;
    raster.APIMode = DX101;
 
    GENX(3DSTATE_SF_pack)(NULL, pipeline->gfx8.sf, &sf);
@@ -1782,8 +1782,8 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
       brw_cs_get_dispatch_info(devinfo, &mesh_prog_data->base, NULL);
 
    const unsigned output_topology =
-      mesh_prog_data->primitive_type == SHADER_PRIM_POINTS ? OUTPUT_POINT :
-      mesh_prog_data->primitive_type == SHADER_PRIM_LINES  ? OUTPUT_LINE :
+      mesh_prog_data->primitive_type == MESA_PRIM_POINTS ? OUTPUT_POINT :
+      mesh_prog_data->primitive_type == MESA_PRIM_LINES  ? OUTPUT_LINE :
                                                              OUTPUT_TRI;
 
    uint32_t index_format;
@@ -1847,7 +1847,6 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
    enum intel_urb_deref_block_size urb_deref_block_size;
    emit_urb_setup(pipeline, &urb_deref_block_size);
 
-   assert(state->rs != NULL);
    emit_rs_state(pipeline, state->ia, state->rs, state->ms, state->rp,
                  urb_deref_block_size);
    emit_ms_state(pipeline, state->ms);

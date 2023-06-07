@@ -186,6 +186,54 @@ Each binding type entry gets an associated structure in memory
 This is the information read by the shader.
 
 
+.. _`Binding tables`:
+
+Binding Tables
+--------------
+
+Binding tables are arrays of 32bit offset entries referencing surface
+states. This is how shaders can refer to binding table entry to read
+or write a surface. For example fragment shaders will often refer to
+entry 0 as the first render target.
+
+The way binding tables are managed is fairly awkward.
+
+Each shader stage must have its binding table programmed through
+a corresponding instruction
+``3DSTATE_BINDING_TABLE_POINTERS_*`` (each stage has its own).
+
+.. graphviz::
+
+  digraph structs {
+    node [shape=record];
+    struct3 [label="{ binding tables&#92;n area | { <bt4> BT4 | <bt3> BT3 | ... | <bt0> BT0 } }|{ surface state&#92;n area |{<ss0> ss0|<ss1> ss1|<ss2> ss2|...}}"];
+    struct3:bt0 -> struct3:ss0;
+    struct3:bt0 -> struct3:ss1;
+  }
+
+
+The value programmed in the ``3DSTATE_BINDING_TABLE_POINTERS_*``
+instructions is not a 64bit pointer but an offset from the address
+programmed in ``STATE_BASE_ADDRESS::Surface State Base Address`` or
+``3DSTATE_BINDING_TABLE_POOL_ALLOC::Binding Table Pool Base Address``
+(available on Gfx11+). The offset value in
+``3DSTATE_BINDING_TABLE_POINTERS_*`` is also limited to a few bits
+(not a full 32bit value), meaning that as we use more and more binding
+tables we need to reposition ``STATE_BASE_ADDRESS::Surface State Base
+Address`` to make space for new binding table arrays.
+
+To make things even more awkward, the binding table entries are also
+relative to ``STATE_BASE_ADDRESS::Surface State Base Address`` so as
+we change ``STATE_BASE_ADDRESS::Surface State Base Address`` we need
+add that offsets to the binding table entries.
+
+The way with deal with this is that we allocate 4Gb of address space
+(since the binding table entries can address 4Gb of surface state
+elements). We reserve the first gigabyte exclusively to binding
+tables, so that anywhere we position our binding table in that first
+gigabyte, it can always refer to the surface states in the next 3Gb.
+
+
 .. _`Descriptor Set Memory Layout`:
 
 Descriptor Set Memory Layout

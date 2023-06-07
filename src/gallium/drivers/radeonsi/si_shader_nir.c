@@ -1,25 +1,7 @@
 /*
  * Copyright 2017 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "nir_builder.h"
@@ -28,11 +10,9 @@
 #include "ac_nir.h"
 
 
-static bool si_alu_to_scalar_filter(const nir_instr *instr, const void *data)
+bool si_alu_to_scalar_packed_math_filter(const nir_instr *instr, const void *data)
 {
-   struct si_screen *sscreen = (struct si_screen *)data;
-
-   if (sscreen->info.has_packed_math_16bit && instr->type == nir_instr_type_alu) {
+   if (instr->type == nir_instr_type_alu) {
       nir_alu_instr *alu = nir_instr_as_alu(instr);
 
       if (alu->dest.dest.is_ssa &&
@@ -93,7 +73,8 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
       bool lower_phis_to_scalar = false;
 
       NIR_PASS(progress, nir, nir_lower_vars_to_ssa);
-      NIR_PASS(progress, nir, nir_lower_alu_to_scalar, si_alu_to_scalar_filter, sscreen);
+      NIR_PASS(progress, nir, nir_lower_alu_to_scalar,
+               nir->options->lower_to_scalar_filter, NULL);
       NIR_PASS(progress, nir, nir_lower_phis_to_scalar, false);
 
       if (first) {
@@ -115,8 +96,10 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
             (LLVM_VERSION_MAJOR == 14 ? 0 : nir_opt_if_optimize_phi_true_false));
       NIR_PASS(progress, nir, nir_opt_dead_cf);
 
-      if (lower_alu_to_scalar)
-         NIR_PASS_V(nir, nir_lower_alu_to_scalar, si_alu_to_scalar_filter, sscreen);
+      if (lower_alu_to_scalar) {
+         NIR_PASS_V(nir, nir_lower_alu_to_scalar,
+                    nir->options->lower_to_scalar_filter, NULL);
+      }
       if (lower_phis_to_scalar)
          NIR_PASS_V(nir, nir_lower_phis_to_scalar, false);
       progress |= lower_alu_to_scalar | lower_phis_to_scalar;
@@ -295,7 +278,6 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
       .lower_invalid_implicit_lod = true,
       .lower_tg4_offsets = true,
       .lower_to_fragment_fetch_amd = sscreen->info.gfx_level < GFX11,
-      .lower_array_layer_round_even = !sscreen->info.conformant_trunc_coord,
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
 

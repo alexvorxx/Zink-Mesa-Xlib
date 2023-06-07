@@ -483,7 +483,7 @@ emit_rss_vgpu10(struct svga_context *svga, uint64_t dirty)
                    SVGA_NEW_FRAME_BUFFER)) {
          struct svga_rasterizer_state *rast = svga->curr.rast;
 
-         if (svga->curr.reduced_prim == PIPE_PRIM_POINTS &&
+         if (svga->curr.reduced_prim == MESA_PRIM_POINTS &&
              svga->curr.gs && svga->curr.gs->wide_point) {
 
             /* If we are drawing a point sprite, we will need to

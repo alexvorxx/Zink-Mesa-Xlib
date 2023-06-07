@@ -33,8 +33,6 @@
 #include "svga_tgsi.h"
 #include "svga_resource_texture.h"
 #include "VGPU10ShaderTokens.h"
-#include "tgsi/tgsi_parse.h"
-#include "tgsi/tgsi_text.h"
 #include "nir/nir_to_tgsi.h"
 
 

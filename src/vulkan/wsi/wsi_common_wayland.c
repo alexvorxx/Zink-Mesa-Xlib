@@ -2168,8 +2168,6 @@ wsi_wl_swapchain_chain_free(struct wsi_wl_swapchain *chain,
    }
 
    wsi_swapchain_finish(&chain->base);
-
-   vk_free(pAllocator, chain);
 }
 
 static VkResult
@@ -2180,6 +2178,8 @@ wsi_wl_swapchain_destroy(struct wsi_swapchain *wsi_chain,
 
    wsi_wl_swapchain_images_free(chain);
    wsi_wl_swapchain_chain_free(chain, pAllocator);
+
+   vk_free(pAllocator, chain);
 
    return VK_SUCCESS;
 }

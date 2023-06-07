@@ -141,9 +141,6 @@ tgsi_num_tokens(const struct tgsi_token *tokens)
    return header.HeaderSize + header.BodySize;
 }
 
-void
-tgsi_dump_tokens(const struct tgsi_token *tokens);
-
 struct tgsi_token *
 tgsi_dup_tokens(const struct tgsi_token *tokens);
 

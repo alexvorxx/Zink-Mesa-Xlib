@@ -983,6 +983,30 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
          }
          break;
 
+      case BRW_OPCODE_ADD3:
+         /* add3 can have a single imm16 source. Proceed if the source type is
+          * already W or UW or the value can be coerced to one of those types.
+          */
+         if (val.type == BRW_REGISTER_TYPE_W || val.type == BRW_REGISTER_TYPE_UW)
+            ; /* Nothing to do. */
+         else if (val.ud <= 0xffff)
+            val = brw_imm_uw(val.ud);
+         else if (val.d >= -0x8000 && val.d <= 0x7fff)
+            val = brw_imm_w(val.d);
+         else
+            break;
+
+         if (i == 2) {
+            inst->src[i] = val;
+            progress = true;
+         } else if (inst->src[2].file != IMM) {
+            inst->src[i] = inst->src[2];
+            inst->src[2] = val;
+            progress = true;
+         }
+
+         break;
+
       case BRW_OPCODE_CMP:
       case BRW_OPCODE_IF:
          if (i == 1) {
@@ -1085,6 +1109,15 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
 
       default:
          break;
+      }
+   }
+
+   /* ADD3 can only have the immediate as src0. */
+   if (progress && inst->opcode == BRW_OPCODE_ADD3) {
+      if (inst->src[2].file == IMM) {
+         const auto src0 = inst->src[0];
+         inst->src[0] = inst->src[2];
+         inst->src[2] = src0;
       }
    }
 

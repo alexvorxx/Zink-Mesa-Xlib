@@ -218,7 +218,7 @@ panfrost_build_key(struct panfrost_context *ctx,
    }
 
    /* Point sprite lowering needed on Bifrost and newer */
-   if (dev->arch >= 6 && rast && ctx->active_prim == PIPE_PRIM_POINTS) {
+   if (dev->arch >= 6 && rast && ctx->active_prim == MESA_PRIM_POINTS) {
       key->fs.sprite_coord_enable = rast->sprite_coord_enable;
    }
 

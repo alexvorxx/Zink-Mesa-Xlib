@@ -2076,7 +2076,7 @@ crocus_update_compiled_clip(struct crocus_context *ice)
    else
       key.clip_mode = BRW_CLIP_MODE_NORMAL;
 
-   if (key.primitive == PIPE_PRIM_TRIANGLES) {
+   if (key.primitive == MESA_PRIM_TRIANGLES) {
       if (rs_state->cull_face == PIPE_FACE_FRONT_AND_BACK)
          key.clip_mode = BRW_CLIP_MODE_REJECT_ALL;
       else {
@@ -2211,17 +2211,17 @@ crocus_update_compiled_sf(struct crocus_context *ice)
    key.attrs = ice->shaders.last_vue_map->slots_valid;
 
    switch (ice->state.reduced_prim_mode) {
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
    default:
       if (key.attrs & BITFIELD64_BIT(VARYING_SLOT_EDGE))
          key.primitive = BRW_SF_PRIM_UNFILLED_TRIS;
       else
          key.primitive = BRW_SF_PRIM_TRIANGLES;
       break;
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       key.primitive = BRW_SF_PRIM_LINES;
       break;
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       key.primitive = BRW_SF_PRIM_POINTS;
       break;
    }

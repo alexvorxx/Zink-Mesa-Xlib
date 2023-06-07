@@ -273,7 +273,7 @@ vk_pipeline_cache_insert_object(struct vk_pipeline_cache *cache,
        if (found_object->ops != object->ops) {
           /* The found object in the cache isn't fully formed. Replace it. */
           assert(found_object->ops == &vk_raw_data_cache_object_ops);
-          assert(found_object->ref_cnt == 1 && object->ref_cnt == 1);
+          assert(object->ref_cnt == 1);
           entry->key = object;
           object = found_object;
        }

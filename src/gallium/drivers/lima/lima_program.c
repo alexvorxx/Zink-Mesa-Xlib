@@ -227,7 +227,6 @@ lima_program_optimize_fs_nir(struct nir_shader *s,
    NIR_PASS_V(s, nir_lower_fragcoord_wtrans);
    NIR_PASS_V(s, nir_lower_io,
 	      nir_var_shader_in | nir_var_shader_out, type_size, 0);
-   NIR_PASS_V(s, nir_lower_regs_to_ssa);
    NIR_PASS_V(s, nir_lower_tex, tex_options);
    NIR_PASS_V(s, lima_nir_lower_txp);
 

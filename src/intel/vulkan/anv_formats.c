@@ -773,7 +773,7 @@ anv_get_image_format_features2(const struct intel_device_info *devinfo,
          }
       }
 
-      if (isl_mod_info->aux_usage == ISL_AUX_USAGE_CCS_E &&
+      if (isl_aux_usage_has_ccs_e(isl_mod_info->aux_usage) &&
           !isl_format_supports_ccs_e(devinfo, plane_format.isl_format)) {
          return 0;
       }

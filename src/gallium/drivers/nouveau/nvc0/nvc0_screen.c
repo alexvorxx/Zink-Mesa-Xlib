@@ -209,7 +209,7 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
    case PIPE_CAP_SUPPORTED_PRIM_MODES:
-      return BITFIELD_MASK(PIPE_PRIM_MAX);
+      return BITFIELD_MASK(MESA_PRIM_COUNT);
 
    /* supported caps */
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:

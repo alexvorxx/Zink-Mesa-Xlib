@@ -194,7 +194,7 @@ util_draw_fullscreen_quad(struct cso_context *cso)
       1, -1, 0, 1,   1, 0, 0, 0
    };
    util_set_interleaved_vertex_elements(cso, 2);
-   util_draw_user_vertex_buffer(cso, vertices, PIPE_PRIM_QUADS, 4, 2);
+   util_draw_user_vertex_buffer(cso, vertices, MESA_PRIM_QUADS, 4, 2);
 }
 
 static void
@@ -208,7 +208,7 @@ util_draw_fullscreen_quad_fill(struct cso_context *cso,
       1, -1, 0, 1,   r, g, b, a,
    };
    util_set_interleaved_vertex_elements(cso, 2);
-   util_draw_user_vertex_buffer(cso, vertices, PIPE_PRIM_QUADS, 4, 2);
+   util_draw_user_vertex_buffer(cso, vertices, MESA_PRIM_QUADS, 4, 2);
 }
 
 /**
@@ -349,7 +349,7 @@ tgsi_vs_window_space_position(struct pipe_context *ctx)
         256,   0, 0, 0,   1,  0, 0, 1,
       };
       util_set_interleaved_vertex_elements(cso, 2);
-      util_draw_user_vertex_buffer(cso, vertices, PIPE_PRIM_QUADS, 4, 2);
+      util_draw_user_vertex_buffer(cso, vertices, MESA_PRIM_QUADS, 4, 2);
    }
 
    /* Probe pixels. */

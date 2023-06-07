@@ -422,10 +422,6 @@ tgsi_exec_machine_run(
    struct tgsi_exec_machine *mach, int start_pc );
 
 
-void
-tgsi_exec_machine_free_data(struct tgsi_exec_machine *mach);
-
-
 extern void
 tgsi_exec_set_constant_buffers(struct tgsi_exec_machine *mach,
                                unsigned num_bufs,

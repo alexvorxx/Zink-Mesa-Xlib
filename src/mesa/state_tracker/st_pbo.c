@@ -274,9 +274,9 @@ st_pbo_draw(struct st_context *st, const struct st_pbo_addresses *addr,
    cso_set_stream_outputs(cso, 0, NULL, 0);
 
    if (addr->depth == 1) {
-      cso_draw_arrays(cso, PIPE_PRIM_TRIANGLE_STRIP, 0, 4);
+      cso_draw_arrays(cso, MESA_PRIM_TRIANGLE_STRIP, 0, 4);
    } else {
-      cso_draw_arrays_instanced(cso, PIPE_PRIM_TRIANGLE_STRIP,
+      cso_draw_arrays_instanced(cso, MESA_PRIM_TRIANGLE_STRIP,
                                 0, 4, 0, addr->depth);
    }
 
@@ -336,8 +336,8 @@ st_pbo_create_gs(struct st_context *st)
    if (!ureg)
       return NULL;
 
-   ureg_property(ureg, TGSI_PROPERTY_GS_INPUT_PRIM, PIPE_PRIM_TRIANGLES);
-   ureg_property(ureg, TGSI_PROPERTY_GS_OUTPUT_PRIM, PIPE_PRIM_TRIANGLE_STRIP);
+   ureg_property(ureg, TGSI_PROPERTY_GS_INPUT_PRIM, MESA_PRIM_TRIANGLES);
+   ureg_property(ureg, TGSI_PROPERTY_GS_OUTPUT_PRIM, MESA_PRIM_TRIANGLE_STRIP);
    ureg_property(ureg, TGSI_PROPERTY_GS_MAX_OUTPUT_VERTICES, 3);
 
    out_pos = ureg_DECL_output(ureg, TGSI_SEMANTIC_POSITION, 0);

@@ -35,21 +35,12 @@
 static nir_deref_instr *
 deref_offset_var(nir_builder *b, unsigned binding, unsigned offset_align_state)
 {
-   nir_foreach_uniform_variable(var, b->shader) {
-      if (var->num_state_slots != 1)
-         continue;
-      if (var->state_slots[0].tokens[0] == offset_align_state &&
-          var->state_slots[0].tokens[1] == binding)
-         return nir_build_deref_var(b, var);
+   gl_state_index16 tokens[STATE_LENGTH] = {offset_align_state, binding};
+   nir_variable *var = nir_find_state_variable(b->shader, tokens);
+   if (!var) {
+      var = nir_state_variable_create(b->shader, glsl_uint_type(), "offset", tokens);
+      var->data.how_declared = nir_var_hidden;
    }
-
-   nir_variable *var = nir_variable_create(b->shader, nir_var_uniform, glsl_uint_type(), "offset");
-   var->state_slots = rzalloc_array(var, nir_state_slot, 1);
-   var->state_slots[0].tokens[0] = offset_align_state;
-   var->state_slots[0].tokens[1] = binding;
-   var->num_state_slots = 1;
-   var->data.how_declared = nir_var_hidden;
-   b->shader->num_uniforms++;
    return nir_build_deref_var(b, var);
 }
 

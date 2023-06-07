@@ -5,3 +5,5 @@ dEQP-VK.rasterization.provoking_vertex.transform_feedback.per_pipeline.triangle_
 
 # New CTS failures in 1.3.5.0
 dEQP-VK.api.info.format_properties.g10x6_b10x6r10x6_2plane_420_unorm_3pack16,Fail
+# since Debian 12 CI uprev
+dEQP-VK.subgroups.shuffle.compute.subgroupshuffleup_double_constant,Crash

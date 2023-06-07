@@ -35,6 +35,8 @@
 #include "draw_private.h"
 #include "draw_vertex.h"
 
+#include "tgsi/tgsi_scan.h"
+
 
 struct draw_context;
 struct pipe_shader_state;

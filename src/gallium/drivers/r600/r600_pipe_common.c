@@ -27,7 +27,6 @@
 #include "r600_pipe_common.h"
 #include "r600_cs.h"
 #include "evergreen_compute.h"
-#include "tgsi/tgsi_parse.h"
 #include "util/list.h"
 #include "util/u_draw_quad.h"
 #include "util/u_memory.h"
@@ -1095,7 +1094,7 @@ static bool r600_fence_finish(struct pipe_screen *screen,
 			return false;
 
 		/* Recompute the timeout after waiting. */
-		if (timeout && timeout != PIPE_TIMEOUT_INFINITE) {
+		if (timeout && timeout != OS_TIMEOUT_INFINITE) {
 			int64_t time = os_time_get_nano();
 			timeout = abs_timeout > time ? abs_timeout - time : 0;
 		}
@@ -1115,7 +1114,7 @@ static bool r600_fence_finish(struct pipe_screen *screen,
 			return false;
 
 		/* Recompute the timeout after all that. */
-		if (timeout && timeout != PIPE_TIMEOUT_INFINITE) {
+		if (timeout && timeout != OS_TIMEOUT_INFINITE) {
 			int64_t time = os_time_get_nano();
 			timeout = abs_timeout > time ? abs_timeout - time : 0;
 		}
@@ -1372,7 +1371,8 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		.lower_cs_local_index_to_id = true,
 		.lower_uniforms_to_ubo = true,
 		.lower_image_offset_to_range_base = 1,
-		.vectorize_tess_levels = 1
+		.vectorize_tess_levels = 1,
+		.use_scoped_barrier = 1,
 	};
 
 	rscreen->nir_options = nir_options;

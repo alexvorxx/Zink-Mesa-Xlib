@@ -279,6 +279,8 @@ vk_vertex_input_state_init(struct vk_vertex_input_state *vi,
    assert(!IS_DYNAMIC(VI));
 
    memset(vi, 0, sizeof(*vi));
+   if (!vi_info)
+      return;
 
    for (uint32_t i = 0; i < vi_info->vertexBindingDescriptionCount; i++) {
       const VkVertexInputBindingDescription *desc =
@@ -350,6 +352,10 @@ vk_input_assembly_state_init(struct vk_input_assembly_state *ia,
                              const BITSET_WORD *dynamic,
                              const VkPipelineInputAssemblyStateCreateInfo *ia_info)
 {
+   memset(ia, 0, sizeof(*ia));
+   if (!ia_info)
+      return;
+
    /* From the Vulkan 1.3.224 spec:
     *
     *    "VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY specifies that the topology
@@ -377,14 +383,17 @@ vk_tessellation_state_init(struct vk_tessellation_state *ts,
                            const BITSET_WORD *dynamic,
                            const VkPipelineTessellationStateCreateInfo *ts_info)
 {
-   if (IS_DYNAMIC(TS_PATCH_CONTROL_POINTS)) {
-      ts->patch_control_points = 0;
-   } else {
+   *ts = (struct vk_tessellation_state) {
+      .domain_origin = VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT,
+   };
+   if (!ts_info)
+      return;
+
+   if (!IS_DYNAMIC(TS_PATCH_CONTROL_POINTS)) {
       assert(ts_info->patchControlPoints <= UINT8_MAX);
       ts->patch_control_points = ts_info->patchControlPoints;
    }
 
-   ts->domain_origin = VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT;
    if (!IS_DYNAMIC(TS_DOMAIN_ORIGIN)) {
       const VkPipelineTessellationDomainOriginStateCreateInfo *ts_do_info =
          vk_find_struct_const(ts_info->pNext,
@@ -410,6 +419,8 @@ vk_viewport_state_init(struct vk_viewport_state *vp,
                        const VkPipelineViewportStateCreateInfo *vp_info)
 {
    memset(vp, 0, sizeof(*vp));
+   if (!vp_info)
+      return;
 
    if (!IS_DYNAMIC(VP_VIEWPORT_COUNT)) {
       assert(vp_info->viewportCount <= MESA_VK_MAX_VIEWPORTS);
@@ -501,7 +512,10 @@ vk_rasterization_state_init(struct vk_rasterization_state *rs,
       .rasterization_order_amd = VK_RASTERIZATION_ORDER_STRICT_AMD,
       .provoking_vertex = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT,
       .line.mode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT,
+      .depth_clip_enable = IS_DYNAMIC(RS_DEPTH_CLAMP_ENABLE) ? VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP : VK_MESA_DEPTH_CLIP_ENABLE_FALSE,
    };
+   if (!rs_info)
+      return;
 
    if (!IS_DYNAMIC(RS_RASTERIZER_DISCARD_ENABLE))
       rs->rasterizer_discard_enable = rs_info->rasterizerDiscardEnable;
@@ -516,9 +530,7 @@ vk_rasterization_state_init(struct vk_rasterization_state *rs,
     *    depth clipping is disabled when
     *    VkPipelineRasterizationStateCreateInfo::depthClampEnable is VK_TRUE.
     */
-   if (IS_DYNAMIC(RS_DEPTH_CLAMP_ENABLE)) {
-      rs->depth_clip_enable = VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP;
-   } else {
+   if (!IS_DYNAMIC(RS_DEPTH_CLAMP_ENABLE)) {
       rs->depth_clamp_enable = rs_info->depthClampEnable;
       rs->depth_clip_enable = rs_info->depthClampEnable ?
                               VK_MESA_DEPTH_CLIP_ENABLE_FALSE :
@@ -661,9 +673,11 @@ vk_multisample_state_init(struct vk_multisample_state *ms,
                           const BITSET_WORD *dynamic,
                           const VkPipelineMultisampleStateCreateInfo *ms_info)
 {
-   if (IS_DYNAMIC(MS_RASTERIZATION_SAMPLES)) {
-      ms->rasterization_samples = 0;
-   } else {
+   memset(ms, 0, sizeof(*ms));
+   if (!ms_info)
+      return;
+
+   if (!IS_DYNAMIC(MS_RASTERIZATION_SAMPLES)) {
       assert(ms_info->rasterizationSamples <= MESA_VK_MAX_SAMPLES);
       ms->rasterization_samples = ms_info->rasterizationSamples;
    }
@@ -758,7 +772,11 @@ vk_depth_stencil_state_init(struct vk_depth_stencil_state *ds,
                             const BITSET_WORD *dynamic,
                             const VkPipelineDepthStencilStateCreateInfo *ds_info)
 {
-   memset(ds, 0, sizeof(*ds));
+   *ds = (struct vk_depth_stencil_state) {
+      .stencil.write_enable = true,
+   };
+   if (!ds_info)
+      return;
 
    ds->depth.test_enable = ds_info->depthTestEnable;
    ds->depth.write_enable = ds_info->depthWriteEnable;
@@ -766,9 +784,7 @@ vk_depth_stencil_state_init(struct vk_depth_stencil_state *ds,
    ds->depth.bounds_test.enable = ds_info->depthBoundsTestEnable;
    ds->depth.bounds_test.min = ds_info->minDepthBounds;
    ds->depth.bounds_test.max = ds_info->maxDepthBounds;
-
    ds->stencil.test_enable = ds_info->stencilTestEnable;
-   ds->stencil.write_enable = true;
    vk_stencil_test_face_state_init(&ds->stencil.front, &ds_info->front);
    vk_stencil_test_face_state_init(&ds->stencil.back, &ds_info->back);
 }
@@ -907,7 +923,11 @@ vk_color_blend_state_init(struct vk_color_blend_state *cb,
                           const BITSET_WORD *dynamic,
                           const VkPipelineColorBlendStateCreateInfo *cb_info)
 {
-   memset(cb, 0, sizeof(*cb));
+   *cb = (struct vk_color_blend_state) {
+      .color_write_enables = BITFIELD_MASK(MESA_VK_MAX_COLOR_ATTACHMENTS),
+   };
+   if (!cb_info)
+      return;
 
    cb->logic_op_enable = cb_info->logicOpEnable;
    cb->logic_op = cb_info->logicOp;
@@ -937,11 +957,13 @@ vk_color_blend_state_init(struct vk_color_blend_state *cb,
    const VkPipelineColorWriteCreateInfoEXT *cw_info =
       vk_find_struct_const(cb_info->pNext, PIPELINE_COLOR_WRITE_CREATE_INFO_EXT);
    if (cw_info != NULL) {
+      uint8_t color_write_enables = 0;
       assert(cb_info->attachmentCount == cw_info->attachmentCount);
       for (uint32_t a = 0; a < cw_info->attachmentCount; a++) {
          if (cw_info->pColorWriteEnables[a])
-            cb->color_write_enables |= BITFIELD_BIT(a);
+            color_write_enables |= BITFIELD_BIT(a);
       }
+      cb->color_write_enables = color_write_enables;
    } else {
       cb->color_write_enables = BITFIELD_MASK(cb_info->attachmentCount);
    }
@@ -1438,8 +1460,9 @@ vk_graphics_pipeline_state_fill(const struct vk_device *device,
    const VkPipelineSampleLocationsStateCreateInfoEXT *sl_info = NULL;
    struct vk_sample_locations_state *new_sl = NULL;
    if (needs & MESA_VK_GRAPHICS_STATE_MULTISAMPLE_BIT) {
-      sl_info = vk_find_struct_const(info->pMultisampleState->pNext,
-                                     PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT);
+      if (info->pMultisampleState)
+         sl_info = vk_find_struct_const(info->pMultisampleState->pNext,
+                                       PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT);
       if (needs_sample_locations_state(dynamic, sl_info)) {
          if (all == NULL) {
             vk_multialloc_add(&ma, &new_sl, struct vk_sample_locations_state, 1);

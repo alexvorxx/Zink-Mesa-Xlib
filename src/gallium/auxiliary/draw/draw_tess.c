@@ -181,7 +181,7 @@ int draw_tess_ctrl_shader_run(struct draw_tess_ctrl_shader *shader,
    output_prims->start = 0;
    output_prims->elts = NULL;
    output_prims->count = 0;
-   output_prims->prim = PIPE_PRIM_PATCHES;
+   output_prims->prim = MESA_PRIM_PATCHES;
    output_prims->flags = 0;
    output_prims->primitive_lengths = NULL;
    output_prims->primitive_count = 0;
@@ -641,12 +641,12 @@ void draw_tes_set_current_variant(struct draw_tess_eval_shader *shader,
 }
 #endif
 
-enum pipe_prim_type get_tes_output_prim(struct draw_tess_eval_shader *shader)
+enum mesa_prim get_tes_output_prim(struct draw_tess_eval_shader *shader)
 {
    if (shader->point_mode)
-      return PIPE_PRIM_POINTS;
-   else if (shader->prim_mode == PIPE_PRIM_LINES)
-      return PIPE_PRIM_LINES;
+      return MESA_PRIM_POINTS;
+   else if (shader->prim_mode == MESA_PRIM_LINES)
+      return MESA_PRIM_LINES;
    else
-      return PIPE_PRIM_TRIANGLES;
+      return MESA_PRIM_TRIANGLES;
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086 # we want word splitting
 
-set -e
-set -x
+set -ex
 
 # If we run in the fork (not from mesa or Marge-bot), reuse mainline kernel and rootfs, if exist.
 BASE_SYSTEM_HOST_PATH="${BASE_SYSTEM_MAINLINE_HOST_PATH}"

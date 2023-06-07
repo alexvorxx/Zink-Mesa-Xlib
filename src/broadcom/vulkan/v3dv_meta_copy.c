@@ -1207,14 +1207,21 @@ copy_image_blit(struct v3dv_cmd_buffer *cmd_buffer,
     * (since the region dimensions are already specified in terms of the source
     * image).
     */
+   uint32_t region_width = region->extent.width * src_scale_w;
+   uint32_t region_height = region->extent.height * src_scale_h;
+   if (src_block_w > 1)
+      region_width = util_next_power_of_two(region_width);
+   if (src_block_h > 1)
+      region_height = util_next_power_of_two(region_height);
+
    const VkOffset3D src_start = {
       region->srcOffset.x * src_scale_w,
       region->srcOffset.y * src_scale_h,
       region->srcOffset.z,
    };
    const VkOffset3D src_end = {
-      src_start.x + region->extent.width * src_scale_w,
-      src_start.y + region->extent.height * src_scale_h,
+      src_start.x + region_width,
+      src_start.y + region_height,
       src_start.z + region->extent.depth,
    };
 
@@ -1224,8 +1231,8 @@ copy_image_blit(struct v3dv_cmd_buffer *cmd_buffer,
       region->dstOffset.z,
    };
    const VkOffset3D dst_end = {
-      dst_start.x + region->extent.width * src_scale_w,
-      dst_start.y + region->extent.height * src_scale_h,
+      dst_start.x + region_width,
+      dst_start.y + region_height,
       dst_start.z + region->extent.depth,
    };
 
@@ -1539,11 +1546,13 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    else
       height = region->bufferImageHeight;
 
-   uint8_t plane =
+   const uint8_t plane =
       v3dv_plane_from_aspect(region->imageSubresource.aspectMask);
 
-   if (width != image->planes[plane].width ||
-       height != image->planes[plane].height)
+   const uint32_t mip_level = region->imageSubresource.mipLevel;
+   const struct v3d_resource_slice *slice = &image->planes[plane].slices[mip_level];
+
+   if (width != slice->width || height != slice->height)
       return false;
 
    /* Handle region semantics for compressed images */
@@ -1565,9 +1574,6 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    /* We only use single-plane formats with the TFU */
    assert(format->plane_count == 1);
    const struct v3dv_format_plane *format_plane = &format->planes[0];
-
-   const uint32_t mip_level = region->imageSubresource.mipLevel;
-   const struct v3d_resource_slice *slice = &image->planes[plane].slices[mip_level];
 
    uint32_t num_layers;
    if (image->vk.image_type != VK_IMAGE_TYPE_3D)
@@ -1855,8 +1861,8 @@ get_texel_buffer_copy_gs()
    nir->info.inputs_read = 1ull << VARYING_SLOT_POS;
    nir->info.outputs_written = (1ull << VARYING_SLOT_POS) |
                                (1ull << VARYING_SLOT_LAYER);
-   nir->info.gs.input_primitive = SHADER_PRIM_TRIANGLES;
-   nir->info.gs.output_primitive = SHADER_PRIM_TRIANGLE_STRIP;
+   nir->info.gs.input_primitive = MESA_PRIM_TRIANGLES;
+   nir->info.gs.output_primitive = MESA_PRIM_TRIANGLE_STRIP;
    nir->info.gs.vertices_in = 3;
    nir->info.gs.vertices_out = 3;
    nir->info.gs.invocations = 1;
@@ -2008,10 +2014,8 @@ get_texel_buffer_copy_fs(struct v3dv_device *device, VkFormat format,
    nir_tex_instr *tex = nir_tex_instr_create(b.shader, 2);
    tex->sampler_dim = GLSL_SAMPLER_DIM_BUF;
    tex->op = nir_texop_txf;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(texel_offset);
-   tex->src[1].src_type = nir_tex_src_texture_deref;
-   tex->src[1].src = nir_src_for_ssa(tex_deref);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, texel_offset);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_texture_deref, tex_deref);
    tex->dest_type = nir_type_uint32;
    tex->is_array = false;
    tex->coord_components = 1;
@@ -3324,7 +3328,7 @@ gen_tex_coords(nir_builder *b)
     */
 
    nir_ssa_def *one = nir_imm_int(b, 1);
-   nir_ssa_def *c0cmp = nir_ilt(b, vertex_id, nir_imm_int(b, 2));
+   nir_ssa_def *c0cmp = nir_ilt_imm(b, vertex_id, 2);
    nir_ssa_def *c1cmp = nir_ieq(b, nir_iand(b, vertex_id, one), one);
 
    nir_ssa_def *comp[4];
@@ -3359,12 +3363,9 @@ build_nir_tex_op_read(struct nir_builder *b,
    nir_tex_instr *tex = nir_tex_instr_create(b->shader, 3);
    tex->sampler_dim = dim;
    tex->op = nir_texop_tex;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(tex_pos);
-   tex->src[1].src_type = nir_tex_src_texture_deref;
-   tex->src[1].src = nir_src_for_ssa(tex_deref);
-   tex->src[2].src_type = nir_tex_src_sampler_deref;
-   tex->src[2].src = nir_src_for_ssa(tex_deref);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, tex_pos);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_texture_deref, tex_deref);
+   tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref, tex_deref);
    tex->dest_type = nir_get_nir_type_for_glsl_base_type(tex_type);
    tex->is_array = glsl_sampler_type_is_array(sampler_type);
    tex->coord_components = tex_pos->num_components;
@@ -3385,14 +3386,10 @@ build_nir_tex_op_ms_fetch_sample(struct nir_builder *b,
    nir_tex_instr *tex = nir_tex_instr_create(b->shader, 4);
    tex->sampler_dim = GLSL_SAMPLER_DIM_MS;
    tex->op = nir_texop_txf_ms;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(tex_pos);
-   tex->src[1].src_type = nir_tex_src_texture_deref;
-   tex->src[1].src = nir_src_for_ssa(tex_deref);
-   tex->src[2].src_type = nir_tex_src_sampler_deref;
-   tex->src[2].src = nir_src_for_ssa(tex_deref);
-   tex->src[3].src_type = nir_tex_src_ms_index;
-   tex->src[3].src = nir_src_for_ssa(sample_idx);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, tex_pos);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_texture_deref, tex_deref);
+   tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref, tex_deref);
+   tex->src[3] = nir_tex_src_for_ssa(nir_tex_src_ms_index, sample_idx);
    tex->dest_type = nir_get_nir_type_for_glsl_base_type(tex_type);
    tex->is_array = false;
    tex->coord_components = tex_pos->num_components;
@@ -3437,7 +3434,7 @@ build_nir_tex_op_ms_resolve(struct nir_builder *b,
    }
 
    assert(!is_int);
-   return nir_fmul(b, tmp, nir_imm_float(b, 1.0f / src_samples));
+   return nir_fmul_imm(b, tmp, 1.0f / src_samples);
 }
 
 /* Fetches the current sample (gl_SampleID) at the given position */

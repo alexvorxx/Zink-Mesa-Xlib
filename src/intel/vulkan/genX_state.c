@@ -179,6 +179,24 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
    device->l3_config = cfg;
 #endif
 
+#if GFX_VER >= 125
+   /* Wa_14014427904 - We need additional invalidate/flush when
+    * emitting NP state commands with ATS-M in compute mode.
+    */
+   if (intel_device_info_is_atsm(device->info) &&
+       queue->family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
+         pc.CommandStreamerStallEnable = true;
+         pc.StateCacheInvalidationEnable = true;
+         pc.ConstantCacheInvalidationEnable = true;
+         pc.UntypedDataPortCacheFlushEnable = true;
+         pc.TextureCacheInvalidationEnable = true;
+         pc.InstructionCacheInvalidateEnable = true;
+         pc.HDCPipelineFlushEnable = true;
+      }
+   }
+#endif
+
    /* Emit STATE_BASE_ADDRESS on Gfx12+ because we set a default CPS_STATE and
     * those are relative to STATE_BASE_ADDRESS::DynamicStateBaseAddress.
     */
@@ -243,18 +261,39 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       sba.InstructionBaseAddressModifyEnable = true;
       sba.InstructionBuffersizeModifyEnable = true;
 
-      sba.BindlessSurfaceStateBaseAddress =
-         (struct anv_address) { .offset =
-         device->physical->va.bindless_surface_state_pool.addr,
-      };
-      sba.BindlessSurfaceStateSize = (1 << 20) - 1;
-      sba.BindlessSurfaceStateMOCS = mocs;
-      sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
+      if (device->physical->indirect_descriptors) {
+         sba.BindlessSurfaceStateBaseAddress =
+            (struct anv_address) { .offset =
+            device->physical->va.bindless_surface_state_pool.addr,
+         };
+         sba.BindlessSurfaceStateSize =
+            anv_physical_device_bindless_heap_size(device->physical) / ANV_SURFACE_STATE_SIZE - 1;
+         sba.BindlessSurfaceStateMOCS = mocs;
+         sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
 
-      sba.BindlessSamplerStateBaseAddress = (struct anv_address) { NULL, 0 };
-      sba.BindlessSamplerStateMOCS = mocs;
-      sba.BindlessSamplerStateBaseAddressModifyEnable = true;
-      sba.BindlessSamplerStateBufferSize = 0;
+         sba.BindlessSamplerStateBaseAddress = (struct anv_address) { NULL, 0 };
+         sba.BindlessSamplerStateMOCS = mocs;
+         sba.BindlessSamplerStateBaseAddressModifyEnable = true;
+         sba.BindlessSamplerStateBufferSize = 0;
+      } else {
+         /* Bindless Surface State & Bindless Sampler State are aligned to the
+          * same heap
+          */
+         sba.BindlessSurfaceStateBaseAddress =
+            sba.BindlessSamplerStateBaseAddress =
+            (struct anv_address) { .offset = device->physical->va.binding_table_pool.addr, };
+         sba.BindlessSurfaceStateSize =
+            (device->physical->va.binding_table_pool.size +
+             device->physical->va.internal_surface_state_pool.size +
+             device->physical->va.descriptor_pool.size) - 1;
+         sba.BindlessSamplerStateBufferSize =
+            (device->physical->va.binding_table_pool.size +
+             device->physical->va.internal_surface_state_pool.size +
+             device->physical->va.descriptor_pool.size) / 4096 - 1;
+         sba.BindlessSurfaceStateMOCS = sba.BindlessSamplerStateMOCS = mocs;
+         sba.BindlessSurfaceStateBaseAddressModifyEnable =
+            sba.BindlessSamplerStateBaseAddressModifyEnable = true;
+      }
 
 #if GFX_VERx10 >= 125
       sba.L1CacheControl = L1CC_WB;
@@ -536,6 +575,8 @@ genX(init_physical_device_state)(ASSERTED struct anv_physical_device *pdevice)
    genX(grl_load_rt_uuid)(pdevice->rt_uuid);
    pdevice->max_grl_scratch_size = genX(grl_max_scratch_size)();
 #endif
+
+   pdevice->cmd_emit_timestamp = genX(cmd_emit_timestamp);
 }
 
 VkResult

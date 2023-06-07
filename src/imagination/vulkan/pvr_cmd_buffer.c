@@ -31,6 +31,7 @@
 
 #include "hwdef/rogue_hw_defs.h"
 #include "hwdef/rogue_hw_utils.h"
+#include "pvr_blit.h"
 #include "pvr_bo.h"
 #include "pvr_clear.h"
 #include "pvr_common.h"
@@ -112,7 +113,8 @@ static void pvr_cmd_buffer_free_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
                                    &sub_cmd->transfer.transfer_cmds,
                                    link) {
             list_del(&transfer_cmd->link);
-            vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+            if (!transfer_cmd->is_deferred_clear)
+               vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
          }
          break;
 
@@ -924,7 +926,7 @@ static void pvr_setup_pbe_state(
    uint32_t pbe_cs_words[static const ROGUE_NUM_PBESTATE_STATE_WORDS],
    uint64_t pbe_reg_words[static const ROGUE_NUM_PBESTATE_REG_WORDS])
 {
-   const struct pvr_image *image = vk_to_pvr_image(iview->vk.image);
+   const struct pvr_image *image = pvr_image_view_get_image(iview);
    uint32_t level_pitch = image->mip_levels[iview->vk.base_mip_level].pitch;
 
    struct pvr_pbe_surf_params surface_params;
@@ -1085,33 +1087,180 @@ pvr_pass_get_pixel_output_width(const struct pvr_render_pass *pass,
  * to the nearest power-of-two (which will be tile-aligned). If the attachment
  * is not twiddled, we don't need to worry about tile-alignment at all.
  */
-static void
-pvr_sub_cmd_gfx_align_zls_subtiles(const struct pvr_device_info *dev_info,
-                                   const struct pvr_render_job *job,
-                                   const struct pvr_image *image)
+static bool pvr_sub_cmd_gfx_requires_ds_subtile_alignment(
+   const struct pvr_device_info *dev_info,
+   const struct pvr_render_job *job)
 {
+   const struct pvr_image *const ds_image =
+      pvr_image_view_get_image(job->ds.iview);
    uint32_t zls_tile_size_x;
    uint32_t zls_tile_size_y;
 
    rogue_get_zls_tile_size_xy(dev_info, &zls_tile_size_x, &zls_tile_size_y);
 
-   if (image->physical_extent.width >= zls_tile_size_x &&
-       image->physical_extent.height >= zls_tile_size_y) {
-      return;
+   if (ds_image->physical_extent.width >= zls_tile_size_x &&
+       ds_image->physical_extent.height >= zls_tile_size_y) {
+      return false;
    }
 
+   /* If we have the zls_subtile feature, we can skip the alignment iff:
+    *  - The attachment is not multisampled, and
+    *  - The depth and stencil attachments are the same.
+    */
    if (PVR_HAS_FEATURE(dev_info, zls_subtile) &&
-       image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
-       (job->has_stencil_attachment || !job->has_depth_attachment)) {
-      return;
+       ds_image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
+       job->has_stencil_attachment == job->has_depth_attachment) {
+      return false;
    }
 
-   pvr_finishme("Unaligned ZLS subtile");
-   mesa_logd("Image: %ux%u   ZLS tile: %ux%u\n",
-             image->physical_extent.width,
-             image->physical_extent.height,
-             zls_tile_size_x,
-             zls_tile_size_y);
+   /* No ZLS functions enabled; nothing to do. */
+   if ((!job->has_depth_attachment && !job->has_stencil_attachment) ||
+       (!job->ds.load && !job->ds.store)) {
+      return false;
+   }
+
+   return true;
+}
+
+static VkResult
+pvr_sub_cmd_gfx_align_ds_subtiles(struct pvr_cmd_buffer *const cmd_buffer,
+                                  struct pvr_sub_cmd_gfx *const gfx_sub_cmd)
+{
+   struct pvr_sub_cmd *const prev_sub_cmd =
+      container_of(gfx_sub_cmd, struct pvr_sub_cmd, gfx);
+   struct pvr_ds_attachment *const ds = &gfx_sub_cmd->job.ds;
+   const struct pvr_image *const ds_image = pvr_image_view_get_image(ds->iview);
+   const VkFormat copy_format = pvr_get_raw_copy_format(ds_image->vk.format);
+
+   struct pvr_suballoc_bo *buffer;
+   uint32_t buffer_layer_size;
+   VkBufferImageCopy2 region;
+   VkExtent2D zls_tile_size;
+   VkExtent2D rounded_size;
+   uint32_t buffer_size;
+   VkExtent2D scale;
+   VkResult result;
+
+   /* The operations below assume the last command in the buffer was the target
+    * gfx subcommand. Assert that this is the case.
+    */
+   assert(list_last_entry(&cmd_buffer->sub_cmds, struct pvr_sub_cmd, link) ==
+          prev_sub_cmd);
+
+   if (!ds->load && !ds->store)
+      return VK_SUCCESS;
+
+   rogue_get_zls_tile_size_xy(&cmd_buffer->device->pdevice->dev_info,
+                              &zls_tile_size.width,
+                              &zls_tile_size.height);
+   rogue_get_isp_scale_xy_from_samples(ds_image->vk.samples,
+                                       &scale.width,
+                                       &scale.height);
+
+   rounded_size = (VkExtent2D){
+      .width = ALIGN_POT(ds_image->physical_extent.width, zls_tile_size.width),
+      .height =
+         ALIGN_POT(ds_image->physical_extent.height, zls_tile_size.height),
+   };
+
+   buffer_layer_size = vk_format_get_blocksize(ds_image->vk.format) *
+                       rounded_size.width * rounded_size.height * scale.width *
+                       scale.height;
+
+   if (ds->iview->vk.layer_count > 1)
+      buffer_layer_size = ALIGN_POT(buffer_layer_size, ds_image->alignment);
+
+   buffer_size = buffer_layer_size * ds->iview->vk.layer_count;
+
+   result = pvr_cmd_buffer_alloc_mem(cmd_buffer,
+                                     cmd_buffer->device->heaps.general_heap,
+                                     buffer_size,
+                                     0,
+                                     &buffer);
+   if (result != VK_SUCCESS)
+      return result;
+
+   region = (VkBufferImageCopy2){
+      .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+      .pNext = NULL,
+      .bufferOffset = 0,
+      .bufferRowLength = rounded_size.width,
+      .bufferImageHeight = 0,
+      .imageSubresource = {
+         .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+         .mipLevel = ds->iview->vk.base_mip_level,
+         .baseArrayLayer = ds->iview->vk.base_array_layer,
+         .layerCount = ds->iview->vk.layer_count,
+      },
+      .imageOffset = { 0 },
+      .imageExtent = {
+         .width = ds->iview->vk.extent.width,
+         .height = ds->iview->vk.extent.height,
+         .depth = 1,
+      },
+   };
+
+   if (ds->load) {
+      result =
+         pvr_cmd_buffer_start_sub_cmd(cmd_buffer, PVR_SUB_CMD_TYPE_TRANSFER);
+      if (result != VK_SUCCESS)
+         return result;
+
+      result = pvr_copy_image_to_buffer_region_format(cmd_buffer,
+                                                      ds_image,
+                                                      buffer->dev_addr,
+                                                      &region,
+                                                      copy_format,
+                                                      copy_format);
+      if (result != VK_SUCCESS)
+         return result;
+
+      cmd_buffer->state.current_sub_cmd->transfer.serialize_with_frag = true;
+
+      result = pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
+      if (result != VK_SUCCESS)
+         return result;
+
+      /* Now we have to fiddle with cmd_buffer to place this transfer command
+       * *before* the target gfx subcommand.
+       */
+      list_move_to(&cmd_buffer->state.current_sub_cmd->link,
+                   &prev_sub_cmd->link);
+   }
+
+   if (ds->store) {
+      result =
+         pvr_cmd_buffer_start_sub_cmd(cmd_buffer, PVR_SUB_CMD_TYPE_TRANSFER);
+      if (result != VK_SUCCESS)
+         return result;
+
+      result = pvr_copy_buffer_to_image_region_format(cmd_buffer,
+                                                      buffer->dev_addr,
+                                                      ds_image,
+                                                      &region,
+                                                      copy_format,
+                                                      copy_format,
+                                                      0);
+      if (result != VK_SUCCESS)
+         return result;
+
+      cmd_buffer->state.current_sub_cmd->transfer.serialize_with_frag = true;
+
+      result = pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   /* Finally, patch up the target graphics sub_cmd to use the correctly-strided
+    * buffer.
+    */
+   ds->has_alignment_transfers = true;
+   ds->addr = buffer->dev_addr;
+   ds->physical_extent = rounded_size;
+
+   gfx_sub_cmd->wait_on_previous_transfer = true;
+
+   return VK_SUCCESS;
 }
 
 struct pvr_emit_state {
@@ -1183,6 +1332,18 @@ pvr_setup_emit_state(const struct pvr_device_info *dev_info,
    }
 }
 
+static inline bool
+pvr_is_render_area_tile_aligned(const struct pvr_cmd_buffer *cmd_buffer,
+                                const struct pvr_image_view *iview)
+{
+   const VkRect2D *render_area =
+      &cmd_buffer->state.render_pass_info.render_area;
+
+   return render_area->offset.x == 0 && render_area->offset.y == 0 &&
+          render_area->extent.height == iview->vk.extent.height &&
+          render_area->extent.width == iview->vk.extent.width;
+}
+
 static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
                                          struct pvr_cmd_buffer *cmd_buffer,
                                          struct pvr_sub_cmd_gfx *sub_cmd)
@@ -1236,6 +1397,8 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
       const struct pvr_load_op *load_op = hw_render->load_op;
       struct pvr_pds_upload load_op_program;
 
+      /* Recalculate Background Object(s). */
+
       /* FIXME: Should we free the PDS pixel event data or let it be freed
        * when the pool gets emptied?
        */
@@ -1288,26 +1451,35 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
 
    /* Setup depth/stencil job information. */
    if (hw_render->ds_attach_idx != VK_ATTACHMENT_UNUSED) {
-      struct pvr_image_view *iview =
+      struct pvr_image_view *ds_iview =
          render_pass_info->attachments[hw_render->ds_attach_idx];
-      const struct pvr_image *image = vk_to_pvr_image(iview->vk.image);
+      const struct pvr_image *ds_image = pvr_image_view_get_image(ds_iview);
 
-      job->has_depth_attachment = vk_format_has_depth(image->vk.format);
-      job->has_stencil_attachment = vk_format_has_stencil(image->vk.format);
+      job->has_depth_attachment = vk_format_has_depth(ds_image->vk.format);
+      job->has_stencil_attachment = vk_format_has_stencil(ds_image->vk.format);
 
       if (job->has_depth_attachment || job->has_stencil_attachment) {
          uint32_t level_pitch =
-            image->mip_levels[iview->vk.base_mip_level].pitch;
+            ds_image->mip_levels[ds_iview->vk.base_mip_level].pitch;
+         const bool render_area_is_tile_aligned =
+            pvr_is_render_area_tile_aligned(cmd_buffer, ds_iview);
+         bool store_was_optimised_out = false;
+         bool d_store = false, s_store = false;
+         bool d_load = false, s_load = false;
 
-         job->ds.addr = image->dev_addr;
+         job->ds.iview = ds_iview;
+         job->ds.addr = ds_image->dev_addr;
 
-         job->ds.stride = pvr_stride_from_pitch(level_pitch, iview->vk.format);
-         job->ds.height = iview->vk.extent.height;
-         job->ds.physical_width =
-            u_minify(image->physical_extent.width, iview->vk.base_mip_level);
-         job->ds.physical_height =
-            u_minify(image->physical_extent.height, iview->vk.base_mip_level);
-         job->ds.layer_size = image->layer_size;
+         job->ds.stride =
+            pvr_stride_from_pitch(level_pitch, ds_iview->vk.format);
+         job->ds.height = ds_iview->vk.extent.height;
+         job->ds.physical_extent = (VkExtent2D){
+            .width = u_minify(ds_image->physical_extent.width,
+                              ds_iview->vk.base_mip_level),
+            .height = u_minify(ds_image->physical_extent.height,
+                               ds_iview->vk.base_mip_level),
+         };
+         job->ds.layer_size = ds_image->layer_size;
 
          job->ds_clear_value = default_ds_clear_value;
 
@@ -1323,11 +1495,77 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
                job->ds_clear_value.stencil = clear_values->stencil;
          }
 
-         job->ds.vk_format = iview->vk.format;
-         job->ds.memlayout = image->memlayout;
-      }
+         job->ds.vk_format = ds_iview->vk.format;
+         job->ds.memlayout = ds_image->memlayout;
 
-      pvr_sub_cmd_gfx_align_zls_subtiles(dev_info, job, image);
+         if (job->has_depth_attachment) {
+            if (hw_render->depth_store || sub_cmd->barrier_store) {
+               const bool depth_init_is_clear = hw_render->depth_init ==
+                                                VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+               d_store = true;
+
+               if (hw_render->depth_store && render_area_is_tile_aligned &&
+                   !(sub_cmd->modifies_depth || depth_init_is_clear)) {
+                  d_store = false;
+                  store_was_optimised_out = true;
+               }
+            }
+
+            if (d_store && !render_area_is_tile_aligned) {
+               d_load = true;
+            } else if (hw_render->depth_init == VK_ATTACHMENT_LOAD_OP_LOAD) {
+               enum pvr_depth_stencil_usage depth_usage = sub_cmd->depth_usage;
+
+               assert(depth_usage != PVR_DEPTH_STENCIL_USAGE_UNDEFINED);
+               d_load = (depth_usage != PVR_DEPTH_STENCIL_USAGE_NEVER);
+            } else {
+               d_load = sub_cmd->barrier_load;
+            }
+         }
+
+         if (job->has_stencil_attachment) {
+            if (hw_render->stencil_store || sub_cmd->barrier_store) {
+               const bool stencil_init_is_clear = hw_render->stencil_init ==
+                                                  VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+               s_store = true;
+
+               if (hw_render->stencil_store && render_area_is_tile_aligned &&
+                   !(sub_cmd->modifies_stencil || stencil_init_is_clear)) {
+                  s_store = false;
+                  store_was_optimised_out = true;
+               }
+            }
+
+            if (s_store && !render_area_is_tile_aligned) {
+               s_load = true;
+            } else if (hw_render->stencil_init == VK_ATTACHMENT_LOAD_OP_LOAD) {
+               enum pvr_depth_stencil_usage stencil_usage =
+                  sub_cmd->stencil_usage;
+
+               assert(stencil_usage != PVR_DEPTH_STENCIL_USAGE_UNDEFINED);
+               s_load = (stencil_usage != PVR_DEPTH_STENCIL_USAGE_NEVER);
+            } else {
+               s_load = sub_cmd->barrier_load;
+            }
+         }
+
+         if (job->has_depth_attachment && job->has_stencil_attachment)
+            assert(d_store == s_store && d_load == s_load);
+
+         job->ds.store = d_store || s_store;
+         job->ds.load = d_load || s_load;
+
+         if (job->ds.load || job->ds.store || store_was_optimised_out)
+            job->process_empty_tiles = true;
+
+         if (pvr_sub_cmd_gfx_requires_ds_subtile_alignment(dev_info, job)) {
+            result = pvr_sub_cmd_gfx_align_ds_subtiles(cmd_buffer, sub_cmd);
+            if (result != VK_SUCCESS)
+               return result;
+         }
+      }
    } else {
       job->has_depth_attachment = false;
       job->has_stencil_attachment = false;
@@ -1337,7 +1575,7 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
    if (hw_render->ds_attach_idx != VK_ATTACHMENT_UNUSED) {
       struct pvr_image_view *iview =
          render_pass_info->attachments[hw_render->ds_attach_idx];
-      const struct pvr_image *image = vk_to_pvr_image(iview->vk.image);
+      const struct pvr_image *image = pvr_image_view_get_image(iview);
 
       /* If the HW render pass has a valid depth/stencil surface, determine the
        * sample count from the attachment's image.
@@ -1785,14 +2023,6 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
       if (result != VK_SUCCESS)
          return pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
 
-      if (pvr_sub_cmd_gfx_requires_split_submit(gfx_sub_cmd)) {
-         result = pvr_sub_cmd_gfx_build_terminate_ctrl_stream(device,
-                                                              cmd_buffer,
-                                                              gfx_sub_cmd);
-         if (result != VK_SUCCESS)
-            return pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
-      }
-
       result = pvr_cmd_buffer_emit_ppp_state(cmd_buffer,
                                              &gfx_sub_cmd->control_stream);
       if (result != VK_SUCCESS)
@@ -1807,6 +2037,14 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
                                         gfx_sub_cmd);
       if (result != VK_SUCCESS)
          return pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
+
+      if (pvr_sub_cmd_gfx_requires_split_submit(gfx_sub_cmd)) {
+         result = pvr_sub_cmd_gfx_build_terminate_ctrl_stream(device,
+                                                              cmd_buffer,
+                                                              gfx_sub_cmd);
+         if (result != VK_SUCCESS)
+            return pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
+      }
 
       break;
    }
@@ -1857,7 +2095,6 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
    }
 
    if (query_pool) {
-      struct pvr_sub_cmd_event *sub_cmd;
       struct pvr_query_info query_info;
 
       assert(query_bo);
@@ -1883,9 +2120,7 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
       if (result != VK_SUCCESS)
          return result;
 
-      sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-      *sub_cmd = (struct pvr_sub_cmd_event) {
+      cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
          .type = PVR_EVENT_TYPE_BARRIER,
          .barrier = {
             .wait_for_stage_mask = PVR_PIPELINE_STAGE_FRAG_BIT,
@@ -7269,31 +7504,37 @@ pvr_cmd_buffer_insert_mid_frag_barrier_event(struct pvr_cmd_buffer *cmd_buffer,
                                              uint32_t src_stage_mask,
                                              uint32_t dst_stage_mask)
 {
-   struct pvr_sub_cmd_event *sub_cmd;
    VkResult result;
 
    assert(cmd_buffer->state.current_sub_cmd->type == PVR_SUB_CMD_TYPE_GRAPHICS);
 
    cmd_buffer->state.current_sub_cmd->gfx.empty_cmd = false;
 
-   pvr_finishme("Handle mid frag barrier stencil store.");
+   /* Submit graphics job to store stencil. */
+   cmd_buffer->state.current_sub_cmd->gfx.barrier_store = true;
 
    pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
    result = pvr_cmd_buffer_start_sub_cmd(cmd_buffer, PVR_SUB_CMD_TYPE_EVENT);
    if (result != VK_SUCCESS)
       return result;
 
-   sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-   sub_cmd->type = PVR_EVENT_TYPE_BARRIER;
-   sub_cmd->barrier.in_render_pass = true;
-   sub_cmd->barrier.wait_for_stage_mask = src_stage_mask;
-   sub_cmd->barrier.wait_at_stage_mask = dst_stage_mask;
+   cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
+      .type = PVR_EVENT_TYPE_BARRIER,
+      .barrier = {
+         .in_render_pass = true,
+         .wait_for_stage_mask = src_stage_mask,
+         .wait_at_stage_mask = dst_stage_mask,
+      },
+   };
 
    pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
    pvr_cmd_buffer_start_sub_cmd(cmd_buffer, PVR_SUB_CMD_TYPE_GRAPHICS);
 
    pvr_finishme("Handle mid frag barrier color attachment load.");
+
+   /* Use existing render setup, but load color attachments from HW BGOBJ */
+   cmd_buffer->state.current_sub_cmd->gfx.barrier_load = true;
+   cmd_buffer->state.current_sub_cmd->gfx.barrier_store = false;
 
    return VK_SUCCESS;
 }
@@ -7303,18 +7544,19 @@ pvr_cmd_buffer_insert_barrier_event(struct pvr_cmd_buffer *cmd_buffer,
                                     uint32_t src_stage_mask,
                                     uint32_t dst_stage_mask)
 {
-   struct pvr_sub_cmd_event *sub_cmd;
    VkResult result;
 
    result = pvr_cmd_buffer_start_sub_cmd(cmd_buffer, PVR_SUB_CMD_TYPE_EVENT);
    if (result != VK_SUCCESS)
       return result;
 
-   sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-   sub_cmd->type = PVR_EVENT_TYPE_BARRIER;
-   sub_cmd->barrier.wait_for_stage_mask = src_stage_mask;
-   sub_cmd->barrier.wait_at_stage_mask = dst_stage_mask;
+   cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
+      .type = PVR_EVENT_TYPE_BARRIER,
+      .barrier = {
+         .wait_for_stage_mask = src_stage_mask,
+         .wait_at_stage_mask = dst_stage_mask,
+      },
+   };
 
    return pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
 }
@@ -7471,7 +7713,6 @@ void pvr_CmdResetEvent2(VkCommandBuffer commandBuffer,
 {
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    PVR_FROM_HANDLE(pvr_event, event, _event);
-   struct pvr_sub_cmd_event *sub_cmd;
    VkResult result;
 
    PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
@@ -7480,11 +7721,13 @@ void pvr_CmdResetEvent2(VkCommandBuffer commandBuffer,
    if (result != VK_SUCCESS)
       return;
 
-   sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-   sub_cmd->type = PVR_EVENT_TYPE_RESET;
-   sub_cmd->reset.event = event;
-   sub_cmd->reset.wait_for_stage_mask = pvr_stage_mask_src(stageMask);
+   cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
+      .type = PVR_EVENT_TYPE_RESET,
+      .set_reset = {
+         .event = event,
+         .wait_for_stage_mask = pvr_stage_mask_src(stageMask),
+      },
+   };
 
    pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
 }
@@ -7496,7 +7739,6 @@ void pvr_CmdSetEvent2(VkCommandBuffer commandBuffer,
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    PVR_FROM_HANDLE(pvr_event, event, _event);
    VkPipelineStageFlags2 stage_mask = 0;
-   struct pvr_sub_cmd_event *sub_cmd;
    VkResult result;
 
    PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
@@ -7514,11 +7756,13 @@ void pvr_CmdSetEvent2(VkCommandBuffer commandBuffer,
    for (uint32_t i = 0; i < pDependencyInfo->imageMemoryBarrierCount; i++)
       stage_mask |= pDependencyInfo->pImageMemoryBarriers[i].srcStageMask;
 
-   sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-   sub_cmd->type = PVR_EVENT_TYPE_SET;
-   sub_cmd->set.event = event;
-   sub_cmd->set.wait_for_stage_mask = pvr_stage_mask_dst(stage_mask);
+   cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
+      .type = PVR_EVENT_TYPE_SET,
+      .set_reset = {
+         .event = event,
+         .wait_for_stage_mask = pvr_stage_mask_dst(stage_mask),
+      },
+   };
 
    pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
 }
@@ -7529,7 +7773,6 @@ void pvr_CmdWaitEvents2(VkCommandBuffer commandBuffer,
                         const VkDependencyInfo *pDependencyInfos)
 {
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_sub_cmd_event *sub_cmd;
    struct pvr_event **events_array;
    uint32_t *stage_masks;
    VkResult result;
@@ -7571,12 +7814,14 @@ void pvr_CmdWaitEvents2(VkCommandBuffer commandBuffer,
       stage_masks[i] = pvr_stage_mask_dst(mask);
    }
 
-   sub_cmd = &cmd_buffer->state.current_sub_cmd->event;
-
-   sub_cmd->type = PVR_EVENT_TYPE_WAIT;
-   sub_cmd->wait.count = eventCount;
-   sub_cmd->wait.events = events_array;
-   sub_cmd->wait.wait_at_stage_masks = stage_masks;
+   cmd_buffer->state.current_sub_cmd->event = (struct pvr_sub_cmd_event){
+      .type = PVR_EVENT_TYPE_WAIT,
+      .wait = {
+         .count = eventCount,
+         .events = events_array,
+         .wait_at_stage_masks = stage_masks,
+      },
+   };
 
    pvr_cmd_buffer_end_sub_cmd(cmd_buffer);
 }

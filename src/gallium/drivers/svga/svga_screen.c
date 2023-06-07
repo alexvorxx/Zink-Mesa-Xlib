@@ -620,6 +620,9 @@ vgpu9_get_shader_param(struct pipe_screen *screen,
    case PIPE_SHADER_TESS_EVAL:
       /* no support for geometry, tess or compute shaders at this time */
       return 0;
+   case PIPE_SHADER_MESH:
+   case PIPE_SHADER_TASK:
+      return 0;
    default:
       debug_printf("Unexpected shader type (%u) query\n", shader);
       return 0;
@@ -638,6 +641,9 @@ vgpu10_get_shader_param(struct pipe_screen *screen,
 
    assert(sws->have_vgpu10);
    (void) sws;  /* silence unused var warnings in non-debug builds */
+
+   if (shader == PIPE_SHADER_MESH || shader == PIPE_SHADER_TASK)
+      return 0;
 
    if ((!sws->have_sm5) &&
        (shader == PIPE_SHADER_TESS_CTRL || shader == PIPE_SHADER_TESS_EVAL))

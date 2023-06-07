@@ -1,28 +1,8 @@
 /*
  * Copyright © 2011 Red Hat All Rights Reserved.
  * Copyright © 2017 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, AUTHORS
- * AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
- * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
+ * SPDX-License-Identifier: MIT
  */
 
 #define AC_SURFACE_INCLUDE_NIR
@@ -654,6 +634,47 @@ static int surf_config_sanity(const struct ac_surf_config *config, unsigned flag
    return 0;
 }
 
+static unsigned bpe_to_format(struct radeon_surf *surf)
+{
+   /* The format must be set correctly for the allocation of compressed
+    * textures to work. In other cases, setting the bpp is sufficient.
+    */
+   if (surf->blk_w == 4 && surf->blk_h == 4) {
+      switch (surf->bpe) {
+      case 8:
+         return ADDR_FMT_BC1;
+      case 16:
+         return ADDR_FMT_BC3;
+      default:
+         unreachable("invalid compressed bpe");
+      }
+   } else {
+      switch (surf->bpe) {
+      case 1:
+         assert(!(surf->flags & RADEON_SURF_ZBUFFER));
+         return ADDR_FMT_8;
+      case 2:
+         assert(surf->flags & RADEON_SURF_ZBUFFER || !(surf->flags & RADEON_SURF_SBUFFER));
+         return ADDR_FMT_16;
+      case 4:
+         assert(surf->flags & RADEON_SURF_ZBUFFER || !(surf->flags & RADEON_SURF_SBUFFER));
+         return ADDR_FMT_32;
+      case 8:
+         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
+         return ADDR_FMT_32_32;
+      case 12:
+         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
+         return ADDR_FMT_32_32_32;
+      case 16:
+         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
+         return ADDR_FMT_32_32_32_32;
+      default:
+         unreachable("invalid bpe");
+      }
+   }
+   return ADDR_FMT_INVALID;
+}
+
 /* The addrlib pitch alignment is forced to this number for all chips to support interop
  * between any 2 chips.
  */
@@ -1102,23 +1123,13 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib, const struct radeon_info *i
       assert(0);
    }
 
-   /* The format must be set correctly for the allocation of compressed
-    * textures to work. In other cases, setting the bpp is sufficient.
-    */
-   if (compressed) {
-      switch (surf->bpe) {
-      case 8:
-         AddrSurfInfoIn.format = ADDR_FMT_BC1;
-         break;
-      case 16:
-         AddrSurfInfoIn.format = ADDR_FMT_BC3;
-         break;
-      default:
-         assert(0);
-      }
-   } else {
+   AddrSurfInfoIn.format = bpe_to_format(surf);
+   if (!compressed)
       AddrDccIn.bpp = AddrSurfInfoIn.bpp = surf->bpe * 8;
-   }
+
+   /* Setting ADDR_FMT_32_32_32 breaks gfx6-8, while INVALID works. */
+   if (AddrSurfInfoIn.format == ADDR_FMT_32_32_32)
+      AddrSurfInfoIn.format = ADDR_FMT_INVALID;
 
    AddrDccIn.numSamples = AddrSurfInfoIn.numSamples = MAX2(1, config->info.samples);
    AddrSurfInfoIn.tileIndex = -1;
@@ -1298,6 +1309,7 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib, const struct radeon_info *i
    if (surf->flags & RADEON_SURF_SBUFFER) {
       AddrSurfInfoIn.tileIndex = stencil_tile_idx;
       AddrSurfInfoIn.bpp = 8;
+      AddrSurfInfoIn.format = ADDR_FMT_8;
       AddrSurfInfoIn.flags.depth = 0;
       AddrSurfInfoIn.flags.stencil = 1;
       AddrSurfInfoIn.flags.tcCompatible = 0;
@@ -1426,7 +1438,9 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib, const struct radeon_info *i
       surf->flags &= ~RADEON_SURF_TC_COMPATIBLE_HTILE;
    }
 
-   surf->is_linear = surf->u.legacy.level[0].mode == RADEON_SURF_MODE_LINEAR_ALIGNED;
+   surf->is_linear = (only_stencil ? surf->u.legacy.zs.stencil_level[0].mode :
+                                     surf->u.legacy.level[0].mode) == RADEON_SURF_MODE_LINEAR_ALIGNED;
+
    surf->is_displayable = surf->is_linear || surf->micro_tile_mode == RADEON_MICRO_MODE_DISPLAY ||
                           surf->micro_tile_mode == RADEON_MICRO_MODE_RENDER;
 
@@ -1793,11 +1807,14 @@ static int gfx9_compute_miptree(struct ac_addrlib *addrlib, const struct radeon_
    surf->surf_size = out.surfSize;
    surf->surf_alignment_log2 = util_logbase2(out.baseAlign);
 
+   const int linear_alignment =
+      util_next_power_of_two(LINEAR_PITCH_ALIGNMENT / surf->bpe);
+
    if (!compressed && surf->blk_w > 1 && out.pitch == out.pixelPitch &&
        surf->u.gfx9.swizzle_mode == ADDR_SW_LINEAR) {
       /* Adjust surf_pitch to be in elements units not in pixels */
       surf->u.gfx9.surf_pitch = align(surf->u.gfx9.surf_pitch / surf->blk_w,
-                                      LINEAR_PITCH_ALIGNMENT / surf->bpe);
+                                      linear_alignment);
       surf->u.gfx9.epitch =
          MAX2(surf->u.gfx9.epitch, surf->u.gfx9.surf_pitch * surf->blk_w - 1);
       /* The surface is really a surf->bpe bytes per pixel surface even if we
@@ -1810,11 +1827,11 @@ static int gfx9_compute_miptree(struct ac_addrlib *addrlib, const struct radeon_
               (uint64_t)surf->u.gfx9.surf_pitch * out.height * surf->bpe * surf->blk_w);
       surf->surf_size = surf->u.gfx9.surf_slice_size * in->numSlices;
 
-      int alignment = LINEAR_PITCH_ALIGNMENT / surf->bpe;
       for (unsigned i = 0; i < in->numMipLevels; i++) {
          surf->u.gfx9.offset[i] = mip_info[i].offset;
          /* Adjust pitch like we did for surf_pitch */
-         surf->u.gfx9.pitch[i] = align(mip_info[i].pitch / surf->blk_w, alignment);
+         surf->u.gfx9.pitch[i] = align(mip_info[i].pitch / surf->blk_w,
+                                       linear_alignment);
       }
       surf->u.gfx9.base_mip_width = surf->u.gfx9.surf_pitch;
    } else if (in->swizzleMode == ADDR_SW_LINEAR) {
@@ -2185,50 +2202,9 @@ static int gfx9_compute_surface(struct ac_addrlib *addrlib, const struct radeon_
 
    compressed = surf->blk_w == 4 && surf->blk_h == 4;
 
-   /* The format must be set correctly for the allocation of compressed
-    * textures to work. In other cases, setting the bpp is sufficient. */
-   if (compressed) {
-      switch (surf->bpe) {
-      case 8:
-         AddrSurfInfoIn.format = ADDR_FMT_BC1;
-         break;
-      case 16:
-         AddrSurfInfoIn.format = ADDR_FMT_BC3;
-         break;
-      default:
-         assert(0);
-      }
-   } else {
-      switch (surf->bpe) {
-      case 1:
-         assert(!(surf->flags & RADEON_SURF_ZBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_8;
-         break;
-      case 2:
-         assert(surf->flags & RADEON_SURF_ZBUFFER || !(surf->flags & RADEON_SURF_SBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_16;
-         break;
-      case 4:
-         assert(surf->flags & RADEON_SURF_ZBUFFER || !(surf->flags & RADEON_SURF_SBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_32;
-         break;
-      case 8:
-         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_32_32;
-         break;
-      case 12:
-         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_32_32_32;
-         break;
-      case 16:
-         assert(!(surf->flags & RADEON_SURF_Z_OR_SBUFFER));
-         AddrSurfInfoIn.format = ADDR_FMT_32_32_32_32;
-         break;
-      default:
-         assert(0);
-      }
+   AddrSurfInfoIn.format = bpe_to_format(surf);
+   if (!compressed)
       AddrSurfInfoIn.bpp = surf->bpe * 8;
-   }
 
    bool is_color_surface = !(surf->flags & RADEON_SURF_Z_OR_SBUFFER);
    AddrSurfInfoIn.flags.color = is_color_surface && !(surf->flags & RADEON_SURF_NO_RENDER_TARGET);
@@ -2415,7 +2391,8 @@ static int gfx9_compute_surface(struct ac_addrlib *addrlib, const struct radeon_
          return r;
    }
 
-   surf->is_linear = surf->u.gfx9.swizzle_mode == ADDR_SW_LINEAR;
+   surf->is_linear = (only_stencil ? surf->u.gfx9.zs.stencil_swizzle_mode :
+                                     surf->u.gfx9.swizzle_mode) == ADDR_SW_LINEAR;
 
    /* Query whether the surface is displayable. */
    /* This is only useful for surfaces that are allocated without SCANOUT. */
@@ -3022,20 +2999,21 @@ static uint32_t ac_surface_get_pitch_align(const struct radeon_info *info,
 }
 
 bool ac_surface_override_offset_stride(const struct radeon_info *info, struct radeon_surf *surf,
-                                       unsigned num_mipmap_levels, uint64_t offset, unsigned pitch)
+                                       unsigned num_layers, unsigned num_mipmap_levels,
+                                       uint64_t offset, unsigned pitch)
 {
    if ((ac_surface_get_pitch_align(info, surf) - 1) & pitch)
       return false;
 
-   /*
-    * GFX10 and newer don't support custom strides. Furthermore, for
-    * multiple miplevels or compression data we'd really need to rerun
-    * addrlib to update all the fields in the surface. That, however, is a
-    * software limitation and could be relaxed later.
+   /* Require an equal pitch with metadata (DCC), mipmapping, non-linear layout (that could be
+    * relaxed), or when the chip is GFX10, which is the only generation that can't override
+    * the pitch.
     */
    bool require_equal_pitch = surf->surf_size != surf->total_size ||
+                              num_layers != 1 ||
                               num_mipmap_levels != 1 ||
-                              info->gfx_level >= GFX10;
+                              !surf->is_linear ||
+                              info->gfx_level == GFX10;
 
    if (info->gfx_level >= GFX9) {
       if (pitch) {
@@ -3244,10 +3222,10 @@ void ac_surface_print_info(FILE *out, const struct radeon_info *info,
    if (info->gfx_level >= GFX9) {
       fprintf(out,
               "    Surf: size=%" PRIu64 ", slice_size=%" PRIu64 ", "
-              "alignment=%u, swmode=%u, epitch=%u, pitch=%u, blk_w=%u, "
+              "alignment=%u, swmode=%u, tile_swizzle=%u, epitch=%u, pitch=%u, blk_w=%u, "
               "blk_h=%u, bpe=%u, flags=0x%"PRIx64"\n",
               surf->surf_size, surf->u.gfx9.surf_slice_size,
-              1 << surf->surf_alignment_log2, surf->u.gfx9.swizzle_mode,
+              1 << surf->surf_alignment_log2, surf->u.gfx9.swizzle_mode, surf->tile_swizzle,
               surf->u.gfx9.epitch, surf->u.gfx9.surf_pitch,
               surf->blk_w, surf->blk_h, surf->bpe, surf->flags);
 
@@ -3509,4 +3487,121 @@ nir_ssa_def *ac_nir_htile_addr_from_coord(nir_builder *b, const struct radeon_in
    return gfx10_nir_meta_addr_from_coord(b, info, equation, -4, 2,
                                             htile_pitch, htile_slice_size,
                                             x, y, z, pipe_xor, NULL);
+}
+
+unsigned ac_get_cb_number_type(enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+   int chan = util_format_get_first_non_void_channel(format);
+
+   if (chan == -1 || desc->channel[chan].type == UTIL_FORMAT_TYPE_FLOAT) {
+      return V_028C70_NUMBER_FLOAT;
+   } else {
+      if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
+         return V_028C70_NUMBER_SRGB;
+      } else if (desc->channel[chan].type == UTIL_FORMAT_TYPE_SIGNED) {
+         return desc->channel[chan].pure_integer ? V_028C70_NUMBER_SINT : V_028C70_NUMBER_SNORM;
+      } else if (desc->channel[chan].type == UTIL_FORMAT_TYPE_UNSIGNED) {
+         return desc->channel[chan].pure_integer ? V_028C70_NUMBER_UINT : V_028C70_NUMBER_UNORM;
+      } else {
+         return V_028C70_NUMBER_UNORM;
+      }
+   }
+}
+
+unsigned ac_get_cb_format(enum amd_gfx_level gfx_level, enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+
+#define HAS_SIZE(x, y, z, w)                                                                       \
+   (desc->channel[0].size == (x) && desc->channel[1].size == (y) &&                                \
+    desc->channel[2].size == (z) && desc->channel[3].size == (w))
+
+   if (format == PIPE_FORMAT_R11G11B10_FLOAT) /* isn't plain */
+      return V_028C70_COLOR_10_11_11;
+
+   if (gfx_level >= GFX10_3 &&
+       format == PIPE_FORMAT_R9G9B9E5_FLOAT) /* isn't plain */
+      return V_028C70_COLOR_5_9_9_9;
+
+   if (desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
+      return V_028C70_COLOR_INVALID;
+
+   /* hw cannot support mixed formats (except depth/stencil, since
+    * stencil is not written to). */
+   if (desc->is_mixed && desc->colorspace != UTIL_FORMAT_COLORSPACE_ZS)
+      return V_028C70_COLOR_INVALID;
+
+   int first_non_void = util_format_get_first_non_void_channel(format);
+
+   /* Reject SCALED formats because we don't implement them for CB. */
+   if (first_non_void >= 0 && first_non_void <= 3 &&
+       (desc->channel[first_non_void].type == UTIL_FORMAT_TYPE_UNSIGNED ||
+        desc->channel[first_non_void].type == UTIL_FORMAT_TYPE_SIGNED) &&
+       !desc->channel[first_non_void].normalized &&
+       !desc->channel[first_non_void].pure_integer)
+      return V_028C70_COLOR_INVALID;
+
+   switch (desc->nr_channels) {
+   case 1:
+      switch (desc->channel[0].size) {
+      case 8:
+         return V_028C70_COLOR_8;
+      case 16:
+         return V_028C70_COLOR_16;
+      case 32:
+         return V_028C70_COLOR_32;
+      case 64:
+         return V_028C70_COLOR_32_32;
+      }
+      break;
+   case 2:
+      if (desc->channel[0].size == desc->channel[1].size) {
+         switch (desc->channel[0].size) {
+         case 8:
+            return V_028C70_COLOR_8_8;
+         case 16:
+            return V_028C70_COLOR_16_16;
+         case 32:
+            return V_028C70_COLOR_32_32;
+         }
+      } else if (HAS_SIZE(8, 24, 0, 0)) {
+         return V_028C70_COLOR_24_8;
+      } else if (HAS_SIZE(24, 8, 0, 0)) {
+         return V_028C70_COLOR_8_24;
+      }
+      break;
+   case 3:
+      if (HAS_SIZE(5, 6, 5, 0)) {
+         return V_028C70_COLOR_5_6_5;
+      } else if (HAS_SIZE(32, 8, 24, 0)) {
+         return V_028C70_COLOR_X24_8_32_FLOAT;
+      }
+      break;
+   case 4:
+      if (desc->channel[0].size == desc->channel[1].size &&
+          desc->channel[0].size == desc->channel[2].size &&
+          desc->channel[0].size == desc->channel[3].size) {
+         switch (desc->channel[0].size) {
+         case 4:
+            return V_028C70_COLOR_4_4_4_4;
+         case 8:
+            return V_028C70_COLOR_8_8_8_8;
+         case 16:
+            return V_028C70_COLOR_16_16_16_16;
+         case 32:
+            return V_028C70_COLOR_32_32_32_32;
+         }
+      } else if (HAS_SIZE(5, 5, 5, 1)) {
+         return V_028C70_COLOR_1_5_5_5;
+      } else if (HAS_SIZE(1, 5, 5, 5)) {
+         return V_028C70_COLOR_5_5_5_1;
+      } else if (HAS_SIZE(10, 10, 10, 2)) {
+         return V_028C70_COLOR_2_10_10_10;
+      } else if (HAS_SIZE(2, 10, 10, 10)) {
+         return V_028C70_COLOR_10_10_10_2;
+      }
+      break;
+   }
+   return V_028C70_COLOR_INVALID;
 }

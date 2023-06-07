@@ -404,7 +404,11 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
       container_of(device->vk.physical, struct dzn_physical_device, vk);
    struct nir_to_dxil_options opts = {
       .environment = DXIL_ENVIRONMENT_VULKAN,
-      .lower_int16 = !pdev->options4.Native16BitShaderOpsSupported,
+      .lower_int16 = !pdev->options4.Native16BitShaderOpsSupported &&
+      /* Don't lower 16-bit types if they can only come from min-precision */
+         (device->vk.enabled_extensions.KHR_shader_float16_int8 ||
+          device->vk.enabled_features.shaderFloat16 ||
+          device->vk.enabled_features.shaderInt16),
       .shader_model_max = dzn_get_shader_model(pdev),
       .input_clip_size = input_clip_size,
 #ifdef _WIN32

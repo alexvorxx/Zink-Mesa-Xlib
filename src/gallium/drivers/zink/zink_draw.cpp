@@ -11,7 +11,6 @@
 #include "zink_surface.h"
 #include "zink_inlines.h"
 
-#include "tgsi/tgsi_from_mesa.h"
 #include "util/hash_table.h"
 #include "util/u_cpu_detect.h"
 #include "util/u_debug.h"
@@ -268,7 +267,7 @@ draw(struct zink_context *ctx,
 
 template <zink_dynamic_state DYNAMIC_STATE, bool BATCH_CHANGED>
 static bool
-update_gfx_pipeline(struct zink_context *ctx, struct zink_batch_state *bs, enum pipe_prim_type mode)
+update_gfx_pipeline(struct zink_context *ctx, struct zink_batch_state *bs, enum mesa_prim mode)
 {
    VkPipeline prev_pipeline = ctx->gfx_pipeline_state.pipeline;
    const struct zink_screen *screen = zink_screen(ctx->base.screen);
@@ -308,30 +307,30 @@ update_gfx_pipeline(struct zink_context *ctx, struct zink_batch_state *bs, enum 
    return pipeline_changed;
 }
 
-static enum pipe_prim_type
+static enum mesa_prim
 zink_prim_type(const struct zink_context *ctx,
                const struct pipe_draw_info *dinfo)
 {
-   if (ctx->gfx_pipeline_state.shader_rast_prim != PIPE_PRIM_MAX)
+   if (ctx->gfx_pipeline_state.shader_rast_prim != MESA_PRIM_COUNT)
       return ctx->gfx_pipeline_state.shader_rast_prim;
 
-   return u_reduced_prim((enum pipe_prim_type)dinfo->mode);
+   return u_reduced_prim((enum mesa_prim)dinfo->mode);
 }
 
-static enum pipe_prim_type
+static enum mesa_prim
 zink_rast_prim(const struct zink_context *ctx,
                const struct pipe_draw_info *dinfo)
 {
-   enum pipe_prim_type prim_type = zink_prim_type(ctx, dinfo);
-   assert(prim_type != PIPE_PRIM_MAX);
+   enum mesa_prim prim_type = zink_prim_type(ctx, dinfo);
+   assert(prim_type != MESA_PRIM_COUNT);
 
-   if (prim_type == PIPE_PRIM_TRIANGLES &&
+   if (prim_type == MESA_PRIM_TRIANGLES &&
        ctx->rast_state->base.fill_front != PIPE_POLYGON_MODE_FILL) {
       switch(ctx->rast_state->base.fill_front) {
       case PIPE_POLYGON_MODE_POINT:
-         return PIPE_PRIM_POINTS;
+         return MESA_PRIM_POINTS;
       case PIPE_POLYGON_MODE_LINE:
-         return PIPE_PRIM_LINES;
+         return MESA_PRIM_LINES;
       default:
          unreachable("unexpected polygon mode");
       }
@@ -369,7 +368,7 @@ zink_draw(struct pipe_context *pctx,
    bool reads_drawid = ctx->shader_reads_drawid;
    bool reads_basevertex = ctx->shader_reads_basevertex;
    unsigned work_count = ctx->batch.work_count;
-   enum pipe_prim_type mode = (enum pipe_prim_type)dinfo->mode;
+   enum mesa_prim mode = (enum mesa_prim)dinfo->mode;
 
    if (ctx->memory_barrier && !ctx->blitting)
       zink_flush_memory_barrier(ctx, false);
@@ -483,16 +482,16 @@ zink_draw(struct pipe_context *pctx,
    bool rast_state_changed = ctx->rast_state_changed;
    if (mode_changed || ctx->gfx_pipeline_state.modules_changed ||
        rast_state_changed) {
-      enum pipe_prim_type rast_prim = zink_rast_prim(ctx, dinfo);
+      enum mesa_prim rast_prim = zink_rast_prim(ctx, dinfo);
       if (rast_prim != ctx->gfx_pipeline_state.rast_prim) {
          bool points_changed =
-            (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_POINTS) !=
-            (rast_prim == PIPE_PRIM_POINTS);
+            (ctx->gfx_pipeline_state.rast_prim == MESA_PRIM_POINTS) !=
+            (rast_prim == MESA_PRIM_POINTS);
 
          prim_changed = ctx->gfx_pipeline_state.rast_prim != rast_prim;
 
          static bool rect_warned = false;
-         if (DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && rast_prim == PIPE_PRIM_LINES && !rect_warned && 
+         if (DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && rast_prim == MESA_PRIM_LINES && !rect_warned && 
              (VkLineRasterizationModeEXT)rast_state->hw_state.line_mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT) {
             if (screen->info.line_rast_feats.rectangularLines)
                rect_warned = true;
@@ -677,7 +676,7 @@ zink_draw(struct pipe_context *pctx,
 
    if (BATCH_CHANGED ||
        /* only re-emit on non-batch change when actually drawing lines */
-       ((ctx->line_width_changed || rast_prim_changed) && ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_LINES)) {
+       ((ctx->line_width_changed || rast_prim_changed) && ctx->gfx_pipeline_state.rast_prim == MESA_PRIM_LINES)) {
       VKCTX(CmdSetLineWidth)(batch->state->cmdbuf, rast_state->line_width);
       ctx->line_width_changed = false;
    }
@@ -686,7 +685,7 @@ zink_draw(struct pipe_context *pctx,
        ctx->gfx_pipeline_state.modules_changed ||
        rast_state_changed) {
       bool depth_bias =
-         zink_prim_type(ctx, dinfo) == PIPE_PRIM_TRIANGLES &&
+         zink_prim_type(ctx, dinfo) == MESA_PRIM_TRIANGLES &&
          rast_state->offset_fill;
 
       if (depth_bias) {

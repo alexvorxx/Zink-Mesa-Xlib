@@ -47,9 +47,9 @@ nir_cull_face(nir_builder *b, nir_variable *vertices, bool ccw)
                                                nir_fsub(b, v2, v0)),
                                    nir_imm_vec4(b, 0.0, 0.0, -1.0, 0.0));
    if (ccw)
-       return nir_fge(b, nir_imm_int(b, 0), dir);
+       return nir_fge(b, nir_imm_float(b, 0.0f), dir);
    else
-       return nir_flt(b, nir_imm_int(b, 0), dir);
+       return nir_flt(b, nir_imm_float(b, 0.0f), dir);
 }
 
 static void
@@ -280,8 +280,7 @@ d3d12_begin_emit_primitives_gs(struct emit_primitives_context *emit_ctx,
    emit_ctx->loop = nir_push_loop(b);
 
    emit_ctx->loop_index = nir_load_deref(b, emit_ctx->loop_index_deref);
-   nir_ssa_def *cmp = nir_ige(b, emit_ctx->loop_index,
-                              nir_imm_int(b, 3));
+   nir_ssa_def *cmp = nir_ige_imm(b, emit_ctx->loop_index, 3);
    nir_if *loop_check = nir_push_if(b, cmp);
    nir_jump(b, nir_jump_break);
    nir_pop_if(b, loop_check);
@@ -289,7 +288,7 @@ d3d12_begin_emit_primitives_gs(struct emit_primitives_context *emit_ctx,
    if (edgeflag_var) {
       nir_ssa_def *edge_flag =
          nir_load_deref(b, nir_build_deref_array(b, nir_build_deref_var(b, edgeflag_var), emit_ctx->loop_index));
-      nir_ssa_def *is_edge = nir_feq(b, nir_channel(b, edge_flag, 0), nir_imm_float(b, 1.0));
+      nir_ssa_def *is_edge = nir_feq_imm(b, nir_channel(b, edge_flag, 0), 1.0);
       if (emit_ctx->edgeflag_cmp)
          emit_ctx->edgeflag_cmp = nir_iand(b, emit_ctx->edgeflag_cmp, is_edge);
       else

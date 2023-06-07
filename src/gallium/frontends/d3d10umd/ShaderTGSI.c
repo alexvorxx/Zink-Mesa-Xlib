@@ -1873,19 +1873,19 @@ Shader_tgsi_translate(const unsigned *code,
          case D3D10_SB_PRIMITIVE_TOPOLOGY_POINTLIST:
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_OUTPUT_PRIM,
-                          PIPE_PRIM_POINTS);
+                          MESA_PRIM_POINTS);
             break;
 
          case D3D10_SB_PRIMITIVE_TOPOLOGY_LINESTRIP:
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_OUTPUT_PRIM,
-                          PIPE_PRIM_LINE_STRIP);
+                          MESA_PRIM_LINE_STRIP);
             break;
 
          case D3D10_SB_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_OUTPUT_PRIM,
-                          PIPE_PRIM_TRIANGLE_STRIP);
+                          MESA_PRIM_TRIANGLE_STRIP);
             break;
 
          default:
@@ -1903,35 +1903,35 @@ Shader_tgsi_translate(const unsigned *code,
             declare_vertices_in(&sx, 1);
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_INPUT_PRIM,
-                          PIPE_PRIM_POINTS);
+                          MESA_PRIM_POINTS);
             break;
 
          case D3D10_SB_PRIMITIVE_LINE:
             declare_vertices_in(&sx, 2);
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_INPUT_PRIM,
-                          PIPE_PRIM_LINES);
+                          MESA_PRIM_LINES);
             break;
 
          case D3D10_SB_PRIMITIVE_TRIANGLE:
             declare_vertices_in(&sx, 3);
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_INPUT_PRIM,
-                          PIPE_PRIM_TRIANGLES);
+                          MESA_PRIM_TRIANGLES);
             break;
 
          case D3D10_SB_PRIMITIVE_LINE_ADJ:
             declare_vertices_in(&sx, 4);
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_INPUT_PRIM,
-                          PIPE_PRIM_LINES_ADJACENCY);
+                          MESA_PRIM_LINES_ADJACENCY);
             break;
 
          case D3D10_SB_PRIMITIVE_TRIANGLE_ADJ:
             declare_vertices_in(&sx, 6);
             ureg_property(sx.ureg,
                           TGSI_PROPERTY_GS_INPUT_PRIM,
-                          PIPE_PRIM_TRIANGLES_ADJACENCY);
+                          MESA_PRIM_TRIANGLES_ADJACENCY);
             break;
 
          default:

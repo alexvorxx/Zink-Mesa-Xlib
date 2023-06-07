@@ -29,8 +29,6 @@
 #include "r300_reg.h"
 
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_parse.h"
-#include "tgsi/tgsi_ureg.h"
 
 #include "compiler/radeon_compiler.h"
 
@@ -67,6 +65,12 @@ static void r300_shader_read_vs_outputs(
             case TGSI_SEMANTIC_BCOLOR:
                 assert(index < ATTR_COLOR_COUNT);
                 vs_outputs->bcolor[index] = i;
+                break;
+
+            case TGSI_SEMANTIC_TEXCOORD:
+                assert(index < ATTR_TEXCOORD_COUNT);
+                vs_outputs->texcoord[index] = i;
+                vs_outputs->num_texcoord++;
                 break;
 
             case TGSI_SEMANTIC_GENERIC:
@@ -155,6 +159,13 @@ static void set_vertex_inputs_outputs(struct r300_vertex_program_compiler * c)
     }
 
     /* Texture coordinates. */
+    for (i = 0; i < ATTR_TEXCOORD_COUNT; i++) {
+        if (outputs->texcoord[i] != ATTR_UNUSED) {
+            c->code->outputs[outputs->texcoord[i]] = reg++;
+        }
+    }
+
+    /* Generics. */
     for (i = 0; i < ATTR_GENERIC_COUNT; i++) {
         if (outputs->generic[i] != ATTR_UNUSED) {
             c->code->outputs[outputs->generic[i]] = reg++;

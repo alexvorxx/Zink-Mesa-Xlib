@@ -652,7 +652,7 @@ lima_transfer_map(struct pipe_context *pctx,
 
       unsigned op = usage & PIPE_MAP_WRITE ?
          LIMA_GEM_WAIT_WRITE : LIMA_GEM_WAIT_READ;
-      lima_bo_wait(bo, op, PIPE_TIMEOUT_INFINITE);
+      lima_bo_wait(bo, op, OS_TIMEOUT_INFINITE);
    }
 
    if (!lima_bo_map(bo))
@@ -917,7 +917,7 @@ lima_texture_subdata(struct pipe_context *pctx,
    };
 
    lima_flush_job_accessing_bo(ctx, res->bo, true);
-   lima_bo_wait(res->bo, LIMA_GEM_WAIT_WRITE, PIPE_TIMEOUT_INFINITE);
+   lima_bo_wait(res->bo, LIMA_GEM_WAIT_WRITE, OS_TIMEOUT_INFINITE);
    if (!lima_bo_map(res->bo))
       return;
 

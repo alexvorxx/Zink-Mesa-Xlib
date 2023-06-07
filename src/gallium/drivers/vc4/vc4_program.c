@@ -31,7 +31,6 @@
 #include "util/ralloc.h"
 #include "util/hash_table.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_parse.h"
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir_types.h"
@@ -2536,7 +2535,6 @@ vc4_shader_state_create(struct pipe_context *pctx,
                    nir_var_shader_in | nir_var_shader_out | nir_var_uniform,
                    type_size, (nir_lower_io_options)0);
 
-        NIR_PASS_V(s, nir_lower_regs_to_ssa);
         NIR_PASS_V(s, nir_normalize_cubemap_coords);
 
         NIR_PASS_V(s, nir_lower_load_const_to_scalar);
@@ -2782,9 +2780,9 @@ vc4_update_compiled_fs(struct vc4_context *vc4, uint8_t prim_mode)
         memset(key, 0, sizeof(*key));
         vc4_setup_shared_key(vc4, &key->base, &vc4->fragtex);
         key->base.shader_state = vc4->prog.bind_fs;
-        key->is_points = (prim_mode == PIPE_PRIM_POINTS);
-        key->is_lines = (prim_mode >= PIPE_PRIM_LINES &&
-                         prim_mode <= PIPE_PRIM_LINE_STRIP);
+        key->is_points = (prim_mode == MESA_PRIM_POINTS);
+        key->is_lines = (prim_mode >= MESA_PRIM_LINES &&
+                         prim_mode <= MESA_PRIM_LINE_STRIP);
         key->blend = vc4->blend->rt[0];
         if (vc4->blend->logicop_enable) {
                 key->logicop_func = vc4->blend->logicop_func;
@@ -2857,7 +2855,7 @@ vc4_update_compiled_vs(struct vc4_context *vc4, uint8_t prim_mode)
                 key->attr_formats[i] = vc4->vtx->pipe[i].src_format;
 
         key->per_vertex_point_size =
-                (prim_mode == PIPE_PRIM_POINTS &&
+                (prim_mode == MESA_PRIM_POINTS &&
                  vc4->rasterizer->base.point_size_per_vertex);
 
         struct vc4_compiled_shader *vs =

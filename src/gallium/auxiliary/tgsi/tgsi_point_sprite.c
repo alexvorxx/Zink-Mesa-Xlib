@@ -503,7 +503,7 @@ psprite_property(struct tgsi_transform_context *ctx,
 {
    switch (prop->Property.PropertyName) {
    case TGSI_PROPERTY_GS_OUTPUT_PRIM:
-       prop->u[0].Data = PIPE_PRIM_TRIANGLE_STRIP;
+       prop->u[0].Data = MESA_PRIM_TRIANGLE_STRIP;
        break;
    case TGSI_PROPERTY_GS_MAX_OUTPUT_VERTICES:
        prop->u[0].Data *= 4;

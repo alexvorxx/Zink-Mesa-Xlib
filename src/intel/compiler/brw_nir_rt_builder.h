@@ -313,7 +313,7 @@ brw_nir_rt_load_globals_addr(nir_builder *b,
 {
    nir_ssa_def *data;
    data = brw_nir_rt_load_const(b, 16, addr, nir_imm_true(b));
-   defs->base_mem_addr = nir_pack_64_2x32(b, nir_channels(b, data, 0x3));
+   defs->base_mem_addr = nir_pack_64_2x32(b, nir_trim_vector(b, data, 2));
 
    defs->call_stack_handler_addr =
       nir_pack_64_2x32(b, nir_channels(b, data, 0x3 << 2));
@@ -781,7 +781,7 @@ brw_nir_rt_load_mem_ray_from_addr(nir_builder *b,
       brw_nir_rt_load(b, nir_iadd_imm(b, ray_addr, 48), 16, 4, 32),
    };
 
-   defs->orig = nir_channels(b, data[0], 0x7);
+   defs->orig = nir_trim_vector(b, data[0], 3);
    defs->dir = nir_vec3(b, nir_channel(b, data[0], 3),
                            nir_channel(b, data[1], 0),
                            nir_channel(b, data[1], 1));
@@ -926,8 +926,8 @@ brw_nir_rt_load_primitive_id_from_hit(nir_builder *b,
 {
    if (!is_procedural) {
       is_procedural =
-         nir_ieq(b, defs->leaf_type,
-                    nir_imm_int(b, BRW_RT_BVH_NODE_TYPE_PROCEDURAL));
+         nir_ieq_imm(b, defs->leaf_type,
+                        BRW_RT_BVH_NODE_TYPE_PROCEDURAL);
    }
 
    nir_ssa_def *prim_id_proc, *prim_id_quad;
@@ -973,7 +973,7 @@ brw_nir_rt_acceleration_structure_to_root_node(nir_builder *b,
     * BVH, we can find the root node at a given offset.
     */
    nir_ssa_def *root_node_ptr, *null_node_ptr;
-   nir_push_if(b, nir_ieq(b, as_addr, nir_imm_int64(b, 0)));
+   nir_push_if(b, nir_ieq_imm(b, as_addr, 0));
    {
       null_node_ptr = nir_imm_int64(b, 0);
    }

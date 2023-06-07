@@ -110,7 +110,7 @@ brw_nir_lower_launch_mesh_workgroups_instr(nir_builder *b, nir_instr *instr, voi
    /* Make sure that the mesh workgroup size is taken from the first invocation
     * (nir_intrinsic_launch_mesh_workgroups requirement)
     */
-   nir_ssa_def *cmp = nir_ieq(b, local_invocation_index, nir_imm_int(b, 0));
+   nir_ssa_def *cmp = nir_ieq_imm(b, local_invocation_index, 0);
    nir_if *if_stmt = nir_push_if(b, cmp);
    {
       /* TUE header contains 4 words:
@@ -684,8 +684,7 @@ brw_nir_initialize_mue(nir_shader *nir,
       /* Zero "remaining" primitive headers starting from the last one covered
        * by the loop above + workgroup_size.
        */
-      nir_ssa_def *cmp = nir_ilt(&b, local_invocation_index,
-                                     nir_imm_int(&b, remaining));
+      nir_ssa_def *cmp = nir_ilt_imm(&b, local_invocation_index, remaining);
       nir_if *if_stmt = nir_push_if(&b, cmp);
       {
          nir_ssa_def *prim = nir_iadd_imm(&b, local_invocation_index,

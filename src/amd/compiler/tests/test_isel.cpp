@@ -185,3 +185,54 @@ BEGIN_TEST(isel.sparse.clause)
       pbld.print_ir(VK_SHADER_STAGE_COMPUTE_BIT, "Assembly", true);
    }
 END_TEST
+
+#if LLVM_VERSION_MAJOR >= 15
+BEGIN_TEST(isel.discard_early_exit.mrtz)
+   QoShaderModuleCreateInfo vs = qoShaderModuleCreateInfoGLSL(VERTEX,
+      void main() {}
+   );
+   QoShaderModuleCreateInfo fs = qoShaderModuleCreateInfoGLSL(FRAGMENT,
+      void main() {
+         if (gl_FragCoord.w > 0.5)
+            discard;
+         gl_FragDepth = 1.0 / gl_FragCoord.z;
+      }
+   );
+
+   /* On GFX11, the discard early exit must use mrtz if the shader exports only depth. */
+   //>> exp mrtz v0, off, off, off done ; $_ $_
+   //! s_endpgm                         ; $_
+   //! BB1:
+   //! exp mrtz off, off, off, off done ; $_ $_
+   //! s_endpgm                         ; $_
+
+   PipelineBuilder pbld(get_vk_device(GFX11));
+   pbld.add_vsfs(vs, fs);
+   pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
+END_TEST
+
+BEGIN_TEST(isel.discard_early_exit.mrt0)
+   QoShaderModuleCreateInfo vs = qoShaderModuleCreateInfoGLSL(VERTEX,
+      void main() {}
+   );
+   QoShaderModuleCreateInfo fs = qoShaderModuleCreateInfoGLSL(FRAGMENT,
+      layout(location = 0) out vec4 out_color;
+      void main() {
+         if (gl_FragCoord.w > 0.5)
+            discard;
+         out_color = vec4(1.0 / gl_FragCoord.z);
+      }
+   );
+
+   /* On GFX11, the discard early exit must use mrt0 if the shader exports color. */
+   //>> exp mrt0 v0, v0, v0, v0 done    ; $_ $_
+   //! s_endpgm                         ; $_
+   //! BB1:
+   //! exp mrt0 off, off, off, off done ; $_ $_
+   //! s_endpgm                         ; $_
+
+   PipelineBuilder pbld(get_vk_device(GFX11));
+   pbld.add_vsfs(vs, fs);
+   pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
+END_TEST
+#endif

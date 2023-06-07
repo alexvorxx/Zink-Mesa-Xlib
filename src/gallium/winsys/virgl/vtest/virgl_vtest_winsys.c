@@ -606,7 +606,7 @@ static bool virgl_fence_wait(struct virgl_winsys *vws,
    if (timeout == 0)
       return !virgl_vtest_resource_is_busy(vws, res);
 
-   if (timeout != PIPE_TIMEOUT_INFINITE) {
+   if (timeout != OS_TIMEOUT_INFINITE) {
       int64_t start_time = os_time_get();
       timeout /= 1000;
       while (virgl_vtest_resource_is_busy(vws, res)) {

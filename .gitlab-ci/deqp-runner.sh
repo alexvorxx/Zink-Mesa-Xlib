@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086 # we want word splitting
 
 section_start test_setup "deqp: preparing test setup"
 
@@ -32,8 +33,6 @@ findmnt -n tmpfs ${SHADER_CACHE_HOME} || findmnt -n tmpfs ${SHADER_CACHE_DIR} ||
     mount -t tmpfs -o nosuid,nodev,size=2G,mode=1755 tmpfs ${SHADER_CACHE_DIR}
 }
 
-HANG_DETECTION_CMD=""
-
 if [ -z "$DEQP_SUITE" ]; then
     if [ -z "$DEQP_VER" ]; then
         echo 'DEQP_SUITE must be set to the name of your deqp-gpu_version.toml, or DEQP_VER must be set to something like "gles2", "gles31-khr" or "vk" for the test run'
@@ -50,7 +49,7 @@ if [ -z "$DEQP_SUITE" ]; then
     DEQP_OPTIONS="$DEQP_OPTIONS --deqp-gl-config-name=$DEQP_CONFIG"
     DEQP_OPTIONS="$DEQP_OPTIONS --deqp-visibility=hidden"
 
-    if [ "$DEQP_VER" = "vk" -a -z "$VK_DRIVER" ]; then
+    if [ "$DEQP_VER" = "vk" ] && [ -z "$VK_DRIVER" ]; then
         echo 'VK_DRIVER must be to something like "radeon" or "intel" for the test run'
         exit 1
     fi
@@ -59,11 +58,10 @@ if [ -z "$DEQP_SUITE" ]; then
     if [ "$DEQP_VER" = "vk" ]; then
        MUSTPASS=/deqp/mustpass/vk-$DEQP_VARIANT.txt
        DEQP=/deqp/external/vulkancts/modules/vulkan/deqp-vk
-       HANG_DETECTION_CMD="/parallel-deqp-runner/build/bin/hang-detection"
-    elif [ "$DEQP_VER" = "gles2" -o "$DEQP_VER" = "gles3" -o "$DEQP_VER" = "gles31" -o "$DEQP_VER" = "egl" ]; then
+    elif [ "$DEQP_VER" = "gles2" ] || [ "$DEQP_VER" = "gles3" ] || [ "$DEQP_VER" = "gles31" ] || [ "$DEQP_VER" = "egl" ]; then
        MUSTPASS=/deqp/mustpass/$DEQP_VER-$DEQP_VARIANT.txt
        DEQP=/deqp/modules/$DEQP_VER/deqp-$DEQP_VER
-    elif [ "$DEQP_VER" = "gles2-khr" -o "$DEQP_VER" = "gles3-khr" -o "$DEQP_VER" = "gles31-khr" -o "$DEQP_VER" = "gles32-khr" ]; then
+    elif [ "$DEQP_VER" = "gles2-khr" ] || [ "$DEQP_VER" = "gles3-khr" ] || [ "$DEQP_VER" = "gles31-khr" ] || [ "$DEQP_VER" = "gles32-khr" ]; then
        MUSTPASS=/deqp/mustpass/$DEQP_VER-$DEQP_VARIANT.txt
        DEQP=/deqp/external/openglcts/modules/glcts
     else
@@ -129,7 +127,7 @@ export VK_LAYER_SETTINGS_PATH=$INSTALL/$GPU_VERSION-validation-settings.txt
 
 report_load() {
     echo "System load: $(cut -d' ' -f1-3 < /proc/loadavg)"
-    echo "# of CPU cores: $(cat /proc/cpuinfo | grep processor | wc -l)"
+    echo "# of CPU cores: $(grep -c processor /proc/cpuinfo)"
 }
 
 if [ "$GALLIUM_DRIVER" = "virpipe" ]; then
@@ -149,10 +147,11 @@ fi
 
 if [ -z "$DEQP_SUITE" ]; then
     if [ -n "$DEQP_EXPECTED_RENDERER" ]; then
-        export DEQP_RUNNER_OPTIONS="$DEQP_RUNNER_OPTIONS --renderer-check "$DEQP_EXPECTED_RENDERER""
+        export DEQP_RUNNER_OPTIONS="$DEQP_RUNNER_OPTIONS --renderer-check $DEQP_EXPECTED_RENDERER"
     fi
-    if [ $DEQP_VER != vk -a $DEQP_VER != egl ]; then
-        export DEQP_RUNNER_OPTIONS="$DEQP_RUNNER_OPTIONS --version-check `cat $INSTALL/VERSION | sed 's/[() ]/./g'`"
+    if [ $DEQP_VER != vk ] && [ $DEQP_VER != egl ]; then
+	VER=$(sed 's/[() ]/./g' "$INSTALL/VERSION")
+        export DEQP_RUNNER_OPTIONS="$DEQP_RUNNER_OPTIONS --version-check $VER"
     fi
 fi
 
@@ -181,7 +180,7 @@ else
         --flakes $INSTALL/$GPU_VERSION-flakes.txt \
         --testlog-to-xml /deqp/executor/testlog-to-xml \
         --fraction-start $CI_NODE_INDEX \
-        --fraction `expr $CI_NODE_TOTAL \* ${DEQP_FRACTION:-1}` \
+	--fraction $((CI_NODE_TOTAL * ${DEQP_FRACTION:-1})) \
         --jobs ${FDO_CI_CONCURRENT:-4} \
 	$DEQP_RUNNER_OPTIONS
 fi

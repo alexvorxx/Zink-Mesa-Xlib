@@ -145,30 +145,30 @@ zink_bo_commit(struct zink_screen *screen, struct zink_resource *res, unsigned l
 static inline bool
 zink_bo_has_unflushed_usage(const struct zink_bo *bo)
 {
-   return zink_batch_usage_is_unflushed(bo->reads) ||
-          zink_batch_usage_is_unflushed(bo->writes);
+   return (zink_batch_usage_is_unflushed(bo->reads.u) && bo->reads.submit_count == bo->reads.u->submit_count) ||
+          (zink_batch_usage_is_unflushed(bo->writes.u) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
 static inline bool
 zink_bo_has_usage(const struct zink_bo *bo)
 {
-   return zink_batch_usage_exists(bo->reads) ||
-          zink_batch_usage_exists(bo->writes);
+   return (zink_batch_usage_exists(bo->reads.u) && bo->reads.submit_count == bo->reads.u->submit_count) ||
+          (zink_batch_usage_exists(bo->writes.u) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
 static inline bool
 zink_bo_usage_matches(const struct zink_bo *bo, const struct zink_batch_state *bs)
 {
-   return zink_batch_usage_matches(bo->reads, bs) ||
-          zink_batch_usage_matches(bo->writes, bs);
+   return (zink_batch_usage_matches(bo->reads.u, bs) && bo->reads.submit_count == bo->reads.u->submit_count) ||
+          (zink_batch_usage_matches(bo->writes.u, bs) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
 static inline bool
 zink_bo_usage_check_completion(struct zink_screen *screen, struct zink_bo *bo, enum zink_resource_access access)
 {
-   if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion(screen, bo->reads))
+   if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion(screen, bo->reads.u))
       return false;
-   if (access & ZINK_RESOURCE_ACCESS_WRITE && !zink_screen_usage_check_completion(screen, bo->writes))
+   if (access & ZINK_RESOURCE_ACCESS_WRITE && !zink_screen_usage_check_completion(screen, bo->writes.u))
       return false;
    return true;
 }
@@ -176,9 +176,9 @@ zink_bo_usage_check_completion(struct zink_screen *screen, struct zink_bo *bo, e
 static inline bool
 zink_bo_usage_check_completion_fast(struct zink_screen *screen, struct zink_bo *bo, enum zink_resource_access access)
 {
-   if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion_fast(screen, bo->reads))
+   if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion_fast(screen, bo->reads.u))
       return false;
-   if (access & ZINK_RESOURCE_ACCESS_WRITE && !zink_screen_usage_check_completion_fast(screen, bo->writes))
+   if (access & ZINK_RESOURCE_ACCESS_WRITE && !zink_screen_usage_check_completion_fast(screen, bo->writes.u))
       return false;
    return true;
 }
@@ -187,35 +187,38 @@ static inline void
 zink_bo_usage_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ)
-      zink_batch_usage_wait(ctx, bo->reads);
+      zink_batch_usage_wait(ctx, bo->reads.u);
    if (access & ZINK_RESOURCE_ACCESS_WRITE)
-      zink_batch_usage_wait(ctx, bo->writes);
+      zink_batch_usage_wait(ctx, bo->writes.u);
 }
 
 static inline void
 zink_bo_usage_try_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ)
-      zink_batch_usage_try_wait(ctx, bo->reads);
+      zink_batch_usage_try_wait(ctx, bo->reads.u);
    if (access & ZINK_RESOURCE_ACCESS_WRITE)
-      zink_batch_usage_try_wait(ctx, bo->writes);
+      zink_batch_usage_try_wait(ctx, bo->writes.u);
 }
 
 static inline void
 zink_bo_usage_set(struct zink_bo *bo, struct zink_batch_state *bs, bool write)
 {
-   if (write)
-      zink_batch_usage_set(&bo->writes, bs);
-   else
-      zink_batch_usage_set(&bo->reads, bs);
+   if (write) {
+      zink_batch_usage_set(&bo->writes.u, bs);
+      bo->writes.submit_count = bs->usage.submit_count;
+   } else {
+      zink_batch_usage_set(&bo->reads.u, bs);
+      bo->reads.submit_count = bs->usage.submit_count;
+   }
 }
 
 static inline bool
 zink_bo_usage_unset(struct zink_bo *bo, struct zink_batch_state *bs)
 {
-   zink_batch_usage_unset(&bo->reads, bs);
-   zink_batch_usage_unset(&bo->writes, bs);
-   return bo->reads || bo->writes;
+   zink_batch_usage_unset(&bo->reads.u, bs);
+   zink_batch_usage_unset(&bo->writes.u, bs);
+   return bo->reads.u || bo->writes.u;
 }
 
 

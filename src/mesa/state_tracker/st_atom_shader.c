@@ -79,6 +79,9 @@ update_gl_clamp(struct st_context *st, struct gl_program *prog, uint32_t *gl_cla
    if (!st->emulate_gl_clamp)
       return;
 
+   if (!st->ctx->Texture.NumSamplersWithClamp)
+      return;
+
    gl_clamp[0] = gl_clamp[1] = gl_clamp[2] = 0;
    GLbitfield samplers_used = prog->SamplersUsed;
    unsigned unit;

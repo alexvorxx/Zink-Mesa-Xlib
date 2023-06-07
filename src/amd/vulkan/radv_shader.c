@@ -613,7 +613,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
       .lower_to_fragment_fetch_amd = device->physical_device->use_fmask,
       .lower_lod_zero_width = true,
       .lower_invalid_implicit_lod = true,
-      .lower_array_layer_round_even = !device->physical_device->rad_info.conformant_trunc_coord,
    };
 
    NIR_PASS(_, nir, nir_lower_tex, &tex_options);
@@ -887,12 +886,12 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
    } else if (nir->info.stage == MESA_SHADER_GEOMETRY) {
       num_vertices_per_prim = nir->info.gs.vertices_in;
    } else if (nir->info.stage == MESA_SHADER_MESH) {
-      if (nir->info.mesh.primitive_type == SHADER_PRIM_POINTS)
+      if (nir->info.mesh.primitive_type == MESA_PRIM_POINTS)
          num_vertices_per_prim = 1;
-      else if (nir->info.mesh.primitive_type == SHADER_PRIM_LINES)
+      else if (nir->info.mesh.primitive_type == MESA_PRIM_LINES)
          num_vertices_per_prim = 2;
       else
-         assert(nir->info.mesh.primitive_type == SHADER_PRIM_TRIANGLES);
+         assert(nir->info.mesh.primitive_type == MESA_PRIM_TRIANGLES);
    } else {
       unreachable("NGG needs to be VS, TES or GS.");
    }
@@ -2125,18 +2124,13 @@ radv_fill_nir_compiler_options(struct radv_nir_compiler_options *options,
 
    options->robust_buffer_access = device->robust_buffer_access;
    options->wgp_mode = should_use_wgp;
-   options->family = device->physical_device->rad_info.family;
-   options->gfx_level = device->physical_device->rad_info.gfx_level;
-   options->has_3d_cube_border_color_mipmap = device->physical_device->rad_info.has_3d_cube_border_color_mipmap;
-   options->conformant_trunc_coord = device->physical_device->rad_info.conformant_trunc_coord;
+   options->info = &device->physical_device->rad_info;
    options->dump_shader = can_dump_shader;
    options->dump_preoptir =
       options->dump_shader && device->instance->debug_flags & RADV_DEBUG_PREOPTIR;
    options->record_ir = keep_shader_info;
    options->record_stats = keep_statistic_info;
    options->check_ir = device->instance->debug_flags & RADV_DEBUG_CHECKIR;
-   options->address32_hi = device->physical_device->rad_info.address32_hi;
-   options->has_ls_vgpr_init_bug = device->physical_device->rad_info.has_ls_vgpr_init_bug;
 
    if (!is_meta_shader)
       options->enable_mrt_output_nan_fixup = options->key.ps.epilog.enable_mrt_output_nan_fixup;
@@ -2363,7 +2357,7 @@ radv_create_rt_prolog(struct radv_device *device)
 
    radv_declare_shader_args(device, &pipeline_key, &info, MESA_SHADER_COMPUTE, MESA_SHADER_NONE,
                             RADV_SHADER_TYPE_DEFAULT, &in_args);
-   radv_declare_rt_shader_args(options.gfx_level, &out_args);
+   radv_declare_rt_shader_args(options.info->gfx_level, &out_args);
    info.user_sgprs_locs = in_args.user_sgprs_locs;
 
 #ifdef LLVM_AVAILABLE

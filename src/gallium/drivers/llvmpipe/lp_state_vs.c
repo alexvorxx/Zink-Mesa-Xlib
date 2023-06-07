@@ -29,7 +29,6 @@
 
 #include "pipe/p_defines.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_parse.h"
 #include "util/u_memory.h"
 #include "draw/draw_context.h"
 

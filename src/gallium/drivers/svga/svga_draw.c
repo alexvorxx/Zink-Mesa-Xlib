@@ -68,7 +68,7 @@ svga_hwtnl_destroy(struct svga_hwtnl *hwtnl)
 {
    unsigned i, j;
 
-   for (i = 0; i < PIPE_PRIM_MAX; i++) {
+   for (i = 0; i < MESA_PRIM_COUNT; i++) {
       for (j = 0; j < IDX_CACHE_MAX; j++) {
          pipe_resource_reference(&hwtnl->index_cache[i][j].buffer, NULL);
       }

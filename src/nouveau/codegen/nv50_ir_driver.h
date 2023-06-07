@@ -167,8 +167,8 @@ struct nv50_ir_prog_info_out
          uint8_t outputPatchSize;
          uint8_t partitioning;    /* PIPE_TESS_PART */
          int8_t winding;          /* +1 (clockwise) / -1 (counter-clockwise) */
-         uint8_t domain;          /* PIPE_PRIM_{QUADS,TRIANGLES,LINES} */
-         uint8_t outputPrim;      /* PIPE_PRIM_{TRIANGLES,LINES,POINTS} */
+         uint8_t domain;          /* MESA_PRIM_{QUADS,TRIANGLES,LINES} */
+         uint8_t outputPrim;      /* MESA_PRIM_{TRIANGLES,LINES,POINTS} */
       } tp;
       struct {
          uint8_t outputPrim;

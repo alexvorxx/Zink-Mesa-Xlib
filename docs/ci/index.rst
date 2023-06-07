@@ -248,7 +248,7 @@ directory.  You can hack on mesa and iterate testing the build with:
 
 .. code-block:: console
 
-   sudo docker run --rm -v `pwd`:/mesa $IMAGE ninja -C /mesa/_build
+   sudo docker run --rm -v `pwd`:/mesa $IMAGE meson compile -C /mesa/_build
 
 Running specific CI jobs
 ------------------------

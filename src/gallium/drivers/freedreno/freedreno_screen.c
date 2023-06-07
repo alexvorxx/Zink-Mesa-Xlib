@@ -146,6 +146,9 @@ fd_screen_destroy(struct pipe_screen *pscreen)
 {
    struct fd_screen *screen = fd_screen(pscreen);
 
+   if (screen->aux_ctx)
+      screen->aux_ctx->destroy(screen->aux_ctx);
+
    if (screen->tess_bo)
       fd_bo_del(screen->tess_bo);
 
@@ -338,7 +341,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
       if (is_a6xx(screen))
-         return 450;
+         return 460;
       else if (is_ir3(screen))
          return 140;
       else
@@ -470,6 +473,10 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return !is_a5xx(screen);
 
    /* Stream output. */
+   case PIPE_CAP_MAX_VERTEX_STREAMS:
+      if (is_a6xx(screen))  /* has SO + GS */
+         return PIPE_MAX_SO_BUFFERS;
+      return 0;
    case PIPE_CAP_MAX_STREAM_OUTPUT_BUFFERS:
       if (is_ir3(screen))
          return PIPE_MAX_SO_BUFFERS;
@@ -536,6 +543,8 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return (screen->max_freq > 0) &&
              (is_a4xx(screen) || is_a5xx(screen) || is_a6xx(screen));
    case PIPE_CAP_QUERY_BUFFER_OBJECT:
+   case PIPE_CAP_QUERY_SO_OVERFLOW:
+   case PIPE_CAP_QUERY_PIPELINE_STATISTICS_SINGLE:
       return is_a6xx(screen);
 
    case PIPE_CAP_VENDOR_ID:
@@ -643,6 +652,9 @@ fd_screen_get_shader_param(struct pipe_screen *pscreen,
    case PIPE_SHADER_COMPUTE:
       if (has_compute(screen))
          break;
+      return 0;
+   case PIPE_SHADER_TASK:
+   case PIPE_SHADER_MESH:
       return 0;
    default:
       mesa_loge("unknown shader type %d", shader);
@@ -883,11 +895,17 @@ fd_screen_bo_get_handle(struct pipe_screen *pscreen, struct fd_bo *bo,
       if (screen->ro) {
          return renderonly_get_handle(scanout, whandle);
       } else {
-         whandle->handle = fd_bo_handle(bo);
+         uint32_t handle = fd_bo_handle(bo);
+         if (!handle)
+            return false;
+         whandle->handle = handle;
          return true;
       }
    } else if (whandle->type == WINSYS_HANDLE_TYPE_FD) {
-      whandle->handle = fd_bo_dmabuf(bo);
+      int fd = fd_bo_dmabuf(bo);
+      if (fd < 0)
+         return false;
+      whandle->handle = fd;
       return true;
    } else {
       return false;
@@ -1168,7 +1186,7 @@ fd_screen_create(int fd,
    /* fdN_screen_init() should set this: */
    assert(screen->primtypes);
    screen->primtypes_mask = 0;
-   for (unsigned i = 0; i <= PIPE_PRIM_MAX; i++)
+   for (unsigned i = 0; i <= MESA_PRIM_COUNT; i++)
       if (screen->primtypes[i])
          screen->primtypes_mask |= (1 << i);
 
@@ -1224,9 +1242,34 @@ fd_screen_create(int fd,
 
    slab_create_parent(&screen->transfer_pool, sizeof(struct fd_transfer), 16);
 
+   simple_mtx_init(&screen->aux_ctx_lock, mtx_plain);
+
    return pscreen;
 
 fail:
    fd_screen_destroy(pscreen);
    return NULL;
+}
+
+struct fd_context *
+fd_screen_aux_context_get(struct pipe_screen *pscreen)
+{
+   struct fd_screen *screen = fd_screen(pscreen);
+
+   simple_mtx_lock(&screen->aux_ctx_lock);
+
+   if (!screen->aux_ctx) {
+      screen->aux_ctx = pscreen->context_create(pscreen, NULL, 0);
+   }
+
+   return fd_context(screen->aux_ctx);
+}
+
+void
+fd_screen_aux_context_put(struct pipe_screen *pscreen)
+{
+   struct fd_screen *screen = fd_screen(pscreen);
+
+   screen->aux_ctx->flush(screen->aux_ctx, NULL, 0);
+   simple_mtx_unlock(&screen->aux_ctx_lock);
 }

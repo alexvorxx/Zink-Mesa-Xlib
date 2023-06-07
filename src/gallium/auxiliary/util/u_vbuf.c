@@ -321,13 +321,13 @@ void u_vbuf_get_caps(struct pipe_screen *screen, struct u_vbuf_caps *caps,
        screen->get_param(screen, PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX)) {
       caps->rewrite_restart_index = screen->get_param(screen, PIPE_CAP_EMULATE_NONFIXED_PRIMITIVE_RESTART);
       caps->supported_restart_modes = screen->get_param(screen, PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART);
-      caps->supported_restart_modes |= BITFIELD_BIT(PIPE_PRIM_PATCHES);
-      if (caps->supported_restart_modes != BITFIELD_MASK(PIPE_PRIM_MAX))
+      caps->supported_restart_modes |= BITFIELD_BIT(MESA_PRIM_PATCHES);
+      if (caps->supported_restart_modes != BITFIELD_MASK(MESA_PRIM_COUNT))
          caps->fallback_always = true;
       caps->fallback_always |= caps->rewrite_restart_index;
    }
    caps->supported_prim_modes = screen->get_param(screen, PIPE_CAP_SUPPORTED_PRIM_MODES);
-   if (caps->supported_prim_modes != BITFIELD_MASK(PIPE_PRIM_MAX))
+   if (caps->supported_prim_modes != BITFIELD_MASK(MESA_PRIM_COUNT))
       caps->fallback_always = true;
 
    if (!screen->is_format_supported(screen, PIPE_FORMAT_R8_UINT, PIPE_BUFFER, 0, 0, PIPE_BIND_INDEX_BUFFER))
@@ -356,8 +356,8 @@ u_vbuf_create(struct pipe_context *pipe, struct u_vbuf_caps *caps)
    mgr->pipe = pipe;
    if (caps->rewrite_ubyte_ibs || caps->rewrite_restart_index ||
        /* require all but patches */
-       ((caps->supported_prim_modes & caps->supported_restart_modes & BITFIELD_MASK(PIPE_PRIM_MAX))) !=
-                                      BITFIELD_MASK(PIPE_PRIM_MAX)) {
+       ((caps->supported_prim_modes & caps->supported_restart_modes & BITFIELD_MASK(MESA_PRIM_COUNT))) !=
+                                      BITFIELD_MASK(MESA_PRIM_COUNT)) {
       struct primconvert_config cfg;
       cfg.fixed_prim_restart = caps->rewrite_restart_index;
       cfg.primtypes_mask = caps->supported_prim_modes;

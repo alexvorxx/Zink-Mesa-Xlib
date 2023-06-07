@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: MIT
 
 pps_panfrost_sources = [
-  'pan_pps_perf.cc',
-  'pan_pps_driver.cc'
+  'pan_pps_perf.cpp',
+  'pan_pps_driver.cpp'
 ]
 
 pps_panfrost_includes = [inc_include, inc_src, inc_tool]

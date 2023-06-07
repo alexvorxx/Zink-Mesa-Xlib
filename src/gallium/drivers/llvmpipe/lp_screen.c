@@ -81,6 +81,7 @@ static const struct debug_named_value lp_debug_flags[] = {
    { "cs", DEBUG_CS, NULL },
    { "tgsi_ir", DEBUG_TGSI_IR, NULL },
    { "accurate_a0", DEBUG_ACCURATE_A0 },
+   { "mesh", DEBUG_MESH },
    DEBUG_NAMED_VALUE_END
 };
 
@@ -391,6 +392,11 @@ llvmpipe_get_shader_param(struct pipe_screen *screen,
          return ((1 << PIPE_SHADER_IR_TGSI) |
                  (1 << PIPE_SHADER_IR_NIR) |
                  (1 << PIPE_SHADER_IR_NIR_SERIALIZED));
+      FALLTHROUGH;
+   case PIPE_SHADER_MESH:
+   case PIPE_SHADER_TASK:
+      if (lscreen->use_tgsi)
+         return 0;
       FALLTHROUGH;
    case PIPE_SHADER_FRAGMENT:
       if (param == PIPE_SHADER_CAP_PREFERRED_IR) {
@@ -909,7 +915,7 @@ llvmpipe_fence_finish(struct pipe_screen *screen,
       return lp_fence_signalled(f);
 
    if (!lp_fence_signalled(f)) {
-      if (timeout != PIPE_TIMEOUT_INFINITE)
+      if (timeout != OS_TIMEOUT_INFINITE)
          return lp_fence_timedwait(f, timeout);
 
       lp_fence_wait(f);

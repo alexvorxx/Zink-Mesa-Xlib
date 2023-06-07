@@ -42,14 +42,14 @@ PRIMS=('tris',
        'trisadj',
        'tristripadj')
 
-LONGPRIMS=('PIPE_PRIM_TRIANGLES',
-           'PIPE_PRIM_TRIANGLE_FAN',
-           'PIPE_PRIM_TRIANGLE_STRIP',
-           'PIPE_PRIM_QUADS',
-           'PIPE_PRIM_QUAD_STRIP',
-           'PIPE_PRIM_POLYGON',
-           'PIPE_PRIM_TRIANGLES_ADJACENCY',
-           'PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY')
+LONGPRIMS=('MESA_PRIM_TRIANGLES',
+           'MESA_PRIM_TRIANGLE_FAN',
+           'MESA_PRIM_TRIANGLE_STRIP',
+           'MESA_PRIM_QUADS',
+           'MESA_PRIM_QUAD_STRIP',
+           'MESA_PRIM_POLYGON',
+           'MESA_PRIM_TRIANGLES_ADJACENCY',
+           'MESA_PRIM_TRIANGLE_STRIP_ADJACENCY')
 
 longprim = dict(zip(PRIMS, LONGPRIMS))
 intype_idx = dict(ubyte='IN_UBYTE', ushort='IN_USHORT', uint='IN_UINT')

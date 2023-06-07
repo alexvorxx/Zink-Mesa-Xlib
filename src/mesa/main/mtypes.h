@@ -1323,6 +1323,8 @@ struct gl_texture_attrib
    /** GL_ARB_seamless_cubemap */
    GLboolean CubeMapSeamless;
 
+   GLshort NumSamplersWithClamp;
+
    struct gl_texture_unit Unit[MAX_COMBINED_TEXTURE_IMAGE_UNITS];
    struct gl_fixedfunc_texture_unit FixedFuncUnit[MAX_TEXTURE_COORD_UNITS];
 };

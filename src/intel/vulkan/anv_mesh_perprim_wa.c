@@ -25,7 +25,7 @@
 #include "nir_builder.h"
 
 /*
- * Wa_14015590813 for gfx 12.5.
+ * Wa_18019110168 for gfx 12.5.
  *
  * This file implements workaround for HW bug, which leads to fragment shader
  * reading incorrect per-primitive data if mesh shader, in addition to writing
@@ -532,7 +532,7 @@ anv_apply_per_prim_attr_wa(struct nir_shader *ms_nir,
    int mesh_conv_prim_attrs_to_vert_attrs =
          device->physical->instance->mesh_conv_prim_attrs_to_vert_attrs;
    if (mesh_conv_prim_attrs_to_vert_attrs < 0 &&
-         !intel_needs_workaround(devinfo, 14015590813))
+         !intel_needs_workaround(devinfo, 18019110168))
       mesh_conv_prim_attrs_to_vert_attrs = 0;
 
    if (mesh_conv_prim_attrs_to_vert_attrs != 0) {

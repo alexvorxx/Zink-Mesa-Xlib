@@ -36,6 +36,7 @@
 #include "prog_parameter.h"
 #include "prog_print.h"
 #include "program.h"
+#include "state_tracker/st_nir.h"
 
 /**
  * \file prog_to_nir.c
@@ -445,7 +446,7 @@ static void
 ptn_cmp(nir_builder *b, nir_alu_dest dest, nir_ssa_def **src)
 {
    ptn_move_dest(b, dest, nir_bcsel(b,
-                                    nir_flt(b, src[0], nir_imm_float(b, 0.0)),
+                                    nir_flt_imm(b, src[0], 0.0),
                                     src[1], src[2]));
 }
 
@@ -460,7 +461,7 @@ ptn_kil(nir_builder *b, nir_ssa_def **src)
 {
    /* flt must be exact, because NaN shouldn't discard. (apps rely on this) */
    b->exact = true;
-   nir_ssa_def *cmp = nir_bany(b, nir_flt(b, src[0], nir_imm_float(b, 0.0)));
+   nir_ssa_def *cmp = nir_bany(b, nir_flt_imm(b, src[0], 0.0));
    b->exact = false;
 
    nir_discard_if(b, cmp);
@@ -574,34 +575,33 @@ ptn_tex(struct ptn_compile *c, nir_alu_dest dest, nir_ssa_def **src,
 
    unsigned src_number = 0;
 
-   instr->src[src_number].src = nir_src_for_ssa(&deref->dest.ssa);
-   instr->src[src_number].src_type = nir_tex_src_texture_deref;
+   instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                                &deref->dest.ssa);
    src_number++;
-   instr->src[src_number].src = nir_src_for_ssa(&deref->dest.ssa);
-   instr->src[src_number].src_type = nir_tex_src_sampler_deref;
+   instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref,
+                                                &deref->dest.ssa);
    src_number++;
 
-   instr->src[src_number].src =
-      nir_src_for_ssa(nir_swizzle(b, src[0], SWIZ(X, Y, Z, W),
-                                  instr->coord_components));
-   instr->src[src_number].src_type = nir_tex_src_coord;
+   instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                                nir_trim_vector(b, src[0],
+                                                                instr->coord_components));
    src_number++;
 
    if (prog_inst->Opcode == OPCODE_TXP) {
-      instr->src[src_number].src = nir_src_for_ssa(ptn_channel(b, src[0], W));
-      instr->src[src_number].src_type = nir_tex_src_projector;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_projector,
+                                                   ptn_channel(b, src[0], W));
       src_number++;
    }
 
    if (prog_inst->Opcode == OPCODE_TXB) {
-      instr->src[src_number].src = nir_src_for_ssa(ptn_channel(b, src[0], W));
-      instr->src[src_number].src_type = nir_tex_src_bias;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_bias,
+                                                   ptn_channel(b, src[0], W));
       src_number++;
    }
 
    if (prog_inst->Opcode == OPCODE_TXL) {
-      instr->src[src_number].src = nir_src_for_ssa(ptn_channel(b, src[0], W));
-      instr->src[src_number].src_type = nir_tex_src_lod;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_lod,
+                                                   ptn_channel(b, src[0], W));
       src_number++;
    }
 
@@ -664,7 +664,6 @@ static const nir_op op_trans[MAX_OPCODE] = {
    [OPCODE_SUB] = nir_op_fsub,
    [OPCODE_SWZ] = 0,
    [OPCODE_TEX] = 0,
-   [OPCODE_TRUNC] = nir_op_ftrunc,
    [OPCODE_TXB] = 0,
    [OPCODE_TXD] = 0,
    [OPCODE_TXL] = 0,
@@ -1030,6 +1029,17 @@ prog_to_nir(const struct gl_context *ctx, const struct gl_program *prog,
    s->info.separate_shader = true;
    s->info.io_lowered = false;
    s->info.internal = false;
+
+   /* ARB_vp: */
+   if (prog->arb.IsPositionInvariant) {
+      NIR_PASS_V(s, st_nir_lower_position_invariant,
+                 ctx->Const.ShaderCompilerOptions[MESA_SHADER_VERTEX].OptimizeForAOS,
+                 prog->Parameters);
+   }
+
+   /* Add OPTION ARB_fog_exp code */
+   if (prog->arb.Fog)
+      NIR_PASS_V(s, st_nir_lower_fog, prog->arb.Fog, prog->Parameters);
 
 fail:
    if (c->error) {

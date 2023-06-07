@@ -37,6 +37,7 @@ struct vn_physical_device_features {
    VkPhysicalDeviceCustomBorderColorFeaturesEXT custom_border_color;
    VkPhysicalDeviceDepthClipControlFeaturesEXT depth_clip_control;
    VkPhysicalDeviceDepthClipEnableFeaturesEXT depth_clip_enable;
+   VkPhysicalDeviceImage2DViewOf3DFeaturesEXT image_2d_view_of_3d;
    VkPhysicalDeviceImageViewMinLodFeaturesEXT image_view_min_lod;
    VkPhysicalDeviceIndexTypeUint8FeaturesEXT index_type_uint8;
    VkPhysicalDeviceLineRasterizationFeaturesEXT line_rasterization;

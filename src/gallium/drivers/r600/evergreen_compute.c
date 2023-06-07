@@ -41,7 +41,6 @@
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
 #include "util/u_framebuffer.h"
-#include "tgsi/tgsi_parse.h"
 #include "pipebuffer/pb_buffer.h"
 #include "evergreend.h"
 #include "r600_shader.h"

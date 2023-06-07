@@ -32,6 +32,7 @@
 #include "util/hash_table.h"
 #define XXH_INLINE_ALL
 #include "util/xxhash.h"
+#include "vk_util.h"
 
 #include <stdbool.h>
 #include <inttypes.h>
@@ -167,6 +168,18 @@ spirv_builder_emit_exec_mode_literal3(struct spirv_builder *b, SpvId entry_point
 {
    spirv_buffer_prepare(&b->exec_modes, b->mem_ctx, 6);
    spirv_buffer_emit_word(&b->exec_modes, SpvOpExecutionMode | (6 << 16));
+   spirv_buffer_emit_word(&b->exec_modes, entry_point);
+   spirv_buffer_emit_word(&b->exec_modes, exec_mode);
+   for (unsigned i = 0; i < 3; i++)
+      spirv_buffer_emit_word(&b->exec_modes, param[i]);
+}
+
+void
+spirv_builder_emit_exec_mode_id3(struct spirv_builder *b, SpvId entry_point,
+                                SpvExecutionMode exec_mode, SpvId param[3])
+{
+   spirv_buffer_prepare(&b->exec_modes, b->mem_ctx, 6);
+   spirv_buffer_emit_word(&b->exec_modes, SpvOpExecutionModeId | (6 << 16));
    spirv_buffer_emit_word(&b->exec_modes, entry_point);
    spirv_buffer_emit_word(&b->exec_modes, exec_mode);
    for (unsigned i = 0; i < 3; i++)
@@ -1294,6 +1307,12 @@ SpvId
 spirv_builder_type_int(struct spirv_builder *b, unsigned width)
 {
    uint32_t args[] = { width, 1 };
+   if (width == 8)
+      spirv_builder_emit_cap(b, SpvCapabilityInt8);
+   else if (width == 16)
+      spirv_builder_emit_cap(b, SpvCapabilityInt16);
+   else if (width == 64)
+      spirv_builder_emit_cap(b, SpvCapabilityInt64);
    return get_type_def(b, SpvOpTypeInt, args, ARRAY_SIZE(args));
 }
 
@@ -1633,7 +1652,7 @@ spirv_builder_emit_var(struct spirv_builder *b, SpvId type,
 {
    assert(storage_class != SpvStorageClassGeneric);
    struct spirv_buffer *buf = storage_class != SpvStorageClassFunction ?
-                              &b->types_const_defs : &b->instructions;
+                              &b->types_const_defs : &b->local_vars;
 
    SpvId ret = spirv_builder_new_id(b);
    spirv_buffer_prepare(buf, b->mem_ctx, 4);
@@ -1690,6 +1709,7 @@ spirv_builder_get_num_words(struct spirv_builder *b)
           b->debug_names.num_words +
           b->decorations.num_words +
           b->types_const_defs.num_words +
+          b->local_vars.num_words +
           b->instructions.num_words;
 }
 
@@ -1723,7 +1743,6 @@ spirv_builder_get_words(struct spirv_builder *b, uint32_t *words,
       &b->debug_names,
       &b->decorations,
       &b->types_const_defs,
-      &b->instructions
    };
 
    for (int i = 0; i < ARRAY_SIZE(buffers); ++i) {
@@ -1736,7 +1755,19 @@ spirv_builder_get_words(struct spirv_builder *b, uint32_t *words,
              buffer->num_words * sizeof(uint32_t));
       written += buffer->num_words;
    }
+   typed_memcpy(&words[written], b->instructions.words, b->local_vars_begin);
+   written += b->local_vars_begin;
+   typed_memcpy(&words[written], b->local_vars.words, b->local_vars.num_words);
+   written += b->local_vars.num_words;
+   typed_memcpy(&words[written], &b->instructions.words[b->local_vars_begin], (b->instructions.num_words - b->local_vars_begin));
+   written += b->instructions.num_words - b->local_vars_begin;
 
    assert(written == spirv_builder_get_num_words(b));
    return written;
+}
+
+void
+spirv_builder_begin_local_vars(struct spirv_builder *b)
+{
+   b->local_vars_begin = b->instructions.num_words;
 }

@@ -619,8 +619,8 @@ build_blit_fs_shader(bool zscale)
    b->shader->info.num_textures = 1;
    BITSET_SET(b->shader->info.textures_used, 0);
 
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(nir_load_var(b, in_coords));
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                     nir_load_var(b, in_coords));
    tex->coord_components = coord_components;
 
    nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
@@ -675,12 +675,11 @@ build_ms_copy_fs_shader(void)
 
    nir_ssa_def *coord = nir_f2i32(b, nir_load_var(b, in_coords));
 
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(coord);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
    tex->coord_components = 2;
 
-   tex->src[1].src_type = nir_tex_src_ms_index;
-   tex->src[1].src = nir_src_for_ssa(nir_load_sample_id(b));
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
+                                     nir_load_sample_id(b));
 
    nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);

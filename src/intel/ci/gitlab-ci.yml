@@ -1,6 +1,6 @@
 .intel-common-test:
   extends:
-    - .lava-test-deqp:amd64
+    - .lava-test-deqp:x86_64
   variables:
     DTB: ""
     BOOT_METHOD: depthcharge
@@ -298,7 +298,7 @@ iris-cml-traces:
     HWCI_FREQ_MAX: "true"
     LAVA_TAGS: "cbg-0"
     # Ensure that we are using the release build artifact
-    MINIO_ARTIFACT_NAME: mesa-amd64-release
+    MINIO_ARTIFACT_NAME: mesa-x86_64-release
 
 iris-apl-traces-performance:
   extends:

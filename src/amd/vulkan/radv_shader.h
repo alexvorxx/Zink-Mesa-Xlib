@@ -77,6 +77,7 @@ struct radv_pipeline_key {
    uint32_t dynamic_rasterization_samples : 1;
    uint32_t dynamic_color_write_mask : 1;
    uint32_t dynamic_provoking_vtx_mode : 1;
+   uint32_t dynamic_line_rast_mode : 1;
    uint32_t tex_non_uniform : 1;
    uint32_t enable_remove_point_size : 1;
 
@@ -111,6 +112,8 @@ struct radv_pipeline_key {
 
       bool dynamic_ps_epilog;
       bool has_epilog;
+
+      bool line_smooth_enabled;
    } ps;
 
    struct {
@@ -130,14 +133,9 @@ struct radv_nir_compiler_options {
    bool record_ir;
    bool record_stats;
    bool check_ir;
-   bool has_ls_vgpr_init_bug;
    uint8_t enable_mrt_output_nan_fixup;
    bool wgp_mode;
-   enum radeon_family family;
-   enum amd_gfx_level gfx_level;
-   uint32_t address32_hi;
-   bool has_3d_cube_border_color_mipmap;
-   bool conformant_trunc_coord;
+   const struct radeon_info *info;
 
    struct {
       void (*func)(void *private_data, enum aco_compiler_debug_level level, const char *message);
@@ -165,7 +163,7 @@ enum radv_ud_index {
    AC_UD_VS_PROLOG_INPUTS,
    AC_UD_VS_MAX_UD,
    AC_UD_PS_EPILOG_PC,
-   AC_UD_PS_NUM_SAMPLES,
+   AC_UD_PS_STATE,
    AC_UD_PS_MAX_UD,
    AC_UD_CS_GRID_SIZE = AC_UD_SHADER_START,
    AC_UD_CS_SBT_DESCRIPTORS,
@@ -183,6 +181,21 @@ enum radv_ud_index {
    AC_UD_TES_MAX_UD,
    AC_UD_MAX_UD = AC_UD_CS_MAX_UD,
 };
+
+#define SET_SGPR_FIELD(field, value) \
+   (((unsigned)(value) & field##__MASK) << field##__SHIFT)
+
+#define TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS__SHIFT   0
+#define TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS__MASK    0x3f
+#define TCS_OFFCHIP_LAYOUT_NUM_PATCHES__SHIFT            6
+#define TCS_OFFCHIP_LAYOUT_NUM_PATCHES__MASK             0xff
+
+#define PS_STATE_NUM_SAMPLES__SHIFT    0
+#define PS_STATE_NUM_SAMPLES__MASK     0xf
+#define PS_STATE_LINE_RAST_MODE__SHIFT 4
+#define PS_STATE_LINE_RAST_MODE__MASK  0x3
+#define PS_STATE_PS_ITER_MASK__SHIFT   6
+#define PS_STATE_PS_ITER_MASK__MASK    0xffff
 
 struct radv_streamout_info {
    uint16_t num_outputs;
@@ -387,7 +400,7 @@ struct radv_shader_info {
       bool tes_reads_tess_factors : 1;
    } tcs;
    struct {
-      enum shader_prim output_prim;
+      enum mesa_prim output_prim;
       bool needs_ms_scratch_ring;
       bool has_task; /* If mesh shader is used together with a task shader. */
    } ms;

@@ -32,7 +32,6 @@
 #include "sp_texture.h"
 #include "sp_tex_sample.h"
 #include "sp_tex_tile_cache.h"
-#include "tgsi/tgsi_parse.h"
 
 static void
 cs_prepare(const struct sp_compute_shader *cs,

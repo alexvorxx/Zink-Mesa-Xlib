@@ -105,7 +105,7 @@ struct range_info {
  * \return true for success, false if out of memory
  */
 static boolean
-add_range(enum pipe_prim_type mode, struct range_info *info, unsigned start, unsigned count, unsigned index_bias)
+add_range(enum mesa_prim mode, struct range_info *info, unsigned start, unsigned count, unsigned index_bias)
 {
    /* degenerate primitive: ignore */
    if (!u_trim_pipe_prim(mode, (unsigned*)&count))

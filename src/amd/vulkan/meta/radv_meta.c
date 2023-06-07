@@ -127,6 +127,7 @@ radv_meta_save(struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_
    assert(flags & (RADV_META_SAVE_GRAPHICS_PIPELINE | RADV_META_SAVE_COMPUTE_PIPELINE));
 
    state->flags = flags;
+   state->active_occlusion_queries = 0;
    state->active_prims_gen_gds_queries = 0;
    state->active_prims_xfb_gds_queries = 0;
 
@@ -677,7 +678,7 @@ radv_meta_load_descriptor(nir_builder *b, unsigned desc_set, unsigned binding)
 {
    nir_ssa_def *rsrc = nir_vulkan_resource_index(b, 3, 32, nir_imm_int(b, 0), .desc_set = desc_set,
                                                  .binding = binding);
-   return nir_channels(b, rsrc, 0x3);
+   return nir_trim_vector(b, rsrc, 2);
 }
 
 nir_ssa_def *

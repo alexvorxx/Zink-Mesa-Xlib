@@ -53,7 +53,7 @@ struct llvm_middle_end {
 
    unsigned vertex_data_offset;
    unsigned vertex_size;
-   enum pipe_prim_type input_prim;
+   enum mesa_prim input_prim;
    unsigned opt;
 
    struct draw_llvm *llvm;
@@ -275,7 +275,7 @@ llvm_middle_end_prepare_tes(struct llvm_middle_end *fpme)
  */
 static void
 llvm_middle_end_prepare(struct draw_pt_middle_end *middle,
-                        enum pipe_prim_type in_prim,
+                        enum mesa_prim in_prim,
                         unsigned opt,
                         unsigned *max_vertices)
 {
@@ -286,13 +286,13 @@ llvm_middle_end_prepare(struct draw_pt_middle_end *middle,
    struct draw_geometry_shader *gs = draw->gs.geometry_shader;
    struct draw_tess_ctrl_shader *tcs = draw->tcs.tess_ctrl_shader;
    struct draw_tess_eval_shader *tes = draw->tes.tess_eval_shader;
-   const enum pipe_prim_type out_prim =
+   const enum mesa_prim out_prim =
       gs ? gs->output_primitive : tes ? get_tes_output_prim(tes) :
       u_assembled_prim(in_prim);
    unsigned point_line_clip = draw->rasterizer->fill_front == PIPE_POLYGON_MODE_POINT ||
                               draw->rasterizer->fill_front == PIPE_POLYGON_MODE_LINE ||
-                              out_prim == PIPE_PRIM_POINTS ||
-                              u_reduced_prim(out_prim) == PIPE_PRIM_LINES;
+                              out_prim == MESA_PRIM_POINTS ||
+                              u_reduced_prim(out_prim) == MESA_PRIM_LINES;
 
    fpme->input_prim = in_prim;
    fpme->opt = opt;
@@ -585,7 +585,7 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
 
    if (draw->collect_statistics) {
       draw->statistics.ia_vertices += prim_info->count;
-      if (prim_info->prim == PIPE_PRIM_PATCHES)
+      if (prim_info->prim == MESA_PRIM_PATCHES)
          draw->statistics.ia_primitives +=
             prim_info->count / draw->pt.vertices_per_patch;
       else
@@ -775,11 +775,11 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
 }
 
 
-static inline enum pipe_prim_type
-prim_type(enum pipe_prim_type prim, unsigned flags)
+static inline enum mesa_prim
+prim_type(enum mesa_prim prim, unsigned flags)
 {
    if (flags & DRAW_LINE_LOOP_AS_STRIP)
-      return PIPE_PRIM_LINE_STRIP;
+      return MESA_PRIM_LINE_STRIP;
    else
       return prim;
 }

@@ -8,7 +8,7 @@
 #include "spirv/nir_spirv.h"
 #include "util/mesa-sha1.h"
 #include "nir/nir_xfb_info.h"
-#include "nir/nir_vulkan.h"
+#include "vk_nir_convert_ycbcr.h"
 #include "vk_pipeline.h"
 #include "vk_util.h"
 
@@ -881,7 +881,7 @@ lower_fdm_instr(struct nir_builder *b, nir_instr *instr, void *data)
       nir_ssa_def *frag_offset =
          nir_load_frag_offset_ir3(b, view, .range = options->num_views);
       nir_ssa_def *unscaled_coord = nir_load_frag_coord_unscaled_ir3(b);
-      nir_ssa_def *xy = nir_channels(b, unscaled_coord, 0x3);
+      nir_ssa_def *xy = nir_trim_vector(b, unscaled_coord, 2);
       xy = nir_fmul(b, nir_fsub(b, xy, frag_offset), nir_i2f32(b, frag_size));
       return nir_vec4(b,
                       nir_channel(b, xy, 0),

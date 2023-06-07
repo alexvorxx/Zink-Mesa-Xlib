@@ -464,6 +464,13 @@ init_context(isel_context* ctx, nir_shader* shader)
                nir_intrinsic_instr* intrinsic = nir_instr_as_intrinsic(instr);
                if (!nir_intrinsic_infos[intrinsic->intrinsic].has_dest)
                   break;
+               if (intrinsic->intrinsic == nir_intrinsic_strict_wqm_coord_amd) {
+                  regclasses[intrinsic->dest.ssa.index] =
+                     RegClass::get(RegType::vgpr, intrinsic->dest.ssa.num_components * 4 +
+                                                     nir_intrinsic_base(intrinsic))
+                        .as_linear();
+                  break;
+               }
                RegType type = RegType::sgpr;
                switch (intrinsic->intrinsic) {
                case nir_intrinsic_load_push_constant:
@@ -485,6 +492,8 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_bindless_image_samples:
                case nir_intrinsic_load_force_vrs_rates_amd:
                case nir_intrinsic_load_scalar_arg_amd:
+               case nir_intrinsic_load_lds_ngg_scratch_base_amd:
+               case nir_intrinsic_load_lds_ngg_gs_out_vertex_base_amd:
                case nir_intrinsic_load_smem_amd: type = RegType::sgpr; break;
                case nir_intrinsic_load_sample_id:
                case nir_intrinsic_load_input:
@@ -497,7 +506,6 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_barycentric_pixel:
                case nir_intrinsic_load_barycentric_model:
                case nir_intrinsic_load_barycentric_centroid:
-               case nir_intrinsic_load_barycentric_at_sample:
                case nir_intrinsic_load_barycentric_at_offset:
                case nir_intrinsic_load_interpolated_input:
                case nir_intrinsic_load_frag_coord:

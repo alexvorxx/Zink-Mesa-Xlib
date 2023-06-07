@@ -72,11 +72,13 @@ struct pvr_render_job {
     * has_stencil_attachment are false, the contents are undefined.
     */
    struct pvr_ds_attachment {
+      bool load;
+      bool store;
+
       pvr_dev_addr_t addr;
       uint32_t stride;
       uint32_t height;
-      uint32_t physical_width;
-      uint32_t physical_height;
+      VkExtent2D physical_extent;
       uint32_t layer_size;
       VkFormat vk_format;
       /* FIXME: This should be of type 'enum pvr_memlayout', but this is defined
@@ -88,6 +90,12 @@ struct pvr_render_job {
        *      included by both this header and pvr_private.h.
        */
       uint32_t memlayout;
+
+      /* TODO: Is this really necessary? Maybe we can extract all useful
+       * information and drop this member. */
+      const struct pvr_image_view *iview;
+
+      bool has_alignment_transfers;
    } ds;
 
    VkClearDepthStencilValue ds_clear_value;

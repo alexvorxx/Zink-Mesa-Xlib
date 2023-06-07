@@ -25,7 +25,6 @@
 
 #include "r600_pipe.h"
 #include "r600_isa.h"
-#include "tgsi/tgsi_exec.h"
 
 #ifdef __cplusplus
 extern "C" {

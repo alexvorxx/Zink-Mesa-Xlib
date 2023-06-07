@@ -213,11 +213,6 @@ tgsi_scan_arrays(const struct tgsi_token *tokens,
                  unsigned max_array_id,
                  struct tgsi_array_info *arrays);
 
-void
-tgsi_scan_tess_ctrl(const struct tgsi_token *tokens,
-                    const struct tgsi_shader_info *info,
-                    struct tgsi_tessctrl_info *out);
-
 static inline bool
 tgsi_is_bindless_image_file(unsigned file)
 {

@@ -31,6 +31,7 @@
 #include "util/os_mman.h"
 #include "util/os_file.h"
 #include "util/os_time.h"
+#include "util/simple_mtx.h"
 #include "util/u_memory.h"
 #include "util/format/u_format.h"
 #include "util/u_hash_table.h"
@@ -1061,7 +1062,7 @@ static bool virgl_fence_wait(struct virgl_winsys *vws,
    if (timeout == 0)
       return !virgl_drm_resource_is_busy(vws, fence->hw_res);
 
-   if (timeout != PIPE_TIMEOUT_INFINITE) {
+   if (timeout != OS_TIMEOUT_INFINITE) {
       int64_t start_time = os_time_get();
       timeout /= 1000;
       while (virgl_drm_resource_is_busy(vws, fence->hw_res)) {
@@ -1292,7 +1293,7 @@ virgl_drm_winsys_create(int drmFD)
 }
 
 static struct hash_table *fd_tab = NULL;
-static mtx_t virgl_screen_mutex = _MTX_INITIALIZER_NP;
+static simple_mtx_t virgl_screen_mutex = SIMPLE_MTX_INITIALIZER;
 
 static void
 virgl_drm_screen_destroy(struct pipe_screen *pscreen)
@@ -1300,14 +1301,14 @@ virgl_drm_screen_destroy(struct pipe_screen *pscreen)
    struct virgl_screen *screen = virgl_screen(pscreen);
    boolean destroy;
 
-   mtx_lock(&virgl_screen_mutex);
+   simple_mtx_lock(&virgl_screen_mutex);
    destroy = --screen->refcnt == 0;
    if (destroy) {
       int fd = virgl_drm_winsys(screen->vws)->fd;
       _mesa_hash_table_remove_key(fd_tab, intptr_to_pointer(fd));
       close(fd);
    }
-   mtx_unlock(&virgl_screen_mutex);
+   simple_mtx_unlock(&virgl_screen_mutex);
 
    if (destroy) {
       pscreen->destroy = screen->winsys_priv;
@@ -1357,7 +1358,7 @@ virgl_drm_screen_create(int fd, const struct pipe_screen_config *config)
 {
    struct pipe_screen *pscreen = NULL;
 
-   mtx_lock(&virgl_screen_mutex);
+   simple_mtx_lock(&virgl_screen_mutex);
    if (!fd_tab) {
       fd_tab = _mesa_hash_table_create(NULL, hash_fd, equal_fd);
       if (!fd_tab)
@@ -1391,6 +1392,6 @@ virgl_drm_screen_create(int fd, const struct pipe_screen_config *config)
    }
 
 unlock:
-   mtx_unlock(&virgl_screen_mutex);
+   simple_mtx_unlock(&virgl_screen_mutex);
    return pscreen;
 }

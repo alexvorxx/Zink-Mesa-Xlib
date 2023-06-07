@@ -371,7 +371,7 @@ v3d_nir_lower_fragment_input(struct v3d_compile *c, nir_builder *b,
                         break;
                 }
                 if (c->fs_key->point_coord_upper_left && comp == 1)
-                        result = nir_fsub(b, nir_imm_float(b, 1.0), result);
+                        result = nir_fsub_imm(b, 1.0, result);
                 if (result != &intr->dest.ssa) {
                         nir_ssa_def_rewrite_uses_after(&intr->dest.ssa,
                                                        result,

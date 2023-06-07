@@ -1379,7 +1379,7 @@ opt_store_vec_deref(nir_builder *b, nir_intrinsic_instr *store)
                             nir_src_for_ssa(&parent->dest.ssa));
 
       /* Restrict things down as needed so the bitcast doesn't fail */
-      data = nir_channels(b, data, (1 << util_last_bit(write_mask)) - 1);
+      data = nir_trim_vector(b, data, util_last_bit(write_mask));
       if (old_bit_size != new_bit_size)
          data = nir_bitcast_vector(b, data, new_bit_size);
       data = resize_vector(b, data, new_num_comps);

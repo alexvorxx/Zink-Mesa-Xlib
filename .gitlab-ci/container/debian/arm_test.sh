@@ -10,14 +10,15 @@ set -o xtrace
 
 ############### Install packages for baremetal testing
 apt-get install -y ca-certificates
-sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list
+sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list.d/*
 apt-get update
 
 apt-get install -y --no-remove \
         cpio \
         curl \
         fastboot \
-        netcat \
+        netcat-openbsd \
+        openssh-server \
         procps \
         python3-distutils \
         python3-minimal \

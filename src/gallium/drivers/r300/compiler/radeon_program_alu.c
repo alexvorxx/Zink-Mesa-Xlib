@@ -37,6 +37,7 @@
 
 #include "radeon_compiler.h"
 #include "radeon_compiler_util.h"
+#include "radeon_dataflow.h"
 
 #include "util/log.h"
 
@@ -446,6 +447,33 @@ static void transform_ROUND(struct radeon_compiler* c,
 	rc_remove_instruction(inst);
 }
 
+/**
+ * According to the GLSL spec, round is only 1.30 and up
+ * so the only reason why we should ever see round is if it actually
+ * is lowered ARR (from nine->ttn). In that case we want to reconstruct
+ * the ARR instead of lowering the round.
+ */
+static void transform_vertex_ROUND(struct radeon_compiler* c,
+	struct rc_instruction* inst)
+{
+	struct rc_reader_data readers;
+	rc_get_readers(c, inst, &readers, NULL, NULL, NULL);
+
+	assert(readers.ReaderCount > 0);
+	for (unsigned i = 0; i < readers.ReaderCount; i++) {
+		struct rc_instruction *reader = readers.Readers[i].Inst;
+		if (reader->U.I.Opcode != RC_OPCODE_ARL)
+			return;
+	}
+
+	/* Only ARL readers, convert all to ARR */
+	for (unsigned i = 0; i < readers.ReaderCount; i++) {
+		readers.Readers[i].Inst->U.I.Opcode = RC_OPCODE_ARR;
+	}
+	/* Switch ROUND to MOV and let copy propagate sort it out later. */
+	inst->U.I.Opcode = RC_OPCODE_MOV;
+}
+
 static void transform_RSQ(struct radeon_compiler* c,
 	struct rc_instruction* inst)
 {
@@ -832,6 +860,7 @@ int r300_transform_vertex_alu(
 	case RC_OPCODE_FLR: transform_FLR(c, inst); return 1;
 	case RC_OPCODE_LIT: transform_r300_vertex_fix_LIT(c, inst); return 1;
 	case RC_OPCODE_LRP: transform_LRP(c, inst); return 1;
+	case RC_OPCODE_ROUND: transform_vertex_ROUND(c, inst); return 1;
 	case RC_OPCODE_SEQ:
 		if (!c->is_r500) {
 			transform_r300_vertex_SEQ(c, inst);

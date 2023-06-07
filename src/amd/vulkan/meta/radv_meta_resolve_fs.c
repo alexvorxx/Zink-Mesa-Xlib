@@ -48,12 +48,14 @@ build_resolve_fragment_shader(struct radv_device *dev, bool is_integer, int samp
    nir_variable *color_out = nir_variable_create(b.shader, nir_var_shader_out, vec4, "f_color");
    color_out->data.location = FRAG_RESULT_DATA0;
 
-   nir_ssa_def *pos_in = nir_channels(&b, nir_load_frag_coord(&b), 0x3);
+   nir_ssa_def *pos_in = nir_trim_vector(&b, nir_load_frag_coord(&b), 2);
    nir_ssa_def *src_offset = nir_load_push_constant(&b, 2, 32, nir_imm_int(&b, 0), .range = 8);
 
    nir_ssa_def *pos_int = nir_f2i32(&b, pos_in);
 
-   nir_ssa_def *img_coord = nir_channels(&b, nir_iadd(&b, pos_int, src_offset), 0x3);
+   nir_ssa_def *img_coord = nir_trim_vector(&b,
+                                            nir_iadd(&b, pos_int, src_offset),
+                                            2);
    nir_variable *color = nir_local_variable_create(b.impl, glsl_vec4_type(), "color");
 
    radv_meta_build_resolve_shader_core(dev, &b, is_integer, samples, input_img, color, img_coord);
@@ -267,11 +269,11 @@ build_depth_stencil_resolve_fragment_shader(struct radv_device *dev, int samples
    nir_variable *fs_out = nir_variable_create(b.shader, nir_var_shader_out, vec4, "f_out");
    fs_out->data.location = index == DEPTH_RESOLVE ? FRAG_RESULT_DEPTH : FRAG_RESULT_STENCIL;
 
-   nir_ssa_def *pos_in = nir_channels(&b, nir_load_frag_coord(&b), 0x3);
+   nir_ssa_def *pos_in = nir_trim_vector(&b, nir_load_frag_coord(&b), 2);
 
    nir_ssa_def *pos_int = nir_f2i32(&b, pos_in);
 
-   nir_ssa_def *img_coord = nir_channels(&b, pos_int, 0x3);
+   nir_ssa_def *img_coord = nir_trim_vector(&b, pos_int, 2);
 
    nir_deref_instr *input_img_deref = nir_build_deref_var(&b, input_img);
    nir_ssa_def *outval = nir_txf_ms_deref(&b, input_img_deref, img_coord, nir_imm_int(&b, 0));

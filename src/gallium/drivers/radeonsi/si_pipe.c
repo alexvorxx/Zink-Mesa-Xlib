@@ -1,26 +1,8 @@
 /*
  * Copyright 2010 Jerome Glisse <glisse@freedesktop.org>
  * Copyright 2018 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "si_pipe.h"
@@ -64,6 +46,7 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    {"initaco", DBG(INIT_ACO), "Print initial ACO IR before optimizations"},
    {"aco", DBG(ACO), "Print final ACO IR"},
    {"asm", DBG(ASM), "Print final shaders in asm"},
+   {"stats", DBG(STATS), "Print shader-db stats to stderr"},
 
    /* Shader compiler options the shader cache should be aware of: */
    {"w32ge", DBG(W32_GE), "Use Wave32 for vertex, tessellation, and geometry shaders."},
@@ -198,7 +181,6 @@ static void decref_implicit_resource(struct hash_entry *entry)
 static void si_destroy_context(struct pipe_context *context)
 {
    struct si_context *sctx = (struct si_context *)context;
-   int i;
 
    /* Unreference the framebuffer normally to disable related logic
     * properly.
@@ -241,9 +223,6 @@ static void si_destroy_context(struct pipe_context *context)
       si_pm4_free_state(sctx, sctx->cs_preamble_state, ~0);
    if (sctx->cs_preamble_state_tmz)
       si_pm4_free_state(sctx, sctx->cs_preamble_state_tmz, ~0);
-
-   for (i = 0; i < ARRAY_SIZE(sctx->vgt_shader_config); i++)
-      si_pm4_free_state(sctx, sctx->vgt_shader_config[i], SI_STATE_IDX(vgt_shader_config));
 
    if (sctx->fixed_func_tcs_shader_cache) {
       hash_table_foreach(sctx->fixed_func_tcs_shader_cache, entry) {
@@ -1482,7 +1461,6 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
 
    ac_print_shadowed_regs(&sscreen->info);
 
-   STATIC_ASSERT(sizeof(union si_vgt_stages_key) == 1);
    return &sscreen->b;
 }
 

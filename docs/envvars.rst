@@ -1633,6 +1633,10 @@ Asahi driver environment variables
       possible) or added in the Mesa-wide driconf (if closed source).
    ``dirty``
       In debug builds only: disable dirty tracking optimizations.
+   ``nowc``
+      Disable write-combining (force all allocations to be write-through). This
+      may be useful for diagnosing certain performance issues. Note imported
+      buffers may still be write-combined.
 
 .. envvar:: AGX_MESA_DEBUG
 

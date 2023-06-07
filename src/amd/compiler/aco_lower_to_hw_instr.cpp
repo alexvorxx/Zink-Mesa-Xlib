@@ -2139,6 +2139,66 @@ hw_init_scratch(Builder& bld, Definition def, Operand scratch_addr, Operand scra
 }
 
 void
+lower_image_sample(lower_context* ctx, aco_ptr<Instruction>& instr)
+{
+   Operand linear_vgpr = instr->operands[3];
+
+   unsigned nsa_size = ctx->program->dev.max_nsa_vgprs;
+   unsigned vaddr_size = linear_vgpr.size();
+   unsigned num_copied_vgprs = instr->operands.size() - 4;
+   nsa_size = num_copied_vgprs > 0 && (ctx->program->gfx_level >= GFX11 || vaddr_size <= nsa_size)
+                 ? nsa_size
+                 : 0;
+
+   Operand vaddr[16];
+   unsigned num_vaddr = 0;
+
+   if (nsa_size) {
+      assert(num_copied_vgprs <= nsa_size);
+      for (unsigned i = 0; i < num_copied_vgprs; i++)
+         vaddr[num_vaddr++] = instr->operands[4 + i];
+      for (unsigned i = num_copied_vgprs; i < std::min(vaddr_size, nsa_size); i++)
+         vaddr[num_vaddr++] = Operand(linear_vgpr.physReg().advance(i * 4), v1);
+      if (vaddr_size > nsa_size) {
+         RegClass rc = RegClass::get(RegType::vgpr, (vaddr_size - nsa_size) * 4);
+         vaddr[num_vaddr++] = Operand(PhysReg(linear_vgpr.physReg().advance(nsa_size * 4)), rc);
+      }
+   } else {
+      PhysReg reg = linear_vgpr.physReg();
+      std::map<PhysReg, copy_operation> copy_operations;
+      for (unsigned i = 4; i < instr->operands.size(); i++) {
+         Operand arg = instr->operands[i];
+         Definition def(reg, RegClass::get(RegType::vgpr, arg.bytes()));
+         copy_operations[def.physReg()] = {arg, def, def.bytes()};
+         reg = reg.advance(arg.bytes());
+      }
+      vaddr[num_vaddr++] = linear_vgpr;
+
+      Pseudo_instruction pi = {};
+      handle_operands(copy_operations, ctx, ctx->program->gfx_level, &pi);
+   }
+
+   instr->mimg().strict_wqm = false;
+
+   if ((3 + num_vaddr) > instr->operands.size()) {
+      MIMG_instruction *new_instr = create_instruction<MIMG_instruction>(
+         instr->opcode, Format::MIMG, 3 + num_vaddr, instr->definitions.size());
+      std::copy(instr->definitions.cbegin(), instr->definitions.cend(),
+                new_instr->definitions.begin());
+      new_instr->operands[0] = instr->operands[0];
+      new_instr->operands[1] = instr->operands[1];
+      new_instr->operands[2] = instr->operands[2];
+      memcpy((uint8_t*)new_instr + sizeof(Instruction), (uint8_t*)instr.get() + sizeof(Instruction),
+             sizeof(MIMG_instruction) - sizeof(Instruction));
+      instr.reset(new_instr);
+   } else {
+      while (instr->operands.size() > (3 + num_vaddr))
+         instr->operands.pop_back();
+   }
+   std::copy(vaddr, vaddr + num_vaddr, std::next(instr->operands.begin(), 3));
+}
+
+void
 lower_to_hw_instr(Program* program)
 {
    Block* discard_block = NULL;
@@ -2230,6 +2290,19 @@ lower_to_hw_instr(Program* program)
                   copy_operations[instr->definitions[j].physReg()] = {
                      instr->operands[j], instr->definitions[j], instr->operands[j].bytes()};
                }
+               handle_operands(copy_operations, &ctx, program->gfx_level, pi);
+               break;
+            }
+            case aco_opcode::p_start_linear_vgpr: {
+               if (instr->operands.empty())
+                  break;
+
+               Definition def(instr->definitions[0].physReg(),
+                              RegClass::get(RegType::vgpr, instr->definitions[0].bytes()));
+
+               std::map<PhysReg, copy_operation> copy_operations;
+               copy_operations[def.physReg()] = {instr->operands[0], def,
+                                                 instr->operands[0].bytes()};
                handle_operands(copy_operations, &ctx, program->gfx_level, pi);
                break;
             }
@@ -2789,6 +2862,9 @@ lower_to_hw_instr(Program* program)
             ctx.instructions.emplace_back(std::move(instr));
 
             emit_set_mode(bld, block->fp_mode, set_round, false);
+         } else if (instr->isMIMG() && instr->mimg().strict_wqm) {
+            lower_image_sample(&ctx, instr);
+            ctx.instructions.emplace_back(std::move(instr));
          } else {
             ctx.instructions.emplace_back(std::move(instr));
          }

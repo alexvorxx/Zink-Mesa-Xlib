@@ -84,7 +84,6 @@
 #include "util/u_memory.h"
 #include "util/u_simple_shaders.h"
 #include "cso_cache/cso_context.h"
-#include "tgsi/tgsi_ureg.h"
 
 #define DBG if (0) printf
 

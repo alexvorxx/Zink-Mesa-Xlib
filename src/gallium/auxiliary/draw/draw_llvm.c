@@ -274,54 +274,6 @@ create_jit_vertex_buffer_type(struct gallivm_state *gallivm,
 }
 
 
-/**
- * Create LLVM type for struct vertex_header;
- */
-static LLVMTypeRef
-create_jit_vertex_header(struct gallivm_state *gallivm, int data_elems)
-{
-   LLVMTargetDataRef target = gallivm->target;
-   LLVMTypeRef elem_types[3];
-   LLVMTypeRef vertex_header;
-   char struct_name[24];
-
-   snprintf(struct_name, 23, "vertex_header%d", data_elems);
-
-   elem_types[DRAW_JIT_VERTEX_VERTEX_ID]  = LLVMIntTypeInContext(gallivm->context, 32);
-   elem_types[DRAW_JIT_VERTEX_CLIP_POS]  = LLVMArrayType(LLVMFloatTypeInContext(gallivm->context), 4);
-   elem_types[DRAW_JIT_VERTEX_DATA]  = LLVMArrayType(elem_types[1], data_elems);
-
-   vertex_header = LLVMStructTypeInContext(gallivm->context, elem_types,
-                                           ARRAY_SIZE(elem_types), 0);
-
-   /* these are bit-fields and we can't take address of them
-      LP_CHECK_MEMBER_OFFSET(struct vertex_header, clipmask,
-      target, vertex_header,
-      DRAW_JIT_VERTEX_CLIPMASK);
-      LP_CHECK_MEMBER_OFFSET(struct vertex_header, edgeflag,
-      target, vertex_header,
-      DRAW_JIT_VERTEX_EDGEFLAG);
-      LP_CHECK_MEMBER_OFFSET(struct vertex_header, pad,
-      target, vertex_header,
-      DRAW_JIT_VERTEX_PAD);
-      LP_CHECK_MEMBER_OFFSET(struct vertex_header, vertex_id,
-      target, vertex_header,
-      DRAW_JIT_VERTEX_VERTEX_ID);
-   */
-   (void) target; /* silence unused var warning for non-debug build */
-   LP_CHECK_MEMBER_OFFSET(struct vertex_header, clip_pos,
-                          target, vertex_header,
-                          DRAW_JIT_VERTEX_CLIP_POS);
-   LP_CHECK_MEMBER_OFFSET(struct vertex_header, data,
-                          target, vertex_header,
-                          DRAW_JIT_VERTEX_DATA);
-
-   assert(LLVMABISizeOfType(target, vertex_header) ==
-          offsetof(struct vertex_header, data[data_elems]));
-
-   return vertex_header;
-}
-
 static LLVMTypeRef
 create_tcs_jit_input_type_deref(struct gallivm_state *gallivm)
 {
@@ -573,7 +525,7 @@ draw_llvm_create_variant(struct draw_llvm *llvm,
       draw_llvm_dump_variant_key(&variant->key);
    }
 
-   variant->vertex_header_type = create_jit_vertex_header(variant->gallivm, num_inputs);
+   variant->vertex_header_type = lp_build_create_jit_vertex_header_type(variant->gallivm, num_inputs);
    variant->vertex_header_ptr_type = LLVMPointerType(variant->vertex_header_type, 0);
 
    draw_llvm_generate(llvm, variant);
@@ -821,6 +773,7 @@ fetch_vector(struct gallivm_state *gallivm,
 
 static void
 store_aos(struct gallivm_state *gallivm,
+          bool is_per_prim,
           LLVMTypeRef io_type,
           LLVMValueRef io_ptr,
           LLVMValueRef index,
@@ -828,19 +781,30 @@ store_aos(struct gallivm_state *gallivm,
 {
    LLVMTypeRef data_ptr_type = LLVMPointerType(lp_build_vec_type(gallivm, lp_float32_vec4_type()), 0);
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef data_ptr = draw_jit_header_data(gallivm, io_type, io_ptr);
-   LLVMTypeRef data_type = LLVMStructGetTypeAtIndex(io_type, DRAW_JIT_VERTEX_DATA);
+   LLVMValueRef data_ptr;
+   LLVMTypeRef data_type;
    LLVMValueRef indices[3];
 
    indices[0] = lp_build_const_int32(gallivm, 0);
    indices[1] = index;
    indices[2] = lp_build_const_int32(gallivm, 0);
 
+   if (!is_per_prim) {
+      data_ptr = lp_jit_vertex_header_data(gallivm, io_type, io_ptr);
+      data_type = LLVMStructGetTypeAtIndex(io_type, LP_JIT_VERTEX_HEADER_DATA);
+   } else {
+      data_ptr = io_ptr;
+      data_type = io_type;
+   }
+
    data_ptr = LLVMBuildGEP2(builder, data_type, data_ptr, indices, 3, "");
    data_ptr = LLVMBuildPointerCast(builder, data_ptr, data_ptr_type, "");
 
 #if DEBUG_STORE
-   lp_build_printf(gallivm, "    ---- %p storing attribute %d (io = %p)\n", data_ptr, index, io_ptr);
+   if (is_per_prim)
+      lp_build_printf(gallivm, "    ---- %p storing prim attribute %d (io = %p)\n", data_ptr, index, io_ptr);
+   else
+      lp_build_printf(gallivm, "    ---- %p storing attribute %d (io = %p)\n", data_ptr, index, io_ptr);
 #endif
 
    /* Unaligned store due to the vertex header */
@@ -901,17 +865,16 @@ adjust_mask(struct gallivm_state *gallivm,
 }
 
 
-static void
-store_aos_array(struct gallivm_state *gallivm,
-                struct lp_type soa_type,
-                LLVMTypeRef io_type,
-                LLVMValueRef io_ptr,
-                LLVMValueRef *indices,
-                LLVMValueRef* aos,
-                int attrib,
-                int num_outputs,
-                LLVMValueRef clipmask,
-                boolean need_edgeflag)
+void
+draw_store_aos_array(struct gallivm_state *gallivm,
+                     struct lp_type soa_type,
+                     LLVMTypeRef io_type,
+                     LLVMValueRef io_ptr,
+                     LLVMValueRef *indices,
+                     LLVMValueRef* aos,
+                     int attrib,
+                     LLVMValueRef clipmask,
+                     boolean need_edgeflag, bool is_per_prim)
 {
    LLVMBuilderRef builder = gallivm->builder;
    LLVMValueRef attr_index = lp_build_const_int32(gallivm, attrib);
@@ -932,7 +895,7 @@ store_aos_array(struct gallivm_state *gallivm,
       io_ptrs[i] = LLVMBuildGEP2(builder, io_type, io_ptr, &inds[i], 1, "");
    }
 
-   if (attrib == 0) {
+   if (attrib == 0 && !is_per_prim) {
       /* store vertex header for each of the n vertices */
       LLVMValueRef val, cliptmp;
       int vertex_id_pad_edgeflag;
@@ -947,13 +910,20 @@ store_aos_array(struct gallivm_state *gallivm,
       } else {
          vertex_id_pad_edgeflag = (0xffff << 16);
       }
-      val = lp_build_const_int_vec(gallivm, lp_int_type(soa_type),
-                                   vertex_id_pad_edgeflag);
+      if (vector_length == 1)
+         val = lp_build_const_int32(gallivm, vertex_id_pad_edgeflag);
+      else
+         val = lp_build_const_int_vec(gallivm, lp_int_type(soa_type),
+                                      vertex_id_pad_edgeflag);
+
       /* OR with the clipmask */
       cliptmp = LLVMBuildOr(builder, val, clipmask, "");
       for (unsigned i = 0; i < vector_length; i++) {
-         LLVMValueRef id_ptr = draw_jit_header_id(gallivm, io_type, io_ptrs[i]);
-         val = LLVMBuildExtractElement(builder, cliptmp, linear_inds[i], "");
+         LLVMValueRef id_ptr = lp_jit_vertex_header_id(gallivm, io_type, io_ptrs[i]);
+         if (vector_length > 1)
+            val = LLVMBuildExtractElement(builder, cliptmp, linear_inds[i], "");
+         else
+            val = cliptmp;
          val = adjust_mask(gallivm, val);
 #if DEBUG_STORE
          lp_build_printf(gallivm, "io = %p, index %d, clipmask = %x\n",
@@ -965,7 +935,7 @@ store_aos_array(struct gallivm_state *gallivm,
 
    /* store for each of the n vertices */
    for (int i = 0; i < vector_length; i++) {
-      store_aos(gallivm, io_type, io_ptrs[i], attr_index, aos[i]);
+      store_aos(gallivm, is_per_prim, io_type, io_ptrs[i], attr_index, aos[i]);
    }
 }
 
@@ -1029,16 +999,15 @@ convert_to_aos(struct gallivm_state *gallivm,
          }
       }
 
-      store_aos_array(gallivm,
-                      soa_type,
-                      io_type,
-                      io,
-                      indices,
-                      aos,
-                      attrib,
-                      num_outputs,
-                      clipmask,
-                      need_edgeflag);
+      draw_store_aos_array(gallivm,
+                           soa_type,
+                           io_type,
+                           io,
+                           indices,
+                           aos,
+                           attrib,
+                           clipmask,
+                           need_edgeflag, false);
    }
 #if DEBUG_STORE
    lp_build_printf(gallivm, "   # storing end\n");
@@ -1079,7 +1048,7 @@ store_clip(struct gallivm_state *gallivm,
    soa[3] = LLVMBuildLoad2(builder, single_type, outputs[idx][3], ""); /*w0 w1 .. wn*/
 
    for (int i = 0; i < vs_type.length; i++) {
-      clip_ptrs[i] = draw_jit_header_clip_pos(gallivm, io_type, io_ptrs[i]);
+      clip_ptrs[i] = lp_jit_vertex_header_clip_pos(gallivm, io_type, io_ptrs[i]);
    }
 
    lp_build_transpose_aos(gallivm, vs_type, soa, soa);
@@ -2639,7 +2608,7 @@ draw_gs_llvm_create_variant(struct draw_llvm *llvm,
 
    create_gs_jit_types(variant);
 
-   variant->vertex_header_type = create_jit_vertex_header(variant->gallivm, num_outputs);
+   variant->vertex_header_type = lp_build_create_jit_vertex_header_type(variant->gallivm, num_outputs);
    variant->vertex_header_ptr_type = LLVMPointerType(variant->vertex_header_type, 0);
 
    draw_gs_llvm_generate(llvm, variant);
@@ -3713,7 +3682,7 @@ draw_tes_llvm_generate(struct draw_llvm *llvm,
             LLVMValueRef idx = LLVMBuildAdd(builder, lp_loop.counter, lp_build_const_int32(gallivm, j), "");
             LLVMValueRef tc_val;
             if (i == 2) {
-               if (variant->shader->base.prim_mode == PIPE_PRIM_TRIANGLES) {
+               if (variant->shader->base.prim_mode == MESA_PRIM_TRIANGLES) {
                   tc_val = lp_build_const_float(gallivm, 1.0);
                   tc_val = LLVMBuildFSub(builder, tc_val, lp_build_pointer_get2(builder, flt_type, tess_coord[0], idx), "");
                   tc_val = LLVMBuildFSub(builder, tc_val, lp_build_pointer_get2(builder, flt_type, tess_coord[1], idx), "");
@@ -3812,7 +3781,7 @@ draw_tes_llvm_create_variant(struct draw_llvm *llvm,
 
    create_tes_jit_types(variant);
 
-   variant->vertex_header_type = create_jit_vertex_header(variant->gallivm, num_outputs);
+   variant->vertex_header_type = lp_build_create_jit_vertex_header_type(variant->gallivm, num_outputs);
    variant->vertex_header_ptr_type = LLVMPointerType(variant->vertex_header_type, 0);
 
    if (gallivm_debug & (GALLIVM_DEBUG_TGSI | GALLIVM_DEBUG_IR)) {

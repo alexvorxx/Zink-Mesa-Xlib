@@ -46,7 +46,7 @@
 #include "util/u_pstipple.h"
 #include "util/u_sampler.h"
 
-#include "tgsi/tgsi_transform.h"
+#include "tgsi/tgsi_parse.h"
 
 #include "draw_context.h"
 #include "draw_pipe.h"

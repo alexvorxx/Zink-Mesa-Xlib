@@ -13,6 +13,7 @@
 #include <xf86drm.h>
 #include "drm-uapi/dma-buf.h"
 #include "util/log.h"
+#include "util/os_file.h"
 #include "util/os_mman.h"
 #include "util/simple_mtx.h"
 
@@ -182,7 +183,7 @@ agx_bo_import(struct agx_device *dev, int fd)
 
       bo->flags = AGX_BO_SHARED | AGX_BO_SHAREABLE;
       bo->handle = gem_handle;
-      bo->prime_fd = dup(fd);
+      bo->prime_fd = os_dupfd_cloexec(fd);
       bo->label = "Imported BO";
       assert(bo->prime_fd >= 0);
 
@@ -247,7 +248,7 @@ agx_bo_export(struct agx_bo *bo)
    if (!(bo->flags & AGX_BO_SHARED)) {
       bo->flags |= AGX_BO_SHARED;
       assert(bo->prime_fd == -1);
-      bo->prime_fd = dup(fd);
+      bo->prime_fd = os_dupfd_cloexec(fd);
 
       /* If there is a pending writer to this BO, import it into the buffer
        * for implicit sync.

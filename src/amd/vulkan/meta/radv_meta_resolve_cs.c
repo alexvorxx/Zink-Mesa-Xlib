@@ -25,6 +25,8 @@
 #include <stdbool.h>
 
 #include "nir/nir_builder.h"
+#include "nir/nir_format_convert.h"
+
 #include "radv_meta.h"
 #include "radv_private.h"
 #include "sid.h"
@@ -34,26 +36,9 @@ static nir_ssa_def *
 radv_meta_build_resolve_srgb_conversion(nir_builder *b, nir_ssa_def *input)
 {
    unsigned i;
-
-   nir_ssa_def *cmp[3];
-   for (i = 0; i < 3; i++)
-      cmp[i] = nir_flt(b, nir_channel(b, input, i), nir_imm_int(b, 0x3b4d2e1c));
-
-   nir_ssa_def *ltvals[3];
-   for (i = 0; i < 3; i++)
-      ltvals[i] = nir_fmul(b, nir_channel(b, input, i), nir_imm_float(b, 12.92));
-
-   nir_ssa_def *gtvals[3];
-
-   for (i = 0; i < 3; i++) {
-      gtvals[i] = nir_fpow(b, nir_channel(b, input, i), nir_imm_float(b, 1.0 / 2.4));
-      gtvals[i] = nir_fmul(b, gtvals[i], nir_imm_float(b, 1.055));
-      gtvals[i] = nir_fsub(b, gtvals[i], nir_imm_float(b, 0.055));
-   }
-
    nir_ssa_def *comp[4];
    for (i = 0; i < 3; i++)
-      comp[i] = nir_bcsel(b, cmp[i], ltvals[i], gtvals[i]);
+      comp[i] = nir_format_linear_to_srgb(b, nir_channel(b, input, i));
    comp[3] = nir_channels(b, input, 1 << 3);
    return nir_vec(b, comp, 4);
 }
@@ -154,7 +139,9 @@ build_depth_stencil_resolve_compute_shader(struct radv_device *dev, int samples,
 
    nir_ssa_def *offset = nir_load_push_constant(&b, 2, 32, nir_imm_int(&b, 0), .range = 8);
 
-   nir_ssa_def *resolve_coord = nir_iadd(&b, nir_channels(&b, global_id, 0x3), offset);
+   nir_ssa_def *resolve_coord = nir_iadd(&b,
+                                         nir_trim_vector(&b, global_id, 2),
+                                         offset);
 
    nir_ssa_def *img_coord = nir_vec3(&b, nir_channel(&b, resolve_coord, 0),
                                          nir_channel(&b, resolve_coord, 1),

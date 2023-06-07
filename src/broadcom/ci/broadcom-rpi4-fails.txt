@@ -27,11 +27,9 @@ spec@!opengl 1.0@gl-1.0-edgeflag-const,Fail
 spec@!opengl 1.0@gl-1.0-edgeflag-quads,Fail
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
-spec@!opengl 1.0@rasterpos,Crash
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-32f_24_8_rev samples=2,Fail
-spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2,Fail
 spec@!opengl 1.1@getteximage-formats,Fail
 spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Factor 2x,Fail
@@ -403,7 +401,6 @@ spec@glsl-1.10@execution@glsl-vs-inline-explosion,Crash
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@glsl-1.20@execution@clipping@vs-clip-vertex-primitives,Fail
 spec@glsl-1.20@execution@fs-underflow-mul-compare-zero,Fail
-spec@glsl-1.30@execution@clipping@fs-clip-distance-interpolated,Crash
 spec@intel_performance_query@intel_performance_query-issue_2235,Fail
 spec@khr_texture_compression_astc@miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@miptree-gles srgb-fp@sRGB decode full precision,Fail
@@ -506,7 +503,6 @@ spec@oes_texture_view@rendering-formats@clear GL_RGB10_A2 as GL_RG16F,Fail
 spec@oes_texture_view@rendering-formats@clear GL_RGB10_A2 as GL_RG16I,Fail
 spec@oes_texture_view@rendering-formats@clear GL_RGB10_A2 as GL_RGBA8I,Fail
 
-spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth16,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24,Fail
 
@@ -525,3 +521,10 @@ spec@!opengl 1.1@line-smooth-stipple,Fail
 
 # Works when run individually, but fail consistently on the CI
 dEQP-GLES3.functional.texture.specification.teximage2d_pbo.rgba32i_cube,Fail
+
+# Debian bookworm update (2023-04-27)
+spec@!opengl 1.0@depth-clear-precision-check,Timeout
+
+# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4377
+dEQP-VK.wsi.acquire_drm_display.acquire_drm_display_invalid_fd,Fail
+dEQP-VK.wsi.acquire_drm_display.get_drm_display_invalid_fd,Fail

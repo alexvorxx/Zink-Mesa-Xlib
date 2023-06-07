@@ -37,8 +37,6 @@
 
 #ifdef __cplusplus
 extern "C" {
-#else
-struct glsl_type;
 #endif
 
 const char *glsl_get_type_name(const struct glsl_type *type);

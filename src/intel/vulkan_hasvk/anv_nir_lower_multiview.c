@@ -123,7 +123,7 @@ build_view_index(struct lower_multiview_state *state)
                nir_ssa_def *shifted_high =
                   nir_ushr(b, nir_imm_int(b, remap >> 32),
                               nir_isub(b, shift, nir_imm_int(b, 32)));
-               shifted = nir_bcsel(b, nir_ilt(b, shift, nir_imm_int(b, 32)),
+               shifted = nir_bcsel(b, nir_ilt_imm(b, shift, 32),
                                       shifted_low, shifted_high);
             }
             state->view_index = nir_iand(b, shifted, nir_imm_int(b, 0xf));

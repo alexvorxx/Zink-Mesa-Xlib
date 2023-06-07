@@ -50,7 +50,7 @@ etna_lower_io(nir_shader *shader, struct etna_shader_variant *v)
 
                   b.cursor = nir_after_instr(instr);
 
-                  nir_ssa_def *ssa = nir_ine(&b, &intr->dest.ssa, nir_imm_int(&b, 0));
+                  nir_ssa_def *ssa = nir_ine_imm(&b, &intr->dest.ssa, 0);
                   if (v->key.front_ccw)
                      nir_instr_as_alu(ssa->parent_instr)->op = nir_op_ieq;
 

@@ -178,6 +178,15 @@ void vk_fill_video_h265_reference_info(const VkVideoDecodeInfoKHR *frame_info,
                                        const struct vk_video_h265_slice_params *slice_params,
                                        struct vk_video_h265_reference ref_slots[][8]);
 
+#define VK_VIDEO_H264_MACROBLOCK_WIDTH 16
+#define VK_VIDEO_H264_MACROBLOCK_HEIGHT 16
+
+#define VK_VIDEO_H265_CTU_MAX_WIDTH 64
+#define VK_VIDEO_H265_CTU_MAX_HEIGHT 64
+
+void
+vk_video_get_profile_alignments(const VkVideoProfileListInfoKHR *profile_list,
+                                uint32_t *width_align_out, uint32_t *height_align_out);
 #ifdef __cplusplus
 }
 #endif

@@ -113,7 +113,7 @@ zink_resource_usage_is_unflushed(const struct zink_resource *res)
 static inline bool
 zink_resource_usage_is_unflushed_write(const struct zink_resource *res)
 {
-   return zink_batch_usage_is_unflushed(res->obj->bo->writes);
+   return zink_batch_usage_is_unflushed(res->obj->bo->writes.u);
 }
 
 

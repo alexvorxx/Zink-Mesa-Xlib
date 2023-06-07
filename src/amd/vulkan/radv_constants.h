@@ -152,4 +152,7 @@
 #define RADV_NGG_QUERY_PRIM_GEN_OFFSET(stream) (20 + stream * 4)
 #define RADV_NGG_QUERY_PRIM_XFB_OFFSET(stream) (36 + stream * 4)
 
+/* Number of samples for line smooth lowering (hw requirement). */
+#define RADV_NUM_SMOOTH_AA_SAMPLES 4
+
 #endif /* RADV_CONSTANTS_H */

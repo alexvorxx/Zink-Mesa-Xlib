@@ -1,30 +1,11 @@
 /*
  * Copyright 2014 Advanced Micro Devices, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE COPYRIGHT HOLDERS, AUTHORS AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
- *
+ * SPDX-License-Identifier: MIT
  */
 /* based on pieces from si_pipe.c and radeon_llvm_emit.c */
 #include "ac_llvm_build.h"
-
+#include "ac_gpu_info.h"
 #include "ac_nir.h"
 #include "ac_llvm_util.h"
 #include "ac_shader_util.h"
@@ -56,16 +37,14 @@ struct ac_llvm_flow {
  * The caller is responsible for initializing ctx::module and ctx::builder.
  */
 void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *compiler,
-                          enum amd_gfx_level gfx_level, enum radeon_family family,
-                          bool has_3d_cube_border_color_mipmap,
-                          enum ac_float_mode float_mode, unsigned wave_size,
-                          unsigned ballot_mask_bits, bool exports_color_null, bool exports_mrtz)
+                          const struct radeon_info *info, enum ac_float_mode float_mode,
+                          unsigned wave_size, unsigned ballot_mask_bits, bool exports_color_null,
+                          bool exports_mrtz)
 {
    ctx->context = LLVMContextCreate();
 
-   ctx->gfx_level = gfx_level;
-   ctx->family = family;
-   ctx->has_3d_cube_border_color_mipmap = has_3d_cube_border_color_mipmap;
+   ctx->info = info;
+   ctx->gfx_level = info->gfx_level;
    ctx->wave_size = wave_size;
    ctx->ballot_mask_bits = ballot_mask_bits;
    ctx->float_mode = float_mode;
@@ -773,190 +752,6 @@ LLVMValueRef ac_build_fast_udiv_u31_d_not_one(struct ac_llvm_context *ctx, LLVMV
    return LLVMBuildLShr(builder, num, post_shift, "");
 }
 
-/* Coordinates for cube map selection. sc, tc, and ma are as in Table 8.27
- * of the OpenGL 4.5 (Compatibility Profile) specification, except ma is
- * already multiplied by two. id is the cube face number.
- */
-struct cube_selection_coords {
-   LLVMValueRef stc[2];
-   LLVMValueRef ma;
-   LLVMValueRef id;
-};
-
-static void build_cube_intrinsic(struct ac_llvm_context *ctx, LLVMValueRef in[3],
-                                 struct cube_selection_coords *out)
-{
-   LLVMTypeRef f32 = ctx->f32;
-
-   out->stc[1] = ac_build_intrinsic(ctx, "llvm.amdgcn.cubetc", f32, in, 3, 0);
-   out->stc[0] = ac_build_intrinsic(ctx, "llvm.amdgcn.cubesc", f32, in, 3, 0);
-   out->ma = ac_build_intrinsic(ctx, "llvm.amdgcn.cubema", f32, in, 3, 0);
-   out->id = ac_build_intrinsic(ctx, "llvm.amdgcn.cubeid", f32, in, 3, 0);
-}
-
-/**
- * Build a manual selection sequence for cube face sc/tc coordinates and
- * major axis vector (multiplied by 2 for consistency) for the given
- * vec3 \p coords, for the face implied by \p selcoords.
- *
- * For the major axis, we always adjust the sign to be in the direction of
- * selcoords.ma; i.e., a positive out_ma means that coords is pointed towards
- * the selcoords major axis.
- */
-static void build_cube_select(struct ac_llvm_context *ctx,
-                              const struct cube_selection_coords *selcoords,
-                              const LLVMValueRef *coords, LLVMValueRef *out_st,
-                              LLVMValueRef *out_ma)
-{
-   LLVMBuilderRef builder = ctx->builder;
-   LLVMTypeRef f32 = LLVMTypeOf(coords[0]);
-   LLVMValueRef is_ma_positive;
-   LLVMValueRef sgn_ma;
-   LLVMValueRef is_ma_z, is_not_ma_z;
-   LLVMValueRef is_ma_y;
-   LLVMValueRef is_ma_x;
-   LLVMValueRef sgn;
-   LLVMValueRef tmp;
-
-   is_ma_positive = LLVMBuildFCmp(builder, LLVMRealUGE, selcoords->ma, LLVMConstReal(f32, 0.0), "");
-   sgn_ma = LLVMBuildSelect(builder, is_ma_positive, LLVMConstReal(f32, 1.0),
-                            LLVMConstReal(f32, -1.0), "");
-
-   is_ma_z = LLVMBuildFCmp(builder, LLVMRealUGE, selcoords->id, LLVMConstReal(f32, 4.0), "");
-   is_not_ma_z = LLVMBuildNot(builder, is_ma_z, "");
-   is_ma_y = LLVMBuildAnd(
-      builder, is_not_ma_z,
-      LLVMBuildFCmp(builder, LLVMRealUGE, selcoords->id, LLVMConstReal(f32, 2.0), ""), "");
-   is_ma_x = LLVMBuildAnd(builder, is_not_ma_z, LLVMBuildNot(builder, is_ma_y, ""), "");
-
-   /* Select sc */
-   tmp = LLVMBuildSelect(builder, is_ma_x, coords[2], coords[0], "");
-   sgn = LLVMBuildSelect(
-      builder, is_ma_y, LLVMConstReal(f32, 1.0),
-      LLVMBuildSelect(builder, is_ma_z, sgn_ma, LLVMBuildFNeg(builder, sgn_ma, ""), ""), "");
-   out_st[0] = LLVMBuildFMul(builder, tmp, sgn, "");
-
-   /* Select tc */
-   tmp = LLVMBuildSelect(builder, is_ma_y, coords[2], coords[1], "");
-   sgn = LLVMBuildSelect(builder, is_ma_y, sgn_ma, LLVMConstReal(f32, -1.0), "");
-   out_st[1] = LLVMBuildFMul(builder, tmp, sgn, "");
-
-   /* Select ma */
-   tmp = LLVMBuildSelect(builder, is_ma_z, coords[2],
-                         LLVMBuildSelect(builder, is_ma_y, coords[1], coords[0], ""), "");
-   tmp = ac_build_intrinsic(ctx, "llvm.fabs.f32", ctx->f32, &tmp, 1, 0);
-   *out_ma = LLVMBuildFMul(builder, tmp, LLVMConstReal(f32, 2.0), "");
-}
-
-void ac_prepare_cube_coords(struct ac_llvm_context *ctx, bool is_deriv, bool is_array, bool is_lod,
-                            LLVMValueRef *coords_arg, LLVMValueRef *derivs_arg)
-{
-
-   LLVMBuilderRef builder = ctx->builder;
-   struct cube_selection_coords selcoords;
-   LLVMValueRef coords[3];
-   LLVMValueRef invma;
-
-   if (is_array && !is_lod) {
-      LLVMValueRef tmp = ac_build_round(ctx, coords_arg[3]);
-
-      /* Section 8.9 (Texture Functions) of the GLSL 4.50 spec says:
-       *
-       *    "For Array forms, the array layer used will be
-       *
-       *       max(0, min(d−1, floor(layer+0.5)))
-       *
-       *     where d is the depth of the texture array and layer
-       *     comes from the component indicated in the tables below.
-       *     Workaround for an issue where the layer is taken from a
-       *     helper invocation which happens to fall on a different
-       *     layer due to extrapolation."
-       *
-       * GFX8 and earlier attempt to implement this in hardware by
-       * clamping the value of coords[2] = (8 * layer) + face.
-       * Unfortunately, this means that the we end up with the wrong
-       * face when clamping occurs.
-       *
-       * Clamp the layer earlier to work around the issue.
-       */
-      if (ctx->gfx_level <= GFX8) {
-         LLVMValueRef ge0;
-         ge0 = LLVMBuildFCmp(builder, LLVMRealOGE, tmp, ctx->f32_0, "");
-         tmp = LLVMBuildSelect(builder, ge0, tmp, ctx->f32_0, "");
-      }
-
-      coords_arg[3] = tmp;
-   }
-
-   build_cube_intrinsic(ctx, coords_arg, &selcoords);
-
-   invma =
-      ac_build_intrinsic(ctx, "llvm.fabs.f32", ctx->f32, &selcoords.ma, 1, 0);
-   invma = ac_build_fdiv(ctx, LLVMConstReal(ctx->f32, 1.0), invma);
-
-   for (int i = 0; i < 2; ++i)
-      coords[i] = LLVMBuildFMul(builder, selcoords.stc[i], invma, "");
-
-   coords[2] = selcoords.id;
-
-   if (is_deriv && derivs_arg) {
-      LLVMValueRef derivs[4];
-      int axis;
-
-      /* Convert cube derivatives to 2D derivatives. */
-      for (axis = 0; axis < 2; axis++) {
-         LLVMValueRef deriv_st[2];
-         LLVMValueRef deriv_ma;
-
-         /* Transform the derivative alongside the texture
-          * coordinate. Mathematically, the correct formula is
-          * as follows. Assume we're projecting onto the +Z face
-          * and denote by dx/dh the derivative of the (original)
-          * X texture coordinate with respect to horizontal
-          * window coordinates. The projection onto the +Z face
-          * plane is:
-          *
-          *   f(x,z) = x/z
-          *
-          * Then df/dh = df/dx * dx/dh + df/dz * dz/dh
-          *            = 1/z * dx/dh - x/z * 1/z * dz/dh.
-          *
-          * This motivatives the implementation below.
-          *
-          * Whether this actually gives the expected results for
-          * apps that might feed in derivatives obtained via
-          * finite differences is anyone's guess. The OpenGL spec
-          * seems awfully quiet about how textureGrad for cube
-          * maps should be handled.
-          */
-         build_cube_select(ctx, &selcoords, &derivs_arg[axis * 3], deriv_st, &deriv_ma);
-
-         deriv_ma = LLVMBuildFMul(builder, deriv_ma, invma, "");
-
-         for (int i = 0; i < 2; ++i)
-            derivs[axis * 2 + i] =
-               LLVMBuildFSub(builder, LLVMBuildFMul(builder, deriv_st[i], invma, ""),
-                             LLVMBuildFMul(builder, deriv_ma, coords[i], ""), "");
-      }
-
-      memcpy(derivs_arg, derivs, sizeof(derivs));
-   }
-
-   /* Shift the texture coordinate. This must be applied after the
-    * derivative calculation.
-    */
-   for (int i = 0; i < 2; ++i)
-      coords[i] = LLVMBuildFAdd(builder, coords[i], LLVMConstReal(ctx->f32, 1.5), "");
-
-   if (is_array) {
-      /* for cube arrays coord.z = coord.w(array_index) * 8 + face */
-      /* coords_arg.w component - array_index for cube arrays */
-      coords[2] = ac_build_fmad(ctx, coords_arg[3], LLVMConstReal(ctx->f32, 8.0), coords[2]);
-   }
-
-   memcpy(coords_arg, coords, sizeof(coords));
-}
-
 LLVMValueRef ac_build_fs_interp(struct ac_llvm_context *ctx, LLVMValueRef llvm_chan,
                                 LLVMValueRef attr_number, LLVMValueRef params, LLVMValueRef i,
                                 LLVMValueRef j)
@@ -1219,7 +1014,7 @@ LLVMValueRef ac_build_load_to_sgpr_uint_wraparound(struct ac_llvm_context *ctx, 
 
 static unsigned get_cache_flags(struct ac_llvm_context *ctx, enum gl_access_qualifier access)
 {
-   return ac_get_hw_cache_flags(ctx->gfx_level, access).value;
+   return ac_get_hw_cache_flags(ctx->info, access).value;
 }
 
 static void ac_build_buffer_store_common(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
@@ -3234,9 +3029,9 @@ static LLVMValueRef get_reduction_identity(struct ac_llvm_context *ctx, nir_op o
       switch (op) {
       case nir_op_ior:
       case nir_op_ixor:
-         return LLVMConstInt(ctx->i1, 0, 0);
+         return ctx->i1false;
       case nir_op_iand:
-         return LLVMConstInt(ctx->i1, 1, 0);
+         return ctx->i1true;
       default:
          unreachable("bad reduction intrinsic");
       }
@@ -3470,7 +3265,7 @@ static LLVMValueRef ac_wavefront_shift_right_1(struct ac_llvm_context *ctx, LLVM
    tmp2 = ac_build_readlane(ctx, src, LLVMConstInt(ctx->i32, 31, 0));
    active = LLVMBuildICmp(ctx->builder, LLVMIntEQ, tid, LLVMConstInt(ctx->i32, 32, 0), "");
    tmp1 = LLVMBuildSelect(ctx->builder, active, tmp2, tmp1, "");
-   active = LLVMBuildICmp(ctx->builder, LLVMIntEQ, tid, LLVMConstInt(ctx->i32, 0, 0), "");
+   active = LLVMBuildICmp(ctx->builder, LLVMIntEQ, tid, ctx->i32_0, "");
    return LLVMBuildSelect(ctx->builder, active, identity, tmp1, "");
 }
 
@@ -3955,26 +3750,13 @@ void ac_export_mrt_z(struct ac_llvm_context *ctx, LLVMValueRef depth, LLVMValueR
 
    /* GFX6 (except OLAND and HAINAN) has a bug that it only looks
     * at the X writemask component. */
-   if (ctx->gfx_level == GFX6 && ctx->family != CHIP_OLAND && ctx->family != CHIP_HAINAN)
+   if (ctx->gfx_level == GFX6 &&
+       ctx->info->family != CHIP_OLAND &&
+       ctx->info->family != CHIP_HAINAN)
       mask |= 0x1;
 
    /* Specify which components to enable */
    args->enabled_channels = mask;
-}
-
-LLVMValueRef ac_pack_edgeflags_for_export(struct ac_llvm_context *ctx,
-                                          const struct ac_shader_args *args)
-{
-   /* Use the following trick to extract the edge flags:
-    *   extracted = v_and_b32 gs_invocation_id, 0x700 ; get edge flags at bits 8, 9, 10
-    *   shifted = v_mul_u32_u24 extracted, 0x80402u   ; shift the bits: 8->9, 9->19, 10->29
-    *   result = v_and_b32 shifted, 0x20080200        ; remove garbage
-    */
-   LLVMValueRef tmp = LLVMBuildAnd(ctx->builder,
-                                   ac_get_arg(ctx, args->gs_invocation_id),
-                                   LLVMConstInt(ctx->i32, 0x700, 0), "");
-   tmp = LLVMBuildMul(ctx->builder, tmp, LLVMConstInt(ctx->i32, 0x80402u, 0), "");
-   return LLVMBuildAnd(ctx->builder, tmp, LLVMConstInt(ctx->i32, 0x20080200, 0), "");
 }
 
 static LLVMTypeRef arg_llvm_type(enum ac_arg_type type, unsigned size, struct ac_llvm_context *ctx)

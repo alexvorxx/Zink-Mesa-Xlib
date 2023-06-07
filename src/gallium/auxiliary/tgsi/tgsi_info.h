@@ -89,9 +89,6 @@ tgsi_get_opcode_info(enum tgsi_opcode opcode);
 const char *
 tgsi_get_opcode_name(enum tgsi_opcode opcode);
 
-const char *
-tgsi_get_processor_name(enum pipe_shader_type processor);
-
 enum tgsi_opcode_type {
    TGSI_TYPE_UNTYPED, /* for MOV */
    TGSI_TYPE_VOID,

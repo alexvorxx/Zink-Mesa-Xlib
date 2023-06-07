@@ -41,7 +41,6 @@
 #include "util/slab.h"
 #include "util/u_upload_mgr.h"
 #include "util/u_blitter.h"
-#include "tgsi/tgsi_text.h"
 
 #include "virgl_encode.h"
 #include "virgl_context.h"
@@ -981,13 +980,13 @@ static void virgl_draw_vbo(struct pipe_context *ctx,
 
            if (ib.user_buffer) {
                    unsigned start_offset = draws[0].start * ib.index_size;
-                   u_upload_data(vctx->uploader, start_offset,
+                   u_upload_data(vctx->uploader, 0,
                                  draws[0].count * ib.index_size, 4,
                                  (char*)ib.user_buffer + start_offset,
                                  &ib.offset, &ib.buffer);
-                   ib.offset -= start_offset;
                    ib.user_buffer = NULL;
            }
+           virgl_hw_set_index_buffer(vctx, &ib);
    }
 
    if (!vctx->num_draws)
@@ -995,8 +994,6 @@ static void virgl_draw_vbo(struct pipe_context *ctx,
    vctx->num_draws++;
 
    virgl_hw_set_vertex_buffers(vctx);
-   if (info.index_size)
-      virgl_hw_set_index_buffer(vctx, &ib);
 
    virgl_encoder_draw_vbo(vctx, &info, drawid_offset, indirect, &draws[0]);
 
@@ -1013,7 +1010,7 @@ static void virgl_submit_cmd(struct virgl_winsys *vws,
 
       vws->submit_cmd(vws, cbuf, &sync_fence);
 
-      vws->fence_wait(vws, sync_fence, PIPE_TIMEOUT_INFINITE);
+      vws->fence_wait(vws, sync_fence, OS_TIMEOUT_INFINITE);
       vws->fence_reference(vws, &sync_fence, NULL);
    } else {
       vws->submit_cmd(vws, cbuf, fence);
@@ -1634,7 +1631,7 @@ static void virgl_link_shader(struct pipe_context *ctx, void **handles)
       struct virgl_winsys *vws = rs->vws;
       struct pipe_fence_handle *sync_fence;
       virgl_flush_eq(vctx, vctx, &sync_fence);
-      vws->fence_wait(vws, sync_fence, PIPE_TIMEOUT_INFINITE);
+      vws->fence_wait(vws, sync_fence, OS_TIMEOUT_INFINITE);
       vws->fence_reference(vws, &sync_fence, NULL);
    }
 }

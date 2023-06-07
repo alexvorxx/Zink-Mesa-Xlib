@@ -58,8 +58,8 @@ reset_obj(struct zink_screen *screen, struct zink_batch_state *bs, struct zink_r
          /* prune all existing views */
          obj->view_prune_count = util_dynarray_num_elements(&obj->views, VkBufferView);
          /* prune them when the views will definitely not be in use */
-         obj->view_prune_timeline = MAX2(obj->bo->reads ? obj->bo->reads->usage : 0,
-                                         obj->bo->writes ? obj->bo->writes->usage : 0);
+         obj->view_prune_timeline = MAX2(obj->bo->reads.u ? obj->bo->reads.u->usage : 0,
+                                         obj->bo->writes.u ? obj->bo->writes.u->usage : 0);
       }
       simple_mtx_unlock(&obj->view_lock);
    }
@@ -167,7 +167,7 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
    bs->has_barriers = false;
    if (bs->fence.batch_id)
       zink_screen_update_last_finished(screen, bs->fence.batch_id);
-   bs->submit_count++;
+   bs->usage.submit_count++;
    bs->fence.batch_id = 0;
    bs->usage.usage = 0;
    bs->next = NULL;
@@ -514,7 +514,7 @@ post_submit(void *data, void *gdata, int thread_index)
       screen->device_lost = true;
    } else if (bs->ctx->batch_states_count > 5000) {
       /* throttle in case something crazy is happening */
-      zink_screen_timeline_wait(screen, bs->fence.batch_id - 2500, PIPE_TIMEOUT_INFINITE);
+      zink_screen_timeline_wait(screen, bs->fence.batch_id - 2500, OS_TIMEOUT_INFINITE);
    }
    /* this resets the buffer hashlist for the state's next use */
    memset(&bs->buffer_indices_hashlist, -1, sizeof(bs->buffer_indices_hashlist));
@@ -608,7 +608,7 @@ submit_queue(void *data, void *gdata, int thread_index)
       bs->is_device_lost = true;
    }
    simple_mtx_unlock(&screen->queue_lock);
-   bs->submit_count++;
+   bs->usage.submit_count++;
 end:
    cnd_broadcast(&bs->usage.flush);
 

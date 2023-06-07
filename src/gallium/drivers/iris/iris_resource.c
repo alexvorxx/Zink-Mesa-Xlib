@@ -1197,16 +1197,16 @@ iris_resource_create_for_image(struct pipe_screen *pscreen,
    if (!isl_surf_created_successfully)
       goto fail;
 
-   /* Don't create staging surfaces that will use over half the aperture,
+   /* Don't create staging surfaces that will use over half the sram,
     * since staging implies you are copying data to another resource that's
-    * at least as large, and then both wouldn't fit in the aperture.
+    * at least as large, and then both wouldn't fit in system memory.
     *
     * Skip this for discrete cards, as the destination buffer might be in
     * device local memory while the staging buffer would be in system memory,
     * so both would fit.
     */
    if (templ->usage == PIPE_USAGE_STAGING && !devinfo->has_local_mem &&
-       res->surf.size_B > devinfo->aperture_bytes / 2)
+       res->surf.size_B > (iris_bufmgr_sram_size(screen->bufmgr) / 2))
       goto fail;
 
    if (!iris_resource_configure_aux(screen, res, false))
@@ -1253,6 +1253,9 @@ iris_resource_create_for_image(struct pipe_screen *pscreen,
                 iris_get_aux_clear_color_state_size(screen, res);
    }
 
+   /* The ISL alignment already includes AUX-TT requirements, so no additional
+    * attention required here :)
+    */
    uint32_t alignment = MAX2(4096, res->surf.alignment_B);
    res->bo =
       iris_bo_alloc(screen->bufmgr, name, bo_size, alignment, memzone, flags);

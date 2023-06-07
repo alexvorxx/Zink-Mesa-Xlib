@@ -598,15 +598,15 @@ static inline unsigned
 d3dprimitivetype_to_pipe_prim(D3DPRIMITIVETYPE prim)
 {
     switch (prim) {
-    case D3DPT_POINTLIST:     return PIPE_PRIM_POINTS;
-    case D3DPT_LINELIST:      return PIPE_PRIM_LINES;
-    case D3DPT_LINESTRIP:     return PIPE_PRIM_LINE_STRIP;
-    case D3DPT_TRIANGLELIST:  return PIPE_PRIM_TRIANGLES;
-    case D3DPT_TRIANGLESTRIP: return PIPE_PRIM_TRIANGLE_STRIP;
-    case D3DPT_TRIANGLEFAN:   return PIPE_PRIM_TRIANGLE_FAN;
+    case D3DPT_POINTLIST:     return MESA_PRIM_POINTS;
+    case D3DPT_LINELIST:      return MESA_PRIM_LINES;
+    case D3DPT_LINESTRIP:     return MESA_PRIM_LINE_STRIP;
+    case D3DPT_TRIANGLELIST:  return MESA_PRIM_TRIANGLES;
+    case D3DPT_TRIANGLESTRIP: return MESA_PRIM_TRIANGLE_STRIP;
+    case D3DPT_TRIANGLEFAN:   return MESA_PRIM_TRIANGLE_FAN;
     default:
         assert(0);
-        return PIPE_PRIM_POINTS;
+        return MESA_PRIM_POINTS;
     }
 }
 

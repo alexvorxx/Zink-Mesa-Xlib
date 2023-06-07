@@ -67,7 +67,7 @@ struct fetch_shade_emit {
 
 static void
 fse_prepare(struct draw_pt_middle_end *middle,
-            enum pipe_prim_type prim,
+            enum mesa_prim prim,
             unsigned opt,
             unsigned *max_vertices)
 {

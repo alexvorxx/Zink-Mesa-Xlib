@@ -74,9 +74,9 @@ create_llvm_function(struct ac_llvm_context *ctx, LLVMModuleRef module, LLVMBuil
 {
    struct ac_llvm_pointer main_function = ac_build_main(args, ctx, convention, "main", ctx->voidt, module);
 
-   if (options->address32_hi) {
+   if (options->info->address32_hi) {
       ac_llvm_add_target_dep_function_attr(main_function.value, "amdgpu-32bit-address-high-bits",
-                                           options->address32_hi);
+                                           options->info->address32_hi);
    }
 
    ac_llvm_set_workgroup_size(main_function.value, max_workgroup_size);
@@ -335,8 +335,7 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
       exports_color_null = !exports_mrtz || (shaders[0]->info.outputs_written & (0xffu << FRAG_RESULT_DATA0));
    }
 
-   ac_llvm_context_init(&ctx.ac, ac_llvm, options->gfx_level, options->family,
-                        options->has_3d_cube_border_color_mipmap,
+   ac_llvm_context_init(&ctx.ac, ac_llvm, options->info,
                         float_mode, info->wave_size, info->ballot_bit_size, exports_color_null, exports_mrtz);
 
    uint32_t length = 1;
@@ -373,7 +372,6 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
    ctx.abi.clamp_shadow_reference = false;
    ctx.abi.robust_buffer_access = options->robust_buffer_access;
    ctx.abi.load_grid_size_from_user_sgpr = args->load_grid_size_from_user_sgpr;
-   ctx.abi.conformant_trunc_coord = options->conformant_trunc_coord;
 
    bool is_ngg = is_pre_gs_stage(shaders[0]->info.stage) && info->is_ngg;
    if (shader_count >= 2 || is_ngg)
@@ -386,7 +384,7 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
    if (args->ac.instance_id.used)
       ctx.abi.instance_id = ac_get_arg(&ctx.ac, args->ac.instance_id);
 
-   if (options->has_ls_vgpr_init_bug &&
+   if (options->info->has_ls_vgpr_init_bug &&
        shaders[shader_count - 1]->info.stage == MESA_SHADER_TESS_CTRL)
       ac_fixup_ls_hs_input_vgprs(&ctx.ac, &ctx.abi, &args->ac);
 
@@ -602,7 +600,7 @@ llvm_compile_shader(const struct radv_nir_compiler_options *options,
    if (options->check_ir)
       tm_options |= AC_TM_CHECK_IR;
 
-   radv_init_llvm_compiler(&ac_llvm, options->family, tm_options, info->wave_size);
+   radv_init_llvm_compiler(&ac_llvm, options->info->family, tm_options, info->wave_size);
 
    radv_compile_nir_shader(&ac_llvm, options, info, binary, args, shaders, shader_count);
 }

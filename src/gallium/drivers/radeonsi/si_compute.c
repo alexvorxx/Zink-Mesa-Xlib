@@ -1,26 +1,7 @@
 /*
  * Copyright 2013 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "si_compute.h"
@@ -201,7 +182,6 @@ static void si_create_compute_state_async(void *job, void *gdata, int thread_ind
                                               sscreen->info.wave64_vgpr_alloc_granularity == 8) ? 8 : 4)) |
                              S_00B848_DX10_CLAMP(1) |
                              S_00B848_MEM_ORDERED(si_shader_mem_ordered(shader)) |
-                             S_00B848_WGP_MODE(sscreen->info.gfx_level >= GFX10) |
                              S_00B848_FLOAT_MODE(shader->config.float_mode);
 
       if (sscreen->info.gfx_level < GFX10) {
@@ -918,7 +898,10 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
                                        sctx->framebuffer.all_DCC_pipe_aligned);
       }
 
-      si_decompress_textures(sctx, 1 << PIPE_SHADER_COMPUTE);
+      if (sctx->gfx_level < GFX11)
+         gfx6_decompress_textures(sctx, 1 << PIPE_SHADER_COMPUTE);
+      else
+         gfx11_decompress_textures(sctx, 1 << PIPE_SHADER_COMPUTE);
    }
 
    /* Add buffer sizes for memory checking in need_cs_space. */

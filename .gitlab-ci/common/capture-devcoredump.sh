@@ -1,7 +1,10 @@
-#!/bin/sh
+#!/usr/bin/env bash
+# shellcheck disable=SC2035
+# shellcheck disable=SC2061
+# shellcheck disable=SC2086 # we want word splitting
 
 while true; do
-  devcds=`find /sys/devices/virtual/devcoredump/ -name data 2>/dev/null`
+  devcds=$(find /sys/devices/virtual/devcoredump/ -name data 2>/dev/null)
   for i in $devcds; do
     echo "Found a devcoredump at $i."
     if cp $i /results/first.devcore; then

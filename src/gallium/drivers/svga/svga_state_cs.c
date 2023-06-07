@@ -27,7 +27,6 @@
 #include "util/u_memory.h"
 #include "util/u_bitmask.h"
 #include "translate/translate.h"
-#include "tgsi/tgsi_ureg.h"
 
 #include "svga_context.h"
 #include "svga_cmd.h"

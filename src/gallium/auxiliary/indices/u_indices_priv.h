@@ -38,7 +38,7 @@
 #define OUT_COUNT     2
 
 
-#define PRIM_COUNT   (PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY + 1)
+#define PRIM_COUNT   (MESA_PRIM_TRIANGLE_STRIP_ADJACENCY + 1)
 
 static void translate_memcpy_uint( const void *in,
                                    unsigned start,

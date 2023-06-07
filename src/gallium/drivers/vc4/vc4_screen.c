@@ -612,13 +612,13 @@ vc4_screen_create(int fd, const struct pipe_screen_config *config,
         }
 
         /* Generate the bitmask of supported draw primitives. */
-        screen->prim_types = BITFIELD_BIT(PIPE_PRIM_POINTS) |
-                             BITFIELD_BIT(PIPE_PRIM_LINES) |
-                             BITFIELD_BIT(PIPE_PRIM_LINE_LOOP) |
-                             BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN);
+        screen->prim_types = BITFIELD_BIT(MESA_PRIM_POINTS) |
+                             BITFIELD_BIT(MESA_PRIM_LINES) |
+                             BITFIELD_BIT(MESA_PRIM_LINE_LOOP) |
+                             BITFIELD_BIT(MESA_PRIM_LINE_STRIP) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLES) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN);
 
 
         return pscreen;

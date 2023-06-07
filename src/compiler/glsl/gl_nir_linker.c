@@ -198,15 +198,6 @@ can_remove_uniform(nir_variable *var, UNUSED void *data)
    return true;
 }
 
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static inline bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
-
 static bool
 inout_has_same_location(const nir_variable *var, unsigned stage)
 {

@@ -30,6 +30,7 @@
 
 #include "draw_context.h"
 #include "tgsi/tgsi_exec.h"
+#include "tgsi/tgsi_scan.h"
 #include "draw_private.h"
 
 #define MAX_TGSI_PRIMITIVES 4

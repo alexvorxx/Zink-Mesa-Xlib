@@ -196,7 +196,7 @@ lower_ishl64(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y)
                                 nir_ishl(b, x_lo, reverse_count));
 
    return nir_bcsel(b, nir_ieq_imm(b, y, 0), x,
-                    nir_bcsel(b, nir_uge(b, y, nir_imm_int(b, 32)),
+                    nir_bcsel(b, nir_uge_imm(b, y, 32),
                                  res_if_ge_32, res_if_lt_32));
 }
 
@@ -243,7 +243,7 @@ lower_ishr64(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y)
                                 nir_ishr(b, x_hi, nir_imm_int(b, 31)));
 
    return nir_bcsel(b, nir_ieq_imm(b, y, 0), x,
-                    nir_bcsel(b, nir_uge(b, y, nir_imm_int(b, 32)),
+                    nir_bcsel(b, nir_uge_imm(b, y, 32),
                                  res_if_ge_32, res_if_lt_32));
 }
 
@@ -289,7 +289,7 @@ lower_ushr64(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y)
                                 nir_imm_int(b, 0));
 
    return nir_bcsel(b, nir_ieq_imm(b, y, 0), x,
-                    nir_bcsel(b, nir_uge(b, y, nir_imm_int(b, 32)),
+                    nir_bcsel(b, nir_uge_imm(b, y, 32),
                                  res_if_ge_32, res_if_lt_32));
 }
 
@@ -337,7 +337,7 @@ static nir_ssa_def *
 lower_iabs64(nir_builder *b, nir_ssa_def *x)
 {
    nir_ssa_def *x_hi = nir_unpack_64_2x32_split_y(b, x);
-   nir_ssa_def *x_is_neg = nir_ilt(b, x_hi, nir_imm_int(b, 0));
+   nir_ssa_def *x_is_neg = nir_ilt_imm(b, x_hi, 0);
    return nir_bcsel(b, x_is_neg, nir_ineg(b, x), x);
 }
 
@@ -600,8 +600,8 @@ lower_idiv64(nir_builder *b, nir_ssa_def *n, nir_ssa_def *d)
    nir_ssa_def *n_hi = nir_unpack_64_2x32_split_y(b, n);
    nir_ssa_def *d_hi = nir_unpack_64_2x32_split_y(b, d);
 
-   nir_ssa_def *negate = nir_ine(b, nir_ilt(b, n_hi, nir_imm_int(b, 0)),
-                                    nir_ilt(b, d_hi, nir_imm_int(b, 0)));
+   nir_ssa_def *negate = nir_ine(b, nir_ilt_imm(b, n_hi, 0),
+                                    nir_ilt_imm(b, d_hi, 0));
    nir_ssa_def *q, *r;
    lower_udiv64_mod64(b, nir_iabs(b, n), nir_iabs(b, d), &q, &r);
    return nir_bcsel(b, negate, nir_ineg(b, q), q);
@@ -620,8 +620,8 @@ lower_imod64(nir_builder *b, nir_ssa_def *n, nir_ssa_def *d)
 {
    nir_ssa_def *n_hi = nir_unpack_64_2x32_split_y(b, n);
    nir_ssa_def *d_hi = nir_unpack_64_2x32_split_y(b, d);
-   nir_ssa_def *n_is_neg = nir_ilt(b, n_hi, nir_imm_int(b, 0));
-   nir_ssa_def *d_is_neg = nir_ilt(b, d_hi, nir_imm_int(b, 0));
+   nir_ssa_def *n_is_neg = nir_ilt_imm(b, n_hi, 0);
+   nir_ssa_def *d_is_neg = nir_ilt_imm(b, d_hi, 0);
 
    nir_ssa_def *q, *r;
    lower_udiv64_mod64(b, nir_iabs(b, n), nir_iabs(b, d), &q, &r);
@@ -637,7 +637,7 @@ static nir_ssa_def *
 lower_irem64(nir_builder *b, nir_ssa_def *n, nir_ssa_def *d)
 {
    nir_ssa_def *n_hi = nir_unpack_64_2x32_split_y(b, n);
-   nir_ssa_def *n_is_neg = nir_ilt(b, n_hi, nir_imm_int(b, 0));
+   nir_ssa_def *n_is_neg = nir_ilt_imm(b, n_hi, 0);
 
    nir_ssa_def *q, *r;
    lower_udiv64_mod64(b, nir_iabs(b, n), nir_iabs(b, d), &q, &r);
@@ -682,7 +682,7 @@ lower_ufind_msb64(nir_builder *b, nir_ssa_def *x)
    nir_ssa_def *hi_count = nir_ufind_msb(b, x_hi);
 
    if (b->shader->options->lower_uadd_sat) {
-      nir_ssa_def *valid_hi_bits = nir_ine(b, x_hi, nir_imm_int(b, 0));
+      nir_ssa_def *valid_hi_bits = nir_ine_imm(b, x_hi, 0);
       nir_ssa_def *hi_res = nir_iadd(b, nir_imm_intN_t(b, 32, 32), hi_count);
       return nir_bcsel(b, valid_hi_bits, hi_res, lo_count);
    } else {
@@ -765,7 +765,7 @@ lower_2f(nir_builder *b, nir_ssa_def *x, unsigned dest_bit_size,
    nir_ssa_def *half = COND_LOWER_OP(b, ishr, lsb_mask, nir_imm_int(b, 1));
    nir_ssa_def *rem = COND_LOWER_OP(b, iand, x, rem_mask);
    nir_ssa_def *halfway = nir_iand(b, COND_LOWER_CMP(b, ieq, rem, half),
-                                   nir_ine(b, discard, nir_imm_int(b, 0)));
+                                   nir_ine_imm(b, discard, 0));
    nir_ssa_def *is_odd = COND_LOWER_CMP(b, ine, nir_imm_int64(b, 0),
                                          COND_LOWER_OP(b, iand, x, lsb_mask));
    nir_ssa_def *round_up = nir_ior(b, COND_LOWER_CMP(b, ilt, half, rem),
@@ -796,15 +796,15 @@ lower_2f(nir_builder *b, nir_ssa_def *x, unsigned dest_bit_size,
        * overflow.
        */
       nir_ssa_def *carry = nir_b2i32(
-         b, nir_uge(b, nir_unpack_64_2x32_split_y(b, significand),
-                    nir_imm_int(b, 1 << (significand_bits - 31))));
+         b, nir_uge_imm(b, nir_unpack_64_2x32_split_y(b, significand),
+                        (uint64_t)(1 << (significand_bits - 31))));
       significand = COND_LOWER_OP(b, ishr, significand, carry);
       exp = nir_iadd(b, exp, carry);
 
       /* Compute the biased exponent, taking care to handle a zero
        * input correctly, which would have caused exp to be negative.
        */
-      nir_ssa_def *biased_exp = nir_bcsel(b, nir_ilt(b, exp, nir_imm_int(b, 0)),
+      nir_ssa_def *biased_exp = nir_bcsel(b, nir_ilt_imm(b, exp, 0),
                                           nir_imm_int(b, 0),
                                           nir_iadd(b, exp, nir_imm_int(b, 1023)));
 
@@ -855,7 +855,7 @@ lower_f2(nir_builder *b, nir_ssa_def *x, bool dst_is_signed)
    }
 
    if (dst_is_signed)
-      res = nir_bcsel(b, nir_flt(b, x_sign, nir_imm_floatN_t(b, 0, x->bit_size)),
+      res = nir_bcsel(b, nir_flt_imm(b, x_sign, 0),
                       nir_ineg(b, res), res);
 
    return res;

@@ -124,9 +124,17 @@ struct spirv_to_nir_options {
    bool skip_os_break_in_debug_build;
 };
 
-bool gl_spirv_validation(const uint32_t *words, size_t word_count,
-                         struct nir_spirv_specialization *spec, unsigned num_spec,
-                         gl_shader_stage stage, const char *entry_point_name);
+enum spirv_verify_result {
+   SPIRV_VERIFY_OK = 0,
+   SPIRV_VERIFY_PARSER_ERROR = 1,
+   SPIRV_VERIFY_ENTRY_POINT_NOT_FOUND = 2,
+   SPIRV_VERIFY_UNKNOWN_SPEC_INDEX = 3,
+};
+
+enum spirv_verify_result spirv_verify_gl_specialization_constants(
+   const uint32_t *words, size_t word_count,
+   struct nir_spirv_specialization *spec, unsigned num_spec,
+   gl_shader_stage stage, const char *entry_point_name);
 
 nir_shader *spirv_to_nir(const uint32_t *words, size_t word_count,
                          struct nir_spirv_specialization *specializations,

@@ -1,5 +1,5 @@
 {
-    "$schema": "https://schema.khronos.org/vulkan/profiles-0.8.1-230.json#",
+    "$schema": "https://schema.khronos.org/vulkan/profiles-0.8.1-251.json",
     "capabilities": {
         "vulkan10requirements": {
             "features": {
@@ -389,13 +389,10 @@
                 "VK_EXT_extended_dynamic_state2": 1,
                 "VK_EXT_extended_dynamic_state3": 1,
                 "VK_EXT_graphics_pipeline_library": 1,
-                "VK_KHR_pipeline_library": 1,
-                "VK_EXT_non_seamless_cube_map": 1
+                "VK_EXT_non_seamless_cube_map": 1,
+                "VK_KHR_pipeline_library": 1
             },
             "features": {
-                "VkPhysicalDeviceFeatures": {
-                    "textureCompressionBC": true
-                },
                 "VkPhysicalDeviceExtendedDynamicStateFeaturesEXT": {
                     "extendedDynamicState": true
                 },
@@ -411,6 +408,9 @@
                     "extendedDynamicState3ProvokingVertexMode": true,
                     "extendedDynamicState3LineRasterizationMode": true,
                     "extendedDynamicState3DepthClipNegativeOneToOne": true
+                },
+                "VkPhysicalDeviceFeatures": {
+                    "textureCompressionBC": true
                 },
                 "VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT": {
                     "graphicsPipelineLibrary": true
@@ -431,11 +431,15 @@
         "gl46_optimal_ext": {
             "extensions": {
                 "VK_EXT_provoking_vertex": 1,
-                "VK_KHR_dynamic_rendering": 1
+                "VK_KHR_dynamic_rendering": 1,
+                "VK_EXT_dynamic_rendering_unused_attachments": 1
             },
             "features": {
                 "VkPhysicalDeviceDynamicRenderingFeaturesKHR": {
                     "dynamicRendering": true
+                },
+                "VkPhysicalDeviceDynamicRenderingUnusedAttachmentsFeaturesEXT": {
+                    "dynamicRenderingUnusedAttachments": true
                 }
             }
         },

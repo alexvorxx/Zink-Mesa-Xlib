@@ -375,7 +375,7 @@ clc_lower_nonnormalized_samplers(nir_shader *nir,
                   // Don't scale the array index, but do clamp it
                   comps[i] = nir_fround_even(&b, comps[i]);
                   comps[i] = nir_fmax(&b, comps[i], nir_imm_float(&b, 0.0f));
-                  comps[i] = nir_fmin(&b, comps[i], nir_fsub(&b, nir_channel(&b, txs, i), nir_imm_float(&b, 1.0f)));
+                  comps[i] = nir_fmin(&b, comps[i], nir_fadd_imm(&b, nir_channel(&b, txs, i), -1.0f));
                   break;
                }
 

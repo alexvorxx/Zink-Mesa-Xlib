@@ -13,7 +13,6 @@
 #include "asahi/lib/agx_formats.h"
 #include "asahi/lib/decode.h"
 #include "drm-uapi/drm_fourcc.h"
-#include "frontend/sw_winsys.h"
 #include "frontend/winsys_handle.h"
 #include "gallium/auxiliary/renderonly/renderonly.h"
 #include "gallium/auxiliary/util/u_debug_cb.h"
@@ -70,6 +69,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"stats",     AGX_DBG_STATS,    "Show command execution statistics"},
    {"resource",  AGX_DBG_RESOURCE, "Log resource operations"},
    {"batch",     AGX_DBG_BATCH,    "Log batches"},
+   {"nowc",      AGX_DBG_NOWC,     "Disable write-combining"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -522,35 +522,11 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
 
    pipe_reference_init(&nresource->base.reference, 1);
 
-   struct sw_winsys *winsys = ((struct agx_screen *)screen)->winsys;
-
    ail_make_miptree(&nresource->layout);
 
    if (templ->target == PIPE_BUFFER) {
       assert(nresource->layout.tiling == AIL_TILING_LINEAR);
       util_range_init(&nresource->valid_buffer_range);
-   }
-
-   if (winsys && templ->bind & PIPE_BIND_DISPLAY_TARGET) {
-      unsigned width = templ->width0;
-      unsigned height = templ->height0;
-
-      if (nresource->layout.tiling == AIL_TILING_TWIDDLED) {
-         width = ALIGN_POT(width, 64);
-         height = ALIGN_POT(height, 64);
-      }
-
-      nresource->dt = winsys->displaytarget_create(
-         winsys, templ->bind, templ->format, width, height, 64,
-         NULL /*map_front_private*/, &nresource->dt_stride);
-
-      if (nresource->layout.tiling == AIL_TILING_LINEAR)
-         nresource->layout.linear_stride_B = nresource->dt_stride;
-
-      if (nresource->dt == NULL) {
-         FREE(nresource);
-         return NULL;
-      }
    }
 
    /* Guess a label based on the bind */
@@ -579,6 +555,11 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
    if (nresource->base.usage == PIPE_USAGE_STAGING ||
        (nresource->base.flags & PIPE_RESOURCE_FLAG_MAP_COHERENT)) {
 
+      create_flags |= AGX_BO_WRITEBACK;
+   }
+
+   /* Allow disabling write-combine to debug performance issues */
+   if (dev->debug & AGX_DBG_NOWC) {
       create_flags |= AGX_BO_WRITEBACK;
    }
 
@@ -615,12 +596,6 @@ agx_resource_destroy(struct pipe_screen *screen, struct pipe_resource *prsrc)
 
    if (prsrc->target == PIPE_BUFFER)
       util_range_destroy(&rsrc->valid_buffer_range);
-
-   if (rsrc->dt) {
-      /* display target */
-      struct sw_winsys *winsys = agx_screen->winsys;
-      winsys->displaytarget_destroy(winsys, rsrc->dt);
-   }
 
    if (rsrc->scanout)
       renderonly_scanout_destroy(rsrc->scanout, agx_screen->dev.ro);
@@ -1101,6 +1076,63 @@ agx_clear(struct pipe_context *pctx, unsigned buffers,
 }
 
 static void
+transition_resource(struct pipe_context *pctx, struct agx_resource *rsrc,
+                    struct pipe_resource *templ)
+{
+   struct agx_resource *new_res =
+      agx_resource(pctx->screen->resource_create(pctx->screen, templ));
+
+   assert(new_res);
+
+   int level;
+   BITSET_FOREACH_SET(level, rsrc->data_valid, PIPE_MAX_TEXTURE_LEVELS) {
+      /* Blit each valid level */
+      struct pipe_blit_info blit = {0};
+
+      u_box_3d(0, 0, 0, rsrc->layout.width_px, rsrc->layout.height_px,
+               rsrc->layout.depth_px, &blit.dst.box);
+      blit.src.box = blit.dst.box;
+
+      blit.dst.resource = &new_res->base;
+      blit.dst.format = new_res->base.format;
+      blit.dst.level = level;
+      blit.src.resource = &rsrc->base;
+      blit.src.format = rsrc->base.format;
+      blit.src.level = level;
+      blit.mask = util_format_get_mask(blit.src.format);
+      blit.filter = PIPE_TEX_FILTER_NEAREST;
+      agx_blit(pctx, &blit);
+   }
+
+   /* Flush the blits out, to make sure the old resource is no longer used */
+   agx_flush_writer(agx_context(pctx), new_res, "flush_resource");
+
+   /* Copy the bind flags and swap the BOs */
+   struct agx_bo *old = rsrc->bo;
+   rsrc->base.bind = new_res->base.bind;
+   rsrc->layout = new_res->layout;
+   rsrc->modifier = new_res->modifier;
+   rsrc->bo = new_res->bo;
+   new_res->bo = old;
+
+   /* Free the new resource, which now owns the old BO */
+   pipe_resource_reference((struct pipe_resource **)&new_res, NULL);
+}
+
+void
+agx_decompress(struct agx_context *ctx, struct agx_resource *rsrc,
+               const char *reason)
+{
+   assert(rsrc->layout.tiling == AIL_TILING_TWIDDLED_COMPRESSED);
+   perf_debug_ctx(ctx, "Decompressing resource due to %s", reason);
+
+   struct pipe_resource templ = rsrc->base;
+   assert(!(templ.bind & PIPE_BIND_SHADER_IMAGE) && "currently compressed");
+   templ.bind |= PIPE_BIND_SHADER_IMAGE /* forces off compression */;
+   transition_resource(&ctx->base, rsrc, &templ);
+}
+
+static void
 agx_flush_resource(struct pipe_context *pctx, struct pipe_resource *pres)
 {
    struct agx_resource *rsrc = agx_resource(pres);
@@ -1119,40 +1151,7 @@ agx_flush_resource(struct pipe_context *pctx, struct pipe_resource *pres)
 
       struct pipe_resource templ = *pres;
       templ.bind |= PIPE_BIND_SHARED;
-
-      /* Create a new shareable resource */
-      struct agx_resource *new_res =
-         agx_resource(pctx->screen->resource_create(pctx->screen, &templ));
-
-      assert(new_res);
-
-      /* Blit it over */
-      struct pipe_blit_info blit = {0};
-
-      u_box_3d(0, 0, 0, rsrc->layout.width_px, rsrc->layout.height_px,
-               rsrc->layout.depth_px, &blit.dst.box);
-      blit.src.box = blit.dst.box;
-
-      blit.dst.resource = &new_res->base;
-      blit.dst.format = new_res->base.format;
-      blit.dst.level = 0;
-      blit.src.resource = pres;
-      blit.src.format = pres->format;
-      blit.src.level = 0;
-      blit.mask = util_format_get_mask(blit.src.format);
-      blit.filter = PIPE_TEX_FILTER_NEAREST;
-      agx_blit(pctx, &blit);
-
-      /* Flush the blit out, to make sure the old resource is no longer used */
-      agx_flush_writer(agx_context(pctx), new_res, "flush_resource");
-
-      /* Copy the bind flags and swap the BOs */
-      rsrc->base.bind = new_res->base.bind;
-      rsrc->bo = new_res->bo;
-      new_res->bo = old;
-
-      /* Free the new resource, which now owns the old BO */
-      pipe_resource_reference((struct pipe_resource **)&new_res, NULL);
+      transition_resource(pctx, rsrc, &templ);
    } else {
       /* Otherwise just claim it's already shared */
       pres->bind |= PIPE_BIND_SHARED;
@@ -1435,33 +1434,10 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    assert(!ret);
    ctx->syncobj = ctx->dummy_syncobj;
 
+   /* By default all samples are enabled */
+   ctx->sample_mask = ~0;
+
    return pctx;
-}
-
-static void
-agx_flush_frontbuffer(struct pipe_screen *_screen, struct pipe_context *pctx,
-                      struct pipe_resource *prsrc, unsigned level,
-                      unsigned layer, void *context_private,
-                      struct pipe_box *box)
-{
-   struct agx_resource *rsrc = (struct agx_resource *)prsrc;
-   struct agx_screen *agx_screen = (struct agx_screen *)_screen;
-   struct sw_winsys *winsys = agx_screen->winsys;
-
-   /* Dump the framebuffer */
-   assert(rsrc->dt);
-   void *map = winsys->displaytarget_map(winsys, rsrc->dt, PIPE_USAGE_DEFAULT);
-   assert(map != NULL);
-
-   if (rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED) {
-      ail_detile(rsrc->bo->ptr.cpu, map, &rsrc->layout, 0, rsrc->dt_stride, 0,
-                 0, rsrc->base.width0, rsrc->base.height0);
-   } else {
-      assert(rsrc->modifier == DRM_FORMAT_MOD_LINEAR);
-      memcpy(map, rsrc->bo->ptr.cpu, rsrc->dt_stride * rsrc->base.height0);
-   }
-
-   winsys->displaytarget_display(winsys, rsrc->dt, context_private, box);
 }
 
 static const char *
@@ -1524,9 +1500,8 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FBFETCH:
    case PIPE_CAP_FBFETCH_COHERENT:
       return 8;
-
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
-      return 0;
+      return 1;
 
    case PIPE_CAP_OCCLUSION_QUERY:
    case PIPE_CAP_GENERATE_MIPMAP:
@@ -1562,7 +1537,11 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
+      return 1;
    case PIPE_CAP_SAMPLE_SHADING:
+      /* TODO: sample shading */
+      return 0;
+
    case PIPE_CAP_IMAGE_LOAD_FORMATTED:
    case PIPE_CAP_IMAGE_STORE_FORMATTED:
    case PIPE_CAP_COMPUTE:
@@ -1588,9 +1567,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
-      return is_deqp ? 330 : 130;
+      return is_deqp ? 330 : 140;
    case PIPE_CAP_ESSL_FEATURE_LEVEL:
-      return is_deqp ? 320 : 120;
+      return is_deqp ? 310 : 300;
 
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:
       return 16;
@@ -1674,13 +1653,13 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_SUPPORTED_PRIM_MODES:
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
-      return BITFIELD_BIT(PIPE_PRIM_POINTS) | BITFIELD_BIT(PIPE_PRIM_LINES) |
-             BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
-             BITFIELD_BIT(PIPE_PRIM_LINE_LOOP) |
-             BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
-             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
-             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN) |
-             BITFIELD_BIT(PIPE_PRIM_QUADS) | BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
+      return BITFIELD_BIT(MESA_PRIM_POINTS) | BITFIELD_BIT(MESA_PRIM_LINES) |
+             BITFIELD_BIT(MESA_PRIM_LINE_STRIP) |
+             BITFIELD_BIT(MESA_PRIM_LINE_LOOP) |
+             BITFIELD_BIT(MESA_PRIM_TRIANGLES) |
+             BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP) |
+             BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN) |
+             BITFIELD_BIT(MESA_PRIM_QUADS) | BITFIELD_BIT(MESA_PRIM_QUAD_STRIP);
 
    case PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE:
       return 1;
@@ -1905,10 +1884,7 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
           target == PIPE_TEXTURE_3D || target == PIPE_TEXTURE_CUBE ||
           target == PIPE_TEXTURE_CUBE_ARRAY);
 
-   bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
-
-   if (sample_count > 1 &&
-       (!is_deqp || (sample_count != 4 && sample_count != 2)))
+   if (sample_count > 1 && sample_count != 4 && sample_count != 2)
       return false;
 
    if (MAX2(sample_count, 1) != MAX2(storage_sample_count, 1))
@@ -2068,7 +2044,7 @@ agx_screen_get_fd(struct pipe_screen *pscreen)
 }
 
 struct pipe_screen *
-agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
+agx_screen_create(int fd, struct renderonly *ro)
 {
    struct agx_screen *agx_screen;
    struct pipe_screen *screen;
@@ -2078,7 +2054,6 @@ agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
       return NULL;
 
    screen = &agx_screen->pscreen;
-   agx_screen->winsys = winsys;
 
    /* Set debug before opening */
    agx_screen->dev.debug =
@@ -2123,7 +2098,6 @@ agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
    screen->resource_get_handle = agx_resource_get_handle;
    screen->resource_get_param = agx_resource_get_param;
    screen->resource_create_with_modifiers = agx_resource_create_with_modifiers;
-   screen->flush_frontbuffer = agx_flush_frontbuffer;
    screen->get_timestamp = u_default_get_timestamp;
    screen->fence_reference = agx_fence_reference;
    screen->fence_finish = agx_fence_finish;

@@ -463,39 +463,6 @@ radv_translate_tex_numformat(VkFormat format, const struct util_format_descripti
    }
 }
 
-uint32_t
-radv_translate_color_numformat(VkFormat format, const struct util_format_description *desc,
-                               int first_non_void)
-{
-   unsigned ntype;
-
-   assert(vk_format_get_plane_count(format) == 1);
-
-   if (first_non_void == -1 || desc->channel[first_non_void].type == UTIL_FORMAT_TYPE_FLOAT)
-      ntype = V_028C70_NUMBER_FLOAT;
-   else {
-      ntype = V_028C70_NUMBER_UNORM;
-      if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB)
-         ntype = V_028C70_NUMBER_SRGB;
-      else if (desc->channel[first_non_void].type == UTIL_FORMAT_TYPE_SIGNED) {
-         if (desc->channel[first_non_void].pure_integer) {
-            ntype = V_028C70_NUMBER_SINT;
-         } else if (desc->channel[first_non_void].normalized) {
-            ntype = V_028C70_NUMBER_SNORM;
-         } else
-            ntype = ~0u;
-      } else if (desc->channel[first_non_void].type == UTIL_FORMAT_TYPE_UNSIGNED) {
-         if (desc->channel[first_non_void].pure_integer) {
-            ntype = V_028C70_NUMBER_UINT;
-         } else if (desc->channel[first_non_void].normalized) {
-            ntype = V_028C70_NUMBER_UNORM;
-         } else
-            ntype = ~0u;
-      }
-   }
-   return ntype;
-}
-
 static bool
 radv_is_sampler_format_supported(VkFormat format, bool *linear_sampling)
 {
@@ -535,6 +502,9 @@ radv_is_storage_image_format_supported(const struct radv_physical_device *physic
    const struct util_format_description *desc = vk_format_description(format);
    unsigned data_format, num_format;
    if (format == VK_FORMAT_UNDEFINED)
+      return false;
+
+   if (vk_format_is_depth_or_stencil(format))
       return false;
 
    data_format =
@@ -607,10 +577,9 @@ radv_is_colorbuffer_format_supported(const struct radv_physical_device *pdevice,
                                      bool *blendable)
 {
    const struct util_format_description *desc = vk_format_description(format);
-   uint32_t color_format = radv_translate_colorformat(format);
+   uint32_t color_format = ac_get_cb_format(pdevice->rad_info.gfx_level, desc->format);
    uint32_t color_swap = radv_translate_colorswap(format, false);
-   uint32_t color_num_format =
-      radv_translate_color_numformat(format, desc, vk_format_get_first_non_void_channel(format));
+   uint32_t color_num_format = ac_get_cb_number_type(desc->format);
 
    if (color_num_format == V_028C70_NUMBER_UINT || color_num_format == V_028C70_NUMBER_SINT ||
        color_format == V_028C70_COLOR_8_24 || color_format == V_028C70_COLOR_24_8 ||
@@ -877,89 +846,6 @@ radv_physical_device_get_format_properties(struct radv_physical_device *physical
    out_properties->linearTilingFeatures = linear;
    out_properties->optimalTilingFeatures = tiled;
    out_properties->bufferFeatures = buffer;
-}
-
-uint32_t
-radv_translate_colorformat(VkFormat format)
-{
-   const struct util_format_description *desc = vk_format_description(format);
-
-#define HAS_SIZE(x, y, z, w)                                                                       \
-   (desc->channel[0].size == (x) && desc->channel[1].size == (y) &&                                \
-    desc->channel[2].size == (z) && desc->channel[3].size == (w))
-
-   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) /* isn't plain */
-      return V_028C70_COLOR_10_11_11;
-
-   if (format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)
-      return V_028C70_COLOR_5_9_9_9;
-
-   if (desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
-      return V_028C70_COLOR_INVALID;
-
-   /* hw cannot support mixed formats (except depth/stencil, since
-    * stencil is not written to). */
-   if (desc->is_mixed && desc->colorspace != UTIL_FORMAT_COLORSPACE_ZS)
-      return V_028C70_COLOR_INVALID;
-
-   switch (desc->nr_channels) {
-   case 1:
-      switch (desc->channel[0].size) {
-      case 8:
-         return V_028C70_COLOR_8;
-      case 16:
-         return V_028C70_COLOR_16;
-      case 32:
-         return V_028C70_COLOR_32;
-      }
-      break;
-   case 2:
-      if (desc->channel[0].size == desc->channel[1].size) {
-         switch (desc->channel[0].size) {
-         case 8:
-            return V_028C70_COLOR_8_8;
-         case 16:
-            return V_028C70_COLOR_16_16;
-         case 32:
-            return V_028C70_COLOR_32_32;
-         }
-      } else if (HAS_SIZE(8, 24, 0, 0)) {
-         return V_028C70_COLOR_24_8;
-      } else if (HAS_SIZE(24, 8, 0, 0)) {
-         return V_028C70_COLOR_8_24;
-      }
-      break;
-   case 3:
-      if (HAS_SIZE(5, 6, 5, 0)) {
-         return V_028C70_COLOR_5_6_5;
-      } else if (HAS_SIZE(32, 8, 24, 0)) {
-         return V_028C70_COLOR_X24_8_32_FLOAT;
-      }
-      break;
-   case 4:
-      if (desc->channel[0].size == desc->channel[1].size &&
-          desc->channel[0].size == desc->channel[2].size &&
-          desc->channel[0].size == desc->channel[3].size) {
-         switch (desc->channel[0].size) {
-         case 4:
-            return V_028C70_COLOR_4_4_4_4;
-         case 8:
-            return V_028C70_COLOR_8_8_8_8;
-         case 16:
-            return V_028C70_COLOR_16_16_16_16;
-         case 32:
-            return V_028C70_COLOR_32_32_32_32;
-         }
-      } else if (HAS_SIZE(5, 5, 5, 1)) {
-         return V_028C70_COLOR_1_5_5_5;
-      } else if (HAS_SIZE(1, 5, 5, 5)) {
-         return V_028C70_COLOR_5_5_5_1;
-      } else if (HAS_SIZE(10, 10, 10, 2)) {
-         return V_028C70_COLOR_2_10_10_10;
-      }
-      break;
-   }
-   return V_028C70_COLOR_INVALID;
 }
 
 uint32_t

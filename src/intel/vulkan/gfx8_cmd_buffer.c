@@ -250,13 +250,13 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
       te.MaximumTessellationFactorOdd = 63.0;
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
-      if (intel_needs_workaround(cmd_buffer->device->info, 22012785325))
+      if (intel_needs_workaround(cmd_buffer->device->info, 22012699309))
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
       else
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
 
-      if (intel_needs_workaround(cmd_buffer->device->info, 14015297576)) {
-         /* Wa_14015297576:
+      if (intel_needs_workaround(cmd_buffer->device->info, 14015055625)) {
+         /* Wa_14015055625:
           *
           * Disable Tessellation Distribution when primitive Id is enabled.
           */

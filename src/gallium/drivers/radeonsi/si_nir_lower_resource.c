@@ -1,25 +1,7 @@
 /*
  * Copyright 2022 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 /*
@@ -109,7 +91,7 @@ static nir_ssa_def *load_ssbo_desc(nir_builder *b, nir_src *index,
 
    nir_ssa_def *addr = ac_nir_load_arg(b, &s->args->ac, s->args->const_and_shader_buffers);
    nir_ssa_def *slot = clamp_index(b, index->ssa, sel->info.base.num_ssbos);
-   slot = nir_isub(b, nir_imm_int(b, SI_NUM_SHADER_BUFFERS - 1), slot);
+   slot = nir_isub_imm(b, SI_NUM_SHADER_BUFFERS - 1, slot);
 
    nir_ssa_def *offset = nir_ishl_imm(b, slot, 4);
    return nir_load_smem_amd(b, 4, addr, offset);
@@ -253,7 +235,7 @@ static nir_ssa_def *load_deref_image_desc(nir_builder *b, nir_deref_instr *deref
       if (desc_type == AC_DESC_FMASK)
          index = nir_iadd_imm(b, index, SI_NUM_IMAGES);
 
-      index = nir_isub(b, nir_imm_int(b, SI_NUM_IMAGE_SLOTS - 1), index);
+      index = nir_isub_imm(b, SI_NUM_IMAGE_SLOTS - 1, index);
 
       nir_ssa_def *list = ac_nir_load_arg(b, &s->args->ac, s->args->samplers_and_images);
       desc = load_image_desc(b, list, index, desc_type, !is_load, s);

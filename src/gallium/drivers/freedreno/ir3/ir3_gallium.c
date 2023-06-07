@@ -27,7 +27,6 @@
 #include "pipe/p_screen.h"
 #include "pipe/p_state.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_parse.h"
 #include "util/format/u_format.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
@@ -162,9 +161,13 @@ copy_stream_out(struct ir3_stream_output_info *i,
    STATIC_ASSERT(ARRAY_SIZE(i->stride) == ARRAY_SIZE(p->stride));
    STATIC_ASSERT(ARRAY_SIZE(i->output) == ARRAY_SIZE(p->output));
 
+   i->streams_written = 0;
    i->num_outputs = p->num_outputs;
-   for (int n = 0; n < ARRAY_SIZE(i->stride); n++)
+   for (int n = 0; n < ARRAY_SIZE(i->stride); n++) {
       i->stride[n] = p->stride[n];
+      if (p->stride[n])
+         i->streams_written |= BIT(n);
+   }
 
    for (int n = 0; n < ARRAY_SIZE(i->output); n++) {
       i->output[n].register_index = p->output[n].register_index;

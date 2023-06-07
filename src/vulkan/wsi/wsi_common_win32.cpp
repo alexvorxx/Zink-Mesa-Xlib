@@ -648,6 +648,10 @@ wsi_win32_acquire_next_image(struct wsi_swapchain *drv_chain,
 
    assert(chain->dxgi);
    uint32_t index = chain->dxgi->GetCurrentBackBufferIndex();
+   if (chain->images[index].state == WSI_IMAGE_DRAWING) {
+      index = (index + 1) % chain->base.image_count;
+      assert(chain->images[index].state == WSI_IMAGE_QUEUED);
+   }
    if (chain->wsi->wsi->WaitForFences(chain->base.device, 1,
                                       &chain->base.fences[index],
                                       false, info->timeout) != VK_SUCCESS)

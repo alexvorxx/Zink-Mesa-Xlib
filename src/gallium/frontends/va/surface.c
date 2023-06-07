@@ -821,7 +821,7 @@ surface_from_prime_2(VADriverContextP ctx, vlVaSurface *surface,
        desc->num_layers < 1)
       return VA_STATUS_ERROR_INVALID_PARAMETER;
 
-   if (desc->num_layers != num_format_planes)
+   if (desc->num_layers > VL_NUM_COMPONENTS)
       return VA_STATUS_ERROR_INVALID_PARAMETER;
 
    input_planes = 0;
@@ -855,8 +855,6 @@ surface_from_prime_2(VADriverContextP ctx, vlVaSurface *surface,
    res_templ.last_level = 0;
    res_templ.depth0 = 1;
    res_templ.array_size = 1;
-   res_templ.width0 = desc->width;
-   res_templ.height0 = desc->height;
    res_templ.bind = PIPE_BIND_SAMPLER_VIEW;
    res_templ.usage = PIPE_USAGE_DEFAULT;
    res_templ.format = templat->buffer_format;
@@ -881,6 +879,10 @@ surface_from_prime_2(VADriverContextP ctx, vlVaSurface *surface,
          if (plane < num_format_planes)
             res_templ.format = resource_formats[plane];
 
+         res_templ.width0 = util_format_get_plane_width(templat->buffer_format, plane,
+                                                        desc->width);
+         res_templ.height0 = util_format_get_plane_height(templat->buffer_format, plane,
+                                                          desc->height);
          whandle.stride = desc->layers[layer].pitch[layer_plane];
          whandle.offset = desc->layers[layer].offset[layer_plane];
          whandle.handle = desc->objects[desc->layers[layer].object_index[layer_plane]].fd;
@@ -1178,7 +1180,11 @@ vlVaCreateSurfaces2(VADriverContextP ctx, unsigned int format,
    if (expected_fourcc) {
       enum pipe_format expected_format = VaFourccToPipeFormat(expected_fourcc);
 
+#ifndef _WIN32
+      if (expected_format != templat.buffer_format || memory_attribute || prime_desc)
+#else
       if (expected_format != templat.buffer_format || memory_attribute)
+#endif
         templat.interlaced = 0;
 
       templat.buffer_format = expected_format;
@@ -1525,7 +1531,6 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
       struct u_rect src_rect, dst_rect;
 
       surf->templat.interlaced = false;
-      surf->obsolete_buf = surf->buffer;
 
       ret = vlVaHandleSurfaceAllocate(drv, surf, &surf->templat, NULL, 0);
       if (ret != VA_STATUS_SUCCESS) {
@@ -1542,10 +1547,11 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
                                    interlaced, surf->buffer,
                                    &src_rect, &dst_rect,
                                    VL_COMPOSITOR_WEAVE);
+      if (interlaced->codec && interlaced->codec->update_decoder_target)
+         interlaced->codec->update_decoder_target(interlaced->codec, interlaced, surf->buffer);
 
       interlaced->destroy(interlaced);
-   } else
-      surf->obsolete_buf = NULL;
+   }
 
    surfaces = surf->buffer->get_surfaces(surf->buffer);
 

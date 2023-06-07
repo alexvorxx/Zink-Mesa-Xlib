@@ -817,3 +817,22 @@ vk_video_parse_h265_slice_header(const struct VkVideoDecodeInfoKHR *frame_info,
    unsigned header_bits = (slice_size * 8 - 24 /* start code */) - vl_vlc_bits_left(&rbsp.nal);
    params->slice_data_bytes_offset = (header_bits + 8) / 8;
 }
+
+void
+vk_video_get_profile_alignments(const VkVideoProfileListInfoKHR *profile_list,
+                                uint32_t *width_align_out, uint32_t *height_align_out)
+{
+   uint32_t width_align = 1, height_align = 1;
+   for (unsigned i = 0; i < profile_list->profileCount; i++) {
+      if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+         width_align = MAX2(width_align, VK_VIDEO_H264_MACROBLOCK_WIDTH);
+         height_align = MAX2(height_align, VK_VIDEO_H264_MACROBLOCK_HEIGHT);
+      }
+      if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+         width_align = MAX2(width_align, VK_VIDEO_H265_CTU_MAX_WIDTH);
+         height_align = MAX2(height_align, VK_VIDEO_H265_CTU_MAX_HEIGHT);
+      }
+   }
+   *width_align_out = width_align;
+   *height_align_out = height_align;
+}

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2038 # TODO: rewrite the find
+# shellcheck disable=SC2086 # we want word splitting
 
 section_switch prepare-artifacts "artifacts: prepare"
 

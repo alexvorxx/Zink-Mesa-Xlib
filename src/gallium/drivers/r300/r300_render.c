@@ -41,6 +41,7 @@
 #include "r300_emit.h"
 #include "r300_reg.h"
 #include "r300_vs.h"
+#include "r300_fs.h"
 
 #include <limits.h>
 
@@ -96,12 +97,12 @@ static uint32_t r300_provoking_vertex_fixes(struct r300_context *r300,
 
     if (rs->rs.flatshade_first) {
         switch (mode) {
-            case PIPE_PRIM_TRIANGLE_FAN:
+            case MESA_PRIM_TRIANGLE_FAN:
                 color_control |= R300_GA_COLOR_CONTROL_PROVOKING_VERTEX_SECOND;
                 break;
-            case PIPE_PRIM_QUADS:
-            case PIPE_PRIM_QUAD_STRIP:
-            case PIPE_PRIM_POLYGON:
+            case MESA_PRIM_QUADS:
+            case MESA_PRIM_QUAD_STRIP:
+            case MESA_PRIM_POLYGON:
                 color_control |= R300_GA_COLOR_CONTROL_PROVOKING_VERTEX_LAST;
                 break;
             default:
@@ -454,7 +455,7 @@ static void r300_emit_draw_elements(struct r300_context *r300,
      * in the command stream. This will increase start by 3 and make it
      * even. We can then proceed without a fallback. */
     if (indexSize == 2 && (start & 1) &&
-        mode == PIPE_PRIM_TRIANGLES) {
+        mode == MESA_PRIM_TRIANGLES) {
         BEGIN_CS(4);
         OUT_CS_PKT3(R300_PACKET3_3D_DRAW_INDX_2, 2);
         OUT_CS(R300_VAP_VF_CNTL__PRIM_WALK_INDICES | (3 << 16) |
@@ -617,7 +618,7 @@ static void r300_draw_elements(struct r300_context *r300,
                                               PIPE_MAP_READ |
                                               PIPE_MAP_UNSYNCHRONIZED);
 
-        if (info->mode == PIPE_PRIM_TRIANGLES) {
+        if (info->mode == MESA_PRIM_TRIANGLES) {
            memcpy(indices3, ptr + start, 6);
         } else {
             /* Copy the mapped index buffer directly to the upload buffer.
@@ -801,11 +802,13 @@ static void r300_draw_vbo(struct pipe_context* pipe,
         return;
     }
 
-    if (r300->sprite_coord_enable != 0)
-        if ((info.mode == PIPE_PRIM_POINTS) != r300->is_point) {
+    if (r300->sprite_coord_enable != 0 ||
+        r300_fs(r300)->shader->inputs.pcoord != ATTR_UNUSED) {
+        if ((info.mode == MESA_PRIM_POINTS) != r300->is_point) {
             r300->is_point = !r300->is_point;
             r300_mark_atom_dirty(r300, &r300->rs_block_state);
         }
+    }
 
     r300_update_derived_state(r300);
 
@@ -888,11 +891,14 @@ static void r300_swtcl_draw_vbo(struct pipe_context* pipe,
                          info->index_size, ~0);
     }
 
-    if (r300->sprite_coord_enable != 0)
-        if ((info->mode == PIPE_PRIM_POINTS) != r300->is_point) {
+    if (r300->sprite_coord_enable != 0 ||
+        r300_fs(r300)->shader->inputs.pcoord != ATTR_UNUSED) {
+        if ((info->mode == MESA_PRIM_POINTS) != r300->is_point) {
             r300->is_point = !r300->is_point;
             r300_mark_atom_dirty(r300, &r300->rs_block_state);
         }
+    }
+
 
     r300_update_derived_state(r300);
 
@@ -1002,7 +1008,7 @@ static void r300_render_release_vertices(struct vbuf_render* render)
 }
 
 static void r300_render_set_primitive(struct vbuf_render* render,
-                                      enum pipe_prim_type prim)
+                                      enum mesa_prim prim)
 {
     struct r300_render* r300render = r300_render(render);
 

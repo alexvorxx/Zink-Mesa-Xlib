@@ -26,6 +26,7 @@
 #include "nir_deref.h"
 
 #include "dxil_spirv_nir.h"
+#include "dxil_nir.h"
 #include "vulkan/vulkan_core.h"
 
 const uint32_t descriptor_size = sizeof(struct dxil_spirv_bindless_entry);
@@ -217,11 +218,15 @@ can_remove_var(nir_variable *var, void *data)
 bool
 dxil_spirv_nir_lower_bindless(nir_shader *nir, struct dxil_spirv_nir_lower_bindless_options *options)
 {
-   bool ret = nir_shader_instructions_pass(nir, lower_bindless_instr,
-                                           nir_metadata_dominance |
-                                             nir_metadata_block_index |
-                                             nir_metadata_loop_analysis,
-                                           options);
+   /* While we still have derefs for images, use that to propagate type info back to image vars,
+    * and then forward to the intrinsics that reference them. */
+   bool ret = dxil_nir_guess_image_formats(nir);
+
+   ret |= nir_shader_instructions_pass(nir, lower_bindless_instr,
+                                       nir_metadata_dominance |
+                                          nir_metadata_block_index |
+                                          nir_metadata_loop_analysis,
+                                       options);
    ret |= nir_remove_dead_derefs(nir);
 
    unsigned descriptor_sets = 0;

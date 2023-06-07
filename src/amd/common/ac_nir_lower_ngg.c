@@ -1,25 +1,7 @@
 /*
  * Copyright © 2021 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ac_nir.h"
@@ -425,12 +407,9 @@ pervertex_lds_addr(nir_builder *b, nir_ssa_def *vertex_idx, unsigned per_vtx_byt
 
 static nir_ssa_def *
 emit_pack_ngg_prim_exp_arg(nir_builder *b, unsigned num_vertices_per_primitives,
-                           nir_ssa_def *vertex_indices[3], nir_ssa_def *is_null_prim,
-                           bool use_edgeflags)
+                           nir_ssa_def *vertex_indices[3], nir_ssa_def *is_null_prim)
 {
-   nir_ssa_def *arg = use_edgeflags
-                      ? nir_load_initial_edgeflags_amd(b)
-                      : nir_imm_int(b, 0);
+   nir_ssa_def *arg = nir_load_initial_edgeflags_amd(b);
 
    for (unsigned i = 0; i < num_vertices_per_primitives; ++i) {
       assert(vertex_indices[i]);
@@ -535,8 +514,7 @@ emit_ngg_nogs_prim_exp_arg(nir_builder *b, lower_ngg_nogs_state *s)
       for (unsigned v = 0; v < s->options->num_vertices_per_primitive; ++v)
          vtx_idx[v] = nir_load_var(b, s->gs_vtx_indices_vars[v]);
 
-      return emit_pack_ngg_prim_exp_arg(b, s->options->num_vertices_per_primitive, vtx_idx, NULL,
-                                        s->options->use_edgeflags);
+      return emit_pack_ngg_prim_exp_arg(b, s->options->num_vertices_per_primitive, vtx_idx, NULL);
    }
 }
 
@@ -592,7 +570,7 @@ emit_ngg_nogs_prim_export(nir_builder *b, lower_ngg_nogs_state *s, nir_ssa_def *
                             .memory_semantics = NIR_MEMORY_ACQ_REL,
                             .memory_modes = nir_var_mem_shared);
 
-         unsigned edge_flag_bits = (1u << 9) | (1u << 19) | (1u << 29);
+         unsigned edge_flag_bits = ac_get_all_edge_flag_bits();
          nir_ssa_def *mask = nir_imm_intN_t(b, ~edge_flag_bits, 32);
 
          unsigned edge_flag_offset = 0;
@@ -673,7 +651,7 @@ emit_store_ngg_nogs_es_primitive_id(nir_builder *b, lower_ngg_nogs_state *s)
 static void
 add_clipdist_bit(nir_builder *b, nir_ssa_def *dist, unsigned index, nir_variable *mask)
 {
-   nir_ssa_def *is_neg = nir_flt(b, dist, nir_imm_float(b, 0));
+   nir_ssa_def *is_neg = nir_flt_imm(b, dist, 0);
    nir_ssa_def *neg_mask = nir_ishl_imm(b, nir_b2i32(b, is_neg), index);
    neg_mask = nir_ior(b, neg_mask, nir_load_var(b, mask));
    nir_store_var(b, mask, neg_mask, 1);
@@ -1060,7 +1038,7 @@ compact_vertices_after_culling(nir_builder *b,
 
       nir_ssa_def *prim_exp_arg =
          emit_pack_ngg_prim_exp_arg(b, s->options->num_vertices_per_primitive,
-                                    exporter_vtx_indices, NULL, s->options->use_edgeflags);
+                                    exporter_vtx_indices, NULL);
       nir_store_var(b, prim_exp_arg_var, prim_exp_arg, 0x1u);
    }
    nir_pop_if(b, if_gs_accepted);
@@ -1603,7 +1581,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       if_es_thread->control = nir_selection_control_divergent_always_taken;
       {
          nir_ssa_def *accepted = nir_load_shared(b, 1, 8u, es_vertex_lds_addr, .base = lds_es_vertex_accepted, .align_mul = 4u);
-         nir_ssa_def *accepted_bool = nir_ine(b, accepted, nir_imm_intN_t(b, 0, 8));
+         nir_ssa_def *accepted_bool = nir_ine_imm(b, nir_u2u32(b, accepted), 0);
          nir_store_var(b, s->es_accepted_var, accepted_bool, 0x1u);
       }
       nir_pop_if(b, if_es_thread);
@@ -1623,7 +1601,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       num_exported_prims = nir_bcsel(b, fully_culled, nir_imm_int(b, 0u), num_exported_prims);
       nir_store_var(b, s->gs_exported_var, nir_iand(b, nir_inot(b, fully_culled), has_input_primitive(b)), 0x1u);
 
-      nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_int(b, 0)));
+      nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, nir_load_subgroup_id(b), 0));
       {
          /* Tell the final vertex and primitive count to the HW. */
          if (s->options->gfx_level == GFX10) {
@@ -1646,7 +1624,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
    nir_push_else(b, if_cull_en);
    {
       /* When culling is disabled, we do the same as we would without culling. */
-      nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_int(b, 0)));
+      nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, nir_load_subgroup_id(b), 0));
       {
          nir_ssa_def *vtx_cnt = nir_load_workgroup_num_input_vertices_amd(b);
          nir_ssa_def *prim_cnt = nir_load_workgroup_num_input_primitives_amd(b);
@@ -2388,7 +2366,7 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       /* Newer chips can use PRIMGEN_PASSTHRU_NO_MSG to skip gs_alloc_req for NGG passthrough. */
       if (!(options->passthrough && options->family >= CHIP_NAVI23)) {
          /* Allocate export space on wave 0 - confirm to the HW that we want to use all possible space */
-         nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_int(b, 0)));
+         nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, nir_load_subgroup_id(b), 0));
          {
             nir_ssa_def *vtx_cnt = nir_load_workgroup_num_input_vertices_amd(b);
             nir_ssa_def *prim_cnt = nir_load_workgroup_num_input_primitives_amd(b);
@@ -2634,7 +2612,7 @@ ngg_gs_clear_primflags(nir_builder *b, nir_ssa_def *num_vertices, unsigned strea
    nir_loop *loop = nir_push_loop(b);
    {
       nir_ssa_def *current_clear_primflag_idx = nir_load_var(b, s->current_clear_primflag_idx_var);
-      nir_if *if_break = nir_push_if(b, nir_uge(b, current_clear_primflag_idx, nir_imm_int(b, b->shader->info.gs.vertices_out)));
+      nir_if *if_break = nir_push_if(b, nir_uge_imm(b, current_clear_primflag_idx, b->shader->info.gs.vertices_out));
       {
          nir_jump(b, nir_jump_break);
       }
@@ -2837,7 +2815,7 @@ lower_ngg_gs_emit_vertex_with_counter(nir_builder *b, nir_intrinsic_instr *intri
          ? nir_ishl_imm(b, nir_b2i32(b, nir_inot(b, nir_load_cull_any_enabled_amd(b))), 2)
          : nir_imm_int(b, 0b100);
 
-   nir_ssa_def *completes_prim = nir_ige(b, current_vtx_per_prim, nir_imm_int(b, s->num_vertices_per_primitive - 1));
+   nir_ssa_def *completes_prim = nir_ige_imm(b, current_vtx_per_prim, s->num_vertices_per_primitive - 1);
    nir_ssa_def *complete_flag = nir_b2i32(b, completes_prim);
 
    nir_ssa_def *prim_flag = nir_ior(b, vertex_live_flag, complete_flag);
@@ -2951,7 +2929,8 @@ ngg_gs_export_primitives(nir_builder *b, nir_ssa_def *max_num_out_prims, nir_ssa
                                  nir_isub(b, vtx_indices[2], is_odd), vtx_indices[2]);
    }
 
-   nir_ssa_def *arg = emit_pack_ngg_prim_exp_arg(b, s->num_vertices_per_primitive, vtx_indices, is_null_prim, false);
+   nir_ssa_def *arg = emit_pack_ngg_prim_exp_arg(b, s->num_vertices_per_primitive, vtx_indices,
+                                                 is_null_prim);
    ac_nir_export_primitive(b, arg);
    nir_pop_if(b, if_prim_export_thread);
 }
@@ -3329,7 +3308,7 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
       /* When the output is compile-time known, the GS writes all possible vertices and primitives it can.
        * The gs_alloc_req needs to happen on one wave only, otherwise the HW hangs.
        */
-      nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_zero(b, 1, 32)));
+      nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, nir_load_subgroup_id(b), 0));
       alloc_vertices_and_primitives(b, max_vtxcnt, max_prmcnt);
       nir_pop_if(b, if_wave_0);
    }
@@ -3363,7 +3342,7 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
     * requires that the invocations that export vertices are packed (ie. compact).
     * To ensure this, we need to repack invocations that have a live vertex.
     */
-   nir_ssa_def *vertex_live = nir_ine(b, out_vtx_primflag_0, nir_imm_zero(b, 1, out_vtx_primflag_0->bit_size));
+   nir_ssa_def *vertex_live = nir_ine_imm(b, out_vtx_primflag_0, 0);
    wg_repack_result rep = repack_invocations_in_workgroup(b, vertex_live, s->lds_addr_gs_scratch,
                                                           s->max_num_waves, s->options->wave_size);
 
@@ -3371,11 +3350,11 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
    nir_ssa_def *exporter_tid_in_tg = rep.repacked_invocation_index;
 
    /* When the workgroup emits 0 total vertices, we also must export 0 primitives (otherwise the HW can hang). */
-   nir_ssa_def *any_output = nir_ine(b, workgroup_num_vertices, nir_imm_int(b, 0));
+   nir_ssa_def *any_output = nir_ine_imm(b, workgroup_num_vertices, 0);
    max_prmcnt = nir_bcsel(b, any_output, max_prmcnt, nir_imm_int(b, 0));
 
    /* Allocate export space. We currently don't compact primitives, just use the maximum number. */
-   nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_zero(b, 1, 32)));
+   nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, nir_load_subgroup_id(b), 0));
    {
       if (s->options->gfx_level == GFX10)
          alloc_vertices_and_primitives_gfx10_workaround(b, workgroup_num_vertices, max_prmcnt);
@@ -3421,11 +3400,11 @@ ac_nir_lower_ngg_gs(nir_shader *shader, const ac_nir_lower_ngg_options *options)
    if (!state.output_compile_time_known)
       state.current_clear_primflag_idx_var = nir_local_variable_create(impl, glsl_uint_type(), "current_clear_primflag_idx");
 
-   if (shader->info.gs.output_primitive == SHADER_PRIM_POINTS)
+   if (shader->info.gs.output_primitive == MESA_PRIM_POINTS)
       state.num_vertices_per_primitive = 1;
-   else if (shader->info.gs.output_primitive == SHADER_PRIM_LINE_STRIP)
+   else if (shader->info.gs.output_primitive == MESA_PRIM_LINE_STRIP)
       state.num_vertices_per_primitive = 2;
-   else if (shader->info.gs.output_primitive == SHADER_PRIM_TRIANGLE_STRIP)
+   else if (shader->info.gs.output_primitive == MESA_PRIM_TRIANGLE_STRIP)
       state.num_vertices_per_primitive = 3;
    else
       unreachable("Invalid GS output primitive.");
@@ -4406,7 +4385,8 @@ emit_ms_finale(nir_builder *b, lower_ngg_ms_state *s)
          indices[i] = nir_umin(b, indices[i], max_vtx_idx);
       }
 
-      nir_ssa_def *prim_exp_arg = emit_pack_ngg_prim_exp_arg(b, s->vertices_per_prim, indices, cull_flag, false);
+      nir_ssa_def *prim_exp_arg = emit_pack_ngg_prim_exp_arg(b, s->vertices_per_prim, indices,
+                                                             cull_flag);
 
       ms_emit_primitive_export(b, prim_exp_arg, per_primitive_outputs, s);
 
@@ -4507,7 +4487,7 @@ handle_smaller_ms_api_workgroup(nir_builder *b,
                             .memory_modes = nir_var_shader_out | nir_var_mem_shared);
    }
 
-   nir_ssa_def *has_api_ms_invocation = nir_ult(b, invocation_index, nir_imm_int(b, s->api_workgroup_size));
+   nir_ssa_def *has_api_ms_invocation = nir_ult_imm(b, invocation_index, s->api_workgroup_size);
    nir_if *if_has_api_ms_invocation = nir_push_if(b, has_api_ms_invocation);
    {
       nir_cf_reinsert(&extracted, b->cursor);

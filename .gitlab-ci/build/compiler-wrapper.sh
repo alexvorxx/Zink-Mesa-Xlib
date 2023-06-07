@@ -1,3 +1,5 @@
+# shellcheck disable=SC1091
+# shellcheck disable=SC2086 # we want word splitting
 if command -V ccache >/dev/null 2>/dev/null; then
   CCACHE=ccache
 else

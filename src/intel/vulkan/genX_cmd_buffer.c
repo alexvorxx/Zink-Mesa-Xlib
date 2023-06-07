@@ -183,17 +183,47 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
       sba.IndirectObjectBufferSizeModifyEnable  = true;
       sba.DynamicStateBufferSizeModifyEnable    = true;
       sba.InstructionBuffersizeModifyEnable     = true;
-      sba.BindlessSurfaceStateBaseAddress =
-         (struct anv_address) { device->bindless_surface_state_pool.block_pool.bo, 0 };
-      sba.BindlessSurfaceStateSize = (1 << 20) - 1;
-      sba.BindlessSurfaceStateMOCS = mocs;
-      sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
-#if GFX_VER >= 11
-      sba.BindlessSamplerStateBaseAddress = (struct anv_address) { NULL, 0 };
-      sba.BindlessSamplerStateMOCS = mocs;
-      sba.BindlessSamplerStateBaseAddressModifyEnable = true;
-      sba.BindlessSamplerStateBufferSize = 0;
+
+      if (!device->physical->indirect_descriptors) {
+#if GFX_VERx10 >= 125
+         /* Bindless Surface State & Bindless Sampler State are aligned to the
+          * same heap
+          */
+         sba.BindlessSurfaceStateBaseAddress =
+            sba.BindlessSamplerStateBaseAddress =
+            (struct anv_address) { .offset =
+            device->physical->va.binding_table_pool.addr, };
+         sba.BindlessSurfaceStateSize =
+            (device->physical->va.binding_table_pool.size +
+             device->physical->va.internal_surface_state_pool.size +
+             device->physical->va.descriptor_pool.size) - 1;
+         sba.BindlessSamplerStateBufferSize =
+            (device->physical->va.binding_table_pool.size +
+             device->physical->va.internal_surface_state_pool.size +
+             device->physical->va.descriptor_pool.size) / 4096 - 1;
+         sba.BindlessSurfaceStateMOCS = sba.BindlessSamplerStateMOCS = mocs;
+         sba.BindlessSurfaceStateBaseAddressModifyEnable =
+            sba.BindlessSamplerStateBaseAddressModifyEnable = true;
+#else
+         unreachable("Direct descriptor not supported");
 #endif
+      } else {
+         sba.BindlessSurfaceStateBaseAddress =
+            (struct anv_address) { .offset =
+            device->physical->va.bindless_surface_state_pool.addr,
+         };
+         sba.BindlessSurfaceStateSize =
+            anv_physical_device_bindless_heap_size(device->physical) / ANV_SURFACE_STATE_SIZE - 1;
+         sba.BindlessSurfaceStateMOCS = mocs;
+         sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
+#if GFX_VER >= 11
+         sba.BindlessSamplerStateBaseAddress = (struct anv_address) { NULL, 0 };
+         sba.BindlessSamplerStateMOCS = mocs;
+         sba.BindlessSamplerStateBaseAddressModifyEnable = true;
+         sba.BindlessSamplerStateBufferSize = 0;
+#endif
+      }
+
 #if GFX_VERx10 >= 125
       sba.L1CacheControl = L1CC_WB;
 #endif
@@ -382,12 +412,16 @@ anv_image_init_aux_tt(struct anv_cmd_buffer *cmd_buffer,
          end_offset_B = MAX2(end_offset_B, slice_end_offset_B);
       }
 
-      /* Aux operates 64K at a time */
-      start_offset_B = ROUND_DOWN_TO(start_offset_B, 64 * 1024);
-      end_offset_B = align64(end_offset_B, 64 * 1024);
+      struct intel_aux_map_context *ctx = cmd_buffer->device->aux_map_ctx;
+      /* It depends on what the purpose you use that figure from AUX module,
+       * alignment, page size of main surface, or actually granularity...
+       */
+      uint64_t main_page_size = intel_aux_map_get_alignment(ctx);
+      start_offset_B = ROUND_DOWN_TO(start_offset_B, main_page_size);
+      end_offset_B = align64(end_offset_B, main_page_size);
 
       for (uint64_t offset = start_offset_B;
-           offset < end_offset_B; offset += 64 * 1024) {
+           offset < end_offset_B; offset += main_page_size) {
          uint64_t address = base_address + offset;
 
          uint64_t aux_entry_addr64, *aux_entry_map;
@@ -562,7 +596,7 @@ set_image_compressed_bit(struct anv_cmd_buffer *cmd_buffer,
    const uint32_t plane = anv_image_aspect_to_plane(image, aspect);
 
    /* We only have compression tracking for CCS_E */
-   if (image->planes[plane].aux_usage != ISL_AUX_USAGE_CCS_E)
+   if (!isl_aux_usage_has_ccs_e(image->planes[plane].aux_usage))
       return;
 
    for (uint32_t a = 0; a < layer_count; a++) {
@@ -968,7 +1002,7 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
          must_init_aux_surface = true;
 
       } else {
-         assert(image->planes[plane].aux_usage == ISL_AUX_USAGE_CCS_E);
+         assert(isl_aux_usage_has_ccs_e(image->planes[plane].aux_usage));
 
          /* We can start using the CCS immediately without ambiguating. The
           * two conditions that enable this are:
@@ -1160,8 +1194,8 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
    if (final_fast_clear < initial_fast_clear)
       resolve_op = ISL_AUX_OP_PARTIAL_RESOLVE;
 
-   if (initial_aux_usage == ISL_AUX_USAGE_CCS_E &&
-       final_aux_usage != ISL_AUX_USAGE_CCS_E)
+   if (isl_aux_usage_has_ccs_e(initial_aux_usage) &&
+       !isl_aux_usage_has_ccs_e(final_aux_usage))
       resolve_op = ISL_AUX_OP_FULL_RESOLVE;
 
    if (resolve_op == ISL_AUX_OP_NONE)
@@ -1799,7 +1833,7 @@ static void
 cmd_buffer_alloc_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
 {
    VkShaderStageFlags stages =
-      cmd_buffer->state.gfx.pipeline->base.active_stages;
+      cmd_buffer->state.gfx.pipeline->base.base.active_stages;
 
    /* In order to avoid thrash, we assume that vertex and fragment stages
     * always exist.  In the rare case where one is missing *and* the other
@@ -1879,6 +1913,188 @@ cmd_buffer_alloc_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
    cmd_buffer->state.push_constants_dirty |= stages;
 }
 
+static inline struct anv_state
+emit_dynamic_buffer_binding_table_entry(struct anv_cmd_buffer *cmd_buffer,
+                                        struct anv_cmd_pipeline_state *pipe_state,
+                                        struct anv_pipeline_binding *binding,
+                                        const struct anv_descriptor *desc)
+{
+   /* Compute the offset within the buffer */
+   uint32_t dynamic_offset =
+      pipe_state->dynamic_offsets[
+         binding->set].offsets[binding->dynamic_offset_index];
+   uint64_t offset = desc->offset + dynamic_offset;
+   /* Clamp to the buffer size */
+   offset = MIN2(offset, desc->buffer->vk.size);
+   /* Clamp the range to the buffer size */
+   uint32_t range = MIN2(desc->range, desc->buffer->vk.size - offset);
+
+   /* Align the range for consistency */
+   if (desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+      range = align(range, ANV_UBO_ALIGNMENT);
+
+   struct anv_address address =
+      anv_address_add(desc->buffer->address, offset);
+
+   struct anv_state surface_state = anv_cmd_buffer_alloc_surface_state(cmd_buffer);
+   enum isl_format format =
+      anv_isl_format_for_descriptor_type(cmd_buffer->device,
+                                         desc->type);
+
+   isl_surf_usage_flags_t usage =
+      desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ?
+      ISL_SURF_USAGE_CONSTANT_BUFFER_BIT :
+      ISL_SURF_USAGE_STORAGE_BIT;
+
+   anv_fill_buffer_surface_state(cmd_buffer->device,
+                                 surface_state.map,
+                                 format, ISL_SWIZZLE_IDENTITY,
+                                 usage, address, range, 1);
+
+   return surface_state;
+}
+
+static uint32_t
+emit_indirect_descriptor_binding_table_entry(struct anv_cmd_buffer *cmd_buffer,
+                                             struct anv_cmd_pipeline_state *pipe_state,
+                                             struct anv_pipeline_binding *binding,
+                                             const struct anv_descriptor *desc)
+{
+   struct anv_device *device = cmd_buffer->device;
+   struct anv_state surface_state;
+
+   /* Relative offset in the STATE_BASE_ADDRESS::SurfaceStateBaseAddress heap.
+    * Depending on where the descriptor surface state is allocated, they can
+    * either come from device->internal_surface_state_pool or
+    * device->bindless_surface_state_pool.
+    */
+   switch (desc->type) {
+   case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+      if (desc->image_view) {
+         struct anv_surface_state sstate =
+            (desc->layout == VK_IMAGE_LAYOUT_GENERAL) ?
+            desc->image_view->planes[binding->plane].general_sampler :
+            desc->image_view->planes[binding->plane].optimal_sampler;
+         surface_state =
+            anv_bindless_state_for_binding_table(device, sstate.state);
+         assert(surface_state.alloc_size);
+      } else {
+         surface_state = anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+   }
+
+   case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+      if (desc->image_view) {
+         struct anv_surface_state sstate =
+            desc->image_view->planes[binding->plane].storage;
+         surface_state = anv_bindless_state_for_binding_table(
+            device, sstate.state);
+         assert(surface_state.alloc_size);
+      } else {
+         surface_state =
+            anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+   }
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+      if (desc->set_buffer_view) {
+         surface_state = desc->set_buffer_view->general.state;
+         assert(surface_state.alloc_size);
+      } else {
+         surface_state = anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+      if (desc->buffer_view) {
+         surface_state = anv_bindless_state_for_binding_table(
+            device,
+            desc->buffer_view->general.state);
+         assert(surface_state.alloc_size);
+      } else {
+         surface_state = anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
+      if (desc->buffer) {
+         surface_state =
+            emit_dynamic_buffer_binding_table_entry(cmd_buffer, pipe_state,
+                                                    binding, desc);
+      } else {
+         surface_state = anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+   }
+
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      if (desc->buffer_view) {
+         surface_state = anv_bindless_state_for_binding_table(
+            device, desc->buffer_view->storage.state);
+         assert(surface_state.alloc_size);
+      } else {
+         surface_state = anv_null_surface_state_for_binding_table(device);
+      }
+      break;
+
+   default:
+      unreachable("Invalid descriptor type");
+   }
+
+   assert(surface_state.map);
+   return surface_state.offset;
+}
+
+static uint32_t
+emit_direct_descriptor_binding_table_entry(struct anv_cmd_buffer *cmd_buffer,
+                                           struct anv_cmd_pipeline_state *pipe_state,
+                                           const struct anv_descriptor_set *set,
+                                           struct anv_pipeline_binding *binding,
+                                           const struct anv_descriptor *desc)
+{
+   struct anv_device *device = cmd_buffer->device;
+   uint32_t desc_offset;
+
+   /* Relative offset in the STATE_BASE_ADDRESS::SurfaceStateBaseAddress heap.
+    * Depending on where the descriptor surface state is allocated, they can
+    * either come from device->internal_surface_state_pool or
+    * device->bindless_surface_state_pool.
+    */
+   switch (desc->type) {
+   case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+   case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      desc_offset = set->desc_offset + binding->set_offset;
+      break;
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
+      struct anv_state state = desc->buffer ?
+         emit_dynamic_buffer_binding_table_entry(cmd_buffer, pipe_state,
+                                                 binding, desc) :
+         anv_null_surface_state_for_binding_table(device);
+      desc_offset = state.offset;
+      break;
+   }
+
+   default:
+      unreachable("Invalid descriptor type");
+   }
+
+   return desc_offset;
+}
+
 static VkResult
 emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                    struct anv_cmd_pipeline_state *pipe_state,
@@ -1935,7 +2151,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
          const enum isl_format format =
             anv_isl_format_for_descriptor_type(cmd_buffer->device,
                                                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-         anv_fill_buffer_surface_state(cmd_buffer->device, surface_state,
+         anv_fill_buffer_surface_state(cmd_buffer->device, surface_state.map,
                                        format, ISL_SWIZZLE_IDENTITY,
                                        ISL_SURF_USAGE_CONSTANT_BUFFER_BIT,
                                        cmd_buffer->state.compute.num_workgroups,
@@ -1999,148 +2215,33 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             assert(desc_idx < MAX_PUSH_DESCRIPTORS);
 
             if (shader->push_desc_info.fully_promoted_ubo_descriptors & BITFIELD_BIT(desc_idx)) {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  cmd_buffer->device->null_surface_state);
+               surface_state =
+                  anv_null_surface_state_for_binding_table(cmd_buffer->device);
                break;
             }
          }
 
          const struct anv_descriptor *desc = &set->descriptors[binding->index];
-         /* Relative offset in the STATE_BASE_ADDRESS::SurfaceStateBaseAddress
-          * heap. Depending on where the descriptor surface state is
-          * allocated, they can either come from
-          * device->internal_surface_state_pool or
-          * device->bindless_surface_state_pool.
-          */
-         switch (desc->type) {
-         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-         case VK_DESCRIPTOR_TYPE_SAMPLER:
+         if (desc->type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR ||
+             desc->type == VK_DESCRIPTOR_TYPE_SAMPLER) {
             /* Nothing for us to do here */
             continue;
-
-         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
-            if (desc->image_view) {
-               struct anv_surface_state sstate =
-                  (desc->layout == VK_IMAGE_LAYOUT_GENERAL) ?
-                  desc->image_view->planes[binding->plane].general_sampler_surface_state :
-                  desc->image_view->planes[binding->plane].optimal_sampler_surface_state;
-               surface_state =
-                  anv_bindless_state_for_binding_table(cmd_buffer->device, sstate.state);
-               assert(surface_state.alloc_size);
-            } else {
-               surface_state =
-                  anv_bindless_state_for_binding_table(
-                     cmd_buffer->device,
-                     cmd_buffer->device->null_surface_state);
-            }
-            break;
          }
 
-         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
-            if (desc->image_view) {
-               struct anv_surface_state sstate =
-                  desc->image_view->planes[binding->plane].storage_surface_state;
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device, sstate.state);
-               assert(surface_state.alloc_size);
-            } else {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  cmd_buffer->device->null_surface_state);
-            }
-            break;
+         const struct anv_pipeline *pipeline = pipe_state->pipeline;
+         uint32_t surface_state_offset;
+         if (pipeline->layout.type == ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_INDIRECT) {
+            surface_state_offset =
+               emit_indirect_descriptor_binding_table_entry(cmd_buffer,
+                                                            pipe_state,
+                                                            binding, desc);
+         } else {
+            surface_state_offset =
+               emit_direct_descriptor_binding_table_entry(cmd_buffer, pipe_state,
+                                                          set, binding, desc);
          }
 
-         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            if (desc->set_buffer_view) {
-               surface_state = desc->set_buffer_view->surface_state;
-               assert(surface_state.alloc_size);
-            } else {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  cmd_buffer->device->null_surface_state);
-            }
-            break;
-
-         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-            if (desc->buffer_view) {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  desc->buffer_view->surface_state);
-               assert(surface_state.alloc_size);
-            } else {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  cmd_buffer->device->null_surface_state);
-            }
-            break;
-
-         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
-            if (desc->buffer) {
-               /* Compute the offset within the buffer */
-               uint32_t dynamic_offset =
-                  pipe_state->dynamic_offsets[
-                     binding->set].offsets[binding->dynamic_offset_index];
-               uint64_t offset = desc->offset + dynamic_offset;
-               /* Clamp to the buffer size */
-               offset = MIN2(offset, desc->buffer->vk.size);
-               /* Clamp the range to the buffer size */
-               uint32_t range = MIN2(desc->range, desc->buffer->vk.size - offset);
-
-               /* Align the range for consistency */
-               if (desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-                  range = align(range, ANV_UBO_ALIGNMENT);
-
-               struct anv_address address =
-                  anv_address_add(desc->buffer->address, offset);
-
-               surface_state = anv_cmd_buffer_alloc_surface_state(cmd_buffer);
-               enum isl_format format =
-                  anv_isl_format_for_descriptor_type(cmd_buffer->device,
-                                                     desc->type);
-
-               isl_surf_usage_flags_t usage =
-                  desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ?
-                  ISL_SURF_USAGE_CONSTANT_BUFFER_BIT :
-                  ISL_SURF_USAGE_STORAGE_BIT;
-
-               anv_fill_buffer_surface_state(cmd_buffer->device, surface_state,
-                                             format, ISL_SWIZZLE_IDENTITY,
-                                             usage, address, range, 1);
-            } else {
-               surface_state =
-                  anv_bindless_state_for_binding_table(
-                     cmd_buffer->device,
-                     cmd_buffer->device->null_surface_state);
-            }
-            break;
-         }
-
-         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-            if (desc->buffer_view) {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  desc->buffer_view->storage_surface_state);
-               assert(surface_state.alloc_size);
-            } else {
-               surface_state = anv_bindless_state_for_binding_table(
-                  cmd_buffer->device,
-                  cmd_buffer->device->null_surface_state);
-            }
-            break;
-
-         default:
-            assert(!"Invalid descriptor type");
-            continue;
-         }
-
-         assert(surface_state.map);
-         bt_map[s] = surface_state.offset + state_offset;
+         bt_map[s] = surface_state_offset + state_offset;
          break;
       }
       }
@@ -2286,9 +2387,10 @@ flush_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
          struct anv_buffer_view *bview = desc->set_buffer_view;
 
          if (bview != NULL) {
-            bview->surface_state = anv_cmd_buffer_alloc_surface_state(cmd_buffer);
+            bview->general.state =
+               anv_cmd_buffer_alloc_surface_state(cmd_buffer);
             anv_descriptor_write_surface_state(cmd_buffer->device, desc,
-                                               bview->surface_state);
+                                               bview->general.state);
          }
       }
    }
@@ -2300,7 +2402,7 @@ flush_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
 
       set->desc_surface_state = anv_cmd_buffer_alloc_surface_state(cmd_buffer);
       anv_fill_buffer_surface_state(cmd_buffer->device,
-                                    set->desc_surface_state,
+                                    set->desc_surface_state.map,
                                     format, ISL_SWIZZLE_IDENTITY,
                                     ISL_SURF_USAGE_CONSTANT_BUFFER_BIT,
                                     set->desc_addr,
@@ -2389,8 +2491,10 @@ get_push_range_address(struct anv_cmd_buffer *cmd_buffer,
          &set->descriptors[range->index];
 
       if (desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-         if (desc->buffer_view)
-            return desc->buffer_view->address;
+         if (desc->buffer) {
+            return anv_address_add(desc->buffer->address,
+                                   desc->offset);
+         }
       } else {
          assert(desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
          if (desc->buffer) {
@@ -2454,13 +2558,13 @@ get_push_range_bound_size(struct anv_cmd_buffer *cmd_buffer,
          /* Here we promote a UBO to a binding table entry so that we can avoid a layer of indirection.
             * We use the descriptor set's internally allocated surface state to fill the binding table entry.
          */
-         if (!desc->set_buffer_view)
+         if (!desc->buffer)
             return 0;
 
-         if (range->start * 32 > desc->set_buffer_view->range)
+         if (range->start * 32 > desc->bind_range)
             return 0;
 
-         return desc->set_buffer_view->range;
+         return desc->bind_range;
       } else {
          if (!desc->buffer)
             return 0;
@@ -2612,7 +2716,7 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
 #endif
 
    /* Compute robust pushed register access mask for each stage. */
-   if (cmd_buffer->device->vk.enabled_features.robustBufferAccess) {
+   if (cmd_buffer->device->robust_buffer_access) {
       anv_foreach_stage(stage, dirty_stages) {
          if (!anv_pipeline_has_stage(pipeline, stage))
             continue;
@@ -2889,10 +2993,10 @@ cmd_buffer_emit_viewport(struct anv_cmd_buffer *cmd_buffer)
       if (gfx->render_area.extent.width > 0 &&
           gfx->render_area.extent.height > 0) {
          x_min = MAX2(x_min, gfx->render_area.offset.x);
-         x_max = MIN2(x_min, gfx->render_area.offset.x +
+         x_max = MIN2(x_max, gfx->render_area.offset.x +
                              gfx->render_area.extent.width);
          y_min = MAX2(y_min, gfx->render_area.offset.y);
-         y_max = MIN2(y_min, gfx->render_area.offset.y +
+         y_max = MIN2(y_max, gfx->render_area.offset.y +
                              gfx->render_area.extent.height);
       }
 
@@ -2912,9 +3016,9 @@ cmd_buffer_emit_viewport(struct anv_cmd_buffer *cmd_buffer)
       if (i < dyn->vp.scissor_count) {
          const VkRect2D *scissor = &dyn->vp.scissors[i];
          x_min = MAX2(x_min, scissor->offset.x);
-         x_max = MIN2(x_min, scissor->offset.x + scissor->extent.width);
+         x_max = MIN2(x_max, scissor->offset.x + scissor->extent.width);
          y_min = MAX2(y_min, scissor->offset.y);
-         y_max = MIN2(y_min, scissor->offset.y + scissor->extent.height);
+         y_max = MIN2(y_max, scissor->offset.y + scissor->extent.height);
       }
 
       /* Only bother calculating the guardband if our known render area is
@@ -3102,7 +3206,7 @@ genX(streamout_prologue)(struct anv_cmd_buffer *cmd_buffer)
     * level preemption for another reason in genX_state.c so we can skip this
     * for Gfx12.
     */
-   if (!intel_device_info_is_dg2(cmd_buffer->device->info))
+   if (!intel_needs_workaround(cmd_buffer->device->info, 16013994831))
       return;
 
    if (cmd_buffer->state.gfx.pipeline->uses_xfb) {
@@ -3203,7 +3307,7 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       &cmd_buffer->vk.dynamic_graphics_state;
    uint32_t *p;
 
-   assert((pipeline->base.active_stages & VK_SHADER_STAGE_COMPUTE_BIT) == 0);
+   assert((pipeline->base.base.active_stages & VK_SHADER_STAGE_COMPUTE_BIT) == 0);
 
    genX(cmd_buffer_config_l3)(cmd_buffer, pipeline->base.base.l3_config);
 
@@ -3292,10 +3396,22 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
 
    cmd_buffer->state.gfx.vb_dirty &= ~vb_emit;
 
+   /* If patch control points value is changed, let's just update the push
+    * constant data. If the current pipeline also use this, we need to reemit
+    * the 3DSTATE_CONSTANT packet.
+    */
+   struct anv_push_constants *push = &cmd_buffer->state.gfx.base.push_constants;
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS) &&
+       push->gfx.tcs_input_vertices != dyn->ts.patch_control_points) {
+      push->gfx.tcs_input_vertices = dyn->ts.patch_control_points;
+      if (pipeline->dynamic_patch_control_points)
+         cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+   }
+
    const bool any_dynamic_state_dirty =
       vk_dynamic_graphics_state_any_dirty(dyn);
    uint32_t descriptors_dirty = cmd_buffer->state.descriptors_dirty &
-                                pipeline->base.active_stages;
+                                pipeline->base.base.active_stages;
 
    const uint32_t push_descriptor_dirty =
       cmd_buffer->state.push_descriptors_dirty &
@@ -3308,15 +3424,18 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
    }
 
-   /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive. */
+   /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive. */
    if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||
-       (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343)) {
+       (INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343)) {
       genX(emit_hs)(cmd_buffer);
    }
 
    if (!cmd_buffer->state.gfx.dirty && !descriptors_dirty &&
        !any_dynamic_state_dirty &&
-       !cmd_buffer->state.push_constants_dirty)
+       ((cmd_buffer->state.push_constants_dirty &
+         (VK_SHADER_STAGE_ALL_GRAPHICS |
+          VK_SHADER_STAGE_TASK_BIT_EXT |
+          VK_SHADER_STAGE_MESH_BIT_EXT)) == 0))
       return;
 
    if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_XFB_ENABLE) {
@@ -3408,7 +3527,8 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       /* Because we're pushing UBOs, we have to push whenever either
        * descriptors or push constants is dirty.
        */
-      dirty |= cmd_buffer->state.push_constants_dirty & pipeline->base.active_stages;
+      dirty |= cmd_buffer->state.push_constants_dirty &
+               pipeline->base.base.active_stages;
       cmd_buffer_flush_gfx_push_constants(cmd_buffer,
                                       dirty & VK_SHADER_STAGE_ALL_GRAPHICS);
 #if GFX_VERx10 >= 125
@@ -3447,7 +3567,7 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
       uint32_t topology;
       if (anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL))
-         topology = _3DPRIM_PATCHLIST(pipeline->patch_control_points);
+         topology = _3DPRIM_PATCHLIST(dyn->ts.patch_control_points);
       else
          topology = genX(vk_to_intel_primitive_type)[dyn->ia.primitive_topology];
 
@@ -3470,9 +3590,9 @@ anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
    const struct anv_device *device = cmd_buffer->device;
 
    /* Limit generated draws to pipelines without HS stage. This makes things
-    * simpler for implementing Wa_1409433168, Wa_16011107343.
+    * simpler for implementing Wa_1306463417, Wa_16011107343.
     */
-   if ((INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343) &&
+   if ((INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343) &&
        anv_pipeline_has_stage(cmd_buffer->state.gfx.pipeline,
                               MESA_SHADER_TESS_CTRL)) {
       return false;
@@ -4153,10 +4273,10 @@ void genX(CmdDrawMultiEXT)(
 #else
    vk_foreach_multi_draw(draw, i, pVertexInfo, drawCount, stride) {
 
-      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
+      if (i && (INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       const uint32_t count = draw->vertexCount * instanceCount;
@@ -4386,10 +4506,10 @@ void genX(CmdDrawMultiIndexedEXT)(
 #else
    vk_foreach_multi_draw_indexed(draw, i, pIndexInfo, drawCount, stride) {
 
-      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
+      if (i && (INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       const uint32_t count =
@@ -4645,10 +4765,10 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
+      if (i && (INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -4870,10 +4990,10 @@ emit_indirect_count_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
+      if (i && (INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -5659,37 +5779,42 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    const struct brw_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
 
-   anv_batch_emit(&cmd_buffer->batch, GENX(COMPUTE_WALKER), cw) {
-      cw.IndirectParameterEnable        = indirect;
-      cw.PredicateEnable                = predicate;
-      cw.SIMDSize                       = dispatch.simd_size / 16;
-      cw.IndirectDataStartAddress       = comp_state->push_data.offset;
-      cw.IndirectDataLength             = comp_state->push_data.alloc_size;
-      cw.LocalXMaximum                  = prog_data->local_size[0] - 1;
-      cw.LocalYMaximum                  = prog_data->local_size[1] - 1;
-      cw.LocalZMaximum                  = prog_data->local_size[2] - 1;
-      cw.ThreadGroupIDXDimension        = groupCountX;
-      cw.ThreadGroupIDYDimension        = groupCountY;
-      cw.ThreadGroupIDZDimension        = groupCountZ;
-      cw.ExecutionMask                  = dispatch.right_mask;
-      cw.PostSync.MOCS                  = anv_mocs(pipeline->base.device, NULL, 0);
+   cmd_buffer->last_compute_walker =
+      anv_batch_emitn(
+         &cmd_buffer->batch,
+         GENX(COMPUTE_WALKER_length),
+         GENX(COMPUTE_WALKER),
+         .IndirectParameterEnable        = indirect,
+         .PredicateEnable                = predicate,
+         .SIMDSize                       = dispatch.simd_size / 16,
+         .IndirectDataStartAddress       = comp_state->push_data.offset,
+         .IndirectDataLength             = comp_state->push_data.alloc_size,
+         .LocalXMaximum                  = prog_data->local_size[0] - 1,
+         .LocalYMaximum                  = prog_data->local_size[1] - 1,
+         .LocalZMaximum                  = prog_data->local_size[2] - 1,
+         .ThreadGroupIDXDimension        = groupCountX,
+         .ThreadGroupIDYDimension        = groupCountY,
+         .ThreadGroupIDZDimension        = groupCountZ,
+         .ExecutionMask                  = dispatch.right_mask,
+         .PostSync                       = {
+            .MOCS                        = anv_mocs(pipeline->base.device, NULL, 0),
+         },
 
-      cw.InterfaceDescriptor = (struct GENX(INTERFACE_DESCRIPTOR_DATA)) {
-         .KernelStartPointer = cs_bin->kernel.offset,
-         .SamplerStatePointer =
-            cmd_buffer->state.samplers[MESA_SHADER_COMPUTE].offset,
-         .BindingTablePointer =
-            cmd_buffer->state.binding_tables[MESA_SHADER_COMPUTE].offset,
-         /* Typically set to 0 to avoid prefetching on every thread dispatch. */
-         .BindingTableEntryCount = devinfo->verx10 == 125 ?
-            0 : 1 + MIN2(pipeline->cs->bind_map.surface_count, 30),
-         .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
-         .SharedLocalMemorySize = encode_slm_size(GFX_VER,
-                                                  prog_data->base.total_shared),
-         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
-         .NumberOfBarriers = prog_data->uses_barrier,
-      };
-   }
+         .InterfaceDescriptor            = (struct GENX(INTERFACE_DESCRIPTOR_DATA)) {
+            .KernelStartPointer                = cs_bin->kernel.offset,
+            .SamplerStatePointer               = cmd_buffer->state.samplers[
+               MESA_SHADER_COMPUTE].offset,
+            .BindingTablePointer               = cmd_buffer->state.binding_tables[
+               MESA_SHADER_COMPUTE].offset,
+            /* Typically set to 0 to avoid prefetching on every thread dispatch. */
+            .BindingTableEntryCount            = devinfo->verx10 == 125 ?
+               0 : 1 + MIN2(pipeline->cs->bind_map.surface_count, 30),
+            .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
+            .SharedLocalMemorySize             = encode_slm_size(
+               GFX_VER, prog_data->base.total_shared),
+            .PreferredSLMAllocationSize        = preferred_slm_allocation_size(devinfo),
+            .NumberOfBarriers                  = prog_data->uses_barrier,
+         });
 }
 
 #else /* #if GFX_VERx10 >= 125 */
@@ -6299,6 +6424,24 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
          global_size[i] = DIV_ROUND_UP((uint64_t)params->launch_size[i], local_size);
       }
    }
+
+#if GFX_VER >= 125
+   /* Wa_14014427904 - We need additional invalidate/flush when
+    * emitting NP state commands with ATS-M in compute mode.
+    */
+   if (intel_device_info_is_atsm(device->info) &&
+      cmd_buffer->queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+         pc.CommandStreamerStallEnable = true;
+         pc.StateCacheInvalidationEnable = true;
+         pc.ConstantCacheInvalidationEnable = true;
+         pc.UntypedDataPortCacheFlushEnable = true;
+         pc.TextureCacheInvalidationEnable = true;
+         pc.InstructionCacheInvalidateEnable = true;
+         pc.HDCPipelineFlushEnable = true;
+      }
+   }
+#endif
 
    anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_BTD), btd) {
       /* TODO: This is the timeout after which the bucketed thread dispatcher
@@ -8049,7 +8192,8 @@ VkResult genX(CmdSetPerformanceStreamMarkerINTEL)(
 void genX(cmd_emit_timestamp)(struct anv_batch *batch,
                               struct anv_device *device,
                               struct anv_address addr,
-                              enum anv_timestamp_capture_type type) {
+                              enum anv_timestamp_capture_type type,
+                              void *data) {
    switch (type) {
    case ANV_TIMESTAMP_CAPTURE_TOP_OF_PIPE: {
       struct mi_builder b;
@@ -8059,6 +8203,7 @@ void genX(cmd_emit_timestamp)(struct anv_batch *batch,
    }
 
    case ANV_TIMESTAMP_CAPTURE_END_OF_PIPE:
+
       anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
          pc.PostSyncOperation   = WriteTimestamp;
          pc.Address             = addr;
@@ -8074,6 +8219,24 @@ void genX(cmd_emit_timestamp)(struct anv_batch *batch,
          anv_debug_dump_pc(pc);
       }
       break;
+
+#if GFX_VERx10 >= 125
+   case ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER: {
+      uint32_t dwords[GENX(COMPUTE_WALKER_length)];
+
+      GENX(COMPUTE_WALKER_pack)(batch, dwords, &(struct GENX(COMPUTE_WALKER)) {
+            .PostSync = (struct GENX(POSTSYNC_DATA)) {
+               .Operation = WriteTimestamp,
+               .DestinationAddress = addr,
+               .MOCS = anv_mocs(device, NULL, 0),
+            },
+         });
+
+      for (uint32_t i = 0; i < ARRAY_SIZE(dwords); i++)
+         ((uint32_t *)data)[i] |= dwords[i];
+      break;
+   }
+#endif
 
    default:
       unreachable("invalid");

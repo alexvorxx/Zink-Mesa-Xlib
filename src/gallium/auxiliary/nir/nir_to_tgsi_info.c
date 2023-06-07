@@ -328,6 +328,8 @@ static void scan_instruction(const struct nir_shader *nir,
             case INTERP_MODE_NONE:
                if (glsl_base_type_is_integer(base_type))
                   break;
+               if (var->data.per_primitive)
+                  break;
 
                FALLTHROUGH;
             case INTERP_MODE_SMOOTH:
@@ -461,7 +463,8 @@ void nir_tgsi_scan_shader(const struct nir_shader *nir,
       }
    }
 
-   if (gl_shader_stage_is_compute(nir->info.stage)) {
+   if (gl_shader_stage_is_compute(nir->info.stage) ||
+       gl_shader_stage_is_mesh(nir->info.stage)) {
       info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_WIDTH] = nir->info.workgroup_size[0];
       info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_HEIGHT] = nir->info.workgroup_size[1];
       info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_DEPTH] = nir->info.workgroup_size[2];
@@ -517,7 +520,7 @@ void nir_tgsi_scan_shader(const struct nir_shader *nir,
 
          switch (variable->data.interpolation) {
          case INTERP_MODE_NONE:
-            if (glsl_base_type_is_integer(base_type)) {
+            if (glsl_base_type_is_integer(base_type) || variable->data.per_primitive) {
                info->input_interpolate[i] = TGSI_INTERPOLATE_CONSTANT;
                break;
             }

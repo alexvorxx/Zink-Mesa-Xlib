@@ -38,7 +38,6 @@
 #include "pipe/p_defines.h"
 #include "util/u_memory.h"
 #include "tgsi/tgsi_exec.h"
-#include "tgsi/tgsi_parse.h"
 
 
 /**

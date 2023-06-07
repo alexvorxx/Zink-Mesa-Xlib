@@ -37,7 +37,6 @@
 #include "lp_state_fs.h"
 #include "lp_state_setup.h"
 #include "lp_context.h"
-#include "tgsi/tgsi_scan.h"
 #include "draw/draw_context.h"
 
 #define NUM_CHANNELS 4

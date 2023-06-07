@@ -1186,6 +1186,14 @@ vtn_get_builtin_location(struct vtn_builder *b,
       *location = SYSTEM_VALUE_RAY_TRIANGLE_VERTEX_POSITIONS;
       set_mode_system_value(b, mode);
       break;
+   case SpvBuiltInBaryCoordKHR:
+      *location = SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD;
+      set_mode_system_value(b, mode);
+      break;
+   case SpvBuiltInBaryCoordNoPerspKHR:
+      *location = SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD;
+      set_mode_system_value(b, mode);
+      break;
 
    default:
       vtn_fail("Unsupported builtin: %s (%u)",
@@ -1375,6 +1383,12 @@ apply_var_decoration(struct vtn_builder *b,
       vtn_fail_if(b->shader->info.stage != MESA_SHADER_MESH,
                   "PerViewNV decoration only allowed in Mesh shaders");
       var_data->per_view = true;
+      break;
+
+   case SpvDecorationPerVertexKHR:
+      vtn_fail_if(b->shader->info.stage != MESA_SHADER_FRAGMENT,
+                  "PerVertexKHR decoration only allowed in Fragment shaders");
+      var_data->per_vertex = true;
       break;
 
    default:

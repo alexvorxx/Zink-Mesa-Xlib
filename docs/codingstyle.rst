@@ -8,7 +8,21 @@ of mesa can use different coding style as set in the local EditorConfig
 following is applicable. If the guidelines below don't cover something,
 try following the format of existing, neighboring code.
 
+``clang-format``
+----------------
+
+A growing number of drivers and components are adopting ``clang-format``
+to standardize the formatting and make it easy for everyone to apply it.
+
+You can re-format the code for the components that have opted-in to the
+formatting enforcement (listed in ``.clang-format-include``) by simply
+running ``ninja -C build/ clang-format``.
+
+Most code editors also support automatically formatting code as you
+write it; check your editor or its pluggins to see how to enable this.
+
 Basic formatting guidelines
+---------------------------
 
 -  3-space indentation, no tabs.
 -  Limit lines to 78 or fewer characters. The idea is to prevent line

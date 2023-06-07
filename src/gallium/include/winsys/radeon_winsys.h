@@ -2,26 +2,9 @@
  * Copyright 2008 Corbin Simpson <MostAwesomeDude@gmail.com>
  * Copyright 2010 Marek Olšák <maraeo@gmail.com>
  * Copyright 2018 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE. */
+ * SPDX-License-Identifier: MIT
+ */
 
 #ifndef RADEON_WINSYS_H
 #define RADEON_WINSYS_H
@@ -80,7 +63,6 @@ enum radeon_bo_flag
     * This guarantees that this buffer will never be moved to GTT.
     */
   RADEON_FLAG_DISCARDABLE = (1 << 10),
-  RADEON_FLAG_MALL_NOALLOC = (1 << 11), /* don't cache in the infinity cache */
 };
 
 static inline void
@@ -107,8 +89,6 @@ si_res_print_flags(enum radeon_bo_flag flags) {
       fprintf(stderr, "DRIVER_INTERNAL ");
    if (flags & RADEON_FLAG_DISCARDABLE)
       fprintf(stderr, "DISCARDABLE ");
-   if (flags & RADEON_FLAG_MALL_NOALLOC)
-      fprintf(stderr, "MALL_NOALLOC ");
 }
 
 enum radeon_map_flags
@@ -384,7 +364,7 @@ struct radeon_winsys {
     * by the device.
     *
     * The timeout of 0 will only return the status.
-    * The timeout of PIPE_TIMEOUT_INFINITE will always wait until the buffer
+    * The timeout of OS_TIMEOUT_INFINITE will always wait until the buffer
     * is idle.
     */
    bool (*buffer_wait)(struct radeon_winsys *ws, struct pb_buffer *buf,
@@ -694,7 +674,7 @@ struct radeon_winsys {
    /**
     * Wait for the fence and return true if the fence has been signalled.
     * The timeout of 0 will only return the status.
-    * The timeout of PIPE_TIMEOUT_INFINITE will always wait until the fence
+    * The timeout of OS_TIMEOUT_INFINITE will always wait until the fence
     * is signalled.
     */
    bool (*fence_wait)(struct radeon_winsys *ws, struct pipe_fence_handle *fence, uint64_t timeout);
@@ -798,7 +778,6 @@ radeon_bo_reference(struct radeon_winsys *rws, struct pb_buffer **dst, struct pb
 #define RADEON_HEAP_BIT_ENCRYPTED      (1 << 3) /* both VRAM and GTT */
 
 #define RADEON_HEAP_BIT_NO_CPU_ACCESS  (1 << 4) /* VRAM only */
-#define RADEON_HEAP_BIT_MALL_NOALLOC   (1 << 5) /* VRAM only */
 
 #define RADEON_HEAP_BIT_WC             (1 << 4) /* GTT only, VRAM implies this to be true */
 #define RADEON_HEAP_BIT_GL2_BYPASS     (1 << 5) /* GTT only */
@@ -833,8 +812,6 @@ static inline unsigned radeon_flags_from_heap(int heap)
       flags |= RADEON_FLAG_GTT_WC;
       if (heap & RADEON_HEAP_BIT_NO_CPU_ACCESS)
          flags |= RADEON_FLAG_NO_CPU_ACCESS;
-      if (heap & RADEON_HEAP_BIT_MALL_NOALLOC)
-         flags |= RADEON_FLAG_MALL_NOALLOC;
    } else {
       /* GTT only */
       if (heap & RADEON_HEAP_BIT_WC)
@@ -868,7 +845,6 @@ static void radeon_canonicalize_bo_flags(enum radeon_bo_domain *_domain,
       break;
    case RADEON_DOMAIN_GTT:
       flags &= ~RADEON_FLAG_NO_CPU_ACCESS;
-      flags &= ~RADEON_FLAG_MALL_NOALLOC;
       break;
    case RADEON_DOMAIN_GDS:
    case RADEON_DOMAIN_OA:
@@ -914,8 +890,6 @@ static inline int radeon_get_heap_index(enum radeon_bo_domain domain, enum radeo
       heap |= RADEON_HEAP_BIT_VRAM;
       if (flags & RADEON_FLAG_NO_CPU_ACCESS)
          heap |= RADEON_HEAP_BIT_NO_CPU_ACCESS;
-      if (flags & RADEON_FLAG_MALL_NOALLOC)
-         heap |= RADEON_HEAP_BIT_MALL_NOALLOC;
       /* RADEON_FLAG_WC is ignored and implied to be true for VRAM */
       /* RADEON_FLAG_GL2_BYPASS is ignored and implied to be false for VRAM */
    } else if (domain == RADEON_DOMAIN_GTT) {

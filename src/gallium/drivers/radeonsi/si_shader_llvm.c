@@ -1,25 +1,7 @@
 /*
  * Copyright 2016 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ac_nir.h"
@@ -28,7 +10,6 @@
 #include "si_pipe.h"
 #include "si_shader_internal.h"
 #include "sid.h"
-#include "tgsi/tgsi_from_mesa.h"
 #include "util/u_memory.h"
 #include "util/u_prim.h"
 
@@ -135,8 +116,7 @@ void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscre
    ctx->screen = sscreen;
    ctx->compiler = compiler;
 
-   ac_llvm_context_init(&ctx->ac, compiler, sscreen->info.gfx_level, sscreen->info.family,
-                        sscreen->info.has_3d_cube_border_color_mipmap, float_mode,
+   ac_llvm_context_init(&ctx->ac, compiler, &sscreen->info, float_mode,
                         wave_size, 64, exports_color_null, exports_mrtz);
 }
 
@@ -331,17 +311,21 @@ LLVMValueRef si_prolog_get_internal_bindings(struct si_shader_context *ctx)
  * We declare it with 64KB alignment as a hint that the
  * pointer value will always be 0.
  */
-void si_llvm_declare_esgs_ring(struct si_shader_context *ctx)
+static void si_llvm_declare_lds_esgs_ring(struct si_shader_context *ctx)
 {
-   if (ctx->esgs_ring)
+   if (ctx->ac.lds.value)
       return;
 
    assert(!LLVMGetNamedGlobal(ctx->ac.module, "esgs_ring"));
 
-   ctx->esgs_ring = LLVMAddGlobalInAddressSpace(ctx->ac.module, LLVMArrayType(ctx->ac.i32, 0),
-                                                "esgs_ring", AC_ADDR_SPACE_LDS);
-   LLVMSetLinkage(ctx->esgs_ring, LLVMExternalLinkage);
-   LLVMSetAlignment(ctx->esgs_ring, 64 * 1024);
+   LLVMValueRef esgs_ring =
+      LLVMAddGlobalInAddressSpace(ctx->ac.module, LLVMArrayType(ctx->ac.i32, 0),
+                                  "esgs_ring", AC_ADDR_SPACE_LDS);
+   LLVMSetLinkage(esgs_ring, LLVMExternalLinkage);
+   LLVMSetAlignment(esgs_ring, 64 * 1024);
+
+   ctx->ac.lds.value = esgs_ring;
+   ctx->ac.lds.pointee_type = ctx->ac.i32;
 }
 
 static void si_init_exec_from_input(struct si_shader_context *ctx, struct ac_arg param,
@@ -693,9 +677,6 @@ static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrin
    case nir_intrinsic_load_tess_rel_patch_id_amd:
       return si_get_rel_patch_id(ctx);
 
-   case nir_intrinsic_load_ring_esgs_amd:
-      return ctx->esgs_ring;
-
    case nir_intrinsic_load_ring_gsvs_amd:
       return ctx->gsvs_ring[nir_intrinsic_stream_id(intrin)];
 
@@ -775,10 +756,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
 
    si_llvm_create_main_func(ctx);
 
-   if (ctx->stage <= MESA_SHADER_GEOMETRY &&
-       (ctx->shader->key.ge.as_es || ctx->stage == MESA_SHADER_GEOMETRY))
-      si_preload_esgs_ring(ctx);
-
    switch (ctx->stage) {
    case MESA_SHADER_VERTEX:
       /* preload instance_divisor_constbuf to be used for input load after culling */
@@ -852,28 +829,34 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
       break;
    }
 
-   if ((ctx->stage == MESA_SHADER_VERTEX || ctx->stage == MESA_SHADER_TESS_EVAL) &&
-       shader->key.ge.as_ngg && !shader->key.ge.as_es) {
-      /* Unconditionally declare scratch space base for streamout and
-       * vertex compaction. Whether space is actually allocated is
-       * determined during linking / PM4 creation.
-       */
-      si_llvm_declare_esgs_ring(ctx);
-      ctx->ac.lds.value = ctx->esgs_ring;
-      ctx->ac.lds.pointee_type = ctx->ac.i32;
+   bool is_merged_esgs_stage =
+      ctx->screen->info.gfx_level >= GFX9 && ctx->stage <= MESA_SHADER_GEOMETRY &&
+      (ctx->shader->key.ge.as_es || ctx->stage == MESA_SHADER_GEOMETRY);
 
-      /* This is really only needed when streamout and / or vertex
-       * compaction is enabled.
-       */
-      if (si_shader_uses_streamout(shader) || shader->key.ge.opt.ngg_culling) {
-         LLVMTypeRef asi32 = LLVMArrayType(ctx->ac.i32, gfx10_ngg_get_scratch_dw_size(shader));
-         ctx->gs_ngg_scratch = (struct ac_llvm_pointer) {
-            .value = LLVMAddGlobalInAddressSpace(ctx->ac.module, asi32, "ngg_scratch", AC_ADDR_SPACE_LDS),
-            .pointee_type = asi32
-         };
-         LLVMSetInitializer(ctx->gs_ngg_scratch.value, LLVMGetUndef(asi32));
-         LLVMSetAlignment(ctx->gs_ngg_scratch.value, 8);
-      }
+   bool is_nogs_ngg_stage =
+      (ctx->stage == MESA_SHADER_VERTEX || ctx->stage == MESA_SHADER_TESS_EVAL) &&
+      shader->key.ge.as_ngg && !shader->key.ge.as_es;
+
+   /* Declare the ESGS ring as an explicit LDS symbol.
+    * When NGG VS/TES, unconditionally declare for streamout and vertex compaction.
+    * Whether space is actually allocated is determined during linking / PM4 creation.
+    */
+   if (is_merged_esgs_stage || is_nogs_ngg_stage)
+      si_llvm_declare_lds_esgs_ring(ctx);
+
+   /* This is really only needed when streamout and / or vertex
+    * compaction is enabled.
+    */
+   if (is_nogs_ngg_stage &&
+       (si_shader_uses_streamout(shader) || shader->key.ge.opt.ngg_culling)) {
+      LLVMTypeRef asi32 = LLVMArrayType(ctx->ac.i32, gfx10_ngg_get_scratch_dw_size(shader));
+      ctx->gs_ngg_scratch = (struct ac_llvm_pointer) {
+         .value = LLVMAddGlobalInAddressSpace(ctx->ac.module, asi32, "ngg_scratch",
+                                              AC_ADDR_SPACE_LDS),
+         .pointee_type = asi32
+      };
+      LLVMSetInitializer(ctx->gs_ngg_scratch.value, LLVMGetUndef(asi32));
+      LLVMSetAlignment(ctx->gs_ngg_scratch.value, 8);
    }
 
    /* For merged shaders (VS-TCS, VS-GS, TES-GS): */
@@ -971,7 +954,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
    ctx->abi.clamp_div_by_zero = ctx->screen->options.clamp_div_by_zero ||
                                 info->options & SI_PROFILE_CLAMP_DIV_BY_ZERO;
    ctx->abi.disable_aniso_single_level = true;
-   ctx->abi.conformant_trunc_coord = ctx->screen->info.conformant_trunc_coord;
 
    bool ls_need_output =
       ctx->stage == MESA_SHADER_VERTEX && shader->key.ge.as_ls &&
@@ -1061,11 +1043,15 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
    struct si_shader_selector *sel = shader->selector;
    struct si_shader_context ctx;
    enum ac_float_mode float_mode = nir->info.stage == MESA_SHADER_KERNEL ? AC_FLOAT_MODE_DEFAULT : AC_FLOAT_MODE_DEFAULT_OPENGL;
+   bool exports_color_null = false;
+   bool exports_mrtz = false;
 
-   bool exports_color_null = sel->info.colors_written;
-   bool exports_mrtz = sel->info.writes_z || sel->info.writes_stencil || sel->info.writes_samplemask;
-   if (!exports_mrtz && !exports_color_null)
-      exports_color_null = si_shader_uses_discard(shader) || sscreen->info.gfx_level < GFX10;
+   if (sel->stage == MESA_SHADER_FRAGMENT) {
+      exports_color_null = sel->info.colors_written;
+      exports_mrtz = sel->info.writes_z || sel->info.writes_stencil || shader->ps.writes_samplemask;
+      if (!exports_mrtz && !exports_color_null)
+         exports_color_null = si_shader_uses_discard(shader) || sscreen->info.gfx_level < GFX10;
+   }
 
    si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size, exports_color_null, exports_mrtz,
                         float_mode);

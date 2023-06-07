@@ -59,42 +59,42 @@ IaSetTopology(D3D10DDI_HDEVICE hDevice,                        // IN
 
    Device *pDevice = CastDevice(hDevice);
 
-   enum pipe_prim_type primitive;
+   enum mesa_prim primitive;
    switch (PrimitiveTopology) {
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_UNDEFINED:
       /* Apps might set topology to UNDEFINED when cleaning up on exit. */
-      primitive = PIPE_PRIM_MAX;
+      primitive = MESA_PRIM_COUNT;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_POINTLIST:
-      primitive = PIPE_PRIM_POINTS;
+      primitive = MESA_PRIM_POINTS;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_LINELIST:
-      primitive = PIPE_PRIM_LINES;
+      primitive = MESA_PRIM_LINES;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_LINESTRIP:
-      primitive = PIPE_PRIM_LINE_STRIP;
+      primitive = MESA_PRIM_LINE_STRIP;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
-      primitive = PIPE_PRIM_TRIANGLES;
+      primitive = MESA_PRIM_TRIANGLES;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
-      primitive = PIPE_PRIM_TRIANGLE_STRIP;
+      primitive = MESA_PRIM_TRIANGLE_STRIP;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
-      primitive = PIPE_PRIM_LINES_ADJACENCY;
+      primitive = MESA_PRIM_LINES_ADJACENCY;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
-      primitive = PIPE_PRIM_LINE_STRIP_ADJACENCY;
+      primitive = MESA_PRIM_LINE_STRIP_ADJACENCY;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
-      primitive = PIPE_PRIM_TRIANGLES_ADJACENCY;
+      primitive = MESA_PRIM_TRIANGLES_ADJACENCY;
       break;
    case D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-      primitive = PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY;
+      primitive = MESA_PRIM_TRIANGLE_STRIP_ADJACENCY;
       break;
    default:
       assert(0);
-      primitive = PIPE_PRIM_MAX;
+      primitive = MESA_PRIM_COUNT;
       break;
    }
 

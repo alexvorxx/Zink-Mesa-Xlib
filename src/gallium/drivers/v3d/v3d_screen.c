@@ -149,6 +149,7 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_CONDITIONAL_RENDER:
         case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
         case PIPE_CAP_CUBE_MAP_ARRAY:
+        case PIPE_CAP_NIR_COMPACT_ARRAYS:
                 return 1;
 
         case PIPE_CAP_POLYGON_OFFSET_CLAMP:
@@ -743,6 +744,7 @@ static const nir_shader_compiler_options v3d_nir_options = {
          */
         .max_unroll_iterations = 16,
         .force_indirect_unrolling_sampler = true,
+        .use_scoped_barrier = true,
 };
 
 static const void *
@@ -965,17 +967,17 @@ v3d_screen_create(int fd, const struct pipe_screen_config *config,
         }
 
         /* Generate the bitmask of supported draw primitives. */
-        screen->prim_types = BITFIELD_BIT(PIPE_PRIM_POINTS) |
-                             BITFIELD_BIT(PIPE_PRIM_LINES) |
-                             BITFIELD_BIT(PIPE_PRIM_LINE_LOOP) |
-                             BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN) |
-                             BITFIELD_BIT(PIPE_PRIM_LINES_ADJACENCY) |
-                             BITFIELD_BIT(PIPE_PRIM_LINE_STRIP_ADJACENCY) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLES_ADJACENCY) |
-                             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY);
+        screen->prim_types = BITFIELD_BIT(MESA_PRIM_POINTS) |
+                             BITFIELD_BIT(MESA_PRIM_LINES) |
+                             BITFIELD_BIT(MESA_PRIM_LINE_LOOP) |
+                             BITFIELD_BIT(MESA_PRIM_LINE_STRIP) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLES) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN) |
+                             BITFIELD_BIT(MESA_PRIM_LINES_ADJACENCY) |
+                             BITFIELD_BIT(MESA_PRIM_LINE_STRIP_ADJACENCY) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLES_ADJACENCY) |
+                             BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP_ADJACENCY);
 
         return pscreen;
 

@@ -38,23 +38,6 @@ struct anv_measure_batch {
 void
 anv_measure_device_init(struct anv_physical_device *device)
 {
-   switch (device->info.verx10) {
-   case 125:
-      device->cmd_emit_timestamp = &gfx125_cmd_emit_timestamp;
-      break;
-   case 120:
-      device->cmd_emit_timestamp = &gfx12_cmd_emit_timestamp;
-      break;
-   case 110:
-      device->cmd_emit_timestamp = &gfx11_cmd_emit_timestamp;
-      break;
-   case 90:
-      device->cmd_emit_timestamp = &gfx9_cmd_emit_timestamp;
-      break;
-   default:
-      assert(false);
-   }
-
    /* initialise list of measure structures that await rendering */
    struct intel_measure_device *measure_device = &device->measure_device;
    intel_measure_init(measure_device);
@@ -156,7 +139,8 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
                                  (struct anv_address) {
                                     .bo = measure->bo,
                                     .offset = index * sizeof(uint64_t) },
-                                 ANV_TIMESTAMP_CAPTURE_AT_CS_STALL);
+                                 ANV_TIMESTAMP_CAPTURE_AT_CS_STALL,
+                                 NULL);
 
    struct intel_measure_snapshot *snapshot = &(measure->base.snapshots[index]);
    memset(snapshot, 0, sizeof(*snapshot));
@@ -200,7 +184,8 @@ anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
                                  (struct anv_address) {
                                     .bo = measure->bo,
                                     .offset = index * sizeof(uint64_t) },
-                                 ANV_TIMESTAMP_CAPTURE_AT_CS_STALL);
+                                 ANV_TIMESTAMP_CAPTURE_AT_CS_STALL,
+                                 NULL);
 
    struct intel_measure_snapshot *snapshot = &(measure->base.snapshots[index]);
    memset(snapshot, 0, sizeof(*snapshot));

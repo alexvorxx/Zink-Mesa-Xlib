@@ -233,6 +233,8 @@ void iris_use_pinned_bo(struct iris_batch *batch, struct iris_bo *bo,
 
 enum pipe_reset_status iris_batch_check_for_reset(struct iris_batch *batch);
 
+bool iris_batch_syncobj_to_sync_file_fd(struct iris_batch *batch, int *out_fd);
+
 static inline unsigned
 iris_batch_bytes_used(struct iris_batch *batch)
 {

@@ -799,12 +799,13 @@ get_res_ms_postfix(enum dxil_resource_kind kind)
       return ", 0";
 
    default:
-      return " ";
+      return "";
    }
 }
 const struct dxil_type *
 dxil_module_get_res_type(struct dxil_module *m, enum dxil_resource_kind kind,
-                         enum dxil_component_type comp_type, bool readwrite)
+                         enum dxil_component_type comp_type, unsigned num_comps,
+                         bool readwrite)
 {
    switch (kind) {
    case DXIL_RESOURCE_KIND_TYPED_BUFFER:
@@ -819,12 +820,18 @@ dxil_module_get_res_type(struct dxil_module *m, enum dxil_resource_kind kind,
    case DXIL_RESOURCE_KIND_TEXTURECUBE_ARRAY:
    {
       const struct dxil_type *component_type = dxil_module_get_type_from_comp_type(m, comp_type);
-      const struct dxil_type *vec_type = dxil_module_get_vector_type(m, component_type, 4);
+      const struct dxil_type *vec_type = num_comps == 1 ? component_type :
+         dxil_module_get_vector_type(m, component_type, num_comps);
+      char vector_name[64] = { 0 };
+      if (num_comps == 1)
+         snprintf(vector_name, 64, "%s", get_res_comp_type_name(comp_type));
+      else
+         snprintf(vector_name, 64, "vector<%s, %d>", get_res_comp_type_name(comp_type), num_comps);
       char class_name[64] = { 0 };
-      snprintf(class_name, 64, "class.%s%s<vector<%s, 4>%s>",
+      snprintf(class_name, 64, "class.%s%s<%s%s>",
                readwrite ? "RW" : "",
                get_res_dimension_type_name(kind),
-               get_res_comp_type_name(comp_type),
+               vector_name,
                get_res_ms_postfix(kind));
       return dxil_module_get_struct_type(m, class_name, &vec_type, 1);
    }
@@ -2115,9 +2122,14 @@ dxil_module_get_uav_res_props_const(struct dxil_module *m,
    dwords[0] = get_basic_srv_uav_res_props_dword(true, false, false /*TODO*/, false,
                                                  dxil_sampler_dim_to_resource_kind(nir_intrinsic_image_dim(intr),
                                                                                    nir_intrinsic_image_array(intr)));
+   unsigned num_comps = intr->num_components ? intr->num_components : 1;
+   if (nir_intrinsic_has_format(intr)) {
+      enum pipe_format format = nir_intrinsic_format(intr);
+      if (format != PIPE_FORMAT_NONE)
+         num_comps = util_format_get_nr_components(format);
+   }
    dwords[1] = get_typed_srv_uav_res_props_dword(comp_type_from_alu_type(alu_type_from_image_intr(intr)),
-                                                 intr->num_components ? intr->num_components : 1,
-                                                 0);
+                                                 num_comps, 0);
 
    const struct dxil_value *values[2] = {
       dxil_module_get_int32_const(m, dwords[0]),

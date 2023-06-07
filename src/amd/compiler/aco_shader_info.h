@@ -88,17 +88,8 @@ struct aco_shader_info {
       bool as_ls;
       bool tcs_in_out_eq;
       uint64_t tcs_temp_only_input_mask;
-      bool use_per_attribute_vb_descs;
-      uint32_t input_slot_usage_mask;
       bool has_prolog;
-      bool dynamic_inputs;
    } vs;
-   struct {
-      uint8_t output_usage_mask[VARYING_SLOT_VAR31 + 1];
-      uint8_t num_stream_output_components[4];
-      uint8_t output_streams[VARYING_SLOT_VAR31 + 1];
-      unsigned vertices_out;
-   } gs;
    struct {
       uint32_t num_lds_blocks;
       unsigned tess_input_vertices;
@@ -137,6 +128,7 @@ struct aco_compiler_options {
    bool optimisations_disabled;
    uint8_t enable_mrt_output_nan_fixup;
    bool wgp_mode;
+   bool is_opengl;
    enum radeon_family family;
    enum amd_gfx_level gfx_level;
    uint32_t address32_hi;
@@ -164,6 +156,8 @@ enum aco_symbol_id {
    aco_symbol_invalid,
    aco_symbol_scratch_addr_lo,
    aco_symbol_scratch_addr_hi,
+   aco_symbol_lds_ngg_scratch_base,
+   aco_symbol_lds_ngg_gs_out_vertex_base,
 };
 
 struct aco_symbol {

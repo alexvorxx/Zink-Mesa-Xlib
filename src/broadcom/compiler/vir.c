@@ -1726,8 +1726,8 @@ static const struct v3d_compiler_strategy strategies[] = {
         /*8*/  { "disable gcm (2t)",               2, 1, true,  true,  false, false, false, false, -1 },
         /*9*/  { "disable loop unrolling (2t)",    2, 1, true,  true,  true,  false, false, false, -1 },
         /*10*/ { "Move buffer loads (2t)",         2, 1, true,  true,  true,  true,  true,  false, -1 },
-        /*11*/ { "disable TMU pipelining (2t)",    2, 1, true,  true,  true,  true,  true,  false, -1 },
-        /*12*/ { "fallback scheduler",             2, 1, true,  true,  true,  true,  true,  false, -1 }
+        /*11*/ { "disable TMU pipelining (2t)",    2, 1, true,  true,  true,  true,  true,  true,  -1 },
+        /*12*/ { "fallback scheduler",             2, 1, true,  true,  true,  true,  true,  true,  -1 }
 };
 
 /**
@@ -1914,6 +1914,9 @@ uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                 fprintf(stderr, "Failed to compile %s prog %d/%d "
                         "with any strategy.\n",
                         vir_get_stage_name(c), c->program_id, c->variant_id);
+
+                vir_compile_destroy(c);
+                return NULL;
         }
 
         struct v3d_prog_data *prog_data;

@@ -31,7 +31,6 @@
 #include "sfn_instr_export.h"
 #include "sfn_instr_fetch.h"
 #include "sfn_instr_tex.h"
-#include "tgsi/tgsi_from_mesa.h"
 
 #include <sstream>
 

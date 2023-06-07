@@ -355,11 +355,9 @@ anv_block_pool_init(struct anv_block_pool *pool,
 {
    VkResult result;
 
-   if (device->info->verx10 >= 125) {
-      /* Make sure VMA addresses are 2MiB aligned for the block pool */
-      assert(anv_is_aligned(start_address, 2 * 1024 * 1024));
-      assert(anv_is_aligned(initial_size, 2 * 1024 * 1024));
-   }
+   /* Make sure VMA addresses are aligned for the block pool */
+   assert(anv_is_aligned(start_address, device->info->mem_alignment));
+   assert(anv_is_aligned(initial_size, device->info->mem_alignment));
 
    pool->name = name;
    pool->device = device;
@@ -637,9 +635,7 @@ anv_state_pool_init(struct anv_state_pool *pool,
    /* We don't want to ever see signed overflow */
    assert(start_offset < INT32_MAX - (int32_t)BLOCK_POOL_MEMFD_SIZE);
 
-   uint32_t initial_size = block_size * 16;
-   if (device->info->verx10 >= 125)
-      initial_size = MAX2(initial_size, 2 * 1024 * 1024);
+   uint32_t initial_size = MAX2(block_size * 16, device->info->mem_alignment);
 
    VkResult result = anv_block_pool_init(&pool->block_pool, device, name,
                                          base_address + start_offset,
@@ -1409,9 +1405,20 @@ anv_bo_vma_alloc_or_close(struct anv_device *device,
 
    uint32_t align = device->physical->info.mem_alignment;
 
-   /* Gen12 CCS surface addresses need to be 64K aligned. */
-   if (device->info->ver >= 12 && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS))
-      align = MAX2(64 * 1024, align);
+   /* If we're using the AUX map, make sure we follow the required
+    * alignment.
+    */
+   if (device->info->has_aux_map && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS))
+      align = MAX2(intel_aux_map_get_alignment(device->aux_map_ctx), align);
+
+   /* Opportunistically align addresses to 2Mb when above 1Mb. We do this
+    * because this gives an opportunity for the kernel to use Transparent Huge
+    * Pages (the 2MB page table layout) for faster memory access.
+    *
+    * Only available on ICL+.
+    */
+   if (device->info->ver >= 11 && (bo->size + bo->_ccs_size) >= 1 * 1024 * 1024)
+      align = MAX2(2 * 1024 * 1024, align);
 
    if (alloc_flags & ANV_BO_ALLOC_FIXED_ADDRESS) {
       bo->has_fixed_address = true;
@@ -1445,19 +1452,18 @@ anv_device_alloc_bo(struct anv_device *device,
       anv_bo_alloc_flags_to_bo_flags(device, alloc_flags);
    assert(bo_flags == (bo_flags & ANV_BO_CACHE_SUPPORTED_FLAGS));
 
-   /* The kernel is going to give us whole pages anyway */
+   /* The kernel is going to give us whole pages anyway. And we
+    * also need 4KB alignment for 1MB AUX buffer that follows
+    * the main region. The 4KB also covers 64KB AUX granularity
+    * that has 256B AUX mapping to the main.
+    */
    size = align64(size, 4096);
 
    uint64_t ccs_size = 0;
    if (device->info->has_aux_map && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS)) {
-      /* Align the size up to the next multiple of 64K so we don't have any
-       * AUX-TT entries pointing from a 64K page to itself.
-       */
-      size = align64(size, 64 * 1024);
-
-      /* See anv_bo::_ccs_size */
       uint64_t aux_ratio =
          intel_aux_get_main_to_aux_ratio(device->aux_map_ctx);
+      /* See anv_bo::_ccs_size */
       ccs_size = align64(DIV_ROUND_UP(size, aux_ratio), 4096);
    }
 

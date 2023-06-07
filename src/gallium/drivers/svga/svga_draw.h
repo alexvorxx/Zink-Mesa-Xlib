@@ -59,7 +59,7 @@ svga_hwtnl_vertex_buffers(struct svga_hwtnl *hwtnl,
 
 enum pipe_error
 svga_hwtnl_draw_arrays(struct svga_hwtnl *hwtnl,
-                       enum pipe_prim_type prim, unsigned start, unsigned count,
+                       enum mesa_prim prim, unsigned start, unsigned count,
                        unsigned start_instance, unsigned instance_count,
                        ubyte vertices_per_patch);
 

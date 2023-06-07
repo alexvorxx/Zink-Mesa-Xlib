@@ -100,6 +100,9 @@ agx_upload_uniforms(struct agx_batch *batch, uint64_t textures,
    } else if (stage == PIPE_SHADER_FRAGMENT) {
       memcpy(uniforms.fs.blend_constant, &ctx->blend_color,
              sizeof(ctx->blend_color));
+
+      uniforms.fs.sample_mask = ctx->sample_mask;
+      uniforms.fs.ppp_multisamplectl = batch->ppp_multisamplectl;
    }
 
    memcpy(root_ptr.cpu, &uniforms, sizeof(uniforms));

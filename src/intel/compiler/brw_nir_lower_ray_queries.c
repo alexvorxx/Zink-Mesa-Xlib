@@ -370,7 +370,7 @@ lower_ray_query_intrinsic(nir_builder *b,
              * RayQueryCommittedIntersectionGeneratedEXT = 2U   <= hit_in.leaf_type == BRW_RT_BVH_NODE_TYPE_PROCEDURAL (3)
              */
             sysval =
-               nir_bcsel(b, nir_ieq(b, hit_in.leaf_type, nir_imm_int(b, 4)),
+               nir_bcsel(b, nir_ieq_imm(b, hit_in.leaf_type, 4),
                          nir_imm_int(b, 1), nir_imm_int(b, 2));
             sysval =
                nir_bcsel(b, hit_in.valid,
@@ -379,8 +379,8 @@ lower_ray_query_intrinsic(nir_builder *b,
             /* 0 -> triangle, 1 -> AABB */
             sysval =
                nir_b2i32(b,
-                         nir_ieq(b, hit_in.leaf_type,
-                                    nir_imm_int(b, BRW_RT_BVH_NODE_TYPE_PROCEDURAL)));
+                         nir_ieq_imm(b, hit_in.leaf_type,
+                                     BRW_RT_BVH_NODE_TYPE_PROCEDURAL));
          }
          break;
 

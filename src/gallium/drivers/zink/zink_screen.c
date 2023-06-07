@@ -517,30 +517,30 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_EMULATE_NONFIXED_PRIMITIVE_RESTART:
       return 1;
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART: {
-      uint32_t modes = BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
-                       BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
-                       BITFIELD_BIT(PIPE_PRIM_LINE_STRIP_ADJACENCY) |
-                       BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY);
+      uint32_t modes = BITFIELD_BIT(MESA_PRIM_LINE_STRIP) |
+                       BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP) |
+                       BITFIELD_BIT(MESA_PRIM_LINE_STRIP_ADJACENCY) |
+                       BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP_ADJACENCY);
       if (screen->have_triangle_fans)
-         modes |= BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN);
+         modes |= BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN);
       if (screen->info.have_EXT_primitive_topology_list_restart) {
-         modes |= BITFIELD_BIT(PIPE_PRIM_POINTS) |
-                  BITFIELD_BIT(PIPE_PRIM_LINES) |
-                  BITFIELD_BIT(PIPE_PRIM_LINES_ADJACENCY) |
-                  BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
-                  BITFIELD_BIT(PIPE_PRIM_TRIANGLES_ADJACENCY);
+         modes |= BITFIELD_BIT(MESA_PRIM_POINTS) |
+                  BITFIELD_BIT(MESA_PRIM_LINES) |
+                  BITFIELD_BIT(MESA_PRIM_LINES_ADJACENCY) |
+                  BITFIELD_BIT(MESA_PRIM_TRIANGLES) |
+                  BITFIELD_BIT(MESA_PRIM_TRIANGLES_ADJACENCY);
          if (screen->info.list_restart_feats.primitiveTopologyPatchListRestart)
-            modes |= BITFIELD_BIT(PIPE_PRIM_PATCHES);
+            modes |= BITFIELD_BIT(MESA_PRIM_PATCHES);
       }
       return modes;
    }
    case PIPE_CAP_SUPPORTED_PRIM_MODES: {
-      uint32_t modes = BITFIELD_MASK(PIPE_PRIM_MAX);
-      modes &= ~BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
-      modes &= ~BITFIELD_BIT(PIPE_PRIM_POLYGON);
-      modes &= ~BITFIELD_BIT(PIPE_PRIM_LINE_LOOP);
+      uint32_t modes = BITFIELD_MASK(MESA_PRIM_COUNT);
+      modes &= ~BITFIELD_BIT(MESA_PRIM_QUAD_STRIP);
+      modes &= ~BITFIELD_BIT(MESA_PRIM_POLYGON);
+      modes &= ~BITFIELD_BIT(MESA_PRIM_LINE_LOOP);
       if (!screen->have_triangle_fans)
-         modes &= ~BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN);
+         modes &= ~BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN);
       return modes;
    }
 
@@ -555,6 +555,8 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return screen->info.have_KHR_external_semaphore_fd || screen->info.have_KHR_external_semaphore_win32;
    case PIPE_CAP_NATIVE_FENCE_FD:
       return screen->instance_info.have_KHR_external_semaphore_capabilities && screen->info.have_KHR_external_semaphore_fd;
+   case PIPE_CAP_RESOURCE_FROM_USER_MEMORY:
+      return screen->info.have_EXT_external_memory_host;
 
    case PIPE_CAP_SURFACE_REINTERPRET_BLOCKS:
       return screen->info.have_vulkan11 || screen->info.have_KHR_maintenance2;
@@ -861,6 +863,10 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SAMPLER_REDUCTION_MINMAX_ARB:
       return screen->info.feats12.samplerFilterMinmax || screen->info.have_EXT_sampler_filter_minmax;
 
+   case PIPE_CAP_OPENCL_INTEGER_FUNCTIONS:
+   case PIPE_CAP_INTEGER_MULTIPLY_32X16:
+      return screen->info.have_INTEL_shader_integer_functions2;
+
    case PIPE_CAP_FS_FINE_DERIVATIVE:
       return 1;
 
@@ -958,6 +964,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_FS_FACE_IS_INTEGER_SYSVAL:
+   case PIPE_CAP_FS_POINT_IS_SYSVAL:
       return 1;
 
    case PIPE_CAP_VIEWPORT_TRANSFORM_LOWERED:
@@ -1655,7 +1662,7 @@ zink_flush_frontbuffer(struct pipe_screen *pscreen,
    /*if (ctx->batch.swapchain || ctx->needs_present) {
       ctx->batch.has_work = true;
       pctx->flush(pctx, NULL, PIPE_FLUSH_END_OF_FRAME);
-      if (ctx->last_fence && screen->threaded) {
+      if (ctx->last_fence && screen->threaded_submit) {
          struct zink_batch_state *bs = zink_batch_state(ctx->last_fence);
          util_queue_fence_wait(&bs->flush_completed);
       }

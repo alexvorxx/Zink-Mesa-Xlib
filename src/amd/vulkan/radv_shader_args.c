@@ -347,6 +347,22 @@ radv_declare_rt_shader_args(enum amd_gfx_level gfx_level, struct radv_shader_arg
    ac_add_arg(&args->ac, AC_ARG_VGPR, 1, AC_ARG_INT, &args->ac.rt_dynamic_callable_stack_base);
 }
 
+static bool
+radv_ps_needs_state_sgpr(const struct radv_shader_info *info, const struct radv_pipeline_key *key)
+{
+   if (info->ps.needs_sample_positions && key->dynamic_rasterization_samples)
+      return true;
+
+   if (key->dynamic_line_rast_mode)
+      return true;
+
+   if (info->ps.reads_sample_mask_in &&
+       (info->ps.uses_sample_shading || key->ps.sample_shading_enable))
+      return true;
+
+   return false;
+}
+
 static void
 declare_shader_args(const struct radv_device *device, const struct radv_pipeline_key *key,
                     const struct radv_shader_info *info, gl_shader_stage stage,
@@ -640,9 +656,8 @@ declare_shader_args(const struct radv_device *device, const struct radv_pipeline
          add_ud_arg(args, 1, AC_ARG_INT, &args->ps_epilog_pc, AC_UD_PS_EPILOG_PC);
       }
 
-      if (info->ps.needs_sample_positions && key->dynamic_rasterization_samples) {
-         add_ud_arg(args, 1, AC_ARG_INT, &args->ps_num_samples, AC_UD_PS_NUM_SAMPLES);
-      }
+      if (radv_ps_needs_state_sgpr(info, key))
+         add_ud_arg(args, 1, AC_ARG_INT, &args->ps_state, AC_UD_PS_STATE);
 
       ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.prim_mask);
       if (args->explicit_scratch_args && gfx_level < GFX11) {

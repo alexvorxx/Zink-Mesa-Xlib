@@ -1359,8 +1359,8 @@ bi_emit_image_load(bi_builder *b, nir_intrinsic_instr *instr)
    bi_split_dest(b, instr->dest);
 }
 
-static bi_index
-bi_emit_lea_image(bi_builder *b, nir_intrinsic_instr *instr)
+static void
+bi_emit_lea_image_to(bi_builder *b, bi_index dest, nir_intrinsic_instr *instr)
 {
    enum glsl_sampler_dim dim = nir_intrinsic_image_dim(instr);
    bool array = nir_intrinsic_image_array(instr);
@@ -1378,7 +1378,6 @@ bi_emit_lea_image(bi_builder *b, nir_intrinsic_instr *instr)
    bi_index coords = bi_src_index(&instr->src[1]);
    bi_index xy = bi_emit_image_coord(b, coords, 0, coord_comps, array);
    bi_index zw = bi_emit_image_coord(b, coords, 1, coord_comps, array);
-   bi_index dest = bi_temp(b->shader);
 
    if (b->shader->arch >= 9 && nir_src_is_const(instr->src[0])) {
       bi_instr *I = bi_lea_tex_imm_to(b, dest, xy, zw, false,
@@ -1398,6 +1397,13 @@ bi_emit_lea_image(bi_builder *b, nir_intrinsic_instr *instr)
    }
 
    bi_emit_cached_split(b, dest, 3 * 32);
+}
+
+static bi_index
+bi_emit_lea_image(bi_builder *b, nir_intrinsic_instr *instr)
+{
+   bi_index dest = bi_temp(b->shader);
+   bi_emit_lea_image_to(b, dest, instr);
    return dest;
 }
 
@@ -1610,29 +1616,12 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       break;
    }
 
-   case nir_intrinsic_image_atomic: {
-      nir_atomic_op op = nir_intrinsic_atomic_op(instr);
-
-      if (op == nir_atomic_op_xchg) {
-         bi_emit_axchg_to(b, dst, bi_emit_lea_image(b, instr), &instr->src[3],
-                          BI_SEG_NONE);
-      } else {
-         assert(nir_src_bit_size(instr->src[3]) == 32);
-
-         bi_emit_atomic_i32_to(b, dst, bi_emit_lea_image(b, instr),
-                               bi_src_index(&instr->src[3]), op);
-      }
-
-      bi_split_dest(b, instr->dest);
-      break;
-   }
-
    case nir_intrinsic_global_atomic: {
       nir_atomic_op op = nir_intrinsic_atomic_op(instr);
 
       if (op == nir_atomic_op_xchg) {
          bi_emit_axchg_to(b, dst, bi_src_index(&instr->src[0]), &instr->src[1],
-                          BI_SEG_WLS);
+                          BI_SEG_NONE);
       } else {
          assert(nir_src_bit_size(instr->src[1]) == 32);
 
@@ -1643,6 +1632,10 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       bi_split_dest(b, instr->dest);
       break;
    }
+
+   case nir_intrinsic_image_texel_address:
+      bi_emit_lea_image_to(b, dst, instr);
+      break;
 
    case nir_intrinsic_image_load:
       bi_emit_image_load(b, instr);
@@ -1655,12 +1648,6 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
    case nir_intrinsic_global_atomic_swap:
       bi_emit_acmpxchg_to(b, dst, bi_src_index(&instr->src[0]), &instr->src[1],
                           &instr->src[2], BI_SEG_NONE);
-      bi_split_dest(b, instr->dest);
-      break;
-
-   case nir_intrinsic_image_atomic_swap:
-      bi_emit_acmpxchg_to(b, dst, bi_emit_lea_image(b, instr), &instr->src[3],
-                          &instr->src[4], BI_SEG_NONE);
       bi_split_dest(b, instr->dest);
       break;
 
@@ -4749,7 +4736,6 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS_V(nir, pan_lower_sample_pos);
    NIR_PASS_V(nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
    NIR_PASS_V(nir, nir_lower_64bit_phis);
-   NIR_PASS_V(nir, nir_lower_regs_to_ssa);
    NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
    NIR_PASS_V(nir, pan_lower_helper_invocation);
    NIR_PASS_V(nir, nir_lower_int64);
@@ -4768,6 +4754,7 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
                  .lower_index_to_offset = true,
               });
 
+   NIR_PASS_V(nir, nir_lower_image_atomics_to_global);
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, bi_scalarize_filter, NULL);
    NIR_PASS_V(nir, nir_lower_load_const_to_scalar);
    NIR_PASS_V(nir, nir_lower_phis_to_scalar, true);

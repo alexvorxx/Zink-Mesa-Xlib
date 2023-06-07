@@ -67,7 +67,7 @@ lower_viewport_transform_instr(nir_builder *b, nir_instr *instr,
 
    nir_ssa_def *w_recip = nir_frcp(b, nir_channel(b, input_point, 3));
 
-   nir_ssa_def *ndc_point = nir_fmul(b, nir_channels(b, input_point, 0x7),
+   nir_ssa_def *ndc_point = nir_fmul(b, nir_trim_vector(b, input_point, 3),
                                      w_recip);
 
    nir_ssa_def *screen = nir_fadd(b, nir_fmul(b, ndc_point, scale),

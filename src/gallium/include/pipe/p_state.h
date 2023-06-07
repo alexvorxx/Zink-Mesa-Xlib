@@ -546,6 +546,7 @@ struct pipe_image_view
          unsigned first_layer:16;     /**< first layer to use for array textures */
          unsigned last_layer:16;      /**< last layer to use for array textures */
          unsigned level:8;            /**< mipmap level to use */
+         bool single_layer_view;      /**< single layer view of array */
       } tex;
       struct {
          unsigned offset;   /**< offset in bytes */
@@ -853,7 +854,7 @@ struct pipe_draw_start_count_bias {
 struct pipe_draw_vertex_state_info {
 #if defined(__GNUC__)
    /* sizeof(mode) == 1 because it's a packed enum. */
-   enum pipe_prim_type mode;  /**< the mode of the primitive */
+   enum mesa_prim mode;  /**< the mode of the primitive */
 #else
    /* sizeof(mode) == 1 is required by draw merging in u_threaded_context. */
    uint8_t mode;              /**< the mode of the primitive */
@@ -868,7 +869,7 @@ struct pipe_draw_info
 {
 #if defined(__GNUC__)
    /* sizeof(mode) == 1 because it's a packed enum. */
-   enum pipe_prim_type mode;  /**< the mode of the primitive */
+   enum mesa_prim mode;  /**< the mode of the primitive */
 #else
    /* sizeof(mode) == 1 is required by draw merging in u_threaded_context. */
    uint8_t mode;              /**< the mode of the primitive */
@@ -883,7 +884,7 @@ struct pipe_draw_info
    bool take_index_buffer_ownership:1; /**< callee inherits caller's refcount
          (no need to reference indexbuf, but still needs to unreference it) */
    bool index_bias_varies:1;   /**< true if index_bias varies between draws */
-   bool was_line_loop:1; /**< true if pipe_prim_type was LINE_LOOP before translation */
+   bool was_line_loop:1; /**< true if mesa_prim was LINE_LOOP before translation */
    uint8_t _pad:1;
 
    unsigned start_instance; /**< first instance id */
@@ -1025,6 +1026,11 @@ struct pipe_grid_info
     */
    struct pipe_resource *indirect;
    unsigned indirect_offset; /**< must be 4 byte aligned */
+   unsigned indirect_stride;
+   /* draw related members are for task/mesh shaders */
+   unsigned draw_count;
+   unsigned indirect_draw_count_offset;
+   struct pipe_resource *indirect_draw_count;
 };
 
 /**

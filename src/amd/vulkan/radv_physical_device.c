@@ -56,8 +56,7 @@ typedef void *drmDevicePtr;
 bool
 radv_sqtt_enabled(void)
 {
-   return radv_get_int_debug_option("RADV_THREAD_TRACE", -1) >= 0 ||
-          getenv("RADV_THREAD_TRACE_TRIGGER");
+   return debug_get_num_option("RADV_THREAD_TRACE", -1) >= 0 || getenv("RADV_THREAD_TRACE_TRIGGER");
 }
 
 static bool
@@ -500,6 +499,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
 #endif
+      .EXT_dynamic_rendering_unused_attachments = true,
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
       .EXT_extended_dynamic_state3 = true,
@@ -795,7 +795,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice,
       /* VK_EXT_line_rasterization */
       .rectangularLines = true,
       .bresenhamLines = true,
-      .smoothLines = false,
+      .smoothLines = true,
       .stippledRectangularLines = false,
       /* FIXME: Some stippled Bresenham CTS fails on Vega10
        * but work on Raven.
@@ -1031,6 +1031,9 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice,
 
       /* VK_EXT_attachment_feedback_loop_dynamic_state */
       .attachmentFeedbackLoopDynamicState = true,
+
+      /* VK_EXT_dynamic_rendering_unused_attachments */
+      .dynamicRenderingUnusedAttachments = true,
    };
 }
 
@@ -1746,7 +1749,8 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
           * overrides during pipeline creation. */
          properties->maxGraphicsShaderGroupCount = 0;
 
-         properties->maxIndirectSequenceCount = UINT32_MAX;
+         /* MSB reserved for signalling indirect count enablement. */
+         properties->maxIndirectSequenceCount = UINT32_MAX >> 1;
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT: {
@@ -1985,7 +1989,6 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
             marketing_name ? marketing_name : "AMD Unknown", device->rad_info.name,
             radv_get_compiler_string(device));
 
-#ifdef ENABLE_SHADER_CACHE
    if (radv_device_get_cache_uuid(device, device->cache_uuid)) {
       result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED, "cannot generate UUID");
       goto fail_wsi;
@@ -1997,7 +2000,6 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
-#endif
 
    if (!radv_is_conformant(device))
       vk_warn_non_conformant_implementation("radv");
@@ -2125,9 +2127,7 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
 fail_perfcounters:
    ac_destroy_perfcounters(&device->ac_perfcounters);
    disk_cache_destroy(device->vk.disk_cache);
-#ifdef ENABLE_SHADER_CACHE
 fail_wsi:
-#endif
    device->ws->destroy(device->ws);
 fail_base:
    vk_physical_device_finish(&device->vk);

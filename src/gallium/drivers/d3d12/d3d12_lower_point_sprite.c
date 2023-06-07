@@ -250,15 +250,8 @@ d3d12_lower_point_sprite(nir_shader *shader,
 
    /* Create uniform to retrieve inverse of viewport size and point size:
     * (1/ViewportWidth, 1/ViewportHeight, PointSize, MaxPointSize) */
-   state.uniform = nir_variable_create(shader,
-                                       nir_var_uniform,
-                                       glsl_vec4_type(),
-                                       "d3d12_ViewportSizeRcp");
-   state.uniform->num_state_slots = 1;
-   state.uniform->state_slots = ralloc_array(state.uniform, nir_state_slot, 1);
-   memcpy(state.uniform->state_slots[0].tokens, tokens,
-          sizeof(state.uniform->state_slots[0].tokens));
-   shader->num_uniforms++;
+   state.uniform = nir_state_variable_create(shader, glsl_vec4_type(),
+                                             "d3d12_ViewportSizeRcp", tokens);
 
    /* Create new outputs for point tex coordinates */
    unsigned count = 0;

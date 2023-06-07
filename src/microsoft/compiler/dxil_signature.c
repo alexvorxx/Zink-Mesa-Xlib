@@ -286,13 +286,13 @@ get_semantic_name(nir_variable *var, struct semantic_info *info,
       break;
 
     case VARYING_SLOT_FACE:
-      assert(glsl_get_components(var->type) == 1);
+      assert(glsl_get_components(type) == 1);
       snprintf(info->name, 64, "%s", "SV_IsFrontFace");
       info->kind = DXIL_SEM_IS_FRONT_FACE;
       break;
 
    case VARYING_SLOT_PRIMITIVE_ID:
-     assert(glsl_get_components(var->type) == 1);
+     assert(glsl_get_components(type) == 1);
      snprintf(info->name, 64, "%s", "SV_PrimitiveID");
      info->kind = DXIL_SEM_PRIMITIVE_ID;
      break;
@@ -307,25 +307,25 @@ get_semantic_name(nir_variable *var, struct semantic_info *info,
       break;
 
    case VARYING_SLOT_TESS_LEVEL_INNER:
-      assert(glsl_get_components(var->type) <= 2);
+      assert(glsl_get_components(type) <= 2);
       snprintf(info->name, 64, "%s", "SV_InsideTessFactor");
       info->kind = DXIL_SEM_INSIDE_TESS_FACTOR;
       break;
 
    case VARYING_SLOT_TESS_LEVEL_OUTER:
-      assert(glsl_get_components(var->type) <= 4);
+      assert(glsl_get_components(type) <= 4);
       snprintf(info->name, 64, "%s", "SV_TessFactor");
       info->kind = DXIL_SEM_TESS_FACTOR;
       break;
 
    case VARYING_SLOT_VIEWPORT:
-      assert(glsl_get_components(var->type) == 1);
+      assert(glsl_get_components(type) == 1);
       snprintf(info->name, 64, "%s", "SV_ViewportArrayIndex");
       info->kind = DXIL_SEM_VIEWPORT_ARRAY_INDEX;
       break;
 
    case VARYING_SLOT_LAYER:
-      assert(glsl_get_components(var->type) == 1);
+      assert(glsl_get_components(type) == 1);
       snprintf(info->name, 64, "%s", "SV_RenderTargetArrayIndex");
       info->kind = DXIL_SEM_RENDERTARGET_ARRAY_INDEX;
       break;

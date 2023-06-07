@@ -464,7 +464,7 @@ v3d_read_and_accumulate_primitive_counters(struct v3d_context *v3d)
 
         perf_debug("stalling on TF counts readback\n");
         struct v3d_resource *rsc = v3d_resource(v3d->prim_counts);
-        if (v3d_bo_wait(rsc->bo, PIPE_TIMEOUT_INFINITE, "prim-counts")) {
+        if (v3d_bo_wait(rsc->bo, OS_TIMEOUT_INFINITE, "prim-counts")) {
                 uint32_t *map = v3d_bo_map(rsc->bo) + v3d->prim_counts_offset;
                 v3d->tf_prims_generated += map[V3D_PRIM_COUNTS_TF_WRITTEN];
                 /* When we only have a vertex shader with no primitive
@@ -493,6 +493,7 @@ void
 v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
 {
         struct v3d_screen *screen = v3d->screen;
+        struct v3d_device_info *devinfo = &screen->devinfo;
 
         if (!job->needs_flush)
                 goto done;
@@ -507,10 +508,10 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
         if (job->needs_primitives_generated)
                 v3d_ensure_prim_counts_allocated(v3d);
 
-        v3d_X(&screen->devinfo, emit_rcl)(job);
+        v3d_X(devinfo, emit_rcl)(job);
 
         if (cl_offset(&job->bcl) > 0)
-                v3d_X(&screen->devinfo, bcl_epilogue)(v3d, job);
+                v3d_X(devinfo, bcl_epilogue)(v3d, job);
 
         /* While the RCL will implicitly depend on the last RCL to have
          * finished, we also need to block on any previous TFU job we may have
@@ -545,7 +546,7 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
         /* On V3D 4.1, the tile alloc/state setup moved to register writes
          * instead of binner packets.
          */
-        if (screen->devinfo.ver >= 41) {
+        if (devinfo->ver >= 41) {
                 v3d_job_add_bo(job, job->tile_alloc);
                 job->submit.qma = job->tile_alloc->offset;
                 job->submit.qms = job->tile_alloc->size;

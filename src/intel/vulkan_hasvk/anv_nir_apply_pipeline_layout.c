@@ -485,7 +485,7 @@ build_buffer_addr_for_res_index(nir_builder *b,
        * have a sliding window range.
        */
       nir_ssa_def *base_ptr =
-         nir_pack_64_2x32(b, nir_channels(b, desc, 0x3));
+         nir_pack_64_2x32(b, nir_trim_vector(b, desc, 2));
       base_ptr = nir_iadd(b, base_ptr, nir_u2u64(b, dynamic_offset));
       desc = nir_vec4(b, nir_unpack_64_2x32_split_x(b, base_ptr),
                          nir_unpack_64_2x32_split_y(b, base_ptr),
@@ -1102,7 +1102,7 @@ build_def_array_select(nir_builder *b, nir_ssa_def **srcs, nir_ssa_def *idx,
       return srcs[start];
    } else {
       unsigned mid = start + (end - start) / 2;
-      return nir_bcsel(b, nir_ilt(b, idx, nir_imm_int(b, mid)),
+      return nir_bcsel(b, nir_ilt_imm(b, idx, mid),
                        build_def_array_select(b, srcs, idx, start, mid),
                        build_def_array_select(b, srcs, idx, mid, end));
    }

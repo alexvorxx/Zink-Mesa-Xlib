@@ -176,7 +176,7 @@ nir_zero_initialize_shared_memory(nir_shader *shader,
    {
       nir_ssa_def *offset = nir_load_var(&b, it);
 
-      nir_push_if(&b, nir_uge(&b, offset, nir_imm_int(&b, shared_size)));
+      nir_push_if(&b, nir_uge_imm(&b, offset, shared_size));
       {
          nir_jump(&b, nir_jump_break);
       }

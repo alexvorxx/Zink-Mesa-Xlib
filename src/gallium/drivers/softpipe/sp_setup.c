@@ -779,7 +779,7 @@ sp_setup_tri(struct setup_context *setup,
    setup_tri_coefficients( setup );
    setup_tri_edges( setup );
 
-   assert(setup->softpipe->reduced_prim == PIPE_PRIM_TRIANGLES);
+   assert(setup->softpipe->reduced_prim == MESA_PRIM_TRIANGLES);
 
    setup->span.y = 0;
    setup->span.right[0] = 0;
@@ -1048,7 +1048,7 @@ sp_setup_line(struct setup_context *setup,
 
    assert(dx >= 0);
    assert(dy >= 0);
-   assert(setup->softpipe->reduced_prim == PIPE_PRIM_LINES);
+   assert(setup->softpipe->reduced_prim == MESA_PRIM_LINES);
 
    setup->quad[0].input.x0 = setup->quad[0].input.y0 = -1;
    setup->quad[0].inout.mask = 0x0;
@@ -1167,7 +1167,7 @@ sp_setup_point(struct setup_context *setup,
        setup->softpipe->rasterizer->rasterizer_discard)
       return;
 
-   assert(setup->softpipe->reduced_prim == PIPE_PRIM_POINTS);
+   assert(setup->softpipe->reduced_prim == MESA_PRIM_POINTS);
 
    if (setup->softpipe->layer_slot > 0) {
       layer = *(unsigned *)v0[setup->softpipe->layer_slot];
@@ -1403,7 +1403,7 @@ sp_setup_prepare(struct setup_context *setup)
 
    sp->quad.first->begin( sp->quad.first );
 
-   if (sp->reduced_api_prim == PIPE_PRIM_TRIANGLES &&
+   if (sp->reduced_api_prim == MESA_PRIM_TRIANGLES &&
        sp->rasterizer->fill_front == PIPE_POLYGON_MODE_FILL &&
        sp->rasterizer->fill_back == PIPE_POLYGON_MODE_FILL) {
       /* we'll do culling */

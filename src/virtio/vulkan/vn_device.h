@@ -17,12 +17,20 @@
 #include "vn_device_memory.h"
 #include "vn_feedback.h"
 
+struct vn_device_memory_report {
+   PFN_vkDeviceMemoryReportCallbackEXT callback;
+   void *data;
+};
+
 struct vn_device {
    struct vn_device_base base;
 
    struct vn_instance *instance;
    struct vn_physical_device *physical_device;
    struct vn_renderer *renderer;
+
+   struct vn_device_memory_report *memory_reports;
+   uint32_t memory_report_count;
 
    /* unique queue family indices in which to create the device queues */
    uint32_t *queue_families;
@@ -47,5 +55,27 @@ VK_DEFINE_HANDLE_CASTS(vn_device,
                        base.base.base,
                        VkDevice,
                        VK_OBJECT_TYPE_DEVICE)
+
+static inline void
+vn_device_emit_device_memory_report(struct vn_device *dev,
+                                    VkDeviceMemoryReportEventTypeEXT type,
+                                    uint64_t mem_obj_id,
+                                    VkDeviceSize size,
+                                    struct vn_object_base *obj,
+                                    uint32_t heap_index)
+{
+   assert(dev->memory_reports);
+   const VkDeviceMemoryReportCallbackDataEXT report = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT,
+      .type = type,
+      .memoryObjectId = mem_obj_id,
+      .size = size,
+      .objectType = obj->base.type,
+      .objectHandle = obj->id,
+      .heapIndex = heap_index,
+   };
+   for (uint32_t i = 0; i < dev->memory_report_count; i++)
+      dev->memory_reports[i].callback(&report, dev->memory_reports[i].data);
+}
 
 #endif /* VN_DEVICE_H */

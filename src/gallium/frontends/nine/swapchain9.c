@@ -687,7 +687,7 @@ static void work_present(void *data)
 {
     struct end_present_struct *work = data;
     if (work->fence_to_wait) {
-        (void) work->screen->fence_finish(work->screen, NULL, work->fence_to_wait, PIPE_TIMEOUT_INFINITE);
+        (void) work->screen->fence_finish(work->screen, NULL, work->fence_to_wait, OS_TIMEOUT_INFINITE);
         work->screen->fence_reference(work->screen, &(work->fence_to_wait), NULL);
     }
     ID3DPresent_PresentBuffer(work->present, work->present_handle, work->hDestWindowOverride, NULL, NULL, NULL, 0);
@@ -921,7 +921,7 @@ bypass_rendering:
     /* Throttle rendering if needed */
     fence = swap_fences_pop_front(This);
     if (fence) {
-        (void) This->screen->fence_finish(This->screen, NULL, fence, PIPE_TIMEOUT_INFINITE);
+        (void) This->screen->fence_finish(This->screen, NULL, fence, OS_TIMEOUT_INFINITE);
         This->screen->fence_reference(This->screen, &fence, NULL);
     }
 

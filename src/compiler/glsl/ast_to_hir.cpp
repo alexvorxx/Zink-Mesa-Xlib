@@ -2774,6 +2774,42 @@ is_allowed_invariant(ir_variable *var, struct _mesa_glsl_parse_state *state)
    if (is_varying_var(var, state->stage))
       return true;
 
+   /* ES2 says:
+    *
+    * "For the built-in special variables, gl_FragCoord can only be declared
+    *  invariant if and only if gl_Position is declared invariant. Similarly
+    *  gl_PointCoord can only be declared invariant if and only if gl_PointSize
+    *  is declared invariant. It is an error to declare gl_FrontFacing as
+    *  invariant. The invariance of gl_FrontFacing is the same as the invariance
+    *  of gl_Position."
+    *
+    * ES3.1 says about invariance:
+    *
+    * "How does this rule apply to the built-in special variables?
+    *
+    *  Option 1: It should be the same as for varyings. But gl_Position is used
+    *  internally by the rasterizer as well as for gl_FragCoord so there may be
+    *  cases where rasterization is required to be invariant but gl_FragCoord is
+    *  not.
+    *
+    *  RESOLUTION: Option 1."
+    *
+    * and the ES3 spec has similar text but the "RESOLUTION" is missing.
+    *
+    * Any system values should be from built-in special variables.
+    */
+   if (var->data.mode == ir_var_system_value) {
+      if (state->is_version(0, 300)) {
+         return true;
+      } else {
+         /* Note: We don't actually have a check that the VS's PointSize is
+          * invariant, even when it's treated as a varying.
+          */
+         if (var->data.location == SYSTEM_VALUE_POINT_COORD)
+            return true;
+      }
+   }
+
    /* From Section 4.6.1 ("The Invariant Qualifier") GLSL 1.20 spec:
     * "Only variables output from a vertex shader can be candidates
     * for invariance".
@@ -7074,8 +7110,7 @@ ast_case_label::hir(exec_list *instructions,
 
          /* Check if int->uint implicit conversion is supported. */
          bool integer_conversion_supported =
-            glsl_type::int_type->can_implicitly_convert_to(glsl_type::uint_type,
-                                                           state);
+            _mesa_glsl_can_implicitly_convert(glsl_type::int_type, glsl_type::uint_type, state);
 
          if ((!type_a->is_integer_32() || !type_b->is_integer_32()) ||
               !integer_conversion_supported) {

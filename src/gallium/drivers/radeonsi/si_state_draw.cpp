@@ -1,25 +1,7 @@
 /*
  * Copyright 2012 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ac_nir.h"
@@ -224,32 +206,42 @@ static bool si_update_shaders(struct si_context *sctx)
    else
       sctx->vs_uses_base_instance = sctx->shader.vs.current->uses_base_instance;
 
-   union si_vgt_stages_key key;
-   key.index = 0;
-
    /* Update VGT_SHADER_STAGES_EN. */
+   uint32_t vgt_stages = 0;
+
    if (HAS_TESS) {
-      key.u.tess = 1;
-      if (GFX_VERSION >= GFX10)
-         key.u.hs_wave32 = sctx->queued.named.hs->wave_size == 32;
-   }
-   if (HAS_GS)
-      key.u.gs = 1;
-   if (NGG) {
-      key.index |= si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->ngg.vgt_stages.index;
-   } else if (GFX_VERSION >= GFX10) {
-      if (HAS_GS) {
-         key.u.gs_wave32 = sctx->shader.gs.current->wave_size == 32;
-         key.u.vs_wave32 = sctx->shader.gs.current->gs_copy_shader->wave_size == 32;
-      } else {
-         key.u.vs_wave32 = si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->wave_size == 32;
-      }
+      vgt_stages |= S_028B54_LS_EN(V_028B54_LS_STAGE_ON) |
+                    S_028B54_HS_EN(1) |
+                    S_028B54_DYNAMIC_HS(1) |
+                    S_028B54_HS_W32_EN(GFX_VERSION >= GFX10 &&
+                                       sctx->queued.named.hs->wave_size == 32);
    }
 
-   struct si_pm4_state **pm4 = &sctx->vgt_shader_config[key.index];
-   if (unlikely(!*pm4))
-      *pm4 = si_build_vgt_shader_config(sctx->screen, key);
-   si_pm4_bind_state(sctx, vgt_shader_config, *pm4);
+   if (NGG) {
+      vgt_stages |= si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->ngg.vgt_shader_stages_en;
+   } else {
+      if (HAS_GS) {
+         /* Legacy GS only supports Wave64. */
+         assert(sctx->shader.gs.current->wave_size == 64);
+
+         vgt_stages |= S_028B54_ES_EN(HAS_TESS ? V_028B54_ES_STAGE_DS : V_028B54_ES_STAGE_REAL) |
+                       S_028B54_GS_EN(1) |
+                       S_028B54_VS_EN(V_028B54_VS_STAGE_COPY_SHADER) |
+                       S_028B54_VS_W32_EN(GFX_VERSION >= GFX10 &&
+                                          sctx->shader.gs.current->gs_copy_shader->wave_size == 32);
+      } else if (HAS_TESS) {
+         vgt_stages |= S_028B54_VS_EN(V_028B54_VS_STAGE_DS);
+      }
+
+      vgt_stages |= S_028B54_MAX_PRIMGRP_IN_WAVE(GFX_VERSION >= GFX9 ? 2 : 0) |
+                    S_028B54_VS_W32_EN(!HAS_GS && GFX_VERSION >= GFX10 &&
+                                       si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->wave_size == 32);
+   }
+
+   if (vgt_stages != sctx->vgt_shader_stages_en) {
+      sctx->vgt_shader_stages_en = vgt_stages;
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.vgt_pipeline_state);
+   }
 
    struct si_shader *hw_vs = si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current;
 
@@ -300,7 +292,7 @@ static bool si_update_shaders(struct si_context *sctx)
          si_mark_atom_dirty(sctx, &sctx->atoms.s.db_render_state);
 
       if (sctx->framebuffer.nr_samples <= 1)
-         si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_sample_locs);
+         si_mark_atom_dirty(sctx, &sctx->atoms.s.sample_locations);
    }
 
    if (GFX_VERSION >= GFX9 && unlikely(sctx->sqtt)) {
@@ -477,21 +469,21 @@ ALWAYS_INLINE
 static unsigned si_conv_pipe_prim(unsigned mode)
 {
    static const unsigned prim_conv[] = {
-      [PIPE_PRIM_POINTS] = V_008958_DI_PT_POINTLIST,
-      [PIPE_PRIM_LINES] = V_008958_DI_PT_LINELIST,
-      [PIPE_PRIM_LINE_LOOP] = V_008958_DI_PT_LINELOOP,
-      [PIPE_PRIM_LINE_STRIP] = V_008958_DI_PT_LINESTRIP,
-      [PIPE_PRIM_TRIANGLES] = V_008958_DI_PT_TRILIST,
-      [PIPE_PRIM_TRIANGLE_STRIP] = V_008958_DI_PT_TRISTRIP,
-      [PIPE_PRIM_TRIANGLE_FAN] = V_008958_DI_PT_TRIFAN,
-      [PIPE_PRIM_QUADS] = V_008958_DI_PT_QUADLIST,
-      [PIPE_PRIM_QUAD_STRIP] = V_008958_DI_PT_QUADSTRIP,
-      [PIPE_PRIM_POLYGON] = V_008958_DI_PT_POLYGON,
-      [PIPE_PRIM_LINES_ADJACENCY] = V_008958_DI_PT_LINELIST_ADJ,
-      [PIPE_PRIM_LINE_STRIP_ADJACENCY] = V_008958_DI_PT_LINESTRIP_ADJ,
-      [PIPE_PRIM_TRIANGLES_ADJACENCY] = V_008958_DI_PT_TRILIST_ADJ,
-      [PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY] = V_008958_DI_PT_TRISTRIP_ADJ,
-      [PIPE_PRIM_PATCHES] = V_008958_DI_PT_PATCH,
+      [MESA_PRIM_POINTS] = V_008958_DI_PT_POINTLIST,
+      [MESA_PRIM_LINES] = V_008958_DI_PT_LINELIST,
+      [MESA_PRIM_LINE_LOOP] = V_008958_DI_PT_LINELOOP,
+      [MESA_PRIM_LINE_STRIP] = V_008958_DI_PT_LINESTRIP,
+      [MESA_PRIM_TRIANGLES] = V_008958_DI_PT_TRILIST,
+      [MESA_PRIM_TRIANGLE_STRIP] = V_008958_DI_PT_TRISTRIP,
+      [MESA_PRIM_TRIANGLE_FAN] = V_008958_DI_PT_TRIFAN,
+      [MESA_PRIM_QUADS] = V_008958_DI_PT_QUADLIST,
+      [MESA_PRIM_QUAD_STRIP] = V_008958_DI_PT_QUADSTRIP,
+      [MESA_PRIM_POLYGON] = V_008958_DI_PT_POLYGON,
+      [MESA_PRIM_LINES_ADJACENCY] = V_008958_DI_PT_LINELIST_ADJ,
+      [MESA_PRIM_LINE_STRIP_ADJACENCY] = V_008958_DI_PT_LINESTRIP_ADJ,
+      [MESA_PRIM_TRIANGLES_ADJACENCY] = V_008958_DI_PT_TRILIST_ADJ,
+      [MESA_PRIM_TRIANGLE_STRIP_ADJACENCY] = V_008958_DI_PT_TRISTRIP_ADJ,
+      [MESA_PRIM_PATCHES] = V_008958_DI_PT_PATCH,
       [SI_PRIM_RECTANGLE_LIST] = V_008958_DI_PT_RECTLIST};
    assert(mode < ARRAY_SIZE(prim_conv));
    return prim_conv[mode];
@@ -880,13 +872,13 @@ static void si_emit_derived_tess_state(struct si_context *sctx)
    }
 }
 
-static unsigned si_num_prims_for_vertices(enum pipe_prim_type prim,
+static unsigned si_num_prims_for_vertices(enum mesa_prim prim,
                                           unsigned count, unsigned vertices_per_patch)
 {
    switch (prim) {
-   case PIPE_PRIM_PATCHES:
+   case MESA_PRIM_PATCHES:
       return count / vertices_per_patch;
-   case PIPE_PRIM_POLYGON:
+   case MESA_PRIM_POLYGON:
       /* It's a triangle fan with different edge flags. */
       return count >= 3 ? count - 2 : 0;
    case SI_PRIM_RECTANGLE_LIST:
@@ -944,13 +936,13 @@ static unsigned si_get_init_multi_vgt_param(struct si_screen *sscreen, union si_
        * Polaris supports primitive restart with WD_SWITCH_ON_EOP=0
        * for points, line strips, and tri strips.
        */
-      if (sscreen->info.max_se <= 2 || key->u.prim == PIPE_PRIM_POLYGON ||
-          key->u.prim == PIPE_PRIM_LINE_LOOP || key->u.prim == PIPE_PRIM_TRIANGLE_FAN ||
-          key->u.prim == PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY ||
+      if (sscreen->info.max_se <= 2 || key->u.prim == MESA_PRIM_POLYGON ||
+          key->u.prim == MESA_PRIM_LINE_LOOP || key->u.prim == MESA_PRIM_TRIANGLE_FAN ||
+          key->u.prim == MESA_PRIM_TRIANGLE_STRIP_ADJACENCY ||
           (key->u.primitive_restart &&
            (sscreen->info.family < CHIP_POLARIS10 ||
-            (key->u.prim != PIPE_PRIM_POINTS && key->u.prim != PIPE_PRIM_LINE_STRIP &&
-             key->u.prim != PIPE_PRIM_TRIANGLE_STRIP))) ||
+            (key->u.prim != MESA_PRIM_POINTS && key->u.prim != MESA_PRIM_LINE_STRIP &&
+             key->u.prim != MESA_PRIM_TRIANGLE_STRIP))) ||
           key->u.count_from_stream_output)
          wd_switch_on_eop = true;
 
@@ -1050,7 +1042,7 @@ static bool si_is_line_stipple_enabled(struct si_context *sctx)
 {
    struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
 
-   return rs->line_stipple_enable && sctx->current_rast_prim != PIPE_PRIM_POINTS &&
+   return rs->line_stipple_enable && sctx->current_rast_prim != MESA_PRIM_POINTS &&
           (rs->polygon_mode_is_lines || util_prim_is_lines(sctx->current_rast_prim));
 }
 
@@ -1061,7 +1053,7 @@ enum si_is_draw_vertex_state {
 
 template <si_is_draw_vertex_state IS_DRAW_VERTEX_STATE> ALWAYS_INLINE
 static bool num_instanced_prims_less_than(const struct pipe_draw_indirect_info *indirect,
-                                          enum pipe_prim_type prim,
+                                          enum mesa_prim prim,
                                           unsigned min_vertex_count,
                                           unsigned instance_count,
                                           unsigned num_prims,
@@ -1083,7 +1075,7 @@ template <amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS,
           si_is_draw_vertex_state IS_DRAW_VERTEX_STATE> ALWAYS_INLINE
 static unsigned si_get_ia_multi_vgt_param(struct si_context *sctx,
                                           const struct pipe_draw_indirect_info *indirect,
-                                          enum pipe_prim_type prim, unsigned num_patches,
+                                          enum mesa_prim prim, unsigned num_patches,
                                           unsigned instance_count, bool primitive_restart,
                                           unsigned min_vertex_count)
 {
@@ -1147,9 +1139,9 @@ static void si_emit_rasterizer_prim_state(struct si_context *sctx)
       /* For lines, reset the stipple pattern at each primitive. Otherwise,
        * reset the stipple pattern at each packet (line strips, line loops).
        */
-      enum pipe_prim_type rast_prim = sctx->current_rast_prim;
-      bool reset_per_prim = rast_prim == PIPE_PRIM_LINES ||
-                            rast_prim == PIPE_PRIM_LINES_ADJACENCY;
+      enum mesa_prim rast_prim = sctx->current_rast_prim;
+      bool reset_per_prim = rast_prim == MESA_PRIM_LINES ||
+                            rast_prim == MESA_PRIM_LINES_ADJACENCY;
       /* 0 = no reset, 1 = reset per prim, 2 = reset per packet */
       unsigned value =
          rs->pa_sc_line_stipple | S_028A0C_AUTO_RESET_CNTL(reset_per_prim ? 1 : 2);
@@ -1234,19 +1226,40 @@ static void si_emit_vs_state(struct si_context *sctx, unsigned index_size)
    }
 }
 
-ALWAYS_INLINE
-static bool si_prim_restart_index_changed(struct si_context *sctx, bool primitive_restart,
-                                          unsigned restart_index)
+template <amd_gfx_level GFX_VERSION> ALWAYS_INLINE
+static bool si_prim_restart_index_changed(struct si_context *sctx, unsigned index_size,
+                                          bool primitive_restart, unsigned restart_index)
 {
-   return primitive_restart && (restart_index != sctx->last_restart_index ||
-                                sctx->last_restart_index == SI_RESTART_INDEX_UNKNOWN);
+   if (!primitive_restart)
+      return false;
+
+   if (sctx->last_restart_index == SI_RESTART_INDEX_UNKNOWN)
+      return true;
+
+   /* GFX8+ only compares the index type number of bits of the restart index, so the unused bits
+    * are "don't care".
+    *
+    * Summary of restart index comparator behavior:
+    * - GFX6-7: Compare all bits.
+    * - GFX8: Only compare index type bits.
+    * - GFX9+: If MATCH_ALL_BITS, compare all bits, else only compare index type bits.
+    */
+   if (GFX_VERSION >= GFX8) {
+      /* This masking eliminates no-op 0xffffffff -> 0xffff restart index changes that cause
+       * unnecessary context rolls when switching the index type.
+       */
+      unsigned index_mask = BITFIELD_MASK(index_size * 8);
+      return (restart_index & index_mask) != (sctx->last_restart_index & index_mask);
+   } else {
+      return restart_index != sctx->last_restart_index;
+   }
 }
 
 template <amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS,
           si_is_draw_vertex_state IS_DRAW_VERTEX_STATE> ALWAYS_INLINE
 static void si_emit_ia_multi_vgt_param(struct si_context *sctx,
                                        const struct pipe_draw_indirect_info *indirect,
-                                       enum pipe_prim_type prim, unsigned num_patches,
+                                       enum mesa_prim prim, unsigned num_patches,
                                        unsigned instance_count, bool primitive_restart,
                                        unsigned min_vertex_count)
 {
@@ -1340,7 +1353,7 @@ template <amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS, si_
           si_is_draw_vertex_state IS_DRAW_VERTEX_STATE> ALWAYS_INLINE
 static void si_emit_draw_registers(struct si_context *sctx,
                                    const struct pipe_draw_indirect_info *indirect,
-                                   enum pipe_prim_type prim,
+                                   enum mesa_prim prim, unsigned index_size,
                                    unsigned instance_count, bool primitive_restart,
                                    unsigned restart_index, unsigned min_vertex_count)
 {
@@ -1370,20 +1383,41 @@ static void si_emit_draw_registers(struct si_context *sctx,
    }
 
    /* Primitive restart. */
-   if (primitive_restart != sctx->last_primitive_restart_en) {
-      if (GFX_VERSION >= GFX11)
-         radeon_set_uconfig_reg(R_03092C_GE_MULTI_PRIM_IB_RESET_EN, primitive_restart);
-      else if (GFX_VERSION >= GFX9)
-         radeon_set_uconfig_reg(R_03092C_VGT_MULTI_PRIM_IB_RESET_EN, primitive_restart);
-      else
-         radeon_set_context_reg(R_028A94_VGT_MULTI_PRIM_IB_RESET_EN, primitive_restart);
-      sctx->last_primitive_restart_en = primitive_restart;
-   }
-   if (si_prim_restart_index_changed(sctx, primitive_restart, restart_index)) {
-      radeon_set_context_reg(R_02840C_VGT_MULTI_PRIM_IB_RESET_INDX, restart_index);
-      sctx->last_restart_index = restart_index;
-      if (GFX_VERSION == GFX9)
-         sctx->context_roll = true;
+   if (GFX_VERSION >= GFX11) {
+      /* GFX11+ can ignore primitive restart for non-indexed draws because it has no effect.
+       * (it's disabled for non-indexed draws by setting DISABLE_FOR_AUTO_INDEX in the preamble)
+       */
+      if (index_size) {
+         if (primitive_restart != sctx->last_primitive_restart_en) {
+            radeon_set_uconfig_reg(R_03092C_GE_MULTI_PRIM_IB_RESET_EN,
+                                   S_03092C_RESET_EN(primitive_restart) |
+                                   /* This disables primitive restart for non-indexed draws.
+                                    * By keeping this set, we don't have to unset RESET_EN
+                                    * for non-indexed draws. */
+                                   S_03092C_DISABLE_FOR_AUTO_INDEX(1));
+            sctx->last_primitive_restart_en = primitive_restart;
+         }
+         if (si_prim_restart_index_changed<GFX_VERSION>(sctx, index_size, primitive_restart,
+                                                        restart_index)) {
+            radeon_set_context_reg(R_02840C_VGT_MULTI_PRIM_IB_RESET_INDX, restart_index);
+            sctx->last_restart_index = restart_index;
+         }
+      }
+   } else {
+      if (primitive_restart != sctx->last_primitive_restart_en) {
+         if (GFX_VERSION >= GFX9)
+            radeon_set_uconfig_reg(R_03092C_VGT_MULTI_PRIM_IB_RESET_EN, primitive_restart);
+         else
+            radeon_set_context_reg(R_028A94_VGT_MULTI_PRIM_IB_RESET_EN, primitive_restart);
+         sctx->last_primitive_restart_en = primitive_restart;
+      }
+      if (si_prim_restart_index_changed<GFX_VERSION>(sctx, index_size, primitive_restart,
+                                                     restart_index)) {
+         radeon_set_context_reg(R_02840C_VGT_MULTI_PRIM_IB_RESET_INDX, restart_index);
+         sctx->last_restart_index = restart_index;
+         if (GFX_VERSION == GFX9)
+            sctx->context_roll = true;
+      }
    }
    radeon_end();
 }
@@ -1459,10 +1493,10 @@ static void si_emit_draw_packets(struct si_context *sctx, const struct pipe_draw
       if (sctx->num_pipeline_stat_queries &&
           sctx->shader.gs.cso == NULL &&
           (instance_count > 1 || indirect) &&
-          (1 << info->mode) & (1 << PIPE_PRIM_LINES_ADJACENCY |
-                               1 << PIPE_PRIM_LINE_STRIP_ADJACENCY |
-                               1 << PIPE_PRIM_TRIANGLES_ADJACENCY |
-                               1 << PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY)) {
+          (1 << info->mode) & (1 << MESA_PRIM_LINES_ADJACENCY |
+                               1 << MESA_PRIM_LINE_STRIP_ADJACENCY |
+                               1 << MESA_PRIM_TRIANGLES_ADJACENCY |
+                               1 << MESA_PRIM_TRIANGLE_STRIP_ADJACENCY)) {
          disable_instance_packing = true;
       }
    }
@@ -2091,13 +2125,9 @@ static void si_get_draw_start_count(struct si_context *sctx, const struct pipe_d
    }
 }
 
-template <amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS, si_has_ngg NGG,
-          si_is_draw_vertex_state IS_DRAW_VERTEX_STATE> ALWAYS_INLINE
-static void si_emit_all_states(struct si_context *sctx, const struct pipe_draw_info *info,
-                               const struct pipe_draw_indirect_info *indirect,
-                               enum pipe_prim_type prim, unsigned instance_count,
-                               unsigned min_vertex_count, bool primitive_restart,
-                               unsigned skip_atom_mask)
+template <amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS, si_has_ngg NGG>
+ALWAYS_INLINE
+static void si_emit_all_states(struct si_context *sctx, unsigned skip_atom_mask)
 {
    si_emit_rasterizer_prim_state<GFX_VERSION, HAS_GS, NGG>(sctx);
    if (HAS_TESS)
@@ -2129,12 +2159,6 @@ static void si_emit_all_states(struct si_context *sctx, const struct pipe_draw_i
 
       sctx->dirty_states = 0;
    }
-
-   /* Emit draw states. */
-   si_emit_vs_state<GFX_VERSION, HAS_TESS, HAS_GS, NGG, IS_DRAW_VERTEX_STATE>(sctx, info->index_size);
-   si_emit_draw_registers<GFX_VERSION, HAS_TESS, HAS_GS, NGG, IS_DRAW_VERTEX_STATE>
-         (sctx, indirect, prim, instance_count, primitive_restart,
-          info->restart_index, min_vertex_count);
 }
 
 #define DRAW_CLEANUP do {                                 \
@@ -2163,7 +2187,11 @@ static void si_draw(struct pipe_context *ctx,
 
    si_check_dirty_buffers_textures(sctx);
 
-   si_decompress_textures(sctx, u_bit_consecutive(0, SI_NUM_GRAPHICS_SHADERS));
+   if (GFX_VERSION < GFX11)
+      gfx6_decompress_textures(sctx, u_bit_consecutive(0, SI_NUM_GRAPHICS_SHADERS));
+   else
+      gfx11_decompress_textures(sctx, u_bit_consecutive(0, SI_NUM_GRAPHICS_SHADERS));
+
    si_need_gfx_cs_space(sctx, num_draws);
 
    unsigned instance_count = info->instance_count;
@@ -2182,12 +2210,12 @@ static void si_draw(struct pipe_context *ctx,
    if (unlikely(!vs ||
                 (!IS_DRAW_VERTEX_STATE && sctx->num_vertex_elements < vs->info.num_vs_inputs) ||
                 (IS_DRAW_VERTEX_STATE && vstate->velems.count < vs->info.num_vs_inputs) ||
-                !sctx->shader.ps.cso || (HAS_TESS != (info->mode == PIPE_PRIM_PATCHES)))) {
+                !sctx->shader.ps.cso || (HAS_TESS != (info->mode == MESA_PRIM_PATCHES)))) {
       assert(0);
       return;
    }
 
-   enum pipe_prim_type prim = HAS_TESS ? PIPE_PRIM_PATCHES : (enum pipe_prim_type)info->mode;
+   enum mesa_prim prim = HAS_TESS ? MESA_PRIM_PATCHES : (enum mesa_prim)info->mode;
 
    if (GFX_VERSION <= GFX9 && HAS_GS) {
       /* Determine whether the GS triangle strip adjacency fix should
@@ -2196,7 +2224,7 @@ static void si_draw(struct pipe_context *ctx,
        * restart occurs after an odd number of triangles.
        */
       bool gs_tri_strip_adj_fix =
-         !HAS_TESS && prim == PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY;
+         !HAS_TESS && prim == MESA_PRIM_TRIANGLE_STRIP_ADJACENCY;
 
       if (gs_tri_strip_adj_fix != sctx->shader.gs.key.ge.mono.u.gs_tri_strip_adj_fix) {
          sctx->shader.gs.key.ge.mono.u.gs_tri_strip_adj_fix = gs_tri_strip_adj_fix;
@@ -2294,10 +2322,10 @@ static void si_draw(struct pipe_context *ctx,
     * current_rast_prim for this draw_vbo call.
     */
    if (!HAS_GS && !HAS_TESS) {
-      enum pipe_prim_type rast_prim;
+      enum mesa_prim rast_prim;
 
       if (util_rast_prim_is_triangles(prim)) {
-         rast_prim = PIPE_PRIM_TRIANGLES;
+         rast_prim = MESA_PRIM_TRIANGLES;
       } else {
          /* Only possibilities, POINTS, LINE*, RECTANGLES */
          rast_prim = prim;
@@ -2429,9 +2457,14 @@ static void si_draw(struct pipe_context *ctx,
    bool primitive_restart = !IS_DRAW_VERTEX_STATE && info->primitive_restart;
 
    /* Emit all states except possibly render condition. */
-   si_emit_all_states<GFX_VERSION, HAS_TESS, HAS_GS, NGG, IS_DRAW_VERTEX_STATE>
-         (sctx, info, indirect, prim, instance_count, min_direct_count,
-          primitive_restart, masked_atoms);
+   si_emit_all_states<GFX_VERSION, HAS_TESS, HAS_GS, NGG>(sctx, masked_atoms);
+
+   /* Emit draw states. */
+   si_emit_vs_state<GFX_VERSION, HAS_TESS, HAS_GS, NGG, IS_DRAW_VERTEX_STATE>(sctx, index_size);
+   si_emit_draw_registers<GFX_VERSION, HAS_TESS, HAS_GS, NGG, IS_DRAW_VERTEX_STATE>
+         (sctx, indirect, prim, index_size, instance_count, primitive_restart,
+          info->restart_index, min_direct_count);
+
    if (sctx->flags)
       sctx->emit_cache_flush(sctx, &sctx->gfx_cs);
    /* <-- CUs are idle here if we waited. */

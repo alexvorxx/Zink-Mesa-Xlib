@@ -25,7 +25,7 @@
 #include "anv_private.h"
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
-#include "nir/nir_vulkan.h"
+#include "vk_nir_convert_ycbcr.h"
 
 struct ycbcr_state {
    nir_builder *builder;
@@ -52,8 +52,8 @@ get_texture_size(struct ycbcr_state *state, nir_deref_instr *texture)
    tex->is_shadow = glsl_sampler_type_is_shadow(type);
    tex->dest_type = nir_type_int32;
 
-   tex->src[0].src_type = nir_tex_src_texture_deref;
-   tex->src[0].src = nir_src_for_ssa(&texture->dest.ssa);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                     &texture->dest.ssa);
 
    nir_ssa_dest_init(&tex->instr, &tex->dest, nir_tex_instr_dest_size(tex),
                      32);
@@ -139,8 +139,8 @@ create_plane_tex_instr_implicit(struct ycbcr_state *state,
          break;
       }
    }
-   tex->src[tex->num_srcs - 1].src = nir_src_for_ssa(nir_imm_int(b, plane));
-   tex->src[tex->num_srcs - 1].src_type = nir_tex_src_plane;
+   tex->src[tex->num_srcs - 1] = nir_tex_src_for_ssa(nir_tex_src_plane,
+                                                     nir_imm_int(b, plane));
 
    tex->sampler_dim = old_tex->sampler_dim;
    tex->dest_type = old_tex->dest_type;

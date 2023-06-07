@@ -537,16 +537,15 @@ for (unsigned bit = 0; bit < bit_size; bit++) {
 """)
 
 # AMD_gcn_shader extended instructions
-unop_horiz("cube_face_coord_amd", 2, tfloat32, 3, tfloat32, """
-dst.x = dst.y = 0.0;
+unop_horiz("cube_face_coord_amd", 3, tfloat32, 3, tfloat32, """
+dst.x = dst.y = dst.z = 0.0;
 float absX = fabsf(src0.x);
 float absY = fabsf(src0.y);
 float absZ = fabsf(src0.z);
 
-float ma = 0.0;
-if (absX >= absY && absX >= absZ) { ma = 2 * src0.x; }
-if (absY >= absX && absY >= absZ) { ma = 2 * src0.y; }
-if (absZ >= absX && absZ >= absY) { ma = 2 * src0.z; }
+if (absX >= absY && absX >= absZ) { dst.z = 2 * src0.x; }
+if (absY >= absX && absY >= absZ) { dst.z = 2 * src0.y; }
+if (absZ >= absX && absZ >= absY) { dst.z = 2 * src0.z; }
 
 if (src0.x >= 0 && absX >= absY && absX >= absZ) { dst.x = -src0.z; dst.y = -src0.y; }
 if (src0.x < 0 && absX >= absY && absX >= absZ) { dst.x = src0.z; dst.y = -src0.y; }
@@ -554,9 +553,6 @@ if (src0.y >= 0 && absY >= absX && absY >= absZ) { dst.x = src0.x; dst.y = src0.
 if (src0.y < 0 && absY >= absX && absY >= absZ) { dst.x = src0.x; dst.y = -src0.z; }
 if (src0.z >= 0 && absZ >= absX && absZ >= absY) { dst.x = src0.x; dst.y = -src0.y; }
 if (src0.z < 0 && absZ >= absX && absZ >= absY) { dst.x = -src0.x; dst.y = -src0.y; }
-
-dst.x = dst.x * (1.0f / ma) + 0.5f;
-dst.y = dst.y * (1.0f / ma) + 0.5f;
 """)
 
 unop_horiz("cube_face_index_amd", 1, tfloat32, 3, tfloat32, """

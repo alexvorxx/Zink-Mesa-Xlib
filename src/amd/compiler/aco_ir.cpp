@@ -188,6 +188,21 @@ init_program(Program* program, Stage stage, const struct aco_shader_info* info,
       program->dev.scratch_global_offset_max = 4095;
    }
 
+   if (program->gfx_level >= GFX11) {
+      /* GFX11 can have only 1 NSA dword. The last VGPR isn't included here because it contains the
+       * rest of the address.
+       */
+      program->dev.max_nsa_vgprs = 4;
+   } else if (program->gfx_level >= GFX10_3) {
+      /* GFX10.3 can have up to 3 NSA dwords. */
+      program->dev.max_nsa_vgprs = 13;
+   } else if (program->gfx_level >= GFX10) {
+      /* Limit NSA instructions to 1 NSA dword on GFX10 to avoid stability issues. */
+      program->dev.max_nsa_vgprs = 5;
+   } else {
+      program->dev.max_nsa_vgprs = 0;
+   }
+
    program->wgp_mode = wgp_mode;
 
    program->progress = CompilationProgress::after_isel;
@@ -834,6 +849,7 @@ needs_exec_mask(const Instruction* instr)
       case aco_opcode::p_logical_end:
       case aco_opcode::p_startpgm:
       case aco_opcode::p_init_scratch: return instr->reads_exec();
+      case aco_opcode::p_start_linear_vgpr: return instr->operands.size();
       default: break;
       }
    }
@@ -1276,6 +1292,29 @@ should_form_clause(const Instruction* a, const Instruction* b)
       return a->operands[0].tempId() == b->operands[0].tempId();
 
    return false;
+}
+
+int
+get_op_fixed_to_def(Instruction* instr)
+{
+   if (instr->opcode == aco_opcode::v_interp_p2_f32 || instr->opcode == aco_opcode::v_mac_f32 ||
+       instr->opcode == aco_opcode::v_fmac_f32 || instr->opcode == aco_opcode::v_mac_f16 ||
+       instr->opcode == aco_opcode::v_fmac_f16 || instr->opcode == aco_opcode::v_mac_legacy_f32 ||
+       instr->opcode == aco_opcode::v_fmac_legacy_f32 ||
+       instr->opcode == aco_opcode::v_pk_fmac_f16 || instr->opcode == aco_opcode::v_writelane_b32 ||
+       instr->opcode == aco_opcode::v_writelane_b32_e64 ||
+       instr->opcode == aco_opcode::v_dot4c_i32_i8) {
+      return 2;
+   } else if (instr->opcode == aco_opcode::s_addk_i32 || instr->opcode == aco_opcode::s_mulk_i32 ||
+              instr->opcode == aco_opcode::s_cmovk_i32) {
+      return 0;
+   } else if (instr->isMUBUF() && instr->definitions.size() == 1 && instr->operands.size() == 4) {
+      return 3;
+   } else if (instr->isMIMG() && instr->definitions.size() == 1 &&
+              !instr->operands[2].isUndefined()) {
+      return 2;
+   }
+   return -1;
 }
 
 bool

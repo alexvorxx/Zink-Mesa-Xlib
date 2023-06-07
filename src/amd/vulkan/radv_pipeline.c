@@ -29,7 +29,6 @@
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "nir/nir_serialize.h"
-#include "nir/nir_vulkan.h"
 #include "nir/radv_nir.h"
 #include "spirv/nir_spirv.h"
 #include "util/disk_cache.h"
@@ -52,6 +51,7 @@
 #include "aco_interface.h"
 #include "sid.h"
 #include "vk_format.h"
+#include "vk_nir_convert_ycbcr.h"
 
 bool
 radv_shader_need_indirect_descriptor_sets(const struct radv_shader *shader)
@@ -529,6 +529,22 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_pipeline_layo
    /* Gather info in the case that nir_vk_lower_ycbcr_tex might have emitted resinfo instructions. */
    if (progress)
       nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
+
+   bool fix_derivs_in_divergent_cf =
+      stage->stage == MESA_SHADER_FRAGMENT && !radv_use_llvm_for_stage(device, stage->stage);
+   if (fix_derivs_in_divergent_cf) {
+      NIR_PASS(_, stage->nir, nir_convert_to_lcssa, true, true);
+      nir_divergence_analysis(stage->nir);
+   }
+   NIR_PASS(_, stage->nir, ac_nir_lower_tex,
+            &(ac_nir_lower_tex_options){
+               .gfx_level = gfx_level,
+               .lower_array_layer_round_even = !device->physical_device->rad_info.conformant_trunc_coord,
+               .fix_derivs_in_divergent_cf = fix_derivs_in_divergent_cf,
+               .max_wqm_vgprs = 64, // TODO: improve spiller and RA support for linear VGPRs
+            });
+   if (fix_derivs_in_divergent_cf)
+      NIR_PASS(_, stage->nir, nir_opt_remove_phis); /* cleanup LCSSA phis */
 
    if (stage->nir->info.uses_resource_info_query)
       NIR_PASS(_, stage->nir, ac_nir_lower_resinfo, gfx_level);

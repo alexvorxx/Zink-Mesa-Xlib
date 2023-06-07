@@ -285,49 +285,49 @@ i915_vbuf_ensure_index_bounds(struct vbuf_render *render, unsigned max_index)
 
 static void
 i915_vbuf_render_set_primitive(struct vbuf_render *render,
-                               enum pipe_prim_type prim)
+                               enum mesa_prim prim)
 {
    struct i915_vbuf_render *i915_render = i915_vbuf_render(render);
    i915_render->prim = prim;
 
    switch (prim) {
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       i915_render->hwprim = PRIM3D_POINTLIST;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       i915_render->hwprim = PRIM3D_LINELIST;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       i915_render->hwprim = PRIM3D_LINELIST;
-      i915_render->fallback = PIPE_PRIM_LINE_LOOP;
+      i915_render->fallback = MESA_PRIM_LINE_LOOP;
       break;
-   case PIPE_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       i915_render->hwprim = PRIM3D_LINESTRIP;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       i915_render->hwprim = PRIM3D_TRILIST;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       i915_render->hwprim = PRIM3D_TRISTRIP;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_TRIANGLE_FAN:
+   case MESA_PRIM_TRIANGLE_FAN:
       i915_render->hwprim = PRIM3D_TRIFAN;
       i915_render->fallback = 0;
       break;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       i915_render->hwprim = PRIM3D_TRILIST;
-      i915_render->fallback = PIPE_PRIM_QUADS;
+      i915_render->fallback = MESA_PRIM_QUADS;
       break;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       i915_render->hwprim = PRIM3D_TRILIST;
-      i915_render->fallback = PIPE_PRIM_QUAD_STRIP;
+      i915_render->fallback = MESA_PRIM_QUAD_STRIP;
       break;
-   case PIPE_PRIM_POLYGON:
+   case MESA_PRIM_POLYGON:
       i915_render->hwprim = PRIM3D_POLY;
       i915_render->fallback = 0;
       break;
@@ -357,21 +357,21 @@ draw_arrays_generate_indices(struct vbuf_render *render, unsigned start,
       if (i < end)
          OUT_BATCH(i);
       break;
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       if (nr >= 2) {
          for (i = start + 1; i < end; i++)
             OUT_BATCH((i - 1) | (i + 0) << 16);
          OUT_BATCH((i - 1) | (start) << 16);
       }
       break;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       for (i = start; i + 3 < end; i += 4) {
          OUT_BATCH((i + 0) | (i + 1) << 16);
          OUT_BATCH((i + 3) | (i + 1) << 16);
          OUT_BATCH((i + 2) | (i + 3) << 16);
       }
       break;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       for (i = start; i + 3 < end; i += 2) {
          OUT_BATCH((i + 0) | (i + 1) << 16);
          OUT_BATCH((i + 3) | (i + 2) << 16);
@@ -389,14 +389,14 @@ draw_arrays_calc_nr_indices(uint32_t nr, unsigned type)
    switch (type) {
    case 0:
       return nr;
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       if (nr >= 2)
          return nr * 2;
       else
          return 0;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       return (nr / 4) * 6;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       return ((nr - 2) / 2) * 6;
    default:
       assert(0);
@@ -514,21 +514,21 @@ draw_generate_indices(struct vbuf_render *render, const ushort *indices,
          OUT_BATCH((o + indices[i]));
       }
       break;
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       if (nr_indices >= 2) {
          for (i = 1; i < nr_indices; i++)
             OUT_BATCH((o + indices[i - 1]) | (o + indices[i]) << 16);
          OUT_BATCH((o + indices[i - 1]) | (o + indices[0]) << 16);
       }
       break;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       for (i = 0; i + 3 < nr_indices; i += 4) {
          OUT_BATCH((o + indices[i + 0]) | (o + indices[i + 1]) << 16);
          OUT_BATCH((o + indices[i + 3]) | (o + indices[i + 1]) << 16);
          OUT_BATCH((o + indices[i + 2]) | (o + indices[i + 3]) << 16);
       }
       break;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       for (i = 0; i + 3 < nr_indices; i += 2) {
          OUT_BATCH((o + indices[i + 0]) | (o + indices[i + 1]) << 16);
          OUT_BATCH((o + indices[i + 3]) | (o + indices[i + 2]) << 16);
@@ -547,14 +547,14 @@ draw_calc_nr_indices(uint32_t nr_indices, unsigned type)
    switch (type) {
    case 0:
       return nr_indices;
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_LINE_LOOP:
       if (nr_indices >= 2)
          return nr_indices * 2;
       else
          return 0;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       return (nr_indices / 4) * 6;
-   case PIPE_PRIM_QUAD_STRIP:
+   case MESA_PRIM_QUAD_STRIP:
       return ((nr_indices - 2) / 2) * 6;
    default:
       assert(0);

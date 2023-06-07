@@ -27,7 +27,6 @@
 
 #include "nir_types.h"
 #include "nir_gl_types.h"
-#include "compiler/glsl/ir.h"
 
 const char *
 glsl_get_type_name(const glsl_type *type)

@@ -154,6 +154,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
 
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
    case PIPE_CAP_CLIP_HALFZ:
+   case PIPE_CAP_POLYGON_OFFSET_CLAMP:
    case PIPE_CAP_TEXTURE_SWIZZLE:
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_VERTEX_ELEMENT_INSTANCE_DIVISOR:
@@ -339,11 +340,11 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART: {
       /* Mali supports GLES and QUADS. Midgard and v6 Bifrost
        * support more */
-      uint32_t modes = BITFIELD_MASK(PIPE_PRIM_QUADS + 1);
+      uint32_t modes = BITFIELD_MASK(MESA_PRIM_QUADS + 1);
 
       if (dev->arch <= 6) {
-         modes |= BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
-         modes |= BITFIELD_BIT(PIPE_PRIM_POLYGON);
+         modes |= BITFIELD_BIT(MESA_PRIM_QUAD_STRIP);
+         modes |= BITFIELD_BIT(MESA_PRIM_POLYGON);
       }
 
       if (dev->arch >= 9) {
@@ -351,7 +352,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
           * don't seem to work correctly. Disable to fix
           * arb-provoking-vertex-render.
           */
-         modes &= ~BITFIELD_BIT(PIPE_PRIM_QUADS);
+         modes &= ~BITFIELD_BIT(MESA_PRIM_QUADS);
       }
 
       return modes;

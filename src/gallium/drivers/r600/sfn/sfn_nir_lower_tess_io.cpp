@@ -333,14 +333,14 @@ emil_tcs_io_offset(nir_builder *b,
 }
 
 inline unsigned
-outer_tf_components(pipe_prim_type prim_type)
+outer_tf_components(mesa_prim prim_type)
 {
    switch (prim_type) {
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       return 2;
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       return 3;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       return 4;
    default:
       return 0;
@@ -348,7 +348,7 @@ outer_tf_components(pipe_prim_type prim_type)
 }
 
 static bool
-r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum pipe_prim_type prim_type)
+r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum mesa_prim prim_type)
 {
    static nir_ssa_def *load_in_param_base = nullptr;
    static nir_ssa_def *load_out_param_base = nullptr;
@@ -476,7 +476,7 @@ r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum pipe_prim_type pr
 }
 
 bool
-r600_lower_tess_io(nir_shader *shader, enum pipe_prim_type prim_type)
+r600_lower_tess_io(nir_shader *shader, enum mesa_prim prim_type)
 {
    bool progress = false;
    nir_foreach_function(function, shader)
@@ -513,7 +513,7 @@ r600_emit_tf(nir_builder *b, nir_ssa_def *val)
 }
 
 bool
-r600_append_tcs_TF_emission(nir_shader *shader, enum pipe_prim_type prim_type)
+r600_append_tcs_TF_emission(nir_shader *shader, enum mesa_prim prim_type)
 {
    if (shader->info.stage != MESA_SHADER_TESS_CTRL)
       return false;
@@ -585,7 +585,7 @@ r600_append_tcs_TF_emission(nir_shader *shader, enum pipe_prim_type prim_type)
    int chanx = 0;
    int chany = 1;
 
-   if (prim_type == PIPE_PRIM_LINES)
+   if (prim_type == MESA_PRIM_LINES)
       std::swap(chanx, chany);
 
    int inner_base = 12;
@@ -657,24 +657,24 @@ r600_lower_tess_coord_filter(const nir_instr *instr, UNUSED const void *_options
 static nir_ssa_def *
 r600_lower_tess_coord_impl(nir_builder *b, UNUSED nir_instr *instr, void *_options)
 {
-   pipe_prim_type prim_type = *(pipe_prim_type *)_options;
+   mesa_prim prim_type = *(mesa_prim *)_options;
 
    auto tc_xy = nir_load_tess_coord_r600(b);
 
    auto tc_x = nir_channel(b, tc_xy, 0);
    auto tc_y = nir_channel(b, tc_xy, 1);
 
-   if (prim_type == PIPE_PRIM_TRIANGLES)
+   if (prim_type == MESA_PRIM_TRIANGLES)
       return nir_vec3(b,
                       tc_x,
                       tc_y,
-                      nir_fsub(b, nir_imm_float(b, 1.0), nir_fadd(b, tc_x, tc_y)));
+                      nir_fsub_imm(b, 1.0, nir_fadd(b, tc_x, tc_y)));
    else
       return nir_vec3(b, tc_x, tc_y, nir_imm_float(b, 0.0));
 }
 
 bool
-r600_lower_tess_coord(nir_shader *sh, enum pipe_prim_type prim_type)
+r600_lower_tess_coord(nir_shader *sh, enum mesa_prim prim_type)
 {
    return nir_shader_lower_instructions(sh,
                                         r600_lower_tess_coord_filter,

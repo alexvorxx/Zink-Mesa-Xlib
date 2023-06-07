@@ -36,8 +36,6 @@
 #include "nir/nir_draw_helpers.h"
 #include "nir/tgsi_to_nir.h"
 #include "compiler/nir/nir_builder.h"
-#include "tgsi/tgsi_from_mesa.h"
-#include "tgsi/tgsi_ureg.h"
 
 #include "util/hash_table.h"
 #include "util/u_memory.h"
@@ -46,11 +44,6 @@
 #include "util/u_dl.h"
 
 #include <dxguids/dxguids.h>
-
-extern "C" {
-#include "tgsi/tgsi_parse.h"
-#include "tgsi/tgsi_point_sprite.h"
-}
 
 #ifdef _WIN32
 #include "dxil_validator.h"
@@ -353,11 +346,11 @@ manual_depth_range(struct d3d12_context *ctx)
 }
 
 static bool
-needs_edge_flag_fix(enum pipe_prim_type mode)
+needs_edge_flag_fix(enum mesa_prim mode)
 {
-   return (mode == PIPE_PRIM_QUADS ||
-           mode == PIPE_PRIM_QUAD_STRIP ||
-           mode == PIPE_PRIM_POLYGON);
+   return (mode == MESA_PRIM_QUADS ||
+           mode == MESA_PRIM_QUAD_STRIP ||
+           mode == MESA_PRIM_POLYGON);
 }
 
 static unsigned
@@ -368,8 +361,8 @@ fill_mode_lowered(struct d3d12_context *ctx, const struct pipe_draw_info *dinfo)
    if ((ctx->gfx_stages[PIPE_SHADER_GEOMETRY] != NULL &&
         !ctx->gfx_stages[PIPE_SHADER_GEOMETRY]->is_variant) ||
        ctx->gfx_pipeline_state.rast == NULL ||
-       (dinfo->mode != PIPE_PRIM_TRIANGLES &&
-        dinfo->mode != PIPE_PRIM_TRIANGLE_STRIP))
+       (dinfo->mode != MESA_PRIM_TRIANGLES &&
+        dinfo->mode != MESA_PRIM_TRIANGLE_STRIP))
       return PIPE_POLYGON_MODE_FILL;
 
    /* D3D12 supports line mode (wireframe) but doesn't support edge flags */
@@ -415,7 +408,7 @@ needs_point_sprite_lowering(struct d3d12_context *ctx, const struct pipe_draw_in
                  !has_stream_out_for_streams(ctx)));
    } else {
       /* No user GS; check if we are drawing wide points */
-      return ((dinfo->mode == PIPE_PRIM_POINTS ||
+      return ((dinfo->mode == MESA_PRIM_POINTS ||
                fill_mode_lowered(ctx, dinfo) == PIPE_POLYGON_MODE_POINT) &&
               (ctx->gfx_pipeline_state.rast->base.point_size > 1.0 ||
                ctx->gfx_pipeline_state.rast->base.offset_point ||
@@ -450,17 +443,17 @@ get_provoking_vertex(struct d3d12_selection_context *sel_ctx, bool *alternate, c
    struct d3d12_shader_selector *last_vertex_stage = gs && !gs->is_variant ? gs : vs;
 
    /* Make sure GL prims match Gallium prims */
-   STATIC_ASSERT(GL_POINTS == PIPE_PRIM_POINTS);
-   STATIC_ASSERT(GL_LINES == PIPE_PRIM_LINES);
-   STATIC_ASSERT(GL_LINE_STRIP == PIPE_PRIM_LINE_STRIP);
+   STATIC_ASSERT(GL_POINTS == MESA_PRIM_POINTS);
+   STATIC_ASSERT(GL_LINES == MESA_PRIM_LINES);
+   STATIC_ASSERT(GL_LINE_STRIP == MESA_PRIM_LINE_STRIP);
 
-   enum pipe_prim_type mode;
+   enum mesa_prim mode;
    switch (last_vertex_stage->stage) {
    case PIPE_SHADER_GEOMETRY:
-      mode = (enum pipe_prim_type)last_vertex_stage->current->nir->info.gs.output_primitive;
+      mode = (enum mesa_prim)last_vertex_stage->current->nir->info.gs.output_primitive;
       break;
    case PIPE_SHADER_VERTEX:
-      mode = (enum pipe_prim_type)dinfo->mode;
+      mode = (enum mesa_prim)dinfo->mode;
       break;
    default:
       unreachable("Tesselation shaders are not supported");

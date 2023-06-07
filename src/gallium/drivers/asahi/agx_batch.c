@@ -120,7 +120,7 @@ agx_batch_init(struct agx_context *ctx,
    batch->initialized = false;
 
    /* We need to emit prim state at the start. Max collides with all. */
-   batch->reduced_prim = PIPE_PRIM_MAX;
+   batch->reduced_prim = MESA_PRIM_COUNT;
 
    if (!batch->syncobj) {
       int ret = drmSyncobjCreate(dev->fd, 0, &batch->syncobj);

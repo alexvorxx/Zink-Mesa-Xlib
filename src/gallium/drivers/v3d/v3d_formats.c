@@ -126,23 +126,6 @@ v3d_get_format_swizzle(const struct v3d_device_info *devinfo, enum pipe_format f
         return vf->swizzle;
 }
 
-void
-v3d_get_internal_type_bpp_for_output_format(const struct v3d_device_info *devinfo,
-                                            uint32_t format,
-                                            uint32_t *type,
-                                            uint32_t *bpp)
-{
-        v3d_X(devinfo, get_internal_type_bpp_for_output_format)(format, type, bpp);
-}
-
-bool
-v3d_tfu_supports_tex_format(const struct v3d_device_info *devinfo,
-                            uint32_t tex_format,
-                            bool for_mipmap)
-{
-        return v3d_X(devinfo, tfu_supports_tex_format)(tex_format, for_mipmap);
-}
-
 bool
 v3d_format_supports_tlb_msaa_resolve(const struct v3d_device_info *devinfo,
                                      enum pipe_format f)
@@ -155,10 +138,8 @@ v3d_format_supports_tlb_msaa_resolve(const struct v3d_device_info *devinfo,
         if (!vf)
                 return false;
 
-        v3d_get_internal_type_bpp_for_output_format(devinfo,
-                                                    vf->rt_type,
-                                                    &internal_type,
-                                                    &internal_bpp);
+        v3d_X(devinfo, get_internal_type_bpp_for_output_format)
+           (vf->rt_type, &internal_type, &internal_bpp);
 
         return internal_type == V3D_INTERNAL_TYPE_8 ||
                internal_type == V3D_INTERNAL_TYPE_16F;

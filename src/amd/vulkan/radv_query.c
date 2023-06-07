@@ -154,7 +154,7 @@ build_occlusion_query_shader(struct radv_device *device)
          nir_ssa_def *load = nir_load_ssbo(&b, 1, 32, src_buf, load_offset, .align_mul = 4,
                                            .access = ACCESS_COHERENT);
 
-         nir_push_if(&b, nir_ige(&b, load, nir_imm_int(&b, 0x80000000)));
+         nir_push_if(&b, nir_ige_imm(&b, load, 0x80000000));
          {
             nir_jump(&b, nir_jump_break);
          }
@@ -183,8 +183,8 @@ build_occlusion_query_shader(struct radv_device *device)
    nir_store_var(&b, start, nir_channel(&b, load, 0), 0x1);
    nir_store_var(&b, end, nir_channel(&b, load, 1), 0x1);
 
-   nir_ssa_def *start_done = nir_ilt(&b, nir_load_var(&b, start), nir_imm_int64(&b, 0));
-   nir_ssa_def *end_done = nir_ilt(&b, nir_load_var(&b, end), nir_imm_int64(&b, 0));
+   nir_ssa_def *start_done = nir_ilt_imm(&b, nir_load_var(&b, start), 0);
+   nir_ssa_def *end_done = nir_ilt_imm(&b, nir_load_var(&b, end), 0);
 
    nir_push_if(&b, nir_iand(&b, start_done, end_done));
 
@@ -293,7 +293,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device)
    nir_ssa_def *global_id = get_global_ids(&b, 1);
 
    nir_variable *input_stride = nir_local_variable_create(b.impl, glsl_int_type(), "input_stride");
-   nir_push_if(&b, nir_ine(&b, uses_gds, nir_imm_int(&b, 0)));
+   nir_push_if(&b, nir_ine_imm(&b, uses_gds, 0));
    {
       nir_store_var(&b, input_stride, nir_imm_int(&b, pipelinestat_block_size * 2 + 8 * 2), 0x1);
    }
@@ -335,8 +335,8 @@ build_pipeline_statistics_query_shader(struct radv_device *device)
       nir_store_var(&b, result, nir_isub(&b, end, start), 0x1);
 
       nir_push_if(&b, nir_iand(&b, nir_i2b(&b, uses_gds),
-                               nir_ieq(&b, nir_imm_int(&b, 1u << i),
-                                       nir_imm_int(&b, VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT))));
+                               nir_ieq_imm(&b, nir_imm_int(&b, 1u << i),
+                                           VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT)));
       {
          /* Compute the GDS result if needed. */
          nir_ssa_def *gds_start_offset =
@@ -447,7 +447,7 @@ build_tfb_query_shader(struct radv_device *device)
       nir_local_variable_create(b.impl, glsl_vector_type(GLSL_TYPE_UINT64, 2), "result");
    nir_variable *available = nir_local_variable_create(b.impl, glsl_bool_type(), "available");
 
-   nir_store_var(&b, result, nir_vec2(&b, nir_imm_int64(&b, 0), nir_imm_int64(&b, 0)), 0x3);
+   nir_store_var(&b, result, nir_replicate(&b, nir_imm_int64(&b, 0), 2), 0x3);
    nir_store_var(&b, available, nir_imm_false(&b), 0x1);
 
    nir_ssa_def *flags = nir_load_push_constant(&b, 1, 32, nir_imm_int(&b, 0), .range = 4);
@@ -483,11 +483,11 @@ build_tfb_query_shader(struct radv_device *device)
    /* Pack values. */
    nir_ssa_def *packed64[4];
    packed64[0] =
-      nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load1, 0), nir_channel(&b, load1, 1)));
+      nir_pack_64_2x32(&b, nir_trim_vector(&b, load1, 2));
    packed64[1] =
       nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load1, 2), nir_channel(&b, load1, 3)));
    packed64[2] =
-      nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load2, 0), nir_channel(&b, load2, 1)));
+      nir_pack_64_2x32(&b, nir_trim_vector(&b, load2, 2));
    packed64[3] =
       nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load2, 2), nir_channel(&b, load2, 3)));
 
@@ -591,7 +591,7 @@ build_timestamp_query_shader(struct radv_device *device)
    /* Pack the timestamp. */
    nir_ssa_def *timestamp;
    timestamp =
-      nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load, 0), nir_channel(&b, load, 1)));
+      nir_pack_64_2x32(&b, nir_trim_vector(&b, load, 2));
 
    /* Check if result is available. */
    nir_ssa_def *result_is_available = nir_i2b(&b, nir_ine_imm(&b, timestamp, TIMESTAMP_NOT_READY));
@@ -723,9 +723,9 @@ build_pg_query_shader(struct radv_device *device)
    /* Pack values. */
    nir_ssa_def *packed64[2];
    packed64[0] =
-      nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load1, 0), nir_channel(&b, load1, 1)));
+      nir_pack_64_2x32(&b, nir_trim_vector(&b, load1, 2));
    packed64[1] =
-      nir_pack_64_2x32(&b, nir_vec2(&b, nir_channel(&b, load2, 0), nir_channel(&b, load2, 1)));
+      nir_pack_64_2x32(&b, nir_trim_vector(&b, load2, 2));
 
    /* Compute result. */
    nir_ssa_def *primitive_storage_needed = nir_isub(&b, packed64[1], packed64[0]);

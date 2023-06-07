@@ -48,6 +48,7 @@ struct draw_vertex_shader;
 struct draw_geometry_shader;
 struct draw_tess_ctrl_shader;
 struct draw_tess_eval_shader;
+struct draw_mesh_shader;
 struct draw_fragment_shader;
 struct tgsi_sampler;
 struct tgsi_image;
@@ -68,6 +69,26 @@ struct draw_so_target {
    int internal_offset;
 };
 
+
+struct draw_vertex_info {
+   struct vertex_header *verts;
+   unsigned vertex_size;
+   unsigned stride;
+   unsigned count;
+};
+
+struct draw_prim_info {
+   boolean linear;
+   unsigned start;
+
+   const ushort *elts;
+   unsigned count;
+
+   enum mesa_prim prim;
+   unsigned flags;
+   unsigned *primitive_lengths;
+   unsigned primitive_count;
+};
 
 struct draw_context *draw_create(struct pipe_context *pipe);
 
@@ -282,6 +303,17 @@ void draw_set_tess_state(struct draw_context *draw,
                          const float default_inner_level[2]);
 
 /*
+ * Mesh shader functions
+ */
+struct draw_mesh_shader *
+draw_create_mesh_shader(struct draw_context *draw,
+                        const struct pipe_shader_state *shader);
+void draw_bind_mesh_shader(struct draw_context *draw,
+                           struct draw_mesh_shader *dvs);
+void draw_delete_mesh_shader(struct draw_context *draw,
+                             struct draw_mesh_shader *dvs);
+
+/*
  * Vertex data functions
  */
 
@@ -334,6 +366,11 @@ void draw_vbo(struct draw_context *draw,
               unsigned num_draws,
               uint8_t patch_vertices);
 
+void
+draw_mesh(struct draw_context *draw,
+          struct draw_vertex_info *vert_info,
+          struct draw_prim_info *prim_info);
+
 
 /*******************************************************************************
  * Driver backend interface
@@ -367,7 +404,7 @@ draw_collect_primitives_generated(struct draw_context *draw,
 boolean
 draw_need_pipeline(const struct draw_context *draw,
                    const struct pipe_rasterizer_state *rasterizer,
-                   enum pipe_prim_type prim);
+                   enum mesa_prim prim);
 
 int
 draw_get_shader_param(enum pipe_shader_type shader, enum pipe_shader_cap param);

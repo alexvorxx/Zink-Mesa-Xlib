@@ -394,14 +394,14 @@ v3d_emit_gs_state_record(struct v3d_job *job,
 }
 
 static uint8_t
-v3d_gs_output_primitive(enum shader_prim prim_type)
+v3d_gs_output_primitive(enum mesa_prim prim_type)
 {
     switch (prim_type) {
-    case SHADER_PRIM_POINTS:
+    case MESA_PRIM_POINTS:
         return GEOMETRY_SHADER_POINTS;
-    case SHADER_PRIM_LINE_STRIP:
+    case MESA_PRIM_LINE_STRIP:
         return GEOMETRY_SHADER_LINE_STRIP;
-    case SHADER_PRIM_TRIANGLE_STRIP:
+    case MESA_PRIM_TRIANGLE_STRIP:
         return GEOMETRY_SHADER_TRI_STRIP;
     default:
         unreachable("Unsupported primitive type");
@@ -600,7 +600,7 @@ v3d_emit_gl_shader_state(struct v3d_context *v3d,
                 shader.enable_clipping = true;
                 /* V3D_DIRTY_PRIM_MODE | V3D_DIRTY_RASTERIZER */
                 shader.point_size_in_shaded_vertex_data =
-                        (info->mode == PIPE_PRIM_POINTS &&
+                        (info->mode == MESA_PRIM_POINTS &&
                          v3d->rasterizer->base.point_size_per_vertex);
 
                 /* Must be set if the shader modifies Z, discards, or modifies
@@ -1033,8 +1033,12 @@ v3d_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
          * rendering to each texture's BO.
          */
         if (v3d->tex[PIPE_SHADER_VERTEX].num_textures || (indirect && indirect->buffer)) {
-                perf_debug("Blocking binner on last render "
-                           "due to vertex texturing or indirect drawing.\n");
+                static bool warned = false;
+                if (!warned) {
+                        perf_debug("Blocking binner on last render due to "
+                                   "vertex texturing or indirect drawing.\n");
+                        warned = true;
+                }
                 job->submit.in_sync_bcl = v3d->out_sync;
         }
 

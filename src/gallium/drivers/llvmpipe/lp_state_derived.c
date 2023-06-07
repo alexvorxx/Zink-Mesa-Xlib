@@ -268,12 +268,19 @@ llvmpipe_update_derived(struct llvmpipe_context *llvmpipe)
       llvmpipe->dirty |= LP_NEW_SAMPLER_VIEW;
    }
 
+   if (llvmpipe->dirty & (LP_NEW_TASK))
+      llvmpipe_update_task_shader(llvmpipe);
+
+   if (llvmpipe->dirty & (LP_NEW_MESH))
+      llvmpipe_update_mesh_shader(llvmpipe);
+
    /* This needs LP_NEW_RASTERIZER because of draw_prepare_shader_outputs(). */
    if (llvmpipe->dirty & (LP_NEW_RASTERIZER |
                           LP_NEW_FS |
                           LP_NEW_GS |
                           LP_NEW_TCS |
                           LP_NEW_TES |
+                          LP_NEW_MESH |
                           LP_NEW_VS))
       compute_vertex_info(llvmpipe);
 
@@ -356,6 +363,9 @@ llvmpipe_update_derived(struct llvmpipe_context *llvmpipe)
                              PIPE_MAX_VIEWPORTS,
                              llvmpipe->viewports);
    }
+
+   llvmpipe_task_update_derived(llvmpipe);
+   llvmpipe_mesh_update_derived(llvmpipe);
 
    llvmpipe_update_derived_clear(llvmpipe);
 

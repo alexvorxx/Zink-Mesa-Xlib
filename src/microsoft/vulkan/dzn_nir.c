@@ -27,8 +27,8 @@
 #include "nir_to_dxil.h"
 #include "nir_builder.h"
 #include "nir_builtin_builder.h"
-#include "nir_vulkan.h"
 #include "dxil_nir.h"
+#include "vk_nir_convert_ycbcr.h"
 
 static nir_ssa_def *
 dzn_nir_create_bo_desc(nir_builder *b,
@@ -160,7 +160,7 @@ dzn_nir_indirect_draw_shader(enum dzn_indirect_draw_type type)
       nir_ssa_def *draw_count =
          nir_load_ssbo(&b, 1, 32, count_buf_desc, nir_imm_int(&b, 0), .align_mul = 4);
 
-      nir_push_if(&b, nir_ieq(&b, index, nir_imm_int(&b, 0)));
+      nir_push_if(&b, nir_ieq_imm(&b, index, 0));
       nir_store_ssbo(&b, draw_count, exec_buf_desc, nir_imm_int(&b, 0),
                     .write_mask = 0x1, .access = ACCESS_NON_READABLE,
                     .align_mul = 16);
@@ -646,7 +646,7 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
    coord_var->data.location = VARYING_SLOT_TEX0;
    coord_var->data.driver_location = 1;
    nir_ssa_def *coord =
-      nir_channels(&b, nir_load_var(&b, coord_var), (1 << coord_comps) - 1);
+      nir_trim_vector(&b, nir_load_var(&b, coord_var), coord_comps);
 
    uint32_t out_comps =
       (info->loc == FRAG_RESULT_DEPTH || info->loc == FRAG_RESULT_STENCIL) ? 1 : 4;
@@ -704,18 +704,18 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
          tex->is_array = info->src_is_array;
          tex->sampler_dim = info->sampler_dim;
 
-         tex->src[0].src_type = nir_tex_src_coord;
-         tex->src[0].src = nir_src_for_ssa(nir_f2i32(&b, coord));
+         tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                           nir_f2i32(&b, coord));
          tex->coord_components = coord_comps;
 
-         tex->src[1].src_type = nir_tex_src_ms_index;
-         tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, s));
+         tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
+                                           nir_imm_int(&b, s));
 
-         tex->src[2].src_type = nir_tex_src_lod;
-         tex->src[2].src = nir_src_for_ssa(nir_imm_int(&b, 0));
+         tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_lod,
+                                           nir_imm_int(&b, 0));
 
-         tex->src[3].src_type = nir_tex_src_texture_deref;
-         tex->src[3].src = nir_src_for_ssa(&tex_deref->dest.ssa);
+         tex->src[3] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                           &tex_deref->dest.ssa);
 
          nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
 
@@ -723,10 +723,8 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
          res = res ? nir_build_alu2(&b, resolve_op, res, &tex->dest.ssa) : &tex->dest.ssa;
       }
 
-      if (resolve_mode == dzn_blit_resolve_average) {
-         unsigned type_sz = nir_alu_type_get_type_size(nir_out_type);
-         res = nir_fmul(&b, res, nir_imm_floatN_t(&b, 1.0f / nsamples, type_sz));
-      }
+      if (resolve_mode == dzn_blit_resolve_average)
+         res = nir_fmul_imm(&b, res, 1.0f / nsamples);
    } else {
       nir_tex_instr *tex =
          nir_tex_instr_create(b.shader, ms ? 4 : 3);
@@ -738,18 +736,18 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
       if (ms) {
          tex->op = nir_texop_txf_ms;
 
-         tex->src[0].src_type = nir_tex_src_coord;
-         tex->src[0].src = nir_src_for_ssa(nir_f2i32(&b, coord));
+         tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                           nir_f2i32(&b, coord));
          tex->coord_components = coord_comps;
 
-         tex->src[1].src_type = nir_tex_src_ms_index;
-         tex->src[1].src = nir_src_for_ssa(nir_load_sample_id(&b));
+         tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
+                                           nir_load_sample_id(&b));
 
-         tex->src[2].src_type = nir_tex_src_lod;
-         tex->src[2].src = nir_src_for_ssa(nir_imm_int(&b, 0));
+         tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_lod,
+                                           nir_imm_int(&b, 0));
 
-         tex->src[3].src_type = nir_tex_src_texture_deref;
-         tex->src[3].src = nir_src_for_ssa(&tex_deref->dest.ssa);
+         tex->src[3] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                           &tex_deref->dest.ssa);
       } else {
          nir_variable *sampler_var =
             nir_variable_create(b.shader, nir_var_uniform, glsl_bare_sampler_type(), "sampler");
@@ -758,15 +756,14 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
          tex->op = nir_texop_tex;
          tex->sampler_index = 0;
 
-         tex->src[0].src_type = nir_tex_src_coord;
-         tex->src[0].src = nir_src_for_ssa(coord);
+         tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
          tex->coord_components = coord_comps;
 
-         tex->src[1].src_type = nir_tex_src_texture_deref;
-         tex->src[1].src = nir_src_for_ssa(&tex_deref->dest.ssa);
+         tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                           &tex_deref->dest.ssa);
 
-         tex->src[2].src_type = nir_tex_src_sampler_deref;
-         tex->src[2].src = nir_src_for_ssa(&sampler_deref->dest.ssa);
+         tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref,
+                                           &sampler_deref->dest.ssa);
       }
 
       nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
@@ -774,7 +771,7 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
       res = &tex->dest.ssa;
    }
 
-   nir_store_var(&b, out, nir_channels(&b, res, (1 << out_comps) - 1), 0xf);
+   nir_store_var(&b, out, nir_trim_vector(&b, res, out_comps), 0xf);
 
    return b.shader;
 }
@@ -793,9 +790,9 @@ cull_face(nir_builder *b, nir_variable *vertices, bool ccw)
                                                 nir_fsub(b, v2, v0)),
                                nir_imm_vec4(b, 0.0, 0.0, -1.0, 0.0));
    if (ccw)
-      return nir_fge(b, nir_imm_int(b, 0), dir);
+      return nir_fge(b, nir_imm_float(b, 0.0f), dir);
    else
-      return nir_flt(b, nir_imm_int(b, 0), dir);
+      return nir_flt(b, nir_imm_float(b, 0.0f), dir);
 }
 
 static void
@@ -857,8 +854,8 @@ dzn_nir_polygon_point_mode_gs(const nir_shader *previous_shader, struct dzn_nir_
    nir_shader *nir = b->shader;
    nir->info.inputs_read = nir->info.outputs_written = previous_shader->info.outputs_written;
    nir->info.outputs_written |= (1ull << VARYING_SLOT_VAR12);
-   nir->info.gs.input_primitive = PIPE_PRIM_TRIANGLES;
-   nir->info.gs.output_primitive = PIPE_PRIM_POINTS;
+   nir->info.gs.input_primitive = MESA_PRIM_TRIANGLES;
+   nir->info.gs.output_primitive = MESA_PRIM_POINTS;
    nir->info.gs.vertices_in = 3;
    nir->info.gs.vertices_out = 3;
    nir->info.gs.invocations = 1;

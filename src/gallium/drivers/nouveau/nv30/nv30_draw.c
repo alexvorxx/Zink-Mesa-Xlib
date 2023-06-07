@@ -112,7 +112,7 @@ nv30_render_unmap_vertices(struct vbuf_render *render,
 }
 
 static void
-nv30_render_set_primitive(struct vbuf_render *render, enum pipe_prim_type prim)
+nv30_render_set_primitive(struct vbuf_render *render, enum mesa_prim prim)
 {
    struct nv30_render *r = nv30_render(render);
 

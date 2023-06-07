@@ -26,7 +26,7 @@
 
 #include "util/u_debug.h"
 #include "util/u_memory.h"
-#include "os/os_process.h"
+#include "util/u_process.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -48,9 +48,9 @@ static void r300_apply_hyperz_blacklist(struct r300_capabilities* caps)
         "firefox",
     };
     int i;
-    char proc_name[128];
-    
-    if (!os_get_process_name(proc_name, sizeof(proc_name)))
+    const char *proc_name = util_get_process_name();
+
+    if (!proc_name)
         return;
 
     for (i = 0; i < ARRAY_SIZE(list); i++) {

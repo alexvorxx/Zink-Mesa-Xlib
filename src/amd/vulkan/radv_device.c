@@ -81,28 +81,6 @@ typedef void *drmDevicePtr;
 #include "ac_llvm_util.h"
 #endif
 
-int
-radv_get_int_debug_option(const char *name, int default_value)
-{
-   const char *str;
-   int result;
-
-   str = getenv(name);
-   if (!str) {
-      result = default_value;
-   } else {
-      char *endptr;
-
-      result = strtol(str, &endptr, 0);
-      if (str == endptr) {
-         /* No digits founs. */
-         result = default_value;
-      }
-   }
-
-   return result;
-}
-
 static bool
 radv_spm_trace_enabled()
 {
@@ -295,10 +273,6 @@ radv_device_finish_ps_epilogs(struct radv_device *device)
 VkResult
 radv_device_init_vrs_state(struct radv_device *device)
 {
-   /* FIXME: 4k depth buffers should be large enough for now but we might want to adjust this
-    * dynamically at some point.
-    */
-   uint32_t width = 4096, height = 4096;
    VkDeviceMemory mem;
    VkBuffer buffer;
    VkResult result;
@@ -308,7 +282,7 @@ radv_device_init_vrs_state(struct radv_device *device)
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
       .format = VK_FORMAT_D16_UNORM,
-      .extent = {width, height, 1},
+      .extent = {MAX_FRAMEBUFFER_WIDTH, MAX_FRAMEBUFFER_HEIGHT, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -650,6 +624,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    bool primitives_generated_query = false;
    bool use_perf_counters = false;
    bool use_dgc = false;
+   bool smooth_lines = false;
 
    /* Check enabled features */
    if (pCreateInfo->pEnabledFeatures) {
@@ -757,6 +732,12 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
             ps_epilogs = true;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT: {
+         const VkPhysicalDeviceLineRasterizationFeaturesEXT *features = (const void *)ext;
+         if (features->smoothLines)
+            smooth_lines = true;
+         break;
+      }
       default:
          break;
       }
@@ -812,6 +793,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
    device->primitives_generated_query = primitives_generated_query;
    device->uses_device_generated_commands = use_dgc;
+   device->smooth_lines = smooth_lines;
 
    radv_init_shader_arenas(device);
 
@@ -1053,7 +1035,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    if (!device->mem_cache)
       goto fail_meta;
 
-   device->force_aniso = MIN2(16, radv_get_int_debug_option("RADV_TEX_ANISO", -1));
+   device->force_aniso = MIN2(16, (int)debug_get_num_option("RADV_TEX_ANISO", -1));
    if (device->force_aniso >= 0) {
       fprintf(stderr, "radv: Forcing anisotropy filter to %ix\n",
               1 << util_logbase2(device->force_aniso));
@@ -1174,6 +1156,12 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    _mesa_hash_table_destroy(device->rt_handles, NULL);
 
+   radv_device_finish_meta(device);
+
+   vk_pipeline_cache_destroy(device->mem_cache, NULL);
+
+   radv_destroy_shader_upload_queue(device);
+
    for (unsigned i = 0; i < RADV_NUM_HW_CTX; i++) {
       if (device->hw_ctx[i])
          device->ws->ctx_destroy(device->hw_ctx[i]);
@@ -1183,12 +1171,6 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    simple_mtx_destroy(&device->pstate_mtx);
    simple_mtx_destroy(&device->trace_mtx);
    simple_mtx_destroy(&device->rt_handles_mtx);
-
-   radv_device_finish_meta(device);
-
-   vk_pipeline_cache_destroy(device->mem_cache, NULL);
-
-   radv_destroy_shader_upload_queue(device);
 
    radv_trap_handler_finish(device);
    radv_finish_trace(device);
@@ -1583,9 +1565,8 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
       cb->cb_color_fmask = cb->cb_color_base;
    }
 
-   ntype = radv_translate_color_numformat(iview->vk.format, desc,
-                                          vk_format_get_first_non_void_channel(iview->vk.format));
-   format = radv_translate_colorformat(iview->vk.format);
+   ntype = ac_get_cb_number_type(desc->format);
+   format = ac_get_cb_format(device->physical_device->rad_info.gfx_level, desc->format);
    assert(format != V_028C70_COLOR_INVALID);
 
    swap = radv_translate_colorswap(iview->vk.format, false);
@@ -1691,6 +1672,24 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
          cb->cb_color_view |= S_028C6C_MIP_LEVEL_GFX9(iview->vk.base_mip_level);
          cb->cb_color_attrib |=
             S_028C74_MIP0_DEPTH(mip0_depth) | S_028C74_RESOURCE_TYPE(surf->u.gfx9.resource_type);
+      }
+
+      /* GFX10.3+ can set a custom pitch for 1D and 2D non-array, but it must be a multiple
+       * of 256B. Only set it for 2D linear for multi-GPU interop.
+       *
+       * We set the pitch in MIP0_WIDTH.
+       */
+      if (device->physical_device->rad_info.gfx_level &&
+          iview->image->vk.image_type == VK_IMAGE_TYPE_2D &&
+          iview->image->vk.array_layers == 1 &&
+          plane->surface.is_linear) {
+         assert((plane->surface.u.gfx9.surf_pitch * plane->surface.bpe) % 256 == 0);
+
+         width = plane->surface.u.gfx9.surf_pitch;
+
+         /* Subsampled images have the pitch in the units of blocks. */
+         if (plane->surface.blk_w == 2)
+            width *= 2;
       }
 
       cb->cb_color_attrib2 = S_028C68_MIP0_WIDTH(width - 1) | S_028C68_MIP0_HEIGHT(height - 1) |

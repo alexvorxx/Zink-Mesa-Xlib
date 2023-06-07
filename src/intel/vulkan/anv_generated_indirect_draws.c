@@ -274,7 +274,8 @@ compile_upload_spirv(struct anv_device *device,
                                wm_prog_data.base.program_size,
                                &wm_prog_data.base, sizeof(wm_prog_data),
                                NULL, 0, NULL, &bind_map,
-                               &push_desc_info);
+                               &push_desc_info,
+                               0 /* dynamic_push_values */);
 
    ralloc_free(nir);
 

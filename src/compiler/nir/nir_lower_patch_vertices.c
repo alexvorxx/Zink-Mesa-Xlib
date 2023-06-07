@@ -30,11 +30,8 @@ make_uniform(nir_shader *nir, const gl_state_index16 *tokens)
     * special handling in uniform setup.
     */
    nir_variable *var =
-      nir_variable_create(nir, nir_var_uniform, glsl_int_type(),
-                          "gl_PatchVerticesIn");
-   var->num_state_slots = 1;
-   var->state_slots = ralloc_array(var, nir_state_slot, var->num_state_slots);
-   memcpy(var->state_slots[0].tokens, tokens, sizeof(*tokens) * STATE_LENGTH);
+      nir_state_variable_create(nir, glsl_int_type(),
+                                "gl_PatchVerticesIn", tokens);
 
    return var;
 }

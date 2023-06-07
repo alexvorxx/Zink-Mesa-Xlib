@@ -3,6 +3,7 @@
 #define SVGA_LINK_H
 
 #include "pipe/p_defines.h"
+#include "tgsi/tgsi_scan.h"
 
 struct svga_context;
 

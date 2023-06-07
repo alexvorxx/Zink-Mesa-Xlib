@@ -738,8 +738,12 @@ struct iris_context {
    struct intel_perf_context *perf_ctx;
 
    /** Frame number for u_trace */
-   uint32_t tracing_begin_frame;
-   uint32_t tracing_end_frame;
+   struct {
+      uint32_t begin_frame;
+      uint32_t end_frame;
+      uint64_t last_full_timestamp;
+      void    *last_compute_walker;
+   } utrace;
 
    /** Frame number for debug prints */
    uint32_t frame;
@@ -772,7 +776,7 @@ struct iris_context {
       uint8_t patch_vertices;
       bool primitive_restart;
       unsigned cut_index;
-      enum pipe_prim_type prim_mode:8;
+      enum mesa_prim prim_mode:8;
       bool prim_is_points_or_lines;
       uint8_t vertices_per_patch;
 
@@ -845,6 +849,9 @@ struct iris_context {
 
       /** Is a PIPE_QUERY_PRIMITIVES_GENERATED query active? */
       bool prims_generated_query_active;
+
+      /** Is a PIPE_QUERY_OCCLUSION_COUNTER query active? */
+      bool occlusion_query_active;
 
       /** 3DSTATE_STREAMOUT and 3DSTATE_SO_DECL_LIST packets */
       uint32_t *streamout;

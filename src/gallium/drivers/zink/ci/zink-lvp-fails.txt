@@ -75,7 +75,6 @@ spec@!opengl 2.1@pbo@test_polygon_stip,Fail
 spec@!opengl 2.1@polygon-stipple-fs,Fail
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail
-spec@arb_point_sprite@arb_point_sprite-checkerboard,Fail
 spec@arb_point_sprite@arb_point_sprite-mipmap,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
@@ -252,6 +251,34 @@ KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
 spec@arb_texture_cube_map_array@texsubimage cube_map_array,Fail
 
-spec@ext_transform_feedback@tessellation quad_strip wireframe,Fail
 spec@ext_transform_feedback@tessellation quads wireframe,Fail
 spec@!opengl 1.1@texsubimage,Fail
+
+# Debian 12 CI update, see https://gitlab.freedesktop.org/mesa/mesa/-/issues/9072
+spec@arb_occlusion_query@occlusion_query_meta_no_fragments,Crash
+spec@arb_pixel_buffer_object@cubemap pbo,Crash
+spec@arb_sample_shading@builtin-gl-num-samples 0,Crash
+spec@arb_texture_rg@fbo-colormask-formats-float,Crash
+spec@arb_texture_rg@rg-teximage-01,Crash
+spec@arb_texture_rg@rg-teximage-02,Crash
+spec@ext_framebuffer_object@fbo-nodepth-test,Crash
+spec@ext_framebuffer_object@fbo-scissor-bitmap,Crash
+spec@ext_packed_float@multisample-formats 4 gl_ext_packed_float,Crash
+spec@ext_transform_feedback@tessellation polygon wireframe,Crash
+spec@ext_transform_feedback@tessellation quad_strip wireframe,Crash
+spec@nv_copy_image@nv_copy_image-formats --samples=2,Crash
+spec@nv_copy_image@nv_copy_image-formats --samples=4,Crash
+spec@!opengl 1.0@gl-1.0-dlist-beginend,Crash
+spec@arb_clip_control@arb_clip_control-depth-precision,Crash
+spec@arb_copy_image@arb_copy_image-formats --samples=2,Crash
+spec@ext_framebuffer_object@fbo-nostencil-test,Crash
+spec@nv_texture_barrier@blending-in-shader,Crash
+spec@arb_copy_image@arb_copy_image-formats --samples=4,Crash
+spec@arb_framebuffer_srgb@framebuffer-srgb,Crash
+spec@arb_pixel_buffer_object@cubemap npot pbo,Crash
+spec@arb_sample_shading@builtin-gl-num-samples 4,Crash
+spec@arb_texture_cube_map@cubemap,Crash
+spec@arb_texture_rg@fbo-colormask-formats,Crash
+spec@ext_render_snorm@render,Crash
+spec@ext_texture_srgb@fbo-srgb,Crash
+spec@ext_transform_feedback@tessellation triangle_strip wireframe,Crash

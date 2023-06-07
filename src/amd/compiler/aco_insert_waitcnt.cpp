@@ -22,6 +22,7 @@
  *
  */
 
+#include "aco_builder.h"
 #include "aco_ir.h"
 
 #include "common/sid.h"
@@ -165,21 +166,6 @@ struct alu_delay_info {
    {
       return valu_instrs == valu_nop && trans_instrs == trans_nop && salu_cycles == 0;
    }
-};
-
-enum class alu_delay_wait {
-   NO_DEP,
-   VALU_DEP_1,
-   VALU_DEP_2,
-   VALU_DEP_3,
-   VALU_DEP_4,
-   TRANS32_DEP_1,
-   TRANS32_DEP_2,
-   TRANS32_DEP_3,
-   FMA_ACCUM_CYCLE_1,
-   SALU_CYCLE_1,
-   SALU_CYCLE_2,
-   SALU_CYCLE_3
 };
 
 uint8_t
@@ -434,16 +420,8 @@ parse_delay_alu(wait_ctx& ctx, alu_delay_info& delay, Instruction* instr)
          delay.salu_cycles = imm[i] - (uint32_t)alu_delay_wait::SALU_CYCLE_1 + 1;
    }
 
-   for (std::pair<const PhysReg, wait_entry>& e : ctx.gpr_map) {
-      wait_entry& entry = e.second;
-
-      if (delay.valu_instrs <= entry.delay.valu_instrs)
-         delay.valu_cycles = std::max(delay.valu_cycles, entry.delay.valu_cycles);
-      if (delay.trans_instrs <= entry.delay.trans_instrs)
-         delay.trans_cycles = std::max(delay.trans_cycles, entry.delay.trans_cycles);
-      if (delay.salu_cycles <= entry.delay.salu_cycles)
-         delay.salu_cycles = std::max(delay.salu_cycles, entry.delay.salu_cycles);
-   }
+   delay.valu_cycles = instr->pass_flags & 0xffff;
+   delay.trans_cycles = instr->pass_flags >> 16;
 
    return true;
 }
@@ -495,11 +473,12 @@ force_waitcnt(wait_ctx& ctx, wait_imm& imm)
 void
 update_alu(wait_ctx& ctx, bool is_valu, bool is_trans, bool clear, int cycles)
 {
-   for (std::pair<const PhysReg, wait_entry>& e : ctx.gpr_map) {
-      wait_entry& entry = e.second;
+   std::map<PhysReg, wait_entry>::iterator it = ctx.gpr_map.begin();
+   while (it != ctx.gpr_map.end()) {
+      wait_entry& entry = it->second;
 
       if (clear) {
-         entry.delay = alu_delay_info();
+         entry.remove_counter(counter_alu);
       } else {
          entry.delay.valu_instrs += is_valu ? 1 : 0;
          entry.delay.trans_instrs += is_trans ? 1 : 0;
@@ -508,7 +487,14 @@ update_alu(wait_ctx& ctx, bool is_valu, bool is_trans, bool clear, int cycles)
          entry.delay.trans_cycles -= cycles;
 
          entry.delay.fixup();
+         if (it->second.delay.empty())
+            entry.remove_counter(counter_alu);
       }
+
+      if (!entry.counters)
+         it = ctx.gpr_map.erase(it);
+      else
+         it++;
    }
 }
 
@@ -782,11 +768,15 @@ void
 insert_wait_entry(wait_ctx& ctx, Definition def, wait_event event, uint8_t vmem_types = 0,
                   unsigned cycles = 0)
 {
-   /* We can't safely write to unwritten destination VGPR lanes on GFX11 without waiting for
-    * the load to finish.
+   /* We can't safely write to unwritten destination VGPR lanes with DS/VMEM on GFX11 without
+    * waiting for the load to finish.
+    * Also, follow linear control flow for ALU because it's unlikely that the hardware does per-lane
+    * dependency checks.
     */
+   uint32_t ds_vmem_events = event_lds | event_gds | event_vmem | event_flat;
+   uint32_t alu_events = event_trans | event_valu | event_salu;
    bool force_linear =
-      ctx.gfx_level >= GFX11 && (event & (event_lds | event_gds | event_vmem | event_flat));
+      ctx.gfx_level >= GFX11 && (event & (ds_vmem_events | alu_events));
 
    insert_wait_entry(ctx, def.physReg(), def.regClass(), event, true, vmem_types, cycles,
                      force_linear);
@@ -973,6 +963,7 @@ emit_delay_alu(wait_ctx& ctx, std::vector<aco_ptr<Instruction>>& instructions,
       create_instruction<SOPP_instruction>(aco_opcode::s_delay_alu, Format::SOPP, 0, 0);
    inst->imm = imm;
    inst->block = -1;
+   inst->pass_flags = (delay.valu_cycles | (delay.trans_cycles << 16));
    instructions.emplace_back(inst);
    delay = alu_delay_info();
 }
@@ -992,9 +983,9 @@ handle_block(Program* program, Block& block, wait_ctx& ctx)
       memory_sync_info sync_info = get_sync_info(instr.get());
       kill(queued_imm, queued_delay, instr.get(), ctx, sync_info);
 
-      gen(instr.get(), ctx);
       if (program->gfx_level >= GFX11)
          gen_alu(instr.get(), ctx);
+      gen(instr.get(), ctx);
 
       if (instr->format != Format::PSEUDO_BARRIER && !is_wait && !is_delay_alu) {
          if (instr->isVINTERP_INREG() && queued_imm.exp != wait_imm::unset_counter) {

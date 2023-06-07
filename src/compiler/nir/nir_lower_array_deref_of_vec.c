@@ -50,7 +50,7 @@ build_write_masked_stores(nir_builder *b, nir_deref_instr *vec_deref,
       build_write_masked_store(b, vec_deref, value, start);
    } else {
       unsigned mid = start + (end - start) / 2;
-      nir_push_if(b, nir_ilt(b, index, nir_imm_int(b, mid)));
+      nir_push_if(b, nir_ilt_imm(b, index, mid));
       build_write_masked_stores(b, vec_deref, value, index, start, mid);
       nir_push_else(b, NULL);
       build_write_masked_stores(b, vec_deref, value, index, mid, end);

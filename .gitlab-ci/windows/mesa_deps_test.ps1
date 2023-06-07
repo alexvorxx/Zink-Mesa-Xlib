@@ -148,7 +148,7 @@ Remove-Item -Recurse 'C:\agility'
 
 Get-Date
 Write-Host "Downloading Updated WARP"
-Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.6 -OutFile 'warp.zip'
+Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.7.1 -OutFile 'warp.zip'
 Expand-Archive -Path 'warp.zip' -DestinationPath 'C:\warp'
 Remove-Item 'warp.zip'
 

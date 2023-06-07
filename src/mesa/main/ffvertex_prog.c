@@ -46,6 +46,7 @@
 #include "util/bitscan.h"
 
 #include "state_tracker/st_program.h"
+#include "state_tracker/st_nir.h"
 
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_builtin_builder.h"
@@ -310,20 +311,9 @@ register_state_var(struct tnl_program *p,
    if (var)
       return var;
 
-   int loc = _mesa_add_state_reference(p->state_params, tokens);
+   var = st_nir_state_variable_create(p->b->shader, type, tokens);
+   var->data.driver_location = _mesa_add_state_reference(p->state_params, tokens);
 
-   char *name = _mesa_program_state_string(tokens);
-   var = nir_variable_create(p->b->shader, nir_var_uniform, type,
-                             name);
-   free(name);
-
-   var->num_state_slots = 1;
-   var->state_slots = ralloc_array(var, nir_state_slot, 1);
-   var->data.driver_location = loc;
-   memcpy(var->state_slots[0].tokens, tokens,
-          sizeof(var->state_slots[0].tokens));
-
-   p->b->shader->num_uniforms++;
    return var;
 }
 
@@ -540,24 +530,6 @@ get_transformed_normal(struct tnl_program *p)
    return p->transformed_normal;
 }
 
-static void
-build_hpos(struct tnl_program *p)
-{
-   nir_ssa_def *pos =
-      load_input_vec4(p, VERT_ATTRIB_POS);
-   if (p->mvp_with_dp4) {
-      nir_ssa_def *mvp[4];
-      load_state_mat4(p, mvp, STATE_MODELVIEW_MATRIX, 0);
-      pos = emit_matrix_transform_vec4(p->b, mvp, pos);
-   } else {
-      nir_ssa_def *mvp[4];
-      load_state_mat4(p, mvp, STATE_MVP_MATRIX_TRANSPOSE, 0);
-      pos = emit_transpose_matrix_transform_vec4(p->b, mvp, pos);
-   }
-
-   store_output_vec4(p, VARYING_SLOT_POS, pos);
-}
-
 static GLuint material_attrib( GLuint side, GLuint property )
 {
    switch (property) {
@@ -706,6 +678,12 @@ calculate_light_attenuation(struct tnl_program *p,
          attenuation = load_state_vec4(p, STATE_LIGHT, i,
                                        STATE_ATTENUATION, 0);
       }
+
+      /* dist is the reciprocal of ||VP|| used in the distance
+       * attenuation formula. So need to get the reciprocal of dist first
+       * before applying to the formula.
+       */
+      dist = nir_frcp(p->b, dist);
 
       /* 1, d, d*d */
       nir_ssa_def *tmp = nir_vec3(p->b,
@@ -950,7 +928,7 @@ static void build_lighting( struct tnl_program *p )
           */
          nir_ssa_def *dot = nir_fdot3(p->b, normal, VPpli);
          if (p->state->material_shininess_is_zero) {
-            dots = nir_vec4(p->b, dot, dot, dot, dot);
+            dots = nir_replicate(p->b, dot, 4);
          } else {
             dots = nir_vector_insert_imm(p->b, dots, dot, 0);
             dot = nir_fdot3(p->b, normal, half);
@@ -1074,9 +1052,8 @@ static void build_fog( struct tnl_program *p )
    switch (p->state->fog_distance_mode) {
    case FDM_EYE_RADIAL:
       /* Z = sqrt(Xe*Xe + Ye*Ye + Ze*Ze) */
-      fog = nir_fast_length(p->b, nir_channels(p->b,
-                                               get_eye_position(p),
-                                               0x7));
+      fog = nir_fast_length(p->b,
+                            nir_trim_vector(p->b, get_eye_position(p), 3));
       break;
    case FDM_EYE_PLANE: /* Z = Ze */
       fog = get_eye_position_z(p);
@@ -1303,9 +1280,7 @@ static void build_array_pointsize( struct tnl_program *p )
 
 static void build_tnl_program( struct tnl_program *p )
 {
-   /* Emit the program, starting with the modelview, projection transforms:
-    */
-   build_hpos(p);
+   /* Emit the program (except for the MVP transform, which is a separate pass) */
 
    /* Lighting calculations:
     */
@@ -1367,6 +1342,9 @@ create_new_program( const struct state_key *key,
    build_tnl_program( &p );
 
    nir_validate_shader(b.shader, "after generating ff-vertex shader");
+
+   /* Emit the MVP position transformation */
+   NIR_PASS_V(b.shader, st_nir_lower_position_invariant, mvp_with_dp4, p.state_params);
 
    _mesa_add_separate_state_parameters(program, p.state_params);
    _mesa_free_parameter_list(p.state_params);

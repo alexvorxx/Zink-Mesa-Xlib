@@ -172,7 +172,8 @@ void genX(blorp_exec)(struct blorp_batch *batch,
 void genX(cmd_emit_timestamp)(struct anv_batch *batch,
                               struct anv_device *device,
                               struct anv_address addr,
-                              enum anv_timestamp_capture_type);
+                              enum anv_timestamp_capture_type type,
+                              void *data);
 
 void genX(batch_emit_dummy_post_sync_op)(struct anv_batch *batch,
                                          struct anv_device *device,

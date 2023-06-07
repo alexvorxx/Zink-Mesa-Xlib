@@ -53,7 +53,7 @@ hash_gfx_pipeline_state(const void *key)
 
 template <bool HAS_DYNAMIC>
 static unsigned
-get_pipeline_idx(enum pipe_prim_type mode, VkPrimitiveTopology vkmode)
+get_pipeline_idx(enum mesa_prim mode, VkPrimitiveTopology vkmode)
 {
    /* VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY specifies that the topology state in
     * VkPipelineInputAssemblyStateCreateInfo only specifies the topology class,
@@ -98,7 +98,7 @@ VkPipeline
 zink_get_gfx_pipeline(struct zink_context *ctx,
                       struct zink_gfx_program *prog,
                       struct zink_gfx_pipeline_state *state,
-                      enum pipe_prim_type mode)
+                      enum mesa_prim mode)
 {
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    bool uses_dynamic_stride = state->uses_dynamic_stride;

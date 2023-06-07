@@ -310,6 +310,9 @@
    DRI_CONF_OPT_B(ignore_discard_framebuffer, def, \
                   "Ignore glDiscardFramebuffer/glInvalidateFramebuffer, workaround for games that use it incorrectly")
 
+#define DRI_CONF_FORCE_VK_VENDOR(def) \
+   DRI_CONF_OPT_I(force_vk_vendor, 0, -1, 2147483647, "Override GPU vendor id")
+
 /**
  * \brief Image quality-related options
  */
@@ -676,6 +679,10 @@
 #define DRI_CONF_ANV_QUERY_CLEAR_WITH_BLORP_THRESHOLD(def) \
    DRI_CONF_OPT_I(query_clear_with_blorp_threshold, def, 0, INT32_MAX, \
                   "Indirect threshold count above which we start generating commands")
+
+#define DRI_CONF_ANV_FORCE_INDIRECT_DESCRIPTORS(def) \
+   DRI_CONF_OPT_B(force_indirect_descriptors, def, \
+                  "Use an indirection to access buffer/image/texture/sampler handles")
 
 /**
  * \brief DZN specific configuration options

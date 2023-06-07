@@ -742,6 +742,7 @@ util_dump_image_view(FILE *stream, const struct pipe_image_view *state)
       util_dump_member(stream, uint, state, u.buf.size);
    }
    else {
+      util_dump_member(stream, bool, state, u.tex.single_layer_view);
       util_dump_member(stream, uint, state, u.tex.first_layer);
       util_dump_member(stream, uint, state, u.tex.last_layer);
       util_dump_member(stream, uint, state, u.tex.level);

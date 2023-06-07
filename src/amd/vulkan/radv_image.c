@@ -77,9 +77,6 @@ radv_use_tc_compat_htile_for_image(struct radv_device *device, const VkImageCrea
    if (device->physical_device->rad_info.gfx_level < GFX8)
       return false;
 
-   if ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT))
-      return false;
-
    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR)
       return false;
 
@@ -865,6 +862,29 @@ si_set_mutable_tex_desc_fields(struct radv_device *device, struct radv_image *im
       }
    }
 
+   /* GFX10.3+ can set a custom pitch for 1D and 2D non-array, but it must be a multiple
+    * of 256B. Only set it for 2D linear for multi-GPU interop.
+    *
+    * If an imported image is used with VK_IMAGE_VIEW_TYPE_2D_ARRAY, it may hang due to VM faults
+    * because DEPTH means pitch with 2D, but it means depth with 2D array.
+    */
+   if (device->physical_device->rad_info.gfx_level >= GFX10_3 &&
+       image->vk.image_type == VK_IMAGE_TYPE_2D &&
+       plane->surface.is_linear &&
+       util_is_power_of_two_nonzero(plane->surface.bpe) &&
+       G_00A00C_TYPE(state[3]) == V_008F1C_SQ_RSRC_IMG_2D) {
+      assert((plane->surface.u.gfx9.surf_pitch * plane->surface.bpe) % 256 == 0);
+      unsigned pitch = plane->surface.u.gfx9.surf_pitch;
+
+      /* Subsampled images have the pitch in the units of blocks. */
+      if (plane->surface.blk_w == 2)
+         pitch *= 2;
+
+      state[4] &= C_00A010_DEPTH & C_00A010_PITCH_MSB;
+      state[4] |= S_00A010_DEPTH(pitch - 1) | /* DEPTH contains low bits of PITCH. */
+                  S_00A010_PITCH_MSB((pitch - 1) >> 13);
+   }
+
    if (gfx_level >= GFX10) {
       state[3] &= C_00A00C_SW_MODE;
 
@@ -1495,7 +1515,7 @@ radv_image_override_offset_stride(struct radv_device *device, struct radv_image 
                                   uint64_t offset, uint32_t stride)
 {
    ac_surface_override_offset_stride(&device->physical_device->rad_info, &image->planes[0].surface,
-                                     image->vk.mip_levels, offset, stride);
+                                     image->vk.array_layers, image->vk.mip_levels, offset, stride);
 }
 
 static void
@@ -1738,7 +1758,8 @@ radv_get_ac_surf_info(struct radv_device *device, const struct radv_image *image
    info.num_channels = vk_format_get_nr_components(image->vk.format);
 
    if (!vk_format_is_depth_or_stencil(image->vk.format) && !image->shareable &&
-       !(image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_ALIASED_BIT) &&
+       !(image->vk.create_flags & (VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
+                                   VK_IMAGE_CREATE_ALIAS_BIT)) &&
        image->vk.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
       info.surf_index = &device->image_mrt_offset_counter;
    }
@@ -1749,6 +1770,7 @@ radv_get_ac_surf_info(struct radv_device *device, const struct radv_image *image
 VkResult
 radv_image_create_layout(struct radv_device *device, struct radv_image_create_info create_info,
                          const struct VkImageDrmFormatModifierExplicitCreateInfoEXT *mod_info,
+                         const struct VkVideoProfileListInfoKHR *profile_list,
                          struct radv_image *image)
 {
    /* Clear the pCreateInfo pointer so we catch issues in the delayed case when we test in the
@@ -1763,6 +1785,19 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
    assert(!mod_info || mod_info->drmFormatModifierPlaneCount >= image->plane_count);
 
    radv_image_reset_layout(device->physical_device, image);
+
+   /*
+    * Due to how the decoder works, the user can't supply an oversized image, because if it attempts
+    * to sample it later with a linear filter, it will get garbage after the height it wants,
+    * so we let the user specify the width/height unaligned, and align them preallocation.
+    */
+   if (image->vk.usage & (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR)) {
+      assert(profile_list);
+      uint32_t width_align, height_align;
+      vk_video_get_profile_alignments(profile_list, &width_align, &height_align);
+      image_info.width = align(image_info.width, width_align);
+      image_info.height = align(image_info.height, height_align);
+   }
 
    unsigned plane_count = radv_get_internal_plane_count(device->physical_device, image->vk.format);
    for (unsigned plane = 0; plane < plane_count; ++plane) {
@@ -1810,7 +1845,8 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
       }
 
       if (!ac_surface_override_offset_stride(&device->physical_device->rad_info,
-                                             &image->planes[plane].surface, image->vk.mip_levels,
+                                             &image->planes[plane].surface,
+                                             image->vk.array_layers, image->vk.mip_levels,
                                              offset, stride))
          return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
 
@@ -1945,6 +1981,8 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
    const struct VkImageDrmFormatModifierExplicitCreateInfoEXT *explicit_mod =
       vk_find_struct_const(pCreateInfo->pNext, IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+   const struct VkVideoProfileListInfoKHR *profile_list =
+      vk_find_struct_const(pCreateInfo->pNext, VIDEO_PROFILE_LIST_INFO_KHR);
 
    unsigned plane_count = radv_get_internal_plane_count(device->physical_device, format);
 
@@ -2005,7 +2043,7 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
       return VK_SUCCESS;
    }
 
-   VkResult result = radv_image_create_layout(device, *create_info, explicit_mod, image);
+   VkResult result = radv_image_create_layout(device, *create_info, explicit_mod, profile_list, image);
    if (result != VK_SUCCESS) {
       radv_destroy_image(device, alloc, image);
       return result;
@@ -2486,15 +2524,23 @@ radv_layout_fmask_compression(const struct radv_device *device, const struct rad
    if (layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && (queue_mask & (1u << RADV_QUEUE_COMPUTE)))
       return RADV_FMASK_COMPRESSION_NONE;
 
-   if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
-       layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-      return radv_image_is_tc_compat_cmask(image) ? RADV_FMASK_COMPRESSION_FULL :
-         RADV_FMASK_COMPRESSION_PARTIAL;
-   }
+   /* Compress images if TC-compat CMASK is enabled. */
+   if (radv_image_is_tc_compat_cmask(image))
+      return RADV_FMASK_COMPRESSION_FULL;
 
-   /* Only compress concurrent images if TC-compat CMASK is enabled (no FMASK decompression). */
-   return (queue_mask == (1u << RADV_QUEUE_GENERAL) || radv_image_is_tc_compat_cmask(image)) ?
-      RADV_FMASK_COMPRESSION_FULL : RADV_FMASK_COMPRESSION_NONE;
+   switch (layout) {
+   case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+   case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+      /* Don't compress images but no need to expand FMASK. */
+      return RADV_FMASK_COMPRESSION_PARTIAL;
+   case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
+      /* Don't compress images that are in feedback loops. */
+      return RADV_FMASK_COMPRESSION_NONE;
+   default:
+      /* Don't compress images that are concurrent. */
+      return queue_mask == (1u << RADV_QUEUE_GENERAL) ?
+         RADV_FMASK_COMPRESSION_FULL : RADV_FMASK_COMPRESSION_NONE;
+   }
 }
 
 unsigned

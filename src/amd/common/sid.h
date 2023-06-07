@@ -1,24 +1,7 @@
 /*
- * Southern Islands Register documentation
- *
  * Copyright (C) 2011  Advanced Micro Devices, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE COPYRIGHT HOLDER(S) BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
- * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef SID_H
@@ -305,16 +288,12 @@
 #define PKT_COUNT_S(x)        (((unsigned)(x)&0x3FFF) << 16)
 #define PKT_COUNT_G(x)        (((x) >> 16) & 0x3FFF)
 #define PKT_COUNT_C           0xC000FFFF
-#define PKT0_BASE_INDEX_S(x)  (((unsigned)(x)&0xFFFF) << 0)
-#define PKT0_BASE_INDEX_G(x)  (((x) >> 0) & 0xFFFF)
-#define PKT0_BASE_INDEX_C     0xFFFF0000
 #define PKT3_IT_OPCODE_S(x)   (((unsigned)(x)&0xFF) << 8)
 #define PKT3_IT_OPCODE_G(x)   (((x) >> 8) & 0xFF)
 #define PKT3_IT_OPCODE_C      0xFFFF00FF
 #define PKT3_PREDICATE(x)     (((x) >> 0) & 0x1)
 #define PKT3_SHADER_TYPE_S(x) (((unsigned)(x)&0x1) << 1)
 #define PKT3_RESET_FILTER_CAM(x) (((unsigned)(x)&0x1) << 2)
-#define PKT0(index, count)    (PKT_TYPE_S(0) | PKT0_BASE_INDEX_S(index) | PKT_COUNT_S(count))
 #define PKT3(op, count, predicate)                                                                 \
    (PKT_TYPE_S(3) | PKT_COUNT_S(count) | PKT3_IT_OPCODE_S(op) | PKT3_PREDICATE(predicate))
 

@@ -503,7 +503,8 @@ pvr_pbe_src_format_normal(VkFormat src_format,
             }
          } else {
             if (dst_format == VK_FORMAT_B8G8R8A8_UNORM ||
-                dst_format == VK_FORMAT_R8G8B8A8_UNORM) {
+                dst_format == VK_FORMAT_R8G8B8A8_UNORM ||
+                dst_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32) {
                *src_format_out = PVR_TRANSFER_PBE_PIXEL_SRC_F16_U8;
             } else {
                *src_format_out = PVR_TRANSFER_PBE_PIXEL_SRC_F16F16;
@@ -3503,7 +3504,7 @@ pvr_int32_to_isp_xy_vtx(const struct pvr_device_info *dev_info,
       return vk_error(NULL, VK_ERROR_UNKNOWN);
 
    pvr_csb_pack (word_out, IPF_ISP_VERTEX_XY, word) {
-      word.sign = val < 0U;
+      word.sign = val < 0;
       word.integer = val;
    }
 
@@ -4848,6 +4849,7 @@ static void pvr_unwind_rects(uint32_t width,
          VkRect2D *new_rect = input ? &mappings[new_mapping].src_rect
                                     : &mappings[new_mapping].dst_rect;
          uint32_t split_point = width - texel_unwind;
+         uint32_t split_width;
 
          assert(new_mapping < ARRAY_SIZE(pass->sources[0].mappings));
 
@@ -4856,28 +4858,28 @@ static void pvr_unwind_rects(uint32_t width,
          rect->extent.width = split_point - rect->offset.x;
          new_rect->offset.x = split_point;
 
+         split_width = (rect->offset.x + new_rect->extent.width) - split_point;
+
          if (input) {
-            mappings[i].dst_rect.extent.width -=
-               new_rect->extent.width - split_point;
+            mappings[i].dst_rect.extent.width -= split_width;
             mappings[new_mapping].dst_rect.offset.x =
                mappings[i].dst_rect.offset.x +
                mappings[i].dst_rect.extent.width;
+            mappings[new_mapping].dst_rect.extent.width = split_width;
          } else {
-            mappings[i].src_rect.extent.width -=
-               new_rect->extent.width - split_point;
+            mappings[i].src_rect.extent.width -= split_width;
             mappings[new_mapping].src_rect.offset.x =
                mappings[i].src_rect.offset.x +
                mappings[i].src_rect.extent.width;
-            mappings[new_mapping].src_rect.extent.width = texel_unwind;
+            mappings[new_mapping].src_rect.extent.width = split_width;
          }
 
          rect->offset.x += texel_unwind;
          rect->extent.width = width - rect->offset.x;
 
-         new_rect->offset.x =
-            (int32_t)texel_unwind - (int32_t)width + new_rect->offset.x;
+         new_rect->offset.x += (int32_t)texel_unwind - (int32_t)width;
          new_rect->offset.y++;
-         new_rect->extent.width = texel_unwind - width + new_rect->extent.width;
+         new_rect->extent.width += (int32_t)texel_unwind - (int32_t)width;
 
          new_mappings++;
       }

@@ -318,7 +318,7 @@ d3d12_video_encoder_negotiate_current_hevc_slices_configuration(struct d3d12_vid
 
       uint32_t subregion_block_pixel_size = pD3D12Enc->m_currentEncodeCapabilities.m_currentResolutionSupportCaps.SubregionBlockPixelsSize;
       uint32_t num_subregions_per_scanline =
-         pD3D12Enc->m_currentEncodeConfig.m_currentResolution.Width / subregion_block_pixel_size;
+         DIV_ROUND_UP(pD3D12Enc->m_currentEncodeConfig.m_currentResolution.Width, subregion_block_pixel_size);
 
       /* m_currentResolutionSupportCaps.SubregionBlockPixelsSize can be a multiple of MinCUSize to accomodate for HW requirements 
          So, if the allowed subregion (slice) pixel size partition is bigger (a multiple) than the CTU size, we have to adjust
@@ -334,7 +334,9 @@ d3d12_video_encoder_negotiate_current_hevc_slices_configuration(struct d3d12_vid
 
       uint32_t subregionsize_to_ctu_factor = pD3D12Enc->m_currentEncodeCapabilities.m_currentResolutionSupportCaps.SubregionBlockPixelsSize / 
          minCUSize;
-      uint32_t num_subregions_per_slice = picture->slices_descriptors[0].num_ctu_in_slice / (subregionsize_to_ctu_factor*subregionsize_to_ctu_factor);
+      uint32_t num_subregions_per_slice = picture->slices_descriptors[0].num_ctu_in_slice
+                                                   * pD3D12Enc->m_currentEncodeCapabilities.m_currentResolutionSupportCaps.SubregionBlockPixelsSize
+                                                   / (subregionsize_to_ctu_factor * subregionsize_to_ctu_factor);
 
       bool bSliceAligned = ((num_subregions_per_slice % num_subregions_per_scanline) == 0);
 

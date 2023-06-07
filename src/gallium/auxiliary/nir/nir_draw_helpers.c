@@ -67,7 +67,7 @@ nir_lower_pstipple_block(nir_block *block,
 
    nir_ssa_def *frag_coord = state->fs_pos_is_sysval ? nir_load_frag_coord(b) : load_frag_coord(b);
 
-   texcoord = nir_fmul(b, nir_channels(b, frag_coord, 0x3),
+   texcoord = nir_fmul(b, nir_trim_vector(b, frag_coord, 2),
                        nir_imm_vec2(b, 1.0/32.0, 1.0/32.0));
 
    nir_tex_instr *tex = nir_tex_instr_create(b->shader, 1);
@@ -77,8 +77,7 @@ nir_lower_pstipple_block(nir_block *block,
    tex->dest_type = nir_type_float32;
    tex->texture_index = state->stip_tex->data.binding;
    tex->sampler_index = state->stip_tex->data.binding;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(texcoord);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, texcoord);
    nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
 
    nir_builder_instr_insert(b, &tex->instr);
@@ -87,8 +86,7 @@ nir_lower_pstipple_block(nir_block *block,
 
    switch (state->bool_type) {
    case nir_type_bool1:
-      condition = nir_fneu(b, nir_channel(b, &tex->dest.ssa, 3),
-                           nir_imm_floatN_t(b, 0.0, tex->dest.ssa.bit_size));
+      condition = nir_fneu_imm(b, nir_channel(b, &tex->dest.ssa, 3), 0.0);
       break;
    case nir_type_bool32:
       condition = nir_fneu32(b, nir_channel(b, &tex->dest.ssa, 3),
@@ -218,7 +216,7 @@ lower_aaline_instr(nir_builder *b, nir_instr *instr, void *data)
 
       // vec2 a = vec2((uvec2(pattern) >> p) & uvec2(1u));
       nir_ssa_def *a = nir_i2f32(b,
-         nir_iand(b, nir_ishr(b, nir_vec2(b, pattern, pattern), p),
+         nir_iand(b, nir_ishr(b, nir_replicate(b, pattern, 2), p),
                   nir_imm_ivec2(b, 1, 1)));
 
       // float cov = mix(a.x, a.y, t);

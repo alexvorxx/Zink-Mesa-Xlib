@@ -564,7 +564,9 @@ _eglQuerySurface(_EGLDisplay *disp, _EGLSurface *surface,
           ctx->DrawSurface != surface)
          return _eglError(EGL_BAD_SURFACE, "eglQuerySurface");
 
-      EGLint result = disp->Driver->QueryBufferAge(disp, surface);
+      EGLint result = 0;
+      if (!disp->Options.GalliumHud)
+         result = disp->Driver->QueryBufferAge(disp, surface);
       if (result < 0)
          return EGL_FALSE;
 

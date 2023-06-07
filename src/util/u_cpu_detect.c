@@ -883,23 +883,19 @@ _util_cpu_detect_once(void)
          uint32_t regs7[4];
          cpuid_count(0x00000007, 0x00000000, regs7);
          util_cpu_caps.has_avx2 = (regs7[1] >> 5) & 1;
-      }
 
-      // check for avx512
-      if (((regs2[2] >> 27) & 1) && // OSXSAVE
-          (xgetbv() & (0x7 << 5)) && // OPMASK: upper-256 enabled by OS
-          ((xgetbv() & 6) == 6)) { // XMM/YMM enabled by OS
-         uint32_t regs3[4];
-         cpuid_count(0x00000007, 0x00000000, regs3);
-         util_cpu_caps.has_avx512f    = (regs3[1] >> 16) & 1;
-         util_cpu_caps.has_avx512dq   = (regs3[1] >> 17) & 1;
-         util_cpu_caps.has_avx512ifma = (regs3[1] >> 21) & 1;
-         util_cpu_caps.has_avx512pf   = (regs3[1] >> 26) & 1;
-         util_cpu_caps.has_avx512er   = (regs3[1] >> 27) & 1;
-         util_cpu_caps.has_avx512cd   = (regs3[1] >> 28) & 1;
-         util_cpu_caps.has_avx512bw   = (regs3[1] >> 30) & 1;
-         util_cpu_caps.has_avx512vl   = (regs3[1] >> 31) & 1;
-         util_cpu_caps.has_avx512vbmi = (regs3[2] >>  1) & 1;
+         // check for avx512
+         if (xgetbv() & (0x7 << 5)) { // OPMASK: upper-256 enabled by OS
+            util_cpu_caps.has_avx512f    = (regs7[1] >> 16) & 1;
+            util_cpu_caps.has_avx512dq   = (regs7[1] >> 17) & 1;
+            util_cpu_caps.has_avx512ifma = (regs7[1] >> 21) & 1;
+            util_cpu_caps.has_avx512pf   = (regs7[1] >> 26) & 1;
+            util_cpu_caps.has_avx512er   = (regs7[1] >> 27) & 1;
+            util_cpu_caps.has_avx512cd   = (regs7[1] >> 28) & 1;
+            util_cpu_caps.has_avx512bw   = (regs7[1] >> 30) & 1;
+            util_cpu_caps.has_avx512vl   = (regs7[1] >> 31) & 1;
+            util_cpu_caps.has_avx512vbmi = (regs7[2] >>  1) & 1;
+         }
       }
 
       if (regs[1] == 0x756e6547 && regs[2] == 0x6c65746e && regs[3] == 0x49656e69) {

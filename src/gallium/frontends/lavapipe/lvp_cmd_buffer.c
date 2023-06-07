@@ -112,7 +112,7 @@ VKAPI_ATTR void VKAPI_CALL lvp_CmdPushDescriptorSetWithTemplateKHR(
    LVP_FROM_HANDLE(lvp_descriptor_update_template, templ, descriptorUpdateTemplate);
    size_t info_size = 0;
    struct vk_cmd_queue_entry *cmd = vk_zalloc(cmd_buffer->vk.cmd_queue.alloc,
-                                              sizeof(*cmd), 8,
+                                              vk_cmd_queue_type_sizes[VK_CMD_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_KHR], 8,
                                               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!cmd)
       return;

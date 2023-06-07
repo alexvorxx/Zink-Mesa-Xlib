@@ -1005,13 +1005,13 @@ tu6_emit_link_map(struct tu_cs *cs,
 }
 
 static enum a6xx_tess_output
-primitive_to_tess(enum shader_prim primitive) {
+primitive_to_tess(enum mesa_prim primitive) {
    switch (primitive) {
-   case SHADER_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       return TESS_POINTS;
-   case SHADER_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       return TESS_LINES;
-   case SHADER_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       return TESS_CW_TRIS;
    default:
       unreachable("");
@@ -1440,7 +1440,7 @@ tu6_emit_vpc(struct tu_cs *cs,
          tu6_emit_link_map(cs, vs, gs, SB6_GS_SHADER);
       }
       vertices_out = gs->gs.vertices_out - 1;
-      enum a6xx_tess_output output = primitive_to_tess((enum shader_prim) gs->gs.output_primitive);
+      enum a6xx_tess_output output = primitive_to_tess((enum mesa_prim) gs->gs.output_primitive);
       invocations = gs->gs.invocations - 1;
       /* Size of per-primitive alloction in ldlw memory in vec4s. */
       vec4_size = gs->gs.vertices_in *
@@ -3140,6 +3140,9 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    bool must_compile =
       builder->state & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT;
    for (uint32_t i = 0; i < builder->create_info->stageCount; i++) {
+      if (!(builder->active_stages & builder->create_info->pStages[i].stage))
+         continue;
+
       gl_shader_stage stage =
          vk_to_mesa_shader_stage(builder->create_info->pStages[i].stage);
       stage_infos[stage] = &builder->create_info->pStages[i];
@@ -4851,6 +4854,24 @@ tu_pipeline_finish(struct tu_pipeline *pipeline,
    ralloc_free(pipeline->executables_mem_ctx);
 }
 
+static VkGraphicsPipelineLibraryFlagBitsEXT
+vk_shader_stage_to_pipeline_library_flags(VkShaderStageFlagBits stage)
+{
+   assert(util_bitcount(stage) == 1);
+   switch (stage) {
+   case VK_SHADER_STAGE_VERTEX_BIT:
+   case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
+   case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
+   case VK_SHADER_STAGE_GEOMETRY_BIT:
+   case VK_SHADER_STAGE_TASK_BIT_EXT:
+   case VK_SHADER_STAGE_MESH_BIT_EXT:
+      return VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT;
+   case VK_SHADER_STAGE_FRAGMENT_BIT:
+      return VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT;
+   default:
+      unreachable("Invalid shader stage");
+   }
+}
 
 static VkResult
 tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
@@ -4872,7 +4893,13 @@ tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
 
    VkShaderStageFlags stages = 0;
    for (unsigned i = 0; i < builder->create_info->stageCount; i++) {
-      stages |= builder->create_info->pStages[i].stage;
+      VkShaderStageFlagBits stage = builder->create_info->pStages[i].stage;
+
+      /* Ignore shader stages that don't need to be imported. */
+      if (!(vk_shader_stage_to_pipeline_library_flags(stage) & builder->state))
+         continue;
+
+      stages |= stage;
    }
    builder->active_stages = stages;
 

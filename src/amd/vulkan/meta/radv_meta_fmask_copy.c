@@ -52,7 +52,7 @@ build_fmask_copy_compute_shader(struct radv_device *dev, int samples)
    nir_ssa_def *global_id = nir_iadd(&b, nir_imul(&b, wg_id, block_size), invoc_id);
 
    /* Get coordinates. */
-   nir_ssa_def *src_coord = nir_channels(&b, global_id, 0x3);
+   nir_ssa_def *src_coord = nir_trim_vector(&b, global_id, 2);
    nir_ssa_def *dst_coord = nir_vec4(&b, nir_channel(&b, src_coord, 0),
                                          nir_channel(&b, src_coord, 1),
                                          nir_ssa_undef(&b, 1, 32),

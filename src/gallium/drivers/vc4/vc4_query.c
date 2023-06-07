@@ -262,7 +262,7 @@ vc4_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
         }
 
         if (!vc4_wait_seqno(ctx->screen, query->hwperfmon->last_seqno,
-                            wait ? PIPE_TIMEOUT_INFINITE : 0, "perfmon"))
+                            wait ? OS_TIMEOUT_INFINITE : 0, "perfmon"))
                 return false;
 
         req.id = query->hwperfmon->id;

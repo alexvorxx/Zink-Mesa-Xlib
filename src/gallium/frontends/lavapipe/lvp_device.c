@@ -45,6 +45,10 @@
 #include "nir.h"
 #include "nir_builder.h"
 
+#if DETECT_OS_LINUX
+#include <sys/mman.h>
+#endif
+
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR) || \
     defined(VK_USE_PLATFORM_WIN32_KHR) || \
     defined(VK_USE_PLATFORM_XCB_KHR) || \
@@ -155,6 +159,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_depth_clip_enable                 = true,
    .EXT_depth_clip_control                = true,
    .EXT_depth_range_unrestricted          = true,
+   .EXT_dynamic_rendering_unused_attachments = true,
    .EXT_extended_dynamic_state            = true,
    .EXT_extended_dynamic_state2           = true,
    .EXT_extended_dynamic_state3           = true,
@@ -166,9 +171,17 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_image_robustness                  = true,
    .EXT_index_type_uint8                  = true,
    .EXT_inline_uniform_block              = true,
+   .EXT_memory_budget                     = true,
+#if DETECT_OS_LINUX
+   .EXT_memory_priority                   = true,
+#endif
+   .EXT_mesh_shader                       = true,
    .EXT_multisampled_render_to_single_sampled = true,
    .EXT_multi_draw                        = true,
    .EXT_non_seamless_cube_map             = true,
+#if DETECT_OS_LINUX
+   .EXT_pageable_device_local_memory      = true,
+#endif
    .EXT_pipeline_creation_feedback        = true,
    .EXT_pipeline_creation_cache_control   = true,
    .EXT_post_depth_coverage               = true,
@@ -493,6 +506,9 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .extendedDynamicState3RepresentativeFragmentTestEnable = false,
       .extendedDynamicState3ColorBlendAdvanced = false,
 
+      /* VK_EXT_dynamic_rendering_unused_attachments */
+      .dynamicRenderingUnusedAttachments = true,
+
       /* VK_EXT_robustness2 */
       .robustBufferAccess2 = true,
       .robustImageAccess2 = true,
@@ -532,6 +548,19 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderSharedFloat64AtomicMinMax = false,
       .shaderImageFloat32AtomicMinMax  = LLVM_VERSION_MAJOR >= 15,
       .sparseImageFloat32AtomicMinMax  = false,
+
+      /* VK_EXT_memory_priority */
+      .memoryPriority = true,
+
+      /* VK_EXT_pageable_device_local_memory */
+      .pageableDeviceLocalMemory = true,
+
+      /* VK_EXT_mesh_shader */
+      .taskShader = true,
+      .meshShader = true,
+      .multiviewMeshShader = false,
+      .primitiveFragmentShadingRateMeshShader = false,
+      .meshShaderQueries = true,
    };
 }
 
@@ -1178,6 +1207,51 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceProperties2(
          props->robustUniformBufferAccessSizeAlignment = 1;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT: {
+         VkPhysicalDeviceMeshShaderPropertiesEXT *props =
+            (VkPhysicalDeviceMeshShaderPropertiesEXT *)ext;
+         props->maxTaskWorkGroupTotalCount = 4194304;
+         props->maxTaskWorkGroupCount[0] = 65536;
+         props->maxTaskWorkGroupCount[1] = 65536;
+         props->maxTaskWorkGroupCount[2] = 65536;
+         props->maxTaskWorkGroupInvocations = 1024;
+         props->maxTaskWorkGroupSize[0] = 1024;
+         props->maxTaskWorkGroupSize[1] = 1024;
+         props->maxTaskWorkGroupSize[2] = 1024;
+         props->maxTaskPayloadSize = 16384;
+         props->maxTaskSharedMemorySize = 32768;
+         props->maxTaskPayloadAndSharedMemorySize = 32768;
+
+         props->maxMeshWorkGroupTotalCount = 4194304;
+         props->maxMeshWorkGroupCount[0] = 65536;
+         props->maxMeshWorkGroupCount[1] = 65536;
+         props->maxMeshWorkGroupCount[2] = 65536;
+         props->maxMeshWorkGroupInvocations = 1024;
+         props->maxMeshWorkGroupSize[0] = 1024;
+         props->maxMeshWorkGroupSize[1] = 1024;
+         props->maxMeshWorkGroupSize[2] = 1024;
+         props->maxMeshOutputMemorySize = 32768; /* 32K min required */
+         props->maxMeshSharedMemorySize = 28672;     /* 28K min required */
+         props->maxMeshPayloadAndSharedMemorySize =
+            props->maxTaskPayloadSize +
+            props->maxMeshSharedMemorySize; /* 28K min required */
+         props->maxMeshPayloadAndOutputMemorySize =
+            props->maxTaskPayloadSize +
+            props->maxMeshOutputMemorySize;    /* 47K min required */
+         props->maxMeshOutputComponents = 128; /* 32x vec4 min required */
+         props->maxMeshOutputVertices = 256;
+         props->maxMeshOutputPrimitives = 256;
+         props->maxMeshOutputLayers = 8;
+         props->meshOutputPerVertexGranularity = 1;
+         props->meshOutputPerPrimitiveGranularity = 1;
+         props->maxPreferredTaskWorkGroupInvocations = 64;
+         props->maxPreferredMeshWorkGroupInvocations = 128;
+         props->prefersLocalInvocationVertexOutput = true;
+         props->prefersLocalInvocationPrimitiveOutput = true;
+         props->prefersCompactVertexOutput = true;
+         props->prefersCompactPrimitiveOutput = false;
+         break;
+      }
       default:
          break;
       }
@@ -1216,11 +1290,16 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceMemoryProperties(
       .heapIndex = 0,
    };
 
+   VkDeviceSize low_size = 3ULL*1024*1024*1024;
+   VkDeviceSize total_size;
+   os_get_total_physical_memory(&total_size);
    pMemoryProperties->memoryHeapCount = 1;
    pMemoryProperties->memoryHeaps[0] = (VkMemoryHeap) {
-      .size = 2ULL*1024*1024*1024,
+      .size = low_size,
       .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
    };
+   if (sizeof(void*) > sizeof(uint32_t))
+      pMemoryProperties->memoryHeaps[0].size = total_size;
 }
 
 VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceMemoryProperties2(
@@ -1229,6 +1308,14 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceMemoryProperties2(
 {
    lvp_GetPhysicalDeviceMemoryProperties(physicalDevice,
                                          &pMemoryProperties->memoryProperties);
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT *props = vk_find_struct(pMemoryProperties, PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+   if (props) {
+      props->heapBudget[0] = pMemoryProperties->memoryProperties.memoryHeaps[0].size;
+      os_get_available_system_memory(&props->heapUsage[0]);
+      props->heapUsage[0] = props->heapBudget[0] - props->heapUsage[0];
+      memset(&props->heapBudget[1], 0, sizeof(props->heapBudget[0]) * (VK_MAX_MEMORY_HEAPS - 1));
+      memset(&props->heapUsage[1], 0, sizeof(props->heapUsage[0]) * (VK_MAX_MEMORY_HEAPS - 1));
+   }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -1501,6 +1588,34 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_EnumerateDeviceLayerProperties(
    return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
 }
 
+static void
+set_mem_priority(struct lvp_device_memory *mem, int priority)
+{
+#if DETECT_OS_LINUX
+   if (priority) {
+      int advice = 0;
+#ifdef MADV_COLD
+      if (priority < 0)
+         advice |= MADV_COLD;
+#endif
+      if (priority > 0)
+         advice |= MADV_WILLNEED;
+      if (advice)
+         madvise(mem->pmem, mem->size, advice);
+   }
+#endif
+}
+
+static int
+get_mem_priority(float priority)
+{
+   if (priority < 0.3)
+      return -1;
+   if (priority < 0.6)
+      return 0;
+   return priority = 1;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
    VkDevice                                    _device,
    const VkMemoryAllocateInfo*                 pAllocateInfo,
@@ -1514,6 +1629,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
    const VkImportMemoryHostPointerInfoEXT *host_ptr_info = NULL;
    VkResult error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
    assert(pAllocateInfo->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+   int priority = 0;
 
    if (pAllocateInfo->allocationSize == 0) {
       /* Apparently, this is allowed */
@@ -1535,6 +1651,11 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
          import_info = (VkImportMemoryFdInfoKHR*)ext;
          assert(import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
          break;
+      case VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT: {
+         VkMemoryPriorityAllocateInfoEXT *prio = (VkMemoryPriorityAllocateInfoEXT*)ext;
+         priority = get_mem_priority(prio->priority);
+         break;
+      }
       default:
          break;
       }
@@ -1556,6 +1677,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
 
    mem->memory_type = LVP_DEVICE_MEMORY_TYPE_DEFAULT;
    mem->backed_fd = -1;
+   mem->size = pAllocateInfo->allocationSize;
 
    if (host_ptr_info) {
       mem->pmem = host_ptr_info->pHostPointer;
@@ -1598,6 +1720,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
       if (device->poison_mem)
          /* this is a value that will definitely break things */
          memset(mem->pmem, UINT8_MAX / 2 + 1, pAllocateInfo->allocationSize);
+      set_mem_priority(mem, priority);
    }
 
    mem->type_index = pAllocateInfo->memoryTypeIndex;
@@ -2276,4 +2399,13 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetDeviceGroupPeerMemoryFeaturesKHR(
     VkPeerMemoryFeatureFlags *pPeerMemoryFeatures)
 {
    *pPeerMemoryFeatures = 0;
+}
+
+VKAPI_ATTR void VKAPI_CALL lvp_SetDeviceMemoryPriorityEXT(
+    VkDevice                                    _device,
+    VkDeviceMemory                              _memory,
+    float                                       priority)
+{
+   LVP_FROM_HANDLE(lvp_device_memory, mem, _memory);
+   set_mem_priority(mem, get_mem_priority(priority));
 }

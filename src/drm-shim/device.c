@@ -147,6 +147,9 @@ static void handle_delete_fxn(struct hash_entry *entry)
 
 void drm_shim_fd_unregister(int fd)
 {
+   if (fd == -1)
+      return;
+
    struct hash_entry *entry =
          _mesa_hash_table_search(shim_device.fd_map, (void *)(uintptr_t)(fd + 1));
    if (!entry)

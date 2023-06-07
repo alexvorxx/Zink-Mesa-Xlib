@@ -199,14 +199,133 @@ xe_batch_check_for_reset(struct iris_batch *batch)
    return status;
 }
 
+static uint32_t
+xe_batch_submit_external_bo_count(struct iris_batch *batch)
+{
+   uint32_t count = 0;
+
+   for (int i = 0; i < batch->exec_count; i++) {
+      if (iris_bo_is_external(batch->exec_bos[i]))
+         count++;
+   }
+
+   return count;
+}
+
+struct iris_implicit_sync {
+   struct iris_implicit_sync_entry {
+      struct iris_bo *bo;
+      struct iris_syncobj *iris_syncobj;
+   } *entries;
+   uint32_t entry_count;
+
+   struct iris_syncobj *batch_signal_syncobj;
+};
+
+static bool
+iris_implicit_sync_add_bo(struct iris_batch *batch,
+                          struct iris_implicit_sync *sync,
+                          struct iris_bo *bo)
+{
+   struct iris_syncobj *syncobj = iris_bo_export_sync_state(bo);
+
+   if (!syncobj)
+      return false;
+
+   sync->entries[sync->entry_count].bo = bo;
+   sync->entries[sync->entry_count].iris_syncobj = syncobj;
+   sync->entry_count++;
+
+   iris_batch_add_syncobj(batch, syncobj, IRIS_BATCH_FENCE_WAIT);
+
+   return true;
+}
+
+/* Cleans up the state of 'sync'. */
+static void
+iris_implicit_sync_finish(struct iris_batch *batch,
+                          struct iris_implicit_sync *sync)
+{
+   struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
+
+   for (int i = 0; i < sync->entry_count; i++)
+      iris_syncobj_reference(bufmgr, &sync->entries[i].iris_syncobj, NULL);
+
+   free(sync->entries);
+   sync->entry_count = 0;
+}
+
+/* Import implicit synchronization data from the batch bos that require
+ * implicit synchronization int our batch buffer so the batch will wait for
+ * these bos to be idle before starting.
+ */
+static int
+iris_implicit_sync_import(struct iris_batch *batch,
+                          struct iris_implicit_sync *sync)
+{
+   uint32_t len = xe_batch_submit_external_bo_count(batch);
+
+   if (!len)
+      return 0;
+
+   sync->entries = malloc(sizeof(*sync->entries) * len);
+   if (!sync->entries)
+      return -ENOMEM;
+
+   for (int i = 0; i < batch->exec_count; i++) {
+      struct iris_bo *bo = batch->exec_bos[i];
+
+      if (!iris_bo_is_real(bo) || !iris_bo_is_external(bo)) {
+         assert(iris_get_backing_bo(bo)->real.prime_fd == -1);
+         continue;
+      }
+
+      if (bo->real.prime_fd == -1) {
+         fprintf(stderr, "Bo(%s/%i %sported) with prime_fd unset in iris_implicit_sync_import()\n",
+                 bo->name, bo->gem_handle, bo->real.imported ? "im" : "ex");
+         continue;
+      }
+
+      if (!iris_implicit_sync_add_bo(batch, sync, bo)) {
+         iris_implicit_sync_finish(batch, sync);
+         return -1;
+      }
+   }
+
+   return 0;
+}
+
+/* Export implicit synchronization data from our batch buffer into the bos
+ * that require implicit synchronization so other clients relying on it can do
+ * implicit synchronization with these bos, which will wait for the batch
+ * buffer we just submitted to signal its syncobj.
+ */
+static bool
+iris_implicit_sync_export(struct iris_batch *batch,
+                          struct iris_implicit_sync *sync)
+{
+   int sync_file_fd;
+
+   if (!iris_batch_syncobj_to_sync_file_fd(batch, &sync_file_fd))
+      return false;
+
+   for (int i = 0; i < sync->entry_count; i++)
+      iris_bo_import_sync_state(sync->entries[i].bo, sync_file_fd);
+
+   close(sync_file_fd);
+
+   return true;
+}
+
 static int
 xe_batch_submit(struct iris_batch *batch)
 {
    struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
    simple_mtx_t *bo_deps_lock = iris_bufmgr_get_bo_deps_lock(bufmgr);
+   struct iris_implicit_sync implicit_sync = {};
    struct drm_xe_sync *syncs = NULL;
    unsigned long sync_len;
-   int ret = 0;
+   int ret;
 
    iris_bo_unmap(batch->bo);
 
@@ -221,6 +340,10 @@ xe_batch_submit(struct iris_batch *batch)
    simple_mtx_lock(bo_deps_lock);
 
    iris_batch_update_syncobjs(batch);
+
+   ret = iris_implicit_sync_import(batch, &implicit_sync);
+   if (ret)
+      goto error_implicit_sync_import;
 
    sync_len = iris_batch_num_fences(batch);
    if (sync_len) {
@@ -262,8 +385,16 @@ xe_batch_submit(struct iris_batch *batch)
    if (!batch->screen->devinfo->no_hw)
        ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
 
-   if (ret)
+   if (ret) {
       ret = -errno;
+      goto error_exec;
+   }
+
+   if (!iris_implicit_sync_export(batch, &implicit_sync))
+      ret = -1;
+
+error_exec:
+   iris_implicit_sync_finish(batch, &implicit_sync);
 
    simple_mtx_unlock(bo_deps_lock);
 
@@ -283,6 +414,8 @@ xe_batch_submit(struct iris_batch *batch)
    return ret;
 
 error_no_sync_mem:
+   iris_implicit_sync_finish(batch, &implicit_sync);
+error_implicit_sync_import:
    simple_mtx_unlock(bo_deps_lock);
    return ret;
 }

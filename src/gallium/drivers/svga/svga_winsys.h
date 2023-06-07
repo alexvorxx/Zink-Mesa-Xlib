@@ -678,7 +678,7 @@ struct svga_winsys_screen
 
    /**
     * Wait for the fence to finish.
-    * \param timeout in nanoseconds (may be PIPE_TIMEOUT_INFINITE).
+    * \param timeout in nanoseconds (may be OS_TIMEOUT_INFINITE).
     *                0 to return immediately, if the API suports it.
     * \param flags  driver-specific meaning
     * \return zero on success.

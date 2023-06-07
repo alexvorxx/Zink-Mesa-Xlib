@@ -62,6 +62,7 @@ struct isel_context {
    Block* block;
    uint32_t first_temp_id;
    std::unordered_map<unsigned, std::array<Temp, NIR_MAX_VEC_COMPONENTS>> allocated_vec;
+   std::vector<Temp> unended_linear_vgprs;
    Stage stage;
    struct {
       bool has_branch;

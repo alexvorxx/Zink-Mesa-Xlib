@@ -73,7 +73,8 @@ convert_value(nir_builder *b, nir_ssa_def *value,
          src_as_vec = nir_pack_unorm_4x8(b, value);
       else {
          nir_ssa_def *packed_channels[2];
-         packed_channels[0] = nir_pack_unorm_2x16(b, nir_channels(b, value, 0x3));
+         packed_channels[0] = nir_pack_unorm_2x16(b,
+                                                  nir_trim_vector(b, value, 2));
          packed_channels[1] = nir_pack_unorm_2x16(b, nir_channels(b, value, 0x3 << 2));
          src_as_vec = nir_vec(b, packed_channels, 2);
       }
@@ -82,7 +83,8 @@ convert_value(nir_builder *b, nir_ssa_def *value,
          src_as_vec = nir_pack_snorm_4x8(b, value);
       else {
          nir_ssa_def *packed_channels[2];
-         packed_channels[0] = nir_pack_snorm_2x16(b, nir_channels(b, value, 0x3));
+         packed_channels[0] = nir_pack_snorm_2x16(b,
+                                                  nir_trim_vector(b, value, 2));
          packed_channels[1] = nir_pack_snorm_2x16(b, nir_channels(b, value, 0x3 << 2));
          src_as_vec = nir_vec(b, packed_channels, 2);
       }

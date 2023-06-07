@@ -930,8 +930,8 @@ util_make_geometry_passthrough_shader(struct pipe_context *pipe,
    if (!ureg)
       return NULL;
 
-   ureg_property(ureg, TGSI_PROPERTY_GS_INPUT_PRIM, PIPE_PRIM_POINTS);
-   ureg_property(ureg, TGSI_PROPERTY_GS_OUTPUT_PRIM, PIPE_PRIM_POINTS);
+   ureg_property(ureg, TGSI_PROPERTY_GS_INPUT_PRIM, MESA_PRIM_POINTS);
+   ureg_property(ureg, TGSI_PROPERTY_GS_OUTPUT_PRIM, MESA_PRIM_POINTS);
    ureg_property(ureg, TGSI_PROPERTY_GS_MAX_OUTPUT_VERTICES, 1);
    ureg_property(ureg, TGSI_PROPERTY_GS_INVOCATIONS, 1);
    imm = ureg_DECL_immediate_uint(ureg, zero, 4);

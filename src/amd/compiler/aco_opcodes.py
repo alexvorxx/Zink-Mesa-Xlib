@@ -305,7 +305,7 @@ opcode("p_barrier", format=Format.PSEUDO_BARRIER)
 opcode("p_spill")
 opcode("p_reload")
 
-# start/end linear vgprs
+# Start/end linear vgprs. p_start_linear_vgpr can take an operand to copy from, into the linear vgpr
 opcode("p_start_linear_vgpr")
 opcode("p_end_linear_vgpr")
 

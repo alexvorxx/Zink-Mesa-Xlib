@@ -3756,8 +3756,8 @@ as well.
 TES_PRIM_MODE
 """""""""""""
 
-This sets the tessellation primitive mode, one of ``PIPE_PRIM_TRIANGLES``,
-``PIPE_PRIM_QUADS``, or ``PIPE_PRIM_LINES``. (Unlike in GL, there is no
+This sets the tessellation primitive mode, one of ``MESA_PRIM_TRIANGLES``,
+``MESA_PRIM_QUADS``, or ``MESA_PRIM_LINES``. (Unlike in GL, there is no
 separate isolines settings, the regular lines is assumed to mean isolines.)
 
 TES_SPACING

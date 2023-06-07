@@ -59,7 +59,7 @@ retry_draw_range_elements(struct svga_context *svga,
 
 static enum pipe_error
 retry_draw_arrays( struct svga_context *svga,
-                   enum pipe_prim_type prim, unsigned start, unsigned count,
+                   enum mesa_prim prim, unsigned start, unsigned count,
                    unsigned start_instance, unsigned instance_count,
                    ubyte vertices_per_patch)
 {
@@ -88,11 +88,11 @@ retry_draw_auto(struct svga_context *svga,
    assert(indirect->count_from_stream_output);
    assert(info->instance_count == 1);
    /* SO drawing implies core profile and none of these prim types */
-   assert(info->mode != PIPE_PRIM_QUADS &&
-          info->mode != PIPE_PRIM_QUAD_STRIP &&
-          info->mode != PIPE_PRIM_POLYGON);
+   assert(info->mode != MESA_PRIM_QUADS &&
+          info->mode != MESA_PRIM_QUAD_STRIP &&
+          info->mode != MESA_PRIM_POLYGON);
 
-   if (info->mode == PIPE_PRIM_LINE_LOOP) {
+   if (info->mode == MESA_PRIM_LINE_LOOP) {
       /* XXX need to do a fallback */
       assert(!"draw auto fallback not supported yet");
       return PIPE_OK;
@@ -137,11 +137,11 @@ retry_draw_indirect(struct svga_context *svga,
    assert(svga_have_sm5(svga));
    assert(indirect && indirect->buffer);
    /* indirect drawing implies core profile and none of these prim types */
-   assert(info->mode != PIPE_PRIM_QUADS &&
-          info->mode != PIPE_PRIM_QUAD_STRIP &&
-          info->mode != PIPE_PRIM_POLYGON);
+   assert(info->mode != MESA_PRIM_QUADS &&
+          info->mode != MESA_PRIM_QUAD_STRIP &&
+          info->mode != MESA_PRIM_POLYGON);
 
-   if (info->mode == PIPE_PRIM_LINE_LOOP) {
+   if (info->mode == MESA_PRIM_LINE_LOOP) {
       /* need to do a fallback */
       util_draw_indirect(&svga->pipe, info, indirect);
       return PIPE_OK;
@@ -232,7 +232,7 @@ svga_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info,
       return;
 
    struct svga_context *svga = svga_context(pipe);
-   enum pipe_prim_type reduced_prim = u_reduced_prim(info->mode);
+   enum mesa_prim reduced_prim = u_reduced_prim(info->mode);
    unsigned count = draws[0].count;
    enum pipe_error ret = 0;
    boolean needed_swtnl;
@@ -241,7 +241,7 @@ svga_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info,
 
    svga->hud.num_draw_calls++;  /* for SVGA_QUERY_NUM_DRAW_CALLS */
 
-   if (u_reduced_prim(info->mode) == PIPE_PRIM_TRIANGLES &&
+   if (u_reduced_prim(info->mode) == MESA_PRIM_TRIANGLES &&
        svga->curr.rast->templ.cull_face == PIPE_FACE_FRONT_AND_BACK)
       goto done;
 

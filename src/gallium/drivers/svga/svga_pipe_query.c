@@ -174,7 +174,7 @@ get_query_result_vgpu9(struct svga_context *svga, struct svga_query *sq,
    if (state == SVGA3D_QUERYSTATE_PENDING) {
       if (!wait)
          return false;
-      sws->fence_finish(sws, sq->fence, PIPE_TIMEOUT_INFINITE,
+      sws->fence_finish(sws, sq->fence, OS_TIMEOUT_INFINITE,
                         SVGA_FENCE_FLAG_QUERY);
       state = sq->queryResult->state;
    }
@@ -607,7 +607,7 @@ get_query_result_vgpu10(struct svga_context *svga, struct svga_query *sq,
        queryState == SVGA3D_QUERYSTATE_NEW) {
       if (!wait)
          return false;
-      sws->fence_finish(sws, sq->fence, PIPE_TIMEOUT_INFINITE,
+      sws->fence_finish(sws, sq->fence, OS_TIMEOUT_INFINITE,
                         SVGA_FENCE_FLAG_QUERY);
       sws->query_get_result(sws, sq->gb_query, sq->offset, &queryState, result, resultLen);
    }
@@ -1257,7 +1257,7 @@ svga_render_condition(struct pipe_context *pipe, struct pipe_query *q,
 
       if ((mode == PIPE_RENDER_COND_WAIT ||
            mode == PIPE_RENDER_COND_BY_REGION_WAIT) && sq->fence) {
-         sws->fence_finish(sws, sq->fence, PIPE_TIMEOUT_INFINITE,
+         sws->fence_finish(sws, sq->fence, OS_TIMEOUT_INFINITE,
                            SVGA_FENCE_FLAG_QUERY);
       }
    }

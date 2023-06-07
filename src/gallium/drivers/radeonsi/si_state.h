@@ -1,25 +1,7 @@
 /*
  * Copyright 2012 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef SI_STATE_H
@@ -184,7 +166,6 @@ union si_state {
       struct si_shader *hs;
       struct si_shader *es;
       struct si_shader *gs;
-      struct si_pm4_state *vgt_shader_config;
       struct si_shader *vs;
       struct si_shader *ps;
       struct si_sqtt_fake_pipeline *sqtt_pipeline;
@@ -199,7 +180,7 @@ union si_state {
 static inline unsigned si_states_that_always_roll_context(void)
 {
    return (SI_STATE_BIT(blend) | SI_STATE_BIT(rasterizer) | SI_STATE_BIT(dsa) |
-           SI_STATE_BIT(poly_offset) | SI_STATE_BIT(vgt_shader_config));
+           SI_STATE_BIT(poly_offset));
 }
 
 union si_state_atoms {
@@ -209,7 +190,7 @@ union si_state_atoms {
       struct si_atom streamout_begin;
       struct si_atom streamout_enable; /* must be after streamout_begin */
       struct si_atom framebuffer;
-      struct si_atom msaa_sample_locs;
+      struct si_atom sample_locations;
       struct si_atom db_render_state;
       struct si_atom dpbb_state;
       struct si_atom msaa_config;
@@ -228,6 +209,7 @@ union si_state_atoms {
       struct si_atom window_rectangles;
       struct si_atom shader_query;
       struct si_atom ngg_cull_state;
+      struct si_atom vgt_pipeline_state;
    } s;
    struct si_atom array[sizeof(struct si_atoms_s) / sizeof(struct si_atom)];
 };
@@ -238,7 +220,7 @@ union si_state_atoms {
 static inline unsigned si_atoms_that_always_roll_context(void)
 {
    return (SI_ATOM_BIT(streamout_begin) | SI_ATOM_BIT(streamout_enable) | SI_ATOM_BIT(framebuffer) |
-           SI_ATOM_BIT(msaa_sample_locs) | SI_ATOM_BIT(sample_mask) | SI_ATOM_BIT(blend_color) |
+           SI_ATOM_BIT(sample_locations) | SI_ATOM_BIT(sample_mask) | SI_ATOM_BIT(blend_color) |
            SI_ATOM_BIT(clip_state) | SI_ATOM_BIT(scissors) | SI_ATOM_BIT(viewports) |
            SI_ATOM_BIT(stencil_ref) | SI_ATOM_BIT(scratch_state) | SI_ATOM_BIT(window_rectangles));
 }
@@ -247,104 +229,111 @@ struct si_shader_data {
    uint32_t sh_base[SI_NUM_SHADERS];
 };
 
-/* The list of registers whose emitted values are remembered by si_context. */
-enum si_tracked_reg
+/* Context registers whose values are tracked by si_context. */
+enum si_tracked_context_reg
 {
-   SI_TRACKED_DB_RENDER_CONTROL, /* 2 consecutive registers */
+   /* 2 consecutive registers */
+   SI_TRACKED_DB_RENDER_CONTROL,
    SI_TRACKED_DB_COUNT_CONTROL,
 
-   SI_TRACKED_DB_RENDER_OVERRIDE2,
-   SI_TRACKED_DB_SHADER_CONTROL,
-
-   SI_TRACKED_CB_TARGET_MASK,
-   SI_TRACKED_CB_DCC_CONTROL,
-
-   SI_TRACKED_SX_PS_DOWNCONVERT, /* 3 consecutive registers */
-   SI_TRACKED_SX_BLEND_OPT_EPSILON,
-   SI_TRACKED_SX_BLEND_OPT_CONTROL,
-
-   SI_TRACKED_PA_SC_LINE_CNTL, /* 2 consecutive registers */
+   /* 2 consecutive registers */
+   SI_TRACKED_PA_SC_LINE_CNTL,
    SI_TRACKED_PA_SC_AA_CONFIG,
 
-   SI_TRACKED_DB_EQAA,
-   SI_TRACKED_PA_SC_MODE_CNTL_1,
-
-   SI_TRACKED_PA_SU_PRIM_FILTER_CNTL,
-   SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL,
-
-   SI_TRACKED_PA_CL_VS_OUT_CNTL,
-   SI_TRACKED_PA_CL_CLIP_CNTL,
-
-   SI_TRACKED_PA_SC_BINNER_CNTL_0,
-
-   SI_TRACKED_DB_PA_SC_VRS_OVERRIDE_CNTL,
-
-   SI_TRACKED_PA_SU_VTX_CNTL, /* 5 consecutive registers */
+   /* 5 consecutive registers */
+   SI_TRACKED_PA_SU_VTX_CNTL,
    SI_TRACKED_PA_CL_GB_VERT_CLIP_ADJ,
    SI_TRACKED_PA_CL_GB_VERT_DISC_ADJ,
    SI_TRACKED_PA_CL_GB_HORZ_CLIP_ADJ,
    SI_TRACKED_PA_CL_GB_HORZ_DISC_ADJ,
 
-   SI_TRACKED_PA_SU_HARDWARE_SCREEN_OFFSET,
-
-   SI_TRACKED_PA_SC_CLIPRECT_RULE,
-
-   SI_TRACKED_PA_SC_LINE_STIPPLE,
-
-   SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,
-
-   SI_TRACKED_VGT_GSVS_RING_OFFSET_1, /* 3 consecutive registers */
-   SI_TRACKED_VGT_GSVS_RING_OFFSET_2,
-   SI_TRACKED_VGT_GSVS_RING_OFFSET_3,
-
-   SI_TRACKED_VGT_GSVS_RING_ITEMSIZE,
-   SI_TRACKED_VGT_GS_MAX_VERT_OUT,
-
-   SI_TRACKED_VGT_GS_VERT_ITEMSIZE, /* 4 consecutive registers */
-   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_1,
-   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_2,
-   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_3,
-
-   SI_TRACKED_VGT_GS_INSTANCE_CNT,
-   SI_TRACKED_VGT_GS_ONCHIP_CNTL,
-   SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP,
-   SI_TRACKED_VGT_GS_MODE,
-   SI_TRACKED_VGT_PRIMITIVEID_EN,
-   SI_TRACKED_VGT_REUSE_OFF,
-   SI_TRACKED_SPI_VS_OUT_CONFIG,
-   SI_TRACKED_PA_CL_VTE_CNTL,
-   SI_TRACKED_PA_CL_NGG_CNTL,
-   SI_TRACKED_GE_MAX_OUTPUT_PER_SUBGROUP,
-   SI_TRACKED_GE_NGG_SUBGRP_CNTL,
-
-   SI_TRACKED_SPI_SHADER_IDX_FORMAT, /* 2 consecutive registers */
+   /* 2 consecutive registers */
+   SI_TRACKED_SPI_SHADER_IDX_FORMAT,
    SI_TRACKED_SPI_SHADER_POS_FORMAT,
 
-   SI_TRACKED_SPI_PS_INPUT_ENA, /* 2 consecutive registers */
-   SI_TRACKED_SPI_PS_INPUT_ADDR,
-
-   SI_TRACKED_SPI_BARYC_CNTL,
-   SI_TRACKED_SPI_PS_IN_CONTROL,
-
-   SI_TRACKED_SPI_SHADER_Z_FORMAT, /* 2 consecutive registers */
+   /* 2 consecutive registers */
+   SI_TRACKED_SPI_SHADER_Z_FORMAT,
    SI_TRACKED_SPI_SHADER_COL_FORMAT,
 
+   SI_TRACKED_SPI_BARYC_CNTL,
+
+   /* 2 consecutive registers */
+   SI_TRACKED_SPI_PS_INPUT_ENA,
+   SI_TRACKED_SPI_PS_INPUT_ADDR,
+
+   SI_TRACKED_DB_EQAA,
+   SI_TRACKED_DB_SHADER_CONTROL,
    SI_TRACKED_CB_SHADER_MASK,
+   SI_TRACKED_CB_TARGET_MASK,
+   SI_TRACKED_PA_CL_CLIP_CNTL,
+   SI_TRACKED_PA_CL_VS_OUT_CNTL,
+   SI_TRACKED_PA_CL_VTE_CNTL,
+   SI_TRACKED_PA_SC_CLIPRECT_RULE,
+   SI_TRACKED_PA_SC_LINE_STIPPLE,
+   SI_TRACKED_PA_SC_MODE_CNTL_1,
+   SI_TRACKED_PA_SU_HARDWARE_SCREEN_OFFSET,
+   SI_TRACKED_SPI_PS_IN_CONTROL,
+   SI_TRACKED_VGT_GS_INSTANCE_CNT,
+   SI_TRACKED_VGT_GS_MAX_VERT_OUT,
+   SI_TRACKED_VGT_SHADER_STAGES_EN,
    SI_TRACKED_VGT_TF_PARAM,
-   SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL,
+   SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL,  /* GFX8-9 (only with has_small_prim_filter_sample_loc_bug) */
+   SI_TRACKED_PA_SC_BINNER_CNTL_0,           /* GFX9+ */
+   SI_TRACKED_GE_MAX_OUTPUT_PER_SUBGROUP,    /* GFX10+ - the SMALL_PRIM_FILTER slot above can be reused */
+   SI_TRACKED_GE_NGG_SUBGRP_CNTL,            /* GFX10+ */
+   SI_TRACKED_DB_PA_SC_VRS_OVERRIDE_CNTL,    /* GFX10.3+ */
 
-   /* Non-context registers: */
-   SI_TRACKED_GE_PC_ALLOC,
-   SI_TRACKED_SPI_SHADER_PGM_RSRC3_GS,
-   SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS,
+   /* 3 consecutive registers */
+   SI_TRACKED_SX_PS_DOWNCONVERT,             /* GFX8+ */
+   SI_TRACKED_SX_BLEND_OPT_EPSILON,          /* GFX8+ */
+   SI_TRACKED_SX_BLEND_OPT_CONTROL,          /* GFX8+ */
 
-   SI_NUM_TRACKED_REGS,
+   /* The slots below can be reused by other generations. */
+   SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,        /* GFX6-8 (GFX9+ can reuse this slot) */
+   SI_TRACKED_VGT_REUSE_OFF,                 /* GFX6-8 (GFX9+ can reuse this slot) */
+
+   SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP, /* GFX9-10 - the slots above can be reused */
+   SI_TRACKED_VGT_GS_ONCHIP_CNTL,            /* GFX9-10 - the slots above can be reused */
+
+   SI_TRACKED_VGT_GSVS_RING_ITEMSIZE,        /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GS_MODE,                   /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL,   /* GFX6-10 (GFX11+ can reuse this slot) */
+
+   /* 3 consecutive registers */
+   SI_TRACKED_VGT_GSVS_RING_OFFSET_1,        /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GSVS_RING_OFFSET_2,        /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GSVS_RING_OFFSET_3,        /* GFX6-10 (GFX11+ can reuse this slot) */
+
+   /* 4 consecutive registers */
+   SI_TRACKED_VGT_GS_VERT_ITEMSIZE,          /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_1,        /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_2,        /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GS_VERT_ITEMSIZE_3,        /* GFX6-10 (GFX11+ can reuse this slot) */
+
+   SI_TRACKED_DB_RENDER_OVERRIDE2,           /* GFX6-xx (TBD) */
+   SI_TRACKED_SPI_VS_OUT_CONFIG,             /* GFX6-xx (TBD) */
+   SI_TRACKED_VGT_PRIMITIVEID_EN,            /* GFX6-xx (TBD) */
+   SI_TRACKED_CB_DCC_CONTROL,                /* GFX8-xx (TBD) */
+
+   SI_NUM_TRACKED_CONTEXT_REGS,
+};
+
+/* Non-context registers whose values are tracked by si_context. */
+enum si_tracked_other_reg {
+   SI_TRACKED_GE_PC_ALLOC,                   /* GFX10+ */
+   SI_TRACKED_SPI_SHADER_PGM_RSRC3_GS,       /* GFX7+ */
+   SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS,       /* GFX10+ */
+
+   SI_NUM_TRACKED_OTHER_REGS,
 };
 
 struct si_tracked_regs {
-   uint64_t reg_saved;
-   uint32_t reg_value[SI_NUM_TRACKED_REGS];
+   uint64_t context_reg_saved_mask;
+   uint32_t context_reg_value[SI_NUM_TRACKED_CONTEXT_REGS];
    uint32_t spi_ps_input_cntl[32];
+
+   uint32_t other_reg_saved_mask;
+   uint32_t other_reg_value[SI_NUM_TRACKED_OTHER_REGS];
 };
 
 /* Private read-write buffer slots. */
@@ -531,11 +520,10 @@ struct pb_slab *si_bindless_descriptor_slab_alloc(void *priv, unsigned heap, uns
 void si_bindless_descriptor_slab_free(void *priv, struct pb_slab *pslab);
 void si_rebind_buffer(struct si_context *sctx, struct pipe_resource *buf);
 /* si_state.c */
-uint32_t si_translate_colorformat(enum amd_gfx_level gfx_level, enum pipe_format format);
 void si_init_state_compute_functions(struct si_context *sctx);
 void si_init_state_functions(struct si_context *sctx);
 void si_init_screen_state_functions(struct si_screen *sscreen);
-void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing);
+void si_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_shadowing);
 void si_make_buffer_descriptor(struct si_screen *screen, struct si_resource *buf,
                                enum pipe_format format, unsigned offset, unsigned num_elements,
                                uint32_t *state);
@@ -562,7 +550,6 @@ struct si_fast_udiv_info32 si_compute_fast_udiv_info32(uint32_t D, unsigned num_
 void si_emit_dpbb_state(struct si_context *sctx);
 
 /* si_state_shaders.cpp */
-struct si_pm4_state *si_build_vgt_shader_config(struct si_screen *screen, union si_vgt_stages_key key);
 void si_get_ir_cache_key(struct si_shader_selector *sel, bool ngg, bool es,
                          unsigned wave_size, unsigned char ir_sha1_cache_key[20]);
 bool si_shader_cache_load_shader(struct si_screen *sscreen, unsigned char ir_sha1_cache_key[20],
@@ -617,7 +604,6 @@ void si_init_spi_map_functions(struct si_context *sctx);
 
 /* si_state_msaa.c */
 void si_init_msaa_functions(struct si_context *sctx);
-void si_emit_sample_locations(struct radeon_cmdbuf *cs, int nr_samples);
 
 /* si_state_streamout.c */
 void si_streamout_buffers_dirty(struct si_context *sctx);

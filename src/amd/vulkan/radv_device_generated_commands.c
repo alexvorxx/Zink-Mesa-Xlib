@@ -347,13 +347,23 @@ build_dgc_prepare_shader(struct radv_device *dev)
    nir_ssa_def *sequence_count = load_param32(&b, sequence_count);
    nir_ssa_def *stream_stride = load_param32(&b, stream_stride);
 
+   nir_ssa_def *use_count = nir_iand_imm(&b, sequence_count, 1u << 31);
+   sequence_count = nir_iand_imm(&b, sequence_count, UINT32_MAX >> 1);
+
+   /* The effective number of draws is
+    * min(sequencesCount, sequencesCountBuffer[sequencesCountOffset]) when
+    * using sequencesCountBuffer. Otherwise it is sequencesCount. */
    nir_variable *count_var = nir_variable_create(b.shader, nir_var_shader_temp, glsl_uint_type(), "sequence_count");
    nir_store_var(&b, count_var, sequence_count, 0x1);
 
-   nir_push_if(&b, nir_ieq_imm(&b, sequence_count, UINT32_MAX));
+   nir_push_if(&b, nir_ine_imm(&b, use_count, 0));
    {
       nir_ssa_def *count_buf = radv_meta_load_descriptor(&b, 0, DGC_DESC_COUNT);
       nir_ssa_def *cnt = nir_load_ssbo(&b, 1, 32, count_buf, nir_imm_int(&b, 0));
+      /* Must clamp count against the API count explicitly.
+       * The workgroup potentially contains more threads than maxSequencesCount from API,
+       * and we have to ensure these threads write NOP packets to pad out the IB. */
+      cnt = nir_umin(&b, cnt, sequence_count);
       nir_store_var(&b, count_var, cnt, 0x1);
    }
    nir_pop_if(&b, NULL);
@@ -420,7 +430,8 @@ build_dgc_prepare_shader(struct radv_device *dev)
                nir_ssa_def *stream_data =
                   nir_load_ssbo(&b, 4, 32, stream_buf, stream_offset);
 
-               nir_ssa_def *va = nir_pack_64_2x32(&b, nir_channels(&b, stream_data, 0x3));
+               nir_ssa_def *va = nir_pack_64_2x32(&b,
+                                                  nir_trim_vector(&b, stream_data, 2));
                nir_ssa_def *size = nir_channel(&b, stream_data, 2);
                nir_ssa_def *stride = nir_channel(&b, stream_data, 3);
 
@@ -519,7 +530,8 @@ build_dgc_prepare_shader(struct radv_device *dev)
              */
             nir_ssa_def *num_records = nir_channel(&b, nir_load_var(&b, vbo_data), 2);
             nir_ssa_def *buf_va = nir_iand_imm(
-               &b, nir_pack_64_2x32(&b, nir_channels(&b, nir_load_var(&b, vbo_data), 0x3)),
+               &b,
+               nir_pack_64_2x32(&b, nir_trim_vector(&b, nir_load_var(&b, vbo_data), 2)),
                (1ull << 48) - 1ull);
             nir_push_if(&b,
                         nir_ior(&b, nir_ieq_imm(&b, num_records, 0), nir_ieq_imm(&b, buf_va, 0)));
@@ -577,7 +589,7 @@ build_dgc_prepare_shader(struct radv_device *dev)
 
             nir_ssa_def *update = nir_iand(&b, push_const_mask, nir_ishl(&b, nir_imm_int64(&b, 1), cur_idx));
             update = nir_bcsel(
-               &b, nir_ult(&b, cur_idx, nir_imm_int(&b, 64 /* bits in push_const_mask */)), update,
+               &b, nir_ult_imm(&b, cur_idx, 64 /* bits in push_const_mask */), update,
                nir_imm_int64(&b, 0));
 
             nir_push_if(&b, nir_ine_imm(&b, update, 0));
@@ -654,7 +666,7 @@ build_dgc_prepare_shader(struct radv_device *dev)
                {
                   nir_ssa_def *cur_idx = nir_load_var(&b, idx);
                   nir_push_if(&b,
-                              nir_uge(&b, cur_idx, nir_imm_int(&b, 64 /* bits in inline_mask */)));
+                              nir_uge_imm(&b, cur_idx, 64 /* bits in inline_mask */));
                   {
                      nir_jump(&b, nir_jump_break);
                   }
@@ -672,7 +684,7 @@ build_dgc_prepare_shader(struct radv_device *dev)
 
                   nir_ssa_def *update = nir_iand(&b, push_const_mask, nir_ishl(&b, nir_imm_int64(&b, 1), cur_idx));
                   update = nir_bcsel(
-                     &b, nir_ult(&b, cur_idx, nir_imm_int(&b, 64 /* bits in push_const_mask */)),
+                     &b, nir_ult_imm(&b, cur_idx, 64 /* bits in push_const_mask */),
                      update, nir_imm_int64(&b, 0));
 
                   nir_push_if(&b, nir_ine_imm(&b, update, 0));
@@ -1332,7 +1344,7 @@ radv_prepare_dgc(struct radv_cmd_buffer *cmd_buffer,
                                 .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                 .pBufferInfo = &buf_info[ds_cnt]};
       ++ds_cnt;
-      params.sequence_count = UINT32_MAX;
+      params.sequence_count |= 1u << 31;
    }
 
    radv_meta_save(

@@ -22,6 +22,7 @@
  */
 
 #include "radv_meta.h"
+#include "radv_private.h"
 #include "vk_format.h"
 
 static VkFormat
@@ -142,6 +143,8 @@ copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
          radv_layout_dcc_compressed(cmd_buffer->device, image, region->imageSubresource.mipLevel,
                                     layout, queue_mask);
       if (compressed) {
+         radv_describe_barrier_start(cmd_buffer, RGP_BARRIER_UNKNOWN_REASON);
+
          radv_decompress_dcc(cmd_buffer, image,
                              &(VkImageSubresourceRange){
                                 .aspectMask = region->imageSubresource.aspectMask,
@@ -151,6 +154,8 @@ copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
                                 .layerCount = region->imageSubresource.layerCount,
                              });
          img_bsurf.disable_compression = true;
+
+         radv_describe_barrier_end(cmd_buffer);
       }
       img_bsurf.format = vk_format_for_size(vk_format_get_blocksize(img_bsurf.format));
    }
@@ -292,6 +297,8 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
       bool compressed = radv_layout_dcc_compressed(device, image, region->imageSubresource.mipLevel,
                                                    layout, queue_mask);
       if (compressed) {
+         radv_describe_barrier_start(cmd_buffer, RGP_BARRIER_UNKNOWN_REASON);
+
          radv_decompress_dcc(cmd_buffer, image,
                              &(VkImageSubresourceRange){
                                 .aspectMask = region->imageSubresource.aspectMask,
@@ -301,6 +308,8 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
                                 .layerCount = region->imageSubresource.layerCount,
                              });
          img_info.disable_compression = true;
+
+         radv_describe_barrier_end(cmd_buffer);
       }
       img_info.format = vk_format_for_size(vk_format_get_blocksize(img_info.format));
    }
@@ -393,7 +402,9 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
            region->extent.width != dst_image->vk.extent.width ||
            region->extent.height != dst_image->vk.extent.height ||
            region->extent.depth != dst_image->vk.extent.depth)) {
-         u_foreach_bit(i, region->dstSubresource.aspectMask) {
+         radv_describe_barrier_start(cmd_buffer, RGP_BARRIER_UNKNOWN_REASON);
+
+         u_foreach_bit (i, region->dstSubresource.aspectMask) {
             unsigned aspect_mask = 1u << i;
             radv_expand_depth_stencil(cmd_buffer, dst_image,
                                       &(VkImageSubresourceRange){
@@ -402,8 +413,11 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
                                          .levelCount = 1,
                                          .baseArrayLayer = region->dstSubresource.baseArrayLayer,
                                          .layerCount = region->dstSubresource.layerCount,
-                                      }, NULL);
+                                      },
+                                      NULL);
          }
+
+         radv_describe_barrier_end(cmd_buffer);
       }
    }
 
@@ -454,6 +468,8 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
       } else if (!dst_compressed) {
          b_dst.format = b_src.format;
       } else {
+         radv_describe_barrier_start(cmd_buffer, RGP_BARRIER_UNKNOWN_REASON);
+
          radv_decompress_dcc(cmd_buffer, dst_image,
                              &(VkImageSubresourceRange){
                                 .aspectMask = dst_aspects[a],
@@ -464,6 +480,8 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
                              });
          b_dst.format = b_src.format;
          b_dst.disable_compression = true;
+
+         radv_describe_barrier_end(cmd_buffer);
       }
 
       /**
@@ -497,19 +515,17 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
          .height = img_extent_el.height,
       };
 
-      if (src_image->vk.image_type == VK_IMAGE_TYPE_3D)
+      unsigned num_slices = region->srcSubresource.layerCount;
+
+      if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
          b_src.layer = src_offset_el.z;
+         num_slices = img_extent_el.depth;
+      }
 
       if (dst_image->vk.image_type == VK_IMAGE_TYPE_3D)
          b_dst.layer = dst_offset_el.z;
 
-      /* Loop through each 3D or array slice */
-      unsigned num_slices_3d = img_extent_el.depth;
-      unsigned num_slices_array = region->dstSubresource.layerCount;
-      unsigned slice_3d = 0;
-      unsigned slice_array = 0;
-      while (slice_3d < num_slices_3d && slice_array < num_slices_array) {
-
+      for (unsigned slice = 0; slice < num_slices; slice++) {
          /* Finish creating blit rect */
          rect.dst_x = dst_offset_el.x;
          rect.dst_y = dst_offset_el.y;
@@ -529,10 +545,6 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
          b_src.layer++;
          b_dst.layer++;
-         if (dst_image->vk.image_type == VK_IMAGE_TYPE_3D)
-            slice_3d++;
-         else
-            slice_array++;
       }
    }
 
@@ -543,7 +555,6 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
       if (radv_layout_is_htile_compressed(cmd_buffer->device, dst_image, dst_image_layout,
                                           queue_mask)) {
-
          cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_INV_VCACHE;
 
          VkImageSubresourceRange range = {

@@ -621,7 +621,7 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
 
                nir_ssa_def *offset = nir_iadd_imm(
                   b, intr->src[1].ssa, nir_intrinsic_component(intr));
-               nif = nir_push_if(b, nir_ult(b, offset, nir_imm_int(b, levels)));
+               nif = nir_push_if(b, nir_ult_imm(b, offset, levels));
             }
 
             nir_ssa_def *offset = build_tessfactor_base(
@@ -723,7 +723,7 @@ ir3_nir_lower_tess_ctrl(nir_shader *shader, struct ir3_shader_variant *v,
    nir_ssa_def *iid = build_invocation_id(&b, &state);
 
    const uint32_t nvertices = shader->info.tess.tcs_vertices_out;
-   nir_ssa_def *cond = nir_ult(&b, iid, nir_imm_int(&b, nvertices));
+   nir_ssa_def *cond = nir_ult_imm(&b, iid, nvertices);
 
    nir_if *nif = nir_push_if(&b, cond);
 
@@ -759,7 +759,7 @@ lower_tess_eval_block(nir_block *block, nir_builder *b, struct state *state)
          nir_ssa_def *z;
 
          if (state->topology == IR3_TESS_TRIANGLES)
-            z = nir_fsub(b, nir_fsub(b, nir_imm_float(b, 1.0f), y), x);
+            z = nir_fsub(b, nir_fsub_imm(b, 1.0f, y), x);
          else
             z = nir_imm_float(b, 0.0f);
 

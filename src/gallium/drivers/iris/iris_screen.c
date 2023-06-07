@@ -485,6 +485,10 @@ iris_get_shader_param(struct pipe_screen *pscreen,
 {
    gl_shader_stage stage = stage_from_pipe(p_stage);
 
+   if (p_stage == PIPE_SHADER_MESH ||
+       p_stage == PIPE_SHADER_TASK)
+      return 0;
+
    /* this is probably not totally correct.. but it's a start: */
    switch (param) {
    case PIPE_SHADER_CAP_MAX_INSTRUCTIONS:

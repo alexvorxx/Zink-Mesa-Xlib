@@ -29,7 +29,6 @@
 #include "sfn_debug.h"
 #include "sfn_instr_alugroup.h"
 #include "sfn_instr_export.h"
-#include "tgsi/tgsi_from_mesa.h"
 
 namespace r600 {
 

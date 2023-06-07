@@ -53,20 +53,20 @@ PRIMS=('points',
 
 OUT_TRIS, OUT_QUADS = 'tris', 'quads'
 
-LONGPRIMS=('PIPE_PRIM_POINTS',
-           'PIPE_PRIM_LINES',
-           'PIPE_PRIM_LINE_STRIP',
-           'PIPE_PRIM_LINE_LOOP',
-           'PIPE_PRIM_TRIANGLES',
-           'PIPE_PRIM_TRIANGLE_FAN',
-           'PIPE_PRIM_TRIANGLE_STRIP',
-           'PIPE_PRIM_QUADS',
-           'PIPE_PRIM_QUAD_STRIP',
-           'PIPE_PRIM_POLYGON',
-           'PIPE_PRIM_LINES_ADJACENCY',
-           'PIPE_PRIM_LINE_STRIP_ADJACENCY',
-           'PIPE_PRIM_TRIANGLES_ADJACENCY',
-           'PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY')
+LONGPRIMS=('MESA_PRIM_POINTS',
+           'MESA_PRIM_LINES',
+           'MESA_PRIM_LINE_STRIP',
+           'MESA_PRIM_LINE_LOOP',
+           'MESA_PRIM_TRIANGLES',
+           'MESA_PRIM_TRIANGLE_FAN',
+           'MESA_PRIM_TRIANGLE_STRIP',
+           'MESA_PRIM_QUADS',
+           'MESA_PRIM_QUAD_STRIP',
+           'MESA_PRIM_POLYGON',
+           'MESA_PRIM_LINES_ADJACENCY',
+           'MESA_PRIM_LINE_STRIP_ADJACENCY',
+           'MESA_PRIM_TRIANGLES_ADJACENCY',
+           'MESA_PRIM_TRIANGLE_STRIP_ADJACENCY')
 
 longprim = dict(zip(PRIMS, LONGPRIMS))
 intype_idx = dict(ubyte='IN_UBYTE', ushort='IN_USHORT', uint='IN_UINT')

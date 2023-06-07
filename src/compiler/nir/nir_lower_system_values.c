@@ -115,6 +115,39 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
    case nir_intrinsic_load_workgroup_size:
       return sanitize_32bit_sysval(b, intrin);
 
+   case nir_intrinsic_interp_deref_at_centroid:
+   case nir_intrinsic_interp_deref_at_sample:
+   case nir_intrinsic_interp_deref_at_offset: {
+      nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+      if (!nir_deref_mode_is(deref, nir_var_system_value))
+         return NULL;
+
+      nir_variable *var = deref->var;
+      enum glsl_interp_mode interp_mode;
+
+      if (var->data.location == SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD) {
+         interp_mode = INTERP_MODE_SMOOTH;
+      } else {
+         assert(var->data.location == SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD);
+         interp_mode = INTERP_MODE_NOPERSPECTIVE;
+      }
+
+      switch (intrin->intrinsic) {
+      case nir_intrinsic_interp_deref_at_centroid:
+         return nir_load_barycentric_coord_centroid(b, 32, .interp_mode = interp_mode);
+      case nir_intrinsic_interp_deref_at_sample:
+         assert(intrin->src[1].is_ssa);
+         return nir_load_barycentric_coord_at_sample(b, 32, intrin->src[1].ssa,
+                                                     .interp_mode = interp_mode);
+      case nir_intrinsic_interp_deref_at_offset:
+         assert(intrin->src[1].is_ssa);
+         return nir_load_barycentric_coord_at_offset(b, 32, intrin->src[1].ssa,
+                                                     .interp_mode = interp_mode);
+      default:
+         unreachable("Bogus interpolateAt() intrinsic.");
+      }
+   }
+
    case nir_intrinsic_load_deref: {
       nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
       if (!nir_deref_mode_is(deref, nir_var_system_value))
@@ -214,6 +247,26 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
       case SYSTEM_VALUE_BARYCENTRIC_PULL_MODEL:
          return nir_load_barycentric(b, nir_intrinsic_load_barycentric_model,
                                      INTERP_MODE_NONE);
+
+      case SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD:
+      case SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD: {
+         enum glsl_interp_mode interp_mode;
+
+         if (var->data.location == SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD) {
+            interp_mode = INTERP_MODE_SMOOTH;
+         } else {
+            assert(var->data.location == SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD);
+            interp_mode = INTERP_MODE_NOPERSPECTIVE;
+         }
+
+         if (var->data.sample) {
+            return nir_load_barycentric_coord_sample(b, 32, .interp_mode = interp_mode);
+         } else if (var->data.centroid) {
+            return nir_load_barycentric_coord_centroid(b, 32, .interp_mode = interp_mode);
+         } else {
+            return nir_load_barycentric_coord_pixel(b, 32, .interp_mode = interp_mode);
+         }
+      }
 
       case SYSTEM_VALUE_HELPER_INVOCATION: {
          /* When demote operation is used, reading the HelperInvocation

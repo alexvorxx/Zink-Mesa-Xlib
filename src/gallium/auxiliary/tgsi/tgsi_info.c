@@ -93,27 +93,6 @@ tgsi_get_opcode_name(enum tgsi_opcode opcode)
 }
 
 
-const char *
-tgsi_get_processor_name(enum pipe_shader_type processor)
-{
-   switch (processor) {
-   case PIPE_SHADER_VERTEX:
-      return "vertex shader";
-   case PIPE_SHADER_FRAGMENT:
-      return "fragment shader";
-   case PIPE_SHADER_GEOMETRY:
-      return "geometry shader";
-   case PIPE_SHADER_TESS_CTRL:
-      return "tessellation control shader";
-   case PIPE_SHADER_TESS_EVAL:
-      return "tessellation evaluation shader";
-   case PIPE_SHADER_COMPUTE:
-      return "compute shader";
-   default:
-      return "unknown shader type!";
-   }
-}
-
 /**
  * Infer the type (of the dst) of the opcode.
  *

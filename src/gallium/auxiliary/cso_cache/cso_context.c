@@ -43,7 +43,6 @@
 #include "util/u_math.h"
 #include "util/u_memory.h"
 #include "util/u_vbuf.h"
-#include "tgsi/tgsi_parse.h"
 
 #include "cso_cache/cso_context.h"
 #include "cso_cache/cso_cache.h"
@@ -74,6 +73,7 @@ struct cso_context {
    boolean has_geometry_shader;
    boolean has_tessellation;
    boolean has_compute_shader;
+   boolean has_task_mesh_shader;
    boolean has_streamout;
 
    uint32_t max_fs_samplerviews : 16;
@@ -83,7 +83,7 @@ struct cso_context {
 
    struct sampler_info fragment_samplers_saved;
    struct sampler_info compute_samplers_saved;
-   struct sampler_info samplers[PIPE_SHADER_TYPES];
+   struct sampler_info samplers[PIPE_SHADER_MESH_TYPES];
 
    /* Temporary number until cso_single_sampler_done is called.
     * It tracks the highest sampler seen in cso_single_sampler.
@@ -182,13 +182,13 @@ sanitize_hash(struct cso_hash *hash, enum cso_cache_type type,
       return;
 
    if (type == CSO_SAMPLER) {
-      samplers_to_restore = MALLOC((PIPE_SHADER_TYPES + 2) * PIPE_MAX_SAMPLERS *
+      samplers_to_restore = MALLOC((PIPE_SHADER_MESH_TYPES + 2) * PIPE_MAX_SAMPLERS *
                                    sizeof(*samplers_to_restore));
 
       /* Temporarily remove currently bound sampler states from the hash
        * table, to prevent them from being deleted
        */
-      for (int i = 0; i < PIPE_SHADER_TYPES; i++) {
+      for (int i = 0; i < PIPE_SHADER_MESH_TYPES; i++) {
          for (int j = 0; j < PIPE_MAX_SAMPLERS; j++) {
             struct cso_sampler *sampler = ctx->samplers[i].cso_samplers[j];
 
@@ -328,6 +328,10 @@ cso_create_context(struct pipe_context *pipe, unsigned flags)
          ctx->has_compute_shader = TRUE;
       }
    }
+   if (pipe->screen->get_shader_param(pipe->screen, PIPE_SHADER_MESH,
+                                PIPE_SHADER_CAP_MAX_INSTRUCTIONS) > 0) {
+      ctx->has_task_mesh_shader = TRUE;
+   }
    if (pipe->screen->get_param(pipe->screen,
                                PIPE_CAP_MAX_STREAM_OUTPUT_BUFFERS) != 0) {
       ctx->has_streamout = TRUE;
@@ -365,7 +369,7 @@ cso_unbind_context(struct cso_context *ctx)
          static void *zeros[PIPE_MAX_SAMPLERS] = { NULL };
          struct pipe_screen *scr = ctx->base.pipe->screen;
          enum pipe_shader_type sh;
-         for (sh = 0; sh < PIPE_SHADER_TYPES; sh++) {
+         for (sh = 0; sh < PIPE_SHADER_MESH_TYPES; sh++) {
             switch (sh) {
             case PIPE_SHADER_GEOMETRY:
                if (!ctx->has_geometry_shader)
@@ -378,6 +382,11 @@ cso_unbind_context(struct cso_context *ctx)
                break;
             case PIPE_SHADER_COMPUTE:
                if (!ctx->has_compute_shader)
+                  continue;
+               break;
+            case PIPE_SHADER_MESH:
+            case PIPE_SHADER_TASK:
+               if (!ctx->has_task_mesh_shader)
                   continue;
                break;
             default:
@@ -433,6 +442,10 @@ cso_unbind_context(struct cso_context *ctx)
       }
       if (ctx->has_compute_shader) {
          ctx->base.pipe->bind_compute_state(ctx->base.pipe, NULL);
+      }
+      if (ctx->has_task_mesh_shader) {
+         ctx->base.pipe->bind_ts_state(ctx->base.pipe, NULL);
+         ctx->base.pipe->bind_ms_state(ctx->base.pipe, NULL);
       }
       ctx->base.pipe->bind_vertex_elements_state(ctx->base.pipe, NULL);
 

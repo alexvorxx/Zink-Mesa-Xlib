@@ -10,6 +10,12 @@
 
 SKQP_BRANCH=android-cts-12.1_r5
 
+# hack for skqp see the clang
+pushd /usr/bin/
+ln -s ../lib/llvm-15/bin/clang clang
+ln -s ../lib/llvm-15/bin/clang++ clang++
+popd
+
 create_gn_args() {
     # gn can be configured to cross-compile skia and its tools
     # It is important to set the target_cpu to guarantee the intended target

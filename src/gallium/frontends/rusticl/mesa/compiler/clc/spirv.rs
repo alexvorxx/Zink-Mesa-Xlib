@@ -48,11 +48,13 @@ unsafe extern "C" fn spirv_msg_callback(data: *mut c_void, msg: *const c_char) {
 
 unsafe extern "C" fn spirv_to_nir_msg_callback(
     data: *mut c_void,
-    _dbg_level: mesa_rust_gen::nir_spirv_debug_level,
+    dbg_level: nir_spirv_debug_level,
     _offset: usize,
     msg: *const c_char,
 ) {
-    callback_impl(data, msg);
+    if dbg_level >= nir_spirv_debug_level::NIR_SPIRV_DEBUG_LEVEL_WARNING {
+        callback_impl(data, msg);
+    }
 }
 
 fn create_clc_logger(msgs: &mut Vec<String>) -> clc_logger {

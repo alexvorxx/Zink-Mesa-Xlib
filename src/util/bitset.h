@@ -91,15 +91,15 @@ __bitset_not(BITSET_WORD *x, unsigned n)
 
 #define BITSET_AND(r, x, y)   \
    do { \
-      assert(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
-      assert(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
       __bitset_and(r, x, y, ARRAY_SIZE(r)); \
    } while (0)
 
 #define BITSET_OR(r, x, y)   \
    do { \
-      assert(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
-      assert(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
       __bitset_or(r, x, y, ARRAY_SIZE(r)); \
    } while (0)
 

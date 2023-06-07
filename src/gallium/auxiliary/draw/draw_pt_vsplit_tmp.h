@@ -205,7 +205,7 @@ CONCAT2(vsplit_segment_fan_, ELT_TYPE)(struct vsplit_frontend *vsplit,
 
 #define LOCAL_VARS                                                         \
    struct vsplit_frontend *vsplit = (struct vsplit_frontend *) frontend;   \
-   const enum pipe_prim_type prim = vsplit->prim;                          \
+   const enum mesa_prim prim = vsplit->prim;                          \
    const unsigned max_count_simple = vsplit->segment_size;                 \
    const unsigned max_count_loop = vsplit->segment_size - 1;               \
    const unsigned max_count_fan = vsplit->segment_size;
@@ -274,7 +274,7 @@ vsplit_segment_fan_linear(struct vsplit_frontend *vsplit, unsigned flags,
 
 #define LOCAL_VARS                                                         \
    struct vsplit_frontend *vsplit = (struct vsplit_frontend *) frontend;   \
-   const enum pipe_prim_type prim = vsplit->prim;                          \
+   const enum mesa_prim prim = vsplit->prim;                          \
    const unsigned max_count_simple = vsplit->max_vertices;                 \
    const unsigned max_count_loop = vsplit->segment_size - 1;               \
    const unsigned max_count_fan = vsplit->segment_size;

@@ -699,7 +699,11 @@ VkResult pvr_srv_winsys_render_submit(
    VkResult result;
 
    pvr_srv_geometry_cmd_init(submit_info, sync_prim, &geom_cmd, dev_info);
-   pvr_srv_fragment_cmd_init(submit_info, &frag_cmd, dev_info);
+
+   if (submit_info->run_frag)
+      pvr_srv_fragment_cmd_init(submit_info, &frag_cmd, dev_info);
+   else
+      memset(&frag_cmd, 0, sizeof(frag_cmd));
 
    if (submit_info->geometry.wait) {
       struct pvr_srv_sync *srv_wait_sync =

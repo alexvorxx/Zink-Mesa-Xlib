@@ -64,6 +64,9 @@ spirv_to_nir_options = {
 
    .min_ubo_alignment = 256, /* D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT */
    .min_ssbo_alignment = 16, /* D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT */
+
+   .mediump_16bit_alu = true,
+   .mediump_16bit_derivatives = true,
 };
 
 const struct spirv_to_nir_options*
@@ -729,7 +732,8 @@ write_pntc_with_pos(nir_builder *b, nir_instr *instr, void *_data)
                                                              nir_channel(b, load_desc, 0),
                                                              nir_imm_int(b, offset), 4, 32, 16),
                                          0x6);
-   nir_ssa_def *point_center_in_clip = nir_fmul(b, nir_channels(b, pos, 0x3), nir_frcp(b, nir_channel(b, pos, 3)));
+   nir_ssa_def *point_center_in_clip = nir_fmul(b, nir_trim_vector(b, pos, 2),
+                                                nir_frcp(b, nir_channel(b, pos, 3)));
    nir_ssa_def *point_center =
       nir_fmul(b, nir_fadd_imm(b,
                                nir_fmul(b, point_center_in_clip,
@@ -790,10 +794,10 @@ lower_pntc_read(nir_builder *b, nir_instr *instr, void *data)
    else
       pos = nir_interp_deref_at_offset(b, 4, 32,
                                        &nir_build_deref_var(b, pos_var)->dest.ssa,
-                                       nir_vec2(b, nir_imm_float(b, 0), nir_imm_float(b, 0)));
+                                       nir_replicate(b, nir_imm_float(b, 0), 2));
 
    nir_ssa_def *pntc = nir_fadd_imm(b,
-                                    nir_fsub(b, nir_channels(b, pos, 0x3), nir_channels(b, point_center, 0x3)),
+                                    nir_fsub(b, nir_trim_vector(b, pos, 2), nir_trim_vector(b, point_center, 2)),
                                     0.5);
    nir_ssa_def_rewrite_uses_after(point_center, pntc, pntc->parent_instr);
    return true;
@@ -1025,9 +1029,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
       NIR_PASS_V(nir, nir_lower_discard_or_demote, nir->info.use_legacy_math_rules);
 
       NIR_PASS_V(nir, dxil_nir_lower_discard_and_terminate);
-      /* Remove single-source phis now that returns have been inserted, otherwise
-       * lowering returns might not behave correctly. */
-      NIR_PASS_V(nir, nir_opt_remove_phis);
       NIR_PASS_V(nir, nir_lower_returns);
       NIR_PASS_V(nir, dxil_nir_lower_sample_pos);
       NIR_PASS_V(nir, nir_lower_fragcoord_wtrans);

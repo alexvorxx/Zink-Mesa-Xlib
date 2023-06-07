@@ -1,25 +1,7 @@
 /*
  * Copyright 2013 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 /* Resource binding slots and sampler states (each described with 8 or
@@ -346,6 +328,24 @@ void si_set_mutable_tex_desc_fields(struct si_screen *sscreen, struct si_texture
          state[3] |= S_00A00C_SW_MODE(tex->surface.u.gfx9.swizzle_mode);
       }
 
+      /* GFX10.3+ can set a custom pitch for 1D and 2D non-array, but it must be a multiple
+       * of 256B. Only set it for 2D linear for multi-GPU interop.
+       */
+      if (sscreen->info.gfx_level >= GFX10_3 &&
+          (tex->buffer.b.b.target == PIPE_TEXTURE_2D ||
+           tex->buffer.b.b.target == PIPE_TEXTURE_RECT) &&
+          tex->surface.is_linear) {
+         assert((tex->surface.u.gfx9.surf_pitch * tex->surface.bpe) % 256 == 0);
+         unsigned pitch = tex->surface.u.gfx9.surf_pitch;
+
+         /* Subsampled images have the pitch in the units of blocks. */
+         if (tex->surface.blk_w == 2)
+            pitch *= 2;
+
+         state[4] |= S_00A010_DEPTH(pitch - 1) | /* DEPTH contains low bits of PITCH. */
+                     S_00A010_PITCH_MSB((pitch - 1) >> 13);
+      }
+
       if (meta_va) {
          struct gfx9_surf_meta_flags meta = {
             .rb_aligned = 1,
@@ -496,7 +496,9 @@ static void si_set_sampler_view_desc(struct si_context *sctx, struct si_sampler_
 
 static bool color_needs_decompression(struct si_texture *tex)
 {
-   if (tex->is_depth)
+   struct si_screen *sscreen = (struct si_screen *)tex->buffer.b.b.screen;
+
+   if (sscreen->info.gfx_level >= GFX11 || tex->is_depth)
       return false;
 
    return tex->surface.fmask_size ||
@@ -1640,6 +1642,8 @@ static void si_resident_handles_update_needs_color_decompress(struct si_context 
  */
 void si_update_needs_color_decompress_masks(struct si_context *sctx)
 {
+   assert(sctx->gfx_level < GFX11);
+
    for (int i = 0; i < SI_NUM_SHADERS; ++i) {
       si_samplers_update_needs_color_decompress_mask(&sctx->samplers[i]);
       si_images_update_needs_color_decompress_mask(&sctx->images[i]);

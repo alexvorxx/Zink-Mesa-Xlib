@@ -701,7 +701,7 @@ VkResult pvr_add_query_program(struct pvr_cmd_buffer *cmd_buffer,
              PVR_COPY_QUERY_POOL_RESULTS_COUNT);
 
       /* Assert if no memory is bound to destination buffer. */
-      assert(buffer->dev_addr.addr == 0);
+      assert(buffer->dev_addr.addr);
 
       addr = buffer->dev_addr;
       addr.addr += query_info->copy_query_results.dst_offset;

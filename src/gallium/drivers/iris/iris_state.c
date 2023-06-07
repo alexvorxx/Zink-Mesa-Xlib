@@ -184,27 +184,27 @@ UNUSED static void pipe_asserts()
 }
 
 static unsigned
-translate_prim_type(enum pipe_prim_type prim, uint8_t verts_per_patch)
+translate_prim_type(enum mesa_prim prim, uint8_t verts_per_patch)
 {
    static const unsigned map[] = {
-      [PIPE_PRIM_POINTS]                   = _3DPRIM_POINTLIST,
-      [PIPE_PRIM_LINES]                    = _3DPRIM_LINELIST,
-      [PIPE_PRIM_LINE_LOOP]                = _3DPRIM_LINELOOP,
-      [PIPE_PRIM_LINE_STRIP]               = _3DPRIM_LINESTRIP,
-      [PIPE_PRIM_TRIANGLES]                = _3DPRIM_TRILIST,
-      [PIPE_PRIM_TRIANGLE_STRIP]           = _3DPRIM_TRISTRIP,
-      [PIPE_PRIM_TRIANGLE_FAN]             = _3DPRIM_TRIFAN,
-      [PIPE_PRIM_QUADS]                    = _3DPRIM_QUADLIST,
-      [PIPE_PRIM_QUAD_STRIP]               = _3DPRIM_QUADSTRIP,
-      [PIPE_PRIM_POLYGON]                  = _3DPRIM_POLYGON,
-      [PIPE_PRIM_LINES_ADJACENCY]          = _3DPRIM_LINELIST_ADJ,
-      [PIPE_PRIM_LINE_STRIP_ADJACENCY]     = _3DPRIM_LINESTRIP_ADJ,
-      [PIPE_PRIM_TRIANGLES_ADJACENCY]      = _3DPRIM_TRILIST_ADJ,
-      [PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY] = _3DPRIM_TRISTRIP_ADJ,
-      [PIPE_PRIM_PATCHES]                  = _3DPRIM_PATCHLIST_1 - 1,
+      [MESA_PRIM_POINTS]                   = _3DPRIM_POINTLIST,
+      [MESA_PRIM_LINES]                    = _3DPRIM_LINELIST,
+      [MESA_PRIM_LINE_LOOP]                = _3DPRIM_LINELOOP,
+      [MESA_PRIM_LINE_STRIP]               = _3DPRIM_LINESTRIP,
+      [MESA_PRIM_TRIANGLES]                = _3DPRIM_TRILIST,
+      [MESA_PRIM_TRIANGLE_STRIP]           = _3DPRIM_TRISTRIP,
+      [MESA_PRIM_TRIANGLE_FAN]             = _3DPRIM_TRIFAN,
+      [MESA_PRIM_QUADS]                    = _3DPRIM_QUADLIST,
+      [MESA_PRIM_QUAD_STRIP]               = _3DPRIM_QUADSTRIP,
+      [MESA_PRIM_POLYGON]                  = _3DPRIM_POLYGON,
+      [MESA_PRIM_LINES_ADJACENCY]          = _3DPRIM_LINELIST_ADJ,
+      [MESA_PRIM_LINE_STRIP_ADJACENCY]     = _3DPRIM_LINESTRIP_ADJ,
+      [MESA_PRIM_TRIANGLES_ADJACENCY]      = _3DPRIM_TRILIST_ADJ,
+      [MESA_PRIM_TRIANGLE_STRIP_ADJACENCY] = _3DPRIM_TRISTRIP_ADJ,
+      [MESA_PRIM_PATCHES]                  = _3DPRIM_PATCHLIST_1 - 1,
    };
 
-   return map[prim] + (prim == PIPE_PRIM_PATCHES ? verts_per_patch : 0);
+   return map[prim] + (prim == MESA_PRIM_PATCHES ? verts_per_patch : 0);
 }
 
 static unsigned
@@ -384,6 +384,20 @@ emit_state(struct iris_batch *batch,
 static void
 flush_before_state_base_change(struct iris_batch *batch)
 {
+   /* Wa_14014427904 - We need additional invalidate/flush when
+    * emitting NP state commands with ATS-M in compute mode.
+    */
+   bool atsm_compute = intel_device_info_is_atsm(batch->screen->devinfo) &&
+                       batch->name == IRIS_BATCH_COMPUTE;
+   uint32_t np_state_wa_bits =
+      PIPE_CONTROL_CS_STALL |
+      PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+      PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+      PIPE_CONTROL_UNTYPED_DATAPORT_CACHE_FLUSH |
+      PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+      PIPE_CONTROL_INSTRUCTION_INVALIDATE |
+      PIPE_CONTROL_FLUSH_HDC;
+
    /* Flush before emitting STATE_BASE_ADDRESS.
     *
     * This isn't documented anywhere in the PRM.  However, it seems to be
@@ -407,6 +421,7 @@ flush_before_state_base_change(struct iris_batch *batch)
     */
    iris_emit_end_of_pipe_sync(batch,
                               "change STATE_BASE_ADDRESS (flushes)",
+                              atsm_compute ? np_state_wa_bits : 0 |
                               PIPE_CONTROL_RENDER_TARGET_FLUSH |
                               PIPE_CONTROL_DEPTH_CACHE_FLUSH |
                               PIPE_CONTROL_DATA_CACHE_FLUSH);
@@ -617,6 +632,31 @@ iris_copy_mem_mem(struct iris_batch *batch,
    }
 
    iris_batch_sync_region_end(batch);
+}
+
+static void
+iris_rewrite_compute_walker_pc(struct iris_batch *batch,
+                               uint32_t *walker,
+                               struct iris_bo *bo,
+                               uint32_t offset)
+{
+#if GFX_VERx10 >= 125
+   struct iris_screen *screen = batch->screen;
+   struct iris_address addr = rw_bo(bo, offset, IRIS_DOMAIN_OTHER_WRITE);
+
+   uint32_t dwords[GENX(COMPUTE_WALKER_length)];
+
+   _iris_pack_command(batch, GENX(COMPUTE_WALKER), dwords, cw) {
+      cw.PostSync.Operation          = WriteTimestamp;
+      cw.PostSync.DestinationAddress = addr;
+      cw.PostSync.MOCS               = iris_mocs(NULL, &screen->isl_dev, 0);
+   }
+
+   for (uint32_t i = 0; i < GENX(COMPUTE_WALKER_length); i++)
+      walker[i] |= dwords[i];
+#else
+   unreachable("Unsupported");
+#endif
 }
 
 static void
@@ -4276,17 +4316,6 @@ iris_create_so_decl_list(const struct pipe_stream_output_info *info,
       sol.Buffer1SurfacePitch = 4 * info->stride[1];
       sol.Buffer2SurfacePitch = 4 * info->stride[2];
       sol.Buffer3SurfacePitch = 4 * info->stride[3];
-
-#if INTEL_NEEDS_WA_14017076903
-      /* Wa_14017076903 : SOL should be programmed to force the
-       * rendering to be enabled.
-       *
-       * This fixes a rare case where SOL must render to get correct
-       * occlusion query results even when no PS and depth buffers are
-       * bound.
-       */
-      sol.ForceRendering = Force_on;
-#endif
    }
 
    iris_pack_command(GENX(3DSTATE_SO_DECL_LIST), so_decl_map, list) {
@@ -4491,7 +4520,7 @@ iris_is_drawing_points(const struct iris_context *ice)
          (void *) ice->shaders.prog[MESA_SHADER_TESS_EVAL]->prog_data;
       return tes_data->output_topology == BRW_TESS_OUTPUT_TOPOLOGY_POINT;
    } else {
-      return ice->state.prim_mode == PIPE_PRIM_POINTS;
+      return ice->state.prim_mode == MESA_PRIM_POINTS;
    }
 }
 
@@ -4833,9 +4862,9 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
       STATIC_ASSERT(TEDMODE_OFF == 0);
-      if (intel_needs_workaround(devinfo, 14015297576)) {
+      if (intel_needs_workaround(devinfo, 14015055625)) {
          te.TessellationDistributionMode = TEDMODE_OFF;
-      } else if (intel_needs_workaround(devinfo, 22012785325)) {
+      } else if (intel_needs_workaround(devinfo, 22012699309)) {
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
       } else {
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
@@ -6104,24 +6133,24 @@ iris_preemption_streamout_wa(struct iris_context *ice,
 }
 
 static void
-shader_program_needs_wa_14015297576(struct iris_context *ice,
+shader_program_needs_wa_14015055625(struct iris_context *ice,
                                     struct iris_batch *batch,
                                     const struct brw_stage_prog_data *prog_data,
                                     gl_shader_stage stage,
-                                    bool *program_needs_wa_14015297576)
+                                    bool *program_needs_wa_14015055625)
 {
-   if (!intel_needs_workaround(batch->screen->devinfo, 14015297576))
+   if (!intel_needs_workaround(batch->screen->devinfo, 14015055625))
       return;
 
    switch (stage) {
    case MESA_SHADER_TESS_CTRL: {
       struct brw_tcs_prog_data *tcs_prog_data = (void *) prog_data;
-      *program_needs_wa_14015297576 |= tcs_prog_data->include_primitive_id;
+      *program_needs_wa_14015055625 |= tcs_prog_data->include_primitive_id;
       break;
    }
    case MESA_SHADER_TESS_EVAL: {
       struct brw_tes_prog_data *tes_prog_data = (void *) prog_data;
-      *program_needs_wa_14015297576 |= tes_prog_data->include_primitive_id;
+      *program_needs_wa_14015055625 |= tes_prog_data->include_primitive_id;
       break;
    }
    default:
@@ -6133,7 +6162,7 @@ shader_program_needs_wa_14015297576(struct iris_context *ice,
    const struct brw_gs_prog_data *gs_prog_data =
       gs_shader ? (void *) gs_shader->prog_data : NULL;
 
-   *program_needs_wa_14015297576 |=
+   *program_needs_wa_14015055625 |=
       gs_prog_data && gs_prog_data->include_primitive_id;
 }
 
@@ -6479,14 +6508,14 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
    }
 
-   bool program_needs_wa_14015297576 = false;
+   bool program_needs_wa_14015055625 = false;
 
-   /* Check if FS stage will use primitive ID overrides for Wa_14015297576. */
+   /* Check if FS stage will use primitive ID overrides for Wa_14015055625. */
    const struct brw_vue_map *last_vue_map =
       &brw_vue_prog_data(ice->shaders.last_vue_shader->prog_data)->vue_map;
    if ((wm_prog_data->inputs & VARYING_BIT_PRIMITIVE_ID) &&
        last_vue_map->varying_to_slot[VARYING_SLOT_PRIMITIVE_ID] == -1) {
-      program_needs_wa_14015297576 = true;
+      program_needs_wa_14015055625 = true;
    }
 
    for (int stage = 0; stage <= MESA_SHADER_FRAGMENT; stage++) {
@@ -6503,8 +6532,8 @@ iris_upload_dirty_render_state(struct iris_context *ice,
          uint32_t scratch_addr =
             pin_scratch_space(ice, batch, prog_data, stage);
 
-         shader_program_needs_wa_14015297576(ice, batch, prog_data, stage,
-                                             &program_needs_wa_14015297576);
+         shader_program_needs_wa_14015055625(ice, batch, prog_data, stage,
+                                             &program_needs_wa_14015055625);
 
          if (stage == MESA_SHADER_FRAGMENT) {
             UNUSED struct iris_rasterizer_state *cso = ice->state.cso_rast;
@@ -6563,15 +6592,15 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             iris_emit_merge(batch, shader_psx, psx_state,
                             GENX(3DSTATE_PS_EXTRA_length));
          } else if (stage == MESA_SHADER_TESS_EVAL &&
-                    intel_needs_workaround(batch->screen->devinfo, 14015297576) &&
-                    !program_needs_wa_14015297576) {
-            /* This program doesn't require Wa_14015297576, so we can enable
+                    intel_needs_workaround(batch->screen->devinfo, 14015055625) &&
+                    !program_needs_wa_14015055625) {
+            /* This program doesn't require Wa_14015055625, so we can enable
              * a Tessellation Distribution Mode.
              */
 #if GFX_VERx10 >= 125
             uint32_t te_state[GENX(3DSTATE_TE_length)] = { 0 };
             iris_pack_command(GENX(3DSTATE_TE), te_state, te) {
-               if (intel_needs_workaround(batch->screen->devinfo, 22012785325))
+               if (intel_needs_workaround(batch->screen->devinfo, 22012699309))
                   te.TessellationDistributionMode = TEDMODE_RR_STRICT;
                else
                   te.TessellationDistributionMode = TEDMODE_RR_FREE;
@@ -6692,10 +6721,8 @@ iris_upload_dirty_render_state(struct iris_context *ice,
 
 #if GFX_VERx10 >= 120
          /* Wa_16013994831 - Disable preemption. */
-         if (batch->screen->devinfo->verx10 == 120 ||
-             intel_device_info_is_dg2(batch->screen->devinfo)) {
+         if (intel_needs_workaround(batch->screen->devinfo, 16013994831))
             iris_preemption_streamout_wa(ice, batch, false);
-         }
 #endif
 
          uint32_t dynamic_sol[GENX(3DSTATE_STREAMOUT_length)];
@@ -6706,6 +6733,41 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             sol.RenderingDisable = cso_rast->rasterizer_discard &&
                                    !ice->state.prims_generated_query_active;
             sol.ReorderMode = cso_rast->flatshade_first ? LEADING : TRAILING;
+
+
+#if INTEL_NEEDS_WA_14017076903
+            /* Wa_14017076903 :
+             *
+             * SKL PRMs, Volume 7: 3D-Media-GPGPU, Stream Output Logic (SOL) Stage:
+             *
+             * SOL_INT::Render_Enable =
+             *   (3DSTATE_STREAMOUT::Force_Rending == Force_On) ||
+             *   (
+             *     (3DSTATE_STREAMOUT::Force_Rending != Force_Off) &&
+             *     !(3DSTATE_GS::Enable && 3DSTATE_GS::Output Vertex Size == 0) &&
+             *     !3DSTATE_STREAMOUT::API_Render_Disable &&
+             *     (
+             *       3DSTATE_DEPTH_STENCIL_STATE::Stencil_TestEnable ||
+             *       3DSTATE_DEPTH_STENCIL_STATE::Depth_TestEnable ||
+             *       3DSTATE_DEPTH_STENCIL_STATE::Depth_WriteEnable ||
+             *       3DSTATE_PS_EXTRA::PS_Valid ||
+             *       3DSTATE_WM::Legacy Depth_Buffer_Clear ||
+             *       3DSTATE_WM::Legacy Depth_Buffer_Resolve_Enable ||
+             *       3DSTATE_WM::Legacy Hierarchical_Depth_Buffer_Resolve_Enable
+             *     )
+             *   )
+             *
+             * If SOL_INT::Render_Enable is false, the SO stage will not forward any
+             * topologies down the pipeline. Which is not what we want for occlusion
+             * queries.
+             *
+             * Here we force rendering to get SOL_INT::Render_Enable when occlusion
+             * queries are active.
+             */
+            const struct iris_rasterizer_state *cso_rast = ice->state.cso_rast;
+            if (!cso_rast->rasterizer_discard && ice->state.occlusion_query_active)
+               sol.ForceRendering = Force_on;
+#endif
          }
 
          assert(ice->state.streamout);
@@ -7289,15 +7351,15 @@ flush_vbos(struct iris_context *ice, struct iris_batch *batch)
 }
 
 static bool
-point_or_line_list(enum pipe_prim_type prim_type)
+point_or_line_list(enum mesa_prim prim_type)
 {
    switch (prim_type) {
-   case PIPE_PRIM_POINTS:
-   case PIPE_PRIM_LINES:
-   case PIPE_PRIM_LINE_STRIP:
-   case PIPE_PRIM_LINES_ADJACENCY:
-   case PIPE_PRIM_LINE_STRIP_ADJACENCY:
-   case PIPE_PRIM_LINE_LOOP:
+   case MESA_PRIM_POINTS:
+   case MESA_PRIM_LINES:
+   case MESA_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINES_ADJACENCY:
+   case MESA_PRIM_LINE_STRIP_ADJACENCY:
+   case MESA_PRIM_LINE_LOOP:
       return true;
    default:
       return false;
@@ -7351,11 +7413,11 @@ iris_upload_render_state(struct iris_context *ice,
       batch->contains_draw_with_next_seqno = true;
    }
 
-   /* Wa_1409433168 - Send HS state for every primitive on gfx11.
+   /* Wa_1306463417 - Send HS state for every primitive on gfx11.
     * Wa_16011107343 (same for gfx12)
     * We implement this by setting TCS dirty on each draw.
     */
-   if ((INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343) &&
+   if ((INTEL_NEEDS_WA_1306463417 || INTEL_NEEDS_WA_16011107343) &&
        ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
       ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TCS;
    }
@@ -7613,7 +7675,10 @@ iris_upload_compute_walker(struct iris_context *ice,
 
    iris_measure_snapshot(ice, batch, INTEL_SNAPSHOT_COMPUTE, NULL, NULL, NULL);
 
-   iris_emit_cmd(batch, GENX(COMPUTE_WALKER), cw) {
+   ice->utrace.last_compute_walker =
+      iris_emit_dwords(batch, GENX(COMPUTE_WALKER_length));
+   _iris_pack_command(batch, GENX(COMPUTE_WALKER),
+                      ice->utrace.last_compute_walker, cw) {
       cw.IndirectParameterEnable        = grid->indirect;
       cw.SIMDSize                       = dispatch.simd_size / 16;
       cw.LocalXMaximum                  = grid->block[0] - 1;
@@ -8700,7 +8765,7 @@ gfx9_toggle_preemption(struct iris_context *ice,
     *    "WA: Disable mid-draw preemption when draw-call is a linestrip_adj
     *     and GS is enabled."
     */
-   if (draw->mode == PIPE_PRIM_LINE_STRIP_ADJACENCY &&
+   if (draw->mode == MESA_PRIM_LINE_STRIP_ADJACENCY &&
        ice->shaders.prog[MESA_SHADER_GEOMETRY])
       object_preemption = false;
 
@@ -8713,7 +8778,7 @@ gfx9_toggle_preemption(struct iris_context *ice,
     *
     *     WA: Disable mid-draw preemption when draw-call has a tri-fan."
     */
-   if (draw->mode == PIPE_PRIM_TRIANGLE_FAN)
+   if (draw->mode == MESA_PRIM_TRIANGLE_FAN)
       object_preemption = false;
 
    /* WaDisableMidObjectPreemptionForLineLoop
@@ -8723,7 +8788,7 @@ gfx9_toggle_preemption(struct iris_context *ice,
     *     WA: Disable mid-draw preemption when the draw uses a lineloop
     *     topology."
     */
-   if (draw->mode == PIPE_PRIM_LINE_LOOP)
+   if (draw->mode == MESA_PRIM_LINE_LOOP)
       object_preemption = false;
 
    /* WA#0798
@@ -8886,6 +8951,7 @@ genX(init_screen_state)(struct iris_screen *screen)
    screen->vtbl.update_binder_address = iris_update_binder_address;
    screen->vtbl.upload_compute_state = iris_upload_compute_state;
    screen->vtbl.emit_raw_pipe_control = iris_emit_raw_pipe_control;
+   screen->vtbl.rewrite_compute_walker_pc = iris_rewrite_compute_walker_pc;
    screen->vtbl.emit_mi_report_perf_count = iris_emit_mi_report_perf_count;
    screen->vtbl.rebind_buffer = iris_rebind_buffer;
    screen->vtbl.load_register_reg32 = iris_load_register_reg32;
@@ -8968,7 +9034,7 @@ genX(init_state)(struct iris_context *ice)
 
    ice->state.sample_mask = 0xffff;
    ice->state.num_viewports = 1;
-   ice->state.prim_mode = PIPE_PRIM_MAX;
+   ice->state.prim_mode = MESA_PRIM_COUNT;
    ice->state.genx = calloc(1, sizeof(struct iris_genx_state));
    ice->draw.derived_params.drawid = -1;
 

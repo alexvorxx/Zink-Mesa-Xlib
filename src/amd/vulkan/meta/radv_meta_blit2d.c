@@ -505,7 +505,7 @@ build_nir_copy_fragment_shader(struct radv_device *device, texel_fetch_build_fun
    color_out->data.location = FRAG_RESULT_DATA0;
 
    nir_ssa_def *pos_int = nir_f2i32(&b, nir_load_var(&b, tex_pos_in));
-   nir_ssa_def *tex_pos = nir_channels(&b, pos_int, 0x3);
+   nir_ssa_def *tex_pos = nir_trim_vector(&b, pos_int, 2);
 
    nir_ssa_def *color = txf_func(&b, device, tex_pos, is_3d, is_multisampled);
    nir_store_var(&b, color_out, color, 0xf);
@@ -530,7 +530,7 @@ build_nir_copy_fragment_shader_depth(struct radv_device *device, texel_fetch_bui
    color_out->data.location = FRAG_RESULT_DEPTH;
 
    nir_ssa_def *pos_int = nir_f2i32(&b, nir_load_var(&b, tex_pos_in));
-   nir_ssa_def *tex_pos = nir_channels(&b, pos_int, 0x3);
+   nir_ssa_def *tex_pos = nir_trim_vector(&b, pos_int, 2);
 
    nir_ssa_def *color = txf_func(&b, device, tex_pos, is_3d, is_multisampled);
    nir_store_var(&b, color_out, color, 0x1);
@@ -555,7 +555,7 @@ build_nir_copy_fragment_shader_stencil(struct radv_device *device, texel_fetch_b
    color_out->data.location = FRAG_RESULT_STENCIL;
 
    nir_ssa_def *pos_int = nir_f2i32(&b, nir_load_var(&b, tex_pos_in));
-   nir_ssa_def *tex_pos = nir_channels(&b, pos_int, 0x3);
+   nir_ssa_def *tex_pos = nir_trim_vector(&b, pos_int, 2);
 
    nir_ssa_def *color = txf_func(&b, device, tex_pos, is_3d, is_multisampled);
    nir_store_var(&b, color_out, color, 0x1);

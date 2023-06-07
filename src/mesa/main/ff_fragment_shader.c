@@ -42,6 +42,7 @@
 
 #include "state_tracker/st_context.h"
 #include "state_tracker/st_program.h"
+#include "state_tracker/st_nir.h"
 
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_builtin_builder.h"
@@ -473,7 +474,7 @@ emit_combine_source(struct texenv_fragment_program *p,
 
    switch (operand) {
    case TEXENV_OPR_ONE_MINUS_COLOR:
-      return nir_fsub(p->b, nir_imm_float(p->b, 1.0), src);
+      return nir_fsub_imm(p->b, 1.0, src);
 
    case TEXENV_OPR_ALPHA:
       return src->num_components == 1 ? src : nir_channel(p->b, src, 3);
@@ -482,7 +483,7 @@ emit_combine_source(struct texenv_fragment_program *p,
       nir_ssa_def *scalar =
          src->num_components == 1 ? src : nir_channel(p->b, src, 3);
 
-      return nir_fsub(p->b, nir_imm_float(p->b, 1.0), scalar);
+      return nir_fsub_imm(p->b, 1.0, scalar);
    }
 
    case TEXENV_OPR_COLOR:
@@ -540,7 +541,7 @@ smear(nir_builder *b, nir_ssa_def *val)
    if (val->num_components != 1)
       return val;
 
-   return nir_vec4(b, val, val, val, val);
+   return nir_replicate(b, val, 4);
 }
 
 static nir_ssa_def *
@@ -798,26 +799,24 @@ load_texture(struct texenv_fragment_program *p, GLuint unit)
    }
 
    nir_deref_instr *deref = nir_build_deref_var(p->b, var);
-   tex->src[0].src = nir_src_for_ssa(&deref->dest.ssa);
-   tex->src[0].src_type = nir_tex_src_texture_deref;
-   tex->src[1].src = nir_src_for_ssa(&deref->dest.ssa);
-   tex->src[1].src_type = nir_tex_src_sampler_deref;
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                     &deref->dest.ssa);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref,
+                                     &deref->dest.ssa);
 
    nir_ssa_def *src2 =
       nir_channels(p->b, texcoord,
                    nir_component_mask(tex->coord_components));
-   tex->src[2].src_type = nir_tex_src_coord;
-   tex->src[2].src = nir_src_for_ssa(src2);
+   tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_coord, src2);
 
-   tex->src[3].src_type = nir_tex_src_projector;
-   tex->src[3].src = nir_src_for_ssa(nir_channel(p->b, texcoord, 3));
+   tex->src[3] = nir_tex_src_for_ssa(nir_tex_src_projector,
+                                     nir_channel(p->b, texcoord, 3));
 
    if (p->state->unit[unit].shadow) {
       tex->is_shadow = true;
       nir_ssa_def *src4 =
          nir_channel(p->b, texcoord, tex->coord_components);
-      tex->src[4].src_type = nir_tex_src_comparator;
-      tex->src[4].src = nir_src_for_ssa(src4);
+      tex->src[4] = nir_tex_src_for_ssa(nir_tex_src_comparator, src4);
    }
 
    nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
@@ -875,80 +874,6 @@ load_texunit_sources(struct texenv_fragment_program *p, GLuint unit)
    return GL_TRUE;
 }
 
-/**
- * Applies the fog calculations.
- *
- * This is basically like the ARB_fragment_prorgam fog options.  Note
- * that ffvertex_prog.c produces fogcoord for us when
- * GL_FOG_COORDINATE_EXT is set to GL_FRAGMENT_DEPTH_EXT.
- */
-static nir_ssa_def *
-emit_fog_instructions(struct texenv_fragment_program *p,
-                      nir_ssa_def *fragcolor)
-{
-   struct state_key *key = p->state;
-   nir_ssa_def *color, *oparams;
-   nir_ssa_def *fogcoord;
-
-   /* Temporary storage for the whole fog result.  Fog calculations
-    * only affect rgb so we're hanging on to the .a value of fragcolor
-    * this way.
-    */
-   nir_ssa_def *fog_alpha = nir_channel(p->b, fragcolor, 3);
-
-   oparams = load_state_var(p, STATE_FOG_PARAMS_OPTIMIZED,
-                            0, 0, 0,
-                            glsl_vec4_type());
-   assert(oparams);
-
-   fogcoord = load_input(p, VARYING_SLOT_FOGC, glsl_float_type());
-   assert(fogcoord);
-
-   color = load_state_var(p, STATE_FOG_COLOR,
-                          0, 0, 0,
-                          glsl_vec4_type());
-   assert(color);
-
-   nir_ssa_def *f = fogcoord;
-   switch (key->fog_mode) {
-   case FOG_LINEAR:
-      /* f = (end - z) / (end - start)
-       *
-       * gl_MesaFogParamsOptimized gives us (-1 / (end - start)) and
-       * (end / (end - start)) so we can generate a single MAD.
-       */
-      f = nir_fadd(p->b, nir_fmul(p->b, f,
-                                  nir_channel(p->b, oparams, 0)),
-                   nir_channel(p->b, oparams, 1));
-      break;
-   case FOG_EXP:
-      /* f = e^(-(density * fogcoord))
-       *
-       * gl_MesaFogParamsOptimized gives us density/ln(2) so we can
-       * use EXP2 which is generally the native instruction without
-       * having to do any further math on the fog density uniform.
-       */
-      f = nir_fmul(p->b, f, nir_channel(p->b, oparams, 2));
-      f = nir_fexp2(p->b, nir_fneg(p->b, f));
-      break;
-   case FOG_EXP2:
-      /* f = e^(-(density * fogcoord)^2)
-       *
-       * gl_MesaFogParamsOptimized gives us density/sqrt(ln(2)) so we
-       * can do this like FOG_EXP but with a squaring after the
-       * multiply by density.
-       */
-      f = nir_fmul(p->b, f, nir_channel(p->b, oparams, 3));
-      f = nir_fmul(p->b, f, f);
-      f = nir_fexp2(p->b, nir_fneg(p->b, f));
-      break;
-   }
-
-   f = nir_fsat(p->b, f);
-   nir_ssa_def *fog_rgb = nir_flrp(p->b, color, fragcolor, f);
-   return nir_vector_insert_imm(p->b, fog_rgb, fog_alpha, 3);
-}
-
 static void
 emit_instructions(struct texenv_fragment_program *p)
 {
@@ -988,10 +913,6 @@ emit_instructions(struct texenv_fragment_program *p)
       secondary = nir_vector_insert_imm(p->b, secondary,
                                         nir_imm_zero(p->b, 1, 32), 3);
       cf = nir_fadd(p->b, spec_result, secondary);
-   }
-
-   if (key->fog_mode) {
-      cf = emit_fog_instructions(p, cf);
    }
 
    const char *name =
@@ -1040,6 +961,9 @@ create_new_program(struct state_key *key,
       emit_instructions(&p);
 
    nir_validate_shader(b.shader, "after generating ff-vertex shader");
+
+   if (key->fog_mode)
+      NIR_PASS_V(b.shader, st_nir_lower_fog, key->fog_mode, p.state_params);
 
    _mesa_add_separate_state_parameters(program, p.state_params);
    _mesa_free_parameter_list(p.state_params);

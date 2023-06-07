@@ -56,12 +56,12 @@ DEBUG_GET_ONCE_BOOL_OPTION(draw_no_fse, "DRAW_NO_FSE", FALSE)
  */
 static boolean
 draw_pt_arrays(struct draw_context *draw,
-               enum pipe_prim_type prim,
+               enum mesa_prim prim,
                bool index_bias_varies,
                const struct pipe_draw_start_count_bias *draw_info,
                unsigned num_draws)
 {
-   enum pipe_prim_type out_prim = prim;
+   enum mesa_prim out_prim = prim;
 
    if (draw->gs.geometry_shader)
       out_prim = draw->gs.geometry_shader->output_primitive;
@@ -137,7 +137,7 @@ draw_pt_arrays(struct draw_context *draw,
        */
       unsigned first, incr;
 
-      if (prim == PIPE_PRIM_PATCHES) {
+      if (prim == MESA_PRIM_PATCHES) {
          first = draw->pt.vertices_per_patch;
          incr = draw->pt.vertices_per_patch;
       } else {
@@ -206,8 +206,10 @@ draw_pt_init(struct draw_context *draw)
       return FALSE;
 
 #ifdef DRAW_LLVM_AVAILABLE
-   if (draw->llvm)
+   if (draw->llvm) {
       draw->pt.middle.llvm = draw_pt_fetch_pipeline_or_emit_llvm(draw);
+      draw->pt.middle.mesh = draw_pt_mesh_pipeline_or_emit(draw);
+   }
 #endif
 
    return TRUE;
@@ -217,6 +219,11 @@ draw_pt_init(struct draw_context *draw)
 void
 draw_pt_destroy(struct draw_context *draw)
 {
+   if (draw->pt.middle.mesh) {
+      draw->pt.middle.mesh->destroy(draw->pt.middle.mesh);
+      draw->pt.middle.mesh = NULL;
+   }
+
    if (draw->pt.middle.llvm) {
       draw->pt.middle.llvm->destroy(draw->pt.middle.llvm);
       draw->pt.middle.llvm = NULL;
@@ -243,7 +250,7 @@ draw_pt_destroy(struct draw_context *draw)
  * Debug- print the first 'count' vertices.
  */
 static void
-draw_print_arrays(struct draw_context *draw, enum pipe_prim_type prim,
+draw_print_arrays(struct draw_context *draw, enum mesa_prim prim,
                   int start, uint count, int index_bias)
 {
    debug_printf("Draw arrays(prim = %u, start = %u, count = %u)\n",
@@ -624,4 +631,17 @@ draw_vbo(struct draw_context *draw,
       draw->render->pipeline_statistics(draw->render, &draw->statistics);
    }
    util_fpstate_set(fpstate);
+}
+
+/* to be called after a mesh shader is run */
+void
+draw_mesh(struct draw_context *draw,
+          struct draw_vertex_info *vert_info,
+          struct draw_prim_info *prim_info)
+{
+   struct draw_pt_middle_end *middle = draw->pt.middle.mesh;
+
+   middle->prepare(middle, 0, 0, NULL);
+
+   draw_mesh_middle_end_run(middle, vert_info, prim_info);
 }

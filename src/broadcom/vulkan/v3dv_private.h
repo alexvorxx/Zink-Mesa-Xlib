@@ -670,6 +670,8 @@ struct v3d_resource_slice {
    uint32_t offset;
    uint32_t stride;
    uint32_t padded_height;
+   uint32_t width;
+   uint32_t height;
    /* Size of a single pane of the slice.  For 3D textures, there will be
     * a number of panes equal to the minified, power-of-two-aligned
     * depth.
@@ -2277,7 +2279,7 @@ struct v3dv_pipeline {
    } va[MAX_VERTEX_ATTRIBS];
    uint32_t va_count;
 
-   enum pipe_prim_type topology;
+   enum mesa_prim topology;
 
    struct v3dv_pipeline_shared_data *shared_data;
 

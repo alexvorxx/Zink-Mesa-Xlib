@@ -1,25 +1,7 @@
 /*
  * Copyright 2020 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "si_pipe.h"
@@ -249,7 +231,7 @@ static LLVMValueRef si_nir_load_tcs_varyings(struct ac_shader_abi *abi, LLVMType
    ubyte semantic = info->input[driver_location].semantic;
    /* Load the TCS input from a VGPR. */
    unsigned func_param = ctx->args->ac.tcs_rel_ids.arg_index + 1 +
-      si_shader_io_get_unique_index(semantic, false) * 4;
+      si_shader_io_get_unique_index(semantic) * 4;
 
    LLVMValueRef value[4];
    for (unsigned i = component; i < component + num_components; i++) {
@@ -559,7 +541,7 @@ void si_llvm_ls_build_end(struct si_shader_context *ctx)
    if (shader->key.ge.opt.same_patch_vertices) {
       for (unsigned i = 0; i < info->num_outputs; i++) {
          unsigned semantic = info->output_semantic[i];
-         int param = si_shader_io_get_unique_index(semantic, false);
+         int param = si_shader_io_get_unique_index(semantic);
 
          for (unsigned chan = 0; chan < 4; chan++) {
             if (!(info->output_usagemask[i] & (1 << chan)))

@@ -285,6 +285,12 @@ index("unsigned", "flags")
 # Logical operation of an atomic intrinsic
 index("nir_atomic_op", "atomic_op")
 
+# Block identifier to push promotion
+index("unsigned", "resource_block_intel")
+
+# Various flags describing the resource access
+index("nir_resource_data_intel", "resource_access_intel")
+
 intrinsic("nop", flags=[CAN_ELIMINATE])
 
 intrinsic("convert_alu_types", dest_comp=0, src_comp=[0],
@@ -641,6 +647,9 @@ atomic3("atomic_counter_comp_swap")
 # argument with the value to be written, and image atomic operations take
 # either one or two additional scalar arguments with the same meaning as in
 # the ARB_shader_image_load_store specification.
+#
+# The last source of many image intrinsics is the LOD. This source is zero
+# unless e.g. SPV_AMD_shader_image_load_store_lod is supported.
 def image(name, src_comp=[], extra_indices=[], **kwargs):
     intrinsic("image_deref_" + name, src_comp=[-1] + src_comp,
               indices=[IMAGE_DIM, IMAGE_ARRAY, FORMAT, ACCESS] + extra_indices, **kwargs)
@@ -656,6 +665,8 @@ image("atomic",  src_comp=[4, 1, 1], dest_comp=1, extra_indices=[ATOMIC_OP])
 image("atomic_swap", src_comp=[4, 1, 1, 1], dest_comp=1, extra_indices=[ATOMIC_OP])
 image("size",    dest_comp=0, src_comp=[1], flags=[CAN_ELIMINATE, CAN_REORDER])
 image("samples", dest_comp=1, flags=[CAN_ELIMINATE, CAN_REORDER])
+image("texel_address", dest_comp=1, src_comp=[4, 1],
+      flags=[CAN_ELIMINATE, CAN_REORDER])
 # This returns true if all samples within the pixel have equal color values.
 image("samples_identical", dest_comp=1, src_comp=[4], flags=[CAN_ELIMINATE])
 # Non-uniform access is not lowered for image_descriptor_amd.
@@ -849,6 +860,8 @@ system_value("xfb_index_buffer", 1, bit_sizes=[32,64])
 
 system_value("frag_size", 2)
 system_value("frag_invocation_count", 1)
+# Whether smooth lines or polygon smoothing is enabled
+system_value("poly_line_smooth_enabled", 1, bit_sizes=[1])
 
 # System values for ray tracing.
 system_value("ray_launch_id", 3)
@@ -921,6 +934,10 @@ system_value("user_data_amd", 4)
 #
 # The vec2 value produced by these intrinsics is intended for use as the
 # barycoord source of a load_interpolated_input intrinsic.
+#
+# The vec3 variants are intended to be used for input barycentric coordinates
+# which are system values on most hardware, compared to the vec2 variants which
+# interpolates input varyings.
 
 def barycentric(name, dst_comp, src_comp=[]):
     intrinsic("load_barycentric_" + name, src_comp=src_comp, dest_comp=dst_comp,
@@ -928,13 +945,18 @@ def barycentric(name, dst_comp, src_comp=[]):
 
 # no sources.
 barycentric("pixel", 2)
+barycentric("coord_pixel", 3)
 barycentric("centroid", 2)
+barycentric("coord_centroid", 3)
 barycentric("sample", 2)
+barycentric("coord_sample", 3)
 barycentric("model", 3)
 # src[] = { sample_id }.
 barycentric("at_sample", 2, [1])
+barycentric("coord_at_sample", 3, [1])
 # src[] = { offset.xy }.
 barycentric("at_offset", 2, [2])
+barycentric("coord_at_offset", 3, [2])
 
 # Load sample position:
 #
@@ -1350,9 +1372,6 @@ store("global_amd", [1, 1], indices=[BASE, ACCESS, ALIGN_MUL, ALIGN_OFFSET, WRIT
 # Same as shared_atomic_add, but with GDS. src[] = {store_val, gds_addr, m0}
 intrinsic("gds_atomic_add_amd",  src_comp=[1, 1, 1], dest_comp=1, indices=[BASE])
 
-# src[] = { descriptor, add_value }
-intrinsic("buffer_atomic_add_amd", src_comp=[4, 1], dest_comp=1, indices=[BASE])
-
 # src[] = { sample_id, num_samples }
 intrinsic("load_sample_positions_amd", src_comp=[1, 1], dest_comp=2, flags=[CAN_ELIMINATE, CAN_REORDER])
 
@@ -1582,6 +1601,11 @@ system_value("alpha_reference_amd", 1)
 # Whether to enable barycentric optimization
 system_value("barycentric_optimize_amd", dest_comp=1, bit_sizes=[1])
 
+# Copy the input into a register which will remain valid for entire quads, even in control flow.
+# This should only be used directly for texture sources.
+intrinsic("strict_wqm_coord_amd", src_comp=[0], dest_comp=0, bit_sizes=[32], indices=[BASE],
+          flags=[CAN_ELIMINATE])
+
 # V3D-specific instrinc for tile buffer color reads.
 #
 # The hardware requires that we read the samples and components of a pixel
@@ -1684,6 +1708,17 @@ intrinsic("load_ubo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
 intrinsic("load_vbo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
           flags=[CAN_ELIMINATE, CAN_REORDER])
 
+# Write out a sample mask for a targeted subset of samples, specified in the two
+# masks. Maps to the corresponding AGX instruction, the actual workings are
+# documented elsewhere as they are too complicated for this comment.
+intrinsic("sample_mask_agx", src_comp=[1, 1])
+
+# The fixed-function sample mask specified in the API (e.g. glSampleMask)
+system_value("api_sample_mask_agx", 1, bit_sizes=[16])
+
+# Loads the sample position array as fixed point packed into a 32-bit word
+system_value("sample_positions_agx", 1, bit_sizes=[32])
+
 # Intel-specific query for loading from the brw_image_param struct passed
 # into the shader as a uniform.  The variable is a deref to the image
 # variable. The const index specifies which of the six parameters to load.
@@ -1707,6 +1742,22 @@ system_value("simd_width_intel", 1)
 # Load a relocatable 32-bit value
 intrinsic("load_reloc_const_intel", dest_comp=1, bit_sizes=[32],
           indices=[PARAM_IDX], flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# 1 component 32bit surface index that can be used for bindless or BTI heaps
+#
+# This intrinsic is used to figure out what UBOs accesses could be promoted to
+# push constants. To allow promoting a load_ubo to push constants, we need to
+# know that the surface & offset are constants. If we want to use the bindless
+# heap for this we have to build the surface index with a pushed constant for
+# the descriptor set which prevents us from doing a nir_src_is_const() check.
+# With this intrinsic, we can just check the surface_index src with
+# nir_src_is_const() and ignore set_offset.
+#
+# src[] = { set_offset, surface_index, array_index }
+intrinsic("resource_intel", dest_comp=1, bit_sizes=[32],
+          src_comp=[1, 1, 1],
+          indices=[DESC_SET, BINDING, RESOURCE_ACCESS_INTEL, RESOURCE_BLOCK_INTEL],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # 64-bit global address for a Vulkan descriptor set
 # src[0] = { set }

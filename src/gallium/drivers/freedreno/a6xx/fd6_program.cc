@@ -133,6 +133,7 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
    OUT_RING(ring, A6XX_SP_VS_PVT_MEM_PARAM_MEMSIZEPERITEM(per_fiber_size));
    if (so->pvtmem_size > 0) { /* SP_xS_PVT_MEM_ADDR */
       OUT_RELOC(ring, ctx->pvtmem[so->pvtmem_per_wave].bo, 0, 0, 0);
+      fd_ringbuffer_attach_bo(ring, ctx->pvtmem[so->pvtmem_per_wave].bo);
    } else {
       OUT_RING(ring, 0);
       OUT_RING(ring, 0);
@@ -154,6 +155,8 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
                      CP_LOAD_STATE6_0_STATE_BLOCK(sb) |
                      CP_LOAD_STATE6_0_NUM_UNIT(shader_preload_size));
    OUT_RELOC(ring, so->bo, 0, 0, 0);
+
+   fd_ringbuffer_attach_bo(ring, so->bo);
 }
 
 /**
@@ -241,8 +244,12 @@ setup_stream_out(struct fd_context *ctx, struct fd6_program_state *state,
       prog_count += end - start + 1;
    }
 
+   const bool emit_pc_so_stream_cntl =
+         ctx->screen->info->a6xx.tess_use_shared &&
+         v->type == MESA_SHADER_TESS_EVAL;
+
    unsigned sizedw = 10 + (2 * prog_count);
-   if (ctx->screen->info->a6xx.tess_use_shared)
+   if (emit_pc_so_stream_cntl)
       sizedw += 2;
 
    struct fd_ringbuffer *ring =
@@ -251,11 +258,15 @@ setup_stream_out(struct fd_context *ctx, struct fd6_program_state *state,
    OUT_PKT7(ring, CP_CONTEXT_REG_BUNCH, sizedw);
    OUT_RING(ring, REG_A6XX_VPC_SO_STREAM_CNTL);
    OUT_RING(ring,
-            A6XX_VPC_SO_STREAM_CNTL_STREAM_ENABLE(0x1) |
-               COND(strmout->stride[0] > 0, A6XX_VPC_SO_STREAM_CNTL_BUF0_STREAM(1)) |
-               COND(strmout->stride[1] > 0, A6XX_VPC_SO_STREAM_CNTL_BUF1_STREAM(1)) |
-               COND(strmout->stride[2] > 0, A6XX_VPC_SO_STREAM_CNTL_BUF2_STREAM(1)) |
-               COND(strmout->stride[3] > 0, A6XX_VPC_SO_STREAM_CNTL_BUF3_STREAM(1)));
+            A6XX_VPC_SO_STREAM_CNTL_STREAM_ENABLE(strmout->streams_written) |
+            COND(strmout->stride[0] > 0,
+                 A6XX_VPC_SO_STREAM_CNTL_BUF0_STREAM(1 + strmout->output[0].stream)) |
+            COND(strmout->stride[1] > 0,
+                 A6XX_VPC_SO_STREAM_CNTL_BUF1_STREAM(1 + strmout->output[1].stream)) |
+            COND(strmout->stride[2] > 0,
+                 A6XX_VPC_SO_STREAM_CNTL_BUF2_STREAM(1 + strmout->output[2].stream)) |
+            COND(strmout->stride[3] > 0,
+                 A6XX_VPC_SO_STREAM_CNTL_BUF3_STREAM(1 + strmout->output[3].stream)));
    OUT_RING(ring, REG_A6XX_VPC_SO_BUFFER_STRIDE(0));
    OUT_RING(ring, strmout->stride[0]);
    OUT_RING(ring, REG_A6XX_VPC_SO_BUFFER_STRIDE(1));
@@ -278,7 +289,7 @@ setup_stream_out(struct fd_context *ctx, struct fd6_program_state *state,
       first = false;
    }
 
-   if (ctx->screen->info->a6xx.tess_use_shared) {
+   if (emit_pc_so_stream_cntl) {
       /* Possibly not tess_use_shared related, but the combination of
        * tess + xfb fails some tests if we don't emit this.
        */
@@ -1067,13 +1078,13 @@ setup_stateobj(struct fd_ringbuffer *ring, struct fd_context *ctx,
 
       enum a6xx_tess_output output;
       switch (gs->gs.output_primitive) {
-      case SHADER_PRIM_POINTS:
+      case MESA_PRIM_POINTS:
          output = TESS_POINTS;
          break;
-      case SHADER_PRIM_LINE_STRIP:
+      case MESA_PRIM_LINE_STRIP:
          output = TESS_LINES;
          break;
-      case SHADER_PRIM_TRIANGLE_STRIP:
+      case MESA_PRIM_TRIANGLE_STRIP:
          output = TESS_CW_TRIS;
          break;
       default:

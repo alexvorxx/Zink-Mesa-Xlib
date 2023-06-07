@@ -736,7 +736,7 @@ v3dX(emit_state)(struct pipe_context *pctx)
                           V3D_DIRTY_PRIM_MODE)) {
                 struct v3d_streamout_stateobj *so = &v3d->streamout;
                 if (so->num_targets) {
-                        bool psiz_per_vertex = (v3d->prim_mode == PIPE_PRIM_POINTS &&
+                        bool psiz_per_vertex = (v3d->prim_mode == MESA_PRIM_POINTS &&
                                                 v3d->rasterizer->base.point_size_per_vertex);
                         struct v3d_uncompiled_shader *tf_shader =
                                 get_tf_shader(v3d);

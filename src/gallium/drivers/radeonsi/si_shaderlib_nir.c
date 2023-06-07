@@ -1,30 +1,14 @@
 /*
  * Copyright 2018 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #define AC_SURFACE_INCLUDE_NIR
 #include "ac_surface.h"
 #include "si_pipe.h"
+
+#include "nir_format_convert.h"
 
 static void *create_shader_state(struct si_context *sctx, nir_shader *nir)
 {
@@ -215,9 +199,9 @@ void *gfx9_create_clear_dcc_msaa_cs(struct si_context *sctx, struct si_texture *
 
    /* Multiply the coordinates by the DCC block size (they are DCC block coordinates). */
    coord = nir_imul(&b, coord,
-                    nir_channels(&b, nir_imm_ivec4(&b, tex->surface.u.gfx9.color.dcc_block_width,
-                                                   tex->surface.u.gfx9.color.dcc_block_height,
-                                                   tex->surface.u.gfx9.color.dcc_block_depth, 0), 0x7));
+                    nir_imm_ivec3(&b, tex->surface.u.gfx9.color.dcc_block_width,
+                                      tex->surface.u.gfx9.color.dcc_block_height,
+                                      tex->surface.u.gfx9.color.dcc_block_depth));
 
    nir_ssa_def *offset =
       ac_nir_dcc_addr_from_coord(&b, &sctx->screen->info, tex->surface.bpe,
@@ -303,25 +287,10 @@ static nir_ssa_def *convert_linear_to_srgb(nir_builder *b, nir_ssa_def *input)
    /* There are small precision differences compared to CB, so the gfx blit will return slightly
     * different results.
     */
-   nir_ssa_def *cmp[3];
-   for (unsigned i = 0; i < 3; i++)
-      cmp[i] = nir_flt(b, nir_channel(b, input, i), nir_imm_float(b, 0.0031308));
-
-   nir_ssa_def *ltvals[3];
-   for (unsigned i = 0; i < 3; i++)
-      ltvals[i] = nir_fmul(b, nir_channel(b, input, i), nir_imm_float(b, 12.92));
-
-   nir_ssa_def *gtvals[3];
-
-   for (unsigned i = 0; i < 3; i++) {
-      gtvals[i] = nir_fpow(b, nir_channel(b, input, i), nir_imm_float(b, 1.0/2.4));
-      gtvals[i] = nir_fmul(b, gtvals[i], nir_imm_float(b, 1.055));
-      gtvals[i] = nir_fsub(b, gtvals[i], nir_imm_float(b, 0.055));
-   }
 
    nir_ssa_def *comp[4];
    for (unsigned i = 0; i < 3; i++)
-      comp[i] = nir_bcsel(b, cmp[i], ltvals[i], gtvals[i]);
+      comp[i] = nir_format_linear_to_srgb(b, nir_channel(b, input, i));
    comp[3] = nir_channel(b, input, 3);
 
    return nir_vec(b, comp, 4);
@@ -505,7 +474,7 @@ void *si_create_blit_cs(struct si_context *sctx, const union si_compute_blit_sha
 
    /* Add box.xyz. */
    nir_ssa_def *coord_src = NULL, *coord_dst = NULL;
-   unpack_2x16_signed(&b, nir_channels(&b, nir_load_user_data_amd(&b), 0x7),
+   unpack_2x16_signed(&b, nir_trim_vector(&b, nir_load_user_data_amd(&b), 3),
                       &coord_src, &coord_dst);
    coord_dst = nir_iadd(&b, coord_dst, dst_xyz);
    coord_src = nir_iadd(&b, coord_src, src_xyz);

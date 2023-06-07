@@ -33,7 +33,6 @@
 #include "util/list.h"
 #include "pipe/p_compiler.h"
 #include "pipe/p_state.h"
-#include "tgsi/tgsi_scan.h" /* for tgsi_shader_info */
 #include "gallivm/lp_bld_sample.h" /* for struct lp_sampler_static_state */
 #include "gallivm/lp_bld_jit_sample.h"
 #include "gallivm/lp_bld_tgsi.h" /* for lp_tgsi_info */

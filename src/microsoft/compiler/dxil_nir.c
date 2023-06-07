@@ -1806,11 +1806,11 @@ lower_fquantize2f16(struct nir_builder *b, nir_instr *instr, void *data)
       nir_ssa_for_src(b, alu->src[0].src, nir_src_num_components(alu->src[0].src));
 
    nir_ssa_def *neg_inf_cond =
-      nir_flt(b, src, nir_imm_float(b, -65504.0f));
+      nir_flt_imm(b, src, -65504.0f);
    nir_ssa_def *pos_inf_cond =
       nir_flt(b, nir_imm_float(b, 65504.0f), src);
    nir_ssa_def *zero_cond =
-      nir_flt(b, nir_fabs(b, src), nir_imm_float(b, ldexpf(1.0, -14)));
+      nir_flt_imm(b, nir_fabs(b, src), ldexpf(1.0, -14));
    nir_ssa_def *zero = nir_iand_imm(b, src, 1 << 31);
    nir_ssa_def *round = nir_iand_imm(b, src, ~BITFIELD_MASK(13));
 
@@ -1834,11 +1834,10 @@ fix_io_uint_deref_types(struct nir_builder *builder, nir_instr *instr, void *dat
       return false;
 
    nir_deref_instr *deref = nir_instr_as_deref(instr);
-   nir_variable *var =
-      deref->deref_type == nir_deref_type_var ? deref->var : NULL;
+   nir_variable *var = nir_deref_instr_get_variable(deref);
 
    if (var == data) {
-      deref->type = var->type;
+      deref->type = glsl_type_wrap_in_arrays(glsl_uint_type(), deref->type);
       return true;
    }
 
@@ -1851,11 +1850,12 @@ fix_io_uint_type(nir_shader *s, nir_variable_mode modes, int slot)
    nir_variable *fixed_var = NULL;
    nir_foreach_variable_with_modes(var, s, modes) {
       if (var->data.location == slot) {
-         if (var->type == glsl_uint_type())
+         const struct glsl_type *plain_type = glsl_without_array(var->type);
+         if (plain_type == glsl_uint_type())
             return false;
 
-         assert(var->type == glsl_int_type());
-         var->type = glsl_uint_type();
+         assert(plain_type == glsl_int_type());
+         var->type = glsl_type_wrap_in_arrays(glsl_uint_type(), var->type);
          fixed_var = var;
          break;
       }
@@ -2646,4 +2646,152 @@ dxil_nir_analyze_io_dependencies(struct dxil_module *mod, nir_shader *s)
       /* TODO */
    }
    return any_bits_set;
+}
+
+static enum pipe_format
+get_format_for_var(unsigned num_comps, enum glsl_base_type sampled_type)
+{
+   switch (sampled_type) {
+   case GLSL_TYPE_INT:
+   case GLSL_TYPE_INT64:
+   case GLSL_TYPE_INT16:
+      switch (num_comps) {
+      case 1: return PIPE_FORMAT_R32_SINT;
+      case 2: return PIPE_FORMAT_R32G32_SINT;
+      case 3: return PIPE_FORMAT_R32G32B32_SINT;
+      case 4: return PIPE_FORMAT_R32G32B32A32_SINT;
+      default: unreachable("Invalid num_comps");
+      }
+   case GLSL_TYPE_UINT:
+   case GLSL_TYPE_UINT64:
+   case GLSL_TYPE_UINT16:
+      switch (num_comps) {
+      case 1: return PIPE_FORMAT_R32_UINT;
+      case 2: return PIPE_FORMAT_R32G32_UINT;
+      case 3: return PIPE_FORMAT_R32G32B32_UINT;
+      case 4: return PIPE_FORMAT_R32G32B32A32_UINT;
+      default: unreachable("Invalid num_comps");
+      }
+   case GLSL_TYPE_FLOAT:
+   case GLSL_TYPE_FLOAT16:
+   case GLSL_TYPE_DOUBLE:
+      switch (num_comps) {
+      case 1: return PIPE_FORMAT_R32_FLOAT;
+      case 2: return PIPE_FORMAT_R32G32_FLOAT;
+      case 3: return PIPE_FORMAT_R32G32B32_FLOAT;
+      case 4: return PIPE_FORMAT_R32G32B32A32_FLOAT;
+      default: unreachable("Invalid num_comps");
+      }
+   default: unreachable("Invalid sampler return type");
+   }
+}
+
+static unsigned
+aoa_size(const struct glsl_type *type)
+{
+   return glsl_type_is_array(type) ? glsl_get_aoa_size(type) : 1;
+}
+
+static bool
+guess_image_format_for_var(nir_shader *s, nir_variable *var)
+{
+   const struct glsl_type *base_type = glsl_without_array(var->type);
+   if (!glsl_type_is_image(base_type))
+      return false;
+   if (var->data.image.format != PIPE_FORMAT_NONE)
+      return false;
+
+   nir_foreach_function(func, s) {
+      if (!func->impl)
+         continue;
+      nir_foreach_block(block, func->impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+            switch (intr->intrinsic) {
+            case nir_intrinsic_image_deref_load:
+            case nir_intrinsic_image_deref_store:
+            case nir_intrinsic_image_deref_atomic:
+            case nir_intrinsic_image_deref_atomic_swap:
+               if (nir_deref_instr_get_variable(nir_src_as_deref(intr->src[0])) != var)
+                  continue;
+               break;
+            case nir_intrinsic_image_load:
+            case nir_intrinsic_image_store:
+            case nir_intrinsic_image_atomic:
+            case nir_intrinsic_image_atomic_swap: {
+               unsigned binding = nir_src_as_uint(intr->src[0]);
+               if (binding < var->data.binding ||
+                   binding >= var->data.binding + aoa_size(var->type))
+                  continue;
+               break;
+               }
+            default:
+               continue;
+            }
+            break;
+
+            switch (intr->intrinsic) {
+            case nir_intrinsic_image_deref_load:
+            case nir_intrinsic_image_load:
+            case nir_intrinsic_image_deref_store:
+            case nir_intrinsic_image_store:
+               /* Increase unknown formats up to 4 components if a 4-component accessor is used */
+               if (intr->num_components > util_format_get_nr_components(var->data.image.format))
+                  var->data.image.format = get_format_for_var(intr->num_components, glsl_get_sampler_result_type(base_type));
+               break;
+            default:
+               /* If an atomic is used, the image format must be 1-component; return immediately */
+               var->data.image.format = get_format_for_var(1, glsl_get_sampler_result_type(base_type));
+               return true;
+            }
+         }
+      }
+   }
+   /* Dunno what it is, assume 4-component */
+   if (var->data.image.format == PIPE_FORMAT_NONE)
+      var->data.image.format = get_format_for_var(4, glsl_get_sampler_result_type(base_type));
+   return true;
+}
+
+static bool
+update_intrinsic_formats(nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   if (!nir_intrinsic_has_format(intr))
+      return false;
+   nir_deref_instr *deref = nir_src_as_deref(intr->src[0]);
+   if (deref) {
+      nir_variable *var = nir_deref_instr_get_variable(deref);
+      if (var)
+         nir_intrinsic_set_format(intr, var->data.image.format);
+      return var != NULL;
+   }
+
+   if (!nir_intrinsic_has_range_base(intr))
+      return false;
+
+   unsigned binding = nir_src_as_uint(intr->src[0]);
+   nir_foreach_variable_with_modes(var, b->shader, nir_var_image) {
+      if (var->data.binding <= binding &&
+          var->data.binding + aoa_size(var->type) > binding) {
+         nir_intrinsic_set_format(intr, var->data.image.format);
+         return true;
+      }
+   }
+   return false;
+}
+
+bool
+dxil_nir_guess_image_formats(nir_shader *s)
+{
+   bool progress = false;
+   nir_foreach_variable_with_modes(var, s, nir_var_image) {
+      progress |= guess_image_format_for_var(s, var);
+   }
+   nir_shader_instructions_pass(s, update_intrinsic_formats, nir_metadata_all, NULL);
+   return progress;
 }

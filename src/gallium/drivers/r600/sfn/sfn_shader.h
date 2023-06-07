@@ -317,9 +317,10 @@ private:
    bool emit_local_store(nir_intrinsic_instr *intr);
    bool emit_local_load(nir_intrinsic_instr *instr);
    bool emit_load_tcs_param_base(nir_intrinsic_instr *instr, int offset);
-   bool emit_barrier(nir_intrinsic_instr *intr);
+   bool emit_group_barrier(nir_intrinsic_instr *intr);
    bool emit_shader_clock(nir_intrinsic_instr *instr);
    bool emit_wait_ack();
+   bool emit_scoped_barrier(nir_intrinsic_instr *instr);
 
    bool equal_to(const Shader& other) const;
    void finalize();
@@ -396,6 +397,7 @@ private:
 
    InstructionChain m_chain_instr;
    std::list<Instr *, Allocator<Instr *>> m_loops;
+   int m_control_flow_depth{0};
 };
 
 std::pair<unsigned, unsigned>

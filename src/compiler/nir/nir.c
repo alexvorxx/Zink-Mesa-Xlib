@@ -324,6 +324,21 @@ nir_local_variable_create(nir_function_impl *impl,
 }
 
 nir_variable *
+nir_state_variable_create(nir_shader *shader,
+                          const struct glsl_type *type,
+                          const char *name,
+                          const gl_state_index16 tokens[STATE_LENGTH])
+{
+   nir_variable *var = nir_variable_create(shader, nir_var_uniform, type, name);
+   var->num_state_slots = 1;
+   var->state_slots = rzalloc_array(var, nir_state_slot, 1);
+   memcpy(var->state_slots[0].tokens, tokens,
+          sizeof(var->state_slots[0].tokens));
+   shader->num_uniforms++;
+   return var;
+}
+
+nir_variable *
 nir_create_variable_with_location(nir_shader *shader, nir_variable_mode mode, int location,
                                   const struct glsl_type *type)
 {
@@ -1785,7 +1800,6 @@ nir_instr_rewrite_dest(nir_instr *instr, nir_dest *dest, nir_dest new_dest)
       src_add_all_uses(dest->reg.indirect, instr, NULL);
 }
 
-/* note: does *not* take ownership of 'name' */
 void
 nir_ssa_def_init(nir_instr *instr, nir_ssa_def *def,
                  unsigned num_components,
@@ -1809,7 +1823,6 @@ nir_ssa_def_init(nir_instr *instr, nir_ssa_def *def,
    }
 }
 
-/* note: does *not* take ownership of 'name' */
 void
 nir_ssa_dest_init(nir_instr *instr, nir_dest *dest,
                  unsigned num_components, unsigned bit_size)
@@ -2943,6 +2956,22 @@ nir_binding nir_chase_binding(nir_src rsrc)
    nir_intrinsic_instr *intrin = nir_src_as_intrinsic(rsrc);
    if (!intrin)
       return (nir_binding){0};
+
+   /* Intel resource, similar to load_vulkan_descriptor after it has been
+    * lowered.
+    */
+   if (intrin->intrinsic == nir_intrinsic_resource_intel) {
+      res.success = true;
+      res.desc_set = nir_intrinsic_desc_set(intrin);
+      res.binding = nir_intrinsic_binding(intrin);
+      /* nir_intrinsic_resource_intel has 3 sources, but src[2] is included in
+       * src[1], it is kept around for other purposes.
+       */
+      res.num_indices = 2;
+      res.indices[0] = intrin->src[0];
+      res.indices[1] = intrin->src[1];
+      return res;
+   }
 
    /* skip load_vulkan_descriptor */
    if (intrin->intrinsic == nir_intrinsic_load_vulkan_descriptor) {

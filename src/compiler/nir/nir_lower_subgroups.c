@@ -548,7 +548,7 @@ vec_find_lsb(nir_builder *b, nir_ssa_def *value)
    for (int i = value->num_components - 1; i >= 0; i--) {
       nir_ssa_def *channel = nir_channel(b, vec_result, i);
       /* result = channel >= 0 ? (i * bitsize + channel) : result */
-      result = nir_bcsel(b, nir_ige(b, channel, nir_imm_int(b, 0)),
+      result = nir_bcsel(b, nir_ige_imm(b, channel, 0),
                          nir_iadd_imm(b, channel, i * value->bit_size),
                          result);
    }
@@ -563,7 +563,7 @@ vec_find_msb(nir_builder *b, nir_ssa_def *value)
    for (unsigned i = 0; i < value->num_components; i++) {
       nir_ssa_def *channel = nir_channel(b, vec_result, i);
       /* result = channel >= 0 ? (i * bitsize + channel) : result */
-      result = nir_bcsel(b, nir_ige(b, channel, nir_imm_int(b, 0)),
+      result = nir_bcsel(b, nir_ige_imm(b, channel, 0),
                          nir_iadd_imm(b, channel, i * value->bit_size),
                          result);
    }

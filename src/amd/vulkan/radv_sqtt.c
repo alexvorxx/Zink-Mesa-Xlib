@@ -608,8 +608,8 @@ radv_sqtt_init(struct radv_device *device)
 
    /* Default buffer size set to 32MB per SE. */
    device->sqtt.buffer_size =
-      radv_get_int_debug_option("RADV_THREAD_TRACE_BUFFER_SIZE", 32 * 1024 * 1024);
-   device->sqtt.start_frame = radv_get_int_debug_option("RADV_THREAD_TRACE", -1);
+      (uint32_t)debug_get_num_option("RADV_THREAD_TRACE_BUFFER_SIZE", 32 * 1024 * 1024);
+   device->sqtt.start_frame = (int)debug_get_num_option("RADV_THREAD_TRACE", -1);
 
    const char *trigger_file = getenv("RADV_THREAD_TRACE_TRIGGER");
    if (trigger_file)

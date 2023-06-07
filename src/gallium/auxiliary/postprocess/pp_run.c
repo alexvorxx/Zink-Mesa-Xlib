@@ -34,6 +34,7 @@
 #include "util/u_sampler.h"
 
 #include "tgsi/tgsi_parse.h"
+#include "tgsi/tgsi_text.h"
 
 
 void
@@ -293,7 +294,7 @@ void
 pp_filter_draw(struct pp_program *p)
 {
    util_draw_vertex_buffer(p->pipe, p->cso, p->vbuf, 0, 0,
-                           PIPE_PRIM_QUADS, 4, 2);
+                           MESA_PRIM_QUADS, 4, 2);
 }
 
 /** Set the framebuffer as active. */

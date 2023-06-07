@@ -502,9 +502,10 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
    }
 
    case AGX_OPCODE_SAMPLE_MASK: {
-      unsigned S = agx_pack_sample_mask_src(I->src[0]);
-      unsigned T = 0xFF;
-      bool Tt = true /* immediate */;
+      unsigned S = agx_pack_sample_mask_src(I->src[1]);
+      unsigned T = I->src[0].value;
+      bool Tt = I->src[0].type == AGX_INDEX_IMMEDIATE;
+      assert(Tt || I->src[0].type == AGX_INDEX_REGISTER);
       uint32_t raw = 0xc1 | (Tt ? BITFIELD_BIT(8) : 0) |
                      ((T & BITFIELD_MASK(6)) << 9) | ((S & 0xff) << 16) |
                      ((T >> 6) << 24) | ((S >> 8) << 26);
@@ -524,19 +525,20 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
    }
 
    case AGX_OPCODE_ITER:
+   case AGX_OPCODE_ITERPROJ:
    case AGX_OPCODE_LDCF: {
       bool flat = (I->op == AGX_OPCODE_LDCF);
+      bool perspective = (I->op == AGX_OPCODE_ITERPROJ);
       unsigned D = agx_pack_alu_dst(I->dest[0]);
       unsigned channels = (I->channels & 0x3);
 
       agx_index src_I = I->src[0];
       assert(src_I.type == AGX_INDEX_IMMEDIATE);
-      assert(!(flat && I->perspective));
 
       unsigned cf_I = src_I.value;
       unsigned cf_J = 0;
 
-      if (I->perspective) {
+      if (perspective) {
          agx_index src_J = I->src[1];
          assert(src_J.type == AGX_INDEX_IMMEDIATE);
          cf_J = src_J.value;
@@ -545,14 +547,28 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       assert(cf_I < 0x100);
       assert(cf_J < 0x100);
 
+      enum agx_interpolation interp = I->interpolation;
+      agx_index sample_index = flat ? agx_null() : I->src[perspective ? 2 : 1];
+
+      /* Fix up the interpolation enum to distinguish the sample index source */
+      if (interp == AGX_INTERPOLATION_SAMPLE) {
+         if (sample_index.type == AGX_INDEX_REGISTER)
+            interp = AGX_INTERPOLATION_SAMPLE_REGISTER;
+         else
+            assert(sample_index.type == AGX_INDEX_IMMEDIATE);
+      } else {
+         sample_index = agx_zero();
+      }
+
       bool kill = false; // TODO: optimize
 
       uint64_t raw =
-         0x21 | (flat ? (1 << 7) : 0) | (I->perspective ? (1 << 6) : 0) |
+         0x21 | (flat ? (1 << 7) : 0) | (perspective ? (1 << 6) : 0) |
          ((D & 0xFF) << 7) | (1ull << 15) | /* XXX */
          ((cf_I & BITFIELD_MASK(6)) << 16) | ((cf_J & BITFIELD_MASK(6)) << 24) |
-         (((uint64_t)channels) << 30) | (!flat ? (1ull << 46) : 0) | /* XXX */
-         (kill ? (1ull << 52) : 0) |                                 /* XXX */
+         (((uint64_t)channels) << 30) | (((uint64_t)sample_index.value) << 32) |
+         (!flat ? (1ull << 46) : 0) |                             /* XXX */
+         (((uint64_t)interp) << 48) | (kill ? (1ull << 52) : 0) | /* XXX */
          (((uint64_t)(D >> 8)) << 56) | ((uint64_t)(cf_I >> 6) << 58) |
          ((uint64_t)(cf_J >> 6) << 60);
 

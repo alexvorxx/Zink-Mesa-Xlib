@@ -2484,38 +2484,33 @@ nir_visitor::visit(ir_texture *ir)
    if (!nir_deref_mode_is(sampler_deref, nir_var_uniform) ||
        nir_deref_instr_get_variable(sampler_deref)->data.bindless) {
       nir_ssa_def *load = nir_load_deref(&b, sampler_deref);
-      instr->src[0].src = nir_src_for_ssa(load);
-      instr->src[0].src_type = nir_tex_src_texture_handle;
-      instr->src[1].src = nir_src_for_ssa(load);
-      instr->src[1].src_type = nir_tex_src_sampler_handle;
+      instr->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_handle, load);
+      instr->src[1] = nir_tex_src_for_ssa(nir_tex_src_sampler_handle, load);
    } else {
-      instr->src[0].src = nir_src_for_ssa(&sampler_deref->dest.ssa);
-      instr->src[0].src_type = nir_tex_src_texture_deref;
-      instr->src[1].src = nir_src_for_ssa(&sampler_deref->dest.ssa);
-      instr->src[1].src_type = nir_tex_src_sampler_deref;
+      instr->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                          &sampler_deref->dest.ssa);
+      instr->src[1] = nir_tex_src_for_ssa(nir_tex_src_sampler_deref,
+                                          &sampler_deref->dest.ssa);
    }
 
    unsigned src_number = 2;
 
    if (ir->coordinate != NULL) {
       instr->coord_components = ir->coordinate->type->vector_elements;
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->coordinate));
-      instr->src[src_number].src_type = nir_tex_src_coord;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_coord,
+                                                   evaluate_rvalue(ir->coordinate));
       src_number++;
    }
 
    if (ir->projector != NULL) {
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->projector));
-      instr->src[src_number].src_type = nir_tex_src_projector;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_projector,
+                                                   evaluate_rvalue(ir->projector));
       src_number++;
    }
 
    if (ir->shadow_comparator != NULL) {
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->shadow_comparator));
-      instr->src[src_number].src_type = nir_tex_src_comparator;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_comparator,
+                                                   evaluate_rvalue(ir->shadow_comparator));
       src_number++;
    }
 
@@ -2533,25 +2528,22 @@ nir_visitor::visit(ir_texture *ir)
       } else {
          assert(ir->offset->type->is_vector() || ir->offset->type->is_scalar());
 
-         instr->src[src_number].src =
-            nir_src_for_ssa(evaluate_rvalue(ir->offset));
-         instr->src[src_number].src_type = nir_tex_src_offset;
+         instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_offset,
+                                                      evaluate_rvalue(ir->offset));
          src_number++;
       }
    }
 
    if (ir->clamp) {
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->clamp));
-      instr->src[src_number].src_type = nir_tex_src_min_lod;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_min_lod,
+                                                   evaluate_rvalue(ir->clamp));
       src_number++;
    }
 
    switch (ir->op) {
    case ir_txb:
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->lod_info.bias));
-      instr->src[src_number].src_type = nir_tex_src_bias;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_bias,
+                                                   evaluate_rvalue(ir->lod_info.bias));
       src_number++;
       break;
 
@@ -2559,28 +2551,24 @@ nir_visitor::visit(ir_texture *ir)
    case ir_txf:
    case ir_txs:
       if (ir->lod_info.lod != NULL) {
-         instr->src[src_number].src =
-            nir_src_for_ssa(evaluate_rvalue(ir->lod_info.lod));
-         instr->src[src_number].src_type = nir_tex_src_lod;
+         instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_lod,
+                                                      evaluate_rvalue(ir->lod_info.lod));
          src_number++;
       }
       break;
 
    case ir_txd:
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->lod_info.grad.dPdx));
-      instr->src[src_number].src_type = nir_tex_src_ddx;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_ddx,
+                                                   evaluate_rvalue(ir->lod_info.grad.dPdx));
       src_number++;
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->lod_info.grad.dPdy));
-      instr->src[src_number].src_type = nir_tex_src_ddy;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_ddy,
+                                                   evaluate_rvalue(ir->lod_info.grad.dPdy));
       src_number++;
       break;
 
    case ir_txf_ms:
-      instr->src[src_number].src =
-         nir_src_for_ssa(evaluate_rvalue(ir->lod_info.sample_index));
-      instr->src[src_number].src_type = nir_tex_src_ms_index;
+      instr->src[src_number] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
+                                                   evaluate_rvalue(ir->lod_info.sample_index));
       src_number++;
       break;
 

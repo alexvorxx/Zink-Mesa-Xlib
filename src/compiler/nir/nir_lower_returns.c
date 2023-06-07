@@ -132,11 +132,11 @@ lower_returns_in_if(nir_if *if_stmt, struct lower_returns_state *state)
           */
 
          /* nir_cf_extract will not extract phis at the start of the block. In
-          * this case we know that any phis will have to have a single
-          * predecessor, so we can just replace the phi with its single source.
+          * this case we know that any phis will have to have had a single
+          * predecessor, and should've been removed by the opt_remove_phis before
+          * beginning this pass.
           */
          nir_block *succ_block = nir_after_cf_node(&if_stmt->cf_node).block;
-         nir_opt_remove_phis_block(succ_block);
          assert(nir_block_first_instr(succ_block) == NULL ||
                 nir_block_first_instr(succ_block)->type != nir_instr_type_phi);
 
@@ -287,6 +287,7 @@ nir_lower_returns_impl(nir_function_impl *impl)
 
    if (progress) {
       nir_metadata_preserve(impl, nir_metadata_none);
+      nir_rematerialize_derefs_in_use_blocks_impl(impl);
       nir_repair_ssa_impl(impl);
    } else {
       nir_metadata_preserve(impl, nir_metadata_all);
@@ -298,11 +299,14 @@ nir_lower_returns_impl(nir_function_impl *impl)
 bool
 nir_lower_returns(nir_shader *shader)
 {
-   bool progress = false;
+   /* Before removing jumps and adding undef sources to otherwise single-source phis,
+    * go ahead and simplify those single-source phis.
+    */
+   bool progress = nir_opt_remove_phis(shader);
 
    nir_foreach_function(function, shader) {
       if (function->impl)
-         progress = nir_lower_returns_impl(function->impl) || progress;
+         progress |= nir_lower_returns_impl(function->impl) || progress;
    }
 
    return progress;

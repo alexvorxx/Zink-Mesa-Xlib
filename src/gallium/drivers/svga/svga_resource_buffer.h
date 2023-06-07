@@ -222,7 +222,7 @@ struct svga_buffer
     * function from svga_draw_elements.c
     */
    struct {
-      enum pipe_prim_type orig_prim, new_prim;
+      enum mesa_prim orig_prim, new_prim;
       struct pipe_resource *buffer;
       unsigned index_size;
       unsigned offset;  /**< first index */

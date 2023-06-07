@@ -290,18 +290,18 @@ nvc0_vp_gen_header(struct nvc0_program *vp, struct nv50_ir_prog_info_out *info)
 static void
 nvc0_tp_get_tess_mode(struct nvc0_program *tp, struct nv50_ir_prog_info_out *info)
 {
-   if (info->prop.tp.outputPrim == PIPE_PRIM_MAX) {
+   if (info->prop.tp.outputPrim == MESA_PRIM_COUNT) {
       tp->tp.tess_mode = ~0;
       return;
    }
    switch (info->prop.tp.domain) {
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       tp->tp.tess_mode = NVC0_3D_TESS_MODE_PRIM_ISOLINES;
       break;
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       tp->tp.tess_mode = NVC0_3D_TESS_MODE_PRIM_TRIANGLES;
       break;
-   case PIPE_PRIM_QUADS:
+   case MESA_PRIM_QUADS:
       tp->tp.tess_mode = NVC0_3D_TESS_MODE_PRIM_QUADS;
       break;
    default:
@@ -312,16 +312,16 @@ nvc0_tp_get_tess_mode(struct nvc0_program *tp, struct nv50_ir_prog_info_out *inf
    /* It seems like lines want the "CW" bit to indicate they're connected, and
     * spit out errors in dmesg when the "CONNECTED" bit is set.
     */
-   if (info->prop.tp.outputPrim != PIPE_PRIM_POINTS) {
-      if (info->prop.tp.domain == PIPE_PRIM_LINES)
+   if (info->prop.tp.outputPrim != MESA_PRIM_POINTS) {
+      if (info->prop.tp.domain == MESA_PRIM_LINES)
          tp->tp.tess_mode |= NVC0_3D_TESS_MODE_CW;
       else
          tp->tp.tess_mode |= NVC0_3D_TESS_MODE_CONNECTED;
    }
 
    /* Winding only matters for triangles/quads, not lines. */
-   if (info->prop.tp.domain != PIPE_PRIM_LINES &&
-       info->prop.tp.outputPrim != PIPE_PRIM_POINTS &&
+   if (info->prop.tp.domain != MESA_PRIM_LINES &&
+       info->prop.tp.outputPrim != MESA_PRIM_POINTS &&
        info->prop.tp.winding > 0)
       tp->tp.tess_mode |= NVC0_3D_TESS_MODE_CW;
 
@@ -395,15 +395,15 @@ nvc0_gp_gen_header(struct nvc0_program *gp, struct nv50_ir_prog_info_out *info)
    gp->hdr[2] = MIN2(info->prop.gp.instanceCount, 32) << 24;
 
    switch (info->prop.gp.outputPrim) {
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       gp->hdr[3] = 0x01000000;
       gp->hdr[0] |= 0xf0000000;
       break;
-   case PIPE_PRIM_LINE_STRIP:
+   case MESA_PRIM_LINE_STRIP:
       gp->hdr[3] = 0x06000000;
       gp->hdr[0] |= 0x10000000;
       break;
-   case PIPE_PRIM_TRIANGLE_STRIP:
+   case MESA_PRIM_TRIANGLE_STRIP:
       gp->hdr[3] = 0x07000000;
       gp->hdr[0] |= 0x10000000;
       break;

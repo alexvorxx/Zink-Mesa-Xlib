@@ -308,21 +308,6 @@ tgsi_free_tokens(const struct tgsi_token *tokens)
 }
 
 
-void
-tgsi_dump_tokens(const struct tgsi_token *tokens)
-{
-   const unsigned *dwords = (const unsigned *)tokens;
-   int nr = tgsi_num_tokens(tokens);
-   int i;
-   
-   STATIC_ASSERT(sizeof(*tokens) == sizeof(unsigned));
-
-   debug_printf("const unsigned tokens[%d] = {\n", nr);
-   for (i = 0; i < nr; i++)
-      debug_printf("0x%08x,\n", dwords[i]);
-   debug_printf("};\n");
-}
-
 unsigned
 tgsi_get_processor_type(const struct tgsi_token *tokens)
 {

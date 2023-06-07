@@ -255,6 +255,16 @@ typedef enum {
    nir_ray_query_value_intersection_triangle_vertex_positions
 } nir_ray_query_value;
 
+/**
+ * Intel resource flags
+ */
+typedef enum {
+   nir_resource_intel_bindless              = 1u << 0,
+   nir_resource_intel_pushable              = 1u << 1,
+   nir_resource_intel_sampler               = 1u << 2,
+   nir_resource_intel_non_uniform           = 1u << 3,
+} nir_resource_data_intel;
+
 typedef union {
    bool b;
    float f32;
@@ -626,6 +636,12 @@ typedef struct nir_variable {
        * Can be use by Mesh Shader outputs and corresponding Fragment Shader inputs.
        */
       unsigned per_primitive:1;
+
+      /**
+       * Whether the variable is declared to indicate that a fragment shader
+       * input will not have interpolated values.
+       */
+      unsigned per_vertex:1;
 
       /**
        * \brief Layout qualifier for gl_FragDepth. See nir_depth_layout.
@@ -3922,6 +3938,11 @@ typedef struct nir_shader_compiler_options {
     *  of adding it to the atomic source
     */
    bool lower_atomic_offset_to_range_base;
+
+   /** Don't convert medium-precision casts (e.g. f2fmp) into concrete
+    *  type casts (e.g. f2f16).
+    */
+   bool preserve_mediump;
 } nir_shader_compiler_options;
 
 typedef struct nir_shader {
@@ -4040,6 +4061,13 @@ nir_variable *nir_variable_create(nir_shader *shader,
 nir_variable *nir_local_variable_create(nir_function_impl *impl,
                                         const struct glsl_type *type,
                                         const char *name);
+
+/** Creates a uniform builtin state variable. */
+nir_variable *
+nir_state_variable_create(nir_shader *shader,
+                          const struct glsl_type *type,
+                          const char *name,
+                          const gl_state_index16 tokens[STATE_LENGTH]);
 
 /* Gets the variable for the given mode and location, creating it (with the given
  * type) if necessary.
@@ -4223,7 +4251,6 @@ nir_before_src(nir_src *src)
    if (src->is_if) {
       nir_block *prev_block =
          nir_cf_node_as_block(nir_cf_node_prev(&src->parent_if->cf_node));
-      assert(!nir_block_ends_in_jump(prev_block));
       return nir_after_block(prev_block);
    } else if (src->parent_instr->type == nir_instr_type_phi) {
 #ifndef NDEBUG
@@ -5031,6 +5058,16 @@ nir_address_format_to_glsl_type(nir_address_format addr_format)
 
 const nir_const_value *nir_address_format_null_value(nir_address_format addr_format);
 
+nir_ssa_def *nir_build_addr_iadd(struct nir_builder *b, nir_ssa_def *addr,
+                                 nir_address_format addr_format,
+                                 nir_variable_mode modes,
+                                 nir_ssa_def *offset);
+
+nir_ssa_def *nir_build_addr_iadd_imm(struct nir_builder *b, nir_ssa_def *addr,
+                                     nir_address_format addr_format,
+                                     nir_variable_mode modes,
+                                     int64_t offset);
+
 nir_ssa_def *nir_build_addr_ieq(struct nir_builder *b, nir_ssa_def *addr0, nir_ssa_def *addr1,
                                 nir_address_format addr_format);
 
@@ -5092,6 +5129,8 @@ typedef struct {
 
 bool nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_options *options);
 
+typedef bool (*nir_lower_shader_calls_should_remat_func)(nir_instr *instr, void *data);
+
 typedef struct nir_lower_shader_calls_options {
    /* Address format used for load/store operations on the call stack. */
    nir_address_format address_format;
@@ -5112,6 +5151,17 @@ typedef struct nir_lower_shader_calls_options {
 
    /* Data passed to vectorizer_callback */
    void *vectorizer_data;
+
+   /* If this function pointer is not NULL, lower_shader_calls will call this
+    * function on instructions that require spill/fill/rematerialization of
+    * their value. If this function returns true, lower_shader_calls will
+    * ensure that the instruction is rematerialized, adding the sources of the
+    * instruction to be spilled/filled.
+    */
+   nir_lower_shader_calls_should_remat_func should_remat_callback;
+
+   /* Data passed to should_remat_callback */
+   void *should_remat_data;
 } nir_lower_shader_calls_options;
 
 bool
@@ -5191,7 +5241,7 @@ nir_shader * nir_create_passthrough_tcs(const nir_shader_compiler_options *optio
                                         const nir_shader *vs, uint8_t patch_vertices);
 nir_shader * nir_create_passthrough_gs(const nir_shader_compiler_options *options,
                                        const nir_shader *prev_stage,
-                                       enum shader_prim primitive_type,
+                                       enum mesa_prim primitive_type,
                                        bool emulate_edgeflags,
                                        bool force_line_strip_out);
 
@@ -5471,11 +5521,6 @@ typedef struct nir_lower_tex_options {
     */
    bool lower_invalid_implicit_lod;
 
-   /* If true, round the layer component of the coordinates source to the nearest
-    * integer for all array ops.
-    */
-   bool lower_array_layer_round_even;
-
    /* If true, texture_index (sampler_index) will be zero if a texture_offset
     * (sampler_offset) source is present. This is convenient for backends that
     * support indirect indexing of textures (samplers) but not offsetting it.
@@ -5526,6 +5571,9 @@ typedef struct nir_lower_image_options {
 
 bool nir_lower_image(nir_shader *nir,
                      const nir_lower_image_options *options);
+
+bool
+nir_lower_image_atomics_to_global(nir_shader *s);
 
 bool nir_lower_readonly_images_to_tex(nir_shader *shader, bool per_variable);
 

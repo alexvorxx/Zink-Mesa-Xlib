@@ -84,7 +84,7 @@ lower_point_smooth(nir_builder *b, nir_instr *instr, UNUSED void *_state)
    nir_ssa_def *coverage = nir_fsat(b, nir_fsub(b, radius, distance));
 
    /* Discard fragments that are not covered by the point */
-   nir_discard_if(b, nir_feq(b, nir_imm_float(b, 0.0f), coverage));
+   nir_discard_if(b, nir_feq_imm(b, coverage, 0.0f));
 
    /* Write out the fragment color*vec4(1, 1, 1, coverage)*/
    nir_ssa_def *one = nir_imm_float(b, 1.0f);

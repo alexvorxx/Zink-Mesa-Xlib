@@ -253,7 +253,7 @@ drisw_swap_buffers(struct dri_drawable *drawable)
       }
 
       screen->base.screen->fence_finish(screen->base.screen, ctx->st->pipe,
-                                        fence, PIPE_TIMEOUT_INFINITE);
+                                        fence, OS_TIMEOUT_INFINITE);
       screen->base.screen->fence_reference(screen->base.screen, &fence, NULL);
       drisw_copy_to_front(ctx->st->pipe, drawable, ptex);
 
@@ -288,7 +288,7 @@ drisw_copy_sub_buffer(struct dri_drawable *drawable, int x, int y,
       st_context_flush(ctx->st, ST_FLUSH_FRONT, &fence, NULL, NULL);
 
       screen->base.screen->fence_finish(screen->base.screen, ctx->st->pipe,
-                                        fence, PIPE_TIMEOUT_INFINITE);
+                                        fence, OS_TIMEOUT_INFINITE);
       screen->base.screen->fence_reference(screen->base.screen, &fence, NULL);
 
       if (drawable->stvis.samples > 1) {

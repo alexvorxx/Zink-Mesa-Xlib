@@ -1102,7 +1102,7 @@ zink_get_query_result(struct pipe_context *pctx,
       struct pipe_screen *screen = pctx->screen;
 
       result->b = screen->fence_finish(screen, query->base.flushed ? NULL : pctx,
-                                        query->fence, wait ? PIPE_TIMEOUT_INFINITE : 0);
+                                        query->fence, wait ? OS_TIMEOUT_INFINITE : 0);
       return result->b;
    }
 

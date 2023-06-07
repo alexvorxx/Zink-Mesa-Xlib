@@ -50,8 +50,6 @@
 #include "lp_bld_logic.h"
 #include "lp_bld_pack.h"
 
-#include "tgsi/tgsi_exec.h"
-
 /* XXX: The CPU only defaults should be repaced by generic ones.  In most
  * cases, the CPU defaults are just wrappers around a function in
  * lp_build_arit.c and these functions should be inlined here and the CPU

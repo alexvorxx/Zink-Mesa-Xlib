@@ -63,7 +63,7 @@ build_nir_itob_compute_shader(struct radv_device *dev, bool is_3d)
    nir_ssa_def *tmp = nir_imul(&b, pos_y, stride);
    tmp = nir_iadd(&b, tmp, pos_x);
 
-   nir_ssa_def *coord = nir_vec4(&b, tmp, tmp, tmp, tmp);
+   nir_ssa_def *coord = nir_replicate(&b, tmp, 4);
 
    nir_image_deref_store(&b, &nir_build_deref_var(&b, output_img)->dest.ssa, coord,
                          nir_ssa_undef(&b, 1, 32), outval, nir_imm_int(&b, 0),
@@ -384,7 +384,7 @@ build_nir_btoi_r32g32b32_compute_shader(struct radv_device *dev)
    for (int chan = 0; chan < 3; chan++) {
       nir_ssa_def *local_pos = nir_iadd_imm(&b, global_pos, chan);
 
-      nir_ssa_def *coord = nir_vec4(&b, local_pos, local_pos, local_pos, local_pos);
+      nir_ssa_def *coord = nir_replicate(&b, local_pos, 4);
 
       nir_image_deref_store(&b, &nir_build_deref_var(&b, output_img)->dest.ssa, coord,
                             nir_ssa_undef(&b, 1, 32), nir_channel(&b, outval, chan),
@@ -706,7 +706,7 @@ build_nir_itoi_r32g32b32_compute_shader(struct radv_device *dev)
       nir_ssa_def *dst_local_pos = nir_iadd_imm(&b, dst_global_pos, chan);
 
       nir_ssa_def *dst_coord =
-         nir_vec4(&b, dst_local_pos, dst_local_pos, dst_local_pos, dst_local_pos);
+         nir_replicate(&b, dst_local_pos, 4);
 
       nir_image_deref_store(&b, &nir_build_deref_var(&b, output_img)->dest.ssa, dst_coord,
                             nir_ssa_undef(&b, 1, 32), nir_channel(&b, outval, 0),
@@ -983,7 +983,7 @@ build_nir_cleari_r32g32b32_compute_shader(struct radv_device *dev)
    for (unsigned chan = 0; chan < 3; chan++) {
       nir_ssa_def *local_pos = nir_iadd_imm(&b, global_pos, chan);
 
-      nir_ssa_def *coord = nir_vec4(&b, local_pos, local_pos, local_pos, local_pos);
+      nir_ssa_def *coord = nir_replicate(&b, local_pos, 4);
 
       nir_image_deref_store(&b, &nir_build_deref_var(&b, output_img)->dest.ssa, coord,
                             nir_ssa_undef(&b, 1, 32), nir_channel(&b, clear_val, chan),

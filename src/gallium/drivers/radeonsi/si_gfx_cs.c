@@ -1,26 +1,8 @@
 /*
  * Copyright 2010 Jerome Glisse <glisse@freedesktop.org>
  * Copyright 2018 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "si_build_pm4.h"
@@ -249,70 +231,81 @@ void si_allocate_gds(struct si_context *sctx)
 
 void si_set_tracked_regs_to_clear_state(struct si_context *ctx)
 {
-   STATIC_ASSERT(SI_NUM_TRACKED_REGS <= sizeof(ctx->tracked_regs.reg_saved) * 8);
+   STATIC_ASSERT(SI_NUM_TRACKED_CONTEXT_REGS <= sizeof(ctx->tracked_regs.context_reg_saved_mask) * 8);
 
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_RENDER_CONTROL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_COUNT_CONTROL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_RENDER_OVERRIDE2] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_SHADER_CONTROL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_CB_TARGET_MASK] = 0xffffffff;
-   ctx->tracked_regs.reg_value[SI_TRACKED_CB_DCC_CONTROL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SX_PS_DOWNCONVERT] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SX_BLEND_OPT_EPSILON] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SX_BLEND_OPT_CONTROL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_LINE_CNTL] = 0x00001000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_AA_CONFIG] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_EQAA] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_MODE_CNTL_1] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SU_PRIM_FILTER_CNTL] = 0;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_VS_OUT_CNTL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_CLIP_CNTL] = 0x00090000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_BINNER_CNTL_0] = 0x00000003;
-   ctx->tracked_regs.reg_value[SI_TRACKED_DB_PA_SC_VRS_OVERRIDE_CNTL] = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_GB_VERT_CLIP_ADJ] = 0x3f800000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_GB_VERT_DISC_ADJ] = 0x3f800000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_GB_HORZ_CLIP_ADJ] = 0x3f800000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_GB_HORZ_DISC_ADJ] = 0x3f800000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SU_HARDWARE_SCREEN_OFFSET] = 0;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SU_VTX_CNTL] = 0x00000005;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_CLIPRECT_RULE] = 0xffff;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_SC_LINE_STIPPLE] = 0;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_ESGS_RING_ITEMSIZE]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_1]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_2]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_3]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GSVS_RING_ITEMSIZE]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_MAX_VERT_OUT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_1]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_2]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_3]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_INSTANCE_CNT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_ONCHIP_CNTL]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_GS_MODE]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_PRIMITIVEID_EN]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_REUSE_OFF]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_VS_OUT_CONFIG]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_GE_MAX_OUTPUT_PER_SUBGROUP]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_GE_NGG_SUBGRP_CNTL]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_SHADER_IDX_FORMAT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_SHADER_POS_FORMAT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_VTE_CNTL]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_PA_CL_NGG_CNTL]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_PS_INPUT_ENA]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_PS_INPUT_ADDR]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_BARYC_CNTL]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_PS_IN_CONTROL]  = 0x00000002;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_SHADER_Z_FORMAT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_SPI_SHADER_COL_FORMAT]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_CB_SHADER_MASK]  = 0xffffffff;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_TF_PARAM]  = 0x00000000;
-   ctx->tracked_regs.reg_value[SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL]  = 0x0000001e; /* From GFX8 */
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_RENDER_CONTROL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_COUNT_CONTROL] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_LINE_CNTL] = 0x1000;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_AA_CONFIG] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SU_VTX_CNTL] = 0x5;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_GB_VERT_CLIP_ADJ] = 0x3f800000;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_GB_VERT_DISC_ADJ] = 0x3f800000;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_GB_HORZ_CLIP_ADJ] = 0x3f800000;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_GB_HORZ_DISC_ADJ] = 0x3f800000;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_SHADER_IDX_FORMAT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_SHADER_POS_FORMAT] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_SHADER_Z_FORMAT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_SHADER_COL_FORMAT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_BARYC_CNTL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_PS_INPUT_ENA] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_PS_INPUT_ADDR] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_EQAA] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_SHADER_CONTROL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_CB_SHADER_MASK] = 0xffffffff;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_CB_TARGET_MASK] = 0xffffffff;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_CLIP_CNTL] = 0x90000;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_VS_OUT_CNTL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_CL_VTE_CNTL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_CLIPRECT_RULE] = 0xffff;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_LINE_STIPPLE] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_MODE_CNTL_1] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SU_HARDWARE_SCREEN_OFFSET] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_PS_IN_CONTROL] = 0x2;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_INSTANCE_CNT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MAX_VERT_OUT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_SHADER_STAGES_EN] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_TF_PARAM] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_BINNER_CNTL_0] = 0x3;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_GE_MAX_OUTPUT_PER_SUBGROUP] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_GE_NGG_SUBGRP_CNTL] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_PA_SC_VRS_OVERRIDE_CNTL] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SX_PS_DOWNCONVERT] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SX_BLEND_OPT_EPSILON] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SX_BLEND_OPT_CONTROL] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_ESGS_RING_ITEMSIZE] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_REUSE_OFF] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_ONCHIP_CNTL] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_ITEMSIZE] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MODE] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL] = 0x1e;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_1] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_2] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_3] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_1] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_2] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_VERT_ITEMSIZE_3] = 0;
+
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_DB_RENDER_OVERRIDE2] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_SPI_VS_OUT_CONFIG] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_PRIMITIVEID_EN] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_CB_DCC_CONTROL] = 0;
 
    /* Set all cleared context registers to saved. */
-   ctx->tracked_regs.reg_saved = BITFIELD64_MASK(SI_TRACKED_GE_PC_ALLOC);
+   ctx->tracked_regs.context_reg_saved_mask = BITFIELD64_MASK(SI_NUM_TRACKED_CONTEXT_REGS);
 
    if (ctx->gfx_level >= GFX11)
       ctx->last_gs_out_prim = -1; /* uconfig register, unknown value */
@@ -494,7 +487,7 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       if (!has_clear_state || ctx->clip_state_any_nonzeros)
          si_mark_atom_dirty(ctx, &ctx->atoms.s.clip_state);
       ctx->sample_locs_num_samples = 0;
-      si_mark_atom_dirty(ctx, &ctx->atoms.s.msaa_sample_locs);
+      si_mark_atom_dirty(ctx, &ctx->atoms.s.sample_locations);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.msaa_config);
       /* CLEAR_STATE sets 0xffff. */
       if (!has_clear_state || ctx->sample_mask != 0xffff)
@@ -516,24 +509,28 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       si_mark_atom_dirty(ctx, &ctx->atoms.s.guardband);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.scissors);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.viewports);
+      si_mark_atom_dirty(ctx, &ctx->atoms.s.vgt_pipeline_state);
 
       if (has_clear_state) {
          si_set_tracked_regs_to_clear_state(ctx);
       } else {
          /* Set all register values to unknown. */
-         ctx->tracked_regs.reg_saved = 0;
+         ctx->tracked_regs.context_reg_saved_mask = 0;
          ctx->last_gs_out_prim = -1; /* unknown */
       }
 
       /* 0xffffffff is an impossible value to register SPI_PS_INPUT_CNTL_n */
       memset(ctx->tracked_regs.spi_ps_input_cntl, 0xff, sizeof(uint32_t) * 32);
+
+      ctx->tracked_regs.other_reg_saved_mask = 0; /* unknown values */
    }
 
    /* Invalidate various draw states so that they are emitted before
     * the first draw call. */
    si_invalidate_draw_constants(ctx);
    ctx->last_index_size = -1;
-   ctx->last_primitive_restart_en = -1;
+   /* Primitive restart is set to false by the gfx preamble on GFX11+. */
+   ctx->last_primitive_restart_en = ctx->gfx_level >= GFX11 ? false : -1;
    ctx->last_restart_index = SI_RESTART_INDEX_UNKNOWN;
    ctx->last_prim = -1;
    ctx->last_multi_vgt_param = -1;

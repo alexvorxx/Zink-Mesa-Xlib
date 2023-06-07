@@ -280,6 +280,7 @@ validate_ir(Program* program)
                                    (flat && i == 1) || (instr->isMIMG() && (i == 1 || i == 2)) ||
                                    ((instr->isMUBUF() || instr->isMTBUF()) && i == 1) ||
                                    (instr->isScratch() && i == 0) ||
+                                   (instr->isDS() && i == 0) ||
                                    (instr->opcode == aco_opcode::p_init_scratch && i == 0);
                check(can_be_undef, "Undefs can only be used in certain operands", instr.get());
             } else {
@@ -585,6 +586,15 @@ validate_ir(Program* program)
                            instr->operands[i].isUndefined(),
                         "Operands of p_dual_src_export_gfx11 must be VGPRs or undef", instr.get());
                }
+            } else if (instr->opcode == aco_opcode::p_start_linear_vgpr) {
+               check(instr->definitions.size() == 1, "Must have one definition", instr.get());
+               check(instr->operands.size() <= 1, "Must have one or zero operands", instr.get());
+               if (!instr->definitions.empty())
+                  check(instr->definitions[0].regClass().is_linear_vgpr(),
+                        "Definition must be linear VGPR", instr.get());
+               if (!instr->definitions.empty() && !instr->operands.empty())
+                  check(instr->definitions[0].bytes() == instr->operands[0].bytes(),
+                        "Operand size must match definition", instr.get());
             }
             break;
          }
@@ -687,21 +697,36 @@ validate_ir(Program* program)
                      "TFE/LWE loads",
                      instr.get());
             }
-            check(instr->operands.size() == 4 || program->gfx_level >= GFX10,
-                  "NSA is only supported on GFX10+", instr.get());
-            for (unsigned i = 3; i < instr->operands.size(); i++) {
-               check(instr->operands[i].hasRegClass() &&
-                        instr->operands[i].regClass().type() == RegType::vgpr,
-                     "MIMG operands[3+] (VADDR) must be VGPR", instr.get());
-               if (instr->operands.size() > 4) {
-                  if (program->gfx_level < GFX11) {
-                     check(instr->operands[i].regClass() == v1,
-                           "GFX10 MIMG VADDR must be v1 if NSA is used", instr.get());
-                  } else {
-                     if (instr->opcode != aco_opcode::image_bvh_intersect_ray &&
-                         instr->opcode != aco_opcode::image_bvh64_intersect_ray && i < 7) {
+
+            if (instr->mimg().strict_wqm) {
+               check(instr->operands[3].isTemp() && instr->operands[3].regClass().is_linear_vgpr(),
+                     "MIMG operands[3] must be temp linear VGPR.", instr.get());
+
+               unsigned total_size = 0;
+               for (unsigned i = 4; i < instr->operands.size(); i++) {
+                  check(instr->operands[i].isTemp() && instr->operands[i].regClass() == v1,
+                        "MIMG operands[4+] (VADDR) must be v1", instr.get());
+                  total_size += instr->operands[i].bytes();
+               }
+               check(total_size <= instr->operands[3].bytes(),
+                     "MIMG operands[4+] must fit within operands[3].", instr.get());
+            } else {
+               check(instr->operands.size() == 4 || program->gfx_level >= GFX10,
+                     "NSA is only supported on GFX10+", instr.get());
+               for (unsigned i = 3; i < instr->operands.size(); i++) {
+                  check(instr->operands[i].hasRegClass() &&
+                           instr->operands[i].regClass().type() == RegType::vgpr,
+                        "MIMG operands[3+] (VADDR) must be VGPR", instr.get());
+                  if (instr->operands.size() > 4) {
+                     if (program->gfx_level < GFX11) {
                         check(instr->operands[i].regClass() == v1,
-                              "first 4 GFX11 MIMG VADDR must be v1 if NSA is used", instr.get());
+                              "GFX10 MIMG VADDR must be v1 if NSA is used", instr.get());
+                     } else {
+                        if (instr->opcode != aco_opcode::image_bvh_intersect_ray &&
+                            instr->opcode != aco_opcode::image_bvh64_intersect_ray && i < 7) {
+                           check(instr->operands[i].regClass() == v1,
+                                 "first 4 GFX11 MIMG VADDR must be v1 if NSA is used", instr.get());
+                        }
                      }
                   }
                }
@@ -720,7 +745,8 @@ validate_ir(Program* program)
          }
          case Format::DS: {
             for (const Operand& op : instr->operands) {
-               check((op.isTemp() && op.regClass().type() == RegType::vgpr) || op.physReg() == m0,
+               check((op.isTemp() && op.regClass().type() == RegType::vgpr) || op.physReg() == m0 ||
+                     op.isUndefined(),
                      "Only VGPRs are valid DS instruction operands", instr.get());
             }
             if (!instr->definitions.empty())

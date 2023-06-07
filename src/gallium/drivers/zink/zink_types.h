@@ -542,9 +542,16 @@ struct zink_batch_descriptor_data {
  */
 struct zink_batch_usage {
    uint32_t usage;
+    /* this is a monotonic int used to disambiguate internal fences from their tc fence references */
+   uint32_t submit_count;
    cnd_t flush;
    mtx_t mtx;
    bool unflushed;
+};
+
+struct zink_bo_usage {
+   uint32_t submit_count;
+   struct zink_batch_usage *u;
 };
 
 struct zink_batch_obj_list {
@@ -604,9 +611,6 @@ struct zink_batch_state {
    struct zink_batch_descriptor_data dd;
 
    VkDeviceSize resource_size;
-
-    /* this is a monotonic int used to disambiguate internal fences from their tc fence references */
-   unsigned submit_count;
 
    bool is_device_lost;
    bool has_barriers;
@@ -683,8 +687,8 @@ struct zink_bo {
 
    simple_mtx_t lock;
 
-   struct zink_batch_usage *reads;
-   struct zink_batch_usage *writes;
+   struct zink_bo_usage reads;
+   struct zink_bo_usage writes;
 
    struct pb_cache_entry cache_entry[];
 };
@@ -790,7 +794,7 @@ struct zink_shader {
    union {
       struct {
          struct zink_shader *generated_tcs; // a generated shader that this shader "owns"; only valid in the tes stage
-         struct zink_shader *generated_gs[PIPE_PRIM_MAX][ZINK_PRIM_MAX]; // generated shaders that this shader "owns"
+         struct zink_shader *generated_gs[MESA_PRIM_COUNT][ZINK_PRIM_MAX]; // generated shaders that this shader "owns"
          struct zink_shader *parent; // for a generated gs this points to the shader that "owns" it
 
          bool is_generated; // if this is a driver-created shader (e.g., tcs)
@@ -870,7 +874,7 @@ struct zink_gfx_pipeline_state {
    struct zink_vertex_elements_hw_state *element_state;
    struct zink_zs_swizzle_key *shadow;
    bool sample_locations_enabled;
-   enum pipe_prim_type shader_rast_prim, rast_prim; /* reduced type or max for unknown */
+   enum mesa_prim shader_rast_prim, rast_prim; /* reduced type or max for unknown */
    union {
       struct {
          struct zink_shader_key key[5];
@@ -886,7 +890,7 @@ struct zink_gfx_pipeline_state {
    VkFormat rendering_formats[PIPE_MAX_COLOR_BUFS];
    VkPipelineRenderingCreateInfo rendering_info;
    VkPipeline pipeline;
-   enum pipe_prim_type gfx_prim_mode; //pending mode
+   enum mesa_prim gfx_prim_mode; //pending mode
 };
 
 struct zink_compute_pipeline_state {

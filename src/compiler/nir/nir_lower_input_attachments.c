@@ -123,15 +123,12 @@ try_lower_input_load(nir_builder *b, nir_intrinsic_instr *load,
    tex->texture_index = 0;
    tex->sampler_index = 0;
 
-   tex->src[0].src_type = nir_tex_src_texture_deref;
-   tex->src[0].src = nir_src_for_ssa(&deref->dest.ssa);
-
-   tex->src[1].src_type = nir_tex_src_coord;
-   tex->src[1].src = nir_src_for_ssa(coord);
+   tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_texture_deref,
+                                     &deref->dest.ssa);
+   tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
    tex->coord_components = 3;
 
-   tex->src[2].src_type = nir_tex_src_lod;
-   tex->src[2].src = nir_src_for_ssa(nir_imm_int(b, 0));
+   tex->src[2] = nir_tex_src_for_ssa(nir_tex_src_lod, nir_imm_int(b, 0));
 
    if (image_dim == GLSL_SAMPLER_DIM_SUBPASS_MS) {
       tex->op = nir_texop_txf_ms;

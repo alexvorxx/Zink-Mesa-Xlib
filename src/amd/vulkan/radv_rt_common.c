@@ -240,7 +240,7 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_s
 
    /* Swap kx and ky dimensions to preserve winding order */
    unsigned swap_xy_swizzle[4] = {1, 0, 2, 3};
-   k = nir_bcsel(b, nir_flt(b, nir_vector_extract(b, dir, kz), nir_imm_float(b, 0.0f)),
+   k = nir_bcsel(b, nir_flt_imm(b, nir_vector_extract(b, dir, kz), 0.0f),
                  nir_swizzle(b, k, swap_xy_swizzle, 3), k);
 
    kx = nir_channel(b, k, 0);
@@ -291,8 +291,8 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_s
     * but we fail dEQP-VK.ray_tracing_pipeline.watertightness.closedFan2.1024 with
     * failures = 1 without doing this. :( */
    nir_ssa_def *cond_retest = nir_ior(
-      b, nir_ior(b, nir_feq(b, u, nir_imm_float(b, 0.0f)), nir_feq(b, v, nir_imm_float(b, 0.0f))),
-      nir_feq(b, w, nir_imm_float(b, 0.0f)));
+      b, nir_ior(b, nir_feq_imm(b, u, 0.0f), nir_feq_imm(b, v, 0.0f)),
+      nir_feq_imm(b, w, 0.0f));
 
    nir_push_if(b, cond_retest);
    {
@@ -318,8 +318,8 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_s
 
    /* Perform edge tests. */
    nir_ssa_def *cond_back = nir_ior(
-      b, nir_ior(b, nir_flt(b, u, nir_imm_float(b, 0.0f)), nir_flt(b, v, nir_imm_float(b, 0.0f))),
-      nir_flt(b, w, nir_imm_float(b, 0.0f)));
+      b, nir_ior(b, nir_flt_imm(b, u, 0.0f), nir_flt_imm(b, v, 0.0f)),
+      nir_flt_imm(b, w, 0.0f));
 
    nir_ssa_def *cond_front = nir_ior(
       b, nir_ior(b, nir_flt(b, nir_imm_float(b, 0.0f), u), nir_flt(b, nir_imm_float(b, 0.0f), v)),
@@ -340,7 +340,7 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_s
 
       nir_ssa_def *t_signed = nir_fmul(b, nir_fsign(b, det), t);
 
-      nir_ssa_def *det_cond_front = nir_inot(b, nir_flt(b, t_signed, nir_imm_float(b, 0.0f)));
+      nir_ssa_def *det_cond_front = nir_inot(b, nir_flt_imm(b, t_signed, 0.0f));
 
       nir_push_if(b, det_cond_front);
       {
@@ -410,8 +410,8 @@ hit_is_opaque(nir_builder *b, nir_ssa_def *sbt_offset_and_flags,
               const struct radv_ray_flags *ray_flags, nir_ssa_def *geometry_id_and_flags)
 {
    nir_ssa_def *opaque =
-      nir_uge(b, nir_ior(b, geometry_id_and_flags, sbt_offset_and_flags),
-              nir_imm_int(b, RADV_INSTANCE_FORCE_OPAQUE | RADV_INSTANCE_NO_FORCE_NOT_OPAQUE));
+      nir_uge_imm(b, nir_ior(b, geometry_id_and_flags, sbt_offset_and_flags),
+                  RADV_INSTANCE_FORCE_OPAQUE | RADV_INSTANCE_NO_FORCE_NOT_OPAQUE);
    opaque = nir_bcsel(b, ray_flags->force_opaque, nir_imm_bool(b, true), opaque);
    opaque = nir_bcsel(b, ray_flags->force_not_opaque, nir_imm_bool(b, false), opaque);
    return opaque;
@@ -562,8 +562,8 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
       {
          /* Early exit if we never overflowed the stack, to avoid having to backtrack to
           * the root for no reason. */
-         nir_push_if(b, nir_ilt(b, nir_load_deref(b, args->vars.stack),
-                                nir_imm_int(b, args->stack_base + args->stack_stride)));
+         nir_push_if(b, nir_ilt_imm(b, nir_load_deref(b, args->vars.stack),
+                                    args->stack_base + args->stack_stride));
          {
             nir_store_var(b, incomplete, nir_imm_bool(b, false), 0x1);
             nir_jump(b, nir_jump_break);
@@ -600,7 +600,7 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                build_node_to_addr(device, b, nir_load_deref(b, args->vars.bvh_base), true);
 
             nir_ssa_def *parent = fetch_parent_node(b, bvh_addr, prev);
-            nir_push_if(b, nir_ieq(b, parent, nir_imm_int(b, RADV_BVH_INVALID_NODE)));
+            nir_push_if(b, nir_ieq_imm(b, parent, RADV_BVH_INVALID_NODE));
             {
                nir_store_var(b, incomplete, nir_imm_bool(b, false), 0x1);
                nir_jump(b, nir_jump_break);
@@ -648,9 +648,9 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
       }
 
       nir_ssa_def *node_type = nir_iand_imm(b, bvh_node, 7);
-      nir_push_if(b, nir_uge(b, node_type, nir_imm_int(b, radv_bvh_node_box16)));
+      nir_push_if(b, nir_uge_imm(b, node_type, radv_bvh_node_box16));
       {
-         nir_push_if(b, nir_uge(b, node_type, nir_imm_int(b, radv_bvh_node_instance)));
+         nir_push_if(b, nir_uge_imm(b, node_type, radv_bvh_node_instance));
          {
             nir_push_if(b, nir_ieq_imm(b, node_type, radv_bvh_node_aabb));
             {
@@ -682,7 +682,8 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
 
                nir_store_deref(b, args->vars.top_stack, nir_load_deref(b, args->vars.stack), 1);
                nir_store_deref(b, args->vars.bvh_base,
-                               nir_pack_64_2x32(b, nir_channels(b, instance_data, 0x3)), 1);
+                               nir_pack_64_2x32(b, nir_trim_vector(b, instance_data, 2)),
+                               1);
 
                /* Push the instance root node onto the stack */
                nir_store_deref(b, args->vars.current_node, nir_imm_int(b, RADV_BVH_ROOT_NODE), 0x1);

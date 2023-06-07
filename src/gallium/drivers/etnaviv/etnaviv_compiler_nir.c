@@ -40,7 +40,6 @@
 #include "util/register_allocate.h"
 #include "compiler/nir/nir_builder.h"
 
-#include "tgsi/tgsi_strings.h"
 #include "util/compiler.h"
 #include "util/half_float.h"
 
@@ -764,7 +763,8 @@ lower_alu(struct etna_compile *c, nir_alu_instr *alu)
 
       nir_const_value value[4] = {};
       uint8_t swizzle[4][4] = {};
-      unsigned swiz_max = 0, num_const = 0;
+      unsigned swiz_max = 0, num_different_const_srcs = 0;
+      int first_const = -1;
 
       for (unsigned i = 0; i < info->num_inputs; i++) {
          nir_const_value *cv = nir_src_as_const_value(alu->src[i].src);
@@ -777,11 +777,16 @@ lower_alu(struct etna_compile *c, nir_alu_instr *alu)
             swizzle[i][j] = idx;
             swiz_max = MAX2(swiz_max, (unsigned) idx);
          }
-         num_const++;
+
+         if (first_const == -1)
+            first_const = i;
+
+         if (!nir_srcs_equal(alu->src[first_const].src, alu->src[i].src))
+            num_different_const_srcs++;
       }
 
       /* nothing to do */
-      if (num_const <= 1)
+      if (num_different_const_srcs == 0)
          return;
 
       /* resolve with single combined const src */
@@ -802,7 +807,7 @@ lower_alu(struct etna_compile *c, nir_alu_instr *alu)
       }
 
       /* resolve with movs */
-      num_const = 0;
+      unsigned num_const = 0;
       for (unsigned i = 0; i < info->num_inputs; i++) {
          nir_const_value *cv = nir_src_as_const_value(alu->src[i].src);
          if (!cv)
@@ -1124,7 +1129,6 @@ etna_compile_shader(struct etna_shader_variant *v)
    NIR_PASS_V(s, nir_lower_io, nir_var_shader_in | nir_var_uniform, etna_glsl_type_size,
             (nir_lower_io_options)0);
 
-   NIR_PASS_V(s, nir_lower_regs_to_ssa);
    NIR_PASS_V(s, nir_lower_vars_to_ssa);
    NIR_PASS_V(s, nir_lower_indirect_derefs, nir_var_all, UINT32_MAX);
    NIR_PASS_V(s, nir_lower_tex, &(struct nir_lower_tex_options) { .lower_txp = ~0u, .lower_invalid_implicit_lod = true, });

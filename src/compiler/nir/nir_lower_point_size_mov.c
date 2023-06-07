@@ -42,13 +42,9 @@ lower_impl(nir_function_impl *impl,
 
    nir_builder_init(&b, impl);
 
-   in = nir_variable_create(shader, nir_var_uniform,
-                            glsl_vec4_type(), "gl_PointSizeClampedMESA");
-   in->num_state_slots = 1;
-   in->state_slots = ralloc_array(in, nir_state_slot, 1);
-   memcpy(in->state_slots[0].tokens,
-         pointsize_state_tokens,
-         sizeof(in->state_slots[0].tokens));
+   in = nir_state_variable_create(shader, glsl_vec4_type(),
+                                  "gl_PointSizeClampedMESA",
+                                  pointsize_state_tokens);
 
    /* the existing output can't be removed in order to avoid breaking xfb.
     * drivers must check var->data.explicit_location to find the original output

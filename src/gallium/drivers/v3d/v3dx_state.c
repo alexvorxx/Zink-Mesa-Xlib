@@ -1019,10 +1019,9 @@ v3dX(create_texture_shader_state_bo)(struct v3d_context *v3d,
                                 v3d_get_rt_format(&screen->devinfo, cso->format);
                         uint32_t internal_type;
                         uint32_t internal_bpp;
-                        v3d_get_internal_type_bpp_for_output_format(&screen->devinfo,
-                                                                    output_image_format,
-                                                                    &internal_type,
-                                                                    &internal_bpp);
+                        v3dX(get_internal_type_bpp_for_output_format)(output_image_format,
+                                                                      &internal_type,
+                                                                      &internal_bpp);
 
                         switch (internal_type) {
                         case V3D_INTERNAL_TYPE_8:
@@ -1202,7 +1201,7 @@ v3d_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
                 pipe_resource_reference(&so->texture, prsc);
         }
 
-        v3d_create_texture_shader_state_bo(v3d, so);
+        v3dX(create_texture_shader_state_bo)(v3d, so);
 
         return &so->base;
 }
@@ -1253,7 +1252,7 @@ v3d_set_sampler_views(struct pipe_context *pctx,
                                 v3d_sampler_view(stage_tex->textures[i]);
                         struct v3d_resource *rsc = v3d_resource(so->texture);
                         if (so->serial_id != rsc->serial_id)
-                                v3d_create_texture_shader_state_bo(v3d, so);
+                                v3dX(create_texture_shader_state_bo)(v3d, so);
                 }
         }
 

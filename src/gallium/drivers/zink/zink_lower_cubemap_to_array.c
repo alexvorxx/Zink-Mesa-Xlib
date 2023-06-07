@@ -91,11 +91,11 @@ static nir_ssa_def *
 evaluate_face_x(nir_builder *b, coord_t *coord)
 {
    nir_ssa_def *sign = nir_fsign(b, coord->rx);
-   nir_ssa_def *positive = nir_fge(b, coord->rx, nir_imm_float(b, 0.0));
+   nir_ssa_def *positive = nir_fge_imm(b, coord->rx, 0.0);
    nir_ssa_def *ima = nir_fdiv(b, nir_imm_float(b, -0.5), coord->arx);
 
-   nir_ssa_def *x = nir_fadd(b, nir_fmul(b, nir_fmul(b, sign, ima), coord->rz), nir_imm_float(b, 0.5));
-   nir_ssa_def *y = nir_fadd(b, nir_fmul(b, ima, coord->ry), nir_imm_float(b, 0.5));
+   nir_ssa_def *x = nir_fadd_imm(b, nir_fmul(b, nir_fmul(b, sign, ima), coord->rz), 0.5);
+   nir_ssa_def *y = nir_fadd_imm(b, nir_fmul(b, ima, coord->ry), 0.5);
    nir_ssa_def *face = nir_bcsel(b, positive, nir_imm_float(b, 0.0), nir_imm_float(b, 1.0));
 
    if (coord->array)
@@ -108,11 +108,11 @@ static nir_ssa_def *
 evaluate_face_y(nir_builder *b, coord_t *coord)
 {
    nir_ssa_def *sign = nir_fsign(b, coord->ry);
-   nir_ssa_def *positive = nir_fge(b, coord->ry, nir_imm_float(b, 0.0));
+   nir_ssa_def *positive = nir_fge_imm(b, coord->ry, 0.0);
    nir_ssa_def *ima = nir_fdiv(b, nir_imm_float(b, 0.5), coord->ary);
 
-   nir_ssa_def *x = nir_fadd(b, nir_fmul(b, ima, coord->rx), nir_imm_float(b, 0.5));
-   nir_ssa_def *y = nir_fadd(b, nir_fmul(b, nir_fmul(b, sign, ima), coord->rz), nir_imm_float(b, 0.5));
+   nir_ssa_def *x = nir_fadd_imm(b, nir_fmul(b, ima, coord->rx), 0.5);
+   nir_ssa_def *y = nir_fadd_imm(b, nir_fmul(b, nir_fmul(b, sign, ima), coord->rz), 0.5);
    nir_ssa_def *face = nir_bcsel(b, positive, nir_imm_float(b, 2.0), nir_imm_float(b, 3.0));
 
    if (coord->array)
@@ -125,11 +125,11 @@ static nir_ssa_def *
 evaluate_face_z(nir_builder *b, coord_t *coord)
 {
    nir_ssa_def *sign = nir_fsign(b, coord->rz);
-   nir_ssa_def *positive = nir_fge(b, coord->rz, nir_imm_float(b, 0.0));
+   nir_ssa_def *positive = nir_fge_imm(b, coord->rz, 0.0);
    nir_ssa_def *ima = nir_fdiv(b, nir_imm_float(b, -0.5), coord->arz);
 
-   nir_ssa_def *x = nir_fadd(b, nir_fmul(b, nir_fmul(b, sign, ima), nir_fneg(b, coord->rx)), nir_imm_float(b, 0.5));
-   nir_ssa_def *y = nir_fadd(b, nir_fmul(b, ima, coord->ry), nir_imm_float(b, 0.5));
+   nir_ssa_def *x = nir_fadd_imm(b, nir_fmul(b, nir_fmul(b, sign, ima), nir_fneg(b, coord->rx)), 0.5);
+   nir_ssa_def *y = nir_fadd_imm(b, nir_fmul(b, ima, coord->ry), 0.5);
    nir_ssa_def *face = nir_bcsel(b, positive, nir_imm_float(b, 4.0), nir_imm_float(b, 5.0));
 
    if (coord->array)
@@ -168,7 +168,8 @@ create_array_tex_from_cube_tex(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *
 
       array_tex->src[s].src_type = tex->src[i].src_type;
       if (psrc->ssa->num_components != nir_tex_instr_src_size(array_tex, s)) {
-         nir_ssa_def *c = nir_channels(b, psrc->ssa, BITFIELD_MASK(nir_tex_instr_src_size(array_tex, s)));
+         nir_ssa_def *c = nir_trim_vector(b, psrc->ssa,
+                                          nir_tex_instr_src_size(array_tex, s));
          array_tex->src[s].src = nir_src_for_ssa(c);
       } else
          nir_src_copy(&array_tex->src[s].src, psrc, &array_tex->instr);
@@ -289,7 +290,7 @@ handle_cube_edge(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y, nir_ssa_def *fa
 
       /* For each possible original face */
       for (unsigned j = 0; j < 6; j++) {
-         nir_ssa_def *predicate = nir_iand(b, remap_predicates[i], nir_ieq(b, face, nir_imm_int(b, j)));
+         nir_ssa_def *predicate = nir_iand(b, remap_predicates[i], nir_ieq_imm(b, face, j));
 
          x_result = nir_bcsel(b, predicate, remap_array[remap_table[j].remap_x], x_result);
          y_result = nir_bcsel(b, predicate, remap_array[remap_table[j].remap_y], y_result);
@@ -310,8 +311,8 @@ handle_cube_gather(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *coord)
    b->cursor = nir_after_instr(coord->parent_instr);
 
    nir_ssa_def *const_05 = nir_imm_float(b, 0.5f);
-   nir_ssa_def *texel_coords = nir_fmul(b, nir_channels(b, coord, 3),
-      nir_i2f32(b, nir_channels(b, tex_size, 3)));
+   nir_ssa_def *texel_coords = nir_fmul(b, nir_trim_vector(b, coord, 2),
+                                        nir_i2f32(b, nir_trim_vector(b, tex_size, 2)));
 
    nir_ssa_def *x_orig = nir_channel(b, texel_coords, 0);
    nir_ssa_def *y_orig = nir_channel(b, texel_coords, 1);
@@ -353,7 +354,7 @@ lower_cube_coords(nir_builder *b, nir_ssa_def *coord, bool is_array)
    coords.arz = nir_fabs(b, coords.rz);
    coords.array = NULL;
    if (is_array)
-      coords.array = nir_fmul(b, nir_channel(b, coord, 3), nir_imm_float(b, 6.0f));
+      coords.array = nir_fmul_imm(b, nir_channel(b, coord, 3), 6.0f);
 
    nir_ssa_def *use_face_x = nir_iand(b,
                                       nir_fge(b, coords.arx, coords.ary),
@@ -442,8 +443,7 @@ lower_tex_to_txl(nir_builder *b, nir_tex_instr *tex)
    if (bias_idx >= 0)
       lod = nir_fadd(b, lod, nir_ssa_for_src(b, tex->src[bias_idx].src, 1));
    lod = nir_fadd_imm(b, lod, -1.0);
-   txl->src[s].src = nir_src_for_ssa(lod);
-   txl->src[s].src_type = nir_tex_src_lod;
+   txl->src[s] = nir_tex_src_for_ssa(nir_tex_src_lod, lod);
 
    b->cursor = nir_before_instr(&tex->instr);
    nir_ssa_dest_init(&txl->instr, &txl->dest,
@@ -491,7 +491,7 @@ lower_cube_txs(nir_builder *b, nir_tex_instr *tex)
    nir_ssa_def *size = nir_vec3(b, nir_channel(b, &tex->dest.ssa, 0),
                                    nir_channel(b, &tex->dest.ssa, 1),
                                    cube_array_dim);
-   return nir_channels(b, size, BITFIELD_MASK(num_components));
+   return nir_trim_vector(b, size, num_components);
 }
 
 static nir_ssa_def *

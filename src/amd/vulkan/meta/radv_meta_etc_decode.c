@@ -134,11 +134,11 @@ decode_etc2_alpha(struct nir_builder *b, nir_ssa_def *alpha_payload, nir_ssa_def
    }
 
    nir_ssa_def *lsb_index =
-      nir_ubfe(b, nir_bcsel(b, nir_uge(b, bit_offset, nir_imm_int(b, 32)), alpha_y, alpha_x),
+      nir_ubfe(b, nir_bcsel(b, nir_uge_imm(b, bit_offset, 32), alpha_y, alpha_x),
                nir_iand_imm(b, bit_offset, 31), nir_imm_int(b, 2));
    bit_offset = nir_iadd_imm(b, bit_offset, 2);
    nir_ssa_def *msb =
-      nir_ubfe(b, nir_bcsel(b, nir_uge(b, bit_offset, nir_imm_int(b, 32)), alpha_y, alpha_x),
+      nir_ubfe(b, nir_bcsel(b, nir_uge_imm(b, bit_offset, 32), alpha_y, alpha_x),
                nir_iand_imm(b, bit_offset, 31), nir_imm_int(b, 1));
    nir_ssa_def *mod =
       nir_ixor(b, etc1_alpha_modifier_lookup(b, table, lsb_index), nir_iadd_imm(b, msb, -1));
@@ -230,13 +230,13 @@ build_shader(struct radv_device *dev)
    nir_variable *color =
       nir_variable_create(b.shader, nir_var_shader_temp, glsl_vec4_type(), "color");
    nir_store_var(&b, color, nir_imm_vec4(&b, 1.0, 0.0, 0.0, 1.0), 0xf);
-   nir_push_if(&b, nir_ilt(&b, format, nir_imm_int(&b, VK_FORMAT_EAC_R11_UNORM_BLOCK)));
+   nir_push_if(&b, nir_ilt_imm(&b, format, VK_FORMAT_EAC_R11_UNORM_BLOCK));
    {
       nir_ssa_def *alpha_bits_8 =
-         nir_ige(&b, format, nir_imm_int(&b, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK));
+         nir_ige_imm(&b, format, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK);
       nir_ssa_def *alpha_bits_1 =
-         nir_iand(&b, nir_ige(&b, format, nir_imm_int(&b, VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK)),
-                  nir_ilt(&b, format, nir_imm_int(&b, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK)));
+         nir_iand(&b, nir_ige_imm(&b, format, VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK),
+                  nir_ilt_imm(&b, format, VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK));
 
       nir_ssa_def *color_payload =
          nir_bcsel(&b, alpha_bits_8, nir_channels(&b, payload, 0xC), nir_channels(&b, payload, 3));

@@ -333,6 +333,7 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FENCE_SIGNAL:
    case PIPE_CAP_TIMELINE_SEMAPHORE_IMPORT:
    case PIPE_CAP_CLIP_HALFZ:
+   case PIPE_CAP_VS_LAYER_VIEWPORT:
       return 1;
 
    case PIPE_CAP_MAX_VERTEX_STREAMS:
@@ -398,6 +399,10 @@ d3d12_get_shader_param(struct pipe_screen *pscreen,
                        enum pipe_shader_cap param)
 {
    struct d3d12_screen *screen = d3d12_screen(pscreen);
+
+   if (shader == PIPE_SHADER_TASK ||
+       shader == PIPE_SHADER_MESH)
+      return 0;
 
    switch (param) {
    case PIPE_SHADER_CAP_MAX_INSTRUCTIONS:
@@ -1475,7 +1480,9 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
       return false;
    }
    screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS14, &screen->opts14, sizeof(screen->opts14));
+#ifndef _GAMING_XBOX
    screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS19, &screen->opts19, sizeof(screen->opts19));
+#endif
 
    screen->architecture.NodeIndex = 0;
    if (FAILED(screen->dev->CheckFeatureSupport(D3D12_FEATURE_ARCHITECTURE,

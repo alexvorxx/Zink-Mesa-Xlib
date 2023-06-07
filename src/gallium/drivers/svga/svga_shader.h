@@ -30,6 +30,7 @@
 #include "svga_context.h"
 #include "svga_streamout.h"
 #include "compiler/shader_enums.h"
+#include "tgsi/tgsi_scan.h"
 
 
 /**
@@ -97,7 +98,7 @@ struct svga_compile_key
    struct {
       unsigned vertices_per_patch:8;
       unsigned vertices_out:8;
-      enum pipe_prim_type prim_mode:8;
+      enum mesa_prim prim_mode:8;
       enum pipe_tess_spacing spacing:3;
       unsigned vertices_order_cw:1;
       unsigned point_mode:1;
@@ -272,7 +273,7 @@ struct svga_tes_variant
 {
    struct svga_shader_variant base;
 
-   enum pipe_prim_type prim_mode:8;
+   enum mesa_prim prim_mode:8;
    enum pipe_tess_spacing spacing:3;
    unsigned vertices_order_cw:1;
    unsigned point_mode:1;
@@ -333,8 +334,8 @@ struct svga_shader_info
    } fs;
 
   struct {
-      enum pipe_prim_type in_prim;
-      enum pipe_prim_type out_prim;
+      enum mesa_prim in_prim;
+      enum mesa_prim out_prim;
    } gs;
 
    struct {
@@ -343,7 +344,7 @@ struct svga_shader_info
    } tcs;
 
    struct {
-      enum pipe_prim_type prim_mode;
+      enum mesa_prim prim_mode;
       boolean reads_control_point;
       boolean reads_tess_factor;
    } tes;

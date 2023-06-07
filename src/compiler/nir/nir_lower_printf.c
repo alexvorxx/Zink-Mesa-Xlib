@@ -77,7 +77,7 @@ lower_printf_instr(nir_builder *b, nir_instr *instr, void *_options)
                           options->max_buffer_size : default_buffer_size;
    int max_valid_offset =
       buffer_size - args_size - fmt_str_id_size - counter_size;
-   nir_push_if(b, nir_ilt(b, offset, nir_imm_int(b, max_valid_offset)));
+   nir_push_if(b, nir_ilt_imm(b, offset, max_valid_offset));
 
    nir_ssa_def *printf_succ_val = nir_imm_int(b, 0);
 

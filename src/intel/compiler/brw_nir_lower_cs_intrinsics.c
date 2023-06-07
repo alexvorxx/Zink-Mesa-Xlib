@@ -209,7 +209,7 @@ lower_cs_intrinsics_convert_block(struct lower_intrinsics_state *state,
             if (ws[0] * ws[1] * ws[2] == 1) {
                nir_ssa_def *zero = nir_imm_int(b, 0);
                local_index = zero;
-               local_id = nir_vec3(b, zero, zero, zero);
+               local_id = nir_replicate(b, zero, 3);
             }
          }
 

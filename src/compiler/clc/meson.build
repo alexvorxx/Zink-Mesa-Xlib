@@ -28,8 +28,9 @@ files_libclc = files(
 _libclc_cpp_args = ['-DLLVM_LIB_DIR="@0@"'.format(llvm_libdir)]
 _libclc_sources = []
 
-if with_microsoft_clc
-
+if get_option('opencl-external-clang-headers') \
+   .disable_auto_if(host_machine.system() == 'windows') \
+   .disabled()
   # LLVM 16 moved clang header path from using full version to only major version
   if dep_llvm.version().version_compare('< 16')
     # Prior to LLVM 16, this path used a full version

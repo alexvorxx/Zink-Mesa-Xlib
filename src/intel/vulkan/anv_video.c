@@ -170,7 +170,9 @@ anv_GetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
                                                uint32_t *pVideoFormatPropertyCount,
                                                VkVideoFormatPropertiesKHR *pVideoFormatProperties)
 {
-   *pVideoFormatPropertyCount = 1;
+   VK_OUTARRAY_MAKE_TYPED(VkVideoFormatPropertiesKHR, out,
+                          pVideoFormatProperties,
+                          pVideoFormatPropertyCount);
 
    bool need_10bit = false;
    const struct VkVideoProfileListInfoKHR *prof_list = (struct VkVideoProfileListInfoKHR *)
@@ -185,25 +187,23 @@ anv_GetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
       }
    }
 
-   if (need_10bit)
-      (*pVideoFormatPropertyCount)++;
-
-   if (!pVideoFormatProperties)
-      return VK_SUCCESS;
-
-   pVideoFormatProperties[0].format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-   pVideoFormatProperties[0].imageType = VK_IMAGE_TYPE_2D;
-   pVideoFormatProperties[0].imageTiling = VK_IMAGE_TILING_OPTIMAL;
-   pVideoFormatProperties[0].imageUsageFlags = pVideoFormatInfo->imageUsage;
-
-   if (need_10bit) {
-      pVideoFormatProperties[1].format = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
-      pVideoFormatProperties[1].imageType = VK_IMAGE_TYPE_2D;
-      pVideoFormatProperties[1].imageTiling = VK_IMAGE_TILING_OPTIMAL;
-      pVideoFormatProperties[1].imageUsageFlags = pVideoFormatInfo->imageUsage;
+   vk_outarray_append_typed(VkVideoFormatPropertiesKHR, &out, p) {
+      p->format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+      p->imageType = VK_IMAGE_TYPE_2D;
+      p->imageTiling = VK_IMAGE_TILING_OPTIMAL;
+      p->imageUsageFlags = pVideoFormatInfo->imageUsage;
    }
 
-   return VK_SUCCESS;
+   if (need_10bit) {
+      vk_outarray_append_typed(VkVideoFormatPropertiesKHR, &out, p) {
+         p->format = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
+         p->imageType = VK_IMAGE_TYPE_2D;
+         p->imageTiling = VK_IMAGE_TILING_OPTIMAL;
+         p->imageUsageFlags = pVideoFormatInfo->imageUsage;
+      }
+   }
+
+   return vk_outarray_status(&out);
 }
 
 static void

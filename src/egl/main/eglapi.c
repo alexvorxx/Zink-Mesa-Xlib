@@ -697,6 +697,9 @@ eglInitialize(EGLDisplay dpy, EGLint *major, EGLint *minor)
       disp->Options.Zink = env && !strcmp(env, "zink");
       disp->Options.ForceSoftware |= disp->Options.Zink;
 
+      const char *gallium_hud_env = getenv("GALLIUM_HUD");
+      disp->Options.GalliumHud = gallium_hud_env && gallium_hud_env[0] != '\0';
+
       /**
        * Initialize the display using the driver's function.
        * If the initialisation fails, try again using only software rendering.

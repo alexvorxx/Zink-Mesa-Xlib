@@ -1338,16 +1338,16 @@ get_deref_offset(struct lp_build_nir_context *bld_base, nir_deref_instr *instr,
       } else if (path.path[idx_lvl]->deref_type == nir_deref_type_array) {
          unsigned size = glsl_count_attribute_slots(path.path[idx_lvl]->type, vs_in);
          if (nir_src_is_const(path.path[idx_lvl]->arr.index)) {
-           const_offset += nir_src_comp_as_int(path.path[idx_lvl]->arr.index, 0) * size;
+            const_offset += nir_src_comp_as_int(path.path[idx_lvl]->arr.index, 0) * size;
          } else {
-           LLVMValueRef idx_src = get_src(bld_base, path.path[idx_lvl]->arr.index);
-           idx_src = cast_type(bld_base, idx_src, nir_type_uint, 32);
-           LLVMValueRef array_off = lp_build_mul(&bld_base->uint_bld, lp_build_const_int_vec(bld_base->base.gallivm, bld_base->base.type, size),
-                                               idx_src);
-           if (offset)
-             offset = lp_build_add(&bld_base->uint_bld, offset, array_off);
-           else
-             offset = array_off;
+            LLVMValueRef idx_src = get_src(bld_base, path.path[idx_lvl]->arr.index);
+            idx_src = cast_type(bld_base, idx_src, nir_type_uint, 32);
+            LLVMValueRef array_off = lp_build_mul(&bld_base->uint_bld, lp_build_const_int_vec(bld_base->base.gallivm, bld_base->base.type, size),
+                                                  idx_src);
+            if (offset)
+               offset = lp_build_add(&bld_base->uint_bld, offset, array_off);
+            else
+               offset = array_off;
          }
       } else
          unreachable("Uhandled deref type in get_deref_instr_offset");
@@ -1494,8 +1494,10 @@ visit_store_var(struct lp_build_nir_context *bld_base,
    if (var) {
       bool tcs_out = bld_base->shader->info.stage == MESA_SHADER_TESS_CTRL &&
          var->data.mode == nir_var_shader_out && !var->data.patch;
+      bool mesh_out = bld_base->shader->info.stage == MESA_SHADER_MESH &&
+         var->data.mode == nir_var_shader_out;
       get_deref_offset(bld_base, deref, false, NULL,
-                       tcs_out ? &indir_vertex_index : NULL,
+                       (tcs_out || mesh_out) ? &indir_vertex_index : NULL,
                        &const_index, &indir_index);
 
       /* Skip stores definitely outside of the array bounds
@@ -1557,7 +1559,7 @@ visit_load_ssbo(struct lp_build_nir_context *bld_base,
       nir_src_is_always_uniform(instr->src[1]);
    bld_base->load_mem(bld_base, nir_dest_num_components(instr->dest),
                       nir_dest_bit_size(instr->dest),
-                      index_and_offset_are_uniform, idx, offset, result);
+                      index_and_offset_are_uniform, false, idx, offset, result);
 }
 
 
@@ -1576,7 +1578,7 @@ visit_store_ssbo(struct lp_build_nir_context *bld_base,
    int nc = nir_src_num_components(instr->src[0]);
    int bitsize = nir_src_bit_size(instr->src[0]);
    bld_base->store_mem(bld_base, writemask, nc, bitsize,
-                       index_and_offset_are_uniform, idx, offset, val);
+                       index_and_offset_are_uniform, false, idx, offset, val);
 }
 
 
@@ -1606,7 +1608,7 @@ visit_ssbo_atomic(struct lp_build_nir_context *bld_base,
    if (instr->intrinsic == nir_intrinsic_ssbo_atomic_swap)
       val2 = get_src(bld_base, instr->src[3]);
 
-   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, idx,
+   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, false, idx,
                         offset, val, val2, &result[0]);
 }
 
@@ -1802,7 +1804,7 @@ visit_shared_load(struct lp_build_nir_context *bld_base,
    bool offset_is_uniform = nir_src_is_always_uniform(instr->src[0]);
    bld_base->load_mem(bld_base, nir_dest_num_components(instr->dest),
                       nir_dest_bit_size(instr->dest),
-                      offset_is_uniform, NULL, offset, result);
+                      offset_is_uniform, false, NULL, offset, result);
 }
 
 
@@ -1817,7 +1819,7 @@ visit_shared_store(struct lp_build_nir_context *bld_base,
    int nc = nir_src_num_components(instr->src[0]);
    int bitsize = nir_src_bit_size(instr->src[0]);
    bld_base->store_mem(bld_base, writemask, nc, bitsize,
-                       offset_is_uniform, NULL, offset, val);
+                       offset_is_uniform, false, NULL, offset, val);
 }
 
 
@@ -1833,15 +1835,25 @@ visit_shared_atomic(struct lp_build_nir_context *bld_base,
    if (instr->intrinsic == nir_intrinsic_shared_atomic_swap)
       val2 = get_src(bld_base, instr->src[2]);
 
-   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, NULL,
+   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, false, NULL,
                         offset, val, val2, &result[0]);
 }
 
 
 static void
-visit_barrier(struct lp_build_nir_context *bld_base)
+visit_barrier(struct lp_build_nir_context *bld_base,
+              nir_intrinsic_instr *instr)
 {
-   bld_base->barrier(bld_base);
+   LLVMBuilderRef builder = bld_base->base.gallivm->builder;
+   nir_scope exec_scope = nir_intrinsic_execution_scope(instr);
+   unsigned nir_semantics = nir_intrinsic_memory_semantics(instr);
+
+   if (nir_semantics) {
+      LLVMAtomicOrdering ordering = LLVMAtomicOrderingSequentiallyConsistent;
+      LLVMBuildFence(builder, ordering, false, "");
+   }
+   if (exec_scope != NIR_SCOPE_NONE)
+      bld_base->barrier(bld_base);
 }
 
 
@@ -1993,6 +2005,47 @@ visit_store_scratch(struct lp_build_nir_context *bld_base,
    bld_base->store_scratch(bld_base, writemask, nc, bitsize, offset, val);
 }
 
+static void
+visit_payload_load(struct lp_build_nir_context *bld_base,
+                  nir_intrinsic_instr *instr,
+                  LLVMValueRef result[NIR_MAX_VEC_COMPONENTS])
+{
+   LLVMValueRef offset = get_src(bld_base, instr->src[0]);
+   bool offset_is_uniform = nir_src_is_always_uniform(instr->src[0]);
+   bld_base->load_mem(bld_base, nir_dest_num_components(instr->dest),
+                      nir_dest_bit_size(instr->dest),
+                      offset_is_uniform, true, NULL, offset, result);
+}
+
+static void
+visit_payload_store(struct lp_build_nir_context *bld_base,
+                    nir_intrinsic_instr *instr)
+{
+   LLVMValueRef val = get_src(bld_base, instr->src[0]);
+   LLVMValueRef offset = get_src(bld_base, instr->src[1]);
+   bool offset_is_uniform = nir_src_is_always_uniform(instr->src[1]);
+   int writemask = instr->const_index[1];
+   int nc = nir_src_num_components(instr->src[0]);
+   int bitsize = nir_src_bit_size(instr->src[0]);
+   bld_base->store_mem(bld_base, writemask, nc, bitsize,
+                       offset_is_uniform, true, NULL, offset, val);
+}
+
+static void
+visit_payload_atomic(struct lp_build_nir_context *bld_base,
+                     nir_intrinsic_instr *instr,
+                     LLVMValueRef result[NIR_MAX_VEC_COMPONENTS])
+{
+   LLVMValueRef offset = get_src(bld_base, instr->src[0]);
+   LLVMValueRef val = get_src(bld_base, instr->src[1]);
+   LLVMValueRef val2 = NULL;
+   int bitsize = nir_src_bit_size(instr->src[1]);
+   if (instr->intrinsic == nir_intrinsic_task_payload_atomic_swap)
+      val2 = get_src(bld_base, instr->src[2]);
+
+   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, true, NULL,
+                        offset, val, val2, &result[0]);
+}
 
 static void
 visit_intrinsic(struct lp_build_nir_context *bld_base,
@@ -2099,8 +2152,7 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
       visit_shared_atomic(bld_base, instr, result);
       break;
    case nir_intrinsic_scoped_barrier:
-      if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE)
-         visit_barrier(bld_base);
+      visit_barrier(bld_base, instr);
       break;
    case nir_intrinsic_load_kernel_input:
       visit_load_kernel_input(bld_base, instr, result);
@@ -2162,6 +2214,25 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
       break;
    case nir_intrinsic_shader_clock:
       bld_base->clock(bld_base, result);
+      break;
+   case nir_intrinsic_launch_mesh_workgroups:
+      bld_base->launch_mesh_workgroups(bld_base,
+                                       get_src(bld_base, instr->src[0]));
+      break;
+   case nir_intrinsic_load_task_payload:
+      visit_payload_load(bld_base, instr, result);
+      break;
+   case nir_intrinsic_store_task_payload:
+      visit_payload_store(bld_base, instr);
+      break;
+   case nir_intrinsic_task_payload_atomic:
+   case nir_intrinsic_task_payload_atomic_swap:
+      visit_payload_atomic(bld_base, instr, result);
+      break;
+   case nir_intrinsic_set_vertex_and_primitive_count:
+      bld_base->set_vertex_and_primitive_count(bld_base,
+                                               get_src(bld_base, instr->src[0]),
+                                               get_src(bld_base, instr->src[1]));
       break;
    default:
       fprintf(stderr, "Unsupported intrinsic: ");
@@ -2732,6 +2803,11 @@ lp_build_opt_nir(struct nir_shader *nir)
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
    NIR_PASS_V(nir, nir_lower_frexp);
+
+   if (nir->info.stage == MESA_SHADER_TASK) {
+      nir_lower_task_shader_options ts_opts = { 0 };
+      NIR_PASS_V(nir, nir_lower_task_shader, ts_opts);
+   }
 
    NIR_PASS_V(nir, nir_lower_flrp, 16|32|64, true);
    NIR_PASS_V(nir, nir_lower_fp16_casts, nir_lower_fp16_all);

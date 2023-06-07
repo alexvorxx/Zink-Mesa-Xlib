@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env bash
+# shellcheck disable=SC2035 # FIXME glob
+# shellcheck disable=SC2086 # we want word splitting
 
 set -ex
 
@@ -9,9 +11,6 @@ RESULTS=$(realpath -s "$PWD"/results)
 mkdir -p "$RESULTS"
 
 if [ "$PIGLIT_REPLAY_SUBCOMMAND" = "profile" ]; then
-    # workaround for older Debian Bullseye libyaml 0.2.2
-    sed -i "/^%YAML 1\.2$/d" "$PIGLIT_REPLAY_DESCRIPTION_FILE"
-
     yq -iY 'del(.traces[][] | select(.label[]? == "no-perf"))' \
       "$PIGLIT_REPLAY_DESCRIPTION_FILE"
 fi
@@ -26,10 +25,10 @@ case "$PIGLIT_REPLAY_DEVICE_NAME" in
     ;;
 esac
 
-PATH="/opt/wine-stable/bin/:$PATH" # WineHQ path
+#PATH="/opt/wine-stable/bin/:$PATH" # WineHQ path
 
 # Avoid asking about Gecko or Mono instalation
-export WINEDLLOVERRIDES=mscoree=d;mshtml=d
+export WINEDLLOVERRIDES="mscoree=d;mshtml=d"  # FIXME: drop, not needed anymore? (wine dir is already created)
 
 # Set environment for DXVK.
 export DXVK_LOG_LEVEL="info"
@@ -43,19 +42,11 @@ export DXVK_STATE_CACHE=0
 # using a command wrapper. Hence, we will just set it when running the
 # command.
 export __LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$INSTALL/lib/"
-export VK_ICD_FILENAMES="$INSTALL/share/vulkan/icd.d/${VK_DRIVER}_icd.${VK_CPU:-`uname -m`}.json"
+export VK_ICD_FILENAMES="$INSTALL/share/vulkan/icd.d/${VK_DRIVER}_icd.${VK_CPU:-$(uname -m)}.json"
 
 # Sanity check to ensure that our environment is sufficient to make our tests
 # run against the Mesa built by CI, rather than any installed distro version.
 MESA_VERSION=$(head -1 "$INSTALL/VERSION" | sed 's/\./\\./g')
-
-print_red() {
-    RED='\033[0;31m'
-    NC='\033[0m' # No Color
-    printf "${RED}"
-    "$@"
-    printf "${NC}"
-}
 
 # wrapper to supress +x to avoid spamming the log
 quiet() {
@@ -67,7 +58,7 @@ quiet() {
 # Set environment for apitrace executable.
 export PATH="/apitrace/build:$PATH"
 
-export PIGLIT_REPLAY_WINE_BINARY=wine64
+export PIGLIT_REPLAY_WINE_BINARY=wine
 export PIGLIT_REPLAY_WINE_APITRACE_BINARY="/apitrace-msvc-win64/bin/apitrace.exe"
 export PIGLIT_REPLAY_WINE_D3DRETRACE_BINARY="/apitrace-msvc-win64/bin/d3dretrace.exe"
 
@@ -82,14 +73,14 @@ HANG_DETECTION_CMD=""
 
 # Set up the platform windowing system.
 
-if [ "x$EGL_PLATFORM" = "xsurfaceless" ]; then
+if [ "$EGL_PLATFORM" = "surfaceless" ]; then
     # Use the surfaceless EGL platform.
     export DISPLAY=
     export WAFFLE_PLATFORM="surfaceless_egl"
 
     SANITY_MESA_VERSION_CMD="$SANITY_MESA_VERSION_CMD --platform surfaceless_egl --api gles2"
 
-    if [ "x$GALLIUM_DRIVER" = "xvirpipe" ]; then
+    if [ "$GALLIUM_DRIVER" = "virpipe" ]; then
     # piglit is to use virpipe, and virgl_test_server llvmpipe
     export GALLIUM_DRIVER="$GALLIUM_DRIVER"
 
@@ -101,9 +92,9 @@ if [ "x$EGL_PLATFORM" = "xsurfaceless" ]; then
 
     sleep 1
     fi
-elif [ "x$PIGLIT_PLATFORM" = "xgbm" ]; then
+elif [ "$PIGLIT_PLATFORM" = "gbm" ]; then
     SANITY_MESA_VERSION_CMD="$SANITY_MESA_VERSION_CMD --platform gbm --api gl"
-elif [ "x$PIGLIT_PLATFORM" = "xmixed_glx_egl" ]; then
+elif [ "$PIGLIT_PLATFORM" = "mixed_glx_egl" ]; then
     # It is assumed that you have already brought up your X server before
     # calling this script.
     SANITY_MESA_VERSION_CMD="$SANITY_MESA_VERSION_CMD --platform glx --api gl"
@@ -118,6 +109,7 @@ if [ -n "$CI_NODE_INDEX" ]; then
     USE_CASELIST=1
 fi
 
+# shellcheck disable=SC2317
 replay_minio_upload_images() {
     find "$RESULTS/$__PREFIX" -type f -name "*.png" -printf "%P\n" \
         | while read -r line; do
@@ -170,7 +162,7 @@ PIGLIT_CMD="./piglit run -l verbose --timeout 300 -j${FDO_CI_CONCURRENT:-4} $PIG
 RUN_CMD="export LD_LIBRARY_PATH=$__LD_LIBRARY_PATH; $SANITY_MESA_VERSION_CMD && $HANG_DETECTION_CMD $PIGLIT_CMD"
 
 if [ "$RUN_CMD_WRAPPER" ]; then
-    RUN_CMD="set +e; $RUN_CMD_WRAPPER "$(/usr/bin/printf "%q" "$RUN_CMD")"; set -e"
+    RUN_CMD="set +e; $RUN_CMD_WRAPPER \"$(/usr/bin/printf "%q" "$RUN_CMD")\"; set -e"
 fi
 
 # The replayer doesn't do any size or checksum verification for the traces in
@@ -180,9 +172,8 @@ fi
 # run.
 rm -rf replayer-db
 
-eval $RUN_CMD
-
-if [ $? -ne 0 ]; then
+if ! eval $RUN_CMD;
+then
     printf "%s\n" "Found $(cat /tmp/version.txt), expected $MESA_VERSION"
 fi
 
@@ -220,7 +211,7 @@ find "$RESULTS"/summary -type f -name "*.html" -print0 \
 find "$RESULTS"/summary -type f -name "*.html" -print0 \
         | xargs -0 sed -i 's%<img src="file://%<img src="https://'"${PIGLIT_REPLAY_REFERENCE_IMAGES_BASE}"'/%g'
 
-quiet print_red echo "Failures in traces:"
+echo "Failures in traces:"
 cat $RESULTSFILE
-quiet print_red echo "Review the image changes and get the new checksums at: ${ARTIFACTS_BASE_URL}/results/summary/problems.html"
+error echo "Review the image changes and get the new checksums at: ${ARTIFACTS_BASE_URL}/results/summary/problems.html"
 exit 1

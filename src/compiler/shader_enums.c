@@ -28,7 +28,6 @@
 
 #include "shader_enums.h"
 #include "util/macros.h"
-#include "mesa/main/config.h"
 
 #define ENUM(x) [x] = #x
 #define NAME(val) ((((val) < ARRAY_SIZE(names)) && names[(val)]) ? names[(val)] : "UNKNOWN")
@@ -435,11 +434,11 @@ unsigned
 num_mesh_vertices_per_primitive(unsigned prim)
 {
    switch (prim) {
-      case SHADER_PRIM_POINTS:
+      case MESA_PRIM_POINTS:
          return 1;
-      case SHADER_PRIM_LINES:
+      case MESA_PRIM_LINES:
          return 2;
-      case SHADER_PRIM_TRIANGLES:
+      case MESA_PRIM_TRIANGLES:
          return 3;
       default:
          unreachable("invalid mesh shader primitive type");

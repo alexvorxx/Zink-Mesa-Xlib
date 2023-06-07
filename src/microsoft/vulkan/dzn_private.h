@@ -176,7 +176,7 @@ dzn_meta_blits_get_context(struct dzn_device *device,
                            const struct dzn_meta_blit_key *key);
 
 #define MAX_SYNC_TYPES 3
-#define MAX_QUEUE_FAMILIES 3
+#define MAX_QUEUE_FAMILIES 2
 
 struct dzn_physical_device {
    struct vk_physical_device vk;
@@ -769,6 +769,7 @@ struct dzn_descriptor_set_layout {
    struct {
       uint32_t bindings[MAX_DYNAMIC_BUFFERS];
       uint32_t count;
+      uint32_t desc_count;
       uint32_t range_offset;
    } dynamic_buffers;
    uint32_t buffer_count;
@@ -1240,6 +1241,7 @@ enum dzn_debug_flags {
    DZN_DEBUG_DEBUGGER = 1 << 8,
    DZN_DEBUG_REDIRECTS = 1 << 9,
    DZN_DEBUG_BINDLESS = 1 << 10,
+   DZN_DEBUG_NO_BINDLESS = 1 << 11,
 };
 
 struct dzn_instance {

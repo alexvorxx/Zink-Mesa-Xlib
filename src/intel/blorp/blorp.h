@@ -184,6 +184,13 @@ blorp_blit(struct blorp_batch *batch,
            bool mirror_x, bool mirror_y);
 
 void
+blorp_copy_get_formats(const struct isl_device *isl_dev,
+                       const struct isl_surf *src_surf,
+                       const struct isl_surf *dst_surf,
+                       enum isl_format *src_view_format,
+                       enum isl_format *dst_view_format);
+
+void
 blorp_copy(struct blorp_batch *batch,
            const struct blorp_surf *src_surf,
            unsigned src_level, unsigned src_layer,

@@ -322,6 +322,31 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
             fprintf(output, " sa_sdst(%d)", sa_sdst);
          break;
       }
+      case aco_opcode::s_delay_alu: {
+         unsigned delay[2] = {imm & 0xfu, (imm >> 7) & 0xfu};
+         unsigned skip = (imm >> 4) & 0x3;
+         for (unsigned i = 0; i < 2; i++) {
+            if (i == 1 && skip) {
+               if (skip == 1)
+                  fprintf(output, " next");
+               else
+                  fprintf(output, " skip_%u", skip - 1);
+            }
+
+            alu_delay_wait wait = (alu_delay_wait)delay[i];
+            if (wait >= alu_delay_wait::VALU_DEP_1 && wait <= alu_delay_wait::VALU_DEP_4)
+               fprintf(output, " valu_dep_%u", delay[i]);
+            else if (wait >= alu_delay_wait::TRANS32_DEP_1 && wait <= alu_delay_wait::TRANS32_DEP_3)
+               fprintf(output, " trans32_dep_%u",
+                       delay[i] - (unsigned)alu_delay_wait::TRANS32_DEP_1 + 1);
+            else if (wait == alu_delay_wait::FMA_ACCUM_CYCLE_1)
+               fprintf(output, " fma_accum_cycle_1");
+            else if (wait >= alu_delay_wait::SALU_CYCLE_1 && wait <= alu_delay_wait::SALU_CYCLE_3)
+               fprintf(output, " salu_cycle_%u",
+                       delay[i] - (unsigned)alu_delay_wait::SALU_CYCLE_1 + 1);
+         }
+         break;
+      }
       case aco_opcode::s_endpgm:
       case aco_opcode::s_endpgm_saved:
       case aco_opcode::s_endpgm_ordered_ps_done:

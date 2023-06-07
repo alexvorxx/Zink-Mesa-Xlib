@@ -24,6 +24,40 @@
 #include "nir.h"
 #include "nir_builder.h"
 
+static const struct glsl_type *
+strip_shadow(const struct glsl_type *type)
+{
+   const struct glsl_type *new_type =
+         glsl_sampler_type(
+            glsl_get_sampler_dim(type),
+            false, glsl_sampler_type_is_array(type),
+            GLSL_TYPE_FLOAT);
+   return new_type;
+}
+
+
+static inline const struct glsl_type *
+strip_shadow_with_array(const struct glsl_type *type)
+{
+   return glsl_type_wrap_in_arrays(strip_shadow(glsl_without_array(type)), type);
+}
+
+static bool
+change_deref_var_type(struct nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_deref)
+      return false;
+
+   nir_variable *sampler = data;
+   nir_deref_instr *deref = nir_instr_as_deref (instr);
+   if (deref->var == sampler) {
+      deref->type = sampler->type;
+      return true;
+   }
+
+   return false;
+}
+
 static bool
 remove_tex_shadow(struct nir_builder *b, nir_instr *instr, void *data)
 {
@@ -43,6 +77,21 @@ remove_tex_shadow(struct nir_builder *b, nir_instr *instr, void *data)
    int index = nir_tex_instr_src_index(tex, nir_tex_src_comparator);
 
    if (index != -1) {
+      nir_deref_instr *sampler_deref = NULL;
+      nir_variable *sampler = NULL;
+      int sampler_src_index = nir_tex_instr_src_index(tex, nir_tex_src_sampler_deref);
+      if (sampler_src_index >= 0) {
+         sampler_deref = nir_instr_as_deref(tex->src[sampler_src_index].src.ssa->parent_instr);
+         sampler = nir_deref_instr_get_variable(sampler_deref);
+         sampler->type = strip_shadow_with_array(sampler->type);
+         sampler_deref->type = sampler->type;
+      } else {
+         sampler = nir_find_variable_with_location(b->shader, nir_var_uniform, tex->sampler_index);
+         sampler->type = strip_shadow_with_array(sampler->type);
+      }
+
+      nir_shader_instructions_pass(b->shader, change_deref_var_type,
+                                   nir_metadata_none, sampler);
       tex->is_shadow = false;
       nir_tex_instr_remove_src(tex, index);
       return true;

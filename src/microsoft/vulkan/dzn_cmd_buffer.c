@@ -502,12 +502,14 @@ dzn_cmd_buffer_reset(struct vk_command_buffer *cbuf, VkCommandBufferResetFlags f
    dzn_descriptor_heap_pool_reset(&cmdbuf->cbv_srv_uav_pool);
    dzn_descriptor_heap_pool_reset(&cmdbuf->sampler_pool);
 
-   if (cmdbuf->vk.state == MESA_VK_COMMAND_BUFFER_STATE_RECORDING)
+   if (cmdbuf->vk.state == MESA_VK_COMMAND_BUFFER_STATE_RECORDING &&
+       cmdbuf->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY)
       ID3D12GraphicsCommandList1_Close(cmdbuf->cmdlist);
 
    vk_command_buffer_reset(&cmdbuf->vk);
 
-   ID3D12CommandAllocator_Reset(cmdbuf->cmdalloc);
+   if (cmdbuf->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY)
+      ID3D12CommandAllocator_Reset(cmdbuf->cmdalloc);
 }
 
 static uint32_t
@@ -644,23 +646,25 @@ dzn_cmd_buffer_create(const VkCommandBufferAllocateInfo *info,
       goto out;
    }
 
-   if (FAILED(ID3D12Device1_CreateCommandAllocator(device->dev, type,
-                                                   &IID_ID3D12CommandAllocator,
-                                                   (void **)&cmdbuf->cmdalloc))) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto out;
-   }
+   if (cmdbuf->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+      if (FAILED(ID3D12Device1_CreateCommandAllocator(device->dev, type,
+                                                      &IID_ID3D12CommandAllocator,
+                                                      (void **)&cmdbuf->cmdalloc))) {
+         result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+         goto out;
+      }
 
-   if (FAILED(ID3D12Device4_CreateCommandList1(device->dev, 0, type,
-                                               D3D12_COMMAND_LIST_FLAG_NONE,
-                                               &IID_ID3D12GraphicsCommandList1,
-                                               (void **)&cmdbuf->cmdlist))) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto out;
-   }
+      if (FAILED(ID3D12Device4_CreateCommandList1(device->dev, 0, type,
+                                                  D3D12_COMMAND_LIST_FLAG_NONE,
+                                                  &IID_ID3D12GraphicsCommandList1,
+                                                  (void **)&cmdbuf->cmdlist))) {
+         result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+         goto out;
+      }
 
-   (void)ID3D12GraphicsCommandList_QueryInterface(cmdbuf->cmdlist, &IID_ID3D12GraphicsCommandList8, (void **)&cmdbuf->cmdlist8);
-   (void)ID3D12GraphicsCommandList_QueryInterface(cmdbuf->cmdlist, &IID_ID3D12GraphicsCommandList9, (void **)&cmdbuf->cmdlist9);
+      (void)ID3D12GraphicsCommandList_QueryInterface(cmdbuf->cmdlist, &IID_ID3D12GraphicsCommandList8, (void **)&cmdbuf->cmdlist8);
+      (void)ID3D12GraphicsCommandList_QueryInterface(cmdbuf->cmdlist, &IID_ID3D12GraphicsCommandList9, (void **)&cmdbuf->cmdlist9);
+   }
 
    cmdbuf->type = type;
    cmdbuf->valid_sync = cmd_buffer_valid_sync[type];
@@ -708,7 +712,8 @@ dzn_BeginCommandBuffer(VkCommandBuffer commandBuffer,
 {
    VK_FROM_HANDLE(dzn_cmd_buffer, cmdbuf, commandBuffer);
    vk_command_buffer_begin(&cmdbuf->vk, info);
-   ID3D12GraphicsCommandList1_Reset(cmdbuf->cmdlist, cmdbuf->cmdalloc, NULL);
+   if (cmdbuf->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY)
+      ID3D12GraphicsCommandList1_Reset(cmdbuf->cmdlist, cmdbuf->cmdalloc, NULL);
    return vk_command_buffer_get_record_result(&cmdbuf->vk);
 }
 
@@ -3216,7 +3221,7 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
                                                         primary_is_writable, &bdesc);
 
                   if (pipeline->sets[s].dynamic_buffer_heap_offsets[o].alt != ~0) {
-                     assert(!primary_is_writable);
+                     assert(primary_is_writable);
                      desc_heap_offset = pipeline->sets[s].dynamic_buffer_heap_offsets[o].alt;
                      dzn_descriptor_heap_write_buffer_desc(device, dst_heap,
                                                            dst_heap_offset + set_heap_offset + desc_heap_offset,
@@ -3394,7 +3399,7 @@ dzn_cmd_buffer_update_vbviews(struct dzn_cmd_buffer *cmdbuf)
    unsigned start, end;
 
    BITSET_FOREACH_RANGE(start, end, cmdbuf->state.vb.dirty, MAX_VBS)
-      ID3D12GraphicsCommandList1_IASetVertexBuffers(cmdbuf->cmdlist, start, end - start, cmdbuf->state.vb.views);
+      ID3D12GraphicsCommandList1_IASetVertexBuffers(cmdbuf->cmdlist, start, end - start, &cmdbuf->state.vb.views[start]);
 
    BITSET_CLEAR_RANGE(cmdbuf->state.vb.dirty, 0, MAX_VBS);
 }

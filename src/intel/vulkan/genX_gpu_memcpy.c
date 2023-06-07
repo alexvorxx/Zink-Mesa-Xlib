@@ -82,7 +82,7 @@ emit_common_so_memcpy(struct anv_batch *batch, struct anv_device *device,
    }
 
    /* Wa_16013994831 - Disable preemption during streamout. */
-   if (intel_device_info_is_dg2(device->info))
+   if (intel_needs_workaround(device->info, 16013994831))
       genX(batch_set_preemption)(batch, false);
 #endif
 

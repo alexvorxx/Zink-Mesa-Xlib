@@ -44,15 +44,12 @@
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
 
-#include "tgsi/tgsi_scan.h"
+#include "draw_vertex_header.h"
 
 #ifdef DRAW_LLVM_AVAILABLE
 struct gallivm_state;
 #endif
 
-
-/** Sum of frustum planes and user-defined planes */
-#define DRAW_TOTAL_CLIP_PLANES (6 + PIPE_MAX_CLIP_PLANES)
 
 /**
  * The largest possible index of a vertex that can be fetched.
@@ -102,6 +99,8 @@ struct tgsi_sampler;
 struct tgsi_image;
 struct tgsi_buffer;
 struct lp_cached_code;
+struct draw_vertex_info;
+struct draw_prim_info;
 
 /**
  * Represents the mapped vertex buffer.
@@ -109,20 +108,6 @@ struct lp_cached_code;
 struct draw_vertex_buffer {
    const void *map;
    uint32_t size;
-};
-
-/**
- * Basic vertex info.  Used to represent vertices after VS (through GS, TESS,
- * etc.) to vbuf output.
- */
-struct vertex_header {
-   unsigned clipmask:DRAW_TOTAL_CLIP_PLANES;
-   unsigned edgeflag:1;
-   unsigned pad:1;
-   unsigned vertex_id:16;
-
-   float clip_pos[4];
-   float data[][4]; // the vertex attributes
 };
 
 /* NOTE: It should match vertex_id size above */
@@ -181,7 +166,7 @@ struct draw_context
    struct {
       /* Current active frontend */
       struct draw_pt_front_end *frontend;
-      enum pipe_prim_type prim;
+      enum mesa_prim prim;
       unsigned opt;     /**< bitmask of PT_x flags */
       unsigned eltSize; /* saved eltSize for flushing */
       unsigned viewid; /* saved viewid for flushing */
@@ -192,6 +177,7 @@ struct draw_context
          struct draw_pt_middle_end *fetch_shade_emit;
          struct draw_pt_middle_end *general;
          struct draw_pt_middle_end *llvm;
+         struct draw_pt_middle_end *mesh;
       } middle;
 
       struct {
@@ -373,6 +359,13 @@ struct draw_context
       struct draw_fragment_shader *fragment_shader;
    } fs;
 
+   struct {
+      struct draw_mesh_shader *mesh_shader;
+      uint num_ms_outputs;  /**< convenience, from geometry_shader */
+      uint position_output;
+      uint clipvertex_output;
+   } ms;
+
    /** Stream output (vertex feedback) state */
    struct {
       struct draw_so_target *targets[PIPE_MAX_SO_BUFFERS];
@@ -439,31 +432,10 @@ struct draw_fetch_info {
    unsigned count;
 };
 
-struct draw_vertex_info {
-   struct vertex_header *verts;
-   unsigned vertex_size;
-   unsigned stride;
-   unsigned count;
-};
-
 /* these flags are set if the primitive is a segment of a larger one */
 #define DRAW_SPLIT_BEFORE        0x1
 #define DRAW_SPLIT_AFTER         0x2
 #define DRAW_LINE_LOOP_AS_STRIP  0x4
-
-struct draw_prim_info {
-   boolean linear;
-   unsigned start;
-
-   const ushort *elts;
-   unsigned count;
-
-   enum pipe_prim_type prim;
-   unsigned flags;
-   unsigned *primitive_lengths;
-   unsigned primitive_count;
-};
-
 
 /*******************************************************************************
  * Draw common initialization code

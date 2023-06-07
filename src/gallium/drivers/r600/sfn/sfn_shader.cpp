@@ -676,11 +676,12 @@ Shader::scan_instruction(nir_instr *instr)
       m_flags.set(sh_writes_memory);
       m_flags.set(sh_uses_images);
       break;
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_group_memory_barrier:
-      m_chain_instr.prepare_mem_barrier = true;
+   case nir_intrinsic_scoped_barrier:
+      m_chain_instr.prepare_mem_barrier =
+            (nir_intrinsic_memory_modes(intr) &
+             (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image) &&
+             nir_intrinsic_memory_scope(intr) != NIR_SCOPE_NONE);
+      break;
    default:;
    }
    return true;
@@ -724,12 +725,37 @@ child_block_empty(const exec_list& list)
    return result;
 }
 
+static bool value_has_non_const_source(VirtualValue *value)
+{
+   auto reg = value->as_register();
+   if (reg) {
+      // Non-ssa registers are probably the result of some control flow
+      // that makes the values non-uniform across the work group
+      if (!reg->has_flag(Register::ssa))
+         return true;
+
+      for (const auto& p : reg->parents()) {
+         auto alu = p->as_alu();
+         if (alu) {
+            for (auto& s : p->as_alu()->sources()) {
+               return value_has_non_const_source(s);
+            }
+         } else {
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
 bool
 Shader::process_if(nir_if *if_stmt)
 {
    SFN_TRACE_FUNC(SfnLog::flow, "IF");
 
    auto value = value_factory().src(if_stmt->condition, 0);
+
+   bool non_const_cond = value_has_non_const_source(value);
 
    EAluOp op = child_block_empty(if_stmt->then_list) ? op2_prede_int :
                                                        op2_pred_setne_int;
@@ -745,6 +771,8 @@ Shader::process_if(nir_if *if_stmt)
 
    IfInstr *ir = new IfInstr(pred);
    emit_instruction(ir);
+   if (non_const_cond)
+      ++m_control_flow_depth;
    start_new_block(1);
 
    if (!child_block_empty(if_stmt->then_list)) {
@@ -774,6 +802,9 @@ Shader::process_if(nir_if *if_stmt)
 
    if (!emit_control_flow(ControlFlowInstr::cf_endif))
       return false;
+
+   if (non_const_cond)
+      --m_control_flow_depth;
 
    return true;
 }
@@ -878,20 +909,8 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
       return emit_load_tcs_param_base(intr, 0);
    case nir_intrinsic_load_tcs_out_param_base_r600:
       return emit_load_tcs_param_base(intr, 16);
-      // We only emit the group barrier, barriers across work groups
-      // are not yet implemented
-   case nir_intrinsic_control_barrier:
-   case nir_intrinsic_memory_barrier_tcs_patch:
-   case nir_intrinsic_memory_barrier_shared:
-      return emit_barrier(intr);
-   case nir_intrinsic_memory_barrier_atomic_counter:
-      return true;
-   case nir_intrinsic_group_memory_barrier:
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier:
-      return emit_wait_ack();
-
+   case nir_intrinsic_scoped_barrier:
+      return emit_scoped_barrier(intr);
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
       return emit_atomic_local_shared(intr);
@@ -1268,8 +1287,9 @@ Shader::emit_shader_clock(nir_intrinsic_instr *instr)
 }
 
 bool
-Shader::emit_barrier(nir_intrinsic_instr *intr)
+Shader::emit_group_barrier(nir_intrinsic_instr *intr)
 {
+   assert(m_control_flow_depth == 0);
    (void)intr;
    /* Put barrier into it's own block, so that optimizers and the
     * scheduler don't move code */
@@ -1278,6 +1298,31 @@ Shader::emit_barrier(nir_intrinsic_instr *intr)
    op->set_alu_flag(alu_last_instr);
    emit_instruction(op);
    start_new_block(0);
+   return true;
+}
+
+bool Shader::emit_scoped_barrier(nir_intrinsic_instr *intr)
+{
+
+   if ((nir_intrinsic_execution_scope(intr) == NIR_SCOPE_WORKGROUP)) {
+      if (!emit_group_barrier(intr))
+         return false;
+   }
+
+   /* We don't check nir_var_mem_shared because we don't emit a real barrier -
+    * for this we need to implement GWS (Global Wave Sync).
+    * Here we just emit a wait_ack - this is no real barrier,
+    * it's just a wait for RAT writes to be finished (if they
+    * are emitted with the _ACK opcode and the `mark` flag set - it
+    * is very likely that WAIT_ACK is also only relevant for this
+    * shader instance). */
+   auto full_barrier_mem_modes = nir_var_mem_ssbo |  nir_var_image | nir_var_mem_global;
+
+   if ((nir_intrinsic_memory_scope(intr) != NIR_SCOPE_NONE) &&
+       (nir_intrinsic_memory_modes(intr) & full_barrier_mem_modes)) {
+      return emit_wait_ack();
+   }
+
    return true;
 }
 

@@ -296,9 +296,6 @@ typedef struct {
    /* For local access */
    enum agx_format format;
 
-   /* For load varying */
-   bool perspective : 1;
-
    /* Invert icond/fcond */
    bool invert_cond : 1;
 
@@ -307,6 +304,9 @@ typedef struct {
    bool offset            : 1;
    bool shadow            : 1;
    enum agx_gather gather : 3;
+
+   /* TODO: Handle iter ops more efficient */
+   enum agx_interpolation interpolation : 2;
 
    /* Final st_vary op */
    bool last : 1;
@@ -325,7 +325,7 @@ typedef struct {
    bool saturate : 1;
    unsigned mask : 4;
 
-   unsigned padding : 8;
+   unsigned padding : 9;
 } agx_instr;
 
 static inline void
@@ -379,7 +379,7 @@ typedef struct {
    unsigned alloc;
 
    /* I don't really understand how writeout ops work yet */
-   bool did_writeout, did_sample_mask;
+   bool did_writeout;
 
    /* Has r0l been zeroed yet due to control flow? */
    bool any_cf;
@@ -793,7 +793,7 @@ void agx_emit_parallel_copies(agx_builder *b, struct agx_copy *copies,
 void agx_compute_liveness(agx_context *ctx);
 void agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I);
 
-bool agx_nir_lower_zs_emit(nir_shader *s);
+bool agx_nir_lower_sample_mask(nir_shader *s, unsigned nr_samples);
 bool agx_nir_lower_texture(nir_shader *s, bool support_lod_bias);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);

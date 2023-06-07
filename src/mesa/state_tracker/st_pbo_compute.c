@@ -289,14 +289,14 @@ init_pbo_shader_data(nir_builder *b, struct pbo_shader_data *sd, unsigned coord_
                                    nir_bcsel(b,
                                              nir_ieq_imm(b, sd->bits1, 8),
                                              nir_bcsel(b,
-                                                       nir_uge(b, sd->channels, nir_imm_int(b, 2)),
+                                                       nir_uge_imm(b, sd->channels, 2),
                                                        nir_bcsel(b,
-                                                                 nir_uge(b, sd->channels, nir_imm_int(b, 3)),
+                                                                 nir_uge_imm(b, sd->channels, 3),
                                                                  nir_bcsel(b,
-                                                                           nir_ieq(b, sd->channels, nir_imm_int(b, 4)),
-                                                                           nir_ball(b, nir_ieq(b, sd->bits, nir_imm_ivec4(b, 8, 8, 8, 8))),
-                                                                           nir_ball(b, nir_ieq(b, nir_channels(b, sd->bits, 7), nir_imm_ivec3(b, 8, 8, 8)))),
-                                                                 nir_ball(b, nir_ieq(b, nir_channels(b, sd->bits, 3), nir_imm_ivec2(b, 8, 8)))),
+                                                                           nir_ieq_imm(b, sd->channels, 4),
+                                                                           nir_ball(b, nir_ieq_imm(b, sd->bits, 8)),
+                                                                           nir_ball(b, nir_ieq_imm(b, nir_channels(b, sd->bits, 7), 8))),
+                                                                 nir_ball(b, nir_ieq_imm(b, nir_channels(b, sd->bits, 3), 8))),
                                                        nir_imm_bool(b, 0)),
                                              nir_imm_bool(b, 0))),
                            nir_imm_bool(b, 0),
@@ -363,7 +363,7 @@ get_buffer_offset(nir_builder *b, nir_ssa_def *coord, struct pbo_shader_data *sd
                + (skipimages + img) * bytes_per_image;
  */
    nir_ssa_def *bytes_per_row = nir_imul(b, nir_channel(b, sd->range, 0), sd->blocksize);
-   bytes_per_row = nir_bcsel(b, nir_ult(b, sd->alignment, nir_imm_int(b, 2)),
+   bytes_per_row = nir_bcsel(b, nir_ult_imm(b, sd->alignment, 2),
                              bytes_per_row,
                              nir_iand(b,
                                       nir_isub(b, nir_iadd(b, bytes_per_row, sd->alignment), nir_imm_int(b, 1)),
@@ -390,7 +390,7 @@ write_ssbo(nir_builder *b, nir_ssa_def *pixel, nir_ssa_def *buffer_offset)
 static void
 write_conversion(nir_builder *b, nir_ssa_def *pixel, nir_ssa_def *buffer_offset, struct pbo_shader_data *sd)
 {
-   nir_push_if(b, nir_ilt(b, sd->dst_bit_size, nir_imm_int(b, 32)));
+   nir_push_if(b, nir_ilt_imm(b, sd->dst_bit_size, 32));
       nir_push_if(b, nir_ieq_imm(b, sd->dst_bit_size, 16));
          write_ssbo(b, nir_u2u16(b, pixel), buffer_offset);
       nir_push_else(b, NULL);
@@ -433,7 +433,7 @@ grab_components(nir_builder *b, nir_ssa_def *pixel, nir_ssa_def *buffer_offset, 
 {
    if (weird_packed) {
       nir_push_if(b, nir_ieq_imm(b, sd->bits1, 32));
-         write_conversion(b, nir_channels(b, pixel, 3), buffer_offset, sd);
+         write_conversion(b, nir_trim_vector(b, pixel, 2), buffer_offset, sd);
       nir_push_else(b, NULL);
          write_conversion(b, nir_channel(b, pixel, 0), buffer_offset, sd);
       nir_pop_if(b, NULL);
@@ -442,12 +442,15 @@ grab_components(nir_builder *b, nir_ssa_def *pixel, nir_ssa_def *buffer_offset, 
          write_conversion(b, nir_channel(b, pixel, 0), buffer_offset, sd);
       nir_push_else(b, NULL);
          nir_push_if(b, nir_ieq_imm(b, sd->channels, 2));
-            write_conversion(b, nir_channels(b, pixel, (1 << 2) - 1), buffer_offset, sd);
+            write_conversion(b, nir_trim_vector(b, pixel, 2), buffer_offset,
+                             sd);
          nir_push_else(b, NULL);
             nir_push_if(b, nir_ieq_imm(b, sd->channels, 3));
-               write_conversion(b, nir_channels(b, pixel, (1 << 3) - 1), buffer_offset, sd);
+               write_conversion(b, nir_trim_vector(b, pixel, 3),
+                                buffer_offset, sd);
             nir_push_else(b, NULL);
-               write_conversion(b, nir_channels(b, pixel, (1 << 4) - 1), buffer_offset, sd);
+               write_conversion(b, nir_trim_vector(b, pixel, 4),
+                                buffer_offset, sd);
             nir_pop_if(b, NULL);
          nir_pop_if(b, NULL);
       nir_pop_if(b, NULL);
@@ -487,10 +490,10 @@ check_for_weird_packing(nir_builder *b, struct pbo_shader_data *sd, unsigned com
    nir_ssa_def *c = nir_channel(b, sd->bits, component - 1);
 
    return nir_bcsel(b,
-                    nir_ige(b, sd->channels, nir_imm_int(b, component)),
+                    nir_ige_imm(b, sd->channels, component),
                     nir_ior(b,
                             nir_ine(b, c, sd->bits1),
-                            nir_ine(b, nir_imod(b, c, nir_imm_int(b, 8)), nir_imm_int(b, 0))),
+                            nir_ine_imm(b, nir_imod(b, c, nir_imm_int(b, 8)), 0)),
                     nir_imm_bool(b, 0));
 }
 
@@ -678,10 +681,8 @@ create_conversion_shader(struct st_context *st, enum pipe_texture_target target,
    txf->coord_components = coord_components;
    txf->texture_index = 0;
    txf->sampler_index = 0;
-   txf->src[0].src_type = nir_tex_src_coord;
-   txf->src[0].src = nir_src_for_ssa(coord);
-   txf->src[1].src_type = nir_tex_src_lod;
-   txf->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
+   txf->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
+   txf->src[1] = nir_tex_src_for_ssa(nir_tex_src_lod, nir_imm_int(&b, 0));
    txf->src[2].src_type = nir_tex_src_texture_deref;
    nir_deref_instr *sampler_deref = nir_build_deref_var(&b, sampler);
    txf->src[2].src = nir_src_for_ssa(&sampler_deref->dest.ssa);

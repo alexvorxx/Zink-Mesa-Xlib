@@ -208,7 +208,7 @@ split_store_deref(nir_builder *b, nir_intrinsic_instr *intr,
 
    int write_mask_xy = nir_intrinsic_write_mask(intr) & 3;
    if (write_mask_xy) {
-      nir_ssa_def *src_xy = nir_channels(b, intr->src[1].ssa, 3);
+      nir_ssa_def *src_xy = nir_trim_vector(b, intr->src[1].ssa, 2);
       nir_build_store_deref(b, &deref_xy->dest.ssa, src_xy, write_mask_xy);
    }
 

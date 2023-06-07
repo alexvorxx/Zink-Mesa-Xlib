@@ -1421,10 +1421,10 @@ static void blitter_draw(struct blitter_context_priv *ctx,
        */
       static uint8_t indices[6] = { 0, 1, 2, 0, 3, 2 };
       util_draw_elements_instanced(pipe, indices, 1, 0,
-                                   PIPE_PRIM_TRIANGLES, 0, 6,
+                                   MESA_PRIM_TRIANGLES, 0, 6,
                                    0, num_instances);
    } else {
-      util_draw_arrays_instanced(pipe, PIPE_PRIM_TRIANGLE_FAN, 0, 4,
+      util_draw_arrays_instanced(pipe, MESA_PRIM_TRIANGLE_FAN, 0, 4,
                                  0, num_instances);
    }
    pipe_resource_reference(&vb.buffer.resource, NULL);
@@ -2648,7 +2648,7 @@ void util_blitter_clear_buffer(struct blitter_context *blitter,
    so_target = pipe->create_stream_output_target(pipe, dst, offset, size);
    pipe->set_stream_output_targets(pipe, 1, &so_target, offsets);
 
-   util_draw_arrays(pipe, PIPE_PRIM_POINTS, 0, size / 4);
+   util_draw_arrays(pipe, MESA_PRIM_POINTS, 0, size / 4);
 
 out:
    util_blitter_restore_vertex_states(blitter);

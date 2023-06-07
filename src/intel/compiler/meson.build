@@ -92,6 +92,7 @@ libintel_compiler_files = files(
   'brw_nir_lower_cs_intrinsics.c',
   'brw_nir_lower_alpha_to_coverage.c',
   'brw_nir_lower_intersection_shader.c',
+  'brw_nir_lower_non_uniform_resource_intel.c',
   'brw_nir_lower_ray_queries.c',
   'brw_nir_lower_rt_intrinsics.c',
   'brw_nir_lower_shader_calls.c',

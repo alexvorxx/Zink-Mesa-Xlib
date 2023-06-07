@@ -155,6 +155,8 @@ nir_options = {
    .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
    .lower_device_index_to_zero = true,
    .linker_ignore_precision = true,
+   .support_16bit_alu = true,
+   .preserve_mediump = true,
 };
 
 const nir_shader_compiler_options*
@@ -177,8 +179,6 @@ dxil_get_nir_compiler_options(nir_shader_compiler_options *options,
    }
    if (!(supported_float_sizes & 64))
       options->lower_doubles_options = ~0;
-   if ((supported_int_sizes & 16) && (supported_float_sizes & 16))
-      options->support_16bit_alu = true;
    if (shader_model_max >= SHADER_MODEL_6_4) {
       options->has_sdot_4x8 = true;
       options->has_udot_4x8 = true;
@@ -1292,7 +1292,7 @@ emit_srv(struct ntd_context *ctx, nir_variable *var, unsigned count)
       res_kind = dxil_get_resource_kind(var->type);
       res_type = DXIL_RES_SRV_TYPED;
    }
-   const struct dxil_type *res_type_as_type = dxil_module_get_res_type(&ctx->mod, res_kind, comp_type, false /* readwrite */);
+   const struct dxil_type *res_type_as_type = dxil_module_get_res_type(&ctx->mod, res_kind, comp_type, 4, false /* readwrite */);
 
    if (glsl_type_is_array(var->type))
       res_type_as_type = dxil_module_get_array_type(&ctx->mod, res_type_as_type, count);
@@ -1321,7 +1321,7 @@ emit_globals(struct ntd_context *ctx, unsigned size)
       return true;
 
    const struct dxil_type *struct_type = dxil_module_get_res_type(&ctx->mod,
-      DXIL_RESOURCE_KIND_RAW_BUFFER, DXIL_COMP_TYPE_INVALID, true /* readwrite */);
+      DXIL_RESOURCE_KIND_RAW_BUFFER, DXIL_COMP_TYPE_INVALID, 1, true /* readwrite */);
    if (!struct_type)
       return false;
 
@@ -1351,12 +1351,13 @@ emit_globals(struct ntd_context *ctx, unsigned size)
 
 static bool
 emit_uav(struct ntd_context *ctx, unsigned binding, unsigned space, unsigned count,
-         enum dxil_component_type comp_type, enum dxil_resource_kind res_kind, const char *name)
+         enum dxil_component_type comp_type, unsigned num_comps, enum dxil_resource_kind res_kind,
+         const char *name)
 {
    unsigned id = util_dynarray_num_elements(&ctx->uav_metadata_nodes, const struct dxil_mdnode *);
    resource_array_layout layout = { id, binding, count, space };
 
-   const struct dxil_type *res_type = dxil_module_get_res_type(&ctx->mod, res_kind, comp_type, true /* readwrite */);
+   const struct dxil_type *res_type = dxil_module_get_res_type(&ctx->mod, res_kind, comp_type, num_comps, true /* readwrite */);
    res_type = dxil_module_get_array_type(&ctx->mod, res_type, count);
    const struct dxil_mdnode *uav_meta = emit_uav_metadata(&ctx->mod, res_type, name,
                                                           &layout, comp_type, res_kind);
@@ -1399,7 +1400,9 @@ emit_uav_var(struct ntd_context *ctx, nir_variable *var, unsigned count)
    enum dxil_resource_kind res_kind = dxil_get_resource_kind(var->type);
    const char *name = var->name;
 
-   return emit_uav(ctx, binding, space, count, comp_type, res_kind, name);
+   return emit_uav(ctx, binding, space, count, comp_type,
+                   util_format_get_nr_components(var->data.image.format),
+                   res_kind, name);
 }
 
 static void
@@ -2137,7 +2140,7 @@ store_dest(struct ntd_context *ctx, nir_dest *dest, unsigned chan,
       ctx->mod.feats.doubles = true;
    if (type == ctx->mod.float16_type ||
        type == ctx->mod.int16_type)
-      ctx->mod.feats.native_low_precision = true;
+      ctx->mod.feats.min_precision = true;
    if (type == ctx->mod.int64_type)
       ctx->mod.feats.int64_ops = true;
    store_dest_value(ctx, dest, chan, value);
@@ -2307,6 +2310,7 @@ get_cast_op(nir_alu_instr *alu)
    /* float -> float */
    case nir_op_f2f16_rtz:
    case nir_op_f2f16:
+   case nir_op_f2fmp:
    case nir_op_f2f32:
    case nir_op_f2f64:
       assert(dst_bits != src_bits);
@@ -2318,6 +2322,7 @@ get_cast_op(nir_alu_instr *alu)
    /* int -> int */
    case nir_op_i2i1:
    case nir_op_i2i16:
+   case nir_op_i2imp:
    case nir_op_i2i32:
    case nir_op_i2i64:
       assert(dst_bits != src_bits);
@@ -2339,24 +2344,28 @@ get_cast_op(nir_alu_instr *alu)
 
    /* float -> int */
    case nir_op_f2i16:
+   case nir_op_f2imp:
    case nir_op_f2i32:
    case nir_op_f2i64:
       return DXIL_CAST_FPTOSI;
 
    /* float -> uint */
    case nir_op_f2u16:
+   case nir_op_f2ump:
    case nir_op_f2u32:
    case nir_op_f2u64:
       return DXIL_CAST_FPTOUI;
 
    /* int -> float */
    case nir_op_i2f16:
+   case nir_op_i2fmp:
    case nir_op_i2f32:
    case nir_op_i2f64:
       return DXIL_CAST_SITOFP;
 
    /* uint -> float */
    case nir_op_u2f16:
+   case nir_op_u2fmp:
    case nir_op_u2f32:
    case nir_op_u2f64:
       return DXIL_CAST_UITOFP;
@@ -2416,6 +2425,20 @@ emit_cast(struct ntd_context *ctx, nir_alu_instr *alu,
       break;
    default:
       break;
+   }
+
+   if (nir_dest_bit_size(alu->dest.dest) == 16) {
+      switch (alu->op) {
+      case nir_op_f2fmp:
+      case nir_op_i2imp:
+      case nir_op_f2imp:
+      case nir_op_f2ump:
+      case nir_op_i2fmp:
+      case nir_op_u2fmp:
+         break;
+      default:
+         ctx->mod.feats.native_low_precision = true;
+      }
    }
 
    const struct dxil_value *v = dxil_emit_cast(&ctx->mod, opcode, type,
@@ -2958,13 +2981,19 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
    case nir_op_u2u1:
    case nir_op_b2i16:
    case nir_op_i2i16:
+   case nir_op_i2imp:
    case nir_op_f2i16:
+   case nir_op_f2imp:
    case nir_op_f2u16:
+   case nir_op_f2ump:
    case nir_op_u2u16:
    case nir_op_u2f16:
+   case nir_op_u2fmp:
    case nir_op_i2f16:
+   case nir_op_i2fmp:
    case nir_op_f2f16_rtz:
    case nir_op_f2f16:
+   case nir_op_f2fmp:
    case nir_op_b2i32:
    case nir_op_f2f32:
    case nir_op_f2i32:
@@ -3060,45 +3089,6 @@ emit_barrier(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       nir_intrinsic_memory_modes(intr),
       nir_intrinsic_execution_scope(intr),
       nir_intrinsic_memory_scope(intr));
-}
-
-/* Memory barrier for UAVs (buffers/images) at cross-workgroup scope */
-static bool
-emit_memory_barrier(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   return emit_barrier_impl(ctx,
-      nir_var_mem_global,
-      NIR_SCOPE_NONE,
-      NIR_SCOPE_DEVICE);
-}
-
-/* Memory barrier for TGSM */
-static bool
-emit_memory_barrier_shared(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   return emit_barrier_impl(ctx,
-      nir_var_mem_shared,
-      NIR_SCOPE_NONE,
-      NIR_SCOPE_WORKGROUP);
-}
-
-/* Memory barrier for all intra-workgroup memory accesses (UAVs and TGSM) */
-static bool
-emit_group_memory_barrier(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   return emit_barrier_impl(ctx,
-      nir_var_mem_shared | nir_var_mem_global,
-      NIR_SCOPE_NONE,
-      NIR_SCOPE_WORKGROUP);
-}
-
-static bool
-emit_control_barrier(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   return emit_barrier_impl(ctx,
-      nir_var_mem_shared,
-      NIR_SCOPE_WORKGROUP,
-      NIR_SCOPE_NONE);
 }
 
 static bool
@@ -3465,6 +3455,8 @@ emit_load_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
          return false;
       store_dest(ctx, &intr->dest, i, val);
    }
+   if (nir_dest_bit_size(intr->dest) == 16)
+      ctx->mod.feats.native_low_precision = true;
    return true;
 }
 
@@ -3479,6 +3471,8 @@ emit_store_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 
    unsigned num_components = nir_src_num_components(intr->src[0]);
    assert(num_components <= 4);
+   if (nir_src_bit_size(intr->src[0]) == 16)
+      ctx->mod.feats.native_low_precision = true;
 
    nir_alu_type type =
       dxil_type_to_nir_type(dxil_value_get_type(get_src_ssa(ctx, intr->src[0].ssa, 0)));
@@ -3660,6 +3654,8 @@ emit_load_ubo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       const struct dxil_value *retval = dxil_emit_extractval(&ctx->mod, agg, i);
       store_dest(ctx, &intr->dest, i, retval);
    }
+   if (nir_dest_bit_size(intr->dest) == 16)
+      ctx->mod.feats.native_low_precision = true;
    return true;
 }
 
@@ -3685,6 +3681,8 @@ emit_load_ubo_dxil(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       store_dest(ctx, &intr->dest, i,
                  dxil_emit_extractval(&ctx->mod, agg, i));
 
+   if (nir_dest_bit_size(intr->dest) == 16)
+      ctx->mod.feats.native_low_precision = true;
    return true;
 }
 
@@ -4306,7 +4304,7 @@ emit_image_load(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       store_dest(ctx, &intr->dest, i, component);
    }
 
-   if (num_components > 1)
+   if (util_format_get_nr_components(nir_intrinsic_format(intr)) > 1)
       ctx->mod.feats.typed_uav_load_additional_formats = true;
 
    return true;
@@ -5063,17 +5061,6 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_end_primitive(ctx, intr);
    case nir_intrinsic_scoped_barrier:
       return emit_barrier(ctx, intr);
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_atomic_counter:
-      return emit_memory_barrier(ctx, intr);
-   case nir_intrinsic_memory_barrier_shared:
-      return emit_memory_barrier_shared(ctx, intr);
-   case nir_intrinsic_group_memory_barrier:
-      return emit_group_memory_barrier(ctx, intr);
-   case nir_intrinsic_control_barrier:
-      return emit_control_barrier(ctx, intr);
    case nir_intrinsic_ssbo_atomic:
       return emit_ssbo_atomic(ctx, intr);
    case nir_intrinsic_ssbo_atomic_swap:
@@ -5191,7 +5178,7 @@ get_value_for_const(struct dxil_module *mod, nir_const_value *c, const struct dx
    if (type == mod->float32_type) return dxil_module_get_float_const(mod, c->f32);
    if (type == mod->int32_type) return dxil_module_get_int32_const(mod, c->i32);
    if (type == mod->int16_type) {
-      mod->feats.native_low_precision = true;
+      mod->feats.min_precision = true;
       return dxil_module_get_int16_const(mod, c->i16);
    }
    if (type == mod->int64_type) {
@@ -5199,7 +5186,7 @@ get_value_for_const(struct dxil_module *mod, nir_const_value *c, const struct dx
       return dxil_module_get_int64_const(mod, c->i64);
    }
    if (type == mod->float16_type) {
-      mod->feats.native_low_precision = true;
+      mod->feats.min_precision = true;
       return dxil_module_get_float16_const(mod, c->u16);
    }
    if (type == mod->float64_type) {
@@ -6300,7 +6287,7 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
             if (glsl_type_is_array(var->type))
                count = glsl_get_length(var->type);
             if (!emit_uav(ctx, var->data.binding, var->data.descriptor_set,
-                        count, DXIL_COMP_TYPE_INVALID,
+                        count, DXIL_COMP_TYPE_INVALID, 1,
                         DXIL_RESOURCE_KIND_RAW_BUFFER, var->name))
                return false;
             
@@ -6310,7 +6297,7 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
       for (unsigned i = 0; i < ctx->shader->info.num_ssbos; ++i) {
          char name[64];
          snprintf(name, sizeof(name), "__ssbo%d", i);
-         if (!emit_uav(ctx, i, 0, 1, DXIL_COMP_TYPE_INVALID,
+         if (!emit_uav(ctx, i, 0, 1, DXIL_COMP_TYPE_INVALID, 1,
                        DXIL_RESOURCE_KIND_RAW_BUFFER, name))
             return false;
       }
@@ -6320,7 +6307,7 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
        * space 2 will be a single array.
        */
       if (ctx->shader->info.num_ssbos &&
-          !emit_uav(ctx, 0, 2, ctx->shader->info.num_ssbos, DXIL_COMP_TYPE_INVALID,
+          !emit_uav(ctx, 0, 2, ctx->shader->info.num_ssbos, DXIL_COMP_TYPE_INVALID, 1,
                     DXIL_RESOURCE_KIND_RAW_BUFFER, "__ssbo_dynamic"))
          return false;
    }
@@ -6380,6 +6367,11 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
    } else if (ctx->shader->info.stage == MESA_SHADER_VERTEX ||
               ctx->shader->info.stage == MESA_SHADER_TESS_EVAL) {
       if (ctx->shader->info.outputs_written &
+          (VARYING_BIT_VIEWPORT | VARYING_BIT_LAYER))
+         ctx->mod.feats.array_layer_from_vs_or_ds = true;
+   } else if (ctx->shader->info.stage == MESA_SHADER_GEOMETRY ||
+              ctx->shader->info.stage == MESA_SHADER_TESS_CTRL) {
+      if (ctx->shader->info.inputs_read &
           (VARYING_BIT_VIEWPORT | VARYING_BIT_LAYER))
          ctx->mod.feats.array_layer_from_vs_or_ds = true;
    }
@@ -6776,6 +6768,8 @@ nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
    NIR_PASS_V(s, dxil_nir_move_consts);
    NIR_PASS_V(s, nir_opt_dce);
 
+   NIR_PASS_V(s, dxil_nir_guess_image_formats);
+
    if (debug_dxil & DXIL_DEBUG_VERBOSE)
       nir_print_shader(s, stderr);
 
@@ -6796,6 +6790,9 @@ nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
 
    struct dxil_container container;
    dxil_container_init(&container);
+   /* Native low precision disables min-precision */
+   if (ctx->mod.feats.native_low_precision)
+      ctx->mod.feats.min_precision = false;
    if (!dxil_container_add_features(&container, &ctx->mod.feats)) {
       debug_printf("D3D12: dxil_container_add_features failed\n");
       retval = false;

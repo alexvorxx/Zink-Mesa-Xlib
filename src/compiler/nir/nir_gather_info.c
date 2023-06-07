@@ -700,6 +700,19 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
          shader->info.fs.uses_sample_qualifier = true;
       break;
 
+   case nir_intrinsic_load_barycentric_coord_pixel:
+   case nir_intrinsic_load_barycentric_coord_centroid:
+   case nir_intrinsic_load_barycentric_coord_sample:
+   case nir_intrinsic_load_barycentric_coord_at_offset:
+   case nir_intrinsic_load_barycentric_coord_at_sample:
+      if (nir_intrinsic_interp_mode(instr) == INTERP_MODE_SMOOTH ||
+          nir_intrinsic_interp_mode(instr) == INTERP_MODE_NONE) {
+         BITSET_SET(shader->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_PERSP_COORD);
+      } else if (nir_intrinsic_interp_mode(instr) == INTERP_MODE_NOPERSPECTIVE) {
+         BITSET_SET(shader->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_LINEAR_COORD);
+      }
+      break;
+
    case nir_intrinsic_quad_broadcast:
    case nir_intrinsic_quad_swap_horizontal:
    case nir_intrinsic_quad_swap_vertical:
@@ -775,6 +788,10 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_store_zs_agx:
       shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_DEPTH) |
                                       BITFIELD64_BIT(FRAG_RESULT_STENCIL);
+      break;
+
+   case nir_intrinsic_sample_mask_agx:
+      shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
       break;
 
    case nir_intrinsic_launch_mesh_workgroups:

@@ -88,6 +88,18 @@ enum fd6_state_id {
    FD6_GROUP_CS_BINDLESS = FD6_GROUP_VS_BINDLESS,
 };
 
+/**
+ * Pipeline type, Ie. is just plain old VS+FS (which can be high draw rate and
+ * should be a fast-path) or is it a pipeline that uses GS and/or tess to
+ * amplify geometry.
+ *
+ * TODO split GS and TESS?
+ */
+enum fd6_pipeline_type {
+   NO_TESS_GS,   /* Only has VS+FS */
+   HAS_TESS_GS,  /* Has tess and/or GS */
+};
+
 #define ENABLE_ALL                                                             \
    (CP_SET_DRAW_STATE__0_BINNING | CP_SET_DRAW_STATE__0_GMEM |                 \
     CP_SET_DRAW_STATE__0_SYSMEM)
@@ -208,8 +220,6 @@ fd6_event_write(struct fd_batch *batch, struct fd_ringbuffer *ring,
                 enum vgt_event_type evt, bool timestamp)
 {
    unsigned seqno = 0;
-
-   fd_reset_wfi(batch);
 
    OUT_PKT7(ring, CP_EVENT_WRITE, timestamp ? 4 : 1);
    OUT_RING(ring, CP_EVENT_WRITE_0_EVENT(evt));
@@ -333,7 +343,7 @@ fd6_gl2spacing(enum gl_tess_spacing spacing)
    }
 }
 
-template <chip CHIP>
+template <chip CHIP, fd6_pipeline_type PIPELINE>
 void fd6_emit_3d_state(struct fd_ringbuffer *ring,
                        struct fd6_emit *emit) assert_dt;
 

@@ -136,21 +136,21 @@ static void r600_texture_barrier(struct pipe_context *ctx, unsigned flags)
 static unsigned r600_conv_pipe_prim(unsigned prim)
 {
 	static const unsigned prim_conv[] = {
-		[PIPE_PRIM_POINTS]			= V_008958_DI_PT_POINTLIST,
-		[PIPE_PRIM_LINES]			= V_008958_DI_PT_LINELIST,
-		[PIPE_PRIM_LINE_LOOP]			= V_008958_DI_PT_LINELOOP,
-		[PIPE_PRIM_LINE_STRIP]			= V_008958_DI_PT_LINESTRIP,
-		[PIPE_PRIM_TRIANGLES]			= V_008958_DI_PT_TRILIST,
-		[PIPE_PRIM_TRIANGLE_STRIP]		= V_008958_DI_PT_TRISTRIP,
-		[PIPE_PRIM_TRIANGLE_FAN]		= V_008958_DI_PT_TRIFAN,
-		[PIPE_PRIM_QUADS]			= V_008958_DI_PT_QUADLIST,
-		[PIPE_PRIM_QUAD_STRIP]			= V_008958_DI_PT_QUADSTRIP,
-		[PIPE_PRIM_POLYGON]			= V_008958_DI_PT_POLYGON,
-		[PIPE_PRIM_LINES_ADJACENCY]		= V_008958_DI_PT_LINELIST_ADJ,
-		[PIPE_PRIM_LINE_STRIP_ADJACENCY]	= V_008958_DI_PT_LINESTRIP_ADJ,
-		[PIPE_PRIM_TRIANGLES_ADJACENCY]		= V_008958_DI_PT_TRILIST_ADJ,
-		[PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY]	= V_008958_DI_PT_TRISTRIP_ADJ,
-		[PIPE_PRIM_PATCHES]                     = V_008958_DI_PT_PATCH,
+		[MESA_PRIM_POINTS]			= V_008958_DI_PT_POINTLIST,
+		[MESA_PRIM_LINES]			= V_008958_DI_PT_LINELIST,
+		[MESA_PRIM_LINE_LOOP]			= V_008958_DI_PT_LINELOOP,
+		[MESA_PRIM_LINE_STRIP]			= V_008958_DI_PT_LINESTRIP,
+		[MESA_PRIM_TRIANGLES]			= V_008958_DI_PT_TRILIST,
+		[MESA_PRIM_TRIANGLE_STRIP]		= V_008958_DI_PT_TRISTRIP,
+		[MESA_PRIM_TRIANGLE_FAN]		= V_008958_DI_PT_TRIFAN,
+		[MESA_PRIM_QUADS]			= V_008958_DI_PT_QUADLIST,
+		[MESA_PRIM_QUAD_STRIP]			= V_008958_DI_PT_QUADSTRIP,
+		[MESA_PRIM_POLYGON]			= V_008958_DI_PT_POLYGON,
+		[MESA_PRIM_LINES_ADJACENCY]		= V_008958_DI_PT_LINELIST_ADJ,
+		[MESA_PRIM_LINE_STRIP_ADJACENCY]	= V_008958_DI_PT_LINESTRIP_ADJ,
+		[MESA_PRIM_TRIANGLES_ADJACENCY]		= V_008958_DI_PT_TRILIST_ADJ,
+		[MESA_PRIM_TRIANGLE_STRIP_ADJACENCY]	= V_008958_DI_PT_TRISTRIP_ADJ,
+		[MESA_PRIM_PATCHES]                     = V_008958_DI_PT_PATCH,
 		[R600_PRIM_RECTANGLE_LIST]		= V_008958_DI_PT_RECTLIST
 	};
 	assert(prim < ARRAY_SIZE(prim_conv));
@@ -160,21 +160,21 @@ static unsigned r600_conv_pipe_prim(unsigned prim)
 unsigned r600_conv_prim_to_gs_out(unsigned mode)
 {
 	static const int prim_conv[] = {
-		[PIPE_PRIM_POINTS]			= V_028A6C_OUTPRIM_TYPE_POINTLIST,
-		[PIPE_PRIM_LINES]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
-		[PIPE_PRIM_LINE_LOOP]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
-		[PIPE_PRIM_LINE_STRIP]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
-		[PIPE_PRIM_TRIANGLES]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_TRIANGLE_STRIP]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_TRIANGLE_FAN]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_QUADS]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_QUAD_STRIP]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_POLYGON]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_LINES_ADJACENCY]		= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
-		[PIPE_PRIM_LINE_STRIP_ADJACENCY]	= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
-		[PIPE_PRIM_TRIANGLES_ADJACENCY]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY]	= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
-		[PIPE_PRIM_PATCHES]			= V_028A6C_OUTPRIM_TYPE_POINTLIST,
+		[MESA_PRIM_POINTS]			= V_028A6C_OUTPRIM_TYPE_POINTLIST,
+		[MESA_PRIM_LINES]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
+		[MESA_PRIM_LINE_LOOP]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
+		[MESA_PRIM_LINE_STRIP]			= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
+		[MESA_PRIM_TRIANGLES]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_TRIANGLE_STRIP]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_TRIANGLE_FAN]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_QUADS]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_QUAD_STRIP]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_POLYGON]			= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_LINES_ADJACENCY]		= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
+		[MESA_PRIM_LINE_STRIP_ADJACENCY]	= V_028A6C_OUTPRIM_TYPE_LINESTRIP,
+		[MESA_PRIM_TRIANGLES_ADJACENCY]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_TRIANGLE_STRIP_ADJACENCY]	= V_028A6C_OUTPRIM_TYPE_TRISTRIP,
+		[MESA_PRIM_PATCHES]			= V_028A6C_OUTPRIM_TYPE_POINTLIST,
 		[R600_PRIM_RECTANGLE_LIST]		= V_028A6C_OUTPRIM_TYPE_TRISTRIP
 	};
 	assert(mode < ARRAY_SIZE(prim_conv));
@@ -908,7 +908,7 @@ r600_shader_precompile_key(const struct pipe_context *ctx,
 
 	case PIPE_SHADER_TESS_CTRL:
 		/* Prim mode comes from the TES, but we need some valid value. */
-		key->tcs.prim_mode = PIPE_PRIM_TRIANGLES;
+		key->tcs.prim_mode = MESA_PRIM_TRIANGLES;
 		break;
 
 	case PIPE_SHADER_COMPUTE:
@@ -2123,14 +2123,14 @@ void r600_emit_clip_misc_state(struct r600_context *rctx, struct r600_atom *atom
 static inline void r600_emit_rasterizer_prim_state(struct r600_context *rctx)
 {
 	struct radeon_cmdbuf *cs = &rctx->b.gfx.cs;
-	enum pipe_prim_type rast_prim = rctx->current_rast_prim;
+	enum mesa_prim rast_prim = rctx->current_rast_prim;
 
 	/* Skip this if not rendering lines. */
-	if (rast_prim != PIPE_PRIM_LINES &&
-	    rast_prim != PIPE_PRIM_LINE_LOOP &&
-	    rast_prim != PIPE_PRIM_LINE_STRIP &&
-	    rast_prim != PIPE_PRIM_LINES_ADJACENCY &&
-	    rast_prim != PIPE_PRIM_LINE_STRIP_ADJACENCY)
+	if (rast_prim != MESA_PRIM_LINES &&
+	    rast_prim != MESA_PRIM_LINE_LOOP &&
+	    rast_prim != MESA_PRIM_LINE_STRIP &&
+	    rast_prim != MESA_PRIM_LINES_ADJACENCY &&
+	    rast_prim != MESA_PRIM_LINE_STRIP_ADJACENCY)
 		return;
 
 	if (rast_prim == rctx->last_rast_prim)
@@ -2140,7 +2140,7 @@ static inline void r600_emit_rasterizer_prim_state(struct r600_context *rctx)
 	 * reset the stipple pattern at each packet (line strips, line loops).
 	 */
 	radeon_set_context_reg(cs, R_028A0C_PA_SC_LINE_STIPPLE,
-			       S_028A0C_AUTO_RESET_CNTL(rast_prim == PIPE_PRIM_LINES ? 1 : 2) |
+			       S_028A0C_AUTO_RESET_CNTL(rast_prim == MESA_PRIM_LINES ? 1 : 2) |
 			       (rctx->rasterizer ? rctx->rasterizer->pa_sc_line_stipple : 0));
 	rctx->last_rast_prim = rast_prim;
 }
@@ -2215,7 +2215,7 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 		 */
 		bool gs_tri_strip_adj_fix =
 			!rctx->tes_shader &&
-			info->mode == PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY &&
+			info->mode == MESA_PRIM_TRIANGLE_STRIP_ADJACENCY &&
 			!info->primitive_restart;
 		if (gs_tri_strip_adj_fix != rctx->gs_tri_strip_adj_fix)
 			rctx->gs_tri_strip_adj_fix = gs_tri_strip_adj_fix;
@@ -2445,7 +2445,9 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 			radeon_emit(cs, PKT3(PKT3_DRAW_INDEX_IMMD, 1 + size_dw, render_cond_bit));
 			radeon_emit(cs, draws[0].count);
 			radeon_emit(cs, V_0287F0_DI_SRC_SEL_IMMEDIATE);
-			radeon_emit_array(cs, info->index.user + draws[0].start * index_size, size_dw);
+			memcpy(cs->current.buf + cs->current.cdw,
+			       info->index.user + draws[0].start * index_size, size_bytes);
+			cs->current.cdw += size_dw;
 		} else {
 			uint64_t va = r600_resource(indexbuf)->gpu_address + index_offset;
 

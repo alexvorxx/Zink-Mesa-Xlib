@@ -70,7 +70,8 @@ upload_blorp_shader(struct blorp_batch *batch, uint32_t stage,
                                key, key_size, kernel, kernel_size,
                                prog_data, prog_data_size,
                                NULL, 0, NULL, &bind_map,
-                               &push_desc_info);
+                               &push_desc_info,
+                               0 /* dynamic_push_values */);
 
    if (!bin)
       return false;

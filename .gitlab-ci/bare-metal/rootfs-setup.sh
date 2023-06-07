@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# shellcheck disable=SC2086 # we want word splitting
 
 rootfs_dst=$1
 

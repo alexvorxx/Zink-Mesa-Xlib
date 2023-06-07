@@ -128,7 +128,7 @@ agx_draw_vbo_from_xfb(struct pipe_context *pctx,
 }
 
 static uint32_t
-xfb_prims_for_vertices(enum pipe_prim_type mode, unsigned verts)
+xfb_prims_for_vertices(enum mesa_prim mode, unsigned verts)
 {
    uint32_t prims = u_decomposed_prims_for_vertices(mode, verts);
 
@@ -136,7 +136,7 @@ xfb_prims_for_vertices(enum pipe_prim_type mode, unsigned verts)
     * supposed to be tessellated into primitives and piglit
     * (ext_transform_feedback-tessellation quads) checks this.
     */
-   if (u_decomposed_prim(mode) == PIPE_PRIM_QUADS)
+   if (u_decomposed_prim(mode) == MESA_PRIM_QUADS)
       prims *= 2;
 
    return prims;
@@ -170,7 +170,7 @@ agx_launch_so(struct pipe_context *pctx, const struct pipe_draw_info *info,
    /* Ignore provoking vertex for modes that don't depend on the provoking
     * vertex, to reduce shader variants.
     */
-   if (info->mode != PIPE_PRIM_TRIANGLE_STRIP)
+   if (info->mode != MESA_PRIM_TRIANGLE_STRIP)
       ctx->streamout.key.flatshade_first = false;
 
    /* Determine how many vertices are XFB there will be */
@@ -189,7 +189,7 @@ agx_launch_so(struct pipe_context *pctx, const struct pipe_draw_info *info,
       pctx, util_blitter_get_discard_rasterizer_state(ctx->blitter));
 
    /* Dispatch a grid of points, this is compute-like */
-   util_draw_arrays_instanced(pctx, PIPE_PRIM_POINTS, 0, num_outputs, 0,
+   util_draw_arrays_instanced(pctx, MESA_PRIM_POINTS, 0, num_outputs, 0,
                               info->instance_count);
    pctx->bind_rasterizer_state(pctx, saved_rast);
 
@@ -289,7 +289,7 @@ primitive_fits(nir_builder *b, struct agx_xfb_key *key)
     */
    uint32_t verts_per_prim = u_vertices_per_prim(key->mode);
 
-   if (u_decomposed_prim(key->mode) == PIPE_PRIM_QUADS)
+   if (u_decomposed_prim(key->mode) == MESA_PRIM_QUADS)
       verts_per_prim = 6;
 
    /* Get the ID for this invocation */
@@ -449,8 +449,8 @@ lower_xfb_intrinsics(struct nir_builder *b, nir_instr *instr, void *data)
       nir_ssa_def *id = nir_load_vertex_id(b);
 
       /* Tessellate by primitive mode */
-      if (key->mode == PIPE_PRIM_LINE_STRIP ||
-          key->mode == PIPE_PRIM_LINE_LOOP) {
+      if (key->mode == MESA_PRIM_LINE_STRIP ||
+          key->mode == MESA_PRIM_LINE_LOOP) {
          /* The last vertex is special for a loop. Check if that's we're dealing
           * with.
           */
@@ -463,10 +463,10 @@ lower_xfb_intrinsics(struct nir_builder *b, nir_instr *instr, void *data)
          id = nir_iadd(b, nir_ushr_imm(b, id, 1), nir_iand_imm(b, id, 1));
 
          /* (0, 1), (1, 2), (2, 0) */
-         if (key->mode == PIPE_PRIM_LINE_LOOP) {
+         if (key->mode == MESA_PRIM_LINE_LOOP) {
             id = nir_bcsel(b, last_vertex, nir_imm_int(b, 0), id);
          }
-      } else if (key->mode == PIPE_PRIM_TRIANGLE_STRIP) {
+      } else if (key->mode == MESA_PRIM_TRIANGLE_STRIP) {
          /* Order depends on the provoking vertex.
           *
           * First: (0, 1, 2), (1, 3, 2), (2, 3, 4).
@@ -486,19 +486,19 @@ lower_xfb_intrinsics(struct nir_builder *b, nir_instr *instr, void *data)
 
          /* Pull the (maybe swapped) vertex from the corresponding primitive */
          id = nir_iadd(b, prim, off);
-      } else if (key->mode == PIPE_PRIM_TRIANGLE_FAN) {
+      } else if (key->mode == MESA_PRIM_TRIANGLE_FAN) {
          /* (0, 1, 2), (0, 2, 3) */
          nir_ssa_def *prim = nir_udiv_imm(b, id, 3);
          nir_ssa_def *rem = nir_umod_imm(b, id, 3);
 
          id = nir_bcsel(b, nir_ieq_imm(b, rem, 0), nir_imm_int(b, 0),
                         nir_iadd(b, prim, rem));
-      } else if (key->mode == PIPE_PRIM_QUADS ||
-                 key->mode == PIPE_PRIM_QUAD_STRIP) {
+      } else if (key->mode == MESA_PRIM_QUADS ||
+                 key->mode == MESA_PRIM_QUAD_STRIP) {
          /* Quads:       [(0, 1, 3), (3, 1, 2)], [(4, 5, 7), (7, 5, 6)]
           * Quad strips: [(0, 1, 3), (0, 2, 3)], [(2, 3, 5), (2, 4, 5)]
           */
-         bool strips = key->mode == PIPE_PRIM_QUAD_STRIP;
+         bool strips = key->mode == MESA_PRIM_QUAD_STRIP;
 
          nir_ssa_def *prim = nir_udiv_imm(b, id, 6);
          nir_ssa_def *rem = nir_umod_imm(b, id, 6);

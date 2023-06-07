@@ -319,7 +319,6 @@ OUT_RELOC(struct fd_ringbuffer *ring, struct fd_bo *bo, uint32_t offset,
    uint64_t *cur = (uint64_t *)ring->cur;
    *cur = iova;
    ring->cur += 2;
-   fd_ringbuffer_attach_bo(ring, bo);
 #else
    struct fd_reloc reloc = {
          .bo = bo,

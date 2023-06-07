@@ -333,7 +333,7 @@ hud_draw_graph_line_strip(struct hud_context *hud, const struct hud_graph *gr,
 
    assert(gr->index <= gr->num_vertices);
 
-   hud_draw_colored_prims(hud, PIPE_PRIM_LINE_STRIP,
+   hud_draw_colored_prims(hud, MESA_PRIM_LINE_STRIP,
                           gr->vertices, gr->index,
                           gr->color[0], gr->color[1], gr->color[2], 1,
                           xoffset + (gr->pane->max_num_vertices - gr->index - 1) * 2 - 1,
@@ -342,7 +342,7 @@ hud_draw_graph_line_strip(struct hud_context *hud, const struct hud_graph *gr,
    if (gr->num_vertices <= gr->index)
       return;
 
-   hud_draw_colored_prims(hud, PIPE_PRIM_LINE_STRIP,
+   hud_draw_colored_prims(hud, MESA_PRIM_LINE_STRIP,
                           gr->vertices + gr->index*2,
                           gr->num_vertices - gr->index,
                           gr->color[0], gr->color[1], gr->color[2], 1,
@@ -457,7 +457,7 @@ hud_pane_draw_colored_objects(struct hud_context *hud,
       unsigned x = pane->x1 + 2;
       unsigned y = pane->y2 + 2 + i*hud->font.glyph_height;
 
-      hud_draw_colored_quad(hud, PIPE_PRIM_QUADS, x + 1, y + 1, x + 12, y + 13,
+      hud_draw_colored_quad(hud, MESA_PRIM_QUADS, x + 1, y + 1, x + 12, y + 13,
                             gr->color[0], gr->color[1], gr->color[2], 1);
       i++;
    }
@@ -604,7 +604,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
       pipe->set_constant_buffer(pipe, PIPE_SHADER_VERTEX, 0, false, &hud->constbuf);
 
       cso_set_vertex_buffers(cso, 0, 1, 0, false, &hud->bg.vbuf);
-      cso_draw_arrays(cso, PIPE_PRIM_QUADS, 0, hud->bg.num_vertices);
+      cso_draw_arrays(cso, MESA_PRIM_QUADS, 0, hud->bg.num_vertices);
    }
    pipe_resource_reference(&hud->bg.vbuf.buffer.resource, NULL);
 
@@ -613,7 +613,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
       cso_set_vertex_shader_handle(cso, hud->vs_text);
       cso_set_vertex_buffers(cso, 0, 1, 0, false, &hud->text.vbuf);
       cso_set_fragment_shader_handle(hud->cso, hud->fs_text);
-      cso_draw_arrays(cso, PIPE_PRIM_QUADS, 0, hud->text.num_vertices);
+      cso_draw_arrays(cso, MESA_PRIM_QUADS, 0, hud->text.num_vertices);
    }
    pipe_resource_reference(&hud->text.vbuf.buffer.resource, NULL);
 
@@ -637,7 +637,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
       cso_set_vertex_shader_handle(cso, hud->vs_color);
       cso_set_vertex_buffers(cso, 0, 1, 0, false, &hud->whitelines.vbuf);
       cso_set_fragment_shader_handle(hud->cso, hud->fs_color);
-      cso_draw_arrays(cso, PIPE_PRIM_LINES, 0, hud->whitelines.num_vertices);
+      cso_draw_arrays(cso, MESA_PRIM_LINES, 0, hud->whitelines.num_vertices);
    }
    pipe_resource_reference(&hud->whitelines.vbuf.buffer.resource, NULL);
 

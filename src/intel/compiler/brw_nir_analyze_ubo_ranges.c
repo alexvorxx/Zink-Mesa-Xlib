@@ -141,9 +141,9 @@ analyze_ubos_block(struct ubo_analysis_state *state, nir_block *block)
          continue; /* Not a uniform or UBO intrinsic */
       }
 
-      if (nir_src_is_const(intrin->src[0]) &&
+      if (brw_nir_ubo_surface_index_is_pushable(intrin->src[0]) &&
           nir_src_is_const(intrin->src[1])) {
-         const int block = nir_src_as_uint(intrin->src[0]);
+         const int block = brw_nir_ubo_surface_index_get_push_block(intrin->src[0]);
          const unsigned byte_offset = nir_src_as_uint(intrin->src[1]);
          const int offset = byte_offset / 32;
 

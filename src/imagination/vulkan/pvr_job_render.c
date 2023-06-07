@@ -1291,58 +1291,6 @@ pvr_render_job_ws_geometry_state_init(struct pvr_render_ctx *ctx,
    pvr_geom_state_flags_init(job, &state->flags);
 }
 
-static inline void
-pvr_get_isp_num_tiles_xy(const struct pvr_device_info *dev_info,
-                         uint32_t samples,
-                         uint32_t width,
-                         uint32_t height,
-                         uint32_t *const x_out,
-                         uint32_t *const y_out)
-{
-   uint32_t tile_samples_x;
-   uint32_t tile_samples_y;
-   uint32_t scale_x;
-   uint32_t scale_y;
-
-   rogue_get_isp_samples_per_tile_xy(dev_info,
-                                     samples,
-                                     &tile_samples_x,
-                                     &tile_samples_y);
-
-   switch (samples) {
-   case 1:
-      scale_x = 1;
-      scale_y = 1;
-      break;
-   case 2:
-      scale_x = 1;
-      scale_y = 2;
-      break;
-   case 4:
-      scale_x = 2;
-      scale_y = 2;
-      break;
-   case 8:
-      scale_x = 2;
-      scale_y = 4;
-      break;
-   default:
-      unreachable("Unsupported number of samples");
-   }
-
-   *x_out = DIV_ROUND_UP(width * scale_x, tile_samples_x);
-   *y_out = DIV_ROUND_UP(height * scale_y, tile_samples_y);
-
-   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format)) {
-      assert(PVR_GET_FEATURE_VALUE(dev_info,
-                                   simple_parameter_format_version,
-                                   0U) == 2U);
-      /* Align to a 2x2 tile block. */
-      *x_out = ALIGN_POT(*x_out, 2);
-      *y_out = ALIGN_POT(*y_out, 2);
-   }
-}
-
 static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
                                        struct pvr_render_job *job,
                                        struct pvr_winsys_fragment_state *state)
@@ -1380,30 +1328,41 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    stream_ptr += pvr_cmd_length(CR_ISP_DBIAS_BASE);
 
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_OCLQRY_BASE, value) {
-      value.addr = PVR_DEV_ADDR_INVALID;
+      const struct pvr_sub_cmd_gfx *sub_cmd =
+         container_of(job, const struct pvr_sub_cmd_gfx, job);
+
+      if (sub_cmd->query_pool)
+         value.addr = sub_cmd->query_pool->result_buffer->dev_addr;
+      else
+         value.addr = PVR_DEV_ADDR_INVALID;
    }
    stream_ptr += pvr_cmd_length(CR_ISP_OCLQRY_BASE);
 
-   /* FIXME: Some additional set up needed to support depth/stencil load/store
-    * operations.
-    */
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_ZLSCTL, value) {
       if (job->has_depth_attachment) {
-         uint32_t aligned_width =
-            ALIGN_POT(job->ds.physical_width, ROGUE_IPF_TILE_SIZE_PIXELS);
-         uint32_t aligned_height =
-            ALIGN_POT(job->ds.physical_height, ROGUE_IPF_TILE_SIZE_PIXELS);
+         uint32_t alignment_x;
+         uint32_t alignment_y;
 
-         pvr_get_isp_num_tiles_xy(dev_info,
-                                  job->samples,
-                                  aligned_width,
-                                  aligned_height,
-                                  &value.zlsextent_x_z,
-                                  &value.zlsextent_y_z);
+         if (job->ds.has_alignment_transfers) {
+            rogue_get_zls_tile_size_xy(dev_info, &alignment_x, &alignment_y);
+         } else {
+            alignment_x = ROGUE_IPF_TILE_SIZE_PIXELS;
+            alignment_y = ROGUE_IPF_TILE_SIZE_PIXELS;
+         }
+
+         rogue_get_isp_num_tiles_xy(
+            dev_info,
+            job->samples,
+            ALIGN_POT(job->ds.physical_extent.width, alignment_x),
+            ALIGN_POT(job->ds.physical_extent.height, alignment_y),
+            &value.zlsextent_x_z,
+            &value.zlsextent_y_z);
+
          value.zlsextent_x_z -= 1;
          value.zlsextent_y_z -= 1;
 
-         if (job->ds.memlayout == PVR_MEMLAYOUT_TWIDDLED) {
+         if (job->ds.memlayout == PVR_MEMLAYOUT_TWIDDLED &&
+             !job->ds.has_alignment_transfers) {
             value.loadtwiddled = true;
             value.storetwiddled = true;
          }
@@ -1428,9 +1387,23 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
             unreachable("Unsupported depth format");
          }
 
+         value.zloaden = job->ds.load;
+         value.forcezload = value.zloaden;
+
+         value.zstoreen = job->ds.store;
+         value.forcezstore = value.zstoreen;
+
          zload_format = value.zloadformat;
       } else {
          zload_format = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
+      }
+
+      if (job->has_stencil_attachment) {
+         value.sstoreen = job->ds.store;
+         value.forcezstore = value.sstoreen;
+
+         value.sloaden = job->ds.load;
+         value.forcezload = value.sloaden;
       }
    }
    stream_ptr += pvr_cmd_length(CR_ISP_ZLSCTL);
@@ -1539,10 +1512,6 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
 
    pvr_csb_pack (stream_ptr, CR_ISP_CTL, value) {
       value.sample_pos = true;
-
-      /* FIXME: There are a number of things that cause this to be set, this
-       * is just one of them.
-       */
       value.process_empty_tiles = job->process_empty_tiles;
 
       /* For integer depth formats we'll convert the specified floating point
@@ -1609,8 +1578,13 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    if (PVR_HAS_FEATURE(dev_info, zls_subtile)) {
       pvr_csb_pack (stream_ptr, CR_ISP_ZLS_PIXELS, value) {
          if (job->has_depth_attachment) {
-            value.x = job->ds.stride - 1;
-            value.y = job->ds.height - 1;
+            if (job->ds.has_alignment_transfers) {
+               value.x = job->ds.physical_extent.width - 1;
+               value.y = job->ds.physical_extent.height - 1;
+            } else {
+               value.x = job->ds.stride - 1;
+               value.y = job->ds.height - 1;
+            }
          }
       }
       stream_ptr += pvr_cmd_length(CR_ISP_ZLS_PIXELS);

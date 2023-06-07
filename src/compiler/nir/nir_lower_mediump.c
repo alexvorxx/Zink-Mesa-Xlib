@@ -946,6 +946,9 @@ fold_16bit_tex_srcs(nir_builder *b, nir_tex_instr *tex,
    if (!(options->sampler_dims & BITFIELD_BIT(tex->sampler_dim)))
       return false;
 
+   if (nir_tex_instr_src_index(tex, nir_tex_src_backend1) >= 0)
+      return false;
+
    unsigned fold_srcs = 0;
    for (unsigned i = 0; i < tex->num_srcs; i++) {
       /* Filter out sources that should be ignored. */

@@ -116,7 +116,7 @@ image_address(nir_builder *b, const struct intel_device_info *devinfo,
     */
    nir_ssa_def *xypos = (coord->num_components == 1) ?
                         nir_vec2(b, coord, nir_imm_int(b, 0)) :
-                        nir_channels(b, coord, 0x3);
+                        nir_trim_vector(b, coord, 2);
    xypos = nir_iadd(b, xypos, offset);
 
    /* The layout of 3-D textures in memory is sort-of like a tiling
@@ -174,8 +174,8 @@ image_address(nir_builder *b, const struct intel_device_info *devinfo,
 
       /* Calculate the minor x and y indices. */
       nir_ssa_def *minor = nir_ubfe(b, xypos, nir_imm_int(b, 0),
-                                       nir_channels(b, tiling, 0x3));
-      nir_ssa_def *major = nir_ushr(b, xypos, nir_channels(b, tiling, 0x3));
+                                       nir_trim_vector(b, tiling, 2));
+      nir_ssa_def *major = nir_ushr(b, xypos, nir_trim_vector(b, tiling, 2));
 
       /* Calculate the texel index from the start of the tile row and the
        * vertical coordinate of the row.

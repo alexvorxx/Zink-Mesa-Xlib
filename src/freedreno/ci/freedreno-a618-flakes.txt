@@ -81,7 +81,7 @@ KHR-.*.core.geometry_shader.layered_framebuffer.depth_support
 KHR-.*.core.tessellation_shader.tessellation_shader_tc_barriers.barrier_guarded_read_calls
 
 # Typically fails, but occasionally passes.
-KHR-GL45.shader_image_load_store.basic-allTargets-store
+KHR-GL46.shader_image_load_store.basic-allTargets-store
 
 # edfff331b3241d1c18d5c589fcdf75728089c886 mostly fixed this, but apparently it still flakes.
 dEQP-GLES3.functional.fbo.blit.depth_stencil.depth32f_stencil8_basic
@@ -193,14 +193,14 @@ spec@ext_timer_query@time-elapsed
 spec@ext_texture_lod_bias@lodbias
 
 # recent flakes, first occurence 03-02-2023
-KHR-GL45.buffer_storage.map_persistent_dispatch
+KHR-GL46.buffer_storage.map_persistent_dispatch
 # recent flakes, first occurence 09-02-2023
-KHR-GL45.buffer_storage.map_persistent_flush
+KHR-GL46.buffer_storage.map_persistent_flush
 
 # very rare flake (once two weeks), first occurence 21-02-2023 (8i.samples_4.mask_3)
-KHR-GL45.sample_variables.mask.rgba8ui.samples_0.mask_2
-KHR-GL45.sample_variables.mask.rgba8i.samples_4.mask_3
-KHR-GL45.sample_variables.mask.rgba32f.samples_4.mask_3
+KHR-GL46.sample_variables.mask.rgba8ui.samples_0.mask_2
+KHR-GL46.sample_variables.mask.rgba8i.samples_4.mask_3
+KHR-GL46.sample_variables.mask.rgba32f.samples_4.mask_3
 
 # these flake basically everywhere
 glx@glx-make-current

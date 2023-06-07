@@ -447,7 +447,7 @@ vmw_fence_ops_fence_finish(struct pb_fence_ops *ops,
 {
    struct vmw_winsys_screen *vws = vmw_fence_ops(ops)->vws;
 
-   return vmw_fence_finish(vws, fence, PIPE_TIMEOUT_INFINITE, flag);
+   return vmw_fence_finish(vws, fence, OS_TIMEOUT_INFINITE, flag);
 }
 
 

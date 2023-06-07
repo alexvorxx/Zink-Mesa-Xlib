@@ -983,7 +983,7 @@ build_clear_dcc_comp_to_single_shader(struct radv_device *dev, bool is_msaa)
    nir_ssa_def *dcc_block_size = nir_load_push_constant(&b, 2, 32, nir_imm_int(&b, 0), .range = 8);
 
    /* Compute the coordinates. */
-   nir_ssa_def *coord = nir_channels(&b, global_id, 0x3);
+   nir_ssa_def *coord = nir_trim_vector(&b, global_id, 2);
    coord = nir_imul(&b, coord, dcc_block_size);
    coord = nir_vec4(&b, nir_channel(&b, coord, 0),
                         nir_channel(&b, coord, 1),

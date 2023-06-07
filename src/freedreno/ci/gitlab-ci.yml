@@ -196,7 +196,7 @@ a618_gl:
 
 # Run dEQP EGL window system tests separately with the window systems available.
 # X11 takes over the screen, wayland is run headless.
-a618_egl:
+.a618_egl:  # FIXME disabled due to device outage
   extends:
     - .lava-test-deqp:arm64
     - .a618-test-limozeen-nots-r5
@@ -207,7 +207,7 @@ a618_egl:
     HWCI_START_WESTON: 1
     DEQP_SUITE: freedreno-a618-egl
 
-a618_skqp:
+.a618_skqp:  # FIXME disabled due to device outage
   extends:
     - .lava-test-deqp:arm64
     - .a618-test-limozeen-nots-r5
@@ -218,8 +218,7 @@ a618_skqp:
     HWCI_START_XORG: 1
     DEQP_SUITE: freedreno-a618-skqp
 
-# FIXME: this job runs gles2 deqp, rename or fix!
-a618_piglit:
+.a618_piglit_gles2:  # FIXME disabled due to device outage
   extends:
     - .piglit-test
     - .lava-piglit:arm64

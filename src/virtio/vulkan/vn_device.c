@@ -167,6 +167,54 @@ vn_device_queue_family_fini(struct vn_device *dev)
    vk_free(&dev->base.base.alloc, dev->queue_families);
 }
 
+static VkResult
+vn_device_memory_report_init(struct vn_device *dev,
+                             const VkDeviceCreateInfo *create_info)
+{
+   const struct vk_features *app_feats = &dev->base.base.enabled_features;
+   if (!app_feats->deviceMemoryReport)
+      return VK_SUCCESS;
+
+   uint32_t count = 0;
+   vk_foreach_struct_const(pnext, create_info->pNext) {
+      if (pnext->sType ==
+          VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT)
+         count++;
+   }
+
+   struct vn_device_memory_report *mem_reports = NULL;
+   if (count) {
+      mem_reports =
+         vk_alloc(&dev->base.base.alloc, sizeof(*mem_reports) * count,
+                  VN_DEFAULT_ALIGN, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (!mem_reports)
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
+   count = 0;
+   vk_foreach_struct_const(pnext, create_info->pNext) {
+      if (pnext->sType ==
+          VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT) {
+         const struct VkDeviceDeviceMemoryReportCreateInfoEXT *report =
+            (void *)pnext;
+         mem_reports[count].callback = report->pfnUserCallback;
+         mem_reports[count].data = report->pUserData;
+         count++;
+      }
+   }
+
+   dev->memory_report_count = count;
+   dev->memory_reports = mem_reports;
+
+   return VK_SUCCESS;
+}
+
+static inline void
+vn_device_memory_report_fini(struct vn_device *dev)
+{
+   vk_free(&dev->base.base.alloc, dev->memory_reports);
+}
+
 static bool
 find_extension_names(const char *const *exts,
                      uint32_t ext_count,
@@ -292,6 +340,11 @@ vn_device_fix_create_info(const struct vn_device *dev,
    if (!app_exts->KHR_external_semaphore_fd && has_wsi) {
       assert(physical_dev->renderer_sync_fd.semaphore_importable);
       extra_exts[extra_count++] = VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME;
+   }
+
+   if (app_exts->EXT_device_memory_report) {
+      /* see vn_physical_device_get_native_extensions */
+      block_exts[block_count++] = VK_EXT_DEVICE_MEMORY_REPORT_EXTENSION_NAME;
    }
 
    if (app_exts->EXT_physical_device_drm) {
@@ -420,9 +473,13 @@ vn_device_init(struct vn_device *dev,
    if (result != VK_SUCCESS)
       return result;
 
+   result = vn_device_memory_report_init(dev, create_info);
+   if (result != VK_SUCCESS)
+      goto out_destroy_device;
+
    if (!vn_device_queue_family_init(dev, create_info)) {
       result = VK_ERROR_OUT_OF_HOST_MEMORY;
-      goto out_destroy_device;
+      goto out_memory_report_fini;
    }
 
    for (uint32_t i = 0; i < ARRAY_SIZE(dev->memory_pools); i++) {
@@ -467,6 +524,9 @@ out_memory_pool_fini:
       vn_device_memory_pool_fini(dev, i);
 
    vn_device_queue_family_fini(dev);
+
+out_memory_report_fini:
+   vn_device_memory_report_fini(dev);
 
 out_destroy_device:
    vn_call_vkDestroyDevice(instance, dev_handle, NULL);

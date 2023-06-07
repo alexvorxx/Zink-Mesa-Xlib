@@ -1,25 +1,7 @@
 /*
  * Copyright 2012 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "si_pipe.h"
@@ -110,10 +92,12 @@ void si_pm4_set_reg_idx3(struct si_screen *sscreen, struct si_pm4_state *state,
 {
    SI_CHECK_SHADOWED_REGS(reg, 1);
 
-   if (sscreen->info.gfx_level >= GFX10)
+   if (sscreen->info.uses_kernel_cu_mask) {
+      assert(sscreen->info.gfx_level >= GFX10);
       si_pm4_set_reg_custom(state, reg - SI_SH_REG_OFFSET, val, PKT3_SET_SH_REG_INDEX, 3);
-   else
+   } else {
       si_pm4_set_reg_custom(state, reg - SI_SH_REG_OFFSET, val, PKT3_SET_SH_REG, 0);
+   }
 }
 
 void si_pm4_set_reg_va(struct si_pm4_state *state, unsigned reg, uint32_t val)
@@ -170,4 +154,24 @@ void si_pm4_reset_emitted(struct si_context *sctx)
       if (sctx->queued.array[i])
          sctx->dirty_states |= BITFIELD_BIT(i);
    }
+}
+
+struct si_pm4_state *si_pm4_create_sized(unsigned max_dw)
+{
+   struct si_pm4_state *pm4;
+   unsigned size = sizeof(*pm4) + 4 * (max_dw - ARRAY_SIZE(pm4->pm4));
+
+   pm4 = (struct si_pm4_state *)calloc(1, size);
+   if (pm4)
+      pm4->max_dw = max_dw;
+   return pm4;
+}
+
+struct si_pm4_state *si_pm4_clone(struct si_pm4_state *orig)
+{
+   struct si_pm4_state *pm4 = si_pm4_create_sized(orig->max_dw);
+
+   if (pm4)
+      memcpy(pm4, orig, sizeof(*pm4) + 4 * (pm4->max_dw - ARRAY_SIZE(pm4->pm4)));
+   return pm4;
 }

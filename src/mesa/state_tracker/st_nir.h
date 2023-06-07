@@ -33,6 +33,7 @@ extern "C" {
 #endif
 
 struct nir_shader;
+struct nir_variable;
 
 void st_nir_lower_builtin(struct nir_shader *shader);
 void st_nir_lower_tex_src_plane(struct nir_shader *shader, unsigned free_slots,
@@ -80,6 +81,16 @@ st_nir_add_point_size(struct nir_shader *nir);
 
 struct pipe_shader_state *
 st_nir_make_clearcolor_shader(struct st_context *st);
+
+struct nir_variable *
+st_nir_state_variable_create(struct nir_shader *shader,
+                             const struct glsl_type *type,
+                             const gl_state_index16 state[STATE_LENGTH]);
+
+bool st_nir_lower_fog(struct nir_shader *s, enum gl_fog_mode fog_mode,
+                      struct gl_program_parameter_list *paramList);
+bool st_nir_lower_position_invariant(struct nir_shader *s, bool aos,
+                                     struct gl_program_parameter_list *paramList);
 
 #ifdef __cplusplus
 }

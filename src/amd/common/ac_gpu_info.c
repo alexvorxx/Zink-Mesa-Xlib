@@ -1,26 +1,7 @@
 /*
  * Copyright © 2017 Advanced Micro Devices, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, AUTHORS
- * AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
- * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "ac_gpu_info.h"
@@ -984,6 +965,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    info->mid_command_buffer_preemption_enabled = device_info.ids_flags & AMDGPU_IDS_FLAGS_PREEMPTION;
    info->has_tmz_support = has_tmz_support(dev, info, device_info.ids_flags);
    info->kernel_has_modifiers = has_modifiers(fd);
+   info->uses_kernel_cu_mask = false; /* Not implemented in the kernel. */
    info->has_graphics = info->ip[AMD_IP_GFX].num_queues > 0;
 
    info->pa_sc_tile_steering_override = device_info.pa_sc_tile_steering_override;
@@ -1163,7 +1145,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
 
    info->has_tc_compat_zrange_bug = info->gfx_level >= GFX8 && info->gfx_level <= GFX9;
 
-   info->has_msaa_sample_loc_bug =
+   info->has_small_prim_filter_sample_loc_bug =
       (info->family >= CHIP_POLARIS10 && info->family <= CHIP_POLARIS12) ||
       info->family == CHIP_VEGA10 || info->family == CHIP_RAVEN;
 
@@ -1678,7 +1660,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    cpdma_prefetch_writes_memory = %u\n", info->cpdma_prefetch_writes_memory);
    fprintf(f, "    has_gfx9_scissor_bug = %i\n", info->has_gfx9_scissor_bug);
    fprintf(f, "    has_tc_compat_zrange_bug = %i\n", info->has_tc_compat_zrange_bug);
-   fprintf(f, "    has_msaa_sample_loc_bug = %i\n", info->has_msaa_sample_loc_bug);
+   fprintf(f, "    has_small_prim_filter_sample_loc_bug = %i\n", info->has_small_prim_filter_sample_loc_bug);
    fprintf(f, "    has_ls_vgpr_init_bug = %i\n", info->has_ls_vgpr_init_bug);
    fprintf(f, "    has_32bit_predication = %i\n", info->has_32bit_predication);
    fprintf(f, "    has_3d_cube_border_color_mipmap = %i\n", info->has_3d_cube_border_color_mipmap);
@@ -1774,6 +1756,8 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
                  info->max_submitted_ibs[i]);
       }
    }
+   fprintf(f, "    kernel_has_modifiers = %u\n", info->kernel_has_modifiers);
+   fprintf(f, "    uses_kernel_cu_mask = %u\n", info->uses_kernel_cu_mask);
 
    fprintf(f, "Shader core info:\n");
    for (unsigned i = 0; i < info->max_se; i++) {

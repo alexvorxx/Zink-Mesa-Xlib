@@ -33,13 +33,15 @@ struct rt_handle_hash_entry {
 };
 
 static uint32_t
-handle_from_stages(struct radv_device *device, const VkPipelineShaderStageCreateInfo *stages,
+handle_from_stages(struct radv_device *device, struct radv_ray_tracing_stage *stages,
                    unsigned stage_count, bool replay_namespace)
 {
    struct mesa_sha1 ctx;
    _mesa_sha1_init(&ctx);
 
-   radv_hash_rt_stages(&ctx, stages, stage_count);
+   for (uint32_t i = 0; i < stage_count; i++)
+      _mesa_sha1_update(&ctx, stages[i].sha1, SHA1_DIGEST_LENGTH);
+
    unsigned char hash[20];
    _mesa_sha1_final(&ctx, hash);
 
@@ -82,6 +84,7 @@ handle_from_stages(struct radv_device *device, const VkPipelineShaderStageCreate
 static VkResult
 radv_create_group_handles(struct radv_device *device,
                           const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                          struct radv_ray_tracing_stage *stages,
                           struct radv_ray_tracing_group *groups)
 {
    bool capture_replay = pCreateInfo->flags &
@@ -91,30 +94,37 @@ radv_create_group_handles(struct radv_device *device,
       switch (group_info->type) {
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR:
          if (group_info->generalShader != VK_SHADER_UNUSED_KHR)
-            groups[i].handle.general_index = handle_from_stages(
-               device, &pCreateInfo->pStages[group_info->generalShader], 1, capture_replay);
+            groups[i].handle.general_index =
+               handle_from_stages(device, &stages[group_info->generalShader], 1, capture_replay);
+
          break;
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR:
          if (group_info->closestHitShader != VK_SHADER_UNUSED_KHR)
-            groups[i].handle.closest_hit_index = handle_from_stages(
-               device, &pCreateInfo->pStages[group_info->closestHitShader], 1, capture_replay);
+            groups[i].handle.closest_hit_index =
+               handle_from_stages(device, &stages[group_info->closestHitShader], 1, capture_replay);
+
          if (group_info->intersectionShader != VK_SHADER_UNUSED_KHR) {
-            VkPipelineShaderStageCreateInfo stages[2];
+            struct radv_ray_tracing_stage temp_stages[2];
             unsigned cnt = 0;
-            stages[cnt++] = pCreateInfo->pStages[group_info->intersectionShader];
+
+            temp_stages[cnt++] = stages[group_info->intersectionShader];
+
             if (group_info->anyHitShader != VK_SHADER_UNUSED_KHR)
-               stages[cnt++] = pCreateInfo->pStages[group_info->anyHitShader];
+               temp_stages[cnt++] = stages[group_info->anyHitShader];
+
             groups[i].handle.intersection_index =
-               handle_from_stages(device, stages, cnt, capture_replay);
+               handle_from_stages(device, temp_stages, cnt, capture_replay);
          }
          break;
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR:
          if (group_info->closestHitShader != VK_SHADER_UNUSED_KHR)
-            groups[i].handle.closest_hit_index = handle_from_stages(
-               device, &pCreateInfo->pStages[group_info->closestHitShader], 1, capture_replay);
+            groups[i].handle.closest_hit_index =
+               handle_from_stages(device, &stages[group_info->closestHitShader], 1, capture_replay);
+
          if (group_info->anyHitShader != VK_SHADER_UNUSED_KHR)
-            groups[i].handle.any_hit_index = handle_from_stages(
-               device, &pCreateInfo->pStages[group_info->anyHitShader], 1, capture_replay);
+            groups[i].handle.any_hit_index =
+               handle_from_stages(device, &stages[group_info->anyHitShader], 1, capture_replay);
+
          break;
       case VK_SHADER_GROUP_SHADER_MAX_ENUM_KHR:
          unreachable("VK_SHADER_GROUP_SHADER_MAX_ENUM_KHR");
@@ -135,9 +145,10 @@ radv_create_group_handles(struct radv_device *device,
 static VkResult
 radv_rt_fill_group_info(struct radv_device *device,
                         const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                        struct radv_ray_tracing_stage *stages,
                         struct radv_ray_tracing_group *groups)
 {
-   VkResult result = radv_create_group_handles(device, pCreateInfo, groups);
+   VkResult result = radv_create_group_handles(device, pCreateInfo, stages, groups);
 
    uint32_t idx;
    for (idx = 0; idx < pCreateInfo->groupCount; idx++) {
@@ -181,16 +192,26 @@ radv_rt_fill_stage_info(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                         struct radv_ray_tracing_stage *stages)
 {
    uint32_t idx;
-   for (idx = 0; idx < pCreateInfo->stageCount; idx++)
+   for (idx = 0; idx < pCreateInfo->stageCount; idx++) {
       stages[idx].stage = vk_to_mesa_shader_stage(pCreateInfo->pStages[idx].stage);
+
+      struct mesa_sha1 ctx;
+      _mesa_sha1_init(&ctx);
+      radv_hash_rt_stages(&ctx, pCreateInfo->pStages + idx, 1);
+      _mesa_sha1_final(&ctx, stages[idx].sha1);
+   }
 
    if (pCreateInfo->pLibraryInfo) {
       for (unsigned i = 0; i < pCreateInfo->pLibraryInfo->libraryCount; ++i) {
          RADV_FROM_HANDLE(radv_pipeline, pipeline, pCreateInfo->pLibraryInfo->pLibraries[i]);
          struct radv_ray_tracing_pipeline *library_pipeline =
             radv_pipeline_to_ray_tracing(pipeline);
-         for (unsigned j = 0; j < library_pipeline->stage_count; ++j)
-            stages[idx++].stage = library_pipeline->stages[j].stage;
+         for (unsigned j = 0; j < library_pipeline->stage_count; ++j) {
+            stages[idx].stage = library_pipeline->stages[j].stage;
+            memcpy(stages[idx].sha1, library_pipeline->stages[j].sha1, SHA1_DIGEST_LENGTH);
+
+            idx++;
+         }
       }
    }
 }
@@ -515,7 +536,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
    pipeline->groups = groups;
 
    radv_rt_fill_stage_info(pCreateInfo, stages);
-   result = radv_rt_fill_group_info(device, pCreateInfo, pipeline->groups);
+   result = radv_rt_fill_group_info(device, pCreateInfo, stages, pipeline->groups);
    if (result != VK_SUCCESS)
       goto done;
 

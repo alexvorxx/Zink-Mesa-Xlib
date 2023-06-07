@@ -1,6 +1,6 @@
 ############### LAVA
 # job prefixes: radeonsi (OpenGL), radv (Vulkan), amd (radeonsi+radv)
-.stoney-test:amd64:
+.stoney-test:x86_64:
   variables:
     BOOT_METHOD: depthcharge
     DEQP_EXPECTED_RENDERER: STONEY
@@ -10,9 +10,9 @@
     HWCI_KERNEL_MODULES: amdgpu
     KERNEL_IMAGE_TYPE: ""
 
-.radeonsi-stoney-test:amd64:
+.radeonsi-stoney-test:x86_64:
   extends:
-    - .stoney-test:amd64
+    - .stoney-test:x86_64
     - .radeonsi-rules
   variables:
     GPU_VERSION: radeonsi-stoney
@@ -22,9 +22,9 @@
     DEVICE_TYPE: acer-R721T-grunt
     PIGLIT_PLATFORM: mixed_glx_egl
 
-.radv-stoney-test:amd64:
+.radv-stoney-test:x86_64:
   extends:
-    - .stoney-test:amd64
+    - .stoney-test:x86_64
     - .radv-collabora-rules
   variables:
     DEQP_VER: vk
@@ -36,34 +36,34 @@
     RUNNER_TAG: mesa-ci-x86-64-lava-hp-14-db0003na-grunt
 
 # Run five jobs in parallel each running 1/55th of the test suite
-radv-stoney-vkcts:amd64:
+radv-stoney-vkcts:x86_64:
   extends:
-    - .lava-test-deqp:amd64
-    - .radv-stoney-test:amd64
+    - .lava-test-deqp:x86_64
+    - .radv-stoney-test:x86_64
   parallel: 5
   variables:
     DEQP_FRACTION: 11
 
-radeonsi-stoney-gl:amd64:
+radeonsi-stoney-gl:x86_64:
   extends:
-    - .lava-test-deqp:amd64
-    - .radeonsi-stoney-test:amd64
+    - .lava-test-deqp:x86_64
+    - .radeonsi-stoney-test:x86_64
   parallel: 11
   variables:
     DEQP_SUITE: radeonsi-stoney
     HWCI_START_XORG: 1
 
-radeonsi-stoney-traces:amd64:
+radeonsi-stoney-traces:x86_64:
   extends:
-    - .lava-piglit-traces:amd64
-    - .radeonsi-stoney-test:amd64
+    - .lava-piglit-traces:x86_64
+    - .radeonsi-stoney-test:x86_64
   variables:
     EGL_PLATFORM: surfaceless
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 # 10 devices (2023-01-17)
-.lava-asus-CM1400CXA-dalboz:amd64:
+.lava-asus-CM1400CXA-dalboz:x86_64:
   variables:
     BOOT_METHOD: depthcharge
     DEVICE_TYPE: asus-CM1400CXA-dalboz
@@ -74,7 +74,7 @@ radeonsi-stoney-traces:amd64:
     RUNNER_TAG: mesa-ci-x86-64-lava-asus-CM1400CXA-dalboz
 
 # 5 devices (2023-05-03)
-.lava-lenovo-TPad-C13-Yoga-zork:amd64:
+.lava-lenovo-TPad-C13-Yoga-zork:x86_64:
   variables:
     BOOT_METHOD: depthcharge
     DEVICE_TYPE: lenovo-TPad-C13-Yoga-zork
@@ -84,21 +84,21 @@ radeonsi-stoney-traces:amd64:
     KERNEL_IMAGE_TYPE: ""
     RUNNER_TAG: mesa-ci-x86-64-lava-lenovo-TPad-C13-Yoga-zork
 
-.radeonsi-raven-test:amd64:
+.radeonsi-raven-test:x86_64:
   extends:
     - .radeonsi-rules
   variables:
     GPU_VERSION: radeonsi-raven
     DRIVER_NAME: radeonsi
 
-.radv-raven-test:amd64:
+.radv-raven-test:x86_64:
   extends:
     - .radv-collabora-rules
   variables:
     GPU_VERSION: radv-raven
     VK_DRIVER: radeon
 
-.amd-raven-test:amd64:
+.amd-raven-test:x86_64:
   extends:
     - .radeonsi+radv-rules
   variables:
@@ -106,65 +106,65 @@ radeonsi-stoney-traces:amd64:
     GPU_VERSION: amd-raven
     VK_DRIVER: radeon
 
-radv-raven-vkcts:amd64:
+radv-raven-vkcts:x86_64:
   extends:
-    - .lava-test-deqp:amd64
-    - .radv-raven-test:amd64
-    - .lava-asus-CM1400CXA-dalboz:amd64
+    - .lava-test-deqp:x86_64
+    - .radv-raven-test:x86_64
+    - .lava-asus-CM1400CXA-dalboz:x86_64
   parallel: 9
   variables:
     DEQP_VER: vk
     DEQP_FRACTION: 6
 
-amd-raven-skqp:amd64:
+amd-raven-skqp:x86_64:
   extends:
-    - .lava-test-deqp:amd64
-    - .amd-raven-test:amd64
-    - .lava-lenovo-TPad-C13-Yoga-zork:amd64
+    - .lava-test-deqp:x86_64
+    - .amd-raven-test:x86_64
+    - .lava-lenovo-TPad-C13-Yoga-zork:x86_64
   variables:
     HWCI_START_WESTON: 1
     DEQP_SUITE: amd-raven-skqp
 
 .radv-traces:
   extends:
-    - .lava-piglit-traces:amd64
+    - .lava-piglit-traces:x86_64
   variables:
     PIGLIT_PLATFORM: mixed_glx_egl  # TODO, take wine/VK in account
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
-radv-raven-traces:amd64:
+radv-raven-traces:x86_64:
   extends:
     - .radv-traces
-    - .radv-raven-test:amd64
-    - .lava-lenovo-TPad-C13-Yoga-zork:amd64
+    - .radv-raven-test:x86_64
+    - .lava-lenovo-TPad-C13-Yoga-zork:x86_64
   variables:
     HWCI_START_XORG: 1
     PIGLIT_REPLAY_DEVICE_NAME: "vk-${GPU_VERSION}"
 
-radeonsi-raven-piglit-quick_gl:amd64:
+radeonsi-raven-piglit-quick_gl:x86_64:
   extends:
-    - .lava-piglit:amd64
-    - .radeonsi-raven-test:amd64
-    - .lava-lenovo-TPad-C13-Yoga-zork:amd64
+    - .lava-piglit:x86_64
+    - .radeonsi-raven-test:x86_64
+    - .lava-lenovo-TPad-C13-Yoga-zork:x86_64
   variables:
     PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_PROFILES: quick_gl
     HWCI_START_XORG: 1
 
-radeonsi-raven-piglit-quick_shader:amd64:
+radeonsi-raven-piglit-quick_shader:x86_64:
   extends:
-    - radeonsi-raven-piglit-quick_gl:amd64
+    - radeonsi-raven-piglit-quick_gl:x86_64
   variables:
     PIGLIT_PROFILES: quick_shader
     PIGLIT_FRACTION: 2
 
-radeonsi-raven-va:amd64:
+radeonsi-raven-va:x86_64:
   extends:
-    - .lava-test-deqp:amd64
-    - .radeonsi-raven-test:amd64
+    - .lava-test-deqp:x86_64
+    - .radeonsi-raven-test:x86_64
     - .radeonsi-vaapi-rules
-    - .lava-asus-CM1400CXA-dalboz:amd64
+    - .lava-asus-CM1400CXA-dalboz:x86_64
   variables:
     HWCI_TEST_SCRIPT: "/install/gtest-runner.sh"
     # While the tests don't need Xorg, it's an easy way to keep DRM open so we don't
@@ -180,9 +180,9 @@ radeonsi-raven-va:amd64:
     # https://github.com/google/googletest/issues/3614 would probably help.
     GTEST_FRACTION: 2
 
-radeonsi-raven-va-full:amd64:
+radeonsi-raven-va-full:x86_64:
   extends:
-    - radeonsi-raven-va:amd64
+    - radeonsi-raven-va:x86_64
     - .radeonsi-vaapi-manual-rules
   variables:
     GTEST_FRACTION: null
@@ -269,7 +269,6 @@ radeonsi-raven-va-full:amd64:
     FDO_CI_CONCURRENT: 8
     B2C_TIMEOUT_BOOT_MINUTES: 85
     B2C_TIMEOUT_OVERALL_MINUTES: 120
-    B2C_TIMEOUT_MINUTES: 3
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
     - amdgpu:codename:VANGOGH
@@ -395,6 +394,17 @@ vkcts-vangogh-valve:
   variables:
     GPU_VERSION: radv-vangogh-aco
 
+glcts-vangogh-valve:
+  extends:
+    - .b2c-test-gl
+    - .deqp-test-valve
+    - .vangogh-test-valve
+    - .radeonsi-valve-manual-rules
+  timeout: 40m
+  variables:
+    GPU_VERSION: radeonsi-vangogh
+    DEQP_SUITE: radeonsi-vangogh
+
 ############### Fossilize
 radv-fossils:
   extends:
@@ -403,27 +413,28 @@ radv-fossils:
     - .test-radv
     - .fossilize-test
   script:
+    - export LD_PRELOAD=$PWD/install/lib/libamdgpu_noop_drm_shim.so
     # Pitcairn (GFX6)
-    - export AMDGPU_GPU_ID="PITCAIRN"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="PITCAIRN"
+      ./install/fossilize-runner.sh
     # Bonaire (GFX7)
-    - export AMDGPU_GPU_ID="BONAIRE"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="BONAIRE"
+      ./install/fossilize-runner.sh
     # Polaris10 (GFX8)
-    - export AMDGPU_GPU_ID="POLARIS10"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="POLARIS10"
+      ./install/fossilize-runner.sh
     # Vega10 (GFX9)
-    - export AMDGPU_GPU_ID="VEGA10"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="VEGA10"
+      ./install/fossilize-runner.sh
     # Navi10 (GFX10)
-    - export AMDGPU_GPU_ID="NAVI10"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="NAVI10"
+      ./install/fossilize-runner.sh
     # Navi21 (GFX10_3)
-    - export AMDGPU_GPU_ID="NAVI21"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="NAVI21"
+      ./install/fossilize-runner.sh
     # RDNA3 (GFX11)
-    - export AMDGPU_GPU_ID="GFX1100"
-    - ./install/fossilize-runner.sh
+    - AMDGPU_GPU_ID="GFX1100"
+      ./install/fossilize-runner.sh
 
 ############### vkd3d-proton
 .vkd3d-test-valve:

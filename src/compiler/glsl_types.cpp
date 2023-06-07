@@ -22,10 +22,13 @@
  */
 
 #include <stdio.h>
-#include "main/macros.h"
-#include "compiler/glsl/glsl_parser_extras.h"
 #include "glsl_types.h"
+#include "util/compiler.h"
+#include "util/glheader.h"
 #include "util/hash_table.h"
+#include "util/macros.h"
+#include "util/ralloc.h"
+#include "util/u_math.h"
 #include "util/u_string.h"
 
 
@@ -43,7 +46,7 @@ hash_table *glsl_type::subroutine_types = NULL;
  */
 static uint32_t glsl_type_users = 0;
 
-glsl_type::glsl_type(GLenum gl_type,
+glsl_type::glsl_type(uint32_t gl_type,
                      glsl_base_type base_type, unsigned vector_elements,
                      unsigned matrix_columns, const char *name,
                      unsigned explicit_stride, bool row_major,
@@ -81,7 +84,7 @@ glsl_type::glsl_type(GLenum gl_type,
    memset(& fields, 0, sizeof(fields));
 }
 
-glsl_type::glsl_type(GLenum gl_type, glsl_base_type base_type,
+glsl_type::glsl_type(uint32_t gl_type, glsl_base_type base_type,
                      enum glsl_sampler_dim dim, bool shadow, bool array,
                      glsl_base_type type, const char *name) :
    gl_type(gl_type),
@@ -1939,57 +1942,6 @@ glsl_type::varying_count() const
       assert(!"unsupported varying type");
       return 0;
    }
-}
-
-bool
-glsl_type::can_implicitly_convert_to(const glsl_type *desired,
-                                     _mesa_glsl_parse_state *state) const
-{
-   if (this == desired)
-      return true;
-
-   /* GLSL 1.10 and ESSL do not allow implicit conversions. If there is no
-    * state, we're doing intra-stage function linking where these checks have
-    * already been done.
-    */
-   if (state && !state->has_implicit_conversions())
-      return false;
-
-   /* There is no conversion among matrix types. */
-   if (this->matrix_columns > 1 || desired->matrix_columns > 1)
-      return false;
-
-   /* Vector size must match. */
-   if (this->vector_elements != desired->vector_elements)
-      return false;
-
-   /* int and uint can be converted to float. */
-   if (desired->is_float() && this->is_integer_32())
-      return true;
-
-   /* With GLSL 4.0, ARB_gpu_shader5, or MESA_shader_integer_functions, int
-    * can be converted to uint.  Note that state may be NULL here, when
-    * resolving function calls in the linker. By this time, all the
-    * state-dependent checks have already happened though, so allow anything
-    * that's allowed in any shader version.
-    */
-   if ((!state || state->has_implicit_int_to_uint_conversion()) &&
-         desired->base_type == GLSL_TYPE_UINT && this->base_type == GLSL_TYPE_INT)
-      return true;
-
-   /* No implicit conversions from double. */
-   if ((!state || state->has_double()) && this->is_double())
-      return false;
-
-   /* Conversions from different types to double. */
-   if ((!state || state->has_double()) && desired->is_double()) {
-      if (this->is_float())
-         return true;
-      if (this->is_integer_32())
-         return true;
-   }
-
-   return false;
 }
 
 unsigned

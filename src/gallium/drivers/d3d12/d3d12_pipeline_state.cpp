@@ -21,12 +21,21 @@
  * IN THE SOFTWARE.
  */
 
+#ifdef _GAMING_XBOX
+#ifdef _GAMING_XBOX_SCARLETT
+#include <d3dx12_xs.h>
+#else
+#include <d3dx12_x.h>
+#endif
+#endif
 
 #include "d3d12_pipeline_state.h"
 #include "d3d12_compiler.h"
 #include "d3d12_context.h"
 #include "d3d12_screen.h"
+#ifndef _GAMING_XBOX
 #include <directx/d3dx12_pipeline_state_stream.h>
+#endif
 
 #include "util/hash_table.h"
 #include "util/set.h"
@@ -147,11 +156,11 @@ fill_so_declaration(const struct pipe_stream_output_info *info,
 }
 
 static bool
-depth_bias(struct d3d12_rasterizer_state *state, enum pipe_prim_type reduced_prim)
+depth_bias(struct d3d12_rasterizer_state *state, enum mesa_prim reduced_prim)
 {
    /* glPolygonOffset is supposed to be only enabled when rendering polygons.
     * In d3d12 case, all polygons (and quads) are lowered to triangles */
-   if (reduced_prim != PIPE_PRIM_TRIANGLES)
+   if (reduced_prim != MESA_PRIM_TRIANGLES)
       return false;
 
    unsigned fill_mode = state->base.cull_face == PIPE_FACE_FRONT ? state->base.fill_back
@@ -173,24 +182,24 @@ depth_bias(struct d3d12_rasterizer_state *state, enum pipe_prim_type reduced_pri
 }
 
 static D3D12_PRIMITIVE_TOPOLOGY_TYPE
-topology_type(enum pipe_prim_type reduced_prim)
+topology_type(enum mesa_prim reduced_prim)
 {
    switch (reduced_prim) {
-   case PIPE_PRIM_POINTS:
+   case MESA_PRIM_POINTS:
       return D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
 
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_LINES:
       return D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
 
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       return D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-   case PIPE_PRIM_PATCHES:
+   case MESA_PRIM_PATCHES:
       return D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 
    default:
-      debug_printf("pipe_prim_type: %s\n", u_prim_name(reduced_prim));
-      unreachable("unexpected enum pipe_prim_type");
+      debug_printf("mesa_prim: %s\n", u_prim_name(reduced_prim));
+      unreachable("unexpected enum mesa_prim");
    }
 }
 
@@ -220,8 +229,8 @@ create_gfx_pipeline_state(struct d3d12_context *ctx)
 {
    struct d3d12_screen *screen = d3d12_screen(ctx->base.screen);
    struct d3d12_gfx_pipeline_state *state = &ctx->gfx_pipeline_state;
-   enum pipe_prim_type reduced_prim = state->prim_type == PIPE_PRIM_PATCHES ?
-      PIPE_PRIM_PATCHES : u_reduced_prim(state->prim_type);
+   enum mesa_prim reduced_prim = state->prim_type == MESA_PRIM_PATCHES ?
+      MESA_PRIM_PATCHES : u_reduced_prim(state->prim_type);
    D3D12_SO_DECLARATION_ENTRY entries[PIPE_MAX_SO_OUTPUTS] = {};
    UINT strides[PIPE_MAX_SO_OUTPUTS] = { 0 };
    UINT num_entries = 0, num_strides = 0;
@@ -278,13 +287,13 @@ create_gfx_pipeline_state(struct d3d12_context *ctx)
    if (state->has_float_rtv)
       blend_state.RenderTarget[0].LogicOpEnable = FALSE;
 
-   (D3D12_DEPTH_STENCIL_DESC2&)pso_desc.DepthStencilState = state->zsa->desc;
+   (d3d12_depth_stencil_desc_type&)pso_desc.DepthStencilState = state->zsa->desc;
    pso_desc.SampleMask = state->sample_mask;
 
    D3D12_RASTERIZER_DESC& rast = (D3D12_RASTERIZER_DESC&)pso_desc.RasterizerState;
    rast = state->rast->desc;
 
-   if (reduced_prim != PIPE_PRIM_TRIANGLES)
+   if (reduced_prim != MESA_PRIM_TRIANGLES)
       rast.CullMode = D3D12_CULL_MODE_NONE;
 
    if (depth_bias(state->rast, reduced_prim)) {
@@ -316,11 +325,14 @@ create_gfx_pipeline_state(struct d3d12_context *ctx)
          rast.ForcedSampleCount = 1;
          pso_desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
       }
-   } else if (state->samples > 1 &&
+   }
+#ifndef _GAMING_XBOX
+   else if (state->samples > 1 &&
               !(screen->opts19.SupportedSampleCountsWithNoOutputs & (1 << state->samples))) {
       samples.Count = 1;
       rast.ForcedSampleCount = state->samples;
    }
+#endif
    samples.Quality = 0;
 
    pso_desc.NodeMask = 0;

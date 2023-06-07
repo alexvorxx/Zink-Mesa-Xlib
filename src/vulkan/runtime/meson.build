@@ -64,6 +64,8 @@ vulkan_runtime_files = files(
   'vk_instance.h',
   'vk_log.c',
   'vk_log.h',
+  'vk_nir_convert_ycbcr.c',
+  'vk_nir_convert_ycbcr.h',
   'vk_nir.c',
   'vk_nir.h',
   'vk_object.c',

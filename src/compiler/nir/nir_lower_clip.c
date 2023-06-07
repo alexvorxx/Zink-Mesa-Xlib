@@ -227,16 +227,9 @@ get_ucp(nir_builder *b, int plane,
    if (clipplane_state_tokens) {
       char tmp[100];
       snprintf(tmp, ARRAY_SIZE(tmp), "gl_ClipPlane%dMESA", plane);
-      nir_variable *var = nir_variable_create(b->shader,
-                                              nir_var_uniform,
-                                              glsl_vec4_type(),
-                                              tmp);
-
-      var->num_state_slots = 1;
-      var->state_slots = ralloc_array(var, nir_state_slot, 1);
-      memcpy(var->state_slots[0].tokens,
-             clipplane_state_tokens[plane],
-             sizeof(var->state_slots[0].tokens));
+      nir_variable *var = nir_state_variable_create(b->shader,
+                                                    glsl_vec4_type(),
+                                                    tmp, clipplane_state_tokens[plane]);
       return nir_load_var(b, var);
    } else
       return nir_load_user_clip_plane(b, plane);
@@ -459,7 +452,7 @@ lower_clip_fs(nir_function_impl *impl, unsigned ucp_enables,
    for (int plane = 0; plane < MAX_CLIP_PLANES; plane++) {
       if (ucp_enables & (1 << plane)) {
          nir_ssa_def *this_cond =
-            nir_flt(&b, clipdist[plane], nir_imm_float(&b, 0.0));
+            nir_flt_imm(&b, clipdist[plane], 0.0);
 
          cond = cond ? nir_ior(&b, cond, this_cond) : this_cond;
       }

@@ -385,8 +385,8 @@ brw_compile_tcs(const struct brw_compiler *compiler,
                              key->_tes_primitive_mode);
    if (key->quads_workaround)
       brw_nir_apply_tcs_quads_workaround(nir);
-   if (compiler->use_tcs_multi_patch)
-      brw_nir_clamp_per_vertex_loads(nir, key->input_vertices);
+   if (key->input_vertices > 0)
+      brw_nir_lower_patch_vertices_in(nir, key->input_vertices);
 
    brw_postprocess_nir(nir, compiler, debug_enabled,
                        key->base.robust_buffer_access);

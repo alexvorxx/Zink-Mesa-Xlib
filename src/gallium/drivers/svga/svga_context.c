@@ -476,7 +476,7 @@ svga_context_flush(struct svga_context *svga,
    if (SVGA_DEBUG & DEBUG_SYNC) {
       if (fence)
          svga->pipe.screen->fence_finish(svga->pipe.screen, NULL, fence,
-                                          PIPE_TIMEOUT_INFINITE);
+                                          OS_TIMEOUT_INFINITE);
    }
 
    if (pfence)
@@ -500,7 +500,7 @@ svga_context_finish(struct svga_context *svga)
    SVGA_STATS_TIME_PUSH(svga_sws(svga), SVGA_STATS_TIME_CONTEXTFINISH);
 
    svga_context_flush(svga, &fence);
-   screen->fence_finish(screen, NULL, fence, PIPE_TIMEOUT_INFINITE);
+   screen->fence_finish(screen, NULL, fence, OS_TIMEOUT_INFINITE);
    screen->fence_reference(screen, &fence, NULL);
 
    SVGA_STATS_TIME_POP(svga_sws(svga));

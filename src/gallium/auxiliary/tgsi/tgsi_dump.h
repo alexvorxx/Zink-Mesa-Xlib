@@ -61,10 +61,6 @@ struct tgsi_full_declaration;
 struct tgsi_full_property;
 
 void
-tgsi_dump_immediate(
-   const struct tgsi_full_immediate *imm );
-
-void
 tgsi_dump_instruction_str(
    const struct tgsi_full_instruction *inst,
    uint instno,
@@ -75,14 +71,6 @@ void
 tgsi_dump_instruction(
    const struct tgsi_full_instruction *inst,
    uint instno );
-
-void
-tgsi_dump_declaration(
-   const struct tgsi_full_declaration *decl );
-
-void
-tgsi_dump_property(
-   const struct tgsi_full_property *prop );
 
 #if defined __cplusplus
 }

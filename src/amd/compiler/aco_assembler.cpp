@@ -473,7 +473,8 @@ emit_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instruction* inst
          encoding |= reg(ctx, instr->operands[2], 8) << 16;
       if (instr->operands.size() >= 2 && instr->operands[1].physReg() != m0)
          encoding |= reg(ctx, instr->operands[1], 8) << 8;
-      encoding |= reg(ctx, instr->operands[0], 8);
+      if (!instr->operands[0].isUndefined())
+         encoding |= reg(ctx, instr->operands[0], 8);
       out.push_back(encoding);
       break;
    }

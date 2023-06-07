@@ -1058,7 +1058,7 @@ vc4_update_shadow_baselevel_texture(struct pipe_context *pctx,
                                 },
                                 .format = orig->base.format,
                         },
-                        .mask = ~0,
+                        .mask = util_format_get_mask(orig->base.format),
                 };
                 pctx->blit(pctx, &info);
         }

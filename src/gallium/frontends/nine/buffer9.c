@@ -449,7 +449,7 @@ NineBuffer9_Lock( struct NineBuffer9 *This,
 
         pipe = NineDevice9_GetPipe(device);
         pipe->flush(pipe, &fence, 0);
-        (void) screen->fence_finish(screen, NULL, fence, PIPE_TIMEOUT_INFINITE);
+        (void) screen->fence_finish(screen, NULL, fence, OS_TIMEOUT_INFINITE);
         screen->fence_reference(screen, &fence, NULL);
     }
     This->need_sync_if_nooverwrite = !(Flags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE));

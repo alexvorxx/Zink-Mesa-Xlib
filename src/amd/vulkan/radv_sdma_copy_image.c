@@ -114,7 +114,8 @@ radv_sdma_v4_v5_copy_image_to_buffer(struct radv_device *device, struct radeon_c
          unsigned hw_fmt, hw_type;
 
          desc = vk_format_description(image->vk.format);
-         hw_fmt = radv_translate_colorformat(format);
+         hw_fmt = ac_get_cb_format(device->physical_device->rad_info.gfx_level,
+                                   vk_format_to_pipe_format(format));
          hw_type = radv_translate_buffer_numformat(desc, vk_format_get_first_non_void_channel(format));
 
          /* Add metadata */

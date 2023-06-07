@@ -3320,7 +3320,7 @@ NineDevice9_ProcessVertices( struct NineDevice9 *This,
         return D3DERR_DRIVERINTERNALERROR;
     }
 
-    draw.mode = PIPE_PRIM_POINTS;
+    draw.mode = MESA_PRIM_POINTS;
     sc.count = VertexCount;
     draw.start_instance = 0;
     draw.primitive_restart = FALSE;

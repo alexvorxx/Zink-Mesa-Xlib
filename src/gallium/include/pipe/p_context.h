@@ -408,6 +408,15 @@ struct pipe_context {
    void   (*bind_vertex_elements_state)(struct pipe_context *, void *);
    void   (*delete_vertex_elements_state)(struct pipe_context *, void *);
 
+   void * (*create_ts_state)(struct pipe_context *,
+                             const struct pipe_shader_state *);
+   void   (*bind_ts_state)(struct pipe_context *, void *);
+   void   (*delete_ts_state)(struct pipe_context *, void *);
+
+   void * (*create_ms_state)(struct pipe_context *,
+                             const struct pipe_shader_state *);
+   void   (*bind_ms_state)(struct pipe_context *, void *);
+   void   (*delete_ms_state)(struct pipe_context *, void *);
    /*@}*/
 
    /**
@@ -995,6 +1004,9 @@ struct pipe_context {
     */
    void (*launch_grid)(struct pipe_context *context,
                        const struct pipe_grid_info *info);
+
+   void (*draw_mesh_tasks)(struct pipe_context *context,
+                           const struct pipe_grid_info *info);
    /*@}*/
 
    /**

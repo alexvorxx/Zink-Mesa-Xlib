@@ -1890,7 +1890,8 @@ handle_pseudo(ra_ctx& ctx, const RegisterFile& reg_file, Instruction* instr)
    case aco_opcode::p_create_vector:
    case aco_opcode::p_split_vector:
    case aco_opcode::p_parallelcopy:
-   case aco_opcode::p_wqm: break;
+   case aco_opcode::p_wqm:
+   case aco_opcode::p_start_linear_vgpr: break;
    default: return;
    }
 
@@ -2444,7 +2445,8 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
                    op.getTemp().type() == instr->definitions[0].getTemp().type())
                   ctx.vectors[op.tempId()] = instr.get();
             }
-         } else if (instr->format == Format::MIMG && instr->operands.size() > 4) {
+         } else if (instr->format == Format::MIMG && instr->operands.size() > 4 &&
+                    !instr->mimg().strict_wqm) {
             for (unsigned i = 3; i < instr->operands.size(); i++)
                ctx.vectors[instr->operands[i].tempId()] = instr.get();
          } else if (instr->opcode == aco_opcode::p_split_vector &&
@@ -2876,32 +2878,9 @@ register_allocation(Program* program, std::vector<IDSet>& live_out_per_block, ra
           * We can't read from the old location because it's corrupted, and we can't write the new
           * location because that's used by a live-through operand.
           */
-         if (instr->opcode == aco_opcode::v_interp_p2_f32 ||
-             instr->opcode == aco_opcode::v_mac_f32 || instr->opcode == aco_opcode::v_fmac_f32 ||
-             instr->opcode == aco_opcode::v_mac_f16 || instr->opcode == aco_opcode::v_fmac_f16 ||
-             instr->opcode == aco_opcode::v_mac_legacy_f32 ||
-             instr->opcode == aco_opcode::v_fmac_legacy_f32 ||
-             instr->opcode == aco_opcode::v_pk_fmac_f16 ||
-             instr->opcode == aco_opcode::v_writelane_b32 ||
-             instr->opcode == aco_opcode::v_writelane_b32_e64 ||
-             instr->opcode == aco_opcode::v_dot4c_i32_i8) {
-            assert(instr->definitions[0].bytes() == instr->operands[2].bytes() ||
-                   instr->operands[2].regClass() == v1);
-            instr->definitions[0].setFixed(instr->operands[2].physReg());
-         } else if (instr->opcode == aco_opcode::s_addk_i32 ||
-                    instr->opcode == aco_opcode::s_mulk_i32 ||
-                    instr->opcode == aco_opcode::s_cmovk_i32) {
-            assert(instr->definitions[0].bytes() == instr->operands[0].bytes());
-            instr->definitions[0].setFixed(instr->operands[0].physReg());
-         } else if (instr->isMUBUF() && instr->definitions.size() == 1 &&
-                    instr->operands.size() == 4) {
-            assert(instr->definitions[0].bytes() == instr->operands[3].bytes());
-            instr->definitions[0].setFixed(instr->operands[3].physReg());
-         } else if (instr->isMIMG() && instr->definitions.size() == 1 &&
-                    !instr->operands[2].isUndefined()) {
-            assert(instr->definitions[0].bytes() == instr->operands[2].bytes());
-            instr->definitions[0].setFixed(instr->operands[2].physReg());
-         }
+         int op_fixed_to_def = get_op_fixed_to_def(instr.get());
+         if (op_fixed_to_def != -1)
+            instr->definitions[0].setFixed(instr->operands[op_fixed_to_def].physReg());
 
          /* handle fixed definitions first */
          for (unsigned i = 0; i < instr->definitions.size(); ++i) {
@@ -2966,7 +2945,9 @@ register_allocation(Program* program, std::vector<IDSet>& live_out_per_block, ra
                      definition->setFixed(reg);
                }
             } else if (instr->opcode == aco_opcode::p_wqm ||
-                       instr->opcode == aco_opcode::p_parallelcopy) {
+                       instr->opcode == aco_opcode::p_parallelcopy ||
+                       (instr->opcode == aco_opcode::p_start_linear_vgpr &&
+                        !instr->operands.empty())) {
                PhysReg reg = instr->operands[i].physReg();
                if (instr->operands[i].isTemp() &&
                    instr->operands[i].getTemp().type() == definition->getTemp().type() &&

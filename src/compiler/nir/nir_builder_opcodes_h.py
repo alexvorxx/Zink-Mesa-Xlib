@@ -167,6 +167,22 @@ _nir_build_${name}(build${intrinsic_macro_list(opcode)}, (struct _nir_${name}_in
 #define nir_${name} nir_build_${name}
 % endfor
 
+% for name in ['flt', 'fge', 'feq', 'fneu']:
+static inline nir_ssa_def *
+nir_${name}_imm(nir_builder *build, nir_ssa_def *src1, double src2)
+{
+   return nir_${name}(build, src1, nir_imm_floatN_t(build, src2, src1->bit_size));
+}
+% endfor
+
+% for name in ['ilt', 'ige', 'ieq', 'ine', 'ult', 'uge']:
+static inline nir_ssa_def *
+nir_${name}_imm(nir_builder *build, nir_ssa_def *src1, uint64_t src2)
+{
+   return nir_${name}(build, src1, nir_imm_intN_t(build, src2, src1->bit_size));
+}
+% endfor
+
 #endif /* _NIR_BUILDER_OPCODES_ */"""
 
 from nir_opcodes import opcodes, type_size, type_base_type

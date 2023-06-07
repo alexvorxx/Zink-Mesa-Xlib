@@ -223,7 +223,7 @@ haiku_swap_buffers(_EGLDisplay *disp, _EGLSurface *surf)
 	struct pipe_fence_handle *new_fence = NULL;
 	st_context_flush(st, ST_FLUSH_FRONT, &new_fence, NULL, NULL);
 	if (hgl_surf->throttle_fence) {
-		screen->fence_finish(screen, NULL, hgl_surf->throttle_fence, PIPE_TIMEOUT_INFINITE);
+		screen->fence_finish(screen, NULL, hgl_surf->throttle_fence, OS_TIMEOUT_INFINITE);
 		screen->fence_reference(screen, &hgl_surf->throttle_fence, NULL);
 	}
 	hgl_surf->throttle_fence = new_fence;

@@ -38,7 +38,6 @@
 #include "util/u_debug.h"
 #include "util/u_memory.h"
 #include "util/u_math.h"
-#include "tgsi/tgsi_scan.h"
 #include "gallivm/lp_bld_debug.h"
 #include "gallivm/lp_bld_const.h"
 #include "gallivm/lp_bld_arit.h"

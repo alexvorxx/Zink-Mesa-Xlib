@@ -49,7 +49,7 @@
 boolean
 draw_need_pipeline(const struct draw_context *draw,
                    const struct pipe_rasterizer_state *rasterizer,
-                   enum pipe_prim_type prim)
+                   enum mesa_prim prim)
 {
    unsigned reduced_prim = u_reduced_prim(prim);
 
@@ -63,7 +63,7 @@ draw_need_pipeline(const struct draw_context *draw,
     * and triggering the pipeline, because we have to trigger the
     * pipeline *anyway* if unfilled mode is active.
     */
-   if (reduced_prim == PIPE_PRIM_LINES) {
+   if (reduced_prim == MESA_PRIM_LINES) {
       /* line stipple */
       if (rasterizer->line_stipple_enable && draw->pipeline.line_stipple)
          return TRUE;
@@ -78,7 +78,7 @@ draw_need_pipeline(const struct draw_context *draw,
 
       if (draw_current_shader_num_written_culldistances(draw))
          return TRUE;
-   } else if (reduced_prim == PIPE_PRIM_POINTS) {
+   } else if (reduced_prim == MESA_PRIM_POINTS) {
       /* large points */
       if (rasterizer->point_size > draw->pipeline.wide_point_threshold)
          return TRUE;
@@ -98,7 +98,7 @@ draw_need_pipeline(const struct draw_context *draw,
 
       if (draw_current_shader_num_written_culldistances(draw))
          return TRUE;
-   } else if (reduced_prim == PIPE_PRIM_TRIANGLES) {
+   } else if (reduced_prim == MESA_PRIM_TRIANGLES) {
       /* polygon stipple */
       if (rasterizer->poly_stipple_enable && draw->pipeline.pstipple)
          return TRUE;

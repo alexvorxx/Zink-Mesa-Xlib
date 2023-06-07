@@ -3,7 +3,7 @@
 set -e
 
 overrideDll() {
-  if ! wine64 reg add 'HKEY_CURRENT_USER\Software\Wine\DllOverrides' /v "$1" /d native /f; then
+  if ! wine reg add 'HKEY_CURRENT_USER\Software\Wine\DllOverrides' /v "$1" /d native /f; then
     echo -e "Failed to add override for $1"
     exit 1
   fi

@@ -76,6 +76,8 @@ void radv_nir_lower_io(struct radv_device *device, nir_shader *nir);
 
 bool radv_nir_lower_io_to_mem(struct radv_device *device, struct radv_pipeline_stage *stage);
 
+void radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_key *key);
+
 #ifdef __cplusplus
 }
 #endif

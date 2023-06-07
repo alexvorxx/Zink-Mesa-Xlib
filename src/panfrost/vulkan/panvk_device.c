@@ -698,8 +698,7 @@ panvk_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
    };
 
-   vk_foreach_struct(ext, pProperties->pNext)
-   {
+   vk_foreach_struct(ext, pProperties->pNext) {
       if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1))
          continue;
       if (vk_get_physical_device_core_1_2_property_ext(ext, &core_1_2))

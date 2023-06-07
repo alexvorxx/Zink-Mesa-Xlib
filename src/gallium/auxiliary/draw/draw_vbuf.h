@@ -97,7 +97,7 @@ struct vbuf_render {
     * the discretion of the driver, for the benefit of the passthrough
     * path.
     */
-   void (*set_primitive)(struct vbuf_render *, enum pipe_prim_type prim);
+   void (*set_primitive)(struct vbuf_render *, enum mesa_prim prim);
 
    /**
     * Notify the renderer of the current view index.

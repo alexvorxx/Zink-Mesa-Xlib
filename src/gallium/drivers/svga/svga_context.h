@@ -36,8 +36,6 @@
 #include "util/u_blitter.h"
 #include "util/list.h"
 
-#include "tgsi/tgsi_scan.h"
-
 #include "svga_screen.h"
 #include "svga_state.h"
 #include "svga_winsys.h"
@@ -181,9 +179,9 @@ struct svga_depth_stencil_state {
 #define SVGA_UNFILLED_LINE    1
 #define SVGA_UNFILLED_POINT   2
 
-#define SVGA_PIPELINE_FLAG_POINTS   (1<<PIPE_PRIM_POINTS)
-#define SVGA_PIPELINE_FLAG_LINES    (1<<PIPE_PRIM_LINES)
-#define SVGA_PIPELINE_FLAG_TRIS     (1<<PIPE_PRIM_TRIANGLES)
+#define SVGA_PIPELINE_FLAG_POINTS   (1<<MESA_PRIM_POINTS)
+#define SVGA_PIPELINE_FLAG_LINES    (1<<MESA_PRIM_LINES)
+#define SVGA_PIPELINE_FLAG_TRIS     (1<<MESA_PRIM_TRIANGLES)
 
 #define SVGA_MAX_FRAMEBUFFER_DEFAULT_SAMPLES 4
 
@@ -207,7 +205,7 @@ struct svga_rasterizer_state {
 
    unsigned hw_fillmode:2;         /* PIPE_POLYGON_MODE_x */
 
-   /** Which prims do we need help for?  Bitmask of (1 << PIPE_PRIM_x) flags */
+   /** Which prims do we need help for?  Bitmask of (1 << MESA_PRIM_x) flags */
    unsigned need_pipeline:16;
 
    SVGA3dRasterizerStateId id;    /**< vgpu10 */
@@ -342,7 +340,7 @@ struct svga_state
    unsigned num_samplers[PIPE_SHADER_TYPES];
    unsigned num_sampler_views[PIPE_SHADER_TYPES];
    unsigned num_vertex_buffers;
-   enum pipe_prim_type reduced_prim;
+   enum mesa_prim reduced_prim;
 
    unsigned vertex_id_bias;
 

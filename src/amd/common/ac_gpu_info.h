@@ -1,26 +1,7 @@
 /*
  * Copyright © 2017 Advanced Micro Devices, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, AUTHORS
- * AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
- * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef AC_GPU_INFO_H
@@ -113,7 +94,7 @@ struct radeon_info {
    bool cpdma_prefetch_writes_memory;
    bool has_gfx9_scissor_bug;
    bool has_tc_compat_zrange_bug;
-   bool has_msaa_sample_loc_bug;
+   bool has_small_prim_filter_sample_loc_bug;
    bool has_ls_vgpr_init_bug;
    bool has_zero_index_buffer_bug;
    bool has_image_load_dcc_bug;
@@ -228,6 +209,21 @@ struct radeon_info {
    bool mid_command_buffer_preemption_enabled;
    bool has_tmz_support;
    bool kernel_has_modifiers;
+
+   /* If the kernel driver uses CU reservation for high priority compute on gfx10+, it programs
+    * a global CU mask in the hw that is AND'ed with CU_EN register fields set by userspace.
+    * The packet that does the AND'ing is SET_SH_REG_INDEX(index = 3). If you don't use
+    * SET_SH_REG_INDEX, the global CU mask will not be applied.
+    *
+    * If uses_kernel_cu_mask is true, use SET_SH_REG_INDEX.
+    *
+    * If uses_kernel_cu_mask is false, SET_SH_REG_INDEX shouldn't be used because it only
+    * increases CP overhead and doesn't have any other effect.
+    *
+    * The alternative to this is to set the AMD_CU_MASK environment variable that has the same
+    * effect on radeonsi and RADV and doesn't need SET_SH_REG_INDEX.
+    */
+   bool uses_kernel_cu_mask;
 
    /* Shader cores. */
    uint16_t cu_mask[AMD_MAX_SE][AMD_MAX_SA_PER_SE];

@@ -138,6 +138,12 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_LOCAL_MEM_SIZE => cl_prop::<cl_ulong>(dev.local_mem_size()),
             // TODO add query for CL_LOCAL vs CL_GLOBAL
             CL_DEVICE_LOCAL_MEM_TYPE => cl_prop::<cl_device_local_mem_type>(CL_GLOBAL),
+            CL_DEVICE_LUID_KHR => cl_prop::<[cl_uchar; CL_LUID_SIZE_KHR as usize]>(
+                dev.screen().device_luid().unwrap_or_default(),
+            ),
+            CL_DEVICE_LUID_VALID_KHR => {
+                cl_prop::<cl_bool>(dev.screen().device_luid().is_some().into())
+            }
             CL_DEVICE_MAX_CLOCK_FREQUENCY => cl_prop::<cl_uint>(dev.max_clock_freq()),
             CL_DEVICE_MAX_COMPUTE_UNITS => cl_prop::<cl_uint>(dev.max_compute_units()),
             // TODO atm implemented as mem_const
@@ -178,6 +184,9 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_NATIVE_VECTOR_WIDTH_INT => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_LONG => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_SHORT => cl_prop::<cl_uint>(1),
+            CL_DEVICE_NODE_MASK_KHR => {
+                cl_prop::<cl_uint>(dev.screen().device_node_mask().unwrap_or_default())
+            }
             CL_DEVICE_NON_UNIFORM_WORK_GROUP_SUPPORT => cl_prop::<bool>(false),
             CL_DEVICE_NUMERIC_VERSION => cl_prop::<cl_version>(dev.cl_version as cl_version),
             // TODO subdevice support
@@ -198,7 +207,9 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT => cl_prop::<cl_uint>(0),
             CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT => cl_prop::<cl_uint>(0),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR => cl_prop::<cl_uint>(1),
-            CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE => cl_prop::<cl_uint>(0),
+            CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE => {
+                cl_prop::<cl_uint>(if dev.doubles_supported() { 1 } else { 0 })
+            }
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF => cl_prop::<cl_uint>(0),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT => cl_prop::<cl_uint>(1),
@@ -244,9 +255,15 @@ impl CLInfo<cl_device_info> for cl_device_id {
                 )
             }
             CL_DEVICE_TYPE => cl_prop::<cl_device_type>(dev.device_type(false)),
+            CL_DEVICE_UUID_KHR => cl_prop::<[cl_uchar; CL_UUID_SIZE_KHR as usize]>(
+                dev.screen().device_uuid().unwrap_or_default(),
+            ),
             CL_DEVICE_VENDOR => cl_prop(dev.screen().device_vendor()),
             CL_DEVICE_VENDOR_ID => cl_prop::<cl_uint>(dev.vendor_id()),
             CL_DEVICE_VERSION => cl_prop::<String>(format!("OpenCL {} ", dev.cl_version.api_str())),
+            CL_DRIVER_UUID_KHR => cl_prop::<[cl_char; CL_UUID_SIZE_KHR as usize]>(
+                dev.screen().driver_uuid().unwrap_or_default(),
+            ),
             CL_DRIVER_VERSION => cl_prop::<&CStr>(unsafe { CStr::from_ptr(mesa_version_string()) }),
             CL_DEVICE_WORK_GROUP_COLLECTIVE_FUNCTIONS_SUPPORT => cl_prop::<bool>(false),
             // CL_INVALID_VALUE if param_name is not one of the supported values

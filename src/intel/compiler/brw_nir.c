@@ -504,8 +504,7 @@ lower_barycentric_at_offset(nir_builder *b, nir_instr *instr, void *data)
    assert(intrin->src[0].ssa);
    nir_ssa_def *offset =
       nir_imin(b, nir_imm_int(b, 7),
-               nir_f2i32(b, nir_fmul(b, nir_imm_float(b, 16),
-                                     intrin->src[0].ssa)));
+               nir_f2i32(b, nir_fmul_imm(b, intrin->src[0].ssa, 16)));
 
    nir_instr_rewrite_src(instr, &intrin->src[0], nir_src_for_ssa(offset));
 
@@ -947,7 +946,7 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
     *
     * So when robust image access is enabled, just avoid the workaround.
     */
-   if (devinfo->ver >= 12 && !opts->robust_image_access)
+   if (intel_needs_workaround(devinfo, 1806565034) && !opts->robust_image_access)
       OPT(brw_nir_clamp_image_1d_2d_array_sizes);
 
    const nir_lower_tex_options tex_options = {
@@ -1049,6 +1048,14 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
        nir_var_mem_ubo | nir_var_mem_ssbo,
        nir_lower_direct_array_deref_of_vec_load);
 
+   /* Clamp load_per_vertex_input of the TCS stage so that we do not generate
+    * loads reading out of bounds. We can do this here because we called
+    * nir_lower_system_values above.
+    */
+   if (nir->info.stage == MESA_SHADER_TESS_CTRL &&
+       compiler->use_tcs_multi_patch)
+      OPT(brw_nir_clamp_per_vertex_loads);
+
    /* Get rid of split copies */
    brw_nir_optimize(nir, compiler);
 }
@@ -1094,7 +1101,7 @@ brw_nir_zero_inputs(nir_shader *shader, uint64_t *zero_inputs)
          nir_metadata_block_index | nir_metadata_dominance, zero_inputs);
 }
 
-/* Code for Wa_14015590813 may have created input/output variables beyond
+/* Code for Wa_18019110168 may have created input/output variables beyond
  * VARYING_SLOT_MAX and removed uses of variables below VARYING_SLOT_MAX.
  * Clean it up, so they all stay below VARYING_SLOT_MAX.
  */
@@ -1131,7 +1138,7 @@ brw_mesh_compact_io(nir_shader *mesh, nir_shader *frag)
    if (!compact)
       return;
 
-   /* The rest of this function should be hit only for Wa_14015590813. */
+   /* The rest of this function should be hit only for Wa_18019110168. */
 
    nir_foreach_shader_out_variable(var, mesh) {
       gl_varying_slot location = var->data.location;
@@ -1985,6 +1992,8 @@ nir_shader *
 brw_nir_create_passthrough_tcs(void *mem_ctx, const struct brw_compiler *compiler,
                                const struct brw_tcs_prog_key *key)
 {
+   assert(key->input_vertices > 0);
+
    const nir_shader_compiler_options *options =
       compiler->nir_options[MESA_SHADER_TESS_CTRL];
 

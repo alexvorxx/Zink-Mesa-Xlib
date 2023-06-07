@@ -605,7 +605,7 @@ retry:
 
 static struct zink_resource_object *
 resource_object_create(struct zink_screen *screen, const struct pipe_resource *templ, struct winsys_handle *whandle, bool *linear,
-                       uint64_t *modifiers, int modifiers_count, const void *loader_private)
+                       uint64_t *modifiers, int modifiers_count, const void *loader_private, const void *user_mem)
 {
    struct zink_resource_object *obj = CALLOC_STRUCT(zink_resource_object);
    unsigned max_level = 0;
@@ -987,6 +987,20 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
    if (templ->bind & ZINK_BIND_TRANSIENT)
       flags |= VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
 
+   if (user_mem) {
+      VkExternalMemoryHandleTypeFlagBits handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+      VkMemoryHostPointerPropertiesEXT memory_host_pointer_properties = {0};
+      memory_host_pointer_properties.sType = VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT;
+      memory_host_pointer_properties.pNext = NULL;
+      VkResult res = VKSCR(GetMemoryHostPointerPropertiesEXT)(screen->dev, handle_type, user_mem, &memory_host_pointer_properties);
+      if (res != VK_SUCCESS) {
+         mesa_loge("ZINK: vkGetMemoryHostPointerPropertiesEXT failed");
+         goto fail1;
+      }
+      reqs.memoryTypeBits &= memory_host_pointer_properties.memoryTypeBits;
+      flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+   }
+
    VkMemoryAllocateInfo mai;
    enum zink_alloc_flag aflags = templ->flags & PIPE_RESOURCE_FLAG_SPARSE ? ZINK_ALLOC_SPARSE : 0;
    mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -1063,6 +1077,17 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
 #endif
 
 #endif
+
+   VkImportMemoryHostPointerInfoEXT imhpi = {
+      VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
+      NULL,
+   };
+   if (user_mem) {
+      imhpi.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+      imhpi.pHostPointer = (void*)user_mem;
+      imhpi.pNext = mai.pNext;
+      mai.pNext = &imhpi;
+   }
 
    unsigned alignment = MAX2(reqs.alignment, 256);
    if (templ->usage == PIPE_USAGE_STAGING && obj->is_buffer)
@@ -1180,7 +1205,7 @@ resource_create(struct pipe_screen *pscreen,
                 struct winsys_handle *whandle,
                 unsigned external_usage,
                 const uint64_t *modifiers, int modifiers_count,
-                const void *loader_private)
+                const void *loader_private, const void *user_mem)
 {
    struct zink_screen *screen = zink_screen(pscreen);
    struct zink_resource *res = CALLOC_STRUCT_CL(zink_resource);
@@ -1216,7 +1241,7 @@ resource_create(struct pipe_screen *pscreen,
       templ2.flags &= ~PIPE_RESOURCE_FLAG_SPARSE;
       res->base.b.flags &= ~PIPE_RESOURCE_FLAG_SPARSE;
    }
-   res->obj = resource_object_create(screen, &templ2, whandle, &linear, res->modifiers, res->modifiers_count, loader_private);
+   res->obj = resource_object_create(screen, &templ2, whandle, &linear, res->modifiers, res->modifiers_count, loader_private, user_mem);
    if (!res->obj) {
       free(res->modifiers);
       FREE_CL(res);
@@ -1338,14 +1363,14 @@ static struct pipe_resource *
 zink_resource_create(struct pipe_screen *pscreen,
                      const struct pipe_resource *templ)
 {
-   return resource_create(pscreen, templ, NULL, 0, NULL, 0, NULL);
+   return resource_create(pscreen, templ, NULL, 0, NULL, 0, NULL, NULL);
 }
 
 static struct pipe_resource *
 zink_resource_create_with_modifiers(struct pipe_screen *pscreen, const struct pipe_resource *templ,
                                     const uint64_t *modifiers, int modifiers_count)
 {
-   return resource_create(pscreen, templ, NULL, 0, modifiers, modifiers_count, NULL);
+   return resource_create(pscreen, templ, NULL, 0, modifiers, modifiers_count, NULL, NULL);
 }
 
 static struct pipe_resource *
@@ -1353,7 +1378,7 @@ zink_resource_create_drawable(struct pipe_screen *pscreen,
                               const struct pipe_resource *templ,
                               const void *loader_private)
 {
-   return resource_create(pscreen, templ, NULL, 0, NULL, 0, loader_private);
+   return resource_create(pscreen, templ, NULL, 0, NULL, 0, loader_private, NULL);
 }
 
 static bool
@@ -1373,7 +1398,7 @@ add_resource_bind(struct zink_context *ctx, struct zink_resource *res, unsigned 
 
       res->modifiers[0] = DRM_FORMAT_MOD_LINEAR;
    }
-   struct zink_resource_object *new_obj = resource_object_create(screen, &res->base.b, NULL, &res->linear, res->modifiers, res->modifiers_count, NULL);
+   struct zink_resource_object *new_obj = resource_object_create(screen, &res->base.b, NULL, &res->linear, res->modifiers, res->modifiers_count, NULL, NULL);
    if (!new_obj) {
       debug_printf("new backing resource alloc failed!\n");
       res->base.b.bind &= ~bind;
@@ -1623,7 +1648,7 @@ zink_resource_from_handle(struct pipe_screen *pscreen,
       modifier = whandle->modifier;
       modifier_count = 1;
    }
-   struct pipe_resource *pres = resource_create(pscreen, &templ2, whandle, usage, &modifier, modifier_count, NULL);
+   struct pipe_resource *pres = resource_create(pscreen, &templ2, whandle, usage, &modifier, modifier_count, NULL, NULL);
    if (pres) {
       struct zink_resource *res = zink_resource(pres);
       if (pres->target != PIPE_BUFFER)
@@ -1636,6 +1661,14 @@ zink_resource_from_handle(struct pipe_screen *pscreen,
 #else
    return NULL;
 #endif
+}
+
+static struct pipe_resource *
+zink_resource_from_user_memory(struct pipe_screen *pscreen,
+                 const struct pipe_resource *templ,
+                 void *user_memory)
+{
+   return resource_create(pscreen, templ, NULL, 0, NULL, 0, NULL, user_memory);
 }
 
 struct zink_memory_object {
@@ -1693,7 +1726,7 @@ zink_resource_from_memobj(struct pipe_screen *pscreen,
 {
    struct zink_memory_object *memobj = (struct zink_memory_object *)pmemobj;
 
-   struct pipe_resource *pres = resource_create(pscreen, templ, &memobj->whandle, 0, NULL, 0, NULL);
+   struct pipe_resource *pres = resource_create(pscreen, templ, &memobj->whandle, 0, NULL, 0, NULL, NULL);
    if (pres) {
       if (pres->target != PIPE_BUFFER)
          zink_resource(pres)->valid = true;
@@ -1727,7 +1760,7 @@ invalidate_buffer(struct zink_context *ctx, struct zink_resource *res)
    if (!zink_resource_has_usage(res))
       return false;
 
-   struct zink_resource_object *new_obj = resource_object_create(screen, &res->base.b, NULL, NULL, NULL, 0, NULL);
+   struct zink_resource_object *new_obj = resource_object_create(screen, &res->base.b, NULL, NULL, NULL, 0, NULL, 0);
    if (!new_obj) {
       debug_printf("new backing resource alloc failed!\n");
       return false;
@@ -2676,6 +2709,9 @@ zink_screen_resource_init(struct pipe_screen *pscreen)
    if (screen->info.have_KHR_external_memory_fd || screen->info.have_KHR_external_memory_win32) {
       pscreen->resource_get_handle = zink_resource_get_handle;
       pscreen->resource_from_handle = zink_resource_from_handle;
+   }
+   if (screen->info.have_EXT_external_memory_host) {
+      pscreen->resource_from_user_memory = zink_resource_from_user_memory;
    }
    if (screen->instance_info.have_KHR_external_memory_capabilities) {
       pscreen->memobj_create_from_handle = zink_memobj_create_from_handle;

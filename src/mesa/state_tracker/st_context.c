@@ -808,7 +808,7 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
 
    ctx->Const.DriverSupportedPrimMask = screen->get_param(screen, PIPE_CAP_SUPPORTED_PRIM_MODES) |
                                         /* patches is always supported */
-                                        BITFIELD_BIT(PIPE_PRIM_PATCHES);
+                                        BITFIELD_BIT(MESA_PRIM_PATCHES);
    st->active_states = _mesa_get_active_states(ctx);
 
    return st;

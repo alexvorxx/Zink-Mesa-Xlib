@@ -27,12 +27,10 @@
 #include "util/u_memory.h"
 #include "util/u_bitmask.h"
 #include "util/u_simple_shaders.h"
-#include "tgsi/tgsi_ureg.h"
 #include "tgsi/tgsi_point_sprite.h"
 #include "tgsi/tgsi_dynamic_indexing.h"
 #include "tgsi/tgsi_vpos.h"
 #include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_info.h"
 
 #include "svga_context.h"
 #include "svga_shader.h"
@@ -451,7 +449,7 @@ update_tgsi_transform(struct svga_context *svga, uint64_t dirty)
       transform_dynamic_indexing(svga, &tes->base);
    }
 
-   if (svga->curr.reduced_prim == PIPE_PRIM_POINTS) {
+   if (svga->curr.reduced_prim == MESA_PRIM_POINTS) {
       /* If the current prim type is POINTS and the current geometry shader
        * emits wide points, transform the shader to emulate wide points using
        * quads. NOTE: we don't do emulation of wide points in GS when

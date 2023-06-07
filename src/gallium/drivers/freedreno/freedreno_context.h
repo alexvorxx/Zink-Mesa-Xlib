@@ -265,7 +265,7 @@ enum fd_buffer_mask {
    FD_BUFFER_LRZ = BIT(15),
 };
 
-#define MAX_HW_SAMPLE_PROVIDERS 7
+#define MAX_HW_SAMPLE_PROVIDERS 10
 struct fd_hw_sample_provider;
 struct fd_hw_sample;
 
@@ -577,6 +577,9 @@ struct fd_context {
    bool (*clear)(struct fd_context *ctx, enum fd_buffer_mask buffers,
                  const union pipe_color_union *color, double depth,
                  unsigned stencil) dt;
+
+   /* called to update draw_vbo func after bound shader stages change, etc: */
+   void (*update_draw)(struct fd_context *ctx);
 
    /* compute: */
    void (*launch_grid)(struct fd_context *ctx,

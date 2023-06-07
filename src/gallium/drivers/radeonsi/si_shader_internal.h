@@ -1,25 +1,7 @@
 /*
  * Copyright 2016 Advanced Micro Devices, Inc.
- * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef SI_SHADER_PRIVATE_H
@@ -115,7 +97,6 @@ struct si_shader_context {
    struct ac_llvm_compiler *compiler;
 
    /* Preloaded descriptors. */
-   LLVMValueRef esgs_ring;
    LLVMValueRef gsvs_ring[4];
    LLVMValueRef tess_offchip_ring;
    LLVMValueRef instance_divisor_constbuf;
@@ -199,7 +180,6 @@ LLVMValueRef si_insert_input_ret_float(struct si_shader_context *ctx, LLVMValueR
 LLVMValueRef si_insert_input_ptr(struct si_shader_context *ctx, LLVMValueRef ret,
                                  struct ac_arg param, unsigned return_index);
 LLVMValueRef si_prolog_get_internal_bindings(struct si_shader_context *ctx);
-void si_llvm_declare_esgs_ring(struct si_shader_context *ctx);
 LLVMValueRef si_unpack_param(struct si_shader_context *ctx, struct ac_arg param, unsigned rshift,
                              unsigned bitwidth);
 void si_build_wrapper_function(struct si_shader_context *ctx, struct ac_llvm_pointer *parts,
@@ -215,7 +195,6 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
 LLVMValueRef si_is_es_thread(struct si_shader_context *ctx);
 LLVMValueRef si_is_gs_thread(struct si_shader_context *ctx);
 void si_llvm_es_build_end(struct si_shader_context *ctx);
-void si_preload_esgs_ring(struct si_shader_context *ctx);
 void si_preload_gs_rings(struct si_shader_context *ctx);
 void si_llvm_gs_build_end(struct si_shader_context *ctx);
 

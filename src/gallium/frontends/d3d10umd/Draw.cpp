@@ -133,7 +133,7 @@ Draw(D3D10DDI_HDEVICE hDevice,   // IN
 
    ResolveState(pDevice);
 
-   assert(pDevice->primitive < PIPE_PRIM_MAX);
+   assert(pDevice->primitive < MESA_PRIM_COUNT);
    util_draw_arrays(pDevice->pipe,
                     pDevice->primitive,
                     StartVertexLocation,
@@ -167,7 +167,7 @@ DrawIndexed(D3D10DDI_HDEVICE hDevice,  // IN
    unsigned index_size = pDevice->index_size;
    unsigned ib_offset = pDevice->ib_offset;
 
-   assert(pDevice->primitive < PIPE_PRIM_MAX);
+   assert(pDevice->primitive < MESA_PRIM_COUNT);
 
    /* XXX I don't think draw still needs this? */
    if (!pDevice->index_buffer) {
@@ -225,7 +225,7 @@ DrawInstanced(D3D10DDI_HDEVICE hDevice,      // IN
 
    ResolveState(pDevice);
 
-   assert(pDevice->primitive < PIPE_PRIM_MAX);
+   assert(pDevice->primitive < MESA_PRIM_COUNT);
    util_draw_arrays_instanced(pDevice->pipe,
                               pDevice->primitive,
                               StartVertexLocation,
@@ -264,7 +264,7 @@ DrawIndexedInstanced(D3D10DDI_HDEVICE hDevice,   // IN
    unsigned index_size = pDevice->index_size;
    unsigned ib_offset = pDevice->ib_offset;
 
-   assert(pDevice->primitive < PIPE_PRIM_MAX);
+   assert(pDevice->primitive < MESA_PRIM_COUNT);
 
    if (!InstanceCount) {
       return;
@@ -330,7 +330,7 @@ DrawAuto(D3D10DDI_HDEVICE hDevice)  // IN
       return;
    }
 
-   assert(pDevice->primitive < PIPE_PRIM_MAX);
+   assert(pDevice->primitive < MESA_PRIM_COUNT);
 
    ResolveState(pDevice);
 

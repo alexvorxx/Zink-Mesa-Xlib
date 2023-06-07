@@ -272,7 +272,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    if (screen->info.have_EXT_color_write_enable)
       dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT;
 
-   assert(state->rast_prim != PIPE_PRIM_MAX);
+   assert(state->rast_prim != MESA_PRIM_COUNT);
 
    VkPipelineRasterizationLineStateCreateInfoEXT rast_line_state;
    if (screen->info.have_EXT_line_rasterization &&
@@ -282,7 +282,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
       rast_line_state.stippledLineEnable = VK_FALSE;
       rast_line_state.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT;
 
-      if (state->rast_prim == PIPE_PRIM_LINES) {
+      if (state->rast_prim == MESA_PRIM_LINES) {
          const char *features[4][2] = {
             [VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT] = {"",""},
             [VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT] = {"rectangularLines", "stippledRectangularLines"},

@@ -300,24 +300,24 @@ fast_color_clear@fcc-read-after-clear blit tex,Fail
 fast_color_clear@fcc-read-after-clear copy rb,Fail
 fast_color_clear@fcc-read-after-clear copy tex,Fail
 
-hiz@hiz-stencil-test-fbo-d0-s8,Fail
-
 shaders@glsl-bug-110796,Fail
 shaders@glsl-fs-flat-color,Fail
 shaders@glsl-fs-loop-nested,Crash
 shaders@glsl-fs-pointcoord,Fail
-shaders@glsl-kwin-blur-1,Fail
-shaders@glsl-kwin-blur-2,Fail
+
+# segfault
+shaders@glsl-kwin-blur-1,Crash
+shaders@glsl-kwin-blur-2,Crash
+
 shaders@glsl-max-varyings,Crash
 shaders@glsl-max-varyings >max_varying_components,Crash
 shaders@glsl-novertexdata,Fail
+shaders@glsl-preprocessor-comments,Fail
 shaders@glsl-routing,Crash
 shaders@glsl-uniform-interstage-limits@subdivide 5- statechanges,Timeout
 shaders@glsl-uniform-interstage-limits@subdivide 5,Timeout
 shaders@glsl-vs-loop-nested,Crash
 shaders@glsl-vs-point-size,Fail
-
-spec@amd_shader_trinary_minmax@execution@built-in-functions@fs-max3-float-float-float,Fail
 
 spec@arb_arrays_of_arrays@execution@glsl-arrays-copy-size-mismatch,Fail
 spec@arb_depth_texture@fbo-depth-gl_depth_component16-drawpixels,Fail
@@ -339,6 +339,11 @@ spec@arb_es2_compatibility@texwrap formats bordercolor-swizzled@GL_RGB565- swizz
 spec@arb_fragment_program@fp-fragment-position,Crash
 spec@arb_fragment_program@fp-indirections2,Fail
 spec@arb_fragment_program@sparse-samplers,Crash
+
+# MESA: error: etna_link_shader:1302: Semantic value not found in vertex shader outputs
+# ati_fragment_shader-render-ops: ../src/gallium/drivers/etnaviv/etnaviv_shader.c:141: etna_link_shaders: Assertion `0' failed.
+spec@ati_fragment_shader@ati_fragment_shader-render-ops,Crash
+
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_depth24_stencil8,Fail
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_stencil_index16,Fail
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_stencil_index1,Fail
@@ -378,7 +383,6 @@ spec@arb_provoking_vertex@arb-provoking-vertex-render,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgrad,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
 spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-07,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-08,Fail
 spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-cumulative,Fail
 spec@arb_shader_texture_lod@execution@tex-miplevel-selection *gradarb 1d,Fail
 spec@arb_shader_texture_lod@execution@tex-miplevel-selection *gradarb 1dshadow,Fail
@@ -433,8 +437,6 @@ spec@ati_texture_compression_3dc@texwrap formats bordercolor@GL_COMPRESSED_LUMIN
 
 spec@arb_texture_cube_map@cubemap npot,Fail
 
-spec@arb_texture_rectangle@copyteximage rect,Fail
-spec@arb_texture_rectangle@fbo-blit rect,Fail
 spec@arb_texture_rectangle@glsl-fs-shadow2drect-07,Fail
 spec@arb_texture_rectangle@texwrap rect bordercolor,Fail
 spec@arb_texture_rectangle@texwrap rect bordercolor@GL_RGBA8- border color only,Fail
@@ -446,8 +448,6 @@ spec@arb_texture_storage@texture-storage,Fail
 spec@arb_vertex_buffer_object@pos-array,Fail
 spec@arb_vertex_program@big-param,Fail
 spec@arb_vertex_program@clip-plane-transformation arb,Fail
-spec@arb_vertex_program@vp-arl-constant-array-huge-offset,Fail
-spec@arb_vertex_program@vp-arl-constant-array-varying,Fail
 
 spec@glsl-1.10@execution@copy-propagation@glsl-fs-copy-propagation-texcoords-2,Fail
 
@@ -650,6 +650,7 @@ spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat4-index-rd,Fail
 spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat4-index-row-rd,Fail
 spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat4-index-row-wr,Fail
 spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat4-index-wr,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-output-array-vec2-index-wr-no-unroll,Fail
 spec@glsl-1.10@execution@varying-packing@simple float array,Crash
 spec@glsl-1.10@execution@varying-packing@simple float separate,Crash
 spec@glsl-1.10@execution@varying-packing@simple mat2 array,Crash
@@ -711,6 +712,14 @@ spec@khr_texture_compression_astc@miptree-gl srgb-fp@sRGB decode full precision,
 spec@nv_copy_image@nv_copy_image-simple --tex-to-tex,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-lines,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-triangles,Fail
+
+# MESA: error: etna_link_shader:1302: Semantic value not found in vertex shader outputs
+# nv_texture_env_combine4-combine: ../src/gallium/drivers/etnaviv/etnaviv_shader.c:141: etna_link_shaders: Assertion `0' failed.
+spec@nv_texture_env_combine4@nv_texture_env_combine4-combine,Crash
+
+# segfault
+spec@sgis_generate_mipmap@gen-nonzero-unit,Crash
+
 spec@!opengl 1.0@gl-1.0-blend-func,Fail
 
 spec@!opengl 1.0@gl-1.0-dlist-materials,Fail
@@ -2038,7 +2047,6 @@ spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)-
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: FIRST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: LAST,Fail
 spec@!opengl 1.1@depthstencil-default_fb-copypixels,Fail
-spec@!opengl 1.1@fog-modes,Fail
 spec@!opengl 1.1@getteximage-luminance,Crash
 spec@!opengl 1.1@gl-1.1-xor-copypixels,Fail
 spec@!opengl 1.1@gl-1.1-xor,Fail
@@ -2049,7 +2057,6 @@ spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Line loop,Fail
 spec@!opengl 1.1@linestipple@Line strip,Fail
 spec@!opengl 1.1@linestipple@Restarting lines within a single Begin-End block,Fail
-spec@!opengl 1.1@line-smooth-coverage,Fail
 spec@!opengl 1.1@line-smooth-stipple,Fail
 spec@!opengl 1.1@polygon-mode,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 0: Expected blue pixel in center,Fail
@@ -2160,6 +2167,10 @@ spec@!opengl 1.2@texwrap 3d bordercolor,Fail
 spec@!opengl 1.2@texwrap 3d bordercolor@GL_RGBA8- border color only,Fail
 spec@!opengl 1.2@texwrap 3d proj bordercolor,Fail
 spec@!opengl 1.2@texwrap 3d proj bordercolor@GL_RGBA8- projected- border color only,Fail
+
+# segfault
+spec@!opengl 1.2@tex-skipped-unit,Crash
+
 spec@!opengl 1.2@two-sided-lighting-separate-specular,Fail
 spec@!opengl 1.3@gl-1.3-texture-env,Fail
 spec@!opengl 1.3@tex3d-depth1,Fail

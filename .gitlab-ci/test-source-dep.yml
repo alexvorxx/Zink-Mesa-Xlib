@@ -114,11 +114,11 @@
     - debian/arm64_test
     - debian-arm64-release
 
-.piglit-performance:amd64:
+.piglit-performance:x86_64:
   extends:
     - .piglit-performance-base
   needs:
-    - kernel+rootfs_amd64
+    - kernel+rootfs_x86_64
     - debian-release
 
 # Mesa source file dependencies that may impact any GL driver test job.
@@ -625,6 +625,21 @@
         *radeon_vcn_file_list
       when: manual
 
+.radeonsi-valve-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.radeonsi-rules, rules]
+
+.radeonsi-valve-manual-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+        *radeonsi_file_list
+      when: manual
+
 .i915g-rules:
   stage: intel
   rules:
@@ -697,9 +712,9 @@
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
     LAVA_JOB_PRIORITY: 40
-    MINIO_ARTIFACT_NAME: "mesa-amd64-release"
+    MINIO_ARTIFACT_NAME: "mesa-x86_64-release"
   needs:
-    - kernel+rootfs_amd64
+    - kernel+rootfs_x86_64
     - debian-release
 
 .anv-rules:
@@ -746,10 +761,8 @@
     # Note that we trigger on changes both anv and iris, because piglit and skqp jobs test both.
     - !reference [.vulkan-rules, rules]
     - !reference [.gl-rules, rules]
-    - changes: &iris_file_list
-      - src/gallium/drivers/iris/**/*
-      - src/gallium/winsys/iris/**/*
-      - src/intel/**/*
+    - changes:
+        *iris_file_list
       when: on_success
 
 .virgl-rules:
@@ -791,9 +804,9 @@
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
     LAVA_JOB_PRIORITY: 40
-    MINIO_ARTIFACT_NAME: "mesa-amd64-release"
+    MINIO_ARTIFACT_NAME: "mesa-x86_64-release"
   needs:
-    - kernel+rootfs_amd64
+    - kernel+rootfs_x86_64
     - debian-release
 
 .zink-common-rules:
@@ -852,6 +865,9 @@
   rules:
     - !reference [.radv-valve-manual-rules, rules]
     - !reference [.zink-common-manual-rules, rules]
+    - changes:
+      - .gitlab-ci/container/build-piglit.sh
+      when: manual
 
 # Unfortunately YAML doesn't let us concatenate arrays, so we have to do the
 # rules duplication manually
@@ -993,6 +1009,10 @@
    rules:
     - !reference [.core-rules, rules]
     - changes:
+      - .clang-format
+      - .clang-format-include
+      - .clang-format-ignore
+      - src/**/.clang-format
       - src/**/asahi/**/*
       - src/**/panfrost/**/*
       when: on_success

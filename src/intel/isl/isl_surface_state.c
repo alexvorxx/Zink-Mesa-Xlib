@@ -388,19 +388,21 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
       unreachable("bad SurfaceType");
    }
 
-#if GFX_VER >= 12
-   /* Wa_1806565034:
-    *
-    *    "Only set SurfaceArray if arrayed surface is > 1."
-    *
-    * Since this is a performance workaround, we only enable it when robust
-    * image access is disabled. Otherwise layered robust access is not
-    * specification compliant.
-    */
-   s.SurfaceArray = info->surf->dim != ISL_SURF_DIM_3D &&
-      (info->robust_image_access || info->view->array_len > 1);
-#elif GFX_VER >= 7
-   s.SurfaceArray = info->surf->dim != ISL_SURF_DIM_3D;
+#if GFX_VER >= 7
+   if (INTEL_NEEDS_WA_1806565034) {
+      /* Wa_1806565034:
+       *
+       *    "Only set SurfaceArray if arrayed surface is > 1."
+       *
+       * Since this is a performance workaround, we only enable it when robust
+       * image access is disabled. Otherwise layered robust access is not
+       * specification compliant.
+       */
+      s.SurfaceArray = info->surf->dim != ISL_SURF_DIM_3D &&
+         (info->robust_image_access || info->view->array_len > 1);
+   } else {
+      s.SurfaceArray = info->surf->dim != ISL_SURF_DIM_3D;
+   }
 #endif
 
    if (info->view->usage & ISL_SURF_USAGE_RENDER_TARGET_BIT) {
@@ -695,8 +697,7 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
        *
        * If CCS_E is in use, the format must support it.
        */
-      if (info->aux_usage == ISL_AUX_USAGE_CCS_E ||
-          info->aux_usage == ISL_AUX_USAGE_GFX12_CCS_E)
+      if (isl_aux_usage_has_ccs_e(info->aux_usage))
          assert(isl_format_supports_ccs_e(dev->info, info->view->format));
 
       /* It also says:

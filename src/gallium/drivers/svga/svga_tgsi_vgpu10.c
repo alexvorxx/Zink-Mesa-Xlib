@@ -35,7 +35,6 @@
 #include "pipe/p_compiler.h"
 #include "pipe/p_shader_tokens.h"
 #include "pipe/p_defines.h"
-#include "tgsi/tgsi_build.h"
 #include "tgsi/tgsi_dump.h"
 #include "tgsi/tgsi_info.h"
 #include "tgsi/tgsi_parse.h"
@@ -408,7 +407,7 @@ struct svga_shader_emitter_v10
 
    /* For tessellation evaluation shaders only */
    struct {
-      enum pipe_prim_type prim_mode;
+      enum mesa_prim prim_mode;
       enum pipe_tess_spacing spacing;
       boolean vertices_order_cw;
       boolean point_mode;
@@ -2947,37 +2946,37 @@ emit_vgpu10_property(struct svga_shader_emitter_v10 *emit,
                      const struct tgsi_full_property *prop)
 {
    static const VGPU10_PRIMITIVE primType[] = {
-      VGPU10_PRIMITIVE_POINT,           /* PIPE_PRIM_POINTS */
-      VGPU10_PRIMITIVE_LINE,            /* PIPE_PRIM_LINES */
-      VGPU10_PRIMITIVE_LINE,            /* PIPE_PRIM_LINE_LOOP */
-      VGPU10_PRIMITIVE_LINE,            /* PIPE_PRIM_LINE_STRIP */
-      VGPU10_PRIMITIVE_TRIANGLE,        /* PIPE_PRIM_TRIANGLES */
-      VGPU10_PRIMITIVE_TRIANGLE,        /* PIPE_PRIM_TRIANGLE_STRIP */
-      VGPU10_PRIMITIVE_TRIANGLE,        /* PIPE_PRIM_TRIANGLE_FAN */
-      VGPU10_PRIMITIVE_UNDEFINED,       /* PIPE_PRIM_QUADS */
-      VGPU10_PRIMITIVE_UNDEFINED,       /* PIPE_PRIM_QUAD_STRIP */
-      VGPU10_PRIMITIVE_UNDEFINED,       /* PIPE_PRIM_POLYGON */
-      VGPU10_PRIMITIVE_LINE_ADJ,        /* PIPE_PRIM_LINES_ADJACENCY */
-      VGPU10_PRIMITIVE_LINE_ADJ,        /* PIPE_PRIM_LINE_STRIP_ADJACENCY */
-      VGPU10_PRIMITIVE_TRIANGLE_ADJ,    /* PIPE_PRIM_TRIANGLES_ADJACENCY */
-      VGPU10_PRIMITIVE_TRIANGLE_ADJ     /* PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY */
+      VGPU10_PRIMITIVE_POINT,           /* MESA_PRIM_POINTS */
+      VGPU10_PRIMITIVE_LINE,            /* MESA_PRIM_LINES */
+      VGPU10_PRIMITIVE_LINE,            /* MESA_PRIM_LINE_LOOP */
+      VGPU10_PRIMITIVE_LINE,            /* MESA_PRIM_LINE_STRIP */
+      VGPU10_PRIMITIVE_TRIANGLE,        /* MESA_PRIM_TRIANGLES */
+      VGPU10_PRIMITIVE_TRIANGLE,        /* MESA_PRIM_TRIANGLE_STRIP */
+      VGPU10_PRIMITIVE_TRIANGLE,        /* MESA_PRIM_TRIANGLE_FAN */
+      VGPU10_PRIMITIVE_UNDEFINED,       /* MESA_PRIM_QUADS */
+      VGPU10_PRIMITIVE_UNDEFINED,       /* MESA_PRIM_QUAD_STRIP */
+      VGPU10_PRIMITIVE_UNDEFINED,       /* MESA_PRIM_POLYGON */
+      VGPU10_PRIMITIVE_LINE_ADJ,        /* MESA_PRIM_LINES_ADJACENCY */
+      VGPU10_PRIMITIVE_LINE_ADJ,        /* MESA_PRIM_LINE_STRIP_ADJACENCY */
+      VGPU10_PRIMITIVE_TRIANGLE_ADJ,    /* MESA_PRIM_TRIANGLES_ADJACENCY */
+      VGPU10_PRIMITIVE_TRIANGLE_ADJ     /* MESA_PRIM_TRIANGLE_STRIP_ADJACENCY */
    };
 
    static const VGPU10_PRIMITIVE_TOPOLOGY primTopology[] = {
-      VGPU10_PRIMITIVE_TOPOLOGY_POINTLIST,     /* PIPE_PRIM_POINTS */
-      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST,      /* PIPE_PRIM_LINES */
-      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST,      /* PIPE_PRIM_LINE_LOOP */
-      VGPU10_PRIMITIVE_TOPOLOGY_LINESTRIP,     /* PIPE_PRIM_LINE_STRIP */
-      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLELIST,  /* PIPE_PRIM_TRIANGLES */
-      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, /* PIPE_PRIM_TRIANGLE_STRIP */
-      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, /* PIPE_PRIM_TRIANGLE_FAN */
-      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* PIPE_PRIM_QUADS */
-      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* PIPE_PRIM_QUAD_STRIP */
-      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* PIPE_PRIM_POLYGON */
-      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST_ADJ,  /* PIPE_PRIM_LINES_ADJACENCY */
-      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST_ADJ,  /* PIPE_PRIM_LINE_STRIP_ADJACENCY */
-      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ, /* PIPE_PRIM_TRIANGLES_ADJACENCY */
-      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ /* PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY */
+      VGPU10_PRIMITIVE_TOPOLOGY_POINTLIST,     /* MESA_PRIM_POINTS */
+      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST,      /* MESA_PRIM_LINES */
+      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST,      /* MESA_PRIM_LINE_LOOP */
+      VGPU10_PRIMITIVE_TOPOLOGY_LINESTRIP,     /* MESA_PRIM_LINE_STRIP */
+      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLELIST,  /* MESA_PRIM_TRIANGLES */
+      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, /* MESA_PRIM_TRIANGLE_STRIP */
+      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, /* MESA_PRIM_TRIANGLE_FAN */
+      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* MESA_PRIM_QUADS */
+      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* MESA_PRIM_QUAD_STRIP */
+      VGPU10_PRIMITIVE_TOPOLOGY_UNDEFINED,     /* MESA_PRIM_POLYGON */
+      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST_ADJ,  /* MESA_PRIM_LINES_ADJACENCY */
+      VGPU10_PRIMITIVE_TOPOLOGY_LINELIST_ADJ,  /* MESA_PRIM_LINE_STRIP_ADJACENCY */
+      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ, /* MESA_PRIM_TRIANGLES_ADJACENCY */
+      VGPU10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ /* MESA_PRIM_TRIANGLE_STRIP_ADJACENCY */
    };
 
    static const unsigned inputArraySize[] = {
@@ -3112,18 +3111,18 @@ emit_property_instructions(struct svga_shader_emitter_v10 *emit)
  */
 static void
 emit_tessellator_domain(struct svga_shader_emitter_v10 *emit,
-                        enum pipe_prim_type prim_mode)
+                        enum mesa_prim prim_mode)
 {
    VGPU10OpcodeToken0 opcode0;
 
    opcode0.value = 0;
    opcode0.opcodeType = VGPU10_OPCODE_DCL_TESS_DOMAIN;
    switch (prim_mode) {
-   case PIPE_PRIM_QUADS:
-   case PIPE_PRIM_LINES:
+   case MESA_PRIM_QUADS:
+   case MESA_PRIM_LINES:
       opcode0.tessDomain = VGPU10_TESSELLATOR_DOMAIN_QUAD;
       break;
-   case PIPE_PRIM_TRIANGLES:
+   case MESA_PRIM_TRIANGLES:
       opcode0.tessDomain = VGPU10_TESSELLATOR_DOMAIN_TRI;
       break;
    default:
@@ -3162,7 +3161,7 @@ emit_domain_shader_declarations(struct svga_shader_emitter_v10 *emit)
    /* Specify a max for swizzles of the domain point according to the
     * tessellator domain type.
     */
-   emit->tes.swizzle_max = emit->tes.prim_mode == PIPE_PRIM_TRIANGLES ?
+   emit->tes.swizzle_max = emit->tes.prim_mode == MESA_PRIM_TRIANGLES ?
                               TGSI_SWIZZLE_Z : TGSI_SWIZZLE_Y;
 }
 
@@ -3325,12 +3324,12 @@ emit_hull_shader_declarations(struct svga_shader_emitter_v10 *emit)
    if (emit->key.tcs.point_mode) {
       opcode0.tessOutputPrimitive = VGPU10_TESSELLATOR_OUTPUT_POINT;
    }
-   else if (emit->key.tcs.prim_mode == PIPE_PRIM_LINES) {
+   else if (emit->key.tcs.prim_mode == MESA_PRIM_LINES) {
       opcode0.tessOutputPrimitive = VGPU10_TESSELLATOR_OUTPUT_LINE;
    }
    else {
-      assert(emit->key.tcs.prim_mode == PIPE_PRIM_QUADS ||
-             emit->key.tcs.prim_mode == PIPE_PRIM_TRIANGLES);
+      assert(emit->key.tcs.prim_mode == MESA_PRIM_QUADS ||
+             emit->key.tcs.prim_mode == MESA_PRIM_TRIANGLES);
 
       if (emit->key.tcs.vertices_order_cw)
          opcode0.tessOutputPrimitive = VGPU10_TESSELLATOR_OUTPUT_TRIANGLE_CCW;
@@ -4380,7 +4379,7 @@ emit_tesslevel_declaration(struct svga_shader_emitter_v10 *emit,
 
    assert(emit->version >= 50);
    assert(name >= VGPU10_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR ||
-          (emit->key.tcs.prim_mode == PIPE_PRIM_LINES &&
+          (emit->key.tcs.prim_mode == MESA_PRIM_LINES &&
            name == VGPU10_NAME_UNDEFINED));
    assert(name <= VGPU10_NAME_FINAL_LINE_DENSITY_TESSFACTOR);
 
@@ -4443,7 +4442,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
 
          emit->tcs.inner.out_index = outputIndex;
          switch (emit->key.tcs.prim_mode) {
-         case PIPE_PRIM_QUADS:
+         case MESA_PRIM_QUADS:
             emit_tesslevel_declaration(emit, outputIndex++,
                VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
                VGPU10_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR,
@@ -4454,13 +4453,13 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
                VGPU10_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR,
                SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR);
             break;
-         case PIPE_PRIM_TRIANGLES:
+         case MESA_PRIM_TRIANGLES:
             emit_tesslevel_declaration(emit, outputIndex++,
                VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
                VGPU10_NAME_FINAL_TRI_INSIDE_TESSFACTOR,
                SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_TRI_INSIDE_TESSFACTOR);
             break;
-         case PIPE_PRIM_LINES:
+         case MESA_PRIM_LINES:
             break;
          default:
             debug_printf("Unsupported primitive type");
@@ -4476,7 +4475,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
 
          emit->tcs.outer.out_index = outputIndex;
          switch (emit->key.tcs.prim_mode) {
-         case PIPE_PRIM_QUADS:
+         case MESA_PRIM_QUADS:
             for (int j = 0; j < 4; j++) {
                emit_tesslevel_declaration(emit, outputIndex++,
                   VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
@@ -4484,7 +4483,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
                   SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR + j);
             }
             break;
-         case PIPE_PRIM_TRIANGLES:
+         case MESA_PRIM_TRIANGLES:
             for (int j = 0; j < 3; j++) {
                emit_tesslevel_declaration(emit, outputIndex++,
                   VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
@@ -4492,7 +4491,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
                   SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR + j);
             }
             break;
-         case PIPE_PRIM_LINES:
+         case MESA_PRIM_LINES:
             for (int j = 0; j < 2; j++) {
                emit_tesslevel_declaration(emit, outputIndex++,
                   VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
@@ -4553,10 +4552,10 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
       if (emit->tcs.control_point_out_index == INVALID_INDEX) {
          /* use register index after tessellation factors */
          switch (emit->key.tcs.prim_mode) {
-         case PIPE_PRIM_QUADS:
+         case MESA_PRIM_QUADS:
             emit->tcs.control_point_out_index = outputIndex + 6;
             break;
-         case PIPE_PRIM_TRIANGLES:
+         case MESA_PRIM_TRIANGLES:
             emit->tcs.control_point_out_index = outputIndex + 4;
             break;
          default:
@@ -4584,7 +4583,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
           * we declare it here for patch constant phase only.
           */
          emit->tcs.outer.out_index = outputIndex;
-         if (emit->key.tcs.prim_mode == PIPE_PRIM_QUADS) {
+         if (emit->key.tcs.prim_mode == MESA_PRIM_QUADS) {
             for (int i = 0; i < 4; i++) {
                emit_tesslevel_declaration(emit, outputIndex++,
                   VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
@@ -4592,7 +4591,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
                   SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR + i);
             }
          }
-         else if (emit->key.tcs.prim_mode == PIPE_PRIM_TRIANGLES) {
+         else if (emit->key.tcs.prim_mode == MESA_PRIM_TRIANGLES) {
             for (int i = 0; i < 3; i++) {
                emit_tesslevel_declaration(emit, outputIndex++,
                   VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
@@ -4607,7 +4606,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
           * we declare it here
           */
          emit->tcs.inner.out_index = outputIndex;
-         if (emit->key.tcs.prim_mode == PIPE_PRIM_QUADS) {
+         if (emit->key.tcs.prim_mode == MESA_PRIM_QUADS) {
             emit_tesslevel_declaration(emit, outputIndex++,
                VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
                VGPU10_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR,
@@ -4617,7 +4616,7 @@ emit_tcs_output_declarations(struct svga_shader_emitter_v10 *emit)
                VGPU10_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR,
                SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR);
          }
-         else if (emit->key.tcs.prim_mode == PIPE_PRIM_TRIANGLES) {
+         else if (emit->key.tcs.prim_mode == MESA_PRIM_TRIANGLES) {
             emit_tesslevel_declaration(emit, outputIndex++,
                VGPU10_OPCODE_DCL_OUTPUT_SIV, VGPU10_OPERAND_TYPE_OUTPUT,
                VGPU10_NAME_FINAL_TRI_INSIDE_TESSFACTOR,
@@ -4758,11 +4757,11 @@ emit_system_value_declaration(struct svga_shader_emitter_v10 *emit,
 
       unsigned usageMask = 0;
 
-      if (emit->tes.prim_mode == PIPE_PRIM_TRIANGLES) {
+      if (emit->tes.prim_mode == MESA_PRIM_TRIANGLES) {
          usageMask = VGPU10_OPERAND_4_COMPONENT_MASK_XYZ;
       }
-      else if (emit->tes.prim_mode == PIPE_PRIM_LINES ||
-               emit->tes.prim_mode == PIPE_PRIM_QUADS) {
+      else if (emit->tes.prim_mode == MESA_PRIM_LINES ||
+               emit->tes.prim_mode == MESA_PRIM_QUADS) {
          usageMask = VGPU10_OPERAND_4_COMPONENT_MASK_XY;
       }
 
@@ -5274,7 +5273,7 @@ emit_tessfactor_input_declarations(struct svga_shader_emitter_v10 *emit)
     */
    unsigned inputIndex = emit->key.tes.tessfactor_index;
 
-   if (emit->tes.prim_mode == PIPE_PRIM_QUADS) {
+   if (emit->tes.prim_mode == MESA_PRIM_QUADS) {
       if (emit->key.tes.need_tessouter) {
          emit->tes.outer.in_index = inputIndex;
          for (int i = 0; i < 4; i++) {
@@ -5301,7 +5300,7 @@ emit_tessfactor_input_declarations(struct svga_shader_emitter_v10 *emit)
             SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR);
       }
    }
-   else if (emit->tes.prim_mode == PIPE_PRIM_TRIANGLES) {
+   else if (emit->tes.prim_mode == MESA_PRIM_TRIANGLES) {
       if (emit->key.tes.need_tessouter) {
          emit->tes.outer.in_index = inputIndex;
          for (int i = 0; i < 3; i++) {
@@ -5322,7 +5321,7 @@ emit_tessfactor_input_declarations(struct svga_shader_emitter_v10 *emit)
             SVGADX_SIGNATURE_SEMANTIC_NAME_FINAL_TRI_INSIDE_TESSFACTOR);
       }
    }
-   else if (emit->tes.prim_mode == PIPE_PRIM_LINES) {
+   else if (emit->tes.prim_mode == MESA_PRIM_LINES) {
       if (emit->key.tes.need_tessouter) {
          emit->tes.outer.in_index = inputIndex;
          emit_tesslevel_declaration(emit, inputIndex++,
@@ -6561,7 +6560,7 @@ store_tesslevels(struct svga_shader_emitter_v10 *emit)
     * emitting the inner/outer tessellation levels, either from
     * values provided in tcs or fallback default values which is 1.0
     */
-   if (emit->key.tcs.prim_mode == PIPE_PRIM_QUADS) {
+   if (emit->key.tcs.prim_mode == MESA_PRIM_QUADS) {
       struct tgsi_full_src_register temp_src;
 
       if (emit->tcs.inner.tgsi_index != INVALID_INDEX)
@@ -6592,7 +6591,7 @@ store_tesslevels(struct svga_shader_emitter_v10 *emit)
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
       }
    }
-   else if (emit->key.tcs.prim_mode == PIPE_PRIM_TRIANGLES) {
+   else if (emit->key.tcs.prim_mode == MESA_PRIM_TRIANGLES) {
       struct tgsi_full_src_register temp_src;
 
       if (emit->tcs.inner.tgsi_index != INVALID_INDEX)
@@ -6621,7 +6620,7 @@ store_tesslevels(struct svga_shader_emitter_v10 *emit)
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
       }
    }
-   else if (emit->key.tcs.prim_mode ==  PIPE_PRIM_LINES) {
+   else if (emit->key.tcs.prim_mode ==  MESA_PRIM_LINES) {
       if (emit->tcs.outer.tgsi_index != INVALID_INDEX) {
          struct tgsi_full_src_register temp_src =
             make_src_temp_reg(emit->tcs.outer.temp_index);
@@ -11974,19 +11973,19 @@ emit_temp_tessfactor_instructions(struct svga_shader_emitter_v10 *emit)
       dst = make_dst_temp_reg(emit->tes.inner.temp_index);
 
       switch (emit->tes.prim_mode) {
-      case PIPE_PRIM_QUADS:
+      case MESA_PRIM_QUADS:
          src = make_src_scalar_reg(TGSI_FILE_INPUT,
                   emit->tes.inner.in_index + 1, TGSI_SWIZZLE_X);
          dst = writemask_dst(&dst, TGSI_WRITEMASK_Y);
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
          FALLTHROUGH;
-      case PIPE_PRIM_TRIANGLES:
+      case MESA_PRIM_TRIANGLES:
          src = make_src_scalar_reg(TGSI_FILE_INPUT,
                   emit->tes.inner.in_index, TGSI_SWIZZLE_X);
          dst = writemask_dst(&dst, TGSI_WRITEMASK_X);
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
          break;
-      case PIPE_PRIM_LINES:
+      case MESA_PRIM_LINES:
          /**
           * As per SM5 spec, InsideTessFactor for isolines are unused.
           * In fact glsl tessInnerLevel for isolines doesn't mean anything but if
@@ -12006,19 +12005,19 @@ emit_temp_tessfactor_instructions(struct svga_shader_emitter_v10 *emit)
       dst = make_dst_temp_reg(emit->tes.outer.temp_index);
 
       switch (emit->tes.prim_mode) {
-      case PIPE_PRIM_QUADS:
+      case MESA_PRIM_QUADS:
          src = make_src_scalar_reg(TGSI_FILE_INPUT,
                   emit->tes.outer.in_index + 3, TGSI_SWIZZLE_X);
          dst = writemask_dst(&dst, TGSI_WRITEMASK_W);
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
          FALLTHROUGH;
-      case PIPE_PRIM_TRIANGLES:
+      case MESA_PRIM_TRIANGLES:
          src = make_src_scalar_reg(TGSI_FILE_INPUT,
                   emit->tes.outer.in_index + 2, TGSI_SWIZZLE_X);
          dst = writemask_dst(&dst, TGSI_WRITEMASK_Z);
          emit_instruction_op1(emit, VGPU10_OPCODE_MOV, &dst, &src);
          FALLTHROUGH;
-      case PIPE_PRIM_LINES:
+      case MESA_PRIM_LINES:
          src = make_src_scalar_reg(TGSI_FILE_INPUT,
                   emit->tes.outer.in_index + 1, TGSI_SWIZZLE_X);
          dst = writemask_dst(&dst, TGSI_WRITEMASK_Y);
