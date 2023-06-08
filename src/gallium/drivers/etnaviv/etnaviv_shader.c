@@ -373,7 +373,7 @@ etna_shader_stage(struct etna_shader_variant *shader)
 static void
 dump_shader_info(struct etna_shader_variant *v, struct util_debug_callback *debug)
 {
-   if (!unlikely(etna_mesa_debug & ETNA_DBG_SHADERDB))
+   if (!DBG_ENABLED(ETNA_DBG_SHADERDB))
       return;
 
    util_debug_message(debug, SHADER_INFO,
@@ -465,7 +465,7 @@ etna_shader_variant(struct etna_shader *shader,
 static inline bool
 initial_variants_synchronous(struct etna_context *ctx)
 {
-   return unlikely(ctx->base.debug.debug_message) || (etna_mesa_debug & ETNA_DBG_SHADERDB);
+   return unlikely(ctx->base.debug.debug_message) || DBG_ENABLED(ETNA_DBG_SHADERDB);
 }
 
 static void

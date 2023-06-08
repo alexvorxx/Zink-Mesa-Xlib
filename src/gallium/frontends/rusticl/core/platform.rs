@@ -43,6 +43,7 @@ macro_rules! gen_cl_exts {
 }
 gen_cl_exts!([
     (1, 0, 0, "cl_khr_byte_addressable_store"),
+    (1, 0, 0, "cl_khr_create_command_queue"),
     (1, 0, 0, "cl_khr_icd"),
     (1, 0, 0, "cl_khr_il_program"),
 ]);

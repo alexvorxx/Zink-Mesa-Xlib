@@ -38,6 +38,7 @@
 
 #include "compiler/shader_enums.h"
 #include "hwdef/rogue_hw_defs.h"
+#include "pvr_border.h"
 #include "pvr_clear.h"
 #include "pvr_common.h"
 #include "pvr_csb.h"
@@ -277,6 +278,8 @@ struct pvr_device {
    struct pvr_bo *robustness_buffer;
 
    struct vk_sync *presignaled_sync;
+
+   struct pvr_border_color_table border_color_table;
 };
 
 struct pvr_device_memory {

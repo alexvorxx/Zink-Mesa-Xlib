@@ -149,6 +149,11 @@ struct pvr_winsys_rt_dataset_create_info {
    /* Local freelist */
    struct pvr_winsys_free_list *local_free_list;
 
+   uint32_t width;
+   uint32_t height;
+   uint32_t samples;
+   uint16_t layers;
+
    /* ISP register values */
    uint32_t isp_merge_lower_x;
    uint32_t isp_merge_lower_y;
@@ -156,18 +161,6 @@ struct pvr_winsys_rt_dataset_create_info {
    uint32_t isp_merge_scale_y;
    uint32_t isp_merge_upper_x;
    uint32_t isp_merge_upper_y;
-   uint32_t isp_mtile_size;
-
-   /* PPP register values */
-   uint64_t ppp_multi_sample_ctl;
-   uint64_t ppp_multi_sample_ctl_y_flipped;
-   uint32_t ppp_screen;
-
-   /* TE register values */
-   uint32_t te_aa;
-   uint32_t te_mtile1;
-   uint32_t te_mtile2;
-   uint32_t te_screen;
 
    /* Allocations and associated information */
    pvr_dev_addr_t vheap_table_dev_addr;
@@ -183,10 +176,6 @@ struct pvr_winsys_rt_dataset_create_info {
       pvr_dev_addr_t rgn_header_dev_addr;
    } rt_datas[ROGUE_NUM_RTDATAS];
    uint64_t rgn_header_size;
-
-   /* Miscellaneous */
-   uint32_t mtile_stride;
-   uint16_t max_rts;
 };
 
 struct pvr_winsys_rt_dataset {
@@ -438,6 +427,7 @@ struct pvr_winsys_ops {
    VkResult (*render_target_dataset_create)(
       struct pvr_winsys *ws,
       const struct pvr_winsys_rt_dataset_create_info *create_info,
+      const struct pvr_device_info *dev_info,
       struct pvr_winsys_rt_dataset **const rt_dataset_out);
    void (*render_target_dataset_destroy)(
       struct pvr_winsys_rt_dataset *rt_dataset);

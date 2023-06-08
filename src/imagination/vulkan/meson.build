@@ -39,6 +39,7 @@ pvr_files = files(
   'winsys/pvr_winsys_helper.c',
   'pvr_blit.c',
   'pvr_bo.c',
+  'pvr_border.c',
   'pvr_clear.c',
   'pvr_cmd_buffer.c',
   'pvr_csb.c',
@@ -83,6 +84,7 @@ pvr_deps = [
   dep_csbgen,
   dep_libdrm,
   dep_valgrind,
+  idep_mesautil,
   idep_vulkan_runtime,
   idep_vulkan_util,
   idep_vulkan_wsi,
@@ -110,7 +112,7 @@ endif
 
 libvulkan_powervr_mesa = shared_library(
   'vulkan_powervr_mesa',
-  [pvr_files, pvr_entrypoints],
+  [pvr_files, pvr_entrypoints, u_format_pack_h],
   include_directories : [
     pvr_includes,
     inc_gallium_aux,

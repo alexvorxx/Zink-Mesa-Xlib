@@ -41,6 +41,7 @@
 #include "hwdef/rogue_hw_utils.h"
 #include "pipe/p_defines.h"
 #include "pvr_bo.h"
+#include "pvr_border.h"
 #include "pvr_clear.h"
 #include "pvr_csb.h"
 #include "pvr_csb_enum_helpers.h"
@@ -1876,6 +1877,10 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto err_pvr_spm_finish_scratch_buffer_store;
 
+   result = pvr_border_color_table_init(&device->border_color_table, device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_robustness_buffer_finish;
+
    /* FIXME: Move this to a later stage and possibly somewhere other than
     * pvr_device. The purpose of this is so that we don't have to get the size
     * on each kick.
@@ -1890,6 +1895,9 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    *pDevice = pvr_device_to_handle(device);
 
    return VK_SUCCESS;
+
+err_pvr_robustness_buffer_finish:
+   pvr_robustness_buffer_finish(device);
 
 err_pvr_spm_finish_scratch_buffer_store:
    pvr_spm_finish_scratch_buffer_store(device);
@@ -1954,6 +1962,7 @@ void pvr_DestroyDevice(VkDevice _device,
    if (!device)
       return;
 
+   pvr_border_color_table_finish(&device->border_color_table, device);
    pvr_robustness_buffer_finish(device);
    pvr_spm_finish_scratch_buffer_store(device);
    pvr_queues_destroy(device);
@@ -2987,10 +2996,12 @@ VkResult pvr_CreateSampler(VkDevice _device,
                            VkSampler *pSampler)
 {
    PVR_FROM_HANDLE(pvr_device, device, _device);
+   uint32_t border_color_table_index;
    struct pvr_sampler *sampler;
    float lod_rounding_bias;
    VkFilter min_filter;
    VkFilter mag_filter;
+   VkResult result;
    float min_lod;
    float max_lod;
 
@@ -3001,11 +3012,20 @@ VkResult pvr_CreateSampler(VkDevice _device,
                              pAllocator,
                              sizeof(*sampler),
                              VK_OBJECT_TYPE_SAMPLER);
-   if (!sampler)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   if (!sampler) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto err_out;
+   }
 
    mag_filter = pCreateInfo->magFilter;
    min_filter = pCreateInfo->minFilter;
+
+   result =
+      pvr_border_color_table_get_or_create_entry(&device->border_color_table,
+                                                 pCreateInfo,
+                                                 &border_color_table_index);
+   if (result != VK_SUCCESS)
+      goto err_free_sampler;
 
    if (PVR_HAS_QUIRK(&device->pdevice->dev_info, 51025)) {
       /* The min/mag filters may need adjustment here, the GPU should decide
@@ -3108,7 +3128,7 @@ VkResult pvr_CreateSampler(VkDevice _device,
       word.maxlod = util_unsigned_fixed(CLAMP(max_lod, 0.0f, lod_clamp_max),
                                         PVRX(TEXSTATE_CLAMP_FRACTIONAL_BITS));
 
-      word.bordercolor_index = pCreateInfo->borderColor;
+      word.bordercolor_index = border_color_table_index;
 
       if (pCreateInfo->unnormalizedCoordinates)
          word.non_normalized_coords = true;
@@ -3117,6 +3137,12 @@ VkResult pvr_CreateSampler(VkDevice _device,
    *pSampler = pvr_sampler_to_handle(sampler);
 
    return VK_SUCCESS;
+
+err_free_sampler:
+   vk_object_free(&device->vk, pAllocator, sampler);
+
+err_out:
+   return result;
 }
 
 void pvr_DestroySampler(VkDevice _device,

@@ -1436,11 +1436,6 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
 
    job->ctrl_stream_addr = pvr_csb_get_start_address(&sub_cmd->control_stream);
 
-   /* FIXME: Need to set up the border color table at device creation
-    * time. Set to invalid for the time being.
-    */
-   job->border_colour_table_addr = PVR_DEV_ADDR_INVALID;
-
    if (sub_cmd->depth_bias_bo)
       job->depth_bias_table_addr = sub_cmd->depth_bias_bo->dev_addr;
    else

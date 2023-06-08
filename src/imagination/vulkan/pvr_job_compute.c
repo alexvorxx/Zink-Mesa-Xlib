@@ -41,7 +41,8 @@ pvr_submit_info_stream_init(struct pvr_compute_ctx *ctx,
                             struct pvr_sub_cmd_compute *sub_cmd,
                             struct pvr_winsys_compute_submit_info *submit_info)
 {
-   const struct pvr_physical_device *const pdevice = ctx->device->pdevice;
+   const struct pvr_device *const device = ctx->device;
+   const struct pvr_physical_device *const pdevice = device->pdevice;
    const struct pvr_device_runtime_info *const dev_runtime_info =
       &pdevice->dev_runtime_info;
    const struct pvr_device_info *const dev_info = &pdevice->dev_info;
@@ -49,13 +50,11 @@ pvr_submit_info_stream_init(struct pvr_compute_ctx *ctx,
 
    uint32_t *stream_ptr = (uint32_t *)submit_info->fw_stream;
 
-   /* FIXME: Need to set up the border color table at device creation time. Set
-    * to invalid for the time being.
-    */
    pvr_csb_pack ((uint64_t *)stream_ptr,
                  CR_TPU_BORDER_COLOUR_TABLE_CDM,
                  value) {
-      value.border_colour_table_address = PVR_DEV_ADDR_INVALID;
+      value.border_colour_table_address =
+         device->border_color_table.table->vma->dev_addr;
    }
    stream_ptr += pvr_cmd_length(CR_TPU_BORDER_COLOUR_TABLE_CDM);
 

@@ -1268,9 +1268,17 @@ extern "C" fn cl_get_extension_function_address(
         return ptr::null_mut();
     }
     match unsafe { CStr::from_ptr(function_name) }.to_str().unwrap() {
-        "clCreateProgramWithILKHR" => cl_create_program_with_il as *mut ::std::ffi::c_void,
+        // cl_khr_create_command_queue
+        "clCreateCommandQueueWithPropertiesKHR" => {
+            cl_create_command_queue_with_properties as *mut ::std::ffi::c_void
+        }
+
+        // cl_khr_icd
         "clGetPlatformInfo" => cl_get_platform_info as *mut ::std::ffi::c_void,
         "clIcdGetPlatformIDsKHR" => cl_icd_get_platform_ids_khr as *mut ::std::ffi::c_void,
+
+        // cl_khr_il_program
+        "clCreateProgramWithILKHR" => cl_create_program_with_il as *mut ::std::ffi::c_void,
 
         // cl_arm_shared_virtual_memory
         "clEnqueueSVMFreeARM" => cl_enqueue_svm_free_arm as *mut ::std::ffi::c_void,

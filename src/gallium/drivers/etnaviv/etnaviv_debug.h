@@ -64,14 +64,14 @@ extern int etna_mesa_debug; /* set in etnaviv_screen.c from ETNA_MESA_DEBUG */
 
 #define DBG_F(flag, fmt, ...)                             \
    do {                                                   \
-      if (etna_mesa_debug & (flag))                       \
+      if (DBG_ENABLED(flag))                              \
          mesa_logd("%s:%d: " fmt, __func__, __LINE__,     \
                    ##__VA_ARGS__);                        \
    } while (0)
 
 #define DBG(fmt, ...)                                     \
    do {                                                   \
-      if (etna_mesa_debug & ETNA_DBG_MSGS)                \
+      if (DBG_ENABLED(ETNA_DBG_MSGS))                     \
          mesa_logd("%s:%d: " fmt, __func__, __LINE__,     \
                    ##__VA_ARGS__);                        \
    } while (0)
