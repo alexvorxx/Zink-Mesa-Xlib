@@ -851,7 +851,7 @@ iris_resource_configure_aux(struct iris_screen *screen,
          res->aux.usage = ISL_AUX_USAGE_STC_CCS;
       } else if (want_ccs_e_for_format(devinfo, res->surf.format)) {
          res->aux.usage = devinfo->ver < 12 ?
-            ISL_AUX_USAGE_CCS_E : ISL_AUX_USAGE_GFX12_CCS_E;
+            ISL_AUX_USAGE_CCS_E : ISL_AUX_USAGE_FCV_CCS_E;
       } else {
          assert(isl_format_supports_ccs_d(devinfo, res->surf.format));
          res->aux.usage = ISL_AUX_USAGE_CCS_D;
@@ -875,7 +875,7 @@ iris_resource_configure_aux(struct iris_screen *screen,
       break;
    case ISL_AUX_USAGE_CCS_D:
    case ISL_AUX_USAGE_CCS_E:
-   case ISL_AUX_USAGE_GFX12_CCS_E:
+   case ISL_AUX_USAGE_FCV_CCS_E:
    case ISL_AUX_USAGE_STC_CCS:
    case ISL_AUX_USAGE_MC:
       if (imported) {
@@ -2709,7 +2709,7 @@ iris_texture_subdata(struct pipe_context *ctx,
                      const struct pipe_box *box,
                      const void *data,
                      unsigned stride,
-                     unsigned layer_stride)
+                     uintptr_t layer_stride)
 {
    struct iris_context *ice = (struct iris_context *)ctx;
    struct iris_resource *res = (struct iris_resource *)resource;

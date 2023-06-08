@@ -209,7 +209,6 @@ static VkResult pvr_write_compute_query_pds_data_section(
    result = pvr_cmd_buffer_alloc_mem(cmd_buffer,
                                      cmd_buffer->device->heaps.pds_heap,
                                      PVR_DW_TO_BYTES(info->data_size_in_dwords),
-                                     PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                      &pvr_bo);
    if (result != VK_SUCCESS)
       return result;

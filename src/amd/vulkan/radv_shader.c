@@ -108,11 +108,7 @@ get_nir_options_for_stage(struct radv_physical_device *device, gl_shader_stage s
       .has_find_msb_rev = true,
       .has_pack_half_2x16_rtz = true,
       .use_scoped_barrier = true,
-#ifdef LLVM_AVAILABLE
-      .has_fmulz = !device->use_llvm || LLVM_VERSION_MAJOR >= 12,
-#else
       .has_fmulz = true,
-#endif
       .max_unroll_iterations = 32,
       .max_unroll_iterations_aggressive = 128,
       .use_interpolated_input_intrinsics = true,
@@ -402,6 +398,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                .float32_atomic_min_max = true,
                .float64 = true,
                .float64_atomic_min_max = true,
+               .fragment_barycentric = true,
                .fragment_fully_covered = true,
                .geometry_streams = true,
                .groups = true,
@@ -1561,7 +1558,8 @@ radv_postprocess_binary_config(struct radv_device *device, struct radv_shader_bi
       config->rsrc2 |= S_00B12C_SHARED_VGPR_CNT(num_shared_vgpr_blocks) | S_00B12C_EXCP_EN(excp_en);
       break;
    case MESA_SHADER_FRAGMENT:
-      config->rsrc1 |= S_00B028_MEM_ORDERED(pdevice->rad_info.gfx_level >= GFX10);
+      config->rsrc1 |= S_00B028_MEM_ORDERED(pdevice->rad_info.gfx_level >= GFX10) |
+                       S_00B028_LOAD_PROVOKING_VTX(info->ps.load_provoking_vtx);
       config->rsrc2 |= S_00B02C_SHARED_VGPR_CNT(num_shared_vgpr_blocks) | S_00B02C_EXCP_EN(excp_en);
       break;
    case MESA_SHADER_GEOMETRY:

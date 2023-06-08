@@ -92,8 +92,8 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
       NIR_PASS(progress, nir, nir_opt_dce);
       /* nir_opt_if_optimize_phi_true_false is disabled on LLVM14 (#6976) */
       NIR_PASS(lower_phis_to_scalar, nir, nir_opt_if,
-         nir_opt_if_aggressive_last_continue |
-            (LLVM_VERSION_MAJOR == 14 ? 0 : nir_opt_if_optimize_phi_true_false));
+               nir_opt_if_aggressive_last_continue |
+               nir_opt_if_optimize_phi_true_false);
       NIR_PASS(progress, nir, nir_opt_dead_cf);
 
       if (lower_alu_to_scalar) {
@@ -185,7 +185,7 @@ static void si_late_optimize_16bit_samplers(struct si_screen *sscreen, nir_shade
     *
     * We only use a16/g16 if all of the affected sources are 16bit.
     */
-   bool has_g16 = sscreen->info.gfx_level >= GFX10 && LLVM_VERSION_MAJOR >= 12;
+   bool has_g16 = sscreen->info.gfx_level >= GFX10;
    struct nir_fold_tex_srcs_options fold_srcs_options[] = {
       {
          .sampler_dims =
@@ -293,9 +293,7 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
 
    NIR_PASS_V(nir, nir_lower_subgroups, &si_nir_subgroups_options);
 
-   NIR_PASS_V(nir, nir_lower_discard_or_demote,
-              (sscreen->debug_flags & DBG(FS_CORRECT_DERIVS_AFTER_KILL)) ||
-               nir->info.use_legacy_math_rules);
+   NIR_PASS_V(nir, nir_lower_discard_or_demote, true);
 
    /* Lower load constants to scalar and then clean up the mess */
    NIR_PASS_V(nir, nir_lower_load_const_to_scalar);

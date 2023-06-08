@@ -105,7 +105,7 @@ impl<'a> HelperContext<'a> {
         bx: &pipe_box,
         data: *const c_void,
         stride: u32,
-        layer_stride: u32,
+        layer_stride: usize,
     ) {
         self.lock
             .texture_subdata(res, bx, data, stride, layer_stride)

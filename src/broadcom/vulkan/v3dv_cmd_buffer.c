@@ -2264,11 +2264,14 @@ emit_scissor(struct v3dv_cmd_buffer *cmd_buffer)
     */
    float *vptranslate = dynamic->viewport.translate[0];
    float *vpscale = dynamic->viewport.scale[0];
+   assert(vpscale[0] >= 0);
 
-   float vp_minx = -fabsf(vpscale[0]) + vptranslate[0];
-   float vp_maxx = fabsf(vpscale[0]) + vptranslate[0];
-   float vp_miny = -fabsf(vpscale[1]) + vptranslate[1];
-   float vp_maxy = fabsf(vpscale[1]) + vptranslate[1];
+   float vp_minx = vptranslate[0] - vpscale[0];
+   float vp_maxx = vptranslate[0] + vpscale[0];
+
+   /* With KHR_maintenance1 viewport may have negative Y */
+   float vp_miny = vptranslate[1] - fabsf(vpscale[1]);
+   float vp_maxy = vptranslate[1] + fabsf(vpscale[1]);
 
    /* Quoting from v3dx_emit:
     * "Clip to the scissor if it's enabled, but still clip to the
@@ -2296,11 +2299,6 @@ emit_scissor(struct v3dv_cmd_buffer *cmd_buffer)
                         cmd_buffer->state.render_area.extent.width);
    maxy = MIN2(vp_maxy, cmd_buffer->state.render_area.offset.y +
                         cmd_buffer->state.render_area.extent.height);
-
-   minx = vp_minx;
-   miny = vp_miny;
-   maxx = vp_maxx;
-   maxy = vp_maxy;
 
    /* Clip against user provided scissor if needed.
     *

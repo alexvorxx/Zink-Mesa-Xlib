@@ -71,7 +71,7 @@ static const uint32_t isl_encode_aux_mode[] = {
    [ISL_AUX_USAGE_NONE] = AUX_NONE,
    [ISL_AUX_USAGE_MC] = AUX_NONE,
    [ISL_AUX_USAGE_MCS] = AUX_CCS_E,
-   [ISL_AUX_USAGE_GFX12_CCS_E] = AUX_CCS_E,
+   [ISL_AUX_USAGE_FCV_CCS_E] = AUX_CCS_E,
    [ISL_AUX_USAGE_CCS_E] = AUX_CCS_E,
    [ISL_AUX_USAGE_HIZ_CCS_WT] = AUX_CCS_E,
    [ISL_AUX_USAGE_MCS_CCS] = AUX_MCS_LCE,
@@ -427,7 +427,6 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
    /* We don't use miptails yet.  The PRM recommends that you set "Mip Tail
     * Start LOD" to 15 to prevent the hardware from trying to use them.
     */
-   s.TiledResourceMode = NONE;
    s.MipTailStartLOD = 15;
 #endif
 
@@ -587,7 +586,7 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
       if (GFX_VER >= 12) {
          assert(info->aux_usage == ISL_AUX_USAGE_MCS ||
                 info->aux_usage == ISL_AUX_USAGE_CCS_E ||
-                info->aux_usage == ISL_AUX_USAGE_GFX12_CCS_E ||
+                info->aux_usage == ISL_AUX_USAGE_FCV_CCS_E ||
                 info->aux_usage == ISL_AUX_USAGE_MC ||
                 info->aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT ||
                 info->aux_usage == ISL_AUX_USAGE_MCS_CCS ||

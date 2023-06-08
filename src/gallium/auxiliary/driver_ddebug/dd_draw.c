@@ -1807,7 +1807,7 @@ dd_context_texture_subdata(struct pipe_context *_pipe,
                            unsigned level, unsigned usage,
                            const struct pipe_box *box,
                            const void *data, unsigned stride,
-                           unsigned layer_stride)
+                           uintptr_t layer_stride)
 {
    struct dd_context *dctx = dd_context(_pipe);
    struct pipe_context *pipe = dctx->pipe;

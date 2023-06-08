@@ -309,12 +309,12 @@ virgl_resource_transfer_prepare(struct virgl_context *vctx,
 static unsigned
 virgl_transfer_map_size(struct virgl_transfer *vtransfer,
                         unsigned *out_stride,
-                        unsigned *out_layer_stride)
+                        uintptr_t *out_layer_stride)
 {
    struct pipe_resource *pres = vtransfer->base.resource;
    struct pipe_box *box = &vtransfer->base.box;
    unsigned stride;
-   unsigned layer_stride;
+   uintptr_t layer_stride;
    unsigned size;
 
    assert(out_stride);
@@ -349,7 +349,7 @@ virgl_staging_map(struct virgl_context *vctx,
    unsigned size;
    unsigned align_offset;
    unsigned stride;
-   unsigned layer_stride;
+   uintptr_t layer_stride;
    void *map_addr;
    bool alloc_succeeded;
 

@@ -60,23 +60,23 @@ struct llvm_tess_eval_shader;
  * Only use types with a clear size and padding here, in particular prefer the
  * stdint.h types to the basic integer types.
  */
-struct draw_jit_context
+struct draw_vs_jit_context
 {
    float (*planes) [DRAW_TOTAL_CLIP_PLANES][4];
    struct pipe_viewport_state *viewports;
 };
 
 enum {
-   DRAW_JIT_CTX_PLANES               = 0,
-   DRAW_JIT_CTX_VIEWPORT             = 1,
-   DRAW_JIT_CTX_NUM_FIELDS
+   DRAW_VS_JIT_CTX_PLANES               = 0,
+   DRAW_VS_JIT_CTX_VIEWPORT             = 1,
+   DRAW_VS_JIT_CTX_NUM_FIELDS
 };
 
-#define draw_jit_context_planes(_gallivm, _type, _ptr) \
-   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_CTX_PLANES, "planes")
+#define draw_vs_jit_context_planes(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_VS_JIT_CTX_PLANES, "planes")
 
-#define draw_jit_context_viewports(_variant, _ptr) \
-   lp_build_struct_get2(_variant->gallivm, _variant->context_type, _ptr, DRAW_JIT_CTX_VIEWPORT, "viewports")
+#define draw_vs_jit_context_viewports(_variant, _ptr) \
+   lp_build_struct_get2(_variant->gallivm, _variant->context_type, _ptr, DRAW_VS_JIT_CTX_VIEWPORT, "viewports")
 
 
 #define draw_jit_vbuffer_stride(_gallivm, _type, _ptr)         \
@@ -145,7 +145,7 @@ enum {
 
 
 typedef boolean
-(*draw_jit_vert_func)(struct draw_jit_context *context,
+(*draw_jit_vert_func)(struct draw_vs_jit_context *context,
                       const struct lp_jit_resources *resources,
                       struct vertex_header *io,
                       const struct draw_vertex_buffer vbuffers[PIPE_MAX_ATTRIBS],
@@ -544,13 +544,10 @@ struct draw_llvm {
    LLVMContextRef context;
    boolean context_owned;
 
-   struct draw_jit_context jit_context;
+   struct draw_vs_jit_context vs_jit_context;
    struct draw_gs_jit_context gs_jit_context;
 
-   struct lp_jit_resources jit_resources;
-   struct lp_jit_resources gs_jit_resources;
-   struct lp_jit_resources tcs_jit_resources;
-   struct lp_jit_resources tes_jit_resources;
+   struct lp_jit_resources jit_resources[DRAW_MAX_SHADER_STAGE];
 
    struct draw_llvm_variant_list_item vs_variants_list;
    int nr_variants;

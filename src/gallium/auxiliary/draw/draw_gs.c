@@ -196,12 +196,11 @@ tgsi_fetch_gs_input(struct draw_geometry_shader *shader,
 
 static void
 tgsi_gs_prepare(struct draw_geometry_shader *shader,
-                const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                const unsigned constants_size[PIPE_MAX_CONSTANT_BUFFERS])
+                const struct draw_buffer_info *constants)
 {
    struct tgsi_exec_machine *machine = shader->machine;
    tgsi_exec_set_constant_buffers(machine, PIPE_MAX_CONSTANT_BUFFERS,
-                                  constants, constants_size);
+                                  (const struct tgsi_exec_consts_info *)constants);
 }
 
 
@@ -380,8 +379,7 @@ llvm_fetch_gs_outputs(struct draw_geometry_shader *shader,
 
 static void
 llvm_gs_prepare(struct draw_geometry_shader *shader,
-                const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                const unsigned constants_size[PIPE_MAX_CONSTANT_BUFFERS])
+                const struct draw_buffer_info *constants)
 {
 }
 
@@ -566,8 +564,7 @@ gs_tri_adj(struct draw_geometry_shader *shader,
  */
 void
 draw_geometry_shader_run(struct draw_geometry_shader *shader,
-                         const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                         const unsigned constants_size[PIPE_MAX_CONSTANT_BUFFERS],
+                         const struct draw_buffer_info *constants,
                          const struct draw_vertex_info *input_verts,
                          const struct draw_prim_info *input_prim,
                          const struct tgsi_shader_info *input_info,
@@ -670,7 +667,7 @@ draw_geometry_shader_run(struct draw_geometry_shader *shader,
    }
 #endif
 
-   shader->prepare(shader, constants, constants_size);
+   shader->prepare(shader, constants);
 
    if (input_prim->linear)
       gs_run(shader, input_prim, input_verts,
@@ -906,7 +903,7 @@ draw_create_geometry_shader(struct draw_context *draw,
       gs->run = llvm_gs_run;
 
       gs->jit_context = &draw->llvm->gs_jit_context;
-      gs->jit_resources = &draw->llvm->gs_jit_resources;
+      gs->jit_resources = &draw->llvm->jit_resources[PIPE_SHADER_GEOMETRY];
 
       llvm_gs->variant_key_size =
          draw_gs_llvm_variant_key_size(

@@ -117,6 +117,7 @@ struct ac_shader_args {
    struct ac_arg ancillary;
    struct ac_arg sample_coverage;
    struct ac_arg prim_mask;
+   struct ac_arg load_provoking_vtx;
    struct ac_arg persp_sample;
    struct ac_arg persp_center;
    struct ac_arg persp_centroid;
@@ -142,13 +143,31 @@ struct ac_shader_args {
    struct ac_arg force_vrs_rates;
 
    /* RT */
-   struct ac_arg rt_shader_pc;
-   struct ac_arg sbt_descriptors;
-   struct ac_arg ray_launch_size;
-   struct ac_arg ray_launch_size_addr;
-   struct ac_arg ray_launch_id;
-   struct ac_arg rt_dynamic_callable_stack_base;
-   struct ac_arg rt_traversal_shader_addr;
+   struct {
+      struct ac_arg shader_pc;
+      struct ac_arg sbt_descriptors;
+      struct ac_arg launch_size;
+      struct ac_arg launch_size_addr;
+      struct ac_arg launch_id;
+      struct ac_arg dynamic_callable_stack_base;
+      struct ac_arg traversal_shader;
+      struct ac_arg next_shader;
+      struct ac_arg shader_record;
+      struct ac_arg payload_offset;
+      struct ac_arg ray_origin;
+      struct ac_arg ray_tmin;
+      struct ac_arg ray_direction;
+      struct ac_arg ray_tmax;
+      struct ac_arg cull_mask_and_flags;
+      struct ac_arg sbt_offset;
+      struct ac_arg sbt_stride;
+      struct ac_arg miss_index;
+      struct ac_arg accel_struct;
+      struct ac_arg primitive_id;
+      struct ac_arg instance_addr;
+      struct ac_arg geometry_id_and_flags;
+      struct ac_arg hit_kind;
+   } rt;
 };
 
 void ac_add_arg(struct ac_shader_args *info, enum ac_arg_regfile regfile, unsigned registers,

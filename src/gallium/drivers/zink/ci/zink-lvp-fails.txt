@@ -282,3 +282,7 @@ spec@arb_texture_rg@fbo-colormask-formats,Crash
 spec@ext_render_snorm@render,Crash
 spec@ext_texture_srgb@fbo-srgb,Crash
 spec@ext_transform_feedback@tessellation triangle_strip wireframe,Crash
+
+spec@arb_texture_cube_map@cubemap npot,Crash
+spec@arb_viewport_array@display-list,Fail
+spec@ext_texture_compression_rgtc@rgtc-teximage-02,Crash

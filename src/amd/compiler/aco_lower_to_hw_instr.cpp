@@ -2423,6 +2423,28 @@ lower_to_hw_instr(Program* program)
                /* s_addc_u32 not needed because the program is in a 32-bit VA range */
                break;
             }
+            case aco_opcode::p_resume_shader_address: {
+               /* Find index of resume block. */
+               unsigned resume_idx = instr->operands[0].constantValue();
+               unsigned resume_block_idx = 0;
+               for (Block& resume_block : program->blocks) {
+                  if (resume_block.kind & block_kind_resume) {
+                     if (resume_idx == 0) {
+                        resume_block_idx = resume_block.index;
+                        break;
+                     }
+                     resume_idx--;
+                  }
+               }
+               assert(resume_block_idx != 0);
+               unsigned id = instr->definitions[0].tempId();
+               PhysReg reg = instr->definitions[0].physReg();
+               bld.sop1(aco_opcode::p_resumeaddr_getpc, instr->definitions[0], Operand::c32(id));
+               bld.sop2(aco_opcode::p_resumeaddr_addlo, Definition(reg, s1), bld.def(s1, scc),
+                        Operand(reg, s1), Operand::c32(resume_block_idx), Operand::c32(id));
+               /* s_addc_u32 not needed because the program is in a 32-bit VA range */
+               break;
+            }
             case aco_opcode::p_extract: {
                assert(instr->operands[1].isConstant());
                assert(instr->operands[2].isConstant());

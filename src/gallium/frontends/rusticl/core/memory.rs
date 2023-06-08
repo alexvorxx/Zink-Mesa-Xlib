@@ -127,7 +127,7 @@ pub trait CLImageDescInfo {
     fn pixels(&self) -> usize;
     fn bx(&self) -> CLResult<pipe_box>;
     fn row_pitch(&self) -> CLResult<u32>;
-    fn slice_pitch(&self) -> CLResult<u32>;
+    fn slice_pitch(&self) -> CLResult<usize>;
     fn width(&self) -> CLResult<u32>;
     fn height(&self) -> CLResult<u32>;
     fn size(&self) -> CLVec<usize>;
@@ -204,7 +204,7 @@ impl CLImageDescInfo for cl_image_desc {
             .map_err(|_| CL_OUT_OF_HOST_MEMORY)
     }
 
-    fn slice_pitch(&self) -> CLResult<u32> {
+    fn slice_pitch(&self) -> CLResult<usize> {
         self.image_slice_pitch
             .try_into()
             .map_err(|_| CL_OUT_OF_HOST_MEMORY)

@@ -2012,6 +2012,7 @@ ngg_build_streamout_vertex(nir_builder *b, nir_xfb_info *info,
                            vtx_buffer_offsets[out->buffer],
                            zero, zero,
                            .base = out->offset,
+                           .memory_modes = nir_var_mem_ssbo,
                            .access = ACCESS_NON_TEMPORAL);
    }
 }
@@ -2071,7 +2072,7 @@ ngg_nogs_build_streamout(nir_builder *b, lower_ngg_nogs_state *s)
     * TODO: not sure if we need this barrier when late prim export, as I
     *       can't observe test fail without this barrier.
     */
-   nir_memory_barrier_buffer(b);
+   nir_scoped_memory_barrier(b, NIR_SCOPE_DEVICE, NIR_MEMORY_RELEASE, nir_var_mem_ssbo);
 }
 
 static unsigned

@@ -255,6 +255,11 @@ struct tgsi_call_record
    uint ReturnAddr;
 };
 
+/* should match draw_buffer_info */
+struct tgsi_exec_consts_info {
+   const void *ptr;
+   unsigned size;
+};
 
 /* Switch-case block state. */
 struct tgsi_switch_record {
@@ -425,8 +430,7 @@ tgsi_exec_machine_run(
 extern void
 tgsi_exec_set_constant_buffers(struct tgsi_exec_machine *mach,
                                unsigned num_bufs,
-                               const void **bufs,
-                               const unsigned *buf_sizes);
+                               const struct tgsi_exec_consts_info *bufs);
 
 
 static inline int

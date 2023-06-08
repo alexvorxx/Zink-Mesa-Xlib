@@ -551,7 +551,7 @@ BEGIN_TEST(optimize.sdwa.insert_modifiers)
       writeout(2, val);
 
       //! v1: %tmp3 = v_rcp_f32 %a dst_sel:ubyte0 src0_sel:dword
-      //! v1: %res3 = v_med3_f32 %tmp3, 0, 1.0
+      //! v1: %res3 = v_add_f32 %tmp3, 0 clamp
       //! p_unit_test 3, %res3
       val = bld.vop1(aco_opcode::v_rcp_f32, bld.def(v1), inputs[0]);
       val = bld.pseudo(ins, bld.def(v1), val, Operand::zero(), Operand::c32(8u));

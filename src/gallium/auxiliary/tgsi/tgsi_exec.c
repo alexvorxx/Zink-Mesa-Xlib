@@ -1005,14 +1005,13 @@ print_temp(const struct tgsi_exec_machine *mach, uint index)
 void
 tgsi_exec_set_constant_buffers(struct tgsi_exec_machine *mach,
                                unsigned num_bufs,
-                               const void **bufs,
-                               const unsigned *buf_sizes)
+                               const struct tgsi_exec_consts_info *bufs)
 {
    unsigned i;
 
    for (i = 0; i < num_bufs; i++) {
-      mach->Consts[i] = bufs[i];
-      mach->ConstsSize[i] = buf_sizes[i];
+      mach->Consts[i] = bufs[i].ptr;
+      mach->ConstsSize[i] = bufs[i].size;
    }
 }
 

@@ -803,13 +803,6 @@
       <value name="WT" value="3" />
       <value name="WS" value="4" />
     </field>
-    <field name="Tiled Resource Mode" start="178" end="179" type="uint">
-      <value name="NONE" value="0" />
-      <value name="4KB" value="1" />
-      <value name="64KB" value="2" />
-      <value name="TILEYF" value="1" />
-      <value name="TILEYS" value="2" />
-    </field>
     <field name="EWA Disable For Cube" start="180" end="180" type="bool" />
     <field name="Y Offset" start="181" end="183" type="uint" />
     <field name="X Offset" start="185" end="191" type="uint" />
@@ -1207,11 +1200,6 @@
     <field name="Memory Compression Enable" start="9" end="9" type="bool" />
     <field name="Memory Compression Mode" start="10" end="10" type="uint" />
     <field name="Cache Select" start="12" end="12" type="uint" />
-    <field name="Tiled Resource Mode" start="13" end="14" type="uint">
-      <value name="TRMODE_NONE" value="0" />
-      <value name="TRMODE_TILEYF" value="1" />
-      <value name="TRMODE_TILEYS" value="2" />
-    </field>
   </struct>
   <struct name="VDENC_PICTURE" length="3">
     <field name="Address" start="0" end="63" type="address" />

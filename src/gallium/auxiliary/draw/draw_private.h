@@ -50,6 +50,11 @@
 struct gallivm_state;
 #endif
 
+/**
+ * The max stage the draw stores resources for.
+ * i.e. vs, tcs, tes, gs. no fs/cs/ms/ts.
+ */
+#define DRAW_MAX_SHADER_STAGE (PIPE_SHADER_GEOMETRY + 1)
 
 /**
  * The largest possible index of a vertex that can be fetched.
@@ -117,6 +122,11 @@ struct draw_vertex_buffer {
 /* maximum number of shader variants we can cache */
 #define DRAW_MAX_SHADER_VARIANTS 512
 
+struct draw_buffer_info {
+   const void *ptr;
+   unsigned size;
+};
+
 /**
  * Private context for the drawing module.
  */
@@ -167,11 +177,12 @@ struct draw_context
       /* Current active frontend */
       struct draw_pt_front_end *frontend;
       enum mesa_prim prim;
+      ubyte vertices_per_patch;
+      boolean rebind_parameters;
+
       unsigned opt;     /**< bitmask of PT_x flags */
       unsigned eltSize; /* saved eltSize for flushing */
       unsigned viewid; /* saved viewid for flushing */
-      ubyte vertices_per_patch;
-      boolean rebind_parameters;
 
       struct {
          struct draw_pt_middle_end *fetch_shade_emit;
@@ -198,6 +209,9 @@ struct draw_context
       struct pipe_vertex_element vertex_element[PIPE_MAX_ATTRIBS];
       unsigned nr_vertex_elements;
 
+      boolean test_fse;         /* enable FSE even though its not correct (eg for softpipe) */
+      boolean no_fse;           /* disable FSE even when it is correct */
+
       /* user-space vertex data, buffers */
       struct {
          /** vertex element/index buffer (ex: glDrawElements) */
@@ -217,31 +231,12 @@ struct draw_context
          struct draw_vertex_buffer vbuffer[PIPE_MAX_ATTRIBS];
 
          /** constant buffers for each shader stage */
-         const void *vs_constants[PIPE_MAX_CONSTANT_BUFFERS];
-         unsigned vs_constants_size[PIPE_MAX_CONSTANT_BUFFERS];
-         const void *gs_constants[PIPE_MAX_CONSTANT_BUFFERS];
-         unsigned gs_constants_size[PIPE_MAX_CONSTANT_BUFFERS];
-         const void *tcs_constants[PIPE_MAX_CONSTANT_BUFFERS];
-         unsigned tcs_constants_size[PIPE_MAX_CONSTANT_BUFFERS];
-         const void *tes_constants[PIPE_MAX_CONSTANT_BUFFERS];
-         unsigned tes_constants_size[PIPE_MAX_CONSTANT_BUFFERS];
-
-         /** shader buffers for each shader stage */
-         const void *vs_ssbos[PIPE_MAX_SHADER_BUFFERS];
-         unsigned vs_ssbos_size[PIPE_MAX_SHADER_BUFFERS];
-         const void *gs_ssbos[PIPE_MAX_SHADER_BUFFERS];
-         unsigned gs_ssbos_size[PIPE_MAX_SHADER_BUFFERS];
-         const void *tcs_ssbos[PIPE_MAX_SHADER_BUFFERS];
-         unsigned tcs_ssbos_size[PIPE_MAX_SHADER_BUFFERS];
-         const void *tes_ssbos[PIPE_MAX_SHADER_BUFFERS];
-         unsigned tes_ssbos_size[PIPE_MAX_SHADER_BUFFERS];
+         struct draw_buffer_info constants[DRAW_MAX_SHADER_STAGE][PIPE_MAX_CONSTANT_BUFFERS];
+         struct draw_buffer_info ssbos[DRAW_MAX_SHADER_STAGE][PIPE_MAX_SHADER_BUFFERS];
 
          /* pointer to planes */
          float (*planes)[DRAW_TOTAL_CLIP_PLANES][4];
       } user;
-
-      boolean test_fse;         /* enable FSE even though its not correct (eg for softpipe) */
-      boolean no_fse;           /* disable FSE even when it is correct */
    } pt;
 
    struct {
@@ -266,6 +261,8 @@ struct draw_context
    boolean guard_band_points_lines_xy;
 
    boolean dump_vs;
+   boolean identity_viewport;
+   boolean bypass_viewport;
 
    /** Depth format and bias related settings. */
    boolean floating_point_depth;
@@ -280,8 +277,6 @@ struct draw_context
    void *rasterizer_no_cull[2][2][2];
 
    struct pipe_viewport_state viewports[PIPE_MAX_VIEWPORTS];
-   boolean identity_viewport;
-   boolean bypass_viewport;
 
    /** Vertex shader state */
    struct {
@@ -327,15 +322,6 @@ struct draw_context
    /* Tessellation state */
    struct {
       struct draw_tess_ctrl_shader *tess_ctrl_shader;
-
-      /** Fields for TGSI interpreter / execution */
-      struct {
-         struct tgsi_exec_machine *machine;
-
-         struct tgsi_sampler *sampler;
-         struct tgsi_image *image;
-         struct tgsi_buffer *buffer;
-      } tgsi;
    } tcs;
 
    struct {
@@ -343,15 +329,6 @@ struct draw_context
       uint num_tes_outputs;  /**< convenience, from tess_eval_shader */
       uint position_output;
       uint clipvertex_output;
-
-      /** Fields for TGSI interpreter / execution */
-      struct {
-         struct tgsi_exec_machine *machine;
-
-         struct tgsi_sampler *sampler;
-         struct tgsi_image *image;
-         struct tgsi_buffer *buffer;
-      } tgsi;
    } tes;
 
    /** Fragment shader state */
@@ -396,20 +373,20 @@ struct draw_context
     * we only handle vertex and geometry shaders in the draw module, but
     * there may be more in the future (ex: hull and tessellation).
     */
-   struct pipe_sampler_view *sampler_views[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
-   unsigned num_sampler_views[PIPE_SHADER_TYPES];
-   const struct pipe_sampler_state *samplers[PIPE_SHADER_TYPES][PIPE_MAX_SAMPLERS];
-   unsigned num_samplers[PIPE_SHADER_TYPES];
+   struct pipe_sampler_view *sampler_views[DRAW_MAX_SHADER_STAGE][PIPE_MAX_SHADER_SAMPLER_VIEWS];
+   unsigned num_sampler_views[DRAW_MAX_SHADER_STAGE];
+   const struct pipe_sampler_state *samplers[DRAW_MAX_SHADER_STAGE][PIPE_MAX_SAMPLERS];
+   unsigned num_samplers[DRAW_MAX_SHADER_STAGE];
 
-   struct pipe_image_view *images[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_IMAGES];
-   unsigned num_images[PIPE_SHADER_TYPES];
+   struct pipe_image_view *images[DRAW_MAX_SHADER_STAGE][PIPE_MAX_SHADER_IMAGES];
+   unsigned num_images[DRAW_MAX_SHADER_STAGE];
 
    struct pipe_query_data_pipeline_statistics statistics;
    boolean collect_statistics;
+   bool collect_primgen;
 
    float default_outer_tess_level[4];
    float default_inner_tess_level[2];
-   bool collect_primgen;
 
    struct draw_assembler *ia;
 

@@ -1483,10 +1483,4 @@ struct glsl_function_param {
    bool out;
 };
 
-static inline unsigned int
-glsl_align(unsigned int a, unsigned int align)
-{
-   return (a + align - 1) / align * align;
-}
-
 #endif /* GLSL_TYPES_H */

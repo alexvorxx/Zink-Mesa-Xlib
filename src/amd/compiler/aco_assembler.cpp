@@ -46,6 +46,7 @@ struct asm_context {
    enum amd_gfx_level gfx_level;
    std::vector<std::pair<int, SOPP_instruction*>> branches;
    std::map<unsigned, constaddr_info> constaddrs;
+   std::map<unsigned, constaddr_info> resumeaddrs;
    std::vector<struct aco_symbol>* symbols;
    const int16_t* opcode;
    // TODO: keep track of branch instructions referring blocks
@@ -132,6 +133,19 @@ emit_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instruction* inst
       instr->operands.pop_back();
    } else if (instr->opcode == aco_opcode::p_constaddr_addlo) {
       ctx.constaddrs[instr->operands[2].constantValue()].add_literal = out.size() + 1;
+
+      instr->opcode = aco_opcode::s_add_u32;
+      instr->operands.pop_back();
+      assert(instr->operands[1].isConstant());
+      /* in case it's an inline constant, make it a literal */
+      instr->operands[1] = Operand::literal32(instr->operands[1].constantValue());
+   } else if (instr->opcode == aco_opcode::p_resumeaddr_getpc) {
+      ctx.resumeaddrs[instr->operands[0].constantValue()].getpc_end = out.size() + 1;
+
+      instr->opcode = aco_opcode::s_getpc_b64;
+      instr->operands.pop_back();
+   } else if (instr->opcode == aco_opcode::p_resumeaddr_addlo) {
+      ctx.resumeaddrs[instr->operands[2].constantValue()].add_literal = out.size() + 1;
 
       instr->opcode = aco_opcode::s_add_u32;
       instr->operands.pop_back();
@@ -1049,6 +1063,13 @@ insert_code(asm_context& ctx, std::vector<uint32_t>& out, unsigned insert_before
       if (info.add_literal >= insert_before)
          info.add_literal += insert_count;
    }
+   for (auto& constaddr : ctx.resumeaddrs) {
+      constaddr_info& info = constaddr.second;
+      if (info.getpc_end >= insert_before)
+         info.getpc_end += insert_count;
+      if (info.add_literal >= insert_before)
+         info.add_literal += insert_count;
+   }
 
    if (ctx.symbols) {
       for (auto& symbol : *ctx.symbols) {
@@ -1187,6 +1208,12 @@ fix_constaddrs(asm_context& ctx, std::vector<uint32_t>& out)
    for (auto& constaddr : ctx.constaddrs) {
       constaddr_info& info = constaddr.second;
       out[info.add_literal] += (out.size() - info.getpc_end) * 4u;
+   }
+   for (auto& addr : ctx.resumeaddrs) {
+      constaddr_info& info = addr.second;
+      const Block& block = ctx.program->blocks[out[info.add_literal]];
+      assert(block.kind & block_kind_resume);
+      out[info.add_literal] = (block.offset - info.getpc_end) * 4u;
    }
 }
 

@@ -77,10 +77,13 @@ static void pvr_setup_buffer_surface(struct pvr_transfer_cmd_surface *surface,
                                      pvr_dev_addr_t dev_addr,
                                      VkDeviceSize offset,
                                      VkFormat vk_format,
+                                     VkFormat image_format,
                                      uint32_t width,
                                      uint32_t height,
                                      uint32_t stride)
 {
+   enum pipe_format pformat = vk_format_to_pipe_format(image_format);
+
    surface->dev_addr = PVR_DEV_ADDR_OFFSET(dev_addr, offset);
    surface->width = width;
    surface->height = height;
@@ -95,6 +98,20 @@ static void pvr_setup_buffer_surface(struct pvr_transfer_cmd_surface *surface,
     */
    rect->extent.width = width;
    rect->extent.height = height;
+
+   if (util_format_is_compressed(pformat)) {
+      uint32_t block_width = util_format_get_blockwidth(pformat);
+      uint32_t block_height = util_format_get_blockheight(pformat);
+
+      surface->width = MAX2(1U, surface->width / block_width);
+      surface->height = MAX2(1U, surface->height / block_height);
+      surface->stride = MAX2(1U, surface->stride / block_width);
+
+      rect->offset.x /= block_width;
+      rect->offset.y /= block_height;
+      rect->extent.width = MAX2(1U, rect->extent.width / block_width);
+      rect->extent.height = MAX2(1U, rect->extent.height / block_height);
+   }
 }
 
 VkFormat pvr_get_raw_copy_format(VkFormat format)
@@ -135,6 +152,8 @@ static void pvr_setup_transfer_surface(struct pvr_device *device,
 {
    const uint32_t height = MAX2(image->vk.extent.height >> mip_level, 1U);
    const uint32_t width = MAX2(image->vk.extent.width >> mip_level, 1U);
+   enum pipe_format image_pformat = vk_format_to_pipe_format(image->vk.format);
+   enum pipe_format pformat = vk_format_to_pipe_format(format);
    const VkImageSubresource sub_resource = {
       .aspectMask = aspect_mask,
       .mipLevel = mip_level,
@@ -168,6 +187,21 @@ static void pvr_setup_transfer_surface(struct pvr_device *device,
    rect->offset.y = offset->y;
    rect->extent.width = extent->width;
    rect->extent.height = extent->height;
+
+   if (util_format_is_compressed(image_pformat) &&
+       !util_format_is_compressed(pformat)) {
+      uint32_t block_width = util_format_get_blockwidth(image_pformat);
+      uint32_t block_height = util_format_get_blockheight(image_pformat);
+
+      surface->width = MAX2(1U, surface->width / block_width);
+      surface->height = MAX2(1U, surface->height / block_height);
+      surface->stride = MAX2(1U, surface->stride / block_width);
+
+      rect->offset.x /= block_width;
+      rect->offset.y /= block_height;
+      rect->extent.width = MAX2(1U, rect->extent.width / block_width);
+      rect->extent.height = MAX2(1U, rect->extent.height / block_height);
+   }
 }
 
 void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
@@ -446,6 +480,10 @@ pvr_copy_or_resolve_image_region(struct pvr_cmd_buffer *cmd_buffer,
                                  const struct pvr_image *dst,
                                  const VkImageCopy2 *region)
 {
+   enum pipe_format src_pformat = vk_format_to_pipe_format(src->vk.format);
+   enum pipe_format dst_pformat = vk_format_to_pipe_format(dst->vk.format);
+   bool src_block_compressed = util_format_is_compressed(src_pformat);
+   bool dst_block_compressed = util_format_is_compressed(dst_pformat);
    VkExtent3D src_extent;
    VkExtent3D dst_extent;
    VkFormat dst_format;
@@ -474,10 +512,24 @@ pvr_copy_or_resolve_image_region(struct pvr_cmd_buffer *cmd_buffer,
    src_extent = region->extent;
    dst_extent = region->extent;
 
+   if (src_block_compressed && !dst_block_compressed) {
+      uint32_t block_width = util_format_get_blockwidth(src_pformat);
+      uint32_t block_height = util_format_get_blockheight(src_pformat);
+
+      dst_extent.width = MAX2(1U, src_extent.width / block_width);
+      dst_extent.height = MAX2(1U, src_extent.height / block_height);
+   } else if (!src_block_compressed && dst_block_compressed) {
+      uint32_t block_width = util_format_get_blockwidth(dst_pformat);
+      uint32_t block_height = util_format_get_blockheight(dst_pformat);
+
+      dst_extent.width = MAX2(1U, src_extent.width * block_width);
+      dst_extent.height = MAX2(1U, src_extent.height * block_height);
+   }
+
    /* We don't care what format dst is as it's guaranteed to be size compatible
     * with src.
     */
-   dst_format = pvr_get_copy_format(src->vk.format);
+   dst_format = pvr_get_raw_copy_format(src->vk.format);
    src_format = dst_format;
 
    src_layers =
@@ -700,6 +752,7 @@ pvr_copy_buffer_to_image_region_format(struct pvr_cmd_buffer *const cmd_buffer,
                                        const VkFormat dst_format,
                                        const uint32_t flags)
 {
+   enum pipe_format pformat = vk_format_to_pipe_format(dst_format);
    uint32_t row_length_in_texels;
    uint32_t buffer_slice_size;
    uint32_t buffer_layer_size;
@@ -715,6 +768,16 @@ pvr_copy_buffer_to_image_region_format(struct pvr_cmd_buffer *const cmd_buffer,
       height_in_blks = region->imageExtent.height;
    else
       height_in_blks = region->bufferImageHeight;
+
+   if (util_format_is_compressed(pformat)) {
+      uint32_t block_width = util_format_get_blockwidth(pformat);
+      uint32_t block_height = util_format_get_blockheight(pformat);
+      uint32_t block_size = util_format_get_blocksize(pformat);
+
+      height_in_blks = DIV_ROUND_UP(height_in_blks, block_height);
+      row_length_in_texels =
+         DIV_ROUND_UP(row_length_in_texels, block_width) * block_size;
+   }
 
    row_length = row_length_in_texels * vk_format_get_blocksize(src_format);
 
@@ -743,6 +806,7 @@ pvr_copy_buffer_to_image_region_format(struct pvr_cmd_buffer *const cmd_buffer,
             buffer_dev_addr,
             buffer_offset,
             src_format,
+            image->vk.format,
             region->imageExtent.width,
             region->imageExtent.height,
             row_length_in_texels);
@@ -880,6 +944,7 @@ pvr_copy_image_to_buffer_region_format(struct pvr_cmd_buffer *const cmd_buffer,
                             buffer_dev_addr,
                             region->bufferOffset,
                             dst_format,
+                            image->vk.format,
                             buffer_row_length,
                             buffer_image_height,
                             buffer_row_length);
@@ -1212,6 +1277,7 @@ static VkResult pvr_cmd_copy_buffer_region(struct pvr_cmd_buffer *cmd_buffer,
             src_addr,
             offset + src_offset,
             vk_format,
+            vk_format,
             width,
             height,
             width);
@@ -1227,6 +1293,7 @@ static VkResult pvr_cmd_copy_buffer_region(struct pvr_cmd_buffer *cmd_buffer,
                                &transfer_cmd->scissor,
                                dst_addr,
                                offset + dst_offset,
+                               vk_format,
                                vk_format,
                                width,
                                height,
@@ -1439,7 +1506,6 @@ static VkResult pvr_clear_color_attachment_static_create_consts_buffer(
    result = pvr_cmd_buffer_alloc_mem(cmd_buffer,
                                      device->heaps.general_heap,
                                      shader_info->const_shared_regs,
-                                     PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                      &const_shareds_buffer);
    if (result != VK_SUCCESS)
       return result;
@@ -1582,7 +1648,6 @@ static VkResult pvr_clear_color_attachment_static(
       cmd_buffer,
       device->heaps.pds_heap,
       clear_attachment_program->texture_program_data_size,
-      PVR_BO_ALLOC_FLAG_CPU_MAPPED,
       &pds_texture_program_bo);
    if (result != VK_SUCCESS) {
       list_del(&const_shareds_buffer->link);

@@ -416,6 +416,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_external_semaphore = true,
       .KHR_external_semaphore_fd = true,
       .KHR_format_feature_flags2 = true,
+      .KHR_fragment_shader_barycentric = device->rad_info.gfx_level >= GFX10_3,
       .KHR_fragment_shading_rate = device->rad_info.gfx_level >= GFX10_3,
       .KHR_get_memory_requirements2 = true,
       .KHR_global_priority = true,
@@ -544,11 +545,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_scalar_block_layout = device->rad_info.gfx_level >= GFX7,
       .EXT_separate_stencil_usage = true,
       .EXT_shader_atomic_float = true,
-#ifdef LLVM_AVAILABLE
-      .EXT_shader_atomic_float2 = !device->use_llvm || LLVM_VERSION_MAJOR >= 14,
-#else
       .EXT_shader_atomic_float2 = true,
-#endif
       .EXT_shader_demote_to_helper_invocation = true,
       .EXT_shader_image_atomic_int64 = true,
       .EXT_shader_module_identifier = true,
@@ -916,7 +913,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice,
 
       /* VK_KHR_ray_tracing_pipeline */
       .rayTracingPipeline = true,
-      .rayTracingPipelineShaderGroupHandleCaptureReplay = true,
+      .rayTracingPipelineShaderGroupHandleCaptureReplay = false,
       .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = false,
       .rayTracingPipelineTraceRaysIndirect = true,
       .rayTraversalPrimitiveCulling = true,
@@ -1034,6 +1031,9 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice,
 
       /* VK_EXT_dynamic_rendering_unused_attachments */
       .dynamicRenderingUnusedAttachments = true,
+
+      /* VK_KHR_fragment_shader_barycentric */
+      .fragmentShaderBarycentric = true,
    };
 }
 
@@ -1851,6 +1851,12 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          properties->samplerDescriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
          properties->resourceDescriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
          properties->descriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_PROPERTIES_KHR: {
+         VkPhysicalDeviceFragmentShaderBarycentricPropertiesKHR *properties =
+            (VkPhysicalDeviceFragmentShaderBarycentricPropertiesKHR *)ext;
+         properties->triStripVertexOrderIndependentOfProvokingVertex = false;
          break;
       }
       default:

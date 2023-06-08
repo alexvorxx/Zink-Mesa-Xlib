@@ -274,6 +274,7 @@ def default_class(opcodes, cls):
 opcode("exp", 0, 0, 0, 0, format = Format.EXP, cls = InstrClass.Export)
 opcode("p_parallelcopy")
 opcode("p_startpgm")
+opcode("p_return")
 opcode("p_phi")
 opcode("p_linear_phi")
 opcode("p_as_uniform")
@@ -334,6 +335,7 @@ opcode("p_bpermute_gfx11w64")
 opcode("p_elect")
 
 opcode("p_constaddr")
+opcode("p_resume_shader_address")
 
 # These don't have to be pseudo-ops, but it makes optimization easier to only
 # have to consider two instructions.
@@ -414,6 +416,7 @@ SOP2 = {
    (  -1,   -1,   -1, 0x2d, 0x36, 0x2e, "s_mul_hi_i32"),
    # actually a pseudo-instruction. it's lowered to SALU during assembly though, so it's useful to identify it as a SOP2.
    (  -1,   -1,   -1,   -1,   -1,   -1, "p_constaddr_addlo"),
+   (  -1,   -1,   -1,   -1,   -1,   -1, "p_resumeaddr_addlo"),
 }
 for (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name, cls) in default_class(SOP2, InstrClass.Salu):
     opcode(name, gfx7, gfx9, gfx10, gfx11, Format.SOP2, cls)
@@ -530,6 +533,7 @@ SOP1 = {
    (  -1,   -1,   -1,   -1,   -1, 0x4d, "s_sendmsg_rtn_b64"),
    # actually a pseudo-instruction. it's lowered to SALU during assembly though, so it's useful to identify it as a SOP1.
    (  -1,   -1,   -1,   -1,   -1,   -1, "p_constaddr_getpc"),
+   (  -1,   -1,   -1,   -1,   -1,   -1, "p_resumeaddr_getpc"),
    (  -1,   -1,   -1,   -1,   -1,   -1, "p_load_symbol"),
 }
 for (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name, cls) in default_class(SOP1, InstrClass.Salu):

@@ -685,57 +685,12 @@ lp_setup_set_fs_images(struct lp_setup_context *setup,
       util_copy_image_view(&setup->images[i].current, &images[i]);
 
       struct pipe_resource *res = image->resource;
-      struct llvmpipe_resource *lp_res = llvmpipe_resource(res);
       struct lp_jit_image *jit_image = &setup->fs.current.jit_resources.images[i];
 
-      if (!lp_res)
+      if (!res)
          continue;
 
-      if (!lp_res->dt) {
-         /* regular texture - setup array of mipmap level offsets */
-         if (llvmpipe_resource_is_texture(res)) {
-            jit_image->base = lp_res->tex_data;
-         } else {
-            jit_image->base = lp_res->data;
-         }
-
-         jit_image->width = res->width0;
-         jit_image->height = res->height0;
-         jit_image->depth = res->depth0;
-         jit_image->num_samples = res->nr_samples;
-
-         if (llvmpipe_resource_is_texture(res)) {
-            uint32_t mip_offset = lp_res->mip_offsets[image->u.tex.level];
-
-            jit_image->width = u_minify(jit_image->width, image->u.tex.level);
-            jit_image->height = u_minify(jit_image->height, image->u.tex.level);
-
-            if (res->target == PIPE_TEXTURE_1D_ARRAY ||
-                res->target == PIPE_TEXTURE_2D_ARRAY ||
-                res->target == PIPE_TEXTURE_3D ||
-                res->target == PIPE_TEXTURE_CUBE ||
-                res->target == PIPE_TEXTURE_CUBE_ARRAY) {
-               /*
-                * For array textures, we don't have first_layer, instead
-                * adjust last_layer (stored as depth) plus the mip level offsets
-                * (as we have mip-first layout can't just adjust base ptr).
-                * XXX For mip levels, could do something similar.
-                */
-               jit_image->depth = image->u.tex.last_layer - image->u.tex.first_layer + 1;
-               mip_offset += image->u.tex.first_layer * lp_res->img_stride[image->u.tex.level];
-            } else
-               jit_image->depth = u_minify(jit_image->depth, image->u.tex.level);
-
-            jit_image->row_stride = lp_res->row_stride[image->u.tex.level];
-            jit_image->img_stride = lp_res->img_stride[image->u.tex.level];
-            jit_image->sample_stride = lp_res->sample_stride;
-            jit_image->base = (uint8_t *)jit_image->base + mip_offset;
-         } else {
-            unsigned view_blocksize = util_format_get_blocksize(image->format);
-            jit_image->width = image->u.buf.size / view_blocksize;
-            jit_image->base = (uint8_t *)jit_image->base + image->u.buf.offset;
-         }
-      }
+      lp_jit_image_from_pipe(jit_image, image);
    }
    for (; i < ARRAY_SIZE(setup->images); i++) {
       util_copy_image_view(&setup->images[i].current, NULL);
@@ -938,7 +893,6 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
 
       if (view) {
          struct pipe_resource *res = view->texture;
-         struct llvmpipe_resource *lp_tex = llvmpipe_resource(res);
          struct lp_jit_texture *jit_tex;
          jit_tex = &setup->fs.current.jit_resources.textures[i];
 
@@ -947,112 +901,7 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
           */
          pipe_resource_reference(&setup->fs.current_tex[i], res);
 
-         if (!lp_tex->dt) {
-            /* regular texture - setup array of mipmap level offsets */
-            unsigned first_level = 0;
-            unsigned last_level = 0;
-
-            if (llvmpipe_resource_is_texture(res)) {
-               first_level = view->u.tex.first_level;
-               last_level = view->u.tex.last_level;
-               assert(first_level <= last_level);
-               assert(last_level <= res->last_level);
-               jit_tex->base = lp_tex->tex_data;
-            } else {
-               jit_tex->base = lp_tex->data;
-            }
-
-            if (LP_PERF & PERF_TEX_MEM) {
-               /* use dummy tile memory */
-               jit_tex->base = lp_dummy_tile;
-               jit_tex->width = TILE_SIZE/8;
-               jit_tex->height = TILE_SIZE/8;
-               jit_tex->depth = 1;
-               jit_tex->first_level = 0;
-               jit_tex->last_level = 0;
-               jit_tex->mip_offsets[0] = 0;
-               jit_tex->row_stride[0] = 0;
-               jit_tex->img_stride[0] = 0;
-               jit_tex->num_samples = 0;
-               jit_tex->sample_stride = 0;
-            } else {
-               jit_tex->width = res->width0;
-               jit_tex->height = res->height0;
-               jit_tex->depth = res->depth0;
-               jit_tex->first_level = first_level;
-               jit_tex->last_level = last_level;
-               jit_tex->num_samples = res->nr_samples;
-               jit_tex->sample_stride = 0;
-
-               if (llvmpipe_resource_is_texture(res)) {
-                  for (unsigned j = first_level; j <= last_level; j++) {
-                     jit_tex->mip_offsets[j] = lp_tex->mip_offsets[j];
-                     jit_tex->row_stride[j] = lp_tex->row_stride[j];
-                     jit_tex->img_stride[j] = lp_tex->img_stride[j];
-                  }
-
-                  jit_tex->sample_stride = lp_tex->sample_stride;
-
-                  if (res->target == PIPE_TEXTURE_1D_ARRAY ||
-                      res->target == PIPE_TEXTURE_2D_ARRAY ||
-                      res->target == PIPE_TEXTURE_CUBE ||
-                      res->target == PIPE_TEXTURE_CUBE_ARRAY ||
-                      (res->target == PIPE_TEXTURE_3D && view->target == PIPE_TEXTURE_2D)) {
-                     /*
-                      * For array textures, we don't have first_layer, instead
-                      * adjust last_layer (stored as depth) plus the mip level
-                      * offsets (as we have mip-first layout can't just adjust
-                      * base ptr).  XXX For mip levels, could do something
-                      * similar.
-                      */
-                     jit_tex->depth = view->u.tex.last_layer - view->u.tex.first_layer + 1;
-                     for (unsigned j = first_level; j <= last_level; j++) {
-                        jit_tex->mip_offsets[j] += view->u.tex.first_layer *
-                                                   lp_tex->img_stride[j];
-                     }
-                     if (view->target == PIPE_TEXTURE_CUBE ||
-                         view->target == PIPE_TEXTURE_CUBE_ARRAY) {
-                        assert(jit_tex->depth % 6 == 0);
-                     }
-                     assert(view->u.tex.first_layer <= view->u.tex.last_layer);
-                     if (res->target == PIPE_TEXTURE_3D)
-                        assert(view->u.tex.last_layer < res->depth0);
-                     else
-                        assert(view->u.tex.last_layer < res->array_size);
-                  }
-               } else {
-                  /*
-                   * For buffers, we don't have "offset", instead adjust
-                   * the size (stored as width) plus the base pointer.
-                   */
-                  const unsigned view_blocksize =
-                     util_format_get_blocksize(view->format);
-                  /* probably don't really need to fill that out */
-                  jit_tex->mip_offsets[0] = 0;
-                  jit_tex->row_stride[0] = 0;
-                  jit_tex->img_stride[0] = 0;
-
-                  /* everything specified in number of elements here. */
-                  jit_tex->width = view->u.buf.size / view_blocksize;
-                  jit_tex->base = (uint8_t *)jit_tex->base + view->u.buf.offset;
-                  /* XXX Unsure if we need to sanitize parameters? */
-                  assert(view->u.buf.offset + view->u.buf.size <= res->width0);
-               }
-            }
-         } else {
-            /* display target texture/surface */
-            jit_tex->base = llvmpipe_resource_map(res, 0, 0, LP_TEX_USAGE_READ);
-            jit_tex->row_stride[0] = lp_tex->row_stride[0];
-            jit_tex->img_stride[0] = lp_tex->img_stride[0];
-            jit_tex->mip_offsets[0] = 0;
-            jit_tex->width = res->width0;
-            jit_tex->height = res->height0;
-            jit_tex->depth = res->depth0;
-            jit_tex->first_level = jit_tex->last_level = 0;
-            jit_tex->num_samples = res->nr_samples;
-            jit_tex->sample_stride = 0;
-            assert(jit_tex->base);
-         }
+         lp_jit_texture_from_pipe(jit_tex, view);
       } else {
          pipe_resource_reference(&setup->fs.current_tex[i], NULL);
       }
@@ -1082,11 +931,7 @@ lp_setup_set_fragment_sampler_state(struct lp_setup_context *setup,
          struct lp_jit_sampler *jit_sam;
          jit_sam = &setup->fs.current.jit_resources.samplers[i];
 
-         jit_sam->min_lod = sampler->min_lod;
-         jit_sam->max_lod = sampler->max_lod;
-         jit_sam->lod_bias = sampler->lod_bias;
-         jit_sam->max_aniso = sampler->max_anisotropy;
-         COPY_4V(jit_sam->border_color, sampler->border_color.f);
+         lp_jit_sampler_from_pipe(jit_sam, sampler);
       }
    }
 
@@ -1275,24 +1120,8 @@ try_update_scene_state(struct lp_setup_context *setup)
 
    if (setup->dirty & LP_SETUP_NEW_SSBOS) {
       for (unsigned i = 0; i < ARRAY_SIZE(setup->ssbos); ++i) {
-         struct pipe_resource *buffer = setup->ssbos[i].current.buffer;
-         const ubyte *current_data = NULL;
-
-         /* resource buffer */
-         if (buffer)
-            current_data = (ubyte *) llvmpipe_resource_data(buffer);
-
-         if (current_data) {
-            current_data += setup->ssbos[i].current.buffer_offset;
-
-            setup->fs.current.jit_resources.ssbos[i].u =
-               (const uint32_t *)current_data;
-            setup->fs.current.jit_resources.ssbos[i].num_elements =
-               setup->ssbos[i].current.buffer_size;
-         } else {
-            setup->fs.current.jit_resources.ssbos[i].u = NULL;
-            setup->fs.current.jit_resources.ssbos[i].num_elements = 0;
-         }
+         lp_jit_buffer_from_pipe(&setup->fs.current.jit_resources.ssbos[i],
+                                 &setup->ssbos[i].current);
          setup->dirty |= LP_SETUP_NEW_FS;
       }
    }

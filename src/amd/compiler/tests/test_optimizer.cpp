@@ -1174,12 +1174,12 @@ BEGIN_TEST(optimize.casts)
    writeout(2, fmul(u2u16(bld.vop2_e64(aco_opcode::v_mul_f32, bld.def(v1), Operand::c32(0xbf800000u), bld.as_uniform(a16))), a16));
 
    //! v1: %res3_tmp = v_mul_f32 %a, %a
-   //! v2b: %res3 = v_med3_f16 0, 1.0, %res3_tmp
+   //! v2b: %res3 = v_add_f16 %res3_tmp, 0 clamp
    //! p_unit_test 3, %res3
    writeout(3, fsat(u2u16(fmul(a, a))));
 
    //! v2b: %res4_tmp = v_mul_f16 %a16, %a16
-   //! v1: %res4 = v_med3_f32 0, 1.0, %res4_tmp
+   //! v1: %res4 = v_add_f32 %res4_tmp, 0 clamp
    //! p_unit_test 4, %res4
    writeout(4, fsat(bld.as_uniform(fmul(a16, a16))));
 
@@ -1383,14 +1383,15 @@ BEGIN_TEST(optimize.mad_mix.input_conv.modifiers)
       writeout(14, fmul(f2f32(ext_ushort(a, 1)), a));
 
       //~gfx(9|10)! v1: %res15_cvt = v_cvt_f32_f16 %a dst_sel:uword0 src0_sel:dword
-      //~gfx11! v1: %res16_cvt1 = v_cvt_f32_f16 %a
+      //~gfx11! v1: %res16_cvt1 = v_fma_mix_f32 lo(%a), 1.0, -0
       //~gfx11! v1: %res15_cvt = p_extract %res16_cvt1, 0, 16, 0
       //! v1: %res15 = v_mul_f32 %res15_cvt, %a
       //! p_unit_test 15, %res15
       writeout(15, fmul(ext_ushort(f2f32(a), 0), a));
 
-      //! v1: %res16_cvt = v_cvt_f32_f16 %a
+      //~gfx(9|10)! v1: %res16_cvt = v_cvt_f32_f16 %a
       //~gfx(9|10)! v1: %res16 = v_mul_f32 %res16_cvt, %a dst_sel:dword src0_sel:uword1 src1_sel:dword
+      //~gfx11! v1: %res16_cvt = v_fma_mix_f32 lo(%a), 1.0, -0
       //~gfx11! v1: %res16_ext = p_extract %res16_cvt, 1, 16, 0
       //~gfx11! v1: %res16 = v_mul_f32 %res16_ext, %a
       //! p_unit_test 16, %res16
@@ -1701,12 +1702,12 @@ BEGIN_TEST(optimize.mad_mix.cast)
       writeout(3, f2f32(u2u16(fmul(a, a))));
 
       //! v1: %res4_mul = v_fma_mix_f32 lo(%a16), %a, -0
-      //! v2b: %res4 = v_med3_f16 0, 1.0, %res4_mul
+      //! v2b: %res4 = v_add_f16 %res4_mul, 0 clamp
       //! p_unit_test 4, %res4
       writeout(4, fsat(u2u16(fmul(f2f32(a16), a))));
 
       //! v2b: %res5_mul = v_fma_mixlo_f16 %a, %a, -0
-      //! v1: %res5 = v_med3_f32 0, 1.0, %res5_mul
+      //! v1: %res5 = v_add_f32 %res5_mul, 0 clamp
       //! p_unit_test 5, %res5
       writeout(5, fsat(bld.as_uniform(f2f16(fmul(a, a)))));
 

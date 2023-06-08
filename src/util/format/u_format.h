@@ -914,28 +914,28 @@ util_format_get_nblocksz(enum pipe_format format,
    return (z + blockdepth - 1) / blockdepth;
 }
 
-static inline unsigned
+static inline uint64_t
 util_format_get_nblocks(enum pipe_format format,
                         unsigned width,
                         unsigned height)
 {
    assert(util_format_get_blockdepth(format) == 1);
-   return util_format_get_nblocksx(format, width) * util_format_get_nblocksy(format, height);
+   return (uint64_t)util_format_get_nblocksx(format, width) *
+          util_format_get_nblocksy(format, height);
 }
 
-static inline size_t
+static inline unsigned
 util_format_get_stride(enum pipe_format format,
                        unsigned width)
 {
-   return (size_t)util_format_get_nblocksx(format, width) * util_format_get_blocksize(format);
+   return util_format_get_nblocksx(format, width) * util_format_get_blocksize(format);
 }
 
-static inline size_t
-util_format_get_2d_size(enum pipe_format format,
-                        size_t stride,
+static inline uint64_t
+util_format_get_2d_size(enum pipe_format format, unsigned stride,
                         unsigned height)
 {
-   return util_format_get_nblocksy(format, height) * stride;
+   return (uint64_t)util_format_get_nblocksy(format, height) * stride;
 }
 
 static inline unsigned
@@ -1646,12 +1646,12 @@ util_format_translate(enum pipe_format dst_format,
 bool
 util_format_translate_3d(enum pipe_format dst_format,
                          void *dst, unsigned dst_stride,
-                         unsigned dst_slice_stride,
+                         uint64_t dst_slice_stride,
                          unsigned dst_x, unsigned dst_y,
                          unsigned dst_z,
                          enum pipe_format src_format,
                          const void *src, unsigned src_stride,
-                         unsigned src_slice_stride,
+                         uint64_t src_slice_stride,
                          unsigned src_x, unsigned src_y,
                          unsigned src_z, unsigned width,
                          unsigned height, unsigned depth);

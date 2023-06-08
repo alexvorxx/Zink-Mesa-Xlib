@@ -527,7 +527,7 @@ blorp_clear_supports_compute(struct blorp_context *blorp,
    if (color_write_disable != 0 || blend_enabled)
       return false;
    if (blorp->isl_dev->info->ver >= 12) {
-      return aux_usage == ISL_AUX_USAGE_GFX12_CCS_E ||
+      return aux_usage == ISL_AUX_USAGE_FCV_CCS_E ||
              aux_usage == ISL_AUX_USAGE_CCS_E ||
              aux_usage == ISL_AUX_USAGE_NONE;
    } else {

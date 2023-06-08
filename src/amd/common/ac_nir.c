@@ -23,6 +23,18 @@ ac_nir_load_arg_at_offset(nir_builder *b, const struct ac_shader_args *ac_args,
       return nir_load_vector_arg_amd(b, num_components, .base = arg_index);
 }
 
+void
+ac_nir_store_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
+                 nir_ssa_def *val)
+{
+   assert(nir_cursor_current_block(b->cursor)->cf_node.parent->type == nir_cf_node_function);
+
+   if (ac_args->args[arg.arg_index].file == AC_ARG_SGPR)
+      nir_store_scalar_arg_amd(b, val, .base = arg.arg_index);
+   else
+      nir_store_vector_arg_amd(b, val, .base = arg.arg_index);
+}
+
 nir_ssa_def *
 ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
                   unsigned rshift, unsigned bitwidth)
@@ -250,10 +262,11 @@ ac_nir_export_position(nir_builder *b,
     * the pixel shader starts.
     */
    if (gfx_level >= GFX10 && no_param_export && b->shader->info.writes_memory) {
-      nir_intrinsic_instr *wait_instr =
-         nir_intrinsic_instr_create(b->shader, nir_intrinsic_memory_barrier_buffer);
-
-      nir_instr_insert_before(&final_exp->instr, &wait_instr->instr);
+      nir_cursor cursor = b->cursor;
+      b->cursor = nir_before_instr(&final_exp->instr);
+      nir_scoped_memory_barrier(b, NIR_SCOPE_DEVICE, NIR_MEMORY_RELEASE,
+                                nir_var_mem_ssbo | nir_var_mem_global | nir_var_image);
+      b->cursor = cursor;
    }
 }
 

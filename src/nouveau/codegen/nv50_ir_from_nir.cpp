@@ -643,14 +643,6 @@ int
 Converter::getSubOp(nir_intrinsic_op op)
 {
    switch (op) {
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier_image:
-      return NV50_IR_SUBOP_MEMBAR(M, GL);
-   case nir_intrinsic_group_memory_barrier:
-   case nir_intrinsic_memory_barrier_shared:
-      return NV50_IR_SUBOP_MEMBAR(M, CTA);
-
    case nir_intrinsic_vote_all:
       return NV50_IR_SUBOP_VOTE_ALL;
    case nir_intrinsic_vote_any:
@@ -2264,26 +2256,33 @@ Converter::visit(nir_intrinsic_instr *insn)
 
       break;
    }
-   case nir_intrinsic_control_barrier: {
-      // TODO: add flag to shader_info
-      info_out->numBarriers = 1;
-      Instruction *bar = mkOp2(OP_BAR, TYPE_U32, NULL, mkImm(0), mkImm(0));
-      bar->fixed = 1;
-      bar->subOp = NV50_IR_SUBOP_BAR_SYNC;
+   case nir_intrinsic_scoped_barrier: {
+      nir_scope exec_scope = nir_intrinsic_execution_scope(insn);
+      nir_scope mem_scope = nir_intrinsic_memory_scope(insn);
+      nir_variable_mode modes = nir_intrinsic_memory_modes(insn);
+      nir_variable_mode valid_modes =
+         nir_var_mem_global | nir_var_image | nir_var_mem_ssbo | nir_var_mem_shared;
+
+      if (mem_scope != NIR_SCOPE_NONE && (modes & valid_modes)) {
+
+         Instruction *bar = mkOp(OP_MEMBAR, TYPE_NONE, NULL);
+         bar->fixed = 1;
+
+         if (mem_scope >= NIR_SCOPE_QUEUE_FAMILY)
+            bar->subOp = NV50_IR_SUBOP_MEMBAR(M, GL);
+         else
+            bar->subOp = NV50_IR_SUBOP_MEMBAR(M, CTA);
+      }
+
+      if (exec_scope != NIR_SCOPE_NONE &&
+          !(exec_scope == NIR_SCOPE_WORKGROUP && nir->info.stage == MESA_SHADER_TESS_CTRL)) {
+         Instruction *bar = mkOp2(OP_BAR, TYPE_U32, NULL, mkImm(0), mkImm(0));
+         bar->fixed = 1;
+         bar->subOp = NV50_IR_SUBOP_BAR_SYNC;
+      }
+
       break;
    }
-   case nir_intrinsic_group_memory_barrier:
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_shared: {
-      Instruction *bar = mkOp(OP_MEMBAR, TYPE_NONE, NULL);
-      bar->fixed = 1;
-      bar->subOp = getSubOp(op);
-      break;
-   }
-   case nir_intrinsic_memory_barrier_tcs_patch:
-      break;
    case nir_intrinsic_shader_clock: {
       const DataType dType = getDType(insn);
       LValues &newDefs = convert(&insn->dest);
@@ -3239,6 +3238,8 @@ Converter::run()
       NIR_PASS(progress, nir, nir_lower_64bit_phis);
    } while (progress);
 
+   NIR_PASS_V(nir, nir_opt_combine_barriers, NULL, NULL);
+
    nir_move_options move_options =
       (nir_move_options)(nir_move_const_undef |
                          nir_move_load_ubo |
@@ -3396,7 +3397,8 @@ nvir_nir_shader_compiler_options(int chipset, uint8_t shader_type, bool prefer_n
        */
       ((chipset >= NVISA_GV100_CHIPSET && shader_type == PIPE_SHADER_FRAGMENT) ? nir_var_shader_in : 0)
    );
-   op.force_indirect_unrolling_sampler = (chipset < NVISA_GF100_CHIPSET),
+   op.use_scoped_barrier = true;
+   op.force_indirect_unrolling_sampler = (chipset < NVISA_GF100_CHIPSET);
    op.max_unroll_iterations = 32;
    op.lower_int64_options = (nir_lower_int64_options) (
       ((chipset >= NVISA_GV100_CHIPSET) ? nir_lower_imul64 : 0) |

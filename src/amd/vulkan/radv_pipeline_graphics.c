@@ -2029,6 +2029,12 @@ radv_generate_graphics_pipeline_key(const struct radv_device *device,
       key.vs.topology = si_translate_prim(state->ia->primitive_topology);
    }
 
+   if (pipeline->base.type == RADV_PIPELINE_GRAPHICS_LIB &&
+       (!(lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) ||
+        !(lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT))) {
+      key.unknown_rast_prim = true;
+   }
+
    if (device->physical_device->rad_info.gfx_level >= GFX10 && state->rs) {
       key.vs.provoking_vtx_last =
          state->rs->provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
@@ -2565,6 +2571,34 @@ radv_pipeline_create_ps_epilog(struct radv_device *device, struct radv_graphics_
    return true;
 }
 
+static unsigned
+radv_get_rasterization_prim(const struct radv_pipeline_stage *stages,
+                            const struct radv_pipeline_key *pipeline_key)
+{
+   unsigned rast_prim;
+
+   if (pipeline_key->unknown_rast_prim)
+      return -1;
+
+   if (stages[MESA_SHADER_GEOMETRY].nir) {
+      rast_prim =
+         si_conv_gl_prim_to_gs_out(stages[MESA_SHADER_GEOMETRY].nir->info.gs.output_primitive);
+   } else if (stages[MESA_SHADER_TESS_EVAL].nir) {
+      if (stages[MESA_SHADER_TESS_EVAL].nir->info.tess.point_mode) {
+         rast_prim = V_028A6C_POINTLIST;
+      } else {
+         rast_prim =
+            si_conv_tess_prim_to_gs_out(stages[MESA_SHADER_TESS_EVAL].nir->info.tess._primitive_mode);
+      }
+   } else if (stages[MESA_SHADER_MESH].nir) {
+      rast_prim = si_conv_gl_prim_to_gs_out(stages[MESA_SHADER_MESH].nir->info.mesh.primitive_type);
+   } else {
+      rast_prim = si_conv_prim_to_gs_out(pipeline_key->vs.topology, false);
+   }
+
+   return rast_prim;
+}
+
 static bool
 radv_skip_graphics_pipeline_compile(const struct radv_device *device,
                                     const struct radv_graphics_pipeline *pipeline,
@@ -2754,6 +2788,13 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
    }
 
    radv_graphics_pipeline_link(device, pipeline, pipeline_key, stages);
+
+   if (stages[MESA_SHADER_FRAGMENT].nir) {
+      unsigned rast_prim = radv_get_rasterization_prim(stages, pipeline_key);
+
+      NIR_PASS(_, stages[MESA_SHADER_FRAGMENT].nir, radv_nir_lower_fs_barycentric, pipeline_key,
+               rast_prim);
+   }
 
    radv_foreach_stage (i, active_nir_stages) {
       int64_t stage_start = os_time_get_nano();
@@ -3344,19 +3385,19 @@ radv_emit_mesh_shader(const struct radv_device *device, struct radeon_cmdbuf *ct
 }
 
 static uint32_t
-offset_to_ps_input(uint32_t offset, bool flat_shade, bool explicit, bool float16,
+offset_to_ps_input(uint32_t offset, bool flat_shade, bool explicit, bool per_vertex, bool float16,
                    bool per_prim_gfx11)
 {
    uint32_t ps_input_cntl;
    if (offset <= AC_EXP_PARAM_OFFSET_31) {
       ps_input_cntl = S_028644_OFFSET(offset) | S_028644_PRIM_ATTR(per_prim_gfx11);
-      if (flat_shade || explicit)
+      if (flat_shade || explicit || per_vertex)
          ps_input_cntl |= S_028644_FLAT_SHADE(1);
-      if (explicit) {
+      if (explicit || per_vertex) {
          /* Force parameter cache to be read in passthrough
           * mode.
           */
-         ps_input_cntl |= S_028644_OFFSET(1 << 5);
+         ps_input_cntl |= S_028644_OFFSET(1 << 5) | S_028644_ROTATE_PC_PTR(per_vertex);
       }
       if (float16) {
          ps_input_cntl |= S_028644_FP16_INTERP_MODE(1) | S_028644_ATTR0_VALID(1);
@@ -3387,7 +3428,7 @@ single_slot_to_ps_input(const struct radv_vs_output_info *outinfo, unsigned slot
    }
 
    ps_input_cntl[*ps_offset] =
-      offset_to_ps_input(vs_offset, flat_shade, false, false, per_prim_gfx11);
+      offset_to_ps_input(vs_offset, flat_shade, false, false, false, per_prim_gfx11);
    ++(*ps_offset);
 }
 
@@ -3406,10 +3447,11 @@ input_mask_to_ps_inputs(const struct radv_vs_output_info *outinfo, const struct 
 
       bool flat_shade = !!(ps->info.ps.flat_shaded_mask & (1u << *ps_offset));
       bool explicit = !!(ps->info.ps.explicit_shaded_mask & (1u << *ps_offset));
+      bool per_vertex = !!(ps->info.ps.per_vertex_shaded_mask & (1u << *ps_offset));
       bool float16 = !!(ps->info.ps.float16_shaded_mask & (1u << *ps_offset));
 
       ps_input_cntl[*ps_offset] =
-         offset_to_ps_input(vs_offset, flat_shade, explicit, float16, per_prim_gfx11);
+         offset_to_ps_input(vs_offset, flat_shade, explicit, per_vertex, float16, per_prim_gfx11);
       ++(*ps_offset);
    }
 }

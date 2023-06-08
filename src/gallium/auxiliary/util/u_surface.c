@@ -64,11 +64,11 @@ u_surface_default_template(struct pipe_surface *surf,
 void
 util_copy_box(ubyte * dst,
               enum pipe_format format,
-              unsigned dst_stride, unsigned dst_slice_stride,
+              unsigned dst_stride, uint64_t dst_slice_stride,
               unsigned dst_x, unsigned dst_y, unsigned dst_z,
               unsigned width, unsigned height, unsigned depth,
               const ubyte * src,
-              int src_stride, unsigned src_slice_stride,
+              int src_stride, uint64_t src_slice_stride,
               unsigned src_x, unsigned src_y, unsigned src_z)
 {
    unsigned z;
@@ -117,7 +117,7 @@ util_fill_rect(ubyte * dst,
    height = (height + blockheight - 1)/blockheight;
 
    dst += dst_x * blocksize;
-   dst += dst_y * dst_stride;
+   dst += (uint64_t)dst_y * dst_stride;
    width_size = width * blocksize;
 
    switch (blocksize) {
@@ -169,7 +169,7 @@ void
 util_fill_box(ubyte * dst,
               enum pipe_format format,
               unsigned stride,
-              unsigned layer_stride,
+              uintptr_t layer_stride,
               unsigned x,
               unsigned y,
               unsigned z,
@@ -475,7 +475,7 @@ util_fill_zs_rect(ubyte *dst_map,
    case 1:
       assert(format == PIPE_FORMAT_S8_UINT);
       if(dst_stride == width)
-         memset(dst_map, (uint8_t) zstencil, height * width);
+         memset(dst_map, (uint8_t) zstencil, (uint64_t)height * width);
       else {
          for (i = 0; i < height; i++) {
             memset(dst_map, (uint8_t) zstencil, width);

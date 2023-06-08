@@ -6464,7 +6464,7 @@ radv_emit_compute_pipeline(struct radv_cmd_buffer *cmd_buffer,
    } else {
       radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, cmd_buffer->state.rt_prolog->bo);
       radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs,
-                         cmd_buffer->state.shaders[MESA_SHADER_RAYGEN]->bo);
+                         cmd_buffer->state.shaders[MESA_SHADER_INTERSECTION]->bo);
    }
 
    if (unlikely(cmd_buffer->device->trace_bo))
@@ -6719,7 +6719,7 @@ radv_bind_shader(struct radv_cmd_buffer *cmd_buffer, struct radv_shader *shader,
       radv_bind_task_shader(cmd_buffer, shader);
       break;
    case MESA_SHADER_COMPUTE:
-   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_INTERSECTION:
       /* no-op */
       break;
    default:
@@ -6762,8 +6762,8 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
          return;
       radv_mark_descriptor_sets_dirty(cmd_buffer, pipelineBindPoint);
 
-      radv_bind_shader(cmd_buffer, rt_pipeline->base.base.shaders[MESA_SHADER_RAYGEN],
-                       MESA_SHADER_RAYGEN);
+      radv_bind_shader(cmd_buffer, rt_pipeline->base.base.shaders[MESA_SHADER_INTERSECTION],
+                       MESA_SHADER_INTERSECTION);
       cmd_buffer->state.rt_prolog = rt_pipeline->base.base.shaders[MESA_SHADER_COMPUTE];
 
       cmd_buffer->state.rt_pipeline = rt_pipeline;
@@ -9085,10 +9085,12 @@ radv_emit_fs_state(struct radv_cmd_buffer *cmd_buffer)
    const unsigned rasterization_samples = radv_get_rasterization_samples(cmd_buffer);
    const unsigned ps_iter_samples = radv_get_ps_iter_samples(cmd_buffer);
    const uint16_t ps_iter_mask = ac_get_ps_iter_mask(ps_iter_samples);
+   const unsigned rast_prim = radv_get_rasterization_prim(cmd_buffer);
    const uint32_t base_reg = ps->info.user_data_0;
    const unsigned ps_state = SET_SGPR_FIELD(PS_STATE_NUM_SAMPLES, rasterization_samples) |
                              SET_SGPR_FIELD(PS_STATE_PS_ITER_MASK, ps_iter_mask) |
-                             SET_SGPR_FIELD(PS_STATE_LINE_RAST_MODE, d->vk.rs.line.mode);
+                             SET_SGPR_FIELD(PS_STATE_LINE_RAST_MODE, d->vk.rs.line.mode) |
+                             SET_SGPR_FIELD(PS_STATE_RAST_PRIM, rast_prim);
 
    radeon_set_sh_reg(cmd_buffer->cs, base_reg + loc->sgpr_idx * 4, ps_state);
 }
@@ -10130,9 +10132,10 @@ radv_trace_rays(struct radv_cmd_buffer *cmd_buffer, const VkTraceRaysIndirectCom
    const struct radv_userdata_info *shader_loc =
       radv_get_user_sgpr(rt_prolog, AC_UD_CS_TRAVERSAL_SHADER_ADDR);
    if (shader_loc->sgpr_idx != -1) {
-      uint64_t raygen_va = cmd_buffer->state.shaders[MESA_SHADER_RAYGEN]->va;
+      uint64_t traversal_va =
+         cmd_buffer->state.shaders[MESA_SHADER_INTERSECTION]->va | radv_rt_priority_traversal;
       radv_emit_shader_pointer(cmd_buffer->device, cmd_buffer->cs,
-                               base_reg + shader_loc->sgpr_idx * 4, raygen_va, true);
+                               base_reg + shader_loc->sgpr_idx * 4, traversal_va, true);
    }
 
    assert(cmd_buffer->cs->cdw <= cdw_max);

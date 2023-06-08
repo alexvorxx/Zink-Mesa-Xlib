@@ -28,6 +28,7 @@
 #include "compiler/glsl/ir_uniform.h" /* for gl_uniform_storage */
 #include "linker_util.h"
 #include "util/u_dynarray.h"
+#include "util/u_math.h"
 #include "main/consts_exts.h"
 #include "main/shader_types.h"
 
@@ -1138,10 +1139,10 @@ enter_record(struct nir_link_uniforms_state *state,
                                     use_std430);
 
    if (packing == GLSL_INTERFACE_PACKING_STD430)
-      state->offset = glsl_align(
+      state->offset = align(
          state->offset, glsl_get_std430_base_alignment(type, row_major));
    else
-      state->offset = glsl_align(
+      state->offset = align(
          state->offset, glsl_get_std140_base_alignment(type, row_major));
 }
 
@@ -1161,10 +1162,10 @@ leave_record(struct nir_link_uniforms_state *state,
                                     use_std430);
 
    if (packing == GLSL_INTERFACE_PACKING_STD430)
-      state->offset = glsl_align(
+      state->offset = align(
          state->offset, glsl_get_std430_base_alignment(type, row_major));
    else
-      state->offset = glsl_align(
+      state->offset = align(
          state->offset, glsl_get_std140_base_alignment(type, row_major));
 }
 
@@ -1407,7 +1408,7 @@ nir_link_uniform(const struct gl_constants *consts,
                alignment =
                   glsl_get_std430_base_alignment(type, uniform->row_major);
             }
-            state->offset = glsl_align(state->offset, alignment);
+            state->offset = align(state->offset, alignment);
          }
       }
 

@@ -3886,7 +3886,7 @@ texturesubimage(struct gl_context *ctx, GLuint dims,
 
    /* Must handle special case GL_TEXTURE_CUBE_MAP. */
    if (texObj->Target == GL_TEXTURE_CUBE_MAP) {
-      GLint imageStride;
+      intptr_t imageStride;
 
       /*
        * What do we do if the user created a texture with the following code

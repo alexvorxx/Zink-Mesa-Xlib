@@ -1527,22 +1527,20 @@ glsl_type::get_interface_instance(const glsl_struct_field *fields,
 const glsl_type *
 glsl_type::get_subroutine_instance(const char *subroutine_name)
 {
-   const glsl_type key(subroutine_name);
-
    simple_mtx_lock(&glsl_type::hash_mutex);
    assert(glsl_type_users > 0);
 
    if (subroutine_types == NULL) {
-      subroutine_types = _mesa_hash_table_create(NULL, record_key_hash,
-                                                 record_key_compare);
+      subroutine_types = _mesa_hash_table_create(NULL, _mesa_hash_string,
+                                                 _mesa_key_string_equal);
    }
 
    const struct hash_entry *entry = _mesa_hash_table_search(subroutine_types,
-                                                            &key);
+                                                            subroutine_name);
    if (entry == NULL) {
       const glsl_type *t = new glsl_type(subroutine_name);
 
-      entry = _mesa_hash_table_insert(subroutine_types, t, (void *) t);
+      entry = _mesa_hash_table_insert(subroutine_types, t->name, (void *) t);
    }
 
    assert(((glsl_type *) entry->data)->base_type == GLSL_TYPE_SUBROUTINE);
@@ -2182,21 +2180,21 @@ glsl_type::std140_size(bool row_major) const
          }
 
          const struct glsl_type *field_type = this->fields.structure[i].type;
-         unsigned align = field_type->std140_base_alignment(field_row_major);
+         unsigned base_alignment = field_type->std140_base_alignment(field_row_major);
 
          /* Ignore unsized arrays when calculating size */
          if (field_type->is_unsized_array())
             continue;
 
-         size = glsl_align(size, align);
+         size = align(size, base_alignment);
          size += field_type->std140_size(field_row_major);
 
-         max_align = MAX2(align, max_align);
+         max_align = MAX2(base_alignment, max_align);
 
          if (field_type->is_struct() && (i + 1 < this->length))
-            size = glsl_align(size, 16);
+            size = align(size, 16);
       }
-      size = glsl_align(size, MAX2(max_align, 16));
+      size = align(size, MAX2(max_align, 16));
       return size;
    }
 
@@ -2216,14 +2214,14 @@ glsl_type::get_explicit_std140_type(bool row_major) const
       else
          vec_type = get_instance(this->base_type, this->vector_elements, 1);
       unsigned elem_size = vec_type->std140_size(false);
-      unsigned stride = glsl_align(elem_size, 16);
+      unsigned stride = align(elem_size, 16);
       return get_instance(this->base_type, this->vector_elements,
                           this->matrix_columns, stride, row_major);
    } else if (this->is_array()) {
       unsigned elem_size = this->fields.array->std140_size(row_major);
       const glsl_type *elem_type =
          this->fields.array->get_explicit_std140_type(row_major);
-      unsigned stride = glsl_align(elem_size, 16);
+      unsigned stride = align(elem_size, 16);
       return get_array_instance(elem_type, this->length, stride);
    } else if (this->is_struct() || this->is_interface()) {
       glsl_struct_field *fields = new glsl_struct_field[this->length];
@@ -2256,7 +2254,7 @@ glsl_type::get_explicit_std140_type(bool row_major) const
             assert((unsigned)fields[i].offset >= offset);
             offset = fields[i].offset;
          }
-         offset = glsl_align(offset, falign);
+         offset = align(offset, falign);
          fields[i].offset = offset;
          offset += fsize;
       }
@@ -2550,13 +2548,13 @@ glsl_type::std430_size(bool row_major) const
          }
 
          const struct glsl_type *field_type = this->fields.structure[i].type;
-         unsigned align = field_type->std430_base_alignment(field_row_major);
-         size = glsl_align(size, align);
+         unsigned base_alignment = field_type->std430_base_alignment(field_row_major);
+         size = align(size, base_alignment);
          size += field_type->std430_size(field_row_major);
 
-         max_align = MAX2(align, max_align);
+         max_align = MAX2(base_alignment, max_align);
       }
-      size = glsl_align(size, max_align);
+      size = align(size, max_align);
       return size;
    }
 
@@ -2614,7 +2612,7 @@ glsl_type::get_explicit_std430_type(bool row_major) const
             assert((unsigned)fields[i].offset >= offset);
             offset = fields[i].offset;
          }
-         offset = glsl_align(offset, falign);
+         offset = align(offset, falign);
          fields[i].offset = offset;
          offset += fsize;
       }

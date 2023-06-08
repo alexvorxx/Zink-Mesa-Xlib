@@ -7700,7 +7700,7 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
          /* Offset can only be used with std430 and std140 layouts an initial
           * value of 0 is used for error detection.
           */
-         unsigned align = 0;
+         unsigned base_alignment = 0;
          unsigned size = 0;
          if (layout) {
             bool row_major;
@@ -7712,10 +7712,10 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
             }
 
             if(layout->flags.q.std140) {
-               align = field_type->std140_base_alignment(row_major);
+               base_alignment = field_type->std140_base_alignment(row_major);
                size = field_type->std140_size(row_major);
             } else if (layout->flags.q.std430) {
-               align = field_type->std430_base_alignment(row_major);
+               base_alignment = field_type->std430_base_alignment(row_major);
                size = field_type->std430_size(row_major);
             }
          }
@@ -7724,12 +7724,12 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
             unsigned qual_offset;
             if (process_qualifier_constant(state, &loc, "offset",
                                            qual->offset, &qual_offset)) {
-               if (align != 0 && size != 0) {
+               if (base_alignment != 0 && size != 0) {
                    if (next_offset > qual_offset)
                       _mesa_glsl_error(&loc, state, "layout qualifier "
                                        "offset overlaps previous member");
 
-                  if (qual_offset % align) {
+                  if (qual_offset % base_alignment) {
                      _mesa_glsl_error(&loc, state, "layout qualifier offset "
                                       "must be a multiple of the base "
                                       "alignment of %s", field_type->name);
@@ -7746,7 +7746,7 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
          if (qual->flags.q.explicit_align || expl_align != 0) {
             unsigned offset = fields[i].offset != -1 ? fields[i].offset :
                next_offset;
-            if (align == 0 || size == 0) {
+            if (base_alignment == 0 || size == 0) {
                _mesa_glsl_error(&loc, state, "align can only be used with "
                                 "std430 and std140 layouts");
             } else if (qual->flags.q.explicit_align) {
@@ -7758,17 +7758,17 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
                      _mesa_glsl_error(&loc, state, "align layout qualifier "
                                       "is not a power of 2");
                   } else {
-                     fields[i].offset = glsl_align(offset, member_align);
+                     fields[i].offset = align(offset, member_align);
                      next_offset = fields[i].offset + size;
                   }
                }
             } else {
-               fields[i].offset = glsl_align(offset, expl_align);
+               fields[i].offset = align(offset, expl_align);
                next_offset = fields[i].offset + size;
             }
          } else if (!qual->flags.q.explicit_offset) {
-            if (align != 0 && size != 0)
-               next_offset = glsl_align(next_offset, align) + size;
+            if (base_alignment != 0 && size != 0)
+               next_offset = align(next_offset, base_alignment) + size;
          }
 
          /* From the ARB_enhanced_layouts spec:
@@ -7790,8 +7790,8 @@ ast_process_struct_or_iface_block_members(exec_list *instructions,
             }
          } else {
             if (layout && layout->flags.q.explicit_xfb_offset) {
-               unsigned align = field_type->is_64bit() ? 8 : 4;
-               fields[i].offset = glsl_align(block_xfb_offset, align);
+               unsigned base_alignment = field_type->is_64bit() ? 8 : 4;
+               fields[i].offset = align(block_xfb_offset, base_alignment);
                block_xfb_offset += 4 * field_type->component_slots();
             }
          }

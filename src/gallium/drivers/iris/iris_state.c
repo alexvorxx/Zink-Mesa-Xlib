@@ -1360,7 +1360,7 @@ struct iris_depth_buffer_state {
                     GENX(3DSTATE_CLEAR_PARAMS_length)];
 };
 
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
 enum iris_depth_reg_mode {
    IRIS_DEPTH_REG_MODE_HW_DEFAULT = 0,
    IRIS_DEPTH_REG_MODE_D16_1X_MSAA,
@@ -1389,7 +1389,7 @@ struct iris_genx_state {
    /* Is object level preemption enabled? */
    bool object_preemption;
 
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
    enum iris_depth_reg_mode depth_reg_mode;
 #endif
 
@@ -2736,7 +2736,7 @@ iris_create_sampler_view(struct pipe_context *ctx,
 
    if ((isv->res->aux.usage == ISL_AUX_USAGE_CCS_D ||
         isv->res->aux.usage == ISL_AUX_USAGE_CCS_E ||
-        isv->res->aux.usage == ISL_AUX_USAGE_GFX12_CCS_E) &&
+        isv->res->aux.usage == ISL_AUX_USAGE_FCV_CCS_E) &&
        !isl_format_supports_ccs_e(devinfo, isv->view.format)) {
       aux_usages = 1 << ISL_AUX_USAGE_NONE;
    } else if (isl_aux_usage_has_hiz(isv->res->aux.usage) &&
@@ -2976,7 +2976,7 @@ iris_create_surface(struct pipe_context *ctx,
    unsigned aux_usages = 0;
 
    if ((res->aux.usage == ISL_AUX_USAGE_CCS_E ||
-        res->aux.usage == ISL_AUX_USAGE_GFX12_CCS_E) &&
+        res->aux.usage == ISL_AUX_USAGE_FCV_CCS_E) &&
        !isl_format_supports_ccs_e(devinfo, view->format)) {
       aux_usages = 1 << ISL_AUX_USAGE_NONE;
    } else {
@@ -3071,8 +3071,8 @@ iris_set_shader_images(struct pipe_context *ctx,
          unsigned aux_usages = 1 << ISL_AUX_USAGE_NONE;
 
          /* Gfx12+ supports render compression for images */
-         if (GFX_VER >= 12)
-            aux_usages |= 1 << res->aux.usage;
+         if (GFX_VER >= 12 && isl_aux_usage_has_ccs_e(res->aux.usage))
+            aux_usages |= 1 << ISL_AUX_USAGE_CCS_E;
 
          alloc_surface_states(&iv->surface_state, aux_usages);
          iv->surface_state.bo_address = res->bo->address;
@@ -6069,7 +6069,7 @@ genX(emit_depth_state_workarounds)(struct iris_context *ice,
                                    struct iris_batch *batch,
                                    const struct isl_surf *surf)
 {
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
    const bool is_d16_1x_msaa = surf->format == ISL_FORMAT_R16_UNORM &&
                                surf->samples == 1;
 
@@ -6091,11 +6091,11 @@ genX(emit_depth_state_workarounds)(struct iris_context *ice,
     * settings while we change the registers.
     */
    iris_emit_end_of_pipe_sync(batch,
-                              "Workaround: Stop pipeline for 14010455700",
+                              "Workaround: Stop pipeline for Wa_1808121037",
                               PIPE_CONTROL_DEPTH_STALL |
                               PIPE_CONTROL_DEPTH_CACHE_FLUSH);
 
-   /* Wa_14010455700
+   /* Wa_1808121037
     *
     * To avoid sporadic corruptions “Set 0x7010[9] when Depth Buffer
     * Surface Format is D16_UNORM , surface type is not NULL & 1X_MSAA”.
@@ -8813,7 +8813,7 @@ iris_lost_genx_state(struct iris_context *ice, struct iris_batch *batch)
 {
    struct iris_genx_state *genx = ice->state.genx;
 
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
    genx->depth_reg_mode = IRIS_DEPTH_REG_MODE_UNKNOWN;
 #endif
 

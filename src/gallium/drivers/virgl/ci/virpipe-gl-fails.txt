@@ -700,3 +700,6 @@ spec@!opengl 1.1@line-smooth-stipple,Fail
 
 # fails since CI uprev to Debian 12
 spec@arb_viewport_array@display-list,Fail
+
+spec@arb_gl_spirv@execution@ssbo@unsized-array,Fail
+spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail

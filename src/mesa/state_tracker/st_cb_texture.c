@@ -2105,7 +2105,8 @@ st_TexSubImage(struct gl_context *ctx, GLuint dims,
                                      texImage->TexFormat, format, type,
                                      unpack)) {
       struct pipe_box box;
-      unsigned stride, layer_stride;
+      unsigned stride;
+      intptr_t layer_stride;
       void *data;
 
       stride = _mesa_image_row_stride(unpack, width, format, type);

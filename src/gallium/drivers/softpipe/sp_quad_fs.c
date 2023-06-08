@@ -110,8 +110,7 @@ shade_quads(struct quad_stage *qs,
    unsigned i, nr_quads = 0;
 
    tgsi_exec_set_constant_buffers(machine, PIPE_MAX_CONSTANT_BUFFERS,
-                         softpipe->mapped_constants[PIPE_SHADER_FRAGMENT],
-                         softpipe->const_buffer_size[PIPE_SHADER_FRAGMENT]);
+                                  softpipe->mapped_constants[PIPE_SHADER_FRAGMENT]);
 
    machine->InterpCoefs = quads[0]->coef;
 

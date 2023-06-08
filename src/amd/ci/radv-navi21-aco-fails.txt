@@ -2,3 +2,10 @@
 dEQP-VK.pipeline.fast_linked_library.extended_dynamic_state.before_draw.line_stipple_enable,Fail
 
 dEQP-VK.subgroups.builtin_var.ray_tracing.subgroupsize,Fail
+
+# Test bug https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4498
+dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_fan.perspective,Fail
+dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list.perspective,Fail
+dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list_with_adjacency.perspective,Fail
+dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_strip.perspective,Fail
+dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_strip_with_adjacency.perspective,Fail

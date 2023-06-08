@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_64_BUILD_BASE_IMAGE: "debian/x86_64_build-base"
-   DEBIAN_BASE_TAG: "2023-05-25-virglrenderer"
+   DEBIAN_BASE_TAG: "2023-06-07-rust-bump"
 
    DEBIAN_X86_64_BUILD_IMAGE_PATH: "debian/x86_64_build"
    DEBIAN_BUILD_TAG: "2023-05-25-bookworm"
@@ -21,7 +21,7 @@ variables:
 
    ALPINE_X86_64_BUILD_TAG: "2023-05-01-3.18-bump-1"
    FEDORA_X86_64_BUILD_TAG: "2023-05-05-ccache-on"
-   KERNEL_ROOTFS_TAG: "2023-06-05-piglit-5036601c"
+   KERNEL_ROOTFS_TAG: "2023-06-05-virgl-crosvm"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

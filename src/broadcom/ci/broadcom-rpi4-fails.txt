@@ -457,7 +457,6 @@ spec@nv_image_formats@compiler@declaration-disallow-rgba16-unorm-3d.vert,Fail
 spec@nv_image_formats@compiler@declaration-disallow-rgba16-unorm-cube.frag,Fail
 spec@nv_image_formats@compiler@declaration-disallow-rgba16-unorm-cube.vert,Fail
 spec@nv_read_depth@read_depth_gles3,Fail
-spec@oes_egl_image_external_essl3@oes_egl_image_external_essl3,Crash
 spec@oes_point_sprite@arb_point_sprite-checkerboard_gles1,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 

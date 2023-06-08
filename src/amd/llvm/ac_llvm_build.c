@@ -294,12 +294,8 @@ LLVMValueRef ac_build_intrinsic(struct ac_llvm_context *ctx, const char *name,
 
    call = LLVMBuildCall2(ctx->builder, function_type, function, params, param_count, "");
 
-   if (attrib_mask & AC_ATTR_INVARIANT_LOAD) {
-      if (LLVM_VERSION_MAJOR >= 15)
-         LLVMSetMetadata(call, ctx->invariant_load_md_kind, ctx->empty_md);
-      else
-         LLVMAddCallSiteAttribute(call, -1, ac_get_llvm_attribute(ctx->context, "readnone"));
-   }
+   if (attrib_mask & AC_ATTR_INVARIANT_LOAD)
+      LLVMSetMetadata(call, ctx->invariant_load_md_kind, ctx->empty_md);
 
    if (attrib_mask & AC_ATTR_CONVERGENT)
       LLVMAddCallSiteAttribute(call, -1, ac_get_llvm_attribute(ctx->context, "convergent"));
@@ -2553,22 +2549,6 @@ void ac_build_else(struct ac_llvm_context *ctx, int label_id)
    current_branch->next_block = endif_block;
 }
 
-/* Invoked after a branch is exited. */
-static void ac_branch_exited(struct ac_llvm_context *ctx)
-{
-   if (ctx->flow->depth == 0 && ctx->conditional_demote_seen) {
-      /* The previous conditional branch contained demote. Kill threads
-       * after all conditional blocks because amdgcn.wqm.vote doesn't
-       * return usable values inside the blocks.
-       *
-       * This is an optional optimization that only kills whole inactive quads.
-       */
-      LLVMValueRef cond = LLVMBuildLoad2(ctx->builder, ctx->i1, ctx->postponed_kill, "");
-      ac_build_kill_if_false(ctx, ac_build_wqm_vote(ctx, cond));
-      ctx->conditional_demote_seen = false;
-   }
-}
-
 void ac_build_endif(struct ac_llvm_context *ctx, int label_id)
 {
    struct ac_llvm_flow *current_branch = get_current_flow(ctx);
@@ -2580,7 +2560,6 @@ void ac_build_endif(struct ac_llvm_context *ctx, int label_id)
    set_basicblock_name(current_branch->next_block, "endif", label_id);
 
    ctx->flow->depth--;
-   ac_branch_exited(ctx);
 }
 
 void ac_build_endloop(struct ac_llvm_context *ctx, int label_id)
@@ -2594,7 +2573,6 @@ void ac_build_endloop(struct ac_llvm_context *ctx, int label_id)
    LLVMPositionBuilderAtEnd(ctx->builder, current_loop->next_block);
    set_basicblock_name(current_loop->next_block, "endloop", label_id);
    ctx->flow->depth--;
-   ac_branch_exited(ctx);
 }
 
 void ac_build_ifcc(struct ac_llvm_context *ctx, LLVMValueRef cond, int label_id)
@@ -3653,30 +3631,9 @@ LLVMValueRef ac_build_ddxy_interp(struct ac_llvm_context *ctx, LLVMValueRef inte
 
 LLVMValueRef ac_build_load_helper_invocation(struct ac_llvm_context *ctx)
 {
-   LLVMValueRef result;
+   LLVMValueRef result = ac_build_intrinsic(ctx, "llvm.amdgcn.live.mask", ctx->i1, NULL, 0, 0);
 
-   if (LLVM_VERSION_MAJOR >= 13) {
-      result = ac_build_intrinsic(ctx, "llvm.amdgcn.live.mask", ctx->i1, NULL, 0, 0);
-   } else {
-      result = ac_build_intrinsic(ctx, "llvm.amdgcn.ps.live", ctx->i1, NULL, 0, 0);
-   }
    return LLVMBuildNot(ctx->builder, result, "");
-}
-
-LLVMValueRef ac_build_is_helper_invocation(struct ac_llvm_context *ctx)
-{
-   if (!ctx->postponed_kill)
-      return ac_build_load_helper_invocation(ctx);
-
-   /* postponed_kill should be NULL on LLVM 13+ */
-   assert(LLVM_VERSION_MAJOR < 13);
-
-   /* !(exact && postponed) */
-   LLVMValueRef exact =
-      ac_build_intrinsic(ctx, "llvm.amdgcn.ps.live", ctx->i1, NULL, 0, 0);
-
-   LLVMValueRef postponed = LLVMBuildLoad2(ctx->builder, ctx->i1, ctx->postponed_kill, "");
-   return LLVMBuildNot(ctx->builder, LLVMBuildAnd(ctx->builder, exact, postponed, ""), "");
 }
 
 LLVMValueRef ac_build_call(struct ac_llvm_context *ctx, LLVMTypeRef fn_type, LLVMValueRef func, LLVMValueRef *args,
@@ -3858,7 +3815,7 @@ struct ac_llvm_pointer ac_build_main(const struct ac_shader_args *args, struct a
    LLVMAddTargetDependentFunctionAttr(main_function, "denormal-fp-math-f32",
                                       "preserve-sign,preserve-sign");
 
-   if (LLVM_VERSION_MAJOR >= 15 && convention == AC_LLVM_AMDGPU_PS) {
+   if (convention == AC_LLVM_AMDGPU_PS) {
       LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-depth-export",
                                          ctx->exports_mrtz ? "1" : "0");
       LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-color-export",

@@ -77,14 +77,6 @@ unsigned si_determine_wave_size(struct si_screen *sscreen, struct si_shader *sha
       return profile_wave_size;
    }
 
-   /* LLVM 13 has a bug that causes compile failures with discard in Wave32
-    * in some cases. Alpha test in Wave32 is luckily unaffected.
-    */
-   if (stage == MESA_SHADER_FRAGMENT && info->base.fs.uses_discard &&
-       !(info && info->options & SI_PROFILE_IGNORE_LLVM13_DISCARD_BUG) &&
-       LLVM_VERSION_MAJOR == 13 && !(sscreen->debug_flags & DBG(W32_PS_DISCARD)))
-      return 64;
-
    /* Debug flags except w32psdiscard don't override the discard bug workaround,
     * but they override everything else.
     */
@@ -159,12 +151,9 @@ void si_get_ir_cache_key(struct si_shader_selector *sel, bool ngg, bool es,
       shader_variant_flags |= 1 << 1;
    if (wave_size == 32)
       shader_variant_flags |= 1 << 2;
-   if (sel->stage == MESA_SHADER_FRAGMENT &&
-       /* Derivatives imply helper invocations so check for needs_quad_helper_invocations. */
-       sel->info.base.fs.needs_quad_helper_invocations &&
-       sel->info.base.fs.uses_discard &&
-       sel->screen->debug_flags & DBG(FS_CORRECT_DERIVS_AFTER_KILL))
-      shader_variant_flags |= 1 << 3;
+
+   /* bit gap */
+
    /* use_ngg_culling disables NGG passthrough for non-culling shaders to reduce context
     * rolls, which can be changed with AMD_DEBUG=nonggc or AMD_DEBUG=nggc.
     */

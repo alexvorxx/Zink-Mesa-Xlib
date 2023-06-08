@@ -395,6 +395,7 @@ tu_allocate_userspace_iova(struct tu_device *dev,
                 util_vma_heap_alloc_addr(&dev->vma, client_iova, size)) {
                *iova = client_iova;
             } else {
+               mtx_unlock(&dev->vma_mutex);
                return VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS;
             }
          }

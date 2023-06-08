@@ -58,6 +58,9 @@ ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_
    return ac_nir_load_arg_at_offset(b, ac_args, arg, 0);
 }
 
+void ac_nir_store_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
+                      nir_ssa_def *val);
+
 nir_ssa_def *
 ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
                   unsigned rshift, unsigned bitwidth);

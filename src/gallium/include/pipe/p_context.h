@@ -893,7 +893,7 @@ struct pipe_context {
                            const struct pipe_box *,
                            const void *data,
                            unsigned stride,
-                           unsigned layer_stride);
+                           uintptr_t layer_stride);
 
    /**
     * Flush any pending framebuffer writes and invalidate texture caches.

@@ -1104,6 +1104,7 @@ BlockScheduler::collect_ready_type(std::list<T *>& ready, std::list<T *>& availa
 
 class CheckArrayAccessVisitor : public  ConstRegisterVisitor {
 public:
+   using ConstRegisterVisitor::visit;
    void visit(const Register& value) override {(void)value;}
    void visit(const LocalArray& value) override {(void)value;}
    void visit(const UniformValue& value) override {(void)value;}

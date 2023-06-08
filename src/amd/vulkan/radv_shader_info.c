@@ -170,6 +170,15 @@ gather_intrinsic_info(const nir_shader *nir, const nir_intrinsic_instr *instr,
          info->ps.needs_sample_positions = true;
       break;
    }
+   case nir_intrinsic_load_provoking_vtx_amd:
+      info->ps.load_provoking_vtx = true;
+      break;
+   case nir_intrinsic_load_sample_positions_amd:
+      info->ps.needs_sample_positions = true;
+      break;
+   case nir_intrinsic_load_rasterization_primitive_amd:
+      info->ps.load_rasterization_prim = true;
+      break;
    case nir_intrinsic_load_local_invocation_id:
    case nir_intrinsic_load_workgroup_id: {
       unsigned mask = nir_ssa_def_components_read(&instr->dest.ssa);
@@ -609,7 +618,9 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
    info->ps.spi_shader_col_format = pipeline_key->ps.epilog.spi_shader_col_format;
 
    nir_foreach_shader_in_variable(var, nir) {
-      unsigned attrib_count = glsl_count_attribute_slots(var->type, false);
+      const struct glsl_type *type =
+         var->data.per_vertex ? glsl_get_array_element(var->type) : var->type;
+      unsigned attrib_count = glsl_count_attribute_slots(type, false);
       int idx = var->data.location;
 
       switch (idx) {
@@ -625,7 +636,7 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
          unsigned component_count = var->data.location_frac + glsl_get_length(var->type);
          attrib_count = (component_count + 3) / 4;
       } else {
-         mark_16bit_ps_input(info, var->type, var->data.driver_location);
+         mark_16bit_ps_input(info, type, var->data.driver_location);
       }
 
       uint64_t mask = ((1ull << attrib_count) - 1);
@@ -635,6 +646,8 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
             info->ps.flat_shaded_mask |= mask << var->data.driver_location;
          else if (var->data.interpolation == INTERP_MODE_EXPLICIT)
             info->ps.explicit_shaded_mask |= mask << var->data.driver_location;
+         else if (var->data.per_vertex)
+            info->ps.per_vertex_shaded_mask |= mask << var->data.driver_location;
       }
 
       if (var->data.location >= VARYING_SLOT_VAR0) {
@@ -767,6 +780,11 @@ radv_get_user_data_0(const struct radv_device *device, struct radv_shader_info *
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_TASK:
    case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_CALLABLE:
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+   case MESA_SHADER_INTERSECTION:
+   case MESA_SHADER_ANY_HIT:
       return R_00B900_COMPUTE_USER_DATA_0;
    default:
       unreachable("invalid shader stage");

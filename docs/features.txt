@@ -512,6 +512,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_KHR_external_memory_win32                          DONE (dzn)
   VK_KHR_external_semaphore_fd                          DONE (anv, dzn, radv, tu, v3dv, vn)
   VK_KHR_external_semaphore_win32                       DONE (dzn)
+  VK_KHR_fragment_shader_barycentric                    DONE (radv/gfx10.3+)
   VK_KHR_fragment_shading_rate                          DONE (anv/gen11+, radv/gfx10.3+)
   VK_KHR_get_display_properties2                        DONE (anv, radv, tu, v3dv)
   VK_KHR_get_surface_capabilities2                      DONE (anv, lvp, radv, tu, v3dv, vn)

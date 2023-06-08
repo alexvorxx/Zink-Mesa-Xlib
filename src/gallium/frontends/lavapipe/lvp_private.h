@@ -86,6 +86,8 @@ extern "C" {
 #define MAX_PUSH_DESCRIPTORS 32
 #define MAX_DESCRIPTOR_UNIFORM_BLOCK_SIZE 4096
 #define MAX_PER_STAGE_DESCRIPTOR_UNIFORM_BLOCKS 8
+#define MAX_DGC_STREAMS 16
+#define MAX_DGC_TOKENS 16
 
 #ifdef _WIN32
 #define lvp_printflike(a, b)
@@ -191,6 +193,9 @@ struct lvp_device {
    struct lvp_physical_device *physical_device;
    struct pipe_screen *pscreen;
    void *noop_fs;
+   simple_mtx_t bda_lock;
+   struct hash_table bda;
+   struct pipe_resource *zero_buffer; /* for zeroed bda */
    bool poison_mem;
    bool print_cmds;
 };
@@ -487,6 +492,10 @@ struct lvp_pipeline {
    bool library;
    bool compiled;
    bool used;
+
+   unsigned num_groups;
+   unsigned num_groups_total;
+   VkPipeline groups[0];
 };
 
 void
@@ -536,6 +545,16 @@ struct lvp_cmd_buffer {
    struct lvp_device *                          device;
 
    uint8_t push_constants[MAX_PUSH_CONSTANTS_SIZE];
+};
+
+struct lvp_indirect_command_layout {
+   struct vk_object_base base;
+   uint8_t stream_count;
+   uint8_t token_count;
+   uint16_t stream_strides[MAX_DGC_STREAMS];
+   VkPipelineBindPoint bind_point;
+   VkIndirectCommandsLayoutUsageFlagsNV flags;
+   VkIndirectCommandsLayoutTokenNV tokens[0];
 };
 
 extern const struct vk_command_buffer_ops lvp_cmd_buffer_ops;
@@ -595,6 +614,8 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_query_pool, base, VkQueryPool,
                                VK_OBJECT_TYPE_QUERY_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_sampler, base, VkSampler,
                                VK_OBJECT_TYPE_SAMPLER)
+VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_indirect_command_layout, base, VkIndirectCommandsLayoutNV,
+                               VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV)
 
 struct lvp_write_descriptor {
    uint32_t dst_binding;
@@ -647,7 +668,9 @@ lvp_vk_format_to_pipe_format(VkFormat format)
        format == VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM ||
        format == VK_FORMAT_G16_B16R16_2PLANE_422_UNORM ||
        format == VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM ||
-       format == VK_FORMAT_D16_UNORM_S8_UINT)
+       format == VK_FORMAT_D16_UNORM_S8_UINT ||
+       format == VK_FORMAT_R10X6G10X6_UNORM_2PACK16 ||
+       format == VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16)
       return PIPE_FORMAT_NONE;
 
    return vk_format_to_pipe_format(format);
@@ -669,6 +692,8 @@ void
 lvp_inline_uniforms(nir_shader *nir, const struct lvp_shader *shader, const uint32_t *uniform_values, uint32_t ubo);
 void *
 lvp_shader_compile(struct lvp_device *device, struct lvp_shader *shader, nir_shader *nir);
+enum vk_cmd_type
+lvp_nv_dgc_token_to_cmd_type(const VkIndirectCommandsLayoutTokenNV *token);
 #ifdef __cplusplus
 }
 #endif

@@ -891,7 +891,7 @@ lima_texture_subdata(struct pipe_context *pctx,
                      const struct pipe_box *box,
                      const void *data,
                      unsigned stride,
-                     unsigned layer_stride)
+                     uintptr_t layer_stride)
 {
    struct lima_context *ctx = lima_context(pctx);
    struct lima_resource *res = lima_resource(prsc);

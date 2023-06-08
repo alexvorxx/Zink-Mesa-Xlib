@@ -4010,7 +4010,7 @@ can_use_byte_align_for_global_load(unsigned num_components, unsigned component_s
    if (align_ < 4) {
       assert(component_size < 4);
       unsigned load_size = num_components * component_size;
-      int new_size = align(load_size + (4 - align_), 4);
+      uint32_t new_size = align(load_size + (4 - align_), 4);
       return new_size == align(load_size, 4) && (new_size != 12 || support_12_byte);
    }
    return true;
@@ -8269,19 +8269,19 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
    }
    case nir_intrinsic_load_ray_launch_size: {
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      bld.copy(Definition(dst), Operand(get_arg(ctx, ctx->args->ray_launch_size)));
+      bld.copy(Definition(dst), Operand(get_arg(ctx, ctx->args->rt.launch_size)));
       emit_split_vector(ctx, dst, 3);
       break;
    }
    case nir_intrinsic_load_ray_launch_id: {
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      bld.copy(Definition(dst), Operand(get_arg(ctx, ctx->args->ray_launch_id)));
+      bld.copy(Definition(dst), Operand(get_arg(ctx, ctx->args->rt.launch_id)));
       emit_split_vector(ctx, dst, 3);
       break;
    }
    case nir_intrinsic_load_ray_launch_size_addr_amd: {
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      Temp addr = get_arg(ctx, ctx->args->ray_launch_size_addr);
+      Temp addr = get_arg(ctx, ctx->args->rt.launch_size_addr);
       assert(addr.regClass() == s2);
       bld.copy(Definition(dst), Operand(addr));
       break;
@@ -8994,7 +8994,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
    }
    case nir_intrinsic_load_sbt_base_amd: {
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      Temp addr = get_arg(ctx, ctx->args->sbt_descriptors);
+      Temp addr = get_arg(ctx, ctx->args->rt.sbt_descriptors);
       assert(addr.regClass() == s2);
       bld.copy(Definition(dst), Operand(addr));
       break;
@@ -9002,8 +9002,14 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
    case nir_intrinsic_bvh64_intersect_ray_amd: visit_bvh64_intersect_ray_amd(ctx, instr); break;
    case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
       bld.copy(Definition(get_ssa_temp(ctx, &instr->dest.ssa)),
-               get_arg(ctx, ctx->args->rt_dynamic_callable_stack_base));
+               get_arg(ctx, ctx->args->rt.dynamic_callable_stack_base));
       break;
+   case nir_intrinsic_load_resume_shader_address_amd: {
+      bld.pseudo(aco_opcode::p_resume_shader_address,
+                 Definition(get_ssa_temp(ctx, &instr->dest.ssa)), bld.def(s1, scc),
+                 Operand::c32(nir_intrinsic_call_idx(instr)));
+      break;
+   }
    case nir_intrinsic_overwrite_vs_arguments_amd: {
       ctx->arg_temps[ctx->args->vertex_id.arg_index] = get_ssa_temp(ctx, instr->src[0].ssa);
       ctx->arg_temps[ctx->args->instance_id.arg_index] = get_ssa_temp(ctx, instr->src[1].ssa);
@@ -9109,14 +9115,6 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
          }
          ds_instr->ds().sync = memory_sync_info(storage_gds, semantic_atomicrmw);
       }
-      break;
-   }
-   case nir_intrinsic_memory_barrier_buffer: {
-      wait_imm wait;
-      wait.lgkm = 0;
-      wait.vm = 0;
-      bld.sopp(aco_opcode::s_waitcnt, -1, wait.pack(bld.program->gfx_level));
-      bld.sopk(aco_opcode::s_waitcnt_vscnt, Definition(sgpr_null, s1), 0);
       break;
    }
    case nir_intrinsic_export_amd: {
@@ -9230,6 +9228,16 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
       bld.sop1(aco_opcode::p_load_symbol, Definition(dst),
                Operand::c32(aco_symbol_lds_ngg_gs_out_vertex_base));
+      break;
+   }
+   case nir_intrinsic_store_scalar_arg_amd: {
+      ctx->arg_temps[nir_intrinsic_base(instr)] =
+         bld.as_uniform(get_ssa_temp(ctx, instr->src[0].ssa));
+      break;
+   }
+   case nir_intrinsic_store_vector_arg_amd: {
+      ctx->arg_temps[nir_intrinsic_base(instr)] =
+         as_vgpr(ctx, get_ssa_temp(ctx, instr->src[0].ssa));
       break;
    }
    default:
@@ -11211,6 +11219,51 @@ merged_wave_info_to_mask(isel_context* ctx, unsigned i)
    return lanecount_to_mask(ctx, count);
 }
 
+void
+select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* const* shaders,
+                  const struct ac_shader_args* args)
+{
+   for (unsigned i = 0; i < shader_count; i++) {
+      if (i) {
+         ctx.block = ctx.program->create_and_insert_block();
+         ctx.block->kind = block_kind_top_level | block_kind_resume;
+      }
+
+      nir_shader* nir = shaders[i];
+      init_context(&ctx, nir);
+      setup_fp_mode(&ctx, nir);
+
+      Pseudo_instruction* startpgm = add_startpgm(&ctx);
+      append_logical_start(ctx.block);
+      split_arguments(&ctx, startpgm);
+      visit_cf_list(&ctx, &nir_shader_get_entrypoint(nir)->body);
+
+      /* Fix output registers and jump to next shader */
+      append_logical_end(ctx.block);
+      ctx.block->kind |= block_kind_uniform;
+      Builder bld(ctx.program, ctx.block);
+      unsigned src_count = ctx.args->arg_count;
+      Pseudo_instruction* ret =
+         create_instruction<Pseudo_instruction>(aco_opcode::p_return, Format::PSEUDO, src_count, 0);
+      ctx.block->instructions.emplace_back(ret);
+      for (unsigned j = 0; j < src_count; j++) {
+         enum ac_arg_regfile file = ctx.args->args[j].file;
+         unsigned size = ctx.args->args[j].size;
+         unsigned reg = ctx.args->args[j].offset + (file == AC_ARG_SGPR ? 0 : 256);
+         RegClass type = RegClass(file == AC_ARG_SGPR ? RegType::sgpr : RegType::vgpr, size);
+         Operand op = ctx.arg_temps[j].id() ? Operand(ctx.arg_temps[j], PhysReg{reg})
+                                            : Operand(PhysReg{reg}, type);
+         ret->operands[j] = op;
+      }
+      bld.sop1(aco_opcode::s_setpc_b64, get_arg(&ctx, ctx.args->rt.shader_pc));
+
+      cleanup_context(&ctx);
+   }
+
+   ctx.program->config->float_mode = ctx.program->blocks[0].fp_mode.val;
+   cleanup_cfg(ctx.program);
+}
+
 } /* end namespace */
 
 void
@@ -11220,6 +11273,10 @@ select_program(Program* program, unsigned shader_count, struct nir_shader* const
                const struct ac_shader_args* args)
 {
    isel_context ctx = setup_isel_context(program, shader_count, shaders, config, options, info, args, false);
+
+   if (ctx.stage == raytracing_cs)
+      return select_program_rt(ctx, shader_count, shaders, args);
+
    if_context ic_merged_wave_info;
    bool ngg_gs = ctx.stage.hw == HWStage::NGG && ctx.stage.has(SWStage::GS);
 
@@ -11516,17 +11573,17 @@ select_rt_prolog(Program* program, ac_shader_config* config,
     * Indirect descriptor sets:    s[2]
     * Push constants pointer:      s[3]
     * SBT descriptors:             s[4-5]
-    * Ray launch size address:     s[6-7]
-    * Traversal shader address:    s[8-9]
+    * Traversal shader address:    s[6-7]
+    * Ray launch size address:     s[8-9]
     * Dynamic callable stack base: s[10]
     * Workgroup IDs (xyz):         s[11], s[12], s[13]
     * Scratch offset:              s[14]
     * Local invocation IDs:        v[0-2]
     */
    PhysReg in_ring_offsets = get_arg_reg(in_args, in_args->ring_offsets);
-   PhysReg in_launch_size_addr = get_arg_reg(in_args, in_args->ray_launch_size_addr);
-   PhysReg in_shader_addr = get_arg_reg(in_args, in_args->rt_traversal_shader_addr);
-   PhysReg in_stack_base = get_arg_reg(in_args, in_args->rt_dynamic_callable_stack_base);
+   PhysReg in_sbt_desc = get_arg_reg(in_args, in_args->rt.sbt_descriptors);
+   PhysReg in_launch_size_addr = get_arg_reg(in_args, in_args->rt.launch_size_addr);
+   PhysReg in_stack_base = get_arg_reg(in_args, in_args->rt.dynamic_callable_stack_base);
    PhysReg in_wg_id_x = get_arg_reg(in_args, in_args->workgroup_ids[0]);
    PhysReg in_wg_id_y = get_arg_reg(in_args, in_args->workgroup_ids[1]);
    PhysReg in_wg_id_z = get_arg_reg(in_args, in_args->workgroup_ids[2]);
@@ -11543,33 +11600,43 @@ select_rt_prolog(Program* program, ac_shader_config* config,
     * Indirect descriptor sets:    s[2]
     * Push constants pointer:      s[3]
     * SBT descriptors:             s[4-5]
-    * Ray launch sizes (xyz):      s[6], s[7], s[8]
-    * Scratch offset (<GFX9 only): s[9]
-    * Ring offsets (<GFX9 only):   s[10-11]
+    * Traversal shader address:    s[6-7]
+    * Ray launch sizes (xyz):      s[8], s[9], s[10]
+    * Scratch offset (<GFX9 only): s[11]
+    * Ring offsets (<GFX9 only):   s[12-13]
     * Ray launch IDs:              v[0-2]
     * Stack pointer:               v[3]
+    * Shader VA:                   v[4-5]
+    * Shader Record Ptr:           v[6-7]
     */
-   PhysReg out_shader_pc = get_arg_reg(out_args, out_args->rt_shader_pc);
-   PhysReg out_launch_size_x = get_arg_reg(out_args, out_args->ray_launch_size);
+   PhysReg out_shader_pc = get_arg_reg(out_args, out_args->rt.shader_pc);
+   PhysReg out_launch_size_x = get_arg_reg(out_args, out_args->rt.launch_size);
    PhysReg out_launch_size_z = out_launch_size_x.advance(8);
    PhysReg out_launch_ids[3];
    for (unsigned i = 0; i < 3; i++)
-      out_launch_ids[i] = get_arg_reg(out_args, out_args->ray_launch_id).advance(i * 4);
-   PhysReg out_stack_ptr = get_arg_reg(out_args, out_args->rt_dynamic_callable_stack_base);
+      out_launch_ids[i] = get_arg_reg(out_args, out_args->rt.launch_id).advance(i * 4);
+   PhysReg out_stack_ptr = get_arg_reg(out_args, out_args->rt.dynamic_callable_stack_base);
+   PhysReg out_shader_va = get_arg_reg(out_args, out_args->rt.next_shader);
+   PhysReg out_record_ptr = get_arg_reg(out_args, out_args->rt.shader_record);
 
    /* Temporaries: */
-   num_sgprs = align(num_sgprs, 2) + 2;
+   num_sgprs = align(num_sgprs, 2) + 4;
+   PhysReg tmp_raygen_sbt = PhysReg{num_sgprs - 4};
    PhysReg tmp_ring_offsets = PhysReg{num_sgprs - 2};
 
    /* Confirm some assumptions about register aliasing */
    assert(in_ring_offsets == out_shader_pc);
    assert(get_arg_reg(in_args, in_args->push_constants) ==
           get_arg_reg(out_args, out_args->push_constants));
-   assert(get_arg_reg(in_args, in_args->sbt_descriptors) ==
-          get_arg_reg(out_args, out_args->sbt_descriptors));
+   assert(get_arg_reg(in_args, in_args->rt.sbt_descriptors) ==
+          get_arg_reg(out_args, out_args->rt.sbt_descriptors));
    assert(in_launch_size_addr == out_launch_size_x);
-   assert(in_shader_addr == out_launch_size_z);
+   assert(in_stack_base == out_launch_size_z);
    assert(in_local_ids[0] == out_launch_ids[0]);
+
+   /* load raygen sbt */
+   bld.smem(aco_opcode::s_load_dwordx2, Definition(tmp_raygen_sbt, s2), Operand(in_sbt_desc, s2),
+            Operand::c32(0u));
 
    /* init scratch */
    if (options->gfx_level < GFX9) {
@@ -11584,9 +11651,9 @@ select_rt_prolog(Program* program, ac_shader_config* config,
    /* set stack ptr */
    bld.vop1(aco_opcode::v_mov_b32, Definition(out_stack_ptr, v1), Operand(in_stack_base, s1));
 
-   /* load RT shader address */
-   /* TODO: load this from the SBT, will be possible with separate shader compilation */
-   bld.sop1(aco_opcode::s_mov_b64, Definition(out_shader_pc, s2), Operand(in_shader_addr, s2));
+   /* load raygen address */
+   bld.smem(aco_opcode::s_load_dwordx2, Definition(out_shader_pc, s2), Operand(tmp_raygen_sbt, s2),
+            Operand::c32(0u));
 
    /* load ray launch sizes */
    bld.smem(aco_opcode::s_load_dword, Definition(out_launch_size_z, s1),
@@ -11617,6 +11684,23 @@ select_rt_prolog(Program* program, ac_shader_config* config,
       bld.sop1(aco_opcode::s_mov_b64, Definition(get_arg_reg(out_args, out_args->ring_offsets), s2),
                Operand(tmp_ring_offsets, s2));
    }
+
+   /* calculate shader record ptr: SBT + RADV_RT_HANDLE_SIZE */
+   if (options->gfx_level < GFX9) {
+      bld.vop2_e64(aco_opcode::v_add_co_u32, Definition(out_record_ptr, v1), Definition(vcc, s2),
+                   Operand(tmp_raygen_sbt, s1), Operand::c32(32u));
+   } else {
+      bld.vop2_e64(aco_opcode::v_add_u32, Definition(out_record_ptr, v1),
+                   Operand(tmp_raygen_sbt, s1), Operand::c32(32u));
+   }
+   bld.vop1(aco_opcode::v_mov_b32, Definition(out_record_ptr.advance(4), v1),
+            Operand(tmp_raygen_sbt.advance(4), s1));
+
+   /* initialize shader_va with raygen shader */
+   // TODO: we can optimize this away if we don't guard the raygen shader with an IF
+   bld.vop1(aco_opcode::v_mov_b32, Definition(out_shader_va, v1), Operand(out_shader_pc, s1));
+   bld.vop1(aco_opcode::v_mov_b32, Definition(out_shader_va.advance(4), v1),
+            Operand(out_shader_pc.advance(4), s1));
 
    /* jump to raygen */
    bld.sop1(aco_opcode::s_setpc_b64, Operand(out_shader_pc, s2));

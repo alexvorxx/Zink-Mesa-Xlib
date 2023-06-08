@@ -450,6 +450,7 @@ zink_batch_bind_db(struct zink_context *ctx)
 void
 zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
 {
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
    zink_reset_batch(ctx, batch);
 
    batch->state->usage.unflushed = true;
@@ -473,7 +474,6 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
    }
 
 #ifdef HAVE_RENDERDOC_APP_H
-   struct zink_screen *screen = zink_screen(ctx->base.screen);
    if (VKCTX(CmdInsertDebugUtilsLabelEXT) && screen->renderdoc_api) {
       VkDebugUtilsLabelEXT capture_label;
       /* Magic fallback which lets us bridge the Wine barrier over to Linux RenderDoc. */
@@ -496,6 +496,9 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
    /* descriptor buffers must always be bound at the start of a batch */
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(ctx->flags & ZINK_CONTEXT_COPY_ONLY))
       zink_batch_bind_db(ctx);
+   /* zero init for unordered blits */
+   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state)
+      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->barrier_cmdbuf, 0);
 }
 
 /* common operations to run post submit; split out for clarity */

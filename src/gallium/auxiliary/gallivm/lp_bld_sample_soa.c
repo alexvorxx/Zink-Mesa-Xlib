@@ -2139,7 +2139,7 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
    scaling = lp_build_int_to_float(&bld->levelf_bld, scaling);
    scaling = lp_build_rcp(&bld->levelf_bld, scaling);
 
-   if (bld->num_lods != length) {
+   if (bld->levelf_bld.type.length != length) {
       if (bld->levelf_bld.type.length == 1) {
          scaling = lp_build_broadcast_scalar(coord_bld,
                                              scaling);
@@ -4650,9 +4650,41 @@ lp_build_do_atomic_soa(struct gallivm_state *gallivm,
 {
    const enum pipe_format format = format_desc->format;
 
-   if (format != PIPE_FORMAT_R32_UINT &&
-       format != PIPE_FORMAT_R32_SINT &&
-       format != PIPE_FORMAT_R32_FLOAT) {
+   bool valid = format == PIPE_FORMAT_R32_UINT ||
+                format == PIPE_FORMAT_R32_SINT ||
+                format == PIPE_FORMAT_R32_FLOAT;
+
+   bool integer = format != PIPE_FORMAT_R32_FLOAT;
+   if (img_op == LP_IMG_ATOMIC) {
+      switch (op) {
+      case LLVMAtomicRMWBinOpAdd:
+      case LLVMAtomicRMWBinOpSub:
+      case LLVMAtomicRMWBinOpAnd:
+      case LLVMAtomicRMWBinOpNand:
+      case LLVMAtomicRMWBinOpOr:
+      case LLVMAtomicRMWBinOpXor:
+      case LLVMAtomicRMWBinOpMax:
+      case LLVMAtomicRMWBinOpMin:
+      case LLVMAtomicRMWBinOpUMax:
+      case LLVMAtomicRMWBinOpUMin:
+         valid &= integer;
+         break;
+      case LLVMAtomicRMWBinOpFAdd:
+      case LLVMAtomicRMWBinOpFSub:
+#if LLVM_VERSION_MAJOR >= 15
+         case LLVMAtomicRMWBinOpFMax:
+         case LLVMAtomicRMWBinOpFMin:
+#endif
+         valid &= !integer;
+         break;
+      default:
+         break;
+      }
+   } else {
+      valid &= integer;
+   }
+
+   if (!valid) {
       atomic_result[0] = lp_build_zero(gallivm, type);
       return;
    }

@@ -738,7 +738,7 @@ radv_get_shader_from_executable_index(struct radv_pipeline *pipeline, int index,
                                       gl_shader_stage *stage)
 {
    if (pipeline->type == RADV_PIPELINE_RAY_TRACING) {
-      *stage = MESA_SHADER_RAYGEN;
+      *stage = MESA_SHADER_INTERSECTION;
       return pipeline->shaders[*stage];
    }
 

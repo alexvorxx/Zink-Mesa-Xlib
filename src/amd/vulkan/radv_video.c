@@ -45,6 +45,26 @@
 /* Not 100% sure this isn't too much but works */
 #define VID_DEFAULT_ALIGNMENT 256
 
+const int vl_zscan_h265_up_right_diagonal_16[] =
+{
+   /* Up-right diagonal scan order for 4x4 blocks - see H.265 section 6.5.3. */
+    0,  4,  1,  8,  5,  2, 12,  9,
+    6,  3, 13, 10,  7, 14, 11, 15,
+};
+
+const int vl_zscan_h265_up_right_diagonal[] =
+{
+   /* Up-right diagonal scan order for 8x8 blocks - see H.265 section 6.5.3. */
+    0,  8,  1, 16,  9,  2, 24, 17,
+   10,  3, 32, 25, 18, 11,  4, 40,
+   33, 26, 19, 12,  5, 48, 41, 34,
+   27, 20, 13,  6, 56, 49, 42, 35,
+   28, 21, 14,  7, 57, 50, 43, 36,
+   29, 22, 15, 58, 51, 44, 37, 30,
+   23, 59, 52, 45, 38, 31, 60, 53,
+   46, 39, 61, 54, 47, 62, 55, 63,
+};
+
 static bool
 radv_enable_tier2(struct radv_physical_device *pdevice)
 {
@@ -476,8 +496,11 @@ radv_GetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
        (VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR))
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
-   *pVideoFormatPropertyCount = 0;
+   VK_OUTARRAY_MAKE_TYPED(VkVideoFormatPropertiesKHR, out,
+                          pVideoFormatProperties,
+                          pVideoFormatPropertyCount);
 
+   bool need_8bit = true;
    bool need_10bit = false;
    const struct VkVideoProfileListInfoKHR *prof_list = (struct VkVideoProfileListInfoKHR *)
       vk_find_struct_const(pVideoFormatInfo->pNext, VIDEO_PROFILE_LIST_INFO_KHR);
@@ -489,27 +512,28 @@ radv_GetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
       }
    }
 
-   (*pVideoFormatPropertyCount)++;
-   if (need_10bit)
-      (*pVideoFormatPropertyCount)++;
-
-   if (!pVideoFormatProperties)
-      return VK_SUCCESS;
-
-   int idx = 0;
-   pVideoFormatProperties[idx].format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-   pVideoFormatProperties[idx].imageType = VK_IMAGE_TYPE_2D;
-   pVideoFormatProperties[idx].imageTiling = VK_IMAGE_TILING_OPTIMAL;
-   pVideoFormatProperties[idx].imageUsageFlags = pVideoFormatInfo->imageUsage;
-   idx++;
    if (need_10bit) {
-      pVideoFormatProperties[idx].format = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
-      pVideoFormatProperties[idx].imageType = VK_IMAGE_TYPE_2D;
-      pVideoFormatProperties[idx].imageTiling = VK_IMAGE_TILING_OPTIMAL;
-      pVideoFormatProperties[idx].imageUsageFlags = pVideoFormatInfo->imageUsage;
-      idx++;
+      vk_outarray_append_typed(VkVideoFormatPropertiesKHR, &out, p) {
+         p->format = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
+         p->imageType = VK_IMAGE_TYPE_2D;
+         p->imageTiling = VK_IMAGE_TILING_OPTIMAL;
+         p->imageUsageFlags = pVideoFormatInfo->imageUsage;
+      }
+
+      if (pVideoFormatInfo->imageUsage & (VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR))
+         need_8bit = false;
    }
-   return VK_SUCCESS;
+
+   if (need_8bit) {
+         vk_outarray_append_typed(VkVideoFormatPropertiesKHR, &out, p) {
+            p->format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+            p->imageType = VK_IMAGE_TYPE_2D;
+            p->imageTiling = VK_IMAGE_TILING_OPTIMAL;
+            p->imageUsageFlags = pVideoFormatInfo->imageUsage;
+         }
+   }
+
+   return vk_outarray_status(&out);
 }
 
 #define RADV_BIND_SESSION_CTX 0
@@ -524,35 +548,29 @@ radv_GetVideoSessionMemoryRequirementsKHR(VkDevice _device,
    RADV_FROM_HANDLE(radv_device, device, _device);
    RADV_FROM_HANDLE(radv_video_session, vid, videoSession);
    uint32_t memory_type_bits = (1u << device->physical_device->memory_properties.memoryTypeCount) - 1;
-   uint32_t num_memory_reqs = 0;
-   int idx = 0;
 
-   if (device->physical_device->rad_info.family >= CHIP_POLARIS10)
-      num_memory_reqs++;
-
-   if (vid->stream_type == RDECODE_CODEC_H264_PERF || vid->stream_type == RDECODE_CODEC_H265)
-      num_memory_reqs++;
-
-   *pMemoryRequirementsCount = num_memory_reqs;
-
-   if (!pMemoryRequirements)
-      return VK_SUCCESS;
+   VK_OUTARRAY_MAKE_TYPED(VkVideoSessionMemoryRequirementsKHR, out,
+                          pMemoryRequirements,
+                          pMemoryRequirementsCount);
 
    /* 1 buffer for session context */
    if (device->physical_device->rad_info.family >= CHIP_POLARIS10) {
-      pMemoryRequirements[idx].memoryBindIndex = RADV_BIND_SESSION_CTX;
-      pMemoryRequirements[idx].memoryRequirements.size = RDECODE_SESSION_CONTEXT_SIZE;
-      pMemoryRequirements[idx].memoryRequirements.alignment = 0;
-      pMemoryRequirements[idx].memoryRequirements.memoryTypeBits = memory_type_bits;
-      idx++;
+      vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
+         m->memoryBindIndex = RADV_BIND_SESSION_CTX;
+         m->memoryRequirements.size = RDECODE_SESSION_CONTEXT_SIZE;
+         m->memoryRequirements.alignment = 0;
+         m->memoryRequirements.memoryTypeBits = memory_type_bits;
+      }
    }
 
    if (vid->stream_type == RDECODE_CODEC_H264_PERF &&
        device->physical_device->rad_info.family >= CHIP_POLARIS10) {
-      pMemoryRequirements[idx].memoryBindIndex = RADV_BIND_DECODER_CTX;
-      pMemoryRequirements[idx].memoryRequirements.size = align(calc_ctx_size_h264_perf(vid), 4096);
-      pMemoryRequirements[idx].memoryRequirements.alignment = 0;
-      pMemoryRequirements[idx].memoryRequirements.memoryTypeBits = memory_type_bits;
+      vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
+         m->memoryBindIndex = RADV_BIND_DECODER_CTX;
+         m->memoryRequirements.size = align(calc_ctx_size_h264_perf(vid), 4096);
+         m->memoryRequirements.alignment = 0;
+         m->memoryRequirements.memoryTypeBits = memory_type_bits;
+      }
    }
    if (vid->stream_type == RDECODE_CODEC_H265) {
       uint32_t ctx_size;
@@ -561,12 +579,14 @@ radv_GetVideoSessionMemoryRequirementsKHR(VkDevice _device,
          ctx_size = calc_ctx_size_h265_main10(vid);
       else
          ctx_size = calc_ctx_size_h265_main(vid);
-      pMemoryRequirements[idx].memoryBindIndex = RADV_BIND_DECODER_CTX;
-      pMemoryRequirements[idx].memoryRequirements.size = align(ctx_size, 4096);
-      pMemoryRequirements[idx].memoryRequirements.alignment = 0;
-      pMemoryRequirements[idx].memoryRequirements.memoryTypeBits = memory_type_bits;
+      vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
+         m->memoryBindIndex = RADV_BIND_DECODER_CTX;
+         m->memoryRequirements.size = align(ctx_size, 4096);
+         m->memoryRequirements.alignment = 0;
+         m->memoryRequirements.memoryTypeBits = memory_type_bits;
+      }
    }
-   return VK_SUCCESS;
+   return vk_outarray_status(&out);
 }
 
 VkResult
@@ -866,6 +886,34 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radv_video_session *vid,
    return result;
 }
 
+static void update_h265_scaling(void *it_ptr,
+                                const StdVideoH265ScalingLists *scaling_lists)
+{
+   uint8_t ScalingList4x4[STD_VIDEO_H265_SCALING_LIST_4X4_NUM_LISTS][STD_VIDEO_H265_SCALING_LIST_4X4_NUM_ELEMENTS] = { 0 };
+   uint8_t ScalingList8x8[STD_VIDEO_H265_SCALING_LIST_8X8_NUM_LISTS][STD_VIDEO_H265_SCALING_LIST_8X8_NUM_ELEMENTS] = { 0 };
+   uint8_t ScalingList16x16[STD_VIDEO_H265_SCALING_LIST_16X16_NUM_LISTS][STD_VIDEO_H265_SCALING_LIST_16X16_NUM_ELEMENTS] = { 0 };
+   uint8_t ScalingList32x32[STD_VIDEO_H265_SCALING_LIST_32X32_NUM_LISTS][STD_VIDEO_H265_SCALING_LIST_32X32_NUM_ELEMENTS] = { 0 };
+   int i, j;
+
+   if (scaling_lists) {
+      for (i = 0; i < STD_VIDEO_H265_SCALING_LIST_4X4_NUM_LISTS; i++)  {
+         for (j = 0; j < STD_VIDEO_H265_SCALING_LIST_4X4_NUM_ELEMENTS; j++)
+            ScalingList4x4[i][j] = scaling_lists->ScalingList4x4[i][vl_zscan_h265_up_right_diagonal_16[j]];
+         for (j = 0; j < STD_VIDEO_H265_SCALING_LIST_8X8_NUM_ELEMENTS; j++) {
+            ScalingList8x8[i][j] = scaling_lists->ScalingList8x8[i][vl_zscan_h265_up_right_diagonal[j]];
+            ScalingList16x16[i][j] = scaling_lists->ScalingList16x16[i][vl_zscan_h265_up_right_diagonal[j]];
+            if (i < STD_VIDEO_H265_SCALING_LIST_32X32_NUM_LISTS)
+               ScalingList32x32[i][j] = scaling_lists->ScalingList32x32[i][vl_zscan_h265_up_right_diagonal[j]];
+         }
+      }
+   }
+
+   memcpy(it_ptr, ScalingList4x4, STD_VIDEO_H265_SCALING_LIST_4X4_NUM_LISTS * STD_VIDEO_H265_SCALING_LIST_4X4_NUM_ELEMENTS);
+   memcpy((char *)it_ptr + 96, ScalingList8x8, STD_VIDEO_H265_SCALING_LIST_8X8_NUM_LISTS * STD_VIDEO_H265_SCALING_LIST_8X8_NUM_ELEMENTS);
+   memcpy((char *)it_ptr + 480, ScalingList16x16, STD_VIDEO_H265_SCALING_LIST_16X16_NUM_LISTS * STD_VIDEO_H265_SCALING_LIST_16X16_NUM_ELEMENTS);
+   memcpy((char *)it_ptr + 864, ScalingList32x32, STD_VIDEO_H265_SCALING_LIST_32X32_NUM_LISTS * STD_VIDEO_H265_SCALING_LIST_32X32_NUM_ELEMENTS);
+}
+
 static rvcn_dec_message_hevc_t get_h265_msg(struct radv_device *device,
                                             struct radv_video_session *vid,
                                             struct radv_video_session_params *params,
@@ -894,6 +942,11 @@ static rvcn_dec_message_hevc_t get_h265_msg(struct radv_device *device,
 
    if (device->physical_device->rad_info.family == CHIP_CARRIZO)
       result.sps_info_flags |= 1 << 9;
+
+   if (!h265_pic_info->pStdPictureInfo->flags.short_term_ref_pic_set_sps_flag) {
+      result.sps_info_flags |= 1 << 11;
+   }
+   result.st_rps_bits = h265_pic_info->pStdPictureInfo->NumBitsForSTRefPicSetInSlice;
 
    result.chroma_format = sps->chroma_format_idc;
    result.bit_depth_luma_minus8 = sps->bit_depth_luma_minus8;
@@ -963,37 +1016,45 @@ static rvcn_dec_message_hevc_t get_h265_msg(struct radv_device *device,
    result.num_delta_pocs_ref_rps_idx = h265_pic_info->pStdPictureInfo->NumDeltaPocsOfRefRpsIdx;
    result.curr_poc = h265_pic_info->pStdPictureInfo->PicOrderCntVal;
 
+   uint8_t idxs[16];
    memset(result.poc_list, 0, 16 * sizeof(int));
    memset(result.ref_pic_list, 0x7f, 16);
+   memset(idxs, 0xff, 16);
    for (i = 0; i < frame_info->referenceSlotCount; i++) {
       const struct VkVideoDecodeH265DpbSlotInfoKHR *dpb_slot =
          vk_find_struct_const(frame_info->pReferenceSlots[i].pNext, VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR);
       int idx = frame_info->pReferenceSlots[i].slotIndex;
-      result.poc_list[idx] = dpb_slot->pStdReferenceInfo->PicOrderCntVal;
-      result.ref_pic_list[idx] = idx;
+      result.poc_list[i] = dpb_slot->pStdReferenceInfo->PicOrderCntVal;
+      result.ref_pic_list[i] = idx;
+      idxs[idx] = i;
    }
    result.curr_idx = frame_info->pSetupReferenceSlot->slotIndex;
 
+#define IDXS(x) ((x) == 0xff ? 0xff : idxs[(x)])
    for (i = 0; i < 8; ++i)
-      result.ref_pic_set_st_curr_before[i] = h265_pic_info->pStdPictureInfo->RefPicSetStCurrBefore[i];
-
-   for (i = 0; i < 8; ++i)
-      result.ref_pic_set_st_curr_after[i] = h265_pic_info->pStdPictureInfo->RefPicSetStCurrAfter[i];
+      result.ref_pic_set_st_curr_before[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetStCurrBefore[i]);
 
    for (i = 0; i < 8; ++i)
-      result.ref_pic_set_lt_curr[i] = h265_pic_info->pStdPictureInfo->RefPicSetLtCurr[i];
+      result.ref_pic_set_st_curr_after[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetStCurrAfter[i]);
 
-   if (sps->flags.sps_scaling_list_data_present_flag) {
-      for (i = 0; i < 6; ++i)
-         result.ucScalingListDCCoefSizeID2[i] = sps->pScalingLists->ScalingListDCCoef16x16[i];
+   for (i = 0; i < 8; ++i)
+      result.ref_pic_set_lt_curr[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetLtCurr[i]);
 
-      for (i = 0; i < 2; ++i)
-         result.ucScalingListDCCoefSizeID3[i] = sps->pScalingLists->ScalingListDCCoef32x32[i];
 
-      memcpy(it_ptr, sps->pScalingLists->ScalingList4x4, 6 * 16);
-      memcpy((char *)it_ptr + 96, sps->pScalingLists->ScalingList8x8, 6 * 64);
-      memcpy((char *)it_ptr + 480, sps->pScalingLists->ScalingList16x16, 6 * 64);
-      memcpy((char *)it_ptr + 864, sps->pScalingLists->ScalingList32x32, 2 * 64);
+   const StdVideoH265ScalingLists *scaling_lists = NULL;
+   if (sps->flags.sps_scaling_list_data_present_flag)
+      scaling_lists = sps->pScalingLists;
+   else if (pps->flags.pps_scaling_list_data_present_flag)
+      scaling_lists = pps->pScalingLists;
+
+   update_h265_scaling(it_ptr, scaling_lists);
+
+   if (scaling_lists) {
+      for (i = 0; i < STD_VIDEO_H265_SCALING_LIST_16X16_NUM_LISTS; ++i)
+         result.ucScalingListDCCoefSizeID2[i] = scaling_lists->ScalingListDCCoef16x16[i];
+
+      for (i = 0; i < STD_VIDEO_H265_SCALING_LIST_32X32_NUM_LISTS; ++i)
+         result.ucScalingListDCCoefSizeID3[i] = scaling_lists->ScalingListDCCoef32x32[i];
    }
 
    for (i = 0; i < 2; i++) {
@@ -1141,7 +1202,6 @@ static bool rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer,
    }
 
    *slice_offset = 0;
-   bool tier_2_use_slot = false;
    switch (vid->vk.op) {
    case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR: {
       rvcn_dec_message_avc_t avc = get_h264_msg(vid, params, frame_info, slice_offset, &decode->width_in_samples, &decode->height_in_samples, it_ptr);
@@ -1153,7 +1213,6 @@ static bool rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer,
       rvcn_dec_message_hevc_t hevc = get_h265_msg(device, vid, params, frame_info, it_ptr);
       memcpy(codec, (void *)&hevc, sizeof(rvcn_dec_message_hevc_t));
       index_codec->message_id = RDECODE_MESSAGE_HEVC;
-      tier_2_use_slot = true;
       break;
    }
    default:
@@ -1169,13 +1228,12 @@ static bool rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer,
    for (int i = 0; i < frame_info->referenceSlotCount; i++) {
       struct radv_image_view *f_dpb_iv = radv_image_view_from_handle(frame_info->pReferenceSlots[i].pPictureResource->imageViewBinding);
       struct radv_image *dpb_img = f_dpb_iv->image;
-      int idx = tier_2_use_slot ? frame_info->pReferenceSlots[i].slotIndex : i;
 
       radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, dpb_img->bindings[0].bo);
       addr = radv_buffer_get_va(dpb_img->bindings[0].bo) + dpb_img->bindings[0].offset;
 
-      dynamic_dpb_t2->dpbAddrLo[idx] = addr;
-      dynamic_dpb_t2->dpbAddrHi[idx] = addr >> 32;
+      dynamic_dpb_t2->dpbAddrLo[i] = addr;
+      dynamic_dpb_t2->dpbAddrHi[i] = addr >> 32;
       ++dynamic_dpb_t2->dpbArraySize;
    }
 
@@ -1416,37 +1474,43 @@ static struct ruvd_h265 get_uvd_h265_msg(struct radv_device *device,
    result.num_delta_pocs_ref_rps_idx = h265_pic_info->pStdPictureInfo->NumDeltaPocsOfRefRpsIdx;
    result.curr_poc = h265_pic_info->pStdPictureInfo->PicOrderCntVal;
 
+   uint8_t idxs[16];
    memset(result.poc_list, 0, 16 * sizeof(int));
    memset(result.ref_pic_list, 0x7f, 16);
+   memset(idxs, 0xff, 16);
    for (i = 0; i < frame_info->referenceSlotCount; i++) {
       const struct VkVideoDecodeH265DpbSlotInfoKHR *dpb_slot =
          vk_find_struct_const(frame_info->pReferenceSlots[i].pNext, VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR);
       int idx = frame_info->pReferenceSlots[i].slotIndex;
-      result.poc_list[idx] = dpb_slot->pStdReferenceInfo->PicOrderCntVal;
-      result.ref_pic_list[idx] = idx;
+      result.poc_list[i] = dpb_slot->pStdReferenceInfo->PicOrderCntVal;
+      result.ref_pic_list[i] = idx;
+      idxs[idx] = i;
    }
    result.curr_idx = frame_info->pSetupReferenceSlot->slotIndex;
 
+#define IDXS(x) ((x) == 0xff ? 0xff : idxs[(x)])
    for (i = 0; i < 8; ++i)
-      result.ref_pic_set_st_curr_before[i] = h265_pic_info->pStdPictureInfo->RefPicSetStCurrBefore[i];
-
-   for (i = 0; i < 8; ++i)
-      result.ref_pic_set_st_curr_after[i] = h265_pic_info->pStdPictureInfo->RefPicSetStCurrAfter[i];
+      result.ref_pic_set_st_curr_before[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetStCurrBefore[i]);
 
    for (i = 0; i < 8; ++i)
-      result.ref_pic_set_lt_curr[i] = h265_pic_info->pStdPictureInfo->RefPicSetLtCurr[i];
+      result.ref_pic_set_st_curr_after[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetStCurrAfter[i]);
 
-   if (sps->flags.sps_scaling_list_data_present_flag) {
-      for (i = 0; i < 6; ++i)
-         result.ucScalingListDCCoefSizeID2[i] = sps->pScalingLists->ScalingListDCCoef16x16[i];
+   for (i = 0; i < 8; ++i)
+      result.ref_pic_set_lt_curr[i] = IDXS(h265_pic_info->pStdPictureInfo->RefPicSetLtCurr[i]);
 
-      for (i = 0; i < 2; ++i)
-         result.ucScalingListDCCoefSizeID3[i] = sps->pScalingLists->ScalingListDCCoef32x32[i];
+   const StdVideoH265ScalingLists *scaling_lists = NULL;
+   if (sps->flags.sps_scaling_list_data_present_flag)
+      scaling_lists = sps->pScalingLists;
+   else if (pps->flags.pps_scaling_list_data_present_flag)
+      scaling_lists = pps->pScalingLists;
 
-      memcpy(it_ptr, sps->pScalingLists->ScalingList4x4, 6 * 16);
-      memcpy((char *)it_ptr + 96, sps->pScalingLists->ScalingList8x8, 6 * 64);
-      memcpy((char *)it_ptr + 480, sps->pScalingLists->ScalingList16x16, 6 * 64);
-      memcpy((char *)it_ptr + 864, sps->pScalingLists->ScalingList32x32, 2 * 64);
+   update_h265_scaling(it_ptr, scaling_lists);
+   if (scaling_lists) {
+      for (i = 0; i < STD_VIDEO_H265_SCALING_LIST_16X16_NUM_LISTS; ++i)
+         result.ucScalingListDCCoefSizeID2[i] = scaling_lists->ScalingListDCCoef16x16[i];
+
+      for (i = 0; i < STD_VIDEO_H265_SCALING_LIST_32X32_NUM_LISTS; ++i)
+         result.ucScalingListDCCoefSizeID3[i] = scaling_lists->ScalingListDCCoef32x32[i];
    }
 
    for (i = 0; i < 2; i++) {

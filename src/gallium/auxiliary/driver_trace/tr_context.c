@@ -1797,7 +1797,7 @@ trace_context_transfer_unmap(struct pipe_context *_context,
       unsigned usage = transfer->usage;
       const struct pipe_box *box = &transfer->box;
       unsigned stride = transfer->stride;
-      unsigned layer_stride = transfer->layer_stride;
+      uintptr_t layer_stride = transfer->layer_stride;
 
       if (resource->target == PIPE_BUFFER) {
          unsigned offset = box->x;
@@ -1896,7 +1896,7 @@ trace_context_texture_subdata(struct pipe_context *_context,
                               const struct pipe_box *box,
                               const void *data,
                               unsigned stride,
-                              unsigned layer_stride)
+                              uintptr_t layer_stride)
 {
    struct trace_context *tr_context = trace_context(_context);
    struct pipe_context *context = tr_context->pipe;

@@ -226,7 +226,7 @@ vc4_texture_subdata(struct pipe_context *pctx,
                     const struct pipe_box *box,
                     const void *data,
                     unsigned stride,
-                    unsigned layer_stride)
+                    uintptr_t layer_stride)
 {
         struct vc4_resource *rsc = vc4_resource(prsc);
         struct vc4_resource_slice *slice = &rsc->slices[level];

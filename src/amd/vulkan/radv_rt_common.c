@@ -35,11 +35,6 @@ static nir_ssa_def *build_node_to_addr(struct radv_device *device, nir_builder *
 bool
 radv_enable_rt(const struct radv_physical_device *pdevice, bool rt_pipelines)
 {
-#ifdef LLVM_AVAILABLE
-   if (pdevice->use_llvm && LLVM_VERSION_MAJOR < 14)
-      return false;
-#endif
-
    if (pdevice->rad_info.gfx_level < GFX10_3 && !radv_emulate_rt(pdevice))
       return false;
 

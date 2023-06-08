@@ -2086,14 +2086,12 @@ emit_tex( struct lp_build_tgsi_soa_context *bld,
    LLVMValueRef coords[5];
    LLVMValueRef offsets[3] = { NULL };
    struct lp_derivatives derivs;
-   struct lp_sampler_params params;
+   struct lp_sampler_params params = { 0 };
    enum lp_sampler_lod_property lod_property = LP_SAMPLER_LOD_SCALAR;
    unsigned num_derivs, num_offsets, i;
    unsigned shadow_coord = 0;
    unsigned layer_coord = 0;
    unsigned sample_key = sampler_op << LP_SAMPLER_OP_TYPE_SHIFT;
-
-   memset(&params, 0, sizeof(params));
 
    if (!bld->sampler) {
       _debug_printf("warning: found texture instruction but no sampler generator supplied\n");
@@ -2301,14 +2299,12 @@ emit_sample(struct lp_build_tgsi_soa_context *bld,
    LLVMValueRef coords[5];
    LLVMValueRef offsets[3] = { NULL };
    struct lp_derivatives derivs;
-   struct lp_sampler_params params;
+   struct lp_sampler_params params = { 0 };
    enum lp_sampler_lod_property lod_property = LP_SAMPLER_LOD_SCALAR;
 
    unsigned num_offsets, num_derivs, i;
    unsigned layer_coord = 0;
    unsigned sample_key = sample_type << LP_SAMPLER_OP_TYPE_SHIFT;
-
-   memset(&params, 0, sizeof(params));
 
    if (!bld->sampler) {
       _debug_printf("warning: found texture instruction but no sampler generator supplied\n");
@@ -2483,13 +2479,11 @@ emit_fetch_texels( struct lp_build_tgsi_soa_context *bld,
    LLVMValueRef coords[5];
    LLVMValueRef offsets[3] = { NULL };
    LLVMValueRef ms_index = NULL;
-   struct lp_sampler_params params;
+   struct lp_sampler_params params = { 0 };
    enum lp_sampler_lod_property lod_property = LP_SAMPLER_LOD_SCALAR;
    unsigned dims, i;
    unsigned layer_coord = 0;
    unsigned sample_key = LP_SAMPLER_OP_FETCH << LP_SAMPLER_OP_TYPE_SHIFT;
-
-   memset(&params, 0, sizeof(params));
 
    if (!bld->sampler) {
       _debug_printf("warning: found texture instruction but no sampler generator supplied\n");
@@ -2627,7 +2621,7 @@ emit_size_query( struct lp_build_tgsi_soa_context *bld,
    unsigned unit = inst->Src[1].Register.Index;
    enum tgsi_texture_type target;
    enum pipe_texture_target pipe_target;
-   struct lp_sampler_size_query_params params;
+   struct lp_sampler_size_query_params params = { 0 };
 
    if (is_sviewinfo) {
       target = bld->sv[unit].Resource;
@@ -3439,7 +3433,7 @@ img_load_emit(
    struct lp_build_emit_data * emit_data)
 {
    struct lp_build_tgsi_soa_context *bld = lp_soa_context(bld_base);
-   struct lp_img_params params;
+   struct lp_img_params params = { 0 };
    LLVMValueRef coords[5];
    LLVMValueRef coord_undef = LLVMGetUndef(bld->bld_base.base.int_vec_type);
    unsigned dims;
@@ -3456,8 +3450,6 @@ img_load_emit(
    }
    if (layer_coord)
       coords[2] = lp_build_emit_fetch(&bld->bld_base, emit_data->inst, 1, layer_coord);
-
-   memset(&params, 0, sizeof(params));
 
    params.type = bld->bld_base.base.type;
    params.resources_type = bld->resources_type;
@@ -3591,7 +3583,7 @@ img_store_emit(
    struct lp_build_emit_data * emit_data)
 {
    struct lp_build_tgsi_soa_context *bld = lp_soa_context(bld_base);
-   struct lp_img_params params;
+   struct lp_img_params params = { 0 };
    LLVMValueRef coords[5];
    LLVMValueRef coord_undef = LLVMGetUndef(bld->bld_base.base.int_vec_type);
    unsigned dims;
@@ -3607,7 +3599,6 @@ img_store_emit(
    }
    if (layer_coord)
       coords[2] = lp_build_emit_fetch(&bld->bld_base, emit_data->inst, 0, layer_coord);
-   memset(&params, 0, sizeof(params));
 
    params.type = bld->bld_base.base.type;
    params.resources_type = bld->resources_type;
@@ -3743,7 +3734,7 @@ img_atomic_emit(
    LLVMAtomicRMWBinOp op)
 {
    struct lp_build_tgsi_soa_context *bld = lp_soa_context(bld_base);
-   struct lp_img_params params;
+   struct lp_img_params params = { 0 };
    LLVMValueRef coords[5];
    LLVMValueRef coord_undef = LLVMGetUndef(bld->bld_base.base.int_vec_type);
    unsigned dims;
@@ -3760,7 +3751,6 @@ img_atomic_emit(
    }
    if (layer_coord)
       coords[2] = lp_build_emit_fetch(&bld->bld_base, emit_data->inst, 1, layer_coord);
-   memset(&params, 0, sizeof(params));
 
    params.type = bld->bld_base.base.type;
    params.resources_type = bld->resources_type;

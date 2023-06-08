@@ -373,4 +373,11 @@ lp_nir_aos_swizzle(struct lp_build_nir_context *bld_base, unsigned chan);
 LLVMAtomicRMWBinOp
 lp_translate_atomic_op(nir_atomic_op op);
 
+uint32_t
+lp_build_nir_sample_key(gl_shader_stage stage, nir_tex_instr *instr);
+
+
+void lp_img_op_from_intrinsic(struct lp_img_params *params, nir_intrinsic_instr *instr);
+
+
 #endif

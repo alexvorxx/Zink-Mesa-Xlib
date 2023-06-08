@@ -175,7 +175,7 @@ static unsigned r600_texture_get_offset(struct r600_common_screen *rscreen,
 					struct r600_texture *rtex, unsigned level,
 					const struct pipe_box *box,
 					unsigned *stride,
-					unsigned *layer_stride)
+					uintptr_t *layer_stride)
 {
 	*stride = rtex->surface.u.legacy.level[level].nblk_x *
 		rtex->surface.bpe;

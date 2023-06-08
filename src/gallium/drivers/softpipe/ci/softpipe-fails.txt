@@ -1275,3 +1275,5 @@ spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 
 spec@nv_shader_atomic_float@execution@ssbo-atomicexchange-float,Fail
+
+spec@arb_viewport_array@display-list,Fail

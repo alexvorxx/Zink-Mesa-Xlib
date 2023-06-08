@@ -23,11 +23,6 @@ static struct si_shader_profile profiles[] =
       SI_PROFILE_VS_NO_BINNING,
    },
    {
-      /* Viewperf/Energy isn't affected by the discard bug. */
-      {0x17118671, 0xd0102e0c, 0x947f3592, 0xb2057e7b, 0x4da5d9b0},
-      SI_PROFILE_IGNORE_LLVM13_DISCARD_BUG,
-   },
-   {
       /* Viewperf/Medical */
       {0x4dce4331, 0x38f778d5, 0x1b75a717, 0x3e454fb9, 0xeb1527f0},
       SI_PROFILE_PS_NO_BINNING,

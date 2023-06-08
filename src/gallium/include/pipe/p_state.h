@@ -638,7 +638,7 @@ struct pipe_transfer
    unsigned level:8;               /**< texture mipmap level */
    struct pipe_box box;            /**< region of the resource to access */
    unsigned stride;                /**< row stride in bytes */
-   unsigned layer_stride;          /**< image/layer stride in bytes */
+   uintptr_t layer_stride;          /**< image/layer stride in bytes */
 
    /* Offset into a driver-internal staging buffer to make use of unused
     * padding in this structure.

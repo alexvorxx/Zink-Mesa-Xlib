@@ -3968,7 +3968,7 @@ genX(CmdExecuteCommands)(
       if (secondary->perf_query_pool)
          primary->perf_query_pool = secondary->perf_query_pool;
 
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
       if (secondary->state.depth_reg_mode != ANV_DEPTH_REG_MODE_UNKNOWN)
          primary->state.depth_reg_mode = secondary->state.depth_reg_mode;
 #endif
@@ -6794,7 +6794,7 @@ void
 genX(cmd_buffer_emit_gfx12_depth_wa)(struct anv_cmd_buffer *cmd_buffer,
                                      const struct isl_surf *surf)
 {
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1808121037
    const bool is_d16_1x_msaa = surf->format == ISL_FORMAT_R16_UNORM &&
                                surf->samples == 1;
 
@@ -6819,10 +6819,10 @@ genX(cmd_buffer_emit_gfx12_depth_wa)(struct anv_cmd_buffer *cmd_buffer,
                              ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
                              ANV_PIPE_DEPTH_STALL_BIT |
                              ANV_PIPE_END_OF_PIPE_SYNC_BIT,
-                             "Workaround: Stop pipeline for 14010455700");
+                             "Workaround: Stop pipeline for 1808121037");
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-   /* Wa_14010455700
+   /* Wa_1808121037
     *
     * To avoid sporadic corruptions “Set 0x7010[9] when Depth Buffer
     * Surface Format is D16_UNORM , surface type is not NULL & 1X_MSAA”.

@@ -599,7 +599,7 @@ get_copy_region_aux_settings(struct iris_context *ice,
       }
       FALLTHROUGH;
    case ISL_AUX_USAGE_CCS_E:
-   case ISL_AUX_USAGE_GFX12_CCS_E: {
+   case ISL_AUX_USAGE_FCV_CCS_E: {
       /* If our source doesn't have any unresolved color, report an aux
        * usage of ISL_AUX_USAGE_NONE.  This way, texturing won't even look
        * at the aux surface and we can save some bandwidth.
@@ -630,6 +630,10 @@ get_copy_region_aux_settings(struct iris_context *ice,
       bool is_zero = clear_color_is_fully_zero(res);
 
       if (batch->name == IRIS_BATCH_BLITTER) {
+
+         /* Compression isn't used for blitter destinations. */
+         assert(!is_dest);
+
          if (devinfo->verx10 >= 125) {
             *out_aux_usage = res->aux.usage;
             *out_clear_supported = is_zero;

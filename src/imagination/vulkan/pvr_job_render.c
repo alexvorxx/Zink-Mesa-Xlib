@@ -1496,11 +1496,6 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
 
       value.mask = true;
 
-      if (job->has_stencil_attachment &&
-          job->ds.vk_format != VK_FORMAT_D24_UNORM_S8_UINT) {
-         unreachable("Unsupported stencil format");
-      }
-
       value.stencil = job->ds_clear_value.stencil & 0xFF;
    }
    stream_ptr += pvr_cmd_length(CR_ISP_BGOBJVALS);

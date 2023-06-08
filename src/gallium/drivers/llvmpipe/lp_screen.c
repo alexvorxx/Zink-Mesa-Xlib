@@ -672,6 +672,88 @@ llvmpipe_get_compiler_options(struct pipe_screen *screen,
 }
 
 
+bool
+lp_storage_render_image_format_supported(enum pipe_format format)
+{
+   const struct util_format_description *format_desc = util_format_description(format);
+
+   if (format_desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
+      /* this is a lie actually other formats COULD exist where we would fail */
+      if (format_desc->nr_channels < 3)
+         return false;
+   } else if (format_desc->colorspace != UTIL_FORMAT_COLORSPACE_RGB) {
+      return false;
+   }
+
+   if (format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN &&
+       format != PIPE_FORMAT_R11G11B10_FLOAT)
+      return false;
+
+   assert(format_desc->block.width == 1);
+   assert(format_desc->block.height == 1);
+
+   if (format_desc->is_mixed)
+      return false;
+
+   if (!format_desc->is_array && !format_desc->is_bitmask &&
+       format != PIPE_FORMAT_R11G11B10_FLOAT)
+      return false;
+
+   return true;
+}
+
+
+bool
+lp_storage_image_format_supported(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_R32G32B32A32_FLOAT:
+   case PIPE_FORMAT_R16G16B16A16_FLOAT:
+   case PIPE_FORMAT_R32G32_FLOAT:
+   case PIPE_FORMAT_R16G16_FLOAT:
+   case PIPE_FORMAT_R11G11B10_FLOAT:
+   case PIPE_FORMAT_R32_FLOAT:
+   case PIPE_FORMAT_R16_FLOAT:
+   case PIPE_FORMAT_R32G32B32A32_UINT:
+   case PIPE_FORMAT_R16G16B16A16_UINT:
+   case PIPE_FORMAT_R10G10B10A2_UINT:
+   case PIPE_FORMAT_R8G8B8A8_UINT:
+   case PIPE_FORMAT_R32G32_UINT:
+   case PIPE_FORMAT_R16G16_UINT:
+   case PIPE_FORMAT_R8G8_UINT:
+   case PIPE_FORMAT_R32_UINT:
+   case PIPE_FORMAT_R16_UINT:
+   case PIPE_FORMAT_R8_UINT:
+   case PIPE_FORMAT_R32G32B32A32_SINT:
+   case PIPE_FORMAT_R16G16B16A16_SINT:
+   case PIPE_FORMAT_R8G8B8A8_SINT:
+   case PIPE_FORMAT_R32G32_SINT:
+   case PIPE_FORMAT_R16G16_SINT:
+   case PIPE_FORMAT_R8G8_SINT:
+   case PIPE_FORMAT_R32_SINT:
+   case PIPE_FORMAT_R16_SINT:
+   case PIPE_FORMAT_R8_SINT:
+   case PIPE_FORMAT_R16G16B16A16_UNORM:
+   case PIPE_FORMAT_R10G10B10A2_UNORM:
+   case PIPE_FORMAT_R8G8B8A8_UNORM:
+   case PIPE_FORMAT_R16G16_UNORM:
+   case PIPE_FORMAT_R8G8_UNORM:
+   case PIPE_FORMAT_R16_UNORM:
+   case PIPE_FORMAT_R8_UNORM:
+   case PIPE_FORMAT_R16G16B16A16_SNORM:
+   case PIPE_FORMAT_R8G8B8A8_SNORM:
+   case PIPE_FORMAT_R16G16_SNORM:
+   case PIPE_FORMAT_R8G8_SNORM:
+   case PIPE_FORMAT_R16_SNORM:
+   case PIPE_FORMAT_R8_SNORM:
+   case PIPE_FORMAT_B8G8R8A8_UNORM:
+      return true;
+   default:
+      return false;
+   }
+}
+
+
 /**
  * Query format support for creating a texture, drawing surface, etc.
  * \param format  the format to test
@@ -703,77 +785,13 @@ llvmpipe_is_format_supported(struct pipe_screen *_screen,
    if (sample_count != 0 && sample_count != 1 && sample_count != 4)
       return false;
 
-   if (bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SHADER_IMAGE)) {
-      if (format_desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
-         /* this is a lie actually other formats COULD exist where we would fail */
-         if (format_desc->nr_channels < 3)
-            return false;
-      } else if (format_desc->colorspace != UTIL_FORMAT_COLORSPACE_RGB) {
+   if (bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SHADER_IMAGE))
+      if (!lp_storage_render_image_format_supported(format))
          return false;
-      }
-
-      if (format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN &&
-          format != PIPE_FORMAT_R11G11B10_FLOAT)
-         return false;
-
-      assert(format_desc->block.width == 1);
-      assert(format_desc->block.height == 1);
-
-      if (format_desc->is_mixed)
-         return false;
-
-      if (!format_desc->is_array && !format_desc->is_bitmask &&
-          format != PIPE_FORMAT_R11G11B10_FLOAT)
-         return false;
-   }
 
    if (bind & PIPE_BIND_SHADER_IMAGE) {
-      switch (format) {
-         case PIPE_FORMAT_R32G32B32A32_FLOAT:
-         case PIPE_FORMAT_R16G16B16A16_FLOAT:
-         case PIPE_FORMAT_R32G32_FLOAT:
-         case PIPE_FORMAT_R16G16_FLOAT:
-         case PIPE_FORMAT_R11G11B10_FLOAT:
-         case PIPE_FORMAT_R32_FLOAT:
-         case PIPE_FORMAT_R16_FLOAT:
-         case PIPE_FORMAT_R32G32B32A32_UINT:
-         case PIPE_FORMAT_R16G16B16A16_UINT:
-         case PIPE_FORMAT_R10G10B10A2_UINT:
-         case PIPE_FORMAT_R8G8B8A8_UINT:
-         case PIPE_FORMAT_R32G32_UINT:
-         case PIPE_FORMAT_R16G16_UINT:
-         case PIPE_FORMAT_R8G8_UINT:
-         case PIPE_FORMAT_R32_UINT:
-         case PIPE_FORMAT_R16_UINT:
-         case PIPE_FORMAT_R8_UINT:
-         case PIPE_FORMAT_R32G32B32A32_SINT:
-         case PIPE_FORMAT_R16G16B16A16_SINT:
-         case PIPE_FORMAT_R8G8B8A8_SINT:
-         case PIPE_FORMAT_R32G32_SINT:
-         case PIPE_FORMAT_R16G16_SINT:
-         case PIPE_FORMAT_R8G8_SINT:
-         case PIPE_FORMAT_R32_SINT:
-         case PIPE_FORMAT_R16_SINT:
-         case PIPE_FORMAT_R8_SINT:
-         case PIPE_FORMAT_R16G16B16A16_UNORM:
-         case PIPE_FORMAT_R10G10B10A2_UNORM:
-         case PIPE_FORMAT_R8G8B8A8_UNORM:
-         case PIPE_FORMAT_R16G16_UNORM:
-         case PIPE_FORMAT_R8G8_UNORM:
-         case PIPE_FORMAT_R16_UNORM:
-         case PIPE_FORMAT_R8_UNORM:
-         case PIPE_FORMAT_R16G16B16A16_SNORM:
-         case PIPE_FORMAT_R8G8B8A8_SNORM:
-         case PIPE_FORMAT_R16G16_SNORM:
-         case PIPE_FORMAT_R8G8_SNORM:
-         case PIPE_FORMAT_R16_SNORM:
-         case PIPE_FORMAT_R8_SNORM:
-         case PIPE_FORMAT_B8G8R8A8_UNORM:
-            break;
-
-         default:
-            return false;
-      }
+      if (!lp_storage_image_format_supported(format))
+         return false;
    }
 
    if ((bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW)) &&

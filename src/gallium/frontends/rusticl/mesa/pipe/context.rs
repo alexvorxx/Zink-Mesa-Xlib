@@ -94,7 +94,7 @@ impl PipeContext {
         bx: &pipe_box,
         data: *const c_void,
         stride: u32,
-        layer_stride: u32,
+        layer_stride: usize,
     ) {
         unsafe {
             self.pipe.as_ref().texture_subdata.unwrap()(

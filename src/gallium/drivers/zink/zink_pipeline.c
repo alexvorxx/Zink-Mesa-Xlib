@@ -332,20 +332,24 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
 
    VkGraphicsPipelineCreateInfo pci = {0};
    pci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-   static bool feedback_warn = false;
    if (!optimize)
       pci.flags |= VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
-   if (state->feedback_loop) {
-      if (screen->info.have_EXT_attachment_feedback_loop_layout)
-         pci.flags |= VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
-      else
-         warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
-   }
-   if (state->feedback_loop_zs) {
-      if (screen->info.have_EXT_attachment_feedback_loop_layout)
-         pci.flags |= VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
-      else
-         warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
+      dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT;
+   } else {
+      static bool feedback_warn = false;
+      if (state->feedback_loop) {
+         if (screen->info.have_EXT_attachment_feedback_loop_layout)
+            pci.flags |= VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         else
+            warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+      }
+      if (state->feedback_loop_zs) {
+         if (screen->info.have_EXT_attachment_feedback_loop_layout)
+            pci.flags |= VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         else
+            warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+      }
    }
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
       pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
@@ -540,18 +544,22 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
    pci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
    pci.pNext = &gplci;
    pci.flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT;
-   static bool feedback_warn = false;
-   if (state->feedback_loop) {
-      if (screen->info.have_EXT_attachment_feedback_loop_layout)
-         pci.flags |= VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
-      else
-         warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
-   }
-   if (state->feedback_loop_zs) {
-      if (screen->info.have_EXT_attachment_feedback_loop_layout)
-         pci.flags |= VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
-      else
-         warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
+      dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT;
+   } else {
+      static bool feedback_warn = false;
+      if (state->feedback_loop) {
+         if (screen->info.have_EXT_attachment_feedback_loop_layout)
+            pci.flags |= VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         else
+            warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+      }
+      if (state->feedback_loop_zs) {
+         if (screen->info.have_EXT_attachment_feedback_loop_layout)
+            pci.flags |= VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         else
+            warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
+      }
    }
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
       pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;

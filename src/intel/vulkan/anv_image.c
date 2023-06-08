@@ -351,7 +351,7 @@ can_fast_clear_with_non_zero_color(const struct intel_device_info *devinfo,
     *     - Texture view rendering (including blorp_copy calls)
     *     - Images with multiple levels or array layers
     */
-   if (image->planes[plane].aux_usage == ISL_AUX_USAGE_GFX12_CCS_E)
+   if (image->planes[plane].aux_usage == ISL_AUX_USAGE_FCV_CCS_E)
       return false;
 
    /* Non mutable image, we can fast clear with any color supported by HW.
@@ -758,7 +758,7 @@ add_aux_surface_if_supported(struct anv_device *device,
                                        image->vk.usage, fmt_list)) {
          image->planes[plane].aux_usage =
             intel_needs_workaround(device->info, 1607794140) ?
-               ISL_AUX_USAGE_GFX12_CCS_E :
+               ISL_AUX_USAGE_FCV_CCS_E :
                ISL_AUX_USAGE_CCS_E;
       } else if (device->info->ver >= 12) {
          anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
@@ -1925,7 +1925,7 @@ VkResult anv_BindImageMemory2(
             image->planes[p].aux_usage = ISL_AUX_USAGE_HIZ;
          } else {
             assert(image->planes[p].aux_usage == ISL_AUX_USAGE_CCS_E ||
-                   image->planes[p].aux_usage == ISL_AUX_USAGE_GFX12_CCS_E ||
+                   image->planes[p].aux_usage == ISL_AUX_USAGE_FCV_CCS_E ||
                    image->planes[p].aux_usage == ISL_AUX_USAGE_STC_CCS);
             image->planes[p].aux_usage = ISL_AUX_USAGE_NONE;
          }
@@ -2167,7 +2167,7 @@ anv_layout_to_aux_state(const struct intel_device_info * const devinfo,
          break;
 
       case ISL_AUX_USAGE_CCS_E:
-      case ISL_AUX_USAGE_GFX12_CCS_E:
+      case ISL_AUX_USAGE_FCV_CCS_E:
       case ISL_AUX_USAGE_STC_CCS:
          break;
 
@@ -2201,7 +2201,7 @@ anv_layout_to_aux_state(const struct intel_device_info * const devinfo,
       }
 
    case ISL_AUX_USAGE_CCS_E:
-   case ISL_AUX_USAGE_GFX12_CCS_E:
+   case ISL_AUX_USAGE_FCV_CCS_E:
       if (aux_supported) {
          assert(clear_supported);
          return ISL_AUX_STATE_COMPRESSED_CLEAR;
@@ -2356,7 +2356,7 @@ anv_layout_to_fast_clear_type(const struct intel_device_info * const devinfo,
          return ANV_FAST_CLEAR_DEFAULT_VALUE;
       } else if (image->planes[plane].aux_usage == ISL_AUX_USAGE_MCS ||
                  image->planes[plane].aux_usage == ISL_AUX_USAGE_CCS_E ||
-                 image->planes[plane].aux_usage == ISL_AUX_USAGE_GFX12_CCS_E) {
+                 image->planes[plane].aux_usage == ISL_AUX_USAGE_FCV_CCS_E) {
          if (devinfo->ver >= 11) {
             /* The image might not support non zero fast clears when mutable. */
             if (!image->planes[plane].can_non_zero_fast_clear)

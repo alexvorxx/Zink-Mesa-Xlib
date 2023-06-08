@@ -433,10 +433,20 @@ void radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_c
                                 struct radv_shader_part_binary *ps_epilog_binary,
                                 const unsigned char *sha1);
 
+struct radv_ray_tracing_pipeline;
+bool radv_ray_tracing_pipeline_cache_search(struct radv_device *device,
+                                            struct vk_pipeline_cache *cache,
+                                            struct radv_ray_tracing_pipeline *pipeline,
+                                            const VkRayTracingPipelineCreateInfoKHR *create_info);
+
+void radv_ray_tracing_pipeline_cache_insert(struct radv_device *device,
+                                            struct vk_pipeline_cache *cache,
+                                            struct radv_ray_tracing_pipeline *pipeline,
+                                            unsigned num_stages, const unsigned char *sha1);
+
 struct vk_pipeline_cache_object *radv_pipeline_cache_search_nir(struct radv_device *device,
                                                                 struct vk_pipeline_cache *cache,
-                                                                const unsigned char *sha1,
-                                                                bool *found_in_application_cache);
+                                                                const unsigned char *sha1);
 
 struct vk_pipeline_cache_object *
 radv_pipeline_cache_nir_to_handle(struct radv_device *device, struct vk_pipeline_cache *cache,
@@ -2144,6 +2154,7 @@ struct radv_event {
 #define RADV_HASH_SHADER_NGG_STREAMOUT         (1 << 20)
 
 struct radv_pipeline_key;
+struct radv_ray_tracing_group;
 
 void radv_pipeline_stage_init(const VkPipelineShaderStageCreateInfo *sinfo,
                               struct radv_pipeline_stage *out_stage, gl_shader_stage stage);
@@ -2197,6 +2208,8 @@ enum radv_pipeline_type {
 };
 
 struct radv_pipeline_group_handle {
+   uint64_t recursive_shader_ptr;
+
    union {
       uint32_t general_index;
       uint32_t closest_hit_index;
@@ -2333,6 +2346,13 @@ struct radv_ray_tracing_stage {
 
    uint8_t sha1[SHA1_DIGEST_LENGTH];
 };
+
+static inline bool
+radv_ray_tracing_stage_is_compiled(struct radv_ray_tracing_stage *stage)
+{
+   return stage->stage == MESA_SHADER_RAYGEN || stage->stage == MESA_SHADER_CALLABLE ||
+          stage->stage == MESA_SHADER_CLOSEST_HIT || stage->stage == MESA_SHADER_MISS;
+}
 
 struct radv_ray_tracing_pipeline {
    struct radv_compute_pipeline base;

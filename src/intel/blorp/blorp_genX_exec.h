@@ -2401,7 +2401,7 @@ xy_aux_mode(const struct brw_blorp_surface_info *info)
 {
    switch (info->aux_usage) {
    case ISL_AUX_USAGE_CCS_E:
-   case ISL_AUX_USAGE_GFX12_CCS_E:
+   case ISL_AUX_USAGE_FCV_CCS_E:
       return XY_CCS_E;
    case ISL_AUX_USAGE_NONE:
       return XY_NONE;

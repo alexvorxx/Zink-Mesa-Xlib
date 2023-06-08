@@ -39,6 +39,8 @@
 #include "gallivm/lp_bld_debug.h"
 #include "gallivm/lp_bld_format.h"
 #include "lp_context.h"
+#include "lp_debug.h"
+#include "lp_memory.h"
 #include "lp_screen.h"
 #include "lp_jit.h"
 
@@ -301,4 +303,225 @@ lp_jit_init_cs_types(struct lp_compute_shader_variant *lp)
 {
    if (!lp->jit_cs_context_ptr_type)
       lp_jit_create_cs_types(lp);
+}
+
+void
+lp_jit_buffer_from_pipe(struct lp_jit_buffer *jit, const struct pipe_shader_buffer *buffer)
+{
+   const ubyte *current_data = NULL;
+
+   /* resource buffer */
+   if (buffer->buffer)
+      current_data = (ubyte *)llvmpipe_resource_data(buffer->buffer);
+
+   if (current_data) {
+      current_data += buffer->buffer_offset;
+      jit->u = (const uint32_t *)current_data;
+      jit->num_elements = buffer->buffer_size;
+   } else {
+      jit->u = NULL;
+      jit->num_elements = 0;
+   }
+}
+
+void
+lp_jit_buffer_from_pipe_const(struct lp_jit_buffer *jit, const struct pipe_constant_buffer *buffer, struct pipe_screen *screen)
+{
+   uint64_t current_size = buffer->buffer_size;
+
+   const ubyte *current_data = NULL;
+   if (buffer->buffer) {
+      /* resource buffer */
+      current_data = (ubyte *)llvmpipe_resource_data(buffer->buffer);
+   } else if (buffer->user_buffer) {
+      /* user-space buffer */
+      current_data = (ubyte *)buffer->user_buffer;
+   }
+
+   if (current_data && current_size >= sizeof(float)) {
+      current_data += buffer->buffer_offset;
+      jit->f = (const float *)current_data;
+      jit->num_elements = DIV_ROUND_UP(current_size, lp_get_constant_buffer_stride(screen));
+   } else {
+      static const float fake_const_buf[4];
+      jit->f = fake_const_buf;
+      jit->num_elements = 0;
+   }
+}
+
+void
+lp_jit_texture_from_pipe(struct lp_jit_texture *jit, const struct pipe_sampler_view *view)
+{
+   struct pipe_resource *res = view->texture;
+   struct llvmpipe_resource *lp_tex = llvmpipe_resource(res);
+
+   if (!lp_tex->dt) {
+      /* regular texture - setup array of mipmap level offsets */
+      unsigned first_level = 0;
+      unsigned last_level = 0;
+
+      if (llvmpipe_resource_is_texture(res)) {
+         first_level = view->u.tex.first_level;
+         last_level = view->u.tex.last_level;
+         assert(first_level <= last_level);
+         assert(last_level <= res->last_level);
+         jit->base = lp_tex->tex_data;
+      } else {
+         jit->base = lp_tex->data;
+      }
+
+      if (LP_PERF & PERF_TEX_MEM) {
+         /* use dummy tile memory */
+         jit->base = lp_dummy_tile;
+         jit->width = TILE_SIZE/8;
+         jit->height = TILE_SIZE/8;
+         jit->depth = 1;
+         jit->first_level = 0;
+         jit->last_level = 0;
+         jit->mip_offsets[0] = 0;
+         jit->row_stride[0] = 0;
+         jit->img_stride[0] = 0;
+         jit->num_samples = 0;
+         jit->sample_stride = 0;
+      } else {
+         jit->width = res->width0;
+         jit->height = res->height0;
+         jit->depth = res->depth0;
+         jit->first_level = first_level;
+         jit->last_level = last_level;
+         jit->num_samples = res->nr_samples;
+         jit->sample_stride = 0;
+
+         if (llvmpipe_resource_is_texture(res)) {
+            for (unsigned j = first_level; j <= last_level; j++) {
+               jit->mip_offsets[j] = lp_tex->mip_offsets[j];
+               jit->row_stride[j] = lp_tex->row_stride[j];
+               jit->img_stride[j] = lp_tex->img_stride[j];
+            }
+
+            jit->sample_stride = lp_tex->sample_stride;
+
+            if (res->target == PIPE_TEXTURE_1D_ARRAY ||
+                res->target == PIPE_TEXTURE_2D_ARRAY ||
+                res->target == PIPE_TEXTURE_CUBE ||
+                res->target == PIPE_TEXTURE_CUBE_ARRAY ||
+                (res->target == PIPE_TEXTURE_3D && view->target == PIPE_TEXTURE_2D)) {
+               /*
+                * For array textures, we don't have first_layer, instead
+                * adjust last_layer (stored as depth) plus the mip level
+                * offsets (as we have mip-first layout can't just adjust
+                * base ptr).  XXX For mip levels, could do something
+                * similar.
+                */
+               jit->depth = view->u.tex.last_layer - view->u.tex.first_layer + 1;
+               for (unsigned j = first_level; j <= last_level; j++) {
+                  jit->mip_offsets[j] += view->u.tex.first_layer *
+                                             lp_tex->img_stride[j];
+               }
+               if (view->target == PIPE_TEXTURE_CUBE ||
+                   view->target == PIPE_TEXTURE_CUBE_ARRAY) {
+                  assert(jit->depth % 6 == 0);
+               }
+               assert(view->u.tex.first_layer <= view->u.tex.last_layer);
+               if (res->target == PIPE_TEXTURE_3D)
+                  assert(view->u.tex.last_layer < res->depth0);
+               else
+                  assert(view->u.tex.last_layer < res->array_size);
+            }
+         } else {
+            /*
+             * For buffers, we don't have "offset", instead adjust
+             * the size (stored as width) plus the base pointer.
+             */
+            const unsigned view_blocksize =
+               util_format_get_blocksize(view->format);
+            /* probably don't really need to fill that out */
+            jit->mip_offsets[0] = 0;
+            jit->row_stride[0] = 0;
+            jit->img_stride[0] = 0;
+
+            /* everything specified in number of elements here. */
+            jit->width = view->u.buf.size / view_blocksize;
+            jit->base = (uint8_t *)jit->base + view->u.buf.offset;
+            /* XXX Unsure if we need to sanitize parameters? */
+            assert(view->u.buf.offset + view->u.buf.size <= res->width0);
+         }
+      }
+   } else {
+      /* display target texture/surface */
+      jit->base = llvmpipe_resource_map(res, 0, 0, LP_TEX_USAGE_READ);
+      jit->row_stride[0] = lp_tex->row_stride[0];
+      jit->img_stride[0] = lp_tex->img_stride[0];
+      jit->mip_offsets[0] = 0;
+      jit->width = res->width0;
+      jit->height = res->height0;
+      jit->depth = res->depth0;
+      jit->first_level = jit->last_level = 0;
+      jit->num_samples = res->nr_samples;
+      jit->sample_stride = 0;
+      assert(jit->base);
+   }
+}
+
+void
+lp_jit_sampler_from_pipe(struct lp_jit_sampler *jit, const struct pipe_sampler_state *sampler)
+{
+   jit->min_lod = sampler->min_lod;
+   jit->max_lod = sampler->max_lod;
+   jit->lod_bias = sampler->lod_bias;
+   jit->max_aniso = sampler->max_anisotropy;
+   COPY_4V(jit->border_color, sampler->border_color.f);
+}
+
+void
+lp_jit_image_from_pipe(struct lp_jit_image *jit, const struct pipe_image_view *view)
+{
+   struct pipe_resource *res = view->resource;
+   struct llvmpipe_resource *lp_res = llvmpipe_resource(res);
+
+   if (!lp_res->dt) {
+      /* regular texture - setup array of mipmap level offsets */
+      if (llvmpipe_resource_is_texture(res)) {
+         jit->base = lp_res->tex_data;
+      } else {
+         jit->base = lp_res->data;
+      }
+
+      jit->width = res->width0;
+      jit->height = res->height0;
+      jit->depth = res->depth0;
+      jit->num_samples = res->nr_samples;
+
+      if (llvmpipe_resource_is_texture(res)) {
+         uint32_t mip_offset = lp_res->mip_offsets[view->u.tex.level];
+
+         jit->width = u_minify(jit->width, view->u.tex.level);
+         jit->height = u_minify(jit->height, view->u.tex.level);
+
+         if (res->target == PIPE_TEXTURE_1D_ARRAY ||
+             res->target == PIPE_TEXTURE_2D_ARRAY ||
+             res->target == PIPE_TEXTURE_3D ||
+             res->target == PIPE_TEXTURE_CUBE ||
+             res->target == PIPE_TEXTURE_CUBE_ARRAY) {
+            /*
+             * For array textures, we don't have first_layer, instead
+             * adjust last_layer (stored as depth) plus the mip level offsets
+             * (as we have mip-first layout can't just adjust base ptr).
+             * XXX For mip levels, could do something similar.
+             */
+            jit->depth = view->u.tex.last_layer - view->u.tex.first_layer + 1;
+            mip_offset += view->u.tex.first_layer * lp_res->img_stride[view->u.tex.level];
+         } else
+            jit->depth = u_minify(jit->depth, view->u.tex.level);
+
+         jit->row_stride = lp_res->row_stride[view->u.tex.level];
+         jit->img_stride = lp_res->img_stride[view->u.tex.level];
+         jit->sample_stride = lp_res->sample_stride;
+         jit->base = (uint8_t *)jit->base + mip_offset;
+      } else {
+         unsigned view_blocksize = util_format_get_blocksize(view->format);
+         jit->width = view->u.buf.size / view_blocksize;
+         jit->base = (uint8_t *)jit->base + view->u.buf.offset;
+      }
+   }
 }

@@ -195,8 +195,7 @@ emit(struct pt_emit *emit,
 
 static void
 draw_vertex_shader_run(struct draw_vertex_shader *vshader,
-                       const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                       unsigned const_size[PIPE_MAX_CONSTANT_BUFFERS],
+                       const struct draw_buffer_info *constants,
                        const struct draw_fetch_info *fetch_info,
                        const struct draw_vertex_info *input_verts,
                        struct draw_vertex_info *output_verts)
@@ -213,7 +212,6 @@ draw_vertex_shader_run(struct draw_vertex_shader *vshader,
                        (const float (*)[4])input_verts->verts->data,
                        (      float (*)[4])output_verts->verts->data,
                        constants,
-                       const_size,
                        input_verts->count,
                        input_verts->vertex_size,
                        input_verts->vertex_size,
@@ -272,8 +270,7 @@ fetch_pipeline_generic(struct draw_pt_middle_end *middle,
     */
    if (fpme->opt & PT_SHADE) {
       draw_vertex_shader_run(vshader,
-                             draw->pt.user.vs_constants,
-                             draw->pt.user.vs_constants_size,
+                             draw->pt.user.constants[PIPE_SHADER_VERTEX],
                              fetch_info,
                              vert_info,
                              &vs_vert_info);
@@ -288,8 +285,7 @@ fetch_pipeline_generic(struct draw_pt_middle_end *middle,
 
    if ((fpme->opt & PT_SHADE) && gshader) {
       draw_geometry_shader_run(gshader,
-                               draw->pt.user.gs_constants,
-                               draw->pt.user.gs_constants_size,
+                               draw->pt.user.constants[PIPE_SHADER_GEOMETRY],
                                vert_info,
                                prim_info,
                                &vshader->info,

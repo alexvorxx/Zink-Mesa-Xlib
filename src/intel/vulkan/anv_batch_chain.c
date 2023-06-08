@@ -425,8 +425,9 @@ anv_cmd_buffer_current_generation_batch_bo(struct anv_cmd_buffer *cmd_buffer)
 struct anv_address
 anv_cmd_buffer_surface_base_address(struct anv_cmd_buffer *cmd_buffer)
 {
-   /* Compute only queues don't need binding tables. */
-   if (!(cmd_buffer->queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT))
+   /* Only graphics & compute queues need binding tables. */
+   if (!(cmd_buffer->queue_family->queueFlags & (VK_QUEUE_GRAPHICS_BIT |
+                                                 VK_QUEUE_COMPUTE_BIT)))
       return ANV_NULL_ADDRESS;
 
    /* If we've never allocated a binding table block, do it now. Otherwise we

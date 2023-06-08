@@ -891,7 +891,7 @@ static void virgl_encoder_transfer3d_common(struct virgl_screen *vs,
 {
    struct pipe_transfer *transfer = &xfer->base;
    unsigned stride;
-   unsigned layer_stride;
+   uintptr_t layer_stride;
 
    if (encode_stride == virgl_transfer3d_explicit_stride) {
       stride = transfer->stride;

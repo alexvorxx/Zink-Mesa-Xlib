@@ -67,7 +67,8 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
    const uint32_t *fpu_iterators,
    uint32_t fpu_iterators_count,
    const uint32_t *destinations,
-   struct pvr_pds_upload *const pds_upload_out)
+   struct pvr_pds_upload *const pds_upload_out,
+   uint32_t *const pds_temps_count_out)
 {
    struct pvr_pds_coeff_loading_program program = {
       .num_fpu_iterators = fpu_iterators_count,
@@ -85,6 +86,7 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
       pds_upload_out->pvr_bo = NULL;
       pds_upload_out->code_size = 0;
       pds_upload_out->data_size = 0;
+      *pds_temps_count_out = 0;
 
       return VK_SUCCESS;
    }
@@ -127,6 +129,8 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
    }
 
    vk_free2(&device->vk.alloc, allocator, staging_buffer);
+
+   *pds_temps_count_out = program.temps_used;
 
    return VK_SUCCESS;
 }
@@ -521,14 +525,14 @@ static VkResult pvr_pds_vertex_attrib_programs_create_and_upload(
       if (special_vars_layout->vertex_id_offset !=
           PVR_VERTEX_SPECIAL_VAR_UNUSED) {
          /* Gets filled by the HW and copied into the appropriate reg. */
-         input.flags = PVR_PDS_VERTEX_FLAGS_VERTEX_ID_REQUIRED;
+         input.flags |= PVR_PDS_VERTEX_FLAGS_VERTEX_ID_REQUIRED;
          input.vertex_id_register = special_vars_layout->vertex_id_offset;
       }
 
       if (special_vars_layout->instance_id_offset !=
           PVR_VERTEX_SPECIAL_VAR_UNUSED) {
          /* Gets filled by the HW and copied into the appropriate reg. */
-         input.flags = PVR_PDS_VERTEX_FLAGS_INSTANCE_ID_REQUIRED;
+         input.flags |= PVR_PDS_VERTEX_FLAGS_INSTANCE_ID_REQUIRED;
          input.instance_id_register = special_vars_layout->instance_id_offset;
       }
    }
@@ -1514,13 +1518,18 @@ pvr_vertex_state_init(struct pvr_graphics_pipeline *gfx_pipeline,
     */
    vertex_state->stage_state.const_shared_reg_count = common_data->shareds;
    vertex_state->stage_state.const_shared_reg_offset = 0;
-   vertex_state->stage_state.temps_count = common_data->temps;
    vertex_state->stage_state.coefficient_size = common_data->coeffs;
    vertex_state->stage_state.uses_atomic_ops = false;
    vertex_state->stage_state.uses_texture_rw = false;
    vertex_state->stage_state.uses_barrier = false;
    vertex_state->stage_state.has_side_effects = false;
    vertex_state->stage_state.empty_program = false;
+
+   /* This ends up unused since we'll use the temp_usage for the PDS program we
+    * end up selecting, and the descriptor PDS program doesn't use any temps.
+    * Let's set it to ~0 in case it ever gets used.
+    */
+   vertex_state->stage_state.pds_temps_count = ~0;
 
    vertex_state->vertex_input_size = vtxin_regs_used;
    vertex_state->vertex_output_size =
@@ -1561,7 +1570,6 @@ pvr_fragment_state_init(struct pvr_graphics_pipeline *gfx_pipeline,
     */
    fragment_state->stage_state.const_shared_reg_count = 0;
    fragment_state->stage_state.const_shared_reg_offset = 0;
-   fragment_state->stage_state.temps_count = common_data->temps;
    fragment_state->stage_state.coefficient_size = common_data->coeffs;
    fragment_state->stage_state.uses_atomic_ops = false;
    fragment_state->stage_state.uses_texture_rw = false;
@@ -1571,6 +1579,11 @@ pvr_fragment_state_init(struct pvr_graphics_pipeline *gfx_pipeline,
 
    fragment_state->pass_type = PVRX(TA_PASSTYPE_OPAQUE);
    fragment_state->entry_offset = 0;
+
+   /* We can't initialize it yet since we still need to generate the PDS
+    * programs so set it to `~0` to make sure that we set this up later on.
+    */
+   fragment_state->stage_state.pds_temps_count = ~0;
 }
 
 static bool pvr_blend_factor_requires_consts(VkBlendFactor factor)
@@ -2080,6 +2093,9 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
       goto err_free_build_context;
 
    if (ctx->nir[MESA_SHADER_FRAGMENT]) {
+      struct pvr_fragment_shader_state *fragment_state =
+         &gfx_pipeline->shader_state.fragment;
+
       if (pvr_has_hard_coded_shaders(&device->pdevice->dev_info) &&
           pvr_hard_code_graphics_get_flags(&device->pdevice->dev_info) &
              BITFIELD_BIT(MESA_SHADER_FRAGMENT)) {
@@ -2092,9 +2108,6 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
                                  &ctx->common_data[MESA_SHADER_FRAGMENT]);
 
          if (!old_path) {
-            struct pvr_fragment_shader_state *fragment_state =
-               &gfx_pipeline->shader_state.fragment;
-
             /* FIXME: For now we just overwrite it but the compiler shouldn't be
              * returning the sh count since the driver is in charge of
              * allocating them.
@@ -2124,7 +2137,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
          ctx->stage_data.fs.iterator_args.fpu_iterators,
          ctx->stage_data.fs.iterator_args.num_fpu_iterators,
          ctx->stage_data.fs.iterator_args.destination,
-         &gfx_pipeline->shader_state.fragment.pds_coeff_program);
+         &fragment_state->pds_coeff_program,
+         &fragment_state->stage_state.pds_temps_count);
       if (result != VK_SUCCESS)
          goto err_free_fragment_bo;
 
@@ -2135,7 +2149,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
          ctx->common_data[MESA_SHADER_FRAGMENT].temps,
          ctx->stage_data.fs.msaa_mode,
          ctx->stage_data.fs.phas,
-         &gfx_pipeline->shader_state.fragment.pds_fragment_program);
+         &fragment_state->pds_fragment_program);
       if (result != VK_SUCCESS)
          goto err_free_coeff_program;
 
@@ -2152,9 +2166,14 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
          layout,
          PVR_STAGE_ALLOCATION_FRAGMENT,
          sh_reg_layout_frag,
-         &gfx_pipeline->shader_state.fragment.descriptor_state);
+         &fragment_state->descriptor_state);
       if (result != VK_SUCCESS)
          goto err_free_frag_program;
+
+      /* If not, we need to MAX2() and set
+       * `fragment_state->stage_state.pds_temps_count` appropriately.
+       */
+      assert(fragment_state->descriptor_state.pds_info.temps_required == 0);
    }
 
    result = pvr_pds_vertex_attrib_programs_create_and_upload(

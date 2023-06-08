@@ -155,8 +155,6 @@ llvm_tcs_run(struct draw_tess_ctrl_shader *shader, uint32_t prim_id)
  * Execute tess ctrl shader.
  */
 int draw_tess_ctrl_shader_run(struct draw_tess_ctrl_shader *shader,
-                              const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                              const unsigned constants_size[PIPE_MAX_CONSTANT_BUFFERS],
                               const struct draw_vertex_info *input_verts,
                               const struct draw_prim_info *input_prim,
                               const struct tgsi_shader_info *input_info,
@@ -320,8 +318,6 @@ llvm_tes_run(struct draw_tess_eval_shader *shader,
  * Execute tess eval shader.
  */
 int draw_tess_eval_shader_run(struct draw_tess_eval_shader *shader,
-                              const void *constants[PIPE_MAX_CONSTANT_BUFFERS],
-                              const unsigned constants_size[PIPE_MAX_CONSTANT_BUFFERS],
                               unsigned num_input_vertices_per_patch,
                               const struct draw_vertex_info *input_verts,
                               const struct draw_prim_info *input_prim,
@@ -459,7 +455,7 @@ draw_create_tess_ctrl_shader(struct draw_context *draw,
       tcs->tcs_output = align_malloc(sizeof(struct draw_tcs_outputs), 16);
       memset(tcs->tcs_output, 0, sizeof(struct draw_tcs_outputs));
 
-      tcs->jit_resources = &draw->llvm->tcs_jit_resources;
+      tcs->jit_resources = &draw->llvm->jit_resources[PIPE_SHADER_TESS_CTRL];
       llvm_tcs->variant_key_size =
          draw_tcs_llvm_variant_key_size(
                                         tcs->info.file_max[TGSI_FILE_SAMPLER]+1,
@@ -584,7 +580,7 @@ draw_create_tess_eval_shader(struct draw_context *draw,
       tes->tes_input = align_malloc(sizeof(struct draw_tes_inputs), 16);
       memset(tes->tes_input, 0, sizeof(struct draw_tes_inputs));
 
-      tes->jit_resources = &draw->llvm->tes_jit_resources;
+      tes->jit_resources = &draw->llvm->jit_resources[PIPE_SHADER_TESS_EVAL];
       llvm_tes->variant_key_size =
          draw_tes_llvm_variant_key_size(
                                         tes->info.file_max[TGSI_FILE_SAMPLER]+1,

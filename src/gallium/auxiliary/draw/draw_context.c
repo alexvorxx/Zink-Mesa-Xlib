@@ -461,26 +461,8 @@ draw_set_mapped_constant_buffer(struct draw_context *draw,
 
    draw_do_flush(draw, DRAW_FLUSH_PARAMETER_CHANGE);
 
-   switch (shader_type) {
-   case PIPE_SHADER_VERTEX:
-      draw->pt.user.vs_constants[slot] = buffer;
-      draw->pt.user.vs_constants_size[slot] = size;
-      break;
-   case PIPE_SHADER_GEOMETRY:
-      draw->pt.user.gs_constants[slot] = buffer;
-      draw->pt.user.gs_constants_size[slot] = size;
-      break;
-   case PIPE_SHADER_TESS_CTRL:
-      draw->pt.user.tcs_constants[slot] = buffer;
-      draw->pt.user.tcs_constants_size[slot] = size;
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      draw->pt.user.tes_constants[slot] = buffer;
-      draw->pt.user.tes_constants_size[slot] = size;
-      break;
-   default:
-      assert(0 && "invalid shader type in draw_set_mapped_constant_buffer");
-   }
+   draw->pt.user.constants[shader_type][slot].ptr = buffer;
+   draw->pt.user.constants[shader_type][slot].size = size;
 }
 
 void
@@ -498,26 +480,8 @@ draw_set_mapped_shader_buffer(struct draw_context *draw,
 
    draw_do_flush(draw, DRAW_FLUSH_PARAMETER_CHANGE);
 
-   switch (shader_type) {
-   case PIPE_SHADER_VERTEX:
-      draw->pt.user.vs_ssbos[slot] = buffer;
-      draw->pt.user.vs_ssbos_size[slot] = size;
-      break;
-   case PIPE_SHADER_GEOMETRY:
-      draw->pt.user.gs_ssbos[slot] = buffer;
-      draw->pt.user.gs_ssbos_size[slot] = size;
-      break;
-   case PIPE_SHADER_TESS_CTRL:
-      draw->pt.user.tcs_ssbos[slot] = buffer;
-      draw->pt.user.tcs_ssbos_size[slot] = size;
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      draw->pt.user.tes_ssbos[slot] = buffer;
-      draw->pt.user.tes_ssbos_size[slot] = size;
-      break;
-   default:
-      assert(0 && "invalid shader type in draw_set_mapped_shader_buffer");
-   }
+   draw->pt.user.ssbos[shader_type][slot].ptr = buffer;
+   draw->pt.user.ssbos[shader_type][slot].size = size;
 }
 
 
@@ -794,12 +758,6 @@ draw_texture_sampler(struct draw_context *draw,
    case PIPE_SHADER_GEOMETRY:
       draw->gs.tgsi.sampler = sampler;
       break;
-   case PIPE_SHADER_TESS_CTRL:
-      draw->tcs.tgsi.sampler = sampler;
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      draw->tes.tgsi.sampler = sampler;
-      break;
    default:
       assert(0);
       break;
@@ -824,12 +782,6 @@ draw_image(struct draw_context *draw,
    case PIPE_SHADER_GEOMETRY:
       draw->gs.tgsi.image = image;
       break;
-   case PIPE_SHADER_TESS_CTRL:
-      draw->tcs.tgsi.image = image;
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      draw->tes.tgsi.image = image;
-      break;
    default:
       assert(0);
       break;
@@ -853,12 +805,6 @@ draw_buffer(struct draw_context *draw,
       break;
    case PIPE_SHADER_GEOMETRY:
       draw->gs.tgsi.buffer = buffer;
-      break;
-   case PIPE_SHADER_TESS_CTRL:
-      draw->tcs.tgsi.buffer = buffer;
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      draw->tes.tgsi.buffer = buffer;
       break;
    default:
       assert(0);
@@ -1101,7 +1047,7 @@ draw_set_sampler_views(struct draw_context *draw,
                        struct pipe_sampler_view **views,
                        unsigned num)
 {
-   assert(shader_stage < PIPE_SHADER_TYPES);
+   assert(shader_stage < DRAW_MAX_SHADER_STAGE);
    assert(num <= PIPE_MAX_SHADER_SAMPLER_VIEWS);
 
    draw_do_flush(draw, DRAW_FLUSH_STATE_CHANGE);
@@ -1121,7 +1067,7 @@ draw_set_samplers(struct draw_context *draw,
                   struct pipe_sampler_state **samplers,
                   unsigned num)
 {
-   assert(shader_stage < PIPE_SHADER_TYPES);
+   assert(shader_stage < DRAW_MAX_SHADER_STAGE);
    assert(num <= PIPE_MAX_SAMPLERS);
 
    draw_do_flush(draw, DRAW_FLUSH_STATE_CHANGE);
@@ -1146,7 +1092,7 @@ draw_set_images(struct draw_context *draw,
                 struct pipe_image_view *views,
                 unsigned num)
 {
-   assert(shader_stage < PIPE_SHADER_TYPES);
+   assert(shader_stage < DRAW_MAX_SHADER_STAGE);
    assert(num <= PIPE_MAX_SHADER_IMAGES);
 
    draw_do_flush(draw, DRAW_FLUSH_STATE_CHANGE);

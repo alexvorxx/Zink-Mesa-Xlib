@@ -1279,17 +1279,23 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    if (info->gfx_level >= GFX9)
       info->ib_alignment = MAX2(info->ib_alignment, info->tcc_cache_line_size);
 
-   if ((info->drm_minor >= 31 && (info->family == CHIP_RAVEN || info->family == CHIP_RAVEN2 ||
-                                  info->family == CHIP_RENOIR)) ||
-       info->gfx_level >= GFX10_3) {
-      /* GFX10+ requires retiling in all cases. */
-      if (info->max_render_backends == 1 && info->gfx_level == GFX9) {
+   if (info->gfx_level >= GFX11) {
+      /* With num_cu = 4 in gfx11 measured power for idle, video playback and observed
+       * power savings, hence enable dcc with retile for gfx11 with num_cu >= 4.
+       */
+       info->use_display_dcc_with_retile_blit = info->num_cu >= 4;
+   } else if (info->gfx_level >= GFX10_3) {
+      /* Displayable DCC with retiling is known to increase power consumption on Raphael
+       * and Mendocino, so disable it on the smallest APUs. We need a proof that
+       * displayable DCC doesn't regress bigger chips in the same way.
+       */
+      info->use_display_dcc_with_retile_blit = info->num_cu > 4;
+   } else if (info->gfx_level == GFX9 && !info->has_dedicated_vram &&
+              info->drm_minor >= 31) {
+      if (info->max_render_backends == 1) {
          info->use_display_dcc_unaligned = true;
       } else {
-         /* Displayable DCC with retiling is known to increase power consumption on Raphael
-          * and Mendocino, so disable it on the smallest APUs. We need a proof that
-          * displayable DCC doesn't regress bigger chips in the same way.
-          */
+         /* there may be power increase for small APUs with less num_cu. */
          info->use_display_dcc_with_retile_blit = info->num_cu > 4;
       }
    }

@@ -377,7 +377,7 @@ static void set_random_image_attrs(struct pipe_resource *templ, bool allow_msaa,
       templ->array_size = (rand() % max_tex_size) + 1;
 
    /* Keep reducing the size until it we get a small enough size. */
-   while ((uint64_t)util_format_get_nblocks(templ->format, templ->width0, templ->height0) *
+   while (util_format_get_nblocks(templ->format, templ->width0, templ->height0) *
           templ->depth0 * templ->array_size * util_format_get_blocksize(templ->format) >
           MAX_ALLOC_SIZE) {
       switch (rand() % 3) {

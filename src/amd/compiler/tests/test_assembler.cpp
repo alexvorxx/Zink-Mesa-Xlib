@@ -379,7 +379,6 @@ BEGIN_TEST(assembler.vopc_sdwa)
    }
 END_TEST
 
-#if LLVM_VERSION_MAJOR >= 15
 BEGIN_TEST(assembler.gfx11.smem)
    if (!setup_cs(NULL, GFX11))
       return;
@@ -972,4 +971,3 @@ BEGIN_TEST(assembler.vop3_dpp)
 
    finish_assembler_test();
 END_TEST
-#endif

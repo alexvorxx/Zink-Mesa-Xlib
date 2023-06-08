@@ -81,6 +81,11 @@ lvp_pipeline_destroy(struct lvp_device *device, struct lvp_pipeline *pipeline)
    if (pipeline->layout)
       vk_pipeline_layout_unref(&device->vk, &pipeline->layout->vk);
 
+   for (unsigned i = 0; i < pipeline->num_groups; i++) {
+      LVP_FROM_HANDLE(lvp_pipeline, p, pipeline->groups[i]);
+      lvp_pipeline_destroy(device, p);
+   }
+
    vk_free(&device->vk.alloc, pipeline->state_data);
    vk_object_base_finish(&pipeline->base);
    vk_free(&device->vk.alloc, pipeline);
@@ -991,7 +996,8 @@ lvp_graphics_pipeline_create(
    VkDevice _device,
    VkPipelineCache _cache,
    const VkGraphicsPipelineCreateInfo *pCreateInfo,
-   VkPipeline *pPipeline)
+   VkPipeline *pPipeline,
+   bool group)
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
    LVP_FROM_HANDLE(lvp_pipeline_cache, cache, _cache);
@@ -1000,7 +1006,12 @@ lvp_graphics_pipeline_create(
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
 
-   pipeline = vk_zalloc(&device->vk.alloc, sizeof(*pipeline), 8,
+   size_t size = 0;
+   const VkGraphicsPipelineShaderGroupsCreateInfoNV *groupinfo = vk_find_struct_const(pCreateInfo, GRAPHICS_PIPELINE_SHADER_GROUPS_CREATE_INFO_NV);
+   if (!group && groupinfo)
+      size += (groupinfo->groupCount + groupinfo->pipelineCount) * sizeof(VkPipeline);
+
+   pipeline = vk_zalloc(&device->vk.alloc, sizeof(*pipeline) + size, 8,
                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (pipeline == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -1013,9 +1024,28 @@ lvp_graphics_pipeline_create(
       vk_free(&device->vk.alloc, pipeline);
       return result;
    }
+   if (!group && groupinfo) {
+      VkGraphicsPipelineCreateInfo pci = *pCreateInfo;
+      for (unsigned i = 0; i < groupinfo->groupCount; i++) {
+         const VkGraphicsShaderGroupCreateInfoNV *g = &groupinfo->pGroups[i];
+         pci.pVertexInputState = g->pVertexInputState;
+         pci.pTessellationState = g->pTessellationState;
+         pci.pStages = g->pStages;
+         pci.stageCount = g->stageCount;
+         result = lvp_graphics_pipeline_create(_device, _cache, &pci, &pipeline->groups[i], true);
+         if (result != VK_SUCCESS) {
+            lvp_pipeline_destroy(device, pipeline);
+            return result;
+         }
+         pipeline->num_groups++;
+      }
+      for (unsigned i = 0; i < groupinfo->pipelineCount; i++)
+         pipeline->groups[pipeline->num_groups + i] = groupinfo->pPipelines[i];
+      pipeline->num_groups_total = groupinfo->groupCount + groupinfo->pipelineCount;
+   }
 
    VkPipelineCreationFeedbackCreateInfo *feedback = (void*)vk_find_struct_const(pCreateInfo->pNext, PIPELINE_CREATION_FEEDBACK_CREATE_INFO);
-   if (feedback) {
+   if (feedback && !group) {
       feedback->pPipelineCreationFeedback->duration = os_time_get_nano() - t0;
       feedback->pPipelineCreationFeedback->flags = VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT;
       memset(feedback->pPipelineStageCreationFeedbacks, 0, sizeof(VkPipelineCreationFeedback) * feedback->pipelineStageCreationFeedbackCount);
@@ -1043,7 +1073,8 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateGraphicsPipelines(
          r = lvp_graphics_pipeline_create(_device,
                                           pipelineCache,
                                           &pCreateInfos[i],
-                                          &pPipelines[i]);
+                                          &pPipelines[i],
+                                          false);
       if (r != VK_SUCCESS) {
          result = r;
          pPipelines[i] = VK_NULL_HANDLE;

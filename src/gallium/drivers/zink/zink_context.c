@@ -1903,6 +1903,19 @@ zink_set_shader_images(struct pipe_context *pctx,
 }
 
 static void
+update_feedback_loop_dynamic_state(struct zink_context *ctx)
+{
+   if (!zink_screen(ctx->base.screen)->info.have_EXT_attachment_feedback_loop_dynamic_state)
+      return;
+   VkImageAspectFlags aspects = 0;
+   if (ctx->feedback_loops & BITFIELD_MASK(PIPE_MAX_COLOR_BUFS))
+      aspects |= VK_IMAGE_ASPECT_COLOR_BIT;
+   if (ctx->feedback_loops & BITFIELD_BIT(PIPE_MAX_COLOR_BUFS))
+      aspects |= VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+   VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->cmdbuf, aspects);
+}
+
+static void
 update_feedback_loop_state(struct zink_context *ctx, unsigned idx, unsigned feedback_loops)
 {
    if (feedback_loops != ctx->feedback_loops) {
@@ -1915,6 +1928,7 @@ update_feedback_loop_state(struct zink_context *ctx, unsigned idx, unsigned feed
             ctx->gfx_pipeline_state.dirty = true;
          ctx->gfx_pipeline_state.feedback_loop = false;
       }
+      update_feedback_loop_dynamic_state(ctx);
    }
    ctx->feedback_loops = feedback_loops;
 }
@@ -3196,6 +3210,7 @@ flush_batch(struct zink_context *ctx, bool sync)
          VKCTX(CmdSetPatchControlPointsEXT)(ctx->batch.state->cmdbuf, ctx->gfx_pipeline_state.dyn_state2.vertices_per_patch);
          VKCTX(CmdSetPatchControlPointsEXT)(ctx->batch.state->barrier_cmdbuf, 1);
       }
+      update_feedback_loop_dynamic_state(ctx);
       if (conditional_render_active)
          zink_start_conditional_render(ctx);
       reapply_color_write(ctx);
@@ -5188,6 +5203,7 @@ add_implicit_feedback_loop(struct zink_context *ctx, struct zink_resource *res)
       else
          ctx->dynamic_fb.attachments[idx].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
    }
+   update_feedback_loop_dynamic_state(ctx);
    return true;
 }
 

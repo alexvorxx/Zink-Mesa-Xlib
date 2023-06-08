@@ -428,6 +428,16 @@ is_done_sendmsg(amd_gfx_level gfx_level, const Instruction* instr)
    return false;
 }
 
+bool
+is_pos_prim_export(amd_gfx_level gfx_level, const Instruction* instr)
+{
+   /* Because of NO_PC_EXPORT=1, a done=1 position or primitive export can launch PS waves before
+    * the NGG/VS wave finishes if there are no parameter exports.
+    */
+   return instr->opcode == aco_opcode::exp && instr->exp().dest >= V_008DFC_SQ_EXP_POS &&
+          instr->exp().dest <= V_008DFC_SQ_EXP_PRIM && gfx_level >= GFX10;
+}
+
 memory_sync_info
 get_sync_info_with_hack(const Instruction* instr)
 {
@@ -483,6 +493,7 @@ add_memory_event(amd_gfx_level gfx_level, memory_event_set* set, Instruction* in
                  memory_sync_info* sync)
 {
    set->has_control_barrier |= is_done_sendmsg(gfx_level, instr);
+   set->has_control_barrier |= is_pos_prim_export(gfx_level, instr);
    if (instr->opcode == aco_opcode::p_barrier) {
       Pseudo_barrier_instruction& bar = instr->barrier();
       if (bar.sync.semantics & semantic_acquire)

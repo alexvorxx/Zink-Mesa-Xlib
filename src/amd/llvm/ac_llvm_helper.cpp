@@ -18,9 +18,7 @@
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/InstCombine/InstCombine.h>
 #include <llvm/Transforms/IPO/SCCP.h>
-#if LLVM_VERSION_MAJOR >= 15
 #include "llvm/CodeGen/SelectionDAGNodes.h"
-#endif
 
 #include <cstring>
 
@@ -37,7 +35,6 @@
 
 using namespace llvm;
 
-#if LLVM_VERSION_MAJOR >= 15
 class RunAtExitForStaticDestructors : public SDNode
 {
 public:
@@ -46,11 +43,9 @@ public:
    {
    }
 };
-#endif
 
 void ac_llvm_run_atexit_for_destructors(void)
 {
-#if LLVM_VERSION_MAJOR >= 15
    /* LLVM >= 16 registers static variable destructors on the first compile, which gcc
     * implements by calling atexit there. Before that, u_queue registers its atexit
     * handler to kill all threads. Since exit() runs atexit handlers in the reverse order,
@@ -65,7 +60,6 @@ void ac_llvm_run_atexit_for_destructors(void)
     * This just executes the code that declares static variables.
     */
    RunAtExitForStaticDestructors();
-#endif
 }
 
 bool ac_is_llvm_processor_supported(LLVMTargetMachineRef tm, const char *processor)
@@ -367,9 +361,7 @@ LLVMValueRef ac_build_atomic_rmw(struct ac_llvm_context *ctx, LLVMAtomicRMWBinOp
    unsigned SSID = unwrap(ctx->context)->getOrInsertSyncScopeID(sync_scope);
    return wrap(unwrap(ctx->builder)
                         ->CreateAtomicRMW(binop, unwrap(ptr), unwrap(val),
-#if LLVM_VERSION_MAJOR >= 13
                                           MaybeAlign(0),
-#endif
                                           AtomicOrdering::SequentiallyConsistent, SSID));
 }
 
@@ -380,9 +372,7 @@ LLVMValueRef ac_build_atomic_cmp_xchg(struct ac_llvm_context *ctx, LLVMValueRef 
    return wrap(unwrap(ctx->builder)
                         ->CreateAtomicCmpXchg(unwrap(ptr), unwrap(cmp),
                                               unwrap(val),
-#if LLVM_VERSION_MAJOR >= 13
                                               MaybeAlign(0),
-#endif
                                               AtomicOrdering::SequentiallyConsistent,
                                               AtomicOrdering::SequentiallyConsistent, SSID));
 }

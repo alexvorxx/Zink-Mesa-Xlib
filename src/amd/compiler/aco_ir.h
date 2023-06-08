@@ -152,11 +152,11 @@ enum memory_semantics : uint8_t {
    semantic_none = 0x0,
    /* for loads: don't move any access after this load to before this load (even other loads)
     * for barriers: don't move any access after the barrier to before any
-    * atomics/control_barriers/sendmsg_gs_done before the barrier */
+    * atomics/control_barriers/sendmsg_gs_done/position-primitive-export before the barrier */
    semantic_acquire = 0x1,
    /* for stores: don't move any access before this store to after this store
     * for barriers: don't move any access before the barrier to after any
-    * atomics/control_barriers/sendmsg_gs_done after the barrier */
+    * atomics/control_barriers/sendmsg_gs_done/position-primitive-export after the barrier */
    semantic_release = 0x2,
 
    /* the rest are for load/stores/atomics only */
@@ -748,7 +748,7 @@ public:
 
    constexpr uint32_t tempId() const noexcept { return data_.temp.id(); }
 
-   constexpr bool hasRegClass() const noexcept { return isTemp() || isUndefined(); }
+   constexpr bool hasRegClass() const noexcept { return !isConstant(); }
 
    constexpr RegClass regClass() const noexcept { return data_.temp.regClass(); }
 
@@ -1873,6 +1873,7 @@ enum block_kind {
    block_kind_discard_early_exit = 1 << 11,
    block_kind_uses_discard = 1 << 12,
    block_kind_needs_lowering = 1 << 13,
+   block_kind_resume = 1 << 14,
    block_kind_export_end = 1 << 15,
 };
 
@@ -1960,12 +1961,12 @@ struct Block {
    std::vector<unsigned> logical_succs;
    std::vector<unsigned> linear_succs;
    RegisterDemand register_demand = RegisterDemand();
+   uint32_t kind = 0;
+   int32_t logical_idom = -1;
+   int32_t linear_idom = -1;
    uint16_t loop_nest_depth = 0;
    uint16_t divergent_if_logical_depth = 0;
    uint16_t uniform_if_depth = 0;
-   uint16_t kind = 0;
-   int logical_idom = -1;
-   int linear_idom = -1;
 
    /* this information is needed for predecessors to blocks with phis when
     * moving out of ssa */

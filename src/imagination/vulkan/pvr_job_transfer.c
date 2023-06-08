@@ -2106,7 +2106,6 @@ pvr_pds_unitex(const struct pvr_device_info *dev_info,
       pvr_cmd_buffer_alloc_mem(transfer_cmd->cmd_buffer,
                                ctx->device->heaps.pds_heap,
                                PVR_DW_TO_BYTES(state->tex_state_data_size),
-                               PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                &pvr_bo);
    if (result != VK_SUCCESS)
       return result;
@@ -2812,7 +2811,6 @@ static VkResult pvr_3d_copy_blit_core(struct pvr_transfer_ctx *ctx,
       result = pvr_cmd_buffer_alloc_mem(transfer_cmd->cmd_buffer,
                                         device->heaps.general_heap,
                                         PVR_DW_TO_BYTES(tex_state_dma_size_dw),
-                                        PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                         &pvr_bo);
       if (result != VK_SUCCESS)
          return result;
@@ -3000,7 +2998,6 @@ pvr_pds_coeff_task(struct pvr_transfer_ctx *ctx,
       transfer_cmd->cmd_buffer,
       ctx->device->heaps.pds_heap,
       PVR_DW_TO_BYTES(program.data_size + program.code_size),
-      PVR_BO_ALLOC_FLAG_CPU_MAPPED,
       &pvr_bo);
    if (result != VK_SUCCESS)
       return result;
@@ -3999,7 +3996,6 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
    result = pvr_cmd_buffer_alloc_mem(transfer_cmd->cmd_buffer,
                                      ctx->device->heaps.transfer_3d_heap,
                                      total_stream_size,
-                                     PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                      &pvr_cs_bo);
    if (result != VK_SUCCESS)
       return result;
@@ -4164,7 +4160,6 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
             result = pvr_cmd_buffer_alloc_mem(transfer_cmd->cmd_buffer,
                                               ctx->device->heaps.general_heap,
                                               tex_state_dma_size << 2U,
-                                              PVR_BO_ALLOC_FLAG_CPU_MAPPED,
                                               &pvr_bo);
             if (result != VK_SUCCESS)
                return result;
@@ -4820,72 +4815,61 @@ static void pvr_unwind_rects(uint32_t width,
                              bool input,
                              struct pvr_transfer_pass *pass)
 {
-   uint32_t num_mappings = pass->sources[0].mapping_count;
-   struct pvr_rect_mapping *mappings = pass->sources[0].mappings;
+   struct pvr_transfer_wa_source *const source = &pass->sources[0];
+   struct pvr_rect_mapping *const mappings = source->mappings;
+   const uint32_t num_mappings = source->mapping_count;
    VkRect2D rect_a, rect_b;
-   uint32_t new_mappings = 0;
-   uint32_t i;
 
    if (texel_unwind == 0)
       return;
 
    pvr_split_rect(width, height, texel_unwind, &rect_a, &rect_b);
 
-   for (i = 0; i < num_mappings; i++) {
-      VkRect2D *rect = input ? &mappings[i].src_rect : &mappings[i].dst_rect;
+   for (uint32_t i = 0; i < num_mappings; i++) {
+      VkRect2D *const old_rect = input ? &mappings[i].src_rect
+                                       : &mappings[i].dst_rect;
 
       if (height == 1) {
-         rect->offset.x += texel_unwind;
+         old_rect->offset.x += texel_unwind;
       } else if (width == 1) {
-         rect->offset.y += texel_unwind;
-      } else if (pvr_rect_width_covered_by(rect, &rect_a)) {
-         rect->offset.x += texel_unwind;
-      } else if (pvr_rect_width_covered_by(rect, &rect_b)) {
-         rect->offset.x = texel_unwind - width + rect->offset.x;
-         rect->offset.y++;
+         old_rect->offset.y += texel_unwind;
+      } else if (pvr_rect_width_covered_by(old_rect, &rect_a)) {
+         old_rect->offset.x += texel_unwind;
+      } else if (pvr_rect_width_covered_by(old_rect, &rect_b)) {
+         old_rect->offset.x = texel_unwind - width + old_rect->offset.x;
+         old_rect->offset.y++;
       } else {
          /* Mapping requires split. */
-         uint32_t new_mapping = num_mappings + new_mappings;
-         VkRect2D *new_rect = input ? &mappings[new_mapping].src_rect
-                                    : &mappings[new_mapping].dst_rect;
-         uint32_t split_point = width - texel_unwind;
-         uint32_t split_width;
+         const uint32_t new_mapping = source->mapping_count++;
 
-         assert(new_mapping < ARRAY_SIZE(pass->sources[0].mappings));
+         VkRect2D *const new_rect = input ? &mappings[new_mapping].src_rect
+                                          : &mappings[new_mapping].dst_rect;
 
+         VkRect2D *const new_rect_opp = input ? &mappings[new_mapping].dst_rect
+                                              : &mappings[new_mapping].src_rect;
+         VkRect2D *const old_rect_opp = input ? &mappings[i].dst_rect
+                                              : &mappings[i].src_rect;
+
+         const uint32_t split_point = width - texel_unwind;
+         const uint32_t split_width =
+            old_rect->offset.x + old_rect->extent.width - split_point;
+
+         assert(new_mapping < ARRAY_SIZE(source->mappings));
          mappings[new_mapping] = mappings[i];
 
-         rect->extent.width = split_point - rect->offset.x;
-         new_rect->offset.x = split_point;
+         old_rect_opp->extent.width -= split_width;
+         new_rect_opp->extent.width = split_width;
+         new_rect_opp->offset.x =
+            old_rect_opp->offset.x + old_rect_opp->extent.width;
 
-         split_width = (rect->offset.x + new_rect->extent.width) - split_point;
+         old_rect->offset.x += texel_unwind;
+         old_rect->extent.width = width - old_rect->offset.x;
 
-         if (input) {
-            mappings[i].dst_rect.extent.width -= split_width;
-            mappings[new_mapping].dst_rect.offset.x =
-               mappings[i].dst_rect.offset.x +
-               mappings[i].dst_rect.extent.width;
-            mappings[new_mapping].dst_rect.extent.width = split_width;
-         } else {
-            mappings[i].src_rect.extent.width -= split_width;
-            mappings[new_mapping].src_rect.offset.x =
-               mappings[i].src_rect.offset.x +
-               mappings[i].src_rect.extent.width;
-            mappings[new_mapping].src_rect.extent.width = split_width;
-         }
-
-         rect->offset.x += texel_unwind;
-         rect->extent.width = width - rect->offset.x;
-
-         new_rect->offset.x += (int32_t)texel_unwind - (int32_t)width;
+         new_rect->offset.x = 0;
          new_rect->offset.y++;
-         new_rect->extent.width += (int32_t)texel_unwind - (int32_t)width;
-
-         new_mappings++;
+         new_rect->extent.width = split_width;
       }
    }
-
-   pass->sources[0].mapping_count += new_mappings;
 }
 
 /**

@@ -91,7 +91,7 @@ void trace_dump_box_bytes(const void *data,
                           struct pipe_resource *resource,
 			  const struct pipe_box *box,
 			  unsigned stride,
-			  unsigned slice_stride);
+			  uint64_t slice_stride);
 void trace_dump_string(const char *str);
 void trace_dump_enum(const char *value);
 void trace_dump_array_begin(void);

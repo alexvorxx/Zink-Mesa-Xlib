@@ -212,8 +212,7 @@ softpipe_launch_grid(struct pipe_context *context,
                        (struct tgsi_image *)softpipe->tgsi.image[PIPE_SHADER_COMPUTE],
                        (struct tgsi_buffer *)softpipe->tgsi.buffer[PIPE_SHADER_COMPUTE]);
             tgsi_exec_set_constant_buffers(machines[idx], PIPE_MAX_CONSTANT_BUFFERS,
-                                           softpipe->mapped_constants[PIPE_SHADER_COMPUTE],
-                                           softpipe->const_buffer_size[PIPE_SHADER_COMPUTE]);
+                                           softpipe->mapped_constants[PIPE_SHADER_COMPUTE]);
             idx++;
          }
       }

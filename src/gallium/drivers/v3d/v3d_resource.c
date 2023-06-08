@@ -348,7 +348,7 @@ v3d_texture_subdata(struct pipe_context *pctx,
                     const struct pipe_box *box,
                     const void *data,
                     unsigned stride,
-                    unsigned layer_stride)
+                    uintptr_t layer_stride)
 {
         struct v3d_resource *rsc = v3d_resource(prsc);
         struct v3d_resource_slice *slice = &rsc->slices[level];

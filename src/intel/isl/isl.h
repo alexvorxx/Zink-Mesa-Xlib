@@ -779,16 +779,18 @@ enum isl_aux_usage {
     */
    ISL_AUX_USAGE_CCS_E,
 
-   /** Single-sample lossless color compression on Tigerlake
+   /** Single-sample lossless color compression with fast clear optimization
     *
-    * This is identical to ISL_AUX_USAGE_CCS_E except it also encodes the
-    * Tigerlake quirk about regular render writes possibly fast-clearing
-    * blocks in the surface.
+    * Introduced on Tigerlake, this is identical to ISL_AUX_USAGE_CCS_E except
+    * it also encodes a feature about regular render writes possibly
+    * fast-clearing blocks in the surface. In the Alchemist docs, the name of
+    * the feature is easier to find. In the 3DSTATE_3D_MODE packet, it is
+    * referred to as "Fast Clear Optimization (FCV)".
     *
     * @invariant The surface is a color surface
     * @invariant isl_surf::samples == 1
     */
-   ISL_AUX_USAGE_GFX12_CCS_E,
+   ISL_AUX_USAGE_FCV_CCS_E,
 
    /** Media color compression
     *
@@ -2202,7 +2204,7 @@ isl_aux_usage_has_ccs(enum isl_aux_usage usage)
 {
    return usage == ISL_AUX_USAGE_CCS_D ||
           usage == ISL_AUX_USAGE_CCS_E ||
-          usage == ISL_AUX_USAGE_GFX12_CCS_E ||
+          usage == ISL_AUX_USAGE_FCV_CCS_E ||
           usage == ISL_AUX_USAGE_MC ||
           usage == ISL_AUX_USAGE_HIZ_CCS_WT ||
           usage == ISL_AUX_USAGE_HIZ_CCS ||
@@ -2214,7 +2216,7 @@ static inline bool
 isl_aux_usage_has_ccs_e(enum isl_aux_usage usage)
 {
    return usage == ISL_AUX_USAGE_CCS_E ||
-          usage == ISL_AUX_USAGE_GFX12_CCS_E;
+          usage == ISL_AUX_USAGE_FCV_CCS_E;
 }
 
 static inline bool
@@ -2279,7 +2281,7 @@ isl_drm_modifier_get_default_aux_state(uint64_t modifier)
       return ISL_AUX_STATE_AUX_INVALID;
 
    assert(mod_info->aux_usage == ISL_AUX_USAGE_CCS_E ||
-          mod_info->aux_usage == ISL_AUX_USAGE_GFX12_CCS_E ||
+          mod_info->aux_usage == ISL_AUX_USAGE_FCV_CCS_E ||
           mod_info->aux_usage == ISL_AUX_USAGE_MC);
    return mod_info->supports_clear_color ? ISL_AUX_STATE_COMPRESSED_CLEAR :
                                            ISL_AUX_STATE_COMPRESSED_NO_CLEAR;
