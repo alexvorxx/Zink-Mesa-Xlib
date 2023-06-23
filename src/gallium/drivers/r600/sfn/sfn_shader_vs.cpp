@@ -625,7 +625,8 @@ VertexExportForGS::do_store_output(const store_loc& store_info,
    }
 
    if (ring_offset == -1) {
-      sfn_log << SfnLog::err << "VS defines output at " << store_info.driver_location
+      sfn_log << SfnLog::warn << "VS defines output at "
+              << store_info.driver_location
               << "name=" << out_io.name() << " sid=" << out_io.sid()
               << " that is not consumed as GS input\n";
       return true;

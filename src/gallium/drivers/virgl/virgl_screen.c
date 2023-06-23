@@ -45,7 +45,6 @@ int virgl_debug = 0;
 const struct debug_named_value virgl_debug_options[] = {
    { "verbose",         VIRGL_DEBUG_VERBOSE,                 NULL },
    { "tgsi",            VIRGL_DEBUG_TGSI,                    NULL },
-   { "use_tgsi",        VIRGL_DEBUG_USE_TGSI,                NULL },
    { "noemubgra",       VIRGL_DEBUG_NO_EMULATE_BGRA,         "Disable tweak to emulate BGRA as RGBA on GLES hosts" },
    { "nobgraswz",       VIRGL_DEBUG_NO_BGRA_DEST_SWIZZLE,    "Disable tweak to swizzle emulated BGRA on GLES hosts" },
    { "sync",            VIRGL_DEBUG_SYNC,                    "Sync after every flush" },
@@ -407,8 +406,13 @@ virgl_get_shader_param(struct pipe_screen *screen,
       case PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR:
       case PIPE_SHADER_CAP_INDIRECT_CONST_ADDR:
          return 1;
-      case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       case PIPE_SHADER_CAP_INDIRECT_INPUT_ADDR:
+         if ((vscreen->caps.caps.v2.capability_bits & VIRGL_CAP_HOST_IS_GLES) &&
+             (shader == PIPE_SHADER_VERTEX)) {
+            return 0;
+         }
+         FALLTHROUGH;
+      case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
          return vscreen->caps.caps.v2.capability_bits & VIRGL_CAP_INDIRECT_INPUT_ADDR;
       case PIPE_SHADER_CAP_MAX_INPUTS:
          if (vscreen->caps.caps.v1.glsl_level < 150)
@@ -450,10 +454,8 @@ virgl_get_shader_param(struct pipe_screen *screen,
             return vscreen->caps.caps.v2.max_shader_image_frag_compute;
          else
             return vscreen->caps.caps.v2.max_shader_image_other_stages;
-      case PIPE_SHADER_CAP_PREFERRED_IR:
-         return (virgl_debug & VIRGL_DEBUG_USE_TGSI) ? PIPE_SHADER_IR_TGSI : PIPE_SHADER_IR_NIR;
       case PIPE_SHADER_CAP_SUPPORTED_IRS:
-         return (1 << PIPE_SHADER_IR_TGSI) | ((virgl_debug & VIRGL_DEBUG_USE_TGSI) ? 0 : (1 << PIPE_SHADER_IR_NIR));
+         return (1 << PIPE_SHADER_IR_TGSI) | (1 << PIPE_SHADER_IR_NIR);
       case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTERS:
          return VIRGL_SHADER_STAGE_CAP_V2(max_atomic_counters, shader);
       case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTER_BUFFERS:
@@ -1041,9 +1043,6 @@ static void virgl_disk_cache_create(struct virgl_screen *screen)
    struct mesa_sha1 sha1_ctx;
    _mesa_sha1_init(&sha1_ctx);
    _mesa_sha1_update(&sha1_ctx, id_sha1, build_id_len);
-
-   uint32_t shader_debug_flags = virgl_debug & VIRGL_DEBUG_USE_TGSI;
-   _mesa_sha1_update(&sha1_ctx, &shader_debug_flags, sizeof(shader_debug_flags));
 
    /* When we switch the host the caps might change and then we might have to
     * apply different lowering. */

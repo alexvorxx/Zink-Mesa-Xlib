@@ -144,7 +144,7 @@ def artifact_download_steps(args):
     else:
         download_steps += [
             "echo Could not find jwt file, disabling S3 requests...",
-            "sed -i '/MINIO_RESULTS_UPLOAD/d' /set-job-env-vars.sh",
+            "sed -i '/S3_RESULTS_UPLOAD/d' /set-job-env-vars.sh",
         ]
 
     return download_steps

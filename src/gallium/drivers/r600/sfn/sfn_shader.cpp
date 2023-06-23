@@ -677,10 +677,10 @@ Shader::scan_instruction(nir_instr *instr)
       m_flags.set(sh_uses_images);
       break;
    case nir_intrinsic_scoped_barrier:
-      m_chain_instr.prepare_mem_barrier =
+      m_chain_instr.prepare_mem_barrier |=
             (nir_intrinsic_memory_modes(intr) &
              (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image) &&
-             nir_intrinsic_memory_scope(intr) != NIR_SCOPE_NONE);
+             nir_intrinsic_memory_scope(intr) != SCOPE_NONE);
       break;
    default:;
    }
@@ -903,6 +903,8 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
       return emit_load_scratch(intr);
    case nir_intrinsic_store_local_shared_r600:
       return emit_local_store(intr);
+   case nir_intrinsic_load_global:
+      return emit_load_global(intr);
    case nir_intrinsic_load_local_shared_r600:
       return emit_local_load(intr);
    case nir_intrinsic_load_tcs_in_param_base_r600:
@@ -1130,6 +1132,25 @@ Shader::emit_load_scratch(nir_intrinsic_instr *intr)
    return true;
 }
 
+bool Shader::emit_load_global(nir_intrinsic_instr *intr)
+{
+   auto dest = value_factory().dest_vec4(intr->dest, pin_group);
+
+   auto src_value = value_factory().src(intr->src[0], 0);
+   auto src = src_value->as_register();
+   if (!src) {
+      src = value_factory().temp_register();
+      emit_instruction(new AluInstr(op1_mov, src, src_value, AluInstr::last_write));
+   }
+   auto load = new LoadFromBuffer(dest, {0,7,7,7}, src, 0, 1, NULL, fmt_32);
+   load->set_mfc(4);
+   load->set_num_format(vtx_nf_int);
+   load->reset_fetch_flag(FetchInstr::format_comp_signed);
+
+   emit_instruction(load);
+   return true;
+}
+
 bool
 Shader::emit_local_store(nir_intrinsic_instr *instr)
 {
@@ -1312,7 +1333,7 @@ Shader::emit_group_barrier(nir_intrinsic_instr *intr)
 bool Shader::emit_scoped_barrier(nir_intrinsic_instr *intr)
 {
 
-   if ((nir_intrinsic_execution_scope(intr) == NIR_SCOPE_WORKGROUP)) {
+   if ((nir_intrinsic_execution_scope(intr) == SCOPE_WORKGROUP)) {
       if (!emit_group_barrier(intr))
          return false;
    }
@@ -1326,7 +1347,7 @@ bool Shader::emit_scoped_barrier(nir_intrinsic_instr *intr)
     * shader instance). */
    auto full_barrier_mem_modes = nir_var_mem_ssbo |  nir_var_image | nir_var_mem_global;
 
-   if ((nir_intrinsic_memory_scope(intr) != NIR_SCOPE_NONE) &&
+   if ((nir_intrinsic_memory_scope(intr) != SCOPE_NONE) &&
        (nir_intrinsic_memory_modes(intr) & full_barrier_mem_modes)) {
       return emit_wait_ack();
    }
@@ -1546,6 +1567,7 @@ Shader::get_shader_info(r600_shader *sh_info)
    sh_info->needs_scratch_space = m_flags.test(sh_needs_scratch_space);
    sh_info->uses_images = m_flags.test(sh_uses_images);
    sh_info->uses_atomics = m_flags.test(sh_uses_atomics);
+   sh_info->disable_sb = m_flags.test(sh_disble_sb);
    sh_info->has_txq_cube_array_z_comp = m_flags.test(sh_txs_cube_array_comp);
    sh_info->indirect_files = m_indirect_files;
    do_get_shader_info(sh_info);

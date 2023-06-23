@@ -90,7 +90,9 @@ impl<T: Copy> CLVec<T> {
     ///
     /// Using it for anything else is undefined.
     pub unsafe fn from_raw(v: *const T) -> Self {
-        Self { vals: *v.cast() }
+        Self {
+            vals: unsafe { *v.cast() },
+        }
     }
 
     pub fn pixels<'a>(&'a self) -> T

@@ -2671,7 +2671,7 @@ vtn_handle_variables(struct vtn_builder *b, SpvOp opcode,
                   "OpArrayLength must take a pointer to a structure type");
       vtn_fail_if(field != ptr->type->length - 1 ||
                   ptr->type->members[field]->base_type != vtn_base_type_array,
-                  "OpArrayLength must reference the last memeber of the "
+                  "OpArrayLength must reference the last member of the "
                   "structure and that must be an array");
 
       struct vtn_access_chain chain = {

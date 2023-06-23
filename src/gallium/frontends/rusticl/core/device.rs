@@ -181,6 +181,9 @@ impl Device {
             return None;
         }
 
+        // Create before loading libclc as llvmpipe only creates the shader cache with the first
+        // context being created.
+        let helper_ctx = screen.create_context()?;
         let lib_clc = spirv::SPIRVBin::get_lib_clc(&screen);
         if lib_clc.is_none() {
             eprintln!("Libclc failed to load. Please make sure it is installed and provides spirv-mesa3d-.spv and/or spirv64-mesa3d-.spv");
@@ -188,7 +191,7 @@ impl Device {
 
         let mut d = Self {
             base: CLObjectBase::new(),
-            helper_ctx: Mutex::new(screen.create_context().unwrap()),
+            helper_ctx: Mutex::new(helper_ctx),
             screen: screen,
             cl_version: CLVersion::Cl3_0,
             clc_version: CLVersion::Cl3_0,
@@ -232,22 +235,31 @@ impl Device {
                 ) {
                     flags |= CL_MEM_READ_ONLY;
                 }
-                if self.screen.is_format_supported(
-                    f.pipe,
-                    cl_mem_type_to_texture_target(t),
-                    PIPE_BIND_SHADER_IMAGE,
-                ) {
+
+                // TODO: cl_khr_srgb_image_writes
+                if !f.is_srgb
+                    && self.screen.is_format_supported(
+                        f.pipe,
+                        cl_mem_type_to_texture_target(t),
+                        PIPE_BIND_SHADER_IMAGE,
+                    )
+                {
                     flags |= CL_MEM_WRITE_ONLY;
                     // TODO: enable once we support it
                     // flags |= CL_MEM_KERNEL_READ_AND_WRITE;
                 }
-                if self.screen.is_format_supported(
-                    f.pipe,
-                    cl_mem_type_to_texture_target(t),
-                    PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_SHADER_IMAGE,
-                ) {
+
+                // TODO: cl_khr_srgb_image_writes
+                if !f.is_srgb
+                    && self.screen.is_format_supported(
+                        f.pipe,
+                        cl_mem_type_to_texture_target(t),
+                        PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_SHADER_IMAGE,
+                    )
+                {
                     flags |= CL_MEM_READ_WRITE;
                 }
+
                 fs.insert(t, flags as cl_mem_flags);
             }
             self.formats.insert(f.cl_image_format, fs);
@@ -364,7 +376,7 @@ impl Device {
 
             // TODO check req formats
         }
-        !self.long_supported()
+        !self.int64_supported()
     }
 
     fn parse_env_device_type() -> Option<cl_device_type> {
@@ -506,13 +518,18 @@ impl Device {
 
         add_spirv("SPV_KHR_float_controls");
         add_spirv("SPV_KHR_integer_dot_product");
+        add_spirv("SPV_KHR_no_integer_wrap_decoration");
 
-        if self.doubles_supported() {
+        if self.fp16_supported() {
+            add_ext(1, 0, 0, "cl_khr_fp16");
+        }
+
+        if self.fp64_supported() {
             add_ext(1, 0, 0, "cl_khr_fp64");
             add_feat(1, 0, 0, "__opencl_c_fp64");
         }
 
-        if self.long_supported() {
+        if self.int64_supported() {
             if self.embedded {
                 add_ext(1, 0, 0, "cles_khr_int64");
             };
@@ -606,7 +623,15 @@ impl Device {
         res as cl_device_type
     }
 
-    pub fn doubles_supported(&self) -> bool {
+    pub fn fp16_supported(&self) -> bool {
+        if !Platform::features().fp16 {
+            return false;
+        }
+
+        self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_FP16) != 0
+    }
+
+    pub fn fp64_supported(&self) -> bool {
         if !Platform::features().fp64 {
             return false;
         }
@@ -638,14 +663,14 @@ impl Device {
         self.get_nir_options().has_pack_32_4x8
     }
 
-    pub fn doubles_is_softfp(&self) -> bool {
+    pub fn fp64_is_softfp(&self) -> bool {
         bit_check(
             self.get_nir_options().lower_doubles_options as u32,
             nir_lower_doubles_options::nir_lower_fp64_full_software as u32,
         )
     }
 
-    pub fn long_supported(&self) -> bool {
+    pub fn int64_supported(&self) -> bool {
         self.screen.param(pipe_cap::PIPE_CAP_INT64) == 1
     }
 
@@ -717,7 +742,7 @@ impl Device {
     pub fn image_3d_write_supported(&self) -> bool {
         !FORMATS
             .iter()
-            .filter(|f| f.req_for_3d_image_write_ext)
+            .filter(|f| f.req_for_full_read_or_write)
             .map(|f| self.formats.get(&f.cl_image_format).unwrap())
             .map(|f| f.get(&CL_MEM_OBJECT_IMAGE3D).unwrap())
             .any(|f| *f & cl_mem_flags::from(CL_MEM_WRITE_ONLY) == 0)
@@ -857,9 +882,9 @@ impl Device {
 
     pub fn cl_features(&self) -> clc_optional_features {
         clc_optional_features {
-            fp16: false,
-            fp64: self.doubles_supported(),
-            int64: self.long_supported(),
+            fp16: self.fp16_supported(),
+            fp64: self.fp64_supported(),
+            int64: self.int64_supported(),
             images: self.image_supported(),
             images_read_write: self.image_read_write_supported(),
             images_write_3d: self.image_3d_write_supported(),

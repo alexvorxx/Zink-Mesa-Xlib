@@ -101,7 +101,6 @@ impl Mappings {
     }
 }
 
-#[repr(C)]
 pub struct Mem {
     pub base: CLObjectBase<CL_INVALID_MEM_OBJECT>,
     pub context: Arc<Context>,
@@ -112,6 +111,7 @@ pub struct Mem {
     pub offset: usize,
     pub host_ptr: *mut c_void,
     pub image_format: cl_image_format,
+    pub pipe_format: pipe_format,
     pub image_desc: cl_image_desc,
     pub image_elem_size: u8,
     pub props: Vec<cl_mem_properties>,
@@ -127,7 +127,7 @@ pub trait CLImageDescInfo {
     fn pixels(&self) -> usize;
     fn bx(&self) -> CLResult<pipe_box>;
     fn row_pitch(&self) -> CLResult<u32>;
-    fn slice_pitch(&self) -> CLResult<usize>;
+    fn slice_pitch(&self) -> usize;
     fn width(&self) -> CLResult<u32>;
     fn height(&self) -> CLResult<u32>;
     fn size(&self) -> CLVec<usize>;
@@ -204,10 +204,8 @@ impl CLImageDescInfo for cl_image_desc {
             .map_err(|_| CL_OUT_OF_HOST_MEMORY)
     }
 
-    fn slice_pitch(&self) -> CLResult<usize> {
+    fn slice_pitch(&self) -> usize {
         self.image_slice_pitch
-            .try_into()
-            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
     }
 
     fn width(&self) -> CLResult<u32> {
@@ -302,6 +300,7 @@ impl Mem {
             offset: 0,
             host_ptr: host_ptr,
             image_format: cl_image_format::default(),
+            pipe_format: pipe_format::PIPE_FORMAT_NONE,
             image_desc: cl_image_desc::default(),
             image_elem_size: 0,
             props: props,
@@ -333,6 +332,7 @@ impl Mem {
             offset: offset,
             host_ptr: host_ptr,
             image_format: cl_image_format::default(),
+            pipe_format: pipe_format::PIPE_FORMAT_NONE,
             image_desc: cl_image_desc::default(),
             image_elem_size: 0,
             props: Vec::new(),
@@ -373,10 +373,11 @@ impl Mem {
             ResourceType::Normal
         };
 
+        let pipe_format = image_format.to_pipe_format().unwrap();
         let texture = if parent.is_none() {
             Some(context.create_texture(
                 &image_desc,
-                image_format,
+                pipe_format,
                 host_ptr,
                 bit_check(flags, CL_MEM_COPY_HOST_PTR),
                 res_type,
@@ -401,6 +402,7 @@ impl Mem {
             offset: 0,
             host_ptr: host_ptr,
             image_format: *image_format,
+            pipe_format: pipe_format,
             image_desc: api_image_desc,
             image_elem_size: image_elem_size,
             props: props,
@@ -532,7 +534,7 @@ impl Mem {
                     r.depth(),
                     r.array_size(),
                     cl_mem_type_to_texture_target(self.image_desc.image_type),
-                    self.image_format.to_pipe_format().unwrap(),
+                    self.pipe_format,
                     ResourceType::Staging,
                 )
                 .ok_or(CL_OUT_OF_RESOURCES)?;
@@ -679,7 +681,7 @@ impl Mem {
                 src_pitch[0] = bpp;
                 if self.is_image_from_buffer() {
                     src_pitch[1] = self.image_desc.row_pitch()? as usize;
-                    src_pitch[2] = self.image_desc.slice_pitch()? as usize;
+                    src_pitch[2] = self.image_desc.slice_pitch();
                 } else {
                     src_pitch[1] = region[0] * bpp;
                     src_pitch[2] = region[0] * region[1] * bpp;
@@ -695,11 +697,7 @@ impl Mem {
                     RWFlags::RD,
                 )?;
 
-                src_pitch = [
-                    1,
-                    tx_src.row_pitch() as usize,
-                    tx_src.slice_pitch() as usize,
-                ];
+                src_pitch = [1, tx_src.row_pitch() as usize, tx_src.slice_pitch()];
             }
 
             if dst.is_buffer() {
@@ -707,7 +705,7 @@ impl Mem {
                 dst_pitch[0] = bpp;
                 if dst_base.is_image_from_buffer() {
                     dst_pitch[1] = dst_base.image_desc.row_pitch()? as usize;
-                    dst_pitch[2] = dst_base.image_desc.slice_pitch()? as usize;
+                    dst_pitch[2] = dst_base.image_desc.slice_pitch();
                 } else {
                     dst_pitch[1] = region[0] * bpp;
                     dst_pitch[2] = region[0] * region[1] * bpp;
@@ -723,11 +721,7 @@ impl Mem {
                     RWFlags::WR,
                 )?;
 
-                dst_pitch = [
-                    1,
-                    tx_dst.row_pitch() as usize,
-                    tx_dst.slice_pitch() as usize,
-                ];
+                dst_pitch = [1, tx_dst.row_pitch() as usize, tx_dst.slice_pitch()];
             }
 
             // Those pitch values cannot have 0 value in its coordinates
@@ -808,7 +802,7 @@ impl Mem {
         // CL_DEPTH where it's just one value.
         unsafe {
             util_format_pack_rgba(
-                self.image_format.to_pipe_format().unwrap(),
+                self.pipe_format,
                 new_pattern.as_mut_ptr().cast(),
                 pattern.as_ptr().cast(),
                 1,
@@ -820,7 +814,7 @@ impl Mem {
         if self.is_parent_buffer() {
             let strides = (
                 self.image_desc.row_pitch()? as usize,
-                self.image_desc.slice_pitch()? as usize,
+                self.image_desc.slice_pitch(),
             );
             ctx.clear_image_buffer(res, &new_pattern, origin, region, strides, pixel_size);
         } else {
@@ -888,9 +882,7 @@ impl Mem {
                 src_row_pitch
                     .try_into()
                     .map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
-                src_slice_pitch
-                    .try_into()
-                    .map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
+                src_slice_pitch,
             );
         }
         Ok(())
@@ -930,7 +922,7 @@ impl Mem {
             let bx = create_pipe_box(*src_origin, *region, self.mem_type)?;
             tx = self.tx_image(q, ctx, &bx, RWFlags::RD)?;
             src_row_pitch = tx.row_pitch() as usize;
-            src_slice_pitch = tx.slice_pitch() as usize;
+            src_slice_pitch = tx.slice_pitch();
 
             pixel_size = self.pixel_size().unwrap();
         };
@@ -1150,7 +1142,7 @@ impl Mem {
                 *row_pitch = tx.row_pitch() as usize;
             }
             if self.image_desc.dims() > 2 || self.image_desc.is_array() {
-                *slice_pitch = tx.slice_pitch() as usize;
+                *slice_pitch = tx.slice_pitch();
             }
 
             tx.ptr()
@@ -1241,7 +1233,6 @@ impl Drop for Mem {
     }
 }
 
-#[repr(C)]
 pub struct Sampler {
     pub base: CLObjectBase<CL_INVALID_SAMPLER>,
     pub context: Arc<Context>,
@@ -1286,13 +1277,13 @@ impl Sampler {
             cl_sampler_addressing_mode::SAMPLER_ADDRESSING_MODE_REPEAT_MIRRORED => {
                 CL_ADDRESS_MIRRORED_REPEAT
             }
-            _ => panic!("unkown addressing_mode"),
+            _ => panic!("unknown addressing_mode"),
         };
 
         let filter = match filter_mode {
             cl_sampler_filter_mode::SAMPLER_FILTER_MODE_NEAREST => CL_FILTER_NEAREST,
             cl_sampler_filter_mode::SAMPLER_FILTER_MODE_LINEAR => CL_FILTER_LINEAR,
-            _ => panic!("unkown filter_mode"),
+            _ => panic!("unknown filter_mode"),
         };
 
         (addr_mode, filter, normalized_coords != 0)
@@ -1319,7 +1310,7 @@ impl Sampler {
         let img_filter = match filter_mode {
             CL_FILTER_NEAREST => pipe_tex_filter::PIPE_TEX_FILTER_NEAREST,
             CL_FILTER_LINEAR => pipe_tex_filter::PIPE_TEX_FILTER_LINEAR,
-            _ => panic!("unkown filter_mode"),
+            _ => panic!("unknown filter_mode"),
         };
 
         res.set_min_img_filter(img_filter);

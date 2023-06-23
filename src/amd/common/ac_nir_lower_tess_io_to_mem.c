@@ -245,8 +245,7 @@ lower_ls_output_store(nir_builder *b,
    unsigned write_mask = nir_intrinsic_write_mask(intrin);
 
    nir_ssa_def *off = nir_iadd_nuw(b, base_off_var, io_off);
-   nir_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask,
-                    .align_mul = 16u, .align_offset = (nir_intrinsic_component(intrin) * 4u) % 16u);
+   nir_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask);
 
    /* NOTE: don't remove the store_output intrinsic on GFX9+ when tcs_in_out_eq,
     * it will be used by same-invocation TCS input loads.
@@ -403,8 +402,7 @@ lower_hs_per_vertex_input_load(nir_builder *b,
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
 
    nir_ssa_def *off = hs_per_vertex_input_lds_offset(b, st, intrin);
-   return nir_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off,
-                          .align_mul = 16u, .align_offset = (nir_intrinsic_component(intrin) * 4u) % 16u);
+   return nir_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off);
 }
 
 static nir_ssa_def *
@@ -453,8 +451,7 @@ lower_hs_output_store(nir_builder *b,
 
    if (write_to_lds) {
       nir_ssa_def *lds_off = hs_output_lds_offset(b, st, intrin);
-      nir_store_shared(b, store_val, lds_off, .write_mask = write_mask,
-                       .align_mul = 16u, .align_offset = (component * 4u) % 16u);
+      nir_store_shared(b, store_val, lds_off, .write_mask = write_mask);
    }
 
    nir_ssa_def *ret = NIR_LOWER_INSTR_PROGRESS_REPLACE;
@@ -483,8 +480,7 @@ lower_hs_output_load(nir_builder *b,
                      lower_tess_io_state *st)
 {
    nir_ssa_def *off = hs_output_lds_offset(b, st, intrin);
-   return nir_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off,
-                          .align_mul = 16u, .align_offset = (nir_intrinsic_component(intrin) * 4u) % 16u);
+   return nir_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off);
 }
 
 static void
@@ -500,13 +496,13 @@ update_hs_scoped_barrier(nir_intrinsic_instr *intrin, lower_tess_io_state *st)
    }
    nir_intrinsic_set_memory_modes(intrin, mem_modes);
 
-   nir_scope exec_scope = nir_intrinsic_execution_scope(intrin);
-   if (exec_scope == NIR_SCOPE_WORKGROUP && st->tcs_out_patch_fits_subgroup)
-      nir_intrinsic_set_execution_scope(intrin, NIR_SCOPE_SUBGROUP);
+   mesa_scope exec_scope = nir_intrinsic_execution_scope(intrin);
+   if (exec_scope == SCOPE_WORKGROUP && st->tcs_out_patch_fits_subgroup)
+      nir_intrinsic_set_execution_scope(intrin, SCOPE_SUBGROUP);
 
-   nir_scope mem_scope = nir_intrinsic_memory_scope(intrin);
-   if (mem_scope == NIR_SCOPE_WORKGROUP && st->tcs_out_patch_fits_subgroup)
-      nir_intrinsic_set_memory_scope(intrin, NIR_SCOPE_SUBGROUP);
+   mesa_scope mem_scope = nir_intrinsic_memory_scope(intrin);
+   if (mem_scope == SCOPE_WORKGROUP && st->tcs_out_patch_fits_subgroup)
+      nir_intrinsic_set_memory_scope(intrin, SCOPE_SUBGROUP);
 }
 
 static nir_ssa_def *
@@ -570,8 +566,8 @@ hs_emit_write_tess_factors(nir_shader *shader,
 
    /* If tess factors are load from LDS, wait previous LDS stores done. */
    if (!st->tcs_pass_tessfactors_by_reg) {
-      nir_scope scope = st->tcs_out_patch_fits_subgroup ?
-         NIR_SCOPE_SUBGROUP : NIR_SCOPE_WORKGROUP;
+      mesa_scope scope = st->tcs_out_patch_fits_subgroup ?
+                        SCOPE_SUBGROUP : SCOPE_WORKGROUP;
 
       nir_scoped_barrier(b, .execution_scope = scope, .memory_scope = scope,
                          .memory_semantics = NIR_MEMORY_ACQ_REL, .memory_modes = nir_var_mem_shared);
@@ -611,14 +607,12 @@ hs_emit_write_tess_factors(nir_shader *shader,
       /* Load all tessellation factors (aka. tess levels) from LDS. */
       if (tess_lvl_out_written) {
          tessfactors_outer = nir_load_shared(b, outer_comps, 32, lds_base,
-                                             .base = st->tcs_tess_lvl_out_loc,
-                                             .align_mul = 16u);
+                                             .base = st->tcs_tess_lvl_out_loc);
       }
 
       if (inner_comps && tess_lvl_in_written) {
          tessfactors_inner = nir_load_shared(b, inner_comps, 32, lds_base,
-                                             .base = st->tcs_tess_lvl_in_loc,
-                                             .align_mul = 16u);
+                                             .base = st->tcs_tess_lvl_in_loc);
       }
    }
 

@@ -587,8 +587,10 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    /* don't move non-reorderable instructions */
    if (instr->opcode == aco_opcode::s_memtime || instr->opcode == aco_opcode::s_memrealtime ||
        instr->opcode == aco_opcode::s_setprio || instr->opcode == aco_opcode::s_getreg_b32 ||
-       instr->opcode == aco_opcode::p_init_scratch || instr->opcode == aco_opcode::p_jump_to_epilog ||
-       instr->opcode == aco_opcode::s_sendmsg_rtn_b32 || instr->opcode == aco_opcode::s_sendmsg_rtn_b64)
+       instr->opcode == aco_opcode::p_init_scratch ||
+       instr->opcode == aco_opcode::p_jump_to_epilog ||
+       instr->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
+       instr->opcode == aco_opcode::s_sendmsg_rtn_b64)
       return hazard_fail_unreorderable;
 
    memory_event_set instr_set;
@@ -663,8 +665,7 @@ schedule_SMEM(sched_ctx& ctx, Block* block, std::vector<RegisterDemand>& registe
    int16_t k = 0;
 
    /* don't move s_memtime/s_memrealtime */
-   if (current->opcode == aco_opcode::s_memtime ||
-       current->opcode == aco_opcode::s_memrealtime ||
+   if (current->opcode == aco_opcode::s_memtime || current->opcode == aco_opcode::s_memrealtime ||
        current->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
        current->opcode == aco_opcode::s_sendmsg_rtn_b64)
       return;
@@ -1018,6 +1019,37 @@ schedule_position_export(sched_ctx& ctx, Block* block, std::vector<RegisterDeman
    }
 }
 
+unsigned
+schedule_VMEM_store(sched_ctx& ctx, Block* block, std::vector<RegisterDemand>& register_demand,
+                    Instruction* current, int idx)
+{
+   hazard_query hq;
+   init_hazard_query(ctx, &hq);
+
+   DownwardsCursor cursor = ctx.mv.downwards_init(idx, true, true);
+   unsigned skip = 0;
+
+   for (int i = 0; i < VMEM_CLAUSE_MAX_GRAB_DIST; i++) {
+      aco_ptr<Instruction>& candidate = block->instructions[cursor.source_idx];
+      if (candidate->opcode == aco_opcode::p_logical_start)
+         break;
+
+      if (!should_form_clause(current, candidate.get())) {
+         add_to_hazard_query(&hq, candidate.get());
+         ctx.mv.downwards_skip(cursor);
+         continue;
+      }
+
+      if (perform_hazard_query(&hq, candidate.get(), false) != hazard_success ||
+          ctx.mv.downwards_move(cursor, true) != move_success)
+         break;
+
+      skip++;
+   }
+
+   return skip;
+}
+
 void
 schedule_block(sched_ctx& ctx, Program* program, Block* block, live& live_vars)
 {
@@ -1027,6 +1059,7 @@ schedule_block(sched_ctx& ctx, Program* program, Block* block, live& live_vars)
    ctx.mv.register_demand = live_vars.register_demand[block->index].data();
 
    /* go through all instructions and find memory loads */
+   unsigned num_stores = 0;
    for (unsigned idx = 0; idx < block->instructions.size(); idx++) {
       Instruction* current = block->instructions[idx].get();
 
@@ -1039,8 +1072,10 @@ schedule_block(sched_ctx& ctx, Program* program, Block* block, live& live_vars)
          }
       }
 
-      if (current->definitions.empty())
+      if (current->definitions.empty()) {
+         num_stores += current->isVMEM() || current->isFlatLike() ? 1 : 0;
          continue;
+      }
 
       if (current->isVMEM() || current->isFlatLike()) {
          ctx.mv.current = current;
@@ -1050,6 +1085,19 @@ schedule_block(sched_ctx& ctx, Program* program, Block* block, live& live_vars)
       if (current->isSMEM()) {
          ctx.mv.current = current;
          schedule_SMEM(ctx, block, live_vars.register_demand[block->index], current, idx);
+      }
+   }
+
+   /* GFX11 benefits from creating VMEM store clauses. */
+   if (num_stores > 1 && program->gfx_level >= GFX11) {
+      for (int idx = block->instructions.size() - 1; idx >= 0; idx--) {
+         Instruction* current = block->instructions[idx].get();
+         if (!current->definitions.empty() || !(current->isVMEM() || current->isFlatLike()))
+            continue;
+
+         ctx.mv.current = current;
+         idx -=
+            schedule_VMEM_store(ctx, block, live_vars.register_demand[block->index], current, idx);
       }
    }
 

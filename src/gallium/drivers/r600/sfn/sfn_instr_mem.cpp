@@ -511,6 +511,8 @@ RatInstr::emit(nir_intrinsic_instr *intr, Shader& shader)
    case nir_intrinsic_ssbo_atomic:
    case nir_intrinsic_ssbo_atomic_swap:
       return emit_ssbo_atomic_op(intr, shader);
+   case nir_intrinsic_store_global:
+      return emit_global_store(intr, shader);
    case nir_intrinsic_image_store:
       return emit_image_store(intr, shader);
    case nir_intrinsic_image_load:
@@ -565,6 +567,50 @@ RatInstr::emit_ssbo_load(nir_intrinsic_instr *intr, Shader& shader)
    ir->set_num_format(vtx_nf_int);
 
    shader.emit_instruction(ir);
+   return true;
+}
+
+bool
+RatInstr::emit_global_store(nir_intrinsic_instr *intr, Shader& shader)
+{
+   auto& vf = shader.value_factory();
+   auto addr_orig = vf.src(intr->src[1], 0);
+   auto addr_vec = vf.temp_vec4(pin_chan, {0, 7, 7, 7});
+
+   shader.emit_instruction(
+      new AluInstr(op2_lshr_int, addr_vec[0], addr_orig, vf.literal(2),
+                   AluInstr::last_write));
+
+   RegisterVec4::Swizzle value_swz = {0,7,7,7};
+   auto mask = nir_intrinsic_write_mask(intr);
+   for (int i = 0; i < 4; ++i) {
+      if (mask & (1 << i))
+         value_swz[i] = i;
+   }
+
+   auto value_vec = vf.temp_vec4(pin_chgr, value_swz);
+
+   AluInstr *ir = nullptr;
+   for (int i = 0; i < 4; ++i) {
+      if (value_swz[i] < 4) {
+         ir = new AluInstr(op1_mov, value_vec[i],
+                           vf.src(intr->src[0], i), AluInstr::write);
+         shader.emit_instruction(ir);
+      }
+   }
+   if (ir)
+      ir->set_alu_flag(alu_last_instr);
+
+   auto store = new RatInstr(cf_mem_rat_cacheless,
+                             RatInstr::STORE_RAW,
+                             value_vec,
+                             addr_vec,
+                             shader.ssbo_image_offset(),
+                             nullptr,
+                             1,
+                             mask,
+                             0);
+   shader.emit_instruction(store);
    return true;
 }
 

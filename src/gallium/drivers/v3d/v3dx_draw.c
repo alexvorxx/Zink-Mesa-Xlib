@@ -1599,6 +1599,9 @@ v3d_tlb_clear(struct v3d_job *job, unsigned buffers,
                         clamped_color.f[3] = orig_color.f[3];
                 }
 
+                if (util_format_is_alpha(psurf->format))
+                        clamped_color.f[0] = clamped_color.f[3];
+
                 switch (surf->internal_type) {
                 case V3D_INTERNAL_TYPE_8:
                         util_pack_color(clamped_color.f, PIPE_FORMAT_R8G8B8A8_UNORM,

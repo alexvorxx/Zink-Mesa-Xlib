@@ -5,3 +5,5 @@ VK_EXT_mesh_shader on lavapipe
 OpenGL 3.1 on Asahi
 OpenGL ES 3.0 on Asahi
 VK_KHR_fragment_shader_barycentric on RADV/GFX10.3+
+VK_KHR_ray_tracing_pipeline on RADV/GFX10.3+
+VK_EXT_depth_bias_control on RADV

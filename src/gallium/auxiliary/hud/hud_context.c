@@ -1082,7 +1082,7 @@ hud_graph_set_dump_file(struct hud_graph *gr, const char *hud_dump_dir, bool to_
          strcpy(dump_file, hud_dump_dir);
          strcat(dump_file, PATH_SEP);
          strcat_without_spaces(dump_file, gr->name);
-         gr->fd = fopen(dump_file, "w+");
+         gr->fd = fopen(dump_file, "a+");
          free(dump_file);
       }
    } else if (to_stdout) {

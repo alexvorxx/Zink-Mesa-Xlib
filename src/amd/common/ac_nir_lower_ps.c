@@ -322,9 +322,9 @@ emit_ps_color_clamp_and_alpha_test(nir_builder *b, lower_ps_state *s)
       }
 
       if (slot == FRAG_RESULT_COLOR || slot == FRAG_RESULT_DATA0) {
-         if (s->options->alpha_func == PIPE_FUNC_ALWAYS) {
+         if (s->options->alpha_func == COMPARE_FUNC_ALWAYS) {
             /* always pass, do nothing */
-         } else if (s->options->alpha_func == PIPE_FUNC_NEVER) {
+         } else if (s->options->alpha_func == COMPARE_FUNC_NEVER) {
             nir_discard(b);
          } else if (s->outputs[slot][3]) {
             nir_ssa_def *ref = nir_load_alpha_reference_amd(b);

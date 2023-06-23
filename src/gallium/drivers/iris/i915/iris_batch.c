@@ -101,6 +101,14 @@ iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected)
    uint32_t ctx_id;
 
    if (protected) {
+      /* User explicitly requested for PXP so wait for the kernel + firmware
+       * dependencies to complete to avoid a premature PXP context-create failure.
+       */
+      if (!intel_gem_wait_on_get_param(iris_bufmgr_get_fd(bufmgr),
+                                      I915_PARAM_PXP_STATUS, 1,
+                                      8000))
+         DBG("unable to wait for pxp-readiness\n");
+
       if (!intel_gem_create_context_ext(iris_bufmgr_get_fd(bufmgr),
                                         INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG,
                                         &ctx_id)) {
@@ -169,8 +177,17 @@ iris_create_engines_context(struct iris_context *ice)
       engine_classes[IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_COMPUTE;
 
    enum intel_gem_create_context_flags flags = 0;
-   if (ice->protected)
+   if (ice->protected) {
       flags |= INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG;
+
+      /* User explicitly requested for PXP so wait for the kernel + firmware
+       * dependencies to complete to avoid a premature PXP context-create failure.
+       */
+      if (!intel_gem_wait_on_get_param(fd,
+                                      I915_PARAM_PXP_STATUS, 1,
+                                      8000))
+         DBG("unable to wait for pxp-readiness\n");
+   }
 
    uint32_t engines_ctx;
    if (!intel_gem_create_context_engines(fd, flags, engines_info, num_batches,

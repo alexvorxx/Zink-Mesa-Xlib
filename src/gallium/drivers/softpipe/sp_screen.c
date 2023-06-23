@@ -55,7 +55,6 @@ static const struct debug_named_value sp_debug_options[] = {
    {"cs",        SP_DBG_CS,         "dump compute shader assembly to stderr"},
    {"no_rast",   SP_DBG_NO_RAST,    "no-ops rasterization, for profiling purposes"},
    {"use_llvm",  SP_DBG_USE_LLVM,   "Use LLVM if available for shaders"},
-   {"use_tgsi",  SP_DBG_USE_TGSI,   "Request TGSI from the API instead of NIR"},
    DEBUG_NAMED_VALUE_END
 };
 
@@ -216,6 +215,7 @@ softpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MIN_MAP_BUFFER_ALIGNMENT:
       return 64;
    case PIPE_CAP_QUERY_TIMESTAMP:
+   case PIPE_CAP_TIMER_RESOLUTION:
    case PIPE_CAP_CUBE_MAP_ARRAY:
       return 1;
    case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
@@ -327,8 +327,6 @@ softpipe_get_shader_param(struct pipe_screen *screen,
    struct softpipe_screen *sp_screen = softpipe_screen(screen);
 
    switch (param) {
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-      return (sp_debug & SP_DBG_USE_TGSI) ? PIPE_SHADER_IR_TGSI : PIPE_SHADER_IR_NIR;
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
       return (1 << PIPE_SHADER_IR_NIR) | (1 << PIPE_SHADER_IR_TGSI);
    default:

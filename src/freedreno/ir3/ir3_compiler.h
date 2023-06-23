@@ -93,6 +93,8 @@ struct ir3_compiler {
     * different generations:
     */
 
+   bool is_64bit;
+
    /* a4xx (and later) drops SP_FS_FLAT_SHAD_MODE_REG_* for flat-interpolate
     * so we need to use ldlv.u32 to load the varying directly:
     */
@@ -265,7 +267,7 @@ int ir3_compile_shader_nir(struct ir3_compiler *compiler,
 static inline unsigned
 ir3_pointer_size(struct ir3_compiler *compiler)
 {
-   return fd_dev_64b(compiler->dev_id) ? 2 : 1;
+   return compiler->is_64bit ? 2 : 1;
 }
 
 enum ir3_shader_debug {

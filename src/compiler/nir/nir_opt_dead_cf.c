@@ -397,6 +397,7 @@ opt_dead_cf_impl(nir_function_impl *impl)
 
    if (progress) {
       nir_metadata_preserve(impl, nir_metadata_none);
+      nir_rematerialize_derefs_in_use_blocks_impl(impl);
 
       /* The CF manipulation code called by this pass is smart enough to keep
        * from breaking any SSA use/def chains by replacing any uses of removed

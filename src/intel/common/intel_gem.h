@@ -187,6 +187,8 @@ bool
 intel_gem_get_context_param(int fd, uint32_t context, uint32_t param,
                             uint64_t *value);
 bool intel_gem_get_param(int fd, uint32_t param, int *value);
+bool intel_gem_wait_on_get_param(int fd, uint32_t param, int target_val,
+                                 uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

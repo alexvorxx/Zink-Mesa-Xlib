@@ -279,7 +279,7 @@ dri_destroy_context(struct dri_context *ctx)
 }
 
 /* This is called inside MakeCurrent to unbind the context. */
-GLboolean
+bool
 dri_unbind_context(struct dri_context *ctx)
 {
    /* dri_util.c ensures cPriv is not null */
@@ -310,7 +310,7 @@ dri_unbind_context(struct dri_context *ctx)
    return GL_TRUE;
 }
 
-GLboolean
+bool
 dri_make_current(struct dri_context *ctx,
 		 struct dri_drawable *draw,
 		 struct dri_drawable *read)

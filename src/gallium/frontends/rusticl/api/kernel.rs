@@ -7,15 +7,18 @@ use crate::core::kernel::*;
 use mesa_rust_util::ptr::*;
 use mesa_rust_util::string::*;
 use rusticl_opencl_gen::*;
+use rusticl_proc_macros::cl_entrypoint;
+use rusticl_proc_macros::cl_info_entrypoint;
 
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
 
+#[cl_info_entrypoint(cl_get_kernel_info)]
 impl CLInfo<cl_kernel_info> for cl_kernel {
-    fn query(&self, q: cl_kernel_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_kernel_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let kernel = self.get_ref()?;
         Ok(match q {
             CL_KERNEL_ATTRIBUTES => cl_prop::<&str>(&kernel.attributes_string),
@@ -36,8 +39,9 @@ impl CLInfo<cl_kernel_info> for cl_kernel {
     }
 }
 
+#[cl_info_entrypoint(cl_get_kernel_arg_info)]
 impl CLInfoObj<cl_kernel_arg_info, cl_uint> for cl_kernel {
-    fn query(&self, idx: cl_uint, q: cl_kernel_arg_info) -> CLResult<Vec<u8>> {
+    fn query(&self, idx: cl_uint, q: cl_kernel_arg_info) -> CLResult<Vec<MaybeUninit<u8>>> {
         let kernel = self.get_ref()?;
 
         // CL_INVALID_ARG_INDEX if arg_index is not a valid argument index.
@@ -63,8 +67,13 @@ impl CLInfoObj<cl_kernel_arg_info, cl_uint> for cl_kernel {
     }
 }
 
+#[cl_info_entrypoint(cl_get_kernel_work_group_info)]
 impl CLInfoObj<cl_kernel_work_group_info, cl_device_id> for cl_kernel {
-    fn query(&self, dev: cl_device_id, q: cl_kernel_work_group_info) -> CLResult<Vec<u8>> {
+    fn query(
+        &self,
+        dev: cl_device_id,
+        q: cl_kernel_work_group_info,
+    ) -> CLResult<Vec<MaybeUninit<u8>>> {
         let kernel = self.get_ref()?;
 
         // CL_INVALID_DEVICE [..] if device is NULL but there is more than one device associated with kernel.
@@ -102,7 +111,7 @@ impl CLInfoObj<cl_kernel_sub_group_info, (cl_device_id, usize, *const c_void)> f
         &self,
         (d, _input_value_size, _input_value): (cl_device_id, usize, *const c_void),
         _q: cl_program_build_info,
-    ) -> CLResult<Vec<u8>> {
+    ) -> CLResult<Vec<MaybeUninit<u8>>> {
         let _kernel = self.get_ref()?;
         let _dev = d.get_arc()?;
 
@@ -117,13 +126,14 @@ const ZERO_ARR: [usize; 3] = [0; 3];
 /// This function is only safe when called on an array of `work_dim` length
 unsafe fn kernel_work_arr_or_default<'a>(arr: *const usize, work_dim: cl_uint) -> &'a [usize] {
     if !arr.is_null() {
-        slice::from_raw_parts(arr, work_dim as usize)
+        unsafe { slice::from_raw_parts(arr, work_dim as usize) }
     } else {
         &ZERO_ARR
     }
 }
 
-pub fn create_kernel(
+#[cl_entrypoint]
+fn create_kernel(
     program: cl_program,
     kernel_name: *const ::std::os::raw::c_char,
 ) -> CLResult<cl_kernel> {
@@ -155,7 +165,18 @@ pub fn create_kernel(
     Ok(cl_kernel::from_arc(Kernel::new(name, p)))
 }
 
-pub fn create_kernels_in_program(
+#[cl_entrypoint]
+fn retain_kernel(kernel: cl_kernel) -> CLResult<()> {
+    kernel.retain()
+}
+
+#[cl_entrypoint]
+fn release_kernel(kernel: cl_kernel) -> CLResult<()> {
+    kernel.release()
+}
+
+#[cl_entrypoint]
+fn create_kernels_in_program(
     program: cl_program,
     num_kernels: cl_uint,
     kernels: *mut cl_kernel,
@@ -198,7 +219,8 @@ pub fn create_kernels_in_program(
     Ok(())
 }
 
-pub fn set_kernel_arg(
+#[cl_entrypoint]
+fn set_kernel_arg(
     kernel: cl_kernel,
     arg_index: cl_uint,
     arg_size: usize,
@@ -293,7 +315,8 @@ pub fn set_kernel_arg(
     //• CL_MAX_SIZE_RESTRICTION_EXCEEDED if the size in bytes of the memory object (if the argument is a memory object) or arg_size (if the argument is declared with local qualifier) exceeds a language- specified maximum size restriction for this argument, such as the MaxByteOffset SPIR-V decoration. This error code is missing before version 2.2.
 }
 
-pub fn set_kernel_arg_svm_pointer(
+#[cl_entrypoint]
+fn set_kernel_arg_svm_pointer(
     kernel: cl_kernel,
     arg_index: cl_uint,
     arg_value: *const ::std::os::raw::c_void,
@@ -324,7 +347,8 @@ pub fn set_kernel_arg_svm_pointer(
     // CL_INVALID_ARG_VALUE if arg_value specified is not a valid value.
 }
 
-pub fn set_kernel_exec_info(
+#[cl_entrypoint]
+fn set_kernel_exec_info(
     kernel: cl_kernel,
     param_name: cl_kernel_exec_info,
     param_value_size: usize,
@@ -365,7 +389,8 @@ pub fn set_kernel_exec_info(
     // CL_INVALID_OPERATION if param_name is CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM and param_value is CL_TRUE but no devices in context associated with kernel support fine-grain system SVM allocations.
 }
 
-pub fn enqueue_ndrange_kernel(
+#[cl_entrypoint]
+fn enqueue_ndrange_kernel(
     command_queue: cl_command_queue,
     kernel: cl_kernel,
     work_dim: cl_uint,
@@ -482,7 +507,8 @@ pub fn enqueue_ndrange_kernel(
     //• CL_INVALID_OPERATION if SVM pointers are passed as arguments to a kernel and the device does not support SVM or if system pointers are passed as arguments to a kernel and/or stored inside SVM allocations passed as kernel arguments and the device does not support fine grain system SVM allocations.
 }
 
-pub fn enqueue_task(
+#[cl_entrypoint]
+fn enqueue_task(
     command_queue: cl_command_queue,
     kernel: cl_kernel,
     num_events_in_wait_list: cl_uint,
@@ -505,7 +531,8 @@ pub fn enqueue_task(
     )
 }
 
-pub fn clone_kernel(source_kernel: cl_kernel) -> CLResult<cl_kernel> {
+#[cl_entrypoint]
+fn clone_kernel(source_kernel: cl_kernel) -> CLResult<cl_kernel> {
     let k = source_kernel.get_ref()?;
     Ok(cl_kernel::from_arc(Arc::new(k.clone())))
 }

@@ -96,9 +96,10 @@ opaque_dri_context(struct dri_context *ctx)
  */
 void dri_destroy_context(struct dri_context *ctx);
 
-boolean dri_unbind_context(struct dri_context *ctx);
+bool
+dri_unbind_context(struct dri_context *ctx);
 
-boolean
+bool
 dri_make_current(struct dri_context *ctx,
                  struct dri_drawable *draw,
 		 struct dri_drawable *read);

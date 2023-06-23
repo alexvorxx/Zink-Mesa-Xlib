@@ -601,7 +601,6 @@ nvc0_sp_state_create(struct pipe_context *pipe,
                      const struct pipe_shader_state *cso, unsigned type)
 {
    struct nvc0_program *prog;
-   const struct nouveau_screen *screen = nouveau_screen(pipe->screen);
 
    prog = CALLOC_STRUCT(nvc0_program);
    if (!prog)
@@ -612,12 +611,8 @@ nvc0_sp_state_create(struct pipe_context *pipe,
 
    switch(cso->type) {
    case PIPE_SHADER_IR_TGSI:
-      if (screen->prefer_nir) {
-         prog->pipe.type = PIPE_SHADER_IR_NIR;
-         prog->pipe.ir.nir = tgsi_to_nir(cso->tokens, pipe->screen, false);
-      } else {
-         prog->pipe.tokens = tgsi_dup_tokens(cso->tokens);
-      }
+      prog->pipe.type = PIPE_SHADER_IR_NIR;
+      prog->pipe.ir.nir = tgsi_to_nir(cso->tokens, pipe->screen, false);
       break;
    case PIPE_SHADER_IR_NIR:
       prog->pipe.ir.nir = cso->ir.nir;
@@ -741,7 +736,6 @@ nvc0_cp_state_create(struct pipe_context *pipe,
                      const struct pipe_compute_state *cso)
 {
    struct nvc0_program *prog;
-   const struct nouveau_screen *screen = nouveau_screen(pipe->screen);
 
    prog = CALLOC_STRUCT(nvc0_program);
    if (!prog)
@@ -755,12 +749,8 @@ nvc0_cp_state_create(struct pipe_context *pipe,
    switch(cso->ir_type) {
    case PIPE_SHADER_IR_TGSI: {
       const struct tgsi_token *tokens = cso->prog;
-      if (screen->prefer_nir) {
-         prog->pipe.type = PIPE_SHADER_IR_NIR;
-         prog->pipe.ir.nir = tgsi_to_nir(tokens, pipe->screen, false);
-      } else {
-         prog->pipe.tokens = tgsi_dup_tokens(tokens);
-      }
+      prog->pipe.type = PIPE_SHADER_IR_NIR;
+      prog->pipe.ir.nir = tgsi_to_nir(tokens, pipe->screen, false);
       break;
    }
    case PIPE_SHADER_IR_NIR:

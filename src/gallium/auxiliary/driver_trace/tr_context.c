@@ -142,6 +142,25 @@ trace_context_draw_vbo(struct pipe_context *_pipe,
    trace_dump_call_end();
 }
 
+static void
+trace_context_draw_mesh_tasks(struct pipe_context *_pipe,
+                              const struct pipe_grid_info *info)
+{
+   struct trace_context *tr_ctx = trace_context(_pipe);
+   struct pipe_context *pipe = tr_ctx->pipe;
+
+   trace_dump_call_begin("pipe_context", "draw_mesh_tasks");
+
+   trace_dump_arg(ptr,  pipe);
+   trace_dump_arg(grid_info, info);
+
+   trace_dump_trace_flush();
+
+   pipe->draw_mesh_tasks(pipe, info);
+
+   trace_dump_call_end();
+}
+
 
 static void
 trace_context_draw_vertex_state(struct pipe_context *_pipe,
@@ -728,6 +747,8 @@ TRACE_SHADER_STATE(vs)
 TRACE_SHADER_STATE(gs)
 TRACE_SHADER_STATE(tcs)
 TRACE_SHADER_STATE(tes)
+TRACE_SHADER_STATE(ms)
+TRACE_SHADER_STATE(ts)
 
 #undef TRACE_SHADER_STATE
 
@@ -2353,6 +2374,7 @@ trace_context_create(struct trace_screen *tr_scr,
    tr_ctx->base . _member = pipe -> _member ? trace_context_ ## _member : NULL
 
    TR_CTX_INIT(draw_vbo);
+   TR_CTX_INIT(draw_mesh_tasks);
    TR_CTX_INIT(draw_vertex_state);
    TR_CTX_INIT(render_condition);
    TR_CTX_INIT(render_condition_mem);
@@ -2390,6 +2412,12 @@ trace_context_create(struct trace_screen *tr_scr,
    TR_CTX_INIT(create_tes_state);
    TR_CTX_INIT(bind_tes_state);
    TR_CTX_INIT(delete_tes_state);
+   TR_CTX_INIT(create_ts_state);
+   TR_CTX_INIT(bind_ts_state);
+   TR_CTX_INIT(delete_ts_state);
+   TR_CTX_INIT(create_ms_state);
+   TR_CTX_INIT(bind_ms_state);
+   TR_CTX_INIT(delete_ms_state);
    TR_CTX_INIT(create_compute_state);
    TR_CTX_INIT(bind_compute_state);
    TR_CTX_INIT(delete_compute_state);

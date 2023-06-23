@@ -3951,16 +3951,12 @@ static void parse_shader(struct shader_translator *tx)
     ureg_END(tx->ureg);
 }
 
-#define NINE_SHADER_DEBUG_OPTION_NIR_VS           (1 << 0)
-#define NINE_SHADER_DEBUG_OPTION_NIR_PS           (1 << 1)
 #define NINE_SHADER_DEBUG_OPTION_NO_NIR_VS        (1 << 2)
 #define NINE_SHADER_DEBUG_OPTION_NO_NIR_PS        (1 << 3)
 #define NINE_SHADER_DEBUG_OPTION_DUMP_NIR         (1 << 4)
 #define NINE_SHADER_DEBUG_OPTION_DUMP_TGSI        (1 << 5)
 
 static const struct debug_named_value nine_shader_debug_options[] = {
-    { "nir_vs", NINE_SHADER_DEBUG_OPTION_NIR_VS, "Use NIR for vertex shaders even if the driver doesn't prefer it." },
-    { "nir_ps", NINE_SHADER_DEBUG_OPTION_NIR_PS, "Use NIR for pixel shaders even if the driver doesn't prefer it." },
     { "no_nir_vs", NINE_SHADER_DEBUG_OPTION_NO_NIR_VS, "Never use NIR for vertex shaders even if the driver prefers it." },
     { "no_nir_ps", NINE_SHADER_DEBUG_OPTION_NO_NIR_PS, "Never use NIR for pixel shaders even if the driver prefers it." },
     { "dump_nir", NINE_SHADER_DEBUG_OPTION_DUMP_NIR, "Print translated NIR shaders." },
@@ -4019,11 +4015,7 @@ nine_ureg_create_shader(struct ureg_program                  *ureg,
     assert(((struct tgsi_header *) &tgsi_tokens[0])->HeaderSize >= 2);
     enum pipe_shader_type shader_type = ((struct tgsi_processor *) &tgsi_tokens[1])->Processor;
 
-    int preferred_ir = screen->get_shader_param(screen, shader_type, PIPE_SHADER_CAP_PREFERRED_IR);
-    bool prefer_nir = (preferred_ir == PIPE_SHADER_IR_NIR);
-    bool use_nir = prefer_nir ||
-        ((shader_type == PIPE_SHADER_VERTEX) && nine_shader_get_debug_flag(NINE_SHADER_DEBUG_OPTION_NIR_VS)) ||
-        ((shader_type == PIPE_SHADER_FRAGMENT) && nine_shader_get_debug_flag(NINE_SHADER_DEBUG_OPTION_NIR_PS));
+    bool use_nir = true;
 
     /* Allow user to override preferred IR, this is very useful for debugging */
     if (unlikely(shader_type == PIPE_SHADER_VERTEX && nine_shader_get_debug_flag(NINE_SHADER_DEBUG_OPTION_NO_NIR_VS)))
@@ -4031,9 +4023,8 @@ nine_ureg_create_shader(struct ureg_program                  *ureg,
     if (unlikely(shader_type == PIPE_SHADER_FRAGMENT && nine_shader_get_debug_flag(NINE_SHADER_DEBUG_OPTION_NO_NIR_PS)))
         use_nir = false;
 
-    DUMP("shader type: %s, preferred IR: %s, selected IR: %s\n",
+    DUMP("shader type: %s, selected IR: %s\n",
          shader_type == PIPE_SHADER_VERTEX ? "VS" : "PS",
-         prefer_nir ? "NIR" : "TGSI",
          use_nir ? "NIR" : "TGSI");
 
     if (use_nir) {

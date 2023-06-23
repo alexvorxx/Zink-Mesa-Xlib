@@ -47,3 +47,5 @@ IncludeCategories:
 MacroBlockBegin: 'BEGIN_TEST'
 MacroBlockEnd: 'END_TEST'
 CommentPragmas: '^(!|;|>>|~)'
+
+WhitespaceSensitiveMacros: ['qoShaderModuleCreateInfoGLSL']

@@ -47,9 +47,9 @@ nir_cull_face(nir_builder *b, nir_variable *vertices, bool ccw)
                                                nir_fsub(b, v2, v0)),
                                    nir_imm_vec4(b, 0.0, 0.0, -1.0, 0.0));
    if (ccw)
-       return nir_fge(b, nir_imm_float(b, 0.0f), dir);
+       return nir_fle_imm(b, dir, 0.0f);
    else
-       return nir_flt(b, nir_imm_float(b, 0.0f), dir);
+       return nir_fgt_imm(b, dir, 0.0f);
 }
 
 static void
@@ -382,7 +382,7 @@ d3d12_emit_lines(struct d3d12_context *ctx, struct d3d12_gs_variant_key *key)
 
    d3d12_begin_emit_primitives_gs(&emit_ctx, ctx, key, GL_LINE_STRIP, 6);
 
-   nir_ssa_def *next_index = nir_imod(b, nir_iadd_imm(b, emit_ctx.loop_index, 1), nir_imm_int(b, 3));
+   nir_ssa_def *next_index = nir_imod_imm(b, nir_iadd_imm(b, emit_ctx.loop_index, 1), 3);
 
    /* First vertex */
    for (unsigned i = 0; i < emit_ctx.num_vars; ++i) {
@@ -436,12 +436,12 @@ d3d12_emit_triangles(struct d3d12_context *ctx, struct d3d12_gs_variant_key *key
       incr = nir_imm_int(b, 3);
 
    if (key->alternate_tri) {
-      nir_ssa_def *odd = nir_imod(b, nir_load_primitive_id(b), nir_imm_int(b, 2));
+      nir_ssa_def *odd = nir_imod_imm(b, nir_load_primitive_id(b), 2);
       incr = nir_isub(b, incr, odd);
    }
 
    assert(incr != NULL);
-   nir_ssa_def *index = nir_imod(b, nir_iadd(b, emit_ctx.loop_index, incr), nir_imm_int(b, 3));
+   nir_ssa_def *index = nir_imod_imm(b, nir_iadd(b, emit_ctx.loop_index, incr), 3);
    for (unsigned i = 0; i < emit_ctx.num_vars; ++i) {
       nir_deref_instr *in_value = nir_build_deref_array(b, nir_build_deref_var(b, emit_ctx.in[i]), index);
       copy_vars(b, nir_build_deref_var(b, emit_ctx.out[i]), in_value);

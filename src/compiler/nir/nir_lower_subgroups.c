@@ -856,7 +856,7 @@ lower_subgroups_instr(nir_builder *b, nir_instr *instr, void *_options)
       break;
 
    case nir_intrinsic_rotate:
-      if (nir_intrinsic_execution_scope(intrin) == NIR_SCOPE_SUBGROUP) {
+      if (nir_intrinsic_execution_scope(intrin) == SCOPE_SUBGROUP) {
          if (options->lower_rotate_to_shuffle)
             return lower_to_shuffle(b, intrin, options);
          else if (options->lower_to_scalar && intrin->num_components > 1)

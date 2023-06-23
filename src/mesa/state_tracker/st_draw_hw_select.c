@@ -274,7 +274,7 @@ clip_with_plane(nir_builder *b, nir_variable *vert, nir_variable *num_vert,
                                        nir_iadd_imm(b, num, -1),
                                        nir_iadd_imm(b, idx, -1));
          nir_ssa_def *dp = nir_load_array_var(b, dist, prev);
-         nir_if *prev_if = nir_push_if(b, nir_flt(b, nir_imm_float(b, 0), dp));
+         nir_if *prev_if = nir_push_if(b, nir_fgt_imm(b, dp, 0));
          {
             /* +- case, replace - with inserted vertex
              * assert(vert_index <= idx), array is sure to not grow here
@@ -296,7 +296,7 @@ clip_with_plane(nir_builder *b, nir_variable *vert, nir_variable *num_vert,
          nir_ssa_def *next = nir_bcsel(b, nir_ieq(b, idx, nir_iadd_imm(b, num, -1)),
                                        nir_imm_int(b, 0), nir_iadd_imm(b, idx, 1));
          nir_ssa_def *dn = nir_load_array_var(b, dist, next);
-         nir_if *next_if = nir_push_if(b, nir_flt(b, nir_imm_float(b, 0), dn));
+         nir_if *next_if = nir_push_if(b, nir_fgt_imm(b, dn, 0));
          {
             /* -+ case, may grow array:
              *   vert_index > idx: +-+ case, grow array, current vertex in 'saved',

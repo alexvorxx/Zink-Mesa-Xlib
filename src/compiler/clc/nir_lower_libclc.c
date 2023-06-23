@@ -28,6 +28,7 @@
  * itself to make sure all instances are lowered, before validation.
  */
 #include "nir.h"
+#include "nir_clc_helpers.h"
 #include "nir_builder.h"
 #include "nir_spirv.h"
 

@@ -8,6 +8,7 @@
 #include "util/mesa-sha1.h"
 #include "util/u_prim.h"
 #include "sid.h"
+#include "nir.h"
 
 
 struct si_shader_profile {
@@ -69,7 +70,8 @@ static void scan_tess_ctrl(nir_cf_node *cf_node, unsigned *upper_block_tf_writem
             continue;
 
          nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-         if (intrin->intrinsic == nir_intrinsic_control_barrier) {
+         if (intrin->intrinsic == nir_intrinsic_scoped_barrier &&
+             nir_intrinsic_execution_scope(intrin) >= SCOPE_WORKGROUP) {
 
             /* If we find a barrier in nested control flow put this in the
              * too hard basket. In GLSL this is not possible but it is in

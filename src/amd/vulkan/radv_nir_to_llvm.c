@@ -33,8 +33,8 @@
 #include "radv_shader_args.h"
 
 #include "ac_binary.h"
-#include "ac_nir.h"
 #include "ac_llvm_build.h"
+#include "ac_nir.h"
 #include "ac_nir_to_llvm.h"
 #include "ac_shader_abi.h"
 #include "ac_shader_util.h"
@@ -80,7 +80,7 @@ create_llvm_function(struct ac_llvm_context *ctx, LLVMModuleRef module, LLVMBuil
    }
 
    ac_llvm_set_workgroup_size(main_function.value, max_workgroup_size);
-   ac_llvm_set_target_features(main_function.value, ctx);
+   ac_llvm_set_target_features(main_function.value, ctx, true);
 
    return main_function;
 }
@@ -96,8 +96,7 @@ load_descriptor_sets(struct radv_shader_context *ctx)
       while (mask) {
          int i = u_bit_scan(&mask);
 
-         ctx->descriptor_sets[i] =
-            ac_build_load_to_sgpr(&ctx->ac, desc_sets, LLVMConstInt(ctx->ac.i32, i, false));
+         ctx->descriptor_sets[i] = ac_build_load_to_sgpr(&ctx->ac, desc_sets, LLVMConstInt(ctx->ac.i32, i, false));
          LLVMSetAlignment(ctx->descriptor_sets[i], 4);
       }
    } else {
@@ -152,15 +151,13 @@ create_function(struct radv_shader_context *ctx, gl_shader_stage stage, bool has
       }
    }
 
-   ctx->main_function =
-      create_llvm_function(&ctx->ac, ctx->ac.module, ctx->ac.builder, &ctx->args->ac,
-                           get_llvm_calling_convention(ctx->main_function.value, stage),
-                           ctx->max_workgroup_size, ctx->options);
+   ctx->main_function = create_llvm_function(&ctx->ac, ctx->ac.module, ctx->ac.builder, &ctx->args->ac,
+                                             get_llvm_calling_convention(ctx->main_function.value, stage),
+                                             ctx->max_workgroup_size, ctx->options);
 
    load_descriptor_sets(ctx);
 
-   if (stage == MESA_SHADER_TESS_CTRL ||
-       (stage == MESA_SHADER_VERTEX && ctx->shader_info->vs.as_ls) ||
+   if (stage == MESA_SHADER_TESS_CTRL || (stage == MESA_SHADER_VERTEX && ctx->shader_info->vs.as_ls) ||
        ctx->shader_info->is_ngg ||
        /* GFX9 has the ESGS ring buffer in LDS. */
        (stage == MESA_SHADER_GEOMETRY && has_previous_stage)) {
@@ -209,8 +206,7 @@ radv_load_ssbo(struct ac_shader_abi *abi, LLVMValueRef buffer_ptr, bool write, b
 }
 
 static LLVMValueRef
-radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
-                      enum ac_descriptor_type desc_type)
+radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index, enum ac_descriptor_type desc_type)
 {
    struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
 
@@ -218,8 +214,7 @@ radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
     * use the tail from plane 1 so that we can store only the first 16 bytes
     * of the last plane. */
    if (desc_type == AC_DESC_PLANE_2 && index && LLVMTypeOf(index) == ctx->ac.i32) {
-      LLVMValueRef plane1_addr =
-         LLVMBuildSub(ctx->ac.builder, index, LLVMConstInt(ctx->ac.i32, 32, false), "");
+      LLVMValueRef plane1_addr = LLVMBuildSub(ctx->ac.builder, index, LLVMConstInt(ctx->ac.i32, 32, false), "");
       LLVMValueRef descriptor1 = radv_load_rsrc(ctx, plane1_addr, ctx->ac.v8i32);
       LLVMValueRef descriptor2 = radv_load_rsrc(ctx, index, ctx->ac.v4i32);
 
@@ -237,8 +232,8 @@ radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
 }
 
 static void
-scan_shader_output_decl(struct radv_shader_context *ctx, struct nir_variable *variable,
-                        struct nir_shader *shader, gl_shader_stage stage)
+scan_shader_output_decl(struct radv_shader_context *ctx, struct nir_variable *variable, struct nir_shader *shader,
+                        gl_shader_stage stage)
 {
    int idx = variable->data.driver_location;
    unsigned attrib_count = glsl_count_attribute_slots(variable->type, false);
@@ -276,8 +271,7 @@ static void
 prepare_gs_input_vgprs(struct radv_shader_context *ctx, bool merged)
 {
    if (merged) {
-      ctx->gs_wave_id =
-         ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->ac.merged_wave_info), 16, 8);
+      ctx->gs_wave_id = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->ac.merged_wave_info), 16, 8);
    } else {
       ctx->gs_wave_id = ac_get_arg(&ctx->ac, ctx->args->ac.gs_wave_id);
    }
@@ -293,13 +287,14 @@ declare_esgs_ring(struct radv_shader_context *ctx)
 {
    assert(!LLVMGetNamedGlobal(ctx->ac.module, "esgs_ring"));
 
-   LLVMValueRef esgs_ring = LLVMAddGlobalInAddressSpace(ctx->ac.module, LLVMArrayType(ctx->ac.i32, 0),
-                                                        "esgs_ring", AC_ADDR_SPACE_LDS);
+   LLVMValueRef esgs_ring =
+      LLVMAddGlobalInAddressSpace(ctx->ac.module, LLVMArrayType(ctx->ac.i32, 0), "esgs_ring", AC_ADDR_SPACE_LDS);
    LLVMSetLinkage(esgs_ring, LLVMExternalLinkage);
    LLVMSetAlignment(esgs_ring, 64 * 1024);
 }
 
-static LLVMValueRef radv_intrinsic_load(struct ac_shader_abi *abi, nir_intrinsic_instr *intrin)
+static LLVMValueRef
+radv_intrinsic_load(struct ac_shader_abi *abi, nir_intrinsic_instr *intrin)
 {
    switch (intrin->intrinsic) {
    case nir_intrinsic_load_base_vertex:
@@ -311,10 +306,8 @@ static LLVMValueRef radv_intrinsic_load(struct ac_shader_abi *abi, nir_intrinsic
 }
 
 static LLVMModuleRef
-ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
-                         const struct radv_nir_compiler_options *options,
-                         const struct radv_shader_info *info,
-                         struct nir_shader *const *shaders, int shader_count,
+ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm, const struct radv_nir_compiler_options *options,
+                         const struct radv_shader_info *info, struct nir_shader *const *shaders, int shader_count,
                          const struct radv_shader_args *args)
 {
    struct radv_shader_context ctx = {0};
@@ -335,8 +328,8 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
       exports_color_null = !exports_mrtz || (shaders[0]->info.outputs_written & (0xffu << FRAG_RESULT_DATA0));
    }
 
-   ac_llvm_context_init(&ctx.ac, ac_llvm, options->info,
-                        float_mode, info->wave_size, info->ballot_bit_size, exports_color_null, exports_mrtz);
+   ac_llvm_context_init(&ctx.ac, ac_llvm, options->info, float_mode, info->wave_size, info->ballot_bit_size,
+                        exports_color_null, exports_mrtz);
 
    uint32_t length = 1;
    for (uint32_t i = 0; i < shader_count; i++)
@@ -384,8 +377,7 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
    if (args->ac.instance_id.used)
       ctx.abi.instance_id = ac_get_arg(&ctx.ac, args->ac.instance_id);
 
-   if (options->info->has_ls_vgpr_init_bug &&
-       shaders[shader_count - 1]->info.stage == MESA_SHADER_TESS_CTRL)
+   if (options->info->has_ls_vgpr_init_bug && shaders[shader_count - 1]->info.stage == MESA_SHADER_TESS_CTRL)
       ac_fixup_ls_hs_input_vgprs(&ctx.ac, &ctx.abi, &args->ac);
 
    if (is_ngg) {
@@ -441,8 +433,8 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
          ac_build_s_barrier(&ctx.ac, shaders[shader_idx]->info.stage);
       }
 
-      nir_foreach_shader_out_variable(variable, shaders[shader_idx]) scan_shader_output_decl(
-         &ctx, variable, shaders[shader_idx], shaders[shader_idx]->info.stage);
+      nir_foreach_shader_out_variable (variable, shaders[shader_idx])
+         scan_shader_output_decl(&ctx, variable, shaders[shader_idx], shaders[shader_idx]->info.stage);
 
       bool check_merged_wave_info = shader_count >= 2 && !(is_ngg && shader_idx == 1);
       LLVMBasicBlockRef merge_block = NULL;
@@ -452,8 +444,8 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
          LLVMBasicBlockRef then_block = LLVMAppendBasicBlockInContext(ctx.ac.context, fn, "");
          merge_block = LLVMAppendBasicBlockInContext(ctx.ac.context, fn, "");
 
-         LLVMValueRef count = ac_unpack_param(
-            &ctx.ac, ac_get_arg(&ctx.ac, args->ac.merged_wave_info), 8 * shader_idx, 8);
+         LLVMValueRef count =
+            ac_unpack_param(&ctx.ac, ac_get_arg(&ctx.ac, args->ac.merged_wave_info), 8 * shader_idx, 8);
          LLVMValueRef thread_id = ac_get_thread_id(&ctx.ac);
          LLVMValueRef cond = LLVMBuildICmp(ctx.ac.builder, LLVMIntULT, thread_id, count, "");
          LLVMBuildCondBr(ctx.ac.builder, cond, then_block, merge_block);
@@ -477,8 +469,7 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
    LLVMBuildRetVoid(ctx.ac.builder);
 
    if (options->dump_preoptir) {
-      fprintf(stderr, "%s LLVM IR:\n\n",
-              radv_get_shader_name(info, shaders[shader_count - 1]->info.stage));
+      fprintf(stderr, "%s LLVM IR:\n\n", radv_get_shader_name(info, shaders[shader_count - 1]->info.stage));
       ac_dump_module(ctx.ac.module);
       fprintf(stderr, "\n");
    }
@@ -506,8 +497,7 @@ ac_diagnostic_handler(LLVMDiagnosticInfoRef di, void *context)
 }
 
 static unsigned
-radv_llvm_compile(LLVMModuleRef M, char **pelf_buffer, size_t *pelf_size,
-                  struct ac_llvm_compiler *ac_llvm)
+radv_llvm_compile(LLVMModuleRef M, char **pelf_buffer, size_t *pelf_size, struct ac_llvm_compiler *ac_llvm)
 {
    unsigned retval = 0;
    LLVMContextRef llvm_ctx;
@@ -524,9 +514,8 @@ radv_llvm_compile(LLVMModuleRef M, char **pelf_buffer, size_t *pelf_size,
 }
 
 static void
-ac_compile_llvm_module(struct ac_llvm_compiler *ac_llvm, LLVMModuleRef llvm_module,
-                       struct radv_shader_binary **rbinary, const char *name,
-                       const struct radv_nir_compiler_options *options)
+ac_compile_llvm_module(struct ac_llvm_compiler *ac_llvm, LLVMModuleRef llvm_module, struct radv_shader_binary **rbinary,
+                       const char *name, const struct radv_nir_compiler_options *options)
 {
    char *elf_buffer = NULL;
    size_t elf_size = 0;
@@ -571,26 +560,22 @@ ac_compile_llvm_module(struct ac_llvm_compiler *ac_llvm, LLVMModuleRef llvm_modu
 }
 
 static void
-radv_compile_nir_shader(struct ac_llvm_compiler *ac_llvm,
-                        const struct radv_nir_compiler_options *options,
-                        const struct radv_shader_info *info,
-                        struct radv_shader_binary **rbinary,
-                        const struct radv_shader_args *args, struct nir_shader *const *nir,
-                        int nir_count)
+radv_compile_nir_shader(struct ac_llvm_compiler *ac_llvm, const struct radv_nir_compiler_options *options,
+                        const struct radv_shader_info *info, struct radv_shader_binary **rbinary,
+                        const struct radv_shader_args *args, struct nir_shader *const *nir, int nir_count)
 {
 
    LLVMModuleRef llvm_module;
 
    llvm_module = ac_translate_nir_to_llvm(ac_llvm, options, info, nir, nir_count, args);
 
-   ac_compile_llvm_module(ac_llvm, llvm_module, rbinary,
-                          radv_get_shader_name(info, nir[nir_count - 1]->info.stage), options);
+   ac_compile_llvm_module(ac_llvm, llvm_module, rbinary, radv_get_shader_name(info, nir[nir_count - 1]->info.stage),
+                          options);
 }
 
 void
-llvm_compile_shader(const struct radv_nir_compiler_options *options,
-                    const struct radv_shader_info *info, unsigned shader_count,
-                    struct nir_shader *const *shaders, struct radv_shader_binary **binary,
+llvm_compile_shader(const struct radv_nir_compiler_options *options, const struct radv_shader_info *info,
+                    unsigned shader_count, struct nir_shader *const *shaders, struct radv_shader_binary **binary,
                     const struct radv_shader_args *args)
 {
    enum ac_target_machine_options tm_options = 0;

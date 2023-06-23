@@ -117,6 +117,13 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
       VKSCR(DestroyQueryPool)(screen->dev, *pool, NULL);
    util_dynarray_clear(&bs->dead_querypools);
 
+   util_dynarray_foreach(&bs->dgc.pipelines, VkPipeline, pipeline)
+      VKSCR(DestroyPipeline)(screen->dev, *pipeline, NULL);
+   util_dynarray_clear(&bs->dgc.pipelines);
+   util_dynarray_foreach(&bs->dgc.layouts, VkIndirectCommandsLayoutNV, iclayout)
+      VKSCR(DestroyIndirectCommandsLayoutNV)(screen->dev, *iclayout, NULL);
+   util_dynarray_clear(&bs->dgc.layouts);
+
    /* framebuffers are appended to the batch state in which they are destroyed
     * to ensure deferred deletion without destroying in-use objects
     */
@@ -272,6 +279,8 @@ zink_batch_state_destroy(struct zink_screen *screen, struct zink_batch_state *bs
    free(bs->slab_objs.objs);
    free(bs->sparse_objs.objs);
    util_dynarray_fini(&bs->dead_querypools);
+   util_dynarray_fini(&bs->dgc.pipelines);
+   util_dynarray_fini(&bs->dgc.layouts);
    util_dynarray_fini(&bs->swapchain_obj);
    util_dynarray_fini(&bs->zombie_samplers);
    util_dynarray_fini(&bs->dead_framebuffers);
@@ -333,6 +342,8 @@ create_batch_state(struct zink_context *ctx)
    SET_CREATE_OR_FAIL(&bs->active_queries);
    util_dynarray_init(&bs->wait_semaphores, NULL);
    util_dynarray_init(&bs->dead_querypools, NULL);
+   util_dynarray_init(&bs->dgc.pipelines, NULL);
+   util_dynarray_init(&bs->dgc.layouts, NULL);
    util_dynarray_init(&bs->wait_semaphore_stages, NULL);
    util_dynarray_init(&bs->zombie_samplers, NULL);
    util_dynarray_init(&bs->dead_framebuffers, NULL);

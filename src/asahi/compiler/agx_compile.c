@@ -730,12 +730,12 @@ agx_emit_atomic(agx_builder *b, agx_index dst, nir_intrinsic_instr *instr,
       translate_atomic_opcode(nir_intrinsic_atomic_op(instr));
    agx_index base =
       local ? agx_local_base(instr->src[0]) : agx_src_index(&instr->src[0]);
-   agx_index value = agx_src_index(&instr->src[1]);
-   agx_index index = agx_zero(); /* TODO: optimize address arithmetic? */
+   agx_index value = agx_src_index(&instr->src[local ? 1 : 2]);
+   agx_index index = local ? agx_zero() : agx_src_index(&instr->src[1]);
 
    /* cmpxchg (only) takes 2 sources, passed in consecutive registers */
    if (op == AGX_ATOMIC_OPC_CMPXCHG) {
-      agx_index value2 = agx_src_index(&instr->src[2]);
+      agx_index value2 = agx_src_index(&instr->src[local ? 2 : 3]);
       value = agx_vec2(b, value2, value);
    }
 
@@ -827,8 +827,8 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
       agx_emit_local_load(b, dst, instr);
       return NULL;
 
-   case nir_intrinsic_global_atomic:
-   case nir_intrinsic_global_atomic_swap:
+   case nir_intrinsic_global_atomic_agx:
+   case nir_intrinsic_global_atomic_swap_agx:
       agx_emit_atomic(b, dst, instr, false);
       return NULL;
 
@@ -907,14 +907,14 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
    case nir_intrinsic_scoped_barrier: {
       bool needs_threadgroup_barrier = false;
 
-      if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
-         assert(nir_intrinsic_execution_scope(instr) > NIR_SCOPE_SUBGROUP &&
+      if (nir_intrinsic_execution_scope(instr) != SCOPE_NONE) {
+         assert(nir_intrinsic_execution_scope(instr) > SCOPE_SUBGROUP &&
                 "todo: subgroup barriers");
 
          needs_threadgroup_barrier = true;
       }
 
-      if (nir_intrinsic_memory_scope(instr) != NIR_SCOPE_NONE) {
+      if (nir_intrinsic_memory_scope(instr) != SCOPE_NONE) {
          nir_variable_mode modes = nir_intrinsic_memory_modes(instr);
 
          if (modes & nir_var_mem_global)
@@ -923,7 +923,7 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
          if (modes & nir_var_mem_shared)
             needs_threadgroup_barrier = true;
 
-         if (nir_intrinsic_memory_scope(instr) >= NIR_SCOPE_WORKGROUP)
+         if (nir_intrinsic_memory_scope(instr) >= SCOPE_WORKGROUP)
             needs_threadgroup_barrier = true;
       }
 
@@ -1136,6 +1136,17 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
    case nir_op_extr_agx:
       return agx_extr_to(b, dst, s0, s1, s2,
                          nir_alu_src_as_uint(instr->src[3]));
+
+   case nir_op_ubitfield_extract: {
+      unsigned m = nir_alu_src_as_uint(instr->src[2]);
+      assert(m != 0 && "should've been optimized");
+
+      /* Disable masking if the whole thing is used */
+      if (m >= 32)
+         m = 0;
+
+      return agx_bfeil_to(b, dst, i0, s0, s1, m);
+   }
 
    case nir_op_bcsel:
       return agx_icmpsel_to(b, dst, s0, i0, s2, s1, AGX_ICOND_UEQ);
@@ -2123,7 +2134,8 @@ agx_fp32_varying_mask(nir_shader *nir)
 }
 
 static nir_mem_access_size_align
-mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes, uint32_t align,
+mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes,
+                         uint8_t input_bit_size, uint32_t align,
                          uint32_t align_offset, bool offset_is_const,
                          const void *cb_data)
 {
@@ -2378,12 +2390,13 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
       out->tag_write_disable = true;
 
    /* Late sysval lowering creates large loads. Load lowering creates unpacks */
-   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes,
-              nir_var_mem_ssbo | nir_var_mem_constant |
-                 nir_var_mem_task_payload | nir_var_shader_temp |
-                 nir_var_function_temp | nir_var_mem_global |
-                 nir_var_mem_shared,
-              mem_access_size_align_cb, NULL);
+   nir_lower_mem_access_bit_sizes_options lower_mem_access_options = {
+      .modes = nir_var_mem_ssbo | nir_var_mem_constant |
+               nir_var_mem_task_payload | nir_var_shader_temp |
+               nir_var_function_temp | nir_var_mem_global | nir_var_mem_shared,
+      .callback = mem_access_size_align_cb,
+   };
+   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes, &lower_mem_access_options);
    NIR_PASS_V(nir, nir_lower_pack);
 
    /* Late blend lowering creates vectors */

@@ -170,10 +170,7 @@ nouveau_disk_cache_create(struct nouveau_screen *screen)
    _mesa_sha1_final(&ctx, sha1);
    mesa_bytes_to_hex(cache_id, sha1, 20);
 
-   if (screen->prefer_nir)
-      driver_flags |= NOUVEAU_SHADER_CACHE_FLAGS_IR_NIR;
-   else
-      driver_flags |= NOUVEAU_SHADER_CACHE_FLAGS_IR_TGSI;
+   driver_flags |= NOUVEAU_SHADER_CACHE_FLAGS_IR_NIR;
 
    screen->disk_shader_cache =
       disk_cache_create(nouveau_screen_get_name(&screen->base),
@@ -282,8 +279,6 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
    char *nv_dbg = getenv("NOUVEAU_MESA_DEBUG");
    if (nv_dbg)
       nouveau_mesa_debug = atoi(nv_dbg);
-
-   screen->prefer_nir = !debug_get_bool_option("NV50_PROG_USE_TGSI", false);
 
    screen->force_enable_cl = debug_get_bool_option("NOUVEAU_ENABLE_CL", false);
    if (screen->force_enable_cl)

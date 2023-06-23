@@ -1,8 +1,6 @@
 use crate::api::icd::*;
-use crate::api::util::cl_prop;
 use crate::core::device::*;
 use crate::core::event::*;
-use crate::core::format::*;
 use crate::core::memory::*;
 use crate::core::program::*;
 use crate::core::queue::*;
@@ -331,7 +329,6 @@ impl KernelDevState {
     }
 }
 
-#[repr(C)]
 pub struct Kernel {
     pub base: CLObjectBase<CL_INVALID_KERNEL>,
     pub prog: Arc<Program>,
@@ -938,7 +935,7 @@ impl Kernel {
                         }
                         resource_info.push((res.clone(), arg.offset));
                     } else {
-                        let format = mem.image_format.to_pipe_format().unwrap();
+                        let format = mem.pipe_format;
                         let (formats, orders) = if arg.kind == KernelArgType::Image {
                             iviews.push(res.pipe_image_view(format, false, app_img_info.as_ref()));
                             (&mut img_formats, &mut img_orders)
@@ -1001,13 +998,15 @@ impl Kernel {
                 }
                 InternalKernelArgType::GlobalWorkOffsets => {
                     if q.device.address_bits() == 64 {
-                        input.extend_from_slice(&cl_prop::<[u64; 3]>(offsets));
+                        input.extend_from_slice(unsafe { as_byte_slice(&offsets) });
                     } else {
-                        input.extend_from_slice(&cl_prop::<[u32; 3]>([
-                            offsets[0] as u32,
-                            offsets[1] as u32,
-                            offsets[2] as u32,
-                        ]));
+                        input.extend_from_slice(unsafe {
+                            as_byte_slice(&[
+                                offsets[0] as u32,
+                                offsets[1] as u32,
+                                offsets[2] as u32,
+                            ])
+                        });
                     }
                 }
                 InternalKernelArgType::PrintfBuffer => {
@@ -1027,12 +1026,12 @@ impl Kernel {
                     samplers.push(Sampler::cl_to_pipe(cl));
                 }
                 InternalKernelArgType::FormatArray => {
-                    input.extend_from_slice(&cl_prop::<&Vec<u16>>(&tex_formats));
-                    input.extend_from_slice(&cl_prop::<&Vec<u16>>(&img_formats));
+                    input.extend_from_slice(unsafe { as_byte_slice(&tex_formats) });
+                    input.extend_from_slice(unsafe { as_byte_slice(&img_formats) });
                 }
                 InternalKernelArgType::OrderArray => {
-                    input.extend_from_slice(&cl_prop::<&Vec<u16>>(&tex_orders));
-                    input.extend_from_slice(&cl_prop::<&Vec<u16>>(&img_orders));
+                    input.extend_from_slice(unsafe { as_byte_slice(&tex_orders) });
+                    input.extend_from_slice(unsafe { as_byte_slice(&img_orders) });
                 }
                 InternalKernelArgType::WorkDim => {
                     input.extend_from_slice(&[work_dim as u8; 1]);

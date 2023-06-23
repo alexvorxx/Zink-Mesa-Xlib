@@ -5,7 +5,7 @@
 set -ex
 
 INSTALL=$(realpath -s "$PWD"/install)
-MINIO_ARGS="--token-file ${CI_JOB_JWT_FILE}"
+S3_ARGS="--token-file ${CI_JOB_JWT_FILE}"
 
 RESULTS=$(realpath -s "$PWD"/results)
 mkdir -p "$RESULTS"
@@ -119,18 +119,18 @@ replay_minio_upload_images() {
             if [ "x$CI_PROJECT_PATH" != "x$FDO_UPSTREAM_REPO" ]; then
                 continue
             fi
-            __MINIO_PATH="$PIGLIT_REPLAY_REFERENCE_IMAGES_BASE"
+            __S3_PATH="$PIGLIT_REPLAY_REFERENCE_IMAGES_BASE"
             __DESTINATION_FILE_PATH="${line##*-}"
-            if curl -L -s -X HEAD "https://${__MINIO_PATH}/${__DESTINATION_FILE_PATH}" 2>/dev/null; then
+            if curl -L -s -X HEAD "https://${__S3_PATH}/${__DESTINATION_FILE_PATH}" 2>/dev/null; then
                 continue
             fi
         else
-            __MINIO_PATH="$JOB_ARTIFACTS_BASE"
-            __DESTINATION_FILE_PATH="$__MINIO_TRACES_PREFIX/${line##*-}"
+            __S3_PATH="$JOB_ARTIFACTS_BASE"
+            __DESTINATION_FILE_PATH="$__S3_TRACES_PREFIX/${line##*-}"
         fi
 
-        ci-fairy s3cp $MINIO_ARGS "$RESULTS/$__PREFIX/$line" \
-            "https://${__MINIO_PATH}/${__DESTINATION_FILE_PATH}"
+        ci-fairy s3cp $S3_ARGS "$RESULTS/$__PREFIX/$line" \
+            "https://${__S3_PATH}/${__DESTINATION_FILE_PATH}"
     done
 }
 
@@ -191,8 +191,8 @@ mkdir -p .gitlab-ci/piglit
     > $RESULTSFILE
 
 __PREFIX="trace/$PIGLIT_REPLAY_DEVICE_NAME"
-__MINIO_PATH="$PIGLIT_REPLAY_ARTIFACTS_BASE_URL"
-__MINIO_TRACES_PREFIX="traces"
+__S3_PATH="$PIGLIT_REPLAY_ARTIFACTS_BASE_URL"
+__S3_TRACES_PREFIX="traces"
 
 if [ "$PIGLIT_REPLAY_SUBCOMMAND" != "profile" ]; then
     quiet replay_minio_upload_images

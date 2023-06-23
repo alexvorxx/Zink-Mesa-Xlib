@@ -75,6 +75,27 @@ struct pvr_csb {
    void *end;
    void *next;
 
+   /* When extending the control stream we can't break state updates across bos.
+    * This indicates where the current state update starts, so that it can be
+    * be relocated into the new bo without breaking the update.
+    */
+   void *relocation_mark;
+#if defined(DEBUG)
+   /* Used to track the state of the `relocation_mark` and to catch cases where
+    * the driver might have emitted to the cs without using the
+    * `relocation_mark`. Doing so is mostly harmless but will waste memory in
+    * case the cs is extended while an untracked state update is emitted, as
+    * we'll have to relocate the cs contents from the last tracked state update
+    * instead of just the one currently being emitted.
+    */
+   enum pvr_csb_relocation_mark_status {
+      PVR_CSB_RELOCATION_MARK_UNINITIALIZED,
+      PVR_CSB_RELOCATION_MARK_SET,
+      PVR_CSB_RELOCATION_MARK_SET_AND_CONSUMED,
+      PVR_CSB_RELOCATION_MARK_CLEARED,
+   } relocation_mark_status;
+#endif
+
    /* List of csb buffer objects */
    struct list_head pvr_bo_list;
 
@@ -126,6 +147,90 @@ pvr_csb_get_start_address(const struct pvr_csb *csb)
 
    return PVR_DEV_ADDR_INVALID;
 }
+
+/** \defgroup CSB relocation marking.
+ * Functions and macros related to relocation marking for control stream words.
+ *
+ * When there is no more space left in the current bo, csb needs has to extend
+ * the control stream by allocating a new bo and emitting a link to it. State
+ * updates have to be contiguous so cannot be broken by a link. Thus csb copies
+ * the current, in construction, state update into the new bo and emits a link
+ * in its place in the old bo. To do so however, it needs a hint from the driver
+ * to determine where the current state update started from, so a relocation
+ * mark is used.
+ *
+ * List of words demarking the beginning of state updates (i.e. state update
+ * headers):
+ *  - ROGUE_VDMCTRL_PPP_STATE0
+ *  - ROGUE_VDMCTRL_PDS_STATE0
+ *  - ROGUE_VDMCTRL_VDM_STATE0
+ *  - ROGUE_VDMCTRL_INDEX_LIST0
+ *  - ROGUE_VDMCTRL_STREAM_LINK0
+ *  - ROGUE_VDMCTRL_STREAM_RETURN
+ *  - ROGUE_VDMCTRL_STREAM_TERMINATE
+ *
+ *  - ROGUE_CDMCTRL_KERNEL0
+ *  - ROGUE_CDMCTRL_STREAM_LINK0
+ *  - ROGUE_CDMCTRL_STREAM_TERMINATE
+ *
+ * The driver should set the relocation mark whenever a new state update is
+ * started. And clear it when the state update is fully formed.
+ *
+ * PVR_CSB_RELOCATION_MARK state machine:
+ *
+ *    UNINITIALIZED
+ *         ↓
+ * ┌─── → SET ─────────┐
+ * │       ↓           │
+ * │ SET_AND_CONSUMED  │
+ * │       ↓           │
+ * │    CLEARED ← ─────┘
+ * └───────┘
+ *
+ * @{
+ */
+/* TODO: Add in the IPF transfer control stream state updates to the list once
+ * csb gets used for it
+ */
+
+/**
+ * \brief Set the relocation mark.
+ *
+ * Indicates to csb that on cs extension it should relocate all words, starting
+ * from now, into the new bo.
+ */
+static inline void pvr_csb_set_relocation_mark(struct pvr_csb *csb)
+{
+#if defined(DEBUG)
+   assert(csb->relocation_mark_status ==
+             PVR_CSB_RELOCATION_MARK_UNINITIALIZED ||
+          csb->relocation_mark_status == PVR_CSB_RELOCATION_MARK_CLEARED);
+
+   csb->relocation_mark_status = PVR_CSB_RELOCATION_MARK_SET;
+#endif
+
+   csb->relocation_mark = csb->next;
+}
+
+/**
+ * \brief Clear the relocation mark.
+ *
+ * Indicate to csb that the state update is fully formed so it doesn't need to
+ * relocate it in case of cs extension.
+ */
+static inline void pvr_csb_clear_relocation_mark(UNUSED struct pvr_csb *csb)
+{
+#if defined(DEBUG)
+   assert(csb->relocation_mark_status == PVR_CSB_RELOCATION_MARK_SET ||
+          csb->relocation_mark_status ==
+             PVR_CSB_RELOCATION_MARK_SET_AND_CONSUMED);
+
+   csb->relocation_mark_status = PVR_CSB_RELOCATION_MARK_CLEARED;
+#endif
+}
+
+/** @} */
+/* End of \defgroup CSB relocation marking. */
 
 void pvr_csb_init(struct pvr_device *device,
                   enum pvr_cmd_stream_type stream_type,

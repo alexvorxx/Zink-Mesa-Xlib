@@ -30,6 +30,7 @@
 #include "brw_nir.h"
 #include "brw_vec4_tcs.h"
 #include "brw_fs.h"
+#include "brw_private.h"
 #include "dev/intel_debug.h"
 
 namespace brw {
@@ -305,9 +306,9 @@ vec4_tcs_visitor::nir_emit_intrinsic(nir_intrinsic_instr *instr)
    }
 
    case nir_intrinsic_scoped_barrier:
-      if (nir_intrinsic_memory_scope(instr) != NIR_SCOPE_NONE)
+      if (nir_intrinsic_memory_scope(instr) != SCOPE_NONE)
          vec4_visitor::nir_emit_intrinsic(instr);
-      if (nir_intrinsic_execution_scope(instr) == NIR_SCOPE_WORKGROUP) {
+      if (nir_intrinsic_execution_scope(instr) == SCOPE_WORKGROUP) {
          dst_reg header = dst_reg(this, glsl_type::uvec4_type);
          emit(TCS_OPCODE_CREATE_BARRIER_HEADER, header);
          emit(SHADER_OPCODE_BARRIER, dst_null_ud(), src_reg(header));
@@ -362,7 +363,7 @@ brw_compile_tcs(const struct brw_compiler *compiler,
    struct brw_vue_prog_data *vue_prog_data = &prog_data->base;
 
    const bool is_scalar = compiler->scalar_stage[MESA_SHADER_TESS_CTRL];
-   const bool debug_enabled = INTEL_DEBUG(DEBUG_TCS);
+   const bool debug_enabled = brw_should_print_shader(nir, DEBUG_TCS);
    const unsigned *assembly;
 
    vue_prog_data->base.stage = MESA_SHADER_TESS_CTRL;

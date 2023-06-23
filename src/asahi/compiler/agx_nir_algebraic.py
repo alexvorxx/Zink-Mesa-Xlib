@@ -38,6 +38,33 @@ lower_pack = [
     # For optimizing extract->convert sequences for unpack/pack norm
     (('u2f32', ('u2u32', a)), ('u2f32', a)),
     (('i2f32', ('i2i32', a)), ('i2f32', a)),
+
+    # These are based on the lowerings from nir_opt_algebraic, but conditioned
+    # on the number of bits not being constant. If the bit count is constant
+    # (the happy path) we can use our native instruction instead.
+    (('ibitfield_extract', 'value', 'offset', 'bits(is_not_const)'),
+     ('bcsel', ('ieq', 0, 'bits'),
+      0,
+      ('ishr',
+       ('ishl', 'value', ('isub', ('isub', 32, 'bits'), 'offset')),
+       ('isub', 32, 'bits')))),
+
+    (('ubitfield_extract', 'value', 'offset', 'bits(is_not_const)'),
+     ('iand',
+      ('ushr', 'value', 'offset'),
+      ('bcsel', ('ieq', 'bits', 32),
+       0xffffffff,
+       ('isub', ('ishl', 1, 'bits'), 1)))),
+
+    # Codegen depends on this trivial case being optimized out.
+    (('ubitfield_extract', 'value', 'offset', 0), 0),
+    (('ibitfield_extract', 'value', 'offset', 0), 0),
+
+    # At this point, bitfield extracts are constant. We can only do constant
+    # unsigned bitfield extract, so lower signed to unsigned + sign extend.
+    (('ibitfield_extract', a, b, '#bits'),
+     ('ishr', ('ishl', ('ubitfield_extract', a, b, 'bits'), ('isub', 32, 'bits')),
+      ('isub', 32, 'bits'))),
 ]
 
 # (x * y) + s = (x * y) + (s << 0)

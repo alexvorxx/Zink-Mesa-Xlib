@@ -14,9 +14,9 @@ export LLVM_VERSION="${LLVM_VERSION:=15}"
 
 check_minio()
 {
-    MINIO_PATH="${MINIO_HOST}/mesa-lava/$1/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+    S3_PATH="${S3_HOST}/mesa-lava/$1/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
     if curl -L --retry 4 -f --retry-delay 60 -s -X HEAD \
-      "https://${MINIO_PATH}/done"; then
+      "https://${S3_PATH}/done"; then
         echo "Remote files are up-to-date, skip rebuilding them."
         exit
     fi
@@ -334,8 +334,8 @@ fi
 
 for f in $FILES_TO_UPLOAD; do
     ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/$f \
-             https://${MINIO_PATH}/$f
+             https://${S3_PATH}/$f
 done
 
 touch /lava-files/done
-ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/done https://${MINIO_PATH}/done
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/done https://${S3_PATH}/done

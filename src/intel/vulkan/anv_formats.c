@@ -1251,6 +1251,19 @@ anv_get_image_format_properties(
       break;
    }
 
+   /* If any of the format in VkImageFormatListCreateInfo is completely
+    * unsupported, report unsupported.
+    */
+   if ((info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+       format_list_info != NULL) {
+      for (uint32_t i = 0; i < format_list_info->viewFormatCount; i++) {
+         const struct anv_format *view_format =
+            anv_get_format(format_list_info->pViewFormats[i]);
+         if (view_format == NULL)
+            goto unsupported;
+      }
+   }
+
    /* From the Vulkan 1.3.218 spec:
     *
     *    "For images created without VK_IMAGE_CREATE_EXTENDED_USAGE_BIT a usage

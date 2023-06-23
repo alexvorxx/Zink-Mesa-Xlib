@@ -34,7 +34,7 @@
 #define VK_LAZY_VRAM (VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 
 
-static inline enum zink_alloc_flag
+static ALWAYS_INLINE enum zink_alloc_flag
 zink_alloc_flags_from_heap(enum zink_heap heap)
 {
    switch (heap) {
@@ -47,7 +47,7 @@ zink_alloc_flags_from_heap(enum zink_heap heap)
    return (enum zink_alloc_flag)0;
 }
 
-static inline VkMemoryPropertyFlags
+static ALWAYS_INLINE VkMemoryPropertyFlags
 vk_domain_from_heap(enum zink_heap heap)
 {
    VkMemoryPropertyFlags domains = (VkMemoryPropertyFlags)0;
@@ -66,8 +66,8 @@ vk_domain_from_heap(enum zink_heap heap)
    case ZINK_HEAP_HOST_VISIBLE_COHERENT:
       domains = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
       break;
-   case ZINK_HEAP_HOST_VISIBLE_CACHED:
-      domains = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+   case ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED:
+      domains = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       break;
    default:
       break;
@@ -75,7 +75,7 @@ vk_domain_from_heap(enum zink_heap heap)
    return domains;
 }
 
-static inline enum zink_heap
+static ALWAYS_INLINE enum zink_heap
 zink_heap_from_domain_flags(VkMemoryPropertyFlags domains, enum zink_alloc_flag flags)
 {
    if (flags & ZINK_ALLOC_SPARSE)
@@ -88,12 +88,12 @@ zink_heap_from_domain_flags(VkMemoryPropertyFlags domains, enum zink_alloc_flag 
       return ZINK_HEAP_DEVICE_LOCAL;
 
    if (domains & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
-      return ZINK_HEAP_HOST_VISIBLE_CACHED;
+      return ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED;
 
    return ZINK_HEAP_HOST_VISIBLE_COHERENT;
 }
 
-static inline unsigned
+static ALWAYS_INLINE unsigned
 zink_mem_type_idx_from_bits(struct zink_screen *screen, enum zink_heap heap, uint32_t bits)
 {
    for (unsigned i = 0; i < screen->heap_count[heap]; i++) {
@@ -116,19 +116,19 @@ zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, en
 bool
 zink_bo_get_kms_handle(struct zink_screen *screen, struct zink_bo *bo, int fd, uint32_t *handle);
 
-static inline uint64_t
+static ALWAYS_INLINE uint64_t
 zink_bo_get_offset(const struct zink_bo *bo)
 {
    return bo->offset;
 }
 
-static inline VkDeviceMemory
+static ALWAYS_INLINE VkDeviceMemory
 zink_bo_get_mem(const struct zink_bo *bo)
 {
    return bo->mem ? bo->mem : bo->u.slab.real->mem;
 }
 
-static inline VkDeviceSize
+static ALWAYS_INLINE VkDeviceSize
 zink_bo_get_size(const struct zink_bo *bo)
 {
    return bo->mem ? bo->base.size : bo->u.slab.real->base.size;
@@ -142,28 +142,28 @@ zink_bo_unmap(struct zink_screen *screen, struct zink_bo *bo);
 bool
 zink_bo_commit(struct zink_screen *screen, struct zink_resource *res, unsigned level, struct pipe_box *box, bool commit, VkSemaphore *sem);
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_has_unflushed_usage(const struct zink_bo *bo)
 {
    return (zink_batch_usage_is_unflushed(bo->reads.u) && bo->reads.submit_count == bo->reads.u->submit_count) ||
           (zink_batch_usage_is_unflushed(bo->writes.u) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_has_usage(const struct zink_bo *bo)
 {
    return (zink_batch_usage_exists(bo->reads.u) && bo->reads.submit_count == bo->reads.u->submit_count) ||
           (zink_batch_usage_exists(bo->writes.u) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_usage_matches(const struct zink_bo *bo, const struct zink_batch_state *bs)
 {
    return (zink_batch_usage_matches(bo->reads.u, bs) && bo->reads.submit_count == bo->reads.u->submit_count) ||
           (zink_batch_usage_matches(bo->writes.u, bs) && bo->writes.submit_count == bo->writes.u->submit_count);
 }
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_usage_check_completion(struct zink_screen *screen, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion(screen, bo->reads.u))
@@ -173,7 +173,7 @@ zink_bo_usage_check_completion(struct zink_screen *screen, struct zink_bo *bo, e
    return true;
 }
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_usage_check_completion_fast(struct zink_screen *screen, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion_fast(screen, bo->reads.u))
@@ -183,7 +183,7 @@ zink_bo_usage_check_completion_fast(struct zink_screen *screen, struct zink_bo *
    return true;
 }
 
-static inline void
+static ALWAYS_INLINE void
 zink_bo_usage_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ)
@@ -192,7 +192,7 @@ zink_bo_usage_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resou
       zink_batch_usage_wait(ctx, bo->writes.u);
 }
 
-static inline void
+static ALWAYS_INLINE void
 zink_bo_usage_try_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
 {
    if (access & ZINK_RESOURCE_ACCESS_READ)
@@ -201,7 +201,7 @@ zink_bo_usage_try_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_r
       zink_batch_usage_try_wait(ctx, bo->writes.u);
 }
 
-static inline void
+static ALWAYS_INLINE void
 zink_bo_usage_set(struct zink_bo *bo, struct zink_batch_state *bs, bool write)
 {
    if (write) {
@@ -213,7 +213,7 @@ zink_bo_usage_set(struct zink_bo *bo, struct zink_batch_state *bs, bool write)
    }
 }
 
-static inline bool
+static ALWAYS_INLINE bool
 zink_bo_usage_unset(struct zink_bo *bo, struct zink_batch_state *bs)
 {
    zink_batch_usage_unset(&bo->reads.u, bs);
@@ -222,7 +222,7 @@ zink_bo_usage_unset(struct zink_bo *bo, struct zink_batch_state *bs)
 }
 
 
-static inline void
+static ALWAYS_INLINE void
 zink_bo_unref(struct zink_screen *screen, struct zink_bo *bo)
 {
    struct pb_buffer *pbuf = &bo->base;

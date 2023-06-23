@@ -535,6 +535,18 @@ void anv_CmdCopyBufferToImage2(
    anv_blorp_batch_finish(&batch);
 }
 
+static void
+anv_add_buffer_write_pending_bits(struct anv_cmd_buffer *cmd_buffer,
+                                  const char *reason)
+{
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+
+   cmd_buffer->state.queries.buffer_write_bits |=
+      (cmd_buffer->queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ?
+      ANV_QUERY_COMPUTE_WRITES_PENDING_BITS :
+      ANV_QUERY_RENDER_TARGET_WRITES_PENDING_BITS(devinfo);
+}
+
 void anv_CmdCopyImageToBuffer2(
     VkCommandBuffer                             commandBuffer,
     const VkCopyImageToBufferInfo2*             pCopyImageToBufferInfo)
@@ -552,11 +564,9 @@ void anv_CmdCopyImageToBuffer2(
                            &pCopyImageToBufferInfo->pRegions[r], false);
    }
 
-   anv_blorp_batch_finish(&batch);
+   anv_add_buffer_write_pending_bits(cmd_buffer, "after copy image to buffer");
 
-   anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_RENDER_TARGET_BUFFER_WRITES,
-                             "after copy image to buffer");
+   anv_blorp_batch_finish(&batch);
 }
 
 static bool
@@ -779,11 +789,9 @@ void anv_CmdCopyBuffer2(
                   &pCopyBufferInfo->pRegions[r]);
    }
 
-   anv_blorp_batch_finish(&batch);
+   anv_add_buffer_write_pending_bits(cmd_buffer, "after copy buffer");
 
-   anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_RENDER_TARGET_BUFFER_WRITES,
-                             "after copy buffer");
+   anv_blorp_batch_finish(&batch);
 }
 
 
@@ -843,11 +851,9 @@ void anv_CmdUpdateBuffer(
       pData = (void *)pData + copy_size;
    }
 
-   anv_blorp_batch_finish(&batch);
+   anv_add_buffer_write_pending_bits(cmd_buffer, "update buffer");
 
-   anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_RENDER_TARGET_BUFFER_WRITES,
-                             "update buffer");
+   anv_blorp_batch_finish(&batch);
 }
 
 void
@@ -955,9 +961,7 @@ void anv_CmdFillBuffer(
                             anv_address_add(dst_buffer->address, dstOffset),
                             fillSize, data);
 
-   anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_RENDER_TARGET_BUFFER_WRITES,
-                             "after fill buffer");
+   anv_add_buffer_write_pending_bits(cmd_buffer, "after fill buffer");
 }
 
 void anv_CmdClearColorImage(
@@ -1252,7 +1256,8 @@ exec_ccs_op(struct anv_cmd_buffer *cmd_buffer,
    case ISL_AUX_OP_FULL_RESOLVE:
    case ISL_AUX_OP_PARTIAL_RESOLVE: {
       /* Wa_1508744258: Enable RHWO optimization for resolves */
-      const bool enable_rhwo_opt = cmd_buffer->device->info->verx10 == 120;
+      const bool enable_rhwo_opt =
+         intel_needs_workaround(cmd_buffer->device->info, 1508744258);
 
       if (enable_rhwo_opt)
          cmd_buffer->state.pending_rhwo_optimization_enabled = true;

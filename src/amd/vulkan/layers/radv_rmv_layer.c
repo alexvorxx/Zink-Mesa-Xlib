@@ -48,13 +48,11 @@ rmv_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-rmv_FlushMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount,
-                            const VkMappedMemoryRange *pMemoryRanges)
+rmv_FlushMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
 
-   VkResult res =
-      device->layer_dispatch.rmv.FlushMappedMemoryRanges(_device, memoryRangeCount, pMemoryRanges);
+   VkResult res = device->layer_dispatch.rmv.FlushMappedMemoryRanges(_device, memoryRangeCount, pMemoryRanges);
    if (res != VK_SUCCESS || !device->vk.memory_trace_data.is_enabled)
       return res;
 
@@ -64,13 +62,11 @@ rmv_FlushMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-rmv_InvalidateMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount,
-                                 const VkMappedMemoryRange *pMemoryRanges)
+rmv_InvalidateMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
 
-   VkResult res = device->layer_dispatch.rmv.InvalidateMappedMemoryRanges(_device, memoryRangeCount,
-                                                                          pMemoryRanges);
+   VkResult res = device->layer_dispatch.rmv.InvalidateMappedMemoryRanges(_device, memoryRangeCount, pMemoryRanges);
    if (res != VK_SUCCESS || !device->vk.memory_trace_data.is_enabled)
       return res;
 

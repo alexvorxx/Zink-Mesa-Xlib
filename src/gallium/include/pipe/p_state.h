@@ -282,12 +282,8 @@ struct pipe_stream_output_info
 };
 
 /**
- * The 'type' parameter identifies whether the shader state contains TGSI
- * tokens, etc.  If the driver returns 'PIPE_SHADER_IR_TGSI' for the
- * 'PIPE_SHADER_CAP_PREFERRED_IR' shader param, the ir will *always* be
- * 'PIPE_SHADER_IR_TGSI' and the tokens ptr will be valid.  If the driver
- * requests a different 'pipe_shader_ir' type, then it must check the 'type'
- * enum to see if it is getting TGSI tokens or its preferred IR.
+ * The 'type' parameter identifies whether the shader state contains NIR, TGSI
+ * tokens, etc.
  *
  * TODO pipe_compute_state should probably get similar treatment to handle
  * multiple IR's in a cleaner way..

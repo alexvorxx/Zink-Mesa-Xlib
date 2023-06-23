@@ -465,9 +465,6 @@ d3d12_get_shader_param(struct pipe_screen *pscreen,
    case PIPE_SHADER_CAP_FP16:
       return 0; /* not implemented */
 
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-      return PIPE_SHADER_IR_NIR;
-
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
       return 0; /* not implemented */
 

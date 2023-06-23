@@ -168,7 +168,7 @@ etna_get_vs(struct etna_context *ctx, struct etna_shader_key* const key)
 {
    const struct etna_shader_variant *old = ctx->shader.vs;
 
-   ctx->shader.vs = etna_shader_variant(ctx->shader.bind_vs, key, &ctx->base.debug);
+   ctx->shader.vs = etna_shader_variant(ctx->shader.bind_vs, key, &ctx->base.debug, true);
 
    if (!ctx->shader.vs)
       return false;
@@ -204,7 +204,7 @@ etna_get_fs(struct etna_context *ctx, struct etna_shader_key* const key)
       }
    }
 
-   ctx->shader.fs = etna_shader_variant(ctx->shader.bind_fs, key, &ctx->base.debug);
+   ctx->shader.fs = etna_shader_variant(ctx->shader.bind_fs, key, &ctx->base.debug, true);
 
    if (!ctx->shader.fs)
       return false;
@@ -246,6 +246,9 @@ etna_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
 
    if (unlikely(ctx->rasterizer->cull_face == PIPE_FACE_FRONT_AND_BACK &&
                 u_decomposed_prim(info->mode) == MESA_PRIM_TRIANGLES))
+      return;
+
+   if (!etna_render_condition_check(pctx))
       return;
 
    int prims = u_decomposed_prims_for_vertices(info->mode, draws[0].count);
@@ -504,9 +507,10 @@ etna_reset_gpu_state(struct etna_context *ctx)
 
    ctx->dirty = ~0L;
    ctx->dirty_sampler_views = ~0L;
+   ctx->prev_active_samplers = ~0L;
 }
 
-static void
+void
 etna_flush(struct pipe_context *pctx, struct pipe_fence_handle **fence,
            enum pipe_flush_flags flags, bool internal)
 {
@@ -663,4 +667,25 @@ fail:
    pctx->destroy(pctx);
 
    return NULL;
+}
+
+bool
+etna_render_condition_check(struct pipe_context *pctx)
+{
+   struct etna_context *ctx = etna_context(pctx);
+
+   if (!ctx->cond_query)
+      return true;
+
+   perf_debug_ctx(ctx, "Implementing conditional rendering on the CPU");
+
+   union pipe_query_result res = { 0 };
+   bool wait =
+      ctx->cond_mode != PIPE_RENDER_COND_NO_WAIT &&
+      ctx->cond_mode != PIPE_RENDER_COND_BY_REGION_NO_WAIT;
+
+   if (pctx->get_query_result(pctx, ctx->cond_query, wait, &res))
+      return (bool)res.u64 != ctx->cond_cond;
+
+   return true;
 }

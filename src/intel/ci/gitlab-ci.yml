@@ -200,12 +200,12 @@ iris-cml-deqp:
     DEQP_SUITE: iris-cml
   parallel: 4
 
-iris-jsl-deqp:
-  extends:
-    - .iris-jsl-test
-  variables:
-    DEQP_SUITE: iris-jsl
-  parallel: 8
+#iris-jsl-deqp:
+#  extends:
+#    - .iris-jsl-test
+#  variables:
+#    DEQP_SUITE: iris-jsl
+#  parallel: 8
 
 iris-amly-egl:
   extends:
@@ -298,7 +298,7 @@ iris-cml-traces:
     HWCI_FREQ_MAX: "true"
     LAVA_TAGS: "cbg-0"
     # Ensure that we are using the release build artifact
-    MINIO_ARTIFACT_NAME: mesa-x86_64-release
+    S3_ARTIFACT_NAME: mesa-x86_64-default-release
 
 iris-apl-traces-performance:
   extends:

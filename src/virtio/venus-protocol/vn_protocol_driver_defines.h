@@ -340,6 +340,7 @@ typedef enum VkCommandTypeEXT {
     VK_COMMAND_TYPE_vkCmdSetLineStippleEXT_EXT = 237,
     VK_COMMAND_TYPE_vkCmdSetPatchControlPointsEXT_EXT = 233,
     VK_COMMAND_TYPE_vkCmdSetLogicOpEXT_EXT = 234,
+    VK_COMMAND_TYPE_vkCmdSetColorWriteEnableEXT_EXT = 254,
     VK_COMMAND_TYPE_vkCmdDrawMultiEXT_EXT = 247,
     VK_COMMAND_TYPE_vkCmdDrawMultiIndexedEXT_EXT = 248,
     VK_COMMAND_TYPE_vkSetReplyCommandStreamMESA_EXT = 178,

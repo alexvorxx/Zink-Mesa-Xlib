@@ -97,6 +97,18 @@
 #define VKCTX(fn) zink_screen(ctx->base.screen)->vk.fn
 #define VKSCR(fn) screen->vk.fn
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern uint32_t zink_debug;
+extern bool zink_tracing;
+
+#ifdef __cplusplus
+}
+#endif
+
+
 /** enums */
 
 /* features for draw/program templates */
@@ -198,7 +210,7 @@ enum zink_heap {
    ZINK_HEAP_DEVICE_LOCAL_LAZY,
    ZINK_HEAP_DEVICE_LOCAL_VISIBLE,
    ZINK_HEAP_HOST_VISIBLE_COHERENT,
-   ZINK_HEAP_HOST_VISIBLE_CACHED,
+   ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED,
    ZINK_HEAP_MAX,
 };
 
@@ -225,6 +237,8 @@ enum zink_debug {
    ZINK_DEBUG_OPTIMAL_KEYS = (1<<14),
    ZINK_DEBUG_NOOPT = (1<<15),
    ZINK_DEBUG_NOBGC = (1<<16),
+   ZINK_DEBUG_DGC = (1<<17),
+   ZINK_DEBUG_MEM = (1<<18),
 };
 
 enum zink_pv_emulation_primitive {
@@ -233,6 +247,15 @@ enum zink_pv_emulation_primitive {
    /* when triangle or quad strips are used and the gs outputs triangles */
    ZINK_PVE_PRIMITIVE_TRISTRIP = 2,
    ZINK_PVE_PRIMITIVE_FAN = 3,
+};
+
+enum zink_dgc_buffer {
+   ZINK_DGC_VBO,
+   ZINK_DGC_IB,
+   ZINK_DGC_PSO,
+   ZINK_DGC_PUSH,
+   ZINK_DGC_DRAW,
+   ZINK_DGC_MAX,
 };
 
 /** fence types */
@@ -329,6 +352,7 @@ struct zink_rasterizer_state {
 
 struct zink_blend_state {
    uint32_t hash;
+   unsigned num_rts;
    VkPipelineColorBlendAttachmentState attachments[PIPE_MAX_COLOR_BUFS];
 
    struct {
@@ -342,6 +366,9 @@ struct zink_blend_state {
 
    VkBool32 alpha_to_coverage;
    VkBool32 alpha_to_one;
+
+   uint32_t wrmask;
+   uint8_t enables;
 
    bool dual_src_blend;
 };
@@ -578,6 +605,11 @@ struct zink_batch_state {
    struct util_dynarray acquires;
    struct util_dynarray acquire_flags;
 
+   struct {
+      struct util_dynarray pipelines;
+      struct util_dynarray layouts;
+   } dgc;
+
    VkAccessFlags unordered_write_access;
    VkPipelineStageFlags unordered_write_stages;
 
@@ -684,6 +716,7 @@ struct zink_bo {
    uint64_t offset;
 
    uint32_t unique_id;
+   const char *name;
 
    simple_mtx_t lock;
 
@@ -1226,8 +1259,8 @@ struct zink_resource_object {
 
 
    VkDeviceSize offset, size, alignment;
-   VkImageCreateFlags vkflags;
-   VkImageUsageFlags vkusage;
+   uint64_t vkflags;
+   uint64_t vkusage;
    VkFormatFeatureFlags vkfeats;
    uint64_t modifier;
    VkImageAspectFlags modifier_aspect;
@@ -1407,6 +1440,9 @@ struct zink_screen {
 
    VkInstance instance;
    struct zink_instance_info instance_info;
+
+   struct hash_table *debug_mem_sizes;
+   simple_mtx_t debug_mem_lock;
 
    VkPhysicalDevice pdev;
    uint32_t vk_version, spirv_version;
@@ -1696,6 +1732,25 @@ typedef void (*pipe_draw_vertex_state_func)(struct pipe_context *ctx,
                                             unsigned num_draws);
 typedef void (*pipe_launch_grid_func)(struct pipe_context *pipe, const struct pipe_grid_info *info);
 
+
+enum zink_ds3_state {
+   ZINK_DS3_RAST_STIPPLE,
+   ZINK_DS3_RAST_CLIP,
+   ZINK_DS3_RAST_CLAMP,
+   ZINK_DS3_RAST_POLYGON,
+   ZINK_DS3_RAST_HALFZ,
+   ZINK_DS3_RAST_PV,
+   ZINK_DS3_RAST_LINE,
+   ZINK_DS3_RAST_STIPPLE_ON,
+   ZINK_DS3_BLEND_A2C,
+   ZINK_DS3_BLEND_A21,
+   ZINK_DS3_BLEND_ON,
+   ZINK_DS3_BLEND_WRITE,
+   ZINK_DS3_BLEND_EQ,
+   ZINK_DS3_BLEND_LOGIC_ON,
+   ZINK_DS3_BLEND_LOGIC,
+};
+
 struct zink_context {
    struct pipe_context base;
    struct threaded_context *tc;
@@ -1838,6 +1893,19 @@ struct zink_context {
       bool active; //this is the internal vk state
    } render_condition;
 
+   struct {
+      bool valid;
+      struct u_upload_mgr *upload[ZINK_DGC_MAX];
+      struct zink_resource *buffers[ZINK_DGC_MAX];
+      struct zink_gfx_program *last_prog;
+      uint8_t *maps[ZINK_DGC_MAX];
+      size_t bind_offsets[ZINK_DGC_MAX];
+      size_t cur_offsets[ZINK_DGC_MAX];
+      size_t max_size[ZINK_DGC_MAX];
+      struct util_dynarray pipelines;
+      struct util_dynarray tokens;
+   } dgc;
+
    struct pipe_resource *dummy_vertex_buffer;
    struct pipe_resource *dummy_xfb_buffer;
    struct pipe_surface *dummy_surface[7];
@@ -1908,10 +1976,13 @@ struct zink_context {
       };
       bool bindless_refs_dirty;
    } di;
+   void (*invalidate_descriptor_state)(struct zink_context *ctx, gl_shader_stage shader, enum zink_descriptor_type type, unsigned, unsigned);
    struct set *need_barriers[2]; //gfx, compute
    struct set update_barriers[2][2]; //[gfx, compute][current, next]
    uint8_t barrier_set_idx[2];
    unsigned memory_barrier;
+
+   uint32_t ds3_states;
 
    uint32_t num_so_targets;
    struct pipe_stream_output_target *so_targets[PIPE_MAX_SO_OUTPUTS];

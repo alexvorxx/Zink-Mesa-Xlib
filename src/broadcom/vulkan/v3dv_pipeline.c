@@ -239,7 +239,6 @@ const nir_shader_compiler_options v3dv_nir_options = {
    .force_indirect_unrolling = (nir_var_shader_in | nir_var_function_temp),
    .divergence_analysis_options =
       nir_divergence_multiple_workgroup_per_compute_subgroup,
-   .use_scoped_barrier = true,
 };
 
 const nir_shader_compiler_options *

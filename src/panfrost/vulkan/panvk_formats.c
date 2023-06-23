@@ -61,10 +61,10 @@ get_format_properties(struct panvk_physical_device *physical_device,
    buffer |=
       VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 
-   if (fmt.bind & PIPE_BIND_VERTEX_BUFFER)
+   if (fmt.bind & PAN_BIND_VERTEX_BUFFER)
       buffer |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
 
-   if (fmt.bind & PIPE_BIND_SAMPLER_VIEW) {
+   if (fmt.bind & PAN_BIND_SAMPLER_VIEW) {
       tex |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
              VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
              VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
@@ -81,7 +81,7 @@ get_format_properties(struct panvk_physical_device *physical_device,
    }
 
    /* SNORM rendering isn't working yet, disable */
-   if (fmt.bind & PIPE_BIND_RENDER_TARGET && !util_format_is_snorm(pfmt)) {
+   if (fmt.bind & PAN_BIND_RENDER_TARGET && !util_format_is_snorm(pfmt)) {
       tex |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
              VK_FORMAT_FEATURE_BLIT_DST_BIT;
 
@@ -92,7 +92,7 @@ get_format_properties(struct panvk_physical_device *physical_device,
       tex |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT;
    }
 
-   if (fmt.bind & PIPE_BIND_DEPTH_STENCIL)
+   if (fmt.bind & PAN_BIND_DEPTH_STENCIL)
       tex |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 end:

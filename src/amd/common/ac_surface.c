@@ -3346,7 +3346,7 @@ static nir_ssa_def *gfx10_nir_meta_addr_from_coord(nir_builder *b, const struct 
          }
       }
 
-      address = nir_ior(b, address, nir_ishl(b, v, nir_imm_int(b, i)));
+      address = nir_ior(b, address, nir_ishl_imm(b, v, i));
    }
 
    unsigned blkMask = (1 << blkSizeLog2) - 1;
@@ -3356,15 +3356,14 @@ static nir_ssa_def *gfx10_nir_meta_addr_from_coord(nir_builder *b, const struct 
    nir_ssa_def *yb = nir_ushr_imm(b, y, meta_block_height_log2);
    nir_ssa_def *pb = nir_ushr_imm(b, meta_pitch, meta_block_width_log2);
    nir_ssa_def *blkIndex = nir_iadd(b, nir_imul(b, yb, pb), xb);
-   nir_ssa_def *pipeXor = nir_iand_imm(b, nir_ishl(b, nir_iand_imm(b, pipe_xor, pipeMask),
-                                                   nir_imm_int(b, m_pipeInterleaveLog2)), blkMask);
+   nir_ssa_def *pipeXor = nir_iand_imm(b, nir_ishl_imm(b, nir_iand_imm(b, pipe_xor, pipeMask),
+                                                       m_pipeInterleaveLog2), blkMask);
 
    if (bit_position)
-      *bit_position = nir_ishl(b, nir_iand(b, address, nir_imm_int(b, 1)),
-                                  nir_imm_int(b, 2));
+      *bit_position = nir_ishl_imm(b, nir_iand_imm(b, address, 1), 2);
 
    return nir_iadd(b, nir_iadd(b, nir_imul(b, meta_slice_size, z),
-                               nir_imul(b, blkIndex, nir_ishl(b, one, nir_imm_int(b, blkSizeLog2)))),
+                               nir_imul(b, blkIndex, nir_ishl_imm(b, one, blkSizeLog2))),
                    nir_ixor(b, nir_ushr(b, address, one), pipeXor));
 }
 
@@ -3417,23 +3416,22 @@ static nir_ssa_def *gfx9_nir_meta_addr_from_coord(nir_builder *b, const struct r
 
          xor = nir_ixor(b, xor, ison);
       }
-      address = nir_ior(b, address, nir_ishl(b, xor, nir_imm_int(b, i)));
+      address = nir_ior(b, address, nir_ishl_imm(b, xor, i));
    }
 
    /* Fill the remaining bits with the block index. */
    unsigned last = num_bits - 1;
    address = nir_ior(b, address,
-                     nir_ishl(b, nir_ushr_imm(b, blockIndex,
+                     nir_ishl_imm(b, nir_ushr_imm(b, blockIndex,
                                               equation->u.gfx9.bit[last].coord[0].ord),
-                     nir_imm_int(b, last)));
+                                  last));
 
    if (bit_position)
-      *bit_position = nir_ishl(b, nir_iand(b, address, nir_imm_int(b, 1)),
-                                  nir_imm_int(b, 2));
+      *bit_position = nir_ishl_imm(b, nir_iand_imm(b, address, 1), 2);
 
    nir_ssa_def *pipeXor = nir_iand_imm(b, pipe_xor, (1 << numPipeBits) - 1);
    return nir_ixor(b, nir_ushr(b, address, one),
-                   nir_ishl(b, pipeXor, nir_imm_int(b, m_pipeInterleaveLog2)));
+                   nir_ishl_imm(b, pipeXor, m_pipeInterleaveLog2));
 }
 
 nir_ssa_def *ac_nir_dcc_addr_from_coord(nir_builder *b, const struct radeon_info *info,

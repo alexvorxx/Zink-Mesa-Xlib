@@ -76,7 +76,7 @@ void ac_disable_signed_zeros(struct ac_llvm_context *ctx);
 
 void ac_llvm_add_target_dep_function_attr(LLVMValueRef F, const char *name, unsigned value);
 void ac_llvm_set_workgroup_size(LLVMValueRef F, unsigned size);
-void ac_llvm_set_target_features(LLVMValueRef F, struct ac_llvm_context *ctx);
+void ac_llvm_set_target_features(LLVMValueRef F, struct ac_llvm_context *ctx, bool wgp_mode);
 
 LLVMTargetLibraryInfoRef ac_create_target_library_info(const char *triple);
 void ac_dispose_target_library_info(LLVMTargetLibraryInfoRef library_info);

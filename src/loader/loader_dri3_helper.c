@@ -2326,10 +2326,13 @@ loader_dri3_update_drawable_geometry(struct loader_dri3_drawable *draw)
    geom_reply = xcb_get_geometry_reply(draw->conn, geom_cookie, NULL);
 
    if (geom_reply) {
+      bool changed = draw->width != geom_reply->width || draw->height != geom_reply->height;
       draw->width = geom_reply->width;
       draw->height = geom_reply->height;
-      draw->vtable->set_drawable_size(draw, draw->width, draw->height);
-      draw->ext->flush->invalidate(draw->dri_drawable);
+      if (changed) {
+         draw->vtable->set_drawable_size(draw, draw->width, draw->height);
+         draw->ext->flush->invalidate(draw->dri_drawable);
+      }
 
       free(geom_reply);
    }

@@ -197,9 +197,9 @@ mv -f ${CI_PROJECT_DIR}/results ./ 2>/dev/null || true
 cleanup
 
 # upload artifacts
-if [ -n "$MINIO_RESULTS_UPLOAD" ]; then
+if [ -n "$S3_RESULTS_UPLOAD" ]; then
   tar --zstd -cf results.tar.zst results/;
-  ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" results.tar.zst https://"$MINIO_RESULTS_UPLOAD"/results.tar.zst;
+  ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" results.tar.zst https://"$S3_RESULTS_UPLOAD"/results.tar.zst;
 fi
 
 # We still need to echo the hwci: mesa message, as some scripts rely on it, such

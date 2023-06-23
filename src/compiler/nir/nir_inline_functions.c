@@ -112,7 +112,7 @@ void nir_inline_function_impl(struct nir_builder *b,
    nir_cf_list_extract(&body, &copy->body);
 
    if (nest_if) {
-      nir_if *cf = nir_push_if(b, nir_imm_bool(b, true));
+      nir_if *cf = nir_push_if(b, nir_imm_true(b));
       nir_cf_reinsert(&body, nir_after_cf_list(&cf->then_list));
       nir_pop_if(b, cf);
    } else {

@@ -1060,6 +1060,7 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
       state->force_min_sample = pipeline->force_min_sample;
       state->sample_shading = ps->ms->sample_shading_enable;
       state->min_sample_shading = ps->ms->min_sample_shading;
+      state->min_samples_dirty = true;
       state->blend_dirty = true;
       if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES))
          update_samples(state, ps->ms->rasterization_samples);
@@ -1072,7 +1073,7 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
       if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK)) {
          state->sample_mask_dirty = state->sample_mask != 0xffffffff;
          state->sample_mask = 0xffffffff;
-         state->min_samples_dirty = state->min_samples;
+         state->min_samples_dirty = !!state->min_samples;
          state->min_samples = 0;
       }
       state->blend_dirty |= state->blend_state.alpha_to_coverage || state->blend_state.alpha_to_one;
@@ -4154,7 +4155,7 @@ handle_shaders(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
    unsigned null_stages = 0;
    for (unsigned i = 0; i < bind->stage_count; i++) {
       gl_shader_stage stage = vk_to_mesa_shader_stage(bind->stages[i]);
-      assert(stage <= MESA_SHADER_COMPUTE && stage != MESA_SHADER_NONE);
+      assert(stage != MESA_SHADER_NONE && stage <= MESA_SHADER_MESH);
       LVP_FROM_HANDLE(lvp_shader, shader, bind->shaders ? bind->shaders[i] : VK_NULL_HANDLE);
       if (stage == MESA_SHADER_FRAGMENT) {
          if (shader) {
@@ -4176,16 +4177,17 @@ handle_shaders(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
       }
 
       if (stage != MESA_SHADER_COMPUTE) {
-         state->gfx_push_sizes[i] = shader ? shader->layout->push_constant_size : 0;
+         state->gfx_push_sizes[stage] = shader ? shader->layout->push_constant_size : 0;
          gfx = true;
       } else {
          state->push_size[1] = shader ? shader->layout->push_constant_size : 0;
       }
    }
 
-   if ((new_stages | null_stages) & BITFIELD_MASK(MESA_SHADER_COMPUTE)) {
-      unbind_graphics_stages(state, null_stages & VK_SHADER_STAGE_ALL_GRAPHICS);
-      handle_graphics_stages(state, vkstages & VK_SHADER_STAGE_ALL_GRAPHICS, true);
+   if ((new_stages | null_stages) & LVP_STAGE_MASK_GFX) {
+      VkShaderStageFlags all_gfx = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+      unbind_graphics_stages(state, null_stages & all_gfx);
+      handle_graphics_stages(state, vkstages & all_gfx, true);
       u_foreach_bit(i, new_stages) {
          handle_graphics_layout(state, i, state->shaders[i]->layout);
          handle_pipeline_access(state, i);

@@ -41,6 +41,8 @@ typedef void *(*ac_debug_addr_callback)(void *data, uint64_t addr);
 
 const char *ac_get_register_name(enum amd_gfx_level gfx_level, enum radeon_family family,
                                  unsigned offset);
+bool ac_register_exists(enum amd_gfx_level gfx_level, enum radeon_family family,
+                        unsigned offset);
 void ac_dump_reg(FILE *file, enum amd_gfx_level gfx_level, enum radeon_family family,
                  unsigned offset, uint32_t value, uint32_t field_mask);
 void ac_parse_ib_chunk(FILE *f, uint32_t *ib, int num_dw, const int *trace_ids,

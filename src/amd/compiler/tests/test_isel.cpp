@@ -21,10 +21,10 @@
  * IN THE SOFTWARE.
  *
  */
+#include <llvm/Config/llvm-config.h>
+
 #include "helpers.h"
 #include "test_isel-spirv.h"
-
-#include <llvm/Config/llvm-config.h>
 
 using namespace aco;
 
@@ -32,8 +32,7 @@ BEGIN_TEST(isel.interp.simple)
    QoShaderModuleCreateInfo vs = qoShaderModuleCreateInfoGLSL(VERTEX,
       layout(location = 0) in vec4 in_color;
       layout(location = 0) out vec4 out_color;
-      void main() {
-         out_color = in_color;
+      void main() { out_color = in_color;
       }
    );
    QoShaderModuleCreateInfo fs = qoShaderModuleCreateInfoGLSL(FRAGMENT,

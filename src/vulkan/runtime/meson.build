@@ -108,6 +108,7 @@ vulkan_runtime_deps = [
   vulkan_wsi_deps,
   idep_mesautil,
   idep_nir,
+  idep_vtn,
   idep_vulkan_util,
 ]
 

@@ -72,7 +72,8 @@ static void si_emit_cb_render_state(struct si_context *sctx)
    /* GFX9: Flush DFSM when CB_TARGET_MASK changes.
     * I think we don't have to do anything between IBs.
     */
-   if (sctx->screen->dpbb_allowed && sctx->last_cb_target_mask != cb_target_mask) {
+   if (sctx->screen->dpbb_allowed && sctx->last_cb_target_mask != cb_target_mask &&
+       sctx->screen->pbb_context_states_per_bin > 1) {
       sctx->last_cb_target_mask = cb_target_mask;
 
       radeon_begin(cs);
@@ -434,6 +435,8 @@ static void *si_create_blend_state_mode(struct pipe_context *ctx,
    if (!blend)
       return NULL;
 
+   si_pm4_clear_state(pm4, sctx->screen, false);
+
    blend->alpha_to_coverage = state->alpha_to_coverage;
    blend->alpha_to_one = state->alpha_to_one;
    blend->dual_src_blend = util_blend_state_is_dual(state, 0);
@@ -634,6 +637,7 @@ static void *si_create_blend_state_mode(struct pipe_context *ctx,
    }
 
    si_pm4_set_reg(pm4, R_028808_CB_COLOR_CONTROL, color_control);
+   si_pm4_finalize(pm4);
    return blend;
 }
 
@@ -940,6 +944,8 @@ static void *si_create_rs_state(struct pipe_context *ctx, const struct pipe_rast
       return NULL;
    }
 
+   si_pm4_clear_state(pm4, sscreen, false);
+
    rs->scissor_enable = state->scissor;
    rs->clip_halfz = state->clip_halfz;
    rs->two_side = state->light_twoside;
@@ -1101,6 +1107,7 @@ static void *si_create_rs_state(struct pipe_context *ctx, const struct pipe_rast
                      S_028230_ER_LINE_TB(0xA) |
                      S_028230_ER_LINE_BT(0xA));
    }
+   si_pm4_finalize(pm4);
 
    if (!rs->uses_poly_offset)
       return rs;
@@ -1117,6 +1124,8 @@ static void *si_create_rs_state(struct pipe_context *ctx, const struct pipe_rast
       float offset_units = state->offset_units;
       float offset_scale = state->offset_scale * 16.0f;
       uint32_t pa_su_poly_offset_db_fmt_cntl = 0;
+
+      si_pm4_clear_state(pm4, sscreen, false);
 
       if (!state->offset_units_unscaled) {
          switch (i) {
@@ -1142,6 +1151,7 @@ static void *si_create_rs_state(struct pipe_context *ctx, const struct pipe_rast
       si_pm4_set_reg(pm4, R_028B84_PA_SU_POLY_OFFSET_FRONT_OFFSET, fui(offset_units));
       si_pm4_set_reg(pm4, R_028B88_PA_SU_POLY_OFFSET_BACK_SCALE, fui(offset_scale));
       si_pm4_set_reg(pm4, R_028B8C_PA_SU_POLY_OFFSET_BACK_OFFSET, fui(offset_units));
+      si_pm4_finalize(pm4);
    }
 
    return rs;
@@ -1336,6 +1346,8 @@ static void *si_create_dsa_state(struct pipe_context *ctx,
       return NULL;
    }
 
+   si_pm4_clear_state(pm4, (struct si_screen*)ctx->screen, false);
+
    dsa->stencil_ref.valuemask[0] = state->stencil[0].valuemask;
    dsa->stencil_ref.valuemask[1] = state->stencil[1].valuemask;
    dsa->stencil_ref.writemask[0] = state->stencil[0].writemask;
@@ -1385,6 +1397,7 @@ static void *si_create_dsa_state(struct pipe_context *ctx,
       si_pm4_set_reg(pm4, R_028020_DB_DEPTH_BOUNDS_MIN, fui(state->depth_bounds_min));
       si_pm4_set_reg(pm4, R_028024_DB_DEPTH_BOUNDS_MAX, fui(state->depth_bounds_max));
    }
+   si_pm4_finalize(pm4);
 
    dsa->depth_enabled = state->depth_enabled;
    dsa->depth_write_enabled = state->depth_enabled && state->depth_writemask;
@@ -1477,11 +1490,16 @@ static void si_set_active_query_state(struct pipe_context *ctx, bool enable)
 
    /* Pipeline stat & streamout queries. */
    if (enable) {
-      sctx->flags &= ~SI_CONTEXT_STOP_PIPELINE_STATS;
-      sctx->flags |= SI_CONTEXT_START_PIPELINE_STATS;
+      /* Disable pipeline stats if there are no active queries. */
+      if (sctx->num_hw_pipestat_streamout_queries) {
+         sctx->flags &= ~SI_CONTEXT_STOP_PIPELINE_STATS;
+         sctx->flags |= SI_CONTEXT_START_PIPELINE_STATS;
+      }
    } else {
-      sctx->flags &= ~SI_CONTEXT_START_PIPELINE_STATS;
-      sctx->flags |= SI_CONTEXT_STOP_PIPELINE_STATS;
+      if (sctx->num_hw_pipestat_streamout_queries) {
+         sctx->flags &= ~SI_CONTEXT_START_PIPELINE_STATS;
+         sctx->flags |= SI_CONTEXT_STOP_PIPELINE_STATS;
+      }
    }
 
    /* Occlusion queries. */
@@ -3533,7 +3551,8 @@ static void si_emit_framebuffer_state(struct si_context *sctx)
    radeon_set_context_reg(R_028208_PA_SC_WINDOW_SCISSOR_BR,
                           S_028208_BR_X(state->width) | S_028208_BR_Y(state->height));
 
-   if (sctx->screen->dpbb_allowed) {
+   if (sctx->screen->dpbb_allowed &&
+       sctx->screen->pbb_context_states_per_bin > 1) {
       radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
       radeon_emit(EVENT_TYPE(V_028A90_BREAK_BATCH) | EVENT_INDEX(0));
    }
@@ -5538,7 +5557,7 @@ unsigned gfx103_get_cu_mask_ps(struct si_screen *sscreen)
    return u_bit_consecutive(0, sscreen->info.min_good_cu_per_sa);
 }
 
-static void gfx6_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
+static void gfx6_init_gfx_preamble_state(struct si_context *sctx)
 {
    struct si_screen *sscreen = sctx->screen;
    uint64_t border_color_va =
@@ -5548,11 +5567,11 @@ static void gfx6_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_
    bool has_clear_state = sscreen->info.has_clear_state;
 
    /* We need more space because the preamble is large. */
-   struct si_pm4_state *pm4 = si_pm4_create_sized(214);
+   struct si_pm4_state *pm4 = si_pm4_create_sized(sscreen, 214, sctx->has_graphics);
    if (!pm4)
       return;
 
-   if (sctx->has_graphics && !uses_reg_shadowing) {
+   if (sctx->has_graphics && !sctx->shadowing.registers) {
       si_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
       si_pm4_cmd_add(pm4, CC0_UPDATE_LOAD_ENABLES(1));
       si_pm4_cmd_add(pm4, CC1_UPDATE_SHADOW_ENABLES(1));
@@ -5662,7 +5681,7 @@ static void gfx6_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_
    }
 
    if (sctx->gfx_level >= GFX7) {
-      si_pm4_set_reg_idx3(sscreen, pm4, R_00B01C_SPI_SHADER_PGM_RSRC3_PS,
+      si_pm4_set_reg_idx3(pm4, R_00B01C_SPI_SHADER_PGM_RSRC3_PS,
                           ac_apply_cu_en(S_00B01C_CU_EN(0xffffffff) |
                                          S_00B01C_WAVE_LIMIT(0x3F),
                                          C_00B01C_CU_EN, 0, &sscreen->info));
@@ -5747,7 +5766,7 @@ static void gfx6_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_
                      S_028060_PUNCHOUT_MODE(V_028060_FORCE_OFF) |
                      S_028060_POPS_DRAIN_PS_ON_OVERLAP(1));
 
-      si_pm4_set_reg_idx3(sscreen, pm4, R_00B41C_SPI_SHADER_PGM_RSRC3_HS,
+      si_pm4_set_reg_idx3(pm4, R_00B41C_SPI_SHADER_PGM_RSRC3_HS,
                           ac_apply_cu_en(S_00B41C_CU_EN(0xffff) | S_00B41C_WAVE_LIMIT(0x3F),
                                          C_00B41C_CU_EN, 0, &sscreen->info));
 
@@ -5762,6 +5781,7 @@ static void gfx6_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_
    }
 
 done:
+   si_pm4_finalize(pm4);
    sctx->cs_preamble_state = pm4;
    sctx->cs_preamble_state_tmz = si_pm4_clone(pm4); /* Make a copy of the preamble for TMZ. */
 }
@@ -5774,7 +5794,7 @@ static void cdna_init_compute_preamble_state(struct si_context *sctx)
    uint32_t compute_cu_en = S_00B858_SH0_CU_EN(sscreen->info.spi_cu_en) |
                             S_00B858_SH1_CU_EN(sscreen->info.spi_cu_en);
 
-   struct si_pm4_state *pm4 = si_pm4_create_sized(48);
+   struct si_pm4_state *pm4 = si_pm4_create_sized(sscreen, 48, true);
    if (!pm4)
       return;
 
@@ -5807,11 +5827,12 @@ static void cdna_init_compute_preamble_state(struct si_context *sctx)
                      S_030E04_ADDRESS(border_color_va >> 40));
    }
 
+   si_pm4_finalize(pm4);
    sctx->cs_preamble_state = pm4;
    sctx->cs_preamble_state_tmz = si_pm4_clone(pm4); /* Make a copy of the preamble for TMZ. */
 }
 
-static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
+static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
 {
    struct si_screen *sscreen = sctx->screen;
    uint64_t border_color_va =
@@ -5831,11 +5852,11 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
    }
 
    /* We need more space because the preamble is large. */
-   struct si_pm4_state *pm4 = si_pm4_create_sized(214);
+   struct si_pm4_state *pm4 = si_pm4_create_sized(sscreen, 214, sctx->has_graphics);
    if (!pm4)
       return;
 
-   if (sctx->has_graphics && !uses_reg_shadowing) {
+   if (sctx->has_graphics && !sctx->shadowing.registers) {
       si_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
       si_pm4_cmd_add(pm4, CC0_UPDATE_LOAD_ENABLES(1));
       si_pm4_cmd_add(pm4, CC1_UPDATE_SHADOW_ENABLES(1));
@@ -5848,6 +5869,12 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
       si_pm4_cmd_add(pm4, PKT3(PKT3_CLEAR_STATE, 0, 0));
       si_pm4_cmd_add(pm4, 0);
    }
+
+   /* Non-graphics uconfig registers. */
+   if (sctx->gfx_level < GFX11)
+      si_pm4_set_reg(pm4, R_0301EC_CP_COHER_START_DELAY, 0x20);
+   si_pm4_set_reg(pm4, R_030E00_TA_CS_BC_BASE_ADDR, border_color_va >> 8);
+   si_pm4_set_reg(pm4, R_030E04_TA_CS_BC_BASE_ADDR_HI, S_030E04_ADDRESS(border_color_va >> 40));
 
    /* Compute registers. */
    si_pm4_set_reg(pm4, R_00B834_COMPUTE_PGM_HI, S_00B834_DATA(sscreen->info.address32_hi >> 8));
@@ -5879,22 +5906,17 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
 
    si_pm4_set_reg(pm4, R_00B9F4_COMPUTE_DISPATCH_TUNNEL, 0);
 
-   if (sctx->gfx_level < GFX11)
-      si_pm4_set_reg(pm4, R_0301EC_CP_COHER_START_DELAY, 0x20);
-   si_pm4_set_reg(pm4, R_030E00_TA_CS_BC_BASE_ADDR, border_color_va >> 8);
-   si_pm4_set_reg(pm4, R_030E04_TA_CS_BC_BASE_ADDR_HI, S_030E04_ADDRESS(border_color_va >> 40));
-
    if (!sctx->has_graphics)
       goto done;
 
    /* Shader registers - PS. */
    unsigned cu_mask_ps = sctx->gfx_level >= GFX10_3 ? gfx103_get_cu_mask_ps(sscreen) : ~0u;
    if (sctx->gfx_level < GFX11) {
-      si_pm4_set_reg_idx3(sscreen, pm4, R_00B004_SPI_SHADER_PGM_RSRC4_PS,
+      si_pm4_set_reg_idx3(pm4, R_00B004_SPI_SHADER_PGM_RSRC4_PS,
                           ac_apply_cu_en(S_00B004_CU_EN(cu_mask_ps >> 16), /* CUs 16-31 */
                                          C_00B004_CU_EN, 16, &sscreen->info));
    }
-   si_pm4_set_reg_idx3(sscreen, pm4, R_00B01C_SPI_SHADER_PGM_RSRC3_PS,
+   si_pm4_set_reg_idx3(pm4, R_00B01C_SPI_SHADER_PGM_RSRC3_PS,
                        ac_apply_cu_en(S_00B01C_CU_EN(cu_mask_ps) |
                                       S_00B01C_WAVE_LIMIT(0x3F) |
                                       S_00B01C_LDS_GROUP_SIZE(sctx->gfx_level >= GFX11),
@@ -5909,7 +5931,7 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
 
    /* Shader registers - VS. */
    if (sctx->gfx_level < GFX11) {
-      si_pm4_set_reg_idx3(sscreen, pm4, R_00B104_SPI_SHADER_PGM_RSRC4_VS,
+      si_pm4_set_reg_idx3(pm4, R_00B104_SPI_SHADER_PGM_RSRC4_VS,
                           ac_apply_cu_en(S_00B104_CU_EN(0xffff), /* CUs 16-31 */
                                          C_00B104_CU_EN, 16, &sscreen->info));
       si_pm4_set_reg(pm4, R_00B1C0_SPI_SHADER_REQ_CTRL_VS, 0);
@@ -5929,11 +5951,11 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
 
    /* Shader registers - HS. */
    if (sctx->gfx_level < GFX11) {
-      si_pm4_set_reg_idx3(sscreen, pm4, R_00B404_SPI_SHADER_PGM_RSRC4_HS,
+      si_pm4_set_reg_idx3(pm4, R_00B404_SPI_SHADER_PGM_RSRC4_HS,
                           ac_apply_cu_en(S_00B404_CU_EN(0xffff), /* CUs 16-31 */
                                          C_00B404_CU_EN, 16, &sscreen->info));
    }
-   si_pm4_set_reg_idx3(sscreen, pm4, R_00B41C_SPI_SHADER_PGM_RSRC3_HS,
+   si_pm4_set_reg_idx3(pm4, R_00B41C_SPI_SHADER_PGM_RSRC3_HS,
                        ac_apply_cu_en(S_00B41C_CU_EN(0xffff) | S_00B41C_WAVE_LIMIT(0x3F),
                                       C_00B41C_CU_EN, 0, &sscreen->info));
    si_pm4_set_reg(pm4, R_00B4C8_SPI_SHADER_USER_ACCUM_LSHS_0, 0);
@@ -5975,8 +5997,6 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
                       S_028410_COLOR_RD_POLICY(V_028410_CACHE_NOA_GFX10)) |
                   S_028410_DCC_RD_POLICY(meta_read_policy));
 
-   if (sctx->gfx_level >= GFX11)
-      si_pm4_set_reg(pm4, R_028620_PA_RATE_CNTL, S_028620_VERTEX_RATE(2) | S_028620_PRIM_RATE(1));
    if (sctx->gfx_level >= GFX10_3)
       si_pm4_set_reg(pm4, R_028750_SX_PS_DOWNCONVERT_CONTROL, 0xff);
 
@@ -6104,16 +6124,17 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg
    }
 
 done:
+   si_pm4_finalize(pm4);
    sctx->cs_preamble_state = pm4;
    sctx->cs_preamble_state_tmz = si_pm4_clone(pm4); /* Make a copy of the preamble for TMZ. */
 }
 
-void si_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
+void si_init_gfx_preamble_state(struct si_context *sctx)
 {
    if (!sctx->screen->info.has_graphics)
       cdna_init_compute_preamble_state(sctx);
    else if (sctx->gfx_level >= GFX10)
-      gfx10_init_gfx_preamble_state(sctx, uses_reg_shadowing);
+      gfx10_init_gfx_preamble_state(sctx);
    else
-      gfx6_init_gfx_preamble_state(sctx, uses_reg_shadowing);
+      gfx6_init_gfx_preamble_state(sctx);
 }

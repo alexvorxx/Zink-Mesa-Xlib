@@ -15,10 +15,6 @@ dEQP-GLES31.functional.shaders.builtin_functions.precision.tanh.lowp_compute.vec
 # Takes more than a few minutes, time is spent in batch_draw_tracking().
 KHR-GLES31.core.shader_image_load_store.basic-allFormats-store-fs
 
-# Sometimes times out in CI.  I think it's spending time in the compiler, and so
-# then the flake-detect run usually passes once shaders are cached.
-KHR-GLES31.core.arrays_of_arrays.SizedDeclarationsPrimitive
-
 # Intermittent timeouts
 spec@ext_texture_lod_bias@lodbias
 spec@!opengl 1.0@gl-1.0-blend-func

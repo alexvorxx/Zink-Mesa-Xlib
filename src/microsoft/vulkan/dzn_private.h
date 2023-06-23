@@ -198,7 +198,6 @@ struct dzn_physical_device {
 
    struct wsi_device wsi_device;
 
-   mtx_t dev_lock;
    ID3D12Device4 *dev;
    ID3D12Device10 *dev10;
    ID3D12Device11 *dev11;

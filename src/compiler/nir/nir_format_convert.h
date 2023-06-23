@@ -314,13 +314,13 @@ nir_format_linear_to_srgb(nir_builder *b, nir_ssa_def *c)
 static inline nir_ssa_def *
 nir_format_srgb_to_linear(nir_builder *b, nir_ssa_def *c)
 {
-   nir_ssa_def *linear = nir_fdiv(b, c, nir_imm_float(b, 12.92f));
+   nir_ssa_def *linear = nir_fdiv_imm(b, c, 12.92f);
    nir_ssa_def *curved =
       nir_fpow(b, nir_fmul_imm(b, nir_fadd_imm(b, c, 0.055f),
                                   1.0 / 1.055f),
                   nir_imm_float(b, 2.4f));
 
-   return nir_fsat(b, nir_bcsel(b, nir_fge(b, nir_imm_float(b, 0.04045f), c),
+   return nir_fsat(b, nir_bcsel(b, nir_fle_imm(b, c, 0.04045f),
                                    linear, curved));
 }
 
@@ -412,7 +412,7 @@ nir_format_pack_r9g9b9e5(nir_builder *b, nir_ssa_def *color)
    nir_ssa_def *clamped = nir_fmin(b, color, nir_imm_float(b, MAX_RGB9E5));
 
    /* Get rid of negatives and NaN */
-   clamped = nir_bcsel(b, nir_ult(b, nir_imm_int(b, 0x7f800000), color),
+   clamped = nir_bcsel(b, nir_ugt_imm(b, color, 0x7f800000),
                           nir_imm_float(b, 0), clamped);
 
    /* maxrgb.u = MAX3(rc.u, gc.u, bc.u); */

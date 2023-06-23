@@ -516,7 +516,7 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
       if (mimg.lwe)
          fprintf(output, " lwe");
       if (mimg.r128)
-        fprintf(output, " r128");
+         fprintf(output, " r128");
       if (mimg.a16)
          fprintf(output, " a16");
       if (mimg.d16)

@@ -464,8 +464,11 @@ dri2_query_surface(_EGLDisplay *disp, _EGLSurface *surf,
    case EGL_WIDTH:
    case EGL_HEIGHT:
       if (x11_get_drawable_info(drawable, &x, &y, &w, &h, dri2_surf)) {
+         bool changed = surf->Width != w || surf->Height != h;
          surf->Width = w;
          surf->Height = h;
+         if (changed && dri2_dpy->flush)
+            dri2_dpy->flush->invalidate(drawable);
       }
       break;
    default:

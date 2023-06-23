@@ -52,8 +52,7 @@ struct wqm_ctx {
    /* state for WQM propagation */
    std::set<unsigned> worklist;
    std::vector<bool> branch_wqm; /* true if the branch condition in this block should be in wqm */
-   wqm_ctx(Program* program_)
-       : program(program_), branch_wqm(program->blocks.size())
+   wqm_ctx(Program* program_) : program(program_), branch_wqm(program->blocks.size())
    {
       for (unsigned i = 0; i < program->blocks.size(); i++)
          worklist.insert(i);
@@ -137,8 +136,7 @@ get_block_needs(wqm_ctx& ctx, exec_ctx& exec_ctx, Block* block)
          propagate_wqm = true;
 
       bool pred_by_exec = needs_exec_mask(instr.get()) ||
-                          instr->opcode == aco_opcode::p_logical_end ||
-                          instr->isBranch();
+                          instr->opcode == aco_opcode::p_logical_end || instr->isBranch();
 
       if (needs_exact(instr))
          instr_needs[i] = Exact;
@@ -574,7 +572,8 @@ process_instructions(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instructio
                 * WQM again.
                 */
                ctx.info[block->index].exec.resize(1);
-               assert(ctx.info[block->index].exec[0].second == (mask_type_exact | mask_type_global));
+               assert(ctx.info[block->index].exec[0].second ==
+                      (mask_type_exact | mask_type_global));
                current_exec = get_exec_op(ctx.info[block->index].exec.back().first);
                ctx.info[block->index].exec[0].first = Operand(bld.lm);
             }
@@ -714,7 +713,7 @@ add_branch_code(exec_ctx& ctx, Block* block)
    /* try to disable wqm handling */
    if (ctx.handle_wqm && block->kind & block_kind_top_level) {
       if (ctx.info[idx].exec.size() == 3) {
-         assert(ctx.info[idx].exec[1].second == mask_type_wqm);
+         assert(ctx.info[idx].exec[1].second & mask_type_wqm);
          ctx.info[idx].exec.pop_back();
       }
       assert(ctx.info[idx].exec.size() <= 2);

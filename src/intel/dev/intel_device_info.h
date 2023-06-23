@@ -583,8 +583,8 @@ void intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo);
 
 #ifdef GFX_VERx10
 #define intel_needs_workaround(devinfo, id)         \
-   INTEL_WA_ ## id ## _GFX_VER &&                              \
-   BITSET_TEST(devinfo->workarounds, INTEL_WA_##id)
+   (INTEL_WA_ ## id ## _GFX_VER &&                              \
+    BITSET_TEST(devinfo->workarounds, INTEL_WA_##id))
 #else
 #define intel_needs_workaround(devinfo, id) \
    BITSET_TEST(devinfo->workarounds, INTEL_WA_##id)

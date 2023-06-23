@@ -6,12 +6,16 @@ use crate::core::queue::*;
 
 use mesa_rust_util::properties::*;
 use rusticl_opencl_gen::*;
+use rusticl_proc_macros::cl_entrypoint;
+use rusticl_proc_macros::cl_info_entrypoint;
 
+use std::mem::MaybeUninit;
 use std::ptr;
 use std::sync::Arc;
 
+#[cl_info_entrypoint(cl_get_command_queue_info)]
 impl CLInfo<cl_command_queue_info> for cl_command_queue {
-    fn query(&self, q: cl_command_queue_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_command_queue_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let queue = self.get_ref()?;
         Ok(match q {
             CL_QUEUE_CONTEXT => {
@@ -82,7 +86,8 @@ pub fn create_command_queue_impl(
     )?))
 }
 
-pub fn create_command_queue(
+#[cl_entrypoint]
+fn create_command_queue(
     context: cl_context,
     device: cl_device_id,
     properties: cl_command_queue_properties,
@@ -90,7 +95,8 @@ pub fn create_command_queue(
     create_command_queue_impl(context, device, properties, None)
 }
 
-pub fn create_command_queue_with_properties(
+#[cl_entrypoint]
+fn create_command_queue_with_properties(
     context: cl_context,
     device: cl_device_id,
     properties: *const cl_queue_properties,
@@ -125,7 +131,8 @@ pub fn create_command_queue_with_properties(
     )?))
 }
 
-pub fn enqueue_marker(command_queue: cl_command_queue, event: *mut cl_event) -> CLResult<()> {
+#[cl_entrypoint]
+fn enqueue_marker(command_queue: cl_command_queue, event: *mut cl_event) -> CLResult<()> {
     let q = command_queue.get_arc()?;
 
     // TODO marker makes sure previous commands did complete
@@ -139,7 +146,8 @@ pub fn enqueue_marker(command_queue: cl_command_queue, event: *mut cl_event) -> 
     )
 }
 
-pub fn enqueue_marker_with_wait_list(
+#[cl_entrypoint]
+fn enqueue_marker_with_wait_list(
     command_queue: cl_command_queue,
     num_events_in_wait_list: cl_uint,
     event_wait_list: *const cl_event,
@@ -159,7 +167,8 @@ pub fn enqueue_marker_with_wait_list(
     )
 }
 
-pub fn enqueue_barrier(command_queue: cl_command_queue) -> CLResult<()> {
+#[cl_entrypoint]
+fn enqueue_barrier(command_queue: cl_command_queue) -> CLResult<()> {
     let q = command_queue.get_arc()?;
 
     // TODO barriers make sure previous commands did complete and other commands didn't start
@@ -168,7 +177,8 @@ pub fn enqueue_barrier(command_queue: cl_command_queue) -> CLResult<()> {
     Ok(())
 }
 
-pub fn enqueue_barrier_with_wait_list(
+#[cl_entrypoint]
+fn enqueue_barrier_with_wait_list(
     command_queue: cl_command_queue,
     num_events_in_wait_list: cl_uint,
     event_wait_list: *const cl_event,
@@ -188,12 +198,14 @@ pub fn enqueue_barrier_with_wait_list(
     )
 }
 
-pub fn flush_queue(command_queue: cl_command_queue) -> CLResult<()> {
+#[cl_entrypoint]
+fn flush(command_queue: cl_command_queue) -> CLResult<()> {
     // CL_INVALID_COMMAND_QUEUE if command_queue is not a valid host command-queue.
     command_queue.get_ref()?.flush(false)
 }
 
-pub fn finish_queue(command_queue: cl_command_queue) -> CLResult<()> {
+#[cl_entrypoint]
+fn finish(command_queue: cl_command_queue) -> CLResult<()> {
     // CL_INVALID_COMMAND_QUEUE if command_queue is not a valid host command-queue.
     let q = command_queue.get_ref()?;
 
@@ -204,10 +216,16 @@ pub fn finish_queue(command_queue: cl_command_queue) -> CLResult<()> {
     q.flush(true)
 }
 
-pub fn release_command_queue(command_queue: cl_command_queue) -> CLResult<()> {
+#[cl_entrypoint]
+fn retain_command_queue(command_queue: cl_command_queue) -> CLResult<()> {
+    command_queue.retain()
+}
+
+#[cl_entrypoint]
+fn release_command_queue(command_queue: cl_command_queue) -> CLResult<()> {
     // clReleaseCommandQueue performs an implicit flush to issue any previously queued OpenCL
     // commands in command_queue.
-    flush_queue(command_queue)?;
+    flush(command_queue)?;
     command_queue.release()?;
     Ok(())
 }

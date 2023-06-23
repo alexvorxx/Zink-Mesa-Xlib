@@ -140,7 +140,6 @@ AluGroup::add_trans_instructions(AluInstr *instr)
          /* We added a vector op in the trans channel, so we have to
           * make sure the corresponding vector channel is used */
          assert(instr->has_alu_flag(alu_is_trans) || m_slots[instr->dest_chan()]);
-
          m_has_kill_op |= instr->is_kill();
          return true;
       }
@@ -161,7 +160,7 @@ AluGroup::free_slots() const
 
 bool
 AluGroup::add_vec_instructions(AluInstr *instr)
-{
+{   
    int param_src = -1;
    for (auto& s : instr->sources()) {
       auto is = s->as_inline_const();
@@ -220,7 +219,6 @@ AluGroup::add_vec_instructions(AluInstr *instr)
             sfn_log << SfnLog::schedule << "V: Try force channel " << free_chan << "\n";
             dest->set_chan(free_chan);
             if (instr->bank_swizzle() != alu_vec_unknown) {
-
                if (try_readport(instr, instr->bank_swizzle())) {
                   m_has_kill_op |= instr->is_kill();
                   return true;

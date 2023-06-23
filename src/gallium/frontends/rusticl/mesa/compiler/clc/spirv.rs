@@ -38,12 +38,15 @@ pub struct CLCHeader<'a> {
 }
 
 unsafe fn callback_impl(data: *mut c_void, msg: *const c_char) {
-    let msgs = (data as *mut Vec<String>).as_mut().expect("");
+    let data = data as *mut Vec<String>;
+    let msgs = unsafe { data.as_mut() }.unwrap();
     msgs.push(c_string_to_string(msg));
 }
 
 unsafe extern "C" fn spirv_msg_callback(data: *mut c_void, msg: *const c_char) {
-    callback_impl(data, msg);
+    unsafe {
+        callback_impl(data, msg);
+    }
 }
 
 unsafe extern "C" fn spirv_to_nir_msg_callback(
@@ -53,7 +56,9 @@ unsafe extern "C" fn spirv_to_nir_msg_callback(
     msg: *const c_char,
 ) {
     if dbg_level >= nir_spirv_debug_level::NIR_SPIRV_DEBUG_LEVEL_WARNING {
-        callback_impl(data, msg);
+        unsafe {
+            callback_impl(data, msg);
+        }
     }
 }
 
@@ -92,6 +97,10 @@ impl SPIRVBin {
                     key.extend_from_slice(h.name.as_bytes());
                     key.extend_from_slice(h.source.as_bytes());
                 });
+
+                // Safety: clc_optional_features is a struct of bools and contains no padding.
+                // Sadly we can't guarentee this.
+                key.extend(unsafe { as_byte_slice(slice::from_ref(&features)) });
 
                 let mut key = cache.gen_key(&key);
                 if let Some(data) = cache.get(&mut key) {
@@ -194,10 +203,10 @@ impl SPIRVBin {
         (res, msgs.join("\n"))
     }
 
-    pub fn clone_on_validate(&self) -> (Option<Self>, String) {
+    pub fn clone_on_validate(&self, options: &clc_validator_options) -> (Option<Self>, String) {
         let mut msgs: Vec<String> = Vec::new();
         let logger = create_clc_logger(&mut msgs);
-        let res = unsafe { clc_validate_spirv(&self.spirv, &logger) };
+        let res = unsafe { clc_validate_spirv(&self.spirv, &logger, options) };
 
         (res.then(|| self.clone()), msgs.join("\n"))
     }
@@ -310,6 +319,7 @@ impl SPIRVBin {
 
             caps: spirv_supported_capabilities {
                 address: true,
+                float16: true,
                 float64: true,
                 generic_pointers: true,
                 int8: true,
@@ -369,7 +379,13 @@ impl SPIRVBin {
         let shader_cache = DiskCacheBorrowed::as_ptr(&screen.shader_cache());
 
         NirShader::new(unsafe {
-            nir_load_libclc_shader(address_bits, shader_cache, &spirv_options, nir_options)
+            nir_load_libclc_shader(
+                address_bits,
+                shader_cache,
+                &spirv_options,
+                nir_options,
+                true,
+            )
         })
     }
 

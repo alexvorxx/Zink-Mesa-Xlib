@@ -55,21 +55,6 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
    b->cursor = nir_before_instr(&instr->instr);
 
    switch (instr->intrinsic) {
-   case nir_intrinsic_memory_barrier_atomic_counter:
-      /* Atomic counters are now SSBOs so memoryBarrierAtomicCounter() is now
-       * memoryBarrierBuffer().
-       */
-      if (b->shader->options->use_scoped_barrier) {
-         instr->intrinsic = nir_intrinsic_scoped_barrier;
-         nir_intrinsic_set_execution_scope(instr, NIR_SCOPE_NONE);
-         nir_intrinsic_set_memory_scope(instr, NIR_SCOPE_DEVICE);
-         nir_intrinsic_set_memory_semantics(instr, NIR_MEMORY_ACQ_REL);
-         nir_intrinsic_set_memory_modes(instr, nir_var_mem_ssbo);
-      } else {
-         instr->intrinsic = nir_intrinsic_memory_barrier_buffer;
-      }
-      return true;
-
    case nir_intrinsic_atomic_counter_inc:
    case nir_intrinsic_atomic_counter_add:
    case nir_intrinsic_atomic_counter_pre_dec:

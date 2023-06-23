@@ -81,6 +81,10 @@ struct clc_compile_args {
    unsigned address_bits;
 };
 
+struct clc_validator_options {
+   uint32_t limit_max_function_arg;
+};
+
 struct clc_binary {
    void *data;
    size_t size;

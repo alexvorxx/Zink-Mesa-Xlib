@@ -180,13 +180,13 @@ void si_cp_dma_clear_buffer(struct si_context *sctx, struct radeon_cmdbuf *cs,
    assert(size && size % 4 == 0);
 
    if (user_flags & SI_OP_SYNC_GE_BEFORE)
-      sctx->flags |= SI_CONTEXT_VS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_VS_PARTIAL_FLUSH;
 
    if (user_flags & SI_OP_SYNC_CS_BEFORE)
-      sctx->flags |= SI_CONTEXT_CS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_CS_PARTIAL_FLUSH;
 
    if (user_flags & SI_OP_SYNC_PS_BEFORE)
-      sctx->flags |= SI_CONTEXT_PS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_PS_PARTIAL_FLUSH;
 
    /* Mark the buffer range of destination as valid (initialized),
     * so that transfer_map knows it should wait for the GPU when mapping
@@ -325,13 +325,13 @@ void si_cp_dma_copy_buffer(struct si_context *sctx, struct pipe_resource *dst,
    }
 
    if (user_flags & SI_OP_SYNC_GE_BEFORE)
-      sctx->flags |= SI_CONTEXT_VS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_VS_PARTIAL_FLUSH;
 
    if (user_flags & SI_OP_SYNC_CS_BEFORE)
-      sctx->flags |= SI_CONTEXT_CS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_CS_PARTIAL_FLUSH;
 
    if (user_flags & SI_OP_SYNC_PS_BEFORE)
-      sctx->flags |= SI_CONTEXT_PS_PARTIAL_FLUSH | SI_CONTEXT_PFP_SYNC_ME;
+      sctx->flags |= SI_CONTEXT_PS_PARTIAL_FLUSH;
 
    if ((dst || src) && !(user_flags & SI_OP_SKIP_CACHE_INV_BEFORE))
          sctx->flags |= si_get_flush_flags(sctx, coher, cache_policy);

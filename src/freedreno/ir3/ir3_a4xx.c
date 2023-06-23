@@ -58,7 +58,7 @@ byte_offset_to_address(struct ir3_context *ctx,
       byte_offset = ir3_ADD_U(b, create_uniform(b, cb), 0, byte_offset, 0);
    }
 
-   if (fd_dev_64b(ctx->compiler->dev_id)) {
+   if (ctx->compiler->is_64bit) {
       return ir3_collect(b, byte_offset, create_immed(b, 0));
    } else {
       return byte_offset;
@@ -271,7 +271,7 @@ get_image_offset(struct ir3_context *ctx, const nir_intrinsic_instr *instr,
       offset = ir3_SHR_B(b, offset, 0, create_immed(b, 2), 0);
    }
 
-   if (fd_dev_64b(ctx->compiler->dev_id))
+   if (ctx->compiler->is_64bit)
       return ir3_collect(b, offset, create_immed(b, 0));
    else
       return offset;

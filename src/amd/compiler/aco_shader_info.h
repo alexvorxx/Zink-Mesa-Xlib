@@ -35,10 +35,10 @@
 extern "C" {
 #endif
 
-#define ACO_MAX_SO_OUTPUTS 64
-#define ACO_MAX_SO_BUFFERS 4
+#define ACO_MAX_SO_OUTPUTS     64
+#define ACO_MAX_SO_BUFFERS     4
 #define ACO_MAX_VERTEX_ATTRIBS 32
-#define ACO_MAX_VBS 32
+#define ACO_MAX_VBS            32
 
 struct aco_vs_input_state {
    uint32_t instance_rate_inputs;
@@ -133,8 +133,8 @@ struct aco_compiler_options {
    enum amd_gfx_level gfx_level;
    uint32_t address32_hi;
    struct {
-      void (*func)(void *private_data, enum aco_compiler_debug_level level, const char *message);
-      void *private_data;
+      void (*func)(void* private_data, enum aco_compiler_debug_level level, const char* message);
+      void* private_data;
    } debug;
 };
 

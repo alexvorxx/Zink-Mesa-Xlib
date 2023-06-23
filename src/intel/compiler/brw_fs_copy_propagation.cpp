@@ -1086,23 +1086,12 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
       case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
       case SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL:
       case SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL:
-         inst->src[i] = val;
-         progress = true;
-         break;
-
       case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD:
       case SHADER_OPCODE_BROADCAST:
-         inst->src[i] = val;
-         progress = true;
-         break;
-
       case BRW_OPCODE_MAD:
       case BRW_OPCODE_LRP:
-         inst->src[i] = val;
-         progress = true;
-         break;
-
       case FS_OPCODE_PACK_HALF_2x16_SPLIT:
+      case SHADER_OPCODE_SHUFFLE:
          inst->src[i] = val;
          progress = true;
          break;

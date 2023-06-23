@@ -488,19 +488,20 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
    bld.sop1(Builder::s_or_saveexec, Definition(stmp, bld.lm), Definition(scc, s1),
             Definition(exec, bld.lm), Operand::c64(UINT64_MAX), Operand(exec, bld.lm));
 
-   for (unsigned i = 0; i < src.size(); i++) {
-      /* p_exclusive_scan needs it to be a sgpr or inline constant for the v_writelane_b32
-       * except on GFX10, where v_writelane_b32 can take a literal. */
-      if (identity[i].isLiteral() && op == aco_opcode::p_exclusive_scan &&
-          ctx->program->gfx_level < GFX10) {
-         bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg{sitmp + i}, s1), identity[i]);
-         identity[i] = Operand(PhysReg{sitmp + i}, s1);
+   /* On GFX10+ v_writelane_b32/v_cndmask_b32_e64 can take a literal */
+   if (ctx->program->gfx_level < GFX10) {
+      for (unsigned i = 0; i < src.size(); i++) {
+         /* p_exclusive_scan uses identity for v_writelane_b32 */
+         if (identity[i].isLiteral() && op == aco_opcode::p_exclusive_scan) {
+            bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg{sitmp + i}, s1), identity[i]);
+            identity[i] = Operand(PhysReg{sitmp + i}, s1);
 
-         bld.vop1(aco_opcode::v_mov_b32, Definition(PhysReg{tmp + i}, v1), identity[i]);
-         vcndmask_identity[i] = Operand(PhysReg{tmp + i}, v1);
-      } else if (identity[i].isLiteral()) {
-         bld.vop1(aco_opcode::v_mov_b32, Definition(PhysReg{tmp + i}, v1), identity[i]);
-         vcndmask_identity[i] = Operand(PhysReg{tmp + i}, v1);
+            bld.vop1(aco_opcode::v_mov_b32, Definition(PhysReg{tmp + i}, v1), identity[i]);
+            vcndmask_identity[i] = Operand(PhysReg{tmp + i}, v1);
+         } else if (identity[i].isLiteral()) {
+            bld.vop1(aco_opcode::v_mov_b32, Definition(PhysReg{tmp + i}, v1), identity[i]);
+            vcndmask_identity[i] = Operand(PhysReg{tmp + i}, v1);
+         }
       }
    }
 
@@ -648,7 +649,8 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
 
          /* fill in the gaps in rows 1 and 3 */
          bld.sop1(aco_opcode::s_mov_b32, Definition(exec_lo, s1), Operand::c32(0x10000u));
-         bld.sop1(aco_opcode::s_mov_b32, Definition(exec_hi, s1), Operand::c32(0x10000u));
+         if (ctx->program->wave_size == 64)
+            bld.sop1(aco_opcode::s_mov_b32, Definition(exec_hi, s1), Operand::c32(0x10000u));
          for (unsigned i = 0; i < src.size(); i++) {
             Instruction* perm =
                bld.vop3(aco_opcode::v_permlanex16_b32, Definition(PhysReg{vtmp + i}, v1),
@@ -781,8 +783,10 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
       if (ctx->program->gfx_level >= GFX10) {
          bld.sop2(aco_opcode::s_bfm_b32, Definition(exec_lo, s1), Operand::c32(16u),
                   Operand::c32(16u));
-         bld.sop2(aco_opcode::s_bfm_b32, Definition(exec_hi, s1), Operand::c32(16u),
-                  Operand::c32(16u));
+         if (ctx->program->wave_size == 64) {
+            bld.sop2(aco_opcode::s_bfm_b32, Definition(exec_hi, s1), Operand::c32(16u),
+                     Operand::c32(16u));
+         }
          for (unsigned i = 0; i < src.size(); i++) {
             Instruction* perm =
                bld.vop3(aco_opcode::v_permlanex16_b32, Definition(PhysReg{vtmp + i}, v1),
@@ -2181,7 +2185,7 @@ lower_image_sample(lower_context* ctx, aco_ptr<Instruction>& instr)
    instr->mimg().strict_wqm = false;
 
    if ((3 + num_vaddr) > instr->operands.size()) {
-      MIMG_instruction *new_instr = create_instruction<MIMG_instruction>(
+      MIMG_instruction* new_instr = create_instruction<MIMG_instruction>(
          instr->opcode, Format::MIMG, 3 + num_vaddr, instr->definitions.size());
       std::copy(instr->definitions.cbegin(), instr->definitions.cend(),
                 new_instr->definitions.begin());
@@ -2346,8 +2350,8 @@ lower_to_hw_instr(Program* program)
                      target =
                         program->has_color_exports ? V_008DFC_SQ_EXP_MRT : V_008DFC_SQ_EXP_MRTZ;
                   if (program->stage == fragment_fs)
-                     bld.exp(aco_opcode::exp, Operand(v1), Operand(v1), Operand(v1), Operand(v1),
-                             0, target, false, true, true);
+                     bld.exp(aco_opcode::exp, Operand(v1), Operand(v1), Operand(v1), Operand(v1), 0,
+                             target, false, true, true);
                   if (should_dealloc_vgprs)
                      bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_dealloc_vgprs);
                   bld.sopp(aco_opcode::s_endpgm);
@@ -2518,8 +2522,7 @@ lower_to_hw_instr(Program* program)
                         create_bperm(bld, ext_swiz, dst, Operand::zero());
                      }
                   } else {
-                     SDWA_instruction& sdwa =
-                        bld.vop1_sdwa(aco_opcode::v_mov_b32, dst, op)->sdwa();
+                     SDWA_instruction& sdwa = bld.vop1_sdwa(aco_opcode::v_mov_b32, dst, op)->sdwa();
                      sdwa.sel[0] = SubdwordSel(bits / 8, offset / 8, signext);
                   }
                }
@@ -2574,7 +2577,8 @@ lower_to_hw_instr(Program* program)
                } else {
                   assert(dst.regClass() == v2b);
                   bld.vop2_sdwa(aco_opcode::v_lshlrev_b32, dst, Operand::c32(offset), op)
-                     ->sdwa().sel[1] = SubdwordSel::ubyte;
+                     ->sdwa()
+                     .sel[1] = SubdwordSel::ubyte;
                }
                break;
             }

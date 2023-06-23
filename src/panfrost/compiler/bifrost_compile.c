@@ -1578,9 +1578,9 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       break;
 
    case nir_intrinsic_scoped_barrier:
-      if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
+      if (nir_intrinsic_execution_scope(instr) != SCOPE_NONE) {
          assert(b->shader->stage != MESA_SHADER_FRAGMENT);
-         assert(nir_intrinsic_execution_scope(instr) > NIR_SCOPE_SUBGROUP &&
+         assert(nir_intrinsic_execution_scope(instr) > SCOPE_SUBGROUP &&
                 "todo: subgroup barriers (different divergence rules)");
          bi_barrier(b);
       }
@@ -4330,7 +4330,8 @@ bifrost_nir_lower_blend_components(struct nir_builder *b, nir_instr *instr,
 }
 
 static nir_mem_access_size_align
-mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes, uint32_t align,
+mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes,
+                         uint8_t input_bit_size, uint32_t align,
                          uint32_t align_offset, bool offset_is_const,
                          const void *cb_data)
 {
@@ -4725,12 +4726,13 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
       NIR_PASS_V(nir, pan_nir_lower_store_component);
    }
 
-   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes,
-              nir_var_mem_ubo | nir_var_mem_ssbo | nir_var_mem_constant |
-                 nir_var_mem_task_payload | nir_var_shader_temp |
-                 nir_var_function_temp | nir_var_mem_global |
-                 nir_var_mem_shared,
-              mem_access_size_align_cb, NULL);
+   nir_lower_mem_access_bit_sizes_options mem_size_options = {
+      .modes = nir_var_mem_ubo | nir_var_mem_ssbo | nir_var_mem_constant |
+               nir_var_mem_task_payload | nir_var_shader_temp |
+               nir_var_function_temp | nir_var_mem_global | nir_var_mem_shared,
+      .callback = mem_access_size_align_cb,
+   };
+   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes, &mem_size_options);
 
    NIR_PASS_V(nir, nir_lower_ssbo);
    NIR_PASS_V(nir, pan_lower_sample_pos);

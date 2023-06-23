@@ -45,9 +45,8 @@ radv_is_cache_disabled(struct radv_device *device)
 }
 
 void
-radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
-                  uint32_t stage_count, const struct radv_pipeline_layout *layout,
-                  const struct radv_pipeline_key *key, uint32_t flags)
+radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages, uint32_t stage_count,
+                  const struct radv_pipeline_layout *layout, const struct radv_pipeline_key *key, uint32_t flags)
 {
    struct mesa_sha1 ctx;
 
@@ -68,8 +67,7 @@ radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
 }
 
 void
-radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo *stages,
-                    unsigned stage_count)
+radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo *stages, unsigned stage_count)
 {
    for (unsigned i = 0; i < stage_count; ++i) {
       unsigned char hash[20];
@@ -80,8 +78,7 @@ radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo
 
 void
 radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                     const struct radv_pipeline_key *key,
-                     const struct radv_ray_tracing_group *groups, uint32_t flags)
+                     const struct radv_pipeline_key *key, const struct radv_ray_tracing_group *groups, uint32_t flags)
 {
    RADV_FROM_HANDLE(radv_pipeline_layout, layout, pCreateInfo->layout);
    struct mesa_sha1 ctx;
@@ -95,12 +92,9 @@ radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKH
    radv_hash_rt_stages(&ctx, pCreateInfo->pStages, pCreateInfo->stageCount);
 
    for (uint32_t i = 0; i < pCreateInfo->groupCount; i++) {
-      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].type,
-                        sizeof(pCreateInfo->pGroups[i].type));
-      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].generalShader,
-                        sizeof(pCreateInfo->pGroups[i].generalShader));
-      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].anyHitShader,
-                        sizeof(pCreateInfo->pGroups[i].anyHitShader));
+      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].type, sizeof(pCreateInfo->pGroups[i].type));
+      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].generalShader, sizeof(pCreateInfo->pGroups[i].generalShader));
+      _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].anyHitShader, sizeof(pCreateInfo->pGroups[i].anyHitShader));
       _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].closestHitShader,
                         sizeof(pCreateInfo->pGroups[i].closestHitShader));
       _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].intersectionShader,
@@ -117,13 +111,12 @@ radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKH
    }
 
    const uint32_t pipeline_flags =
-      pCreateInfo->flags & (VK_PIPELINE_CREATE_RAY_TRACING_SKIP_TRIANGLES_BIT_KHR |
-                            VK_PIPELINE_CREATE_RAY_TRACING_SKIP_AABBS_BIT_KHR |
-                            VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_ANY_HIT_SHADERS_BIT_KHR |
-                            VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR |
-                            VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR |
-                            VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_INTERSECTION_SHADERS_BIT_KHR |
-                            VK_PIPELINE_CREATE_LIBRARY_BIT_KHR);
+      pCreateInfo->flags &
+      (VK_PIPELINE_CREATE_RAY_TRACING_SKIP_TRIANGLES_BIT_KHR | VK_PIPELINE_CREATE_RAY_TRACING_SKIP_AABBS_BIT_KHR |
+       VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_ANY_HIT_SHADERS_BIT_KHR |
+       VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR |
+       VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR |
+       VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_INTERSECTION_SHADERS_BIT_KHR | VK_PIPELINE_CREATE_LIBRARY_BIT_KHR);
    _mesa_sha1_update(&ctx, &pipeline_flags, 4);
 
    _mesa_sha1_update(&ctx, &flags, 4);
@@ -159,8 +152,7 @@ radv_shader_deserialize(struct vk_pipeline_cache *cache, const void *key_data, s
                         struct blob_reader *blob)
 {
    struct radv_device *device = container_of(cache->base.device, struct radv_device, vk);
-   const struct radv_shader_binary *binary =
-      blob_read_bytes(blob, sizeof(struct radv_shader_binary));
+   const struct radv_shader_binary *binary = blob_read_bytes(blob, sizeof(struct radv_shader_binary));
    assert(key_size == SHA1_DIGEST_LENGTH);
 
    struct radv_shader *shader = radv_shader_create(device, binary);
@@ -219,8 +211,8 @@ radv_shader_create_cached(struct radv_device *device, struct vk_pipeline_cache *
    /* TODO: Skip disk-cache for meta-shaders because they are stored in a different cache file */
 
    struct vk_pipeline_cache_object *shader_obj;
-   shader_obj = vk_pipeline_cache_create_and_insert_object(cache, hash, SHA1_DIGEST_LENGTH, binary,
-                                                           binary->total_size, &radv_shader_ops);
+   shader_obj = vk_pipeline_cache_create_and_insert_object(cache, hash, SHA1_DIGEST_LENGTH, binary, binary->total_size,
+                                                           &radv_shader_ops);
 
    return shader_obj ? container_of(shader_obj, struct radv_shader, base) : NULL;
 }
@@ -249,17 +241,14 @@ radv_pipeline_cache_object_create(struct vk_device *device, unsigned num_shaders
                                   unsigned num_stack_sizes, unsigned ps_epilog_binary_size)
 {
    assert(num_stack_sizes == 0 || ps_epilog_binary_size == 0);
-   const size_t size = sizeof(struct radv_pipeline_cache_object) +
-                       (num_shaders * sizeof(struct radv_shader *)) + ps_epilog_binary_size +
-                       (num_stack_sizes * sizeof(uint32_t));
+   const size_t size = sizeof(struct radv_pipeline_cache_object) + (num_shaders * sizeof(struct radv_shader *)) +
+                       ps_epilog_binary_size + (num_stack_sizes * sizeof(uint32_t));
 
-   struct radv_pipeline_cache_object *object =
-      vk_alloc(&device->alloc, size, 8, VK_SYSTEM_ALLOCATION_SCOPE_CACHE);
+   struct radv_pipeline_cache_object *object = vk_alloc(&device->alloc, size, 8, VK_SYSTEM_ALLOCATION_SCOPE_CACHE);
    if (!object)
       return NULL;
 
-   vk_pipeline_cache_object_init(device, &object->base, &radv_pipeline_ops, object->sha1,
-                                 SHA1_DIGEST_LENGTH);
+   vk_pipeline_cache_object_init(device, &object->base, &radv_pipeline_ops, object->sha1, SHA1_DIGEST_LENGTH);
    object->num_shaders = num_shaders;
    object->num_stack_sizes = num_stack_sizes;
    object->ps_epilog_binary_size = ps_epilog_binary_size;
@@ -272,12 +261,10 @@ radv_pipeline_cache_object_create(struct vk_device *device, unsigned num_shaders
 }
 
 static void
-radv_pipeline_cache_object_destroy(struct vk_device *_device,
-                                   struct vk_pipeline_cache_object *object)
+radv_pipeline_cache_object_destroy(struct vk_device *_device, struct vk_pipeline_cache_object *object)
 {
    struct radv_device *device = container_of(_device, struct radv_device, vk);
-   struct radv_pipeline_cache_object *pipeline_obj =
-      container_of(object, struct radv_pipeline_cache_object, base);
+   struct radv_pipeline_cache_object *pipeline_obj = container_of(object, struct radv_pipeline_cache_object, base);
 
    for (unsigned i = 0; i < pipeline_obj->num_shaders; i++) {
       if (pipeline_obj->shaders[i])
@@ -291,8 +278,8 @@ radv_pipeline_cache_object_destroy(struct vk_device *_device,
 }
 
 static struct vk_pipeline_cache_object *
-radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const void *key_data,
-                                       size_t key_size, struct blob_reader *blob)
+radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const void *key_data, size_t key_size,
+                                       struct blob_reader *blob)
 {
    struct radv_device *device = container_of(cache->base.device, struct radv_device, vk);
    assert(key_size == SHA1_DIGEST_LENGTH);
@@ -302,8 +289,8 @@ radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const vo
    unsigned ps_epilog_binary_size = blob_read_uint32(blob);
 
    struct radv_pipeline_cache_object *object;
-   object = radv_pipeline_cache_object_create(&device->vk, num_shaders, key_data, num_stack_sizes,
-                                              ps_epilog_binary_size);
+   object =
+      radv_pipeline_cache_object_create(&device->vk, num_shaders, key_data, num_stack_sizes, ps_epilog_binary_size);
    if (!object)
       return NULL;
 
@@ -331,8 +318,7 @@ radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const vo
    if (ps_epilog_binary_size) {
       assert(num_stack_sizes == 0);
       struct radv_shader_part_binary *binary = object->data;
-      object->ps_epilog =
-         radv_shader_part_create(device, binary, device->physical_device->ps_wave_size);
+      object->ps_epilog = radv_shader_part_create(device, binary, device->physical_device->ps_wave_size);
 
       if (!object->ps_epilog) {
          vk_pipeline_cache_object_unref(&device->vk, &object->base);
@@ -346,8 +332,7 @@ radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const vo
 static bool
 radv_pipeline_cache_object_serialize(struct vk_pipeline_cache_object *object, struct blob *blob)
 {
-   struct radv_pipeline_cache_object *pipeline_obj =
-      container_of(object, struct radv_pipeline_cache_object, base);
+   struct radv_pipeline_cache_object *pipeline_obj = container_of(object, struct radv_pipeline_cache_object, base);
 
    blob_write_uint32(blob, pipeline_obj->num_shaders);
    blob_write_uint32(blob, pipeline_obj->num_stack_sizes);
@@ -356,8 +341,7 @@ radv_pipeline_cache_object_serialize(struct vk_pipeline_cache_object *object, st
    for (unsigned i = 0; i < pipeline_obj->num_shaders; i++)
       blob_write_bytes(blob, pipeline_obj->shaders[i]->sha1, SHA1_DIGEST_LENGTH);
 
-   const size_t data_size =
-      pipeline_obj->ps_epilog_binary_size + (pipeline_obj->num_stack_sizes * sizeof(uint32_t));
+   const size_t data_size = pipeline_obj->ps_epilog_binary_size + (pipeline_obj->num_stack_sizes * sizeof(uint32_t));
    blob_write_bytes(blob, pipeline_obj->data, data_size);
 
    return true;
@@ -370,9 +354,8 @@ const struct vk_pipeline_cache_object_ops radv_pipeline_ops = {
 };
 
 bool
-radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache *cache,
-                           struct radv_pipeline *pipeline, const unsigned char *sha1,
-                           bool *found_in_application_cache)
+radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache *cache, struct radv_pipeline *pipeline,
+                           const unsigned char *sha1, bool *found_in_application_cache)
 {
    *found_in_application_cache = false;
 
@@ -391,8 +374,7 @@ radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache 
    if (!object)
       return false;
 
-   struct radv_pipeline_cache_object *pipeline_obj =
-      container_of(object, struct radv_pipeline_cache_object, base);
+   struct radv_pipeline_cache_object *pipeline_obj = container_of(object, struct radv_pipeline_cache_object, base);
 
    for (unsigned i = 0; i < pipeline_obj->num_shaders; i++) {
       gl_shader_stage s = pipeline_obj->shaders[i]->info.stage;
@@ -419,10 +401,8 @@ radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache 
 }
 
 void
-radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache *cache,
-                           struct radv_pipeline *pipeline,
-                           struct radv_shader_part_binary *ps_epilog_binary,
-                           const unsigned char *sha1)
+radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache *cache, struct radv_pipeline *pipeline,
+                           struct radv_shader_part_binary *ps_epilog_binary, const unsigned char *sha1)
 {
    if (radv_is_cache_disabled(device))
       return;
@@ -439,8 +419,7 @@ radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache 
    unsigned ps_epilog_binary_size = ps_epilog_binary ? ps_epilog_binary->total_size : 0;
 
    struct radv_pipeline_cache_object *pipeline_obj;
-   pipeline_obj =
-      radv_pipeline_cache_object_create(&device->vk, num_shaders, sha1, 0, ps_epilog_binary_size);
+   pipeline_obj = radv_pipeline_cache_object_create(&device->vk, num_shaders, sha1, 0, ps_epilog_binary_size);
 
    if (!pipeline_obj)
       return;
@@ -468,8 +447,7 @@ radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache 
    }
 
    /* Add the object to the cache */
-   struct vk_pipeline_cache_object *object =
-      vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
+   struct vk_pipeline_cache_object *object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
    vk_pipeline_cache_object_unref(&device->vk, object);
 }
 
@@ -485,29 +463,26 @@ radv_ray_tracing_pipeline_cache_search(struct radv_device *device, struct vk_pip
       cache = device->mem_cache;
 
    bool cache_hit = false;
-   struct vk_pipeline_cache_object *object = vk_pipeline_cache_lookup_object(
-      cache, pipeline->sha1, SHA1_DIGEST_LENGTH, &radv_pipeline_ops, &cache_hit);
+   struct vk_pipeline_cache_object *object =
+      vk_pipeline_cache_lookup_object(cache, pipeline->sha1, SHA1_DIGEST_LENGTH, &radv_pipeline_ops, &cache_hit);
 
    if (!object)
       return false;
 
-   struct radv_pipeline_cache_object *pipeline_obj =
-      container_of(object, struct radv_pipeline_cache_object, base);
+   struct radv_pipeline_cache_object *pipeline_obj = container_of(object, struct radv_pipeline_cache_object, base);
 
    bool is_library = pCreateInfo->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
    bool complete = true;
    unsigned idx = 0;
 
    if (!is_library)
-      pipeline->base.base.shaders[MESA_SHADER_INTERSECTION] =
-         radv_shader_ref(pipeline_obj->shaders[idx++]);
+      pipeline->base.base.shaders[MESA_SHADER_INTERSECTION] = radv_shader_ref(pipeline_obj->shaders[idx++]);
 
    for (unsigned i = 0; i < pCreateInfo->stageCount; i++) {
       if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i])) {
          pipeline->stages[i].shader = &radv_shader_ref(pipeline_obj->shaders[idx++])->base;
       } else if (is_library) {
-         pipeline->stages[i].shader =
-            radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
+         pipeline->stages[i].shader = radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
          complete &= pipeline->stages[i].shader != NULL;
       }
    }
@@ -532,8 +507,8 @@ radv_ray_tracing_pipeline_cache_search(struct radv_device *device, struct vk_pip
 
 void
 radv_ray_tracing_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache *cache,
-                                       struct radv_ray_tracing_pipeline *pipeline,
-                                       unsigned num_stages, const unsigned char *sha1)
+                                       struct radv_ray_tracing_pipeline *pipeline, unsigned num_stages,
+                                       const unsigned char *sha1)
 {
    if (radv_is_cache_disabled(device))
       return;
@@ -551,8 +526,7 @@ radv_ray_tracing_pipeline_cache_insert(struct radv_device *device, struct vk_pip
 
    unsigned idx = 0;
    if (pipeline->base.base.shaders[MESA_SHADER_INTERSECTION])
-      pipeline_obj->shaders[idx++] =
-         radv_shader_ref(pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
+      pipeline_obj->shaders[idx++] = radv_shader_ref(pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
 
    for (unsigned i = 0; i < num_stages; ++i) {
       if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i]))
@@ -566,14 +540,12 @@ radv_ray_tracing_pipeline_cache_insert(struct radv_device *device, struct vk_pip
       stack_sizes[i] = pipeline->stages[i].stack_size;
 
    /* Add the object to the cache */
-   struct vk_pipeline_cache_object *object =
-      vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
+   struct vk_pipeline_cache_object *object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
    vk_pipeline_cache_object_unref(&device->vk, object);
 }
 
 struct vk_pipeline_cache_object *
-radv_pipeline_cache_search_nir(struct radv_device *device, struct vk_pipeline_cache *cache,
-                               const uint8_t *sha1)
+radv_pipeline_cache_search_nir(struct radv_device *device, struct vk_pipeline_cache *cache, const uint8_t *sha1)
 {
    if (radv_is_cache_disabled(device))
       return NULL;
@@ -581,17 +553,14 @@ radv_pipeline_cache_search_nir(struct radv_device *device, struct vk_pipeline_ca
    if (!cache)
       cache = device->mem_cache;
 
-   return vk_pipeline_cache_lookup_object(cache, sha1, SHA1_DIGEST_LENGTH,
-                                          &vk_raw_data_cache_object_ops, NULL);
+   return vk_pipeline_cache_lookup_object(cache, sha1, SHA1_DIGEST_LENGTH, &vk_raw_data_cache_object_ops, NULL);
 }
 
 struct nir_shader *
-radv_pipeline_cache_handle_to_nir(struct radv_device *device,
-                                  struct vk_pipeline_cache_object *object)
+radv_pipeline_cache_handle_to_nir(struct radv_device *device, struct vk_pipeline_cache_object *object)
 {
    struct blob_reader blob;
-   struct vk_raw_data_cache_object *nir_object =
-      container_of(object, struct vk_raw_data_cache_object, base);
+   struct vk_raw_data_cache_object *nir_object = container_of(object, struct vk_raw_data_cache_object, base);
    blob_reader_init(&blob, nir_object->data, nir_object->data_size);
    nir_shader *nir = nir_deserialize(NULL, NULL, &blob);
 
@@ -605,8 +574,8 @@ radv_pipeline_cache_handle_to_nir(struct radv_device *device,
 }
 
 struct vk_pipeline_cache_object *
-radv_pipeline_cache_nir_to_handle(struct radv_device *device, struct vk_pipeline_cache *cache,
-                                  struct nir_shader *nir, const uint8_t *sha1, bool cached)
+radv_pipeline_cache_nir_to_handle(struct radv_device *device, struct vk_pipeline_cache *cache, struct nir_shader *nir,
+                                  const uint8_t *sha1, bool cached)
 {
    if (!cache)
       cache = device->mem_cache;
@@ -626,8 +595,8 @@ radv_pipeline_cache_nir_to_handle(struct radv_device *device, struct vk_pipeline
    struct vk_pipeline_cache_object *object;
 
    if (cached && !radv_is_cache_disabled(device)) {
-      object = vk_pipeline_cache_create_and_insert_object(cache, sha1, SHA1_DIGEST_LENGTH, data,
-                                                          size, &vk_raw_data_cache_object_ops);
+      object = vk_pipeline_cache_create_and_insert_object(cache, sha1, SHA1_DIGEST_LENGTH, data, size,
+                                                          &vk_raw_data_cache_object_ops);
    } else {
       struct vk_raw_data_cache_object *nir_object =
          vk_raw_data_cache_object_create(&device->vk, sha1, SHA1_DIGEST_LENGTH, data, size);

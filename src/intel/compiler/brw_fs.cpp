@@ -5693,29 +5693,25 @@ fs_visitor::lower_find_live_channel()
 }
 
 void
-fs_visitor::dump_instructions() const
+fs_visitor::dump_instructions_to_file(FILE *file) const
 {
-   dump_instructions(NULL);
-}
-
-void
-fs_visitor::dump_instructions(const char *name) const
-{
-   FILE *file = stderr;
-   if (name && geteuid() != 0) {
-      file = fopen(name, "w");
-      if (!file)
-         file = stderr;
-   }
-
    if (cfg) {
       const register_pressure &rp = regpressure_analysis.require();
       unsigned ip = 0, max_pressure = 0;
+      unsigned cf_count = 0;
       foreach_block_and_inst(block, backend_instruction, inst, cfg) {
+         if (inst->is_control_flow_end())
+            cf_count -= 1;
+
          max_pressure = MAX2(max_pressure, rp.regs_live_at_ip[ip]);
          fprintf(file, "{%3d} %4d: ", rp.regs_live_at_ip[ip], ip);
+         for (unsigned i = 0; i < cf_count; i++)
+            fprintf(file, "  ");
          dump_instruction(inst, file);
          ip++;
+
+         if (inst->is_control_flow_begin())
+            cf_count += 1;
       }
       fprintf(file, "Maximum %3d registers live at once.\n", max_pressure);
    } else {
@@ -5725,20 +5721,10 @@ fs_visitor::dump_instructions(const char *name) const
          dump_instruction(inst, file);
       }
    }
-
-   if (file != stderr) {
-      fclose(file);
-   }
 }
 
 void
-fs_visitor::dump_instruction(const backend_instruction *be_inst) const
-{
-   dump_instruction(be_inst, stderr);
-}
-
-void
-fs_visitor::dump_instruction(const backend_instruction *be_inst, FILE *file) const
+fs_visitor::dump_instruction_to_file(const backend_instruction *be_inst, FILE *file) const
 {
    const fs_inst *inst = (const fs_inst *)be_inst;
 
@@ -7474,7 +7460,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
    struct brw_wm_prog_data *prog_data = params->prog_data;
    bool allow_spilling = params->allow_spilling;
    const bool debug_enabled =
-      INTEL_DEBUG(params->debug_flag ? params->debug_flag : DEBUG_WM);
+      brw_should_print_shader(nir, params->debug_flag ? params->debug_flag : DEBUG_WM);
 
    prog_data->base.stage = MESA_SHADER_FRAGMENT;
    prog_data->base.ray_queries = nir->info.ray_queries;
@@ -7831,7 +7817,7 @@ brw_compile_cs(const struct brw_compiler *compiler,
    struct brw_cs_prog_data *prog_data = params->prog_data;
 
    const bool debug_enabled =
-      INTEL_DEBUG(params->debug_flag ? params->debug_flag : DEBUG_CS);
+      brw_should_print_shader(nir, params->debug_flag ? params->debug_flag : DEBUG_CS);
 
    prog_data->base.stage = MESA_SHADER_COMPUTE;
    prog_data->base.total_shared = nir->info.shared_size;
@@ -7980,7 +7966,7 @@ compile_single_bs(const struct brw_compiler *compiler, void *log_data,
                   int *prog_offset,
                   char **error_str)
 {
-   const bool debug_enabled = INTEL_DEBUG(DEBUG_RT);
+   const bool debug_enabled = brw_should_print_shader(shader, DEBUG_RT);
 
    prog_data->base.stage = shader->info.stage;
    prog_data->max_stack_size = MAX2(prog_data->max_stack_size,
@@ -8074,7 +8060,7 @@ brw_compile_bs(const struct brw_compiler *compiler,
    struct brw_bs_prog_data *prog_data = params->prog_data;
    unsigned num_resume_shaders = params->num_resume_shaders;
    nir_shader **resume_shaders = params->resume_shaders;
-   const bool debug_enabled = INTEL_DEBUG(DEBUG_RT);
+   const bool debug_enabled = brw_should_print_shader(shader, DEBUG_RT);
 
    prog_data->base.stage = shader->info.stage;
    prog_data->base.ray_queries = shader->info.ray_queries;
@@ -8180,4 +8166,9 @@ fs_visitor::workgroup_size() const
    assert(gl_shader_stage_uses_workgroup(stage));
    const struct brw_cs_prog_data *cs = brw_cs_prog_data(prog_data);
    return cs->local_size[0] * cs->local_size[1] * cs->local_size[2];
+}
+
+bool brw_should_print_shader(const nir_shader *shader, uint64_t debug_flag)
+{
+   return INTEL_DEBUG(debug_flag) && (!shader->info.internal || NIR_DEBUG(PRINT_INTERNAL));
 }

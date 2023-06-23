@@ -73,29 +73,16 @@ nir_lower_to_source_mods_instr(nir_builder *b, nir_instr *instr,
       if (parent->dest.saturate)
          continue;
 
-      switch (nir_alu_type_get_base_type(nir_op_infos[alu->op].input_types[i])) {
-      case nir_type_float:
-         if (!(options & nir_lower_float_source_mods))
-            continue;
-         if (!(parent->op == nir_op_fabs && (options & nir_lower_fabs_source_mods)) &&
-             !(parent->op == nir_op_fneg && (options & nir_lower_fneg_source_mods))) {
-            continue;
-         }
-         break;
-      case nir_type_int:
-         if (!(options & nir_lower_int_source_mods))
-            continue;
-         if (parent->op != nir_op_iabs && parent->op != nir_op_ineg)
-            continue;
-         break;
-      default:
+      if (nir_alu_type_get_base_type(nir_op_infos[alu->op].input_types[i]) != nir_type_float)
+         continue;
+
+      if (!(parent->op == nir_op_fabs && (options & nir_lower_fabs_source_mods)) &&
+          !(parent->op == nir_op_fneg && (options & nir_lower_fneg_source_mods))) {
          continue;
       }
 
-      if (nir_src_bit_size(alu->src[i].src) == 64 &&
-            !(options & nir_lower_64bit_source_mods)) {
+      if (nir_src_bit_size(alu->src[i].src) == 64)
          continue;
-      }
 
       /* We can only do a rewrite if the source we are copying is SSA.
        * Otherwise, moving the read might invalidly reorder reads/writes
@@ -104,17 +91,15 @@ nir_lower_to_source_mods_instr(nir_builder *b, nir_instr *instr,
       if (!parent->src[0].src.is_ssa)
          continue;
 
-      if (!lower_abs && (parent->op == nir_op_fabs ||
-                         parent->op == nir_op_iabs ||
-                         parent->src[0].abs))
+      if (!lower_abs && (parent->op == nir_op_fabs || parent->src[0].abs))
          continue;
 
       nir_instr_rewrite_src(instr, &alu->src[i].src, parent->src[0].src);
 
       /* Apply any modifiers that come from the parent opcode */
-      if (parent->op == nir_op_fneg || parent->op == nir_op_ineg)
+      if (parent->op == nir_op_fneg)
          alu_src_consume_negate(&alu->src[i]);
-      if (parent->op == nir_op_fabs || parent->op == nir_op_iabs)
+      if (parent->op == nir_op_fabs)
          alu_src_consume_abs(&alu->src[i]);
 
       /* Apply modifiers from the parent source */
@@ -142,17 +127,12 @@ nir_lower_to_source_mods_instr(nir_builder *b, nir_instr *instr,
    if (!alu->dest.dest.is_ssa)
       return progress;
 
-   if (nir_dest_bit_size(alu->dest.dest) == 64 &&
-       !(options & nir_lower_64bit_source_mods)) {
+   if (nir_dest_bit_size(alu->dest.dest) == 64)
       return progress;
-   }
 
    /* We can only saturate float destinations */
    if (nir_alu_type_get_base_type(nir_op_infos[alu->op].output_type) !=
        nir_type_float)
-      return progress;
-
-   if (!(options & nir_lower_float_source_mods))
       return progress;
 
    bool all_children_are_sat = true;

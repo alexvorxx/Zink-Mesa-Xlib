@@ -922,6 +922,13 @@ VkResult pvr_srv_winsys_render_submit(
    struct rogue_fwif_cmd_ta geom_cmd;
    struct rogue_fwif_cmd_3d frag_cmd;
 
+   uint32_t current_sync_value = sync_prim->value;
+   uint32_t geom_sync_update_value;
+   uint32_t frag_to_geom_fence_count = 0;
+   uint32_t frag_to_geom_fence_value;
+   uint32_t frag_sync_update_count = 0;
+   uint32_t frag_sync_update_value;
+
    int in_frag_fd = -1;
    int in_geom_fd = -1;
    int fence_frag;
@@ -966,15 +973,18 @@ VkResult pvr_srv_winsys_render_submit(
       }
    }
 
-   /* The 1.14 PowerVR Services KM driver doesn't add a sync dependency to the
-    * fragment phase on the geometry phase for us. This makes it
-    * necessary to use a sync prim for this purpose. This requires that we pass
-    * in the same sync prim information for the geometry phase update and the
-    * PR fence. We update the sync prim value here as this is the value the
-    * sync prim will get updated to once the geometry phase has completed and
-    * the value the PR or fragment phase will be fenced on.
-    */
-   sync_prim->value++;
+   if (submit_info->geometry.flags & PVR_WINSYS_GEOM_FLAG_FIRST_GEOMETRY) {
+      frag_to_geom_fence_count = 1;
+      frag_to_geom_fence_value = current_sync_value;
+   }
+
+   /* Geometery is always kicked */
+   geom_sync_update_value = ++current_sync_value;
+
+   if (submit_info->run_frag) {
+      frag_sync_update_count = 1;
+      frag_sync_update_value = ++current_sync_value;
+   }
 
    do {
       /* The fw allows the ZS and MSAA scratch buffers to be lazily allocated in
@@ -985,21 +995,21 @@ VkResult pvr_srv_winsys_render_submit(
        */
       result = pvr_srv_rgx_kick_render2(srv_ws->base.render_fd,
                                         srv_ctx->handle,
-                                        0,
-                                        NULL,
-                                        NULL,
-                                        NULL,
+                                        frag_to_geom_fence_count,
+                                        &sync_prim->ctx->block_handle,
+                                        &sync_prim->offset,
+                                        &frag_to_geom_fence_value,
                                         1,
                                         &sync_prim->ctx->block_handle,
                                         &sync_prim->offset,
-                                        &sync_prim->value,
-                                        0,
-                                        NULL,
-                                        NULL,
-                                        NULL,
+                                        &geom_sync_update_value,
+                                        frag_sync_update_count,
+                                        &sync_prim->ctx->block_handle,
+                                        &sync_prim->offset,
+                                        &frag_sync_update_value,
                                         sync_prim->ctx->block_handle,
                                         sync_prim->offset,
-                                        sync_prim->value,
+                                        geom_sync_update_value,
                                         in_geom_fd,
                                         srv_ctx->timeline_geom,
                                         &fence_geom,
@@ -1039,6 +1049,9 @@ VkResult pvr_srv_winsys_render_submit(
 
    if (result != VK_SUCCESS)
       goto end_close_in_fds;
+
+   /* The job submission was succesful, update the sync prim value. */
+   sync_prim->value = current_sync_value;
 
    if (signal_sync_geom) {
       srv_signal_sync_geom = to_srv_sync(signal_sync_geom);

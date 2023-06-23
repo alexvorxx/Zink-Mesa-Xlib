@@ -32,17 +32,6 @@ spec@glsl-es-3.20.*
 dEQP-VK.draw.renderpass.inverted_depth_ranges.nodepthclamp_deltazero
 dEQP-VK.rasterization.depth_bias.d32_sfloat
 
-# Invalid tests; these will be fixed or removed from CTS in a future release
-# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4075
-dEQP-VK.api.external.fence.sync_fd.export_multiple_times_temporary
-dEQP-VK.api.external.semaphore.sync_fd.export_multiple_times_temporary
-dEQP-VK.api.external.semaphore.sync_fd.import_twice_temporary
-
-# Tests using a wrongly aligned offset when calling BindImageMemoryInfo
-# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4223
-dEQP-VK.ycbcr.subresource_offset.g8_b8_r8_3plane_420_unorm
-dEQP-VK.ycbcr.subresource_offset.g8_b8r8_2plane_420_unorm
-
 # Kernel blocks (probably GMP violations)
 spec@arb_shading_language_420pack@active sampler conflict
 spec@arb_texture_buffer_object@render-no-bo
@@ -66,6 +55,7 @@ dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertuvec2.no
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertuvec2.store.single.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.nostore.multi.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.nostore.single.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.store.multi.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.comp
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.frag
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.vert
@@ -103,6 +93,7 @@ dEQP-VK.ssbo.layout.3_level_unsized_array.std140.row_major_mat4
 dEQP-VK.ssbo.layout.3_level_unsized_array.std140.row_major_mat4_comp_access
 dEQP-VK.ssbo.layout.3_level_unsized_array.std140.row_major_mat4_comp_access_store_cols
 dEQP-VK.ssbo.layout.3_level_unsized_array.std140.row_major_mat4_store_cols
+dEQP-VK.ssbo.layout.3_level_unsized_array.std430.mat4
 dEQP-VK.ssbo.layout.3_level_unsized_array.std430.row_major_mat4
 dEQP-VK.ssbo.layout.random.16bit.all_per_block_buffers.47
 dEQP-VK.ssbo.layout.random.16bit.all_per_block_buffers.5

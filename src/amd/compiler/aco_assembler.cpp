@@ -52,7 +52,7 @@ struct asm_context {
    // TODO: keep track of branch instructions referring blocks
    // and, when emitting the block, correct the offset in instr
    asm_context(Program* program_, std::vector<struct aco_symbol>* symbols_)
-      : program(program_), gfx_level(program->gfx_level), symbols(symbols_)
+       : program(program_), gfx_level(program->gfx_level), symbols(symbols_)
    {
       if (gfx_level <= GFX7)
          opcode = &instr_info.opcode_gfx7[0];
@@ -1160,8 +1160,7 @@ emit_long_jump(asm_context& ctx, SOPP_instruction* branch, bool backwards,
    emit_instruction(ctx, out, instr.get());
 
    /* create the s_setpc_b64 to jump */
-   instr.reset(
-      bld.sop1(aco_opcode::s_setpc_b64, Operand(def.physReg(), s2)).instr);
+   instr.reset(bld.sop1(aco_opcode::s_setpc_b64, Operand(def.physReg(), s2)).instr);
    emit_instruction(ctx, out, instr.get());
 }
 
@@ -1218,8 +1217,7 @@ fix_constaddrs(asm_context& ctx, std::vector<uint32_t>& out)
 }
 
 unsigned
-emit_program(Program* program, std::vector<uint32_t>& code,
-             std::vector<struct aco_symbol>* symbols)
+emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct aco_symbol>* symbols)
 {
    asm_context ctx(program, symbols);
 
@@ -1252,8 +1250,8 @@ emit_program(Program* program, std::vector<uint32_t>& code,
    code.insert(code.end(), (uint32_t*)program->constant_data.data(),
                (uint32_t*)(program->constant_data.data() + program->constant_data.size()));
 
-   program->config->scratch_bytes_per_wave = align(
-      program->config->scratch_bytes_per_wave, program->dev.scratch_alloc_granule);
+   program->config->scratch_bytes_per_wave =
+      align(program->config->scratch_bytes_per_wave, program->dev.scratch_alloc_granule);
 
    return exec_size;
 }

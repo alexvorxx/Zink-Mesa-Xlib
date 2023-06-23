@@ -34,8 +34,7 @@ void _mesa_blake3_hex_to_blake3(unsigned char *buf, const char *hex)
   mesa_hex_to_bytes(buf, hex, BLAKE3_OUT_LEN);
 }
 
-void _mesa_blake3_compute(const void *data, size_t size,
-                          unsigned char result[BLAKE3_OUT_LEN])
+void _mesa_blake3_compute(const void *data, size_t size, blake3_hash result)
 {
   struct mesa_blake3 ctx;
   _mesa_blake3_init(&ctx);

@@ -1,2 +1,7 @@
+# The following files are opted into `ninja clang-format` and
+# enforcement in the CI.
+
 src/**/asahi/**/*
 src/**/panfrost/**/*
+src/amd/vulkan/**/*
+src/amd/compiler/**/*

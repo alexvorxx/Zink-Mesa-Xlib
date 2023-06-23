@@ -1950,7 +1950,8 @@ iris_gem_set_tiling(struct iris_bo *bo, const struct isl_surf *surf)
 }
 
 struct iris_bo *
-iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
+iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd,
+                      const uint64_t modifier)
 {
    uint32_t handle;
    struct iris_bo *bo;
@@ -1999,17 +2000,16 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
    bo->gem_handle = handle;
    bo->real.prime_fd = needs_prime_fd(bufmgr) ? dup(prime_fd) : -1;
 
-   /* From the Bspec, Memory Compression - Gfx12:
-    *
-    *    The base address for the surface has to be 64K page aligned and the
-    *    surface is expected to be padded in the virtual domain to be 4 4K
-    *    pages.
-    *
-    * The dmabuf may contain a compressed surface. Align the BO to 64KB just
-    * in case. We always align to 64KB even on platforms where we don't need
-    * to, because it's a fairly reasonable thing to do anyway.
+   uint64_t alignment = 1;
+
+   /* When an aux map will be used, there is an alignment requirement on the
+    * main surface from the mapping granularity. Some planes of the image may
+    * have smaller alignment requirements, but this one should work for all.
     */
-   bo->address = vma_alloc(bufmgr, IRIS_MEMZONE_OTHER, bo->size, 64 * 1024);
+   if (bufmgr->devinfo.has_aux_map && isl_drm_modifier_has_aux(modifier))
+      alignment = intel_aux_map_get_alignment(bufmgr->aux_map_ctx);
+
+   bo->address = vma_alloc(bufmgr, IRIS_MEMZONE_OTHER, bo->size, alignment);
    if (bo->address == 0ull)
       goto err_free;
 

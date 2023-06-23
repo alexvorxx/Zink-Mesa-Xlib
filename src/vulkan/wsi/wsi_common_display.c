@@ -1715,9 +1715,9 @@ wsi_display_fence_destroy(struct wsi_display_fence *fence)
 {
    /* Destroy hotplug fence list. */
    if (fence->device_event) {
-      mtx_lock(&fence->wsi->wait_mutex);
+      pthread_mutex_lock(&fence->wsi->wait_mutex);
       list_del(&fence->link);
-      mtx_unlock(&fence->wsi->wait_mutex);
+      pthread_mutex_unlock(&fence->wsi->wait_mutex);
       fence->event_received = true;
    }
 
@@ -2243,7 +2243,7 @@ udev_event_listener_thread(void *data)
             /* Note, this supports both drmSyncobjWait for fence->syncobj
              * and wsi_display_wait_for_event.
              */
-            mtx_lock(&wsi->wait_mutex);
+            pthread_mutex_lock(&wsi->wait_mutex);
             pthread_cond_broadcast(&wsi->hotplug_cond);
             list_for_each_entry(struct wsi_display_fence, fence,
                                 &wsi_device->hotplug_fences, link) {
@@ -2251,7 +2251,7 @@ udev_event_listener_thread(void *data)
                   drmSyncobjSignal(wsi->syncobj_fd, &fence->syncobj, 1);
                fence->event_received = true;
             }
-            mtx_unlock(&wsi->wait_mutex);
+            pthread_mutex_unlock(&wsi->wait_mutex);
             udev_device_unref(dev);
          }
       } else if (ret < 0) {
@@ -2926,15 +2926,15 @@ wsi_register_device_event(VkDevice _device,
 
 #ifdef HAVE_LIBUDEV
    /* Start listening for output change notifications. */
-   mtx_lock(&wsi->wait_mutex);
+   pthread_mutex_lock(&wsi->wait_mutex);
    if (!wsi->hotplug_thread) {
       if (pthread_create(&wsi->hotplug_thread, NULL, udev_event_listener_thread,
                          wsi_device)) {
-         mtx_unlock(&wsi->wait_mutex);
+         pthread_mutex_unlock(&wsi->wait_mutex);
          return VK_ERROR_OUT_OF_HOST_MEMORY;
       }
    }
-   mtx_unlock(&wsi->wait_mutex);
+   pthread_mutex_unlock(&wsi->wait_mutex);
 #endif
 
    struct wsi_display_fence *fence;
@@ -2948,9 +2948,9 @@ wsi_register_device_event(VkDevice _device,
 
    fence->device_event = true;
 
-   mtx_lock(&wsi->wait_mutex);
+   pthread_mutex_lock(&wsi->wait_mutex);
    list_addtail(&fence->link, &wsi_device->hotplug_fences);
-   mtx_unlock(&wsi->wait_mutex);
+   pthread_mutex_unlock(&wsi->wait_mutex);
 
    if (sync_out) {
       ret = wsi_display_sync_create(device, fence, sync_out);

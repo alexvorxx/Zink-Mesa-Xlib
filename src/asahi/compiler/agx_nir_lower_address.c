@@ -246,6 +246,8 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
    if (intr->intrinsic != nir_intrinsic_load_global &&
        intr->intrinsic != nir_intrinsic_load_global_constant &&
+       intr->intrinsic != nir_intrinsic_global_atomic &&
+       intr->intrinsic != nir_intrinsic_global_atomic_swap &&
        intr->intrinsic != nir_intrinsic_store_global)
       return false;
 
@@ -293,27 +295,42 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
    assert(match.shift >= 0);
    nir_ssa_def *new_base = nir_channel(b, match.base.def, match.base.comp);
 
+   nir_ssa_def *repl = NULL;
+   bool has_dest = (intr->intrinsic != nir_intrinsic_store_global);
+   unsigned num_components = has_dest ? nir_dest_num_components(intr->dest) : 0;
+   unsigned bit_size = has_dest ? nir_dest_bit_size(intr->dest) : 0;
+
    if (intr->intrinsic == nir_intrinsic_load_global) {
-      nir_ssa_def *repl =
-         nir_load_agx(b, nir_dest_num_components(intr->dest),
-                      nir_dest_bit_size(intr->dest), new_base, offset,
+      repl =
+         nir_load_agx(b, num_components, bit_size, new_base, offset,
                       .access = nir_intrinsic_access(intr), .base = match.shift,
                       .format = format, .sign_extend = match.sign_extend);
 
-      nir_ssa_def_rewrite_uses(&intr->dest.ssa, repl);
    } else if (intr->intrinsic == nir_intrinsic_load_global_constant) {
-      nir_ssa_def *repl = nir_load_constant_agx(
-         b, nir_dest_num_components(intr->dest), nir_dest_bit_size(intr->dest),
-         new_base, offset, .access = nir_intrinsic_access(intr),
-         .base = match.shift, .format = format,
+      repl = nir_load_constant_agx(b, num_components, bit_size, new_base,
+                                   offset, .access = nir_intrinsic_access(intr),
+                                   .base = match.shift, .format = format,
+                                   .sign_extend = match.sign_extend);
+   } else if (intr->intrinsic == nir_intrinsic_global_atomic) {
+      offset = nir_ishl_imm(b, offset, match.shift);
+      repl =
+         nir_global_atomic_agx(b, bit_size, new_base, offset, intr->src[1].ssa,
+                               .atomic_op = nir_intrinsic_atomic_op(intr),
+                               .sign_extend = match.sign_extend);
+   } else if (intr->intrinsic == nir_intrinsic_global_atomic_swap) {
+      offset = nir_ishl_imm(b, offset, match.shift);
+      repl = nir_global_atomic_swap_agx(
+         b, bit_size, new_base, offset, intr->src[1].ssa, intr->src[2].ssa,
+         .atomic_op = nir_intrinsic_atomic_op(intr),
          .sign_extend = match.sign_extend);
-
-      nir_ssa_def_rewrite_uses(&intr->dest.ssa, repl);
    } else {
       nir_store_agx(b, intr->src[0].ssa, new_base, offset,
                     .access = nir_intrinsic_access(intr), .base = match.shift,
                     .format = format, .sign_extend = match.sign_extend);
    }
+
+   if (repl)
+      nir_ssa_def_rewrite_uses(&intr->dest.ssa, repl);
 
    nir_instr_remove(instr);
    return true;

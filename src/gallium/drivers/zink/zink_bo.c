@@ -193,16 +193,18 @@ bo_slab_destroy(struct zink_screen *screen, struct pb_buffer *pbuf)
       pb_slab_free(get_slabs(screen, bo->base.size, 0), &bo->u.slab.entry);
 }
 
-static void
+static bool
 clean_up_buffer_managers(struct zink_screen *screen)
 {
+   unsigned num_reclaims = 0;
    for (unsigned i = 0; i < NUM_SLAB_ALLOCATORS; i++) {
-      pb_slabs_reclaim(&screen->pb.bo_slabs[i]);
+      num_reclaims += pb_slabs_reclaim(&screen->pb.bo_slabs[i]);
       //if (screen->info.has_tmz_support)
          //pb_slabs_reclaim(&screen->bo_slabs_encrypted[i]);
    }
 
-   pb_cache_release_all_buffers(&screen->pb.bo_cache);
+   num_reclaims += pb_cache_release_all_buffers(&screen->pb.bo_cache);
+   return !!num_reclaims;
 }
 
 static unsigned
@@ -303,6 +305,11 @@ bo_create_internal(struct zink_screen *screen,
    VkResult ret = VKSCR(AllocateMemory)(screen->dev, &mai, NULL, &bo->mem);
    if (!zink_screen_handle_vkresult(screen, ret)) {
       mesa_loge("zink: couldn't allocate memory: heap=%u size=%" PRIu64, heap, size);
+      if (zink_debug & ZINK_DEBUG_MEM) {
+         zink_debug_mem_print_stats(screen);
+         /* abort with mem debug to allow debugging */
+         abort();
+      }
       goto fail;
    }
 
@@ -624,9 +631,8 @@ zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, en
       entry = pb_slab_alloc_reclaimed(slabs, alloc_size, mem_type_idx, reclaim_all);
       if (!entry) {
          /* Clean up buffer managers and try again. */
-         clean_up_buffer_managers(screen);
-
-         entry = pb_slab_alloc_reclaimed(slabs, alloc_size, mem_type_idx, true);
+         if (clean_up_buffer_managers(screen))
+            entry = pb_slab_alloc_reclaimed(slabs, alloc_size, mem_type_idx, true);
       }
       if (!entry)
          return NULL;
@@ -671,9 +677,8 @@ no_slab:
    bo = bo_create_internal(screen, size, alignment, heap, mem_type_idx, flags, pNext);
    if (!bo) {
       /* Clean up buffer managers and try again. */
-      clean_up_buffer_managers(screen);
-
-      bo = bo_create_internal(screen, size, alignment, heap, mem_type_idx, flags, pNext);
+      if (clean_up_buffer_managers(screen))
+         bo = bo_create_internal(screen, size, alignment, heap, mem_type_idx, flags, pNext);
       if (!bo)
          return NULL;
    }

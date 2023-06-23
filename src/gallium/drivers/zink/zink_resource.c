@@ -67,6 +67,102 @@
 
 #define ZINK_EXTERNAL_MEMORY_HANDLE 999
 
+
+
+struct zink_debug_mem_entry {
+   uint32_t count;
+   uint64_t size;
+   const char *name;
+};
+
+static const char *
+zink_debug_mem_add(struct zink_screen *screen, uint64_t size, const char *name)
+{
+   assert(name);
+
+   simple_mtx_lock(&screen->debug_mem_lock);
+   struct hash_entry *entry = _mesa_hash_table_search(screen->debug_mem_sizes, name);
+   struct zink_debug_mem_entry *debug_bos;
+
+   if (!entry) {
+      debug_bos = calloc(1, sizeof(struct zink_debug_mem_entry));
+      debug_bos->name = strdup(name);
+      _mesa_hash_table_insert(screen->debug_mem_sizes, debug_bos->name, debug_bos);
+   } else {
+      debug_bos = (struct zink_debug_mem_entry *) entry->data;
+   }
+
+   debug_bos->count++;
+   debug_bos->size += align(size, 4096);
+   simple_mtx_unlock(&screen->debug_mem_lock);
+
+   return debug_bos->name;
+}
+
+static void
+zink_debug_mem_del(struct zink_screen *screen, struct zink_bo *bo)
+{
+   simple_mtx_lock(&screen->debug_mem_lock);
+   struct hash_entry *entry = _mesa_hash_table_search(screen->debug_mem_sizes, bo->name);
+   /* If we're finishing the BO, it should have been added already */
+   assert(entry);
+
+   struct zink_debug_mem_entry *debug_bos = entry->data;
+   debug_bos->count--;
+   debug_bos->size -= align(zink_bo_get_size(bo), 4096);
+   if (!debug_bos->count) {
+      _mesa_hash_table_remove(screen->debug_mem_sizes, entry);
+      free((void*)debug_bos->name);
+      free(debug_bos);
+   }
+   simple_mtx_unlock(&screen->debug_mem_lock);
+}
+
+static int
+debug_bos_count_compare(const void *in_a, const void *in_b)
+{
+   struct zink_debug_mem_entry *a = *(struct zink_debug_mem_entry **)in_a;
+   struct zink_debug_mem_entry *b = *(struct zink_debug_mem_entry **)in_b;
+   return a->count - b->count;
+}
+
+void
+zink_debug_mem_print_stats(struct zink_screen *screen)
+{
+   simple_mtx_lock(&screen->debug_mem_lock);
+
+   /* Put the HT's sizes data in an array so we can sort by number of allocations. */
+   struct util_dynarray dyn;
+   util_dynarray_init(&dyn, NULL);
+
+   uint32_t size = 0;
+   uint32_t count = 0;
+   hash_table_foreach(screen->debug_mem_sizes, entry)
+   {
+      struct zink_debug_mem_entry *debug_bos = entry->data;
+      util_dynarray_append(&dyn, struct zink_debug_mem_entry *, debug_bos);
+      size += debug_bos->size / 1024;
+      count += debug_bos->count;
+   }
+
+   qsort(dyn.data,
+         util_dynarray_num_elements(&dyn, struct zink_debug_mem_entry *),
+         sizeof(struct zink_debug_mem_entryos_entry *), debug_bos_count_compare);
+
+   util_dynarray_foreach(&dyn, struct zink_debug_mem_entry *, entryp)
+   {
+      struct zink_debug_mem_entry *debug_bos = *entryp;
+      mesa_logi("%30s: %4d bos, %lld kb\n", debug_bos->name, debug_bos->count,
+                (long long) (debug_bos->size / 1024));
+   }
+
+   mesa_logi("submitted %d bos (%d MB)\n", count, DIV_ROUND_UP(size, 1024));
+
+   util_dynarray_fini(&dyn);
+
+   simple_mtx_unlock(&screen->debug_mem_lock);
+}
+
 static bool
 equals_ivci(const void *a, const void *b)
 {
@@ -106,6 +202,8 @@ zink_destroy_resource_object(struct zink_screen *screen, struct zink_resource_ob
       while (util_dynarray_contains(&obj->views, VkImageView))
          VKSCR(DestroyImageView)(screen->dev, util_dynarray_pop(&obj->views, VkImageView), NULL);
    }
+   if (!obj->dt && zink_debug & ZINK_DEBUG_MEM)
+      zink_debug_mem_del(screen, obj->bo);
    util_dynarray_fini(&obj->views);
    for (unsigned i = 0; i < ARRAY_SIZE(obj->copies); i++)
       util_dynarray_fini(&obj->copies[i]);
@@ -365,11 +463,26 @@ double_check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, VkImageUsag
     if (check_ici(screen, ici, *mod))
        return true;
     if (pNext) {
-       ici->pNext = NULL;
+       VkBaseOutStructure *prev = NULL;
+       VkBaseOutStructure *fmt_list = NULL;
+       vk_foreach_struct(strct, (void*)ici->pNext) {
+          if (strct->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO) {
+             fmt_list = strct;
+             if (prev) {
+                prev->pNext = strct->pNext;
+             } else {
+                ici->pNext = strct->pNext;
+             }
+             fmt_list->pNext = NULL;
+             break;
+          }
+          prev = strct;
+       }
        ici->flags &= ~VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
        if (check_ici(screen, ici, *mod))
           return true;
-       ici->pNext = pNext;
+       fmt_list->pNext = (void*)ici->pNext;
+       ici->pNext = fmt_list;
        ici->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     }
     return false;
@@ -474,7 +587,8 @@ create_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe
    ici->queueFamilyIndexCount = 0;
 
    /* assume we're going to be doing some CompressedTexSubImage */
-   if (util_format_is_compressed(templ->format) && (ici->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+   if (util_format_is_compressed(templ->format) && (ici->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+       !vk_find_struct_const(ici->pNext, IMAGE_FORMAT_LIST_CREATE_INFO))
       ici->flags |= VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT;
 
    if (templ->flags & PIPE_RESOURCE_FLAG_SPARSE)
@@ -697,9 +811,17 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
          }
       }
 
-      VKSCR(GetBufferMemoryRequirements)(screen->dev, obj->buffer, &reqs);
+      if (modifiers_count) {
+         assert(modifiers_count == 3);
+         /* this is the DGC path because there's no other way to pass mem bits and I don't wanna copy/paste everything around */
+         reqs.size = modifiers[0];
+         reqs.alignment = modifiers[1];
+         reqs.memoryTypeBits = modifiers[2];
+      } else {
+         VKSCR(GetBufferMemoryRequirements)(screen->dev, obj->buffer, &reqs);
+      }
       if (templ->usage == PIPE_USAGE_STAGING)
-         flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+         flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       else if (templ->usage == PIPE_USAGE_STREAM)
          flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       else if (templ->usage == PIPE_USAGE_IMMUTABLE)
@@ -730,11 +852,10 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       bool success = false;
       VkImageCreateInfo ici;
       enum pipe_format srgb = PIPE_FORMAT_NONE;
-      /* We use modifiers as a proxy for "this surface is used as a window system render target".
-       * For winsys, we need to be able to mutate between srgb and linear, but we don't need general
+      /* we often need to be able to mutate between srgb and linear, but we don't need general
        * image view/shader image format compatibility (that path means losing fast clears or compression on some hardware).
        */
-      if (ici_modifier_count) {
+      if (!(templ->bind & ZINK_BIND_MUTABLE)) {
          srgb = util_format_is_srgb(templ->format) ? util_format_linear(templ->format) : util_format_srgb(templ->format);
          /* why do these helpers have different default return values? */
          if (srgb == templ->format)
@@ -743,14 +864,19 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       VkFormat formats[2];
       VkImageFormatListCreateInfo format_list;
       if (srgb) {
-         format_list.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;
-         format_list.pNext = NULL;
-         format_list.viewFormatCount = 2;
-         format_list.pViewFormats = formats;
-
          formats[0] = zink_get_format(screen, templ->format);
          formats[1] = zink_get_format(screen, srgb);
-         ici.pNext = &format_list;
+         /* only use format list if both formats have supported vk equivalents */
+         if (formats[0] && formats[1]) {
+            format_list.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;
+            format_list.pNext = NULL;
+            format_list.viewFormatCount = 2;
+            format_list.pViewFormats = formats;
+
+            ici.pNext = &format_list;
+         } else {
+            ici.pNext = NULL;
+         }
       } else {
          ici.pNext = NULL;
       }
@@ -982,7 +1108,7 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       flags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
    else if (!(flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
             templ->usage == PIPE_USAGE_STAGING)
-      flags |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      flags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
 
    if (templ->bind & ZINK_BIND_TRANSIENT)
       flags |= VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
@@ -1100,7 +1226,7 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       case ZINK_HEAP_DEVICE_LOCAL_VISIBLE:
          heap = ZINK_HEAP_DEVICE_LOCAL;
          break;
-      case ZINK_HEAP_HOST_VISIBLE_CACHED:
+      case ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED:
          heap = ZINK_HEAP_HOST_VISIBLE_COHERENT;
          break;
       default:
@@ -1135,6 +1261,35 @@ retry:
    } else {
       obj->offset = zink_bo_get_offset(obj->bo);
       obj->size = zink_bo_get_size(obj->bo);
+   }
+   if (zink_debug & ZINK_DEBUG_MEM) {
+      char buf[4096];
+      unsigned idx = 0;
+      if (obj->is_buffer) {
+         size_t size = (size_t)DIV_ROUND_UP(obj->size, 1024);
+         if (templ->bind == PIPE_BIND_QUERY_BUFFER && templ->usage == PIPE_USAGE_STAGING) //internal qbo
+            idx += snprintf(buf, sizeof(buf), "QBO(%zu)", size);
+         else
+            idx += snprintf(buf, sizeof(buf), "BUF(%zu)", size);
+      } else {
+         idx += snprintf(buf, sizeof(buf), "IMG(%s:%ux%ux%u)", util_format_short_name(templ->format), templ->width0, templ->height0, templ->depth0);
+      }
+      /*
+      zink_vkflags_func flag_func = obj->is_buffer ? (zink_vkflags_func)vk_BufferCreateFlagBits_to_str : (zink_vkflags_func)vk_ImageCreateFlagBits_to_str;
+      zink_vkflags_func usage_func = obj->is_buffer ? (zink_vkflags_func)vk_BufferUsageFlagBits_to_str : (zink_vkflags_func)vk_ImageUsageFlagBits_to_str;
+      if (obj->vkflags) {
+         buf[idx++] = '[';
+         idx += zink_string_vkflags_unroll(&buf[idx], sizeof(buf) - idx, obj->vkflags, flag_func);
+         buf[idx++] = ']';
+      }
+      if (obj->vkusage) {
+         buf[idx++] = '[';
+         idx += zink_string_vkflags_unroll(&buf[idx], sizeof(buf) - idx, obj->vkusage, usage_func);
+         buf[idx++] = ']';
+      }
+      */
+      buf[idx] = 0;
+      obj->bo->name = zink_debug_mem_add(screen, obj->size, buf);
    }
 
    obj->coherent = screen->info.mem_props.memoryTypes[obj->bo->base.placement].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -1181,6 +1336,7 @@ retry:
             }
       }
    }
+
    for (unsigned i = 0; i < max_level; i++)
       util_dynarray_init(&obj->copies[i], NULL);
    return obj;
@@ -1263,7 +1419,7 @@ resource_create(struct pipe_screen *pscreen,
           */
          res->base.b.flags |= PIPE_RESOURCE_FLAG_DONT_MAP_DIRECTLY;
       }
-      if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
+      if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB || zink_debug & ZINK_DEBUG_DGC)
          zink_resource_get_address(screen, res);
    } else {
       if (templ->flags & PIPE_RESOURCE_FLAG_SPARSE)
@@ -1991,7 +2147,7 @@ zink_buffer_map(struct pipe_context *pctx,
       usage |= PIPE_MAP_UNSYNCHRONIZED;
    } else if (!(usage & PIPE_MAP_UNSYNCHRONIZED) &&
               (((usage & PIPE_MAP_READ) && !(usage & PIPE_MAP_PERSISTENT) &&
-               ((res->obj->bo->base.placement & VK_STAGING_RAM) != VK_STAGING_RAM)) ||
+               ((screen->info.mem_props.memoryTypes[res->obj->bo->base.placement].propertyFlags & VK_STAGING_RAM) != VK_STAGING_RAM)) ||
               !res->obj->host_visible)) {
       /* the above conditional catches uncached reads and non-HV writes */
       assert(!(usage & (TC_TRANSFER_MAP_THREADED_UNSYNC)));

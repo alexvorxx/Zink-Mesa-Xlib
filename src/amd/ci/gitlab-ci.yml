@@ -272,6 +272,7 @@ radeonsi-raven-va-full:x86_64:
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
     - amdgpu:codename:VANGOGH
+    - priority:low
 
 ############### VKCTS tests ###############
 
@@ -491,6 +492,8 @@ vkd3d-navi21-valve:
     - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi21-vkd3d
+    RADV_PERFTEST: rt
+    VKD3D_CONFIG: dxr11
 
 vkd3d-vangogh-valve:
   extends:

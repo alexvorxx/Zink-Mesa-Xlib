@@ -91,9 +91,8 @@ enum vmem_type : uint8_t {
    vmem_bvh = 1 << 2,
 };
 
-static const uint16_t exp_events =
-   event_exp_pos | event_exp_param | event_exp_mrt_null | event_gds_gpr_lock | event_vmem_gpr_lock |
-   event_ldsdir;
+static const uint16_t exp_events = event_exp_pos | event_exp_param | event_exp_mrt_null |
+                                   event_gds_gpr_lock | event_vmem_gpr_lock | event_ldsdir;
 static const uint16_t lgkm_events = event_smem | event_lds | event_gds | event_flat | event_sendmsg;
 static const uint16_t vm_events = event_vmem | event_flat;
 static const uint16_t vs_events = event_vmem_store;
@@ -580,7 +579,8 @@ kill(wait_imm& imm, alu_delay_info& delay, Instruction* instr, wait_ctx& ctx,
       }
 
       if (ctx.program->gfx_level >= GFX11) {
-         update_alu(ctx, false, false, false, MAX3(delay.salu_cycles, delay.valu_cycles, delay.trans_cycles));
+         update_alu(ctx, false, false, false,
+                    MAX3(delay.salu_cycles, delay.valu_cycles, delay.trans_cycles));
       }
 
       /* remove all gprs with higher counter from map */
@@ -775,8 +775,7 @@ insert_wait_entry(wait_ctx& ctx, Definition def, wait_event event, uint8_t vmem_
     */
    uint32_t ds_vmem_events = event_lds | event_gds | event_vmem | event_flat;
    uint32_t alu_events = event_trans | event_valu | event_salu;
-   bool force_linear =
-      ctx.gfx_level >= GFX11 && (event & (ds_vmem_events | alu_events));
+   bool force_linear = ctx.gfx_level >= GFX11 && (event & (ds_vmem_events | alu_events));
 
    insert_wait_entry(ctx, def.physReg(), def.regClass(), event, true, vmem_types, cycles,
                      force_linear);

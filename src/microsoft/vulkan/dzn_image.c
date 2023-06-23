@@ -157,8 +157,8 @@ dzn_image_create(struct dzn_device *device,
       D3D12_RESOURCE_DESC tmp_desc = {
          .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
          .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
-         .Width = ALIGN(image->vk.extent.width, util_format_get_blockwidth(pfmt)),
-         .Height = (UINT)ALIGN(image->vk.extent.height, util_format_get_blockheight(pfmt)),
+         .Width = ALIGN_POT(image->vk.extent.width, util_format_get_blockwidth(pfmt)),
+         .Height = (UINT)ALIGN_POT(image->vk.extent.height, util_format_get_blockheight(pfmt)),
          .DepthOrArraySize = 1,
          .MipLevels = 1,
          .Format =
@@ -276,8 +276,12 @@ dzn_image_get_dxgi_format(const struct dzn_physical_device *pdev,
 {
    enum pipe_format pfmt = vk_format_to_pipe_format(format);
 
-   if (pfmt == PIPE_FORMAT_A4R4G4B4_UNORM && !pdev->support_a4b4g4r4)
-      return DXGI_FORMAT_B4G4R4A4_UNORM;
+   if (pdev && !pdev->support_a4b4g4r4) {
+      if (pfmt == PIPE_FORMAT_A4R4G4B4_UNORM)
+         return DXGI_FORMAT_B4G4R4A4_UNORM;
+      if (pfmt == PIPE_FORMAT_A4B4G4R4_UNORM)
+         return DXGI_FORMAT_UNKNOWN;
+   }
 
    if (!vk_format_is_depth_or_stencil(format))
       return dzn_pipe_to_dxgi_format(pfmt);
@@ -425,13 +429,17 @@ dzn_image_get_copy_loc(const struct dzn_image *image,
    if (image->desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
       assert((subres->baseArrayLayer + layer) == 0);
       assert(subres->mipLevel == 0);
+      enum pipe_format pfmt = vk_format_to_pipe_format(image->vk.format);
+      uint32_t blkw = util_format_get_blockwidth(pfmt);
+      uint32_t blkh = util_format_get_blockheight(pfmt);
+      uint32_t blkd = util_format_get_blockdepth(pfmt);
       loc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
       loc.PlacedFootprint.Offset = 0;
       loc.PlacedFootprint.Footprint.Format =
          dzn_image_get_placed_footprint_format(pdev, image->vk.format, aspect);
-      loc.PlacedFootprint.Footprint.Width = image->vk.extent.width;
-      loc.PlacedFootprint.Footprint.Height = image->vk.extent.height;
-      loc.PlacedFootprint.Footprint.Depth = image->vk.extent.depth;
+      loc.PlacedFootprint.Footprint.Width = ALIGN_POT(image->vk.extent.width, blkw);
+      loc.PlacedFootprint.Footprint.Height = ALIGN_POT(image->vk.extent.height, blkh);
+      loc.PlacedFootprint.Footprint.Depth = ALIGN_POT(image->vk.extent.depth, blkd);
       loc.PlacedFootprint.Footprint.RowPitch = image->linear.row_stride;
    } else {
       loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;

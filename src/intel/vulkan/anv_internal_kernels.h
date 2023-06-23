@@ -33,7 +33,7 @@
 
 /* This needs to match common_generated_draws.glsl :
  *
- *    layout(set = 0, binding = 2) uniform block
+ *    layout(set = 0, binding = 3) uniform block
  */
 struct anv_generated_indirect_draw_params {
    /* Draw ID buffer address (only used on Gfx9) */
@@ -82,6 +82,51 @@ struct anv_generated_indirect_params {
     * genX(cmd_buffer_emit_indirect_generated_draws)
     */
    struct anv_generated_indirect_params *prev;
+};
+
+#define ANV_COPY_QUERY_FLAG_RESULT64  BITFIELD_BIT(0)
+#define ANV_COPY_QUERY_FLAG_AVAILABLE BITFIELD_BIT(1)
+#define ANV_COPY_QUERY_FLAG_DELTA     BITFIELD_BIT(2)
+#define ANV_COPY_QUERY_FLAG_PARTIAL   BITFIELD_BIT(3)
+
+/* This needs to match common_query_copy.glsl :
+ *
+ *    layout(set = 0, binding = 2) uniform block
+ */
+struct anv_query_copy_shader_params {
+   /* ANV_COPY_QUERY_FLAG_* flags */
+   uint32_t flags;
+
+   /* Number of queries to copy */
+   uint32_t num_queries;
+
+   /* Number of items to write back in the results per query */
+   uint32_t num_items;
+
+   /* First query to copy result from */
+   uint32_t query_base;
+
+   /* Query stride in bytes */
+   uint32_t query_stride;
+
+   /* Offset at which the data should be read from */
+   uint32_t query_data_offset;
+
+   /* Stride of destination writes */
+   uint32_t destination_stride;
+
+   /* We need to be 64 bit aligned, or 32 bit builds get
+    * very unhappy.
+    */
+   uint32_t padding;
+};
+
+struct anv_query_copy_params {
+   struct anv_query_copy_shader_params copy;
+
+   uint64_t query_data_addr;
+
+   uint64_t destination_addr;
 };
 
 #endif /* ANV_GENERATED_INDIRECT_DRAWS_H */

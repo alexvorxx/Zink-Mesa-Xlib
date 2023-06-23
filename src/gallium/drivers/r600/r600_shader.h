@@ -125,6 +125,7 @@ struct r600_shader {
 	uint8_t                 atomic_base;
 	uint8_t			rat_base;
 	uint8_t                 image_size_const_offset;
+        boolean			disable_sb;
 };
 
 union r600_shader_key {

@@ -1971,6 +1971,15 @@ vn_CmdSetLogicOpEXT(VkCommandBuffer commandBuffer, VkLogicOp logicOp)
 }
 
 void
+vn_CmdSetColorWriteEnableEXT(VkCommandBuffer commandBuffer,
+                             uint32_t attachmentCount,
+                             const VkBool32 *pColorWriteEnables)
+{
+   VN_CMD_ENQUEUE(vkCmdSetColorWriteEnableEXT, commandBuffer, attachmentCount,
+                  pColorWriteEnables);
+}
+
+void
 vn_CmdSetPatchControlPointsEXT(VkCommandBuffer commandBuffer,
                                uint32_t patchControlPoints)
 {

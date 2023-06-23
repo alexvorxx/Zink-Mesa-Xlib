@@ -581,7 +581,7 @@ void *si_create_fmask_expand_cs(struct pipe_context *ctx, unsigned num_samples, 
  *          2: write next summary buffer
  *  0.w = result_count
  */
-void *gfx10_create_sh_query_result_cs(struct si_context *sctx)
+void *gfx11_create_sh_query_result_cs(struct si_context *sctx)
 {
    /* TEMP[0].x = accumulated result so far
     * TEMP[0].y = result missing

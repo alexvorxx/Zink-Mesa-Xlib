@@ -191,12 +191,8 @@ nir_zero_initialize_shared_memory(nir_shader *shader,
    }
    nir_pop_loop(&b, loop);
 
-   if (shader->options->use_scoped_barrier) {
-      nir_scoped_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_SCOPE_WORKGROUP,
-                         NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
-   } else {
-      nir_memory_barrier_shared(&b);
-   }
+   nir_scoped_barrier(&b, SCOPE_WORKGROUP, SCOPE_WORKGROUP,
+                      NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
 
    nir_metadata_preserve(nir_shader_get_entrypoint(shader), nir_metadata_none);
 

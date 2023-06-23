@@ -98,7 +98,7 @@ fix_inv_result(nir_builder *b, nir_ssa_def *res, nir_ssa_def *src,
     * denorms properly. Note that this doesn't preserve positive/negative
     * zeros, but GLSL doesn't require it.
     */
-   res = nir_bcsel(b, nir_ior(b, nir_ige(b, nir_imm_int(b, 0), exp),
+   res = nir_bcsel(b, nir_ior(b, nir_ile_imm(b, exp, 0),
                               nir_feq_imm(b, nir_fabs(b, src), INFINITY)),
                    nir_imm_double(b, 0.0f), res);
 

@@ -246,10 +246,10 @@ index("nir_memory_semantics", "memory_semantics")
 index("nir_variable_mode", "memory_modes")
 
 # Scope of a memory operation
-index("nir_scope", "memory_scope")
+index("mesa_scope", "memory_scope")
 
 # Scope of a control barrier
-index("nir_scope", "execution_scope")
+index("mesa_scope", "execution_scope")
 
 # Semantics of an IO instruction
 index("struct nir_io_semantics", "io_semantics")
@@ -363,21 +363,10 @@ intrinsic("is_helper_invocation", dest_comp=1, flags=[CAN_ELIMINATE])
 # SpvOpTerminateInvocation from SPIR-V.  Essentially a discard "for real".
 barrier("terminate")
 
-# A workgroup-level control barrier.  Any thread which hits this barrier will
-# pause until all threads within the current workgroup have also hit the
-# barrier.  For compute shaders, the workgroup is defined as the local group.
-# For tessellation control shaders, the workgroup is defined as the current
-# patch.  This intrinsic does not imply any sort of memory barrier.
-barrier("control_barrier")
-
-# Memory barrier with semantics analogous to the memoryBarrier() GLSL
-# intrinsic.
-barrier("memory_barrier")
-
 # Control/Memory barrier with explicit scope.  Follows the semantics of SPIR-V
 # OpMemoryBarrier and OpControlBarrier, used to implement Vulkan Memory Model.
 # Storage that the barrier applies is represented using NIR variable modes.
-# For an OpMemoryBarrier, set EXECUTION_SCOPE to NIR_SCOPE_NONE.
+# For an OpMemoryBarrier, set EXECUTION_SCOPE to SCOPE_NONE.
 intrinsic("scoped_barrier",
           indices=[EXECUTION_SCOPE, MEMORY_SCOPE, MEMORY_SEMANTICS, MEMORY_MODES])
 
@@ -413,19 +402,8 @@ intrinsic("elect", dest_comp=1, flags=[CAN_ELIMINATE])
 intrinsic("first_invocation", dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE])
 intrinsic("last_invocation", dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE])
 
-# Memory barrier with semantics analogous to the compute shader
-# groupMemoryBarrier(), memoryBarrierAtomicCounter(), memoryBarrierBuffer(),
-# memoryBarrierImage() and memoryBarrierShared() GLSL intrinsics.
-barrier("group_memory_barrier")
-barrier("memory_barrier_atomic_counter")
-barrier("memory_barrier_buffer")
-barrier("memory_barrier_image")
-barrier("memory_barrier_shared")
 barrier("begin_invocation_interlock")
 barrier("end_invocation_interlock")
-
-# Memory barrier for synchronizing TCS patch outputs
-barrier("memory_barrier_tcs_patch")
 
 # A conditional discard/demote/terminate, with a single boolean source.
 intrinsic("discard_if", src_comp=[1])
@@ -754,6 +732,9 @@ intrinsic("load_vulkan_descriptor", src_comp=[-1], dest_comp=0,
 #
 # IR3 global operations take 32b vec2 as memory address. IR3 doesn't support
 # float atomics.
+#
+# AGX global variants take a 64-bit base address plus a 32-bit offset in words.
+# The offset is sign-extended or zero-extended based on the SIGN_EXTEND index.
 
 intrinsic("deref_atomic",  src_comp=[-1, 1], dest_comp=1, indices=[ACCESS, ATOMIC_OP])
 intrinsic("ssbo_atomic",  src_comp=[-1, 1, 1], dest_comp=1, indices=[ACCESS, ATOMIC_OP])
@@ -763,6 +744,7 @@ intrinsic("global_atomic",  src_comp=[1, 1], dest_comp=1, indices=[ATOMIC_OP])
 intrinsic("global_atomic_2x32",  src_comp=[2, 1], dest_comp=1, indices=[ATOMIC_OP])
 intrinsic("global_atomic_amd",  src_comp=[1, 1, 1], dest_comp=1, indices=[BASE, ATOMIC_OP])
 intrinsic("global_atomic_ir3",  src_comp=[2, 1], dest_comp=1, indices=[BASE, ATOMIC_OP])
+intrinsic("global_atomic_agx",  src_comp=[1, 1, 1], dest_comp=1, indices=[ATOMIC_OP, SIGN_EXTEND])
 
 intrinsic("deref_atomic_swap",  src_comp=[-1, 1, 1], dest_comp=1, indices=[ACCESS, ATOMIC_OP])
 intrinsic("ssbo_atomic_swap",  src_comp=[-1, 1, 1, 1], dest_comp=1, indices=[ACCESS, ATOMIC_OP])
@@ -772,6 +754,7 @@ intrinsic("global_atomic_swap",  src_comp=[1, 1, 1], dest_comp=1, indices=[ATOMI
 intrinsic("global_atomic_swap_2x32",  src_comp=[2, 1, 1], dest_comp=1, indices=[ATOMIC_OP])
 intrinsic("global_atomic_swap_amd",  src_comp=[1, 1, 1, 1], dest_comp=1, indices=[BASE, ATOMIC_OP])
 intrinsic("global_atomic_swap_ir3",  src_comp=[2, 1, 1], dest_comp=1, indices=[BASE, ATOMIC_OP])
+intrinsic("global_atomic_swap_agx",  src_comp=[1, 1, 1, 1], dest_comp=1, indices=[ATOMIC_OP, SIGN_EXTEND])
 
 def system_value(name, dest_comp, indices=[], bit_sizes=[32]):
     intrinsic("load_" + name, [], dest_comp, indices,
@@ -1250,30 +1233,6 @@ store("uniform_ir3", [], indices=[BASE])
 # base is the const file base in components, range is the amount to copy in
 # vec4's.
 intrinsic("copy_ubo_to_uniform_ir3", [1, 1], indices=[BASE, RANGE])
-
-# DXIL specific intrinsics
-# src[] = { value, mask, index, offset }.
-intrinsic("store_ssbo_masked_dxil", [1, 1, 1, 1])
-# src[] = { value, index }.
-intrinsic("store_shared_dxil", [1, 1])
-# src[] = { value, mask, index }.
-intrinsic("store_shared_masked_dxil", [1, 1, 1])
-# src[] = { value, index }.
-intrinsic("store_scratch_dxil", [1, 1])
-# src[] = { index }.
-load("shared_dxil", [1], [], [CAN_ELIMINATE])
-# src[] = { index }.
-load("scratch_dxil", [1], [], [CAN_ELIMINATE])
-# src[] = { deref_var, offset }
-load("ptr_dxil", [1, 1], [], [])
-# src[] = { index, 16-byte-based-offset }
-load("ubo_dxil", [1, 1], [], [CAN_ELIMINATE, CAN_REORDER])
-
-# DXIL Shared atomic intrinsics
-#
-# src0 is the index in the i32 array for by the shared memory region
-intrinsic("shared_atomic_dxil",  src_comp=[1, 1], dest_comp=1, indices=[ATOMIC_OP])
-intrinsic("shared_atomic_swap_dxil", src_comp=[1, 1, 1], dest_comp=1, indices=[ATOMIC_OP])
 
 # Intrinsics used by the Midgard/Bifrost blend pipeline. These are defined
 # within a blend shader to read/write the raw value from the tile buffer,
@@ -1802,6 +1761,16 @@ store("ssbo_block_intel", [-1, 1], [WRITE_MASK, ACCESS, ALIGN_MUL, ALIGN_OFFSET]
 
 # src[] = { value, offset }.
 store("shared_block_intel", [1], [BASE, WRITE_MASK, ALIGN_MUL, ALIGN_OFFSET])
+
+# src[] = { address }.
+load("global_constant_uniform_block_intel", [1],
+     [ACCESS, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE, CAN_REORDER])
+
+# Similar to load_global_const_block_intel but for UBOs
+# offset should be uniform
+# src[] = { buffer_index, offset }.
+load("ubo_uniform_block_intel", [-1, 1],
+     [ACCESS, ALIGN_MUL, ALIGN_OFFSET, RANGE_BASE, RANGE], [CAN_ELIMINATE, CAN_REORDER])
 
 # Similar to load_global_const_block_intel but for SSBOs
 # offset should be uniform

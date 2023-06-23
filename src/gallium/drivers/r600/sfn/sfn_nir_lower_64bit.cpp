@@ -201,7 +201,7 @@ class LowerSplit64op : public NirLowerInstruction {
          }
          case nir_op_f2i32: {
             auto src = nir_ssa_for_alu_src(b, alu, 0);
-            auto gt0 = nir_flt(b, nir_imm_double(b, 0.0), src);
+            auto gt0 = nir_fgt_imm(b, src, 0.0);
             auto abs_src = nir_fabs(b, src);
             auto value = nir_f2u32(b, abs_src);
             return nir_bcsel(b, gt0, value, nir_ineg(b, value));
@@ -213,7 +213,7 @@ class LowerSplit64op : public NirLowerInstruction {
              * For values > UINT_MAX the result is undefined */
             auto src = nir_ssa_for_alu_src(b, alu, 0);
             src = nir_fadd(b, src, nir_fneg(b, nir_ffract(b, src)));
-            auto gt0 = nir_flt(b, nir_imm_double(b, 0.0), src);
+            auto gt0 = nir_fgt_imm(b, src, 0.0);
             auto highval = nir_fmul_imm(b, src, 1.0 / 65536.0);
             auto fract = nir_ffract(b, highval);
             auto high = nir_f2u32(b, nir_f2f32(b, nir_fadd(b, highval, nir_fneg(b, fract))));
@@ -831,6 +831,7 @@ Lower64BitToVec2::filter(const nir_instr *instr) const
       case nir_intrinsic_load_input:
       case nir_intrinsic_load_uniform:
       case nir_intrinsic_load_ubo:
+      case nir_intrinsic_load_global:
       case nir_intrinsic_load_ubo_vec4:
       case nir_intrinsic_load_ssbo:
          return nir_dest_bit_size(intr->dest) == 64;
@@ -842,6 +843,8 @@ Lower64BitToVec2::filter(const nir_instr *instr) const
             return true;
          return (var->type->without_array()->components() != intr->num_components);
       }
+      case nir_intrinsic_store_global:
+         return nir_src_bit_size(intr->src[0]) == 64;
       default:
          return false;
       }
@@ -881,6 +884,7 @@ Lower64BitToVec2::lower(nir_instr *instr)
       case nir_intrinsic_load_ssbo:
          return load_ssbo_64_to_vec2(intr);
       case nir_intrinsic_load_input:
+      case nir_intrinsic_load_global:
       case nir_intrinsic_load_ubo:
       case nir_intrinsic_load_ubo_vec4:
          return load_64_to_vec2(intr);
@@ -1082,6 +1086,7 @@ r600_nir_64_to_vec2(nir_shader *sh)
                   auto ir = nir_instr_as_intrinsic(instr);
                   switch (ir->intrinsic) {
                   case nir_intrinsic_store_output:
+                  case nir_intrinsic_store_global:
                   case nir_intrinsic_store_ssbo: {
                      bool success = false;
                      nir_foreach_src(instr, store_64bit_intr, &success);

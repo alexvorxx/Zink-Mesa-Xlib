@@ -20,8 +20,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef ST_ATIFS_TO_TGSI_H
-#define ST_ATIFS_TO_TGSI_H
+#ifndef ST_ATIFS_TO_NIR_H
+#define ST_ATIFS_TO_NIR_H
 
 #include "util/glheader.h"
 #include "pipe/p_defines.h"
@@ -47,4 +47,4 @@ bool st_nir_lower_atifs_samplers(struct nir_shader *s, const uint8_t *texture_in
 } /* extern "C" */
 #endif
 
-#endif /* ST_ATIFS_TO_TGSI_H */
+#endif /* ST_ATIFS_TO_NIR_H */

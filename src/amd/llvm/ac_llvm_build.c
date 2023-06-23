@@ -458,9 +458,9 @@ void ac_build_optimization_barrier(struct ac_llvm_context *ctx, LLVMValueRef *pg
    }
 }
 
-LLVMValueRef ac_build_shader_clock(struct ac_llvm_context *ctx, nir_scope scope)
+LLVMValueRef ac_build_shader_clock(struct ac_llvm_context *ctx, mesa_scope scope)
 {
-   if (ctx->gfx_level >= GFX11 && scope == NIR_SCOPE_DEVICE) {
+   if (ctx->gfx_level >= GFX11 && scope == SCOPE_DEVICE) {
       const char *name = "llvm.amdgcn.s.sendmsg.rtn.i64";
       LLVMValueRef arg = LLVMConstInt(ctx->i32, 0x83 /* realtime */, 0);
       LLVMValueRef tmp = ac_build_intrinsic(ctx, name, ctx->i64, &arg, 1, 0);
@@ -468,7 +468,7 @@ LLVMValueRef ac_build_shader_clock(struct ac_llvm_context *ctx, nir_scope scope)
    }
 
    const char *subgroup = "llvm.readcyclecounter";
-   const char *name = scope == NIR_SCOPE_DEVICE ? "llvm.amdgcn.s.memrealtime" : subgroup;
+   const char *name = scope == SCOPE_DEVICE ? "llvm.amdgcn.s.memrealtime" : subgroup;
 
    LLVMValueRef tmp = ac_build_intrinsic(ctx, name, ctx->i64, NULL, 0, 0);
    return LLVMBuildBitCast(ctx->builder, tmp, ctx->v2i32, "");

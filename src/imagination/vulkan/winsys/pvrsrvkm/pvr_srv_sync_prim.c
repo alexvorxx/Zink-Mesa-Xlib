@@ -112,6 +112,7 @@ struct pvr_srv_sync_prim *pvr_srv_sync_prim_alloc(struct pvr_srv_winsys *srv_ws)
 
    sync_prim->offset = id * PVR_SRV_SYNC_PRIM_VALUE_SIZE;
    sync_prim->ctx = &srv_ws->sync_prim_ctx;
+   sync_prim->value = 0;
 
    return sync_prim;
 }

@@ -59,6 +59,7 @@ having three separate program parameter arrays.
 #include "prog_parameter.h"
 #include "prog_statevars.h"
 #include "prog_instruction.h"
+#include "prog_print.h"
 #include "program_parser.h"
 
 
@@ -130,7 +131,7 @@ _mesa_parse_arb_fragment_program(struct gl_context* ctx, GLenum target,
 
 #if DEBUG_FP
    printf("____________Fragment program %u ________\n", program->Id);
-   _mesa_print_program(&program->Base);
+   _mesa_print_program(program);
 #endif
 }
 

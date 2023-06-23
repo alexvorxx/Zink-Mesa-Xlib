@@ -177,7 +177,7 @@ void si_llvm_create_func(struct si_shader_context *ctx, const char *name, LLVMTy
       ac_llvm_add_target_dep_function_attr(ctx->main_fn.value, "amdgpu-gds-size", 256);
 
    ac_llvm_set_workgroup_size(ctx->main_fn.value, max_workgroup_size);
-   ac_llvm_set_target_features(ctx->main_fn.value, &ctx->ac);
+   ac_llvm_set_target_features(ctx->main_fn.value, &ctx->ac, false);
 }
 
 void si_llvm_create_main_func(struct si_shader_context *ctx)
@@ -671,14 +671,8 @@ static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrin
    struct si_shader_context *ctx = si_shader_context_from_abi(abi);
 
    switch (intrin->intrinsic) {
-   case nir_intrinsic_load_ring_tess_offchip_amd:
-      return ctx->tess_offchip_ring;
-
    case nir_intrinsic_load_tess_rel_patch_id_amd:
       return si_get_rel_patch_id(ctx);
-
-   case nir_intrinsic_load_ring_gsvs_amd:
-      return ctx->gsvs_ring[nir_intrinsic_stream_id(intrin)];
 
    case nir_intrinsic_load_lds_ngg_scratch_base_amd:
       return LLVMBuildPtrToInt(ctx->ac.builder, ctx->gs_ngg_scratch.value, ctx->ac.i32, "");
@@ -766,24 +760,10 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
             ac_build_load_to_sgpr(
                &ctx->ac, buf, LLVMConstInt(ctx->ac.i32, SI_VS_CONST_INSTANCE_DIVISORS, 0));
       }
-
-      /* preload GSVS ring for GS copy shader */
-      if (shader->is_gs_copy_shader) {
-         ctx->gsvs_ring[0] =
-            ac_build_load_to_sgpr(
-               &ctx->ac,
-               ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->internal_bindings),
-               LLVMConstInt(ctx->ac.i32, SI_RING_GSVS, 0));
-      }
       break;
 
    case MESA_SHADER_TESS_CTRL:
       si_llvm_init_tcs_callbacks(ctx);
-      si_llvm_preload_tess_rings(ctx);
-      break;
-
-   case MESA_SHADER_TESS_EVAL:
-      si_llvm_preload_tess_rings(ctx);
       break;
 
    case MESA_SHADER_GEOMETRY:
@@ -800,8 +780,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
             ctx->ac.module, LLVMArrayType(ctx->ac.i32, 0), "ngg_emit", AC_ADDR_SPACE_LDS);
          LLVMSetLinkage(ctx->gs_ngg_emit, LLVMExternalLinkage);
          LLVMSetAlignment(ctx->gs_ngg_emit, 4);
-      } else {
-         si_preload_gs_rings(ctx);
       }
       break;
 
@@ -815,12 +793,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
    }
 
    case MESA_SHADER_COMPUTE:
-      if (nir->info.cs.user_data_components_amd) {
-         ctx->abi.user_data = ac_get_arg(&ctx->ac, ctx->args->cs_user_data);
-         ctx->abi.user_data = ac_build_expand_to_vec4(&ctx->ac, ctx->abi.user_data,
-                                                      nir->info.cs.user_data_components_amd);
-      }
-
       if (ctx->shader->selector->info.base.shared_size)
          si_llvm_declare_compute_memory(ctx);
       break;

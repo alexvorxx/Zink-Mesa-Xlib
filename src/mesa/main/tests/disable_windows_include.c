@@ -138,7 +138,6 @@
 #include <mesa/math/m_eval.h>
 #include <mesa/math/m_matrix.h>
 #include <mesa/program/arbprogparse.h>
-#include <mesa/program/link_program.h>
 #include <mesa/program/program.h>
 #include <mesa/program/program_parser.h>
 #include <mesa/program/prog_cache.h>

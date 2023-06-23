@@ -79,7 +79,6 @@ static const struct debug_named_value lp_debug_flags[] = {
    { "mem", DEBUG_MEM, NULL },
    { "fs", DEBUG_FS, NULL },
    { "cs", DEBUG_CS, NULL },
-   { "tgsi_ir", DEBUG_TGSI_IR, NULL },
    { "accurate_a0", DEBUG_ACCURATE_A0 },
    { "mesh", DEBUG_MESH },
    DEBUG_NAMED_VALUE_END
@@ -136,6 +135,7 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return PIPE_MAX_COLOR_BUFS;
    case PIPE_CAP_OCCLUSION_QUERY:
    case PIPE_CAP_QUERY_TIMESTAMP:
+   case PIPE_CAP_TIMER_RESOLUTION:
    case PIPE_CAP_QUERY_TIME_ELAPSED:
       return 1;
    case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
@@ -196,10 +196,8 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES:
    case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
       return 1024;
-   case PIPE_CAP_MAX_VERTEX_STREAMS: {
-      struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
-      return lscreen->use_tgsi ? 1 : 4;
-   }
+   case PIPE_CAP_MAX_VERTEX_STREAMS:
+      return 4;
    case PIPE_CAP_MAX_VERTEX_ATTRIB_STRIDE:
       return 2048;
    case PIPE_CAP_STREAM_OUTPUT_PAUSE_RESUME:
@@ -208,10 +206,8 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_VERTEX_COLOR_CLAMPED:
       return 1;
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
-   case PIPE_CAP_GLSL_FEATURE_LEVEL: {
-      struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
-      return lscreen->use_tgsi ? 330 : 450;
-   }
+   case PIPE_CAP_GLSL_FEATURE_LEVEL:
+      return 450;
    case PIPE_CAP_COMPUTE:
       return GALLIVM_COROUTINES;
    case PIPE_CAP_USER_VERTEX_BUFFERS:
@@ -255,10 +251,8 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_TGSI_TEX_TXF_LZ:
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
       return 1;
-   case PIPE_CAP_FAKE_SW_MSAA: {
-      struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
-      return lscreen->use_tgsi ? 1 : 0;
-   }
+   case PIPE_CAP_FAKE_SW_MSAA:
+      return 0;
    case PIPE_CAP_TEXTURE_QUERY_LOD:
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
    case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
@@ -364,14 +358,10 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_GL_SPIRV:
    case PIPE_CAP_POST_DEPTH_COVERAGE:
    case PIPE_CAP_SHADER_CLOCK:
-   case PIPE_CAP_PACKED_UNIFORMS: {
-      struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
-      return !lscreen->use_tgsi;
-   }
-   case PIPE_CAP_ATOMIC_FLOAT_MINMAX: {
-      struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
-      return !lscreen->use_tgsi && LLVM_VERSION_MAJOR >= 15;
-   }
+   case PIPE_CAP_PACKED_UNIFORMS:
+      return 1;
+   case PIPE_CAP_ATOMIC_FLOAT_MINMAX:
+      return LLVM_VERSION_MAJOR >= 15;
    case PIPE_CAP_NIR_IMAGES_AS_DEREF:
       return 0;
    default:
@@ -395,31 +385,17 @@ llvmpipe_get_shader_param(struct pipe_screen *screen,
       FALLTHROUGH;
    case PIPE_SHADER_MESH:
    case PIPE_SHADER_TASK:
-      if (lscreen->use_tgsi)
-         return 0;
-      FALLTHROUGH;
    case PIPE_SHADER_FRAGMENT:
-      if (param == PIPE_SHADER_CAP_PREFERRED_IR) {
-         if (lscreen->use_tgsi)
-            return PIPE_SHADER_IR_TGSI;
-         else
-            return PIPE_SHADER_IR_NIR;
-      }
       return gallivm_get_shader_param(param);
    case PIPE_SHADER_TESS_CTRL:
    case PIPE_SHADER_TESS_EVAL:
       /* Tessellation shader needs llvm coroutines support */
-      if (!GALLIVM_COROUTINES || lscreen->use_tgsi)
+      if (!GALLIVM_COROUTINES)
          return 0;
       FALLTHROUGH;
    case PIPE_SHADER_VERTEX:
    case PIPE_SHADER_GEOMETRY:
       switch (param) {
-      case PIPE_SHADER_CAP_PREFERRED_IR:
-         if (lscreen->use_tgsi)
-            return PIPE_SHADER_IR_TGSI;
-         else
-            return PIPE_SHADER_IR_NIR;
       case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
          /* At this time, the draw module and llvmpipe driver only
           * support vertex shader texture lookups when LLVM is enabled in
@@ -648,7 +624,6 @@ static const struct nir_shader_compiler_options gallivm_nir_options = {
    .lower_device_index_to_zero = true,
    .support_16bit_alu = true,
    .lower_fisnormal = true,
-   .use_scoped_barrier = true,
 };
 
 
@@ -1128,7 +1103,6 @@ llvmpipe_create_screen(struct sw_winsys *winsys)
    llvmpipe_init_screen_resource_funcs(&screen->base);
 
    screen->allow_cl = !!getenv("LP_CL");
-   screen->use_tgsi = (LP_DEBUG & DEBUG_TGSI_IR);
    screen->num_threads = util_get_cpu_caps()->nr_cpus > 1
       ? util_get_cpu_caps()->nr_cpus : 0;
    screen->num_threads = debug_get_num_option("LP_NUM_THREADS",

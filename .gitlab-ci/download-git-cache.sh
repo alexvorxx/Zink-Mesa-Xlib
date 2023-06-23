@@ -18,7 +18,7 @@ TMP_DIR=$(mktemp -d)
 echo "Downloading archived master..."
 if ! /usr/bin/wget \
 	      -O "$TMP_DIR/$CI_PROJECT_NAME.tar.gz" \
-              "https://${MINIO_HOST}/git-cache/${FDO_UPSTREAM_REPO}/$CI_PROJECT_NAME.tar.gz";
+              "https://${S3_HOST}/git-cache/${FDO_UPSTREAM_REPO}/$CI_PROJECT_NAME.tar.gz";
 then
     echo "Repository cache not available"
     exit

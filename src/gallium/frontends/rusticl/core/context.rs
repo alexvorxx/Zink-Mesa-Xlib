@@ -1,12 +1,12 @@
 use crate::api::icd::*;
 use crate::core::device::*;
-use crate::core::format::*;
 use crate::core::memory::*;
 use crate::core::util::*;
 use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::ResourceType;
+use mesa_rust_gen::*;
 use mesa_rust_util::properties::Properties;
 use rusticl_opencl_gen::*;
 
@@ -84,7 +84,7 @@ impl Context {
     pub fn create_texture(
         &self,
         desc: &cl_image_desc,
-        format: &cl_image_format,
+        format: pipe_format,
         user_ptr: *mut c_void,
         copy: bool,
         res_type: ResourceType,
@@ -106,7 +106,6 @@ impl Context {
             .try_into()
             .map_err(|_| CL_OUT_OF_HOST_MEMORY)?;
         let target = cl_mem_type_to_texture_target(desc.image_type);
-        let format = format.to_pipe_format().unwrap();
 
         let mut res = HashMap::new();
         for dev in &self.devs {
@@ -132,7 +131,7 @@ impl Context {
         if !user_ptr.is_null() {
             let bx = desc.bx()?;
             let stride = desc.row_pitch()?;
-            let layer_stride = desc.slice_pitch()?;
+            let layer_stride = desc.slice_pitch();
 
             res.iter()
                 .filter(|(_, r)| copy || !r.is_user)

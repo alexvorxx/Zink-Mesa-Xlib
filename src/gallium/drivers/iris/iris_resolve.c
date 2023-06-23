@@ -518,17 +518,19 @@ iris_resolve_color(struct iris_context *ice,
    iris_emit_end_of_pipe_sync(batch, "color resolve: pre-flush",
                               PIPE_CONTROL_RENDER_TARGET_FLUSH);
 
-   /* Wa_1508744258
-    *
-    *    Disable RHWO by setting 0x7010[14] by default except during resolve
-    *    pass.
-    *
-    * We implement global disabling of the RHWO optimization during
-    * iris_init_render_context. We toggle it around the blorp resolve call.
-    */
-   assert(resolve_op == ISL_AUX_OP_FULL_RESOLVE ||
-          resolve_op == ISL_AUX_OP_PARTIAL_RESOLVE);
-   batch->screen->vtbl.disable_rhwo_optimization(batch, false);
+   if (intel_needs_workaround(batch->screen->devinfo, 1508744258)) {
+      /* The suggested workaround is:
+       *
+       *    Disable RHWO by setting 0x7010[14] by default except during resolve
+       *    pass.
+       *
+       * We implement global disabling of the RHWO optimization during
+       * iris_init_render_context. We toggle it around the blorp resolve call.
+       */
+      assert(resolve_op == ISL_AUX_OP_FULL_RESOLVE ||
+             resolve_op == ISL_AUX_OP_PARTIAL_RESOLVE);
+      batch->screen->vtbl.disable_rhwo_optimization(batch, false);
+   }
 
    iris_batch_sync_region_start(batch);
    struct blorp_batch blorp_batch;
@@ -541,7 +543,9 @@ iris_resolve_color(struct iris_context *ice,
    iris_emit_end_of_pipe_sync(batch, "color resolve: post-flush",
                               PIPE_CONTROL_RENDER_TARGET_FLUSH);
 
-   batch->screen->vtbl.disable_rhwo_optimization(batch, true);
+   if (intel_needs_workaround(batch->screen->devinfo, 1508744258)) {
+      batch->screen->vtbl.disable_rhwo_optimization(batch, true);
+   }
 
    iris_batch_sync_region_end(batch);
 }

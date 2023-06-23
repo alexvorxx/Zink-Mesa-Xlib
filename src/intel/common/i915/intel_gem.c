@@ -235,10 +235,20 @@ i915_gem_create_context_ext(int fd,
 bool
 i915_gem_supports_protected_context(int fd)
 {
+   int val = 0;
    uint32_t ctx_id;
-   bool ret = i915_gem_create_context_ext(fd,
-                                          INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG,
-                                          &ctx_id);
+   bool ret;
+
+   errno = 0;
+   if (!i915_gem_get_param(fd, I915_PARAM_PXP_STATUS, &val) && (errno == ENODEV))
+      return false;
+   else
+      return (val > 0);
+
+   /* failed without ENODEV, so older kernels require a creation test */
+   ret = i915_gem_create_context_ext(fd,
+                                     INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG,
+                                     &ctx_id);
    if (!ret)
       return ret;
 

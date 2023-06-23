@@ -200,16 +200,6 @@ class Opcode(object):
    NOTE: this must be kept in sync with aco_op_info
    """
    def __init__(self, name, opcode_gfx7, opcode_gfx9, opcode_gfx10, opcode_gfx11, format, input_mod, output_mod, is_atomic, cls):
-      """Parameters:
-
-      - name is the name of the opcode (prepend nir_op_ for the enum name)
-      - all types are strings that get nir_type_ prepended to them
-      - input_types is a list of types
-      - algebraic_properties is a space-separated string, where nir_op_is_ is
-        prepended before each entry
-      - const_expr is an expression or series of statements that computes the
-        constant value of the opcode given the constant values of its inputs.
-      """
       assert isinstance(name, str)
       assert isinstance(opcode_gfx7, int)
       assert isinstance(opcode_gfx9, int)
@@ -716,6 +706,7 @@ for (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name) in SMEM:
 # TODO: misses some GFX6_7 opcodes which were shifted to VOP3 in GFX8
 VOP2 = {
   # GFX6, GFX7, GFX8, GFX9, GFX10,GFX11,name, input modifiers, output modifiers
+   (0x00, 0x00, 0x00, 0x00, 0x01, 0x01, "v_cndmask_b32", True, False),
    (0x01, 0x01,   -1,   -1,   -1,   -1, "v_readlane_b32", False, False),
    (0x02, 0x02,   -1,   -1,   -1,   -1, "v_writelane_b32", False, False),
    (0x03, 0x03, 0x01, 0x01, 0x03, 0x03, "v_add_f32", True, True),
@@ -794,11 +785,6 @@ VOP2 = {
 }
 for (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name, in_mod, out_mod) in VOP2:
    opcode(name, gfx7, gfx9, gfx10, gfx11, Format.VOP2, InstrClass.Valu32, in_mod, out_mod)
-
-if True:
-    # v_cndmask_b32 can use input modifiers but not output modifiers
-    (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name) = (0x00, 0x00, 0x00, 0x00, 0x01, 0x01, "v_cndmask_b32")
-    opcode(name, gfx7, gfx9, gfx10, gfx11, Format.VOP2, InstrClass.Valu32, True, False)
 
 
 # VOP1 instructions: instructions with 1 input and 1 output
@@ -1160,7 +1146,7 @@ VOP3 = {
    (0x11e, 0x11e, 0x293, 0x293, 0x363, 0x31d, "v_bfm_b32", False, False),
    (0x12d, 0x12d, 0x294, 0x294, 0x368, 0x321, "v_cvt_pknorm_i16_f32", True, False),
    (0x12e, 0x12e, 0x295, 0x295, 0x369, 0x322, "v_cvt_pknorm_u16_f32", True, False),
-   (0x12f, 0x12f, 0x296, 0x296, 0x12f, 0x12f, "v_cvt_pkrtz_f16_f32_e64", True, False), # GFX6_7_10_11 is VOP2 with opcode 0x02f
+   (   -1,    -1, 0x296, 0x296,    -1,    -1, "v_cvt_pkrtz_f16_f32_e64", True, False),
    (0x130, 0x130, 0x297, 0x297, 0x36a, 0x323, "v_cvt_pk_u16_u32", False, False),
    (0x131, 0x131, 0x298, 0x298, 0x36b, 0x324, "v_cvt_pk_i16_i32", False, False),
    (   -1,    -1,    -1, 0x299, 0x312, 0x312, "v_cvt_pknorm_i16_f16", True, False), #v_cvt_pk_norm_i16_f32 in GFX11

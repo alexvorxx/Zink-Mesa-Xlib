@@ -136,7 +136,7 @@ lower_returns_in_if(nir_if *if_stmt, struct lower_returns_state *state)
           * predecessor, and should've been removed by the opt_remove_phis before
           * beginning this pass.
           */
-         nir_block *succ_block = nir_after_cf_node(&if_stmt->cf_node).block;
+         ASSERTED nir_block *succ_block = nir_after_cf_node(&if_stmt->cf_node).block;
          assert(nir_block_first_instr(succ_block) == NULL ||
                 nir_block_first_instr(succ_block)->type != nir_instr_type_phi);
 

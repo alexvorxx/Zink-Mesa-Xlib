@@ -181,7 +181,7 @@ bool si_query_buffer_alloc(struct si_context *sctx, struct si_query_buffer *buff
 
 struct si_query_hw {
    struct si_query b;
-   struct si_query_hw_ops *ops;
+   const struct si_query_hw_ops *ops;
    unsigned flags;
 
    /* The query buffer and how many results are in it. */
@@ -203,13 +203,6 @@ struct si_query_hw {
 
 unsigned si_query_pipestat_end_dw_offset(struct si_screen *sscreen,
                                          enum pipe_statistics_query_index index);
-void si_query_hw_destroy(struct si_context *sctx, struct si_query *squery);
-bool si_query_hw_begin(struct si_context *sctx, struct si_query *squery);
-bool si_query_hw_end(struct si_context *sctx, struct si_query *squery);
-bool si_query_hw_get_result(struct si_context *sctx, struct si_query *squery, bool wait,
-                            union pipe_query_result *result);
-void si_query_hw_suspend(struct si_context *sctx, struct si_query *query);
-void si_query_hw_resume(struct si_context *sctx, struct si_query *query);
 
 /* Shader-based queries */
 
@@ -221,7 +214,7 @@ void si_query_hw_resume(struct si_context *sctx, struct si_query *query);
  * point into the ring, allowing an arbitrary number of queries to be active
  * without additional GPU cost.
  */
-struct gfx10_sh_query_buffer {
+struct gfx11_sh_query_buffer {
    struct list_head list;
    struct si_resource *buf;
    unsigned refcount;
@@ -237,7 +230,7 @@ struct gfx10_sh_query_buffer {
  * SET_PREDICATION packet, which also means that we're setting the high bit
  * of all those values unconditionally.
  */
-struct gfx10_sh_query_buffer_mem {
+struct gfx11_sh_query_buffer_mem {
    struct {
       uint64_t generated_primitives_start_dummy;
       uint64_t emitted_primitives_start_dummy;
@@ -248,18 +241,18 @@ struct gfx10_sh_query_buffer_mem {
    uint32_t pad[31];
 };
 
-struct gfx10_sh_query {
+struct gfx11_sh_query {
    struct si_query b;
 
-   struct gfx10_sh_query_buffer *first;
-   struct gfx10_sh_query_buffer *last;
+   struct gfx11_sh_query_buffer *first;
+   struct gfx11_sh_query_buffer *last;
    unsigned first_begin;
    unsigned last_end;
 
    unsigned stream;
 };
 
-struct pipe_query *gfx10_sh_query_create(struct si_screen *screen, enum pipe_query_type query_type,
+struct pipe_query *gfx11_sh_query_create(struct si_screen *screen, enum pipe_query_type query_type,
                                          unsigned index);
 
 /* Performance counters */

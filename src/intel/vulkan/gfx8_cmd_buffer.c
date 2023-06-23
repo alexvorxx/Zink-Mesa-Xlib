@@ -49,24 +49,16 @@ genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer, bool enable)
     * streamer stall.  However, the hardware seems to violently disagree.
     * A full command streamer stall seems to be needed in both cases.
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.DepthCacheFlushEnable = true;
-      pc.CommandStreamerStallEnable = true;
-      pc.RenderTargetCacheFlushEnable = true;
+   genX(batch_emit_pipe_control)
+      (&cmd_buffer->batch, cmd_buffer->device->info,
+       ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
+       ANV_PIPE_CS_STALL_BIT |
 #if GFX_VER >= 12
-      pc.TileCacheFlushEnable = true;
+       ANV_PIPE_TILE_CACHE_FLUSH_BIT |
 #endif
-
-#if INTEL_NEEDS_WA_1409600907
-      /* Wa_1409600907: "PIPE_CONTROL with Depth Stall Enable bit must
-       * be set with any PIPE_CONTROL with Depth Flush Enable bit set.
-       */
-      pc.DepthStallEnable = true;
-#endif
-   }
+       ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT);
 
 #if GFX_VER == 9
-
    uint32_t cache_mode;
    anv_pack_struct(&cache_mode, GENX(CACHE_MODE_0),
                    .STCPMAOptimizationEnable = enable,
@@ -85,14 +77,14 @@ genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer, bool enable)
     * Again, the Skylake docs give a different set of flushes but the BDW
     * flushes seem to work just as well.
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.DepthStallEnable = true;
-      pc.DepthCacheFlushEnable = true;
-      pc.RenderTargetCacheFlushEnable = true;
+   genX(batch_emit_pipe_control)
+      (&cmd_buffer->batch, cmd_buffer->device->info,
+       ANV_PIPE_DEPTH_STALL_BIT |
+       ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
 #if GFX_VER >= 12
-      pc.TileCacheFlushEnable = true;
+       ANV_PIPE_TILE_CACHE_FLUSH_BIT |
 #endif
-   }
+       ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT);
 }
 
 UNUSED static bool
@@ -470,7 +462,8 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_LINE_WIDTH) ||
-       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS)) {
       uint32_t sf_dw[GENX(3DSTATE_SF_length)];
       struct GENX(3DSTATE_SF) sf = {
          GENX(3DSTATE_SF_header),
@@ -478,7 +471,30 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 
       ANV_SETUP_PROVOKING_VERTEX(sf, dyn->rs.provoking_vertex);
 
-      sf.LineWidth = dyn->rs.line.width,
+      sf.LineWidth = dyn->rs.line.width;
+
+      /**
+       * From the Vulkan Spec:
+       *
+       *    "VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT specifies that the depth
+       *     bias representation is a factor of constant r equal to 1."
+       *
+       * From the SKL PRMs, Volume 7: 3D-Media-GPGPU, Depth Offset:
+       *
+       *    "When UNORM Depth Buffer is at Output Merger (or no Depth Buffer):
+       *
+       *     Bias = GlobalDepthOffsetConstant * r + GlobalDepthOffsetScale * MaxDepthSlope
+       *
+       *     Where r is the minimum representable value > 0 in the depth
+       *     buffer format, converted to float32 (note: If state bit Legacy
+       *     Global Depth Bias Enable is set, the r term will be forced to
+       *     1.0)"
+       *
+       * When VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT is set, enable
+       * LegacyGlobalDepthBiasEnable.
+       */
+      sf.LegacyGlobalDepthBiasEnable =
+         dyn->rs.depth_bias.representation == VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT;
 
       GENX(3DSTATE_SF_pack)(NULL, sf_dw, &sf);
       anv_batch_emit_merge(&cmd_buffer->batch, sf_dw, pipeline->gfx8.sf);

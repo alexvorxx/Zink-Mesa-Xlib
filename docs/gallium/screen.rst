@@ -153,6 +153,7 @@ The integer capabilities:
   the pipe_screen::get_timestamp hook are implemented.
 * ``PIPE_CAP_QUERY_TIMESTAMP_BITS``: How many bits the driver uses for the
   results of GL_TIMESTAMP queries.
+* ``PIPE_CAP_TIMER_RESOLUTION``: The resolution of the timer in nanos.
 * ``PIPE_CAP_TEXTURE_MULTISAMPLE``: Whether all MSAA resources supported
   for rendering are also supported for texturing.
 * ``PIPE_CAP_MIN_MAP_BUFFER_ALIGNMENT``: The minimum alignment that should be
@@ -741,8 +742,6 @@ support different features.
   Note that 16-bit constants are not lowered to uniforms in GLSL.
 * ``PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS``: The maximum number of texture
   samplers.
-* ``PIPE_SHADER_CAP_PREFERRED_IR``: Preferred representation of the
-  program.  It should be one of the ``pipe_shader_ir`` enum values.
 * ``PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS``: The maximum number of texture
   sampler views. Must not be lower than PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS.
 * ``PIPE_SHADER_CAP_DROUND_SUPPORTED``: Whether double precision rounding

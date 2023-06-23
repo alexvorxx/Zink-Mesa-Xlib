@@ -274,7 +274,7 @@ dzn_sync_prep_win32_export(struct vk_device *device, struct vk_sync *sync,
    struct dzn_device *ddev = container_of(device, struct dzn_device, vk);
    if (FAILED(ID3D12Device_CreateSharedHandle(ddev->dev, (ID3D12DeviceChild *)dsync->fence,
                                               (const LPSECURITY_ATTRIBUTES)security_attributes,
-                                              access, name, &dsync->export_handle)))
+                                              GENERIC_ALL, name, &dsync->export_handle)))
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
    return VK_SUCCESS;
 }

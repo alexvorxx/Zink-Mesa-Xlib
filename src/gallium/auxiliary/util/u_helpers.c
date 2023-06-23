@@ -548,8 +548,11 @@ util_clamp_color(enum pipe_format format,
    union pipe_color_union clamp_color = *color;
    int i;
 
-   for (i = 0; i < util_format_get_nr_components(format); i++) {
+   for (i = 0; i < 4; i++) {
       uint8_t bits = util_format_get_component_bits(format, UTIL_FORMAT_COLORSPACE_RGB, i);
+
+      if (!bits)
+         continue;
 
       if (util_format_is_unorm(format))
          clamp_color.ui[i] = _mesa_unorm_to_unorm(clamp_color.ui[i], bits, bits);

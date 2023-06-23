@@ -51,7 +51,7 @@ nir_lower_load_and_store_is_helper(nir_builder *b, nir_instr *instr, void *data)
    switch (intrin->intrinsic) {
    case nir_intrinsic_demote: {
       b->cursor = nir_before_instr(instr);
-      nir_store_deref(b, is_helper_deref, nir_imm_bool(b, true), 1);
+      nir_store_deref(b, is_helper_deref, nir_imm_true(b), 1);
       return true;
    }
    case nir_intrinsic_demote_if: {

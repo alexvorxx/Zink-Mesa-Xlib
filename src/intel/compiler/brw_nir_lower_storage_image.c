@@ -420,7 +420,7 @@ lower_image_load_instr(nir_builder *b,
           */
          nir_ssa_def *stride = load_image_param(b, deref, STRIDE);
          nir_ssa_def *is_raw =
-            nir_ilt(b, nir_imm_int(b, 4), nir_channel(b, stride, 0));
+            nir_igt_imm(b, nir_channel(b, stride, 0), 4);
          do_load = nir_iand(b, do_load, is_raw);
       }
       nir_push_if(b, do_load);
@@ -571,7 +571,7 @@ lower_image_store_instr(nir_builder *b,
           */
          nir_ssa_def *stride = load_image_param(b, deref, STRIDE);
          nir_ssa_def *is_raw =
-            nir_ilt(b, nir_imm_int(b, 4), nir_channel(b, stride, 0));
+            nir_igt_imm(b, nir_channel(b, stride, 0), 4);
          do_store = nir_iand(b, do_store, is_raw);
       }
       nir_push_if(b, do_store);

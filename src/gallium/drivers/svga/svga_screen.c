@@ -28,11 +28,10 @@
 #include "util/format/u_format.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
+#include "util/u_process.h"
 #include "util/u_screen.h"
 #include "util/u_string.h"
 #include "util/u_math.h"
-
-#include "os/os_process.h"
 
 #include "svga_winsys.h"
 #include "svga_public.h"
@@ -535,10 +534,8 @@ vgpu9_get_shader_param(struct pipe_screen *screen,
       case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
       case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
          return 16;
-      case PIPE_SHADER_CAP_PREFERRED_IR:
-         return svgascreen->debug.nir ? PIPE_SHADER_IR_NIR : PIPE_SHADER_IR_TGSI;
       case PIPE_SHADER_CAP_SUPPORTED_IRS:
-         return (1 << PIPE_SHADER_IR_TGSI) | (svgascreen->debug.nir ? (1 << PIPE_SHADER_IR_NIR) : 0);
+         return (1 << PIPE_SHADER_IR_TGSI) | (1 << PIPE_SHADER_IR_NIR);
       case PIPE_SHADER_CAP_DROUND_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
@@ -599,10 +596,8 @@ vgpu9_get_shader_param(struct pipe_screen *screen,
       case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
       case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
          return 0;
-      case PIPE_SHADER_CAP_PREFERRED_IR:
-         return svgascreen->debug.nir ? PIPE_SHADER_IR_NIR : PIPE_SHADER_IR_TGSI;
       case PIPE_SHADER_CAP_SUPPORTED_IRS:
-         return (1 << PIPE_SHADER_IR_TGSI) | (svgascreen->debug.nir ? (1 << PIPE_SHADER_IR_NIR) : 0);
+         return (1 << PIPE_SHADER_IR_TGSI) | (1 << PIPE_SHADER_IR_NIR);
       case PIPE_SHADER_CAP_DROUND_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
@@ -711,11 +706,9 @@ vgpu10_get_shader_param(struct pipe_screen *screen,
    case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
    case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
       return sws->have_gl43 ? PIPE_MAX_SAMPLERS : SVGA3D_DX_MAX_SAMPLERS;
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-         return svgascreen->debug.nir ? PIPE_SHADER_IR_NIR : PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
       if (sws->have_gl43)
-         return (1 << PIPE_SHADER_IR_TGSI) | (svgascreen->debug.nir ? (1 << PIPE_SHADER_IR_NIR) : 0);
+         return (1 << PIPE_SHADER_IR_TGSI) | (1 << PIPE_SHADER_IR_NIR);
       else
          return 0;
    case PIPE_SHADER_CAP_DROUND_SUPPORTED:
@@ -838,7 +831,6 @@ svga_sm5_get_compute_param(struct pipe_screen *screen,
    uint64_t *iret = (uint64_t *)ret;
 
    assert(sws->have_gl43);
-   assert(ir_type == PIPE_SHADER_IR_TGSI);
 
    switch (param) {
    case PIPE_COMPUTE_CAP_MAX_GRID_SIZE:
@@ -1089,8 +1081,6 @@ svga_screen_create(struct svga_winsys_screen *sws)
       debug_get_bool_option("SVGA_NO_SAMPLER_VIEW", FALSE);
    svgascreen->debug.no_cache_index_buffers =
       debug_get_bool_option("SVGA_NO_CACHE_INDEX_BUFFERS", FALSE);
-   svgascreen->debug.nir =
-      debug_get_bool_option("SVGA_NIR", FALSE);
 
    screen = &svgascreen->screen;
 

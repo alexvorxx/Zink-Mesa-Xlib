@@ -93,6 +93,8 @@ struct backend_instruction : public exec_node {
    bool is_3src(const struct brw_compiler *compiler) const;
    bool is_tex() const;
    bool is_math() const;
+   bool is_control_flow_begin() const;
+   bool is_control_flow_end() const;
    bool is_control_flow() const;
    bool is_commutative() const;
    bool can_do_source_mods() const;

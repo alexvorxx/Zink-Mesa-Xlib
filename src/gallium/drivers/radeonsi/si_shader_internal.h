@@ -8,6 +8,7 @@
 #define SI_SHADER_PRIVATE_H
 
 #include "ac_shader_abi.h"
+#include "ac_llvm_build.h"
 #include "si_shader.h"
 
 struct util_debug_callback;
@@ -42,24 +43,17 @@ struct si_shader_args {
     *   [0:5] = the number of patches per threadgroup - 1, max = 63
     * # 5 bits
     *   [6:10] = the number of output vertices per patch - 1, max = 31
-    * # 21 bits
-    *   [11:31] = the offset of per patch attributes in the buffer in bytes.
-    *             max = NUM_PATCHES*32*32*16 = 1M
+    * # 5 bits
+    *   [11:15] = the number of input vertices per patch - 1, max = 31 (TCS only)
+    * # 16 bits
+    *   [16:31] = the offset of per patch attributes in the buffer in bytes.
+    *       64 outputs are implied by SI_UNIQUE_SLOT_* values.
+    *       max = 32(CPs) * 64(outputs) * 16(vec4) * 64(num_patches) = 2M,
+    *       clamped to 32K(LDS limit) = 32K
     */
    struct ac_arg tcs_offchip_layout;
 
-   /* API TCS */
-   /* Offsets where TCS outputs and TCS patch outputs live in LDS (<= 16K):
-    *   [16:31] = TCS output patch0 offset for per-patch / 4, max = 16K / 4 = 4K
-    */
-   struct ac_arg tcs_out_lds_offsets;
-   /* Layout of TCS outputs / TES inputs:
-    *   [13:18] = gl_PatchVerticesIn, max = 32
-    *   [19:31] = high 13 bits of the 32-bit address of tessellation ring buffers
-    */
-   struct ac_arg tcs_out_lds_layout;
-
-   /* API TES */
+   /* API TCS & TES */
    struct ac_arg tes_offchip_addr;
    /* PS */
    struct ac_arg pos_fixed_pt;
@@ -97,8 +91,6 @@ struct si_shader_context {
    struct ac_llvm_compiler *compiler;
 
    /* Preloaded descriptors. */
-   LLVMValueRef gsvs_ring[4];
-   LLVMValueRef tess_offchip_ring;
    LLVMValueRef instance_divisor_constbuf;
 
    LLVMValueRef gs_ngg_emit;
@@ -195,12 +187,10 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
 LLVMValueRef si_is_es_thread(struct si_shader_context *ctx);
 LLVMValueRef si_is_gs_thread(struct si_shader_context *ctx);
 void si_llvm_es_build_end(struct si_shader_context *ctx);
-void si_preload_gs_rings(struct si_shader_context *ctx);
 void si_llvm_gs_build_end(struct si_shader_context *ctx);
 
 /* si_shader_llvm_tess.c */
 LLVMValueRef si_get_rel_patch_id(struct si_shader_context *ctx);
-void si_llvm_preload_tess_rings(struct si_shader_context *ctx);
 void si_llvm_ls_build_end(struct si_shader_context *ctx);
 void si_llvm_build_tcs_epilog(struct si_shader_context *ctx, union si_shader_part_key *key,
                               bool separate_epilog);

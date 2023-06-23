@@ -6,6 +6,17 @@
   rules:
     - if: &is-scheduled-pipeline '$CI_PIPELINE_SOURCE == "schedule"'
       when: on_success
+  retry: &scheduled-pipeline-retries
+    max: 1
+    # Don't retry on script_failure, job_execution_timeout, runner_unsupported,
+    # stale_schedule, archived_failure, or unmet_prerequisites
+    when:
+      - api_failure
+      - runner_system_failure
+      - scheduler_failure
+      - data_integrity_failure
+      - unknown_failure
+
 
 # Generic rule to not run the job during scheduled pipelines. Jobs that aren't
 # something like a nightly run should include this rule.
@@ -54,6 +65,7 @@
 
 # Same core dependencies for doing manual runs.
 .core-manual-rules:
+  retry: *scheduled-pipeline-retries
   rules:
     # We only want manual jobs to show up when it's not marge's pre-merge CI
     # run, otherwise she'll wait until her timeout.  The exception is
@@ -100,7 +112,7 @@
     # Always use the same device
     LAVA_TAGS: "cbg-0"
     # Ensure that we are using the release build artifact
-    MINIO_ARTIFACT_NAME: mesa-${ARCH}-release
+    S3_ARTIFACT_NAME: mesa-${ARCH}-default-release
   # Reset dependencies in performance jobs to enforce the release build artifact
   dependencies: null
   # Don't run in parallel. It is okay to performance jobs to take a little
@@ -155,6 +167,7 @@
       when: on_success
 
 .gl-manual-rules:
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.core-manual-rules, rules]
     - changes:
@@ -173,6 +186,7 @@
       when: on_success
 
 .vulkan-manual-rules:
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.core-manual-rules, rules]
     - changes:
@@ -211,6 +225,7 @@
 
 .lavapipe-manual-rules:
   stage: software-renderer
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.vulkan-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -253,37 +268,92 @@
       - src/gallium/frontends/rusticl/**/*
       when: on_success
 
+# Farm rules
+.microsoft-farm-container-rules:
+  rules:
+    # Allow triggering jobs manually in other cases if any files affecting the
+    # pipeline were changed
+    - exists: [ .ci-farms-disabled/microsoft ]
+      when: never
+    - changes: [ .ci-farms-disabled/microsoft ]
+      when: manual
+    - !reference [.microsoft-farm-rules, rules]
+
+.microsoft-farm-rules:
+  rules:
+    - exists: [ .ci-farms-disabled/microsoft ]  # 1. Is disabled, never run
+      when: never
+    - changes: [ .ci-farms-disabled/microsoft ]  # 2. Removed from disabled, run
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]  # 3. We touched other farms in MR, do not run
+      when: never
+    # 4. Fall-through (other rules or on_success)
+
 .collabora-farm-rules:
   rules:
-    - if: '$COLLABORA_FARM == "offline" && $RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
+    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
+      exists: [ .ci-farms-disabled/collabora ]
+      when: never
+    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
+      changes: [ .ci-farms-disabled/collabora ]
+      when: on_success
+    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
+      changes: [ .ci-farms-disabled/* ]
       when: never
 
 .igalia-farm-rules:
   rules:
-    - if: '$IGALIA_FARM == "offline"'
+    - exists: [ .ci-farms-disabled/igalia ]
+      when: never
+    - changes: [ .ci-farms-disabled/igalia ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
+      when: never
+
+.lima-farm-rules:
+  rules:
+    - exists: [ .ci-farms-disabled/lima ]
+      when: never
+    - changes: [ .ci-farms-disabled/lima ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
       when: never
 
 .anholt-farm-rules:
   rules:
-    - if: '$ANHOLT_FARM == "offline"'
+    - exists: [ .ci-farms-disabled/anholt ]
+      when: never
+    - changes: [ .ci-farms-disabled/anholt ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
       when: never
 
 .valve-farm-rules:
   rules:
-    - if: '$VALVE_FARM == "offline"'
+    - exists: [ .ci-farms-disabled/valve ]
+      when: never
+    - changes: [ .ci-farms-disabled/valve ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
       when: never
 
 .austriancoder-farm-rules:
   rules:
-    - if: '$AUSTRIANCODER_FARM == "offline"'
+    - exists: [ .ci-farms-disabled/austriancoder ]
+      when: never
+    - changes: [ .ci-farms-disabled/austriancoder ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
       when: never
 
-# Skips freedreno jobs if either of the farms we use are offline.
 .freedreno-farm-rules:
   rules:
-    - if: '$FD_FARM == "offline"'
+    - exists: [ .ci-farms-disabled/freedreno ]
       when: never
-    - !reference [.collabora-farm-rules, rules]
+    - changes: [ .ci-farms-disabled/freedreno ]
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
+      when: never
 
 # Rules for changes that impact either freedreno or turnip.
 .freedreno-common-rules:
@@ -301,6 +371,7 @@
       when: on_success
 
 .freedreno-common-manual-rules:
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.freedreno-farm-rules, rules]
     - !reference [.core-manual-rules, rules]
@@ -321,6 +392,7 @@
 
 .freedreno-manual-rules:
   stage: freedreno
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.freedreno-common-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -339,6 +411,7 @@
 
 .turnip-manual-rules:
   stage: freedreno
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.freedreno-common-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
@@ -360,6 +433,7 @@
 
 .freedreno-rules-performance:
   stage: freedreno
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.performance-rules, rules]
     - !reference [.freedreno-manual-rules, rules]
@@ -367,7 +441,7 @@
   variables:
     LAVA_JOB_PRIORITY: 40
     # Ensure that we are using the release build artifact
-    MINIO_ARTIFACT_NAME: mesa-arm64-release
+    S3_ARTIFACT_NAME: mesa-arm64-default-release
   needs:
     - debian/arm64_test
     - debian-arm64-release
@@ -387,6 +461,7 @@
 
 .nouveau-manual-rules:
   stage: nouveau
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.anholt-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -416,6 +491,7 @@
 
 .panfrost-midgard-manual-rules:
   stage: arm
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -448,6 +524,7 @@
 
 .panfrost-bifrost-manual-rules:
   stage: arm
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
@@ -505,6 +582,7 @@
 
 .v3d-manual-rules:
   stage: broadcom
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.igalia-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -527,8 +605,7 @@
 .lima-rules:
   stage: arm
   rules:
-    - if: '$LIMA_FARM == "offline"'
-      when: never
+    - !reference [.lima-farm-rules, rules]
     - !reference [.gl-rules, rules]
     - changes:
       - src/gallium/drivers/lima/**/*
@@ -559,6 +636,7 @@
 
 .radv-valve-manual-rules:
   stage: amd
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.valve-farm-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
@@ -620,6 +698,7 @@
 .radeonsi-vaapi-manual-rules:
   stage: amd
   rules:
+    - !reference [.collabora-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *radeon_vcn_file_list
@@ -652,6 +731,7 @@
 
 .i915g-manual-rules:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.gl-manual-rules, rules]
     - changes:
@@ -661,6 +741,7 @@
 .crocus-rules:
   stage: intel
   rules:
+    - !reference [.anholt-farm-rules, rules]
     - !reference [.gl-rules, rules]
     - changes: &crocus_file_list
       - src/gallium/drivers/crocus/**/*
@@ -670,7 +751,9 @@
 
 .crocus-manual-rules:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
+    - !reference [.anholt-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *crocus_file_list
@@ -690,6 +773,7 @@
 
 .iris-manual-rules:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -702,6 +786,7 @@
 # .performance-rules)
 .iris-rules-performance:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.performance-rules, rules]
@@ -712,7 +797,7 @@
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
     LAVA_JOB_PRIORITY: 40
-    MINIO_ARTIFACT_NAME: "mesa-x86_64-release"
+    S3_ARTIFACT_NAME: "mesa-x86_64-default-release"
   needs:
     - kernel+rootfs_x86_64
     - debian-release
@@ -729,6 +814,7 @@
 
 .anv-manual-rules:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
@@ -747,6 +833,7 @@
 
 .hasvk-manual-rules:
   stage: intel
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.anholt-farm-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
@@ -779,6 +866,7 @@
 
 .virgl-iris-manual-rules:
   stage: layered-backends
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
@@ -791,6 +879,7 @@
 
 .virgl-iris-rules-performance:
   stage: layered-backends
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.collabora-farm-rules, rules]
     - !reference [.performance-rules, rules]
@@ -804,7 +893,7 @@
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
     LAVA_JOB_PRIORITY: 40
-    MINIO_ARTIFACT_NAME: "mesa-x86_64-release"
+    S3_ARTIFACT_NAME: "mesa-x86_64-default-release"
   needs:
     - kernel+rootfs_x86_64
     - debian-release
@@ -817,6 +906,7 @@
       when: on_success
 
 .zink-common-manual-rules:
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.gl-manual-rules, rules]
     - changes:
@@ -837,6 +927,7 @@
 
 .zink-anv-manual-rules:
   stage: layered-backends
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.anv-manual-rules, rules]
     - !reference [.zink-common-manual-rules, rules]
@@ -856,12 +947,20 @@
 
 .zink-turnip-manual-rules:
   stage: layered-backends
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.turnip-manual-rules, rules]
     - !reference [.zink-common-manual-rules, rules]
 
+.zink-radv-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.radv-valve-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
 .zink-radv-manual-rules:
   stage: layered-backends
+  retry: *scheduled-pipeline-retries
   rules:
     - !reference [.radv-valve-manual-rules, rules]
     - !reference [.zink-common-manual-rules, rules]
@@ -873,8 +972,7 @@
 # rules duplication manually
 .windows-build-rules:
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.zink-common-rules, rules]
     - !reference [.vulkan-rules, rules]
     - changes:
@@ -901,8 +999,7 @@
 
 .glon12-test-rules:
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.gl-rules, rules]
     - changes: *d3d12_file_list
       when: on_success
@@ -912,8 +1009,7 @@
 
 .spirv2dxil-test-rules:
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.core-rules, rules]
     - changes: &spirv2dxil_file_list
       - src/microsoft/ci/*
@@ -923,8 +1019,7 @@
 
 .dozen-test-rules:
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.vulkan-rules, rules]
     - changes:
         *spirv2dxil_file_list
@@ -949,7 +1044,9 @@
 
 .etnaviv-manual-rules:
   stage: etnaviv
+  retry: *scheduled-pipeline-retries
   rules:
+    - !reference [.austriancoder-farm-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *etnaviv_file_list
@@ -1015,4 +1112,6 @@
       - src/**/.clang-format
       - src/**/asahi/**/*
       - src/**/panfrost/**/*
+      - src/amd/vulkan/**/*
+      - src/amd/compiler/**/*
       when: on_success

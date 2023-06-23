@@ -121,7 +121,7 @@ initialise_coverage_var(struct lower_line_smooth_state *state,
                                                         0.5f))));
 
         /* Discard fragments that aren’t covered at all by the line */
-        nir_ssa_def *outside = nir_fge(&b, nir_imm_float(&b, 0.0f), coverage);
+        nir_ssa_def *outside = nir_fle_imm(&b, coverage, 0.0f);
 
         nir_discard_if(&b, outside);
 

@@ -444,3 +444,18 @@ num_mesh_vertices_per_primitive(unsigned prim)
          unreachable("invalid mesh shader primitive type");
    }
 }
+
+const char *
+mesa_scope_name(mesa_scope scope)
+{
+   static const char *names[] = {
+      ENUM(SCOPE_NONE),
+      ENUM(SCOPE_INVOCATION),
+      ENUM(SCOPE_SUBGROUP),
+      ENUM(SCOPE_SHADER_CALL),
+      ENUM(SCOPE_WORKGROUP),
+      ENUM(SCOPE_QUEUE_FAMILY),
+      ENUM(SCOPE_DEVICE),
+   };
+   return NAME(scope);
+}

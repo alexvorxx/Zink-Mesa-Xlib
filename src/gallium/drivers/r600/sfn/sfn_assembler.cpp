@@ -338,9 +338,9 @@ AssamblerVisitor::emit_alu_op(const AluInstr& ai)
 
    for (unsigned i = 0; i < ai.n_sources(); ++i) {
       buffer_offset = copy_src(alu.src[i], ai.src(i));
-      alu.src[i].neg = ai.has_alu_flag(AluInstr::src_neg_flags[i]);
+      alu.src[i].neg = ai.has_source_mod(i, AluInstr::mod_neg);
       if (!alu.is_op3)
-         alu.src[i].abs = ai.has_alu_flag(AluInstr::src_abs_flags[i]);
+         alu.src[i].abs = ai.has_source_mod(i, AluInstr::mod_abs);
 
       if (buffer_offset && kcache_index_mode == bim_none) {
          auto idx_reg = buffer_offset->as_register();
@@ -435,9 +435,6 @@ AssamblerVisitor::emit_alu_op(const AluInstr& ai)
       m_bc->index_loaded[1] = 1;
       m_bc->index_reg[1] = -1;
    }
-
-   m_bc->force_add_cf |=
-      ai.opcode() == op2_kille || ai.opcode() == op2_killne_int;
 }
 
 void

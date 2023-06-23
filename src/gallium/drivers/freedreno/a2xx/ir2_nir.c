@@ -1119,8 +1119,6 @@ ir2_nir_compile(struct ir2_context *ctx, bool binning)
 
    OPT_V(ctx->nir, nir_lower_alu_to_scalar, ir2_alu_to_scalar_filter_cb, NULL);
 
-   OPT_V(ctx->nir, nir_lower_locals_to_regs);
-
    OPT_V(ctx->nir, nir_convert_from_ssa, true);
 
    OPT_V(ctx->nir, nir_move_vec_src_uses_to_dest);

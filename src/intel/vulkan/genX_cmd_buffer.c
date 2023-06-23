@@ -109,10 +109,9 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
    cmd_buffer->state.descriptors_dirty |= ~0;
 
 #if GFX_VERx10 >= 125
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.CommandStreamerStallEnable = true;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch,
+                                 cmd_buffer->device->info,
+                                 ANV_PIPE_CS_STALL_BIT);
    anv_batch_emit(
       &cmd_buffer->batch, GENX(3DSTATE_BINDING_TABLE_POOL_ALLOC), btpa) {
       btpa.BindingTablePoolBaseAddress =
@@ -128,16 +127,15 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
     * this, we get GPU hangs when using multi-level command buffers which
     * clear depth, reset state base address, and then go render stuff.
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+   genX(batch_emit_pipe_control)
+      (&cmd_buffer->batch, cmd_buffer->device->info,
 #if GFX_VER >= 12
-      pc.HDCPipelineFlushEnable = true;
+       ANV_PIPE_HDC_PIPELINE_FLUSH_BIT |
 #else
-      pc.DCFlushEnable = true;
+       ANV_PIPE_DATA_CACHE_FLUSH_BIT |
 #endif
-      pc.RenderTargetCacheFlushEnable = true;
-      pc.CommandStreamerStallEnable = true;
-      anv_debug_dump_pc(pc);
-   }
+       ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+       ANV_PIPE_CS_STALL_BIT);
 
 #if GFX_VERx10 == 120
    /* Wa_1607854226:
@@ -283,13 +281,14 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
     *   or program pipe control with Instruction cache invalidate post
     *   STATE_BASE_ADDRESS command"
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.TextureCacheInvalidationEnable = true;
-      pc.ConstantCacheInvalidationEnable = true;
-      pc.StateCacheInvalidationEnable = true;
+   enum anv_pipe_bits bits =
+      ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
+      ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT |
 #if GFX_VERx10 == 125
-      pc.InstructionCacheInvalidateEnable = true;
+      ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT |
 #endif
+      ANV_PIPE_STATE_CACHE_INVALIDATE_BIT;
+
 #if GFX_VER >= 9 && GFX_VER <= 11
       /* From the SKL PRM, Vol. 2a, "PIPE_CONTROL",
        *
@@ -299,11 +298,11 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
        *
        * Workaround stopped appearing in TGL PRMs.
        */
-      pc.CommandStreamerStallEnable =
-         cmd_buffer->state.current_pipeline == GPGPU;
+      if (cmd_buffer->state.current_pipeline == GPGPU)
+         bits |= ANV_PIPE_CS_STALL_BIT;
 #endif
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch, cmd_buffer->device->info,
+                                 bits);
 }
 
 static void
@@ -1352,12 +1351,9 @@ genX(cmd_buffer_config_l3)(struct anv_cmd_buffer *cmd_buffer,
     * while the pipeline is completely drained and the caches are flushed,
     * which involves a first PIPE_CONTROL flush which stalls the pipeline...
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.DCFlushEnable = true;
-      pc.PostSyncOperation = NoWrite;
-      pc.CommandStreamerStallEnable = true;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch, cmd_buffer->device->info,
+                                 ANV_PIPE_DATA_CACHE_FLUSH_BIT |
+                                 ANV_PIPE_CS_STALL_BIT);
 
    /* ...followed by a second pipelined PIPE_CONTROL that initiates
     * invalidation of the relevant caches.  Note that because RO invalidation
@@ -1373,24 +1369,18 @@ genX(cmd_buffer_config_l3)(struct anv_cmd_buffer *cmd_buffer,
     * already guarantee that there is no concurrent GPGPU kernel execution
     * (see SKL HSD 2132585).
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.TextureCacheInvalidationEnable = true;
-      pc.ConstantCacheInvalidationEnable = true;
-      pc.InstructionCacheInvalidateEnable = true;
-      pc.StateCacheInvalidationEnable = true;
-      pc.PostSyncOperation = NoWrite;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch, cmd_buffer->device->info,
+                                 ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
+                                 ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT |
+                                 ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT |
+                                 ANV_PIPE_STATE_CACHE_INVALIDATE_BIT);
 
    /* Now send a third stalling flush to make sure that invalidation is
     * complete when the L3 configuration registers are modified.
     */
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      pc.DCFlushEnable = true;
-      pc.PostSyncOperation = NoWrite;
-      pc.CommandStreamerStallEnable = true;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch, cmd_buffer->device->info,
+                                 ANV_PIPE_DATA_CACHE_FLUSH_BIT |
+                                 ANV_PIPE_CS_STALL_BIT);
 
    genX(emit_l3_config)(&cmd_buffer->batch, cmd_buffer->device, cfg);
 #endif /* GFX_VER >= 11 */
@@ -1401,7 +1391,8 @@ ALWAYS_INLINE enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,
                               uint32_t current_pipeline,
-                              enum anv_pipe_bits bits)
+                              enum anv_pipe_bits bits,
+                              enum anv_pipe_bits *emitted_flush_bits)
 {
 #if GFX_VER >= 12
    /* From the TGL PRM, Volume 2a, "PIPE_CONTROL":
@@ -1532,136 +1523,89 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
 
    if (bits & (ANV_PIPE_FLUSH_BITS | ANV_PIPE_STALL_BITS |
                ANV_PIPE_END_OF_PIPE_SYNC_BIT)) {
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe) {
-#if GFX_VERx10 >= 125
-         /* BSpec 47112: PIPE_CONTROL::Untyped Data-Port Cache Flush:
-          *
-          *    "'HDC Pipeline Flush' bit must be set for this bit to take
-          *     effect."
-          *
-          * BSpec 47112: PIPE_CONTROL::HDC Pipeline Flush:
-          *
-          *    "When the "Pipeline Select" mode in PIPELINE_SELECT command is
-          *     set to "3D", HDC Pipeline Flush can also flush/invalidate the
-          *     LSC Untyped L1 cache based on the programming of HDC_Chicken0
-          *     register bits 13:11."
-          *
-          *    "When the 'Pipeline Select' mode is set to 'GPGPU', the LSC
-          *     Untyped L1 cache flush is controlled by 'Untyped Data-Port
-          *     Cache Flush' bit in the PIPE_CONTROL command."
-          *
-          *    As part of Wa_1608949956 & Wa_14010198302, i915 is programming
-          *    HDC_CHICKEN0[11:13] = 0 ("Untyped L1 is flushed, for both 3D
-          *    Pipecontrol Dataport flush, and UAV coherency barrier event").
-          *    So there is no need to set "Untyped Data-Port Cache" in 3D
-          *    mode.
-          */
-         pipe.UntypedDataPortCacheFlushEnable =
-            (bits & ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT) &&
-            current_pipeline == GPGPU;
-         pipe.HDCPipelineFlushEnable |= pipe.UntypedDataPortCacheFlushEnable;
-#endif
-#if GFX_VER >= 12
-         pipe.TileCacheFlushEnable = bits & ANV_PIPE_TILE_CACHE_FLUSH_BIT;
-         pipe.HDCPipelineFlushEnable |= bits & ANV_PIPE_HDC_PIPELINE_FLUSH_BIT;
-#else
-         /* Flushing HDC pipeline requires DC Flush on earlier HW. */
-         pipe.DCFlushEnable |= bits & ANV_PIPE_HDC_PIPELINE_FLUSH_BIT;
-#endif
-         pipe.DepthCacheFlushEnable = bits & ANV_PIPE_DEPTH_CACHE_FLUSH_BIT;
-         pipe.DCFlushEnable |= bits & ANV_PIPE_DATA_CACHE_FLUSH_BIT;
-         pipe.RenderTargetCacheFlushEnable =
-            bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
-
-#if INTEL_NEEDS_WA_1409600907
-         /* Wa_1409600907: "PIPE_CONTROL with Depth Stall Enable bit must
-          * be set with any PIPE_CONTROL with Depth Flush Enable bit set.
-          */
-         pipe.DepthStallEnable =
-            pipe.DepthCacheFlushEnable || (bits & ANV_PIPE_DEPTH_STALL_BIT);
-#else
-         pipe.DepthStallEnable = bits & ANV_PIPE_DEPTH_STALL_BIT;
-#endif
+      enum anv_pipe_bits flush_bits =
+         bits & (ANV_PIPE_FLUSH_BITS | ANV_PIPE_STALL_BITS |
+                 ANV_PIPE_END_OF_PIPE_SYNC_BIT);
 
 #if GFX_VERx10 >= 125
-         pipe.PSSStallSyncEnable = bits & ANV_PIPE_PSS_STALL_SYNC_BIT;
+      /* BSpec 47112: PIPE_CONTROL::Untyped Data-Port Cache Flush:
+       *
+       *    "'HDC Pipeline Flush' bit must be set for this bit to take
+       *     effect."
+       *
+       * BSpec 47112: PIPE_CONTROL::HDC Pipeline Flush:
+       *
+       *    "When the "Pipeline Select" mode in PIPELINE_SELECT command is
+       *     set to "3D", HDC Pipeline Flush can also flush/invalidate the
+       *     LSC Untyped L1 cache based on the programming of HDC_Chicken0
+       *     register bits 13:11."
+       *
+       *    "When the 'Pipeline Select' mode is set to 'GPGPU', the LSC
+       *     Untyped L1 cache flush is controlled by 'Untyped Data-Port
+       *     Cache Flush' bit in the PIPE_CONTROL command."
+       *
+       *    As part of Wa_1608949956 & Wa_14010198302, i915 is programming
+       *    HDC_CHICKEN0[11:13] = 0 ("Untyped L1 is flushed, for both 3D
+       *    Pipecontrol Dataport flush, and UAV coherency barrier event").
+       *    So there is no need to set "Untyped Data-Port Cache" in 3D
+       *    mode.
+       */
+      if ((flush_bits & ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT) &&
+          current_pipeline != GPGPU)
+         flush_bits &= ~ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT;
+
+      if (flush_bits & ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT)
+         flush_bits |= ANV_PIPE_HDC_PIPELINE_FLUSH_BIT;
 #endif
 
-         pipe.CommandStreamerStallEnable = bits & ANV_PIPE_CS_STALL_BIT;
+#if GFX_VER < 12
+      if (flush_bits & ANV_PIPE_HDC_PIPELINE_FLUSH_BIT)
+         flush_bits |= ANV_PIPE_DATA_CACHE_FLUSH_BIT;
+#endif
 
-         pipe.StallAtPixelScoreboard = bits & ANV_PIPE_STALL_AT_SCOREBOARD_BIT;
+      uint32_t sync_op = NoWrite;
+      struct anv_address addr = ANV_NULL_ADDRESS;
 
-         /* From Sandybridge PRM, volume 2, "1.7.3.1 Writing a Value to Memory":
-          *
-          *    "The most common action to perform upon reaching a
-          *    synchronization point is to write a value out to memory. An
-          *    immediate value (included with the synchronization command) may
-          *    be written."
-          *
-          *
-          * From Broadwell PRM, volume 7, "End-of-Pipe Synchronization":
-          *
-          *    "In case the data flushed out by the render engine is to be
-          *    read back in to the render engine in coherent manner, then the
-          *    render engine has to wait for the fence completion before
-          *    accessing the flushed data. This can be achieved by following
-          *    means on various products: PIPE_CONTROL command with CS Stall
-          *    and the required write caches flushed with Post-Sync-Operation
-          *    as Write Immediate Data.
-          *
-          *    Example:
-          *       - Workload-1 (3D/GPGPU/MEDIA)
-          *       - PIPE_CONTROL (CS Stall, Post-Sync-Operation Write
-          *         Immediate Data, Required Write Cache Flush bits set)
-          *       - Workload-2 (Can use the data produce or output by
-          *         Workload-1)
-          */
-         if (bits & ANV_PIPE_END_OF_PIPE_SYNC_BIT) {
-            pipe.CommandStreamerStallEnable = true;
-            pipe.PostSyncOperation = WriteImmediateData;
-            pipe.Address = device->workaround_address;
-         }
-
-         /*
-          * According to the Broadwell documentation, any PIPE_CONTROL with the
-          * "Command Streamer Stall" bit set must also have another bit set,
-          * with five different options:
-          *
-          *  - Render Target Cache Flush
-          *  - Depth Cache Flush
-          *  - Stall at Pixel Scoreboard
-          *  - Post-Sync Operation
-          *  - Depth Stall
-          *  - DC Flush Enable
-          *
-          * I chose "Stall at Pixel Scoreboard" since that's what we use in
-          * mesa and it seems to work fine. The choice is fairly arbitrary.
-          */
-         if (pipe.CommandStreamerStallEnable &&
-             !pipe.RenderTargetCacheFlushEnable &&
-             !pipe.DepthCacheFlushEnable &&
-             !pipe.StallAtPixelScoreboard &&
-             !pipe.PostSyncOperation &&
-             !pipe.DepthStallEnable &&
-             !pipe.DCFlushEnable)
-            pipe.StallAtPixelScoreboard = true;
-         anv_debug_dump_pc(pipe);
+      /* From Sandybridge PRM, volume 2, "1.7.3.1 Writing a Value to Memory":
+       *
+       *    "The most common action to perform upon reaching a
+       *    synchronization point is to write a value out to memory. An
+       *    immediate value (included with the synchronization command) may
+       *    be written."
+       *
+       *
+       * From Broadwell PRM, volume 7, "End-of-Pipe Synchronization":
+       *
+       *    "In case the data flushed out by the render engine is to be
+       *    read back in to the render engine in coherent manner, then the
+       *    render engine has to wait for the fence completion before
+       *    accessing the flushed data. This can be achieved by following
+       *    means on various products: PIPE_CONTROL command with CS Stall
+       *    and the required write caches flushed with Post-Sync-Operation
+       *    as Write Immediate Data.
+       *
+       *    Example:
+       *       - Workload-1 (3D/GPGPU/MEDIA)
+       *       - PIPE_CONTROL (CS Stall, Post-Sync-Operation Write
+       *         Immediate Data, Required Write Cache Flush bits set)
+       *       - Workload-2 (Can use the data produce or output by
+       *         Workload-1)
+       */
+      if (flush_bits & ANV_PIPE_END_OF_PIPE_SYNC_BIT) {
+         flush_bits |= ANV_PIPE_CS_STALL_BIT;
+         sync_op = WriteImmediateData;
+         addr = device->workaround_address;
       }
 
-      /* If a render target flush was emitted, then we can toggle off the bit
-       * saying that render target writes are ongoing.
-       */
-      if (bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT)
-         bits &= ~ANV_PIPE_RENDER_TARGET_BUFFER_WRITES;
+      /* Flush PC. */
+      genX(batch_emit_pipe_control_write)(batch, device->info, sync_op, addr,
+                                          0, flush_bits);
 
-      /* If the conditions for flushing the query clears are met, we can
-       * toggle the bit off.
+      /* If the caller wants to know what flushes have been emitted,
+       * provide the bits based off the PIPE_CONTROL programmed bits.
        */
-      if ((bits & ANV_PIPE_QUERY_FLUSH_BITS) == ANV_PIPE_QUERY_FLUSH_BITS &&
-          (bits & (ANV_PIPE_END_OF_PIPE_SYNC_BIT |
-                   ANV_PIPE_CS_STALL_BIT))) {
-         bits &= ~ANV_PIPE_QUERY_CLEARS_BIT;
-      }
+      if (emitted_flush_bits != NULL)
+         *emitted_flush_bits = flush_bits;
 
       bits &= ~(ANV_PIPE_FLUSH_BITS | ANV_PIPE_STALL_BITS |
                 ANV_PIPE_END_OF_PIPE_SYNC_BIT);
@@ -1681,50 +1625,37 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
       if (GFX_VER == 9 && (bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT))
          anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe);
 
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe) {
-         pipe.StateCacheInvalidationEnable =
-            bits & ANV_PIPE_STATE_CACHE_INVALIDATE_BIT;
-         pipe.ConstantCacheInvalidationEnable =
-            bits & ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT;
-#if GFX_VER >= 12
-         /* Invalidates the L3 cache part in which index & vertex data is loaded
-          * when VERTEX_BUFFER_STATE::L3BypassDisable is set.
-          */
-         pipe.L3ReadOnlyCacheInvalidationEnable =
-            bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT;
-#endif
-         pipe.VFCacheInvalidationEnable =
-            bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT;
-         pipe.TextureCacheInvalidationEnable =
-            bits & ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT;
-         pipe.InstructionCacheInvalidateEnable =
-            bits & ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT;
-
 #if GFX_VER >= 9 && GFX_VER <= 11
-         /* From the SKL PRM, Vol. 2a, "PIPE_CONTROL",
-          *
-          *    "Workaround : “CS Stall” bit in PIPE_CONTROL command must be
-          *     always set for GPGPU workloads when “Texture Cache
-          *     Invalidation Enable” bit is set".
-          *
-          * Workaround stopped appearing in TGL PRMs.
-          */
-         if (current_pipeline == GPGPU && pipe.TextureCacheInvalidationEnable)
-            pipe.CommandStreamerStallEnable = true;
+      /* From the SKL PRM, Vol. 2a, "PIPE_CONTROL",
+       *
+       *    "Workaround : “CS Stall” bit in PIPE_CONTROL command must be
+       *     always set for GPGPU workloads when “Texture Cache
+       *     Invalidation Enable” bit is set".
+       *
+       * Workaround stopped appearing in TGL PRMs.
+       */
+      if (current_pipeline == GPGPU &&
+          (bits & ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT))
+         bits |= ANV_PIPE_CS_STALL_BIT;
 #endif
 
-         /* From the SKL PRM, Vol. 2a, "PIPE_CONTROL",
-          *
-          *    "When VF Cache Invalidate is set “Post Sync Operation” must be
-          *    enabled to “Write Immediate Data” or “Write PS Depth Count” or
-          *    “Write Timestamp”.
-          */
-         if (GFX_VER == 9 && pipe.VFCacheInvalidationEnable) {
-            pipe.PostSyncOperation = WriteImmediateData;
-            pipe.Address = device->workaround_address;
-         }
-         anv_debug_dump_pc(pipe);
+      uint32_t sync_op = NoWrite;
+      struct anv_address addr = ANV_NULL_ADDRESS;
+
+      /* From the SKL PRM, Vol. 2a, "PIPE_CONTROL",
+       *
+       *    "When VF Cache Invalidate is set “Post Sync Operation” must be
+       *    enabled to “Write Immediate Data” or “Write PS Depth Count” or
+       *    “Write Timestamp”.
+       */
+      if (GFX_VER == 9 && (bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT)) {
+         sync_op = WriteImmediateData;
+         addr = device->workaround_address;
       }
+
+      /* Invalidate PC. */
+      genX(batch_emit_pipe_control_write)(batch, device->info, sync_op, addr,
+                                          0, bits);
 
 #if GFX_VER == 12
       if ((bits & ANV_PIPE_AUX_TABLE_INVALIDATE_BIT) && device->info->has_aux_map) {
@@ -1761,7 +1692,7 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
 ALWAYS_INLINE void
 genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
 {
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1508744258
    /* If we're changing the state of the RHWO optimization, we need to have
     * sb_stall+cs_stall.
     */
@@ -1803,14 +1734,17 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
              sizeof(cmd_buffer->state.gfx.ib_dirty_range));
    }
 
+
+   enum anv_pipe_bits emitted_bits = 0;
    cmd_buffer->state.pending_pipe_bits =
       genX(emit_apply_pipe_flushes)(&cmd_buffer->batch,
                                     cmd_buffer->device,
                                     cmd_buffer->state.current_pipeline,
-                                    bits);
+                                    bits,
+                                    &emitted_bits);
+   anv_cmd_buffer_update_pending_query_bits(cmd_buffer, emitted_bits);
 
-#if GFX_VERx10 == 120
-   /* Wa_1508744258 handling */
+#if INTEL_NEEDS_WA_1508744258
    if (rhwo_opt_change) {
       anv_batch_write_reg(&cmd_buffer->batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
          c1.RCCRHWOOptimizationDisable =
@@ -3163,6 +3097,88 @@ cmd_buffer_emit_scissor(struct anv_cmd_buffer *cmd_buffer)
    }
 }
 
+ALWAYS_INLINE void
+genX(batch_emit_pipe_control)(struct anv_batch *batch,
+                              const struct intel_device_info *devinfo,
+                              enum anv_pipe_bits bits)
+{
+   genX(batch_emit_pipe_control_write)(batch,
+                                       devinfo,
+                                       NoWrite,
+                                       ANV_NULL_ADDRESS,
+                                       0,
+                                       bits);
+}
+
+ALWAYS_INLINE void
+genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
+                                    const struct intel_device_info *devinfo,
+                                    uint32_t post_sync_op,
+                                    struct anv_address address,
+                                    uint32_t imm_data,
+                                    enum anv_pipe_bits bits)
+{
+   /* XXX - insert all workarounds and GFX specific things below. */
+
+#if INTEL_NEEDS_WA_1409600907
+   /* Wa_1409600907: "PIPE_CONTROL with Depth Stall Enable bit must
+    * be set with any PIPE_CONTROL with Depth Flush Enable bit set.
+    */
+   if (bits & ANV_PIPE_DEPTH_CACHE_FLUSH_BIT)
+      bits |= ANV_PIPE_DEPTH_STALL_BIT;
+#endif
+
+   anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe) {
+#if GFX_VERx10 >= 125
+      pipe.UntypedDataPortCacheFlushEnable =
+         bits & ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT;
+#endif
+#if GFX_VER >= 12
+      pipe.TileCacheFlushEnable = bits & ANV_PIPE_TILE_CACHE_FLUSH_BIT;
+#endif
+#if GFX_VER >= 11
+      pipe.HDCPipelineFlushEnable = bits & ANV_PIPE_HDC_PIPELINE_FLUSH_BIT;
+#endif
+      pipe.DepthCacheFlushEnable = bits & ANV_PIPE_DEPTH_CACHE_FLUSH_BIT;
+      pipe.DCFlushEnable = bits & ANV_PIPE_DATA_CACHE_FLUSH_BIT;
+      pipe.RenderTargetCacheFlushEnable =
+         bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
+
+      pipe.DepthStallEnable = bits & ANV_PIPE_DEPTH_STALL_BIT;
+
+#if GFX_VERx10 >= 125
+      pipe.PSSStallSyncEnable = bits & ANV_PIPE_PSS_STALL_SYNC_BIT;
+#endif
+      pipe.CommandStreamerStallEnable = bits & ANV_PIPE_CS_STALL_BIT;
+      pipe.StallAtPixelScoreboard = bits & ANV_PIPE_STALL_AT_SCOREBOARD_BIT;
+
+      pipe.StateCacheInvalidationEnable =
+         bits & ANV_PIPE_STATE_CACHE_INVALIDATE_BIT;
+      pipe.ConstantCacheInvalidationEnable =
+         bits & ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT;
+#if GFX_VER >= 12
+      /* Invalidates the L3 cache part in which index & vertex data is loaded
+       * when VERTEX_BUFFER_STATE::L3BypassDisable is set.
+       */
+      pipe.L3ReadOnlyCacheInvalidationEnable =
+         bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT;
+#endif
+      pipe.VFCacheInvalidationEnable =
+         bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT;
+      pipe.TextureCacheInvalidationEnable =
+         bits & ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT;
+      pipe.InstructionCacheInvalidateEnable =
+         bits & ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT;
+
+      pipe.PostSyncOperation = post_sync_op;
+      pipe.Address = address;
+      pipe.DestinationAddressType = DAT_PPGTT;
+      pipe.ImmediateData = imm_data;
+
+      anv_debug_dump_pc(pipe);
+   }
+}
+
 /* Set preemption on/off. */
 void
 genX(batch_set_preemption)(struct anv_batch *batch, bool value)
@@ -3792,11 +3808,10 @@ genX(BeginCommandBuffer)(
 static void
 emit_isp_disable(struct anv_cmd_buffer *cmd_buffer)
 {
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-         pc.StallAtPixelScoreboard = true;
-         pc.CommandStreamerStallEnable = true;
-         anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control)(&cmd_buffer->batch,
+                                 cmd_buffer->device->info,
+                                 ANV_PIPE_CS_STALL_BIT |
+                                 ANV_PIPE_STALL_AT_SCOREBOARD_BIT);
    anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
          pc.IndirectStatePointersDisable = true;
          pc.CommandStreamerStallEnable = true;
@@ -3824,10 +3839,9 @@ genX(EndCommandBuffer)(
    /* Flush query clears using blorp so that secondary query writes do not
     * race with the clear.
     */
-   if (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT) {
+   if (cmd_buffer->state.queries.clear_bits) {
       anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_QUERY_FLUSH_BITS |
-                                ANV_PIPE_NEEDS_END_OF_PIPE_SYNC_BIT,
+                                ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
                                 "query clear flush prior command buffer end");
    }
 
@@ -3909,10 +3923,9 @@ genX(CmdExecuteCommands)(
    /* Flush query clears using blorp so that secondary query writes do not
     * race with the clear.
     */
-   if (primary->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT) {
+   if (primary->state.queries.clear_bits) {
       anv_add_pending_pipe_bits(primary,
-                                ANV_PIPE_QUERY_FLUSH_BITS |
-                                ANV_PIPE_NEEDS_END_OF_PIPE_SYNC_BIT,
+                                ANV_PIPE_QUERY_BITS(primary->state.queries.clear_bits),
                                 "query clear flush prior to secondary buffer");
    }
 
@@ -4030,6 +4043,37 @@ genX(CmdExecuteCommands)(
    }
 }
 
+static inline bool
+stage_is_shader(const VkPipelineStageFlags2 stage)
+{
+   return (stage & (VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT |
+                    VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
+                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
+                    VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                    VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT));
+}
+
+static inline bool
+stage_is_transfer(const VkPipelineStageFlags2 stage)
+{
+   return (stage & (VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT));
+}
+
+static inline bool
+mask_is_shader_write(const VkAccessFlags2 access)
+{
+   return (access & (VK_ACCESS_2_SHADER_WRITE_BIT |
+                     VK_ACCESS_2_MEMORY_WRITE_BIT |
+                     VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT));
+}
+
 static void
 cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
                    const VkDependencyInfo *dep_info,
@@ -4048,11 +4092,31 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
    for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
       src_flags |= dep_info->pMemoryBarriers[i].srcAccessMask;
       dst_flags |= dep_info->pMemoryBarriers[i].dstAccessMask;
+
+      /* Shader writes to buffers that could then be written by a transfer
+       * command (including queries).
+       */
+      if (stage_is_shader(dep_info->pMemoryBarriers[i].srcStageMask) &&
+          mask_is_shader_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
+          stage_is_transfer(dep_info->pMemoryBarriers[i].dstStageMask)) {
+         cmd_buffer->state.queries.buffer_write_bits |=
+            ANV_QUERY_COMPUTE_WRITES_PENDING_BITS;
+      }
    }
 
    for (uint32_t i = 0; i < dep_info->bufferMemoryBarrierCount; i++) {
       src_flags |= dep_info->pBufferMemoryBarriers[i].srcAccessMask;
       dst_flags |= dep_info->pBufferMemoryBarriers[i].dstAccessMask;
+
+      /* Shader writes to buffers that could then be written by a transfer
+       * command (including queries).
+       */
+      if (stage_is_shader(dep_info->pBufferMemoryBarriers[i].srcStageMask) &&
+          mask_is_shader_write(dep_info->pBufferMemoryBarriers[i].srcAccessMask) &&
+          stage_is_transfer(dep_info->pBufferMemoryBarriers[i].dstStageMask)) {
+         cmd_buffer->state.queries.buffer_write_bits |=
+            ANV_QUERY_COMPUTE_WRITES_PENDING_BITS;
+      }
    }
 
    for (uint32_t i = 0; i < dep_info->imageMemoryBarrierCount; i++) {
@@ -6431,15 +6495,15 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
     */
    if (intel_device_info_is_atsm(device->info) &&
       cmd_buffer->queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
-      anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-         pc.CommandStreamerStallEnable = true;
-         pc.StateCacheInvalidationEnable = true;
-         pc.ConstantCacheInvalidationEnable = true;
-         pc.UntypedDataPortCacheFlushEnable = true;
-         pc.TextureCacheInvalidationEnable = true;
-         pc.InstructionCacheInvalidateEnable = true;
-         pc.HDCPipelineFlushEnable = true;
-      }
+      genX(batch_emit_pipe_control)(&cmd_buffer->batch,
+                                    cmd_buffer->device->info,
+                                    ANV_PIPE_CS_STALL_BIT |
+                                    ANV_PIPE_STATE_CACHE_INVALIDATE_BIT |
+                                    ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT |
+                                    ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT |
+                                    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
+                                    ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT |
+                                    ANV_PIPE_HDC_PIPELINE_FLUSH_BIT);
    }
 #endif
 
@@ -6652,10 +6716,9 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
     * copy/write. So we need to flush it before going to GPGPU mode.
     */
    if (cmd_buffer->state.current_pipeline == _3D &&
-       (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT)) {
+       cmd_buffer->state.queries.clear_bits) {
       anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_QUERY_FLUSH_BITS |
-                                ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                                ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
                                 "query clear flush prior to GPGPU");
    }
 #endif
@@ -7119,18 +7182,20 @@ cmd_buffer_emit_depth_stencil(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
       genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-      /* Wa_1408224581
-       *
-       * Workaround: Gfx12LP Astep only An additional pipe control with
-       * post-sync = store dword operation would be required.( w/a is to
-       * have an additional pipe control after the stencil state whenever
-       * the surface state bits of this state is changing).
-       *
-       * This also seems sufficient to handle Wa_14014097488.
-       */
-      anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-         pc.PostSyncOperation = WriteImmediateData;
-         pc.Address = cmd_buffer->device->workaround_address;
+      if (intel_needs_workaround(cmd_buffer->device->info, 1408224581) ||
+          intel_needs_workaround(cmd_buffer->device->info, 14014097488)) {
+         /* Wa_1408224581
+          *
+          * Workaround: Gfx12LP Astep only An additional pipe control with
+          * post-sync = store dword operation would be required.( w/a is to
+          * have an additional pipe control after the stencil state whenever
+          * the surface state bits of this state is changing).
+          *
+          * This also seems sufficient to handle Wa_14014097488.
+          */
+         genX(batch_emit_pipe_control_write)
+            (&cmd_buffer->batch, cmd_buffer->device->info, WriteImmediateData,
+             cmd_buffer->device->workaround_address, 0, 0);
       }
    }
    cmd_buffer->state.hiz_enabled = isl_aux_usage_has_hiz(info.hiz_usage);
@@ -8011,20 +8076,17 @@ void genX(CmdSetEvent2)(
    cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      if (src_stages & ANV_PIPELINE_STAGE_PIPELINED_BITS) {
-         pc.StallAtPixelScoreboard = true;
-         pc.CommandStreamerStallEnable = true;
-      }
+   enum anv_pipe_bits pc_bits = 0;
+   if (src_stages & ANV_PIPELINE_STAGE_PIPELINED_BITS) {
+      pc_bits |= ANV_PIPE_STALL_AT_SCOREBOARD_BIT;
+      pc_bits |= ANV_PIPE_CS_STALL_BIT;
+  }
 
-      pc.DestinationAddressType  = DAT_PPGTT,
-      pc.PostSyncOperation       = WriteImmediateData,
-         pc.Address = anv_state_pool_state_address(
-            &cmd_buffer->device->dynamic_state_pool,
-            event->state);
-      pc.ImmediateData           = VK_EVENT_SET;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control_write)
+      (&cmd_buffer->batch, cmd_buffer->device->info, WriteImmediateData,
+       anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
+                                    event->state),
+       VK_EVENT_SET, pc_bits);
 }
 
 void genX(CmdResetEvent2)(
@@ -8049,20 +8111,18 @@ void genX(CmdResetEvent2)(
    cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-      if (stageMask & ANV_PIPELINE_STAGE_PIPELINED_BITS) {
-         pc.StallAtPixelScoreboard = true;
-         pc.CommandStreamerStallEnable = true;
-      }
+   enum anv_pipe_bits pc_bits = 0;
+   if (stageMask & ANV_PIPELINE_STAGE_PIPELINED_BITS) {
+      pc_bits |= ANV_PIPE_STALL_AT_SCOREBOARD_BIT;
+      pc_bits |= ANV_PIPE_CS_STALL_BIT;
+    }
 
-      pc.DestinationAddressType  = DAT_PPGTT;
-      pc.PostSyncOperation       = WriteImmediateData;
-      pc.Address = anv_state_pool_state_address(
-         &cmd_buffer->device->dynamic_state_pool,
-         event->state);
-      pc.ImmediateData           = VK_EVENT_RESET;
-      anv_debug_dump_pc(pc);
-   }
+   genX(batch_emit_pipe_control_write)
+      (&cmd_buffer->batch, cmd_buffer->device->info, WriteImmediateData,
+       anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
+                                    event->state),
+       VK_EVENT_RESET,
+       pc_bits);
 }
 
 void genX(CmdWaitEvents2)(
@@ -8203,21 +8263,14 @@ void genX(cmd_emit_timestamp)(struct anv_batch *batch,
    }
 
    case ANV_TIMESTAMP_CAPTURE_END_OF_PIPE:
-
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
-         pc.PostSyncOperation   = WriteTimestamp;
-         pc.Address             = addr;
-         anv_debug_dump_pc(pc);
-      }
+      genX(batch_emit_pipe_control_write)
+         (batch, device->info, WriteTimestamp, addr, 0, 0);
       break;
 
    case ANV_TIMESTAMP_CAPTURE_AT_CS_STALL:
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
-         pc.CommandStreamerStallEnable = true;
-         pc.PostSyncOperation    = WriteTimestamp;
-         pc.Address              = addr;
-         anv_debug_dump_pc(pc);
-      }
+      genX(batch_emit_pipe_control_write)
+           (batch, device->info, WriteTimestamp, addr, 0,
+            ANV_PIPE_CS_STALL_BIT);
       break;
 
 #if GFX_VERx10 >= 125
@@ -8264,10 +8317,9 @@ genX(batch_emit_dummy_post_sync_op)(struct anv_batch *batch,
         primitive_topology == _3DPRIM_LINESTRIP_BF ||
         primitive_topology == _3DPRIM_LINESTRIP_CONT_BF) &&
        (vertex_count == 1 || vertex_count == 2)) {
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
-         pc.PostSyncOperation = WriteImmediateData;
-         pc.Address = device->workaround_address;
-         anv_debug_dump_pc(pc);
-      }
+      genX(batch_emit_pipe_control_write)
+         (batch, device->info, WriteImmediateData,
+          device->workaround_address, 0, 0);
+
    }
 }

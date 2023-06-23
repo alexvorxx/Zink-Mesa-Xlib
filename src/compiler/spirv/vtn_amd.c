@@ -43,7 +43,7 @@ vtn_handle_amd_gcn_shader_instruction(struct vtn_builder *b, SpvOp ext_opcode,
       break;
    }
    case TimeAMD: {
-      def = nir_pack_64_2x32(&b->nb, nir_shader_clock(&b->nb, NIR_SCOPE_SUBGROUP));
+      def = nir_pack_64_2x32(&b->nb, nir_shader_clock(&b->nb, SCOPE_SUBGROUP));
       break;
    }
    default:

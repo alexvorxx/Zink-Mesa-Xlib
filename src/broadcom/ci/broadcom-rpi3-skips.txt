@@ -33,6 +33,7 @@ spec@!opengl 1.0@gl-1.0-blend-func
 shaders@glsl-predication-on-large-array
 spec@arb_texture_rectangle@copyteximage rect samples=2
 spec@arb_texture_rectangle@copyteximage rect samples=4
+spec@ext_texture_env_combine@texture-env-combine
 
 # Versions / Extensions not supported
 spec@!opengl 3.*

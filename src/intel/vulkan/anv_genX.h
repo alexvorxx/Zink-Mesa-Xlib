@@ -103,7 +103,8 @@ enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,
                               uint32_t current_pipeline,
-                              enum anv_pipe_bits bits);
+                              enum anv_pipe_bits bits,
+                              enum anv_pipe_bits *emitted_flush_bits);
 
 void genX(emit_so_memcpy_init)(struct anv_memcpy_state *state,
                                struct anv_device *device,
@@ -221,3 +222,16 @@ genX(batch_set_preemption)(struct anv_batch *batch, bool value);
 
 void
 genX(cmd_buffer_set_preemption)(struct anv_cmd_buffer *cmd_buffer, bool value);
+
+void
+genX(batch_emit_pipe_control)(struct anv_batch *batch,
+                              const struct intel_device_info *devinfo,
+                              enum anv_pipe_bits bits);
+
+void
+genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
+                                    const struct intel_device_info *devinfo,
+                                    uint32_t post_sync_op,
+                                    struct anv_address address,
+                                    uint32_t imm_data,
+                                    enum anv_pipe_bits bits);

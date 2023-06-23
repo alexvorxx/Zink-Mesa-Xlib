@@ -34,6 +34,8 @@ class ReserveReadport : public ConstRegisterVisitor {
 public:
    ReserveReadport(AluReadportReservation& reserv);
 
+   using ConstRegisterVisitor::visit;
+
    void visit(const LocalArray& value) override;
    void visit(const LiteralConstant& value) override;
    void visit(const InlineConstant& value) override;
@@ -53,6 +55,7 @@ public:
 class ReserveReadportVec : public ReserveReadport {
 public:
    using ReserveReadport::ReserveReadport;
+   using ReserveReadport::visit;
 
    void visit(const Register& value) override;
    void visit(const LocalArrayValue& value) override;
@@ -69,6 +72,7 @@ public:
 class ReserveReadportTransPass1 : public ReserveReadportTrans {
 public:
    using ReserveReadportTrans::ReserveReadportTrans;
+   using ReserveReadportTrans::visit;
 
    void visit(const Register& value) override;
    void visit(const LocalArrayValue& value) override;
@@ -80,6 +84,7 @@ public:
 class ReserveReadportTransPass2 : public ReserveReadportTrans {
 public:
    using ReserveReadportTrans::ReserveReadportTrans;
+   using ReserveReadportTrans::visit;
 
    void visit(const Register& value) override;
    void visit(const LocalArrayValue& value) override;

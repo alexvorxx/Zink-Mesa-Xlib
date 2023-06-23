@@ -1078,6 +1078,7 @@ init_aux_map_state(struct iris_batch *batch);
 static void
 iris_disable_rhwo_optimization(struct iris_batch *batch, bool disable)
 {
+   assert(batch->screen->devinfo->verx10 == 120);
 #if GFX_VERx10 == 120
    iris_emit_reg(batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
       c1.RCCRHWOOptimizationDisable = disable;
@@ -1228,8 +1229,8 @@ iris_init_render_context(struct iris_batch *batch)
    }
 #endif
 
-#if GFX_VERx10 == 120
-   /* Wa_1508744258
+#if INTEL_NEEDS_WORKAROUND_1508744258
+   /* The suggested workaround is:
     *
     *    Disable RHWO by setting 0x7010[14] by default except during resolve
     *    pass.
@@ -1244,7 +1245,9 @@ iris_init_render_context(struct iris_batch *batch)
     * field in the 3DSTATE_PS instruction).
     */
    iris_disable_rhwo_optimization(batch, true);
+#endif
 
+#if GFX_VERx10 == 120
    /* Wa_1806527549 says to disable the following HiZ optimization when the
     * depth buffer is D16_UNORM. We've found the WA to help with more depth
     * buffer configurations however, so we always disable it just to be safe.
@@ -6999,7 +7002,8 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       if (zres)
          genX(emit_depth_state_workarounds)(ice, batch, &zres->surf);
 
-      if (GFX_VER >= 11) {
+      if (intel_needs_workaround(batch->screen->devinfo, 1408224581) ||
+          intel_needs_workaround(batch->screen->devinfo, 14014097488)) {
          /* Wa_1408224581
           *
           * Workaround: Gfx12LP Astep only An additional pipe control with
@@ -8542,8 +8546,9 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
    /* "GPGPU specific workarounds" (both post-sync and flush) ------------ */
 
    if (IS_COMPUTE_PIPELINE(batch)) {
-      if (GFX_VER >= 9 && (flags & PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE)) {
-         /* Project: SKL+ / Argument: Tex Invalidate
+      if ((GFX_VER == 9 || GFX_VER == 11) &&
+          (flags & PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE)) {
+         /* Project: SKL, ICL / Argument: Tex Invalidate
           * "Requires stall bit ([20] of DW) set for all GPGPU Workloads."
           */
          flags |= PIPE_CONTROL_CS_STALL;

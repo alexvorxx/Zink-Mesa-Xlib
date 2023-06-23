@@ -223,6 +223,8 @@ v3d_nir_lower_vpm_output(struct v3d_compile *c, nir_builder *b,
                 int vpm_offset =
                         v3d_varying_slot_vpm_offset(c, location, start_comp + i);
 
+                if (!(nir_intrinsic_write_mask(intr) & (1 << i)))
+                        continue;
 
                 if (vpm_offset == -1)
                         continue;

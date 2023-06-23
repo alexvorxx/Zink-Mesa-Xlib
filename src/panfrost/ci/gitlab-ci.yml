@@ -125,11 +125,10 @@ panfrost-g52-gl:arm64:
 
 panfrost-g52-piglit-gles2:arm64:
   extends:
-    - .piglit-test
     - .lava-piglit:arm64
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     DEQP_VER: gles2
     PIGLIT_PROFILES: quick_gl
 

@@ -98,7 +98,7 @@ if gbm_backends_path == ''
   gbm_backends_path = join_paths(get_option('prefix'), get_option('libdir'), 'gbm')
 endif
 
-# Default shared glapi off for windows, on elsewhere.
+# Default shared glapi disabled for windows, enabled elsewhere.
 with_shared_glapi = get_option('shared-glapi') \
   .disable_auto_if(host_machine.system() == 'windows') \
   .allowed()
@@ -278,7 +278,6 @@ else
   with_intel_vk_rt = false
 endif
 with_clc = with_microsoft_clc or with_intel_clc
-with_libclc = with_clc
 with_spirv_to_dxil = get_option('spirv-to-dxil')
 
 if host_machine.system() == 'darwin'
@@ -751,7 +750,7 @@ if _opencl != 'disabled'
     error('The Clover OpenCL state tracker requires rtti')
   endif
 
-  with_libclc = true
+  with_clc = true
   with_gallium_opencl = true
   with_opencl_icd = _opencl == 'icd'
 else
@@ -772,11 +771,10 @@ if with_gallium_rusticl
   add_languages('rust', required: true)
 
   with_clc = true
-  with_libclc = true
 endif
 
 dep_clc = null_dep
-if with_libclc
+if with_clc
   dep_clc = dependency('libclc')
 endif
 
@@ -1282,7 +1280,6 @@ endforeach
 functions_to_detect = {
   'strtof': '',
   'mkostemp': '',
-  'timespec_get': '#include <time.h>',
   'memfd_create': '',
   'random_r': '',
   'flock': '',
@@ -1497,18 +1494,28 @@ if dep_thread.found()
   endif
 endif
 
-# We don't have expat on Android or Windows, which is a needed dep for xmlconfig
-opt_xmlconfig = get_option('xmlconfig') \
-  .require(not (with_platform_android or with_platform_windows),
-           error_message : 'xmlconfig not available on Android or Windows')
+with_expat = get_option('expat') \
+  .disable_auto_if(with_platform_android or with_platform_windows)
 
 if host_machine.system() == 'darwin'
-  dep_expat = meson.get_compiler('c').find_library('expat', required : opt_xmlconfig)
+  dep_expat = meson.get_compiler('c').find_library('expat', required : with_expat)
 else
   dep_expat = dependency('expat', fallback : ['expat', 'expat_dep'],
-                         required : opt_xmlconfig)
+                         required : with_expat)
 endif
-use_xmlconfig = dep_expat.found()
+
+# TODO: with Meson 1.1.0 this can be replaced with with_expat.enable_if(with_intel_tools)
+if with_intel_tools and not dep_expat.found()
+  error('Intel tools require expat')
+endif
+
+# We don't require expat on Android or Windows
+use_xmlconfig = get_option('xmlconfig') \
+  .require(not (with_platform_android or with_platform_windows),
+           error_message : 'xmlconfig not available on Android or Windows') \
+  .require(dep_expat.found(),
+           error_message : 'requires expat') \
+  .allowed()
   
 # Predefined macros for windows
 if host_machine.system() == 'windows'
@@ -1717,7 +1724,7 @@ if with_llvm
 elif with_amd_vk and with_aco_tests
   error('ACO tests require LLVM, but LLVM is disabled.')
 elif with_gallium_radeonsi or with_swrast_vk
-  error('The following drivers require LLVM: RadeonSI, SWR, Lavapipe. One of these is enabled, but LLVM is disabled.')
+  error('The following drivers require LLVM: RadeonSI, Lavapipe. One of these is enabled, but LLVM is disabled.')
 elif with_gallium_opencl
   error('The OpenCL "Clover" state tracker requires LLVM, but LLVM is disabled.')
 elif with_clc
@@ -1870,15 +1877,8 @@ endif
 
 dep_selinux = null_dep
 if get_option('selinux')
-  if get_option('execmem') != true
-    warning('execmem option is disabled, selinux will not be able to use execmem.')
-  endif
   dep_selinux = dependency('libselinux')
   pre_args += '-DMESA_SELINUX'
-endif
-
-if get_option('execmem')
-  pre_args += '-DMESA_EXECMEM'
 endif
 
 _libunwind = get_option('libunwind') \

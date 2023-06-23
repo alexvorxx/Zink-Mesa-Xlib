@@ -1,5 +1,5 @@
 /*
- * Copyright © 2010 Intel Corporation
+ * Copyright © 2023 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -17,24 +17,19 @@
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
  * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#ifndef IR_TO_MESA_H
-#define IR_TO_MESA_H
+#version 450
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_GOOGLE_include_directive : enable
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "common_query_copy.glsl"
 
-struct gl_context;
-struct gl_shader_program;
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-void _mesa_glsl_link_shader(struct gl_context *ctx, struct gl_shader_program *prog);
-
-#ifdef __cplusplus
+void main()
+{
+   query_copy(gl_GlobalInvocationID.x);
 }
-#endif
-
-#endif /* IR_TO_MESA_H */

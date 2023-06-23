@@ -845,7 +845,6 @@ void radeon_drm_cs_init_functions(struct radeon_drm_winsys *ws)
    ws->base.ctx_destroy = radeon_drm_ctx_destroy;
    ws->base.ctx_query_reset_status = radeon_drm_ctx_query_reset_status;
    ws->base.cs_create = radeon_drm_cs_create;
-   ws->base.cs_set_preamble = radeon_drm_cs_set_preamble;
    ws->base.cs_destroy = radeon_drm_cs_destroy;
    ws->base.cs_add_buffer = radeon_drm_cs_add_buffer;
    ws->base.cs_lookup_buffer = radeon_drm_cs_lookup_buffer;

@@ -216,9 +216,9 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
       } else {
          /* optimize by default only when expecting precompiles in order to reduce stuttering */
          if (DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT2 && DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT)
-            pipeline = zink_create_gfx_pipeline(screen, prog, prog->objs, state, state->element_state->binding_map, vkmode, !HAVE_LIB);
+            pipeline = zink_create_gfx_pipeline(screen, prog, prog->objs, state, state->element_state->binding_map, vkmode, !HAVE_LIB, NULL);
          else
-            pipeline = zink_create_gfx_pipeline(screen, prog, prog->objs, state, NULL, vkmode, !HAVE_LIB);
+            pipeline = zink_create_gfx_pipeline(screen, prog, prog->objs, state, NULL, vkmode, !HAVE_LIB, NULL);
       }
       if (pipeline == VK_NULL_HANDLE)
          return VK_NULL_HANDLE;

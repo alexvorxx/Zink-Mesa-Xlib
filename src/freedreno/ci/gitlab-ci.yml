@@ -177,13 +177,14 @@ a618_vk_full:
     - .turnip-manual-rules
   # We use a longer timeout to keep the parallel down so that we don't lock up
   # too many runners for a long time when a dev is trying out at full VK status.
-  timeout: 2h
+  timeout: 4h
   parallel: 3
   variables:
     # ran into OOM with VK-GL-CTS 1.2.8.0 at 6
     FDO_CI_CONCURRENT: 4
     DEQP_SUITE: freedreno-a618-vk-full
-    JOB_TIMEOUT: 120
+    JOB_TIMEOUT: 180
+    TEST_PHASE_TIMEOUT: 180
 
 a618_gl:
   extends:

@@ -85,12 +85,8 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
           * idle when we leave the IB, otherwise another process
           * might overwrite it while our shaders are busy.
           */
-         if (sscreen->use_ngg_streamout) {
-            if (ctx->gfx_level >= GFX11)
-               wait_flags |= SI_CONTEXT_VS_PARTIAL_FLUSH;
-            else
-               wait_flags |= SI_CONTEXT_PS_PARTIAL_FLUSH;
-         }
+         if (ctx->gfx_level >= GFX11)
+            wait_flags |= SI_CONTEXT_VS_PARTIAL_FLUSH;
       }
    }
 
@@ -194,8 +190,6 @@ static void si_begin_gfx_cs_debug(struct si_context *ctx)
 
 static void si_add_gds_to_buffer_list(struct si_context *sctx)
 {
-   if (sctx->screen->gds)
-      sctx->ws->cs_add_buffer(&sctx->gfx_cs, sctx->screen->gds, RADEON_USAGE_READWRITE, 0);
    if (sctx->screen->gds_oa)
       sctx->ws->cs_add_buffer(&sctx->gfx_cs, sctx->screen->gds_oa, RADEON_USAGE_READWRITE, 0);
 }
@@ -204,25 +198,16 @@ void si_allocate_gds(struct si_context *sctx)
 {
    struct radeon_winsys *ws = sctx->ws;
 
-   assert(sctx->screen->use_ngg_streamout);
+   assert(sctx->gfx_level >= GFX11);
 
    if (sctx->screen->gds_oa)
       return;
 
-   assert(!sctx->screen->gds && !sctx->screen->gds_oa);
-
-   /* Gfx11 only uses GDS OA, not GDS memory.
-    * Gfx10 needs 256B (64 dw) of GDS, otherwise streamout hangs.
-    */
+   /* Gfx11 only uses GDS OA, not GDS memory. */
    simple_mtx_lock(&sctx->screen->gds_mutex);
    if (!sctx->screen->gds_oa) {
       sctx->screen->gds_oa = ws->buffer_create(ws, 1, 1, RADEON_DOMAIN_OA, RADEON_FLAG_DRIVER_INTERNAL);
       assert(sctx->screen->gds_oa);
-
-      if (sctx->gfx_level < GFX11) {
-         sctx->screen->gds = ws->buffer_create(ws, 256, 4, RADEON_DOMAIN_GDS, RADEON_FLAG_DRIVER_INTERNAL);
-         assert(sctx->screen->gds);
-      }
    }
    simple_mtx_unlock(&sctx->screen->gds_mutex);
 
@@ -269,6 +254,7 @@ void si_set_tracked_regs_to_clear_state(struct si_context *ctx)
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_INSTANCE_CNT] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MAX_VERT_OUT] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_SHADER_STAGES_EN] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_LS_HS_CONFIG] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_TF_PARAM] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_PA_SC_BINNER_CNTL_0] = 0x3;
@@ -282,6 +268,7 @@ void si_set_tracked_regs_to_clear_state(struct si_context *ctx)
 
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_ESGS_RING_ITEMSIZE] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_REUSE_OFF] = 0;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_IA_MULTI_VGT_PARAM] = 0xff;
 
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_ONCHIP_CNTL] = 0;
@@ -289,6 +276,7 @@ void si_set_tracked_regs_to_clear_state(struct si_context *ctx)
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_ITEMSIZE] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_MODE] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL] = 0x1e;
+   ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GS_OUT_PRIM_TYPE] = 0;
 
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_1] = 0;
    ctx->tracked_regs.context_reg_value[SI_TRACKED_VGT_GSVS_RING_OFFSET_2] = 0;
@@ -306,11 +294,6 @@ void si_set_tracked_regs_to_clear_state(struct si_context *ctx)
 
    /* Set all cleared context registers to saved. */
    ctx->tracked_regs.context_reg_saved_mask = BITFIELD64_MASK(SI_NUM_TRACKED_CONTEXT_REGS);
-
-   if (ctx->gfx_level >= GFX11)
-      ctx->last_gs_out_prim = -1; /* uconfig register, unknown value */
-   else
-      ctx->last_gs_out_prim = 0; /* context register cleared by CLEAR_STATE */
 }
 
 void si_install_draw_wrapper(struct si_context *sctx, pipe_draw_vbo_func wrapper,
@@ -385,15 +368,27 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
     * users (e.g. BO evictions and SDMA/UVD/VCE IBs) can modify our
     * buffers.
     *
+    * Gfx10+ automatically invalidates I$, SMEM$, VMEM$, and GL1$ at the beginning of IBs,
+    * so we only need to flush the GL2 cache.
+    *
     * Note that the cache flush done by the kernel at the end of GFX IBs
     * isn't useful here, because that flush can finish after the following
     * IB starts drawing.
     *
     * TODO: Do we also need to invalidate CB & DB caches?
     */
-   ctx->flags |= SI_CONTEXT_INV_ICACHE | SI_CONTEXT_INV_SCACHE | SI_CONTEXT_INV_VCACHE |
-                 SI_CONTEXT_INV_L2 | SI_CONTEXT_START_PIPELINE_STATS;
-   ctx->pipeline_stats_enabled = -1;
+   ctx->flags |= SI_CONTEXT_INV_L2;
+   if (ctx->gfx_level < GFX10)
+      ctx->flags |= SI_CONTEXT_INV_ICACHE | SI_CONTEXT_INV_SCACHE | SI_CONTEXT_INV_VCACHE;
+
+   /* Disable pipeline stats if there are no active queries. */
+   ctx->flags &= ~SI_CONTEXT_START_PIPELINE_STATS & ~SI_CONTEXT_STOP_PIPELINE_STATS;
+   if (ctx->num_hw_pipestat_streamout_queries)
+      ctx->flags |= SI_CONTEXT_START_PIPELINE_STATS;
+   else
+      ctx->flags |= SI_CONTEXT_STOP_PIPELINE_STATS;
+
+   ctx->pipeline_stats_enabled = -1; /* indicate that the current hw state is unknown */
 
    /* We don't know if the last draw used NGG because it can be a different process.
     * When switching NGG->legacy, we need to flush VGT for certain hw generations.
@@ -426,9 +421,9 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
    if (ctx->cs_preamble_state) {
       struct si_pm4_state *preamble = is_secure ? ctx->cs_preamble_state_tmz :
                                                   ctx->cs_preamble_state;
-      ctx->ws->cs_set_preamble(&ctx->gfx_cs, preamble->pm4, preamble->ndw,
-                               preamble != ctx->last_preamble);
-      ctx->last_preamble = preamble;
+      radeon_begin(&ctx->gfx_cs);
+      radeon_emit_array(preamble->pm4, preamble->ndw);
+      radeon_end();
    }
 
    if (!ctx->has_graphics) {
@@ -472,8 +467,18 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       ctx->framebuffer.dirty_zsbuf = true;
    }
 
+   /* RB+ depth-only rendering needs to set CB_COLOR0_INFO differently from CLEAR_STATE. */
+   if (ctx->screen->info.rbplus_allowed)
+      ctx->framebuffer.dirty_cbufs |= 0x1;
+
+   /* GFX11+ needs to set NUM_SAMPLES differently from CLEAR_STATE. */
+   if (ctx->gfx_level >= GFX11)
+      ctx->framebuffer.dirty_zsbuf = true;
+
    /* Even with shadowed registers, we have to add buffers to the buffer list.
     * These atoms are the only ones that add buffers.
+    *
+    * The framebuffer state also needs to set PA_SC_WINDOW_SCISSOR_BR differently from CLEAR_STATE.
     */
    si_mark_atom_dirty(ctx, &ctx->atoms.s.framebuffer);
    si_mark_atom_dirty(ctx, &ctx->atoms.s.render_cond);
@@ -501,7 +506,7 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
          si_mark_atom_dirty(ctx, &ctx->atoms.s.dpbb_state);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.stencil_ref);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.spi_map);
-      if (!ctx->screen->use_ngg_streamout)
+      if (ctx->gfx_level < GFX11)
          si_mark_atom_dirty(ctx, &ctx->atoms.s.streamout_enable);
       /* CLEAR_STATE disables all window rectangles. */
       if (!has_clear_state || ctx->num_window_rectangles > 0)
@@ -510,13 +515,13 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       si_mark_atom_dirty(ctx, &ctx->atoms.s.scissors);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.viewports);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.vgt_pipeline_state);
+      si_mark_atom_dirty(ctx, &ctx->atoms.s.tess_io_layout);
 
       if (has_clear_state) {
          si_set_tracked_regs_to_clear_state(ctx);
       } else {
          /* Set all register values to unknown. */
          ctx->tracked_regs.context_reg_saved_mask = 0;
-         ctx->last_gs_out_prim = -1; /* unknown */
       }
 
       /* 0xffffffff is an impossible value to register SPI_PS_INPUT_CNTL_n */
@@ -533,14 +538,17 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
    ctx->last_primitive_restart_en = ctx->gfx_level >= GFX11 ? false : -1;
    ctx->last_restart_index = SI_RESTART_INDEX_UNKNOWN;
    ctx->last_prim = -1;
-   ctx->last_multi_vgt_param = -1;
    ctx->last_vs_state = ~0;
    ctx->last_gs_state = ~0;
    ctx->last_ls = NULL;
    ctx->last_tcs = NULL;
    ctx->last_tes_sh_base = -1;
    ctx->last_num_tcs_input_cp = -1;
-   ctx->last_ls_hs_config = -1; /* impossible value */
+
+   assert(ctx->num_buffered_gfx_sh_regs == 0);
+   assert(ctx->num_buffered_compute_sh_regs == 0);
+   ctx->num_buffered_gfx_sh_regs = 0;
+   ctx->num_buffered_compute_sh_regs = 0;
 
    if (ctx->scratch_buffer) {
       si_context_add_resource_size(ctx, &ctx->scratch_buffer->b.b);

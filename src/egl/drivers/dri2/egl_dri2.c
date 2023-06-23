@@ -1031,7 +1031,7 @@ dri2_setup_extensions(_EGLDisplay *disp)
 
    extensions = dri2_dpy->core->getExtensions(dri2_dpy->dri_screen_render_gpu);
 
-   if (dri2_dpy->image_driver || dri2_dpy->dri2) {
+   if (dri2_dpy->image_driver || dri2_dpy->dri2 || disp->Options.Zink) {
       if (!loader_bind_extensions(dri2_dpy, dri2_core_extensions, ARRAY_SIZE(dri2_core_extensions), extensions))
          return EGL_FALSE;
    } else {

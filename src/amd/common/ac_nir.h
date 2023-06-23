@@ -13,7 +13,6 @@
 #include "ac_shader_args.h"
 #include "ac_shader_util.h"
 #include "amd_family.h"
-#include "pipe/p_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -302,7 +301,7 @@ typedef struct {
    bool clamp_color;
    bool alpha_to_one;
    bool kill_samplemask;
-   enum pipe_compare_func alpha_func;
+   enum compare_func alpha_func;
    unsigned broadcast_last_cbuf;
 
    /* Vulkan only */

@@ -33,6 +33,7 @@
 #include "brw_fs.h"
 #include "brw_nir.h"
 #include "brw_prim.h"
+#include "brw_private.h"
 #include "dev/intel_debug.h"
 
 namespace brw {
@@ -594,7 +595,7 @@ brw_compile_gs(const struct brw_compiler *compiler,
    c.key = *key;
 
    const bool is_scalar = compiler->scalar_stage[MESA_SHADER_GEOMETRY];
-   const bool debug_enabled = INTEL_DEBUG(DEBUG_GS);
+   const bool debug_enabled = brw_should_print_shader(nir, DEBUG_GS);
 
    prog_data->base.base.stage = MESA_SHADER_GEOMETRY;
    prog_data->base.base.ray_queries = nir->info.ray_queries;

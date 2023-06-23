@@ -476,8 +476,6 @@ tgsi_exec_get_shader_param(enum pipe_shader_cap param)
       return PIPE_MAX_SAMPLERS;
    case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
       return PIPE_MAX_SHADER_SAMPLER_VIEWS;
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-      return PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
       return 1 << PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:

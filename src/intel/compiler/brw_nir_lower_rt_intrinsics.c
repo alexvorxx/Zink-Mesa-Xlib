@@ -39,8 +39,8 @@ build_leaf_is_procedural(nir_builder *b, struct brw_nir_rt_mem_hit_defs *hit)
       return nir_imm_true(b);
 
    default:
-      return nir_ieq(b, hit->leaf_type,
-                        nir_imm_int(b, BRW_RT_BVH_NODE_TYPE_PROCEDURAL));
+      return nir_ieq_imm(b, hit->leaf_type,
+                            BRW_RT_BVH_NODE_TYPE_PROCEDURAL);
    }
 }
 

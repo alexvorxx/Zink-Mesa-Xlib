@@ -232,16 +232,17 @@ void ac_llvm_set_workgroup_size(LLVMValueRef F, unsigned size)
    LLVMAddTargetDependentFunctionAttr(F, "amdgpu-flat-work-group-size", str);
 }
 
-void ac_llvm_set_target_features(LLVMValueRef F, struct ac_llvm_context *ctx)
+void ac_llvm_set_target_features(LLVMValueRef F, struct ac_llvm_context *ctx, bool wgp_mode)
 {
    char features[2048];
 
-   snprintf(features, sizeof(features), "+DumpCode%s%s",
+   snprintf(features, sizeof(features), "+DumpCode%s%s%s",
             /* GFX9 has broken VGPR indexing, so always promote alloca to scratch. */
             ctx->gfx_level == GFX9 ? ",-promote-alloca" : "",
             /* Wave32 is the default. */
             ctx->gfx_level >= GFX10 && ctx->wave_size == 64 ?
-               ",+wavefrontsize64,-wavefrontsize32" : "");
+               ",+wavefrontsize64,-wavefrontsize32" : "",
+            ctx->gfx_level >= GFX10 && !wgp_mode ? ",+cumode" : "");
 
    LLVMAddTargetDependentFunctionAttr(F, "target-features", features);
 }

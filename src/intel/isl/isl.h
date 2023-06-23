@@ -42,6 +42,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "drm-uapi/drm_fourcc.h"
 #include "util/compiler.h"
 #include "util/macros.h"
 #include "util/format/u_format.h"
@@ -414,7 +415,7 @@ enum isl_format {
 /**
  * Numerical base type for channels of isl_format.
  */
-enum PACKED isl_base_type {
+enum ENUM_PACKED isl_base_type {
    /** Data which takes up space but is ignored */
    ISL_VOID,
 
@@ -1139,7 +1140,7 @@ typedef uint8_t isl_channel_mask_t;
 /**
  * @brief A channel select (also known as texture swizzle) value
  */
-enum PACKED isl_channel_select {
+enum ENUM_PACKED isl_channel_select {
    ISL_CHANNEL_SELECT_ZERO = 0,
    ISL_CHANNEL_SELECT_ONE = 1,
    ISL_CHANNEL_SELECT_RED = 4,
@@ -2246,6 +2247,9 @@ isl_drm_modifier_get_info(uint64_t modifier);
 static inline bool
 isl_drm_modifier_has_aux(uint64_t modifier)
 {
+   if (modifier == DRM_FORMAT_MOD_INVALID)
+      return false;
+
    return isl_drm_modifier_get_info(modifier)->aux_usage != ISL_AUX_USAGE_NONE;
 }
 

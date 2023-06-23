@@ -1385,6 +1385,36 @@ optimizations.extend([
    (('uror@16', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 16, b))), 'options->lower_rotate'),
    (('uror@32', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 32, b))), 'options->lower_rotate'),
    (('uror@64', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 64, b))), 'options->lower_rotate'),
+
+   # bfi(X, a, b) = (b & ~X) | (a & X)
+   # If X = ~0: (b & 0) | (a & 0xffffffff) = a
+   # If X = 0:  (b & 0xffffffff) | (a & 0) = b
+   (('bfi', 0xffffffff, a, b), a),
+   (('bfi', 0x00000000, a, b), b),
+
+   # The result of -int(some_bool) is 0 or 0xffffffff, so the result of the
+   # bfi is either b or c.
+   (('bfi', ('ineg', ('b2i', 'a@1')), b, c), ('bcsel', a, b, c)),
+
+   # bfi(a, a, b) = ((a << find_lsb(a)) & a) | (b & ~a)
+   #              = (a & a) | (b & ~a)    If a is odd, find_lsb(a) == 0
+   #              = a | (b & ~a)
+   #              = a | b
+   (('bfi', '#a(is_odd)', a, b), ('ior', a, b)),
+
+   # bfi(a, b, 0) = ((b << find_lsb(a)) & a) | (0 & ~a)
+   #              = ((b << find_lsb(a)) & a)
+   #              = (b & a)               If a is odd, find_lsb(a) == 0
+   (('bfi', '#a(is_odd)', b, 0), ('iand', a, b)),
+
+   # Because 'a' is a positive power of two, the result of the bfi is either 0
+   # or 'a' depending on whether or not 'b' is odd.  Use 'b&1' for the zero
+   # value to help platforms that can't have two constants in a bcsel.
+   (('u2f32', ('bfi', '#a(is_pos_power_of_two)', b, 0)),
+    ('bcsel', ('ieq', ('iand', b, 1), 0), ('iand', b, 1), ('u2f', a))),
+   (('u2f', ('bfi', '#a(is_pos_power_of_two)', b, 0)),
+    ('bcsel', ('ieq', ('iand', b, 1), 0), 0, ('u2f', a))),
+
    # Exponential/logarithmic identities
    (('~fexp2', ('flog2', a)), a), # 2^lg2(a) = a
    (('~flog2', ('fexp2', a)), a), # lg2(2^a) = a
@@ -1600,6 +1630,10 @@ optimizations.extend([
                               ('unpack_64_2x32_split_y', a))), a),
    (('pack_64_2x32', ('unpack_64_2x32', a)), a),
    (('pack_double_2x32_dxil', ('unpack_double_2x32_dxil', a)), a),
+
+   (('unpack_64_4x16', ('pack_64_4x16', a)), a),
+   (('unpack_64_4x16', ('pack_64_2x32', ('vec2', ('pack_32_2x16_split', a, b), ('pack_32_2x16_split', c, d)))), ('vec4', a, b, c, d)),
+   (('unpack_64_4x16', ('pack_64_2x32_split', ('pack_32_2x16_split', a, b), ('pack_32_2x16_split', c, d))), ('vec4', a, b, c, d)),
 
    # Comparing two halves of an unpack separately.  While this optimization
    # should be correct for non-constant values, it's less obvious that it's
@@ -2694,6 +2728,19 @@ optimizations.extend([
     (('fisnormal', 'a@64'), ('ult', 0x3fffffffffffff, ('iadd', ('ishl', a, 1), 0x20000000000000)), 'options->lower_fisnormal')
     ])
 
+for s in range(0, 31):
+    mask = 0xffffffff << s
+
+    # bfi is ((mask & ...) | (~mask & ...)). Since the two sources of the ior
+    # will never both have the same bits set, replacing the ior with an iadd
+    # is safe (i.e., a carry out of a bit can never be generated). The iadd is
+    # more likely to participate in other optimization patterns (e.g., iadd of
+    # constant reassociation)
+    optimizations.extend([
+        (('bfi', mask, a, '#b'), ('iadd', ('ishl', a, s), ('iand', b, ~mask)),
+         'options->avoid_ternary_with_two_constants'),
+    ])
+
 # This section contains optimizations to propagate downsizing conversions of
 # constructed vectors into vectors of downsized components. Whether this is
 # useful depends on the SIMD semantics of the backend. On a true SIMD machine,
@@ -3142,10 +3189,10 @@ late_optimizations += [
   (('fcsel', ('sge', a, 0), b, c), ('fcsel_ge', a, b, c), "options->has_fused_comp_and_csel"),
   (('fcsel', ('sge', 0, a), b, c), ('fcsel_ge', ('fneg', a), b, c), "options->has_fused_comp_and_csel"),
 
-  (('bcsel', ('ilt', 0, 'a@32'), 'b@32', 'c@32'), ('i32csel_gt', a, b, c), "options->has_fused_comp_and_csel"),
-  (('bcsel', ('ilt', 'a@32', 0), 'b@32', 'c@32'), ('i32csel_ge', a, c, b), "options->has_fused_comp_and_csel"),
-  (('bcsel', ('ige', 'a@32', 0), 'b@32', 'c@32'), ('i32csel_ge', a, b, c), "options->has_fused_comp_and_csel"),
-  (('bcsel', ('ige', 0, 'a@32'), 'b@32', 'c@32'), ('i32csel_gt', a, c, b), "options->has_fused_comp_and_csel"),
+  (('bcsel', ('ilt', 0, 'a@32'), 'b@32', 'c@32'), ('i32csel_gt', a, b, c), "options->has_fused_comp_and_csel && !options->no_integers"),
+  (('bcsel', ('ilt', 'a@32', 0), 'b@32', 'c@32'), ('i32csel_ge', a, c, b), "options->has_fused_comp_and_csel && !options->no_integers"),
+  (('bcsel', ('ige', 'a@32', 0), 'b@32', 'c@32'), ('i32csel_ge', a, b, c), "options->has_fused_comp_and_csel && !options->no_integers"),
+  (('bcsel', ('ige', 0, 'a@32'), 'b@32', 'c@32'), ('i32csel_gt', a, c, b), "options->has_fused_comp_and_csel && !options->no_integers"),
 
   (('bcsel', ('flt', 0, 'a@32'), 'b@32', 'c@32'), ('fcsel_gt', a, b, c), "options->has_fused_comp_and_csel"),
   (('bcsel', ('flt', 'a@32', 0), 'b@32', 'c@32'), ('fcsel_gt', ('fneg', a), b, c), "options->has_fused_comp_and_csel"),

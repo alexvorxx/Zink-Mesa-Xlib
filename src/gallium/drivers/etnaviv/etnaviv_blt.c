@@ -360,6 +360,9 @@ etna_clear_blt(struct pipe_context *pctx, unsigned buffers, const struct pipe_sc
 {
    struct etna_context *ctx = etna_context(pctx);
 
+   if (!etna_render_condition_check(pctx))
+      return;
+
    etna_set_state(ctx->stream, VIVS_GL_FLUSH_CACHE, 0x00000c23);
    etna_set_state(ctx->stream, VIVS_TS_FLUSH_CACHE, VIVS_TS_FLUSH_CACHE_FLUSH);
 

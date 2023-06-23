@@ -962,7 +962,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    info->has_sparse_vm_mappings = info->gfx_level >= GFX7;
    info->has_scheduled_fence_dependency = info->drm_minor >= 28;
    info->has_gang_submit = info->drm_minor >= 49;
-   info->mid_command_buffer_preemption_enabled = device_info.ids_flags & AMDGPU_IDS_FLAGS_PREEMPTION;
+   info->register_shadowing_required = device_info.ids_flags & AMDGPU_IDS_FLAGS_PREEMPTION;
    info->has_tmz_support = has_tmz_support(dev, info, device_info.ids_flags);
    info->kernel_has_modifiers = has_modifiers(fd);
    info->uses_kernel_cu_mask = false; /* Not implemented in the kernel. */
@@ -1002,15 +1002,15 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    info->tcc_rb_non_coherent = !util_is_power_of_two_or_zero(info->num_tcc_blocks);
 
    if (info->drm_minor >= 52) {
-      info->sqc_inst_cache_size = device_info.sqc_inst_cache_size;
-      info->sqc_scalar_cache_size = device_info.sqc_data_cache_size;
+      info->sqc_inst_cache_size = device_info.sqc_inst_cache_size * 1024;
+      info->sqc_scalar_cache_size = device_info.sqc_data_cache_size * 1024;
       info->num_sqc_per_wgp = device_info.num_sqc_per_wgp;
    }
 
    if (info->gfx_level >= GFX11 && info->drm_minor >= 52) {
-      info->tcp_cache_size = device_info.tcp_cache_size;
-      info->l1_cache_size = device_info.gl1c_cache_size;
-      info->l2_cache_size = device_info.gl2c_cache_size;
+      info->tcp_cache_size = device_info.tcp_cache_size * 1024;
+      info->l1_cache_size = device_info.gl1c_cache_size * 1024;
+      info->l2_cache_size = device_info.gl2c_cache_size * 1024;
       info->l3_cache_size_mb = DIV_ROUND_UP(device_info.mall_size, 1024 * 1024);
    } else {
       if (info->gfx_level >= GFX11) {
@@ -1485,10 +1485,10 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    if (info->gfx_level >= GFX11) {
       switch (info->family) {
       case CHIP_GFX1103_R1:
-         info->attribute_ring_size_per_se = 512 * 1024;
+         info->attribute_ring_size_per_se = 768 * 1024;
          break;
       case CHIP_GFX1103_R2:
-         /* TODO: Test if 192 * 1024 is faster. */
+         /* TODO: Test if 192K or 384K is faster. */
          info->attribute_ring_size_per_se = 256 * 1024;
          break;
       default:
@@ -1499,9 +1499,6 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       /* The size must be aligned to 64K per SE and must be at most 16M in total. */
       info->attribute_ring_size_per_se = align(info->attribute_ring_size_per_se, 64 * 1024);
       assert(info->attribute_ring_size_per_se * info->max_se <= 16 * 1024 * 1024);
-
-      info->has_set_reg_pairs = info->pfp_fw_version >= SET_REG_PAIRS_PFP_VERSION;
-      info->has_set_sh_reg_pairs_n = info->pfp_fw_version >= SET_REG_PAIRS_PACKED_N_COUNT14_PFP_VERSION;
 
       info->conformant_trunc_coord =
          info->drm_minor >= 52 &&
@@ -1713,8 +1710,6 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    mec_fw_feature = %i\n", info->mec_fw_feature);
    fprintf(f, "    pfp_fw_version = %i\n", info->pfp_fw_version);
    fprintf(f, "    pfp_fw_feature = %i\n", info->pfp_fw_feature);
-   fprintf(f, "    has_set_reg_pairs = %i\n", info->has_set_reg_pairs);
-   fprintf(f, "    has_set_sh_reg_pairs_n = %i\n", info->has_set_sh_reg_pairs_n);
 
    fprintf(f, "Multimedia info:\n");
    fprintf(f, "    vce_encode = %u\n", info->ip[AMD_IP_VCE].num_queues);
@@ -1743,8 +1738,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    has_stable_pstate = %u\n", info->has_stable_pstate);
    fprintf(f, "    has_scheduled_fence_dependency = %u\n", info->has_scheduled_fence_dependency);
    fprintf(f, "    has_gang_submit = %u\n", info->has_gang_submit);
-   fprintf(f, "    mid_command_buffer_preemption_enabled = %u\n",
-           info->mid_command_buffer_preemption_enabled);
+   fprintf(f, "    register_shadowing_required = %u\n", info->register_shadowing_required);
    fprintf(f, "    has_fw_based_shadowing = %u\n", info->has_fw_based_shadowing);
    if (info->has_fw_based_shadowing) {
       fprintf(f, "        * shadow size: %u (alignment: %u)\n",

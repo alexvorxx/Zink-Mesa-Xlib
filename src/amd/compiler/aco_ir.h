@@ -140,9 +140,9 @@ enum storage_class : uint8_t {
    storage_buffer = 0x1, /* SSBOs and global memory */
    storage_gds = 0x2,
    storage_image = 0x4,
-   storage_shared = 0x8,       /* or TCS output */
-   storage_vmem_output = 0x10, /* GS or TCS output stores using VMEM */
-   storage_task_payload = 0x20,/* Task-Mesh payload */
+   storage_shared = 0x8,        /* or TCS output */
+   storage_vmem_output = 0x10,  /* GS or TCS output stores using VMEM */
+   storage_task_payload = 0x20, /* Task-Mesh payload */
    storage_scratch = 0x40,
    storage_vgpr_spill = 0x80,
    storage_count = 8, /* not counting storage_none */
@@ -823,7 +823,8 @@ public:
       assert(bytes() == 2 || bytes() == 4);
       if (opsel) {
          if (bytes() == 2 && int16_t(data_.i) >= -16 && int16_t(data_.i) <= 64 && !isLiteral())
-            return int16_t(data_.i) >> 16; /* 16-bit inline integers are sign-extended, even with fp16 instrs */
+            return int16_t(data_.i) >>
+                   16; /* 16-bit inline integers are sign-extended, even with fp16 instrs */
          else
             return data_.i >> 16;
       }
@@ -1418,7 +1419,8 @@ struct VINTERP_inreg_instruction : public VALU_instruction {
    uint8_t padding5;
    uint8_t padding6;
 };
-static_assert(sizeof(VINTERP_inreg_instruction) == sizeof(VALU_instruction) + 4, "Unexpected padding");
+static_assert(sizeof(VINTERP_inreg_instruction) == sizeof(VALU_instruction) + 4,
+              "Unexpected padding");
 
 /**
  * Data Parallel Primitives Format:
@@ -1809,8 +1811,7 @@ memory_sync_info get_sync_info(const Instruction* instr);
 inline bool
 is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
 {
-   if (instr->definitions.empty() || instr->isBranch() ||
-       instr->opcode == aco_opcode::p_startpgm ||
+   if (instr->definitions.empty() || instr->isBranch() || instr->opcode == aco_opcode::p_startpgm ||
        instr->opcode == aco_opcode::p_init_scratch ||
        instr->opcode == aco_opcode::p_dual_src_export_gfx11)
       return false;
@@ -2216,8 +2217,7 @@ void init_program(Program* program, Stage stage, const struct aco_shader_info* i
 
 void select_program(Program* program, unsigned shader_count, struct nir_shader* const* shaders,
                     ac_shader_config* config, const struct aco_compiler_options* options,
-                    const struct aco_shader_info* info,
-                    const struct ac_shader_args* args);
+                    const struct aco_shader_info* info, const struct ac_shader_args* args);
 void select_trap_handler_shader(Program* program, struct nir_shader* shader,
                                 ac_shader_config* config,
                                 const struct aco_compiler_options* options,
@@ -2258,7 +2258,7 @@ bool dealloc_vgprs(Program* program);
 void insert_NOPs(Program* program);
 void form_hard_clauses(Program* program);
 unsigned emit_program(Program* program, std::vector<uint32_t>& code,
-                      std::vector<struct aco_symbol> *symbols);
+                      std::vector<struct aco_symbol>* symbols);
 /**
  * Returns true if print_asm can disassemble the given program for the current build/runtime
  * configuration
@@ -2266,6 +2266,7 @@ unsigned emit_program(Program* program, std::vector<uint32_t>& code,
 bool check_print_asm_support(Program* program);
 bool print_asm(Program* program, std::vector<uint32_t>& binary, unsigned exec_size, FILE* output);
 bool validate_ir(Program* program);
+bool validate_cfg(Program* program);
 bool validate_ra(Program* program);
 #ifndef NDEBUG
 void perfwarn(Program* program, bool cond, const char* msg, Instruction* instr = NULL);

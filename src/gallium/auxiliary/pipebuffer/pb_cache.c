@@ -223,11 +223,12 @@ pb_cache_reclaim_buffer(struct pb_cache *mgr, pb_size size,
 /**
  * Empty the cache. Useful when there is not enough memory.
  */
-void
+unsigned
 pb_cache_release_all_buffers(struct pb_cache *mgr)
 {
    struct list_head *curr, *next;
    struct pb_cache_entry *buf;
+   unsigned num_reclaims = 0;
    unsigned i;
 
    simple_mtx_lock(&mgr->mutex);
@@ -239,11 +240,13 @@ pb_cache_release_all_buffers(struct pb_cache *mgr)
       while (curr != cache) {
          buf = list_entry(curr, struct pb_cache_entry, head);
          destroy_buffer_locked(buf);
+         num_reclaims++;
          curr = next;
          next = curr->next;
       }
    }
    simple_mtx_unlock(&mgr->mutex);
+   return num_reclaims;
 }
 
 void

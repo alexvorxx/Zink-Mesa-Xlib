@@ -750,6 +750,18 @@ nir_iadd_nuw(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y)
    return d;
 }
 
+static inline nir_ssa_def *
+nir_fgt_imm(nir_builder *build, nir_ssa_def *src1, double src2)
+{
+   return nir_flt(build, nir_imm_floatN_t(build, src2, src1->bit_size), src1);
+}
+
+static inline nir_ssa_def *
+nir_fle_imm(nir_builder *build, nir_ssa_def *src1, double src2)
+{
+   return nir_fge(build, nir_imm_floatN_t(build, src2, src1->bit_size), src1);
+}
+
 /* Use nir_iadd(x, -y) for reversing parameter ordering */
 static inline nir_ssa_def *
 nir_isub_imm(nir_builder *build, uint64_t y, nir_ssa_def *x)
@@ -805,6 +817,12 @@ static inline nir_ssa_def *
 nir_fmul_imm(nir_builder *build, nir_ssa_def *x, double y)
 {
    return nir_fmul(build, x, nir_imm_floatN_t(build, y, x->bit_size));
+}
+
+static inline nir_ssa_def *
+nir_fdiv_imm(nir_builder *build, nir_ssa_def *x, double y)
+{
+   return nir_fdiv(build, x, nir_imm_floatN_t(build, y, x->bit_size));
 }
 
 static inline nir_ssa_def *
@@ -875,6 +893,12 @@ nir_ushr_imm(nir_builder *build, nir_ssa_def *x, uint32_t y)
 }
 
 static inline nir_ssa_def *
+nir_imod_imm(nir_builder *build, nir_ssa_def *x, uint64_t y)
+{
+   return nir_imod(build, x, nir_imm_intN_t(build, y, x->bit_size));
+}
+
+static inline nir_ssa_def *
 nir_udiv_imm(nir_builder *build, nir_ssa_def *x, uint64_t y)
 {
    assert(x->bit_size <= 64);
@@ -911,6 +935,12 @@ static inline nir_ssa_def *
 nir_ubfe_imm(nir_builder *build, nir_ssa_def *x, uint32_t offset, uint32_t size)
 {
    return nir_ubfe(build, x, nir_imm_int(build, offset), nir_imm_int(build, size));
+}
+
+static inline nir_ssa_def *
+nir_ubitfield_extract_imm(nir_builder *build, nir_ssa_def *x, uint32_t offset, uint32_t size)
+{
+   return nir_ubitfield_extract(build, x, nir_imm_int(build, offset), nir_imm_int(build, size));
 }
 
 static inline nir_ssa_def *
@@ -1650,6 +1680,24 @@ nir_tex_src_for_ssa(nir_tex_src_type src_type, nir_ssa_def *def)
    return src;
 }
 
+/*
+ * Find a texture source, remove it, and return its nir_ssa_def. If the texture
+ * source does not exist, return NULL. This is useful for texture lowering pass
+ * that consume their input sources and produce a new lowered source.
+ */
+static inline nir_ssa_def *
+nir_steal_tex_src(nir_tex_instr *tex, nir_tex_src_type type_)
+{
+   int idx = nir_tex_instr_src_index(tex, type_);
+   if (idx < 0)
+      return NULL;
+
+   assert(tex->src[idx].src.is_ssa);
+   nir_ssa_def *ssa = tex->src[idx].src.ssa;
+   nir_tex_instr_remove_src(tex, idx);
+   return ssa;
+}
+
 static inline nir_ssa_def *
 nir_tex_deref(nir_builder *b, nir_deref_instr *t, nir_deref_instr *s,
               nir_ssa_def *coord)
@@ -1787,11 +1835,11 @@ nir_compare_func(nir_builder *b, enum compare_func func,
 
 static inline void
 nir_scoped_memory_barrier(nir_builder *b,
-                          nir_scope scope,
+                          mesa_scope scope,
                           nir_memory_semantics semantics,
                           nir_variable_mode modes)
 {
-   nir_scoped_barrier(b, NIR_SCOPE_NONE, scope, semantics, modes);
+   nir_scoped_barrier(b, SCOPE_NONE, scope, semantics, modes);
 }
 
 nir_ssa_def *

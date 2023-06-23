@@ -496,6 +496,10 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_QUERY_TIMESTAMP:
 		return rscreen->b.info.clock_crystal_freq != 0;
 
+	case PIPE_CAP_TIMER_RESOLUTION:
+		/* Conversion to nanos from cycles per millisecond */
+		return DIV_ROUND_UP(1000000, rscreen->b.info.clock_crystal_freq);
+
 	case PIPE_CAP_MIN_TEXTURE_GATHER_OFFSET:
 	case PIPE_CAP_MIN_TEXEL_OFFSET:
 		return -8;
@@ -623,8 +627,6 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 	case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
 	case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
 		return 16;
-	case PIPE_SHADER_CAP_PREFERRED_IR:
-		return PIPE_SHADER_IR_NIR;
 	case PIPE_SHADER_CAP_SUPPORTED_IRS: {
 		int ir = 0;
 		if (shader == PIPE_SHADER_COMPUTE)

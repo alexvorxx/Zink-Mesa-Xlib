@@ -2197,14 +2197,13 @@ ntq_emit_vpm_read(struct v3d_compile *c,
                   uint32_t *remaining,
                   uint32_t vpm_index)
 {
-        struct qreg vpm = vir_reg(QFILE_VPM, vpm_index);
-
         if (c->devinfo->ver >= 40 ) {
                 return vir_LDVPMV_IN(c,
                                      vir_uniform_ui(c,
                                                     (*num_components_queued)++));
         }
 
+        struct qreg vpm = vir_reg(QFILE_VPM, vpm_index);
         if (*num_components_queued != 0) {
                 (*num_components_queued)--;
                 return vir_MOV(c, vpm);
@@ -3512,7 +3511,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
                  */
                 ntq_flush_tmu(c);
 
-                if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
+                if (nir_intrinsic_execution_scope(instr) != SCOPE_NONE) {
                         /* Ensure we flag the use of the control barrier. NIR's
                          * gather info pass usually takes care of this, but that
                          * requires that we call that pass after any other pass

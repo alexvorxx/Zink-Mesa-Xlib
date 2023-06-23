@@ -829,12 +829,6 @@ namespace brw {
          return inst;
       }
 
-      bblock_t *
-      get_block() const
-      {
-         return block;
-      }
-
       backend_shader *shader;
 
    private:

@@ -13,11 +13,13 @@ use crate::*;
 use mesa_rust_util::properties::Properties;
 use mesa_rust_util::ptr::*;
 use rusticl_opencl_gen::*;
+use rusticl_proc_macros::cl_entrypoint;
+use rusticl_proc_macros::cl_info_entrypoint;
 
 use std::alloc;
 use std::alloc::Layout;
 use std::cmp::Ordering;
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
@@ -207,8 +209,9 @@ fn validate_matching_buffer_flags(mem: &Mem, flags: cl_mem_flags) -> CLResult<()
     Ok(())
 }
 
+#[cl_info_entrypoint(cl_get_mem_object_info)]
 impl CLInfo<cl_mem_info> for cl_mem {
-    fn query(&self, q: cl_mem_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_mem_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let mem = self.get_ref()?;
         Ok(match *q {
             CL_MEM_ASSOCIATED_MEMOBJECT => {
@@ -241,7 +244,8 @@ impl CLInfo<cl_mem_info> for cl_mem {
     }
 }
 
-pub fn create_buffer_with_properties(
+#[cl_entrypoint]
+fn create_buffer_with_properties(
     context: cl_context,
     properties: *const cl_mem_properties,
     flags: cl_mem_flags,
@@ -279,7 +283,8 @@ pub fn create_buffer_with_properties(
     )?))
 }
 
-pub fn create_buffer(
+#[cl_entrypoint]
+fn create_buffer(
     context: cl_context,
     flags: cl_mem_flags,
     size: usize,
@@ -288,7 +293,8 @@ pub fn create_buffer(
     create_buffer_with_properties(context, ptr::null(), flags, size, host_ptr)
 }
 
-pub fn create_sub_buffer(
+#[cl_entrypoint]
+fn create_sub_buffer(
     buffer: cl_mem,
     mut flags: cl_mem_flags,
     buffer_create_type: cl_buffer_create_type,
@@ -341,7 +347,8 @@ pub fn create_sub_buffer(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if there are no devices in context associated with buffer for which the origin field of the cl_buffer_region structure passed in buffer_create_info is aligned to the CL_DEVICE_MEM_BASE_ADDR_ALIGN value.
 }
 
-pub fn set_mem_object_destructor_callback(
+#[cl_entrypoint]
+fn set_mem_object_destructor_callback(
     memobj: cl_mem,
     pfn_notify: Option<MemCB>,
     user_data: *mut ::std::os::raw::c_void,
@@ -372,9 +379,9 @@ fn validate_image_format<'a>(
     // special validation
     let valid_combination = match format.image_channel_data_type {
         CL_UNORM_SHORT_565 | CL_UNORM_SHORT_555 | CL_UNORM_INT_101010 => {
-            [CL_RGB, CL_RGBx].contains(&format.image_channel_data_type)
+            [CL_RGB, CL_RGBx].contains(&format.image_channel_order)
         }
-        CL_UNORM_INT_101010_2 => format.image_channel_data_type == CL_RGBA,
+        CL_UNORM_INT_101010_2 => format.image_channel_order == CL_RGBA,
         _ => true,
     };
     if !valid_combination {
@@ -695,8 +702,9 @@ fn validate_buffer(
     Ok(flags)
 }
 
+#[cl_info_entrypoint(cl_get_image_info)]
 impl CLInfo<cl_image_info> for cl_mem {
-    fn query(&self, q: cl_image_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_image_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let mem = self.get_ref()?;
         Ok(match *q {
             CL_IMAGE_ARRAY_SIZE => cl_prop::<usize>(mem.image_desc.image_array_size),
@@ -715,7 +723,8 @@ impl CLInfo<cl_image_info> for cl_mem {
     }
 }
 
-pub fn create_image_with_properties(
+#[cl_entrypoint]
+fn create_image_with_properties(
     context: cl_context,
     properties: *const cl_mem_properties,
     mut flags: cl_mem_flags,
@@ -779,7 +788,8 @@ pub fn create_image_with_properties(
     )?))
 }
 
-pub fn create_image(
+#[cl_entrypoint]
+fn create_image(
     context: cl_context,
     flags: cl_mem_flags,
     image_format: *const cl_image_format,
@@ -796,7 +806,8 @@ pub fn create_image(
     )
 }
 
-pub fn create_image_2d(
+#[cl_entrypoint]
+fn create_image_2d(
     context: cl_context,
     flags: cl_mem_flags,
     image_format: *const cl_image_format,
@@ -816,7 +827,8 @@ pub fn create_image_2d(
     create_image(context, flags, image_format, &image_desc, host_ptr)
 }
 
-pub fn create_image_3d(
+#[cl_entrypoint]
+fn create_image_3d(
     context: cl_context,
     flags: cl_mem_flags,
     image_format: *const cl_image_format,
@@ -840,7 +852,8 @@ pub fn create_image_3d(
     create_image(context, flags, image_format, &image_desc, host_ptr)
 }
 
-pub fn get_supported_image_formats(
+#[cl_entrypoint]
+fn get_supported_image_formats(
     context: cl_context,
     flags: cl_mem_flags,
     image_type: cl_mem_object_type,
@@ -884,8 +897,9 @@ pub fn get_supported_image_formats(
     Ok(())
 }
 
+#[cl_info_entrypoint(cl_get_sampler_info)]
 impl CLInfo<cl_sampler_info> for cl_sampler {
-    fn query(&self, q: cl_sampler_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_sampler_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let sampler = self.get_ref()?;
         Ok(match q {
             CL_SAMPLER_ADDRESSING_MODE => cl_prop::<cl_addressing_mode>(sampler.addressing_mode),
@@ -937,7 +951,8 @@ fn create_sampler_impl(
     Ok(cl_sampler::from_arc(sampler))
 }
 
-pub fn create_sampler(
+#[cl_entrypoint]
+fn create_sampler(
     context: cl_context,
     normalized_coords: cl_bool,
     addressing_mode: cl_addressing_mode,
@@ -952,7 +967,8 @@ pub fn create_sampler(
     )
 }
 
-pub fn create_sampler_with_properties(
+#[cl_entrypoint]
+fn create_sampler_with_properties(
     context: cl_context,
     sampler_properties: *const cl_sampler_properties,
 ) -> CLResult<cl_sampler> {
@@ -988,7 +1004,18 @@ pub fn create_sampler_with_properties(
     )
 }
 
-pub fn enqueue_read_buffer(
+#[cl_entrypoint]
+fn retain_sampler(sampler: cl_sampler) -> CLResult<()> {
+    sampler.retain()
+}
+
+#[cl_entrypoint]
+fn release_sampler(sampler: cl_sampler) -> CLResult<()> {
+    sampler.release()
+}
+
+#[cl_entrypoint]
+fn enqueue_read_buffer(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     blocking_read: cl_bool,
@@ -1040,7 +1067,8 @@ pub fn enqueue_read_buffer(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue.
 }
 
-pub fn enqueue_write_buffer(
+#[cl_entrypoint]
+fn enqueue_write_buffer(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     blocking_write: cl_bool,
@@ -1092,7 +1120,8 @@ pub fn enqueue_write_buffer(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue.
 }
 
-pub fn enqueue_copy_buffer(
+#[cl_entrypoint]
+fn enqueue_copy_buffer(
     command_queue: cl_command_queue,
     src_buffer: cl_mem,
     dst_buffer: cl_mem,
@@ -1159,7 +1188,8 @@ pub fn enqueue_copy_buffer(
     //• CL_MEM_OBJECT_ALLOCATION_FAILURE if there is a failure to allocate memory for data store associated with src_buffer or dst_buffer.
 }
 
-pub fn enqueue_read_buffer_rect(
+#[cl_entrypoint]
+fn enqueue_read_buffer_rect(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     blocking_read: cl_bool,
@@ -1281,7 +1311,8 @@ pub fn enqueue_read_buffer_rect(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue.
 }
 
-pub fn enqueue_write_buffer_rect(
+#[cl_entrypoint]
+fn enqueue_write_buffer_rect(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     blocking_write: cl_bool,
@@ -1403,7 +1434,8 @@ pub fn enqueue_write_buffer_rect(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue.
 }
 
-pub fn enqueue_copy_buffer_rect(
+#[cl_entrypoint]
+fn enqueue_copy_buffer_rect(
     command_queue: cl_command_queue,
     src_buffer: cl_mem,
     dst_buffer: cl_mem,
@@ -1541,7 +1573,8 @@ pub fn enqueue_copy_buffer_rect(
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if src_buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue.
 }
 
-pub fn enqueue_fill_buffer(
+#[cl_entrypoint]
+fn enqueue_fill_buffer(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     pattern: *const ::std::os::raw::c_void,
@@ -1594,7 +1627,8 @@ pub fn enqueue_fill_buffer(
     //• CL_MEM_OBJECT_ALLOCATION_FAILURE if there is a failure to allocate memory for data store associated with buffer.
 }
 
-pub fn enqueue_map_buffer(
+#[cl_entrypoint]
+fn enqueue_map_buffer(
     command_queue: cl_command_queue,
     buffer: cl_mem,
     blocking_map: cl_bool,
@@ -1647,7 +1681,8 @@ pub fn enqueue_map_buffer(
     // CL_INVALID_OPERATION if mapping would lead to overlapping regions being mapped for writing.
 }
 
-pub fn enqueue_read_image(
+#[cl_entrypoint]
+fn enqueue_read_image(
     command_queue: cl_command_queue,
     image: cl_mem,
     blocking_read: cl_bool,
@@ -1737,7 +1772,8 @@ pub fn enqueue_read_image(
     //• CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST if the read and write operations are blocking and the execution status of any of the events in event_wait_list is a negative integer value.
 }
 
-pub fn enqueue_write_image(
+#[cl_entrypoint]
+fn enqueue_write_image(
     command_queue: cl_command_queue,
     image: cl_mem,
     blocking_write: cl_bool,
@@ -1827,7 +1863,8 @@ pub fn enqueue_write_image(
     //• CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST if the read and write operations are blocking and the execution status of any of the events in event_wait_list is a negative integer value.
 }
 
-pub fn enqueue_copy_image(
+#[cl_entrypoint]
+fn enqueue_copy_image(
     command_queue: cl_command_queue,
     src_image: cl_mem,
     dst_image: cl_mem,
@@ -1887,7 +1924,8 @@ pub fn enqueue_copy_image(
     //• CL_MEM_COPY_OVERLAP if src_image and dst_image are the same image object and the source and destination regions overlap.
 }
 
-pub fn enqueue_fill_image(
+#[cl_entrypoint]
+fn enqueue_fill_image(
     command_queue: cl_command_queue,
     image: cl_mem,
     fill_color: *const ::std::os::raw::c_void,
@@ -1938,7 +1976,8 @@ pub fn enqueue_fill_image(
     //image are not supported by device associated with queue.
 }
 
-pub fn enqueue_copy_buffer_to_image(
+#[cl_entrypoint]
+fn enqueue_copy_buffer_to_image(
     command_queue: cl_command_queue,
     src_buffer: cl_mem,
     dst_image: cl_mem,
@@ -1993,7 +2032,8 @@ pub fn enqueue_copy_buffer_to_image(
     //• CL_INVALID_OPERATION if the device associated with command_queue does not support images (i.e. CL_DEVICE_IMAGE_SUPPORT specified in the Device Queries table is CL_FALSE).
 }
 
-pub fn enqueue_copy_image_to_buffer(
+#[cl_entrypoint]
+fn enqueue_copy_image_to_buffer(
     command_queue: cl_command_queue,
     src_image: cl_mem,
     dst_buffer: cl_mem,
@@ -2049,7 +2089,8 @@ pub fn enqueue_copy_image_to_buffer(
     //• CL_INVALID_OPERATION if the device associated with command_queue does not support images (i.e. CL_DEVICE_IMAGE_SUPPORT specified in the Device Queries table is CL_FALSE).
 }
 
-pub fn enqueue_map_image(
+#[cl_entrypoint]
+fn enqueue_map_image(
     command_queue: cl_command_queue,
     image: cl_mem,
     blocking_map: cl_bool,
@@ -2128,7 +2169,18 @@ pub fn enqueue_map_image(
     //• CL_INVALID_OPERATION if mapping would lead to overlapping regions being mapped for writing.
 }
 
-pub fn enqueue_unmap_mem_object(
+#[cl_entrypoint]
+fn retain_mem_object(mem: cl_mem) -> CLResult<()> {
+    mem.retain()
+}
+
+#[cl_entrypoint]
+fn release_mem_object(mem: cl_mem) -> CLResult<()> {
+    mem.release()
+}
+
+#[cl_entrypoint]
+fn enqueue_unmap_mem_object(
     command_queue: cl_command_queue,
     memobj: cl_mem,
     mapped_ptr: *mut ::std::os::raw::c_void,
@@ -2161,7 +2213,8 @@ pub fn enqueue_unmap_mem_object(
     )
 }
 
-pub fn enqueue_migrate_mem_objects(
+#[cl_entrypoint]
+fn enqueue_migrate_mem_objects(
     command_queue: cl_command_queue,
     num_mem_objects: cl_uint,
     mem_objects: *const cl_mem,
@@ -2208,8 +2261,9 @@ pub fn enqueue_migrate_mem_objects(
     //• CL_MEM_OBJECT_ALLOCATION_FAILURE if there is a failure to allocate memory for the specified set of memory objects in mem_objects.
 }
 
+#[cl_info_entrypoint(cl_get_pipe_info)]
 impl CLInfo<cl_pipe_info> for cl_mem {
-    fn query(&self, _q: cl_pipe_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, _q: cl_pipe_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         // CL_INVALID_MEM_OBJECT if pipe is a not a valid pipe object.
         Err(CL_INVALID_MEM_OBJECT)
     }
@@ -2343,7 +2397,8 @@ fn enqueue_svm_free_impl(
     )
 }
 
-pub fn enqueue_svm_free(
+#[cl_entrypoint]
+fn enqueue_svm_free(
     command_queue: cl_command_queue,
     num_svm_pointers: cl_uint,
     svm_pointers: *mut *mut c_void,
@@ -2366,7 +2421,8 @@ pub fn enqueue_svm_free(
     )
 }
 
-pub fn enqueue_svm_free_arm(
+#[cl_entrypoint]
+fn enqueue_svm_free_arm(
     command_queue: cl_command_queue,
     num_svm_pointers: cl_uint,
     svm_pointers: *mut *mut c_void,
@@ -2442,7 +2498,8 @@ fn enqueue_svm_memcpy_impl(
     )
 }
 
-pub fn enqueue_svm_memcpy(
+#[cl_entrypoint]
+fn enqueue_svm_memcpy(
     command_queue: cl_command_queue,
     blocking_copy: cl_bool,
     dst_ptr: *mut c_void,
@@ -2465,7 +2522,8 @@ pub fn enqueue_svm_memcpy(
     )
 }
 
-pub fn enqueue_svm_memcpy_arm(
+#[cl_entrypoint]
+fn enqueue_svm_memcpy_arm(
     command_queue: cl_command_queue,
     blocking_copy: cl_bool,
     dst_ptr: *mut c_void,
@@ -2554,7 +2612,8 @@ fn enqueue_svm_mem_fill_impl(
     )
 }
 
-pub fn enqueue_svm_mem_fill(
+#[cl_entrypoint]
+fn enqueue_svm_mem_fill(
     command_queue: cl_command_queue,
     svm_ptr: *mut ::std::os::raw::c_void,
     pattern: *const ::std::os::raw::c_void,
@@ -2577,7 +2636,8 @@ pub fn enqueue_svm_mem_fill(
     )
 }
 
-pub fn enqueue_svm_mem_fill_arm(
+#[cl_entrypoint]
+fn enqueue_svm_mem_fill_arm(
     command_queue: cl_command_queue,
     svm_ptr: *mut ::std::os::raw::c_void,
     pattern: *const ::std::os::raw::c_void,
@@ -2636,7 +2696,8 @@ fn enqueue_svm_map_impl(
     create_and_queue(q, cmd_type, evs, event, block, Box::new(|_, _| Ok(())))
 }
 
-pub fn enqueue_svm_map(
+#[cl_entrypoint]
+fn enqueue_svm_map(
     command_queue: cl_command_queue,
     blocking_map: cl_bool,
     flags: cl_map_flags,
@@ -2659,7 +2720,8 @@ pub fn enqueue_svm_map(
     )
 }
 
-pub fn enqueue_svm_map_arm(
+#[cl_entrypoint]
+fn enqueue_svm_map_arm(
     command_queue: cl_command_queue,
     blocking_map: cl_bool,
     flags: cl_map_flags,
@@ -2706,7 +2768,8 @@ fn enqueue_svm_unmap_impl(
     create_and_queue(q, cmd_type, evs, event, false, Box::new(|_, _| Ok(())))
 }
 
-pub fn enqueue_svm_unmap(
+#[cl_entrypoint]
+fn enqueue_svm_unmap(
     command_queue: cl_command_queue,
     svm_ptr: *mut ::std::os::raw::c_void,
     num_events_in_wait_list: cl_uint,
@@ -2723,7 +2786,8 @@ pub fn enqueue_svm_unmap(
     )
 }
 
-pub fn enqueue_svm_unmap_arm(
+#[cl_entrypoint]
+fn enqueue_svm_unmap_arm(
     command_queue: cl_command_queue,
     svm_ptr: *mut ::std::os::raw::c_void,
     num_events_in_wait_list: cl_uint,
@@ -2740,7 +2804,8 @@ pub fn enqueue_svm_unmap_arm(
     )
 }
 
-pub fn enqueue_svm_migrate_mem(
+#[cl_entrypoint]
+fn enqueue_svm_migrate_mem(
     command_queue: cl_command_queue,
     num_svm_pointers: cl_uint,
     svm_pointers: *mut *const ::std::os::raw::c_void,
@@ -2809,4 +2874,15 @@ pub fn enqueue_svm_migrate_mem(
             Ok(())
         }),
     )
+}
+
+#[cl_entrypoint]
+fn create_pipe(
+    _context: cl_context,
+    _flags: cl_mem_flags,
+    _pipe_packet_size: cl_uint,
+    _pipe_max_packets: cl_uint,
+    _properties: *const cl_pipe_properties,
+) -> CLResult<cl_mem> {
+    Err(CL_INVALID_OPERATION)
 }

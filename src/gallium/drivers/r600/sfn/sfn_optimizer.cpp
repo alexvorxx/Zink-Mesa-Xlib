@@ -478,8 +478,8 @@ CopyPropFwdVisitor::propagate_to(RegisterVec4& value, Instr *instr)
              return;
 
          if ((parents[i]->opcode() != op1_mov) ||
-             parents[i]->has_alu_flag(alu_src0_neg) ||
-             parents[i]->has_alu_flag(alu_src0_abs) ||
+             parents[i]->has_source_mod(0, AluInstr::mod_neg) ||
+             parents[i]->has_source_mod(0, AluInstr::mod_abs) ||
              parents[i]->has_alu_flag(alu_dst_clamp) ||
              parents[i]->has_alu_flag(alu_src0_rel))
             return;
@@ -740,6 +740,36 @@ public:
    bool progress;
 };
 
+class HasVecDestVisitor : public ConstInstrVisitor {
+public:
+   HasVecDestVisitor():
+       has_group_dest(false)
+   {
+   }
+
+   void visit(const AluInstr& instr) override { (void)instr; }
+   void visit(const AluGroup& instr) override { (void)instr; }
+   void visit(const TexInstr& instr) override  {  (void)instr; has_group_dest = true; };
+   void visit(const ExportInstr& instr) override { (void)instr; }
+   void visit(const FetchInstr& instr) override  {  (void)instr; has_group_dest = true; };
+   void visit(const Block& instr) override { (void)instr; };
+   void visit(const ControlFlowInstr& instr) override{ (void)instr; }
+   void visit(const IfInstr& instr) override{ (void)instr; }
+   void visit(const ScratchIOInstr& instr) override  { (void)instr; };
+   void visit(const StreamOutInstr& instr) override { (void)instr; }
+   void visit(const MemRingOutInstr& instr) override { (void)instr; }
+   void visit(const EmitVertexInstr& instr) override { (void)instr; }
+   void visit(const GDSInstr& instr) override { (void)instr; }
+   void visit(const WriteTFInstr& instr) override { (void)instr; };
+   void visit(const LDSAtomicInstr& instr) override { (void)instr; };
+   void visit(const LDSReadInstr& instr) override { (void)instr; };
+   void visit(const RatInstr& instr) override {  (void)instr; };
+
+   bool has_group_dest;
+};
+
+
+
 bool
 simplify_source_vectors(Shader& sh)
 {
@@ -765,6 +795,16 @@ SimplifySourceVecVisitor::visit(TexInstr *instr)
       if (nvals == 1) {
          for (int i = 0; i < 4; ++i)
             if (src[i]->chan() < 4) {
+               HasVecDestVisitor check_dests;
+               for (auto p : src[i]->parents()) {
+                  p->accept(check_dests);
+                  if (check_dests.has_group_dest)
+                     break;
+               }
+
+               if (check_dests.has_group_dest)
+                  break;
+
                if (src[i]->pin() == pin_group)
                   src[i]->set_pin(pin_free);
                else if (src[i]->pin() == pin_chgr)
@@ -854,7 +894,8 @@ ReplaceConstSource::visit(AluInstr *alu)
    if (alu->opcode() != op1_mov)
       return;
 
-   if (alu->has_alu_flag(alu_src0_abs) || alu->has_alu_flag(alu_src0_neg))
+   if (alu->has_source_mod(0, AluInstr::mod_abs) ||
+       alu->has_source_mod(0, AluInstr::mod_neg))
       return;
 
    auto src = alu->psrc(0);

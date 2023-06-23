@@ -253,6 +253,7 @@ spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y416,Crash
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuv420,Crash
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuyv,Crash
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yvu420,Crash
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-transcode-nv12-as-r8-gr88,Crash
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-unsupported_format,Crash
 spec@ext_packed_float@query-rgba-signed-components,Fail
 spec@ext_texture_srgb@fbo-fast-clear,Fail

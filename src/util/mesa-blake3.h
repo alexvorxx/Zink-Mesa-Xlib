@@ -31,6 +31,8 @@ extern "C" {
 
 #define mesa_blake3 blake3_hasher
 
+typedef uint8_t blake3_hash[BLAKE3_OUT_LEN];
+
 static inline void
 _mesa_blake3_init(struct mesa_blake3 *ctx)
 {
@@ -44,7 +46,7 @@ _mesa_blake3_update(struct mesa_blake3 *ctx, const void *data, size_t size)
 }
 
 static inline void
-_mesa_blake3_final(struct mesa_blake3 *ctx, unsigned char result[BLAKE3_OUT_LEN])
+_mesa_blake3_final(struct mesa_blake3 *ctx, blake3_hash result)
 {
    blake3_hasher_finalize(ctx, result, BLAKE3_OUT_LEN);
 }
@@ -56,7 +58,7 @@ void
 _mesa_blake3_hex_to_blake3(unsigned char *buf, const char *hex);
 
 void
-_mesa_blake3_compute(const void *data, size_t size, unsigned char result[BLAKE3_OUT_LEN]);
+_mesa_blake3_compute(const void *data, size_t size, blake3_hash result);
 
 #ifdef __cplusplus
 } /* extern C */

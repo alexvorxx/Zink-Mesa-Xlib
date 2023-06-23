@@ -37,7 +37,6 @@
 #include "zink_state.h"
 #include "nir_to_spirv/nir_to_spirv.h" // for SPIRV_VERSION
 
-#include "os/os_process.h"
 #include "util/u_debug.h"
 #include "util/u_dl.h"
 #include "util/os_file.h"
@@ -100,6 +99,8 @@ zink_debug_options[] = {
    { "optimal_keys", ZINK_DEBUG_OPTIMAL_KEYS, "Debug/use optimal_keys" },
    { "noopt", ZINK_DEBUG_NOOPT, "Disable async optimized pipeline compiles" },
    { "nobgc", ZINK_DEBUG_NOBGC, "Disable all async pipeline compiles" },
+   { "dgc", ZINK_DEBUG_DGC, "Use DGC (driver testing only)" },
+   { "mem", ZINK_DEBUG_MEM, "Debug memory allocations" },
    DEBUG_NAMED_VALUE_END
 };
 
@@ -800,6 +801,9 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_QUERY_TIMESTAMP_BITS:
       return screen->timestamp_valid_bits;
 
+   case PIPE_CAP_TIMER_RESOLUTION:
+      return ceil(screen->info.props.limits.timestampPeriod);
+
    case PIPE_CAP_MIN_MAP_BUFFER_ALIGNMENT:
       return 1 << MIN_SLAB_ORDER;
 
@@ -1210,9 +1214,6 @@ zink_get_shader_param(struct pipe_screen *pscreen,
    case PIPE_SHADER_CAP_INT16:
       return screen->info.feats.features.shaderInt16;
 
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-      return PIPE_SHADER_IR_NIR;
-
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
       return 0; /* not implemented */
 
@@ -1498,6 +1499,9 @@ zink_destroy_screen(struct pipe_screen *pscreen)
       VKSCR(DestroySemaphore)(screen->dev, util_dynarray_pop(&screen->semaphores, VkSemaphore), NULL);
    if (screen->bindless_layout)
       VKSCR(DestroyDescriptorSetLayout)(screen->dev, screen->bindless_layout, NULL);
+
+   if (zink_debug & ZINK_DEBUG_MEM)
+      simple_mtx_destroy(&screen->debug_mem_lock);
 
    simple_mtx_destroy(&screen->queue_lock);
    VKSCR(DestroyDevice)(screen->dev, NULL);
@@ -2699,6 +2703,17 @@ init_optimal_keys(struct zink_screen *screen)
       screen->info.have_EXT_shader_object = false;
    if (screen->info.have_EXT_shader_object)
       screen->have_full_ds3 = true;
+   if (zink_debug & ZINK_DEBUG_DGC) {
+      if (!screen->optimal_keys) {
+         mesa_loge("zink: can't DGC without optimal_keys!");
+         zink_debug &= ~ZINK_DEBUG_DGC;
+      } else {
+         screen->info.have_EXT_multi_draw = false;
+         screen->info.have_EXT_shader_object = false;
+         screen->info.have_EXT_graphics_pipeline_library = false;
+         screen->info.have_EXT_vertex_input_dynamic_state = false;
+      }
+   }
 }
 
 static struct disk_cache *
@@ -2911,6 +2926,17 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       mesa_loge("zink: KHR_timeline_semaphore is required");
       goto fail;
    }
+   if (zink_debug & ZINK_DEBUG_DGC) {
+      if (!screen->info.have_NV_device_generated_commands) {
+         mesa_loge("zink: can't use DGC without NV_device_generated_commands");
+         goto fail;
+      }
+   }
+
+   if (zink_debug & ZINK_DEBUG_MEM) {
+      simple_mtx_init(&screen->debug_mem_lock, mtx_plain);
+      screen->debug_mem_sizes = _mesa_hash_table_create(screen, _mesa_hash_string, _mesa_key_string_equal);
+   }
 
    init_driver_workarounds(screen);
 
@@ -3038,7 +3064,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 
    slab_create_parent(&screen->transfer_pool, sizeof(struct zink_transfer), 16);
 
-   screen->driconf.inline_uniforms = debug_get_bool_option("ZINK_INLINE_UNIFORMS", screen->is_cpu);
+   screen->driconf.inline_uniforms = debug_get_bool_option("ZINK_INLINE_UNIFORMS", screen->is_cpu) && !(zink_debug & ZINK_DEBUG_DGC);
 
    screen->total_video_mem = get_video_mem(screen);
    screen->clamp_video_mem = screen->total_video_mem * 0.8;
@@ -3066,9 +3092,9 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       /* not found: use compatible heap */
       if (screen->heap_map[i][0] == UINT8_MAX) {
          /* only cached mem has a failure case for now */
-         assert(i == ZINK_HEAP_HOST_VISIBLE_CACHED || i == ZINK_HEAP_DEVICE_LOCAL_LAZY ||
+         assert(i == ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED || i == ZINK_HEAP_DEVICE_LOCAL_LAZY ||
                 i == ZINK_HEAP_DEVICE_LOCAL_VISIBLE);
-         if (i == ZINK_HEAP_HOST_VISIBLE_CACHED) {
+         if (i == ZINK_HEAP_HOST_VISIBLE_COHERENT_CACHED) {
             memcpy(screen->heap_map[i], screen->heap_map[ZINK_HEAP_HOST_VISIBLE_COHERENT], screen->heap_count[ZINK_HEAP_HOST_VISIBLE_COHERENT]);
             screen->heap_count[i] = screen->heap_count[ZINK_HEAP_HOST_VISIBLE_COHERENT];
          } else {

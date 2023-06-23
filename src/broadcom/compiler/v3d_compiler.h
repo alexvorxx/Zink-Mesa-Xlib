@@ -99,6 +99,8 @@ enum qfile {
         /**
          * VPM reads use this with an index value to say what part of the VPM
          * is being read.
+         *
+         * Used only for ver < 40. For ver >= 40 we use ldvpm.
          */
         QFILE_VPM,
 

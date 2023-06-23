@@ -185,33 +185,9 @@ struct tgsi_shader_info
    unsigned max_depth;
 };
 
-struct tgsi_array_info
-{
-   /** Whether an array with this ID was declared. */
-   bool declared;
-
-   /** The OR of all writemasks used to write to this array. */
-   ubyte writemask;
-
-   /** The range with which the array was declared. */
-   struct tgsi_declaration_range range;
-};
-
-struct tgsi_tessctrl_info
-{
-   /** Whether all codepaths write tess factors in all invocations. */
-   bool tessfactors_are_def_in_all_invocs;
-};
-
 extern void
 tgsi_scan_shader(const struct tgsi_token *tokens,
                  struct tgsi_shader_info *info);
-
-void
-tgsi_scan_arrays(const struct tgsi_token *tokens,
-                 unsigned file,
-                 unsigned max_array_id,
-                 struct tgsi_array_info *arrays);
 
 static inline bool
 tgsi_is_bindless_image_file(unsigned file)

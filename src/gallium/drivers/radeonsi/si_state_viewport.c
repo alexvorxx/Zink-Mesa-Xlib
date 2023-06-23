@@ -90,10 +90,17 @@ static void si_emit_cull_state(struct si_context *sctx)
    /* This will end up in SGPR6 as (value << 8), shifted by the hw. */
    radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, sctx->small_prim_cull_info_buf,
                              RADEON_USAGE_READ | RADEON_PRIO_CONST_BUFFER);
-   radeon_begin(&sctx->gfx_cs);
-   radeon_set_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 + GFX9_SGPR_SMALL_PRIM_CULL_INFO * 4,
-                     sctx->small_prim_cull_info_address);
-   radeon_end();
+
+   if (sctx->gfx_level >= GFX11) {
+      radeon_push_gfx_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 +
+                             GFX9_SGPR_SMALL_PRIM_CULL_INFO * 4,
+                             sctx->small_prim_cull_info_address);
+   } else {
+      radeon_begin(&sctx->gfx_cs);
+      radeon_set_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 + GFX9_SGPR_SMALL_PRIM_CULL_INFO * 4,
+                        sctx->small_prim_cull_info_address);
+      radeon_end();
+   }
 
    /* Better subpixel precision increases the efficiency of small
     * primitive culling. (more precision means a tighter bounding box

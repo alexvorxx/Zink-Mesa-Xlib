@@ -20,8 +20,8 @@
 
 files_libradeonsi = files(
   'driinfo_radeonsi.h',
-  'gfx10_query.c',
   'gfx10_shader_ngg.c',
+  'gfx11_query.c',
   'si_blit.c',
   'si_buffer.c',
   'si_build_pm4.h',
@@ -89,7 +89,6 @@ files_libradeonsi = files(
   'radeon_vce_52.c',
   'radeon_vcn.h',
   'radeon_vcn.c',
-  'radeon_vcn_av1_default.h',
   'radeon_vcn_dec.c',
   'radeon_vcn_dec.h',
   'radeon_vcn_dec_jpeg.c',

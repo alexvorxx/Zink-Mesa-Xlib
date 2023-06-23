@@ -18,6 +18,8 @@ struct lower_abi_state {
    struct si_shader_args *args;
 
    nir_ssa_def *esgs_ring;
+   nir_ssa_def *tess_offchip_ring;
+   nir_ssa_def *gsvs_ring[4];
 };
 
 #define GET_FIELD_NIR(field) \
@@ -157,13 +159,10 @@ fetch_framebuffer(nir_builder *b, struct si_shader_args *args,
                                   .access = ACCESS_CAN_REORDER);
 }
 
-static nir_ssa_def *build_tess_factor_ring_desc(nir_builder *b, struct si_screen *screen,
-                                                struct si_shader_args *args)
+static nir_ssa_def *build_tess_ring_desc(nir_builder *b, struct si_screen *screen,
+                                         struct si_shader_args *args)
 {
-   nir_ssa_def *addr = ac_nir_load_arg(b, &args->ac, args->tcs_out_lds_layout);
-   /* TCS only receives high 13 bits of the address. */
-   addr = nir_iand_imm(b, addr, 0xfff80000);
-   addr = nir_iadd_imm(b, addr, screen->hs.tess_offchip_ring_size);
+   nir_ssa_def *addr = ac_nir_load_arg(b, &args->ac, args->tes_offchip_addr);
 
    uint32_t rsrc3 =
       S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
@@ -218,6 +217,80 @@ static nir_ssa_def *build_esgs_ring_desc(nir_builder *b, enum amd_gfx_level gfx_
    return nir_vec(b, vec, 4);
 }
 
+static void build_gsvs_ring_desc(nir_builder *b, struct lower_abi_state *s)
+{
+   const struct si_shader_selector *sel = s->shader->selector;
+   const union si_shader_key *key = &s->shader->key;
+
+   if (s->shader->is_gs_copy_shader) {
+      s->gsvs_ring[0] = si_nir_load_internal_binding(b, s->args, SI_RING_GSVS, 4);
+   } else if (sel->stage == MESA_SHADER_GEOMETRY && !key->ge.as_ngg) {
+      nir_ssa_def *base_addr = si_nir_load_internal_binding(b, s->args, SI_RING_GSVS, 2);
+      base_addr = nir_pack_64_2x32(b, base_addr);
+
+      /* The conceptual layout of the GSVS ring is
+       *   v0c0 .. vLv0 v0c1 .. vLc1 ..
+       * but the real memory layout is swizzled across
+       * threads:
+       *   t0v0c0 .. t15v0c0 t0v1c0 .. t15v1c0 ... t15vLcL
+       *   t16v0c0 ..
+       * Override the buffer descriptor accordingly.
+       */
+
+      for (unsigned stream = 0; stream < 4; stream++) {
+         unsigned num_components = sel->info.num_stream_output_components[stream];
+         if (!num_components)
+            continue;
+
+         nir_ssa_def *desc[4];
+         desc[0] = nir_unpack_64_2x32_split_x(b, base_addr);
+         desc[1] = nir_unpack_64_2x32_split_y(b, base_addr);
+
+         unsigned stride = 4 * num_components * sel->info.base.gs.vertices_out;
+         /* Limit on the stride field for <= GFX7. */
+         assert(stride < (1 << 14));
+
+         desc[1] = nir_ior_imm(
+            b, desc[1], S_008F04_STRIDE(stride) | S_008F04_SWIZZLE_ENABLE_GFX6(1));
+
+         unsigned num_records = s->shader->wave_size;
+         desc[2] = nir_imm_int(b, num_records);
+
+         uint32_t rsrc3 =
+            S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+            S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+            S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+            S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+            S_008F0C_INDEX_STRIDE(1) | /* index_stride = 16 (elements) */
+            S_008F0C_ADD_TID_ENABLE(1);
+
+         if (sel->screen->info.gfx_level >= GFX10) {
+            rsrc3 |=
+               S_008F0C_FORMAT(V_008F0C_GFX10_FORMAT_32_FLOAT) |
+               S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_DISABLED) |
+               S_008F0C_RESOURCE_LEVEL(1);
+         } else {
+            /* If MUBUF && ADD_TID_ENABLE, DATA_FORMAT means STRIDE[14:17] on gfx8-9, so set 0. */
+            unsigned data_format =
+               sel->screen->info.gfx_level == GFX8 || sel->screen->info.gfx_level == GFX9 ?
+               0 : V_008F0C_BUF_DATA_FORMAT_32;
+
+            rsrc3 |=
+               S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+               S_008F0C_DATA_FORMAT(data_format) |
+               S_008F0C_ELEMENT_SIZE(1); /* element_size = 4 (bytes) */
+         }
+
+         desc[3] = nir_imm_int(b, rsrc3);
+
+         s->gsvs_ring[stream] = nir_vec(b, desc, 4);
+
+         /* next stream's desc addr */
+         base_addr = nir_iadd_imm(b, base_addr, stride * num_records);
+      }
+   }
+}
+
 static void preload_reusable_variables(nir_builder *b, struct lower_abi_state *s)
 {
    const struct si_shader_selector *sel = s->shader->selector;
@@ -229,6 +302,11 @@ static void preload_reusable_variables(nir_builder *b, struct lower_abi_state *s
        (key->ge.as_es || sel->stage == MESA_SHADER_GEOMETRY)) {
       s->esgs_ring = build_esgs_ring_desc(b, sel->screen->info.gfx_level, s->args);
    }
+
+   if (sel->stage == MESA_SHADER_TESS_CTRL || sel->stage == MESA_SHADER_TESS_EVAL)
+      s->tess_offchip_ring = build_tess_ring_desc(b, sel->screen, s->args);
+
+   build_gsvs_ring_desc(b, s);
 }
 
 static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_state *s)
@@ -281,12 +359,12 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
    }
    case nir_intrinsic_load_patch_vertices_in:
       if (stage == MESA_SHADER_TESS_CTRL)
-         replacement = ac_nir_unpack_arg(b, &args->ac, args->tcs_out_lds_layout, 13, 6);
+         replacement = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 11, 5);
       else if (stage == MESA_SHADER_TESS_EVAL) {
-         nir_ssa_def *tmp = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 6, 5);
-         replacement = nir_iadd_imm(b, tmp, 1);
+         replacement = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 6, 5);
       } else
          unreachable("no nir_load_patch_vertices_in");
+      replacement = nir_iadd_imm(b, replacement, 1);
       break;
    case nir_intrinsic_load_sample_mask_in:
       replacement = ac_nir_load_arg(b, &args->ac, args->ac.sample_coverage);
@@ -313,7 +391,7 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
       break;
    }
    case nir_intrinsic_load_hs_out_patch_data_offset_amd:
-      replacement = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 11, 21);
+      replacement = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 16, 16);
       break;
    case nir_intrinsic_load_ring_tess_offchip_offset_amd:
       replacement = ac_nir_load_arg(b, &args->ac, args->ac.tess_offchip_offset);
@@ -338,7 +416,7 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
       break;
    case nir_intrinsic_load_cull_ccw_amd:
       /* radeonsi embed cw/ccw info into front/back face enabled */
-      replacement = nir_imm_bool(b, false);
+      replacement = nir_imm_false(b);
       break;
    case nir_intrinsic_load_cull_any_enabled_amd:
       replacement = nir_imm_bool(b, !!key->ge.opt.ngg_culling);
@@ -411,8 +489,8 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
 
       unsigned stream = nir_intrinsic_stream_id(intrin);
       unsigned offset = intrin->intrinsic == nir_intrinsic_atomic_add_gen_prim_count_amd ?
-         offsetof(struct gfx10_sh_query_buffer_mem, stream[stream].generated_primitives) :
-         offsetof(struct gfx10_sh_query_buffer_mem, stream[stream].emitted_primitives);
+         offsetof(struct gfx11_sh_query_buffer_mem, stream[stream].generated_primitives) :
+         offsetof(struct gfx11_sh_query_buffer_mem, stream[stream].emitted_primitives);
 
       nir_ssa_def *prim_count = intrin->src[0].ssa;
       nir_ssbo_atomic(b, 32, buf, nir_imm_int(b, offset), prim_count,
@@ -496,9 +574,13 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
       replacement = fetch_framebuffer(b, args, sel, key);
       break;
    }
-   case nir_intrinsic_load_ring_tess_factors_amd:
-      replacement = build_tess_factor_ring_desc(b, sel->screen, args);
+   case nir_intrinsic_load_ring_tess_factors_amd: {
+      assert(s->tess_offchip_ring);
+      nir_ssa_def *addr = nir_channel(b, s->tess_offchip_ring, 0);
+      addr = nir_iadd_imm(b, addr, sel->screen->hs.tess_offchip_ring_size);
+      replacement = nir_vector_insert_imm(b, s->tess_offchip_ring, addr, 0);
       break;
+   }
    case nir_intrinsic_load_ring_tess_factors_offset_amd:
       replacement = ac_nir_load_arg(b, &args->ac, args->ac.tcs_factor_offset);
       break;
@@ -594,6 +676,33 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
    case nir_intrinsic_load_ring_esgs_amd:
       assert(s->esgs_ring);
       replacement = s->esgs_ring;
+      break;
+   case nir_intrinsic_load_tess_rel_patch_id_amd:
+      /* LLVM need to replace patch id arg, so have to be done in LLVM backend. */
+      if (!shader->use_aco)
+         return false;
+
+      if (stage == MESA_SHADER_TESS_CTRL) {
+         replacement = ac_nir_unpack_arg(b, &args->ac, args->ac.tcs_rel_ids, 0, 8);
+      } else {
+         assert(stage == MESA_SHADER_TESS_EVAL);
+         replacement = ac_nir_load_arg(b, &args->ac, args->ac.tes_rel_patch_id);
+      }
+      break;
+   case nir_intrinsic_load_ring_tess_offchip_amd:
+      assert(s->tess_offchip_ring);
+      replacement = s->tess_offchip_ring;
+      break;
+   case nir_intrinsic_load_ring_gsvs_amd: {
+      unsigned stream_id = nir_intrinsic_stream_id(intrin);
+      /* Unused nir_load_ring_gsvs_amd may not be eliminated yet. */
+      replacement = s->gsvs_ring[stream_id] ?
+         s->gsvs_ring[stream_id] : nir_ssa_undef(b, 4, 32);
+      break;
+   }
+   case nir_intrinsic_load_user_data_amd:
+      replacement = ac_nir_load_arg(b, &args->ac, args->cs_user_data);
+      replacement = nir_pad_vec4(b, replacement);
       break;
    default:
       return false;

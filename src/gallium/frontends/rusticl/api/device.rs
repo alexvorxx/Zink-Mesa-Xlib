@@ -8,10 +8,12 @@ use crate::core::version::*;
 use mesa_rust_gen::*;
 use mesa_rust_util::ptr::*;
 use rusticl_opencl_gen::*;
+use rusticl_proc_macros::cl_entrypoint;
+use rusticl_proc_macros::cl_info_entrypoint;
 
 use std::cmp::min;
 use std::ffi::CStr;
-use std::mem::size_of;
+use std::mem::{size_of, MaybeUninit};
 use std::ptr;
 use std::sync::Arc;
 
@@ -24,8 +26,10 @@ const SPIRV_SUPPORT: [cl_name_version; 5] = [
     mk_cl_version_ext(1, 4, 0, "SPIR-V"),
 ];
 type ClDevIdpAccelProps = cl_device_integer_dot_product_acceleration_properties_khr;
+
+#[cl_info_entrypoint(cl_get_device_info)]
 impl CLInfo<cl_device_info> for cl_device_id {
-    fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<u8>> {
+    fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let dev = self.get_ref()?;
 
         // curses you CL_DEVICE_INTEGER_DOT_PRODUCT_ACCELERATION_PROPERTIES_4x8BIT_PACKED_KHR
@@ -46,18 +50,24 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_BUILT_IN_KERNELS => cl_prop::<&str>(""),
             CL_DEVICE_BUILT_IN_KERNELS_WITH_VERSION => cl_prop::<Vec<cl_name_version>>(Vec::new()),
             CL_DEVICE_COMPILER_AVAILABLE => cl_prop::<bool>(true),
+            CL_DEVICE_CROSS_DEVICE_SHARED_MEM_CAPABILITIES_INTEL => {
+                cl_prop::<cl_device_device_enqueue_capabilities>(0)
+            }
             CL_DEVICE_DEVICE_ENQUEUE_CAPABILITIES => {
                 cl_prop::<cl_device_device_enqueue_capabilities>(0)
             }
+            CL_DEVICE_DEVICE_MEM_CAPABILITIES_INTEL => {
+                cl_prop::<cl_device_unified_shared_memory_capabilities_intel>(0)
+            }
             CL_DEVICE_DOUBLE_FP_CONFIG => cl_prop::<cl_device_fp_config>(
-                if dev.doubles_supported() {
+                if dev.fp64_supported() {
                     let mut fp64_config = CL_FP_FMA
                         | CL_FP_ROUND_TO_NEAREST
                         | CL_FP_ROUND_TO_ZERO
                         | CL_FP_ROUND_TO_INF
                         | CL_FP_INF_NAN
                         | CL_FP_DENORM;
-                    if dev.doubles_is_softfp() {
+                    if dev.fp64_is_softfp() {
                         fp64_config |= CL_FP_SOFT_FLOAT;
                     }
                     fp64_config
@@ -79,7 +89,17 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_GLOBAL_MEM_SIZE => cl_prop::<cl_ulong>(dev.global_mem_size()),
             CL_DEVICE_GLOBAL_VARIABLE_PREFERRED_TOTAL_SIZE => cl_prop::<usize>(0),
-            CL_DEVICE_HALF_FP_CONFIG => cl_prop::<cl_device_fp_config>(0),
+            CL_DEVICE_HALF_FP_CONFIG => cl_prop::<cl_device_fp_config>(
+                if dev.fp16_supported() {
+                    CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN
+                } else {
+                    0
+                }
+                .into(),
+            ),
+            CL_DEVICE_HOST_MEM_CAPABILITIES_INTEL => {
+                cl_prop::<cl_device_unified_shared_memory_capabilities_intel>(0)
+            }
             CL_DEVICE_HOST_UNIFIED_MEMORY => cl_prop::<bool>(dev.unified_memory()),
             CL_DEVICE_IL_VERSION => cl_prop::<&str>(SPIRV_SUPPORT_STRING),
             CL_DEVICE_ILS_WITH_VERSION => cl_prop::<Vec<cl_name_version>>(SPIRV_SUPPORT.to_vec()),
@@ -174,13 +194,15 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE => {
                 cl_prop::<cl_uint>(size_of::<cl_ulong16>() as cl_uint)
             }
-            CL_DEVICE_NAME => cl_prop(dev.screen().name()),
+            CL_DEVICE_NAME => cl_prop::<&str>(&dev.screen().name()),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_CHAR => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE => {
-                cl_prop::<cl_uint>(if dev.doubles_supported() { 1 } else { 0 })
+                cl_prop::<cl_uint>(if dev.fp64_supported() { 1 } else { 0 })
             }
             CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT => cl_prop::<cl_uint>(1),
-            CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF => cl_prop::<cl_uint>(0),
+            CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF => {
+                cl_prop::<cl_uint>(if dev.fp16_supported() { 1 } else { 0 })
+            }
             CL_DEVICE_NATIVE_VECTOR_WIDTH_INT => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_LONG => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_SHORT => cl_prop::<cl_uint>(1),
@@ -188,7 +210,15 @@ impl CLInfo<cl_device_info> for cl_device_id {
                 cl_prop::<cl_uint>(dev.screen().device_node_mask().unwrap_or_default())
             }
             CL_DEVICE_NON_UNIFORM_WORK_GROUP_SUPPORT => cl_prop::<bool>(false),
-            CL_DEVICE_NUMERIC_VERSION => cl_prop::<cl_version>(dev.cl_version as cl_version),
+            CL_DEVICE_NUMERIC_VERSION => cl_prop::<cl_version>(dev.cl_version.into()),
+            CL_DEVICE_OPENCL_C_ALL_VERSIONS => cl_prop::<&Vec<cl_name_version>>(&dev.clc_versions),
+            CL_DEVICE_OPENCL_C_FEATURES => cl_prop::<&Vec<cl_name_version>>(&dev.clc_features),
+            CL_DEVICE_OPENCL_C_NUMERIC_VERSION_KHR => {
+                cl_prop::<cl_version_khr>(dev.clc_version.into())
+            }
+            CL_DEVICE_OPENCL_C_VERSION => {
+                cl_prop::<&str>(&format!("OpenCL C {} ", dev.clc_version.api_str()))
+            }
             // TODO subdevice support
             CL_DEVICE_PARENT_DEVICE => cl_prop::<cl_device_id>(cl_device_id::from_ptr(ptr::null())),
             CL_DEVICE_PARTITION_AFFINITY_DOMAIN => cl_prop::<cl_device_affinity_domain>(0),
@@ -208,10 +238,12 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT => cl_prop::<cl_uint>(0),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE => {
-                cl_prop::<cl_uint>(if dev.doubles_supported() { 1 } else { 0 })
+                cl_prop::<cl_uint>(if dev.fp64_supported() { 1 } else { 0 })
             }
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT => cl_prop::<cl_uint>(1),
-            CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF => cl_prop::<cl_uint>(0),
+            CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF => {
+                cl_prop::<cl_uint>(if dev.fp16_supported() { 1 } else { 0 })
+            }
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT => cl_prop::<cl_uint>(1),
@@ -219,18 +251,13 @@ impl CLInfo<cl_device_info> for cl_device_id {
                 cl_prop::<usize>(dev.subgroups() as usize)
             }
             CL_DEVICE_PRINTF_BUFFER_SIZE => cl_prop::<usize>(dev.printf_buffer_size()),
-            // TODO
-            CL_DEVICE_PROFILING_TIMER_RESOLUTION => cl_prop::<usize>(0),
-            CL_DEVICE_OPENCL_C_FEATURES => cl_prop::<&Vec<cl_name_version>>(&dev.clc_features),
-            CL_DEVICE_OPENCL_C_VERSION => {
-                cl_prop::<String>(format!("OpenCL C {} ", dev.clc_version.api_str()))
-            }
-            CL_DEVICE_OPENCL_C_ALL_VERSIONS => cl_prop::<&Vec<cl_name_version>>(&dev.clc_versions),
             CL_DEVICE_PROFILE => cl_prop(if dev.embedded {
                 "EMBEDDED_PROFILE"
             } else {
                 "FULL_PROFILE"
             }),
+            // TODO
+            CL_DEVICE_PROFILING_TIMER_RESOLUTION => cl_prop::<usize>(0),
             CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_QUEUE_ON_DEVICE_PROPERTIES => cl_prop::<cl_command_queue_properties>(0),
@@ -238,6 +265,12 @@ impl CLInfo<cl_device_info> for cl_device_id {
                 cl_prop::<cl_command_queue_properties>(CL_QUEUE_PROFILING_ENABLE.into())
             }
             CL_DEVICE_REFERENCE_COUNT => cl_prop::<cl_uint>(1),
+            CL_DEVICE_SHARED_SYSTEM_MEM_CAPABILITIES_INTEL => {
+                cl_prop::<cl_device_unified_shared_memory_capabilities_intel>(0)
+            }
+            CL_DEVICE_SINGLE_DEVICE_SHARED_MEM_CAPABILITIES_INTEL => {
+                cl_prop::<cl_device_unified_shared_memory_capabilities_intel>(0)
+            }
             CL_DEVICE_SINGLE_FP_CONFIG => cl_prop::<cl_device_fp_config>(
                 (CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN) as cl_device_fp_config,
             ),
@@ -258,9 +291,9 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_UUID_KHR => cl_prop::<[cl_uchar; CL_UUID_SIZE_KHR as usize]>(
                 dev.screen().device_uuid().unwrap_or_default(),
             ),
-            CL_DEVICE_VENDOR => cl_prop(dev.screen().device_vendor()),
+            CL_DEVICE_VENDOR => cl_prop::<&str>(&dev.screen().device_vendor()),
             CL_DEVICE_VENDOR_ID => cl_prop::<cl_uint>(dev.vendor_id()),
-            CL_DEVICE_VERSION => cl_prop::<String>(format!("OpenCL {} ", dev.cl_version.api_str())),
+            CL_DEVICE_VERSION => cl_prop::<&str>(&format!("OpenCL {} ", dev.cl_version.api_str())),
             CL_DRIVER_UUID_KHR => cl_prop::<[cl_char; CL_UUID_SIZE_KHR as usize]>(
                 dev.screen().driver_uuid().unwrap_or_default(),
             ),
@@ -284,7 +317,8 @@ pub fn get_devs_for_type(device_type: cl_device_type) -> Vec<&'static Arc<Device
         .collect()
 }
 
-pub fn get_device_ids(
+#[cl_entrypoint]
+fn get_device_ids(
     platform: cl_platform_id,
     device_type: cl_device_type,
     num_entries: cl_uint,
@@ -332,7 +366,18 @@ pub fn get_device_ids(
     Ok(())
 }
 
-pub fn get_device_and_host_timer(
+#[cl_entrypoint]
+fn retain_device(_device: cl_device_id) -> CLResult<()> {
+    Ok(())
+}
+
+#[cl_entrypoint]
+fn release_device(_device: cl_device_id) -> CLResult<()> {
+    Ok(())
+}
+
+#[cl_entrypoint]
+fn get_device_and_host_timer(
     _device: cl_device_id,
     _device_timestamp: *mut cl_ulong,
     _host_timestamp: *mut cl_ulong,
@@ -341,12 +386,14 @@ pub fn get_device_and_host_timer(
     Err(CL_INVALID_OPERATION)
 }
 
-pub fn get_host_timer(_device: cl_device_id, _host_timestamp: *mut cl_ulong) -> CLResult<()> {
+#[cl_entrypoint]
+fn get_host_timer(_device: cl_device_id, _host_timestamp: *mut cl_ulong) -> CLResult<()> {
     // TODO: we could support it
     Err(CL_INVALID_OPERATION)
 }
 
-pub fn set_default_device_command_queue(
+#[cl_entrypoint]
+fn set_default_device_command_queue(
     _context: cl_context,
     _device: cl_device_id,
     _command_queue: cl_command_queue,

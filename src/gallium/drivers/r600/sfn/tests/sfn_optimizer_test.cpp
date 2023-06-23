@@ -369,6 +369,206 @@ BLOCK_END
    check(sh, expect);
 };
 
+TEST_F(TestShaderFromNir, PeeholeSoureModsSimple)
+{
+   const char *input =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+OUTPUT LOC:1 NAME:5 MASK:15 SID:9 SPI_SID:10
+SHADER
+BLOCK_START
+  ALU MOV S2.x@free{s} : I[0] {WL}
+  ALU MOV S3.y@free{s} : L[0x40c00000] {WL}
+  ALU MOV S4.z@free{s} : L[0xc1140000] {WL}
+  ALU MOV S5.w@free{s} : L[0xbfe00000] {WL}
+  ALU MOV S6.x@free{s} : L[0x3fa00000] {WL}
+  ALU MOV S7.x{s} : |KC0[0].x| {W}
+  ALU MOV S7.y{s} : -KC0[0].y {W}
+  ALU MOV S7.z{s} : -|KC0[0].z| {W}
+  ALU MOV S7.w{s} : KC0[0].w {WL}
+  ALU ADD S8.y@free{s} : S3.y@free{s} S7.x{s} {WL}
+  ALU ADD S9.z@free{s} : S4.z@free{s} S7.y{s} {WL}
+  ALU ADD S10.w@free{s} : S5.w@free{s} S7.z{s} {WL}
+  ALU ADD S11.x@free{s} : S6.x@free{s} S7.w{s} {WL}
+  ALU EXP_IEEE S12.y@free{s} : S8.y@free{s} + S8.y@free{s} + S8.y@free{s} {WL}
+  ALU EXP_IEEE S13.z@free{s} : S9.z@free{s} + S9.z@free{s} + S9.z@free{s} {WL}
+  ALU EXP_IEEE S14.x@free{s} : S10.w@free{s} + S10.w@free{s} + S10.w@free{s} {WL}
+  ALU EXP_IEEE S15.y@free{s} : S11.x@free{s} + S11.x@free{s} + S11.x@free{s} {WL}
+  ALU MOV S17.x{s} : S12.y@free{s} {W}
+  ALU MOV S17.y{s} : S13.z@free{s} {W}
+  ALU MOV S17.z{s} : S14.x@free{s} {W}
+  ALU MOV S17.w{s} : S15.y@free{s} {WL}
+  ALU MOV S18.x@group{s} : S17.x{s} {W}
+  ALU MOV S18.y@group{s} : S17.y{s} {W}
+  ALU MOV S18.z@group{s} : S17.z{s} {W}
+  ALU MOV S18.w@group{s} : S17.w{s} {WL}
+  EXPORT_DONE PARAM 0 S18.xyzw
+BLOCK_END)";
+
+   const char *expect =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+OUTPUT LOC:1 NAME:5 MASK:15 SID:9 SPI_SID:10
+SHADER
+BLOCK_START
+  ALU ADD S8.y@free{s} : L[0x40c00000] |KC0[0].x| {WL}
+  ALU ADD S9.z@free{s} : L[0xc1140000] -KC0[0].y {WL}
+  ALU ADD S10.w@free{s} : L[0xbfe00000] -|KC0[0].z| {WL}
+  ALU ADD S11.x@free{s} : L[0x3fa00000] KC0[0].w {WL}
+  ALU EXP_IEEE S18.x@group{s} : S8.y@free{s} + S8.y@free{s} + S8.y@free{s} {W}
+  ALU EXP_IEEE S18.y@group{s} : S9.z@free{s} + S9.z@free{s} + S9.z@free{s} {W}
+  ALU EXP_IEEE S18.z@group{s} : S10.w@free{s} + S10.w@free{s} + S10.w@free{s} {W}
+  ALU EXP_IEEE S18.w@group{s} : S11.x@free{s} + S11.x@free{s} + S11.x@free{s} + S11.x@free{s} {WL}
+  EXPORT_DONE PARAM 0 S18.xyzw
+BLOCK_END
+)";
+   auto sh = from_string(input);
+   optimize(*sh);
+   check(sh, expect);
+};
+
+TEST_F(TestShaderFromNir, PeeholeSoureModsAbsNegTwice)
+{
+   const char *input =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+OUTPUT LOC:1 NAME:5 MASK:15 SID:9 SPI_SID:10
+SHADER
+BLOCK_START
+  ALU MOV S2.x@free{s} : I[0] {WL}
+  ALU MOV S3.y@free{s} : L[0x40c00000] {WL}
+  ALU MOV S4.z@free{s} : L[0xc1140000] {WL}
+  ALU MOV S5.w@free{s} : L[0xbfe00000] {WL}
+  ALU MOV S6.x@free{s} : L[0x3fa00000] {WL}
+  ALU MOV S7.x{s} : |KC0[0].x| {W}
+  ALU MOV S7.y{s} : -KC0[0].y {W}
+  ALU MOV S7.z{s} : -|KC0[0].z| {W}
+  ALU MOV S7.w{s} : KC0[0].w {WL}
+  ALU MOV S8.x : |S7.x| {W}
+  ALU MOV S8.y : -S7.y {W}
+  ALU MOV S8.z : -|S7.z| {W}
+  ALU MOV S8.w : -|S7.x| {WL}
+  ALU ADD S19.y@free{s} : S3.y@free{s} S8.x {WL}
+  ALU ADD S9.z@free{s} : S4.z@free{s} S8.y {WL}
+  ALU ADD S10.w@free{s} : S5.w@free{s} S8.z {WL}
+  ALU ADD S11.x@free{s} : S6.x@free{s} S8.w {WL}
+  ALU EXP_IEEE S12.y@free{s} : S19.y@free{s} + S19.y@free{s} + S19.y@free{s} {WL}
+  ALU EXP_IEEE S13.z@free{s} : S9.z@free{s} + S9.z@free{s} + S9.z@free{s} {WL}
+  ALU EXP_IEEE S14.x@free{s} : S10.w@free{s} + S10.w@free{s} + S10.w@free{s} {WL}
+  ALU EXP_IEEE S15.y@free{s} : S11.x@free{s} + S11.x@free{s} + S11.x@free{s} {WL}
+  ALU MOV S17.x{s} : S12.y@free{s} {W}
+  ALU MOV S17.y{s} : S13.z@free{s} {W}
+  ALU MOV S17.z{s} : S14.x@free{s} {W}
+  ALU MOV S17.w{s} : S15.y@free{s} {WL}
+  ALU MOV S18.x@group{s} : S17.x{s} {W}
+  ALU MOV S18.y@group{s} : S17.y{s} {W}
+  ALU MOV S18.z@group{s} : S17.z{s} {W}
+  ALU MOV S18.w@group{s} : S17.w{s} {WL}
+  EXPORT_DONE PARAM 0 S18.xyzw
+BLOCK_END)";
+
+   const char *expect =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+OUTPUT LOC:1 NAME:5 MASK:15 SID:9 SPI_SID:10
+SHADER
+BLOCK_START
+  ALU ADD S19.y@free{s} : L[0x40c00000] |KC0[0].x| {WL}
+  ALU ADD S9.z@free{s} : L[0xc1140000] KC0[0].y {WL}
+  ALU ADD S10.w@free{s} : L[0xbfe00000] |KC0[0].z| {WL}
+  ALU ADD S11.x@free{s} : L[0x3fa00000] -|KC0[0].x| {WL}
+  ALU EXP_IEEE S18.x@group{s} : S19.y@free{s} + S19.y@free{s} + S19.y@free{s} {W}
+  ALU EXP_IEEE S18.y@group{s} : S9.z@free{s} + S9.z@free{s} + S9.z@free{s} {W}
+  ALU EXP_IEEE S18.z@group{s} : S10.w@free{s} + S10.w@free{s} + S10.w@free{s} {W}
+  ALU EXP_IEEE S18.w@group{s} : S11.x@free{s} + S11.x@free{s} + S11.x@free{s} + S11.x@free{s} {WL}
+  EXPORT_DONE PARAM 0 S18.xyzw
+BLOCK_END
+)";
+   auto sh = from_string(input);
+   optimize(*sh);
+   check(sh, expect);
+};
+
+TEST_F(TestShaderFromNir, PeeholeSoureModsClamp)
+{
+   const char *input =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+SHADER
+BLOCK_START
+  ALU MOV S1.x{s} : |KC0[0].x| {W}
+  ALU MOV S2.y{s} : -KC0[0].y {W}
+  ALU ADD S3.x : S1.x S2.y {W}
+  ALU MOV CLAMP S4.x : S3.x {W}
+  EXPORT_DONE PARAM 0 S4.xxxx
+BLOCK_END)";
+
+   const char *expect =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+SHADER
+BLOCK_START
+  ALU ADD CLAMP S3.x : |KC0[0].x| -KC0[0].y {W}
+  EXPORT_DONE PARAM 0 S3.xxxx
+BLOCK_END
+)";
+   auto sh = from_string(input);
+   optimize(*sh);
+   check(sh, expect);
+};
+
+TEST_F(TestShaderFromNir, PeeholeSoureModsMuliSlot)
+{
+   const char *input =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+REGISTERS R1.xyzw
+SHADER
+BLOCK_START
+  ALU MOV S1.x{s} : |KC0[0].x| {W}
+  ALU MOV S1.y{s} : -KC0[0].y {W}
+  ALU MOV S1.z{s} : |KC0[0].z| {W}
+  ALU MOV S1.w{s} : KC0[0].w {W}
+  ALU MOV S2.x{s} : |R1.x| {W}
+  ALU MOV S2.y{s} : R1.y {W}
+  ALU MOV S2.z{s} : -R1.z {W}
+  ALU MOV S2.w{s} : -R1.w {W}
+  ALU DOT4 S5.x : S1.x S2.x + S1.y S2.y  + S1.z S2.z + S1.w S2.w {W}
+  EXPORT_DONE PARAM 0 S5.xxxx
+BLOCK_END)";
+
+   const char *expect =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+REGISTERS R1.xyzw
+SHADER
+BLOCK_START
+  ALU DOT4 S5.x : |KC0[0].x| |R1.x| + -KC0[0].y R1.y  + |KC0[0].z| -R1.z + KC0[0].w -R1.w {W}
+  EXPORT_DONE PARAM 0 S5.xxxx
+BLOCK_END
+)";
+   auto sh = from_string(input);
+   optimize(*sh);
+   check(sh, expect);
+};
+
+
 TEST_F(TestShaderFromNir, OptimizeIntoGroup)
 {
    const char *input =

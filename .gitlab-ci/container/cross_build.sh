@@ -18,6 +18,7 @@ apt-get install -y --no-remove \
         $STABLE_EPHEMERAL \
         crossbuild-essential-$arch \
         pkgconf:$arch \
+        libasan8:$arch \
         libdrm-dev:$arch \
         libelf-dev:$arch \
         libexpat1-dev:$arch \

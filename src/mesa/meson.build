@@ -262,8 +262,6 @@ files_libmesa = files(
   'math/m_matrix.h',
   'program/arbprogparse.c',
   'program/arbprogparse.h',
-  'program/link_program.cpp',
-  'program/link_program.h',
   'program/prog_cache.c',
   'program/prog_cache.h',
   'program/prog_instruction.c',
@@ -485,7 +483,7 @@ libmesa = static_library(
     inc_libmesa_asm, include_directories('main'),
   ],
   link_with : [libglsl, libmesa_sse41],
-  dependencies : [idep_nir_headers, dep_vdpau, idep_mesautil],
+  dependencies : [idep_nir, idep_vtn, dep_vdpau, idep_mesautil],
   build_by_default : false,
 )
 

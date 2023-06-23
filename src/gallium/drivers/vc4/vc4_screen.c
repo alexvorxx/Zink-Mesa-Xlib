@@ -299,8 +299,6 @@ vc4_screen_get_shader_param(struct pipe_screen *pscreen,
         case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
         case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
                 return VC4_MAX_TEXTURE_SAMPLERS;
-        case PIPE_SHADER_CAP_PREFERRED_IR:
-                return PIPE_SHADER_IR_NIR;
         case PIPE_SHADER_CAP_SUPPORTED_IRS:
                 return 1 << PIPE_SHADER_IR_NIR;
         case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:

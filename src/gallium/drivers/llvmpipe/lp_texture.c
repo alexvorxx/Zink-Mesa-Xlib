@@ -288,7 +288,7 @@ llvmpipe_resource_create_all(struct pipe_screen *_screen,
          lpr->size_required += (LP_RASTER_BLOCK_SIZE - 1) * 4 * sizeof(float);
 
       if (alloc_backing) {
-         uint64_t alignment = 64;
+         uint64_t alignment = sizeof(uint64_t) * 16;
 
          if (templat->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT)
             os_get_page_size(&alignment);

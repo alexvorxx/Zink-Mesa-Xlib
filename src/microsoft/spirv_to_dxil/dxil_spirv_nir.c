@@ -60,7 +60,7 @@ spirv_to_nir_options = {
    },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
-   .shared_addr_format = nir_address_format_32bit_offset,
+   .shared_addr_format = nir_address_format_logical,
 
    .min_ubo_alignment = 256, /* D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT */
    .min_ssbo_alignment = 16, /* D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT */
@@ -252,15 +252,16 @@ lower_shader_system_values(struct nir_builder *builder, nir_instr *instr,
       nir_address_format_bit_size(ubo_format),
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-   unsigned num_components = nir_dest_num_components(intrin->dest);
-   unsigned alignment = (num_components == 3 ? 4 : num_components) *
-      nir_dest_bit_size(intrin->dest) / 8;
-   assert(offset % alignment == 0);
-   nir_ssa_def *load_data = build_load_ubo_dxil(
-      builder, nir_channel(builder, load_desc, 0),
+   nir_ssa_def *load_data = nir_build_load_ubo(
+      builder, 
+      nir_dest_num_components(intrin->dest),
+      nir_dest_bit_size(intrin->dest),
+      nir_channel(builder, load_desc, 0),
       nir_imm_int(builder, offset),
-      num_components, nir_dest_bit_size(intrin->dest),
-      alignment);
+      .align_mul = 256,
+      .align_offset = offset,
+      .range_base = offset,
+      .range = nir_dest_bit_size(intrin->dest) * nir_dest_num_components(intrin->dest) / 8);
 
    nir_ssa_def_rewrite_uses(&intrin->dest.ssa, load_data);
    nir_instr_remove(instr);
@@ -340,11 +341,16 @@ lower_load_push_constant(struct nir_builder *builder, nir_instr *instr,
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    nir_ssa_def *offset = nir_ssa_for_src(builder, intrin->src[0], 1);
-   nir_ssa_def *load_data = build_load_ubo_dxil(
-      builder, nir_channel(builder, load_desc, 0),
+   nir_ssa_def *load_data = nir_build_load_ubo(
+      builder, 
+      nir_dest_num_components(intrin->dest),
+      nir_dest_bit_size(intrin->dest), 
+      nir_channel(builder, load_desc, 0),
       nir_iadd_imm(builder, offset, base),
-      nir_dest_num_components(intrin->dest), nir_dest_bit_size(intrin->dest),
-      nir_intrinsic_align(intrin));
+      .align_mul = nir_intrinsic_align_mul(intrin),
+      .align_offset = nir_intrinsic_align_offset(intrin),
+      .range_base = base,
+      .range = range);
 
    nir_ssa_def_rewrite_uses(&intrin->dest.ssa, load_data);
    nir_instr_remove(instr);
@@ -431,9 +437,13 @@ lower_yz_flip(struct nir_builder *builder, nir_instr *instr,
          index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
       dyn_yz_flip_mask =
-         build_load_ubo_dxil(builder,
-                             nir_channel(builder, load_desc, 0),
-                             nir_imm_int(builder, offset), 1, 32, 4);
+         nir_build_load_ubo(builder, 1, 32,
+                            nir_channel(builder, load_desc, 0),
+                            nir_imm_int(builder, offset),
+                            .align_mul = 256,
+                            .align_offset = offset,
+                            .range_base = offset,
+                            .range = 4);
       *data->reads_sysval_ubo = true;
    }
 
@@ -728,9 +738,12 @@ write_pntc_with_pos(nir_builder *b, nir_instr *instr, void *_data)
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    nir_ssa_def *transform = nir_channels(b,
-                                         build_load_ubo_dxil(b,
-                                                             nir_channel(b, load_desc, 0),
-                                                             nir_imm_int(b, offset), 4, 32, 16),
+                                         nir_build_load_ubo(b, 4, 32,
+                                                            nir_channel(b, load_desc, 0),
+                                                            nir_imm_int(b, offset),
+                                                            .align_mul = 16,
+                                                            .range_base = offset,
+                                                            .range = 16),
                                          0x6);
    nir_ssa_def *point_center_in_clip = nir_fmul(b, nir_trim_vector(b, pos, 2),
                                                 nir_frcp(b, nir_channel(b, pos, 3)));
@@ -1035,9 +1048,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
    }
 
    NIR_PASS_V(nir, nir_opt_deref);
-   NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores,
-              nir_var_mem_ubo | nir_var_mem_push_const |
-              nir_var_mem_ssbo);
 
    if (conf->inferred_read_only_images_as_srvs) {
       const nir_opt_access_options opt_access_options = {
@@ -1065,17 +1075,18 @@ dxil_spirv_nir_passes(nir_shader *nir,
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo,
               nir_address_format_32bit_index_offset);
 
-   if (!nir->info.shared_memory_explicit_layout) {
+   if (nir->info.shared_memory_explicit_layout) {
       NIR_PASS_V(nir, nir_lower_vars_to_explicit_types, nir_var_mem_shared,
                  shared_var_info);
+      NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores, nir_var_mem_shared);
+      NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared, nir_address_format_32bit_offset);
+   } else {
+      NIR_PASS_V(nir, nir_split_struct_vars, nir_var_mem_shared);
+      NIR_PASS_V(nir, dxil_nir_flatten_var_arrays, nir_var_mem_shared);
+      NIR_PASS_V(nir, dxil_nir_lower_var_bit_size, nir_var_mem_shared,
+                 conf->shader_model_max >= SHADER_MODEL_6_2 ? 16 : 32, 64);
    }
-   NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores, nir_var_mem_shared);
-   NIR_PASS_V(nir, nir_lower_vars_to_scratch, nir_var_function_temp | nir_var_shader_temp,
-              256 /* arbitrary */, temp_var_info);
-   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared,
-      nir_address_format_32bit_offset);
 
-   NIR_PASS_V(nir, dxil_nir_lower_atomics_to_dxil);
    NIR_PASS_V(nir, dxil_nir_lower_int_cubemaps, false);
 
    NIR_PASS_V(nir, nir_lower_clip_cull_distance_arrays);
@@ -1131,6 +1142,12 @@ dxil_spirv_nir_passes(nir_shader *nir,
          NIR_PASS(progress, nir, nir_opt_algebraic);
       } while (progress);
    }
+
+   NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+   NIR_PASS_V(nir, nir_split_struct_vars, nir_var_function_temp);
+   NIR_PASS_V(nir, dxil_nir_flatten_var_arrays, nir_var_function_temp);
+   NIR_PASS_V(nir, dxil_nir_lower_var_bit_size, nir_var_function_temp,
+              conf->shader_model_max >= SHADER_MODEL_6_2 ? 16 : 32, 64);
 
    NIR_PASS_V(nir, nir_lower_doubles, NULL, nir->options->lower_doubles_options);
 

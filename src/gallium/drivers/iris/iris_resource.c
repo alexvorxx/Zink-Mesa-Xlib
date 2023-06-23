@@ -65,6 +65,8 @@ enum modifier_priority {
    MODIFIER_PRIORITY_4,
    MODIFIER_PRIORITY_4_DG2_RC_CCS,
    MODIFIER_PRIORITY_4_DG2_RC_CCS_CC,
+   MODIFIER_PRIORITY_4_MTL_RC_CCS,
+   MODIFIER_PRIORITY_4_MTL_RC_CCS_CC,
 };
 
 static const uint64_t priority_to_modifier[] = {
@@ -78,6 +80,8 @@ static const uint64_t priority_to_modifier[] = {
    [MODIFIER_PRIORITY_4] = I915_FORMAT_MOD_4_TILED,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS_CC] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+   [MODIFIER_PRIORITY_4_MTL_RC_CCS] = I915_FORMAT_MOD_4_TILED_MTL_RC_CCS,
+   [MODIFIER_PRIORITY_4_MTL_RC_CCS_CC] = I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC,
 };
 
 static bool
@@ -116,6 +120,12 @@ modifier_is_supported(const struct intel_device_info *devinfo,
       if (!intel_device_info_is_dg2(devinfo))
          return false;
       break;
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+   case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+      if (!intel_device_info_is_mtl(devinfo))
+         return false;
+      break;
    case DRM_FORMAT_MOD_INVALID:
    default:
       return false;
@@ -123,6 +133,7 @@ modifier_is_supported(const struct intel_device_info *devinfo,
 
    /* Check remaining requirements. */
    switch (modifier) {
+   case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
       if (INTEL_DEBUG(DEBUG_NO_CCS))
@@ -141,6 +152,8 @@ modifier_is_supported(const struct intel_device_info *devinfo,
          return false;
       }
       break;
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
@@ -179,6 +192,12 @@ select_best_modifier(const struct intel_device_info *devinfo,
          continue;
 
       switch (modifiers[i]) {
+      case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+         prio = MAX2(prio, MODIFIER_PRIORITY_4_MTL_RC_CCS_CC);
+         break;
+      case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+         prio = MAX2(prio, MODIFIER_PRIORITY_4_MTL_RC_CCS);
+         break;
       case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
          prio = MAX2(prio, MODIFIER_PRIORITY_4_DG2_RC_CCS_CC);
          break;
@@ -246,6 +265,9 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_MC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+      I915_FORMAT_MOD_4_TILED_MTL_RC_CCS,
+      I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC,
+      I915_FORMAT_MOD_4_TILED_MTL_MC_CCS,
       I915_FORMAT_MOD_Y_TILED,
       I915_FORMAT_MOD_Y_TILED_CCS,
       I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS,
@@ -300,8 +322,11 @@ iris_get_dmabuf_modifier_planes(struct pipe_screen *pscreen, uint64_t modifier,
    unsigned int planes = util_format_get_num_planes(format);
 
    switch (modifier) {
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       return 3;
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+   case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
@@ -358,7 +383,8 @@ iris_memobj_create_from_handle(struct pipe_screen *pscreen,
                                         whandle->handle);
       break;
    case WINSYS_HANDLE_TYPE_FD:
-      bo = iris_bo_import_dmabuf(screen->bufmgr, whandle->handle);
+      bo = iris_bo_import_dmabuf(screen->bufmgr, whandle->handle,
+                                 whandle->modifier);
       break;
    default:
       unreachable("invalid winsys handle type");
@@ -1033,6 +1059,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
 
    /* Combine main and aux plane information. */
    switch (res->mod_info->modifier) {
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
       assert(num_main_planes == 1 && num_planes == 2);
@@ -1060,6 +1087,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
                        iris_get_aux_clear_color_state_size(screen, res),
                        4096, IRIS_MEMZONE_OTHER, BO_ALLOC_ZEROED);
       break;
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       assert(num_main_planes == 1 && num_planes == 3);
       import_aux_info(r[0], r[1]);
@@ -1081,6 +1109,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
       r[0]->aux.clear_color_offset = r[1]->aux.clear_color_offset;
       r[0]->aux.clear_color_unknown = true;
       break;
+   case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
       if (num_main_planes == 1 && num_planes == 2) {
          import_aux_info(r[0], r[1]);
@@ -1383,6 +1412,7 @@ mod_plane_is_clear_color(uint64_t modifier, uint32_t plane)
    assert(mod_info);
 
    switch (modifier) {
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 2;
@@ -1421,7 +1451,8 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
 
    switch (whandle->type) {
    case WINSYS_HANDLE_TYPE_FD:
-      res->bo = iris_bo_import_dmabuf(bufmgr, whandle->handle);
+      res->bo = iris_bo_import_dmabuf(bufmgr, whandle->handle,
+                                      whandle->modifier);
       break;
    case WINSYS_HANDLE_TYPE_SHARED:
       res->bo = iris_bo_gem_create_from_name(bufmgr, "winsys image",
@@ -2389,7 +2420,12 @@ iris_map_tiled_memcpy(struct iris_transfer *map)
 
          isl_memcpy_tiled_to_linear(x1, x2, y1, y2, ptr, src, xfer->stride,
                                     surf->row_pitch_B, has_swizzling,
-                                    surf->tiling, ISL_MEMCPY_STREAMING_LOAD);
+                                    surf->tiling,
+#if defined(USE_SSE41)
+                                    util_get_cpu_caps()->has_sse4_1 ?
+                                    ISL_MEMCPY_STREAMING_LOAD :
+#endif
+                                    ISL_MEMCPY);
       }
    }
 

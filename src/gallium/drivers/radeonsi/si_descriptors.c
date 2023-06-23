@@ -2155,21 +2155,30 @@ void si_shader_change_notify(struct si_context *sctx)
    }
 }
 
-#define si_emit_consecutive_shader_pointers(sctx, pointer_mask, sh_base) do { \
+#define si_emit_consecutive_shader_pointers(sctx, pointer_mask, sh_base, type) do { \
    unsigned sh_reg_base = (sh_base); \
    if (sh_reg_base) { \
       unsigned mask = sctx->shader_pointers_dirty & (pointer_mask); \
       \
-      while (mask) { \
-         int start, count; \
-         u_bit_scan_consecutive_range(&mask, &start, &count); \
-         \
-         struct si_descriptors *descs = &sctx->descriptors[start]; \
-         unsigned sh_offset = sh_reg_base + descs->shader_userdata_offset; \
-         \
-         radeon_set_sh_reg_seq(sh_offset, count); \
-         for (int i = 0; i < count; i++) \
-            radeon_emit_32bit_pointer(sctx->screen, descs[i].gpu_address); \
+      if (sctx->gfx_level >= GFX11) { \
+         u_foreach_bit(i, mask) { \
+            struct si_descriptors *descs = &sctx->descriptors[i]; \
+            unsigned sh_reg = sh_reg_base + descs->shader_userdata_offset; \
+            \
+            radeon_push_##type##_sh_reg(sh_reg, descs->gpu_address); \
+         } \
+      } else { \
+         while (mask) { \
+            int start, count; \
+            u_bit_scan_consecutive_range(&mask, &start, &count); \
+            \
+            struct si_descriptors *descs = &sctx->descriptors[start]; \
+            unsigned sh_offset = sh_reg_base + descs->shader_userdata_offset; \
+            \
+            radeon_set_sh_reg_seq(sh_offset, count); \
+            for (int i = 0; i < count; i++) \
+               radeon_emit_32bit_pointer(sctx->screen, descs[i].gpu_address); \
+         } \
       } \
    } \
 } while (0)
@@ -2179,9 +2188,12 @@ static void si_emit_global_shader_pointers(struct si_context *sctx, struct si_de
    radeon_begin(&sctx->gfx_cs);
 
    if (sctx->gfx_level >= GFX11) {
-      radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
-      radeon_emit_one_32bit_pointer(sctx, descs, R_00B230_SPI_SHADER_USER_DATA_GS_0);
-      radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_HS_0);
+      radeon_push_gfx_sh_reg(R_00B030_SPI_SHADER_USER_DATA_PS_0 + descs->shader_userdata_offset,
+                             descs->gpu_address);
+      radeon_push_gfx_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 + descs->shader_userdata_offset,
+                             descs->gpu_address);
+      radeon_push_gfx_sh_reg(R_00B430_SPI_SHADER_USER_DATA_HS_0 + descs->shader_userdata_offset,
+                             descs->gpu_address);
    } else if (sctx->gfx_level >= GFX10) {
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
       /* HW VS stage only used in non-NGG mode. */
@@ -2219,20 +2231,21 @@ void si_emit_graphics_shader_pointers(struct si_context *sctx)
 
    radeon_begin(&sctx->gfx_cs);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(VERTEX),
-                                       sh_base[PIPE_SHADER_VERTEX]);
+                                       sh_base[PIPE_SHADER_VERTEX], gfx);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(TESS_EVAL),
-                                       sh_base[PIPE_SHADER_TESS_EVAL]);
+                                       sh_base[PIPE_SHADER_TESS_EVAL], gfx);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(FRAGMENT),
-                                       sh_base[PIPE_SHADER_FRAGMENT]);
+                                       sh_base[PIPE_SHADER_FRAGMENT], gfx);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(TESS_CTRL),
-                                       sh_base[PIPE_SHADER_TESS_CTRL]);
+                                       sh_base[PIPE_SHADER_TESS_CTRL], gfx);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(GEOMETRY),
-                                       sh_base[PIPE_SHADER_GEOMETRY]);
+                                       sh_base[PIPE_SHADER_GEOMETRY], gfx);
 
    if (sctx->gs_attribute_ring_pointer_dirty) {
       assert(sctx->gfx_level >= GFX11);
-      radeon_set_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 + GFX9_SGPR_ATTRIBUTE_RING_ADDR * 4,
-                        sctx->screen->attribute_ring->gpu_address);
+      radeon_push_gfx_sh_reg(R_00B230_SPI_SHADER_USER_DATA_GS_0 +
+                             GFX9_SGPR_ATTRIBUTE_RING_ADDR * 4,
+                             sctx->screen->attribute_ring->gpu_address);
       sctx->gs_attribute_ring_pointer_dirty = false;
    }
    radeon_end();
@@ -2253,11 +2266,16 @@ void si_emit_compute_shader_pointers(struct si_context *sctx)
 
    radeon_begin(cs);
    si_emit_consecutive_shader_pointers(sctx, SI_DESCS_SHADER_MASK(COMPUTE),
-                                       R_00B900_COMPUTE_USER_DATA_0);
+                                       R_00B900_COMPUTE_USER_DATA_0, compute);
    sctx->shader_pointers_dirty &= ~SI_DESCS_SHADER_MASK(COMPUTE);
 
    if (sctx->compute_bindless_pointer_dirty) {
-      radeon_emit_one_32bit_pointer(sctx, &sctx->bindless_descriptors, base);
+      if (sctx->gfx_level >= GFX11) {
+         radeon_push_compute_sh_reg(base + sctx->bindless_descriptors.shader_userdata_offset,
+                                    sctx->bindless_descriptors.gpu_address);
+      } else {
+         radeon_emit_one_32bit_pointer(sctx, &sctx->bindless_descriptors, base);
+      }
       sctx->compute_bindless_pointer_dirty = false;
    }
 

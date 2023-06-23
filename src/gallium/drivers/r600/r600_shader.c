@@ -168,7 +168,8 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 		pipe_shader_type_from_mesa(sel->nir->info.stage);
 	
 	bool dump = r600_can_dump_shader(&rctx->screen->b, processor);
-	unsigned use_sb = rctx->screen->b.debug_flags & DBG_NIR_SB;
+	bool use_sb = rctx->screen->b.debug_flags & DBG_NIR_SB;
+
 	unsigned sb_disasm;
 	unsigned export_shader;
 	
@@ -239,6 +240,7 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 	use_sb &= !shader->shader.uses_atomics;
 	use_sb &= !shader->shader.uses_images;
 	use_sb &= !shader->shader.uses_helper_invocation;
+        use_sb &= !shader->shader.disable_sb;
 
 	/* SB can't handle READ_SCRATCH properly */
 	use_sb &= !(shader->shader.needs_scratch_space && rscreen->b.gfx_level < R700);
@@ -388,11 +390,6 @@ void r600_pipe_shader_destroy(struct pipe_context *ctx UNUSED, struct r600_pipe_
 		free(shader->shader.arrays);
 }
 
-/*
- * tgsi -> r600 shader
- */
-struct r600_shader_tgsi_instruction;
-
 struct r600_shader_src {
 	unsigned				sel;
 	unsigned				swizzle[4];
@@ -410,53 +407,12 @@ struct eg_interp {
 };
 
 struct r600_shader_ctx {
-	struct tgsi_shader_info			info;
-	struct tgsi_array_info			*array_infos;
-	/* flag for each tgsi temp array if its been spilled or not */
-	bool					*spilled_arrays;
-	struct tgsi_parse_context		parse;
-	const struct tgsi_token			*tokens;
 	unsigned				type;
-	unsigned				file_offset[TGSI_FILE_COUNT];
 	unsigned				temp_reg;
-	const struct r600_shader_tgsi_instruction	*inst_info;
 	struct r600_bytecode			*bc;
 	struct r600_shader			*shader;
-	struct r600_shader_src			src[4];
-	uint32_t				*literals;
-	uint32_t				nliterals;
 	uint32_t				max_driver_temp_used;
-	/* needed for evergreen interpolation */
-	struct eg_interp		eg_interpolators[6]; // indexed by Persp/Linear * 3 + sample/center/centroid
-	/* evergreen/cayman also store sample mask in face register */
-	int					face_gpr;
-	/* sample id is .w component stored in fixed point position register */
-	int					fixed_pt_position_gpr;
-	int					colors_used;
-	boolean                 clip_vertex_write;
-	unsigned                cv_output;
-	unsigned		edgeflag_output;
-	int					helper_invoc_reg;
-	int                                     cs_block_size_reg;
-	int                                     cs_grid_size_reg;
-	bool cs_block_size_loaded, cs_grid_size_loaded;
-	int					fragcoord_input;
-	int					next_ring_offset;
-	int					gs_out_ring_offset;
-	int					gs_next_vertex;
-	struct r600_shader	*gs_for_vs;
-	int					gs_export_gpr_tregs[4];
-	int                                     gs_rotated_input[2];
-	const struct pipe_stream_output_info	*gs_stream_output_info;
 	unsigned				enabled_stream_buffers_mask;
-	unsigned                                tess_input_info; /* temp with tess input offsets */
-	unsigned                                tess_output_info; /* temp with tess input offsets */
-	unsigned                                thread_id_gpr; /* temp with thread id calculated for images */
-};
-
-struct r600_shader_tgsi_instruction {
-	unsigned	op;
-	int (*process)(struct r600_shader_ctx *ctx);
 };
 
 int eg_get_interpolator_index(unsigned interpolate, unsigned location)

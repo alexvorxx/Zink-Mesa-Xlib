@@ -55,7 +55,6 @@ pub enum ProgramSourceType {
     Il(spirv::SPIRVBin),
 }
 
-#[repr(C)]
 pub struct Program {
     pub base: CLObjectBase<CL_INVALID_PROGRAM>,
     pub context: Arc<Context>,
@@ -555,7 +554,13 @@ impl Program {
         let mut d = info.dev_build_mut(dev);
 
         let (spirv, log) = match &self.src {
-            ProgramSourceType::Il(spirv) => spirv.clone_on_validate(),
+            ProgramSourceType::Il(spirv) => {
+                let options = clc_validator_options {
+                    // has to match CL_DEVICE_MAX_PARAMETER_SIZE
+                    limit_max_function_arg: dev.param_max_size() as u32,
+                };
+                spirv.clone_on_validate(&options)
+            }
             ProgramSourceType::Src(src) => {
                 let args = prepare_options(&options, dev);
                 spirv::SPIRVBin::from_clc(

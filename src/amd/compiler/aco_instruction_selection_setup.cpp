@@ -308,7 +308,8 @@ init_context(isel_context* ctx, nir_shader* shader)
    ctx->ub_config.max_workgroup_size[2] = 2048;
 
    nir_divergence_analysis(shader);
-   nir_opt_uniform_atomics(shader);
+   if (nir_opt_uniform_atomics(shader) && nir_lower_int64(shader))
+      nir_divergence_analysis(shader);
 
    apply_nuw_to_offsets(ctx, impl);
 
@@ -659,8 +660,8 @@ cleanup_context(isel_context* ctx)
 isel_context
 setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* const* shaders,
                    ac_shader_config* config, const struct aco_compiler_options* options,
-                   const struct aco_shader_info* info,
-                   const struct ac_shader_args* args, bool is_ps_epilog)
+                   const struct aco_shader_info* info, const struct ac_shader_args* args,
+                   bool is_ps_epilog)
 {
    SWStage sw_stage = SWStage::None;
    for (unsigned i = 0; i < shader_count; i++) {

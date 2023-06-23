@@ -1075,9 +1075,7 @@ emit_3dstate_streamout(struct anv_graphics_pipeline *pipeline,
 
 #if GFX_VERx10 == 125
       /* Wa_14015946265: Send PC with CS stall after SO_DECL. */
-      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
-         pc.CommandStreamerStallEnable = true;
-      }
+      genX(batch_emit_pipe_control)(batch, device->info, ANV_PIPE_CS_STALL_BIT);
 #endif
    }
 
@@ -1872,8 +1870,8 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
 #if GFX_VERx10 >= 125
       const struct anv_device *device = pipeline->base.base.device;
       /* Disable Mesh. */
-      if (device->physical->vk.supported_extensions.NV_mesh_shader ||
-          device->physical->vk.supported_extensions.EXT_mesh_shader) {
+      if (device->vk.enabled_extensions.NV_mesh_shader ||
+          device->vk.enabled_extensions.EXT_mesh_shader) {
          struct anv_batch *batch = &pipeline->base.base.batch;
 
          anv_batch_emit(batch, GENX(3DSTATE_MESH_CONTROL), zero);

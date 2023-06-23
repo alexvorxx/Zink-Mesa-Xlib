@@ -10,11 +10,7 @@
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
 
-#if DETECT_ARCH_X86_64 || DETECT_ARCH_PPC_64 || DETECT_ARCH_AARCH64 || DETECT_ARCH_MIPS64
-#define NUM_QUERIES 5000
-#else
 #define NUM_QUERIES 500
-#endif
 
 struct zink_query_pool {
    struct list_head list;
@@ -368,7 +364,7 @@ qbo_append(struct pipe_screen *screen, struct zink_query *query)
       qbo->buffers[i] = pipe_buffer_create(screen, PIPE_BIND_QUERY_BUFFER,
                                            PIPE_USAGE_STAGING,
                                            /* this is the maximum possible size of the results in a given buffer */
-                                           NUM_QUERIES * get_num_results(query) * sizeof(uint64_t));
+                                           (query->type == PIPE_QUERY_TIMESTAMP ? 1 : NUM_QUERIES) * get_num_results(query) * sizeof(uint64_t));
       if (!qbo->buffers[i])
          goto fail;
    }
@@ -887,6 +883,8 @@ begin_query(struct zink_context *ctx, struct zink_batch *batch, struct zink_quer
       return;
    }
 
+   zink_flush_dgc_if_enabled(ctx);
+
    update_query_id(ctx, q);
    q->predicate_dirty = true;
    if (q->needs_reset)
@@ -994,6 +992,8 @@ end_query(struct zink_context *ctx, struct zink_batch *batch, struct zink_query 
 {
    if (q->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
       return;
+
+   zink_flush_dgc_if_enabled(ctx);
 
    ASSERTED struct zink_query_buffer *qbo = q->curr_qbo;
    assert(qbo);
@@ -1282,6 +1282,7 @@ zink_start_conditional_render(struct zink_context *ctx)
 void
 zink_stop_conditional_render(struct zink_context *ctx)
 {
+   zink_flush_dgc_if_enabled(ctx);
    struct zink_batch *batch = &ctx->batch;
    zink_clear_apply_conditionals(ctx);
    if (unlikely(!zink_screen(ctx->base.screen)->info.have_EXT_conditional_rendering) || !ctx->render_condition.active)
@@ -1301,6 +1302,7 @@ zink_render_condition(struct pipe_context *pctx,
    zink_batch_no_rp(ctx);
    VkQueryResultFlagBits flags = 0;
 
+   zink_flush_dgc_if_enabled(ctx);
    if (query == NULL) {
       /* force conditional clears if they exist */
       if (ctx->clears_enabled && !ctx->batch.in_rp)

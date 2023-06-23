@@ -153,6 +153,7 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
 
    case PIPE_CAP_START_INSTANCE:
    case PIPE_CAP_QUERY_TIMESTAMP:
+   case PIPE_CAP_TIMER_RESOLUTION:
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
       return 0;
 

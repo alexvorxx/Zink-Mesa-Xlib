@@ -266,6 +266,16 @@ static LLVMValueRef emit_b2i(struct ac_llvm_context *ctx, LLVMValueRef src0, uns
    case 8:
       return LLVMBuildSelect(ctx->builder, src0, ctx->i8_1, ctx->i8_0, "");
    case 16:
+      if (LLVMGetTypeKind(LLVMTypeOf(src0)) == LLVMVectorTypeKind) {
+         assert(LLVMGetVectorSize(LLVMTypeOf(src0)) == 2);
+         LLVMValueRef i[] = {
+            LLVMBuildSelect(ctx->builder, ac_llvm_extract_elem(ctx, src0, 0),
+                            ctx->i16_1, ctx->i16_0, ""),
+            LLVMBuildSelect(ctx->builder, ac_llvm_extract_elem(ctx, src0, 1),
+                            ctx->i16_1, ctx->i16_0, ""),
+         };
+         return ac_build_gather_values(ctx, i, 2);
+      }
       return LLVMBuildSelect(ctx->builder, src0, ctx->i16_1, ctx->i16_0, "");
    case 32:
       return LLVMBuildSelect(ctx->builder, src0, ctx->i32_1, ctx->i32_0, "");
@@ -1505,7 +1515,7 @@ static LLVMValueRef build_tex_intrinsic(struct ac_nir_context *ctx, const nir_te
       break;
    case nir_texop_tex:
       if (ctx->stage != MESA_SHADER_FRAGMENT &&
-          (ctx->stage != MESA_SHADER_COMPUTE ||
+          (!gl_shader_stage_is_compute(ctx->stage) ||
            ctx->info->cs.derivative_group == DERIVATIVE_GROUP_NONE)) {
          assert(!args->lod);
          args->level_zero = true;
@@ -1541,7 +1551,7 @@ static LLVMValueRef build_tex_intrinsic(struct ac_nir_context *ctx, const nir_te
 
    args->attributes = AC_ATTR_INVARIANT_LOAD;
    bool cs_derivs =
-      ctx->stage == MESA_SHADER_COMPUTE && ctx->info->cs.derivative_group != DERIVATIVE_GROUP_NONE;
+      gl_shader_stage_is_compute(ctx->stage) && ctx->info->cs.derivative_group != DERIVATIVE_GROUP_NONE;
    if (ctx->stage == MESA_SHADER_FRAGMENT || cs_derivs) {
       /* Prevent texture instructions with implicit derivatives from being
        * sinked into branches. */
@@ -2603,7 +2613,7 @@ static void emit_demote(struct ac_nir_context *ctx, const nir_intrinsic_instr *i
 
 static LLVMValueRef visit_load_subgroup_id(struct ac_nir_context *ctx)
 {
-   if (ctx->stage == MESA_SHADER_COMPUTE) {
+   if (gl_shader_stage_is_compute(ctx->stage)) {
       if (ctx->ac.gfx_level >= GFX10_3)
          return ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->tg_size), 20, 5);
       else
@@ -2629,7 +2639,7 @@ static LLVMValueRef visit_load_local_invocation_index(struct ac_nir_context *ctx
 
 static LLVMValueRef visit_load_num_subgroups(struct ac_nir_context *ctx)
 {
-   if (ctx->stage == MESA_SHADER_COMPUTE) {
+   if (gl_shader_stage_is_compute(ctx->stage)) {
       return LLVMBuildAnd(ctx->ac.builder, ac_get_arg(&ctx->ac, ctx->args->tg_size),
                           LLVMConstInt(ctx->ac.i32, 0x3f, false), "");
    } else if (ctx->args->merged_wave_info.used) {
@@ -3084,9 +3094,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_base_vertex:
    case nir_intrinsic_load_first_vertex:
    case nir_intrinsic_load_tess_rel_patch_id_amd:
-   case nir_intrinsic_load_ring_tess_offchip_amd:
    case nir_intrinsic_load_ring_attr_amd:
-   case nir_intrinsic_load_ring_gsvs_amd:
    case nir_intrinsic_load_lds_ngg_scratch_base_amd:
    case nir_intrinsic_load_lds_ngg_gs_out_vertex_base_amd:
       result = ctx->abi->intrinsic_load(ctx->abi, instr);
@@ -3163,10 +3171,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_helper_invocation:
    case nir_intrinsic_is_helper_invocation:
       result = ac_build_load_helper_invocation(&ctx->ac);
-      break;
-   case nir_intrinsic_load_user_data_amd:
-      assert(LLVMTypeOf(ctx->abi->user_data) == ctx->ac.v4i32);
-      result = ctx->abi->user_data;
       break;
    case nir_intrinsic_load_instance_id:
       result = ctx->abi->instance_id_replaced ?
@@ -3278,9 +3282,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_demote_if:
       emit_demote(ctx, instr);
       break;
-   case nir_intrinsic_memory_barrier_buffer:
-      ac_build_waitcnt(&ctx->ac, AC_WAIT_VLOAD | AC_WAIT_VSTORE);
-      break;
    case nir_intrinsic_scoped_barrier: {
       assert(!(nir_intrinsic_memory_semantics(instr) &
                (NIR_MEMORY_MAKE_AVAILABLE | NIR_MEMORY_MAKE_VISIBLE)));
@@ -3296,7 +3297,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       if (wait_flags)
          ac_build_waitcnt(&ctx->ac, wait_flags);
 
-      if (nir_intrinsic_execution_scope(instr) == NIR_SCOPE_WORKGROUP)
+      if (nir_intrinsic_execution_scope(instr) == SCOPE_WORKGROUP)
          ac_build_s_barrier(&ctx->ac, ctx->stage);
       break;
    }

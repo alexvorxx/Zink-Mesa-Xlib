@@ -792,15 +792,12 @@ spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@arb_depth_buffer_float@depthstencil-render-miplevels 1024 s=z24_s8_d=z32f,Fail
 
 # Crashes in this group are CMA allocation fails
-spec@!opengl 1.1@depthstencil-default_fb-blit samples=4,Crash
 spec@!opengl 1.1@depthstencil-default_fb-clear samples=2,Fail
 spec@!opengl 1.1@depthstencil-default_fb-clear samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-clear,Fail
-spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2,Crash
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2,Crash
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=4,Crash
-spec@!opengl 1.1@depthstencil-default_fb-readpixels-24_8 samples=4,Crash
 
 spec@!opengl 1.1@draw-pixels,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_line_loop,Fail
@@ -1149,7 +1146,6 @@ spec@glsl-1.20@execution@tex-miplevel-selection gl2:textureproj(bias) 2dshadow,F
 
 spec@glsl-1.20@execution@vs-nan-builtin-max,Fail
 spec@glsl-1.20@execution@vs-nan-builtin-min,Fail
-spec@intel_performance_query@intel_performance_query-issue_2235,Fail
 spec@khr_texture_compression_astc@basic-gles,Fail
 spec@khr_texture_compression_astc@miptree-gl ldr,Fail
 spec@khr_texture_compression_astc@miptree-gl ldr@LDR Profile,Fail
@@ -1181,3 +1177,6 @@ spec@ext_framebuffer_multisample@unaligned-blit 2 depth msaa,Fail
 spec@ext_framebuffer_multisample@unaligned-blit 2 stencil msaa,Fail
 spec@ext_framebuffer_multisample@unaligned-blit 4 depth msaa,Fail
 spec@ext_framebuffer_multisample@unaligned-blit 4 stencil msaa,Fail
+
+# https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/817
+spec@intel_performance_query@intel_performance_query-issue_2235,Fail

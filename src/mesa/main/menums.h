@@ -82,7 +82,7 @@ _mesa_is_api_gles2(gl_api api)
  *
  *    result_bit = logic_op & (1 << (2 * src_bit + dst_bit))
  */
-enum PACKED gl_logicop_mode {
+enum ENUM_PACKED gl_logicop_mode {
    COLOR_LOGICOP_CLEAR = 0,
    COLOR_LOGICOP_NOR = 1,
    COLOR_LOGICOP_AND_INVERTED = 2,

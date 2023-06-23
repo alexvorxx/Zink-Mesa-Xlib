@@ -187,11 +187,15 @@ read_constant(read_ctx *ctx, nir_variable *nvar)
 {
    nir_constant *c = ralloc(nvar, nir_constant);
 
+   static const nir_const_value zero_vals[ARRAY_SIZE(c->values)] = { 0 };
    blob_copy_bytes(ctx->blob, (uint8_t *)c->values, sizeof(c->values));
+   c->is_null_constant = memcmp(c->values, zero_vals, sizeof(c->values)) == 0;
    c->num_elements = blob_read_uint32(ctx->blob);
    c->elements = ralloc_array(nvar, nir_constant *, c->num_elements);
-   for (unsigned i = 0; i < c->num_elements; i++)
+   for (unsigned i = 0; i < c->num_elements; i++) {
       c->elements[i] = read_constant(ctx, nvar);
+      c->is_null_constant &= c->elements[i]->is_null_constant;
+   }
 
    return c;
 }

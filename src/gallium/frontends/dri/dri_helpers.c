@@ -270,7 +270,7 @@ dri2_lookup_egl_image(struct dri_screen *screen, void *handle)
    return img;
 }
 
-boolean
+bool
 dri2_validate_egl_image(struct dri_screen *screen, void *handle)
 {
    const __DRIimageLookupExtension *loader = screen->dri2.image;
@@ -698,7 +698,7 @@ dri2_get_pipe_format_for_dri_format(int format)
    return PIPE_FORMAT_NONE;
 }
 
-boolean
+bool
 dri2_yuv_dma_buf_supported(struct dri_screen *screen,
                            const struct dri2_format_mapping *map)
 {
@@ -713,7 +713,7 @@ dri2_yuv_dma_buf_supported(struct dri_screen *screen,
    return true;
 }
 
-boolean
+bool
 dri2_query_dma_buf_formats(__DRIscreen *_screen, int max, int *formats,
                            int *count)
 {

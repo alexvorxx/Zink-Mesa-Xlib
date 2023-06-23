@@ -362,6 +362,10 @@ def get_feature_structs(doc, api, beta):
         if _type.attrib['name'] not in required:
             continue
 
+        # Skip extensions with a define for now
+        if required[_type.attrib['name']].guard is not None:
+            continue
+
         # find Vulkan structure type
         for elem in _type:
             if "STRUCTURE_TYPE" in str(elem.attrib):

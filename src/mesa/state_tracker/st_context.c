@@ -68,7 +68,6 @@
 #include "util/hash_table.h"
 #include "cso_cache/cso_context.h"
 #include "compiler/glsl/glsl_parser_extras.h"
-#include "nir/nir_to_tgsi.h"
 
 DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", FALSE)
 
@@ -372,6 +371,7 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    if (st->pipe && destroy_pipe)
       st->pipe->destroy(st->pipe);
 
+   st->ctx->st = NULL;
    FREE(st);
 }
 
@@ -1033,14 +1033,5 @@ st_destroy_context(struct st_context *st)
 const struct nir_shader_compiler_options *
 st_get_nir_compiler_options(struct st_context *st, gl_shader_stage stage)
 {
-   const struct nir_shader_compiler_options *options =
-      st->ctx->Const.ShaderCompilerOptions[stage].NirOptions;
-
-   if (options) {
-      return options;
-   } else {
-      return nir_to_tgsi_get_compiler_options(st->screen,
-                                              PIPE_SHADER_IR_NIR,
-                                              pipe_shader_type_from_mesa(stage));
-   }
+   return st->ctx->Const.ShaderCompilerOptions[stage].NirOptions;
 }

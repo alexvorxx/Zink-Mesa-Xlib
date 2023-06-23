@@ -166,8 +166,7 @@ lower_es_output_store(nir_builder *b,
       /* GFX9+: ES is merged into GS, data is passed through LDS. */
       nir_ssa_def *vertex_idx = nir_build_load_local_invocation_index(b);
       nir_ssa_def *off = nir_iadd(b, nir_imul_imm(b, vertex_idx, st->esgs_itemsize), io_off);
-      nir_build_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask,
-                             .align_mul = 16u, .align_offset = (nir_intrinsic_component(intrin) * 4u) % 16u);
+      nir_build_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask);
    }
 
    nir_instr_remove(instr);
@@ -223,8 +222,8 @@ gs_per_vertex_input_vertex_offset_gfx9(nir_builder *b, lower_esgs_io_state *st,
 {
    if (nir_src_is_const(*vertex_src)) {
       unsigned vertex = nir_src_as_uint(*vertex_src);
-      return nir_ubfe(b, gs_get_vertex_offset(b, st, vertex / 2u),
-                      nir_imm_int(b, (vertex & 1u) * 16u), nir_imm_int(b, 16u));
+      return nir_ubfe_imm(b, gs_get_vertex_offset(b, st, vertex / 2u),
+                          (vertex & 1u) * 16u, 16u);
    }
 
    nir_ssa_def *vertex_offset = gs_get_vertex_offset(b, st, 0);
@@ -273,8 +272,7 @@ lower_gs_per_vertex_input_load(nir_builder *b,
    nir_ssa_def *off = gs_per_vertex_input_offset(b, st, intrin);
 
    if (st->gfx_level >= GFX9)
-      return nir_build_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off,
-                                   .align_mul = 16u, .align_offset = (nir_intrinsic_component(intrin) * 4u) % 16u);
+      return nir_build_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off);
 
    unsigned wave_size = 64u; /* GFX6-8 only support wave64 */
    nir_ssa_def *ring = nir_build_load_ring_esgs_amd(b);

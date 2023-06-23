@@ -464,8 +464,6 @@ v3d_screen_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type s
                         return 0;
                 }
 
-        case PIPE_SHADER_CAP_PREFERRED_IR:
-                return PIPE_SHADER_IR_NIR;
         case PIPE_SHADER_CAP_SUPPORTED_IRS:
                 return 1 << PIPE_SHADER_IR_NIR;
         default:
@@ -744,7 +742,6 @@ static const nir_shader_compiler_options v3d_nir_options = {
          */
         .max_unroll_iterations = 16,
         .force_indirect_unrolling_sampler = true,
-        .use_scoped_barrier = true,
 };
 
 static const void *

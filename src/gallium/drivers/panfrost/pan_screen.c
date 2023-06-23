@@ -469,9 +469,6 @@ panfrost_get_shader_param(struct pipe_screen *screen,
       STATIC_ASSERT(PIPE_MAX_SHADER_SAMPLER_VIEWS < 0x10000);
       return PIPE_MAX_SHADER_SAMPLER_VIEWS;
 
-   case PIPE_SHADER_CAP_PREFERRED_IR:
-      return PIPE_SHADER_IR_NIR;
-
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
       return (1 << PIPE_SHADER_IR_NIR);
 
@@ -529,6 +526,18 @@ panfrost_get_paramf(struct pipe_screen *screen, enum pipe_capf param)
    }
 }
 
+static uint32_t
+pipe_to_pan_bind_flags(uint32_t pipe_bind_flags)
+{
+   static_assert(PIPE_BIND_DEPTH_STENCIL == PAN_BIND_DEPTH_STENCIL, "");
+   static_assert(PIPE_BIND_RENDER_TARGET == PAN_BIND_RENDER_TARGET, "");
+   static_assert(PIPE_BIND_SAMPLER_VIEW == PAN_BIND_SAMPLER_VIEW, "");
+   static_assert(PIPE_BIND_VERTEX_BUFFER == PAN_BIND_VERTEX_BUFFER, "");
+
+   return pipe_bind_flags & (PAN_BIND_DEPTH_STENCIL | PAN_BIND_RENDER_TARGET |
+                             PAN_BIND_VERTEX_BUFFER | PAN_BIND_SAMPLER_VIEW);
+}
+
 /**
  * Query format support for creating a texture, drawing surface, etc.
  * \param format  the format to test
@@ -576,9 +585,7 @@ panfrost_is_format_supported(struct pipe_screen *screen,
 
    /* Check we support the format with the given bind */
 
-   unsigned relevant_bind =
-      bind & (PIPE_BIND_DEPTH_STENCIL | PIPE_BIND_RENDER_TARGET |
-              PIPE_BIND_VERTEX_BUFFER | PIPE_BIND_SAMPLER_VIEW);
+   unsigned pan_bind_flags = pipe_to_pan_bind_flags(bind);
 
    struct panfrost_format fmt = dev->formats[format];
 
@@ -592,7 +599,7 @@ panfrost_is_format_supported(struct pipe_screen *screen,
    if (!supported)
       return false;
 
-   return MALI_EXTRACT_INDEX(fmt.hw) && ((relevant_bind & ~fmt.bind) == 0);
+   return MALI_EXTRACT_INDEX(fmt.hw) && ((pan_bind_flags & ~fmt.bind) == 0);
 }
 
 /* We always support linear and tiled operations, both external and internal.

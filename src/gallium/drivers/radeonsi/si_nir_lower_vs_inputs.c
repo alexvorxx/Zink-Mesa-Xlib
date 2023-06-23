@@ -116,7 +116,7 @@ load_vs_input_from_blit_sgpr(nir_builder *b, unsigned input_index,
                              nir_ssa_def *out[4])
 {
    nir_ssa_def *vertex_id = nir_load_vertex_id_zero_base(b);
-   nir_ssa_def *sel_x1 = nir_uge(b, nir_imm_int(b, 1), vertex_id);
+   nir_ssa_def *sel_x1 = nir_ule_imm(b, vertex_id, 1);
    /* Use nir_ine, because we have 3 vertices and only
     * the middle one should use y2.
     */

@@ -314,7 +314,7 @@ st_make_passthrough_vertex_shader(struct st_context *st)
 
    unsigned inputs[] =
       {  VERT_ATTRIB_POS, VERT_ATTRIB_COLOR0, VERT_ATTRIB_GENERIC0 };
-   unsigned outputs[] =
+   gl_varying_slot outputs[] =
       { VARYING_SLOT_POS,  VARYING_SLOT_COL0,    VARYING_SLOT_TEX0 };
 
    st->passthrough_vs =
@@ -656,8 +656,8 @@ make_texture(struct st_context *st,
 
       /* map texture transfer */
       dest = pipe_texture_map(pipe, pt, 0, 0,
-                               PIPE_MAP_WRITE, 0, 0,
-                               width, height, &transfer);
+                              PIPE_MAP_WRITE | PIPE_MAP_DISCARD_WHOLE_RESOURCE,
+                              0, 0, width, height, &transfer);
       if (!dest) {
          pipe_resource_reference(&pt, NULL);
          _mesa_unmap_pbo_source(ctx, unpack);

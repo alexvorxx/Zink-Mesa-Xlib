@@ -85,6 +85,7 @@ case nir_intrinsic_##op: {\
    STORE(nir_var_mem_shared, shared, -1, 1, -1, 0)
    LOAD(nir_var_mem_global, global, -1, 0, -1)
    STORE(nir_var_mem_global, global, -1, 1, -1, 0)
+   LOAD(nir_var_mem_global, global_constant, -1, 0, -1)
    LOAD(nir_var_mem_task_payload, task_payload, -1, 0, -1)
    STORE(nir_var_mem_task_payload, task_payload, -1, 1, -1, 0)
    ATOMIC(nir_var_mem_ssbo, ssbo, 0, 1, -1, 2)
@@ -94,8 +95,10 @@ case nir_intrinsic_##op: {\
    ATOMIC(nir_var_mem_task_payload, task_payload, -1, 0, -1, 1)
    LOAD(nir_var_shader_temp, stack, -1, -1, -1)
    STORE(nir_var_shader_temp, stack, -1, -1, -1, 0)
+   LOAD(nir_var_mem_ubo, ubo_uniform_block_intel, 0, 1, -1)
    LOAD(nir_var_mem_ssbo, ssbo_uniform_block_intel, 0, 1, -1)
    LOAD(nir_var_mem_shared, shared_uniform_block_intel, -1, 0, -1)
+   LOAD(nir_var_mem_global, global_constant_uniform_block_intel, -1, 0, -1)
    default:
       break;
 #undef ATOMIC
@@ -1306,11 +1309,6 @@ handle_barrier(struct vectorize_ctx *ctx, bool *progress, nir_function_impl *imp
    if (instr->type == nir_instr_type_intrinsic) {
       nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
       switch (intrin->intrinsic) {
-      case nir_intrinsic_group_memory_barrier:
-      case nir_intrinsic_memory_barrier:
-         modes = nir_var_mem_ssbo | nir_var_mem_shared | nir_var_mem_global |
-                 nir_var_mem_task_payload;
-         break;
       /* prevent speculative loads/stores */
       case nir_intrinsic_discard_if:
       case nir_intrinsic_discard:
@@ -1324,14 +1322,8 @@ handle_barrier(struct vectorize_ctx *ctx, bool *progress, nir_function_impl *imp
          acquire = false;
          modes = nir_var_all;
          break;
-      case nir_intrinsic_memory_barrier_buffer:
-         modes = nir_var_mem_ssbo | nir_var_mem_global;
-         break;
-      case nir_intrinsic_memory_barrier_shared:
-         modes = nir_var_mem_shared | nir_var_mem_task_payload;
-         break;
       case nir_intrinsic_scoped_barrier:
-         if (nir_intrinsic_memory_scope(intrin) == NIR_SCOPE_NONE)
+         if (nir_intrinsic_memory_scope(intrin) == SCOPE_NONE)
             break;
 
          modes = nir_intrinsic_memory_modes(intrin) & (nir_var_mem_ssbo |
@@ -1341,7 +1333,7 @@ handle_barrier(struct vectorize_ctx *ctx, bool *progress, nir_function_impl *imp
          acquire = nir_intrinsic_memory_semantics(intrin) & NIR_MEMORY_ACQUIRE;
          release = nir_intrinsic_memory_semantics(intrin) & NIR_MEMORY_RELEASE;
          switch (nir_intrinsic_memory_scope(intrin)) {
-         case NIR_SCOPE_INVOCATION:
+         case SCOPE_INVOCATION:
             /* a barier should never be required for correctness with these scopes */
             modes = 0;
             break;

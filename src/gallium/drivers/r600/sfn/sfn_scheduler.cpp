@@ -1207,6 +1207,8 @@ bool BlockScheduler::check_array_reads(const AluGroup& group)
                              m_last_direct_array_write);
 
       for (auto alu : group) {
+         if (!alu)
+            continue;
          for (auto& s : alu->sources()) {
             s->accept(visitor);
          }

@@ -1083,7 +1083,11 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0841" name="CP_CHICKEN_DBG"/>
 	<reg32 offset="0x0842" name="CP_ADDR_MODE_CNTL" type="a5xx_address_mode"/>
 	<reg32 offset="0x0843" name="CP_DBG_ECO_CNTL"/>
-	<reg32 offset="0x084F" name="CP_PROTECT_CNTL"/>
+	<reg32 offset="0x084F" name="CP_PROTECT_CNTL">
+		<bitfield pos="3" name="LAST_SPAN_INF_RANGE" type="boolean"/>
+		<bitfield pos="1" name="ACCESS_FAULT_ON_VIOL_EN" type="boolean"/>
+		<bitfield pos="0" name="ACCESS_PROT_EN" type="boolean"/>
+	</reg32>
 
 	<array offset="0x0883" name="CP_SCRATCH" stride="1" length="8">
 		<reg32 offset="0x0" name="REG" type="uint"/>

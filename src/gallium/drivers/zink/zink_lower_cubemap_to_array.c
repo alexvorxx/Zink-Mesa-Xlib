@@ -329,7 +329,7 @@ handle_cube_gather(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *coord)
    };
 
    nir_ssa_def *array_slice_2d = nir_f2i32(b, nir_channel(b, coord, 2));
-   nir_ssa_def *face = nir_imod(b, array_slice_2d, nir_imm_int(b, 6));
+   nir_ssa_def *face = nir_imod_imm(b, array_slice_2d, 6);
    nir_ssa_def *array_slice_cube_base = nir_isub(b, array_slice_2d, face);
 
    nir_ssa_def *channels[4];

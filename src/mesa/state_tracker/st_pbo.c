@@ -37,7 +37,6 @@
 #include "pipe/p_defines.h"
 #include "pipe/p_screen.h"
 #include "cso_cache/cso_context.h"
-#include "tgsi/tgsi_ureg.h"
 #include "util/format/u_format.h"
 #include "util/u_inlines.h"
 #include "util/u_upload_mgr.h"
@@ -299,17 +298,18 @@ st_pbo_create_vs(struct st_context *st)
    nir_variable *out_pos = nir_create_variable_with_location(b.shader, nir_var_shader_out,
                                                              VARYING_SLOT_POS, vec4);
 
-   nir_copy_var(&b, out_pos, in_pos);
+   if (!st->pbo.use_gs)
+      nir_copy_var(&b, out_pos, in_pos);
 
    if (st->pbo.layers) {
       nir_variable *instance_id = nir_create_variable_with_location(b.shader, nir_var_system_value,
                                                                     SYSTEM_VALUE_INSTANCE_ID, glsl_int_type());
 
       if (st->pbo.use_gs) {
-         unsigned swiz_x[4] = {0, 0, 0, 0};
          nir_store_var(&b, out_pos,
-                       nir_swizzle(&b, nir_i2f32(&b, nir_load_var(&b, instance_id)), swiz_x, 4),
-                       (1 << 2));
+                       nir_vector_insert_imm(&b, nir_load_var(&b, in_pos),
+                                             nir_i2f32(&b, nir_load_var(&b, instance_id)), 2),
+                       0xf);
       } else {
          nir_variable *out_layer = nir_create_variable_with_location(b.shader, nir_var_shader_out,
                                                                      VARYING_SLOT_LAYER, glsl_int_type());
@@ -324,45 +324,45 @@ st_pbo_create_vs(struct st_context *st)
 void *
 st_pbo_create_gs(struct st_context *st)
 {
-   static const int zero = 0;
-   struct ureg_program *ureg;
-   struct ureg_dst out_pos;
-   struct ureg_dst out_layer;
-   struct ureg_src in_pos;
-   struct ureg_src imm;
-   unsigned i;
+   const nir_shader_compiler_options *options =
+      st_get_nir_compiler_options(st, MESA_SHADER_GEOMETRY);
 
-   ureg = ureg_create(PIPE_SHADER_GEOMETRY);
-   if (!ureg)
-      return NULL;
+   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_GEOMETRY, options,
+                                                  "st/pbo GS");
 
-   ureg_property(ureg, TGSI_PROPERTY_GS_INPUT_PRIM, MESA_PRIM_TRIANGLES);
-   ureg_property(ureg, TGSI_PROPERTY_GS_OUTPUT_PRIM, MESA_PRIM_TRIANGLE_STRIP);
-   ureg_property(ureg, TGSI_PROPERTY_GS_MAX_OUTPUT_VERTICES, 3);
+   b.shader->info.gs.input_primitive = MESA_PRIM_TRIANGLES;
+   b.shader->info.gs.output_primitive = MESA_PRIM_TRIANGLE_STRIP;
+   b.shader->info.gs.vertices_in = 3;
+   b.shader->info.gs.vertices_out = 3;
+   b.shader->info.gs.invocations = 1;
+   b.shader->info.gs.active_stream_mask = 1;
 
-   out_pos = ureg_DECL_output(ureg, TGSI_SEMANTIC_POSITION, 0);
-   out_layer = ureg_DECL_output(ureg, TGSI_SEMANTIC_LAYER, 0);
+   const struct glsl_type *in_type = glsl_array_type(glsl_vec4_type(), 3, 0);
+   nir_variable *in_pos = nir_variable_create(b.shader, nir_var_shader_in, in_type, "in_pos");
+   in_pos->data.location = VARYING_SLOT_POS;
+   b.shader->info.inputs_read |= VARYING_BIT_POS;
 
-   in_pos = ureg_DECL_input(ureg, TGSI_SEMANTIC_POSITION, 0, 0, 1);
+   nir_variable *out_pos = nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                             VARYING_SLOT_POS, glsl_vec4_type());
 
-   imm = ureg_DECL_immediate_int(ureg, &zero, 1);
+   b.shader->info.outputs_written |= VARYING_BIT_POS;
 
-   for (i = 0; i < 3; ++i) {
-      struct ureg_src in_pos_vertex = ureg_src_dimension(in_pos, i);
+   nir_variable *out_layer = nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                               VARYING_SLOT_LAYER, glsl_int_type());
+   out_layer->data.interpolation = INTERP_MODE_NONE;
+   b.shader->info.outputs_written |= VARYING_BIT_LAYER;
 
-      /* out_pos = in_pos[i] */
-      ureg_MOV(ureg, out_pos, in_pos_vertex);
+   for (int i = 0; i < 3; ++i) {
+      nir_ssa_def *pos = nir_load_array_var_imm(&b, in_pos, i);
 
+      nir_store_var(&b, out_pos, nir_vector_insert_imm(&b, pos, nir_imm_float(&b, 0.0), 2), 0xf);
       /* out_layer.x = f2i(in_pos[i].z) */
-      ureg_F2I(ureg, ureg_writemask(out_layer, TGSI_WRITEMASK_X),
-                     ureg_scalar(in_pos_vertex, TGSI_SWIZZLE_Z));
+      nir_store_var(&b, out_layer, nir_f2i32(&b, nir_channel(&b, pos, 2)), 0x1);
 
-      ureg_EMIT(ureg, ureg_scalar(imm, TGSI_SWIZZLE_X));
+      nir_emit_vertex(&b);
    }
 
-   ureg_END(ureg);
-
-   return ureg_create_shader_and_destroy(ureg, st->pipe);
+   return st_nir_finish_builtin_shader(st, b.shader);
 }
 
 const struct glsl_type *
@@ -661,13 +661,7 @@ st_init_pbo_helpers(struct st_context *st)
    if (screen->get_param(screen, PIPE_CAP_VS_INSTANCEID)) {
       if (screen->get_param(screen, PIPE_CAP_VS_LAYER_VIEWPORT)) {
          st->pbo.layers = true;
-      } else if (screen->get_param(screen, PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES) >= 3 &&
-                 screen->get_shader_param(screen, PIPE_SHADER_GEOMETRY,
-                                          PIPE_SHADER_CAP_PREFERRED_IR) != PIPE_SHADER_IR_NIR) {
-         /* As the download GS is created in TGSI, and TGSI to NIR translation
-          * is not implemented for GS, avoid using GS for drivers preferring
-          * NIR shaders.
-          */
+      } else if (screen->get_param(screen, PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES) >= 3) {
          st->pbo.layers = true;
          st->pbo.use_gs = true;
       }

@@ -3,8 +3,6 @@ dEQP-VK.binding_model.ics_miss_buffers8_sets1,Crash
 
 dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.linear_interpolation.no_offset_2_samples,Fail
 
-dEQP-VK.subgroups.builtin_var.ray_tracing.subgroupsize,Fail
-
 # Test bug https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4498
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_fan.perspective,Fail
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list.perspective,Fail

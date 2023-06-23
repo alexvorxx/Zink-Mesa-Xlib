@@ -34,17 +34,16 @@ radv_spm_init_bo(struct radv_device *device)
 {
    struct radeon_winsys *ws = device->ws;
    uint64_t size = 32 * 1024 * 1024; /* Default to 1MB. */
-   uint16_t sample_interval = 4096; /* Default to 4096 clk. */
+   uint16_t sample_interval = 4096;  /* Default to 4096 clk. */
    VkResult result;
 
    device->spm.buffer_size = size;
    device->spm.sample_interval = sample_interval;
 
    struct radeon_winsys_bo *bo = NULL;
-   result = ws->buffer_create(
-      ws, size, 4096, RADEON_DOMAIN_VRAM,
-      RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING | RADEON_FLAG_ZERO_VRAM,
-      RADV_BO_PRIORITY_SCRATCH, 0, &bo);
+   result = ws->buffer_create(ws, size, 4096, RADEON_DOMAIN_VRAM,
+                              RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING | RADEON_FLAG_ZERO_VRAM,
+                              RADV_BO_PRIORITY_SCRATCH, 0, &bo);
    device->spm.bo = bo;
    if (result != VK_SUCCESS)
       return false;
@@ -95,9 +94,9 @@ radv_emit_spm_counters(struct radv_device *device, struct radeon_cmdbuf *cs)
    }
 
    /* Restore global broadcasting. */
-   radeon_set_uconfig_reg(cs, R_030800_GRBM_GFX_INDEX,
-                              S_030800_SE_BROADCAST_WRITES(1) | S_030800_SH_BROADCAST_WRITES(1) |
-                              S_030800_INSTANCE_BROADCAST_WRITES(1));
+   radeon_set_uconfig_reg(
+      cs, R_030800_GRBM_GFX_INDEX,
+      S_030800_SE_BROADCAST_WRITES(1) | S_030800_SH_BROADCAST_WRITES(1) | S_030800_INSTANCE_BROADCAST_WRITES(1));
 }
 
 void
@@ -114,11 +113,10 @@ radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs)
 
    /* Configure the SPM ring buffer. */
    radeon_set_uconfig_reg(cs, R_037200_RLC_SPM_PERFMON_CNTL,
-                              S_037200_PERFMON_RING_MODE(0) | /* no stall and no interrupt on overflow */
-                              S_037200_PERFMON_SAMPLE_INTERVAL(spm->sample_interval)); /* in sclk */
+                          S_037200_PERFMON_RING_MODE(0) | /* no stall and no interrupt on overflow */
+                             S_037200_PERFMON_SAMPLE_INTERVAL(spm->sample_interval)); /* in sclk */
    radeon_set_uconfig_reg(cs, R_037204_RLC_SPM_PERFMON_RING_BASE_LO, va);
-   radeon_set_uconfig_reg(cs, R_037208_RLC_SPM_PERFMON_RING_BASE_HI,
-                              S_037208_RING_BASE_HI(va >> 32));
+   radeon_set_uconfig_reg(cs, R_037208_RLC_SPM_PERFMON_RING_BASE_HI, S_037208_RING_BASE_HI(va >> 32));
    radeon_set_uconfig_reg(cs, R_03720C_RLC_SPM_PERFMON_RING_SIZE, ring_size);
 
    /* Configure the muxsel. */
@@ -129,20 +127,18 @@ radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs)
 
    radeon_set_uconfig_reg(cs, R_03726C_RLC_SPM_ACCUM_MODE, 0);
    radeon_set_uconfig_reg(cs, R_037210_RLC_SPM_PERFMON_SEGMENT_SIZE, 0);
-   radeon_set_uconfig_reg(cs, R_03727C_RLC_SPM_PERFMON_SE3TO0_SEGMENT_SIZE,
-                              S_03727C_SE0_NUM_LINE(spm->num_muxsel_lines[0]) |
-                              S_03727C_SE1_NUM_LINE(spm->num_muxsel_lines[1]) |
-                              S_03727C_SE2_NUM_LINE(spm->num_muxsel_lines[2]) |
-                              S_03727C_SE3_NUM_LINE(spm->num_muxsel_lines[3]));
-   radeon_set_uconfig_reg(cs, R_037280_RLC_SPM_PERFMON_GLB_SEGMENT_SIZE,
-                              S_037280_PERFMON_SEGMENT_SIZE(total_muxsel_lines) |
-                              S_037280_GLOBAL_NUM_LINE(spm->num_muxsel_lines[4]));
+   radeon_set_uconfig_reg(
+      cs, R_03727C_RLC_SPM_PERFMON_SE3TO0_SEGMENT_SIZE,
+      S_03727C_SE0_NUM_LINE(spm->num_muxsel_lines[0]) | S_03727C_SE1_NUM_LINE(spm->num_muxsel_lines[1]) |
+         S_03727C_SE2_NUM_LINE(spm->num_muxsel_lines[2]) | S_03727C_SE3_NUM_LINE(spm->num_muxsel_lines[3]));
+   radeon_set_uconfig_reg(
+      cs, R_037280_RLC_SPM_PERFMON_GLB_SEGMENT_SIZE,
+      S_037280_PERFMON_SEGMENT_SIZE(total_muxsel_lines) | S_037280_GLOBAL_NUM_LINE(spm->num_muxsel_lines[4]));
 
    /* Upload each muxsel ram to the RLC. */
    for (unsigned s = 0; s < AC_SPM_SEGMENT_TYPE_COUNT; s++) {
       unsigned rlc_muxsel_addr, rlc_muxsel_data;
-      unsigned grbm_gfx_index = S_030800_SH_BROADCAST_WRITES(1) |
-                                S_030800_INSTANCE_BROADCAST_WRITES(1);
+      unsigned grbm_gfx_index = S_030800_SH_BROADCAST_WRITES(1) | S_030800_INSTANCE_BROADCAST_WRITES(1);
 
       if (!spm->num_muxsel_lines[s])
          continue;
@@ -169,10 +165,8 @@ radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs)
 
          /* Write the muxsel line configuration with MUXSEL_DATA. */
          radeon_emit(cs, PKT3(PKT3_WRITE_DATA, 2 + AC_SPM_MUXSEL_LINE_SIZE, 0));
-         radeon_emit(cs, S_370_DST_SEL(V_370_MEM_MAPPED_REGISTER) |
-                         S_370_WR_CONFIRM(1) |
-                         S_370_ENGINE_SEL(V_370_ME) |
-                         S_370_WR_ONE_ADDR(1));
+         radeon_emit(cs, S_370_DST_SEL(V_370_MEM_MAPPED_REGISTER) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME) |
+                            S_370_WR_ONE_ADDR(1));
          radeon_emit(cs, rlc_muxsel_data >> 2);
          radeon_emit(cs, 0);
          radeon_emit_array(cs, data, AC_SPM_MUXSEL_LINE_SIZE);
@@ -189,18 +183,18 @@ radv_spm_init(struct radv_device *device)
    const struct radeon_info *info = &device->physical_device->rad_info;
    struct ac_perfcounters *pc = &device->physical_device->ac_perfcounters;
    struct ac_spm_counter_create_info spm_counters[] = {
-      {TCP, 0, 0x9},    /* Number of L2 requests. */
-      {TCP, 0, 0x12},   /* Number of L2 misses. */
-      {SQ, 0, 0x14f},   /* Number of SCACHE hits. */
-      {SQ, 0, 0x150},   /* Number of SCACHE misses. */
-      {SQ, 0, 0x151},   /* Number of SCACHE misses duplicate. */
-      {SQ, 0, 0x12c},   /* Number of ICACHE hits. */
-      {SQ, 0, 0x12d},   /* Number of ICACHE misses. */
-      {SQ, 0, 0x12e},   /* Number of ICACHE misses duplicate. */
-      {GL1C, 0, 0xe},   /* Number of GL1C requests. */
-      {GL1C, 0, 0x12},  /* Number of GL1C misses. */
-      {GL2C, 0, 0x3},   /* Number of GL2C requests. */
-      {GL2C, 0, info->gfx_level >= GFX10_3 ? 0x2b : 0x23},  /* Number of GL2C misses. */
+      {TCP, 0, 0x9},                                       /* Number of L2 requests. */
+      {TCP, 0, 0x12},                                      /* Number of L2 misses. */
+      {SQ, 0, 0x14f},                                      /* Number of SCACHE hits. */
+      {SQ, 0, 0x150},                                      /* Number of SCACHE misses. */
+      {SQ, 0, 0x151},                                      /* Number of SCACHE misses duplicate. */
+      {SQ, 0, 0x12c},                                      /* Number of ICACHE hits. */
+      {SQ, 0, 0x12d},                                      /* Number of ICACHE misses. */
+      {SQ, 0, 0x12e},                                      /* Number of ICACHE misses duplicate. */
+      {GL1C, 0, 0xe},                                      /* Number of GL1C requests. */
+      {GL1C, 0, 0x12},                                     /* Number of GL1C misses. */
+      {GL2C, 0, 0x3},                                      /* Number of GL2C requests. */
+      {GL2C, 0, info->gfx_level >= GFX10_3 ? 0x2b : 0x23}, /* Number of GL2C misses. */
    };
 
    /* We failed to initialize the performance counters. */

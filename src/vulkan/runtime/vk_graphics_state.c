@@ -513,6 +513,8 @@ vk_rasterization_state_init(struct vk_rasterization_state *rs,
       .provoking_vertex = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT,
       .line.mode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT,
       .depth_clip_enable = IS_DYNAMIC(RS_DEPTH_CLAMP_ENABLE) ? VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP : VK_MESA_DEPTH_CLIP_ENABLE_FALSE,
+      .depth_bias.representation = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT,
+      .depth_bias.exact = false,
    };
    if (!rs_info)
       return;
@@ -601,6 +603,16 @@ vk_rasterization_state_init(struct vk_rasterization_state *rs,
          const VkPipelineRasterizationStateStreamCreateInfoEXT *rss_info =
             (const VkPipelineRasterizationStateStreamCreateInfoEXT *)ext;
          rs->rasterization_stream = rss_info->rasterizationStream;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT: {
+         const VkDepthBiasRepresentationInfoEXT *dbr_info =
+            (const VkDepthBiasRepresentationInfoEXT *)ext;
+         if (!IS_DYNAMIC(RS_DEPTH_BIAS_FACTORS)) {
+            rs->depth_bias.representation = dbr_info->depthBiasRepresentation;
+            rs->depth_bias.exact = dbr_info->depthBiasExact;
+         }
          break;
       }
 
@@ -1770,6 +1782,8 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
    COPY_IF_SET(RS_DEPTH_BIAS_FACTORS, rs.depth_bias.constant);
    COPY_IF_SET(RS_DEPTH_BIAS_FACTORS, rs.depth_bias.clamp);
    COPY_IF_SET(RS_DEPTH_BIAS_FACTORS, rs.depth_bias.slope);
+   COPY_IF_SET(RS_DEPTH_BIAS_FACTORS, rs.depth_bias.representation);
+   COPY_IF_SET(RS_DEPTH_BIAS_FACTORS, rs.depth_bias.exact);
    COPY_IF_SET(RS_LINE_WIDTH, rs.line.width);
    COPY_IF_SET(RS_LINE_MODE, rs.line.mode);
    COPY_IF_SET(RS_LINE_STIPPLE_ENABLE, rs.line.stipple.enable);
@@ -2196,14 +2210,16 @@ vk_common_CmdSetDepthBias(VkCommandBuffer commandBuffer,
                           float depthBiasSlopeFactor)
 {
    VK_FROM_HANDLE(vk_command_buffer, cmd, commandBuffer);
-   struct vk_dynamic_graphics_state *dyn = &cmd->dynamic_graphics_state;
 
-   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
-                 rs.depth_bias.constant, depthBiasConstantFactor);
-   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
-                 rs.depth_bias.clamp, depthBiasClamp);
-   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
-                 rs.depth_bias.slope, depthBiasSlopeFactor);
+   VkDepthBiasInfoEXT depth_bias_info = {
+      .sType = VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT,
+      .depthBiasConstantFactor = depthBiasConstantFactor,
+      .depthBiasClamp = depthBiasClamp,
+      .depthBiasSlopeFactor = depthBiasSlopeFactor,
+   };
+
+   cmd->base.device->dispatch_table.CmdSetDepthBias2EXT(commandBuffer,
+                                                        &depth_bias_info);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2667,4 +2683,43 @@ vk_common_CmdSetDiscardRectangleModeEXT(VkCommandBuffer commandBuffer,
    struct vk_dynamic_graphics_state *dyn = &cmd->dynamic_graphics_state;
 
    SET_DYN_VALUE(dyn, DR_MODE, dr.mode, discardRectangleMode);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_CmdSetDepthBias2EXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkDepthBiasInfoEXT*                   pDepthBiasInfo)
+{
+   VK_FROM_HANDLE(vk_command_buffer, cmd, commandBuffer);
+   struct vk_dynamic_graphics_state *dyn = &cmd->dynamic_graphics_state;
+
+   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                 rs.depth_bias.constant, pDepthBiasInfo->depthBiasConstantFactor);
+   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                 rs.depth_bias.clamp, pDepthBiasInfo->depthBiasClamp);
+   SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                 rs.depth_bias.slope, pDepthBiasInfo->depthBiasSlopeFactor);
+
+   /** From the Vulkan 1.3.254 spec:
+    *
+    *    "If pNext does not contain a VkDepthBiasRepresentationInfoEXT
+    *     structure, then this command is equivalent to including a
+    *     VkDepthBiasRepresentationInfoEXT with depthBiasExact set to VK_FALSE
+    *     and depthBiasRepresentation set to
+    *     VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT."
+    */
+   const VkDepthBiasRepresentationInfoEXT *dbr_info =
+      vk_find_struct_const(pDepthBiasInfo->pNext, DEPTH_BIAS_REPRESENTATION_INFO_EXT);
+   if (dbr_info) {
+      SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                    rs.depth_bias.representation, dbr_info->depthBiasRepresentation);
+      SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                    rs.depth_bias.exact, dbr_info->depthBiasExact);
+   } else {
+      SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                    rs.depth_bias.representation,
+                    VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT);
+      SET_DYN_VALUE(dyn, RS_DEPTH_BIAS_FACTORS,
+                    rs.depth_bias.exact, false);
+   }
 }

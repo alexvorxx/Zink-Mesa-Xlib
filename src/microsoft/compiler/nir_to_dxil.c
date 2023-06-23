@@ -32,6 +32,7 @@
 #include "dxil_signature.h"
 
 #include "nir/nir_builder.h"
+#include "nir_deref.h"
 #include "util/ralloc.h"
 #include "util/u_debug.h"
 #include "util/u_dynarray.h"
@@ -125,6 +126,7 @@ nir_options = {
    .lower_pack_unorm_2x16 = true,
    .lower_pack_64_2x32_split = true,
    .lower_pack_32_2x16_split = true,
+   .lower_pack_64_4x16 = true,
    .lower_unpack_64_2x32_split = true,
    .lower_unpack_32_2x16_split = true,
    .lower_unpack_half_2x16 = true,
@@ -135,7 +137,6 @@ nir_options = {
    .lower_interpolate_at = true,
    .has_fsub = true,
    .has_isub = true,
-   .use_scoped_barrier = true,
    .vertex_id_zero_based = true,
    .lower_base_vertex = true,
    .lower_helper_invocation = true,
@@ -152,7 +153,7 @@ nir_options = {
       nir_lower_dceil |
       nir_lower_dround_even,
    .max_unroll_iterations = 32, /* arbitrary */
-   .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
+   .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out),
    .lower_device_index_to_zero = true,
    .linker_ignore_precision = true,
    .support_16bit_alu = true,
@@ -581,9 +582,9 @@ struct ntd_context {
    unsigned num_defs;
    struct hash_table *phis;
 
-   const struct dxil_value *sharedvars;
-   const struct dxil_value *scratchvars;
-   struct hash_table *consts;
+   const struct dxil_value **sharedvars;
+   const struct dxil_value **scratchvars;
+   const struct dxil_value **consts;
 
    nir_variable *ps_front_face;
    nir_variable *system_value[SYSTEM_VALUE_MAX];
@@ -1405,114 +1406,149 @@ emit_uav_var(struct ntd_context *ctx, nir_variable *var, unsigned count)
                    res_kind, name);
 }
 
-static void
-var_fill_const_array_with_vector_or_scalar(struct ntd_context *ctx,
-                                           const struct nir_constant *c,
-                                           const struct glsl_type *type,
-                                           void *const_vals,
-                                           unsigned int offset)
+static const struct dxil_value *
+get_value_for_const(struct dxil_module *mod, nir_const_value *c, const struct dxil_type *type)
 {
-   assert(glsl_type_is_vector_or_scalar(type));
-   unsigned int components = glsl_get_vector_elements(type);
-   unsigned bit_size = glsl_get_bit_size(type);
-   unsigned int increment = bit_size / 8;
-
-   for (unsigned int comp = 0; comp < components; comp++) {
-      uint8_t *dst = (uint8_t *)const_vals + offset;
-
-      switch (bit_size) {
-      case 64:
-         memcpy(dst, &c->values[comp].u64, sizeof(c->values[0].u64));
-         break;
-      case 32:
-         memcpy(dst, &c->values[comp].u32, sizeof(c->values[0].u32));
-         break;
-      case 16:
-         memcpy(dst, &c->values[comp].u16, sizeof(c->values[0].u16));
-         break;
-      case 8:
-         assert(glsl_base_type_is_integer(glsl_get_base_type(type)));
-         memcpy(dst, &c->values[comp].u8, sizeof(c->values[0].u8));
-         break;
-      default:
-         unreachable("unexpeted bit-size");
-      }
-
-      offset += increment;
+   if (type == mod->int1_type) return dxil_module_get_int1_const(mod, c->b);
+   if (type == mod->float32_type) return dxil_module_get_float_const(mod, c->f32);
+   if (type == mod->int32_type) return dxil_module_get_int32_const(mod, c->i32);
+   if (type == mod->int16_type) {
+      mod->feats.min_precision = true;
+      return dxil_module_get_int16_const(mod, c->i16);
    }
+   if (type == mod->int64_type) {
+      mod->feats.int64_ops = true;
+      return dxil_module_get_int64_const(mod, c->i64);
+   }
+   if (type == mod->float16_type) {
+      mod->feats.min_precision = true;
+      return dxil_module_get_float16_const(mod, c->u16);
+   }
+   if (type == mod->float64_type) {
+      mod->feats.doubles = true;
+      return dxil_module_get_double_const(mod, c->f64);
+   }
+   unreachable("Invalid type");
 }
 
-static void
-var_fill_const_array(struct ntd_context *ctx, const struct nir_constant *c,
-                     const struct glsl_type *type, void *const_vals,
-                     unsigned int offset)
+static const struct dxil_type *
+get_type_for_glsl_base_type(struct dxil_module *mod, enum glsl_base_type type)
 {
-   assert(!glsl_type_is_interface(type));
+   uint32_t bit_size = glsl_base_type_bit_size(type);
+   if (nir_alu_type_get_base_type(nir_get_nir_type_for_glsl_base_type(type)) == nir_type_float)
+      return dxil_module_get_float_type(mod, bit_size);
+   return dxil_module_get_int_type(mod, bit_size);
+}
 
+static const struct dxil_type *
+get_type_for_glsl_type(struct dxil_module *mod, const struct glsl_type *type)
+{
+   if (glsl_type_is_scalar(type))
+      return get_type_for_glsl_base_type(mod, glsl_get_base_type(type));
+
+   if (glsl_type_is_vector(type))
+      return dxil_module_get_vector_type(mod, get_type_for_glsl_base_type(mod, glsl_get_base_type(type)),
+                                         glsl_get_vector_elements(type));
+
+   if (glsl_type_is_array(type))
+      return dxil_module_get_array_type(mod, get_type_for_glsl_type(mod, glsl_get_array_element(type)),
+                                        glsl_array_size(type));
+
+   assert(glsl_type_is_struct(type));
+   uint32_t size = glsl_get_length(type);
+   const struct dxil_type **fields = calloc(sizeof(const struct dxil_type *), size);
+   for (uint32_t i = 0; i < size; ++i)
+      fields[i] = get_type_for_glsl_type(mod, glsl_get_struct_field(type, i));
+   const struct dxil_type *ret = dxil_module_get_struct_type(mod, glsl_get_type_name(type), fields, size);
+   free((void *)fields);
+   return ret;
+}
+
+static const struct dxil_value *
+get_value_for_const_aggregate(struct dxil_module *mod, nir_constant *c, const struct glsl_type *type)
+{
+   const struct dxil_type *dxil_type = get_type_for_glsl_type(mod, type);
    if (glsl_type_is_vector_or_scalar(type)) {
-      var_fill_const_array_with_vector_or_scalar(ctx, c, type,
-                                                 const_vals,
-                                                 offset);
-   } else if (glsl_type_is_array(type)) {
-      assert(!glsl_type_is_unsized_array(type));
-      const struct glsl_type *without = glsl_get_array_element(type);
-      unsigned stride = glsl_get_explicit_stride(type);
+      const struct dxil_type *element_type = get_type_for_glsl_base_type(mod, glsl_get_base_type(type));
+      const struct dxil_value *elements[NIR_MAX_VEC_COMPONENTS];
+      for (uint32_t i = 0; i < glsl_get_vector_elements(type); ++i)
+         elements[i] = get_value_for_const(mod, &c->values[i], element_type);
+      if (glsl_type_is_scalar(type))
+         return elements[0];
+      return dxil_module_get_vector_const(mod, dxil_type, elements);
+   }
 
-      for (unsigned elt = 0; elt < glsl_get_length(type); elt++) {
-         var_fill_const_array(ctx, c->elements[elt], without,
-                              const_vals, offset);
-         offset += stride;
-      }
-   } else if (glsl_type_is_struct(type)) {
-      for (unsigned int elt = 0; elt < glsl_get_length(type); elt++) {
-         const struct glsl_type *elt_type = glsl_get_struct_field(type, elt);
-         unsigned field_offset = glsl_get_struct_field_offset(type, elt);
-
-         var_fill_const_array(ctx, c->elements[elt],
-                              elt_type, const_vals,
-                              offset + field_offset);
-      }
-   } else
-      unreachable("unknown GLSL type in var_fill_const_array");
+   uint32_t num_values = glsl_get_length(type);
+   assert(num_values == c->num_elements);
+   const struct dxil_value **values = calloc(sizeof(const struct dxil_value *), num_values);
+   const struct dxil_value *ret;
+   if (glsl_type_is_array(type)) {
+      const struct glsl_type *element_type = glsl_get_array_element(type);
+      for (uint32_t i = 0; i < num_values; ++i)
+         values[i] = get_value_for_const_aggregate(mod, c->elements[i], element_type);
+      ret = dxil_module_get_array_const(mod, dxil_type, values);
+   } else {
+      for (uint32_t i = 0; i < num_values; ++i)
+         values[i] = get_value_for_const_aggregate(mod, c->elements[i], glsl_get_struct_field(type, i));
+      ret = dxil_module_get_struct_const(mod, dxil_type, values);
+   }
+   free((void *)values);
+   return ret;
 }
 
 static bool
 emit_global_consts(struct ntd_context *ctx)
 {
-   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_shader_temp) {
+   uint32_t index = 0;
+   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_constant) {
       assert(var->constant_initializer);
+      var->data.driver_location = index++;
+   }
 
-      unsigned int num_members = DIV_ROUND_UP(glsl_get_cl_size(var->type), 4);
-      uint32_t *const_ints = ralloc_array(ctx->ralloc_ctx, uint32_t, num_members);
-      var_fill_const_array(ctx, var->constant_initializer, var->type,
-                                 const_ints, 0);
-      const struct dxil_value **const_vals =
-         ralloc_array(ctx->ralloc_ctx, const struct dxil_value *, num_members);
-      if (!const_vals)
-         return false;
-      for (int i = 0; i < num_members; i++)
-         const_vals[i] = dxil_module_get_int32_const(&ctx->mod, const_ints[i]);
+   ctx->consts = ralloc_array(ctx->ralloc_ctx, const struct dxil_value *, index);
 
-      const struct dxil_type *elt_type = dxil_module_get_int_type(&ctx->mod, 32);
-      if (!elt_type)
-         return false;
-      const struct dxil_type *type =
-         dxil_module_get_array_type(&ctx->mod, elt_type, num_members);
-      if (!type)
-         return false;
+   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_constant) {
+      if (!var->name)
+         var->name = ralloc_asprintf(var, "const_%d", var->data.driver_location);
+
       const struct dxil_value *agg_vals =
-         dxil_module_get_array_const(&ctx->mod, type, const_vals);
+         get_value_for_const_aggregate(&ctx->mod, var->constant_initializer, var->type);
       if (!agg_vals)
          return false;
 
-      const struct dxil_value *gvar = dxil_add_global_ptr_var(&ctx->mod, var->name, type,
-                                                              DXIL_AS_DEFAULT, 4,
+      const struct dxil_value *gvar = dxil_add_global_ptr_var(&ctx->mod, var->name,
+                                                              dxil_value_get_type(agg_vals),
+                                                              DXIL_AS_DEFAULT, 16,
                                                               agg_vals);
       if (!gvar)
          return false;
 
-      if (!_mesa_hash_table_insert(ctx->consts, var, (void *)gvar))
+      ctx->consts[var->data.driver_location] = gvar;
+   }
+
+   return true;
+}
+
+static bool
+emit_shared_vars(struct ntd_context *ctx)
+{
+   uint32_t index = 0;
+   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_shared)
+      var->data.driver_location = index++;
+
+   ctx->sharedvars = ralloc_array(ctx->ralloc_ctx, const struct dxil_value *, index);
+
+   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_shared) {
+      if (!var->name)
+         var->name = ralloc_asprintf(var, "shared_%d", var->data.driver_location);
+      const struct dxil_value *gvar = dxil_add_global_ptr_var(&ctx->mod, var->name,
+                                                              get_type_for_glsl_type(&ctx->mod, var->type),
+                                                              DXIL_AS_GROUPSHARED, 16,
+                                                              NULL);
+      if (!gvar)
          return false;
+
+      ctx->sharedvars[var->data.driver_location] = gvar;
    }
 
    return true;
@@ -3043,19 +3079,19 @@ load_ubo(struct ntd_context *ctx, const struct dxil_value *handle,
 }
 
 static bool
-emit_barrier_impl(struct ntd_context *ctx, nir_variable_mode modes, nir_scope execution_scope, nir_scope mem_scope)
+emit_barrier_impl(struct ntd_context *ctx, nir_variable_mode modes, mesa_scope execution_scope, mesa_scope mem_scope)
 {
    const struct dxil_value *opcode, *mode;
    const struct dxil_func *func;
    uint32_t flags = 0;
 
-   if (execution_scope == NIR_SCOPE_WORKGROUP)
+   if (execution_scope == SCOPE_WORKGROUP)
       flags |= DXIL_BARRIER_MODE_SYNC_THREAD_GROUP;
 
    bool is_compute = ctx->mod.shader_kind == DXIL_COMPUTE_SHADER;
 
    if (modes & (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image)) {
-      if (mem_scope > NIR_SCOPE_WORKGROUP || !is_compute)
+      if (mem_scope > SCOPE_WORKGROUP || !is_compute)
          flags |= DXIL_BARRIER_MODE_UAV_FENCE_GLOBAL;
       else
          flags |= DXIL_BARRIER_MODE_UAV_FENCE_THREAD_GROUP;
@@ -3274,24 +3310,6 @@ get_int32_undef(struct dxil_module *m)
 }
 
 static const struct dxil_value *
-emit_gep_for_index(struct ntd_context *ctx, const nir_variable *var,
-                   const struct dxil_value *index)
-{
-   assert(var->data.mode == nir_var_shader_temp);
-
-   struct hash_entry *he = _mesa_hash_table_search(ctx->consts, var);
-   assert(he != NULL);
-   const struct dxil_value *ptr = he->data;
-
-   const struct dxil_value *zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return NULL;
-
-   const struct dxil_value *ops[] = { ptr, zero, index };
-   return dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
-}
-
-static const struct dxil_value *
 get_resource_handle(struct ntd_context *ctx, nir_src *src, enum dxil_resource_class class,
                     enum dxil_resource_kind kind)
 {
@@ -3443,7 +3461,7 @@ emit_load_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       emit_raw_bufferload_call(ctx, handle, coord,
                                overload,
                                nir_intrinsic_dest_components(intr),
-                               nir_intrinsic_align(intr)) :
+                               nir_dest_bit_size(intr->dest) / 8) :
       emit_bufferload_call(ctx, handle, coord, overload);
    if (!load)
       return false;
@@ -3508,164 +3526,14 @@ emit_store_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return false;
 
    return ctx->mod.minor_version >= 2 ?
-      emit_raw_bufferstore_call(ctx, handle, coord, value, write_mask, overload, nir_intrinsic_align(intr)) :
+      emit_raw_bufferstore_call(ctx, handle, coord, value, write_mask, overload, intr->src[0].ssa->bit_size / 8) :
       emit_bufferstore_call(ctx, handle, coord, value, write_mask, overload);
 }
 
 static bool
-emit_store_ssbo_masked(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+emit_load_ubo_vec4(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
-   const struct dxil_value *value =
-      get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   const struct dxil_value *mask =
-      get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   const struct dxil_value* handle = get_resource_handle(ctx, &intr->src[2], DXIL_RESOURCE_CLASS_UAV, DXIL_RESOURCE_KIND_RAW_BUFFER);
-   const struct dxil_value *offset =
-      get_src(ctx, &intr->src[3], 0, nir_type_uint);
-   if (!value || !mask || !handle || !offset)
-      return false;
-
-   const struct dxil_value *int32_undef = get_int32_undef(&ctx->mod);
-   if (!int32_undef)
-      return false;
-
-   const struct dxil_value *coord[3] = {
-      offset, int32_undef, int32_undef
-   };
-
-   return
-      emit_atomic_binop(ctx, handle, DXIL_ATOMIC_AND, coord, mask) != NULL &&
-      emit_atomic_binop(ctx, handle, DXIL_ATOMIC_OR, coord, value) != NULL;
-}
-
-static bool
-emit_store_shared(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value *zero, *index;
-
-   /* All shared mem accesses should have been lowered to scalar 32bit
-    * accesses.
-    */
-   assert(nir_src_bit_size(intr->src[0]) == 32);
-   assert(nir_src_num_components(intr->src[0]) == 1);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   if (intr->intrinsic == nir_intrinsic_store_shared_dxil)
-      index = get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   else
-      index = get_src(ctx, &intr->src[2], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->sharedvars, zero, index };
-   const struct dxil_value *ptr, *value;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
-   if (!ptr)
-      return false;
-
-   value = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!value)
-      return false;
-
-   if (intr->intrinsic == nir_intrinsic_store_shared_dxil)
-      return dxil_emit_store(&ctx->mod, value, ptr, 4, false);
-
-   const struct dxil_value *mask = get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   if (!mask)
-      return false;
-
-   if (!dxil_emit_atomicrmw(&ctx->mod, mask, ptr, DXIL_RMWOP_AND, false,
-                            DXIL_ATOMIC_ORDERING_ACQREL,
-                            DXIL_SYNC_SCOPE_CROSSTHREAD))
-      return false;
-
-   if (!dxil_emit_atomicrmw(&ctx->mod, value, ptr, DXIL_RMWOP_OR, false,
-                            DXIL_ATOMIC_ORDERING_ACQREL,
-                            DXIL_SYNC_SCOPE_CROSSTHREAD))
-      return false;
-
-   return true;
-}
-
-static bool
-emit_store_scratch(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value *zero, *index;
-
-   /* All scratch mem accesses should have been lowered to scalar 32bit
-    * accesses.
-    */
-   assert(nir_src_bit_size(intr->src[0]) == 32);
-   assert(nir_src_num_components(intr->src[0]) == 1);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   index = get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->scratchvars, zero, index };
-   const struct dxil_value *ptr, *value;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
-   if (!ptr)
-      return false;
-
-   value = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!value)
-      return false;
-
-   return dxil_emit_store(&ctx->mod, value, ptr, 4, false);
-}
-
-static bool
-emit_load_ubo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value* handle = get_resource_handle(ctx, &intr->src[0], DXIL_RESOURCE_CLASS_CBV, DXIL_RESOURCE_KIND_CBUFFER);
-   if (!handle)
-      return false;
-
-   const struct dxil_value *offset;
-   nir_const_value *const_offset = nir_src_as_const_value(intr->src[1]);
-   if (const_offset) {
-      offset = dxil_module_get_int32_const(&ctx->mod, const_offset->i32 >> 4);
-   } else {
-      const struct dxil_value *offset_src = get_src(ctx, &intr->src[1], 0, nir_type_uint);
-      const struct dxil_value *c4 = dxil_module_get_int32_const(&ctx->mod, 4);
-      if (!offset_src || !c4)
-         return false;
-
-      offset = dxil_emit_binop(&ctx->mod, DXIL_BINOP_ASHR, offset_src, c4, 0);
-   }
-
-   enum overload_type overload = get_ambiguous_overload_alu_type(ctx, intr, nir_type_float);
-   const struct dxil_value *agg = load_ubo(ctx, handle, offset, overload);
-
-   if (!agg)
-      return false;
-
-   for (unsigned i = 0; i < nir_dest_num_components(intr->dest); ++i) {
-      const struct dxil_value *retval = dxil_emit_extractval(&ctx->mod, agg, i);
-      store_dest(ctx, &intr->dest, i, retval);
-   }
-   if (nir_dest_bit_size(intr->dest) == 16)
-      ctx->mod.feats.native_low_precision = true;
-   return true;
-}
-
-static bool
-emit_load_ubo_dxil(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   assert(nir_dest_num_components(intr->dest) <= 4);
-   assert(nir_dest_bit_size(intr->dest) == 32);
-
-   const struct dxil_value* handle = get_resource_handle(ctx, &intr->src[0], DXIL_RESOURCE_CLASS_CBV, DXIL_RESOURCE_KIND_CBUFFER);
+   const struct dxil_value *handle = get_resource_handle(ctx, &intr->src[0], DXIL_RESOURCE_CLASS_CBV, DXIL_RESOURCE_KIND_CBUFFER);
    const struct dxil_value *offset =
       get_src(ctx, &intr->src[1], 0, nir_type_uint);
 
@@ -3677,9 +3545,11 @@ emit_load_ubo_dxil(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    if (!agg)
       return false;
 
+   unsigned first_component = nir_intrinsic_has_component(intr) ?
+      nir_intrinsic_component(intr) : 0;
    for (unsigned i = 0; i < nir_dest_num_components(intr->dest); i++)
       store_dest(ctx, &intr->dest, i,
-                 dxil_emit_extractval(&ctx->mod, agg, i));
+                 dxil_emit_extractval(&ctx->mod, agg, i + first_component));
 
    if (nir_dest_bit_size(intr->dest) == 16)
       ctx->mod.feats.native_low_precision = true;
@@ -4013,23 +3883,44 @@ emit_load_interpolated_input(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    return true;
 }
 
-static bool
-emit_load_ptr(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+static const struct dxil_value *
+deref_to_gep(struct ntd_context *ctx, nir_deref_instr *deref)
 {
-   struct nir_variable *var =
-      nir_deref_instr_get_variable(nir_src_as_deref(intr->src[0]));
+   nir_deref_path path;
+   nir_deref_path_init(&path, deref, ctx->ralloc_ctx);
+   assert(path.path[0]->deref_type == nir_deref_type_var);
+   uint32_t count = 0;
+   while (path.path[count])
+      ++count;
+   
+   const struct dxil_value **gep_indices = ralloc_array(ctx->ralloc_ctx,
+                                                       const struct dxil_value *,
+                                                       count + 1);
+   nir_variable *var = path.path[0]->var;
+   const struct dxil_value **var_array;
+   switch (deref->modes) {
+   case nir_var_mem_constant: var_array = ctx->consts; break;
+   case nir_var_mem_shared: var_array = ctx->sharedvars; break;
+   case nir_var_function_temp: var_array = ctx->scratchvars; break;
+   default: unreachable("Invalid deref mode");
+   }
+   gep_indices[0] = var_array[var->data.driver_location];
 
-   const struct dxil_value *index =
-      get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   if (!index)
-      return false;
+   for (uint32_t i = 0; i < count; ++i)
+      gep_indices[i + 1] = get_src_ssa(ctx, &path.path[i]->dest.ssa, 0);
 
-   const struct dxil_value *ptr = emit_gep_for_index(ctx, var, index);
+   return dxil_emit_gep_inbounds(&ctx->mod, gep_indices, count + 1);
+}
+
+static bool
+emit_load_deref(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   const struct dxil_value *ptr = deref_to_gep(ctx, nir_src_as_deref(intr->src[0]));
    if (!ptr)
       return false;
 
    const struct dxil_value *retval =
-      dxil_emit_load(&ctx->mod, ptr, 4, false);
+      dxil_emit_load(&ctx->mod, ptr, nir_dest_bit_size(intr->dest) / 8, false);
    if (!retval)
       return false;
 
@@ -4038,34 +3929,32 @@ emit_load_ptr(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 }
 
 static bool
-emit_load_shared(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+emit_store_deref(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
-   const struct dxil_value *zero, *index;
-   unsigned bit_size = nir_dest_bit_size(intr->dest);
-   unsigned align = bit_size / 8;
-
-   /* All shared mem accesses should have been lowered to scalar 32bit
-    * accesses.
-    */
-   assert(bit_size == 32);
-   assert(nir_dest_num_components(intr->dest) == 1);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   index = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->sharedvars, zero, index };
-   const struct dxil_value *ptr, *retval;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
+   nir_deref_instr *deref = nir_src_as_deref(intr->src[0]);
+   const struct dxil_value *ptr = deref_to_gep(ctx, deref);
    if (!ptr)
       return false;
 
-   retval = dxil_emit_load(&ctx->mod, ptr, align, false);
+   const struct dxil_value *value = get_src(ctx, &intr->src[1], 0, nir_get_nir_type_for_glsl_type(deref->type));
+   return dxil_emit_store(&ctx->mod, value, ptr, nir_src_bit_size(intr->src[1]) / 8, false);
+}
+
+static bool
+emit_atomic_deref(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   const struct dxil_value *ptr = deref_to_gep(ctx, nir_src_as_deref(intr->src[0]));
+   if (!ptr)
+      return false;
+   
+   const struct dxil_value *value = get_src(ctx, &intr->src[1], 0, nir_type_uint);
+   if (!value)
+      return false;
+
+   enum dxil_rmw_op dxil_op = nir_atomic_to_dxil_rmw(nir_intrinsic_atomic_op(intr));
+   const struct dxil_value *retval = dxil_emit_atomicrmw(&ctx->mod, value, ptr, dxil_op, false,
+                                                         DXIL_ATOMIC_ORDERING_ACQREL,
+                                                         DXIL_SYNC_SCOPE_CROSSTHREAD);
    if (!retval)
       return false;
 
@@ -4074,34 +3963,20 @@ emit_load_shared(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 }
 
 static bool
-emit_load_scratch(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+emit_atomic_deref_swap(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
-   const struct dxil_value *zero, *index;
-   unsigned bit_size = nir_dest_bit_size(intr->dest);
-   unsigned align = bit_size / 8;
-
-   /* All scratch mem accesses should have been lowered to scalar 32bit
-    * accesses.
-    */
-   assert(bit_size == 32);
-   assert(nir_dest_num_components(intr->dest) == 1);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   index = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->scratchvars, zero, index };
-   const struct dxil_value *ptr, *retval;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
+   const struct dxil_value *ptr = deref_to_gep(ctx, nir_src_as_deref(intr->src[0]));
    if (!ptr)
       return false;
 
-   retval = dxil_emit_load(&ctx->mod, ptr, align, false);
+   const struct dxil_value *cmp = get_src(ctx, &intr->src[1], 0, nir_type_uint);
+   const struct dxil_value *value = get_src(ctx, &intr->src[2], 0, nir_type_uint);
+   if (!value)
+      return false;
+
+   const struct dxil_value *retval = dxil_emit_cmpxchg(&ctx->mod, cmp, value, ptr, false,
+                                                       DXIL_ATOMIC_ORDERING_ACQREL,
+                                                       DXIL_SYNC_SCOPE_CROSSTHREAD);
    if (!retval)
       return false;
 
@@ -4565,82 +4440,6 @@ emit_ssbo_atomic_comp_swap(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 }
 
 static bool
-emit_shared_atomic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value *zero, *index;
-
-   assert(nir_src_bit_size(intr->src[1]) == 32);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   index = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->sharedvars, zero, index };
-   const struct dxil_value *ptr, *value, *retval;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
-   if (!ptr)
-      return false;
-
-   nir_atomic_op nir_op = nir_intrinsic_atomic_op(intr);
-   enum dxil_rmw_op dxil_op = nir_atomic_to_dxil_rmw(nir_op);
-   nir_alu_type type = nir_atomic_op_type(nir_op);
-   value = get_src(ctx, &intr->src[1], 0, type);
-   if (!value)
-      return false;
-
-   retval = dxil_emit_atomicrmw(&ctx->mod, value, ptr, dxil_op, false,
-                                DXIL_ATOMIC_ORDERING_ACQREL,
-                                DXIL_SYNC_SCOPE_CROSSTHREAD);
-   if (!retval)
-      return false;
-
-   store_dest(ctx, &intr->dest, 0, retval);
-   return true;
-}
-
-static bool
-emit_shared_atomic_comp_swap(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value *zero, *index;
-
-   assert(nir_src_bit_size(intr->src[1]) == 32);
-
-   zero = dxil_module_get_int32_const(&ctx->mod, 0);
-   if (!zero)
-      return false;
-
-   index = get_src(ctx, &intr->src[0], 0, nir_type_uint);
-   if (!index)
-      return false;
-
-   const struct dxil_value *ops[] = { ctx->sharedvars, zero, index };
-   const struct dxil_value *ptr, *cmpval, *newval, *retval;
-
-   ptr = dxil_emit_gep_inbounds(&ctx->mod, ops, ARRAY_SIZE(ops));
-   if (!ptr)
-      return false;
-
-   cmpval = get_src(ctx, &intr->src[1], 0, nir_type_uint);
-   newval = get_src(ctx, &intr->src[2], 0, nir_type_uint);
-   if (!cmpval || !newval)
-      return false;
-
-   retval = dxil_emit_cmpxchg(&ctx->mod, cmpval, newval, ptr, false,
-                              DXIL_ATOMIC_ORDERING_ACQREL,
-                              DXIL_SYNC_SCOPE_CROSSTHREAD);
-   if (!retval)
-      return false;
-
-   store_dest(ctx, &intr->dest, 0, retval);
-   return true;
-}
-
-static bool
 emit_vulkan_resource_index(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
    unsigned int binding = nir_intrinsic_binding(intr);
@@ -5007,19 +4806,16 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_load_ssbo(ctx, intr);
    case nir_intrinsic_store_ssbo:
       return emit_store_ssbo(ctx, intr);
-   case nir_intrinsic_store_ssbo_masked_dxil:
-      return emit_store_ssbo_masked(ctx, intr);
-   case nir_intrinsic_store_shared_dxil:
-   case nir_intrinsic_store_shared_masked_dxil:
-      return emit_store_shared(ctx, intr);
-   case nir_intrinsic_store_scratch_dxil:
-      return emit_store_scratch(ctx, intr);
-   case nir_intrinsic_load_ptr_dxil:
-      return emit_load_ptr(ctx, intr);
-   case nir_intrinsic_load_ubo:
-      return emit_load_ubo(ctx, intr);
-   case nir_intrinsic_load_ubo_dxil:
-      return emit_load_ubo_dxil(ctx, intr);
+   case nir_intrinsic_load_deref:
+      return emit_load_deref(ctx, intr);
+   case nir_intrinsic_store_deref:
+      return emit_store_deref(ctx, intr);
+   case nir_intrinsic_deref_atomic:
+      return emit_atomic_deref(ctx, intr);
+   case nir_intrinsic_deref_atomic_swap:
+      return emit_atomic_deref_swap(ctx, intr);
+   case nir_intrinsic_load_ubo_vec4:
+      return emit_load_ubo_vec4(ctx, intr);
    case nir_intrinsic_load_primitive_id:
       return emit_load_unary_external_function(ctx, intr, "dx.op.primitiveID",
                                                DXIL_INTR_PRIMITIVE_ID, nir_type_int);
@@ -5045,10 +4841,6 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_load_sample_mask_in(ctx, intr);
    case nir_intrinsic_load_tess_coord:
       return emit_load_tess_coord(ctx, intr);
-   case nir_intrinsic_load_shared_dxil:
-      return emit_load_shared(ctx, intr);
-   case nir_intrinsic_load_scratch_dxil:
-      return emit_load_scratch(ctx, intr);
    case nir_intrinsic_discard_if:
    case nir_intrinsic_demote_if:
       return emit_discard_if(ctx, intr);
@@ -5065,10 +4857,6 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_ssbo_atomic(ctx, intr);
    case nir_intrinsic_ssbo_atomic_swap:
       return emit_ssbo_atomic_comp_swap(ctx, intr);
-   case nir_intrinsic_shared_atomic_dxil:
-      return emit_shared_atomic(ctx, intr);
-   case nir_intrinsic_shared_atomic_swap_dxil:
-      return emit_shared_atomic_comp_swap(ctx, intr);
    case nir_intrinsic_image_deref_atomic:
    case nir_intrinsic_image_atomic:
    case nir_intrinsic_bindless_image_atomic:
@@ -5171,31 +4959,6 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    }
 }
 
-static const struct dxil_value *
-get_value_for_const(struct dxil_module *mod, nir_const_value *c, const struct dxil_type *type)
-{
-   if (type == mod->int1_type) return dxil_module_get_int1_const(mod, c->b);
-   if (type == mod->float32_type) return dxil_module_get_float_const(mod, c->f32);
-   if (type == mod->int32_type) return dxil_module_get_int32_const(mod, c->i32);
-   if (type == mod->int16_type) {
-      mod->feats.min_precision = true;
-      return dxil_module_get_int16_const(mod, c->i16);
-   }
-   if (type == mod->int64_type) {
-      mod->feats.int64_ops = true;
-      return dxil_module_get_int64_const(mod, c->i64);
-   }
-   if (type == mod->float16_type) {
-      mod->feats.min_precision = true;
-      return dxil_module_get_float16_const(mod, c->u16);
-   }
-   if (type == mod->float64_type) {
-      mod->feats.doubles = true;
-      return dxil_module_get_double_const(mod, c->f64);
-   }
-   unreachable("Invalid type");
-}
-
 static const struct dxil_type *
 dxil_type_for_const(struct ntd_context *ctx, nir_ssa_def *def)
 {
@@ -5218,25 +4981,41 @@ emit_load_const(struct ntd_context *ctx, nir_load_const_instr *load_const)
 static bool
 emit_deref(struct ntd_context* ctx, nir_deref_instr* instr)
 {
-   assert(instr->deref_type == nir_deref_type_var ||
-          instr->deref_type == nir_deref_type_array);
+   /* There's two possible reasons we might be walking through derefs:
+    * 1. Computing an index to be used for a texture/sampler/image binding, which
+    *    can only do array indexing and should compute the indices along the way with
+    *    array-of-array sizes.
+    * 2. Storing an index to be used in a GEP for access to a variable.
+    */
+   nir_variable *var = nir_deref_instr_get_variable(instr);
+   assert(var);
+
+   bool is_aoa_size =
+      glsl_type_is_sampler(glsl_without_array(var->type)) ||
+      glsl_type_is_image(glsl_without_array(var->type)) ||
+      glsl_type_is_texture(glsl_without_array(var->type));
+
+   if (!is_aoa_size) {
+      /* Just store the values, we'll use these to build a GEP in the load or store */
+      switch (instr->deref_type) {
+      case nir_deref_type_var:
+         store_dest(ctx, &instr->dest, 0, dxil_module_get_int_const(&ctx->mod, 0, instr->dest.ssa.bit_size));
+         return true;
+      case nir_deref_type_array:
+         store_dest(ctx, &instr->dest, 0, get_src(ctx, &instr->arr.index, 0, nir_type_int));
+         return true;
+      case nir_deref_type_struct:
+         store_dest(ctx, &instr->dest, 0, dxil_module_get_int_const(&ctx->mod, instr->strct.index, 32));
+         return true;
+      default:
+         unreachable("Other deref types not supported");
+      }
+   }
 
    /* In the CL environment, there's nothing to emit. Any references to
     * derefs will emit the necessary logic to handle scratch/shared GEP addressing
     */
    if (ctx->opts->environment == DXIL_ENVIRONMENT_CL)
-      return true;
-
-   /* In the Vulkan environment, we don't have cached handles for textures or
-    * samplers, so let's use the opportunity of walking through the derefs to
-    * emit those.
-    */
-   nir_variable *var = nir_deref_instr_get_variable(instr);
-   assert(var);
-
-   if (!glsl_type_is_sampler(glsl_without_array(var->type)) &&
-       !glsl_type_is_image(glsl_without_array(var->type)) &&
-       !glsl_type_is_texture(glsl_without_array(var->type)))
       return true;
 
    const struct glsl_type *type = instr->type;
@@ -6082,58 +5861,28 @@ emit_cbvs(struct ntd_context *ctx)
 }
 
 static bool
-emit_scratch(struct ntd_context *ctx)
+emit_scratch(struct ntd_context *ctx, nir_function_impl *impl)
 {
-   if (ctx->shader->scratch_size) {
-      /*
-       * We always allocate an u32 array, no matter the actual variable types.
-       * According to the DXIL spec, the minimum load/store granularity is
-       * 32-bit, anything smaller requires using a read-extract/read-write-modify
-       * approach.
-       */
-      unsigned size = ALIGN_POT(ctx->shader->scratch_size, sizeof(uint32_t));
-      const struct dxil_type *int32 = dxil_module_get_int_type(&ctx->mod, 32);
-      const struct dxil_value *array_length = dxil_module_get_int32_const(&ctx->mod, size / sizeof(uint32_t));
-      if (!int32 || !array_length)
+   uint32_t index = 0;
+   nir_foreach_function_temp_variable(var, impl)
+      var->data.driver_location = index++;
+
+   if (ctx->scratchvars)
+      ralloc_free((void *)ctx->scratchvars);
+
+   ctx->scratchvars = ralloc_array(ctx->ralloc_ctx, const struct dxil_value *, index);
+
+   nir_foreach_function_temp_variable(var, impl) {
+      const struct dxil_type *type = get_type_for_glsl_type(&ctx->mod, var->type);
+      const struct dxil_value *length = dxil_module_get_int32_const(&ctx->mod, 1);
+      const struct dxil_value *ptr = dxil_emit_alloca(&ctx->mod, type, length, 16);
+      if (!ptr)
          return false;
 
-      const struct dxil_type *type = dxil_module_get_array_type(
-         &ctx->mod, int32, size / sizeof(uint32_t));
-      if (!type)
-         return false;
-
-      ctx->scratchvars = dxil_emit_alloca(&ctx->mod, type, int32, array_length, 4);
-      if (!ctx->scratchvars)
-         return false;
+      ctx->scratchvars[var->data.driver_location] = ptr;
    }
 
    return true;
-}
-
-/* The validator complains if we don't have ops that reference a global variable. */
-static bool
-shader_has_shared_ops(struct nir_shader *s)
-{
-   nir_foreach_function(func, s) {
-      if (!func->impl)
-         continue;
-      nir_foreach_block(block, func->impl) {
-         nir_foreach_instr(instr, block) {
-            if (instr->type != nir_instr_type_intrinsic)
-               continue;
-            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-            switch (intrin->intrinsic) {
-            case nir_intrinsic_load_shared_dxil:
-            case nir_intrinsic_store_shared_dxil:
-            case nir_intrinsic_shared_atomic_dxil:
-            case nir_intrinsic_shared_atomic_swap_dxil:
-               return true;
-            default: break;
-            }
-         }
-      }
-   }
-   return false;
 }
 
 static bool
@@ -6180,7 +5929,7 @@ emit_function(struct ntd_context *ctx, nir_function *func)
 
    nir_gather_ssa_types(impl, ctx->float_types, ctx->int_types);
 
-   if (!emit_scratch(ctx))
+   if (!emit_scratch(ctx, impl))
       return false;
 
    if (!emit_static_indexing_handles(ctx))
@@ -6245,40 +5994,16 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
       }
    }
 
-   if (ctx->shader->info.shared_size && shader_has_shared_ops(ctx->shader)) {
-      const struct dxil_type *type;
-      unsigned size;
-
-     /*
-      * We always allocate an u32 array, no matter the actual variable types.
-      * According to the DXIL spec, the minimum load/store granularity is
-      * 32-bit, anything smaller requires using a read-extract/read-write-modify
-      * approach. Non-atomic 64-bit accesses are allowed, but the
-      * GEP(cast(gvar, u64[] *), offset) and cast(GEP(gvar, offset), u64 *))
-      * sequences don't seem to be accepted by the DXIL validator when the
-      * pointer is in the groupshared address space, making the 32-bit -> 64-bit
-      * pointer cast impossible.
-      */
-      size = ALIGN_POT(ctx->shader->info.shared_size, sizeof(uint32_t));
-      type = dxil_module_get_array_type(&ctx->mod,
-                                        dxil_module_get_int_type(&ctx->mod, 32),
-                                        size / sizeof(uint32_t));
-      ctx->sharedvars = dxil_add_global_ptr_var(&ctx->mod, "shared", type,
-                                                DXIL_AS_GROUPSHARED,
-                                                ffs(sizeof(uint64_t)),
-                                                NULL);
-   }
+   if (!emit_shared_vars(ctx))
+      return false;
+   if (!emit_global_consts(ctx))
+      return false;
 
    /* UAVs */
    if (ctx->shader->info.stage == MESA_SHADER_KERNEL) {
       if (!emit_globals(ctx, opts->num_kernel_globals))
          return false;
 
-      ctx->consts = _mesa_pointer_hash_table_create(ctx->ralloc_ctx);
-      if (!ctx->consts)
-         return false;
-      if (!emit_global_consts(ctx))
-         return false;
    } else if (ctx->opts->environment == DXIL_ENVIRONMENT_VULKAN) {
       /* Handle read/write SSBOs as UAVs */
       nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_ssbo) {
@@ -6414,9 +6139,12 @@ lower_bit_size_callback(const nir_instr* instr, void *data)
 {
    if (instr->type != nir_instr_type_alu)
       return 0;
-   const nir_alu_instr *alu = nir_instr_as_alu(instr);
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
 
    if (nir_op_infos[alu->op].is_conversion)
+      return 0;
+
+   if (nir_alu_instr_is_copy(alu))
       return 0;
 
    unsigned num_inputs = nir_op_infos[alu->op].num_inputs;
@@ -6433,6 +6161,79 @@ lower_bit_size_callback(const nir_instr* instr, void *data)
    return ret;
 }
 
+static bool
+vectorize_filter(
+   unsigned align_mul,
+   unsigned align_offset,
+   unsigned bit_size,
+   unsigned num_components,
+   nir_intrinsic_instr *low, nir_intrinsic_instr *high,
+   void *data)
+{
+   return util_is_power_of_two_nonzero(num_components);
+}
+
+struct lower_mem_bit_sizes_data {
+   const nir_shader_compiler_options *nir_options;
+   const struct nir_to_dxil_options *dxil_options;
+};
+
+static nir_mem_access_size_align
+lower_mem_access_bit_sizes_cb(nir_intrinsic_op intrin,
+                              uint8_t bytes,
+                              uint8_t bit_size_in,
+                              uint32_t align_mul,
+                              uint32_t align_offset,
+                              bool offset_is_const,
+                              const void *cb_data)
+{
+   const struct lower_mem_bit_sizes_data *data = cb_data;
+   unsigned max_bit_size = 32;
+   unsigned min_bit_size = data->dxil_options->lower_int16 ? 32 : 16;
+   unsigned closest_bit_size = MAX2(min_bit_size, MIN2(max_bit_size, bit_size_in));
+   if (intrin == nir_intrinsic_load_ubo) {
+      /* UBO loads can be done at whatever (supported) bit size, but require 16 byte
+       * alignment and can load up to 16 bytes per instruction. However this pass requires
+       * loading 16 bytes of data to get 16-byte alignment. We're going to run lower_ubo_vec4
+       * which can deal with unaligned vec4s, so for this pass let's just deal with bit size
+       * and total size restrictions. */
+      return (nir_mem_access_size_align) {
+         .align = closest_bit_size / 8,
+         .bit_size = closest_bit_size,
+         .num_components = DIV_ROUND_UP(MIN2(bytes, 16) * 8, closest_bit_size),
+      };
+   }
+
+   assert(intrin == nir_intrinsic_load_ssbo || intrin == nir_intrinsic_store_ssbo);
+   uint32_t align = nir_combined_align(align_mul, align_offset);
+   if (align < min_bit_size / 8) {
+      /* Unaligned load/store, use the minimum bit size, up to 4 components */
+      unsigned ideal_num_components = intrin == nir_intrinsic_load_ssbo ?
+         DIV_ROUND_UP(bytes * 8, min_bit_size) :
+         (bytes * 8 / min_bit_size);
+      return (nir_mem_access_size_align) {
+         .align = min_bit_size / 8,
+         .bit_size = min_bit_size,
+         .num_components = MIN2(4, ideal_num_components),
+      };
+   }
+
+   /* Increase/decrease bit size to try to get closer to the requested byte size/align */
+   unsigned bit_size = closest_bit_size;
+   unsigned target = MIN2(bytes, align);
+   while (target < bit_size / 8 && bit_size > min_bit_size)
+      bit_size /= 2;
+   while (target > bit_size / 8 * 4 && bit_size < max_bit_size)
+      bit_size *= 2;
+
+   /* This is the best we can do */
+   return (nir_mem_access_size_align) {
+      .align = bit_size / 8,
+      .bit_size = bit_size,
+      .num_components = MIN2(4, DIV_ROUND_UP(bytes * 8, bit_size)),
+   };
+}
+
 static void
 optimize_nir(struct nir_shader *s, const struct nir_to_dxil_options *opts)
 {
@@ -6440,7 +6241,7 @@ optimize_nir(struct nir_shader *s, const struct nir_to_dxil_options *opts)
    do {
       progress = false;
       NIR_PASS_V(s, nir_lower_vars_to_ssa);
-      NIR_PASS(progress, s, nir_lower_indirect_derefs, nir_var_function_temp, UINT32_MAX);
+      NIR_PASS(progress, s, nir_lower_indirect_derefs, nir_var_function_temp, 4);
       NIR_PASS(progress, s, nir_lower_alu_to_scalar, NULL, NULL);
       NIR_PASS(progress, s, nir_copy_prop);
       NIR_PASS(progress, s, nir_opt_copy_prop_vars);
@@ -6467,6 +6268,7 @@ optimize_nir(struct nir_shader *s, const struct nir_to_dxil_options *opts)
       NIR_PASS(progress, s, nir_lower_64bit_phis);
       NIR_PASS(progress, s, nir_lower_phis_to_scalar, true);
       NIR_PASS(progress, s, nir_opt_loop_unroll);
+      NIR_PASS(progress, s, nir_lower_pack);
       NIR_PASS_V(s, nir_lower_system_values);
    } while (progress);
 
@@ -6733,9 +6535,37 @@ nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
    NIR_PASS_V(s, nir_lower_flrp, 16 | 32 | 64, true);
    NIR_PASS_V(s, nir_lower_io, nir_var_shader_in | nir_var_shader_out, type_size_vec4, nir_lower_io_lower_64bit_to_32);
    NIR_PASS_V(s, dxil_nir_ensure_position_writes);
-   NIR_PASS_V(s, nir_lower_pack);
    NIR_PASS_V(s, dxil_nir_lower_system_values);
    NIR_PASS_V(s, nir_lower_io_to_scalar, nir_var_shader_in | nir_var_system_value | nir_var_shader_out);
+
+   /* Do a round of optimization to try to vectorize loads/stores. Otherwise the addresses used for loads
+    * might be too opaque for the pass to see that they're next to each other. */
+   optimize_nir(s, opts);
+
+   /* Vectorize UBO/SSBO accesses aggressively. This can help increase alignment to enable us to do better
+    * chunking of loads and stores after lowering bit sizes. Ignore load/store size limitations here, we'll
+    * address them with lower_mem_access_bit_sizes */
+   nir_load_store_vectorize_options vectorize_opts = {
+      .callback = vectorize_filter,
+      .modes = nir_var_mem_ubo | nir_var_mem_ssbo,
+   };
+   NIR_PASS_V(s, nir_opt_load_store_vectorize, &vectorize_opts);
+
+   /* Now that they're bloated to the max, address bit size restrictions and overall size limitations for
+    * a single load/store op. */
+   struct lower_mem_bit_sizes_data mem_size_data = { s->options, opts };
+   nir_lower_mem_access_bit_sizes_options mem_size_options = {
+      .modes = nir_var_mem_ubo | nir_var_mem_ssbo,
+      .callback = lower_mem_access_bit_sizes_cb,
+      .may_lower_unaligned_stores_to_atomics = true,
+      .cb_data = &mem_size_data
+   };
+   NIR_PASS_V(s, nir_lower_mem_access_bit_sizes, &mem_size_options);
+
+   /* Lastly, conver byte-address UBO loads to vec-addressed. This pass can also deal with selecting sub-
+    * components from the load and dealing with vec-straddling loads. */
+   NIR_PASS_V(s, nir_lower_ubo_vec4);
+
    if (opts->shader_model_max < SHADER_MODEL_6_6) {
       /* In a later pass, load_helper_invocation will be lowered to sample mask based fallback,
        * so both load- and is- will be emulated eventually.
@@ -6756,7 +6586,7 @@ nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
    optimize_nir(s, opts);
 
    NIR_PASS_V(s, nir_remove_dead_variables,
-              nir_var_function_temp | nir_var_shader_temp, NULL);
+              nir_var_function_temp | nir_var_mem_constant | nir_var_mem_shared, NULL);
 
    if (!allocate_sysvalues(ctx))
       return false;

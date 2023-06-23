@@ -328,6 +328,7 @@ ir3_compiler = executable(
   include_directories : freedreno_includes,
   dependencies : [
     idep_nir,
+    idep_vtn,
     idep_mesautil,
   ],
   link_with : [

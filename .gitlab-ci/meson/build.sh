@@ -75,7 +75,7 @@ meson setup _build \
       ${CROSS+--cross "$CROSS_FILE"} \
       -D prefix=$PWD/install \
       -D libdir=lib \
-      -D buildtype=${BUILDTYPE:-debug} \
+      -D buildtype=${BUILDTYPE:?} \
       -D build-tests=true \
       -D c_args="$(echo -n $C_ARGS)" \
       -D c_link_args="$(echo -n $C_LINK_ARGS)" \

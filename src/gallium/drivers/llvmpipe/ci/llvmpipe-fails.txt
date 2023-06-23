@@ -212,10 +212,6 @@ spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_
 # [...]
 wayland-dEQP-EGL.functional.wide_color.pbuffer_888_colorspace_default,Fail
 
-# New CTS failures in 1.3.5.0
-KHR-GL45.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
-KHR-GL45.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
-
 # Debian bookworm fails
 spec@arb_viewport_array@display-list,Fail
 spec@intel_shader_atomic_float_minmax@execution@ssbo-atomicmin-float-nan,Fail

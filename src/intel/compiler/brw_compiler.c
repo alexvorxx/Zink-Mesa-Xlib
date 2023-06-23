@@ -49,7 +49,6 @@
    .lower_insert_word = true,                                                 \
    .vertex_id_zero_based = true,                                              \
    .lower_base_vertex = true,                                                 \
-   .use_scoped_barrier = true,                                                \
    .support_16bit_alu = true,                                                 \
    .lower_uniforms_to_ubo = true,                                             \
    .has_txs = true

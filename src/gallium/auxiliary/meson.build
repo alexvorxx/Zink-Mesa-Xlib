@@ -123,7 +123,6 @@ files_libgallium = files(
   'indices/u_indices_priv.h',
   'indices/u_primconvert.c',
   'indices/u_primconvert.h',
-  'os/os_process.h',
   'pipebuffer/pb_buffer_fenced.c',
   'pipebuffer/pb_buffer_fenced.h',
   'pipebuffer/pb_buffer.h',

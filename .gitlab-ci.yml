@@ -21,23 +21,17 @@ variables:
           rm download-git-cache.sh
           set +o xtrace
   CI_JOB_JWT_FILE: /minio_jwt
-  MINIO_HOST: s3.freedesktop.org
+  S3_HOST: s3.freedesktop.org
   # per-pipeline artifact storage on MinIO
-  PIPELINE_ARTIFACTS_BASE: ${MINIO_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
+  PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
   # per-job artifact storage on MinIO
   JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
   # reference images stored for traces
-  PIGLIT_REPLAY_REFERENCE_IMAGES_BASE: "${MINIO_HOST}/mesa-tracie-results/$FDO_UPSTREAM_REPO"
-  # Individual CI farm status, set to "offline" to disable jobs
-  # running on a particular CI farm (ie. for outages, etc):
-  FD_FARM: "online"
-  COLLABORA_FARM: "online"
-  MICROSOFT_FARM: "online"
-  LIMA_FARM: "online"
-  IGALIA_FARM: "online"
-  ANHOLT_FARM: "online"
-  VALVE_FARM: "online"
-  AUSTRIANCODER_FARM: "online"  # only etnaviv GPUs
+  PIGLIT_REPLAY_REFERENCE_IMAGES_BASE: "${S3_HOST}/mesa-tracie-results/$FDO_UPSTREAM_REPO"
+  # For individual CI farm status see .ci-farms folder
+  # Disable farm with   `git mv .ci-farms{,-disabled}/$farm_name`
+  # Re-enable farm with `git mv .ci-farms{-disabled,}/$farm_name`
+  # NEVER MIX FARM MAINTENANCE WITH ANY OTHER CHANGE IN THE SAME MERGE REQUEST!
 
 default:
   before_script:
@@ -60,6 +54,16 @@ default:
   # https://gitlab.freedesktop.org/mesa/mesa/-/issues/?sort=created_date&state=opened&label_name%5B%5D=CI%20daily
   retry:
     max: 1
+    # Ignore runner_unsupported, stale_schedule, archived_failure, or
+    # unmet_prerequisites
+    when:
+      - api_failure
+      - runner_system_failure
+      - script_failure
+      - job_execution_timeout
+      - scheduler_failure
+      - data_integrity_failure
+      - unknown_failure
 
 include:
   - project: 'freedesktop/ci-templates'
@@ -155,6 +159,7 @@ stages:
       # Source code
       - include/**/*
       - src/**/*
+      - .ci-farms/*
       when: on_success
     # Otherwise, build/test jobs won't run because no rule matched.
 
@@ -216,7 +221,7 @@ make git archive:
     # compress the current folder
     - tar -cvzf ../$CI_PROJECT_NAME.tar.gz .
 
-    - ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" ../$CI_PROJECT_NAME.tar.gz https://$MINIO_HOST/git-cache/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME/$CI_PROJECT_NAME.tar.gz
+    - ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" ../$CI_PROJECT_NAME.tar.gz https://$S3_HOST/git-cache/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME/$CI_PROJECT_NAME.tar.gz
 
 
 # Sanity checks of MR settings and commit logs

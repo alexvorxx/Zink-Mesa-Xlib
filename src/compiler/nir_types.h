@@ -205,8 +205,8 @@ const struct glsl_type *glsl_explicit_matrix_type(const struct glsl_type *mat,
                                                   unsigned stride,
                                                   bool row_major);
 
-const struct glsl_type *glsl_array_type(const struct glsl_type *base,
-                                        unsigned elements,
+const struct glsl_type *glsl_array_type(const struct glsl_type *element,
+                                        unsigned array_size,
                                         unsigned explicit_stride);
 
 const struct glsl_type *glsl_struct_type(const struct glsl_struct_field *fields,

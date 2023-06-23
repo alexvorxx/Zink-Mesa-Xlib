@@ -527,19 +527,6 @@ struct radeon_winsys {
                      void *flush_ctx, bool allow_context_lost);
 
    /**
-    * Set or change the CS preamble, which is a sequence of packets that is executed before
-    * the command buffer. If the winsys doesn't support preambles, the packets are inserted
-    * into the command buffer.
-    *
-    * \param cs               Command stream
-    * \param preamble_ib      Preamble IB for the context.
-    * \param preamble_num_dw  Number of dwords in the preamble IB.
-    * \param preamble_changed Whether the preamble changed or is the same as the last one.
-    */
-   void (*cs_set_preamble)(struct radeon_cmdbuf *cs, const uint32_t *preamble_ib,
-                           unsigned preamble_num_dw, bool preamble_changed);
-
-   /**
     * Set up and enable mid command buffer preemption for the command stream.
     *
     * \param cs               Command stream

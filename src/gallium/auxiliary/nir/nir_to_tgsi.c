@@ -2341,6 +2341,50 @@ ntt_emit_load_sysval(struct ntt_compile *c, nir_intrinsic_instr *instr)
 }
 
 static void
+ntt_emit_barrier(struct ntt_compile *c, nir_intrinsic_instr *intr)
+{
+   bool compute = gl_shader_stage_is_compute(c->s->info.stage);
+
+   if (nir_intrinsic_memory_scope(intr) != SCOPE_NONE) {
+      nir_variable_mode modes = nir_intrinsic_memory_modes(intr);
+      unsigned membar = 0;
+
+      if (modes & nir_var_image)
+         membar |= TGSI_MEMBAR_SHADER_IMAGE;
+
+      if (modes & nir_var_mem_shared)
+         membar |= TGSI_MEMBAR_SHARED;
+
+      /* Atomic counters are lowered to SSBOs, there's no NIR mode corresponding
+       * exactly to atomics. Take the closest match.
+       */
+      if (modes & nir_var_mem_ssbo)
+         membar |= TGSI_MEMBAR_SHADER_BUFFER | TGSI_MEMBAR_ATOMIC_BUFFER;
+
+      if (modes & nir_var_mem_global)
+         membar |= TGSI_MEMBAR_SHADER_BUFFER;
+
+      /* If we only need workgroup scope (not device-scope), we might be able to
+       * optimize a bit.
+       */
+      if (membar && compute &&
+          nir_intrinsic_memory_scope(intr) == SCOPE_WORKGROUP) {
+
+         membar |= TGSI_MEMBAR_THREAD_GROUP;
+      }
+
+      /* Only emit a memory barrier if there are any relevant modes */
+      if (membar)
+         ntt_MEMBAR(c, ureg_imm1u(c->ureg, membar));
+   }
+
+   if (nir_intrinsic_execution_scope(intr) != SCOPE_NONE) {
+      assert(compute || c->s->info.stage == MESA_SHADER_TESS_CTRL);
+      ntt_BARRIER(c);
+   }
+}
+
+static void
 ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
 {
    switch (instr->intrinsic) {
@@ -2491,42 +2535,8 @@ ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
       ntt_emit_image_load_store(c, instr);
       break;
 
-   case nir_intrinsic_control_barrier:
-   case nir_intrinsic_memory_barrier_tcs_patch:
-      ntt_BARRIER(c);
-      break;
-
-   case nir_intrinsic_memory_barrier:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg,
-                               TGSI_MEMBAR_SHADER_BUFFER |
-                               TGSI_MEMBAR_ATOMIC_BUFFER |
-                               TGSI_MEMBAR_SHADER_IMAGE |
-                               TGSI_MEMBAR_SHARED));
-      break;
-
-   case nir_intrinsic_memory_barrier_atomic_counter:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg, TGSI_MEMBAR_ATOMIC_BUFFER));
-      break;
-
-   case nir_intrinsic_memory_barrier_buffer:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg, TGSI_MEMBAR_SHADER_BUFFER));
-      break;
-
-   case nir_intrinsic_memory_barrier_image:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg, TGSI_MEMBAR_SHADER_IMAGE));
-      break;
-
-   case nir_intrinsic_memory_barrier_shared:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg, TGSI_MEMBAR_SHARED));
-      break;
-
-   case nir_intrinsic_group_memory_barrier:
-      ntt_MEMBAR(c, ureg_imm1u(c->ureg,
-                               TGSI_MEMBAR_SHADER_BUFFER |
-                               TGSI_MEMBAR_ATOMIC_BUFFER |
-                               TGSI_MEMBAR_SHADER_IMAGE |
-                               TGSI_MEMBAR_SHARED |
-                               TGSI_MEMBAR_THREAD_GROUP));
+   case nir_intrinsic_scoped_barrier:
+      ntt_emit_barrier(c, instr);
       break;
 
    case nir_intrinsic_end_primitive:
@@ -3824,6 +3834,8 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
       }
    } while (progress);
 
+   NIR_PASS_V(s, nir_opt_combine_barriers, NULL, NULL);
+
    if (screen->get_shader_param(screen,
                                 pipe_shader_type_from_mesa(s->info.stage),
                                 PIPE_SHADER_CAP_INTEGERS)) {
@@ -3843,9 +3855,9 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
    NIR_PASS_V(s, nir_opt_move, move_all);
 
-   /* Only lower 32-bit floats.  The only other modifier type officially
-    * supported by TGSI is 32-bit integer negates, but even those are broken on
-    * virglrenderer, so skip lowering all integer and f64 float mods.
+   /* We're fine lowering only 32-bit floats. TGSI officially supports 32-bit
+    * integer negates, but even those are broken on virglrenderer, so we don't
+    * use integer or f64 float mods.
     *
     * The options->lower_fabs requests that we not have native source modifiers
     * for fabs, and instead emit MAX(a,-a) for nir_op_fabs.

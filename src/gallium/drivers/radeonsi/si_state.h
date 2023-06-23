@@ -7,9 +7,8 @@
 #ifndef SI_STATE_H
 #define SI_STATE_H
 
-#include "pipebuffer/pb_slab.h"
 #include "si_pm4.h"
-#include "util/u_blitter.h"
+#include "util/format/u_format.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +30,8 @@ struct si_shader_ctx_state;
 struct si_shader_selector;
 struct si_texture;
 struct si_qbo_state;
+struct legacy_surf_level;
+struct pb_slab_entry;
 
 struct si_state_blend {
    struct si_pm4_state pm4;
@@ -210,6 +211,7 @@ union si_state_atoms {
       struct si_atom shader_query;
       struct si_atom ngg_cull_state;
       struct si_atom vgt_pipeline_state;
+      struct si_atom tess_io_layout;
    } s;
    struct si_atom array[sizeof(struct si_atoms_s) / sizeof(struct si_atom)];
 };
@@ -276,6 +278,7 @@ enum si_tracked_context_reg
    SI_TRACKED_VGT_GS_INSTANCE_CNT,
    SI_TRACKED_VGT_GS_MAX_VERT_OUT,
    SI_TRACKED_VGT_SHADER_STAGES_EN,
+   SI_TRACKED_VGT_LS_HS_CONFIG,
    SI_TRACKED_VGT_TF_PARAM,
    SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL,  /* GFX8-9 (only with has_small_prim_filter_sample_loc_bug) */
    SI_TRACKED_PA_SC_BINNER_CNTL_0,           /* GFX9+ */
@@ -291,6 +294,7 @@ enum si_tracked_context_reg
    /* The slots below can be reused by other generations. */
    SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,        /* GFX6-8 (GFX9+ can reuse this slot) */
    SI_TRACKED_VGT_REUSE_OFF,                 /* GFX6-8 (GFX9+ can reuse this slot) */
+   SI_TRACKED_IA_MULTI_VGT_PARAM,            /* GFX6-8 (GFX9+ can reuse this slot) */
 
    SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP, /* GFX9-10 - the slots above can be reused */
    SI_TRACKED_VGT_GS_ONCHIP_CNTL,            /* GFX9-10 - the slots above can be reused */
@@ -298,6 +302,7 @@ enum si_tracked_context_reg
    SI_TRACKED_VGT_GSVS_RING_ITEMSIZE,        /* GFX6-10 (GFX11+ can reuse this slot) */
    SI_TRACKED_VGT_GS_MODE,                   /* GFX6-10 (GFX11+ can reuse this slot) */
    SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL,   /* GFX6-10 (GFX11+ can reuse this slot) */
+   SI_TRACKED_VGT_GS_OUT_PRIM_TYPE,          /* GFX6-10 (GFX11+ can reuse this slot) */
 
    /* 3 consecutive registers */
    SI_TRACKED_VGT_GSVS_RING_OFFSET_1,        /* GFX6-10 (GFX11+ can reuse this slot) */
@@ -323,6 +328,32 @@ enum si_tracked_other_reg {
    SI_TRACKED_GE_PC_ALLOC,                   /* GFX10+ */
    SI_TRACKED_SPI_SHADER_PGM_RSRC3_GS,       /* GFX7+ */
    SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS,       /* GFX10+ */
+   SI_TRACKED_VGT_GS_OUT_PRIM_TYPE_UCONFIG,  /* GFX11+ */
+
+   SI_TRACKED_IA_MULTI_VGT_PARAM_UCONFIG,    /* GFX9 only */
+   SI_TRACKED_GE_CNTL = SI_TRACKED_IA_MULTI_VGT_PARAM_UCONFIG, /* GFX10+ */
+
+   SI_TRACKED_SPI_SHADER_PGM_RSRC2_HS,       /* GFX9+ (not tracked on previous chips) */
+
+   /* 3 consecutive registers. */
+   SI_TRACKED_SPI_SHADER_USER_DATA_HS__TCS_OFFCHIP_LAYOUT,
+   SI_TRACKED_SPI_SHADER_USER_DATA_HS__TCS_OFFCHIP_ADDR,
+   SI_TRACKED_SPI_SHADER_USER_DATA_HS__VS_STATE_BITS,    /* GFX6-8 */
+
+   SI_TRACKED_COMPUTE_RESOURCE_LIMITS,
+   SI_TRACKED_COMPUTE_NUM_THREAD_X,
+   SI_TRACKED_COMPUTE_NUM_THREAD_Y,
+   SI_TRACKED_COMPUTE_NUM_THREAD_Z,
+   SI_TRACKED_COMPUTE_TMPRING_SIZE,
+   SI_TRACKED_COMPUTE_PGM_RSRC3,             /* GFX11+ */
+
+   /* 2 consecutive registers. */
+   SI_TRACKED_COMPUTE_PGM_RSRC1,
+   SI_TRACKED_COMPUTE_PGM_RSRC2,
+
+   /* 2 consecutive registers. */
+   SI_TRACKED_COMPUTE_DISPATCH_SCRATCH_BASE_LO, /* GFX11+ */
+   SI_TRACKED_COMPUTE_DISPATCH_SCRATCH_BASE_HI, /* GFX11+ */
 
    SI_NUM_TRACKED_OTHER_REGS,
 };
@@ -523,7 +554,7 @@ void si_rebind_buffer(struct si_context *sctx, struct pipe_resource *buf);
 void si_init_state_compute_functions(struct si_context *sctx);
 void si_init_state_functions(struct si_context *sctx);
 void si_init_screen_state_functions(struct si_screen *sscreen);
-void si_init_gfx_preamble_state(struct si_context *sctx, bool uses_reg_shadowing);
+void si_init_gfx_preamble_state(struct si_context *sctx);
 void si_make_buffer_descriptor(struct si_screen *screen, struct si_resource *buf,
                                enum pipe_format format, unsigned offset, unsigned num_elements,
                                uint32_t *state);
@@ -586,6 +617,7 @@ bool si_update_gs_ring_buffers(struct si_context *sctx);
 bool si_update_spi_tmpring_size(struct si_context *sctx, unsigned bytes);
 unsigned si_get_shader_prefetch_size(struct si_shader *shader);
 bool si_set_tcs_to_fixed_func_shader(struct si_context *sctx);
+void si_update_tess_io_layout_state(struct si_context *sctx);
 
 /* si_state_draw.cpp */
 void si_cp_dma_prefetch(struct si_context *sctx, struct pipe_resource *buf,
@@ -593,6 +625,7 @@ void si_cp_dma_prefetch(struct si_context *sctx, struct pipe_resource *buf,
 void si_set_vertex_buffer_descriptor(struct si_screen *sscreen, struct si_vertex_elements *velems,
                                      struct pipe_vertex_buffer *vb, unsigned element_index,
                                      uint32_t *out);
+void gfx11_emit_buffered_compute_sh_regs(struct si_context *sctx);
 void si_init_draw_functions_GFX6(struct si_context *sctx);
 void si_init_draw_functions_GFX7(struct si_context *sctx);
 void si_init_draw_functions_GFX8(struct si_context *sctx);

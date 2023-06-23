@@ -71,6 +71,7 @@ enum {
    RADV_DEBUG_EXTRA_MD = 1ull << 40,
    RADV_DEBUG_NO_GPL = 1ull << 41,
    RADV_DEBUG_VIDEO_ARRAY_PATH = 1ull << 42,
+   RADV_DEBUG_NO_RT = 1ull << 43,
 };
 
 enum {

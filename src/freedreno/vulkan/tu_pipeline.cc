@@ -2557,10 +2557,10 @@ tu_pipeline_allocate_cs(struct tu_device *dev,
     * can't use its EXTERNALLY_SYNCHRONIZED flag to avoid atomics because
     * pipeline destroy isn't synchronized by the cache.
     */
-   pthread_mutex_lock(&dev->pipeline_mutex);
+   mtx_lock(&dev->pipeline_mutex);
    VkResult result = tu_suballoc_bo_alloc(&pipeline->bo, &dev->pipeline_suballoc,
                                           size * 4, 128);
-   pthread_mutex_unlock(&dev->pipeline_mutex);
+   mtx_unlock(&dev->pipeline_mutex);
    if (result != VK_SUCCESS)
       return result;
 
@@ -4832,9 +4832,9 @@ tu_pipeline_finish(struct tu_pipeline *pipeline,
                    const VkAllocationCallbacks *alloc)
 {
    tu_cs_finish(&pipeline->cs);
-   pthread_mutex_lock(&dev->pipeline_mutex);
+   mtx_lock(&dev->pipeline_mutex);
    tu_suballoc_bo_free(&dev->pipeline_suballoc, &pipeline->bo);
-   pthread_mutex_unlock(&dev->pipeline_mutex);
+   mtx_unlock(&dev->pipeline_mutex);
 
    if (pipeline->pvtmem_bo)
       tu_bo_finish(dev, pipeline->pvtmem_bo);

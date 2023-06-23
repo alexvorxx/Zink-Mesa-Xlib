@@ -43,6 +43,19 @@ transform_trig_input_fs_r500 = [
         (('fcos', 'a'), ('fcos', ('ffract', ('fmul', 'a', 1 / (2 * pi))))),
 ]
 
+# The is a pattern produced by wined3d for A0 register load.
+# The specific pattern wined3d emits looks like this
+# A0.x = (int(floor(abs(R0.x) + 0.5) * sign(R0.x)));
+# however we lower both sign and floor so here we check for the already lowered
+# sequence.
+r300_nir_fuse_fround_d3d9 = [
+        (('fmul', ('fadd', ('fadd', ('fabs', 'a') , 0.5),
+                           ('fneg', ('ffract', ('fadd', ('fabs', 'a') , 0.5)))),
+                  ('fadd', ('b2f', ('!flt', 0.0, 'a')),
+                           ('fneg', ('b2f', ('!flt', 'a', 0.0))))),
+         ('fround_even', 'a'))
+]
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--import-path', required=True)
@@ -53,7 +66,7 @@ def main():
     import nir_algebraic  # pylint: disable=import-error
 
     with open(args.output, 'w') as f:
-        f.write('#include "r300_vs.h"')
+        f.write('#include "compiler/r300_nir.h"')
 
         f.write(nir_algebraic.AlgebraicPass("r300_transform_vs_trig_input",
                                             transform_trig_input_vs_r500).render())
@@ -61,6 +74,8 @@ def main():
         f.write(nir_algebraic.AlgebraicPass("r300_transform_fs_trig_input",
                                             transform_trig_input_fs_r500).render())
 
+        f.write(nir_algebraic.AlgebraicPass("r300_nir_fuse_fround_d3d9",
+                                            r300_nir_fuse_fround_d3d9).render())
 
 if __name__ == '__main__':
     main()

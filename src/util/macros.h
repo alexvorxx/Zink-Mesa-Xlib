@@ -209,8 +209,10 @@ do {                       \
 #  else
 #    define PACKED __attribute__((__packed__))
 #  endif
+#  define ENUM_PACKED __attribute__((packed))
 #else
 #define PACKED
+#define ENUM_PACKED
 #endif
 
 /* Attribute pure is used for functions that have no effects other than their

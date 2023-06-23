@@ -696,15 +696,15 @@ static int setup_dpb(struct radeon_encoder *enc)
    uint32_t rec_alignment = is_h264 ? 16 : 64;
    uint32_t aligned_width = align(enc->base.width, rec_alignment);
    uint32_t aligned_height = align(enc->base.height, rec_alignment);
-   uint32_t aligned_chroma_height = align(aligned_height / 2, rec_alignment);
    uint32_t pitch = align(aligned_width, enc->alignment);
    uint32_t num_reconstructed_pictures = enc->base.max_references + 1;
    uint32_t luma_size, chroma_size, offset;
    struct radeon_enc_pic *enc_pic = &enc->enc_pic;
    int i;
+   uint32_t aligned_dpb_height = MAX2(256, aligned_height);
 
-   luma_size = align(pitch * aligned_height, enc->alignment);
-   chroma_size = align(pitch * aligned_chroma_height, enc->alignment);
+   luma_size = align(pitch * aligned_dpb_height , enc->alignment);
+   chroma_size = align(luma_size / 2 , enc->alignment);
    if (enc_pic->bit_depth_luma_minus8 || enc_pic->bit_depth_chroma_minus8) {
       luma_size *= 2;
       chroma_size *= 2;

@@ -395,6 +395,9 @@ typedef struct nir_constant {
     */
    nir_const_value values[NIR_MAX_VEC_COMPONENTS];
 
+   /* Indicates all the values are 0s which can enable some optimizations */
+   bool is_null_constant;
+
    /* we could get this from the var->type but makes clone *much* easier to
     * not have to care about the type.
     */
@@ -899,7 +902,7 @@ typedef struct nir_register {
 #define nir_foreach_register_safe(reg, reg_list) \
    foreach_list_typed_safe(nir_register, reg, node, reg_list)
 
-typedef enum PACKED {
+typedef enum ENUM_PACKED {
    nir_instr_type_alu,
    nir_instr_type_deref,
    nir_instr_type_call,
@@ -1262,7 +1265,7 @@ typedef struct {
  * The values in this enum are carefully chosen so that the sized type is
  * just the unsized type OR the number of bits.
  */
-typedef enum PACKED {
+typedef enum ENUM_PACKED {
    nir_type_invalid = 0, /* Not a valid type */
    nir_type_int =       2,
    nir_type_uint =      4,
@@ -1808,6 +1811,7 @@ bool nir_deref_instr_is_known_out_of_bounds(nir_deref_instr *instr);
 typedef enum {
    nir_deref_instr_has_complex_use_allow_memcpy_src = (1 << 0),
    nir_deref_instr_has_complex_use_allow_memcpy_dst = (1 << 1),
+   nir_deref_instr_has_complex_use_allow_atomics = (1 << 2),
 } nir_deref_instr_has_complex_use_options;
 
 bool nir_deref_instr_has_complex_use(nir_deref_instr *instr,
@@ -1894,16 +1898,6 @@ typedef enum {
    NIR_MEMORY_MAKE_AVAILABLE = 1 << 2,
    NIR_MEMORY_MAKE_VISIBLE   = 1 << 3,
 } nir_memory_semantics;
-
-typedef enum {
-   NIR_SCOPE_NONE,
-   NIR_SCOPE_INVOCATION,
-   NIR_SCOPE_SUBGROUP,
-   NIR_SCOPE_SHADER_CALL,
-   NIR_SCOPE_WORKGROUP,
-   NIR_SCOPE_QUEUE_FAMILY,
-   NIR_SCOPE_DEVICE,
-} nir_scope;
 
 /**
  * \name NIR intrinsics semantic flags
@@ -3830,11 +3824,6 @@ typedef struct nir_shader_compiler_options {
    /** Backend supports sdot_2x16 and udot_2x16 opcodes. */
    bool has_dot_2x16;
 
-   /* Whether to generate only scoped_barrier intrinsics instead of the set of
-    * memory and control barrier intrinsics based on GLSL.
-    */
-   bool use_scoped_barrier;
-
    /** Backend supports fmulz (and ffmaz if lower_ffma32=false) */
    bool has_fmulz;
 
@@ -5102,15 +5091,21 @@ typedef struct {
 typedef nir_mem_access_size_align
    (*nir_lower_mem_access_bit_sizes_cb)(nir_intrinsic_op intrin,
                                         uint8_t bytes,
+                                        uint8_t bit_size,
                                         uint32_t align_mul,
                                         uint32_t align_offset,
                                         bool offset_is_const,
                                         const void *cb_data);
 
+typedef struct {
+   nir_lower_mem_access_bit_sizes_cb callback;
+   nir_variable_mode modes;
+   bool may_lower_unaligned_stores_to_atomics;
+   void *cb_data;
+} nir_lower_mem_access_bit_sizes_options;
+
 bool nir_lower_mem_access_bit_sizes(nir_shader *shader,
-                                    nir_variable_mode modes,
-                                    nir_lower_mem_access_bit_sizes_cb cb,
-                                    const void *cb_data);
+                                    const nir_lower_mem_access_bit_sizes_options *options);
 
 typedef bool (*nir_should_vectorize_mem_func)(unsigned align_mul,
                                               unsigned align_offset,
@@ -5305,7 +5300,7 @@ bool
 nir_lower_sysvals_to_varyings(nir_shader *shader,
                               const struct nir_lower_sysvals_to_varyings_options *options);
 
-enum PACKED nir_lower_tex_packing {
+enum ENUM_PACKED nir_lower_tex_packing {
    /** No packing */
    nir_lower_tex_packing_none = 0,
    /**
@@ -5687,15 +5682,11 @@ void nir_lower_bitmap(nir_shader *shader, const nir_lower_bitmap_options *option
 bool nir_lower_atomics_to_ssbo(nir_shader *shader, unsigned offset_align_state);
 
 typedef enum  {
-   nir_lower_int_source_mods = 1 << 0,
-   nir_lower_fabs_source_mods = 1 << 1,
-   nir_lower_fneg_source_mods = 1 << 2,
-   nir_lower_64bit_source_mods = 1 << 3,
-   nir_lower_triop_abs = 1 << 4,
-   nir_lower_all_source_mods = (1 << 5) - 1
+   nir_lower_fabs_source_mods = 1 << 0,
+   nir_lower_fneg_source_mods = 1 << 1,
+   nir_lower_triop_abs = 1 << 2,
+   nir_lower_all_source_mods = (1 << 3) - 1
 } nir_lower_to_source_mods_flags;
-
-#define nir_lower_float_source_mods (nir_lower_fabs_source_mods | nir_lower_fneg_source_mods)
 
 bool nir_lower_to_source_mods(nir_shader *shader, nir_lower_to_source_mods_flags options);
 
@@ -5964,6 +5955,8 @@ bool nir_opt_offsets(nir_shader *shader, const nir_opt_offsets_options *options)
 
 bool nir_opt_peephole_select(nir_shader *shader, unsigned limit,
                              bool indirect_load_ok, bool expensive_alu_ok);
+
+bool nir_opt_reassociate_bfi(nir_shader *shader);
 
 bool nir_opt_rematerialize_compares(nir_shader *shader);
 

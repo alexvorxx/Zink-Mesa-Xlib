@@ -73,7 +73,6 @@ INTEL_STUB_GPU_PLATFORM=$platform
 ld_preload="@install_libdir@/libintel_noop_drm_shim.so${LD_PRELOAD:+:$LD_PRELOAD}"
 if [ -n "$gdb" ]; then
     gdb -iex "set exec-wrapper env LD_PRELOAD=$ld_preload INTEL_STUB_GPU_PLATFORM=$platform" --args "$@"
-    LD_PRELOAD=$ld_preload INTEL_STUB_GPU_PLATFORM=$platform exec "$@"
 elif [ -n "$valgrind" ]; then
     LD_PRELOAD=$ld_preload INTEL_STUB_GPU_PLATFORM=$platform exec valgrind "$@"
 else

@@ -1114,13 +1114,6 @@ amdgpu_cs_create(struct radeon_cmdbuf *rcs,
    return true;
 }
 
-static void amdgpu_cs_set_preamble(struct radeon_cmdbuf *cs, const uint32_t *preamble_ib,
-                                   unsigned preamble_num_dw, bool preamble_changed)
-{
-   /* TODO: implement this properly */
-   radeon_emit_array(cs, preamble_ib, preamble_num_dw);
-}
-
 static bool
 amdgpu_cs_setup_preemption(struct radeon_cmdbuf *rcs, const uint32_t *preamble_ib,
                            unsigned preamble_num_dw)
@@ -1965,7 +1958,6 @@ void amdgpu_cs_init_functions(struct amdgpu_screen_winsys *ws)
    ws->base.ctx_destroy = amdgpu_ctx_destroy;
    ws->base.ctx_query_reset_status = amdgpu_ctx_query_reset_status;
    ws->base.cs_create = amdgpu_cs_create;
-   ws->base.cs_set_preamble = amdgpu_cs_set_preamble;
    ws->base.cs_setup_preemption = amdgpu_cs_setup_preemption;
    ws->base.cs_destroy = amdgpu_cs_destroy;
    ws->base.cs_add_buffer = amdgpu_cs_add_buffer;

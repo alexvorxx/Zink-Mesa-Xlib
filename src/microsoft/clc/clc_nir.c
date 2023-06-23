@@ -31,20 +31,28 @@
 #include "clc_compiler.h"
 #include "../compiler/dxil_nir.h"
 
+static nir_ssa_def *
+load_ubo(nir_builder *b, nir_intrinsic_instr *intr, nir_variable *var, unsigned offset)
+{
+   return nir_build_load_ubo(b,
+                             nir_dest_num_components(intr->dest),
+                             nir_dest_bit_size(intr->dest),
+                             nir_imm_int(b, var->data.binding),
+                             nir_imm_int(b, offset),
+                             .align_mul = 256,
+                             .align_offset = offset,
+                             .range_base = offset,
+                             .range = nir_dest_bit_size(intr->dest) * nir_dest_num_components(intr->dest) / 8);
+}
+
 static bool
 lower_load_base_global_invocation_id(nir_builder *b, nir_intrinsic_instr *intr,
                                     nir_variable *var)
 {
    b->cursor = nir_after_instr(&intr->instr);
 
-   nir_ssa_def *offset =
-      build_load_ubo_dxil(b, nir_imm_int(b, var->data.binding),
-                          nir_imm_int(b,
-                                      offsetof(struct clc_work_properties_data,
-                                               global_offset_x)),
-                          nir_dest_num_components(intr->dest),
-                          nir_dest_bit_size(intr->dest),
-                          sizeof(uint32_t) * 4);
+   nir_ssa_def *offset = load_ubo(b, intr, var, offsetof(struct clc_work_properties_data,
+                                                         global_offset_x));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, offset);
    nir_instr_remove(&intr->instr);
    return true;
@@ -56,14 +64,8 @@ lower_load_work_dim(nir_builder *b, nir_intrinsic_instr *intr,
 {
    b->cursor = nir_after_instr(&intr->instr);
 
-   nir_ssa_def *dim =
-      build_load_ubo_dxil(b, nir_imm_int(b, var->data.binding),
-                          nir_imm_int(b,
-                                      offsetof(struct clc_work_properties_data,
-                                               work_dim)),
-                          nir_dest_num_components(intr->dest),
-                          nir_dest_bit_size(intr->dest),
-                          sizeof(uint32_t));
+   nir_ssa_def *dim = load_ubo(b, intr, var, offsetof(struct clc_work_properties_data,
+                                                      work_dim));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, dim);
    nir_instr_remove(&intr->instr);
    return true;
@@ -76,13 +78,8 @@ lower_load_num_workgroups(nir_builder *b, nir_intrinsic_instr *intr,
    b->cursor = nir_after_instr(&intr->instr);
 
    nir_ssa_def *count =
-      build_load_ubo_dxil(b, nir_imm_int(b, var->data.binding),
-                         nir_imm_int(b,
-                                     offsetof(struct clc_work_properties_data,
-                                              group_count_total_x)),
-                         nir_dest_num_components(intr->dest),
-                         nir_dest_bit_size(intr->dest),
-                         sizeof(uint32_t) * 4);
+      load_ubo(b, intr, var, offsetof(struct clc_work_properties_data,
+                                      group_count_total_x));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, count);
    nir_instr_remove(&intr->instr);
    return true;
@@ -95,13 +92,8 @@ lower_load_base_workgroup_id(nir_builder *b, nir_intrinsic_instr *intr,
    b->cursor = nir_after_instr(&intr->instr);
 
    nir_ssa_def *offset =
-      build_load_ubo_dxil(b, nir_imm_int(b, var->data.binding),
-                         nir_imm_int(b,
-                                     offsetof(struct clc_work_properties_data,
-                                              group_id_offset_x)),
-                         nir_dest_num_components(intr->dest),
-                         nir_dest_bit_size(intr->dest),
-                         sizeof(uint32_t) * 4);
+      load_ubo(b, intr, var, offsetof(struct clc_work_properties_data,
+                                      group_id_offset_x));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, offset);
    nir_instr_remove(&intr->instr);
    return true;
@@ -135,10 +127,10 @@ clc_nir_lower_system_values(nir_shader *nir, nir_variable *var)
                progress |= lower_load_work_dim(&b, intr, var);
                break;
             case nir_intrinsic_load_num_workgroups:
-               lower_load_num_workgroups(&b, intr, var);
+               progress |= lower_load_num_workgroups(&b, intr, var);
                break;
             case nir_intrinsic_load_base_workgroup_id:
-               lower_load_base_workgroup_id(&b, intr, var);
+               progress |= lower_load_base_workgroup_id(&b, intr, var);
                break;
             default: break;
             }
@@ -165,12 +157,14 @@ lower_load_kernel_input(nir_builder *b, nir_intrinsic_instr *intr,
    case 32:
       base_type = GLSL_TYPE_UINT;
       break;
-    case 16:
+   case 16:
       base_type = GLSL_TYPE_UINT16;
       break;
-    case 8:
+   case 8:
       base_type = GLSL_TYPE_UINT8;
       break;
+   default:
+      unreachable("invalid bit size");
    }
 
    const struct glsl_type *type =

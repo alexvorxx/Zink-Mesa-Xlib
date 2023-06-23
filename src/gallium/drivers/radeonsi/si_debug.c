@@ -15,6 +15,7 @@
 #include "util/u_dump.h"
 #include "util/u_log.h"
 #include "util/u_memory.h"
+#include "util/u_process.h"
 #include "util/u_string.h"
 
 static void si_dump_bo_list(struct si_context *sctx, const struct radeon_saved_cs *saved, FILE *f);

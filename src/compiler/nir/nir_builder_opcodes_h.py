@@ -183,6 +183,20 @@ nir_${name}_imm(nir_builder *build, nir_ssa_def *src1, uint64_t src2)
 }
 % endfor
 
+% for prefix in ['i', 'u']:
+static inline nir_ssa_def *
+nir_${prefix}gt_imm(nir_builder *build, nir_ssa_def *src1, uint64_t src2)
+{
+   return nir_${prefix}lt(build, nir_imm_intN_t(build, src2, src1->bit_size), src1);
+}
+
+static inline nir_ssa_def *
+nir_${prefix}le_imm(nir_builder *build, nir_ssa_def *src1, uint64_t src2)
+{
+   return nir_${prefix}ge(build, nir_imm_intN_t(build, src2, src1->bit_size), src1);
+}
+% endfor
+
 #endif /* _NIR_BUILDER_OPCODES_ */"""
 
 from nir_opcodes import opcodes, type_size, type_base_type

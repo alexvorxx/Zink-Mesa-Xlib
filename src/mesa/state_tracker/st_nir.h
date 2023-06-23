@@ -72,8 +72,8 @@ st_nir_make_passthrough_shader(struct st_context *st,
                                const char *shader_name,
                                gl_shader_stage stage,
                                unsigned num_vars,
-                               unsigned *input_locations,
-                               unsigned *output_locations,
+                               const unsigned *input_locations,
+                               const gl_varying_slot *output_locations,
                                unsigned *interpolation_modes,
                                unsigned sysval_mask);
 void

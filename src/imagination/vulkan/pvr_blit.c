@@ -103,14 +103,16 @@ static void pvr_setup_buffer_surface(struct pvr_transfer_cmd_surface *surface,
       uint32_t block_width = util_format_get_blockwidth(pformat);
       uint32_t block_height = util_format_get_blockheight(pformat);
 
-      surface->width = MAX2(1U, surface->width / block_width);
-      surface->height = MAX2(1U, surface->height / block_height);
-      surface->stride = MAX2(1U, surface->stride / block_width);
+      surface->width = MAX2(1U, DIV_ROUND_UP(surface->width, block_width));
+      surface->height = MAX2(1U, DIV_ROUND_UP(surface->height, block_height));
+      surface->stride = MAX2(1U, DIV_ROUND_UP(surface->stride, block_width));
 
       rect->offset.x /= block_width;
       rect->offset.y /= block_height;
-      rect->extent.width = MAX2(1U, rect->extent.width / block_width);
-      rect->extent.height = MAX2(1U, rect->extent.height / block_height);
+      rect->extent.width =
+         MAX2(1U, DIV_ROUND_UP(rect->extent.width, block_width));
+      rect->extent.height =
+         MAX2(1U, DIV_ROUND_UP(rect->extent.height, block_height));
    }
 }
 
@@ -173,7 +175,10 @@ static void pvr_setup_transfer_surface(struct pvr_device *device,
    surface->width = width;
    surface->height = height;
    surface->depth = depth;
+
+   assert(info.rowPitch % vk_format_get_blocksize(format) == 0);
    surface->stride = info.rowPitch / vk_format_get_blocksize(format);
+
    surface->vk_format = format;
    surface->mem_layout = image->memlayout;
    surface->sample_count = image->vk.samples;
@@ -193,14 +198,16 @@ static void pvr_setup_transfer_surface(struct pvr_device *device,
       uint32_t block_width = util_format_get_blockwidth(image_pformat);
       uint32_t block_height = util_format_get_blockheight(image_pformat);
 
-      surface->width = MAX2(1U, surface->width / block_width);
-      surface->height = MAX2(1U, surface->height / block_height);
-      surface->stride = MAX2(1U, surface->stride / block_width);
+      surface->width = MAX2(1U, DIV_ROUND_UP(surface->width, block_width));
+      surface->height = MAX2(1U, DIV_ROUND_UP(surface->height, block_height));
+      surface->stride = MAX2(1U, DIV_ROUND_UP(surface->stride, block_width));
 
       rect->offset.x /= block_width;
       rect->offset.y /= block_height;
-      rect->extent.width = MAX2(1U, rect->extent.width / block_width);
-      rect->extent.height = MAX2(1U, rect->extent.height / block_height);
+      rect->extent.width =
+         MAX2(1U, DIV_ROUND_UP(rect->extent.width, block_width));
+      rect->extent.height =
+         MAX2(1U, DIV_ROUND_UP(rect->extent.height, block_height));
    }
 }
 
@@ -516,8 +523,9 @@ pvr_copy_or_resolve_image_region(struct pvr_cmd_buffer *cmd_buffer,
       uint32_t block_width = util_format_get_blockwidth(src_pformat);
       uint32_t block_height = util_format_get_blockheight(src_pformat);
 
-      dst_extent.width = MAX2(1U, src_extent.width / block_width);
-      dst_extent.height = MAX2(1U, src_extent.height / block_height);
+      dst_extent.width = MAX2(1U, DIV_ROUND_UP(src_extent.width, block_width));
+      dst_extent.height =
+         MAX2(1U, DIV_ROUND_UP(src_extent.height, block_height));
    } else if (!src_block_compressed && dst_block_compressed) {
       uint32_t block_width = util_format_get_blockwidth(dst_pformat);
       uint32_t block_height = util_format_get_blockheight(dst_pformat);
@@ -956,8 +964,10 @@ pvr_copy_image_to_buffer_region_format(struct pvr_cmd_buffer *const cmd_buffer,
       uint32_t block_width = util_format_get_blockwidth(pformat);
       uint32_t block_height = util_format_get_blockheight(pformat);
 
-      dst_rect.extent.width = MAX2(1U, dst_rect.extent.width / block_width);
-      dst_rect.extent.height = MAX2(1U, dst_rect.extent.height / block_height);
+      dst_rect.extent.width =
+         MAX2(1U, DIV_ROUND_UP(dst_rect.extent.width, block_width));
+      dst_rect.extent.height =
+         MAX2(1U, DIV_ROUND_UP(dst_rect.extent.height, block_height));
    }
 
    sub_resource = (VkImageSubresource){
@@ -2146,6 +2156,8 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
             pvr_clear_vdm_state_get_size_in_dw(dev_info,
                                                clear_rect->layerCount);
 
+         pvr_csb_set_relocation_mark(&sub_cmd->control_stream);
+
          vdm_cs_buffer =
             pvr_csb_alloc_dwords(&sub_cmd->control_stream, vdm_cs_size_in_dw);
          if (!vdm_cs_buffer) {
@@ -2161,6 +2173,8 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                                   vs_output_size_in_bytes,
                                   clear_rect->layerCount,
                                   vdm_cs_buffer);
+
+         pvr_csb_clear_relocation_mark(&sub_cmd->control_stream);
       }
    }
 }

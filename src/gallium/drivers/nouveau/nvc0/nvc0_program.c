@@ -1016,7 +1016,7 @@ nvc0_program_init_tcp_empty(struct nvc0_context *nvc0)
 {
    const nir_shader_compiler_options *options =
       nv50_ir_nir_shader_compiler_options(nvc0->screen->base.device->chipset,
-                                          PIPE_SHADER_TESS_CTRL, true);
+                                          PIPE_SHADER_TESS_CTRL);
 
    struct nir_builder b =
       nir_builder_init_simple_shader(MESA_SHADER_TESS_CTRL, options,

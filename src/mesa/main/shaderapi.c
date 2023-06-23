@@ -69,6 +69,7 @@
 #include "api_exec_decl.h"
 
 #include "state_tracker/st_context.h"
+#include "state_tracker/st_glsl_to_ir.h"
 #include "state_tracker/st_program.h"
 
 #ifdef ENABLE_SHADER_CACHE
@@ -1332,7 +1333,7 @@ link_program(struct gl_context *ctx, struct gl_shader_program *shProg,
    ensure_builtin_types(ctx);
 
    FLUSH_VERTICES(ctx, 0, 0);
-   _mesa_glsl_link_shader(ctx, shProg);
+   st_link_shader(ctx, shProg);
 
    /* From section 7.3 (Program Objects) of the OpenGL 4.5 spec:
     *

@@ -790,9 +790,9 @@ cull_face(nir_builder *b, nir_variable *vertices, bool ccw)
                                                 nir_fsub(b, v2, v0)),
                                nir_imm_vec4(b, 0.0, 0.0, -1.0, 0.0));
    if (ccw)
-      return nir_fge(b, nir_imm_float(b, 0.0f), dir);
+      return nir_fle_imm(b, dir, 0.0f);
    else
-      return nir_flt(b, nir_imm_float(b, 0.0f), dir);
+      return nir_fgt_imm(b, dir, 0.0f);
 }
 
 static void
@@ -829,10 +829,12 @@ load_dynamic_depth_bias(nir_builder *b, struct dzn_nir_point_gs_info *info)
       nir_address_format_bit_size(ubo_format),
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-   return build_load_ubo_dxil(
-      b, nir_channel(b, load_desc, 0),
+   return nir_build_load_ubo(
+      b, 1, 32,
+      nir_channel(b, load_desc, 0),
       nir_imm_int(b, offset),
-      1, 32, 4);
+      .align_mul = 256,
+      .align_offset = offset);
 }
 
 nir_shader *
@@ -923,7 +925,7 @@ dzn_nir_polygon_point_mode_gs(const nir_shader *previous_shader, struct dzn_nir_
    nir_deref_instr *loop_index_deref = nir_build_deref_var(b, loop_index_var);
    nir_store_deref(b, loop_index_deref, nir_imm_int(b, 0), 1);
 
-   nir_ssa_def *cull_pass = nir_imm_bool(b, true);
+   nir_ssa_def *cull_pass = nir_imm_true(b);
    nir_ssa_def *front_facing;
    assert(info->cull_mode != VK_CULL_MODE_FRONT_AND_BACK);
    if (info->cull_mode == VK_CULL_MODE_FRONT_BIT) {

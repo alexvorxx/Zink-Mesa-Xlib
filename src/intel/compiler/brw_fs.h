@@ -373,7 +373,8 @@ public:
                                nir_intrinsic_instr *instr);
    void nir_emit_surface_atomic(const brw::fs_builder &bld,
                                 nir_intrinsic_instr *instr,
-                                fs_reg surface);
+                                fs_reg surface,
+                                bool bindless_surface);
    void nir_emit_global_atomic(const brw::fs_builder &bld,
                                nir_intrinsic_instr *instr);
    void nir_emit_texture(const brw::fs_builder &bld,
@@ -439,10 +440,8 @@ public:
    fs_reg interp_reg(int location, int channel);
    fs_reg per_primitive_reg(int location);
 
-   virtual void dump_instructions() const;
-   virtual void dump_instructions(const char *name) const;
-   void dump_instruction(const backend_instruction *inst) const;
-   void dump_instruction(const backend_instruction *inst, FILE *file) const;
+   virtual void dump_instruction_to_file(const backend_instruction *inst, FILE *file) const;
+   virtual void dump_instructions_to_file(FILE *file) const;
 
    const brw_base_prog_key *const key;
    const struct brw_sampler_prog_key_data *key_tex;
@@ -783,10 +782,6 @@ uint32_t brw_fb_write_msg_control(const fs_inst *inst,
 void brw_compute_urb_setup_index(struct brw_wm_prog_data *wm_prog_data);
 
 bool brw_nir_lower_simd(nir_shader *nir, unsigned dispatch_width);
-
-namespace brw {
-   class fs_builder;
-}
 
 fs_reg brw_sample_mask_reg(const brw::fs_builder &bld);
 void brw_emit_predicate_on_sample_mask(const brw::fs_builder &bld, fs_inst *inst);

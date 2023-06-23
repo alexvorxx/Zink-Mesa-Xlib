@@ -108,8 +108,8 @@ radv_hal_close(struct hw_device_t *dev)
 
 VkResult
 radv_image_from_gralloc(VkDevice device_h, const VkImageCreateInfo *base_info,
-                        const VkNativeBufferANDROID *gralloc_info,
-                        const VkAllocationCallbacks *alloc, VkImage *out_image_h)
+                        const VkNativeBufferANDROID *gralloc_info, const VkAllocationCallbacks *alloc,
+                        VkImage *out_image_h)
 
 {
    RADV_FROM_HANDLE(radv_device, device, device_h);
@@ -194,12 +194,10 @@ radv_image_from_gralloc(VkDevice device_h, const VkImageCreateInfo *base_info,
 
    radv_image_override_offset_stride(device, image, 0, gralloc_info->stride);
 
-   VkBindImageMemoryInfo bind_info = {
-      .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
-      .image = image_h,
-      .memory = memory_h,
-      .memoryOffset = 0
-   };
+   VkBindImageMemoryInfo bind_info = {.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+                                      .image = image_h,
+                                      .memory = memory_h,
+                                      .memoryOffset = 0};
    radv_BindImageMemory2(device_h, 1, &bind_info);
 
    image->owned_memory = memory_h;
@@ -214,8 +212,8 @@ fail_create_image:
 }
 
 VkResult
-radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format,
-                                     VkImageUsageFlags imageUsage, int *grallocUsage)
+radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format, VkImageUsageFlags imageUsage,
+                                     int *grallocUsage)
 {
    RADV_FROM_HANDLE(radv_device, device, device_h);
    struct radv_physical_device *phys_dev = device->physical_device;
@@ -250,8 +248,7 @@ radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format,
    };
 
    /* Check that requested format and usage are supported. */
-   result = radv_GetPhysicalDeviceImageFormatProperties2(phys_dev_h, &image_format_info,
-                                                         &image_format_props);
+   result = radv_GetPhysicalDeviceImageFormatProperties2(phys_dev_h, &image_format_info, &image_format_props);
    if (result != VK_SUCCESS) {
       return vk_errorf(device, result,
                        "radv_GetPhysicalDeviceImageFormatProperties2 failed "
@@ -262,8 +259,8 @@ radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format,
    if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))
       *grallocUsage |= GRALLOC_USAGE_HW_RENDER;
 
-   if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
+   if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       *grallocUsage |= GRALLOC_USAGE_HW_TEXTURE;
 
    /* All VkImageUsageFlags not explicitly checked here are unsupported for
@@ -282,8 +279,7 @@ radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format,
     * what we need for 30-bit colors.
     */
    if (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B5G6R5_UNORM_PACK16) {
-      *grallocUsage |=
-         GRALLOC_USAGE_HW_FB | GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_EXTERNAL_DISP;
+      *grallocUsage |= GRALLOC_USAGE_HW_FB | GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_EXTERNAL_DISP;
    }
 
    if (*grallocUsage == 0)
@@ -293,11 +289,9 @@ radv_GetSwapchainGrallocUsageANDROID(VkDevice device_h, VkFormat format,
 }
 
 VkResult
-radv_GetSwapchainGrallocUsage2ANDROID(VkDevice device_h, VkFormat format,
-                                      VkImageUsageFlags imageUsage,
+radv_GetSwapchainGrallocUsage2ANDROID(VkDevice device_h, VkFormat format, VkImageUsageFlags imageUsage,
                                       VkSwapchainImageUsageFlagsANDROID swapchainImageUsage,
-                                      uint64_t *grallocConsumerUsage,
-                                      uint64_t *grallocProducerUsage)
+                                      uint64_t *grallocConsumerUsage, uint64_t *grallocProducerUsage)
 {
    /* Before level 26 (Android 8.0/Oreo) the loader uses
     * vkGetSwapchainGrallocUsageANDROID. */
@@ -327,8 +321,7 @@ radv_GetSwapchainGrallocUsage2ANDROID(VkDevice device_h, VkFormat format,
    };
 
    /* Check that requested format and usage are supported. */
-   result = radv_GetPhysicalDeviceImageFormatProperties2(phys_dev_h, &image_format_info,
-                                                         &image_format_props);
+   result = radv_GetPhysicalDeviceImageFormatProperties2(phys_dev_h, &image_format_info, &image_format_props);
    if (result != VK_SUCCESS) {
       return vk_errorf(device, result,
                        "radv_GetPhysicalDeviceImageFormatProperties2 failed "
@@ -336,14 +329,13 @@ radv_GetSwapchainGrallocUsage2ANDROID(VkDevice device_h, VkFormat format,
                        __func__);
    }
 
-   if (unmask32(&imageUsage,
-                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
+   if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
       *grallocProducerUsage |= GRALLOC1_PRODUCER_USAGE_GPU_RENDER_TARGET;
       *grallocConsumerUsage |= GRALLOC1_CONSUMER_USAGE_CLIENT_TARGET;
    }
 
-   if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
+   if (unmask32(&imageUsage, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
       *grallocConsumerUsage |= GRALLOC1_CONSUMER_USAGE_GPU_TEXTURE;
    }
 
@@ -421,8 +413,7 @@ get_ahb_buffer_format_properties(VkDevice device_h, const struct AHardwareBuffer
    AHardwareBuffer_describe(buffer, &desc);
 
    /* Verify description. */
-   const uint64_t gpu_usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
-                              AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+   const uint64_t gpu_usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
                               AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
 
    /* "Buffer must be a valid Android hardware buffer object with at least
@@ -437,12 +428,10 @@ get_ahb_buffer_format_properties(VkDevice device_h, const struct AHardwareBuffer
    p->format = vk_format_from_android(desc.format, desc.usage);
    p->externalFormat = (uint64_t)(uintptr_t)p->format;
 
-   VkFormatProperties2 format_properties = {
-      .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2
-   };
+   VkFormatProperties2 format_properties = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
 
-   radv_GetPhysicalDeviceFormatProperties2(radv_physical_device_to_handle(device->physical_device),
-                                               p->format, &format_properties);
+   radv_GetPhysicalDeviceFormatProperties2(radv_physical_device_to_handle(device->physical_device), p->format,
+                                           &format_properties);
 
    if (desc.usage & AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER)
       p->formatFeatures = format_properties.formatProperties.linearTilingFeatures;
@@ -497,8 +486,7 @@ get_ahb_buffer_format_properties2(VkDevice device_h, const struct AHardwareBuffe
    AHardwareBuffer_describe(buffer, &desc);
 
    /* Verify description. */
-   const uint64_t gpu_usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
-                              AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+   const uint64_t gpu_usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
                               AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
 
    /* "Buffer must be a valid Android hardware buffer object with at least
@@ -513,12 +501,10 @@ get_ahb_buffer_format_properties2(VkDevice device_h, const struct AHardwareBuffe
    p->format = vk_format_from_android(desc.format, desc.usage);
    p->externalFormat = (uint64_t)(uintptr_t)p->format;
 
-   VkFormatProperties2 format_properties = {
-      .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2
-   };
+   VkFormatProperties2 format_properties = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
 
-   radv_GetPhysicalDeviceFormatProperties2(radv_physical_device_to_handle(device->physical_device),
-                                               p->format, &format_properties);
+   radv_GetPhysicalDeviceFormatProperties2(radv_physical_device_to_handle(device->physical_device), p->format,
+                                           &format_properties);
 
    if (desc.usage & AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER)
       p->formatFeatures = format_properties.formatProperties.linearTilingFeatures;
@@ -563,8 +549,7 @@ get_ahb_buffer_format_properties2(VkDevice device_h, const struct AHardwareBuffe
 }
 
 VkResult
-radv_GetAndroidHardwareBufferPropertiesANDROID(VkDevice device_h,
-                                               const struct AHardwareBuffer *buffer,
+radv_GetAndroidHardwareBufferPropertiesANDROID(VkDevice device_h, const struct AHardwareBuffer *buffer,
                                                VkAndroidHardwareBufferPropertiesANDROID *pProperties)
 {
    RADV_FROM_HANDLE(radv_device, dev, device_h);
@@ -602,8 +587,7 @@ radv_GetAndroidHardwareBufferPropertiesANDROID(VkDevice device_h,
 }
 
 VkResult
-radv_GetMemoryAndroidHardwareBufferANDROID(VkDevice device_h,
-                                           const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
+radv_GetMemoryAndroidHardwareBufferANDROID(VkDevice device_h, const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
                                            struct AHardwareBuffer **pBuffer)
 {
    RADV_FROM_HANDLE(radv_device_memory, mem, pInfo->memory);
@@ -634,8 +618,7 @@ VkFormat
 radv_select_android_external_format(const void *next, VkFormat default_format)
 {
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
-   const VkExternalFormatANDROID *android_format =
-      vk_find_struct_const(next, EXTERNAL_FORMAT_ANDROID);
+   const VkExternalFormatANDROID *android_format = vk_find_struct_const(next, EXTERNAL_FORMAT_ANDROID);
 
    if (android_format && android_format->externalFormat) {
       return (VkFormat)android_format->externalFormat;
@@ -646,8 +629,8 @@ radv_select_android_external_format(const void *next, VkFormat default_format)
 }
 
 VkResult
-radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *mem,
-                       unsigned priority, const VkImportAndroidHardwareBufferInfoANDROID *info)
+radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *mem, unsigned priority,
+                       const VkImportAndroidHardwareBufferInfoANDROID *info)
 {
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
    /* Import from AHardwareBuffer to radv_device_memory. */
@@ -663,8 +646,7 @@ radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *me
       return VK_ERROR_INVALID_EXTERNAL_HANDLE;
 
    uint64_t alloc_size = 0;
-   VkResult result =
-      device->ws->buffer_from_fd(device->ws, dma_buf, priority, &mem->bo, &alloc_size);
+   VkResult result = device->ws->buffer_from_fd(device->ws, dma_buf, priority, &mem->bo, &alloc_size);
    if (result != VK_SUCCESS)
       return result;
 
@@ -672,8 +654,7 @@ radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *me
       struct radeon_bo_metadata metadata;
       device->ws->buffer_get_metadata(device->ws, mem->bo, &metadata);
 
-      struct radv_image_create_info create_info = {.no_metadata_planes = true,
-                                                   .bo_metadata = &metadata};
+      struct radv_image_create_info create_info = {.no_metadata_planes = true, .bo_metadata = &metadata};
 
       result = radv_image_create_layout(device, create_info, NULL, NULL, mem->image);
       if (result != VK_SUCCESS) {
@@ -710,8 +691,8 @@ radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *me
 }
 
 VkResult
-radv_create_ahb_memory(struct radv_device *device, struct radv_device_memory *mem,
-                       unsigned priority, const VkMemoryAllocateInfo *pAllocateInfo)
+radv_create_ahb_memory(struct radv_device *device, struct radv_device_memory *mem, unsigned priority,
+                       const VkMemoryAllocateInfo *pAllocateInfo)
 {
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
    mem->android_hardware_buffer = vk_alloc_ahardware_buffer(pAllocateInfo);

@@ -133,6 +133,7 @@ EXTENSIONS = [
               alias="feedback_loop",
               features=True),
     Extension("VK_EXT_attachment_feedback_loop_dynamic_state", alias="feedback_dyn", features=True),
+    Extension("VK_NV_device_generated_commands", alias="nv_dgc", features=True, properties=True),
     Extension("VK_EXT_fragment_shader_interlock",
               alias="interlock",
               features=True,

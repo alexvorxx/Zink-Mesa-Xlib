@@ -7,14 +7,9 @@
 #ifndef AC_GPU_INFO_H
 #define AC_GPU_INFO_H
 
-#include "amd_family.h"
-
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-
 #include "util/macros.h"
+#include "amd_family.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -167,8 +162,6 @@ struct radeon_info {
    uint32_t mec_fw_feature;
    uint32_t pfp_fw_version;
    uint32_t pfp_fw_feature;
-   bool has_set_reg_pairs;
-   bool has_set_sh_reg_pairs_n;
 
    /* Multimedia info. */
    uint32_t uvd_fw_version;
@@ -206,7 +199,7 @@ struct radeon_info {
    bool has_pcie_bandwidth_info;
    bool has_stable_pstate;
    /* Whether SR-IOV is enabled or amdgpu.mcbp=1 was set on the kernel command line. */
-   bool mid_command_buffer_preemption_enabled;
+   bool register_shadowing_required;
    bool has_tmz_support;
    bool kernel_has_modifiers;
 

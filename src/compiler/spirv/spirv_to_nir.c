@@ -1977,6 +1977,7 @@ vtn_null_constant(struct vtn_builder *b, struct vtn_type *type)
    switch (type->base_type) {
    case vtn_base_type_scalar:
    case vtn_base_type_vector:
+      c->is_null_constant = true;
       /* Nothing to do here.  It's already initialized to zero */
       break;
 
@@ -2003,6 +2004,7 @@ vtn_null_constant(struct vtn_builder *b, struct vtn_type *type)
    case vtn_base_type_matrix:
    case vtn_base_type_array:
       vtn_assert(type->length > 0);
+      c->is_null_constant = true;
       c->num_elements = type->length;
       c->elements = ralloc_array(b, nir_constant *, c->num_elements);
 
@@ -2012,6 +2014,7 @@ vtn_null_constant(struct vtn_builder *b, struct vtn_type *type)
       break;
 
    case vtn_base_type_struct:
+      c->is_null_constant = true;
       c->num_elements = type->length;
       c->elements = ralloc_array(b, nir_constant *, c->num_elements);
       for (unsigned i = 0; i < c->num_elements; i++)
@@ -2566,13 +2569,19 @@ vtn_mem_semantics_to_nir_var_modes(struct vtn_builder *b,
          modes |= nir_var_mem_task_payload;
    }
 
+   if (semantics & SpvMemorySemanticsAtomicCounterMemoryMask) {
+      /* There's no nir_var_atomic_counter, but since atomic counters are
+       * lowered to SSBOs, we use nir_var_mem_ssbo instead.
+       */
+      modes |= nir_var_mem_ssbo;
+   }
+
    return modes;
 }
 
-nir_scope
-vtn_scope_to_nir_scope(struct vtn_builder *b, SpvScope scope)
+mesa_scope
+vtn_translate_scope(struct vtn_builder *b, SpvScope scope)
 {
-   nir_scope nir_scope;
    switch (scope) {
    case SpvScopeDevice:
       vtn_fail_if(b->options->caps.vk_memory_model &&
@@ -2580,37 +2589,29 @@ vtn_scope_to_nir_scope(struct vtn_builder *b, SpvScope scope)
                   "If the Vulkan memory model is declared and any instruction "
                   "uses Device scope, the VulkanMemoryModelDeviceScope "
                   "capability must be declared.");
-      nir_scope = NIR_SCOPE_DEVICE;
-      break;
+      return SCOPE_DEVICE;
 
    case SpvScopeQueueFamily:
       vtn_fail_if(!b->options->caps.vk_memory_model,
                   "To use Queue Family scope, the VulkanMemoryModel capability "
                   "must be declared.");
-      nir_scope = NIR_SCOPE_QUEUE_FAMILY;
-      break;
+      return SCOPE_QUEUE_FAMILY;
 
    case SpvScopeWorkgroup:
-      nir_scope = NIR_SCOPE_WORKGROUP;
-      break;
+      return SCOPE_WORKGROUP;
 
    case SpvScopeSubgroup:
-      nir_scope = NIR_SCOPE_SUBGROUP;
-      break;
+      return SCOPE_SUBGROUP;
 
    case SpvScopeInvocation:
-      nir_scope = NIR_SCOPE_INVOCATION;
-      break;
+      return SCOPE_INVOCATION;
 
    case SpvScopeShaderCallKHR:
-      nir_scope = NIR_SCOPE_SHADER_CALL;
-      break;
+      return SCOPE_SHADER_CALL;
 
    default:
       vtn_fail("Invalid memory scope");
    }
-
-   return nir_scope;
 }
 
 static void
@@ -2621,22 +2622,22 @@ vtn_emit_scoped_control_barrier(struct vtn_builder *b, SpvScope exec_scope,
    nir_memory_semantics nir_semantics =
       vtn_mem_semantics_to_nir_mem_semantics(b, semantics);
    nir_variable_mode modes = vtn_mem_semantics_to_nir_var_modes(b, semantics);
-   nir_scope nir_exec_scope = vtn_scope_to_nir_scope(b, exec_scope);
+   mesa_scope nir_exec_scope = vtn_translate_scope(b, exec_scope);
 
    /* Memory semantics is optional for OpControlBarrier. */
-   nir_scope nir_mem_scope;
+   mesa_scope nir_mem_scope;
    if (nir_semantics == 0 || modes == 0)
-      nir_mem_scope = NIR_SCOPE_NONE;
+      nir_mem_scope = SCOPE_NONE;
    else
-      nir_mem_scope = vtn_scope_to_nir_scope(b, mem_scope);
+      nir_mem_scope = vtn_translate_scope(b, mem_scope);
 
    nir_scoped_barrier(&b->nb, .execution_scope=nir_exec_scope, .memory_scope=nir_mem_scope,
                               .memory_semantics=nir_semantics, .memory_modes=modes);
 }
 
-static void
-vtn_emit_scoped_memory_barrier(struct vtn_builder *b, SpvScope scope,
-                               SpvMemorySemanticsMask semantics)
+void
+vtn_emit_memory_barrier(struct vtn_builder *b, SpvScope scope,
+                        SpvMemorySemanticsMask semantics)
 {
    nir_variable_mode modes = vtn_mem_semantics_to_nir_var_modes(b, semantics);
    nir_memory_semantics nir_semantics =
@@ -2646,7 +2647,7 @@ vtn_emit_scoped_memory_barrier(struct vtn_builder *b, SpvScope scope,
    if (nir_semantics == 0 || modes == 0)
       return;
 
-   nir_scoped_barrier(&b->nb, .memory_scope=vtn_scope_to_nir_scope(b, scope),
+   nir_scoped_barrier(&b->nb, .memory_scope=vtn_translate_scope(b, scope),
                               .memory_semantics=nir_semantics,
                               .memory_modes=modes);
 }
@@ -4327,80 +4328,6 @@ vtn_handle_composite(struct vtn_builder *b, SpvOp opcode,
    vtn_push_ssa_value(b, w[2], ssa);
 }
 
-void
-vtn_emit_memory_barrier(struct vtn_builder *b, SpvScope scope,
-                        SpvMemorySemanticsMask semantics)
-{
-   if (b->shader->options->use_scoped_barrier) {
-      vtn_emit_scoped_memory_barrier(b, scope, semantics);
-      return;
-   }
-
-   static const SpvMemorySemanticsMask all_memory_semantics =
-      SpvMemorySemanticsUniformMemoryMask |
-      SpvMemorySemanticsWorkgroupMemoryMask |
-      SpvMemorySemanticsAtomicCounterMemoryMask |
-      SpvMemorySemanticsImageMemoryMask |
-      SpvMemorySemanticsOutputMemoryMask;
-
-   /* If we're not actually doing a memory barrier, bail */
-   if (!(semantics & all_memory_semantics))
-      return;
-
-   /* GL and Vulkan don't have these */
-   vtn_assert(scope != SpvScopeCrossDevice);
-
-   if (scope == SpvScopeSubgroup)
-      return; /* Nothing to do here */
-
-   if (scope == SpvScopeWorkgroup) {
-      nir_group_memory_barrier(&b->nb);
-      return;
-   }
-
-   /* There's only three scopes left */
-   vtn_assert(scope == SpvScopeInvocation || scope == SpvScopeDevice || scope == SpvScopeQueueFamily);
-
-   /* Map the GLSL memoryBarrier() construct and any barriers with more than one
-    * semantic to the corresponding NIR one.
-    */
-   if (util_bitcount(semantics & all_memory_semantics) > 1) {
-      nir_memory_barrier(&b->nb);
-      if (semantics & SpvMemorySemanticsOutputMemoryMask) {
-         /* GLSL memoryBarrier() (and the corresponding NIR one) doesn't include
-          * TCS outputs, so we have to emit it's own intrinsic for that. We
-          * then need to emit another memory_barrier to prevent moving
-          * non-output operations to before the tcs_patch barrier.
-          */
-         nir_memory_barrier_tcs_patch(&b->nb);
-         nir_memory_barrier(&b->nb);
-      }
-      return;
-   }
-
-   /* Issue a more specific barrier */
-   switch (semantics & all_memory_semantics) {
-   case SpvMemorySemanticsUniformMemoryMask:
-      nir_memory_barrier_buffer(&b->nb);
-      break;
-   case SpvMemorySemanticsWorkgroupMemoryMask:
-      nir_memory_barrier_shared(&b->nb);
-      break;
-   case SpvMemorySemanticsAtomicCounterMemoryMask:
-      nir_memory_barrier_atomic_counter(&b->nb);
-      break;
-   case SpvMemorySemanticsImageMemoryMask:
-      nir_memory_barrier_image(&b->nb);
-      break;
-   case SpvMemorySemanticsOutputMemoryMask:
-      if (b->nb.shader->info.stage == MESA_SHADER_TESS_CTRL)
-         nir_memory_barrier_tcs_patch(&b->nb);
-      break;
-   default:
-      break;
-   }
-}
-
 static void
 vtn_handle_barrier(struct vtn_builder *b, SpvOp opcode,
                    const uint32_t *w, UNUSED unsigned count)
@@ -4478,15 +4405,8 @@ vtn_handle_barrier(struct vtn_builder *b, SpvOp opcode,
                              SpvMemorySemanticsOutputMemoryMask;
       }
 
-      if (b->shader->options->use_scoped_barrier) {
-         vtn_emit_scoped_control_barrier(b, execution_scope, memory_scope,
-                                         memory_semantics);
-      } else {
-         vtn_emit_memory_barrier(b, memory_scope, memory_semantics);
-
-         if (execution_scope == SpvScopeWorkgroup)
-            nir_control_barrier(&b->nb);
-      }
+      vtn_emit_scoped_control_barrier(b, execution_scope, memory_scope,
+                                      memory_semantics);
       break;
    }
 
@@ -6499,23 +6419,14 @@ vtn_handle_body_instruction(struct vtn_builder *b, SpvOp opcode,
 
    case SpvOpReadClockKHR: {
       SpvScope scope = vtn_constant_uint(b, w[3]);
-      nir_scope nir_scope;
-
-      switch (scope) {
-      case SpvScopeDevice:
-         nir_scope = NIR_SCOPE_DEVICE;
-         break;
-      case SpvScopeSubgroup:
-         nir_scope = NIR_SCOPE_SUBGROUP;
-         break;
-      default:
-         vtn_fail("invalid read clock scope");
-      }
+      vtn_fail_if(scope != SpvScopeDevice && scope != SpvScopeSubgroup,
+                  "OpReadClockKHR Scope must be either "
+                  "ScopeDevice or ScopeSubgroup.");
 
       /* Operation supports two result types: uvec2 and uint64_t.  The NIR
        * intrinsic gives uvec2, so pack the result for the other case.
        */
-      nir_ssa_def *result = nir_shader_clock(&b->nb, nir_scope);
+      nir_ssa_def *result = nir_shader_clock(&b->nb, vtn_translate_scope(b, scope));
 
       struct vtn_type *type = vtn_get_type(b, w[1]);
       const struct glsl_type *dest_type = type->type;

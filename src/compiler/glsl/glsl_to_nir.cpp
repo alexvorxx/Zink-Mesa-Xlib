@@ -1121,9 +1121,12 @@ nir_visitor::visit(ir_call *ir)
          atomic_op = nir_atomic_op_dec_wrap;
          break;
       case ir_intrinsic_memory_barrier:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_memory_barrier;
+      case ir_intrinsic_memory_barrier_buffer:
+      case ir_intrinsic_memory_barrier_image:
+      case ir_intrinsic_memory_barrier_shared:
+      case ir_intrinsic_memory_barrier_atomic_counter:
+      case ir_intrinsic_group_memory_barrier:
+         op = nir_intrinsic_scoped_barrier;
          break;
       case ir_intrinsic_image_size:
          op = nir_intrinsic_image_deref_size;
@@ -1142,31 +1145,6 @@ nir_visitor::visit(ir_call *ir)
          break;
       case ir_intrinsic_end_invocation_interlock:
          op = nir_intrinsic_end_invocation_interlock;
-         break;
-      case ir_intrinsic_group_memory_barrier:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_group_memory_barrier;
-         break;
-      case ir_intrinsic_memory_barrier_atomic_counter:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_memory_barrier_atomic_counter;
-         break;
-      case ir_intrinsic_memory_barrier_buffer:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_memory_barrier_buffer;
-         break;
-      case ir_intrinsic_memory_barrier_image:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_memory_barrier_image;
-         break;
-      case ir_intrinsic_memory_barrier_shared:
-         op = shader->options->use_scoped_barrier
-            ? nir_intrinsic_scoped_barrier
-            : nir_intrinsic_memory_barrier_shared;
          break;
       case ir_intrinsic_vote_any:
          op = nir_intrinsic_vote_any;
@@ -1404,14 +1382,6 @@ nir_visitor::visit(ir_call *ir)
          nir_builder_instr_insert(&b, &instr->instr);
          break;
       }
-      case nir_intrinsic_memory_barrier:
-      case nir_intrinsic_group_memory_barrier:
-      case nir_intrinsic_memory_barrier_atomic_counter:
-      case nir_intrinsic_memory_barrier_buffer:
-      case nir_intrinsic_memory_barrier_image:
-      case nir_intrinsic_memory_barrier_shared:
-         nir_builder_instr_insert(&b, &instr->instr);
-         break;
       case nir_intrinsic_scoped_barrier: {
          /* The nir_intrinsic_scoped_barrier follows the general
           * semantics of SPIR-V memory barriers, so this and other memory
@@ -1419,23 +1389,23 @@ nir_visitor::visit(ir_call *ir)
           *
           *   https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_gl_spirv.txt
           */
-         nir_scope scope;
+         mesa_scope scope;
          unsigned modes;
          switch (ir->callee->intrinsic_id) {
          case ir_intrinsic_memory_barrier:
-            scope = NIR_SCOPE_DEVICE;
+            scope = SCOPE_DEVICE;
             modes = nir_var_image |
                     nir_var_mem_ssbo |
                     nir_var_mem_shared |
                     nir_var_mem_global;
             break;
          case ir_intrinsic_memory_barrier_buffer:
-            scope = NIR_SCOPE_DEVICE;
+            scope = SCOPE_DEVICE;
             modes = nir_var_mem_ssbo |
                     nir_var_mem_global;
             break;
          case ir_intrinsic_memory_barrier_image:
-            scope = NIR_SCOPE_DEVICE;
+            scope = SCOPE_DEVICE;
             modes = nir_var_image;
             break;
          case ir_intrinsic_memory_barrier_shared:
@@ -1443,11 +1413,11 @@ nir_visitor::visit(ir_call *ir)
              * follow their lead.  Note GL_KHR_vulkan_glsl also does
              * something similar.
              */
-            scope = NIR_SCOPE_DEVICE;
+            scope = SCOPE_DEVICE;
             modes = nir_var_mem_shared;
             break;
          case ir_intrinsic_group_memory_barrier:
-            scope = NIR_SCOPE_WORKGROUP;
+            scope = SCOPE_WORKGROUP;
             modes = nir_var_image |
                     nir_var_mem_ssbo |
                     nir_var_mem_shared |
@@ -1457,7 +1427,7 @@ nir_visitor::visit(ir_call *ir)
             /* There's no nir_var_atomic_counter, but since atomic counters are lowered
              * to SSBOs, we use nir_var_mem_ssbo instead.
              */
-            scope = NIR_SCOPE_DEVICE;
+            scope = SCOPE_DEVICE;
             modes = nir_var_mem_ssbo;
             break;
          default:
@@ -1470,7 +1440,7 @@ nir_visitor::visit(ir_call *ir)
       }
       case nir_intrinsic_shader_clock:
          nir_ssa_dest_init(&instr->instr, &instr->dest, 2, 32);
-         nir_intrinsic_set_memory_scope(instr, NIR_SCOPE_SUBGROUP);
+         nir_intrinsic_set_memory_scope(instr, SCOPE_SUBGROUP);
          nir_builder_instr_insert(&b, &instr->instr);
          break;
       case nir_intrinsic_begin_invocation_interlock:
@@ -2681,21 +2651,12 @@ nir_visitor::visit(ir_dereference_array *ir)
 void
 nir_visitor::visit(ir_barrier *)
 {
-   if (shader->options->use_scoped_barrier) {
-      if (shader->info.stage == MESA_SHADER_COMPUTE) {
-         nir_scoped_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_SCOPE_WORKGROUP,
-                            NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
-      } else if (shader->info.stage == MESA_SHADER_TESS_CTRL) {
-         nir_scoped_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_SCOPE_WORKGROUP,
-                            NIR_MEMORY_ACQ_REL, nir_var_shader_out);
-      }
-   } else {
-      if (shader->info.stage == MESA_SHADER_COMPUTE)
-         nir_memory_barrier_shared(&b);
-      else if (shader->info.stage == MESA_SHADER_TESS_CTRL)
-         nir_memory_barrier_tcs_patch(&b);
-
-      nir_control_barrier(&b);
+   if (shader->info.stage == MESA_SHADER_COMPUTE) {
+      nir_scoped_barrier(&b, SCOPE_WORKGROUP, SCOPE_WORKGROUP,
+                         NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
+   } else if (shader->info.stage == MESA_SHADER_TESS_CTRL) {
+      nir_scoped_barrier(&b, SCOPE_WORKGROUP, SCOPE_WORKGROUP,
+                         NIR_MEMORY_ACQ_REL, nir_var_shader_out);
    }
 }
 

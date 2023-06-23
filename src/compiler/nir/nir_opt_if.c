@@ -195,8 +195,7 @@ opt_peel_loop_initial_if(nir_loop *loop)
     */
    foreach_list_typed(nir_cf_node, cf_node, node, entry_list) {
       nir_foreach_block_in_cf_node(block, cf_node) {
-         nir_instr *last_instr = nir_block_last_instr(block);
-         if (last_instr && last_instr->type == nir_instr_type_jump)
+         if (nir_block_ends_in_jump(block))
             return false;
       }
    }

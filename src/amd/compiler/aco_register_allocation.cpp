@@ -460,8 +460,7 @@ print_regs(ra_ctx& ctx, bool vgprs, RegisterFile& reg_file)
    printf("%u/%u used, %u/%u free\n", regs.size - free_regs, regs.size, free_regs, regs.size);
 
    /* print assignments ordered by registers */
-   std::map<PhysReg, std::pair<unsigned, unsigned>>
-      regs_to_vars; /* maps to byte size and temp id */
+   std::map<PhysReg, std::pair<unsigned, unsigned>> regs_to_vars; /* maps to byte size and temp id */
    for (unsigned id : find_vars(ctx, reg_file, regs)) {
       const assignment& var = ctx.assignments[id];
       PhysReg reg = var.reg;
@@ -1088,8 +1087,8 @@ get_reg_for_create_vector_copy(ra_ctx& ctx, RegisterFile& reg_file,
              instr->operands[i].regClass() == info.rc) {
             assignment& op = ctx.assignments[instr->operands[i].tempId()];
             /* if everything matches, create parallelcopy for the killed operand */
-            if (!intersects(def_reg, PhysRegInterval{op.reg, op.rc.size()}) &&
-                op.reg != scc && reg_file.get_id(op.reg) == instr->operands[i].tempId()) {
+            if (!intersects(def_reg, PhysRegInterval{op.reg, op.rc.size()}) && op.reg != scc &&
+                reg_file.get_id(op.reg) == instr->operands[i].tempId()) {
                Definition pc_def = Definition(reg, info.rc);
                parallelcopies.emplace_back(instr->operands[i], pc_def);
                return op.reg;
@@ -1655,8 +1654,7 @@ get_reg(ra_ctx& ctx, RegisterFile& reg_file, Temp temp,
          return vcc;
    }
    if (ctx.assignments[temp.id()].m0) {
-      if (get_reg_specified(ctx, reg_file, temp.regClass(), instr, m0) &&
-          can_write_m0(instr))
+      if (get_reg_specified(ctx, reg_file, temp.regClass(), instr, m0) && can_write_m0(instr))
          return m0;
    }
 

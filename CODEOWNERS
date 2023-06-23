@@ -141,6 +141,9 @@ meson.build @dbaker @eric
 /src/panfrost/midgard @italove
 /src/gallium/drivers/panfrost/ @bbrezillon
 
+# R300
+/src/gallium/drivers/r300/ @ondracka @gawin
+
 # VMware
 /src/gallium/drivers/svga/ @brianp @charmainel
 /src/gallium/winsys/svga/ @thomash @drawat

@@ -714,9 +714,13 @@ print_var_decl(nir_variable *var, print_state *state)
    }
 
    if (var->constant_initializer) {
-      fprintf(fp, " = { ");
-      print_constant(var->constant_initializer, var->type, state);
-      fprintf(fp, " }");
+      if (var->constant_initializer->is_null_constant) {
+         fprintf(fp, " = null");
+      } else {
+         fprintf(fp, " = { ");
+         print_constant(var->constant_initializer, var->type, state);
+         fprintf(fp, " }");
+      }
    }
    if (glsl_type_is_sampler(var->type) && var->data.sampler.is_inline_sampler) {
       fprintf(fp, " = { %s, %s, %s }",
@@ -1069,19 +1073,14 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
 
       case NIR_INTRINSIC_EXECUTION_SCOPE:
       case NIR_INTRINSIC_MEMORY_SCOPE: {
-         fprintf(fp, "%s=", nir_intrinsic_index_names[idx]);
-         nir_scope scope =
+         mesa_scope scope =
             idx == NIR_INTRINSIC_MEMORY_SCOPE ? nir_intrinsic_memory_scope(instr)
                                               : nir_intrinsic_execution_scope(instr);
-         switch (scope) {
-         case NIR_SCOPE_NONE:         fprintf(fp, "NONE");         break;
-         case NIR_SCOPE_DEVICE:       fprintf(fp, "DEVICE");       break;
-         case NIR_SCOPE_QUEUE_FAMILY: fprintf(fp, "QUEUE_FAMILY"); break;
-         case NIR_SCOPE_WORKGROUP:    fprintf(fp, "WORKGROUP");    break;
-         case NIR_SCOPE_SHADER_CALL:  fprintf(fp, "SHADER_CALL");  break;
-         case NIR_SCOPE_SUBGROUP:     fprintf(fp, "SUBGROUP");     break;
-         case NIR_SCOPE_INVOCATION:   fprintf(fp, "INVOCATION");   break;
-         }
+         const char *name = mesa_scope_name(scope);
+         static const char prefix[] = "SCOPE_";
+         if (strncmp(name, prefix, sizeof(prefix) - 1) == 0)
+            name += sizeof(prefix) - 1;
+         fprintf(fp, "%s=%s", nir_intrinsic_index_names[idx], name);
          break;
       }
 
@@ -1193,7 +1192,7 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
          case nir_rounding_mode_ru:    fprintf(fp, "ru");      break;
          case nir_rounding_mode_rd:    fprintf(fp, "rd");      break;
          case nir_rounding_mode_rtz:   fprintf(fp, "rtz");     break;
-         default:                      fprintf(fp, "unkown");  break;
+         default:                      fprintf(fp, "unknown"); break;
          }
          break;
       }
@@ -1935,6 +1934,8 @@ print_shader_info(const struct shader_info *info, FILE *fp)
 
    if (info->label)
       fprintf(fp, "label: %s\n", info->label);
+
+   fprintf(fp, "internal: %s\n", info->internal ? "true" : "false");
 
    if (gl_shader_stage_uses_workgroup(info->stage)) {
       fprintf(fp, "workgroup-size: %u, %u, %u%s\n",

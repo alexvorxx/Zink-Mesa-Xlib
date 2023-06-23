@@ -924,11 +924,21 @@ Rusticl environment variables
    -  ``RUSTICL_ENABLE=iris:1,radeonsi:0,2`` (enables second iris and first
       and third radeonsi device)
 
+   Supported drivers (decent support with maybe a few conformance issues or bugs):
+   ``iris``,
+   ``llvmpipe``,
+   ``nouveau``,
+   ``panfrost``,
+   ``radeonsi``,
+   Experimental drivers (unknown level of support, expect conformance issues or major bugs):
+   ``r600``
+
 .. envvar:: RUSTICL_FEATURES
 
    a comma-separated list of features to enable. Those are disabled by default
    as they might not be stable enough or break OpenCL conformance.
 
+   - ``fp16`` enables OpenCL half support
    - ``fp64`` enables OpenCL double support
 
 .. envvar:: RUSTICL_DEBUG
@@ -983,9 +993,6 @@ Softpipe driver environment variables
    ``use_llvm``
       the Softpipe driver will try to use LLVM JIT for vertex
       shading processing.
-   ``use_tgsi``
-      if set, the Softpipe driver will ask to directly consume TGSI, instead
-      of NIR.
 
 LLVMpipe driver environment variables
 -------------------------------------
@@ -1154,6 +1161,9 @@ RADV driver environment variables
       disable NGG for GFX10 and GFX10.3
    ``nonggc``
       disable NGG culling on GPUs where it's enabled by default (GFX10.3+ only).
+   ``nort``
+      skip executing vkCmdTraceRays and ray queries (RT extensions will still be
+      advertised)
    ``notccompatcmask``
       disable TC-compat CMASK for MSAA surfaces
    ``noumr``
@@ -1609,8 +1619,6 @@ r300 driver environment variables
       Disable hierarchical zbuffer
    ``nocmask``
       Disable AA compression and fast AA clear
-   ``use_tgsi``
-      Request TGSI shaders from the state tracker
    ``notcl``
       Disable hardware accelerated Transform/Clip/Lighting
 

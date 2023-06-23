@@ -87,7 +87,7 @@ debian-testing:
       -D valgrind=disabled
       -D perfetto=true
       -D tools=drm-shim
-    MINIO_ARTIFACT_NAME: mesa-x86_64
+    S3_ARTIFACT_NAME: mesa-x86_64-default-${BUILDTYPE}
     LLVM_VERSION: 15
   script:
     - .gitlab-ci/meson/build.sh
@@ -106,7 +106,7 @@ debian-testing-asan:
       -D b_sanitize=address
       -D valgrind=disabled
       -D tools=dlclose-skip
-    MINIO_ARTIFACT_NAME: ""
+    S3_ARTIFACT_NAME: ""
     ARTIFACTS_DEBUG_SYMBOLS: 1
 
 debian-testing-msan:
@@ -119,7 +119,7 @@ debian-testing-msan:
     EXTRA_OPTION:
       -D b_sanitize=memory
       -D b_lundef=false
-    MINIO_ARTIFACT_NAME: ""
+    S3_ARTIFACT_NAME: ""
     ARTIFACTS_DEBUG_SYMBOLS: 1
     # Don't run all the tests yet:
     # GLSL has some issues in sexpression reading.
@@ -167,6 +167,7 @@ debian-rusticl-testing:
 debian-build-testing:
   extends: .meson-build
   variables:
+    BUILDTYPE: debug
     UNWIND: "enabled"
     DRI_LOADERS: >
       -D glx=dri
@@ -236,7 +237,7 @@ debian-release:
       -D intel-clc=enabled
       -D imagination-srv=true
     BUILDTYPE: "release"
-    MINIO_ARTIFACT_NAME: "mesa-x86_64-${BUILDTYPE}"
+    S3_ARTIFACT_NAME: "mesa-x86_64-default-${BUILDTYPE}"
   script:
     - .gitlab-ci/meson/build.sh
     - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
@@ -336,6 +337,7 @@ debian-android:
     - .use-debian/android_build
     - .ci-deqp-artifacts
   variables:
+    BUILDTYPE: debug
     UNWIND: "disabled"
     C_ARGS: >
       -Wno-error=asm-operand-widths
@@ -372,7 +374,7 @@ debian-android:
     LLVM_VERSION: ""
     PKG_CONFIG_LIBDIR: "/disable/non/android/system/pc/files"
     ARTIFACTS_DEBUG_SYMBOLS: 1
-    MINIO_ARTIFACT_NAME: mesa-x86_64-android
+    S3_ARTIFACT_NAME: mesa-x86_64-android-${BUILDTYPE}
   script:
     - CROSS=aarch64-linux-android GALLIUM_DRIVERS=etnaviv,freedreno,lima,panfrost,vc4,v3d VULKAN_DRIVERS=freedreno,broadcom,virtio .gitlab-ci/meson/build.sh
     # x86_64 build:
@@ -425,13 +427,26 @@ debian-arm32:
     EXTRA_OPTION: >
       -D llvm=disabled
       -D valgrind=disabled
-    MINIO_ARTIFACT_NAME: mesa-arm32
+    S3_ARTIFACT_NAME: mesa-arm32-default-${BUILDTYPE}
     # The strip command segfaults, failing to strip the binary and leaving
     # tempfiles in our artifacts.
     ARTIFACTS_DEBUG_SYMBOLS: 1
   script:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh
+
+debian-arm32-asan:
+  extends:
+    - debian-arm32
+  variables:
+    EXTRA_OPTION: >
+      -D llvm=disabled
+      -D b_sanitize=address
+      -D valgrind=disabled
+      -D tools=dlclose-skip
+    ARTIFACTS_DEBUG_SYMBOLS: 1
+    S3_ARTIFACT_NAME: mesa-arm32-asan-${BUILDTYPE}
+    MESON_TEST_ARGS: "--no-suite mesa:compiler --no-suite mesa:util"
 
 debian-arm64:
   extends:
@@ -447,7 +462,7 @@ debian-arm64:
       -D valgrind=disabled
       -D imagination-srv=true
       -D perfetto=true
-    MINIO_ARTIFACT_NAME: mesa-arm64
+    S3_ARTIFACT_NAME: mesa-arm64-default-${BUILDTYPE}
   script:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh
@@ -462,7 +477,7 @@ debian-arm64-asan:
       -D valgrind=disabled
       -D tools=dlclose-skip
     ARTIFACTS_DEBUG_SYMBOLS: 1
-    MINIO_ARTIFACT_NAME: mesa-arm64-asan
+    S3_ARTIFACT_NAME: mesa-arm64-asan-${BUILDTYPE}
     MESON_TEST_ARGS: "--no-suite mesa:compiler"
 
 debian-arm64-build-test:
@@ -481,7 +496,7 @@ debian-arm64-release:
     - debian-arm64
   variables:
     BUILDTYPE: release
-    MINIO_ARTIFACT_NAME: mesa-arm64-${BUILDTYPE}
+    S3_ARTIFACT_NAME: mesa-arm64-default-${BUILDTYPE}
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
@@ -493,6 +508,7 @@ debian-arm64-release:
 debian-clang:
   extends: .meson-build
   variables:
+    BUILDTYPE: debug
     LLVM_VERSION: 15
     UNWIND: "enabled"
     GALLIUM_DUMP_CPU: "true"
@@ -594,6 +610,7 @@ windows-vs2019:
 debian-rusticl:
   extends: .debian-cl
   variables:
+    BUILDTYPE: debug
     GALLIUM_DRIVERS: "iris,swrast"
     GALLIUM_ST: >
       -D dri3=disabled
@@ -604,10 +621,12 @@ debian-rusticl:
       -D gallium-nine=false
       -D gallium-opencl=disabled
       -D gallium-rusticl=true
+    RUSTC: clippy-driver
 
 debian-vulkan:
   extends: .meson-build
   variables:
+    BUILDTYPE: debug
     LLVM_VERSION: 15
     UNWIND: "disabled"
     DRI_LOADERS: >
@@ -641,6 +660,7 @@ debian-x86_32:
     - .meson-cross
     - .use-debian/x86_32_build
   variables:
+    BUILDTYPE: debug
     CROSS: i386
     VULKAN_DRIVERS: intel,amd,swrast,virtio
     GALLIUM_DRIVERS: "iris,nouveau,r300,r600,radeonsi,swrast,virgl,zink,crocus"
@@ -667,6 +687,7 @@ debian-ppc64el:
     - .use-debian/ppc64el_build
     - .ppc64el-rules
   variables:
+    BUILDTYPE: debug
     CROSS: ppc64el
     GALLIUM_DRIVERS: "nouveau,radeonsi,swrast,virgl,zink"
     VULKAN_DRIVERS: "amd,swrast"

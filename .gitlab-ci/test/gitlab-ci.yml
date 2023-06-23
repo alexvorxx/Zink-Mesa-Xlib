@@ -76,7 +76,7 @@ clang-format:
     - .test
     - .use-debian/x86_64_test-android
   variables:
-    MINIO_ARTIFACT_NAME: mesa-x86_64-android
+    S3_ARTIFACT_NAME: mesa-x86_64-android-debug
   needs:
     - job: debian-testing
       artifacts: true  # On the host we want the Linux build
@@ -171,7 +171,7 @@ clang-format:
     - section_start artifacts_download "Downloading artifacts from s3"
     # Note: Build dir (and thus install) may be dirty due to GIT_STRATEGY
     - rm -rf install
-    - (set -x; curl -L --retry 4 -f --retry-all-errors --retry-delay 60 ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NAME}.tar.zst | tar --zstd -x)
+    - (set -x; curl -L --retry 4 -f --retry-all-errors --retry-delay 60 ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${S3_ARTIFACT_NAME}.tar.zst | tar --zstd -x)
     - section_end artifacts_download
   artifacts:
     when: always
@@ -191,7 +191,7 @@ clang-format:
     - .use-debian/arm32_test
   variables:
     BM_ROOTFS: /rootfs-armhf
-    MINIO_ARTIFACT_NAME: mesa-arm32
+    S3_ARTIFACT_NAME: mesa-arm32-default-debugoptimized
   needs:
     - debian/arm32_test
     - job: debian-arm32
@@ -204,20 +204,32 @@ clang-format:
     - .use-debian/arm64_test
   variables:
     BM_ROOTFS: /rootfs-arm64
-    MINIO_ARTIFACT_NAME: mesa-arm64
+    S3_ARTIFACT_NAME: mesa-arm64-default-debugoptimized
   needs:
     - debian/arm64_test
     - job: debian-arm64
       artifacts: false
 
-# ARM64 testing of bare-metal boards attached to an x86 gitlab-runner system, using an asan mesa build
+# ARM32/64 testing of bare-metal boards attached to an x86 gitlab-runner system, using an asan mesa build
+.baremetal-arm32-asan-test:
+  extends:
+    - .baremetal-test
+    - .use-debian/arm32_test
+  variables:
+    DEQP_RUNNER_OPTIONS: "--env LD_PRELOAD=libasan.so.8:/install/lib/libdlclose-skip.so"
+    S3_ARTIFACT_NAME: mesa-arm32-asan-debugoptimized
+  needs:
+    - debian/arm32_test
+    - job: debian-arm32-asan
+      artifacts: false
+
 .baremetal-arm64-asan-test:
   extends:
     - .baremetal-test
     - .use-debian/arm64_test
   variables:
     DEQP_RUNNER_OPTIONS: "--env LD_PRELOAD=libasan.so.8:/install/lib/libdlclose-skip.so"
-    MINIO_ARTIFACT_NAME: mesa-arm64-asan
+    S3_ARTIFACT_NAME: mesa-arm64-asan-debugoptimized
   needs:
     - debian/arm64_test
     - job: debian-arm64-asan
@@ -240,7 +252,7 @@ clang-format:
   # like FDO_DISTRIBUTION_TAG for *the* image, there is no way to
   # depend on more than one image per job. So, the job container is
   # built as part of the CI in the boot2container project.
-  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2023-02-27.1
+  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2023-03-08.1
   timeout: 1h 40m
   variables:
     # No need by default to pull the whole repo
@@ -256,7 +268,7 @@ clang-format:
     B2C_SESSION_REBOOT_REGEX: ''
     B2C_TIMEOUT_BOOT_MINUTES: 45
     B2C_TIMEOUT_BOOT_RETRIES: 0
-    B2C_TIMEOUT_FIRST_MINUTES: 5
+    B2C_TIMEOUT_FIRST_MINUTES: 2
     B2C_TIMEOUT_FIRST_RETRIES: 3
     B2C_TIMEOUT_MINUTES: 5
     B2C_TIMEOUT_OVERALL_MINUTES: 90
@@ -356,7 +368,7 @@ clang-format:
       # Submit the job to Valve's CI gateway service with the CI
       # provisioned job_folder.
       env PYTHONUNBUFFERED=1 executorctl \
-          run -w b2c.yml.jinja2 -j $(slugify "$CI_JOB_NAME") -s ${JOB_FOLDER}
+          run -w b2c.yml.jinja2 -j $(slugify "$CI_JOB_NAME") -s ${JOB_FOLDER} -i "$CI_RUNNER_DESCRIPTION"
 
       # Anything our job places in results/ will be collected by the
       # Gitlab coordinator for status presentation. results/junit.xml

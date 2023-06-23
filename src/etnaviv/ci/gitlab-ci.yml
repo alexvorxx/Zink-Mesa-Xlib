@@ -48,6 +48,14 @@ gc2000_gles2:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     DEQP_VER: gles2
 
+gc2000_gles2_asan:
+  extends:
+    - gc2000_gles2
+    - .baremetal-arm32-asan-test
+  variables:
+    DEQP_FRACTION: 100
+    FDO_CI_CONCURRENT: 1
+
 gc2000_piglit:
   extends:
     - .piglit-test

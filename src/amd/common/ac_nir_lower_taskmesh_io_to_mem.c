@@ -90,7 +90,7 @@ task_draw_ready_bit(nir_builder *b,
    nir_ssa_def *workgroup_index = task_workgroup_index(b, s);
 
    nir_ssa_def *idx = nir_iadd_nuw(b, ring_entry, workgroup_index);
-   return nir_u2u8(b, nir_ubfe(b, idx, nir_imm_int(b, util_bitcount(s->num_entries - 1)), nir_imm_int(b, 1)));
+   return nir_u2u8(b, nir_ubfe_imm(b, idx, util_bitcount(s->num_entries - 1), 1));
 }
 
 static nir_ssa_def *
@@ -153,8 +153,8 @@ lower_task_launch_mesh_workgroups(nir_builder *b,
     * always a waitcnt_vscnt instruction in order to avoid a race condition
     * between payload stores and their loads after mesh shaders launch.
     */
-   nir_scoped_barrier(b, .execution_scope = NIR_SCOPE_WORKGROUP,
-                         .memory_scope = NIR_SCOPE_DEVICE,
+   nir_scoped_barrier(b, .execution_scope = SCOPE_WORKGROUP,
+                         .memory_scope = SCOPE_DEVICE,
                          .memory_semantics = NIR_MEMORY_ACQ_REL,
                          .memory_modes = nir_var_mem_task_payload | nir_var_shader_out |
                                          nir_var_mem_ssbo | nir_var_mem_global);
@@ -176,7 +176,7 @@ lower_task_launch_mesh_workgroups(nir_builder *b,
       /* Dispatch dimensions of mesh shader workgroups. */
       task_write_draw_ring(b, nir_vec3(b, x, y, z), 0, s);
       /* Prevent the two stores from being reordered. */
-      nir_scoped_memory_barrier(b, NIR_SCOPE_INVOCATION, NIR_MEMORY_RELEASE, nir_var_shader_out);
+      nir_scoped_memory_barrier(b, SCOPE_INVOCATION, NIR_MEMORY_RELEASE, nir_var_shader_out);
       /* Ready bit, only write the low 8 bits. */
       task_write_draw_ring(b, task_draw_ready_bit(b, s), 12, s);
    }

@@ -208,11 +208,13 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_btd_shader_type_intel:
    case nir_intrinsic_load_base_workgroup_id:
    case nir_intrinsic_load_alpha_reference_amd:
+   case nir_intrinsic_load_ubo_uniform_block_intel:
    case nir_intrinsic_load_ssbo_uniform_block_intel:
    case nir_intrinsic_load_shared_uniform_block_intel:
    case nir_intrinsic_load_barycentric_optimize_amd:
    case nir_intrinsic_load_poly_line_smooth_enabled:
    case nir_intrinsic_load_rasterization_primitive_amd:
+   case nir_intrinsic_load_global_constant_uniform_block_intel:
       is_divergent = false;
       break;
 

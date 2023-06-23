@@ -341,7 +341,7 @@ vtn_handle_subgroup(struct vtn_builder *b, SpvOp opcode,
    }
 
    case SpvOpGroupNonUniformRotateKHR: {
-      const nir_scope scope = vtn_scope_to_nir_scope(b, vtn_constant_uint(b, w[3]));
+      const mesa_scope scope = vtn_translate_scope(b, vtn_constant_uint(b, w[3]));
       const uint32_t cluster_size = count > 6 ? vtn_constant_uint(b, w[6]) : 0;
       vtn_fail_if(cluster_size && !IS_POT(cluster_size),
                   "Behavior is undefined unless ClusterSize is at least 1 and a power of 2.");

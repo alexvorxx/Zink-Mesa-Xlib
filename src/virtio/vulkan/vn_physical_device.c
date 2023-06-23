@@ -187,17 +187,25 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
    VN_ADD_PNEXT_EXT(feats2, TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT, feats->texel_buffer_alignment, exts->EXT_texel_buffer_alignment);
    VN_ADD_PNEXT_EXT(feats2, YCBCR_2_PLANE_444_FORMATS_FEATURES_EXT, feats->ycbcr_2plane_444_formats, exts->EXT_ycbcr_2plane_444_formats);
 
+   /* KHR */
+   VN_ADD_PNEXT_EXT(feats2, SHADER_CLOCK_FEATURES_KHR, feats->shader_clock, exts->KHR_shader_clock);
+
    /* EXT */
+   VN_ADD_PNEXT_EXT(feats2, BORDER_COLOR_SWIZZLE_FEATURES_EXT, feats->border_color_swizzle, exts->EXT_border_color_swizzle);
+   VN_ADD_PNEXT_EXT(feats2, COLOR_WRITE_ENABLE_FEATURES_EXT, feats->color_write_enable, exts->EXT_color_write_enable);
    VN_ADD_PNEXT_EXT(feats2, CONDITIONAL_RENDERING_FEATURES_EXT, feats->conditional_rendering, exts->EXT_conditional_rendering);
    VN_ADD_PNEXT_EXT(feats2, CUSTOM_BORDER_COLOR_FEATURES_EXT, feats->custom_border_color, exts->EXT_custom_border_color);
    VN_ADD_PNEXT_EXT(feats2, DEPTH_CLIP_CONTROL_FEATURES_EXT, feats->depth_clip_control, exts->EXT_depth_clip_control);
    VN_ADD_PNEXT_EXT(feats2, DEPTH_CLIP_ENABLE_FEATURES_EXT, feats->depth_clip_enable, exts->EXT_depth_clip_enable);
+   VN_ADD_PNEXT_EXT(feats2, DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT, feats->dynamic_rendering_unused_attachments, exts->EXT_dynamic_rendering_unused_attachments);
+   VN_ADD_PNEXT_EXT(feats2, FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT, feats->fragment_shader_interlock, exts->EXT_fragment_shader_interlock);
    VN_ADD_PNEXT_EXT(feats2, IMAGE_2D_VIEW_OF_3D_FEATURES_EXT, feats->image_2d_view_of_3d, exts->EXT_image_2d_view_of_3d);
    VN_ADD_PNEXT_EXT(feats2, IMAGE_VIEW_MIN_LOD_FEATURES_EXT, feats->image_view_min_lod, exts->EXT_image_view_min_lod);
    VN_ADD_PNEXT_EXT(feats2, INDEX_TYPE_UINT8_FEATURES_EXT, feats->index_type_uint8, exts->EXT_index_type_uint8);
    VN_ADD_PNEXT_EXT(feats2, LINE_RASTERIZATION_FEATURES_EXT, feats->line_rasterization, exts->EXT_line_rasterization);
    VN_ADD_PNEXT_EXT(feats2, MULTI_DRAW_FEATURES_EXT, feats->multi_draw, exts->EXT_multi_draw);
    VN_ADD_PNEXT_EXT(feats2, MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT, feats->mutable_descriptor_type, exts->EXT_mutable_descriptor_type || exts->VALVE_mutable_descriptor_type);
+   VN_ADD_PNEXT_EXT(feats2, NON_SEAMLESS_CUBE_MAP_FEATURES_EXT, feats->non_seamless_cube_map, exts->EXT_non_seamless_cube_map);
    VN_ADD_PNEXT_EXT(feats2, PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT, feats->primitive_topology_list_restart, exts->EXT_primitive_topology_list_restart);
    VN_ADD_PNEXT_EXT(feats2, PRIMITIVES_GENERATED_QUERY_FEATURES_EXT, feats->primitives_generated_query, exts->EXT_primitives_generated_query);
    VN_ADD_PNEXT_EXT(feats2, PROVOKING_VERTEX_FEATURES_EXT, feats->provoking_vertex, exts->EXT_provoking_vertex);
@@ -1141,14 +1149,19 @@ vn_physical_device_get_passthrough_extensions(
 
       /* KHR */
       .KHR_push_descriptor = true,
+      .KHR_shader_clock = true,
 
       /* EXT */
+      .EXT_border_color_swizzle = true,
       .EXT_calibrated_timestamps = true,
+      .EXT_color_write_enable = true,
       .EXT_conditional_rendering = true,
       .EXT_conservative_rasterization = true,
       .EXT_custom_border_color = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
+      .EXT_dynamic_rendering_unused_attachments = true,
+      .EXT_fragment_shader_interlock = true,
       .EXT_image_2d_view_of_3d = true,
       .EXT_image_drm_format_modifier = true,
       .EXT_image_view_min_lod = true,
@@ -1159,6 +1172,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_memory_budget = false,
       .EXT_multi_draw = true,
       .EXT_mutable_descriptor_type = true,
+      .EXT_non_seamless_cube_map = true,
       .EXT_primitive_topology_list_restart = true,
       .EXT_primitives_generated_query = true,
       /* TODO(VK_EXT_private_data): Support natively.
@@ -1184,6 +1198,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_rasterization_order_attachment_access = true,
       .EXT_robustness2 = true,
       .EXT_shader_stencil_export = true,
+      .EXT_shader_subgroup_ballot = true,
       .EXT_transform_feedback = true,
       .EXT_vertex_attribute_divisor = true,
 
@@ -1787,17 +1802,25 @@ vn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       CASE(TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT, texel_buffer_alignment);
       CASE(YCBCR_2_PLANE_444_FORMATS_FEATURES_EXT, ycbcr_2plane_444_formats);
 
+      /* KHR */
+      CASE(SHADER_CLOCK_FEATURES_KHR, shader_clock);
+
       /* EXT */
+      CASE(BORDER_COLOR_SWIZZLE_FEATURES_EXT, border_color_swizzle);
+      CASE(COLOR_WRITE_ENABLE_FEATURES_EXT, color_write_enable);
       CASE(CONDITIONAL_RENDERING_FEATURES_EXT, conditional_rendering);
       CASE(CUSTOM_BORDER_COLOR_FEATURES_EXT, custom_border_color);
       CASE(DEPTH_CLIP_CONTROL_FEATURES_EXT, depth_clip_control);
       CASE(DEPTH_CLIP_ENABLE_FEATURES_EXT, depth_clip_enable);
+      CASE(DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT, dynamic_rendering_unused_attachments);
+      CASE(FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT, fragment_shader_interlock);
       CASE(IMAGE_2D_VIEW_OF_3D_FEATURES_EXT, image_2d_view_of_3d);
       CASE(IMAGE_VIEW_MIN_LOD_FEATURES_EXT, image_view_min_lod);
       CASE(INDEX_TYPE_UINT8_FEATURES_EXT, index_type_uint8);
       CASE(LINE_RASTERIZATION_FEATURES_EXT, line_rasterization);
       CASE(MULTI_DRAW_FEATURES_EXT, multi_draw);
       CASE(MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT, mutable_descriptor_type);
+      CASE(NON_SEAMLESS_CUBE_MAP_FEATURES_EXT, non_seamless_cube_map);
       CASE(PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT, primitive_topology_list_restart);
       CASE(PRIMITIVES_GENERATED_QUERY_FEATURES_EXT, primitives_generated_query);
       CASE(PROVOKING_VERTEX_FEATURES_EXT, provoking_vertex);

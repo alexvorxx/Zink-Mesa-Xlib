@@ -1037,6 +1037,7 @@ struct anv_instance {
     float                                       lower_depth_range_rate;
     unsigned                                    generated_indirect_threshold;
     unsigned                                    query_clear_with_blorp_threshold;
+    unsigned                                    query_copy_with_shader_threshold;
     unsigned                                    force_vk_vendor;
 
     /* HW workarounds */
@@ -1112,6 +1113,28 @@ anv_device_upload_nir(struct anv_device *device,
 
 void
 anv_load_fp64_shader(struct anv_device *device);
+
+enum anv_internal_kernel_name {
+   ANV_INTERNAL_KERNEL_GENERATED_DRAWS,
+   ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_COMPUTE,
+   ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_FRAGMENT,
+
+   ANV_INTERNAL_KERNEL_COUNT,
+};
+
+struct anv_internal_kernel_bind_map {
+   uint32_t num_bindings;
+   struct {
+      /* Whether this binding is provided through push constants */
+      bool     push_constant;
+
+      /* When not provided by push constants, this is offset at which the
+       * 64bit address of the binding is located in the push constant data.
+       */
+      uint32_t address_offset;
+   } bindings[5];
+   uint32_t push_data_size;
+};
 
 enum anv_rt_bvh_build_method {
    ANV_BVH_BUILD_METHOD_TRIVIAL,
@@ -1240,8 +1263,8 @@ struct anv_device {
      * Generates direct draw calls out of indirect parameters. Used to
      * workaround slowness with indirect draw calls.
      */
-    struct anv_shader_bin                      *generated_draw_kernel;
-    const struct intel_l3_config               *generated_draw_l3_config;
+    struct anv_shader_bin                      *internal_kernels[ANV_INTERNAL_KERNEL_COUNT];
+    const struct intel_l3_config               *internal_kernels_l3_config;
 
     pthread_mutex_t                             mutex;
     pthread_cond_t                              queue_submit;
@@ -2188,31 +2211,62 @@ enum anv_pipe_bits {
     */
    ANV_PIPE_NEEDS_END_OF_PIPE_SYNC_BIT       = (1 << 22),
 
-   /* This bit does not exist directly in PIPE_CONTROL. It means that render
-    * target operations related to transfer commands with VkBuffer as
-    * destination are ongoing. Some operations like copies on the command
-    * streamer might need to be aware of this to trigger the appropriate stall
-    * before they can proceed with the copy.
-    */
-   ANV_PIPE_RENDER_TARGET_BUFFER_WRITES      = (1 << 23),
-
    /* This bit does not exist directly in PIPE_CONTROL. It means that Gfx12
     * AUX-TT data has changed and we need to invalidate AUX-TT data.  This is
     * done by writing the AUX-TT register.
     */
-   ANV_PIPE_AUX_TABLE_INVALIDATE_BIT         = (1 << 24),
+   ANV_PIPE_AUX_TABLE_INVALIDATE_BIT         = (1 << 23),
 
    /* This bit does not exist directly in PIPE_CONTROL. It means that a
     * PIPE_CONTROL with a post-sync operation will follow. This is used to
     * implement a workaround for Gfx9.
     */
-   ANV_PIPE_POST_SYNC_BIT                    = (1 << 25),
-
-   /* This bit does not exist directly in PIPE_CONTROL. It means that render
-    * target operations related to clearing of queries are ongoing.
-    */
-   ANV_PIPE_QUERY_CLEARS_BIT                 = (1 << 26),
+   ANV_PIPE_POST_SYNC_BIT                    = (1 << 24),
 };
+
+/* These bits track the state of buffer writes for queries. They get cleared
+ * based on PIPE_CONTROL emissions.
+ */
+enum anv_query_bits {
+   ANV_QUERY_WRITES_RT_FLUSH      = (1 << 0),
+
+   ANV_QUERY_WRITES_TILE_FLUSH    = (1 << 1),
+
+   ANV_QUERY_WRITES_CS_STALL      = (1 << 2),
+
+   ANV_QUERY_WRITES_DATA_FLUSH    = (1 << 3),
+};
+
+/* Things we need to flush before accessing query data using the command
+ * streamer.
+ *
+ * Prior to DG2 experiments show that the command streamer is not coherent
+ * with the tile cache so we need to flush it to make any data visible to CS.
+ *
+ * Otherwise we want to flush the RT cache which is where blorp writes, either
+ * for clearing the query buffer or for clearing the destination buffer in
+ * vkCopyQueryPoolResults().
+ */
+#define ANV_QUERY_RENDER_TARGET_WRITES_PENDING_BITS(devinfo) \
+   (((devinfo->verx10 >= 120 && \
+      devinfo->verx10 < 125) ? ANV_QUERY_WRITES_TILE_FLUSH : 0) | \
+   ANV_QUERY_WRITES_RT_FLUSH | \
+   ANV_QUERY_WRITES_CS_STALL)
+#define ANV_QUERY_COMPUTE_WRITES_PENDING_BITS \
+   (ANV_QUERY_WRITES_DATA_FLUSH | \
+    ANV_QUERY_WRITES_CS_STALL)
+
+#define ANV_PIPE_QUERY_BITS(pending_query_bits) ( \
+   ((pending_query_bits & ANV_QUERY_WRITES_RT_FLUSH) ?   \
+    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT : 0) | \
+   ((pending_query_bits & ANV_QUERY_WRITES_TILE_FLUSH) ?   \
+    ANV_PIPE_TILE_CACHE_FLUSH_BIT : 0) | \
+   ((pending_query_bits & ANV_QUERY_WRITES_CS_STALL) ?   \
+    ANV_PIPE_CS_STALL_BIT : 0) | \
+   ((pending_query_bits & ANV_QUERY_WRITES_DATA_FLUSH) ?  \
+    (ANV_PIPE_DATA_CACHE_FLUSH_BIT | \
+     ANV_PIPE_HDC_PIPELINE_FLUSH_BIT | \
+     ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT) : 0))
 
 #define ANV_PIPE_FLUSH_BITS ( \
    ANV_PIPE_DEPTH_CACHE_FLUSH_BIT | \
@@ -2253,20 +2307,6 @@ enum anv_pipe_bits {
  */
 #define ANV_PIPE_GPGPU_BITS ( \
    (GFX_VERx10 >= 125 ? ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT : 0))
-
-/* Things we need to flush before accessing query data using the command
- * streamer.
- *
- * Prior to DG2 experiments show that the command streamer is not coherent
- * with the tile cache so we need to flush it to make any data visible to CS.
- *
- * Otherwise we want to flush the RT cache which is where blorp writes, either
- * for clearing the query buffer or for clearing the destination buffer in
- * vkCopyQueryPoolResults().
- */
-#define ANV_PIPE_QUERY_FLUSH_BITS ( \
-   (GFX_VERx10 < 125 ? ANV_PIPE_TILE_CACHE_FLUSH_BIT : 0) | \
-   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT)
 
 enum intel_ds_stall_flag
 anv_pipe_flush_bit_to_ds_stall_flag(enum anv_pipe_bits bits);
@@ -2652,6 +2692,23 @@ anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
    return (dirty->end - dirty->start) > (1ull << 32);
 }
 
+/**
+ * State tracking for simple internal shaders
+ */
+struct anv_simple_shader {
+   /* The command buffer associated with this emission */
+   struct anv_cmd_buffer *cmd_buffer;
+   /* Where to emit the commands (can be different from cmd_buffer->batch) */
+   struct anv_batch *batch;
+   /* Shader to use */
+   struct anv_shader_bin *kernel;
+   /**/
+   const struct intel_l3_config *l3_config;
+
+   /* Managed by the simpler shader helper*/
+   struct anv_state bt_state;
+};
+
 /** State tracking for particular pipeline bind point
  *
  * This struct is the base struct for anv_cmd_graphics_state and
@@ -2792,6 +2849,26 @@ struct anv_cmd_state {
    struct anv_cmd_ray_tracing_state             rt;
 
    enum anv_pipe_bits                           pending_pipe_bits;
+
+   struct {
+      /**
+       * Tracks operations susceptible to interfere with queries in the
+       * destination buffer of vkCmdCopyQueryResults, we need those operations to
+       * have completed before we do the work of vkCmdCopyQueryResults.
+       */
+      enum anv_query_bits                          buffer_write_bits;
+
+      /**
+       * Tracks clear operations of query buffers that can interact with
+       * vkCmdQueryBegin*, vkCmdWriteTimestamp*,
+       * vkCmdWriteAccelerationStructuresPropertiesKHR, etc...
+       *
+       * We need the clearing of the buffer completed before with write data with
+       * the command streamer or a shader.
+       */
+      enum anv_query_bits                          clear_bits;
+   } queries;
+
    VkShaderStageFlags                           descriptors_dirty;
    VkShaderStageFlags                           push_descriptors_dirty;
    VkShaderStageFlags                           push_constants_dirty;
@@ -2961,17 +3038,17 @@ struct anv_cmd_buffer {
     */
    struct anv_address                           generation_return_addr;
 
-   /**
-    * Binding table allocation for generation shaders (only used on Gfx9).
-    */
-   struct anv_state                             generation_bt_state;
-
    /** List of anv_batch_bo used for generation
     *
     * We have to keep this separated of the anv_cmd_buffer::batch_bos that is
     * used for a chaining optimization.
     */
    struct list_head                             generation_batch_bos;
+
+   /**
+    * State tracking of the generation shader.
+    */
+   struct anv_simple_shader                     generation_shader_state;
 
    /**
     * A vector of anv_bo pointers for chunks of memory used by the command
@@ -3078,6 +3155,10 @@ anv_cmd_buffer_exec_batch_debug(struct anv_queue *queue,
 void
 anv_cmd_buffer_clflush(struct anv_cmd_buffer **cmd_buffers,
                        uint32_t num_cmd_buffers);
+
+void
+anv_cmd_buffer_update_pending_query_bits(struct anv_cmd_buffer *cmd_buffer,
+                                         enum anv_pipe_bits flushed_bits);
 
 /**
  * A allocation tied to a command buffer.
@@ -4310,6 +4391,9 @@ struct anv_image_create_info {
 
    /** An opt-in stride, should be 0 for implicit layouts */
    uint32_t stride;
+
+   /** Whether to allocate private binding */
+   bool no_private_binding_alloc;
 };
 
 VkResult anv_image_init(struct anv_device *device, struct anv_image *image,
@@ -4556,10 +4640,8 @@ struct anv_memcpy_state {
    struct anv_vb_cache_range vb_dirty;
 };
 
-VkResult
-anv_device_init_generated_indirect_draws(struct anv_device *device);
-void
-anv_device_finish_generated_indirect_draws(struct anv_device *device);
+VkResult anv_device_init_internal_kernels(struct anv_device *device);
+void anv_device_finish_internal_kernels(struct anv_device *device);
 
 /* This structure is used in 2 scenarios :
  *

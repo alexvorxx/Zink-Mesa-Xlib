@@ -24,6 +24,7 @@
 #include "brw_kernel.h"
 #include "brw_nir.h"
 
+#include "nir_clc_helpers.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/spirv/nir_spirv.h"
 #include "dev/intel_debug.h"
@@ -38,7 +39,8 @@ load_clc_shader(struct brw_compiler *compiler, struct disk_cache *disk_cache,
       return compiler->clc_shader;
 
    nir_shader *nir =  nir_load_libclc_shader(64, disk_cache,
-                                             spirv_options, nir_options);
+                                             spirv_options, nir_options,
+                                             disk_cache != NULL);
    if (nir == NULL)
       return NULL;
 

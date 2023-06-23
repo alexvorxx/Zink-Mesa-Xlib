@@ -99,15 +99,12 @@ static const float bt2020_full_range_csc_offsets[3] = {
 static bool
 project_src(nir_builder *b, nir_tex_instr *tex)
 {
-   /* Find the projector in the srcs list, if present. */
-   int proj_index = nir_tex_instr_src_index(tex, nir_tex_src_projector);
-   if (proj_index < 0)
+   nir_ssa_def *proj = nir_steal_tex_src(tex, nir_tex_src_projector);
+   if (!proj)
       return false;
 
    b->cursor = nir_before_instr(&tex->instr);
-
-   nir_ssa_def *inv_proj =
-      nir_frcp(b, nir_ssa_for_src(b, tex->src[proj_index].src, 1));
+   nir_ssa_def *inv_proj = nir_frcp(b, proj);
 
    /* Walk through the sources projecting the arguments. */
    for (unsigned i = 0; i < tex->num_srcs; i++) {
@@ -156,23 +153,20 @@ project_src(nir_builder *b, nir_tex_instr *tex)
                             nir_src_for_ssa(projected));
    }
 
-   nir_tex_instr_remove_src(tex, proj_index);
    return true;
 }
 
 static bool
 lower_offset(nir_builder *b, nir_tex_instr *tex)
 {
-   int offset_index = nir_tex_instr_src_index(tex, nir_tex_src_offset);
-   if (offset_index < 0)
+   nir_ssa_def *offset = nir_steal_tex_src(tex, nir_tex_src_offset);
+   if (!offset)
       return false;
 
    int coord_index = nir_tex_instr_src_index(tex, nir_tex_src_coord);
    assert(coord_index >= 0);
 
-   assert(tex->src[offset_index].src.is_ssa);
    assert(tex->src[coord_index].src.is_ssa);
-   nir_ssa_def *offset = tex->src[offset_index].src.ssa;
    nir_ssa_def *coord = tex->src[coord_index].src.ssa;
 
    b->cursor = nir_before_instr(&tex->instr);
@@ -210,8 +204,6 @@ lower_offset(nir_builder *b, nir_tex_instr *tex)
 
    nir_instr_rewrite_src(&tex->instr, &tex->src[coord_index].src,
                          nir_src_for_ssa(offset_coord));
-
-   nir_tex_instr_remove_src(tex, offset_index);
 
    return true;
 }
@@ -263,19 +255,15 @@ lower_lod(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *lod)
    assert(nir_tex_instr_src_index(tex, nir_tex_src_ddx) < 0);
    assert(nir_tex_instr_src_index(tex, nir_tex_src_ddy) < 0);
 
-   int bias_idx = nir_tex_instr_src_index(tex, nir_tex_src_bias);
-   if (bias_idx >= 0) {
-      /* If we have a bias, add it in */
-      lod = nir_fadd(b, lod, nir_ssa_for_src(b, tex->src[bias_idx].src, 1));
-      nir_tex_instr_remove_src(tex, bias_idx);
-   }
+   /* If we have a bias, add it in */
+   nir_ssa_def *bias = nir_steal_tex_src(tex, nir_tex_src_bias);
+   if (bias)
+      lod = nir_fadd(b, lod, bias);
 
-   int min_lod_idx = nir_tex_instr_src_index(tex, nir_tex_src_min_lod);
-   if (min_lod_idx >= 0) {
-      /* If we have a minimum LOD, clamp LOD accordingly */
-      lod = nir_fmax(b, lod, nir_ssa_for_src(b, tex->src[min_lod_idx].src, 1));
-      nir_tex_instr_remove_src(tex, min_lod_idx);
-   }
+   /* If we have a minimum LOD, clamp LOD accordingly */
+   nir_ssa_def *min_lod = nir_steal_tex_src(tex, nir_tex_src_min_lod);
+   if (min_lod)
+      lod = nir_fmax(b, lod, min_lod);
 
    nir_tex_instr_add_src(tex, nir_tex_src_lod, nir_src_for_ssa(lod));
    tex->op = nir_texop_txl;
@@ -576,12 +564,10 @@ replace_gradient_with_lod(nir_builder *b, nir_ssa_def *lod, nir_tex_instr *tex)
    nir_tex_instr_remove_src(tex, nir_tex_instr_src_index(tex, nir_tex_src_ddx));
    nir_tex_instr_remove_src(tex, nir_tex_instr_src_index(tex, nir_tex_src_ddy));
 
-   int min_lod_idx = nir_tex_instr_src_index(tex, nir_tex_src_min_lod);
-   if (min_lod_idx >= 0) {
-      /* If we have a minimum LOD, clamp LOD accordingly */
-      lod = nir_fmax(b, lod, nir_ssa_for_src(b, tex->src[min_lod_idx].src, 1));
-      nir_tex_instr_remove_src(tex, min_lod_idx);
-   }
+   /* If we have a minimum LOD, clamp LOD accordingly */
+   nir_ssa_def *min_lod = nir_steal_tex_src(tex, nir_tex_src_min_lod);
+   if (min_lod)
+      lod = nir_fmax(b, lod, min_lod);
 
    nir_tex_instr_add_src(tex, nir_tex_src_lod, nir_src_for_ssa(lod));
    tex->op = nir_texop_txl;
@@ -1141,6 +1127,8 @@ lower_tg4_offsets(nir_builder *b, nir_tex_instr *tex)
       tex_copy->is_gather_implicit_lod = tex->is_gather_implicit_lod;
       tex_copy->component = tex->component;
       tex_copy->dest_type = tex->dest_type;
+      tex_copy->texture_index = tex->texture_index;
+      tex_copy->sampler_index = tex->sampler_index;
 
       for (unsigned j = 0; j < tex->num_srcs; ++j) {
          nir_src_copy(&tex_copy->src[j].src, &tex->src[j].src, &tex_copy->instr);
@@ -1323,7 +1311,7 @@ nir_lower_lod_zero_width(nir_builder *b, nir_tex_instr *tex)
 
    b->cursor = nir_after_instr(&tex->instr);
 
-   nir_ssa_def *is_zero = nir_imm_bool(b, true);
+   nir_ssa_def *is_zero = nir_imm_true(b);
    for (unsigned i = 0; i < tex->coord_components; i++) {
       nir_ssa_def *coord = nir_channel(b, tex->src[coord_index].src.ssa, i);
 
@@ -1397,13 +1385,15 @@ nir_lower_tex_block(nir_block *block, nir_builder *b,
 
       /* mask of src coords to saturate (clamp): */
       unsigned sat_mask = 0;
-
-      if ((1 << tex->sampler_index) & options->saturate_r)
-         sat_mask |= (1 << 2);    /* .z */
-      if ((1 << tex->sampler_index) & options->saturate_t)
-         sat_mask |= (1 << 1);    /* .y */
-      if ((1 << tex->sampler_index) & options->saturate_s)
-         sat_mask |= (1 << 0);    /* .x */
+      /* ignore saturate for txf ops: these don't use samplers and can't GL_CLAMP */
+      if (nir_tex_instr_need_sampler(tex)) {
+         if ((1 << tex->sampler_index) & options->saturate_r)
+            sat_mask |= (1 << 2);    /* .z */
+         if ((1 << tex->sampler_index) & options->saturate_t)
+            sat_mask |= (1 << 1);    /* .y */
+         if ((1 << tex->sampler_index) & options->saturate_s)
+            sat_mask |= (1 << 0);    /* .x */
+      }
 
       if (options->lower_index_to_offset)
          progress |= lower_index_to_offset(b, tex);
@@ -1646,6 +1636,17 @@ bool
 nir_lower_tex(nir_shader *shader, const nir_lower_tex_options *options)
 {
    bool progress = false;
+
+   /* lower_tg4_offsets injects new tg4 instructions that won't be lowered
+    * if lower_tg4_broadcom_swizzle is also requested so when both are set
+    * we want to run lower_tg4_offsets in a separate pass first.
+    */
+   if (options->lower_tg4_offsets && options->lower_tg4_broadcom_swizzle) {
+      nir_lower_tex_options _options = {
+         .lower_tg4_offsets = true,
+      };
+      progress = nir_lower_tex(shader, &_options);
+   }
 
    nir_foreach_function(function, shader) {
       if (function->impl)

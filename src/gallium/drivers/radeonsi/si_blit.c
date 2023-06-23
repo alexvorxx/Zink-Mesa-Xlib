@@ -10,6 +10,7 @@
 #include "util/format/u_format.h"
 #include "util/u_log.h"
 #include "util/u_surface.h"
+#include "util/hash_table.h"
 
 enum
 {

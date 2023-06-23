@@ -338,7 +338,6 @@ public:
          uint32_t spec_id = ins->words[ins->operands[2].offset];
          for (auto &c : specConstants) {
             if (c.second.id == spec_id) {
-               assert(c.first == id);
                return;
             }
          }
@@ -757,6 +756,9 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
                            const struct clc_compile_args *args,
                            const struct clc_logger *logger)
 {
+   static_assert(std::has_unique_object_representations<clc_optional_features>(),
+                 "no padding allowed inside clc_optional_features");
+
    std::string diag_log_str;
    raw_string_ostream diag_log_stream { diag_log_str };
 
@@ -1110,7 +1112,7 @@ public:
          return;
 
       std::ostringstream message;
-      message << "(file=" << src
+      message << "(file=" << (src ? src : "input")
               << ",line=" << pos.line
               << ",column=" << pos.column
               << ",index=" << pos.index
@@ -1160,13 +1162,22 @@ clc_link_spirv_binaries(const struct clc_linker_args *args,
 
 bool
 clc_validate_spirv(const struct clc_binary *spirv,
-                   const struct clc_logger *logger)
+                   const struct clc_logger *logger,
+                   const struct clc_validator_options *options)
 {
    SPIRVMessageConsumer msgconsumer(logger);
    spvtools::SpirvTools tools(spirv_target);
    tools.SetMessageConsumer(msgconsumer);
+   spvtools::ValidatorOptions spirv_options;
    const uint32_t *data = static_cast<const uint32_t *>(spirv->data);
-   return tools.Validate(data, spirv->size / 4);
+
+   if (options) {
+      spirv_options.SetUniversalLimit(
+         spv_validator_limit_max_function_args,
+         options->limit_max_function_arg);
+   }
+
+   return tools.Validate(data, spirv->size / 4, spirv_options);
 }
 
 int

@@ -71,7 +71,7 @@ void pb_cache_add_buffer(struct pb_cache_entry *entry);
 struct pb_buffer *pb_cache_reclaim_buffer(struct pb_cache *mgr, pb_size size,
                                           unsigned alignment, unsigned usage,
                                           unsigned bucket_index);
-void pb_cache_release_all_buffers(struct pb_cache *mgr);
+unsigned pb_cache_release_all_buffers(struct pb_cache *mgr);
 void pb_cache_init_entry(struct pb_cache *mgr, struct pb_cache_entry *entry,
                          struct pb_buffer *buf, unsigned bucket_index);
 void pb_cache_init(struct pb_cache *mgr, uint num_heaps,

@@ -368,7 +368,7 @@ kernel+rootfs_arm32:
     - .build-rules
   variables:
     FDO_DISTRIBUTION_TAG: "${MESA_IMAGE_TAG}--${MESA_ROOTFS_TAG}--${MESA_TEMPLATES_COMMIT}"
-    ARTIFACTS_PREFIX: "https://${MINIO_HOST}/mesa-lava"
+    ARTIFACTS_PREFIX: "https://${S3_HOST}/mesa-lava"
     ARTIFACTS_SUFFIX: "${MESA_ROOTFS_TAG}--${MESA_ARTIFACTS_TAG}--${MESA_TEMPLATES_COMMIT}"
     MESA_ARTIFACTS_TAG: *debian-arm64_build
     MESA_ROOTFS_TAG: *kernel-rootfs
@@ -437,8 +437,7 @@ debian/arm64_test:
     - .container
     - .windows-docker-vs2019
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-container-rules, rules]
     - !reference [.container-rules, rules]
   variables:
     GIT_STRATEGY: fetch # we do actually need the full repository though
@@ -468,8 +467,7 @@ windows_build_vs2019:
   extends:
     - .windows_container_build
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.build-rules, rules]
   variables:
     MESA_IMAGE_PATH: &windows_build_image_path ${WINDOWS_X64_BUILD_PATH}
@@ -488,8 +486,7 @@ windows_test_vs2019:
   extends:
     - .windows_container_build
   rules:
-    - if: '$MICROSOFT_FARM == "offline"'
-      when: never
+    - !reference [.microsoft-farm-rules, rules]
     - !reference [.build-rules, rules]
   variables:
     MESA_IMAGE_PATH: &windows_test_image_path ${WINDOWS_X64_TEST_PATH}

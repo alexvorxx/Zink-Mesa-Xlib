@@ -32,12 +32,6 @@
 #include "radv_constants.h"
 #include "radv_shader.h"
 
-enum radv_shader_type {
-   RADV_SHADER_TYPE_DEFAULT,
-   RADV_SHADER_TYPE_GS_COPY,
-   RADV_SHADER_TYPE_TRAP_HANDLER,
-};
-
 struct radv_shader_args {
    struct ac_shader_args ac;
 
@@ -85,7 +79,6 @@ struct radv_shader_args {
    bool explicit_scratch_args;
    bool remap_spi_ps_input;
    bool load_grid_size_from_user_sgpr;
-   enum radv_shader_type type;
 };
 
 static inline struct radv_shader_args *
@@ -99,11 +92,9 @@ struct radv_shader_info;
 
 void radv_declare_shader_args(const struct radv_device *device, const struct radv_pipeline_key *key,
                               const struct radv_shader_info *info, gl_shader_stage stage,
-                              gl_shader_stage previous_stage, enum radv_shader_type type,
-                              struct radv_shader_args *args);
+                              gl_shader_stage previous_stage, struct radv_shader_args *args);
 
-void radv_declare_ps_epilog_args(const struct radv_device *device,
-                                 const struct radv_ps_epilog_key *key,
+void radv_declare_ps_epilog_args(const struct radv_device *device, const struct radv_ps_epilog_key *key,
                                  struct radv_shader_args *args);
 
 void radv_declare_rt_shader_args(enum amd_gfx_level gfx_level, struct radv_shader_args *args);

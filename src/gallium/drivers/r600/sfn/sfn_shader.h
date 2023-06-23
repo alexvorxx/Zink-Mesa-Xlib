@@ -227,6 +227,7 @@ public:
       sh_indirect_atomic,
       sh_mem_barrier,
       sh_legacy_math_rules,
+      sh_disble_sb,
       sh_flags_count
    };
 
@@ -314,6 +315,7 @@ private:
    bool emit_control_flow(ControlFlowInstr::CFType type);
    bool emit_store_scratch(nir_intrinsic_instr *intr);
    bool emit_load_scratch(nir_intrinsic_instr *intr);
+   bool emit_load_global(nir_intrinsic_instr *intr);
    bool emit_local_store(nir_intrinsic_instr *intr);
    bool emit_local_load(nir_intrinsic_instr *instr);
    bool emit_load_tcs_param_base(nir_intrinsic_instr *instr, int offset);

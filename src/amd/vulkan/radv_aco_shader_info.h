@@ -31,7 +31,7 @@
 
 #include "aco_shader_info.h"
 
-#define ASSIGN_FIELD(x) aco_info->x = radv->x
+#define ASSIGN_FIELD(x)    aco_info->x = radv->x
 #define ASSIGN_FIELD_CP(x) memcpy(&aco_info->x, &radv->x, sizeof(radv->x))
 
 static inline void radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info,
@@ -40,8 +40,7 @@ static inline void radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco
 
 static inline void
 radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv_shader_info *radv,
-                             const struct radv_shader_args *radv_args,
-                             const struct radv_pipeline_key *radv_key)
+                             const struct radv_shader_args *radv_args, const struct radv_pipeline_key *radv_key)
 {
    ASSIGN_FIELD(wave_size);
    ASSIGN_FIELD(is_ngg);
@@ -61,17 +60,16 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv
    ASSIGN_FIELD(cs.subgroup_size);
    ASSIGN_FIELD(cs.uses_full_subgroups);
    aco_info->gfx9_gs_ring_lds_size = radv->gs_ring_info.lds_size;
-   aco_info->is_trap_handler_shader = radv_args->type == RADV_SHADER_TYPE_TRAP_HANDLER;
+   aco_info->is_trap_handler_shader = radv->type == RADV_SHADER_TYPE_TRAP_HANDLER;
    aco_info->tcs.tess_input_vertices = radv_key->tcs.tess_input_vertices;
    aco_info->image_2d_view_of_3d = radv_key->image_2d_view_of_3d;
    aco_info->ps.epilog_pc = radv_args->ps_epilog_pc;
 }
 
-#define ASSIGN_VS_STATE_FIELD(x) aco_info->state.x = radv->state->x
+#define ASSIGN_VS_STATE_FIELD(x)    aco_info->state.x = radv->state->x
 #define ASSIGN_VS_STATE_FIELD_CP(x) memcpy(&aco_info->state.x, &radv->state->x, sizeof(radv->state->x))
 static inline void
-radv_aco_convert_vs_prolog_key(struct aco_vs_prolog_info *aco_info,
-                               const struct radv_vs_prolog_key *radv,
+radv_aco_convert_vs_prolog_key(struct aco_vs_prolog_info *aco_info, const struct radv_vs_prolog_key *radv,
                                const struct radv_shader_args *radv_args)
 {
    ASSIGN_VS_STATE_FIELD(instance_rate_inputs);
@@ -90,8 +88,7 @@ radv_aco_convert_vs_prolog_key(struct aco_vs_prolog_info *aco_info,
 }
 
 static inline void
-radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info,
-                               const struct radv_ps_epilog_key *radv,
+radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info, const struct radv_ps_epilog_key *radv,
                                const struct radv_shader_args *radv_args)
 {
    ASSIGN_FIELD(spi_shader_col_format);
@@ -104,8 +101,7 @@ radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info,
 }
 
 static inline void
-radv_aco_convert_opts(struct aco_compiler_options *aco_info,
-                      const struct radv_nir_compiler_options *radv,
+radv_aco_convert_opts(struct aco_compiler_options *aco_info, const struct radv_nir_compiler_options *radv,
                       const struct radv_shader_args *radv_args)
 {
    ASSIGN_FIELD(dump_shader);

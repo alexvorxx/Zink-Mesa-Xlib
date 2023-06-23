@@ -21,9 +21,9 @@ static void
 analyze_position_w(nir_builder *b, nir_ssa_def *pos[][4], unsigned num_vertices,
                    position_w_info *w_info)
 {
-   w_info->all_w_negative = nir_imm_bool(b, true);
-   w_info->w_reflection = nir_imm_bool(b, false);
-   w_info->any_w_negative = nir_imm_bool(b, false);
+   w_info->all_w_negative = nir_imm_true(b);
+   w_info->w_reflection = nir_imm_false(b);
+   w_info->any_w_negative = nir_imm_false(b);
 
    for (unsigned i = 0; i < num_vertices; ++i) {
       nir_ssa_def *neg_w = nir_flt_imm(b, pos[i][3], 0.0f);
@@ -46,7 +46,7 @@ cull_face_triangle(nir_builder *b, nir_ssa_def *pos[3][4], const position_w_info
 
    det = nir_bcsel(b, w_info->w_reflection, nir_fneg(b, det), det);
 
-   nir_ssa_def *front_facing_ccw = nir_flt(b, nir_imm_float(b, 0.0f), det);
+   nir_ssa_def *front_facing_ccw = nir_fgt_imm(b, det, 0.0f);
    nir_ssa_def *zero_area = nir_feq_imm(b, det, 0.0f);
    nir_ssa_def *ccw = nir_load_cull_ccw_amd(b);
    nir_ssa_def *front_facing = nir_ieq(b, front_facing_ccw, ccw);
@@ -78,7 +78,7 @@ cull_frustrum(nir_builder *b, nir_ssa_def *bbox_min[2], nir_ssa_def *bbox_max[2]
 
    for (unsigned chan = 0; chan < 2; ++chan) {
       prim_outside_view = nir_ior(b, prim_outside_view, nir_flt_imm(b, bbox_max[chan], -1.0f));
-      prim_outside_view = nir_ior(b, prim_outside_view, nir_flt(b, nir_imm_float(b, 1.0f), bbox_min[chan]));
+      prim_outside_view = nir_ior(b, prim_outside_view, nir_fgt_imm(b, bbox_min[chan], 1.0f));
    }
 
    return prim_outside_view;

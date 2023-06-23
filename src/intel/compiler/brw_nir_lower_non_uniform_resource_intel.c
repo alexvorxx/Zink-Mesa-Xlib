@@ -92,6 +92,7 @@ brw_nir_lower_non_uniform_intrinsic(nir_builder *b,
    case nir_intrinsic_ssbo_atomic_swap:
    case nir_intrinsic_load_ssbo_block_intel:
    case nir_intrinsic_store_ssbo_block_intel:
+   case nir_intrinsic_load_ubo_uniform_block_intel:
    case nir_intrinsic_load_ssbo_uniform_block_intel:
    case nir_intrinsic_image_load_raw_intel:
    case nir_intrinsic_image_store_raw_intel:

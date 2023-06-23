@@ -366,7 +366,7 @@ ptn_lit(nir_builder *b, nir_alu_dest dest, nir_ssa_def **src)
                                   wclamp);
 
       nir_ssa_def *z = nir_bcsel(b,
-                                 nir_fge(b, nir_imm_float(b, 0.0), ptn_channel(b, src[0], X)),
+                                 nir_fle_imm(b, ptn_channel(b, src[0], X), 0.0),
                                  nir_imm_float(b, 0.0),
                                  pow);
 

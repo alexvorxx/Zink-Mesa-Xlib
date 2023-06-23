@@ -112,24 +112,20 @@
 #ifndef SI_SHADER_H
 #define SI_SHADER_H
 
+#include "shader_info.h"
 #include "ac_binary.h"
-#include "ac_llvm_build.h"
-#include "ac_llvm_util.h"
-#include "util/simple_mtx.h"
-#include "util/u_inlines.h"
+#include "ac_gpu_info.h"
 #include "util/u_live_shader_cache.h"
 #include "util/u_queue.h"
 #include "si_pm4.h"
-
-#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct nir_shader;
-struct si_shader;
-struct si_context;
+struct nir_instr;
+struct nir_lower_subgroups_options;
 
 #define SI_MAX_ATTRIBS    16
 #define SI_MAX_VS_OUTPUTS 40
@@ -169,15 +165,13 @@ enum
 
    /* GFX6-8: TCS only */
    GFX6_SGPR_TCS_OFFCHIP_LAYOUT = SI_NUM_RESOURCE_SGPRS,
-   GFX6_SGPR_TCS_OUT_OFFSETS,
-   GFX6_SGPR_TCS_OUT_LAYOUT,
+   GFX6_SGPR_TCS_OFFCHIP_ADDR,
    GFX6_SGPR_TCS_IN_LAYOUT,
    GFX6_TCS_NUM_USER_SGPR,
 
    /* GFX9: Merged LS-HS (VS-TCS) only. */
    GFX9_SGPR_TCS_OFFCHIP_LAYOUT = SI_VS_NUM_USER_SGPR,
-   GFX9_SGPR_TCS_OUT_OFFSETS,
-   GFX9_SGPR_TCS_OUT_LAYOUT,
+   GFX9_SGPR_TCS_OFFCHIP_ADDR,
    GFX9_TCS_NUM_USER_SGPR,
 
    /* GS limits */
@@ -238,8 +232,16 @@ enum
  * in the shader via vs_state_bits in LS/HS.
  */
 /* bit gap */
-#define VS_STATE_LS_OUT_VERTEX_SIZE__SHIFT   24
-#define VS_STATE_LS_OUT_VERTEX_SIZE__MASK    0xff /* max 32 * 4 + 1 (to reduce LDS bank conflicts) */
+/* TCS output patch0 offset for per-patch outputs / 4
+ * - 64 outputs are implied by SI_UNIQUE_SLOT_* values.
+ * - max = 32(CPs) * 64(outputs) * 16(vec4) * 64(num_patches) * 2(inputs + outputs) / 4
+ *       = 1M, clamped to 32K(LDS limit) / 4 = 8K
+ * - only used by si_llvm_tcs_build_end, it can be removed after NIR lowering replaces it
+ */
+#define VS_STATE_TCS_OUT_PATCH0_OFFSET__SHIFT   10
+#define VS_STATE_TCS_OUT_PATCH0_OFFSET__MASK    0x3fff
+#define VS_STATE_LS_OUT_VERTEX_SIZE__SHIFT      24
+#define VS_STATE_LS_OUT_VERTEX_SIZE__MASK       0xff /* max 32 * 4 + 1 (to reduce LDS bank conflicts) */
 
 /* These fields are only set in current_gs_state in si_context, and they are accessible
  * in the shader via vs_state_bits in legacy GS, the GS copy shader, and any NGG shader.
@@ -997,7 +999,7 @@ struct si_shader_part {
 /* si_shader.c */
 struct ac_rtld_binary;
 
-void si_update_shader_binary_info(struct si_shader *shader, nir_shader *nir);
+void si_update_shader_binary_info(struct si_shader *shader, struct nir_shader *nir);
 bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
                        struct si_shader *shader, struct util_debug_callback *debug);
 bool si_create_shader_variant(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
@@ -1028,11 +1030,11 @@ void si_nir_scan_shader(struct si_screen *sscreen,  const struct nir_shader *nir
                         struct si_shader_info *info);
 
 /* si_shader_nir.c */
-extern const nir_lower_subgroups_options si_nir_subgroups_options;
+extern const struct nir_lower_subgroups_options si_nir_subgroups_options;
 
-bool si_alu_to_scalar_packed_math_filter(const nir_instr *instr, const void *data);
+bool si_alu_to_scalar_packed_math_filter(const struct nir_instr *instr, const void *data);
 void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first);
-void si_nir_late_opts(nir_shader *nir);
+void si_nir_late_opts(struct nir_shader *nir);
 char *si_finalize_nir(struct pipe_screen *screen, void *nirptr);
 
 /* si_state_shaders.cpp */
