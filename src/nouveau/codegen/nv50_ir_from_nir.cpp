@@ -2279,6 +2279,7 @@ Converter::visit(nir_intrinsic_instr *insn)
          Instruction *bar = mkOp2(OP_BAR, TYPE_U32, NULL, mkImm(0), mkImm(0));
          bar->fixed = 1;
          bar->subOp = NV50_IR_SUBOP_BAR_SYNC;
+         info_out->numBarriers = 1;
       }
 
       break;

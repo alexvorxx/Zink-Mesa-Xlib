@@ -93,9 +93,11 @@ radv_get_sequence_size(const struct radv_indirect_command_layout *layout, const 
 }
 
 static uint32_t
-radv_align_cmdbuf_size(uint32_t size)
+radv_align_cmdbuf_size(const struct radv_device *device, uint32_t size)
 {
-   return align(MAX2(1, size), 256);
+   const uint32_t ib_pad_dw_mask = device->physical_device->rad_info.ib_pad_dw_mask[AMD_IP_GFX];
+
+   return align(size, ib_pad_dw_mask + 1);
 }
 
 uint32_t
@@ -103,11 +105,12 @@ radv_get_indirect_cmdbuf_size(const VkGeneratedCommandsInfoNV *cmd_info)
 {
    VK_FROM_HANDLE(radv_indirect_command_layout, layout, cmd_info->indirectCommandsLayout);
    VK_FROM_HANDLE(radv_pipeline, pipeline, cmd_info->pipeline);
+   const struct radv_device *device = container_of(layout->base.device, struct radv_device, vk);
    struct radv_graphics_pipeline *graphics_pipeline = radv_pipeline_to_graphics(pipeline);
 
    uint32_t cmd_size, upload_size;
    radv_get_sequence_size(layout, graphics_pipeline, &cmd_size, &upload_size);
-   return radv_align_cmdbuf_size(cmd_size * cmd_info->sequencesCount);
+   return radv_align_cmdbuf_size(device, cmd_size * cmd_info->sequencesCount);
 }
 
 struct radv_dgc_params {
@@ -1085,11 +1088,11 @@ radv_GetGeneratedCommandsMemoryRequirementsNV(VkDevice _device,
    uint32_t cmd_stride, upload_stride;
    radv_get_sequence_size(layout, graphics_pipeline, &cmd_stride, &upload_stride);
 
-   VkDeviceSize cmd_buf_size = radv_align_cmdbuf_size(cmd_stride * pInfo->maxSequencesCount);
+   VkDeviceSize cmd_buf_size = radv_align_cmdbuf_size(device, cmd_stride * pInfo->maxSequencesCount);
    VkDeviceSize upload_buf_size = upload_stride * pInfo->maxSequencesCount;
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits = device->physical_device->memory_types_32bit;
-   pMemoryRequirements->memoryRequirements.alignment = 256;
+   pMemoryRequirements->memoryRequirements.alignment = device->physical_device->rad_info.ib_alignment;
    pMemoryRequirements->memoryRequirements.size =
       align(cmd_buf_size + upload_buf_size, pMemoryRequirements->memoryRequirements.alignment);
 }
@@ -1117,7 +1120,8 @@ radv_prepare_dgc(struct radv_cmd_buffer *cmd_buffer, const VkGeneratedCommandsIn
    uint32_t cmd_stride, upload_stride;
    radv_get_sequence_size(layout, graphics_pipeline, &cmd_stride, &upload_stride);
 
-   unsigned cmd_buf_size = radv_align_cmdbuf_size(cmd_stride * pGeneratedCommandsInfo->sequencesCount);
+   unsigned cmd_buf_size =
+      radv_align_cmdbuf_size(cmd_buffer->device, cmd_stride * pGeneratedCommandsInfo->sequencesCount);
 
    unsigned vb_size = layout->bind_vbo_mask ? util_bitcount(vs->info.vs.vb_desc_usage_mask) * 24 : 0;
    unsigned const_size = graphics_pipeline->base.push_constant_size +

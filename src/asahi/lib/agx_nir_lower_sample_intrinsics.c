@@ -102,9 +102,9 @@ lower_to_sample(nir_builder *b, nir_instr *instr, void *_)
  * The load_sample_id intrinsics themselves are lowered later, with different
  * lowerings for monolithic vs epilogs.
  *
- * Note that fragment I/O (like store_local_pixel_agx and sample_mask_agx) does
- * not get lowered here, because that lowering is different for monolithic vs
- * FS epilogs even though there's no dependency on sample count.
+ * Note that fragment I/O (like store_local_pixel_agx and discard_agx) does not
+ * get lowered here, because that lowering is different for monolithic vs FS
+ * epilogs even though there's no dependency on sample count.
  */
 bool
 agx_nir_lower_sample_intrinsics(nir_shader *shader)

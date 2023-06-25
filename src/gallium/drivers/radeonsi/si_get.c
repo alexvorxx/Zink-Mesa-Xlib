@@ -571,6 +571,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
 {
    struct si_screen *sscreen = (struct si_screen *)screen;
    enum pipe_video_format codec = u_reduce_video_profile(profile);
+   bool fully_supported_profile = ((profile >= PIPE_VIDEO_PROFILE_MPEG4_AVC_BASELINE) &&
+                                   (profile <= PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH)) ||
+                                  (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN);
 
    if (entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
       if (!(sscreen->info.ip[AMD_IP_VCE].num_queues ||
@@ -585,8 +588,8 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       case PIPE_VIDEO_CAP_SUPPORTED:
          return (
              /* in case it is explicitly marked as not supported by the kernel */
-            (QUERYABLE_KERNEL ? KERNEL_ENC_CAP(codec, valid) : 1) &&
-            ((codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
+            ((QUERYABLE_KERNEL && fully_supported_profile) ? KERNEL_ENC_CAP(codec, valid) : 1) &&
+            ((codec == PIPE_VIDEO_FORMAT_MPEG4_AVC && profile != PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH10 &&
              (sscreen->info.vcn_ip_version >= VCN_1_0_0 || si_vce_is_fw_version_supported(sscreen))) ||
             (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN &&
              (sscreen->info.vcn_ip_version >= VCN_1_0_0 || si_radeon_uvd_enc_supported(sscreen))) ||
@@ -760,7 +763,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
 	      sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues :
 	      sscreen->info.ip[AMD_IP_VCN_DEC].num_queues)))
          return false;
-      if (QUERYABLE_KERNEL &&
+      if (QUERYABLE_KERNEL && fully_supported_profile &&
           sscreen->info.vcn_ip_version >= VCN_1_0_0)
          return KERNEL_DEC_CAP(codec, valid);
       if (codec < PIPE_VIDEO_FORMAT_MPEG4_AVC &&
@@ -778,7 +781,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             RVID_ERR("POLARIS10/11 firmware version need to be updated.\n");
             return false;
          }
-         return true;
+         return (profile != PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH10);
       case PIPE_VIDEO_FORMAT_VC1:
          return !(sscreen->info.vcn_ip_version >= VCN_3_0_33);
       case PIPE_VIDEO_FORMAT_HEVC:

@@ -32,6 +32,7 @@
 #include "util/compiler.h"
 
 #include "ac_binary.h"
+#include "ac_shader_util.h"
 #include "amd_family.h"
 #include <algorithm>
 #include <bitset>
@@ -2004,31 +2005,13 @@ operator|(SWStage a, SWStage b)
 }
 
 /*
- * Shader stages as running on the AMD GPU.
- *
- * The relation between HWStages and SWStages is not a one-to-one mapping:
- * Some SWStages are merged by ACO to run on a single HWStage.
- * See README.md for details.
- */
-enum class HWStage : uint8_t {
-   VS,
-   ES, /* Export shader: pre-GS (VS or TES) on GFX6-8. Combined into GS on GFX9 (and GFX10/legacy). */
-   GS,  /* Geometry shader on GFX10/legacy and GFX6-9. */
-   NGG, /* Primitive shader, used to implement VS, TES, GS. */
-   LS,  /* Local shader: pre-TCS (VS) on GFX6-8. Combined into HS on GFX9 (and GFX10/legacy). */
-   HS,  /* Hull shader: TCS on GFX6-8. Merged VS and TCS on GFX9-10. */
-   FS,
-   CS,
-};
-
-/*
  * Set of SWStages to be merged into a single shader paired with the
  * HWStage it will run on.
  */
 struct Stage {
    constexpr Stage() = default;
 
-   explicit constexpr Stage(HWStage hw_, SWStage sw_) : sw(sw_), hw(hw_) {}
+   explicit constexpr Stage(ac_hw_stage hw_, SWStage sw_) : sw(sw_), hw(hw_) {}
 
    /* Check if the given SWStage is included */
    constexpr bool has(SWStage stage) const
@@ -2046,35 +2029,36 @@ struct Stage {
    SWStage sw = SWStage::None;
 
    /* Active hardware stage */
-   HWStage hw{};
+   ac_hw_stage hw{};
 };
 
 /* possible settings of Program::stage */
-static constexpr Stage vertex_vs(HWStage::VS, SWStage::VS);
-static constexpr Stage fragment_fs(HWStage::FS, SWStage::FS);
-static constexpr Stage compute_cs(HWStage::CS, SWStage::CS);
-static constexpr Stage tess_eval_vs(HWStage::VS, SWStage::TES);
+static constexpr Stage vertex_vs(AC_HW_VERTEX_SHADER, SWStage::VS);
+static constexpr Stage fragment_fs(AC_HW_PIXEL_SHADER, SWStage::FS);
+static constexpr Stage compute_cs(AC_HW_COMPUTE_SHADER, SWStage::CS);
+static constexpr Stage tess_eval_vs(AC_HW_VERTEX_SHADER, SWStage::TES);
 /* Mesh shading pipeline */
-static constexpr Stage task_cs(HWStage::CS, SWStage::TS);
-static constexpr Stage mesh_ngg(HWStage::NGG, SWStage::MS);
+static constexpr Stage task_cs(AC_HW_COMPUTE_SHADER, SWStage::TS);
+static constexpr Stage mesh_ngg(AC_HW_NEXT_GEN_GEOMETRY_SHADER, SWStage::MS);
 /* GFX10/NGG */
-static constexpr Stage vertex_ngg(HWStage::NGG, SWStage::VS);
-static constexpr Stage vertex_geometry_ngg(HWStage::NGG, SWStage::VS_GS);
-static constexpr Stage tess_eval_ngg(HWStage::NGG, SWStage::TES);
-static constexpr Stage tess_eval_geometry_ngg(HWStage::NGG, SWStage::TES_GS);
+static constexpr Stage vertex_ngg(AC_HW_NEXT_GEN_GEOMETRY_SHADER, SWStage::VS);
+static constexpr Stage vertex_geometry_ngg(AC_HW_NEXT_GEN_GEOMETRY_SHADER, SWStage::VS_GS);
+static constexpr Stage tess_eval_ngg(AC_HW_NEXT_GEN_GEOMETRY_SHADER, SWStage::TES);
+static constexpr Stage tess_eval_geometry_ngg(AC_HW_NEXT_GEN_GEOMETRY_SHADER, SWStage::TES_GS);
 /* GFX9 (and GFX10 if NGG isn't used) */
-static constexpr Stage vertex_geometry_gs(HWStage::GS, SWStage::VS_GS);
-static constexpr Stage vertex_tess_control_hs(HWStage::HS, SWStage::VS_TCS);
-static constexpr Stage tess_eval_geometry_gs(HWStage::GS, SWStage::TES_GS);
+static constexpr Stage vertex_geometry_gs(AC_HW_LEGACY_GEOMETRY_SHADER, SWStage::VS_GS);
+static constexpr Stage vertex_tess_control_hs(AC_HW_HULL_SHADER, SWStage::VS_TCS);
+static constexpr Stage tess_eval_geometry_gs(AC_HW_LEGACY_GEOMETRY_SHADER, SWStage::TES_GS);
 /* pre-GFX9 */
-static constexpr Stage vertex_ls(HWStage::LS, SWStage::VS); /* vertex before tessellation control */
-static constexpr Stage vertex_es(HWStage::ES, SWStage::VS); /* vertex before geometry */
-static constexpr Stage tess_control_hs(HWStage::HS, SWStage::TCS);
-static constexpr Stage tess_eval_es(HWStage::ES,
+static constexpr Stage vertex_ls(AC_HW_LOCAL_SHADER,
+                                 SWStage::VS); /* vertex before tessellation control */
+static constexpr Stage vertex_es(AC_HW_EXPORT_SHADER, SWStage::VS); /* vertex before geometry */
+static constexpr Stage tess_control_hs(AC_HW_HULL_SHADER, SWStage::TCS);
+static constexpr Stage tess_eval_es(AC_HW_EXPORT_SHADER,
                                     SWStage::TES); /* tessellation evaluation before geometry */
-static constexpr Stage geometry_gs(HWStage::GS, SWStage::GS);
+static constexpr Stage geometry_gs(AC_HW_LEGACY_GEOMETRY_SHADER, SWStage::GS);
 /* Raytracing */
-static constexpr Stage raytracing_cs(HWStage::CS, SWStage::RT);
+static constexpr Stage raytracing_cs(AC_HW_COMPUTE_SHADER, SWStage::RT);
 
 struct DeviceInfo {
    uint16_t lds_encoding_granule;

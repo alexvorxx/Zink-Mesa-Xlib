@@ -194,8 +194,7 @@ dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func)
 
    *patch_const_func = nir_function_create(nir, "PatchConstantFunc");
    nir_function_impl *patch_const_func_impl = nir_function_impl_clone(nir, entrypoint);
-   (*patch_const_func)->impl = patch_const_func_impl;
-   patch_const_func_impl->function = *patch_const_func;
+   nir_function_set_impl(*patch_const_func, patch_const_func_impl);
 
    remove_hs_intrinsics(entrypoint);
    prune_patch_function_to_intrinsic_and_srcs(patch_const_func_impl);

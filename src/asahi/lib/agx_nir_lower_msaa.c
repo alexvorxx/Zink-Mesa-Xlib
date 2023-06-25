@@ -31,7 +31,7 @@ lower_wrapped(nir_builder *b, nir_instr *instr, void *data)
    case nir_intrinsic_load_local_pixel_agx:
    case nir_intrinsic_store_local_pixel_agx:
    case nir_intrinsic_store_zs_agx:
-   case nir_intrinsic_sample_mask_agx: {
+   case nir_intrinsic_discard_agx: {
       /* Fragment I/O inside the loop should only affect one sample. */
       unsigned mask_index =
          (intr->intrinsic == nir_intrinsic_store_local_pixel_agx) ? 1 : 0;
@@ -110,26 +110,17 @@ lower_sample_mask_write(nir_builder *b, nir_instr *instr, void *data)
 
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
    b->cursor = nir_before_instr(instr);
-
-   nir_ssa_def *mask;
-   if (intr->intrinsic == nir_intrinsic_sample_mask_agx) {
-      /* For alpha-to-coverage */
-      assert(nir_src_as_uint(intr->src[0]) == ALL_SAMPLES && "not wrapped");
-      mask = intr->src[1].ssa;
-   } else if (intr->intrinsic == nir_intrinsic_store_output) {
-      nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
-      if (sem.location != FRAG_RESULT_SAMPLE_MASK)
-         return false;
-
-      /* Sample mask writes are ignored unless multisampling is used. */
-      if (state->nr_samples == 1) {
-         nir_instr_remove(instr);
-         return true;
-      }
-
-      mask = nir_u2u16(b, intr->src[0].ssa);
-   } else {
+   if (intr->intrinsic != nir_intrinsic_store_output)
       return false;
+
+   nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
+   if (sem.location != FRAG_RESULT_SAMPLE_MASK)
+      return false;
+
+   /* Sample mask writes are ignored unless multisampling is used. */
+   if (state->nr_samples == 1) {
+      nir_instr_remove(instr);
+      return true;
    }
 
    /* The Vulkan spec says:
@@ -139,13 +130,9 @@ lower_sample_mask_write(nir_builder *b, nir_instr *instr, void *data)
     *    shader invocation are ignored.
     *
     * That will be satisfied by outputting gl_SampleMask for the whole pixel
-    * and then lowering sample shading after (splitting up sample_mask
-    * targets).
+    * and then lowering sample shading after (splitting up discard targets).
     */
-   if (state->api_sample_mask)
-      mask = nir_iand(b, mask, nir_load_api_sample_mask_agx(b));
-
-   nir_sample_mask_agx(b, nir_imm_intN_t(b, ALL_SAMPLES, 16), mask);
+   nir_discard_agx(b, nir_inot(b, nir_u2u16(b, intr->src[0].ssa)));
    nir_instr_remove(instr);
    return true;
 }
@@ -179,20 +166,14 @@ lower_sample_mask_read(nir_builder *b, nir_instr *instr, UNUSED void *_)
 static void
 insert_sample_mask_write(nir_shader *s)
 {
-   /* nir_lower_io_to_temporaries ensures that stores are in the last block */
-   nir_function_impl *impl = nir_shader_get_entrypoint(s);
-
    nir_builder b;
+   nir_function_impl *impl = nir_shader_get_entrypoint(s);
    nir_builder_init(&b, impl);
    b.cursor = nir_before_block(nir_start_block(impl));
 
-   /* Load the desired API sample mask */
-   nir_ssa_def *api_sample_mask = nir_load_api_sample_mask_agx(&b);
-
-   /* Kill samples that are not covered by the mask using the AGX instruction */
-   nir_ssa_def *all_samples = nir_imm_intN_t(&b, ALL_SAMPLES, 16);
-   nir_sample_mask_agx(&b, all_samples, api_sample_mask);
-   s->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
+   /* Kill samples that are NOT covered by the mask */
+   nir_discard_agx(&b, nir_inot(&b, nir_load_api_sample_mask_agx(&b)));
+   s->info.fs.uses_discard = true;
 }
 
 /*
@@ -207,19 +188,16 @@ agx_nir_lower_monolithic_msaa(nir_shader *shader, struct agx_msaa_state *state)
    assert(state->nr_samples == 1 || state->nr_samples == 2 ||
           state->nr_samples == 4);
 
+   /* Lower gl_SampleMask writes */
    if (shader->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)) {
-      /* Sample mask writes need to be lowered. This includes an API sample mask
-       * lowering.
-       */
       nir_shader_instructions_pass(
          shader, lower_sample_mask_write,
          nir_metadata_block_index | nir_metadata_dominance, state);
-   } else if ((state->nr_samples > 1) && state->api_sample_mask) {
-      /* If there's no sample mask write, we need to add one of our own for the
-       * API-level sample masking to work.
-       */
-      insert_sample_mask_write(shader);
    }
+
+   /* Lower API sample masks */
+   if ((state->nr_samples > 1) && state->api_sample_mask)
+      insert_sample_mask_write(shader);
 
    /* Additional, sample_mask_in needs to account for the API-level mask */
    nir_shader_instructions_pass(

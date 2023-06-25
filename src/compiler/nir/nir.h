@@ -3402,6 +3402,9 @@ typedef struct nir_function {
    /** The implementation of this function.
     *
     * If the function is only declared and not implemented, this is NULL.
+    *
+    * Unless setting to NULL or NIR_SERIALIZE_FUNC_HAS_IMPL, set with
+    * nir_function_set_impl to maintain IR invariants.
     */
    nir_function_impl *impl;
 
@@ -4089,6 +4092,13 @@ void nir_sort_variables_with_modes(nir_shader *shader,
 
 /** creates a function and adds it to the shader's list of functions */
 nir_function *nir_function_create(nir_shader *shader, const char *name);
+
+static inline void
+nir_function_set_impl(nir_function *func, nir_function_impl *impl)
+{
+   func->impl = impl;
+   impl->function = func;
+}
 
 nir_function_impl *nir_function_impl_create(nir_function *func);
 /** creates a function_impl that isn't tied to any particular function */

@@ -355,8 +355,18 @@ typedef struct agx_block {
    BITSET_WORD *live_in;
    BITSET_WORD *live_out;
 
+   /* For visited blocks during register assignment and live-out registers, the
+    * mapping of SSA names to registers at the end of the block.
+    */
+   uint8_t *ssa_to_reg_out;
+
    /* Register allocation */
    BITSET_DECLARE(regs_out, AGX_NUM_REGS);
+
+   /* Is this block a loop header? If not, all of its predecessors precede it in
+    * source order.
+    */
+   bool loop_header;
 
    /* Offset of the block in the emitted binary */
    off_t offset;

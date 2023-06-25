@@ -652,7 +652,7 @@ radv_begin_sqtt(struct radv_queue *queue)
    if (!cs)
       return false;
 
-   radeon_check_space(ws, cs, 256);
+   radeon_check_space(ws, cs, 512);
 
    switch (family) {
    case RADV_QUEUE_GENERAL:
@@ -723,7 +723,7 @@ radv_end_sqtt(struct radv_queue *queue)
    if (!cs)
       return false;
 
-   radeon_check_space(ws, cs, 256);
+   radeon_check_space(ws, cs, 512);
 
    switch (family) {
    case RADV_QUEUE_GENERAL:

@@ -36,7 +36,6 @@ def generate_lava_yaml_payload(args) -> dict[str, Any]:
             "docker": {
                 "image": "registry.gitlab.collabora.com/lava/health-check-docker",
                 "steps": [
-                    "gzip Image",
                     f"cat Image.gz {args.dtb_filename}.dtb > Image.gz+dtb",
                     "mkbootimg --kernel Image.gz+dtb"
                     + ' --cmdline "root=/dev/nfs rw nfsroot=$NFS_SERVER_IP:$NFS_ROOTFS,tcp,hard rootwait ip=dhcp init=/init"'

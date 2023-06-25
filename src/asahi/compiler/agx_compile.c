@@ -30,6 +30,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"noopt",     AGX_DBG_NOOPT,     "Disable backend optimizations"},
    {"wait",      AGX_DBG_WAIT,      "Wait after all async instructions"},
    {"nopreamble",AGX_DBG_NOPREAMBLE,"Do not use shader preambles"},
+   {"demand",    AGX_DBG_DEMAND,    "Bound tightly to register demand"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -205,6 +206,18 @@ static agx_index
 agx_vec2(agx_builder *b, agx_index s0, agx_index s1)
 {
    return agx_emit_collect(b, 2, (agx_index[]){s0, s1});
+}
+
+static agx_index
+agx_recollect_vector(agx_builder *b, nir_src vec)
+{
+   agx_index comps[4];
+   unsigned nr = nir_src_num_components(vec);
+
+   for (unsigned i = 0; i < nr; ++i)
+      comps[i] = agx_extract_nir_src(b, vec, i);
+
+   return agx_emit_collect(b, nr, comps);
 }
 
 /*
@@ -540,7 +553,6 @@ agx_emit_load(agx_builder *b, agx_index dest, nir_intrinsic_instr *instr)
 static void
 agx_emit_store(agx_builder *b, nir_intrinsic_instr *instr)
 {
-   agx_index value = agx_src_index(&instr->src[0]);
    agx_index addr = agx_src_index(&instr->src[1]);
    agx_index offset = agx_src_index(&instr->src[2]);
    enum agx_format fmt = agx_format_for_pipe(nir_intrinsic_format(instr));
@@ -550,9 +562,9 @@ agx_emit_store(agx_builder *b, nir_intrinsic_instr *instr)
    if (!nir_intrinsic_sign_extend(instr))
       offset = agx_abs(offset);
 
-   agx_device_store(b, value, addr, offset, fmt,
-                    BITFIELD_MASK(nir_src_num_components(instr->src[0])), shift,
-                    0);
+   agx_device_store(b, agx_recollect_vector(b, instr->src[0]), addr, offset,
+                    fmt, BITFIELD_MASK(nir_src_num_components(instr->src[0])),
+                    shift, 0);
 }
 
 /* Preambles write directly to uniform registers, so move from uniform to GPR */
@@ -1727,6 +1739,7 @@ emit_loop(agx_context *ctx, nir_loop *nloop)
 
    /* Emit the body */
    ctx->after_block = ctx->continue_block;
+   ctx->after_block->loop_header = true;
    agx_block *start_block = emit_cf_list(ctx, &nloop->body);
 
    /* Fix up the nesting counter via an always true while_icmp, and branch back

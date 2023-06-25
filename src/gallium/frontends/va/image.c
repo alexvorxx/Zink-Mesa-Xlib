@@ -575,7 +575,7 @@ vlVaGetImage(VADriverContextP ctx, VASurfaceID surface, int x, int y,
       return VA_STATUS_ERROR_OPERATION_FAILED;
    }
 
-   for (i = 0; i < vaimage->num_planes; i++) {
+   for (i = 0; i < MIN2(vaimage->num_planes, 3); i++) {
       data[i] = ((uint8_t*)img_buf->data) + vaimage->offsets[i];
       pitches[i] = vaimage->pitches[i];
    }
@@ -709,7 +709,7 @@ vlVaPutImage(VADriverContextP ctx, VASurfaceID surface, VAImageID image,
       return VA_STATUS_ERROR_OPERATION_FAILED;
    }
 
-   for (i = 0; i < vaimage->num_planes; i++) {
+   for (i = 0; i < MIN2(vaimage->num_planes, 3); i++) {
       data[i] = ((uint8_t*)img_buf->data) + vaimage->offsets[i];
       pitches[i] = vaimage->pitches[i];
    }

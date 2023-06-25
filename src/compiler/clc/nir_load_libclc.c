@@ -276,8 +276,7 @@ libclc_add_generic_variants(nir_shader *shader)
       for (unsigned i = 0; i < gfunc->num_params; i++)
          gfunc->params[i] = func->params[i];
 
-      gfunc->impl = nir_function_impl_clone(shader, func->impl);
-      gfunc->impl->function = gfunc;
+      nir_function_set_impl(gfunc, nir_function_impl_clone(shader, func->impl));
 
       /* Rewrite any global pointers to generic */
       nir_foreach_block(block, gfunc->impl) {

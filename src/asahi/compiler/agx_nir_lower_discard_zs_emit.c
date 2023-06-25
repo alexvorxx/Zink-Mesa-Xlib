@@ -6,6 +6,7 @@
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
 #include "agx_compiler.h"
+#include "nir_builder_opcodes.h"
 
 #define ALL_SAMPLES 0xFF
 #define BASE_Z      1
@@ -86,15 +87,13 @@ lower_discard(nir_builder *b, nir_instr *instr, UNUSED void *data)
 
    nir_ssa_def *all_samples = nir_imm_intN_t(b, ALL_SAMPLES, 16);
    nir_ssa_def *no_samples = nir_imm_intN_t(b, 0, 16);
+   nir_ssa_def *killed_samples = all_samples;
 
    if (intr->intrinsic == nir_intrinsic_discard_if)
-      no_samples = nir_bcsel(b, intr->src[0].ssa, no_samples, all_samples);
+      killed_samples = nir_bcsel(b, intr->src[0].ssa, all_samples, no_samples);
 
-   /* This will get lowered later to zs_emit if needed */
-   nir_sample_mask_agx(b, all_samples, no_samples);
-   b->shader->info.fs.uses_discard = false;
-   b->shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
-
+   /* This will get lowered later as needed */
+   nir_discard_agx(b, killed_samples);
    nir_instr_remove(instr);
    return true;
 }

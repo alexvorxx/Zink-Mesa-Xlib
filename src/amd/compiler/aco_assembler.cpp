@@ -994,7 +994,8 @@ fix_exports(asm_context& ctx, std::vector<uint32_t>& out, Program* program)
       while (it != block.instructions.rend()) {
          if ((*it)->isEXP()) {
             Export_instruction& exp = (*it)->exp();
-            if (program->stage.hw == HWStage::VS || program->stage.hw == HWStage::NGG) {
+            if (program->stage.hw == AC_HW_VERTEX_SHADER ||
+                program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
                if (exp.dest >= V_008DFC_SQ_EXP_POS && exp.dest <= (V_008DFC_SQ_EXP_POS + 3)) {
                   exp.done = true;
                   exported = true;
@@ -1014,19 +1015,19 @@ fix_exports(asm_context& ctx, std::vector<uint32_t>& out, Program* program)
             /* Do not abort if the main FS has an epilog because it only
              * exports MRTZ (if present) and the epilog exports colors.
              */
-            exported |= program->stage.hw == HWStage::FS && program->info.ps.has_epilog;
+            exported |= program->stage.hw == AC_HW_PIXEL_SHADER && program->info.ps.has_epilog;
          }
          ++it;
       }
    }
 
    /* GFX10+ FS may not export anything if no discard is used. */
-   bool may_skip_export = program->stage.hw == HWStage::FS && program->gfx_level >= GFX10;
+   bool may_skip_export = program->stage.hw == AC_HW_PIXEL_SHADER && program->gfx_level >= GFX10;
 
    if (!exported && !may_skip_export) {
       /* Abort in order to avoid a GPU hang. */
-      bool is_vertex_or_ngg =
-         (program->stage.hw == HWStage::VS || program->stage.hw == HWStage::NGG);
+      bool is_vertex_or_ngg = (program->stage.hw == AC_HW_VERTEX_SHADER ||
+                               program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER);
       aco_err(program,
               "Missing export in %s shader:", is_vertex_or_ngg ? "vertex or NGG" : "fragment");
       aco_print_program(program, stderr);
@@ -1221,8 +1222,8 @@ emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct a
 {
    asm_context ctx(program, symbols);
 
-   if (program->stage.hw == HWStage::VS || program->stage.hw == HWStage::FS ||
-       program->stage.hw == HWStage::NGG)
+   if (program->stage.hw == AC_HW_VERTEX_SHADER || program->stage.hw == AC_HW_PIXEL_SHADER ||
+       program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER)
       fix_exports(ctx, code, program);
 
    for (Block& block : program->blocks) {

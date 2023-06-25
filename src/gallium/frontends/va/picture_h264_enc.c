@@ -51,6 +51,9 @@ vlVaHandleVAEncPictureParameterBufferTypeH264(vlVaDriver *drv, vlVaContext *cont
    context->desc.h264enc.p_remain = context->desc.h264enc.gop_size - context->desc.h264enc.gop_cnt - context->desc.h264enc.i_remain;
 
    coded_buf = handle_table_get(drv->htab, h264->coded_buf);
+   if (!coded_buf)
+      return VA_STATUS_ERROR_INVALID_BUFFER;
+
    if (!coded_buf->derived_surface.resource)
       coded_buf->derived_surface.resource = pipe_buffer_create(drv->pipe->screen, PIPE_BIND_VERTEX_BUFFER,
                                             PIPE_USAGE_STAGING, coded_buf->size);

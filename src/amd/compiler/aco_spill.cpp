@@ -1431,7 +1431,7 @@ load_scratch_resource(spill_ctx& ctx, Temp& scratch_offset, Block& block,
          bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_hi));
       private_segment_buffer =
          bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
-   } else if (ctx.program->stage.hw != HWStage::CS) {
+   } else if (ctx.program->stage.hw != AC_HW_COMPUTE_SHADER) {
       private_segment_buffer =
          bld.smem(aco_opcode::s_load_dwordx2, bld.def(s2), private_segment_buffer, Operand::zero());
    }

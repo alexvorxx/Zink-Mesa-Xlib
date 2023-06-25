@@ -7239,10 +7239,11 @@ emit_scoped_barrier(isel_context* ctx, nir_intrinsic_instr* instr)
     * - when GS is used on GFX9+, VS->GS and TES->GS I/O is lowered to shared memory
     * - additionally, when NGG is used on GFX10+, shared memory is used for certain features
     */
-   bool shared_storage_used = ctx->stage.hw == HWStage::CS || ctx->stage.hw == HWStage::LS ||
-                              ctx->stage.hw == HWStage::HS ||
-                              (ctx->stage.hw == HWStage::GS && ctx->program->gfx_level >= GFX9) ||
-                              ctx->stage.hw == HWStage::NGG;
+   bool shared_storage_used =
+      ctx->stage.hw == AC_HW_COMPUTE_SHADER || ctx->stage.hw == AC_HW_LOCAL_SHADER ||
+      ctx->stage.hw == AC_HW_HULL_SHADER ||
+      (ctx->stage.hw == AC_HW_LEGACY_GEOMETRY_SHADER && ctx->program->gfx_level >= GFX9) ||
+      ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER;
 
    if (shared_storage_used)
       storage_allowed |= storage_shared;
@@ -7252,15 +7253,16 @@ emit_scoped_barrier(isel_context* ctx, nir_intrinsic_instr* instr)
       storage_allowed |= storage_task_payload;
 
    /* Allow VMEM output for all stages that can have outputs. */
-   if ((ctx->stage.hw != HWStage::CS && ctx->stage.hw != HWStage::FS) ||
+   if ((ctx->stage.hw != AC_HW_COMPUTE_SHADER && ctx->stage.hw != AC_HW_PIXEL_SHADER) ||
        ctx->stage.has(SWStage::TS))
       storage_allowed |= storage_vmem_output;
 
    /* Workgroup barriers can hang merged shaders that can potentially have 0 threads in either half.
     * They are allowed in CS, TCS, and in any NGG shader.
     */
-   ASSERTED bool workgroup_scope_allowed =
-      ctx->stage.hw == HWStage::CS || ctx->stage.hw == HWStage::HS || ctx->stage.hw == HWStage::NGG;
+   ASSERTED bool workgroup_scope_allowed = ctx->stage.hw == AC_HW_COMPUTE_SHADER ||
+                                           ctx->stage.hw == AC_HW_HULL_SHADER ||
+                                           ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER;
 
    unsigned nir_storage = nir_intrinsic_memory_modes(instr);
    unsigned storage = aco_storage_mode_from_nir_mem_mode(nir_storage);
@@ -7510,7 +7512,7 @@ get_scratch_resource(isel_context* ctx)
       Temp addr_hi =
          bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_hi));
       scratch_addr = bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
-   } else if (ctx->stage.hw != HWStage::CS) {
+   } else if (ctx->stage.hw != AC_HW_COMPUTE_SHADER) {
       scratch_addr =
          bld.smem(aco_opcode::s_load_dwordx2, bld.def(s2), scratch_addr, Operand::zero());
    }
@@ -8284,7 +8286,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
    }
    case nir_intrinsic_load_workgroup_id: {
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      if (ctx->stage.hw == HWStage::CS) {
+      if (ctx->stage.hw == AC_HW_COMPUTE_SHADER) {
          const struct ac_arg* ids = ctx->args->workgroup_ids;
          bld.pseudo(aco_opcode::p_create_vector, Definition(dst),
                     ids[0].used ? Operand(get_arg(ctx, ids[0])) : Operand::zero(),
@@ -8297,7 +8299,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       break;
    }
    case nir_intrinsic_load_local_invocation_index: {
-      if (ctx->stage.hw == HWStage::LS || ctx->stage.hw == HWStage::HS) {
+      if (ctx->stage.hw == AC_HW_LOCAL_SHADER || ctx->stage.hw == AC_HW_HULL_SHADER) {
          if (ctx->options->gfx_level >= GFX11) {
             /* On GFX11, RelAutoIndex is WaveID * WaveSize + ThreadID. */
             Temp wave_id =
@@ -8312,7 +8314,8 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
                      get_arg(ctx, ctx->args->vs_rel_patch_id));
          }
          break;
-      } else if (ctx->stage.hw == HWStage::GS || ctx->stage.hw == HWStage::NGG) {
+      } else if (ctx->stage.hw == AC_HW_LEGACY_GEOMETRY_SHADER ||
+                 ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
          bld.copy(Definition(get_ssa_temp(ctx, &instr->dest.ssa)), thread_id_in_threadgroup(ctx));
          break;
       } else if (ctx->program->workgroup_size <= ctx->program->wave_size) {
@@ -8343,11 +8346,11 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       break;
    }
    case nir_intrinsic_load_subgroup_id: {
-      if (ctx->stage.hw == HWStage::CS) {
+      if (ctx->stage.hw == AC_HW_COMPUTE_SHADER) {
          bld.sop2(aco_opcode::s_bfe_u32, Definition(get_ssa_temp(ctx, &instr->dest.ssa)),
                   bld.def(s1, scc), get_arg(ctx, ctx->args->tg_size),
                   Operand::c32(0x6u | (0x6u << 16)));
-      } else if (ctx->stage.hw == HWStage::NGG) {
+      } else if (ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
          /* Get the id of the current wave within the threadgroup (workgroup) */
          bld.sop2(aco_opcode::s_bfe_u32, Definition(get_ssa_temp(ctx, &instr->dest.ssa)),
                   bld.def(s1, scc), get_arg(ctx, ctx->args->merged_wave_info),
@@ -8362,10 +8365,10 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       break;
    }
    case nir_intrinsic_load_num_subgroups: {
-      if (ctx->stage.hw == HWStage::CS)
+      if (ctx->stage.hw == AC_HW_COMPUTE_SHADER)
          bld.sop2(aco_opcode::s_and_b32, Definition(get_ssa_temp(ctx, &instr->dest.ssa)),
                   bld.def(s1, scc), Operand::c32(0x3fu), get_arg(ctx, ctx->args->tg_size));
-      else if (ctx->stage.hw == HWStage::NGG)
+      else if (ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER)
          bld.sop2(aco_opcode::s_bfe_u32, Definition(get_ssa_temp(ctx, &instr->dest.ssa)),
                   bld.def(s1, scc), get_arg(ctx, ctx->args->merged_wave_info),
                   Operand::c32(28u | (4u << 16)));
@@ -8922,7 +8925,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
          bld.copy(Definition(dst), get_arg(ctx, ctx->args->tes_patch_id));
          break;
       default:
-         if (ctx->stage.hw == HWStage::NGG && !ctx->stage.has(SWStage::GS)) {
+         if (ctx->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER && !ctx->stage.has(SWStage::GS)) {
             /* In case of NGG, the GS threads always have the primitive ID
              * even if there is no SW GS. */
             bld.copy(Definition(dst), get_arg(ctx, ctx->args->gs_prim_id));
@@ -11249,7 +11252,7 @@ select_program(Program* program, unsigned shader_count, struct nir_shader* const
       return select_program_rt(ctx, shader_count, shaders, args);
 
    if_context ic_merged_wave_info;
-   bool ngg_gs = ctx.stage.hw == HWStage::NGG && ctx.stage.has(SWStage::GS);
+   bool ngg_gs = ctx.stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER && ctx.stage.has(SWStage::GS);
 
    for (unsigned i = 0; i < shader_count; i++) {
       nir_shader* nir = shaders[i];
@@ -11286,7 +11289,7 @@ select_program(Program* program, unsigned shader_count, struct nir_shader* const
       bool endif_merged_wave_info =
          ctx.tcs_in_out_eq ? i == 1 : (check_merged_wave_info && !(ngg_gs && i == 1));
 
-      if (program->gfx_level == GFX10 && program->stage.hw == HWStage::NGG &&
+      if (program->gfx_level == GFX10 && program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER &&
           program->stage.num_sw_stages() == 1) {
          /* Workaround for Navi1x HW bug to ensure that all NGG waves launch before
           * s_sendmsg(GS_ALLOC_REQ). */

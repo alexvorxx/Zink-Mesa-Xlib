@@ -4470,7 +4470,7 @@ anv_is_dual_src_blend_equation(const struct vk_color_blend_attachment_state *cb)
 }
 
 VkFormatFeatureFlags2
-anv_get_image_format_features2(const struct intel_device_info *devinfo,
+anv_get_image_format_features2(const struct anv_physical_device *physical_device,
                                VkFormat vk_format,
                                const struct anv_format *anv_format,
                                VkImageTiling vk_tiling,

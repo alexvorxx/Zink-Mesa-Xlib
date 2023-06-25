@@ -53,6 +53,8 @@ vlVaHandleVAEncPictureParameterBufferTypeHEVC(vlVaDriver *drv, vlVaContext *cont
 
    context->desc.h265enc.pic_order_cnt = h265->decoded_curr_pic.pic_order_cnt;
    coded_buf = handle_table_get(drv->htab, h265->coded_buf);
+   if (!coded_buf)
+      return VA_STATUS_ERROR_INVALID_BUFFER;
 
    if (!coded_buf->derived_surface.resource)
       coded_buf->derived_surface.resource = pipe_buffer_create(drv->pipe->screen, PIPE_BIND_VERTEX_BUFFER,

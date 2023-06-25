@@ -359,7 +359,7 @@ v3dv_bo_unmap(struct v3dv_device *device, struct v3dv_bo *bo)
    bo->map_size = 0;
 }
 
-static boolean
+static bool
 reallocate_size_list(struct v3dv_bo_cache *cache,
                      struct v3dv_device *device,
                      uint32_t size)

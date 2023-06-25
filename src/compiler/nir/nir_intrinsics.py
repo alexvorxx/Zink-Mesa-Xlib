@@ -1683,6 +1683,12 @@ intrinsic("load_vbo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
 # documented elsewhere as they are too complicated for this comment.
 intrinsic("sample_mask_agx", src_comp=[1, 1])
 
+# Discard a subset of samples given by a specified sample mask. This acts like a
+# per-sample discard, or an inverted accumulating gl_SampleMask write. The
+# compiler will lower to sample_mask_agx, but that lowering is nontrivial as
+# sample_mask_agx also triggers depth/stencil testing.
+intrinsic("discard_agx", src_comp=[1])
+
 # The fixed-function sample mask specified in the API (e.g. glSampleMask)
 system_value("api_sample_mask_agx", 1, bit_sizes=[16])
 

@@ -261,7 +261,8 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
       Operand start_exec(bld.lm);
 
       /* exec seems to need to be manually initialized with combined shaders */
-      if (ctx.program->stage.num_sw_stages() > 1 || ctx.program->stage.hw == HWStage::NGG) {
+      if (ctx.program->stage.num_sw_stages() > 1 ||
+          ctx.program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
          start_exec = Operand::c32_or_c64(-1u, bld.lm == s2);
          bld.copy(Definition(exec, bld.lm), start_exec);
       }

@@ -263,6 +263,7 @@ a618-traces-performance:
 .lava-sm8350-hdk:
   variables:
     BOOT_METHOD: fastboot
+    KERNEL_IMAGE_NAME: "Image.gz"
     KERNEL_IMAGE_TYPE: ""
     # Increase the hangcheck timer for our spilling tests which bump up against
     # the .5s default.

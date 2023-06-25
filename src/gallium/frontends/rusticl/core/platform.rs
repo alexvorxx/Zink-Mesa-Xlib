@@ -17,6 +17,8 @@ pub struct Platform {
 }
 
 pub struct PlatformDebug {
+    pub allow_invalid_spirv: bool,
+    pub clc: bool,
     pub program: bool,
 }
 
@@ -55,7 +57,11 @@ static mut PLATFORM: Platform = Platform {
     dispatch: &DISPATCH,
     devs: Vec::new(),
 };
-static mut PLATFORM_DBG: PlatformDebug = PlatformDebug { program: false };
+static mut PLATFORM_DBG: PlatformDebug = PlatformDebug {
+    allow_invalid_spirv: false,
+    clc: false,
+    program: false,
+};
 static mut PLATFORM_FEATURES: PlatformFeatures = PlatformFeatures {
     fp16: false,
     fp64: false,
@@ -66,6 +72,8 @@ fn load_env() {
     if let Ok(debug_flags) = env::var("RUSTICL_DEBUG") {
         for flag in debug_flags.split(',') {
             match flag {
+                "allow_invalid_spirv" => debug.allow_invalid_spirv = true,
+                "clc" => debug.clc = true,
                 "program" => debug.program = true,
                 _ => eprintln!("Unknown RUSTICL_DEBUG flag found: {}", flag),
             }

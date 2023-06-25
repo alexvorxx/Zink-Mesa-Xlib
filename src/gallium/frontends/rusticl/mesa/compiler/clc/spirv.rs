@@ -7,6 +7,7 @@ use mesa_rust_util::serialize::*;
 use mesa_rust_util::string::*;
 
 use std::ffi::CString;
+use std::fmt::Debug;
 use std::os::raw::c_char;
 use std::os::raw::c_void;
 use std::ptr;
@@ -35,6 +36,15 @@ pub struct SPIRVKernelArg {
 pub struct CLCHeader<'a> {
     pub name: CString,
     pub source: &'a CString,
+}
+
+impl<'a> Debug for CLCHeader<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.name.to_string_lossy();
+        let source = self.source.to_string_lossy();
+
+        f.write_fmt(format_args!("[{name}]:\n{source}"))
+    }
 }
 
 unsafe fn callback_impl(data: *mut c_void, msg: *const c_char) {

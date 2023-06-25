@@ -667,10 +667,7 @@ nir_function_impl_create(nir_function *function)
    assert(function->impl == NULL);
 
    nir_function_impl *impl = nir_function_impl_create_bare(function->shader);
-
-   function->impl = impl;
-   impl->function = function;
-
+   nir_function_set_impl(function, impl);
    return impl;
 }
 

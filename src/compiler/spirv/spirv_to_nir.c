@@ -6628,9 +6628,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
    vtn_assert(b->shader->info.stage == MESA_SHADER_KERNEL);
 
    nir_function *main_entry_point = nir_function_create(b->shader, func_name);
-   main_entry_point->impl = nir_function_impl_create(main_entry_point);
-   nir_builder_init(&b->nb, main_entry_point->impl);
-   b->nb.cursor = nir_after_cf_list(&main_entry_point->impl->body);
+   nir_function_impl *impl = nir_function_impl_create(main_entry_point);
+   nir_builder_init(&b->nb, impl);
+   b->nb.cursor = nir_after_cf_list(&impl->body);
    b->func_param_idx = 0;
 
    nir_call_instr *call = nir_call_instr_create(b->nb.shader, entry_point);
@@ -6674,8 +6674,7 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
       /* we have to copy the entire variable into function memory */
       if (is_by_val) {
          nir_variable *copy_var =
-            nir_local_variable_create(main_entry_point->impl, in_var->type,
-                                      "copy_in");
+            nir_local_variable_create(impl, in_var->type, "copy_in");
          nir_copy_var(&b->nb, copy_var, in_var);
          call->params[i] =
             nir_src_for_ssa(&nir_build_deref_var(&b->nb, copy_var)->dest.ssa);

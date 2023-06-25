@@ -70,8 +70,8 @@ agx_nir_lower_alpha_to_coverage(nir_shader *shader, uint8_t nr_samples)
       nir_iadd_imm(b, nir_ishl(b, nir_imm_intN_t(b, 1, 16), bits), -1);
 
    /* Discard samples that aren't covered */
-   nir_sample_mask_agx(b, nir_imm_intN_t(b, ALL_SAMPLES, 16), mask);
-   shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
+   nir_discard_agx(b, nir_inot(b, mask));
+   shader->info.fs.uses_discard = true;
 }
 
 /*

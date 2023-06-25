@@ -170,6 +170,36 @@ agx_validate_width(agx_context *ctx)
    return succ;
 }
 
+static bool
+agx_validate_predecessors(agx_block *block)
+{
+   /* Loop headers (only) have predecessors that are later in source form */
+   bool has_later_preds = false;
+
+   agx_foreach_predecessor(block, pred) {
+      if ((*pred)->index >= block->index)
+         has_later_preds = true;
+   }
+
+   if (block->loop_header != has_later_preds)
+      return false;
+
+   /* Successors and predecessors are found together */
+   agx_foreach_predecessor(block, pred) {
+      bool found = false;
+
+      agx_foreach_successor((*pred), succ) {
+         if (succ == block)
+            found = true;
+      }
+
+      if (!found)
+         return false;
+   }
+
+   return true;
+}
+
 void
 agx_validate(agx_context *ctx, const char *after)
 {
@@ -178,9 +208,26 @@ agx_validate(agx_context *ctx, const char *after)
    if (agx_compiler_debug & AGX_DBG_NOVALIDATE)
       return;
 
+   int last_index = -1;
+
    agx_foreach_block(ctx, block) {
+      if ((int)block->index < last_index) {
+         fprintf(stderr, "Out-of-order block index %d vs %d after %s\n",
+                 block->index, last_index, after);
+         agx_print_block(block, stdout);
+         fail = true;
+      }
+
+      last_index = block->index;
+
       if (!agx_validate_block_form(block)) {
          fprintf(stderr, "Invalid block form after %s\n", after);
+         agx_print_block(block, stdout);
+         fail = true;
+      }
+
+      if (!agx_validate_predecessors(block)) {
+         fprintf(stderr, "Invalid loop header flag after %s\n", after);
          agx_print_block(block, stdout);
          fail = true;
       }

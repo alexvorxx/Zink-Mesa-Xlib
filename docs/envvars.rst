@@ -945,7 +945,21 @@ Rusticl environment variables
 
    a comma-separated list of debug channels to enable.
 
+   - ``allow_invalid_spirv`` disables validation of any input SPIR-V
+   - ``clc`` dumps all OpenCL C source being compiled
    - ``program`` dumps compilation logs to stderr
+
+.. _clc-env-var:
+
+clc environment variables
+-----------------------------
+
+.. envvar:: CLC_DEBUG
+
+   a comma-separated list of debug channels to enable.
+
+   - ``dump_spirv`` Dumps all compiled, linked and specialized SPIR-Vs
+   - ``verbose`` Enable debug logging of clc code
 
 Nine frontend environment variables
 -----------------------------------

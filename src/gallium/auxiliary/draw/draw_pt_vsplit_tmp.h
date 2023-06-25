@@ -29,7 +29,7 @@
  * Fetch all elements in [min_index, max_index] with bias, and use the
  * (rebased) index buffer as the draw elements.
  */
-static boolean
+static bool
 CONCAT2(vsplit_primitive_, ELT_TYPE)(struct vsplit_frontend *vsplit,
                                      unsigned istart, unsigned icount)
 {
@@ -47,12 +47,12 @@ CONCAT2(vsplit_primitive_, ELT_TYPE)(struct vsplit_frontend *vsplit,
     * through the normal paths */
    if (end >= draw->pt.user.eltMax ||
        end < istart)
-      return FALSE;
+      return false;
 
    /* use the ib directly */
    if (min_index == 0 && sizeof(ib[0]) == sizeof(draw_elts[0])) {
       if (icount > vsplit->max_vertices)
-         return FALSE;
+         return false;
 
       for (unsigned i = 0; i < icount; i++) {
          ELT_TYPE idx = DRAW_GET_IDX(ib, start + i);
@@ -64,20 +64,20 @@ CONCAT2(vsplit_primitive_, ELT_TYPE)(struct vsplit_frontend *vsplit,
    } else {
       /* have to go through vsplit->draw_elts */
       if (icount > vsplit->segment_size)
-         return FALSE;
+         return false;
    }
 
    /* this is faster only when we fetch less elements than the normal path */
    if (max_index - min_index > icount - 1)
-      return FALSE;
+      return false;
 
    if (elt_bias < 0 && (int) min_index < -elt_bias)
-      return FALSE;
+      return false;
 
    /* why this check? */
    for (unsigned i = 0; i < draw->pt.nr_vertex_elements; i++) {
       if (draw->pt.vertex_element[i].instance_divisor)
-         return FALSE;
+         return false;
    }
 
    fetch_start = min_index + elt_bias;
@@ -85,7 +85,7 @@ CONCAT2(vsplit_primitive_, ELT_TYPE)(struct vsplit_frontend *vsplit,
 
    /* Check for overflow in the fetch_start */
    if (fetch_start < min_index || fetch_start < elt_bias)
-      return FALSE;
+      return false;
 
    if (!draw_elts) {
       if (min_index == 0) {
@@ -127,8 +127,8 @@ static inline void
 CONCAT2(vsplit_segment_cache_, ELT_TYPE)(struct vsplit_frontend *vsplit,
                                          unsigned flags,
                                          unsigned istart, unsigned icount,
-                                         boolean spoken, unsigned ispoken,
-                                         boolean close, unsigned iclose)
+                                         bool spoken, unsigned ispoken,
+                                         bool close, unsigned iclose)
 {
    struct draw_context *draw = vsplit->draw;
    const ELT_TYPE *ib = (const ELT_TYPE *) draw->pt.user.elts;
@@ -171,7 +171,7 @@ CONCAT2(vsplit_segment_simple_, ELT_TYPE)(struct vsplit_frontend *vsplit,
                                           unsigned icount)
 {
    CONCAT2(vsplit_segment_cache_, ELT_TYPE)(vsplit,
-          flags, istart, icount, FALSE, 0, FALSE, 0);
+          flags, istart, icount, false, 0, false, 0);
 }
 
 
@@ -182,10 +182,10 @@ CONCAT2(vsplit_segment_loop_, ELT_TYPE)(struct vsplit_frontend *vsplit,
                                         unsigned icount,
                                         unsigned i0)
 {
-   const boolean close_loop = ((flags) == DRAW_SPLIT_BEFORE);
+   const bool close_loop = ((flags) == DRAW_SPLIT_BEFORE);
 
    CONCAT2(vsplit_segment_cache_, ELT_TYPE)(vsplit,
-          flags, istart, icount, FALSE, 0, close_loop, i0);
+          flags, istart, icount, false, 0, close_loop, i0);
 }
 
 
@@ -196,10 +196,10 @@ CONCAT2(vsplit_segment_fan_, ELT_TYPE)(struct vsplit_frontend *vsplit,
                                        unsigned icount,
                                        unsigned i0)
 {
-   const boolean use_spoken = (((flags) & DRAW_SPLIT_BEFORE) != 0);
+   const bool use_spoken = (((flags) & DRAW_SPLIT_BEFORE) != 0);
 
    CONCAT2(vsplit_segment_cache_, ELT_TYPE)(vsplit,
-          flags, istart, icount, use_spoken, i0, FALSE, 0);
+          flags, istart, icount, use_spoken, i0, false, 0);
 }
 
 
@@ -228,7 +228,7 @@ static void
 vsplit_segment_loop_linear(struct vsplit_frontend *vsplit, unsigned flags,
                            unsigned istart, unsigned icount, unsigned i0)
 {
-   boolean close_loop = (flags == DRAW_SPLIT_BEFORE);
+   bool close_loop = (flags == DRAW_SPLIT_BEFORE);
    unsigned nr;
 
    assert(icount + !!close_loop <= vsplit->segment_size);
@@ -253,7 +253,7 @@ static void
 vsplit_segment_fan_linear(struct vsplit_frontend *vsplit, unsigned flags,
                           unsigned istart, unsigned icount, unsigned i0)
 {
-   boolean use_spoken = ((flags & DRAW_SPLIT_BEFORE) != 0);
+   bool use_spoken = ((flags & DRAW_SPLIT_BEFORE) != 0);
    unsigned nr = 0;
 
    assert(icount <= vsplit->segment_size);
@@ -279,7 +279,7 @@ vsplit_segment_fan_linear(struct vsplit_frontend *vsplit, unsigned flags,
    const unsigned max_count_loop = vsplit->segment_size - 1;               \
    const unsigned max_count_fan = vsplit->segment_size;
 
-#define PRIMITIVE(istart, icount) FALSE
+#define PRIMITIVE(istart, icount) false
 
 #define ELT_TYPE linear
 

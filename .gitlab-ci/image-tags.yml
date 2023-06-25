@@ -3,7 +3,7 @@ variables:
    DEBIAN_BASE_TAG: "2023-06-21-virglrenderer"
 
    DEBIAN_X86_64_BUILD_IMAGE_PATH: "debian/x86_64_build"
-   DEBIAN_BUILD_TAG: "2023-05-25-bookworm"
+   DEBIAN_BUILD_TAG: "2023-06-23-bindgen-bump"
 
    DEBIAN_X86_64_BUILD_MINGW_IMAGE_PATH: "debian/x86_64_build-mingw"
    DEBIAN_BUILD_MINGW_TAG: "2023-05-25-bookworm"

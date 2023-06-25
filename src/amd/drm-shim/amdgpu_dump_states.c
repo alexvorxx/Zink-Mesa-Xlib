@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <xf86drm.h>
+#include <inttypes.h>
 
 #include "drm-uapi/amdgpu_drm.h"
 #include "util/macros.h"
@@ -102,22 +103,26 @@ amdgpu_dump_memory(int fd)
 
    printf(".mem = {\n");
    printf("   .vram = {\n");
-   printf("      .total_heap_size = %llu,\n", info.vram.total_heap_size);
-   printf("      .usable_heap_size = %llu,\n", info.vram.usable_heap_size);
-   printf("      .heap_usage = %llu,\n", info.vram.heap_usage);
-   printf("      .max_allocation = %llu,\n", info.vram.max_allocation);
+   printf("      .total_heap_size = UINT64_C(%"PRIu64"),\n", (uint64_t)info.vram.total_heap_size);
+   printf("      .usable_heap_size = UINT64_C(%"PRIu64"),\n", (uint64_t)info.vram.usable_heap_size);
+   printf("      .heap_usage = UINT64_C(%"PRIu64"),\n", (uint64_t)info.vram.heap_usage);
+   printf("      .max_allocation = UINT64_C(%"PRIu64"),\n", (uint64_t)info.vram.max_allocation);
    printf("   },\n");
    printf("   .cpu_accessible_vram = {\n");
-   printf("      .total_heap_size = %llu,\n", info.cpu_accessible_vram.total_heap_size);
-   printf("      .usable_heap_size = %llu,\n", info.cpu_accessible_vram.usable_heap_size);
-   printf("      .heap_usage = %llu,\n", info.cpu_accessible_vram.heap_usage);
-   printf("      .max_allocation = %llu,\n", info.cpu_accessible_vram.max_allocation);
+   printf("      .total_heap_size = UINT64_C(%"PRIu64"),\n",
+          (uint64_t)info.cpu_accessible_vram.total_heap_size);
+   printf("      .usable_heap_size = UINT64_C(%"PRIu64"),\n",
+          (uint64_t)info.cpu_accessible_vram.usable_heap_size);
+   printf("      .heap_usage = UINT64_C(%"PRIu64"),\n",
+          (uint64_t)info.cpu_accessible_vram.heap_usage);
+   printf("      .max_allocation = UINT64_C(%"PRIu64"),\n",
+          (uint64_t)info.cpu_accessible_vram.max_allocation);
    printf("   },\n");
    printf("   .gtt = {\n");
-   printf("      .total_heap_size = %llu,\n", info.gtt.total_heap_size);
-   printf("      .usable_heap_size = %llu,\n", info.gtt.usable_heap_size);
-   printf("      .heap_usage = %llu,\n", info.gtt.heap_usage);
-   printf("      .max_allocation = %llu,\n", info.gtt.max_allocation);
+   printf("      .total_heap_size = UINT64_C(%"PRIu64"),\n", (uint64_t)info.gtt.total_heap_size);
+   printf("      .usable_heap_size = UINT64_C(%"PRIu64"),\n", (uint64_t)info.gtt.usable_heap_size);
+   printf("      .heap_usage = UINT64_C(%"PRIu64"),\n", (uint64_t)info.gtt.heap_usage);
+   printf("      .max_allocation = UINT64_C(%"PRIu64"),\n", (uint64_t)info.gtt.max_allocation);
    printf("   },\n");
    printf("},\n");
 }
@@ -174,8 +179,8 @@ amdgpu_dump_dev_info(int fd)
    printf("   .num_shader_engines = %u,\n", info.num_shader_engines);
    printf("   .num_shader_arrays_per_engine = %u,\n", info.num_shader_arrays_per_engine);
    printf("   .gpu_counter_freq = %u,\n", info.gpu_counter_freq);
-   printf("   .max_engine_clock = %llullu,\n", info.max_engine_clock);
-   printf("   .max_memory_clock = %llullu,\n", info.max_memory_clock);
+   printf("   .max_engine_clock = UINT64_C(%"PRIu64"),\n", (uint64_t)info.max_engine_clock);
+   printf("   .max_memory_clock = UINT64_C(%"PRIu64"),\n", (uint64_t)info.max_memory_clock);
    printf("   .cu_active_number = %u,\n", info.cu_active_number);
    printf("   .cu_ao_mask = 0x%x,\n", info.cu_ao_mask);
 
@@ -192,9 +197,10 @@ amdgpu_dump_dev_info(int fd)
    printf("   .num_rb_pipes = %u,\n", info.num_rb_pipes);
    printf("   .num_hw_gfx_contexts = %u,\n", info.num_hw_gfx_contexts);
    printf("   .pcie_gen = %u,\n", info.pcie_gen);
-   printf("   .ids_flags = 0x%llxllu,\n", info.ids_flags);
-   printf("   .virtual_address_offset = 0x%llxllu,\n", info.virtual_address_offset);
-   printf("   .virtual_address_max = 0x%llxllu,\n", info.virtual_address_max);
+   printf("   .ids_flags = UINT64_C(0x%"PRIx64"),\n", (uint64_t)info.ids_flags);
+   printf("   .virtual_address_offset = UINT64_C(0x%"PRIx64"),\n",
+          (uint64_t)info.virtual_address_offset);
+   printf("   .virtual_address_max = UINT64_C(0x%"PRIx64"),\n", (uint64_t)info.virtual_address_max);
    printf("   .virtual_address_alignment = %u,\n", info.virtual_address_alignment);
    printf("   .pte_fragment_size = %u,\n", info.pte_fragment_size);
    printf("   .gart_page_size = %u,\n", info.gart_page_size);
@@ -203,10 +209,10 @@ amdgpu_dump_dev_info(int fd)
    printf("   .vram_bit_width = %u,\n", info.vram_bit_width);
    printf("   .vce_harvest_config = %u,\n", info.vce_harvest_config);
    printf("   .gc_double_offchip_lds_buf = %u,\n", info.gc_double_offchip_lds_buf);
-   printf("   .prim_buf_gpu_addr = %llullu,\n", info.prim_buf_gpu_addr);
-   printf("   .pos_buf_gpu_addr = %llullu,\n", info.pos_buf_gpu_addr);
-   printf("   .cntl_sb_buf_gpu_addr = %llullu,\n", info.cntl_sb_buf_gpu_addr);
-   printf("   .param_buf_gpu_addr = %llullu,\n", info.param_buf_gpu_addr);
+   printf("   .prim_buf_gpu_addr = UINT64_C(%"PRIu64"),\n", (uint64_t)info.prim_buf_gpu_addr);
+   printf("   .pos_buf_gpu_addr = UINT64_C(%"PRIu64"),\n", (uint64_t)info.pos_buf_gpu_addr);
+   printf("   .cntl_sb_buf_gpu_addr = UINT64_C(%"PRIu64"),\n", (uint64_t)info.cntl_sb_buf_gpu_addr);
+   printf("   .param_buf_gpu_addr = UINT64_C(%"PRIu64"),\n", (uint64_t)info.param_buf_gpu_addr);
    printf("   .prim_buf_size = %u,\n", info.prim_buf_size);
    printf("   .pos_buf_size = %u,\n", info.pos_buf_size);
    printf("   .cntl_sb_buf_size = %u,\n", info.cntl_sb_buf_size);
@@ -229,19 +235,19 @@ amdgpu_dump_dev_info(int fd)
    }
    printf("   },\n");
 
-   printf("   .high_va_offset = 0x%llxllu,\n", info.high_va_offset);
-   printf("   .high_va_max = 0x%llxllu,\n", info.high_va_max);
+   printf("   .high_va_offset = UINT64_C(0x%"PRIx64"),\n", (uint64_t)info.high_va_offset);
+   printf("   .high_va_max = UINT64_C(0x%"PRIx64"),\n", (uint64_t)info.high_va_max);
    printf("   .pa_sc_tile_steering_override = %u,\n", info.pa_sc_tile_steering_override);
-   printf("   .tcc_disabled_mask = %llullu,\n", info.tcc_disabled_mask);
-   printf("   .min_engine_clock = %llullu,\n", info.min_engine_clock);
-   printf("   .min_memory_clock = %llullu,\n", info.min_memory_clock);
+   printf("   .tcc_disabled_mask = UINT64_C(%"PRIu64"),\n", (uint64_t)info.tcc_disabled_mask);
+   printf("   .min_engine_clock = UINT64_C(%"PRIu64"),\n", (uint64_t)info.min_engine_clock);
+   printf("   .min_memory_clock = UINT64_C(%"PRIu64"),\n", (uint64_t)info.min_memory_clock);
    printf("   .tcp_cache_size = %u,\n", info.tcp_cache_size);
    printf("   .num_sqc_per_wgp = %u,\n", info.num_sqc_per_wgp);
    printf("   .sqc_data_cache_size = %u,\n", info.sqc_data_cache_size);
    printf("   .sqc_inst_cache_size = %u,\n", info.sqc_inst_cache_size);
    printf("   .gl1c_cache_size = %u,\n", info.gl1c_cache_size);
    printf("   .gl2c_cache_size = %u,\n", info.gl2c_cache_size);
-   printf("   .mall_size = %llullu,\n", info.mall_size);
+   printf("   .mall_size = UINT64_C(%"PRIu64"),\n", (uint64_t)info.mall_size);
    printf("   .enabled_rb_pipes_mask_hi = %u,\n", info.enabled_rb_pipes_mask_hi);
    printf("},\n");
 }
@@ -366,7 +372,7 @@ amdgpu_dump_hw_ips(int fd)
       printf(".hw_ip_%s = {\n", hw_ips[i].name);
       printf("   .hw_ip_version_major = %u,\n", info.hw_ip_version_major);
       printf("   .hw_ip_version_minor = %u,\n", info.hw_ip_version_minor);
-      printf("   .capabilities_flags = %llullu,\n", info.capabilities_flags);
+      printf("   .capabilities_flags = UINT64_C(%"PRIu64"),\n", (uint64_t)info.capabilities_flags);
       printf("   .ib_start_alignment = %u,\n", info.ib_start_alignment);
       printf("   .ib_size_alignment = %u,\n", info.ib_size_alignment);
       printf("   .available_rings = 0x%x,\n", info.available_rings);

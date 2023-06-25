@@ -57,11 +57,44 @@ si_fill_aco_options(struct si_shader *shader, struct aco_compiler_options *optio
    options->debug.private_data = debug;
 }
 
+static enum ac_hw_stage
+si_select_hw_stage(const gl_shader_stage stage, const union si_shader_key *const key,
+                   const enum amd_gfx_level gfx_level)
+{
+   switch (stage) {
+   case MESA_SHADER_VERTEX:
+   case MESA_SHADER_TESS_EVAL:
+      if (key->ge.as_ngg)
+         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+      else if (key->ge.as_es)
+         return gfx_level >= GFX9 ? AC_HW_LEGACY_GEOMETRY_SHADER : AC_HW_EXPORT_SHADER;
+      else if (key->ge.as_ls)
+         return gfx_level >= GFX9 ? AC_HW_HULL_SHADER : AC_HW_LOCAL_SHADER;
+      else
+         return AC_HW_VERTEX_SHADER;
+   case MESA_SHADER_TESS_CTRL:
+      return AC_HW_HULL_SHADER;
+   case MESA_SHADER_GEOMETRY:
+      if (key->ge.as_ngg)
+         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+      else
+         return AC_HW_LEGACY_GEOMETRY_SHADER;
+   case MESA_SHADER_FRAGMENT:
+      return AC_HW_PIXEL_SHADER;
+   case MESA_SHADER_COMPUTE:
+   case MESA_SHADER_KERNEL:
+      return AC_HW_COMPUTE_SHADER;
+   default:
+      unreachable("Unsupported HW stage");
+   }
+}
+
 static void
 si_fill_aco_shader_info(struct si_shader *shader, struct aco_shader_info *info)
 {
    const struct si_shader_selector *sel = shader->selector;
    const union si_shader_key *key = &shader->key;
+   const enum amd_gfx_level gfx_level = sel->screen->info.gfx_level;
    gl_shader_stage stage = shader->is_gs_copy_shader ? MESA_SHADER_VERTEX : sel->stage;
 
    info->wave_size = shader->wave_size;
@@ -70,22 +103,15 @@ si_fill_aco_shader_info(struct si_shader *shader, struct aco_shader_info *info)
    if (!info->workgroup_size)
       info->workgroup_size = info->wave_size;
 
-   info->image_2d_view_of_3d = sel->screen->info.gfx_level == GFX9;
+   info->image_2d_view_of_3d = gfx_level == GFX9;
+   info->hw_stage = si_select_hw_stage(stage, key, gfx_level);
 
    if (stage <= MESA_SHADER_GEOMETRY && key->ge.as_ngg && !key->ge.as_es) {
-      info->is_ngg = true;
       info->has_ngg_culling = key->ge.opt.ngg_culling;
       info->has_ngg_early_prim_export = gfx10_ngg_export_prim_early(shader);
    }
 
    switch (stage) {
-   case MESA_SHADER_VERTEX:
-      info->vs.as_es = key->ge.as_es;
-      info->vs.as_ls = key->ge.as_ls;
-      break;
-   case MESA_SHADER_TESS_EVAL:
-      info->tes.as_es = key->ge.as_es;
-      break;
    case MESA_SHADER_FRAGMENT:
       info->ps.num_interp = si_get_ps_num_interp(shader);
       info->ps.spi_ps_input = shader->config.spi_ps_input_ena;

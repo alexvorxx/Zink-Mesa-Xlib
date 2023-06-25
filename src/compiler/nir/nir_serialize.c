@@ -2001,10 +2001,9 @@ write_function_impl(write_ctx *ctx, const nir_function_impl *fi)
 }
 
 static nir_function_impl *
-read_function_impl(read_ctx *ctx, nir_function *fxn)
+read_function_impl(read_ctx *ctx)
 {
    nir_function_impl *fi = nir_function_impl_create_bare(ctx->nir);
-   fi->function = fxn;
 
    fi->structured = blob_read_uint8(ctx->blob);
    bool preamble = blob_read_uint8(ctx->blob);
@@ -2223,7 +2222,7 @@ nir_deserialize(void *mem_ctx,
 
    nir_foreach_function(fxn, ctx.nir) {
       if (fxn->impl == NIR_SERIALIZE_FUNC_HAS_IMPL)
-         fxn->impl = read_function_impl(&ctx, fxn);
+         nir_function_set_impl(fxn, read_function_impl(&ctx));
    }
 
    ctx.nir->constant_data_size = blob_read_uint32(blob);

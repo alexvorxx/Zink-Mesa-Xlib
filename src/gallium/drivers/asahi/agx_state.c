@@ -888,6 +888,7 @@ agx_create_surface(struct pipe_context *ctx, struct pipe_resource *texture,
 
    surface->context = ctx;
    surface->format = surf_tmpl->format;
+   surface->nr_samples = surf_tmpl->nr_samples;
    surface->width = u_minify(texture->width0, level);
    surface->height = u_minify(texture->height0, level);
    surface->texture = texture;

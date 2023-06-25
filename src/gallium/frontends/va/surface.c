@@ -1586,7 +1586,7 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
    desc->width  = surf->templat.width;
    desc->height = surf->templat.height;
 
-   for (p = 0; p < VL_MAX_SURFACES; p++) {
+   for (p = 0; p < ARRAY_SIZE(desc->objects); p++) {
       struct winsys_handle whandle;
       struct pipe_resource *resource;
       uint32_t drm_format;

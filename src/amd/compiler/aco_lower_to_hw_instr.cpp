@@ -2595,7 +2595,7 @@ lower_to_hw_instr(Program* program)
                   bld.sop1(aco_opcode::p_load_symbol, Definition(reg.advance(4), s1),
                            Operand::c32(aco_symbol_scratch_addr_hi));
                   scratch_addr.setFixed(reg);
-               } else if (program->stage.hw != HWStage::CS) {
+               } else if (program->stage.hw != AC_HW_COMPUTE_SHADER) {
                   bld.smem(aco_opcode::s_load_dwordx2, instr->definitions[0], scratch_addr,
                            Operand::zero());
                   scratch_addr.setFixed(instr->definitions[0].physReg());

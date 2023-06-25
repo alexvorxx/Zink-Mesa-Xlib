@@ -1611,17 +1611,15 @@ static bool pvr_blend_factor_requires_consts(VkBlendFactor factor)
 static bool pvr_graphics_pipeline_requires_dynamic_blend_consts(
    const struct pvr_graphics_pipeline *gfx_pipeline)
 {
-   const bool has_dynamic_blend_consts =
-      BITSET_TEST(gfx_pipeline->dynamic_state.set,
-                  MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS);
+   const struct vk_dynamic_graphics_state *const state =
+      &gfx_pipeline->dynamic_state;
 
-   if (!has_dynamic_blend_consts)
+   if (BITSET_TEST(state->set, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS))
       return false;
 
-   for (uint32_t i = 0; i < gfx_pipeline->dynamic_state.cb.attachment_count;
-        i++) {
+   for (uint32_t i = 0; i < state->cb.attachment_count; i++) {
       const struct vk_color_blend_attachment_state *attachment =
-         &gfx_pipeline->dynamic_state.cb.attachments[i];
+         &state->cb.attachments[i];
 
       const bool has_color_write =
          attachment->write_mask &

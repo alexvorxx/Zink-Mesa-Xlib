@@ -771,8 +771,7 @@ nir_shader_clone(void *mem_ctx, const nir_shader *s)
     */
    nir_foreach_function(fxn, s) {
       nir_function *nfxn = remap_global(&state, fxn);
-      nfxn->impl = clone_function_impl(&state, fxn->impl);
-      nfxn->impl->function = nfxn;
+      nir_function_set_impl(nfxn, clone_function_impl(&state, fxn->impl));
    }
 
    ns->info = s->info;

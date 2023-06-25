@@ -2005,7 +2005,7 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
                ctx.info[instr->operands[0].tempId()].instr->definitions[1].getTemp());
             break;
          } else if ((ctx.program->stage.num_sw_stages() > 1 ||
-                     ctx.program->stage.hw == HWStage::NGG) &&
+                     ctx.program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) &&
                     instr->pass_flags == 1) {
             /* In case of merged shaders, pass_flags=1 means that all lanes are active (exec=-1), so
              * s_and is unnecessary. */
