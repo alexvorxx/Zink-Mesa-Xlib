@@ -739,7 +739,7 @@ static void r600_set_sampler_views(struct pipe_context *pipe,
 	dst->views.dirty_mask |= new_mask;
 	dst->views.compressed_depthtex_mask &= dst->views.enabled_mask;
 	dst->views.compressed_colortex_mask &= dst->views.enabled_mask;
-	dst->views.dirty_buffer_constants = TRUE;
+	dst->views.dirty_buffer_constants = true;
 	r600_sampler_views_dirty(rctx, &dst->views);
 
 	if (dirty_sampler_states_mask) {
@@ -1478,7 +1478,7 @@ static void r600_setup_buffer_constants(struct r600_context *rctx, int shader_ty
 	if (!samplers->views.dirty_buffer_constants)
 		return;
 
-	samplers->views.dirty_buffer_constants = FALSE;
+	samplers->views.dirty_buffer_constants = false;
 
 	bits = util_last_bit(samplers->views.enabled_mask);
 	array_size = bits * 8 * sizeof(uint32_t);
@@ -1536,8 +1536,8 @@ void eg_setup_buffer_constants(struct r600_context *rctx, int shader_type)
 		return;
 
 	if (images)
-		images->dirty_buffer_constants = FALSE;
-	samplers->views.dirty_buffer_constants = FALSE;
+		images->dirty_buffer_constants = false;
+	samplers->views.dirty_buffer_constants = false;
 
 	bits = sview_bits = util_last_bit(samplers->views.enabled_mask);
 	if (images)
@@ -2325,7 +2325,7 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 		evergreen_setup_tess_constants(rctx, info, &num_patches);
 
 	/* Emit states. */
-	r600_need_cs_space(rctx, has_user_indices ? 5 : 0, TRUE, util_bitcount(atomic_used_mask));
+	r600_need_cs_space(rctx, has_user_indices ? 5 : 0, true, util_bitcount(atomic_used_mask));
 	r600_flush_emit(rctx);
 
 	mask = rctx->dirty_atoms;
@@ -2713,7 +2713,7 @@ void r600_emit_shader(struct r600_context *rctx, struct r600_atom *a)
 
 unsigned r600_get_swizzle_combined(const unsigned char *swizzle_format,
 				   const unsigned char *swizzle_view,
-				   boolean vtx)
+				   bool vtx)
 {
 	unsigned i;
 	unsigned char swizzle[4];
@@ -2773,8 +2773,8 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 	struct r600_screen *rscreen = (struct r600_screen *)screen;
 	uint32_t result = 0, word4 = 0, yuv_format = 0;
 	const struct util_format_description *desc;
-	boolean uniform = TRUE;
-	bool is_srgb_valid = FALSE;
+	bool uniform = true;
+	bool is_srgb_valid = false;
 	const unsigned char swizzle_xxxx[4] = {0, 0, 0, 0};
 	const unsigned char swizzle_yyyy[4] = {1, 1, 1, 1};
 	const unsigned char swizzle_xxxy[4] = {0, 0, 0, 1};
@@ -2813,15 +2813,15 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 		 */
 		if (do_endian_swap) {
 			if (format == PIPE_FORMAT_L4A4_UNORM)
-				word4 |= r600_get_swizzle_combined(swizzle_xxxy, swizzle_view, FALSE);
+				word4 |= r600_get_swizzle_combined(swizzle_xxxy, swizzle_view, false);
 			else if (format == PIPE_FORMAT_B4G4R4A4_UNORM)
-				word4 |= r600_get_swizzle_combined(swizzle_zyxw, swizzle_view, FALSE);
+				word4 |= r600_get_swizzle_combined(swizzle_zyxw, swizzle_view, false);
 			else if (format == PIPE_FORMAT_B4G4R4X4_UNORM || format == PIPE_FORMAT_B5G6R5_UNORM)
-				word4 |= r600_get_swizzle_combined(swizzle_zyx1, swizzle_view, FALSE);
+				word4 |= r600_get_swizzle_combined(swizzle_zyx1, swizzle_view, false);
 			else
-				word4 |= r600_get_swizzle_combined(desc->swizzle, swizzle_view, FALSE);
+				word4 |= r600_get_swizzle_combined(desc->swizzle, swizzle_view, false);
 		} else {
-			word4 |= r600_get_swizzle_combined(desc->swizzle, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(desc->swizzle, swizzle_view, false);
 		}
 	}
 
@@ -2832,50 +2832,50 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 		switch (format) {
 		/* Depth sampler formats. */
 		case PIPE_FORMAT_Z16_UNORM:
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_16;
 			goto out_word4;
 		case PIPE_FORMAT_Z24X8_UNORM:
 		case PIPE_FORMAT_Z24_UNORM_S8_UINT:
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_8_24;
 			goto out_word4;
 		case PIPE_FORMAT_X8Z24_UNORM:
 		case PIPE_FORMAT_S8_UINT_Z24_UNORM:
 			if (rscreen->b.gfx_level < EVERGREEN)
 				goto out_unknown;
-			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, false);
 			result = FMT_24_8;
 			goto out_word4;
 		case PIPE_FORMAT_Z32_FLOAT:
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_32_FLOAT;
 			goto out_word4;
 		case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_X24_8_32_FLOAT;
 			goto out_word4;
 		/* Stencil sampler formats. */
 		case PIPE_FORMAT_S8_UINT:
 			word4 |= S_038010_NUM_FORMAT_ALL(V_038010_SQ_NUM_FORMAT_INT);
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_8;
 			goto out_word4;
 		case PIPE_FORMAT_X24S8_UINT:
 			word4 |= S_038010_NUM_FORMAT_ALL(V_038010_SQ_NUM_FORMAT_INT);
-			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, false);
 			result = FMT_8_24;
 			goto out_word4;
 		case PIPE_FORMAT_S8X24_UINT:
 			if (rscreen->b.gfx_level < EVERGREEN)
 				goto out_unknown;
 			word4 |= S_038010_NUM_FORMAT_ALL(V_038010_SQ_NUM_FORMAT_INT);
-			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_xxxx, swizzle_view, false);
 			result = FMT_24_8;
 			goto out_word4;
 		case PIPE_FORMAT_X32_S8X24_UINT:
 			word4 |= S_038010_NUM_FORMAT_ALL(V_038010_SQ_NUM_FORMAT_INT);
-			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, FALSE);
+			word4 |= r600_get_swizzle_combined(swizzle_yyyy, swizzle_view, false);
 			result = FMT_X24_8_32_FLOAT;
 			goto out_word4;
 		default:
@@ -2930,17 +2930,17 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 		case PIPE_FORMAT_DXT1_SRGB:
 		case PIPE_FORMAT_DXT1_SRGBA:
 			result = FMT_BC1;
-			is_srgb_valid = TRUE;
+			is_srgb_valid = true;
 			goto out_word4;
 		case PIPE_FORMAT_DXT3_RGBA:
 		case PIPE_FORMAT_DXT3_SRGBA:
 			result = FMT_BC2;
-			is_srgb_valid = TRUE;
+			is_srgb_valid = true;
 			goto out_word4;
 		case PIPE_FORMAT_DXT5_RGBA:
 		case PIPE_FORMAT_DXT5_SRGBA:
 			result = FMT_BC3;
-			is_srgb_valid = TRUE;
+			is_srgb_valid = true;
 			goto out_word4;
 		default:
 			goto out_unknown;
@@ -2955,7 +2955,7 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 			case PIPE_FORMAT_BPTC_RGBA_UNORM:
 			case PIPE_FORMAT_BPTC_SRGBA:
 				result = FMT_BC7;
-				is_srgb_valid = TRUE;
+				is_srgb_valid = true;
 				goto out_word4;
 			case PIPE_FORMAT_BPTC_RGB_FLOAT:
 				word4 |= sign_bit[0] | sign_bit[1] | sign_bit[2];
@@ -3072,14 +3072,14 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 			switch (desc->nr_channels) {
 			case 1:
 				result = FMT_8;
-				is_srgb_valid = TRUE;
+				is_srgb_valid = true;
 				goto out_word4;
 			case 2:
 				result = FMT_8_8;
 				goto out_word4;
 			case 4:
 				result = FMT_8_8_8_8;
-				is_srgb_valid = TRUE;
+				is_srgb_valid = true;
 				goto out_word4;
 			}
 			goto out_unknown;

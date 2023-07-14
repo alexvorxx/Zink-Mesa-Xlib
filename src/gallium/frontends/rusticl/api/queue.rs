@@ -23,11 +23,7 @@ impl CLInfo<cl_command_queue_info> for cl_command_queue {
                 let ptr = Arc::as_ptr(&queue.context);
                 cl_prop::<cl_context>(cl_context::from_ptr(ptr))
             }
-            CL_QUEUE_DEVICE => {
-                // Note we use as_ptr here which doesn't increase the reference count.
-                let ptr = Arc::as_ptr(&queue.device);
-                cl_prop::<cl_device_id>(cl_device_id::from_ptr(ptr))
-            }
+            CL_QUEUE_DEVICE => cl_prop::<cl_device_id>(cl_device_id::from_ptr(queue.device)),
             CL_QUEUE_DEVICE_DEFAULT => cl_prop::<cl_command_queue>(ptr::null_mut()),
             CL_QUEUE_PROPERTIES => cl_prop::<cl_command_queue_properties>(queue.props),
             CL_QUEUE_PROPERTIES_ARRAY => {
@@ -61,7 +57,7 @@ pub fn create_command_queue_impl(
     properties_v2: Option<Properties<cl_queue_properties>>,
 ) -> CLResult<cl_command_queue> {
     let c = context.get_arc()?;
-    let d = device.get_arc()?;
+    let d = device.get_ref()?.to_static().ok_or(CL_INVALID_DEVICE)?;
 
     // CL_INVALID_DEVICE if device [...] is not associated with context.
     if !c.devs.contains(&d) {
@@ -102,7 +98,7 @@ fn create_command_queue_with_properties(
     properties: *const cl_queue_properties,
 ) -> CLResult<cl_command_queue> {
     let c = context.get_arc()?;
-    let d = device.get_arc()?;
+    let d = device.get_ref()?.to_static().ok_or(CL_INVALID_DEVICE)?;
 
     let mut queue_properties = cl_command_queue_properties::default();
     let properties = if properties.is_null() {

@@ -33,18 +33,12 @@ impl CLInfo<cl_program_info> for cl_program {
                 let ptr = Arc::as_ptr(&prog.context);
                 cl_prop::<cl_context>(cl_context::from_ptr(ptr))
             }
-            CL_PROGRAM_DEVICES => {
-                cl_prop::<&Vec<cl_device_id>>(
-                    &prog
-                        .devs
-                        .iter()
-                        .map(|d| {
-                            // Note we use as_ptr here which doesn't increase the reference count.
-                            cl_device_id::from_ptr(Arc::as_ptr(d))
-                        })
-                        .collect(),
-                )
-            }
+            CL_PROGRAM_DEVICES => cl_prop::<Vec<cl_device_id>>(
+                prog.devs
+                    .iter()
+                    .map(|&d| cl_device_id::from_ptr(d))
+                    .collect(),
+            ),
             CL_PROGRAM_IL => match &prog.src {
                 ProgramSourceType::Il(il) => to_maybeuninit_vec(il.to_bin().to_vec()),
                 _ => Vec::new(),
@@ -82,12 +76,12 @@ impl CLInfoObj<cl_program_build_info, cl_device_id> for cl_program {
     }
 }
 
-fn validate_devices(
+fn validate_devices<'a>(
     device_list: *const cl_device_id,
     num_devices: cl_uint,
-    default: &[Arc<Device>],
-) -> CLResult<Vec<Arc<Device>>> {
-    let mut devs = cl_device_id::get_arc_vec_from_arr(device_list, num_devices)?;
+    default: &[&'a Device],
+) -> CLResult<Vec<&'a Device>> {
+    let mut devs = cl_device_id::get_ref_vec_from_arr(device_list, num_devices)?;
 
     // If device_list is a NULL value, the compile is performed for all devices associated with
     // program.
@@ -197,7 +191,7 @@ fn create_program_with_binary(
     binary_status: *mut cl_int,
 ) -> CLResult<cl_program> {
     let c = context.get_arc()?;
-    let devs = cl_device_id::get_arc_vec_from_arr(device_list, num_devices)?;
+    let devs = cl_device_id::get_ref_vec_from_arr(device_list, num_devices)?;
 
     // CL_INVALID_VALUE if device_list is NULL or num_devices is zero.
     if devs.is_empty() {

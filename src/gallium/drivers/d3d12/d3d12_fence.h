@@ -44,7 +44,7 @@ inline HANDLE
 d3d12_fence_create_event(int *fd)
 {
    *fd = -1;
-   return CreateEvent(NULL, FALSE, FALSE, NULL);
+   return CreateEvent(NULL, false, false, NULL);
 }
 
 inline bool

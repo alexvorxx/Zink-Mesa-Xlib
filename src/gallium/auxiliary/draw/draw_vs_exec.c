@@ -102,7 +102,7 @@ vs_exec_run_linear(struct draw_vertex_shader *shader,
    struct tgsi_exec_machine *machine = evs->machine;
    unsigned int i, j;
    unsigned slot;
-   boolean clamp_vertex_color = shader->draw->rasterizer->clamp_vertex_color;
+   bool clamp_vertex_color = shader->draw->rasterizer->clamp_vertex_color;
 
    assert(!shader->draw->llvm);
    tgsi_exec_set_constant_buffers(machine, PIPE_MAX_CONSTANT_BUFFERS,

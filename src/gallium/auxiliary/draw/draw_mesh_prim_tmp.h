@@ -5,11 +5,11 @@
    unsigned start,                              \
    unsigned count
 
-#define FUNC_ENTER                                                \
-   /* declare more local vars */                                  \
-   const enum mesa_prim prim = input_prims->prim;                 \
-   const unsigned prim_flags = input_prims->flags;                \
-   const boolean last_vertex_last = false;                          \
+#define FUNC_ENTER                                                  \
+   /* declare more local vars */                                    \
+   const enum mesa_prim prim = input_prims->prim;                   \
+   const unsigned prim_flags = input_prims->flags;                  \
+   const bool last_vertex_last = false;                             \
    switch (prim) {                                                  \
    case MESA_PRIM_POINTS:                                           \
    case MESA_PRIM_LINES:                                            \

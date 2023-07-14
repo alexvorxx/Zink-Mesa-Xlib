@@ -459,7 +459,11 @@ struct pvr_sub_cmd_gfx {
    bool modifies_depth;
    bool modifies_stencil;
 
+   /* Store the render to a scratch buffer. */
    bool barrier_store;
+   /* Load the render (stored with a `barrier_store`) as a background to the
+    * current render.
+    */
    bool barrier_load;
 
    const struct pvr_query_pool *query_pool;
@@ -523,8 +527,15 @@ struct pvr_sub_cmd_compute {
 struct pvr_sub_cmd_transfer {
    bool serialize_with_frag;
 
-   /* List of pvr_transfer_cmd type structures. */
-   struct list_head transfer_cmds;
+   /* Pointer to the actual transfer command list, allowing primary and
+    * secondary sub-commands to share the same list.
+    */
+   struct list_head *transfer_cmds;
+
+   /* List of pvr_transfer_cmd type structures. Do not access the list
+    * directly, but always use the transfer_cmds pointer above.
+    */
+   struct list_head transfer_cmds_priv;
 };
 
 struct pvr_sub_cmd_event {

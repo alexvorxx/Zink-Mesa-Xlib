@@ -23,6 +23,7 @@
 
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_deref.h"
+#include "compiler/nir/nir_legacy.h"
 #include "compiler/nir/nir_worklist.h"
 #include "nir/nir_to_tgsi.h"
 #include "pipe/p_screen.h"
@@ -564,8 +565,9 @@ ntt_extract_const_src_offset(nir_src *src)
 
       if (alu->op == nir_op_iadd) {
          for (int i = 0; i < 2; i++) {
+            assert(!alu->src[i].negate && !alu->src[i].abs);
             nir_const_value *v = nir_src_as_const_value(alu->src[i].src);
-            if (v && !alu->src[i].negate && !alu->src[i].abs) {
+            if (v != NULL) {
                *src = alu->src[1 - i].src;
                return v[alu->src[i].swizzle[s.comp]].u32;
             }
@@ -757,13 +759,10 @@ ntt_output_decl(struct ntt_compile *c, nir_intrinsic_instr *instr, uint32_t *fra
    return ureg_writemask(out, write_mask);
 }
 
-/* If this reg or SSA def is used only for storing an output, then in the simple
- * cases we can write directly to the TGSI output instead of having store_output
- * emit its own MOV.
- */
 static bool
-ntt_try_store_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
-                             struct list_head *uses)
+ntt_try_store_in_tgsi_output_with_use(struct ntt_compile *c,
+                                      struct ureg_dst *dst,
+                                      nir_src *src)
 {
    *dst = ureg_dst_undef();
 
@@ -779,10 +778,6 @@ ntt_try_store_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
       return false;
    }
 
-   if (!list_is_singular(uses))
-      return false;
-
-   nir_src *src = list_first_entry(uses, nir_src, use_link);
    if (src->is_if)
       return false;
 
@@ -800,6 +795,56 @@ ntt_try_store_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
    dst->Index += ntt_src_as_uint(c, intr->src[1]);
 
    return frac == 0;
+}
+
+/* If this reg is used only for storing an output, then in the simple
+ * cases we can write directly to the TGSI output instead of having
+ * store_output emit its own MOV.
+ */
+static bool
+ntt_try_store_reg_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
+                                 nir_intrinsic_instr *reg_decl)
+{
+   assert(reg_decl->intrinsic == nir_intrinsic_decl_reg);
+
+   *dst = ureg_dst_undef();
+
+   /* Look for a single use for try_store_in_tgsi_output */
+   nir_src *use = NULL;
+   nir_foreach_reg_load(src, reg_decl) {
+      nir_intrinsic_instr *load = nir_instr_as_intrinsic(src->parent_instr);
+      nir_foreach_use_including_if(load_use, &load->dest.ssa) {
+         /* We can only have one use */
+         if (use != NULL)
+            return false;
+
+         use = load_use;
+      }
+   }
+
+   if (use == NULL)
+      return false;
+
+   return ntt_try_store_in_tgsi_output_with_use(c, dst, use);
+}
+
+/* If this SSA def is used only for storing an output, then in the simple
+ * cases we can write directly to the TGSI output instead of having
+ * store_output emit its own MOV.
+ */
+static bool
+ntt_try_store_ssa_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
+                                 nir_ssa_def *def)
+{
+   *dst = ureg_dst_undef();
+
+   if (!list_is_singular(&def->uses))
+      return false;
+
+   nir_foreach_use_including_if(use, def) {
+      return ntt_try_store_in_tgsi_output_with_use(c, dst, use);
+   }
+   unreachable("We have one use");
 }
 
 static void
@@ -1083,13 +1128,17 @@ static void
 ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
 {
    assert(c->num_temps == 0);
-   /* Permanently allocate all the array regs at the start. */
-   foreach_list_typed(nir_register, nir_reg, node, list) {
-      if (nir_reg->num_array_elems != 0) {
-         struct ureg_dst decl = ureg_DECL_array_temporary(c->ureg, nir_reg->num_array_elems, true);
-         c->reg_temp[nir_reg->index] = decl;
+
+   nir_foreach_reg_decl_safe(nir_reg, nir_shader_get_entrypoint(c->s)) {
+      /* Permanently allocate all the array regs at the start. */
+      unsigned num_array_elems = nir_intrinsic_num_array_elems(nir_reg);
+      unsigned index = nir_reg->dest.ssa.index;
+
+      if (num_array_elems != 0) {
+         struct ureg_dst decl = ureg_DECL_array_temporary(c->ureg, num_array_elems, true);
+         c->reg_temp[index] = decl;
          assert(c->num_temps == decl.Index);
-         c->num_temps += nir_reg->num_array_elems;
+         c->num_temps += num_array_elems;
       }
    }
    c->first_non_array_temp = c->num_temps;
@@ -1097,15 +1146,22 @@ ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
    /* After that, allocate non-array regs in our virtual space that we'll
     * register-allocate before ureg emit.
     */
-   foreach_list_typed(nir_register, nir_reg, node, list) {
-      if (nir_reg->num_array_elems == 0) {
+   nir_foreach_reg_decl_safe(nir_reg, nir_shader_get_entrypoint(c->s)) {
+      unsigned num_array_elems = nir_intrinsic_num_array_elems(nir_reg);
+      unsigned num_components = nir_intrinsic_num_components(nir_reg);
+      unsigned bit_size = nir_intrinsic_bit_size(nir_reg);
+      unsigned index = nir_reg->dest.ssa.index;
+
+      /* We already handled arrays */
+      if (num_array_elems == 0) {
          struct ureg_dst decl;
-         uint32_t write_mask = BITFIELD_MASK(nir_reg->num_components);
-         if (!ntt_try_store_in_tgsi_output(c, &decl, &nir_reg->uses)) {
-            if (nir_reg->bit_size == 64) {
-               if (nir_reg->num_components > 2) {
+         uint32_t write_mask = BITFIELD_MASK(num_components);
+
+         if (!ntt_try_store_reg_in_tgsi_output(c, &decl, nir_reg)) {
+            if (bit_size == 64) {
+               if (num_components > 2) {
                   fprintf(stderr, "NIR-to-TGSI: error: %d-component NIR r%d\n",
-                        nir_reg->num_components, nir_reg->index);
+                          num_components, index);
                }
 
                write_mask = ntt_64bit_write_mask(write_mask);
@@ -1113,7 +1169,7 @@ ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
 
             decl = ureg_writemask(ntt_temp(c), write_mask);
          }
-         c->reg_temp[nir_reg->index] = decl;
+         c->reg_temp[index] = decl;
       }
    }
 }
@@ -1169,21 +1225,24 @@ ntt_reladdr(struct ntt_compile *c, struct ureg_src addr, int addr_index)
    return ureg_scalar(ureg_src(c->addr_reg[addr_index]), 0);
 }
 
+/* Forward declare for recursion with indirects */
 static struct ureg_src
-ntt_get_src(struct ntt_compile *c, nir_src src)
+ntt_get_src(struct ntt_compile *c, nir_src src);
+
+static struct ureg_src
+ntt_get_chased_src(struct ntt_compile *c, nir_legacy_src *src)
 {
-   if (src.is_ssa) {
-      if (src.ssa->parent_instr->type == nir_instr_type_load_const)
-         return ntt_get_load_const_src(c, nir_instr_as_load_const(src.ssa->parent_instr));
+   if (src->is_ssa) {
+      if (src->ssa->parent_instr->type == nir_instr_type_load_const)
+         return ntt_get_load_const_src(c, nir_instr_as_load_const(src->ssa->parent_instr));
 
-      return c->ssa_temp[src.ssa->index];
+      return c->ssa_temp[src->ssa->index];
    } else {
-      nir_register *reg = src.reg.reg;
-      struct ureg_dst reg_temp = c->reg_temp[reg->index];
-      reg_temp.Index += src.reg.base_offset;
+      struct ureg_dst reg_temp = c->reg_temp[src->reg.handle->index];
+      reg_temp.Index += src->reg.base_offset;
 
-      if (src.reg.indirect) {
-         struct ureg_src offset = ntt_get_src(c, *src.reg.indirect);
+      if (src->reg.indirect) {
+         struct ureg_src offset = ntt_get_src(c, nir_src_for_ssa(src->reg.indirect));
          return ureg_src_indirect(ureg_src(reg_temp),
                                   ntt_reladdr(c, offset, 0));
       } else {
@@ -1193,16 +1252,31 @@ ntt_get_src(struct ntt_compile *c, nir_src src)
 }
 
 static struct ureg_src
+ntt_get_src(struct ntt_compile *c, nir_src src)
+{
+   nir_legacy_src chased = nir_legacy_chase_src(&src);
+   return ntt_get_chased_src(c, &chased);
+}
+
+static struct ureg_src
 ntt_get_alu_src(struct ntt_compile *c, nir_alu_instr *instr, int i)
 {
-   nir_alu_src src = instr->src[i];
-   struct ureg_src usrc = ntt_get_src(c, src.src);
+   /* We only support 32-bit float modifiers.  The only other modifier type
+    * officially supported by TGSI is 32-bit integer negates, but even those are
+    * broken on virglrenderer, so skip lowering all integer and f64 float mods.
+    *
+    * The options->lower_fabs requests that we not have native source modifiers
+    * for fabs, and instead emit MAX(a,-a) for nir_op_fabs.
+    */
+   nir_legacy_alu_src src =
+      nir_legacy_chase_alu_src(&instr->src[i], !c->options->lower_fabs);
+   struct ureg_src usrc = ntt_get_chased_src(c, &src.src);
 
    /* Expand double/dvec2 src references to TGSI swizzles using a pair of 32-bit
     * channels.  We skip this for undefs, as those don't get split to vec2s (but
     * the specific swizzles from an undef don't matter)
     */
-   if (nir_src_bit_size(src.src) == 64 &&
+   if (nir_src_bit_size(instr->src[i].src) == 64 &&
       !(src.src.is_ssa && src.src.ssa->parent_instr->type == nir_instr_type_ssa_undef)) {
       int chan0 = 0, chan1 = 1;
       if (nir_op_infos[instr->op].input_sizes[i] == 0) {
@@ -1224,9 +1298,9 @@ ntt_get_alu_src(struct ntt_compile *c, nir_alu_instr *instr, int i)
                           src.swizzle[3]);
    }
 
-   if (src.abs)
+   if (src.fabs)
       usrc = ureg_abs(usrc);
-   if (src.negate)
+   if (src.fneg)
       usrc = ureg_negate(usrc);
 
    return usrc;
@@ -1255,7 +1329,7 @@ ntt_get_ssa_def_decl(struct ntt_compile *c, nir_ssa_def *ssa)
       writemask = ntt_64bit_write_mask(writemask);
 
    struct ureg_dst dst;
-   if (!ntt_try_store_in_tgsi_output(c, &dst, &ssa->uses))
+   if (!ntt_try_store_ssa_in_tgsi_output(c, &dst, ssa))
       dst = ntt_temp(c);
 
    c->ssa_temp[ssa->index] = ntt_swizzle_for_write_mask(ureg_src(dst), writemask);
@@ -1264,29 +1338,58 @@ ntt_get_ssa_def_decl(struct ntt_compile *c, nir_ssa_def *ssa)
 }
 
 static struct ureg_dst
-ntt_get_dest_decl(struct ntt_compile *c, nir_dest *dest)
+ntt_get_chased_dest_decl(struct ntt_compile *c, nir_legacy_dest *dest)
 {
    if (dest->is_ssa)
-      return ntt_get_ssa_def_decl(c, &dest->ssa);
+      return ntt_get_ssa_def_decl(c, dest->ssa);
    else
-      return c->reg_temp[dest->reg.reg->index];
+      return c->reg_temp[dest->reg.handle->index];
 }
 
 static struct ureg_dst
-ntt_get_dest(struct ntt_compile *c, nir_dest *dest)
+ntt_get_chased_dest(struct ntt_compile *c, nir_legacy_dest *dest)
 {
-   struct ureg_dst dst = ntt_get_dest_decl(c, dest);
+   struct ureg_dst dst = ntt_get_chased_dest_decl(c, dest);
 
    if (!dest->is_ssa) {
       dst.Index += dest->reg.base_offset;
 
       if (dest->reg.indirect) {
-         struct ureg_src offset = ntt_get_src(c, *dest->reg.indirect);
+         struct ureg_src offset = ntt_get_src(c, nir_src_for_ssa(dest->reg.indirect));
          dst = ureg_dst_indirect(dst, ntt_reladdr(c, offset, 0));
       }
    }
 
    return dst;
+}
+
+static struct ureg_dst
+ntt_get_dest(struct ntt_compile *c, nir_dest *dest)
+{
+   nir_legacy_dest chased = nir_legacy_chase_dest(dest);
+   return ntt_get_chased_dest(c, &chased);
+}
+
+static struct ureg_dst
+ntt_get_alu_dest(struct ntt_compile *c, nir_dest *dest)
+{
+   nir_legacy_alu_dest chased = nir_legacy_chase_alu_dest(dest);
+   struct ureg_dst dst = ntt_get_chased_dest(c, &chased.dest);
+
+   if (chased.fsat)
+      dst.Saturate = true;
+
+   /* Only registers get write masks */
+   if (chased.dest.is_ssa)
+      return dst;
+
+   int dst_64 = nir_dest_bit_size(*dest) == 64;
+   unsigned write_mask = chased.write_mask;
+
+   if (dst_64)
+      return ureg_writemask(dst, ntt_64bit_write_mask(write_mask));
+   else
+      return ureg_writemask(dst, write_mask);
 }
 
 /* For an SSA dest being populated by a constant src, replace the storage with
@@ -1312,10 +1415,12 @@ ntt_store_def(struct ntt_compile *c, nir_ssa_def *def, struct ureg_src src)
 static void
 ntt_store(struct ntt_compile *c, nir_dest *dest, struct ureg_src src)
 {
-   if (dest->is_ssa)
-      ntt_store_def(c, &dest->ssa, src);
+   nir_legacy_dest chased = nir_legacy_chase_dest(dest);
+
+   if (chased.is_ssa)
+      ntt_store_def(c, chased.ssa, src);
    else {
-      struct ureg_dst dst = ntt_get_dest(c, dest);
+      struct ureg_dst dst = ntt_get_chased_dest(c, &chased);
       ntt_MOV(c, dst, src);
    }
 }
@@ -1353,6 +1458,10 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
    int src_64 = nir_src_bit_size(instr->src[0].src) == 64;
    int num_srcs = nir_op_infos[instr->op].num_inputs;
 
+   /* Don't try to translate folded fsat since their source won't be valid */
+   if (instr->op == nir_op_fsat && nir_legacy_fsat_folds(instr))
+      return;
+
    c->precise = instr->exact;
 
    assert(num_srcs <= ARRAY_SIZE(src));
@@ -1361,15 +1470,7 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
    for (; i < ARRAY_SIZE(src); i++)
       src[i] = ureg_src_undef();
 
-   dst = ntt_get_dest(c, &instr->dest.dest);
-
-   if (instr->dest.saturate)
-      dst.Saturate = true;
-
-   if (dst_64)
-      dst = ureg_writemask(dst, ntt_64bit_write_mask(instr->dest.write_mask));
-   else
-      dst = ureg_writemask(dst, instr->dest.write_mask);
+   dst = ntt_get_alu_dest(c, &instr->dest.dest);
 
    static enum tgsi_opcode op_map[][2] = {
       [nir_op_mov] = { TGSI_OPCODE_MOV, TGSI_OPCODE_MOV },
@@ -1522,6 +1623,10 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
          break;
 
       case nir_op_fabs:
+         /* Try to eliminate */
+         if (!c->options->lower_fabs && nir_legacy_float_mod_folds(instr))
+            break;
+
          if (c->options->lower_fabs)
             ntt_MAX(c, dst, src[0], ureg_negate(src[0]));
          else
@@ -1538,6 +1643,10 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
          break;
 
       case nir_op_fneg:
+         /* Try to eliminate */
+         if (nir_legacy_float_mod_folds(instr))
+            break;
+
          ntt_MOV(c, dst, ureg_negate(src[0]));
          break;
 
@@ -2564,6 +2673,14 @@ ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
       ntt_CLOCK(c, ntt_get_dest(c, &instr->dest));
       break;
 
+   case nir_intrinsic_decl_reg:
+   case nir_intrinsic_load_reg:
+   case nir_intrinsic_load_reg_indirect:
+   case nir_intrinsic_store_reg:
+   case nir_intrinsic_store_reg_indirect:
+      /* fully consumed */
+      break;
+
    default:
       fprintf(stderr, "Unknown intrinsic: ");
       nir_print_instr(&instr->instr, stderr);
@@ -3050,7 +3167,7 @@ ntt_emit_impl(struct ntt_compile *c, nir_function_impl *impl)
    c->impl = impl;
 
    c->ssa_temp = rzalloc_array(c, struct ureg_src, impl->ssa_alloc);
-   c->reg_temp = rzalloc_array(c, struct ureg_dst, impl->reg_alloc);
+   c->reg_temp = rzalloc_array(c, struct ureg_dst, impl->ssa_alloc);
 
    /* Set up the struct ntt_blocks to put insns in */
    c->blocks = _mesa_pointer_hash_table_create(c);
@@ -3855,24 +3972,16 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
    NIR_PASS_V(s, nir_opt_move, move_all);
 
-   /* We're fine lowering only 32-bit floats. TGSI officially supports 32-bit
-    * integer negates, but even those are broken on virglrenderer, so we don't
-    * use integer or f64 float mods.
-    *
-    * The options->lower_fabs requests that we not have native source modifiers
-    * for fabs, and instead emit MAX(a,-a) for nir_op_fabs.
+   NIR_PASS_V(s, nir_convert_from_ssa, true, true);
+   NIR_PASS_V(s, nir_lower_vec_to_regs, ntt_vec_to_mov_writemask_cb, NULL);
+
+   /* locals_to_reg_intrinsics will leave dead derefs that are good to clean up.
     */
-   nir_lower_to_source_mods_flags source_mods = nir_lower_fneg_source_mods;
-   if (!options->lower_fabs)
-      source_mods |= nir_lower_fabs_source_mods;
-   NIR_PASS_V(s, nir_lower_to_source_mods, source_mods);
-
-   NIR_PASS_V(s, nir_convert_from_ssa, true);
-   NIR_PASS_V(s, nir_lower_vec_to_movs, ntt_vec_to_mov_writemask_cb, NULL);
-
-   /* locals_to_regs will leave dead derefs that are good to clean up. */
-   NIR_PASS_V(s, nir_lower_locals_to_regs);
+   NIR_PASS_V(s, nir_lower_locals_to_reg_intrinsics, 32);
    NIR_PASS_V(s, nir_opt_dce);
+
+   /* See comment in ntt_get_alu_src for supported modifiers */
+   NIR_PASS_V(s, nir_legacy_trivialize, !options->lower_fabs);
 
    if (NIR_DEBUG(TGSI)) {
       fprintf(stderr, "NIR before translation to TGSI:\n");

@@ -136,6 +136,9 @@ zink-tu-a618-traces-performance:
     # Always use the same device
     # a618 tag starts with cbg-1 (not cbg-0) for some reason
     LAVA_TAGS: "cbg-1"
+  needs:
+    - !reference [zink-tu-a618-traces, needs]
+    - !reference [.piglit-performance:arm64, needs]
 
 .zink-freedreno-a630-traces:
   extends:

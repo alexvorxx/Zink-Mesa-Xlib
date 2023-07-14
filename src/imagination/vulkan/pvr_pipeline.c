@@ -2242,8 +2242,8 @@ err_free_build_context:
    return result;
 }
 
-static struct vk_subpass_info
-pvr_create_subpass_info(const VkGraphicsPipelineCreateInfo *const info)
+static struct vk_render_pass_state
+pvr_create_renderpass_state(const VkGraphicsPipelineCreateInfo *const info)
 {
    PVR_FROM_HANDLE(pvr_render_pass, pass, info->renderPass);
    const struct pvr_render_subpass *const subpass =
@@ -2263,8 +2263,10 @@ pvr_create_subpass_info(const VkGraphicsPipelineCreateInfo *const info)
          pass->attachments[subpass->depth_stencil_attachment].aspects;
    }
 
-   return (struct vk_subpass_info){
+   return (struct vk_render_pass_state){
       .attachment_aspects = attachment_aspects,
+      .render_pass = info->renderPass,
+      .subpass = info->subpass,
 
       /* TODO: This is only needed for VK_KHR_create_renderpass2 (or core 1.2),
        * which is not currently supported.
@@ -2282,7 +2284,8 @@ pvr_graphics_pipeline_init(struct pvr_device *device,
 {
    struct vk_dynamic_graphics_state *const dynamic_state =
       &gfx_pipeline->dynamic_state;
-   const struct vk_subpass_info sp_info = pvr_create_subpass_info(pCreateInfo);
+   const struct vk_render_pass_state rp_state =
+      pvr_create_renderpass_state(pCreateInfo);
 
    struct vk_graphics_pipeline_all_state all_state;
    struct vk_graphics_pipeline_state state = { 0 };
@@ -2294,7 +2297,7 @@ pvr_graphics_pipeline_init(struct pvr_device *device,
    result = vk_graphics_pipeline_state_fill(&device->vk,
                                             &state,
                                             pCreateInfo,
-                                            &sp_info,
+                                            &rp_state,
                                             &all_state,
                                             NULL,
                                             0,

@@ -28,7 +28,6 @@ spec@!opengl 1.0@gl-1.0-edgeflag-quads,Fail
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2,Fail
-spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-32f_24_8_rev samples=2,Fail
 spec@!opengl 1.1@getteximage-formats,Fail
 spec@!opengl 1.1@linestipple,Fail
@@ -215,7 +214,6 @@ spec@arb_texture_float@fbo-blending-formats@GL_ALPHA32F_ARB,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_INTENSITY32F_ARB,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_LUMINANCE32F_ARB,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_LUMINANCE_ALPHA32F_ARB,Fail
-spec@arb_texture_float@fbo-blending-formats@GL_RGB16F,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_RGB32F,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_RGBA32F,Fail
 spec@arb_texture_float@texwrap formats bordercolor,Fail
@@ -503,6 +501,10 @@ spec@oes_texture_view@rendering-formats@clear GL_RGB10_A2 as GL_RGBA8I,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth16,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24,Fail
 
+# This fails the subtest for GL_ALPHA16 because we don't support a 16-bit unorm format for rendering
+# so gallium falls back to using an 8-bit unorm format and we lose some precision in the result.
+spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
+
 # These fail because the shaders use indirect indexing on samplers which we
 # don't support (the GLSL linker fails to link the shaders because of this).
 # If loop unrolling kicks-in for these tests it removes the indirect indexing
@@ -512,15 +514,11 @@ spec@!opengl 2.0@max-samplers,Fail
 spec@!opengl 2.0@max-samplers border,Fail
 
 wayland-dEQP-EGL.functional.wide_color.window_888_colorspace_default,Fail
-wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
 
 # Works when run individually, but fail consistently on the CI
 dEQP-GLES3.functional.texture.specification.teximage2d_pbo.rgba32i_cube,Fail
-
-# Debian bookworm update (2023-04-27)
-spec@!opengl 1.0@depth-clear-precision-check,Timeout
 
 # https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/818
 spec@intel_performance_query@intel_performance_query-issue_2235,Fail

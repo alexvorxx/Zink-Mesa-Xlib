@@ -493,15 +493,18 @@ radv_dynamic_state_mask(VkDynamicState state)
 static bool
 radv_pipeline_is_blend_enabled(const struct radv_graphics_pipeline *pipeline, const struct vk_color_blend_state *cb)
 {
+   /* If we don't know then we have to assume that blend may be enabled. cb may also be NULL in this
+    * case.
+    */
+   if (pipeline->dynamic_states & (RADV_DYNAMIC_COLOR_BLEND_ENABLE | RADV_DYNAMIC_COLOR_WRITE_MASK))
+      return true;
+
+   /* If we have the blend enable state, then cb being NULL indicates no attachments are written. */
    if (cb) {
       for (uint32_t i = 0; i < cb->attachment_count; i++) {
          if (cb->attachments[i].write_mask && cb->attachments[i].blend_enable)
             return true;
       }
-   } else {
-      /* When all color blend states are dynamic, it's allowed to be NULL. */
-      if ((pipeline->dynamic_states & RADV_DYNAMIC_CB_STATES) == RADV_DYNAMIC_CB_STATES)
-         return true;
    }
 
    return false;
@@ -1814,7 +1817,8 @@ radv_generate_graphics_pipeline_key(const struct radv_device *device, const stru
                                     VkGraphicsPipelineLibraryFlagBitsEXT lib_flags)
 {
    const struct radv_physical_device *pdevice = device->physical_device;
-   struct radv_pipeline_key key = radv_generate_pipeline_key(device, &pipeline->base, pCreateInfo->flags);
+   struct radv_pipeline_key key = radv_generate_pipeline_key(device, pCreateInfo->pStages, pCreateInfo->stageCount,
+                                                             pCreateInfo->flags, pCreateInfo->pNext);
 
    key.lib_flags = lib_flags;
    key.has_multiview_view_index = state->rp ? !!state->rp->view_mask : 0;
@@ -2059,9 +2063,14 @@ radv_consider_force_vrs(const struct radv_device *device, const struct radv_grap
    if (!(pipeline->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT))
       return false;
 
-   /* Do not enable if the PS uses gl_FragCoord because it breaks postprocessing in some games. */
+   /* Do not enable if the PS uses gl_FragCoord because it breaks postprocessing in some games, or with Primitive
+    * Ordered Pixel Shading (regardless of whether per-pixel data is addressed with gl_FragCoord or a custom
+    * interpolator) as that'd result in races between adjacent primitives with no common fine pixels.
+    */
    nir_shader *fs_shader = stages[MESA_SHADER_FRAGMENT].nir;
-   if (fs_shader && BITSET_TEST(fs_shader->info.system_values_read, SYSTEM_VALUE_FRAG_COORD)) {
+   if (fs_shader && (BITSET_TEST(fs_shader->info.system_values_read, SYSTEM_VALUE_FRAG_COORD) ||
+                     fs_shader->info.fs.sample_interlock_ordered || fs_shader->info.fs.sample_interlock_unordered ||
+                     fs_shader->info.fs.pixel_interlock_ordered || fs_shader->info.fs.pixel_interlock_unordered)) {
       return false;
    }
 
@@ -2201,6 +2210,8 @@ radv_pipeline_create_gs_copy_shader(struct radv_device *device, struct radv_pipe
    gs_copy_stage.info.user_sgprs_locs = gs_copy_stage.args.user_sgprs_locs;
    gs_copy_stage.info.inline_push_constant_mask = gs_copy_stage.args.ac.inline_push_const_mask;
 
+   NIR_PASS_V(nir, ac_nir_lower_intrinsics_to_args, device->physical_device->rad_info.gfx_level, AC_HW_VERTEX_SHADER,
+              &gs_copy_stage.args.ac);
    NIR_PASS_V(nir, radv_nir_lower_abi, device->physical_device->rad_info.gfx_level, &gs_copy_stage.info,
               &gs_copy_stage.args, pipeline_key, device->physical_device->rad_info.address32_hi);
 
@@ -2208,8 +2219,15 @@ radv_pipeline_create_gs_copy_shader(struct radv_device *device, struct radv_pipe
       .optimisations_disabled = pipeline_key->optimisations_disabled,
    };
 
-   return radv_shader_nir_to_asm(device, cache, &gs_copy_stage, &nir, 1, &key, keep_executable_info,
-                                 keep_statistic_info, gs_copy_binary);
+   bool dump_shader = radv_can_dump_shader(device, nir, true);
+
+   *gs_copy_binary =
+      radv_shader_nir_to_asm(device, &gs_copy_stage, &nir, 1, &key, keep_executable_info, keep_statistic_info);
+   struct radv_shader *copy_shader =
+      radv_shader_create(device, cache, *gs_copy_binary, keep_executable_info || dump_shader);
+   if (copy_shader)
+      radv_shader_generate_debug_info(device, dump_shader, *gs_copy_binary, copy_shader, &nir, 1, &gs_copy_stage.info);
+   return copy_shader;
 }
 
 static void
@@ -2245,8 +2263,13 @@ radv_pipeline_nir_to_asm(struct radv_device *device, struct radv_graphics_pipeli
 
       int64_t stage_start = os_time_get_nano();
 
-      pipeline->base.shaders[s] = radv_shader_nir_to_asm(device, cache, &stages[s], shaders, shader_count, pipeline_key,
-                                                         keep_executable_info, keep_statistic_info, &binaries[s]);
+      bool dump_shader = radv_can_dump_shader(device, shaders[0], false);
+
+      binaries[s] = radv_shader_nir_to_asm(device, &stages[s], shaders, shader_count, pipeline_key,
+                                           keep_executable_info, keep_statistic_info);
+      pipeline->base.shaders[s] = radv_shader_create(device, cache, binaries[s], keep_executable_info || dump_shader);
+      radv_shader_generate_debug_info(device, dump_shader, binaries[s], pipeline->base.shaders[s], shaders,
+                                      shader_count, &stages[s].info);
 
       if (s == MESA_SHADER_GEOMETRY && !stages[s].info.is_ngg) {
          pipeline->base.gs_copy_shader =
@@ -3321,6 +3344,9 @@ radv_emit_fragment_shader(const struct radv_device *device, struct radeon_cmdbuf
    radeon_set_context_reg(ctx_cs, R_028710_SPI_SHADER_Z_FORMAT,
                           ac_get_spi_shader_z_format(ps->info.ps.writes_z, ps->info.ps.writes_stencil,
                                                      ps->info.ps.writes_sample_mask, ps->info.ps.writes_mrt0_alpha));
+
+   if (pdevice->rad_info.gfx_level >= GFX9 && pdevice->rad_info.gfx_level < GFX11)
+      radeon_set_context_reg(ctx_cs, R_028C40_PA_SC_SHADER_CONTROL, S_028C40_LOAD_COLLISION_WAVEID(ps->info.ps.pops));
 }
 
 static void
@@ -3809,8 +3835,11 @@ radv_needs_null_export_workaround(const struct radv_device *device, const struct
     * instructions if any are present.
     *
     * GFX11 requires one color output, otherwise the DCC decompression does nothing.
+    *
+    * Primitive Ordered Pixel Shading also requires an export, otherwise interlocking doesn't work
+    * correctly before GFX11, and a hang happens on GFX11.
     */
-   return (gfx_level <= GFX9 || ps->info.ps.can_discard ||
+   return (gfx_level <= GFX9 || ps->info.ps.can_discard || ps->info.ps.pops ||
            (custom_blend_mode == V_028808_CB_DCC_DECOMPRESS_GFX11 && gfx_level >= GFX11)) &&
           !ps->info.ps.writes_z && !ps->info.ps.writes_stencil && !ps->info.ps.writes_sample_mask;
 }
@@ -3913,7 +3942,6 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       radv_pipeline_init_vertex_input_state(device, pipeline, &state);
 
    radv_pipeline_init_shader_stages_state(device, pipeline);
-   radv_pipeline_init_scratch(device, &pipeline->base);
 
    /* Find the last vertex shader stage that eventually uses streamout. */
    pipeline->streamout_shader = radv_pipeline_get_streamout_shader(pipeline);
@@ -3933,6 +3961,8 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       if (pipeline->base.shaders[i]) {
          pipeline->base.shader_upload_seq =
             MAX2(pipeline->base.shader_upload_seq, pipeline->base.shaders[i]->upload_seq);
+
+         radv_pipeline_init_scratch(device, &pipeline->base, pipeline->base.shaders[i]);
       }
    }
 

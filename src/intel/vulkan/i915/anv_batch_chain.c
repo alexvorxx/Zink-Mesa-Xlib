@@ -539,10 +539,16 @@ static int
 anv_gem_execbuffer(struct anv_device *device,
                    struct drm_i915_gem_execbuffer2 *execbuf)
 {
-   if (execbuf->flags & I915_EXEC_FENCE_OUT)
-      return intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_EXECBUFFER2_WR, execbuf);
-   else
-      return intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_EXECBUFFER2, execbuf);
+   int ret;
+   const unsigned long request = (execbuf->flags & I915_EXEC_FENCE_OUT) ?
+      DRM_IOCTL_I915_GEM_EXECBUFFER2_WR :
+      DRM_IOCTL_I915_GEM_EXECBUFFER2;
+
+   do {
+      ret = intel_ioctl(device->fd, request, execbuf);
+   } while (ret && errno == ENOMEM);
+
+   return ret;
 }
 
 static VkResult

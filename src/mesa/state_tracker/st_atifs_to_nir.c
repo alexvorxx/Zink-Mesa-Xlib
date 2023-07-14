@@ -51,7 +51,7 @@ struct st_translate {
 
    bool regs_written[MAX_NUM_PASSES_ATI][MAX_NUM_FRAGMENT_REGISTERS_ATI];
 
-   boolean error;
+   bool error;
 };
 
 static nir_ssa_def *

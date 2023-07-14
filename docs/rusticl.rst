@@ -1,6 +1,17 @@
 Rusticl
 =======
 
+Enabling
+--------
+
+In order to use Rusticl on any platform the environment variable
+:envvar:`RUSTICL_ENABLE` has to be used. Rusticl does not advertise devices
+for any driver by default yet as doing so can impact system stability until
+remaining core issues are ironed out.
+
+Building
+--------
+
 To build Rusticl you need to satisfy the following build dependencies:
 
 -  ``rustc``

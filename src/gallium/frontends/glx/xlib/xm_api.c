@@ -398,8 +398,8 @@ xmesa_get_window_size(Display *dpy, XMesaBuffer b,
 static GLuint
 choose_pixel_format(XMesaVisual v)
 {
-   boolean native_byte_order = (host_byte_order() ==
-                                ImageByteOrder(v->display));
+   bool native_byte_order = (host_byte_order() ==
+                             ImageByteOrder(v->display));
 
    if (   GET_REDMASK(v)   == 0x0000ff
        && GET_GREENMASK(v) == 0x00ff00
@@ -1534,7 +1534,7 @@ XMesaBindTexImage(Display *dpy, XMesaBuffer drawable, int buffer,
       pipe_texture_unmap(pipe, tex_xfer);
 
       st_context_teximage(st, GL_TEXTURE_2D, 0 /* level */, internal_format,
-                          res, FALSE /* no mipmap */);
+                          res, false /* no mipmap */);
 
    }
 }

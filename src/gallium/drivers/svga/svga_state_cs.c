@@ -109,7 +109,7 @@ emit_hw_cs(struct svga_context *svga, uint64_t dirty)
       if (ret != PIPE_OK)
          goto done;
 
-      svga->rebind.flags.cs = FALSE;
+      svga->rebind.flags.cs = false;
       svga->dirty |= SVGA_NEW_CS_VARIANT;
       svga->state.hw_draw.cs = variant;
    }

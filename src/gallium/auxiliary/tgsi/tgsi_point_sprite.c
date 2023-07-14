@@ -526,8 +526,8 @@ tgsi_add_point_sprite(const struct tgsi_token *tokens_in,
                       int *aa_point_coord_index)
 {
    struct psprite_transform_context transform;
-   const uint num_new_tokens = 200; /* should be enough */
-   const uint new_len = tgsi_num_tokens(tokens_in) + num_new_tokens;
+   const unsigned num_new_tokens = 200; /* should be enough */
+   const unsigned new_len = tgsi_num_tokens(tokens_in) + num_new_tokens;
    struct tgsi_token *new_tokens;
 
    /* setup transformation context */

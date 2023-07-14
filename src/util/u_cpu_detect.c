@@ -33,7 +33,7 @@
  */
 
 #include "util/detect.h"
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 
 #include "util/u_debug.h"
 #include "u_cpu_detect.h"

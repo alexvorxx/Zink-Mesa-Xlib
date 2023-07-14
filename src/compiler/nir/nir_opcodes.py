@@ -536,65 +536,35 @@ for (unsigned bit = 0; bit < bit_size; bit++) {
 }
 """)
 
-# AMD_gcn_shader extended instructions
-unop_horiz("cube_face_coord_amd", 3, tfloat32, 3, tfloat32, """
-dst.x = dst.y = dst.z = 0.0;
-float absX = fabsf(src0.x);
-float absY = fabsf(src0.y);
-float absZ = fabsf(src0.z);
-
-if (absX >= absY && absX >= absZ) { dst.z = 2 * src0.x; }
-if (absY >= absX && absY >= absZ) { dst.z = 2 * src0.y; }
-if (absZ >= absX && absZ >= absY) { dst.z = 2 * src0.z; }
-
-if (src0.x >= 0 && absX >= absY && absX >= absZ) { dst.x = -src0.z; dst.y = -src0.y; }
-if (src0.x < 0 && absX >= absY && absX >= absZ) { dst.x = src0.z; dst.y = -src0.y; }
-if (src0.y >= 0 && absY >= absX && absY >= absZ) { dst.x = src0.x; dst.y = src0.z; }
-if (src0.y < 0 && absY >= absX && absY >= absZ) { dst.x = src0.x; dst.y = -src0.z; }
-if (src0.z >= 0 && absZ >= absX && absZ >= absY) { dst.x = src0.x; dst.y = -src0.y; }
-if (src0.z < 0 && absZ >= absX && absZ >= absY) { dst.x = -src0.x; dst.y = -src0.y; }
-""")
-
-unop_horiz("cube_face_index_amd", 1, tfloat32, 3, tfloat32, """
-dst.x = 0.0;
-float absX = fabsf(src0.x);
-float absY = fabsf(src0.y);
-float absZ = fabsf(src0.z);
-if (src0.x >= 0 && absX >= absY && absX >= absZ) dst.x = 0;
-if (src0.x < 0 && absX >= absY && absX >= absZ) dst.x = 1;
-if (src0.y >= 0 && absY >= absX && absY >= absZ) dst.x = 2;
-if (src0.y < 0 && absY >= absX && absY >= absZ) dst.x = 3;
-if (src0.z >= 0 && absZ >= absX && absZ >= absY) dst.x = 4;
-if (src0.z < 0 && absZ >= absX && absZ >= absY) dst.x = 5;
-""")
-
 unop_reduce("fsum", 1, tfloat, tfloat, "{src}", "{src0} + {src1}", "{src}",
             description = "Sum of vector components")
 
-def binop_convert(name, out_type, in_type, alg_props, const_expr, description=""):
-   opcode(name, 0, out_type, [0, 0], [in_type, in_type],
+def binop_convert(name, out_type, in_type1, alg_props, const_expr, description="", in_type2=None):
+   if in_type2 is None:
+      in_type2 = in_type1
+   opcode(name, 0, out_type, [0, 0], [in_type1, in_type2],
           False, alg_props, const_expr, description)
 
 def binop(name, ty, alg_props, const_expr, description = ""):
    binop_convert(name, ty, ty, alg_props, const_expr, description)
 
-def binop_compare(name, ty, alg_props, const_expr, description = ""):
-   binop_convert(name, tbool1, ty, alg_props, const_expr, description)
+def binop_compare(name, ty, alg_props, const_expr, description = "", ty2=None):
+   binop_convert(name, tbool1, ty, alg_props, const_expr, description, ty2)
 
-def binop_compare8(name, ty, alg_props, const_expr, description = ""):
-   binop_convert(name, tbool8, ty, alg_props, const_expr, description)
+def binop_compare8(name, ty, alg_props, const_expr, description = "", ty2=None):
+   binop_convert(name, tbool8, ty, alg_props, const_expr, description, ty2)
 
-def binop_compare16(name, ty, alg_props, const_expr, description = ""):
-   binop_convert(name, tbool16, ty, alg_props, const_expr, description)
+def binop_compare16(name, ty, alg_props, const_expr, description = "", ty2=None):
+   binop_convert(name, tbool16, ty, alg_props, const_expr, description, ty2)
 
-def binop_compare32(name, ty, alg_props, const_expr, description = ""):
-   binop_convert(name, tbool32, ty, alg_props, const_expr, description)
+def binop_compare32(name, ty, alg_props, const_expr, description = "", ty2=None):
+   binop_convert(name, tbool32, ty, alg_props, const_expr, description, ty2)
 
-def binop_compare_all_sizes(name, ty, alg_props, const_expr, description = ""):
-   binop_compare(name, ty, alg_props, const_expr, description)
-   binop_compare8(name + "8", ty, alg_props, const_expr, description)
-   binop_compare16(name + "16", ty, alg_props, const_expr, description)
-   binop_compare32(name + "32", ty, alg_props, const_expr, description)
+def binop_compare_all_sizes(name, ty, alg_props, const_expr, description = "", ty2=None):
+   binop_compare(name, ty, alg_props, const_expr, description, ty2)
+   binop_compare8(name + "8", ty, alg_props, const_expr, description, ty2)
+   binop_compare16(name + "16", ty, alg_props, const_expr, description, ty2)
+   binop_compare32(name + "32", ty, alg_props, const_expr, description, ty2)
 
 def binop_horiz(name, out_size, out_type, src1_size, src1_type, src2_size,
                 src2_type, const_expr, description = ""):
@@ -846,6 +816,12 @@ binop_compare_all_sizes("ieq", tint, _2src_commutative, "src0 == src1")
 binop_compare_all_sizes("ine", tint, _2src_commutative, "src0 != src1")
 binop_compare_all_sizes("ult", tuint, "", "src0 < src1")
 binop_compare_all_sizes("uge", tuint, "", "src0 >= src1")
+
+binop_compare_all_sizes("bitnz", tuint, "", "((uint64_t)src0 >> (src1 & (bit_size - 1)) & 0x1) == 0x1",
+   "only uses the least significant bits like SM5 shifts", tuint32)
+
+binop_compare_all_sizes("bitz", tuint, "", "((uint64_t)src0 >> (src1 & (bit_size - 1)) & 0x1) == 0x0",
+   "only uses the least significant bits like SM5 shifts", tuint32)
 
 # integer-aware GLSL-style comparisons that compare floats and ints
 
@@ -1259,11 +1235,11 @@ dst = ((((src0 & 0xffff0000) >> 16) * (src1 & 0x0000ffff)) << 16) + src2;
 triop("imad24_ir3", tint32, _2src_commutative,
       "(((int32_t)src0 << 8) >> 8) * (((int32_t)src1 << 8) >> 8) + src2")
 
-# r600-specific instruction that evaluates unnormalized cube texture coordinates
+# r600/gcn specific instruction that evaluates unnormalized cube texture coordinates
 # and face index
 # The actual texture coordinates are evaluated from this according to
 #    dst.yx / abs(dst.z) + 1.5
-unop_horiz("cube_r600", 4, tfloat32, 3, tfloat32, """
+unop_horiz("cube_amd", 4, tfloat32, 3, tfloat32, """
    dst.x = dst.y = dst.z = 0.0;
    float absX = fabsf(src0.x);
    float absY = fabsf(src0.y);
@@ -1420,6 +1396,14 @@ for (int i = 0; i < 32; i += 8) {
 # Mali-specific opcodes
 unop("fsat_signed_mali", tfloat, ("fmin(fmax(src0, -1.0), 1.0)"))
 unop("fclamp_pos_mali", tfloat, ("fmax(src0, 0.0)"))
+
+opcode("b32fcsel_mdg", 0, tuint, [0, 0, 0],
+       [tbool32, tfloat, tfloat], False, selection, "src0 ? src1 : src2",
+       description = csel_description.format("a 32-bit", "0 vs ~0") + """
+       This Midgard-specific variant takes floating-point sources, rather than
+       integer sources. That includes support for floating point modifiers in
+       the backend.
+       """)
 
 # Magnitude equal to fddx/y, sign undefined. Derivative of a constant is zero.
 unop("fddx_must_abs_mali", tfloat, "0.0")

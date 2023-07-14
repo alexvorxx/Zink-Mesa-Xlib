@@ -1684,7 +1684,13 @@ v3d_clear_render_target(struct pipe_context *pctx, struct pipe_surface *ps,
                         unsigned x, unsigned y, unsigned w, unsigned h,
                         bool render_condition_enabled)
 {
-        fprintf(stderr, "unimpl: clear RT\n");
+        struct v3d_context *v3d = v3d_context(pctx);
+
+        if (render_condition_enabled && !v3d_render_condition_check(v3d))
+                return;
+
+        v3d_blitter_save(v3d, false, render_condition_enabled);
+        util_blitter_clear_render_target(v3d->blitter, ps, color, x, y, w, h);
 }
 
 static void
@@ -1693,7 +1699,14 @@ v3d_clear_depth_stencil(struct pipe_context *pctx, struct pipe_surface *ps,
                         unsigned x, unsigned y, unsigned w, unsigned h,
                         bool render_condition_enabled)
 {
-        fprintf(stderr, "unimpl: clear DS\n");
+        struct v3d_context *v3d = v3d_context(pctx);
+
+        if (render_condition_enabled && !v3d_render_condition_check(v3d))
+                return;
+
+        v3d_blitter_save(v3d, false, render_condition_enabled);
+        util_blitter_clear_depth_stencil(v3d->blitter, ps, buffers, depth,
+                                         stencil, x, y, w, h);
 }
 
 void

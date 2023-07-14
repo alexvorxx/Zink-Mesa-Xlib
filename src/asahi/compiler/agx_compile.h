@@ -10,6 +10,17 @@
 #include "util/u_dynarray.h"
 
 struct agx_varyings_vs {
+   /* The number of user varyings of each type. The varyings must be allocated
+    * in this order ({smooth, flat, linear} × {32, 16}), which may require
+    * remapping.
+    */
+   unsigned num_32_smooth;
+   unsigned num_32_flat;
+   unsigned num_32_linear;
+   unsigned num_16_smooth;
+   unsigned num_16_flat;
+   unsigned num_16_linear;
+
    /* The first index used for FP16 varyings. Indices less than this are treated
     * as FP32. This may require remapping slots to guarantee.
     */
@@ -74,6 +85,11 @@ struct agx_varyings_fs {
 union agx_varyings {
    struct agx_varyings_vs vs;
    struct agx_varyings_fs fs;
+};
+
+struct agx_uncompiled_shader_info {
+   uint64_t inputs_flat_shaded;
+   uint64_t inputs_linear_shaded;
 };
 
 struct agx_shader_info {
@@ -141,6 +157,17 @@ enum agx_format {
    AGX_NUM_FORMATS,
 };
 
+struct agx_vs_shader_key {
+   /* The GPU ABI requires all smooth shaded varyings to come first, then all
+    * flat shaded varyings, then all linear shaded varyings, as written by the
+    * VS. In order to correctly remap the varyings into the right order in the
+    * VS, we need to propagate the mask of flat/linear shaded varyings into the
+    * compiler.
+    */
+   uint64_t outputs_flat_shaded;
+   uint64_t outputs_linear_shaded;
+};
+
 struct agx_fs_shader_key {
    /* Normally, access to the tilebuffer must be guarded by appropriate fencing
     * instructions to ensure correct results in the presence of out-of-order
@@ -167,11 +194,13 @@ struct agx_shader_key {
    unsigned reserved_preamble;
 
    union {
+      struct agx_vs_shader_key vs;
       struct agx_fs_shader_key fs;
    };
 };
 
-void agx_preprocess_nir(nir_shader *nir, bool support_lod_bias);
+void agx_preprocess_nir(nir_shader *nir, bool support_lod_bias,
+                        struct agx_uncompiled_shader_info *out);
 
 bool agx_nir_lower_discard_zs_emit(nir_shader *s);
 

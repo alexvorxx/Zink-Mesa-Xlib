@@ -107,6 +107,7 @@ static int ring_name_to_class(const char *ring_name,
 {
    static const char *class_names[] = {
       [INTEL_ENGINE_CLASS_RENDER] = "rcs",
+      [INTEL_ENGINE_CLASS_COMPUTE] = "ccs",
       [INTEL_ENGINE_CLASS_COPY] = "bcs",
       [INTEL_ENGINE_CLASS_VIDEO] = "vcs",
       [INTEL_ENGINE_CLASS_VIDEO_ENHANCE] = "vecs",

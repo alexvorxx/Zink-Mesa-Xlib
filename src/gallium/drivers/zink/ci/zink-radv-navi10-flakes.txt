@@ -6,7 +6,7 @@ spec@!opengl 1.0@rasterpos
 spec@!opengl 1.1@depthstencil-default_fb-copypixels samples=6
 
 # need to handle non-fbfetch feedback loops
-spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader*
+spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader.*
 
 dEQP-GLES31.functional.copy_image.mixed.viewclass_128_bits_mixed.rgba32i_srgb8_alpha8_astc_12x10_khr.renderbuffer_to_cubemap
 dEQP-GLES31.functional.copy_image.mixed.viewclass_128_bits_mixed.srgb8_alpha8_astc_8x8_khr_rgba32ui.cubemap_to_cubemap
@@ -78,3 +78,8 @@ spec@arb_compute_variable_group_size@local-size
 
 # first noticed in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/898164
 spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC-GL_UNSIGNED_INT64_ARB
+
+# Expects ordering between per-sample invocations generated from the same primitive,
+# contradicts the resolution of GL_ARB_fragment_shader_interlock issue 1.
+# https://gitlab.freedesktop.org/mesa/piglit/-/issues/93
+spec@arb_fragment_shader_interlock@arb_fragment_shader_interlock-image-load-store

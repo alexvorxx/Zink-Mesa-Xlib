@@ -42,7 +42,7 @@
  */
 
 
-#if !defined(DISPATCH_FUNCTION_SIZE) 
+#if !defined(DISPATCH_FUNCTION_SIZE)
 # define NEED_FUNCTION_POINTER
 #endif
 #include "glprocs.h"
@@ -53,14 +53,14 @@
  * and return the corresponding glprocs_table_t entry.
  */
 static const glprocs_table_t *
-get_static_proc( const char * n )
+get_static_proc(const char *n)
 {
    GLuint i;
    for (i = 0; static_functions[i].Name_offset >= 0; i++) {
       const char *testName = gl_string_table + static_functions[i].Name_offset;
       if (strcmp(testName, n) == 0)
       {
-	 return &static_functions[i];
+         return &static_functions[i];
       }
    }
    return NULL;
@@ -74,7 +74,7 @@ get_static_proc( const char * n )
 static GLint
 get_static_proc_offset(const char *funcName)
 {
-   const glprocs_table_t * const f = get_static_proc( funcName );
+   const glprocs_table_t *const f = get_static_proc(funcName);
    if (f == NULL) {
       return -1;
    }
@@ -83,72 +83,16 @@ get_static_proc_offset(const char *funcName)
 }
 
 
-
-/**
- * Return dispatch function address for the named static (built-in) function.
- * Return NULL if function not found.
- */
-static _glapi_proc
-get_static_proc_address(const char *funcName)
-{
-   const glprocs_table_t * const f = get_static_proc( funcName );
-   if (f == NULL) {
-      return NULL;
-   }
-
-#if defined(DISPATCH_FUNCTION_SIZE) && defined(GLX_INDIRECT_RENDERING)
-   return (f->Address == NULL)
-      ? get_entrypoint_address(f->Offset)
-      : f->Address;
-#elif defined(DISPATCH_FUNCTION_SIZE)
-   return get_entrypoint_address(f->Offset);
-#else
-   return f->Address;
-#endif
-}
-
-
-
-/**
- * Return the name of the function at the given offset in the dispatch
- * table.  For debugging only.
- */
-static const char *
-get_static_proc_name( GLuint offset )
-{
-   GLuint i;
-   for (i = 0; static_functions[i].Name_offset >= 0; i++) {
-      if (static_functions[i].Offset == offset) {
-	 return gl_string_table + static_functions[i].Name_offset;
-      }
-   }
-   return NULL;
-}
-
-
-
 /**********************************************************************
  * Extension function management.
  */
-
-
-/**
- * Track information about a function added to the GL API.
- */
-struct _glapi_function {
-   /**
-    * Name of the function.
-    */
-   const char * name;
-};
-
 
 /**
  * Initializes the glapi relocs table, and returns the offset of the given
  * function in the dispatch table.
  */
 int
-_glapi_add_dispatch(const char function_name)
+_glapi_add_dispatch(const char *funcName)
 {
    init_glapi_relocs_once();
 
@@ -168,27 +112,31 @@ _glapi_get_proc_offset(const char *funcName)
 
 
 /**
- * Return pointer to the named function.  If the function name isn't found
- * in the name of static functions, try generating a new API entrypoint on
- * the fly with assembly language.
+ * Return dispatch function address for the named static (built-in) function.
+ * Return NULL if function not found.
  */
 _glapi_proc
 _glapi_get_proc_address(const char *funcName)
 {
-   _glapi_proc func;
-   struct _glapi_function * entry;
-
    init_glapi_relocs_once();
 
-  if (!funcName || funcName[0] != 'g' || funcName[1] != 'l')
+   if (!funcName || funcName[0] != 'g' || funcName[1] != 'l')
       return NULL;
 
-   /* search static functions */
-   func = get_static_proc_address(funcName);
-   if (func)
-      return func;
+   const glprocs_table_t *const f = get_static_proc(funcName);
+   if (f == NULL) {
+      return NULL;
+   }
 
-   return NULL;
+#if defined(DISPATCH_FUNCTION_SIZE) && defined(GLX_INDIRECT_RENDERING)
+   return (f->Address == NULL)
+      ? get_entrypoint_address(f->Offset)
+      : f->Address;
+#elif defined(DISPATCH_FUNCTION_SIZE)
+   return get_entrypoint_address(f->Offset);
+#else
+   return f->Address;
+#endif
 }
 
 
@@ -200,16 +148,13 @@ _glapi_get_proc_address(const char *funcName)
 const char *
 _glapi_get_proc_name(GLuint offset)
 {
-   const char * n;
-
-   /* search built-in functions */
-   n = get_static_proc_name(offset);
-   if ( n != NULL ) {
-      return n;
+   GLuint i;
+   for (i = 0; static_functions[i].Name_offset >= 0; i++) {
+      if (static_functions[i].Offset == offset) {
+         return gl_string_table + static_functions[i].Name_offset;
+      }
    }
-
-   /* search added extension functions */
-   return get_extension_proc_name(offset);
+   return NULL;
 }
 
 

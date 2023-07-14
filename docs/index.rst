@@ -89,6 +89,7 @@ Linux, FreeBSD, and other operating systems.
    drivers/lima
    drivers/llvmpipe
    drivers/panfrost
+   drivers/powervr
    drivers/radv
    drivers/svga3d
    drivers/v3d

@@ -157,16 +157,16 @@ lower_es_output_store(nir_builder *b,
 
    if (st->gfx_level <= GFX8) {
       /* GFX6-8: ES is a separate HW stage, data is passed from ES to GS in VRAM. */
-      nir_ssa_def *ring = nir_build_load_ring_esgs_amd(b);
-      nir_ssa_def *es2gs_off = nir_build_load_ring_es2gs_offset_amd(b);
+      nir_ssa_def *ring = nir_load_ring_esgs_amd(b);
+      nir_ssa_def *es2gs_off = nir_load_ring_es2gs_offset_amd(b);
       emit_split_buffer_store(b, intrin->src[0].ssa, ring, io_off, es2gs_off, 4u,
                               intrin->src[0].ssa->num_components, intrin->src[0].ssa->bit_size,
                               write_mask, true, true);
    } else {
       /* GFX9+: ES is merged into GS, data is passed through LDS. */
-      nir_ssa_def *vertex_idx = nir_build_load_local_invocation_index(b);
+      nir_ssa_def *vertex_idx = nir_load_local_invocation_index(b);
       nir_ssa_def *off = nir_iadd(b, nir_imul_imm(b, vertex_idx, st->esgs_itemsize), io_off);
-      nir_build_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask);
+      nir_store_shared(b, intrin->src[0].ssa, off, .write_mask = write_mask);
    }
 
    nir_instr_remove(instr);
@@ -176,7 +176,7 @@ lower_es_output_store(nir_builder *b,
 static nir_ssa_def *
 gs_get_vertex_offset(nir_builder *b, lower_esgs_io_state *st, unsigned vertex_index)
 {
-   nir_ssa_def *origin = nir_build_load_gs_vertex_offset_amd(b, .base = vertex_index);
+   nir_ssa_def *origin = nir_load_gs_vertex_offset_amd(b, .base = vertex_index);
    if (!st->gs_triangle_strip_adjacency_fix)
       return origin;
 
@@ -190,7 +190,7 @@ gs_get_vertex_offset(nir_builder *b, lower_esgs_io_state *st, unsigned vertex_in
       /* 6 vertex offset are packed to 3 vgprs for GFX9+ */
       fixed_index = (vertex_index + 2) % 3;
    }
-   nir_ssa_def *fixed = nir_build_load_gs_vertex_offset_amd(b, .base = fixed_index);
+   nir_ssa_def *fixed = nir_load_gs_vertex_offset_amd(b, .base = fixed_index);
 
    nir_ssa_def *prim_id = nir_load_primitive_id(b);
    /* odd primitive id use fixed offset */
@@ -272,10 +272,10 @@ lower_gs_per_vertex_input_load(nir_builder *b,
    nir_ssa_def *off = gs_per_vertex_input_offset(b, st, intrin);
 
    if (st->gfx_level >= GFX9)
-      return nir_build_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off);
+      return nir_load_shared(b, intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size, off);
 
    unsigned wave_size = 64u; /* GFX6-8 only support wave64 */
-   nir_ssa_def *ring = nir_build_load_ring_esgs_amd(b);
+   nir_ssa_def *ring = nir_load_ring_esgs_amd(b);
    return emit_split_buffer_load(b, ring, off, nir_imm_zero(b, 1, 32), 4u * wave_size,
                                  intrin->dest.ssa.num_components, intrin->dest.ssa.bit_size);
 }

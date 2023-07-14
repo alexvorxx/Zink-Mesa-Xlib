@@ -50,11 +50,8 @@ lower_rt_intrinsics_impl(nir_function_impl *impl,
 {
    bool progress = false;
 
-   nir_builder build;
-   nir_builder_init(&build, impl);
+   nir_builder build = nir_builder_at(nir_before_block(nir_start_block(impl)));
    nir_builder *b = &build;
-
-   b->cursor = nir_before_block(nir_start_block(b->impl));
 
    struct brw_nir_rt_globals_defs globals;
    brw_nir_rt_load_globals(b, &globals);
@@ -383,8 +380,7 @@ void
 brw_nir_lower_rt_intrinsics(nir_shader *nir,
                             const struct intel_device_info *devinfo)
 {
-   nir_foreach_function(function, nir) {
-      if (function->impl)
-         lower_rt_intrinsics_impl(function->impl, devinfo);
+   nir_foreach_function_impl(impl, nir) {
+      lower_rt_intrinsics_impl(impl, devinfo);
    }
 }

@@ -184,8 +184,7 @@ split_load_deref(nir_builder *b, nir_intrinsic_instr *intr,
    }
 
    nir_ssa_def *load1 = nir_build_load_deref(b, 2, 64, &deref1->dest.ssa, 0);
-   nir_ssa_def *load2 = nir_build_load_deref(b, old_components - 2, 64,
-                                             &deref2->dest.ssa, 0);
+   nir_ssa_def *load2 = nir_build_load_deref(b, old_components - 2, 64, &deref2->dest.ssa, 0);
 
    return merge_to_vec3_or_vec4(b, load1, load2);
 }
@@ -214,7 +213,8 @@ split_store_deref(nir_builder *b, nir_intrinsic_instr *intr,
 
    int write_mask_zw = nir_intrinsic_write_mask(intr) & 0xc;
    if (write_mask_zw) {
-      nir_ssa_def *src_zw = nir_channels(b, intr->src[1].ssa, write_mask_zw);
+      nir_ssa_def *src_zw = nir_channels(b, intr->src[1].ssa,
+                                         nir_component_mask(intr->src[1].ssa->num_components) & 0xc);
       nir_build_store_deref(b, &deref_zw->dest.ssa, src_zw, write_mask_zw >> 2);
    }
 

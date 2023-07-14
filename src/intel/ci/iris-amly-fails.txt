@@ -5,5 +5,3 @@
 # [...]
 wayland-dEQP-EGL.functional.wide_color.pbuffer_888_colorspace_default,Fail
 wayland-dEQP-EGL.functional.wide_color.window_888_colorspace_default,Fail
-
-wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail

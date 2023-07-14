@@ -247,7 +247,7 @@ validate_alu_src(nir_alu_instr *instr, unsigned index, validate_state *state)
 }
 
 static void
-validate_reg_dest(nir_reg_dest *dest, validate_state *state,
+validate_reg_dest(nir_register_dest *dest, validate_state *state,
                   unsigned bit_sizes, unsigned num_components)
 {
    validate_assert(state, dest->reg != NULL);
@@ -586,11 +586,52 @@ image_intrin_format(nir_intrinsic_instr *instr)
 }
 
 static void
+validate_register_handle(nir_src handle_src,
+                         unsigned num_components,
+                         unsigned bit_size,
+                         validate_state *state)
+{
+   if (!validate_assert(state, handle_src.is_ssa))
+      return;
+
+   nir_ssa_def *handle = handle_src.ssa;
+   nir_instr *parent = handle->parent_instr;
+
+   if (!validate_assert(state, parent->type == nir_instr_type_intrinsic))
+      return;
+
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(parent);
+   if (!validate_assert(state, intr->intrinsic == nir_intrinsic_decl_reg))
+      return;
+
+   validate_assert(state, nir_intrinsic_num_components(intr) == num_components);
+   validate_assert(state, nir_intrinsic_bit_size(intr) == bit_size);
+}
+
+static void
 validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
 {
    unsigned dest_bit_size = 0;
    unsigned src_bit_sizes[NIR_INTRINSIC_MAX_INPUTS] = { 0, };
    switch (instr->intrinsic) {
+   case nir_intrinsic_decl_reg:
+      assert(state->block == nir_start_block(state->impl));
+      break;
+
+   case nir_intrinsic_load_reg:
+   case nir_intrinsic_load_reg_indirect:
+      validate_register_handle(instr->src[0],
+                               nir_dest_num_components(instr->dest),
+                               nir_dest_bit_size(instr->dest), state);
+      break;
+
+   case nir_intrinsic_store_reg:
+   case nir_intrinsic_store_reg_indirect:
+      validate_register_handle(instr->src[1],
+                               nir_src_num_components(instr->src[0]),
+                               nir_src_bit_size(instr->src[0]), state);
+      break;
+
    case nir_intrinsic_convert_alu_types: {
       nir_alu_type src_type = nir_intrinsic_src_type(instr);
       nir_alu_type dest_type = nir_intrinsic_dest_type(instr);
@@ -929,6 +970,14 @@ validate_tex_instr(nir_tex_instr *instr, validate_state *state)
          break;
       }
    }
+
+   bool msaa = (instr->sampler_dim == GLSL_SAMPLER_DIM_MS ||
+                instr->sampler_dim == GLSL_SAMPLER_DIM_SUBPASS_MS);
+
+   if (msaa)
+      validate_assert(state, instr->op != nir_texop_txf);
+   else
+      validate_assert(state, instr->op != nir_texop_txf_ms);
 
    if (instr->op != nir_texop_tg4)
       validate_assert(state, instr->component == 0);
@@ -1840,18 +1889,15 @@ nir_validate_ssa_dominance(nir_shader *shader, const char *when)
 
    state.shader = shader;
 
-   nir_foreach_function(func, shader) {
-      if (func->impl == NULL)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       state.ssa_defs_found = reralloc(state.mem_ctx, state.ssa_defs_found,
                                       BITSET_WORD,
-                                      BITSET_WORDS(func->impl->ssa_alloc));
-      memset(state.ssa_defs_found, 0, BITSET_WORDS(func->impl->ssa_alloc) *
+                                      BITSET_WORDS(impl->ssa_alloc));
+      memset(state.ssa_defs_found, 0, BITSET_WORDS(impl->ssa_alloc) *
                                       sizeof(BITSET_WORD));
 
-      state.impl = func->impl;
-      validate_ssa_dominance(func->impl, &state);
+      state.impl = impl;
+      validate_ssa_dominance(impl, &state);
    }
 
    if (_mesa_hash_table_num_entries(state.errors) > 0)

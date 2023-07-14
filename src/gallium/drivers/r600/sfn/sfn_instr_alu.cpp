@@ -1878,7 +1878,7 @@ AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
       return emit_tex_fdd(*alu, TexInstr::get_gradient_v, false, shader);
    case nir_op_fddy_fine:
       return emit_tex_fdd(*alu, TexInstr::get_gradient_v, true, shader);
-   case nir_op_cube_r600:
+   case nir_op_cube_amd:
       return emit_alu_cube(*alu, shader);
    default:
       fprintf(stderr, "Unknown instruction '");

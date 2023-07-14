@@ -122,8 +122,7 @@ static void
 record_images_used(struct shader_info *info,
                    nir_intrinsic_instr *instr)
 {
-   nir_variable *var =
-      nir_deref_instr_get_variable(nir_src_as_deref(instr->src[0]));
+   nir_variable *var = nir_intrinsic_get_var(instr, 0);
 
    /* Structs have been lowered already, so get_aoa_size is sufficient. */
    const unsigned size =

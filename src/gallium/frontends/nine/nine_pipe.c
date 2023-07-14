@@ -203,7 +203,7 @@ nine_convert_blend_state(struct pipe_blend_state *blend_state, const DWORD *rs)
         rs[D3DRS_COLORWRITEENABLE2] != rs[D3DRS_COLORWRITEENABLE] ||
         rs[D3DRS_COLORWRITEENABLE3] != rs[D3DRS_COLORWRITEENABLE]) {
         unsigned i;
-        blend.independent_blend_enable = TRUE;
+        blend.independent_blend_enable = true;
         for (i = 1; i < 4; ++i)
             blend.rt[i] = blend.rt[0];
         blend.rt[1].colormask = rs[D3DRS_COLORWRITEENABLE1];

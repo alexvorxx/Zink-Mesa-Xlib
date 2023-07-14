@@ -49,7 +49,7 @@
                 "VkPhysicalDeviceTimelineSemaphoreFeaturesKHR": {
                     "timelineSemaphore": true
                 },
-                "VkPhysicalDeviceImagelessFramebufferFeatures": {
+                "VkPhysicalDeviceImagelessFramebufferFeaturesKHR": {
                     "imagelessFramebuffer": true
                 }
             }
@@ -332,9 +332,6 @@
                 },
                 "VK_FORMAT_D32_SFLOAT_S8_UINT": {
                     "VkFormatProperties": {
-                        "linearTilingFeatures": [ 
-                            "VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT"
-                        ],
                         "optimalTilingFeatures": [ 
                             "VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT"
                         ]
@@ -638,7 +635,7 @@
     "profiles": {
         "VP_ZINK_gl21_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 2.1 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 2.1 support.",
             "capabilities": [
@@ -650,7 +647,7 @@
         },
         "VP_ZINK_gl30_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 3.0 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 3.0 support.",
             "capabilities": [
@@ -663,7 +660,7 @@
         },
         "VP_ZINK_gl31_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 3.1 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 3.1 support.",
             "capabilities": [
@@ -677,7 +674,7 @@
         },
         "VP_ZINK_gl32_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 3.2 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 3.2 support.",
             "capabilities": [
@@ -692,7 +689,7 @@
         },
         "VP_ZINK_gl33_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 3.3 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 3.3 support.",
             "capabilities": [
@@ -708,7 +705,7 @@
         },
         "VP_ZINK_gl40_baseline": {
             "version": 1,
-            "api-version": "1.0.196",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 4.0 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.0 support.",
             "capabilities": [
@@ -725,7 +722,7 @@
         },
         "VP_ZINK_gl41_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 4.1 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.1 support.",
             "capabilities": [
@@ -743,7 +740,7 @@
         },
         "VP_ZINK_gl42_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.2.0",
             "label": "Zink OpenGL 4.2 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.2 support.",
             "capabilities": [
@@ -763,7 +760,7 @@
         },
         "VP_ZINK_gl43_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.3.0",
             "label": "Zink OpenGL 4.3 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.3 support.",
             "capabilities": [
@@ -785,7 +782,7 @@
         },
         "VP_ZINK_gl44_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.3.0",
             "label": "Zink OpenGL 4.4 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.4 support.",
             "capabilities": [
@@ -809,7 +806,7 @@
         },
         "VP_ZINK_gl45_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.3.0",
             "label": "Zink OpenGL 4.5 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.5 support.",
             "capabilities": [
@@ -834,7 +831,7 @@
         },
         "VP_ZINK_gl46_baseline": {
             "version": 1,
-            "api-version": "1.0.211",
+            "api-version": "1.3.0",
             "label": "Zink OpenGL 4.6 Baseline profile",
             "description": "Minimum requirements for Zink OpenGL 4.6 support.",
             "capabilities": [
@@ -860,7 +857,7 @@
         },
         "VP_ZINK_gl46_optimal": {
             "version": 1,
-            "api-version": "1.0.230",
+            "api-version": "1.3.0",
             "label": "Zink OpenGL 4.6 Optimal profile",
             "description": "Requirements for Zink OpenGL 4.6 support with best performances.",
             "capabilities": [

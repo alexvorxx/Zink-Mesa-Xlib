@@ -41,7 +41,9 @@ i915_gem_create(struct iris_bufmgr *bufmgr,
                 uint16_t regions_count, uint64_t size,
                 enum iris_heap heap_flags, unsigned alloc_flags)
 {
-   if (unlikely(!iris_bufmgr_get_device_info(bufmgr)->mem.use_class_instance)) {
+   const struct intel_device_info *devinfo =
+      iris_bufmgr_get_device_info(bufmgr);
+   if (unlikely(!devinfo->mem.use_class_instance)) {
       struct drm_i915_gem_create create_legacy = { .size = size };
 
       assert(regions_count == 1 &&
@@ -77,7 +79,7 @@ i915_gem_create(struct iris_bufmgr *bufmgr,
                      &ext_regions.base);
 
    if (iris_bufmgr_vram_size(bufmgr) > 0 &&
-       !intel_vram_all_mappable(iris_bufmgr_get_device_info(bufmgr)) &&
+       !intel_vram_all_mappable(devinfo) &&
        heap_flags == IRIS_HEAP_DEVICE_LOCAL_PREFERRED)
       create.flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
 
@@ -89,6 +91,16 @@ i915_gem_create(struct iris_bufmgr *bufmgr,
       intel_gem_add_ext(&create.extensions,
                         I915_GEM_CREATE_EXT_PROTECTED_CONTENT,
                         &protected_param.base);
+   }
+
+   /* Set PAT param */
+   struct drm_i915_gem_create_ext_set_pat set_pat_param = { 0 };
+   if (devinfo->has_set_pat_uapi) {
+      set_pat_param.pat_index =
+         iris_pat_index_for_bo_flags(devinfo, alloc_flags);
+      intel_gem_add_ext(&create.extensions,
+                        I915_GEM_CREATE_EXT_SET_PAT,
+                        &set_pat_param.base);
    }
 
    if (intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_I915_GEM_CREATE_EXT,
@@ -255,8 +267,9 @@ i915_batch_submit(struct iris_batch *batch)
    struct drm_i915_gem_exec_object2 *validation_list =
       malloc(batch->exec_count * sizeof(*validation_list));
 
-   unsigned *index_for_handle =
-      calloc(batch->max_gem_handle + 1, sizeof(unsigned));
+   size_t sz = (batch->max_gem_handle + 1) * sizeof(int);
+   int *index_for_handle = malloc(sz);
+   memset(index_for_handle, -1, sz);
 
    unsigned validation_count = 0;
    for (int i = 0; i < batch->exec_count; i++) {
@@ -264,8 +277,8 @@ i915_batch_submit(struct iris_batch *batch)
       assert(bo->gem_handle != 0);
 
       bool written = BITSET_TEST(batch->bos_written, i);
-      unsigned prev_index = index_for_handle[bo->gem_handle];
-      if (prev_index > 0) {
+      int prev_index = index_for_handle[bo->gem_handle];
+      if (prev_index != -1) {
          if (written)
             validation_list[prev_index].flags |= EXEC_OBJECT_WRITE;
       } else {

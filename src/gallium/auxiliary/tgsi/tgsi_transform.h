@@ -87,9 +87,9 @@ struct tgsi_transform_context
                          const struct tgsi_full_property *prop);
 
    struct tgsi_header *header;
-   uint max_tokens_out;
+   unsigned max_tokens_out;
    struct tgsi_token *tokens_out;
-   uint ti;
+   unsigned ti;
    bool fail;
 };
 
@@ -495,7 +495,7 @@ tgsi_transform_kill_inst(struct tgsi_transform_context *ctx,
                          unsigned src_file,
                          unsigned src_index,
                          unsigned src_swizzle,
-                         boolean negate)
+                         bool negate)
 {
    struct tgsi_full_instruction inst;
 
@@ -533,7 +533,7 @@ tgsi_transform_tex_inst(struct tgsi_transform_context *ctx,
    inst.Dst[0].Register.File = dst_file;
    inst.Dst[0].Register.Index = dst_index;
    inst.Instruction.NumSrcRegs = 2;
-   inst.Instruction.Texture = TRUE;
+   inst.Instruction.Texture = true;
    inst.Texture.Texture = tex_target;
    tgsi_transform_src_reg_xyzw(&inst.Src[0], src_file, src_index);
    tgsi_transform_src_reg_xyzw(&inst.Src[1], TGSI_FILE_SAMPLER, sampler_index);
@@ -544,7 +544,7 @@ tgsi_transform_tex_inst(struct tgsi_transform_context *ctx,
 
 extern struct tgsi_token *
 tgsi_transform_shader(const struct tgsi_token *tokens_in,
-                      uint initial_tokens_len,
+                      unsigned initial_tokens_len,
                       struct tgsi_transform_context *ctx);
 
 

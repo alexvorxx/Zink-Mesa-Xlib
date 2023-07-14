@@ -116,7 +116,7 @@ occlusion_pause(struct fd_acc_query *aq, struct fd_batch *batch) assert_dt
 
    OUT_PKT7(epilogue, CP_WAIT_REG_MEM, 6);
    OUT_RING(epilogue, CP_WAIT_REG_MEM_0_FUNCTION(WRITE_NE) |
-                      CP_WAIT_REG_MEM_0_POLL_MEMORY);
+                      CP_WAIT_REG_MEM_0_POLL(POLL_MEMORY));
    OUT_RELOC(epilogue, query_sample(aq, stop));
    OUT_RING(epilogue, CP_WAIT_REG_MEM_3_REF(0xffffffff));
    OUT_RING(epilogue, CP_WAIT_REG_MEM_4_MASK(0xffffffff));
@@ -172,7 +172,7 @@ occlusion_predicate_result_resource(struct fd_acc_query *aq, struct fd_ringbuffe
     */
    OUT_PKT7(ring, CP_COND_WRITE5, 9);
    OUT_RING(ring, CP_COND_WRITE5_0_FUNCTION(WRITE_NE) |
-                  CP_COND_WRITE5_0_POLL_MEMORY |
+                  CP_WAIT_REG_MEM_0_POLL(POLL_MEMORY) |
                   CP_COND_WRITE5_0_WRITE_MEMORY);
    OUT_RELOC(ring, query_sample(aq, result)); /* POLL_ADDR_LO/HI */
    OUT_RING(ring, CP_COND_WRITE5_3_REF(0));
@@ -716,7 +716,7 @@ so_overflow_predicate_result_resource(struct fd_acc_query *aq,
     */
    OUT_PKT7(ring, CP_COND_WRITE5, 9);
    OUT_RING(ring, CP_COND_WRITE5_0_FUNCTION(WRITE_NE) |
-                  CP_COND_WRITE5_0_POLL_MEMORY |
+                  CP_COND_WRITE5_0_POLL(POLL_MEMORY) |
                   CP_COND_WRITE5_0_WRITE_MEMORY);
    OUT_RELOC(ring, dst->bo, offset, 0, 0);    /* POLL_ADDR_LO/HI */
    OUT_RING(ring, CP_COND_WRITE5_3_REF(0));

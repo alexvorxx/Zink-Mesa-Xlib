@@ -45,7 +45,7 @@ void
 renderer_set_constants(struct xa_context *r,
 		       int shader_type, const float *params, int param_bytes);
 
-static inline boolean
+static inline bool
 is_affine(const float *matrix)
 {
     return floatIsZero(matrix[2]) && floatIsZero(matrix[5])

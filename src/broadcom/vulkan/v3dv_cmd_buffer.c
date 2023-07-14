@@ -3307,24 +3307,6 @@ v3dv_CmdBindVertexBuffers(VkCommandBuffer commandBuffer,
       cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_VERTEX_BUFFER;
 }
 
-static uint32_t
-get_index_size(VkIndexType index_type)
-{
-   switch (index_type) {
-   case VK_INDEX_TYPE_UINT8_EXT:
-      return 1;
-      break;
-   case VK_INDEX_TYPE_UINT16:
-      return 2;
-      break;
-   case VK_INDEX_TYPE_UINT32:
-      return 4;
-      break;
-   default:
-      unreachable("Unsupported index type");
-   }
-}
-
 VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdBindIndexBuffer(VkCommandBuffer commandBuffer,
                         VkBuffer buffer,
@@ -3333,7 +3315,7 @@ v3dv_CmdBindIndexBuffer(VkCommandBuffer commandBuffer,
 {
    V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   const uint32_t index_size = get_index_size(indexType);
+   const uint32_t index_size = vk_index_type_to_bytes(indexType);
    if (buffer == cmd_buffer->state.index_buffer.buffer &&
        offset == cmd_buffer->state.index_buffer.offset &&
        index_size == cmd_buffer->state.index_buffer.index_size) {

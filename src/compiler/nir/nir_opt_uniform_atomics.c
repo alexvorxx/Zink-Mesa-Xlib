@@ -298,8 +298,7 @@ static bool
 opt_uniform_atomics(nir_function_impl *impl)
 {
    bool progress = false;
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
    b.update_divergence = true;
 
    nir_foreach_block(block, impl) {
@@ -344,15 +343,12 @@ nir_opt_uniform_atomics(nir_shader *shader)
        shader->info.workgroup_size[2] == 1)
       return false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
-      if (opt_uniform_atomics(function->impl)) {
+   nir_foreach_function_impl(impl, shader) {
+      if (opt_uniform_atomics(impl)) {
          progress = true;
-         nir_metadata_preserve(function->impl, nir_metadata_none);
+         nir_metadata_preserve(impl, nir_metadata_none);
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 

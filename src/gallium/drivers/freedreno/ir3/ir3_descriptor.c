@@ -62,7 +62,7 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
 
    unsigned set = ir3_shader_descriptor_set(b->shader->info.stage);
    nir_ssa_def *src = nir_ssa_for_src(b, intr->src[buffer_src], 1);
-   src = nir_iadd(b, src, nir_imm_int(b, desc_offset));
+   src = nir_iadd_imm(b, src, desc_offset);
    /* An out-of-bounds index into an SSBO/image array can cause a GPU fault
     * on access to the descriptor (I don't see any hw mechanism to bound the
     * access).  We could just allow the resulting iova fault (it is a read

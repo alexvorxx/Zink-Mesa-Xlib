@@ -28,7 +28,7 @@
 #ifndef TGSI_DUMP_H
 #define TGSI_DUMP_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_shader_tokens.h"
 
@@ -43,17 +43,17 @@ extern "C" {
 bool
 tgsi_dump_str(
    const struct tgsi_token *tokens,
-   uint flags,
+   unsigned flags,
    char *str,
    size_t size);
 
 void
-tgsi_dump_to_file(const struct tgsi_token *tokens, uint flags, FILE *file);
+tgsi_dump_to_file(const struct tgsi_token *tokens, unsigned flags, FILE *file);
 
 void
 tgsi_dump(
    const struct tgsi_token *tokens,
-   uint flags );
+   unsigned flags );
 
 struct tgsi_full_immediate;
 struct tgsi_full_instruction;
@@ -63,14 +63,14 @@ struct tgsi_full_property;
 void
 tgsi_dump_instruction_str(
    const struct tgsi_full_instruction *inst,
-   uint instno,
+   unsigned instno,
    char *str,
    size_t size);
 
 void
 tgsi_dump_instruction(
    const struct tgsi_full_instruction *inst,
-   uint instno );
+   unsigned instno );
 
 #if defined __cplusplus
 }

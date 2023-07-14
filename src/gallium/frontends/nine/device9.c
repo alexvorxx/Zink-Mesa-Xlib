@@ -132,7 +132,7 @@ nine_resource_create_with_retry( struct NineDevice9 *This,
 }
 
 void
-NineDevice9_SetDefaultState( struct NineDevice9 *This, boolean is_reset )
+NineDevice9_SetDefaultState( struct NineDevice9 *This, bool is_reset )
 {
     struct NineSurface9 *refSurf = NULL;
 
@@ -160,8 +160,8 @@ NineDevice9_SetDefaultState( struct NineDevice9 *This, boolean is_reset )
     nine_context_set_scissor(This, &This->state.scissor);
 
     if (This->nswapchains && This->swapchains[0]->params.EnableAutoDepthStencil) {
-        nine_context_set_render_state(This, D3DRS_ZENABLE, TRUE);
-        This->state.rs_advertised[D3DRS_ZENABLE] = TRUE;
+        nine_context_set_render_state(This, D3DRS_ZENABLE, true);
+        This->state.rs_advertised[D3DRS_ZENABLE] = true;
     }
     if (This->state.rs_advertised[D3DRS_ZENABLE])
         NineDevice9_SetDepthStencilSurface(
@@ -179,7 +179,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
                   IDirect3D9 *pD3D9,
                   ID3DPresentGroup *pPresentationGroup,
                   struct d3dadapter9_context *pCTX,
-                  boolean ex,
+                  bool ex,
                   D3DDISPLAYMODEEX *pFullscreenDisplayMode,
                   int minorVersionNum )
 {
@@ -308,11 +308,11 @@ NineDevice9_ctor( struct NineDevice9 *This,
 
             if (pFullscreenDisplayMode) mode = &(pFullscreenDisplayMode[i]);
             /* when this is a Device9Ex, it should create SwapChain9Exs */
-            hr = NineSwapChain9Ex_new(This, TRUE, present,
+            hr = NineSwapChain9Ex_new(This, true, present,
                                       &pPresentationParameters[i], pCTX,
                                       This->params.hFocusWindow, mode, ret);
         } else {
-            hr = NineSwapChain9_new(This, TRUE, present,
+            hr = NineSwapChain9_new(This, true, present,
                                     &pPresentationParameters[i], pCTX,
                                     This->params.hFocusWindow,
                                     &This->swapchains[i]);
@@ -403,11 +403,11 @@ NineDevice9_ctor( struct NineDevice9 *This,
         This->context.pipe->buffer_unmap(This->context.pipe, transfer);
     }
 
-    This->cursor.software = FALSE;
+    This->cursor.software = false;
     This->cursor.hotspot.x = -1;
     This->cursor.hotspot.y = -1;
     This->cursor.w = This->cursor.h = 0;
-    This->cursor.visible = FALSE;
+    This->cursor.visible = false;
     if (ID3DPresent_GetCursorPos(This->swapchains[0]->present, &This->cursor.pos) != S_OK) {
         This->cursor.pos.x = 0;
         This->cursor.pos.y = 0;
@@ -493,7 +493,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
 
         if (strstr(pScreen->get_name(pScreen), "AMD") ||
             strstr(pScreen->get_name(pScreen), "ATI")) {
-            This->driver_bugs.buggy_barycentrics = TRUE;
+            This->driver_bugs.buggy_barycentrics = true;
         }
     }
 
@@ -587,7 +587,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
 
     nine_ff_init(This); /* initialize fixed function code */
 
-    NineDevice9_SetDefaultState(This, FALSE);
+    NineDevice9_SetDefaultState(This, false);
 
     {
         struct pipe_poly_stipple stipple;
@@ -625,7 +625,7 @@ NineDevice9_dtor( struct NineDevice9 *This )
     if (This->csmt_active && This->csmt_ctx) {
         nine_csmt_process(This);
         nine_csmt_destroy(This, This->csmt_ctx);
-        This->csmt_active = FALSE;
+        This->csmt_active = false;
         This->csmt_ctx = NULL;
     }
 
@@ -704,7 +704,7 @@ NineDevice9_PauseRecording( struct NineDevice9 *This )
 {
     if (This->record) {
         This->update = &This->state;
-        This->is_recording = FALSE;
+        This->is_recording = false;
     }
 }
 
@@ -713,7 +713,7 @@ NineDevice9_ResumeRecording( struct NineDevice9 *This )
 {
     if (This->record) {
         This->update = &This->record->state;
-        This->is_recording = TRUE;
+        This->is_recording = true;
     }
 }
 
@@ -721,10 +721,10 @@ HRESULT NINE_WINAPI
 NineDevice9_TestCooperativeLevel( struct NineDevice9 *This )
 {
     if (NineSwapChain9_GetOccluded(This->swapchains[0])) {
-        This->device_needs_reset = TRUE;
+        This->device_needs_reset = true;
         return D3DERR_DEVICELOST;
     } else if (NineSwapChain9_ResolutionMismatch(This->swapchains[0])) {
-        This->device_needs_reset = TRUE;
+        This->device_needs_reset = true;
         return D3DERR_DEVICENOTRESET;
     } else if (This->device_needs_reset) {
         return D3DERR_DEVICENOTRESET;
@@ -898,7 +898,7 @@ NineDevice9_SetCursorProperties( struct NineDevice9 *This,
 
     /* hide cursor if we emulate it */
     if (!hw_cursor)
-        ID3DPresent_SetCursor(This->swapchains[0]->present, NULL, NULL, FALSE);
+        ID3DPresent_SetCursor(This->swapchains[0]->present, NULL, NULL, false);
     This->cursor.software = !hw_cursor;
 
     return D3D_OK;
@@ -974,7 +974,7 @@ NineDevice9_CreateAdditionalSwapChain( struct NineDevice9 *This,
     if (FAILED(hr))
         return hr;
 
-    hr = NineSwapChain9_new(This, FALSE, present, pPresentationParameters,
+    hr = NineSwapChain9_new(This, false, present, pPresentationParameters,
                             tmplt->actx,
                             tmplt->params.hDeviceWindow,
                             &swapchain);
@@ -1019,7 +1019,7 @@ NineDevice9_Reset( struct NineDevice9 *This,
     user_assert(pPresentationParameters != NULL, D3DERR_INVALIDCALL);
 
     if (NineSwapChain9_GetOccluded(This->swapchains[0])) {
-        This->device_needs_reset = TRUE;
+        This->device_needs_reset = true;
         return D3DERR_DEVICELOST;
     }
 
@@ -1034,7 +1034,7 @@ NineDevice9_Reset( struct NineDevice9 *This,
     nine_device_state_clear(This);
     nine_context_clear(This);
 
-    NineDevice9_SetDefaultState(This, TRUE);
+    NineDevice9_SetDefaultState(This, true);
     NineDevice9_SetRenderTarget(
         This, 0, (IDirect3DSurface9 *)This->swapchains[0]->buffers[0]);
     /* XXX: better use GetBackBuffer here ? */
@@ -1633,7 +1633,7 @@ NineDevice9_UpdateTexture( struct NineDevice9 *This,
     }
 
     if (dstb->base.usage & D3DUSAGE_AUTOGENMIPMAP) {
-        dstb->dirty_mip = TRUE;
+        dstb->dirty_mip = true;
         NineBaseTexture9_GenerateMipSubLevels(dstb);
     }
 
@@ -1696,9 +1696,9 @@ NineDevice9_StretchRect( struct NineDevice9 *This,
     struct NineSurface9 *dst = NineSurface9(pDestSurface);
     struct NineSurface9 *src = NineSurface9(pSourceSurface);
     struct pipe_resource *dst_res, *src_res;
-    boolean zs;
+    bool zs;
     struct pipe_blit_info blit;
-    boolean scaled, clamped, ms, flip_x = FALSE, flip_y = FALSE;
+    bool scaled, clamped, ms, flip_x = false, flip_y = false;
 
     DBG("This=%p pSourceSurface=%p pSourceRect=%p pDestSurface=%p "
         "pDestRect=%p Filter=%u\n",
@@ -1809,8 +1809,8 @@ NineDevice9_StretchRect( struct NineDevice9 *This,
     blit.mask = zs ? PIPE_MASK_ZS : PIPE_MASK_RGBA;
     blit.filter = Filter == D3DTEXF_LINEAR ?
        PIPE_TEX_FILTER_LINEAR : PIPE_TEX_FILTER_NEAREST;
-    blit.scissor_enable = FALSE;
-    blit.alpha_blend = FALSE;
+    blit.scissor_enable = false;
+    blit.alpha_blend = false;
 
     /* If both of a src and dst dimension are negative, flip them. */
     if (blit.dst.box.width < 0 && blit.src.box.width < 0) {
@@ -1986,7 +1986,7 @@ NineDevice9_CreateOffscreenPlainSurface( struct NineDevice9 *This,
     hr = create_zs_or_rt_surface(This, 2, Pool, Width, Height,
                                  Format,
                                  D3DMULTISAMPLE_NONE, 0,
-                                 TRUE,
+                                 true,
                                  ppSurface, pSharedHandle);
     if (FAILED(hr))
         DBG("Failed to create surface.\n");
@@ -2086,7 +2086,7 @@ NineDevice9_BeginScene( struct NineDevice9 *This )
 {
     DBG("This=%p\n", This);
     user_assert(!This->in_scene, D3DERR_INVALIDCALL);
-    This->in_scene = TRUE;
+    This->in_scene = true;
     /* Do we want to do anything else here ? */
     return D3D_OK;
 }
@@ -2096,7 +2096,7 @@ NineDevice9_EndScene( struct NineDevice9 *This )
 {
     DBG("This=%p\n", This);
     user_assert(This->in_scene, D3DERR_INVALIDCALL);
-    This->in_scene = FALSE;
+    This->in_scene = false;
     This->end_scene_since_present++;
     /* EndScene() is supposed to flush the GPU commands.
      * The idea is to flush ahead of the Present() call.
@@ -2166,7 +2166,7 @@ NineDevice9_SetTransform( struct NineDevice9 *This,
                           const D3DMATRIX *pMatrix )
 {
     struct nine_state *state = This->update;
-    D3DMATRIX *M = nine_state_access_transform(&state->ff, State, TRUE);
+    D3DMATRIX *M = nine_state_access_transform(&state->ff, State, true);
 
     DBG("This=%p State=%d pMatrix=%p\n", This, State, pMatrix);
 
@@ -2192,7 +2192,7 @@ NineDevice9_GetTransform( struct NineDevice9 *This,
     D3DMATRIX *M;
 
     user_assert(!This->pure, D3DERR_INVALIDCALL);
-    M = nine_state_access_transform(&This->state.ff, State, FALSE);
+    M = nine_state_access_transform(&This->state.ff, State, false);
     user_assert(pMatrix, D3DERR_INVALIDCALL);
     user_assert(M, D3DERR_INVALIDCALL);
     *pMatrix = *M;
@@ -2206,7 +2206,7 @@ NineDevice9_MultiplyTransform( struct NineDevice9 *This,
 {
     struct nine_state *state = This->update;
     D3DMATRIX T;
-    D3DMATRIX *M = nine_state_access_transform(&state->ff, State, TRUE);
+    D3DMATRIX *M = nine_state_access_transform(&state->ff, State, true);
 
     DBG("This=%p State=%d pMatrix=%p\n", This, State, pMatrix);
 
@@ -2591,7 +2591,7 @@ NineDevice9_BeginStateBlock( struct NineDevice9 *This )
     NineUnknown_ConvertRefToBind(NineUnknown(This->record));
 
     This->update = &This->record->state;
-    This->is_recording = TRUE;
+    This->is_recording = true;
 
     return D3D_OK;
 }
@@ -2606,7 +2606,7 @@ NineDevice9_EndStateBlock( struct NineDevice9 *This,
     user_assert(ppSB != NULL, D3DERR_INVALIDCALL);
 
     This->update = &This->state;
-    This->is_recording = FALSE;
+    This->is_recording = false;
 
     NineUnknown_AddRef(NineUnknown(This->record));
     *ppSB = (IDirect3DStateBlock9 *)This->record;
@@ -2984,7 +2984,7 @@ NineAfterDraw( struct NineDevice9 *This )
             rt->desc.Usage & D3DUSAGE_AUTOGENMIPMAP) {
             assert(rt->texture == D3DRTYPE_TEXTURE ||
                    rt->texture == D3DRTYPE_CUBETEXTURE);
-            NineBaseTexture9(rt->base.base.container)->dirty_mip = TRUE;
+            NineBaseTexture9(rt->base.base.container)->dirty_mip = true;
         }
     }
 }
@@ -3007,7 +3007,7 @@ NineTrackSystemmemDynamic( struct NineBuffer9 *This, unsigned start, unsigned wi
     u_box_union_1d(&This->managed.required_valid_region,
                    &This->managed.required_valid_region,
                    &box);
-    This->managed.dirty = TRUE;
+    This->managed.dirty = true;
     BASEBUF_REGISTER_UPDATE(This);
 }
 
@@ -3323,7 +3323,7 @@ NineDevice9_ProcessVertices( struct NineDevice9 *This,
     draw.mode = MESA_PRIM_POINTS;
     sc.count = VertexCount;
     draw.start_instance = 0;
-    draw.primitive_restart = FALSE;
+    draw.primitive_restart = false;
     draw.restart_index = 0;
     draw.instance_count = 1;
     draw.index_size = 0;
@@ -3711,7 +3711,7 @@ NineDevice9_GetVertexShaderConstantB( struct NineDevice9 *This,
     user_assert(pConstantData, D3DERR_INVALIDCALL);
 
     for (i = 0; i < BoolCount; i++)
-        pConstantData[i] = state->vs_const_b[StartRegister + i] != 0 ? TRUE : FALSE;
+        pConstantData[i] = state->vs_const_b[StartRegister + i] != 0 ? true : false;
 
     return D3D_OK;
 }
@@ -4131,7 +4131,7 @@ NineDevice9_GetPixelShaderConstantB( struct NineDevice9 *This,
     user_assert(pConstantData, D3DERR_INVALIDCALL);
 
     for (i = 0; i < BoolCount; i++)
-        pConstantData[i] = state->ps_const_b[StartRegister + i] ? TRUE : FALSE;
+        pConstantData[i] = state->ps_const_b[StartRegister + i] ? true : false;
 
     return D3D_OK;
 }
@@ -4318,7 +4318,7 @@ NineDevice9_new( struct pipe_screen *pScreen,
                  IDirect3D9 *pD3D9,
                  ID3DPresentGroup *pPresentationGroup,
                  struct d3dadapter9_context *pCTX,
-                 boolean ex,
+                 bool ex,
                  D3DDISPLAYMODEEX *pFullscreenDisplayMode,
                  struct NineDevice9 **ppOut,
                  int minorVersionNum )

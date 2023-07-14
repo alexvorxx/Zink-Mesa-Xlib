@@ -27,6 +27,7 @@
 
 #include "anv_private.h"
 
+#include "i915/anv_queue.h"
 #include "xe/anv_queue.h"
 
 static VkResult
@@ -36,7 +37,7 @@ anv_create_engine(struct anv_device *device,
 {
    switch (device->info->kmd_type) {
    case INTEL_KMD_TYPE_I915:
-      return VK_SUCCESS;
+      return anv_i915_create_engine(device, queue, pCreateInfo);
    case INTEL_KMD_TYPE_XE:
       return anv_xe_create_engine(device, queue, pCreateInfo);
    default:
@@ -51,6 +52,7 @@ anv_destroy_engine(struct anv_queue *queue)
    struct anv_device *device = queue->device;
    switch (device->info->kmd_type) {
    case INTEL_KMD_TYPE_I915:
+      anv_i915_destroy_engine(device, queue);
       break;
    case INTEL_KMD_TYPE_XE:
       anv_xe_destroy_engine(device, queue);
@@ -62,21 +64,20 @@ anv_destroy_engine(struct anv_queue *queue)
 
 VkResult
 anv_queue_init(struct anv_device *device, struct anv_queue *queue,
-               uint32_t exec_flags,
                const VkDeviceQueueCreateInfo *pCreateInfo,
                uint32_t index_in_family)
 {
    struct anv_physical_device *pdevice = device->physical;
    VkResult result;
 
-   result = anv_create_engine(device, queue, pCreateInfo);
+   result = vk_queue_init(&queue->vk, &device->vk, pCreateInfo,
+                          index_in_family);
    if (result != VK_SUCCESS)
       return result;
 
-   result = vk_queue_init(&queue->vk, &device->vk, pCreateInfo,
-                          index_in_family);
+   result = anv_create_engine(device, queue, pCreateInfo);
    if (result != VK_SUCCESS) {
-      anv_destroy_engine(queue);
+      vk_queue_finish(&queue->vk);
       return result;
    }
 
@@ -96,9 +97,6 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
 
    assert(queue->vk.queue_family_index < pdevice->queue.family_count);
    queue->family = &pdevice->queue.families[queue->vk.queue_family_index];
-
-   if (device->info->kmd_type == INTEL_KMD_TYPE_I915)
-      queue->exec_flags = exec_flags;
 
    queue->decoder = &device->decoder[queue->vk.queue_family_index];
 

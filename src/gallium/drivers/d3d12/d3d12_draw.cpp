@@ -1161,7 +1161,7 @@ d3d12_draw_vbo(struct pipe_context *pctx,
          d3d12_batch_reference_surface_texture(batch, surface);
          depth_desc = &tmp_desc;
       }
-      ctx->cmdlist->OMSetRenderTargets(ctx->fb.nr_cbufs, render_targets, FALSE, depth_desc);
+      ctx->cmdlist->OMSetRenderTargets(ctx->fb.nr_cbufs, render_targets, false, depth_desc);
    }
 
    struct pipe_stream_output_target **so_targets = ctx->fake_so_buffer_factor ? ctx->fake_so_targets

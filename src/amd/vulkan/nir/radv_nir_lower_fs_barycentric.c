@@ -148,7 +148,7 @@ lower_line(nir_builder *b, nir_ssa_def *p1, nir_ssa_def *p2)
    nir_ssa_def *coords[3];
 
    coords[1] = nir_fadd(b, p1, p2);
-   coords[0] = nir_fsub(b, nir_imm_float(b, 1.0f), coords[1]);
+   coords[0] = nir_fsub_imm(b, 1.0f, coords[1]);
    coords[2] = nir_imm_float(b, 0.0f);
 
    return nir_vec(b, coords, 3);
@@ -170,16 +170,16 @@ lower_triangle(nir_builder *b, nir_ssa_def *p1, nir_ssa_def *p2)
    nir_ssa_def *provoking_vtx_id = nir_ubfe(b, provoking_vtx, nir_ishl_imm(b, quad_id, 1), nir_imm_int(b, 2));
 
    /* Compute barycentrics. */
-   v0_bary[0] = nir_fsub(b, nir_fsub(b, nir_imm_float(b, 1.0f), p2), p1);
+   v0_bary[0] = nir_fsub(b, nir_fsub_imm(b, 1.0f, p2), p1);
    v0_bary[1] = p1;
    v0_bary[2] = p2;
 
    v1_bary[0] = p1;
    v1_bary[1] = p2;
-   v1_bary[2] = nir_fsub(b, nir_fsub(b, nir_imm_float(b, 1.0f), p2), p1);
+   v1_bary[2] = nir_fsub(b, nir_fsub_imm(b, 1.0f, p2), p1);
 
    v2_bary[0] = p2;
-   v2_bary[1] = nir_fsub(b, nir_fsub(b, nir_imm_float(b, 1.0f), p2), p1);
+   v2_bary[1] = nir_fsub(b, nir_fsub_imm(b, 1.0f, p2), p1);
    v2_bary[2] = p1;
 
    /* Select barycentrics for the given provoking vertex ID. */
@@ -274,7 +274,7 @@ radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_pipeline_key
       if (!function->impl)
          continue;
 
-      nir_builder_init(&b, function->impl);
+      b = nir_builder_create(function->impl);
 
       nir_foreach_block (block, impl) {
          nir_foreach_instr_safe (instr, block) {

@@ -115,7 +115,6 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_ROBUST_BUFFER_ACCESS_BEHAVIOR:
    case PIPE_CAP_POLYGON_OFFSET_UNITS_UNSCALED:
    case PIPE_CAP_STRING_MARKER:
-   case PIPE_CAP_CLEAR_TEXTURE:
    case PIPE_CAP_CULL_DISTANCE:
    case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
    case PIPE_CAP_SHADER_CAN_READ_OUTPUTS:
@@ -1102,10 +1101,30 @@ static int si_get_compute_param(struct pipe_screen *screen, enum pipe_shader_ir 
       return sizeof(uint32_t);
    case PIPE_COMPUTE_CAP_MAX_PRIVATE_SIZE:
       break; /* unused */
-   case PIPE_COMPUTE_CAP_SUBGROUP_SIZE:
+   case PIPE_COMPUTE_CAP_MAX_SUBGROUPS: {
+      if (ret) {
+         uint32_t *max_subgroups = ret;
+         unsigned threads = get_max_threads_per_block(sscreen, ir_type);
+         unsigned subgroup_size;
+
+         if (sscreen->debug_flags & DBG(W64_CS) || sscreen->info.gfx_level < GFX10)
+            subgroup_size = 64;
+         else
+            subgroup_size = 32;
+
+         *max_subgroups = threads / subgroup_size;
+      }
+      return sizeof(uint32_t);
+   }
+   case PIPE_COMPUTE_CAP_SUBGROUP_SIZES:
       if (ret) {
          uint32_t *subgroup_size = ret;
-         *subgroup_size = si_determine_wave_size(sscreen, NULL);
+         if (sscreen->debug_flags & DBG(W32_CS))
+            *subgroup_size = 32;
+         else if (sscreen->debug_flags & DBG(W64_CS))
+            *subgroup_size = 64;
+         else
+            *subgroup_size = sscreen->info.gfx_level < GFX10 ? 64 : 64 | 32;
       }
       return sizeof(uint32_t);
    case PIPE_COMPUTE_CAP_MAX_VARIABLE_THREADS_PER_BLOCK:
@@ -1294,7 +1313,6 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .lower_to_scalar = true,
       .lower_to_scalar_filter = sscreen->info.has_packed_math_16bit ?
                                    si_alu_to_scalar_packed_math_filter : NULL,
-      .lower_int64_options = nir_lower_imul_2x32_64 | nir_lower_imul_high64,
       .has_sdot_4x8 = sscreen->info.has_accelerated_dot_product,
       .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
       .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
@@ -1330,7 +1348,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .lower_int64_options =
          nir_lower_imul64 | nir_lower_imul_high64 | nir_lower_imul_2x32_64 |
          nir_lower_divmod64 | nir_lower_minmax64 | nir_lower_iabs64 |
-         nir_lower_iadd_sat64,
+         nir_lower_iadd_sat64 | nir_lower_conv64,
    };
    *sscreen->nir_options = nir_options;
 }

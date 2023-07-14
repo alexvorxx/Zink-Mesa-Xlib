@@ -2152,9 +2152,8 @@ nir_serialize(struct blob *blob, const nir_shader *nir, bool strip)
       write_function(&ctx, fxn);
    }
 
-   nir_foreach_function(fxn, nir) {
-      if (fxn->impl)
-         write_function_impl(&ctx, fxn->impl);
+   nir_foreach_function_impl(impl, nir) {
+      write_function_impl(&ctx, impl);
    }
 
    blob_write_uint32(blob, nir->constant_data_size);

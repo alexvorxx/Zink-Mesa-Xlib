@@ -45,6 +45,9 @@
 #define FRAME_TYPE_SWITCH        (3)
 #define OBU_TYPE_SEQUENCE_HEADER (1)
 #define OBU_TYPE_FRAME_HEADER    (3)
+#define OBU_TYPE_FRAME           (6)
+#define AV1_MIN_QP_DEFAULT (1)
+#define AV1_MAX_QP_DEFAULT (255)
 
 static unsigned av1_f(struct vl_vlc *vlc, unsigned n)
 {
@@ -100,6 +103,7 @@ VAStatus vlVaHandleVAEncSequenceParameterBufferTypeAV1(vlVaDriver *drv, vlVaCont
    VAEncSequenceParameterBufferAV1 *av1 = buf->data;
 
    if (!context->decoder) {
+      context->templat.max_references = PIPE_AV1_MAX_REFERENCES;
       context->templat.level = av1->seq_level_idx;
       context->decoder = drv->pipe->create_video_codec(drv->pipe, &context->templat);
 
@@ -112,6 +116,7 @@ VAStatus vlVaHandleVAEncSequenceParameterBufferTypeAV1(vlVaDriver *drv, vlVaCont
    context->desc.av1enc.seq.tier = av1->seq_tier;
    context->desc.av1enc.seq.level = av1->seq_level_idx;
    context->desc.av1enc.seq.intra_period = av1->intra_period;
+   context->desc.av1enc.seq.ip_period = av1->ip_period;
    context->desc.av1enc.seq.bit_depth_minus8 = av1->seq_fields.bits.bit_depth_minus8;
    context->desc.av1enc.seq.seq_bits.enable_cdef = av1->seq_fields.bits.enable_cdef;
    context->desc.av1enc.seq.seq_bits.enable_order_hint = av1->seq_fields.bits.enable_order_hint;
@@ -134,6 +139,72 @@ VAStatus vlVaHandleVAEncPictureParameterBufferTypeAV1(vlVaDriver *drv, vlVaConte
    context->desc.av1enc.allow_high_precision_mv = av1->picture_flags.bits.allow_high_precision_mv;
    context->desc.av1enc.palette_mode_enable = av1->picture_flags.bits.palette_mode_enable;
    context->desc.av1enc.num_tiles_in_pic = av1->tile_cols * av1->tile_rows;
+   context->desc.av1enc.tile_rows = av1->tile_rows;
+   context->desc.av1enc.tile_cols = av1->tile_cols;
+   context->desc.av1enc.context_update_tile_id = av1->context_update_tile_id;
+   context->desc.av1enc.use_superres = av1->picture_flags.bits.use_superres;
+   context->desc.av1enc.reduced_tx_set = av1->picture_flags.bits.reduced_tx_set;
+   context->desc.av1enc.skip_mode_present = av1->mode_control_flags.bits.skip_mode_present;
+   context->desc.av1enc.tx_mode = av1->mode_control_flags.bits.tx_mode;
+   context->desc.av1enc.compound_reference_mode = av1->mode_control_flags.bits.reference_mode;
+   context->desc.av1enc.superres_scale_denominator = av1->superres_scale_denominator;
+   context->desc.av1enc.interpolation_filter = av1->interpolation_filter;
+
+   /* The last tile column or row size needs to be derived. */
+    for (uint8_t i = 0 ; i < ARRAY_SIZE(av1->width_in_sbs_minus_1); i++)
+        context->desc.av1enc.width_in_sbs_minus_1[i] = av1->width_in_sbs_minus_1[i];
+    
+    /* The last tile column or row size needs to be derived. */
+    for (uint8_t i = 0 ; i < ARRAY_SIZE(av1->height_in_sbs_minus_1); i++)
+        context->desc.av1enc.height_in_sbs_minus_1[i] = av1->height_in_sbs_minus_1[i];
+
+   context->desc.av1enc.cdef.cdef_damping_minus_3 = av1->cdef_damping_minus_3;
+   context->desc.av1enc.cdef.cdef_bits = av1->cdef_bits;
+   
+   for (uint8_t i = 0 ; i < ARRAY_SIZE(av1->cdef_y_strengths); i++)
+      context->desc.av1enc.cdef.cdef_y_strengths[i] = av1->cdef_y_strengths[i];
+
+   for (uint8_t i = 0 ; i < ARRAY_SIZE(av1->cdef_uv_strengths); i++)
+      context->desc.av1enc.cdef.cdef_uv_strengths[i] = av1->cdef_uv_strengths[i];
+
+   context->desc.av1enc.loop_filter.filter_level[0] = av1->filter_level[0];
+   context->desc.av1enc.loop_filter.filter_level[1] = av1->filter_level[1];
+   context->desc.av1enc.loop_filter.filter_level_u = av1->filter_level_u;
+   context->desc.av1enc.loop_filter.filter_level_v = av1->filter_level_v;
+   context->desc.av1enc.loop_filter.sharpness_level = av1->loop_filter_flags.bits.sharpness_level;
+   context->desc.av1enc.loop_filter.mode_ref_delta_enabled = av1->loop_filter_flags.bits.mode_ref_delta_enabled;
+   context->desc.av1enc.loop_filter.mode_ref_delta_update = av1->loop_filter_flags.bits.mode_ref_delta_update;
+   context->desc.av1enc.loop_filter.delta_lf_present = av1->mode_control_flags.bits.delta_lf_present;
+   context->desc.av1enc.loop_filter.delta_lf_res = av1->mode_control_flags.bits.delta_lf_res;
+   context->desc.av1enc.loop_filter.delta_lf_multi = av1->mode_control_flags.bits.delta_lf_multi;
+
+   context->desc.av1enc.restoration.yframe_restoration_type = av1->loop_restoration_flags.bits.yframe_restoration_type;
+   context->desc.av1enc.restoration.cbframe_restoration_type = av1->loop_restoration_flags.bits.cbframe_restoration_type;
+   context->desc.av1enc.restoration.crframe_restoration_type = av1->loop_restoration_flags.bits.crframe_restoration_type;
+   context->desc.av1enc.restoration.lr_unit_shift = av1->loop_restoration_flags.bits.lr_unit_shift;
+   context->desc.av1enc.restoration.lr_uv_shift = av1->loop_restoration_flags.bits.lr_uv_shift;
+   context->desc.av1enc.quantization.base_qindex = av1->base_qindex;
+   context->desc.av1enc.quantization.y_dc_delta_q = av1->y_dc_delta_q;
+   context->desc.av1enc.quantization.u_dc_delta_q = av1->u_dc_delta_q;
+   context->desc.av1enc.quantization.u_ac_delta_q = av1->u_ac_delta_q;
+   context->desc.av1enc.quantization.v_dc_delta_q = av1->v_dc_delta_q;
+   context->desc.av1enc.quantization.v_ac_delta_q = av1->v_ac_delta_q;
+   context->desc.av1enc.quantization.min_base_qindex = av1->min_base_qindex;
+   context->desc.av1enc.quantization.max_base_qindex = av1->max_base_qindex;
+   context->desc.av1enc.quantization.using_qmatrix = av1->qmatrix_flags.bits.using_qmatrix;
+   context->desc.av1enc.quantization.qm_y = av1->qmatrix_flags.bits.qm_y;
+   context->desc.av1enc.quantization.qm_u = av1->qmatrix_flags.bits.qm_u;
+   context->desc.av1enc.quantization.qm_v = av1->qmatrix_flags.bits.qm_v;
+   context->desc.av1enc.quantization.delta_q_present = av1->mode_control_flags.bits.delta_q_present;
+   context->desc.av1enc.quantization.delta_q_res = av1->mode_control_flags.bits.delta_q_res;
+
+   /* VAEncWarpedMotionParamsAV1    wm[7]; */
+
+   context->desc.av1enc.tg_obu_header.obu_extension_flag = av1->tile_group_obu_hdr_info.bits.obu_extension_flag;
+   context->desc.av1enc.tg_obu_header.obu_has_size_field = av1->tile_group_obu_hdr_info.bits.obu_has_size_field;
+   context->desc.av1enc.tg_obu_header.obu_has_size_field = av1->tile_group_obu_hdr_info.bits.obu_has_size_field;
+   context->desc.av1enc.tg_obu_header.temporal_id = av1->tile_group_obu_hdr_info.bits.temporal_id;
+   context->desc.av1enc.tg_obu_header.spatial_id = av1->tile_group_obu_hdr_info.bits.spatial_id;
 
    coded_buf = handle_table_get(drv->htab, av1->coded_buf);
    if (!coded_buf)
@@ -146,8 +217,13 @@ VAStatus vlVaHandleVAEncPictureParameterBufferTypeAV1(vlVaDriver *drv, vlVaConte
 
    for (i = 0; i < ARRAY_SIZE(context->desc.av1enc.rc); i++) {
       context->desc.av1enc.rc[i].qp = av1->base_qindex ? av1->base_qindex : 60;
+      /* Distinguishes from the default params set for these values and app specific params passed down */
+      context->desc.av1enc.rc[i].app_requested_initial_qp = (av1->base_qindex != 0);
       context->desc.av1enc.rc[i].min_qp = av1->min_base_qindex ? av1->min_base_qindex : 1;
       context->desc.av1enc.rc[i].max_qp = av1->max_base_qindex ? av1->max_base_qindex : 255;
+      /* Distinguishes from the default params set for these values and app specific params passed down */
+      context->desc.av1enc.rc[i].app_requested_qp_range = 
+         ((context->desc.av1enc.rc[i].max_qp != AV1_MAX_QP_DEFAULT) || (context->desc.av1enc.rc[i].min_qp != AV1_MIN_QP_DEFAULT));
    }
 
    /* these frame types will need to be seen as force type */
@@ -166,6 +242,16 @@ VAStatus vlVaHandleVAEncPictureParameterBufferTypeAV1(vlVaDriver *drv, vlVaConte
          context->desc.av1enc.frame_type = PIPE_AV1_ENC_FRAME_TYPE_SWITCH;
          break;
    };
+
+   if (context->desc.av1enc.frame_type == FRAME_TYPE_KEY_FRAME)
+      context->desc.av1enc.last_key_frame_num = context->desc.av1enc.frame_num;
+
+   for (uint8_t i = 0 ; i < ARRAY_SIZE(av1->ref_frame_idx); i++)
+        context->desc.av1enc.ref_frame_idx[i] = av1->ref_frame_idx[i];
+
+    /* Initialize slice descriptors for this picture */
+    context->desc.av1enc.num_tile_groups = 0;
+    memset(&context->desc.av1enc.tile_groups, 0, sizeof(context->desc.av1enc.tile_groups));
 
    return VA_STATUS_SUCCESS;
 }
@@ -196,6 +282,9 @@ VAStatus vlVaHandleVAEncMiscParameterTypeRateControlAV1(vlVaContext *context, VA
 
       pipe_rc->fill_data_enable = !(rc->rc_flags.bits.disable_bit_stuffing);
       pipe_rc->skip_frame_enable = 0;/* !(rc->rc_flags.bits.disable_frame_skip); */
+
+      if (pipe_rc->rate_ctrl_method == PIPE_H2645_ENC_RATE_CONTROL_METHOD_QUALITY_VARIABLE)
+         pipe_rc->vbr_quality_factor = rc->quality_factor;
    }
 
    return VA_STATUS_SUCCESS;
@@ -227,6 +316,10 @@ vlVaHandleVAEncMiscParameterTypeHRDAV1(vlVaContext *context, VAEncMiscParameterB
    if (ms->buffer_size) {
       context->desc.av1enc.rc[0].vbv_buffer_size = ms->buffer_size;
       context->desc.av1enc.rc[0].vbv_buf_lv = (ms->initial_buffer_fullness << 6 ) / ms->buffer_size;
+      context->desc.av1enc.rc[0].vbv_buf_initial_size = ms->initial_buffer_fullness;
+      /* Distinguishes from the default params set for these values in other
+       * functions and app specific params passed down via HRD buffer */
+      context->desc.av1enc.rc[0].app_requested_hrd_buffer = true;
    }
 
    return VA_STATUS_SUCCESS;
@@ -234,9 +327,9 @@ vlVaHandleVAEncMiscParameterTypeHRDAV1(vlVaContext *context, VAEncMiscParameterB
 
 static void av1_color_config(vlVaContext *context, struct vl_vlc *vlc)
 {
-   unsigned high_bitdepth;
+   unsigned high_bitdepth = 0;
    unsigned bit_depth = 8;
-   unsigned mono_chrome;
+   unsigned mono_chrome = 0;
    unsigned subsampling_x = 0, subsampling_y = 0;
 
    struct pipe_av1_enc_seq_param *seq = &context->desc.av1enc.seq;
@@ -359,17 +452,17 @@ static void av1_sequence_header(vlVaContext *context, struct vl_vlc *vlc)
       seq->delta_frame_id_length = av1_f(vlc, 4) + 2;
       seq->additional_frame_id_length = av1_f(vlc, 3) + 1;
    }
-   av1_f(vlc, 1);
-   av1_f(vlc, 1);
-   av1_f(vlc, 1);
+   seq->seq_bits.use_128x128_superblock = av1_f(vlc, 1);
+   seq->seq_bits.enable_filter_intra = av1_f(vlc, 1);
+   seq->seq_bits.enable_intra_edge_filter = av1_f(vlc, 1);
    /* reduced_still_pictuer_header should be zero */
-   av1_f(vlc, 1);
-   av1_f(vlc, 1);
-   av1_f(vlc, 1);
-   av1_f(vlc, 1);
+   seq->seq_bits.enable_interintra_compound = av1_f(vlc, 1);
+   seq->seq_bits.enable_masked_compound = av1_f(vlc, 1);
+   seq->seq_bits.enable_warped_motion = av1_f(vlc, 1);
+   seq->seq_bits.enable_dual_filter = av1_f(vlc, 1);
    seq->seq_bits.enable_order_hint = av1_f(vlc, 1);
    if (seq->seq_bits.enable_order_hint) {
-      av1_f(vlc, 1);
+      seq->seq_bits.enable_jnt_comp = av1_f(vlc, 1);
       seq->seq_bits.enable_ref_frame_mvs = av1_f(vlc, 1);
    } else
       seq->seq_bits.enable_ref_frame_mvs = 0;
@@ -393,7 +486,7 @@ static void av1_sequence_header(vlVaContext *context, struct vl_vlc *vlc)
 
    seq->seq_bits.enable_superres = av1_f(vlc, 1);
    seq->seq_bits.enable_cdef = av1_f(vlc, 1);
-   av1_f(vlc, 1);
+   seq->seq_bits.enable_restoration = av1_f(vlc, 1);
    av1_color_config(context, vlc);
 }
 
@@ -419,9 +512,18 @@ static void av1_frame_size(vlVaContext *context, struct vl_vlc *vlc)
 
    if (av1->frame_size_override_flag) {
       av1->frame_width = av1_f(vlc, av1->seq.frame_width_bits_minus1 + 1) + 1;
-      av1_f(vlc, av1->seq.frame_height_bits_minus1 + 1);
-   } else
+      av1->frame_height = av1_f(vlc, av1->seq.frame_height_bits_minus1 + 1) + 1;
+   } else {
       av1->frame_width = av1->seq.pic_width_in_luma_samples;
+      av1->frame_height = av1->seq.pic_height_in_luma_samples;
+   }
+
+   unsigned MiCols = 2 * (((av1->frame_width - 1) + 8) >> 3);
+   unsigned MiRows = 2 * (((av1->frame_height - 1) + 8) >> 3);
+   context->desc.av1enc.frame_width_sb = (av1->seq.seq_bits.use_128x128_superblock) ?
+      ((MiCols + 31) >> 5) : ((MiCols + 15) >> 4);
+   context->desc.av1enc.frame_height_sb = (av1->seq.seq_bits.use_128x128_superblock) ?
+      ((MiRows + 31) >> 5) : ((MiRows + 15) >> 4);
 
    av1_superres_params(context, vlc);
 }
@@ -467,7 +569,6 @@ static void av1_frame_header(vlVaContext *context, struct vl_vlc *vlc)
    struct pipe_av1_enc_picture_desc *av1 = &context->desc.av1enc;
    uint32_t frame_type;
    uint32_t id_len, all_frames, show_frame;
-   uint32_t refresh_frame_flags = 0;
 
    bool frame_is_intra = false;
 
@@ -525,10 +626,10 @@ static void av1_frame_header(vlVaContext *context, struct vl_vlc *vlc)
       av1->frame_size_override_flag = av1_f(vlc, 1);
 
    if (av1->seq.seq_bits.enable_order_hint)
-      av1_f(vlc, av1->seq.order_hint_bits);
+      av1->order_hint = av1_f(vlc, av1->seq.order_hint_bits);
 
    if (!(frame_is_intra || av1->error_resilient_mode))
-      av1_f(vlc, 3);
+      av1->primary_ref_frame = av1_f(vlc, 3);
 
    if (av1->seq.seq_bits.decoder_model_info_present_flag) {
       unsigned buffer_removal_time_present_flag = av1_f(vlc, 1);
@@ -547,11 +648,11 @@ static void av1_frame_header(vlVaContext *context, struct vl_vlc *vlc)
 
    if (frame_type == FRAME_TYPE_SWITCH ||
        (frame_type == FRAME_TYPE_KEY_FRAME && show_frame))
-       refresh_frame_flags = all_frames;
+       av1->refresh_frame_flags = all_frames;
    else
-      refresh_frame_flags = av1_f(vlc, 8);
+      av1->refresh_frame_flags = av1_f(vlc, 8);
 
-   if ( !frame_is_intra || refresh_frame_flags != all_frames) {
+   if ( !frame_is_intra || av1->refresh_frame_flags != all_frames) {
       if (av1->error_resilient_mode && av1->seq.seq_bits.enable_order_hint)
          for (int i = 0; i < AV1_MAXNUM_REF_FRAMES; i++)
             av1_f(vlc, av1->seq.order_hint_bits);
@@ -561,7 +662,7 @@ static void av1_frame_header(vlVaContext *context, struct vl_vlc *vlc)
       av1_frame_size(context, vlc);
       av1_render_size(context, vlc);
       if (av1->allow_screen_content_tools && av1->upscaled_width == av1->frame_width)
-         av1_f(vlc, 1);
+         av1->allow_intrabc = av1_f(vlc, 1);
    } else {
       unsigned frame_refs_short_signaling = 0;
       if (av1->seq.seq_bits.enable_order_hint) {
@@ -617,7 +718,9 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeAV1(vlVaContext *context, vlVaBuffer *b
       for (int i = 0; i < 8 && vl_vlc_bits_left(&vlc) >= 8; ++i) {
          /* then start decoding , first 5 bits has to be 0000 1xxx for sequence header */
          obu_type = vl_vlc_peekbits(&vlc, 5);
-         if (obu_type == OBU_TYPE_SEQUENCE_HEADER || obu_type == OBU_TYPE_FRAME_HEADER)
+         if (obu_type == OBU_TYPE_SEQUENCE_HEADER
+            || obu_type == OBU_TYPE_FRAME_HEADER
+            || obu_type == OBU_TYPE_FRAME)
             break;
          vl_vlc_eatbits(&vlc, 8);
          vl_vlc_fillbits(&vlc);
@@ -638,7 +741,7 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeAV1(vlVaContext *context, vlVaBuffer *b
 
       if (obu_type == OBU_TYPE_SEQUENCE_HEADER)
          av1_sequence_header(context, &vlc);
-      else if (obu_type == OBU_TYPE_FRAME_HEADER)
+      else if (obu_type == OBU_TYPE_FRAME_HEADER || obu_type == OBU_TYPE_FRAME)
          av1_frame_header(context, &vlc);
       else
          assert(0);
@@ -700,4 +803,18 @@ void getEncParamPresetAV1(vlVaContext *context)
    }
 }
 
+VAStatus vlVaHandleVAEncSliceParameterBufferTypeAV1(vlVaDriver *drv, vlVaContext *context, vlVaBuffer *buf)
+{
+    VAEncTileGroupBufferAV1 *tile_buf = (VAEncTileGroupBufferAV1*) buf->data;
+    
+    if (context->desc.av1enc.num_tile_groups < ARRAY_SIZE(context->desc.av1enc.tile_groups)) {
+        context->desc.av1enc.tile_groups[context->desc.av1enc.num_tile_groups].tile_group_start = tile_buf->tg_start;
+        context->desc.av1enc.tile_groups[context->desc.av1enc.num_tile_groups].tile_group_end = tile_buf->tg_end;
+        context->desc.av1enc.num_tile_groups++;
+    } else {
+        return VA_STATUS_ERROR_NOT_ENOUGH_BUFFER;
+    }
+    
+    return VA_STATUS_SUCCESS;
+}
 #endif /* VA_CHECK_VERSION(1, 16, 0) */

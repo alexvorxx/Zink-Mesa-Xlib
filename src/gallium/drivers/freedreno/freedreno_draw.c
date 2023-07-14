@@ -540,19 +540,27 @@ static void
 fd_clear_render_target(struct pipe_context *pctx, struct pipe_surface *ps,
                        const union pipe_color_union *color, unsigned x,
                        unsigned y, unsigned w, unsigned h,
-                       bool render_condition_enabled)
+                       bool render_condition_enabled) in_dt
 {
-   DBG("TODO: x=%u, y=%u, w=%u, h=%u", x, y, w, h);
+   if (render_condition_enabled && !fd_render_condition_check(pctx))
+      return;
+
+   fd_blitter_clear_render_target(pctx, ps, color, x, y, w, h,
+                                  render_condition_enabled);
 }
 
 static void
 fd_clear_depth_stencil(struct pipe_context *pctx, struct pipe_surface *ps,
                        unsigned buffers, double depth, unsigned stencil,
                        unsigned x, unsigned y, unsigned w, unsigned h,
-                       bool render_condition_enabled)
+                       bool render_condition_enabled) in_dt
 {
-   DBG("TODO: buffers=%u, depth=%f, stencil=%u, x=%u, y=%u, w=%u, h=%u",
-       buffers, depth, stencil, x, y, w, h);
+   if (render_condition_enabled && !fd_render_condition_check(pctx))
+      return;
+
+   fd_blitter_clear_depth_stencil(pctx, ps, buffers,
+                                  depth, stencil, x, y, w, h,
+                                  render_condition_enabled);
 }
 
 static void

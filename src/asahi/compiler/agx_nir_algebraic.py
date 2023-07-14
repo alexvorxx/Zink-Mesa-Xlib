@@ -121,6 +121,12 @@ for s in range(1, 5):
         (('ishl', a, s), iaddshl(0, a, s)),
     ]
 
+# Discard lowering generates this pattern, clean it up
+ixor_bcsel = [
+   (('ixor', ('bcsel', a, '#b', '#c'), '#d'),
+    ('bcsel', a, ('ixor', b, d), ('ixor', c, d))),
+]
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--import-path', required=True)
@@ -137,6 +143,8 @@ def run():
                                       lower_sm5_shift + lower_pack).render())
     print(nir_algebraic.AlgebraicPass("agx_nir_fuse_algebraic_late",
                                       fuse_imad).render())
+    print(nir_algebraic.AlgebraicPass("agx_nir_opt_ixor_bcsel",
+                                      ixor_bcsel).render())
 
 
 if __name__ == '__main__':

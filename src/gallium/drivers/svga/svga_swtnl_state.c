@@ -344,7 +344,7 @@ svga_swtnl_update_vdecl(struct svga_context *svga)
    }
 
    memcpy(svga_render->vdecl, vdecl, sizeof(vdecl));
-   svga->swtnl.new_vdecl = TRUE;
+   svga->swtnl.new_vdecl = true;
 
 done:
    SVGA_STATS_TIME_POP(svga_sws(svga));

@@ -181,35 +181,21 @@ agx_create_blend_state(struct pipe_context *ctx,
          /* No blending, but we get the colour mask below */
       } else if (!rt.blend_enable) {
          static const nir_lower_blend_channel replace = {
-            .func = BLEND_FUNC_ADD,
-            .src_factor = BLEND_FACTOR_ZERO,
-            .invert_src_factor = true,
-            .dst_factor = BLEND_FACTOR_ZERO,
-            .invert_dst_factor = false,
+            .func = PIPE_BLEND_ADD,
+            .src_factor = PIPE_BLENDFACTOR_ONE,
+            .dst_factor = PIPE_BLENDFACTOR_ZERO,
          };
 
          so->rt[i].rgb = replace;
          so->rt[i].alpha = replace;
       } else {
-         so->rt[i].rgb.func = util_blend_func_to_shader(rt.rgb_func);
-         so->rt[i].rgb.src_factor =
-            util_blend_factor_to_shader(rt.rgb_src_factor);
-         so->rt[i].rgb.invert_src_factor =
-            util_blend_factor_is_inverted(rt.rgb_src_factor);
-         so->rt[i].rgb.dst_factor =
-            util_blend_factor_to_shader(rt.rgb_dst_factor);
-         so->rt[i].rgb.invert_dst_factor =
-            util_blend_factor_is_inverted(rt.rgb_dst_factor);
+         so->rt[i].rgb.func = rt.rgb_func;
+         so->rt[i].rgb.src_factor = rt.rgb_src_factor;
+         so->rt[i].rgb.dst_factor = rt.rgb_dst_factor;
 
-         so->rt[i].alpha.func = util_blend_func_to_shader(rt.alpha_func);
-         so->rt[i].alpha.src_factor =
-            util_blend_factor_to_shader(rt.alpha_src_factor);
-         so->rt[i].alpha.invert_src_factor =
-            util_blend_factor_is_inverted(rt.alpha_src_factor);
-         so->rt[i].alpha.dst_factor =
-            util_blend_factor_to_shader(rt.alpha_dst_factor);
-         so->rt[i].alpha.invert_dst_factor =
-            util_blend_factor_is_inverted(rt.alpha_dst_factor);
+         so->rt[i].alpha.func = rt.alpha_func;
+         so->rt[i].alpha.src_factor = rt.alpha_src_factor;
+         so->rt[i].alpha.dst_factor = rt.alpha_dst_factor;
 
          so->blend_enable = true;
       }
@@ -1097,10 +1083,9 @@ agx_batch_upload_pbe(struct agx_batch *batch, unsigned rt)
 
    assert(surf->u.tex.last_layer == layer);
 
-   struct agx_ptr T =
-      agx_pool_alloc_aligned(&batch->pool, AGX_RENDER_TARGET_LENGTH, 256);
+   struct agx_ptr T = agx_pool_alloc_aligned(&batch->pool, AGX_PBE_LENGTH, 256);
 
-   agx_pack(T.cpu, RENDER_TARGET, cfg) {
+   agx_pack(T.cpu, PBE, cfg) {
       cfg.dimension = agx_translate_tex_dim(PIPE_TEXTURE_2D,
                                             util_res_sample_count(&tex->base));
       cfg.layout = agx_translate_layout(tex->layout.tiling);
@@ -1456,7 +1441,9 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
       }
 
       /* Clip plane lowering creates discard instructions, so run that before
-       * lowering discards.
+       * lowering discards. Note: this introduces extra loads from the clip
+       * plane outputs, but they use smooth interpolation so it does not affect
+       * the flat/linear masks that get propagated back to the VS.
        */
       if (key->clip_plane_enable) {
          NIR_PASS_V(nir, nir_lower_clip_fs, key->clip_plane_enable, false);
@@ -1494,6 +1481,11 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
       base_key.fs.nr_samples = key_->fs.nr_samples;
+
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      base_key.vs.outputs_flat_shaded = key_->vs.outputs_flat_shaded;
+      base_key.vs.outputs_linear_shaded = key_->vs.outputs_linear_shaded;
+   }
 
    NIR_PASS_V(nir, agx_nir_lower_sysvals, compiled,
               &base_key.reserved_preamble);
@@ -1580,10 +1572,10 @@ agx_create_shader_state(struct pipe_context *pctx,
    ralloc_steal(so, nir);
 
    if (nir->info.stage == MESA_SHADER_VERTEX) {
-      so->variants = _mesa_hash_table_create(NULL, asahi_vs_shader_key_hash,
+      so->variants = _mesa_hash_table_create(so, asahi_vs_shader_key_hash,
                                              asahi_vs_shader_key_equal);
    } else {
-      so->variants = _mesa_hash_table_create(NULL, asahi_fs_shader_key_hash,
+      so->variants = _mesa_hash_table_create(so, asahi_fs_shader_key_hash,
                                              asahi_fs_shader_key_equal);
    }
 
@@ -1596,7 +1588,7 @@ agx_create_shader_state(struct pipe_context *pctx,
    blob_finish(&blob);
 
    so->nir = nir;
-   agx_preprocess_nir(nir, true);
+   agx_preprocess_nir(nir, true, &so->info);
 
    /* For shader-db, precompile a shader with a default key. This could be
     * improved but hopefully this is acceptable for now.
@@ -1625,11 +1617,9 @@ agx_create_shader_state(struct pipe_context *pctx,
             key.fs.blend.rt[i].colormask = 0xF;
 
             const nir_lower_blend_channel replace = {
-               .func = BLEND_FUNC_ADD,
-               .src_factor = BLEND_FACTOR_ZERO,
-               .invert_src_factor = true,
-               .dst_factor = BLEND_FACTOR_ZERO,
-               .invert_dst_factor = false,
+               .func = PIPE_BLEND_ADD,
+               .src_factor = PIPE_BLENDFACTOR_ONE,
+               .dst_factor = PIPE_BLENDFACTOR_ZERO,
             };
 
             key.fs.blend.rt[i].rgb = replace;
@@ -1658,13 +1648,13 @@ agx_create_compute_state(struct pipe_context *pctx,
 
    so->static_shared_mem = cso->static_shared_mem;
 
-   so->variants = _mesa_hash_table_create(NULL, asahi_cs_shader_key_hash,
+   so->variants = _mesa_hash_table_create(so, asahi_cs_shader_key_hash,
                                           asahi_cs_shader_key_equal);
 
    union asahi_shader_key key = {0};
 
    assert(cso->ir_type == PIPE_SHADER_IR_NIR && "TGSI kernels unsupported");
-   nir_shader *nir = nir_shader_clone(NULL, cso->prog);
+   nir_shader *nir = (void *)cso->prog;
 
    so->type = pipe_shader_type_from_mesa(nir->info.stage);
 
@@ -1675,7 +1665,7 @@ agx_create_compute_state(struct pipe_context *pctx,
    blob_finish(&blob);
 
    so->nir = nir;
-   agx_preprocess_nir(nir, true);
+   agx_preprocess_nir(nir, true, &so->info);
    agx_get_shader_variant(agx_screen(pctx->screen), so, &pctx->debug, &key);
 
    /* We're done with the NIR, throw it away */
@@ -1714,13 +1704,19 @@ agx_update_vs(struct agx_context *ctx)
     *
     * vb_mask, attributes, vertex_buffers: VERTEX
     * streamout.active: XFB
+    * outputs_{flat,linear}_shaded: FS_PROG
     */
-   if (!(ctx->dirty & (AGX_DIRTY_VS_PROG | AGX_DIRTY_VERTEX | AGX_DIRTY_XFB)))
+   if (!(ctx->dirty & (AGX_DIRTY_VS_PROG | AGX_DIRTY_VERTEX | AGX_DIRTY_XFB |
+                       AGX_DIRTY_FS_PROG)))
       return false;
 
    struct asahi_vs_shader_key key = {
       .vbuf.count = util_last_bit(ctx->vb_mask),
       .xfb = ctx->streamout.key,
+      .outputs_flat_shaded =
+         ctx->stage[PIPE_SHADER_FRAGMENT].shader->info.inputs_flat_shaded,
+      .outputs_linear_shaded =
+         ctx->stage[PIPE_SHADER_FRAGMENT].shader->info.inputs_linear_shaded,
    };
 
    memcpy(key.vbuf.attributes, ctx->attributes,
@@ -2200,7 +2196,6 @@ agx_batch_init_state(struct agx_batch *batch)
    struct agx_ppp_update ppp =
       agx_new_ppp_update(&batch->pool, (struct AGX_PPP_HEADER){
                                           .w_clamp = true,
-                                          .varying_word_1 = true,
                                           .cull_2 = true,
                                           .occlusion_query_2 = true,
                                           .output_unknown = true,
@@ -2209,7 +2204,6 @@ agx_batch_init_state(struct agx_batch *batch)
 
    /* clang-format off */
    agx_ppp_push(&ppp, W_CLAMP, cfg) cfg.w_clamp = 1e-10;
-   agx_ppp_push(&ppp, VARYING_1, cfg);
    agx_ppp_push(&ppp, CULL_2, cfg);
    agx_ppp_push(&ppp, FRAGMENT_OCCLUSION_QUERY_2, cfg);
    agx_ppp_push(&ppp, OUTPUT_UNKNOWN, cfg);
@@ -2403,7 +2397,8 @@ agx_encode_state(struct agx_batch *batch, uint8_t *out, bool is_lines,
       .fragment_back_face_2 = object_type_dirty || IS_DIRTY(FS_PROG),
       .fragment_back_stencil = IS_DIRTY(ZS),
       .output_select = IS_DIRTY(VS_PROG) || IS_DIRTY(FS_PROG),
-      .varying_word_0 = IS_DIRTY(VS_PROG),
+      .varying_counts_32 = IS_DIRTY(VS_PROG),
+      .varying_counts_16 = IS_DIRTY(VS_PROG),
       .cull = IS_DIRTY(RS),
       .fragment_shader =
          IS_DIRTY(FS) || varyings_dirty || IS_DIRTY(SAMPLE_MASK),
@@ -2494,9 +2489,19 @@ agx_encode_state(struct agx_batch *batch, uint8_t *out, bool is_lines,
       }
    }
 
-   if (dirty.varying_word_0) {
-      agx_ppp_push(&ppp, VARYING_0, cfg) {
-         cfg.count = agx_num_general_outputs(&ctx->vs->info.varyings.vs);
+   assert(dirty.varying_counts_32 == dirty.varying_counts_16);
+
+   if (dirty.varying_counts_32) {
+      agx_ppp_push(&ppp, VARYING_COUNTS, cfg) {
+         cfg.smooth = vs->info.varyings.vs.num_32_smooth;
+         cfg.flat = vs->info.varyings.vs.num_32_flat;
+         cfg.linear = vs->info.varyings.vs.num_32_linear;
+      }
+
+      agx_ppp_push(&ppp, VARYING_COUNTS, cfg) {
+         cfg.smooth = vs->info.varyings.vs.num_16_smooth;
+         cfg.flat = vs->info.varyings.vs.num_16_flat;
+         cfg.linear = vs->info.varyings.vs.num_16_linear;
       }
    }
 
@@ -2615,7 +2620,7 @@ agx_scissor_culls_everything(struct agx_context *ctx)
                            ctx->rast->base.scissor ? &ctx->scissor : NULL,
                            &ctx->framebuffer, &minx, &miny, &maxx, &maxy);
 
-   return (minx == maxx) || (miny == maxy);
+   return (minx >= maxx) || (miny >= maxy);
 }
 
 static void

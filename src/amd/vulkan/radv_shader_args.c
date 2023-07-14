@@ -668,6 +668,10 @@ declare_shader_args(const struct radv_device *device, const struct radv_pipeline
 
       ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.prim_mask);
 
+      if (info->ps.pops && gfx_level < GFX11) {
+         ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.pops_collision_wave_id);
+      }
+
       if (info->ps.load_provoking_vtx) {
          ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.load_provoking_vtx);
       }

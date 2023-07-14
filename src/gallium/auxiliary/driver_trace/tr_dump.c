@@ -48,7 +48,7 @@
 # include <io.h>
 #endif
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_thread.h"
 #include "util/os_time.h"
 #include "util/simple_mtx.h"
@@ -444,7 +444,7 @@ void trace_dump_ret_end(void)
    trace_dump_newline();
 }
 
-void trace_dump_bool(int value)
+void trace_dump_bool(bool value)
 {
    if (!dumping)
       return;
@@ -452,20 +452,20 @@ void trace_dump_bool(int value)
    trace_dump_writef("<bool>%c</bool>", value ? '1' : '0');
 }
 
-void trace_dump_int(long long int value)
+void trace_dump_int(int64_t value)
 {
    if (!dumping)
       return;
 
-   trace_dump_writef("<int>%lli</int>", value);
+   trace_dump_writef("<int>%" PRIi64 "</int>", value);
 }
 
-void trace_dump_uint(long long unsigned value)
+void trace_dump_uint(uint64_t value)
 {
    if (!dumping)
       return;
 
-   trace_dump_writef("<uint>%llu</uint>", value);
+   trace_dump_writef("<uint>%" PRIu64 "</uint>", value);
 }
 
 void trace_dump_float(double value)

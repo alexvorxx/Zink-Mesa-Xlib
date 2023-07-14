@@ -56,12 +56,11 @@ load_clc_shader(struct brw_compiler *compiler, struct disk_cache *disk_cache,
    }
 }
 
-static void
-builder_init_new_impl(nir_builder *b, nir_function *func)
+static nir_builder
+builder_init_new_impl(nir_function *func)
 {
    nir_function_impl *impl = nir_function_impl_create(func);
-   nir_builder_init(b, impl);
-   b->cursor = nir_before_cf_list(&impl->body);
+   return nir_builder_at(nir_before_cf_list(&impl->body));
 }
 
 static void
@@ -69,9 +68,7 @@ implement_atomic_builtin(nir_function *func, nir_atomic_op atomic_op,
                          enum glsl_base_type data_base_type,
                          nir_variable_mode mode)
 {
-   nir_builder b;
-   builder_init_new_impl(&b, func);
-
+   nir_builder b = builder_init_new_impl(func);
    const struct glsl_type *data_type = glsl_scalar_type(data_base_type);
 
    unsigned p = 0;
@@ -103,9 +100,7 @@ implement_atomic_builtin(nir_function *func, nir_atomic_op atomic_op,
 static void
 implement_sub_group_ballot_builtin(nir_function *func)
 {
-   nir_builder b;
-   builder_init_new_impl(&b, func);
-
+   nir_builder b = builder_init_new_impl(func);
    nir_deref_instr *ret =
       nir_build_deref_cast(&b, nir_load_param(&b, 0),
                            nir_var_function_temp, glsl_uint_type(), 0);
@@ -169,8 +164,7 @@ lower_kernel_intrinsics(nir_shader *nir)
    unsigned kernel_arg_start = sizeof(struct brw_kernel_sysvals);
    nir->num_uniforms += kernel_arg_start;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -313,9 +307,8 @@ brw_kernel_from_spirv(struct brw_compiler *compiler,
 
    if (INTEL_DEBUG(DEBUG_CS)) {
       /* Re-index SSA defs so we print more sensible numbers. */
-      nir_foreach_function(function, nir) {
-         if (function->impl)
-            nir_index_ssa_defs(function->impl);
+      nir_foreach_function_impl(impl, nir) {
+         nir_index_ssa_defs(impl);
       }
 
       fprintf(stderr, "NIR (from SPIR-V) for kernel\n");
@@ -414,9 +407,8 @@ brw_kernel_from_spirv(struct brw_compiler *compiler,
 
    if (INTEL_DEBUG(DEBUG_CS)) {
       /* Re-index SSA defs so we print more sensible numbers. */
-      nir_foreach_function(function, nir) {
-         if (function->impl)
-            nir_index_ssa_defs(function->impl);
+      nir_foreach_function_impl(impl, nir) {
+         nir_index_ssa_defs(impl);
       }
 
       fprintf(stderr, "NIR (before I/O lowering) for kernel\n");

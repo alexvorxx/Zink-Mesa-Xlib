@@ -44,11 +44,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
    bool has_const_ubo = false;
    unsigned push_start = UINT_MAX, push_end = 0;
-   nir_foreach_function(function, nir) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -146,14 +143,11 @@ anv_nir_compute_push_layout(nir_shader *nir,
    };
 
    if (has_push_intrinsic) {
-      nir_foreach_function(function, nir) {
-         if (!function->impl)
-            continue;
+      nir_foreach_function_impl(impl, nir) {
+         nir_builder build = nir_builder_create(impl);
+         nir_builder *b = &build;
 
-         nir_builder build, *b = &build;
-         nir_builder_init(b, function->impl);
-
-         nir_foreach_block(block, function->impl) {
+         nir_foreach_block(block, impl) {
             nir_foreach_instr_safe(instr, block) {
                if (instr->type != nir_instr_type_intrinsic)
                   continue;

@@ -231,7 +231,7 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
         }
     }
 
-    fn get_ref(&self) -> CLResult<&'static T> {
+    fn get_ref(&self) -> CLResult<&T> {
         unsafe { Ok(self.get_ptr()?.as_ref().unwrap()) }
     }
 
@@ -267,6 +267,28 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
         for i in 0..count as usize {
             unsafe {
                 res.push((*objs.add(i)).get_arc()?);
+            }
+        }
+        Ok(res)
+    }
+
+    fn get_ref_vec_from_arr<'a>(objs: *const Self, count: u32) -> CLResult<Vec<&'a T>>
+    where
+        Self: Sized + 'a,
+    {
+        // CL spec requires validation for obj arrays, both values have to make sense
+        if objs.is_null() && count > 0 || !objs.is_null() && count == 0 {
+            return Err(CL_INVALID_VALUE);
+        }
+
+        let mut res = Vec::new();
+        if objs.is_null() || count == 0 {
+            return Ok(res);
+        }
+
+        for i in 0..count as usize {
+            unsafe {
+                res.push((*objs.add(i)).get_ref()?);
             }
         }
         Ok(res)
@@ -465,7 +487,7 @@ extern "C" fn cl_get_kernel_sub_group_info(
     param_value_size_ret: *mut usize,
 ) -> cl_int {
     match kernel.get_info_obj(
-        (device, input_value_size, input_value),
+        (device, input_value_size, input_value, param_value_size),
         param_name,
         param_value_size,
         param_value,

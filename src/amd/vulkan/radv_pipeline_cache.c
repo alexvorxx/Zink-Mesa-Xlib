@@ -23,6 +23,7 @@
 
 #include "util/disk_cache.h"
 #include "util/macros.h"
+#include "util/mesa-blake3.h"
 #include "util/mesa-sha1.h"
 #include "util/u_atomic.h"
 #include "util/u_debug.h"
@@ -153,13 +154,14 @@ radv_shader_deserialize(struct vk_pipeline_cache *cache, const void *key_data, s
 {
    struct radv_device *device = container_of(cache->base.device, struct radv_device, vk);
    const struct radv_shader_binary *binary = blob_read_bytes(blob, sizeof(struct radv_shader_binary));
-   assert(key_size == SHA1_DIGEST_LENGTH);
 
-   struct radv_shader *shader = radv_shader_create(device, binary);
+   struct radv_shader *shader;
+   radv_shader_create_uncached(device, binary, false, NULL, &shader);
    if (!shader)
       return NULL;
 
-   memcpy(shader->sha1, key_data, key_size);
+   assert(key_size == sizeof(shader->hash));
+   memcpy(shader->hash, key_data, key_size);
    blob_skip_bytes(blob, binary->total_size - sizeof(struct radv_shader_binary));
 
    return &shader->base;
@@ -170,7 +172,7 @@ radv_shader_serialize(struct vk_pipeline_cache_object *object, struct blob *blob
 {
    struct radv_shader *shader = container_of(object, struct radv_shader, base);
    size_t stats_size = shader->statistics ? aco_num_statistics * sizeof(uint32_t) : 0;
-   size_t code_size = shader->code_size - 5 /* DEBUGGER_NUM_MARKERS */ * 4;
+   size_t code_size = shader->code_size;
    uint32_t total_size = sizeof(struct radv_shader_binary_legacy) + code_size + stats_size;
 
    struct radv_shader_binary_legacy binary = {
@@ -196,22 +198,23 @@ radv_shader_serialize(struct vk_pipeline_cache_object *object, struct blob *blob
 }
 
 struct radv_shader *
-radv_shader_create_cached(struct radv_device *device, struct vk_pipeline_cache *cache,
-                          const struct radv_shader_binary *binary)
+radv_shader_create(struct radv_device *device, struct vk_pipeline_cache *cache, const struct radv_shader_binary *binary,
+                   bool skip_cache)
 {
-   if (radv_is_cache_disabled(device))
-      return radv_shader_create(device, binary);
+   if (radv_is_cache_disabled(device) || skip_cache) {
+      struct radv_shader *shader;
+      radv_shader_create_uncached(device, binary, false, NULL, &shader);
+      return shader;
+   }
 
    if (!cache)
       cache = device->mem_cache;
 
-   uint8_t hash[SHA1_DIGEST_LENGTH];
-   _mesa_sha1_compute(binary, binary->total_size, hash);
-
-   /* TODO: Skip disk-cache for meta-shaders because they are stored in a different cache file */
+   blake3_hash hash;
+   _mesa_blake3_compute(binary, binary->total_size, hash);
 
    struct vk_pipeline_cache_object *shader_obj;
-   shader_obj = vk_pipeline_cache_create_and_insert_object(cache, hash, SHA1_DIGEST_LENGTH, binary, binary->total_size,
+   shader_obj = vk_pipeline_cache_create_and_insert_object(cache, hash, sizeof(hash), binary, binary->total_size,
                                                            &radv_shader_ops);
 
    return shader_obj ? container_of(shader_obj, struct radv_shader, base) : NULL;
@@ -297,9 +300,9 @@ radv_pipeline_cache_object_deserialize(struct vk_pipeline_cache *cache, const vo
    object->base.data_size = total_size;
 
    for (unsigned i = 0; i < num_shaders; i++) {
-      const unsigned char *hash = blob_read_bytes(blob, SHA1_DIGEST_LENGTH);
+      const uint8_t *hash = blob_read_bytes(blob, sizeof(blake3_hash));
       struct vk_pipeline_cache_object *shader =
-         vk_pipeline_cache_lookup_object(cache, hash, SHA1_DIGEST_LENGTH, &radv_shader_ops, NULL);
+         vk_pipeline_cache_lookup_object(cache, hash, sizeof(blake3_hash), &radv_shader_ops, NULL);
 
       if (!shader) {
          /* If some shader could not be created from cache, better return NULL here than having
@@ -339,7 +342,7 @@ radv_pipeline_cache_object_serialize(struct vk_pipeline_cache_object *object, st
    blob_write_uint32(blob, pipeline_obj->ps_epilog_binary_size);
 
    for (unsigned i = 0; i < pipeline_obj->num_shaders; i++)
-      blob_write_bytes(blob, pipeline_obj->shaders[i]->sha1, SHA1_DIGEST_LENGTH);
+      blob_write_bytes(blob, pipeline_obj->shaders[i]->hash, sizeof(pipeline_obj->shaders[i]->hash));
 
    const size_t data_size = pipeline_obj->ps_epilog_binary_size + (pipeline_obj->num_stack_sizes * sizeof(uint32_t));
    blob_write_bytes(blob, pipeline_obj->data, data_size);
@@ -396,7 +399,7 @@ radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache 
          radv_pipeline_to_graphics_lib(pipeline)->base.ps_epilog = ps_epilog;
    }
 
-   vk_pipeline_cache_object_unref(&device->vk, object);
+   pipeline->cache_object = object;
    return true;
 }
 
@@ -447,8 +450,7 @@ radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache 
    }
 
    /* Add the object to the cache */
-   struct vk_pipeline_cache_object *object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
-   vk_pipeline_cache_object_unref(&device->vk, object);
+   pipeline->cache_object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
 }
 
 bool
@@ -502,6 +504,7 @@ radv_ray_tracing_pipeline_cache_search(struct radv_device *device, struct vk_pip
             VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
    }
 
+   pipeline->base.base.cache_object = object;
    return complete;
 }
 
@@ -515,6 +518,13 @@ radv_ray_tracing_pipeline_cache_insert(struct radv_device *device, struct vk_pip
 
    if (!cache)
       cache = device->mem_cache;
+
+   /* Skip insertion on cache hit.
+    * This branch can be triggered if a cache_object was found but not all NIR shaders could be
+    * looked up. The cache_object is already complete in that case.
+    */
+   if (pipeline->base.base.cache_object)
+      return;
 
    /* Count compiled shaders excl. library shaders */
    unsigned num_shaders = pipeline->base.base.shaders[MESA_SHADER_INTERSECTION] ? 1 : 0;
@@ -540,8 +550,7 @@ radv_ray_tracing_pipeline_cache_insert(struct radv_device *device, struct vk_pip
       stack_sizes[i] = pipeline->stages[i].stack_size;
 
    /* Add the object to the cache */
-   struct vk_pipeline_cache_object *object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
-   vk_pipeline_cache_object_unref(&device->vk, object);
+   pipeline->base.base.cache_object = vk_pipeline_cache_add_object(cache, &pipeline_obj->base);
 }
 
 struct vk_pipeline_cache_object *

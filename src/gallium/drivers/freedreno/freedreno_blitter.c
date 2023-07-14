@@ -279,6 +279,35 @@ fd_blitter_clear(struct pipe_context *pctx, unsigned buffers,
    fd_blitter_pipe_end(ctx);
 }
 
+/* Partially generic clear_render_target implementation using u_blitter */
+void
+fd_blitter_clear_render_target(struct pipe_context *pctx, struct pipe_surface *ps,
+                               const union pipe_color_union *color, unsigned x,
+                               unsigned y, unsigned w, unsigned h,
+                               bool render_condition_enabled)
+{
+   struct fd_context *ctx = fd_context(pctx);
+
+   fd_blitter_pipe_begin(ctx, render_condition_enabled);
+   util_blitter_clear_render_target(ctx->blitter, ps, color, x, y, w, h);
+   fd_blitter_pipe_end(ctx);
+}
+
+/* Partially generic clear_depth_stencil implementation using u_blitter */
+void
+fd_blitter_clear_depth_stencil(struct pipe_context *pctx, struct pipe_surface *ps,
+                               unsigned buffers, double depth, unsigned stencil,
+                               unsigned x, unsigned y, unsigned w, unsigned h,
+                               bool render_condition_enabled)
+{
+   struct fd_context *ctx = fd_context(pctx);
+
+   fd_blitter_pipe_begin(ctx, render_condition_enabled);
+   util_blitter_clear_depth_stencil(ctx->blitter, ps, buffers, depth,
+                                    stencil, x, y, w, h);
+   fd_blitter_pipe_end(ctx);
+}
+
 /**
  * Optimal hardware path for blitting pixels.
  * Scaling, format conversion, up- and downsampling (resolve) are allowed.

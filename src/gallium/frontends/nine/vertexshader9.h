@@ -51,14 +51,14 @@ struct NineVertexShader9
 
     uint8_t sampler_mask;
 
-    boolean position_t; /* if true, disable vport transform */
-    boolean point_size; /* if true, set rasterizer.point_size_per_vertex to 1 */
-    boolean swvp_only;
+    bool position_t; /* if true, disable vport transform */
+    bool point_size; /* if true, set rasterizer.point_size_per_vertex to 1 */
+    bool swvp_only;
 
     struct nine_lconstf lconstf;
 
-    boolean int_slots_used[NINE_MAX_CONST_I];
-    boolean bool_slots_used[NINE_MAX_CONST_B];
+    bool int_slots_used[NINE_MAX_CONST_I];
+    bool bool_slots_used[NINE_MAX_CONST_B];
 
     unsigned const_int_slots;
     unsigned const_bool_slots;

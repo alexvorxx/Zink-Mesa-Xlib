@@ -96,11 +96,7 @@ dxil_spirv_nir_prep(nir_shader *nir)
    NIR_PASS_V(nir, nir_opt_deref);
 
    /* Pick off the single entrypoint that we want */
-   foreach_list_typed_safe(nir_function, func, node, &nir->functions) {
-      if (!func->is_entrypoint)
-         exec_node_remove(&func->node);
-   }
-   assert(exec_list_length(&nir->functions) == 1);
+   nir_remove_non_entrypoints(nir);
 
    /* Now that we've deleted all but the main function, we can go ahead and
    * lower the rest of the constant initializers.  We do this here so that
@@ -252,7 +248,7 @@ lower_shader_system_values(struct nir_builder *builder, nir_instr *instr,
       nir_address_format_bit_size(ubo_format),
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-   nir_ssa_def *load_data = nir_build_load_ubo(
+   nir_ssa_def *load_data = nir_load_ubo(
       builder, 
       nir_dest_num_components(intrin->dest),
       nir_dest_bit_size(intrin->dest),
@@ -341,7 +337,7 @@ lower_load_push_constant(struct nir_builder *builder, nir_instr *instr,
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    nir_ssa_def *offset = nir_ssa_for_src(builder, intrin->src[0], 1);
-   nir_ssa_def *load_data = nir_build_load_ubo(
+   nir_ssa_def *load_data = nir_load_ubo(
       builder, 
       nir_dest_num_components(intrin->dest),
       nir_dest_bit_size(intrin->dest), 
@@ -437,7 +433,7 @@ lower_yz_flip(struct nir_builder *builder, nir_instr *instr,
          index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
       dyn_yz_flip_mask =
-         nir_build_load_ubo(builder, 1, 32,
+         nir_load_ubo(builder, 1, 32,
                             nir_channel(builder, load_desc, 0),
                             nir_imm_int(builder, offset),
                             .align_mul = 256,
@@ -600,10 +596,8 @@ kill_undefined_varyings(struct nir_builder *b,
     * since that would remove the store instruction, and would make it tricky to satisfy
     * the DXIL requirements of writing all position components.
     */
-   unsigned int swizzle[NIR_MAX_VEC_COMPONENTS] = { 0 };
-   nir_ssa_def *zero =
-      nir_swizzle(b, nir_imm_intN_t(b, 0, nir_dest_bit_size(intr->dest)),
-                     swizzle, nir_dest_num_components(intr->dest));
+   nir_ssa_def *zero = nir_imm_zero(b, nir_dest_num_components(intr->dest),
+                                       nir_dest_bit_size(intr->dest));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, zero);
    nir_instr_remove(instr);
    return true;
@@ -738,12 +732,12 @@ write_pntc_with_pos(nir_builder *b, nir_instr *instr, void *_data)
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    nir_ssa_def *transform = nir_channels(b,
-                                         nir_build_load_ubo(b, 4, 32,
-                                                            nir_channel(b, load_desc, 0),
-                                                            nir_imm_int(b, offset),
-                                                            .align_mul = 16,
-                                                            .range_base = offset,
-                                                            .range = 16),
+                                         nir_load_ubo(b, 4, 32,
+                                                      nir_channel(b, load_desc, 0),
+                                                      nir_imm_int(b, offset),
+                                                      .align_mul = 16,
+                                                      .range_base = offset,
+                                                      .range = 16),
                                          0x6);
    nir_ssa_def *point_center_in_clip = nir_fmul(b, nir_trim_vector(b, pos, 2),
                                                 nir_frcp(b, nir_channel(b, pos, 3)));
@@ -807,7 +801,7 @@ lower_pntc_read(nir_builder *b, nir_instr *instr, void *data)
    else
       pos = nir_interp_deref_at_offset(b, 4, 32,
                                        &nir_build_deref_var(b, pos_var)->dest.ssa,
-                                       nir_replicate(b, nir_imm_float(b, 0), 2));
+                                       nir_imm_zero(b, 2, 32));
 
    nir_ssa_def *pntc = nir_fadd_imm(b,
                                     nir_fsub(b, nir_trim_vector(b, pos, 2), nir_trim_vector(b, point_center, 2)),
@@ -897,9 +891,7 @@ lower_view_index_to_rt_layer(nir_shader *nir)
                                    nir_metadata_loop_analysis, var);
    } else {
       nir_function_impl *func = nir_shader_get_entrypoint(nir);
-      nir_builder b;
-      nir_builder_init(&b, func);
-      b.cursor = nir_after_block(nir_impl_last_block(func));
+      nir_builder b = nir_builder_at(nir_after_block(nir_impl_last_block(func)));
       add_layer_write(&b, NULL, var);
    }
 }

@@ -113,8 +113,8 @@ static void set_vertex_inputs_outputs(struct r300_vertex_program_compiler * c)
     struct r300_shader_semantics* outputs = &vs->outputs;
     struct tgsi_shader_info* info = &vs->info;
     int i, reg = 0;
-    boolean any_bcolor_used = outputs->bcolor[0] != ATTR_UNUSED ||
-                              outputs->bcolor[1] != ATTR_UNUSED;
+    bool any_bcolor_used = outputs->bcolor[0] != ATTR_UNUSED ||
+                           outputs->bcolor[1] != ATTR_UNUSED;
 
     /* Fill in the input mapping */
     for (i = 0; i < info->num_inputs; i++)
@@ -209,9 +209,9 @@ void r300_translate_vertex_shader(struct r300_context *r300,
     compiler.Base.debug = &r300->context.debug;
     compiler.Base.is_r500 = r300->screen->caps.is_r500;
     compiler.Base.disable_optimizations = DBG_ON(r300, DBG_NO_OPT);
-    compiler.Base.has_half_swizzles = FALSE;
-    compiler.Base.has_presub = FALSE;
-    compiler.Base.has_omod = FALSE;
+    compiler.Base.has_half_swizzles = false;
+    compiler.Base.has_presub = false;
+    compiler.Base.has_omod = false;
     compiler.Base.max_temp_regs = 32;
     compiler.Base.max_constants = 256;
     compiler.Base.max_alu_insts = r300->screen->caps.is_r500 ? 1024 : 256;
@@ -230,12 +230,12 @@ void r300_translate_vertex_shader(struct r300_context *r300,
     if (ttr.error) {
         fprintf(stderr, "r300 VP: Cannot translate a shader. "
                 "Corresponding draws will be skipped.\n");
-        vs->dummy = TRUE;
+        vs->dummy = true;
         return;
     }
 
     if (compiler.Base.Program.Constants.Count > 200) {
-        compiler.Base.remove_unused_constants = TRUE;
+        compiler.Base.remove_unused_constants = true;
     }
 
     compiler.RequiredOutputs = ~(~0U << (vs->info.num_outputs + (vs->wpos ? 1 : 0)));
@@ -252,7 +252,7 @@ void r300_translate_vertex_shader(struct r300_context *r300,
                 " skipped.\n", compiler.Base.ErrorMsg);
 
         rc_destroy(&compiler.Base);
-        vs->dummy = TRUE;
+        vs->dummy = true;
         return;
     }
 

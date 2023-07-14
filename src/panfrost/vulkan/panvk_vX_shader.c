@@ -145,11 +145,9 @@ panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
 
       if (!rt_state->equation.blend_enable) {
          static const nir_lower_blend_channel replace = {
-            .func = BLEND_FUNC_ADD,
-            .src_factor = BLEND_FACTOR_ZERO,
-            .invert_src_factor = true,
-            .dst_factor = BLEND_FACTOR_ZERO,
-            .invert_dst_factor = false,
+            .func = PIPE_BLEND_ADD,
+            .src_factor = PIPE_BLENDFACTOR_ONE,
+            .dst_factor = PIPE_BLENDFACTOR_ZERO,
          };
 
          options.rt[rt].rgb = replace;
@@ -157,32 +155,20 @@ panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
       } else {
          options.rt[rt].rgb.func = rt_state->equation.rgb_func;
          options.rt[rt].rgb.src_factor = rt_state->equation.rgb_src_factor;
-         options.rt[rt].rgb.invert_src_factor =
-            rt_state->equation.rgb_invert_src_factor;
          options.rt[rt].rgb.dst_factor = rt_state->equation.rgb_dst_factor;
-         options.rt[rt].rgb.invert_dst_factor =
-            rt_state->equation.rgb_invert_dst_factor;
          options.rt[rt].alpha.func = rt_state->equation.alpha_func;
          options.rt[rt].alpha.src_factor = rt_state->equation.alpha_src_factor;
-         options.rt[rt].alpha.invert_src_factor =
-            rt_state->equation.alpha_invert_src_factor;
          options.rt[rt].alpha.dst_factor = rt_state->equation.alpha_dst_factor;
-         options.rt[rt].alpha.invert_dst_factor =
-            rt_state->equation.alpha_invert_dst_factor;
       }
 
       /* Update the equation to force a color replacement */
       rt_state->equation.color_mask = 0xf;
-      rt_state->equation.rgb_func = BLEND_FUNC_ADD;
-      rt_state->equation.rgb_src_factor = BLEND_FACTOR_ZERO;
-      rt_state->equation.rgb_invert_src_factor = true;
-      rt_state->equation.rgb_dst_factor = BLEND_FACTOR_ZERO;
-      rt_state->equation.rgb_invert_dst_factor = false;
-      rt_state->equation.alpha_func = BLEND_FUNC_ADD;
-      rt_state->equation.alpha_src_factor = BLEND_FACTOR_ZERO;
-      rt_state->equation.alpha_invert_src_factor = true;
-      rt_state->equation.alpha_dst_factor = BLEND_FACTOR_ZERO;
-      rt_state->equation.alpha_invert_dst_factor = false;
+      rt_state->equation.rgb_func = PIPE_BLEND_ADD;
+      rt_state->equation.rgb_src_factor = PIPE_BLENDFACTOR_ONE;
+      rt_state->equation.rgb_dst_factor = PIPE_BLENDFACTOR_ZERO;
+      rt_state->equation.alpha_func = PIPE_BLEND_ADD;
+      rt_state->equation.alpha_src_factor = PIPE_BLENDFACTOR_ONE;
+      rt_state->equation.alpha_dst_factor = PIPE_BLENDFACTOR_ZERO;
       lower_blend = true;
    }
 

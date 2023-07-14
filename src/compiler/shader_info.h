@@ -247,6 +247,7 @@ typedef struct shader_info {
    uint16_t workgroup_size[3];
 
    enum gl_subgroup_size subgroup_size;
+   uint8_t num_subgroups;
 
    /**
     * Uses subgroup intrinsics which can communicate across a quad.

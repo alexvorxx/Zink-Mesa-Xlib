@@ -100,7 +100,6 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
    case PIPE_CAP_FRAGMENT_COLOR_CLAMPED:
    case PIPE_CAP_SEAMLESS_CUBE_MAP:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
-   case PIPE_CAP_RGB_OVERRIDE_DST_ALPHA_BLEND:
       return 0;
 
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
@@ -272,7 +271,6 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       return 1;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
-   case PIPE_CAP_CLEAR_TEXTURE:
    case PIPE_CAP_CLEAR_SCISSORED:
    case PIPE_CAP_DRAW_PARAMETERS:
    case PIPE_CAP_SHADER_PACK_HALF_FLOAT:
@@ -629,7 +627,7 @@ static simple_mtx_t screen_mutex = SIMPLE_MTX_INITIALIZER;
 static void
 drm_screen_destroy(struct pipe_screen *pscreen)
 {
-   boolean destroy;
+   bool destroy;
 
    simple_mtx_lock(&screen_mutex);
    destroy = --pscreen->refcnt == 0;

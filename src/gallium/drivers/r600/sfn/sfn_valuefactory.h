@@ -292,8 +292,8 @@ public:
 private:
    PVirtualValue ssa_src(const nir_ssa_def& dest, int chan);
 
-   PRegister local_register(const nir_reg_dest& dest, int chan);
-   PRegister local_register(const nir_reg_src& dest, int chan);
+   PRegister local_register(const nir_register_dest& dest, int chan);
+   PRegister local_register(const nir_register_src& dest, int chan);
    PRegister
    resolve_array(nir_register *reg, nir_src *indirect, int base_offset, int chan);
 

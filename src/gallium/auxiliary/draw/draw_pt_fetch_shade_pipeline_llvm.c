@@ -120,7 +120,7 @@ llvm_middle_end_prepare_gs(struct llvm_middle_end *fpme)
          }
       }
 
-      variant = draw_gs_llvm_create_variant(llvm, gs->info.num_outputs, key);
+      variant = draw_gs_llvm_create_variant(llvm, draw_total_gs_outputs(draw), key);
 
       if (variant) {
          list_add(&variant->list_item_local.list, &shader->variants.list);
@@ -305,7 +305,7 @@ llvm_middle_end_prepare(struct draw_pt_middle_end *middle,
                                              draw->guard_band_xy,
                            draw->bypass_viewport,
                            draw->rasterizer->clip_halfz,
-                           (draw->vs.edgeflag_output ? TRUE : FALSE));
+                           (draw->vs.edgeflag_output ? true : false));
 
    draw_pt_so_emit_prepare(fpme->so_emit, (gs == NULL && tes == NULL));
 
@@ -511,10 +511,10 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
    struct draw_prim_info ia_prim_info;
    struct draw_vertex_info ia_vert_info;
    const struct draw_prim_info *prim_info = in_prim_info;
-   boolean free_prim_info = FALSE;
+   bool free_prim_info = false;
    unsigned opt = fpme->opt;
-   boolean clipped = 0;
-   ushort *tes_elts_out = NULL;
+   bool clipped = 0;
+   uint16_t *tes_elts_out = NULL;
 
    assert(fetch_info->count > 0);
 
@@ -607,7 +607,7 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
          FREE(vert_info->verts);
          vert_info = &tes_vert_info;
          prim_info = &tes_prim_info;
-         free_prim_info = TRUE;
+         free_prim_info = true;
 
          /*
           * pt emit can only handle ushort number of vertices (see
@@ -641,7 +641,7 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
       }
       vert_info = &gs_vert_info[0];
       prim_info = &gs_prim_info[0];
-      free_prim_info = FALSE;
+      free_prim_info = false;
       /*
        * pt emit can only handle ushort number of vertices (see
        * render->allocate_vertices).
@@ -666,7 +666,7 @@ llvm_pipeline_generic(struct draw_pt_middle_end *middle,
             }
             vert_info = &ia_vert_info;
             prim_info = &ia_prim_info;
-            free_prim_info = TRUE;
+            free_prim_info = true;
          }
       }
    }
@@ -731,7 +731,7 @@ static void
 llvm_middle_end_run(struct draw_pt_middle_end *middle,
                     const unsigned *fetch_elts,
                     unsigned fetch_count,
-                    const ushort *draw_elts,
+                    const uint16_t *draw_elts,
                     unsigned draw_count,
                     unsigned prim_flags)
 {
@@ -739,12 +739,12 @@ llvm_middle_end_run(struct draw_pt_middle_end *middle,
    struct draw_fetch_info fetch_info;
    struct draw_prim_info prim_info;
 
-   fetch_info.linear = FALSE;
+   fetch_info.linear = false;
    fetch_info.start = 0;
    fetch_info.elts = fetch_elts;
    fetch_info.count = fetch_count;
 
-   prim_info.linear = FALSE;
+   prim_info.linear = false;
    prim_info.start = 0;
    prim_info.count = draw_count;
    prim_info.elts = draw_elts;
@@ -767,12 +767,12 @@ llvm_middle_end_linear_run(struct draw_pt_middle_end *middle,
    struct draw_fetch_info fetch_info;
    struct draw_prim_info prim_info;
 
-   fetch_info.linear = TRUE;
+   fetch_info.linear = true;
    fetch_info.start = start;
    fetch_info.count = count;
    fetch_info.elts = NULL;
 
-   prim_info.linear = TRUE;
+   prim_info.linear = true;
    prim_info.start = 0;
    prim_info.count = count;
    prim_info.elts = NULL;
@@ -785,11 +785,11 @@ llvm_middle_end_linear_run(struct draw_pt_middle_end *middle,
 }
 
 
-static boolean
+static bool
 llvm_middle_end_linear_run_elts(struct draw_pt_middle_end *middle,
                                 unsigned start,
                                 unsigned count,
-                                const ushort *draw_elts,
+                                const uint16_t *draw_elts,
                                 unsigned draw_count,
                                 unsigned prim_flags)
 {
@@ -797,12 +797,12 @@ llvm_middle_end_linear_run_elts(struct draw_pt_middle_end *middle,
    struct draw_fetch_info fetch_info;
    struct draw_prim_info prim_info;
 
-   fetch_info.linear = TRUE;
+   fetch_info.linear = true;
    fetch_info.start = start;
    fetch_info.count = count;
    fetch_info.elts = NULL;
 
-   prim_info.linear = FALSE;
+   prim_info.linear = false;
    prim_info.start = 0;
    prim_info.count = draw_count;
    prim_info.elts = draw_elts;
@@ -813,7 +813,7 @@ llvm_middle_end_linear_run_elts(struct draw_pt_middle_end *middle,
 
    llvm_pipeline_generic(middle, &fetch_info, &prim_info);
 
-   return TRUE;
+   return true;
 }
 
 

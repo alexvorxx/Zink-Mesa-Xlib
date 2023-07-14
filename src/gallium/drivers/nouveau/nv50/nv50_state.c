@@ -894,6 +894,7 @@ nv50_get_compute_state_info(struct pipe_context *pipe, void *hwcso,
    info->max_threads = MIN2(ROUND_DOWN_TO(threads, 32), 512);
    info->private_memory = prog->tls_space;
    info->preferred_simd_size = 32;
+   info->simd_sizes = 32;
 }
 
 static void

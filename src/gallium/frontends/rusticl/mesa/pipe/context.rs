@@ -160,7 +160,12 @@ impl PipeContext {
 
     pub fn clear_texture(&self, res: &PipeResource, pattern: &[u32], bx: &pipe_box) {
         unsafe {
-            self.pipe.as_ref().clear_texture.unwrap()(
+            let clear_texture = self
+                .pipe
+                .as_ref()
+                .clear_texture
+                .unwrap_or(u_default_clear_texture);
+            clear_texture(
                 self.pipe.as_ptr(),
                 res.pipe(),
                 0,
@@ -325,6 +330,16 @@ impl PipeContext {
             self.pipe.as_ref().get_compute_state_info.unwrap()(self.pipe.as_ptr(), state, &mut info)
         }
         info
+    }
+
+    pub fn compute_state_subgroup_size(&self, state: *mut c_void, block: &[u32; 3]) -> u32 {
+        unsafe {
+            if let Some(cb) = self.pipe.as_ref().get_compute_state_subgroup_size {
+                cb(self.pipe.as_ptr(), state, block)
+            } else {
+                0
+            }
+        }
     }
 
     pub fn create_sampler_state(&self, state: &pipe_sampler_state) -> *mut c_void {
@@ -561,7 +576,6 @@ fn has_required_cbs(context: &pipe_context) -> bool {
         & has_required_feature!(context, buffer_subdata)
         & has_required_feature!(context, buffer_unmap)
         & has_required_feature!(context, clear_buffer)
-        & has_required_feature!(context, clear_texture)
         & has_required_feature!(context, create_compute_state)
         & has_required_feature!(context, delete_compute_state)
         & has_required_feature!(context, delete_sampler_state)

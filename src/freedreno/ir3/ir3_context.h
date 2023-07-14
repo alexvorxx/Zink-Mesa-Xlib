@@ -243,8 +243,8 @@ struct ir3_instruction *ir3_get_addr1(struct ir3_context *ctx,
 struct ir3_instruction *ir3_get_predicate(struct ir3_context *ctx,
                                           struct ir3_instruction *src);
 
-void ir3_declare_array(struct ir3_context *ctx, nir_register *reg);
-struct ir3_array *ir3_get_array(struct ir3_context *ctx, nir_register *reg);
+void ir3_declare_array(struct ir3_context *ctx, nir_intrinsic_instr *decl);
+struct ir3_array *ir3_get_array(struct ir3_context *ctx, nir_ssa_def *reg);
 struct ir3_instruction *ir3_create_array_load(struct ir3_context *ctx,
                                               struct ir3_array *arr, int n,
                                               struct ir3_instruction *address);

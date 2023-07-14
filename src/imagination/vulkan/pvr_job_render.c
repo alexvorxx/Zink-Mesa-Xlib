@@ -942,6 +942,10 @@ static void pvr_geom_state_stream_init(struct pvr_render_ctx *ctx,
    const struct pvr_device_info *const dev_info = &device->pdevice->dev_info;
 
    uint32_t *stream_ptr = (uint32_t *)state->fw_stream;
+   uint32_t *stream_len_ptr = stream_ptr;
+
+   /* Leave space for stream header. */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_VDM_CTRL_STREAM_BASE, value) {
       value.addr = job->ctrl_stream_addr;
@@ -986,12 +990,17 @@ static void pvr_geom_state_stream_init(struct pvr_render_ctx *ctx,
    }
    stream_ptr += pvr_cmd_length(VDMCTRL_PDS_STATE0);
 
-   /* Set up view_idx to 0 */
-   *stream_ptr = 0;
-   stream_ptr++;
+   /* clang-format off */
+   pvr_csb_pack (stream_ptr, KMD_STREAM_VIEW_IDX, value);
+   /* clang-format on */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_VIEW_IDX);
 
-   state->fw_stream_len = (uint8_t *)stream_ptr - state->fw_stream;
+   state->fw_stream_len = (uint8_t *)stream_ptr - (uint8_t *)state->fw_stream;
    assert(state->fw_stream_len <= ARRAY_SIZE(state->fw_stream));
+
+   pvr_csb_pack ((uint64_t *)stream_len_ptr, KMD_STREAM_HDR, value) {
+      value.length = state->fw_stream_len;
+   }
 }
 
 static void
@@ -1001,13 +1010,16 @@ pvr_geom_state_stream_ext_init(struct pvr_render_ctx *ctx,
 {
    const struct pvr_device_info *dev_info = &ctx->device->pdevice->dev_info;
 
-   uint32_t *ext_stream_ptr = (uint32_t *)state->fw_ext_stream;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((uint64_t *)state->fw_stream, KMD_STREAM_HDR).length;
+   uint32_t *ext_stream_ptr =
+      (uint32_t *)((uint8_t *)state->fw_stream + main_stream_len);
    uint32_t *header0_ptr;
 
    header0_ptr = ext_stream_ptr;
-   ext_stream_ptr += pvr_cmd_length(FW_STREAM_EXTHDR_GEOM0);
+   ext_stream_ptr += pvr_cmd_length(KMD_STREAM_EXTHDR_GEOM0);
 
-   pvr_csb_pack (header0_ptr, FW_STREAM_EXTHDR_GEOM0, header0) {
+   pvr_csb_pack (header0_ptr, KMD_STREAM_EXTHDR_GEOM0, header0) {
       if (PVR_HAS_QUIRK(dev_info, 49927)) {
          header0.has_brn49927 = true;
 
@@ -1021,26 +1033,22 @@ pvr_geom_state_stream_ext_init(struct pvr_render_ctx *ctx,
       }
    }
 
-   state->fw_ext_stream_len = (uint8_t *)ext_stream_ptr - state->fw_ext_stream;
-   assert(state->fw_ext_stream_len <= ARRAY_SIZE(state->fw_ext_stream));
-
-   if ((*header0_ptr & PVRX(FW_STREAM_EXTHDR_DATA_MASK)) == 0)
-      state->fw_ext_stream_len = 0;
+   if ((*header0_ptr & PVRX(KMD_STREAM_EXTHDR_DATA_MASK)) != 0) {
+      state->fw_stream_len =
+         (uint8_t *)ext_stream_ptr - (uint8_t *)state->fw_stream;
+      assert(state->fw_stream_len <= ARRAY_SIZE(state->fw_stream));
+   }
 }
 
-static void pvr_geom_state_flags_init(const struct pvr_render_job *const job,
-                                      uint32_t *const flags)
+static void
+pvr_geom_state_flags_init(const struct pvr_render_job *const job,
+                          struct pvr_winsys_geometry_state_flags *flags)
 {
-   *flags = 0;
-
-   if (!job->rt_dataset->need_frag)
-      *flags |= PVR_WINSYS_GEOM_FLAG_FIRST_GEOMETRY;
-
-   if (job->geometry_terminate)
-      *flags |= PVR_WINSYS_GEOM_FLAG_LAST_GEOMETRY;
-
-   if (job->frag_uses_atomic_ops)
-      *flags |= PVR_WINSYS_GEOM_FLAG_SINGLE_CORE;
+   *flags = (struct pvr_winsys_geometry_state_flags){
+      .is_first_geometry = !job->rt_dataset->need_frag,
+      .is_last_geometry = job->geometry_terminate,
+      .use_single_core = job->frag_uses_atomic_ops,
+   };
 }
 
 static void
@@ -1056,6 +1064,55 @@ pvr_render_job_ws_geometry_state_init(struct pvr_render_ctx *ctx,
    pvr_geom_state_flags_init(job, &state->flags);
 }
 
+static inline uint32_t pvr_frag_km_stream_pbe_reg_words_offset(
+   const struct pvr_device_info *const dev_info)
+{
+   uint32_t offset = 0;
+
+   offset += pvr_cmd_length(KMD_STREAM_HDR);
+   offset += pvr_cmd_length(CR_ISP_SCISSOR_BASE);
+   offset += pvr_cmd_length(CR_ISP_DBIAS_BASE);
+   offset += pvr_cmd_length(CR_ISP_OCLQRY_BASE);
+   offset += pvr_cmd_length(CR_ISP_ZLSCTL);
+   offset += pvr_cmd_length(CR_ISP_ZLOAD_BASE);
+   offset += pvr_cmd_length(CR_ISP_STENCIL_LOAD_BASE);
+
+   if (PVR_HAS_FEATURE(dev_info, requires_fb_cdc_zls_setup))
+      offset += pvr_cmd_length(CR_FB_CDC_ZLS);
+
+   return PVR_DW_TO_BYTES(offset);
+}
+
+#define DWORDS_PER_U64 2
+
+static inline uint32_t pvr_frag_km_stream_pds_eot_data_addr_offset(
+   const struct pvr_device_info *const dev_info)
+{
+   uint32_t offset = 0;
+
+   offset += pvr_frag_km_stream_pbe_reg_words_offset(dev_info) / 4U;
+   offset +=
+      PVR_MAX_COLOR_ATTACHMENTS * ROGUE_NUM_PBESTATE_REG_WORDS * DWORDS_PER_U64;
+   offset += pvr_cmd_length(CR_TPU_BORDER_COLOUR_TABLE_PDM);
+   offset += ROGUE_NUM_CR_PDS_BGRND_WORDS * DWORDS_PER_U64;
+   offset += ROGUE_NUM_CR_PDS_BGRND_WORDS * DWORDS_PER_U64;
+   offset += PVRX(KMD_STREAM_USC_CLEAR_REGISTER_COUNT) *
+             pvr_cmd_length(CR_USC_CLEAR_REGISTER);
+   offset += pvr_cmd_length(CR_USC_PIXEL_OUTPUT_CTRL);
+   offset += pvr_cmd_length(CR_ISP_BGOBJDEPTH);
+   offset += pvr_cmd_length(CR_ISP_BGOBJVALS);
+   offset += pvr_cmd_length(CR_ISP_AA);
+   offset += pvr_cmd_length(CR_ISP_CTL);
+   offset += pvr_cmd_length(CR_EVENT_PIXEL_PDS_INFO);
+
+   if (PVR_HAS_FEATURE(dev_info, cluster_grouping))
+      offset += pvr_cmd_length(KMD_STREAM_PIXEL_PHANTOM);
+
+   offset += pvr_cmd_length(KMD_STREAM_VIEW_IDX);
+
+   return PVR_DW_TO_BYTES(offset);
+}
+
 static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
                                        struct pvr_render_job *job,
                                        struct pvr_winsys_fragment_state *state)
@@ -1068,10 +1125,14 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    const enum PVRX(CR_ISP_AA_MODE_TYPE)
       isp_aa_mode = pvr_cr_isp_aa_mode_type(job->samples);
 
+   enum PVRX(CR_ZLS_FORMAT_TYPE) zload_format = PVRX(CR_ZLS_FORMAT_TYPE_F32Z);
    uint32_t *stream_ptr = (uint32_t *)state->fw_stream;
-   enum PVRX(CR_ZLOADFORMAT_TYPE) zload_format;
+   uint32_t *stream_len_ptr = stream_ptr;
    uint32_t pixel_ctl;
    uint32_t isp_ctl;
+
+   /* Leave space for stream header. */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    /* FIXME: pass in the number of samples rather than isp_aa_mode? */
    pvr_setup_tiles_in_flight(dev_info,
@@ -1105,7 +1166,7 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    stream_ptr += pvr_cmd_length(CR_ISP_OCLQRY_BASE);
 
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_ZLSCTL, value) {
-      if (job->has_depth_attachment) {
+      if (job->has_depth_attachment || job->has_stencil_attachment) {
          uint32_t alignment_x;
          uint32_t alignment_y;
 
@@ -1133,44 +1194,24 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
             value.storetwiddled = true;
          }
 
-         switch (job->ds.vk_format) {
-         case VK_FORMAT_D16_UNORM:
-            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_16BITINT);
-            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_16BITINT);
-            break;
-
-         case VK_FORMAT_D32_SFLOAT:
-            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
-            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_F32Z);
-            break;
-
-         case VK_FORMAT_D24_UNORM_S8_UINT:
-            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_24BITINT);
-            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_24BITINT);
-            break;
-
-         default:
-            unreachable("Unsupported depth format");
-         }
-
-         value.zloaden = job->ds.load;
-         value.forcezload = value.zloaden;
-
-         value.zstoreen = job->ds.store;
-         value.forcezstore = value.zstoreen;
+         value.zloadformat = job->ds.zls_format;
+         value.zstoreformat = job->ds.zls_format;
 
          zload_format = value.zloadformat;
-      } else {
-         zload_format = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
+      }
+
+      if (job->has_depth_attachment) {
+         value.zloaden = job->ds.load.d;
+         value.zstoreen = job->ds.store.d;
       }
 
       if (job->has_stencil_attachment) {
-         value.sstoreen = job->ds.store;
-         value.forcezstore = value.sstoreen;
-
-         value.sloaden = job->ds.load;
-         value.forcezload = value.sloaden;
+         value.sloaden = job->ds.load.s;
+         value.sstoreen = job->ds.store.s;
       }
+
+      value.forcezload = value.zloaden || value.sloaden;
+      value.forcezstore = value.zstoreen || value.sstoreen;
    }
    stream_ptr += pvr_cmd_length(CR_ISP_ZLSCTL);
 
@@ -1188,20 +1229,36 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
           * in CR_ISP_STENCIL_LOAD_BASE does not contain a depth component.
           */
          assert(job->has_depth_attachment ||
-                job->ds.vk_format == VK_FORMAT_S8_UINT);
+                !pvr_zls_format_type_is_packed(job->ds.zls_format));
          value.enable = !job->has_depth_attachment;
       }
    }
    stream_ptr += pvr_cmd_length(CR_ISP_STENCIL_LOAD_BASE);
 
-   *(uint64_t *)stream_ptr = 0;
-   stream_ptr += 2U;
+   if (PVR_HAS_FEATURE(dev_info, requires_fb_cdc_zls_setup)) {
+      /* Currently no support for FBC, so just go ahead and set the default
+       * values.
+       */
+      pvr_csb_pack ((uint64_t *)stream_ptr, CR_FB_CDC_ZLS, value) {
+         value.fbdc_depth_fmt = PVRX(TEXSTATE_FORMAT_F32);
+         value.fbdc_stencil_fmt = PVRX(TEXSTATE_FORMAT_U8);
+      }
+      stream_ptr += pvr_cmd_length(CR_FB_CDC_ZLS);
+   }
 
-   STATIC_ASSERT(ARRAY_SIZE(job->pbe_reg_words) == 8U);
-   STATIC_ASSERT(ARRAY_SIZE(job->pbe_reg_words[0]) == 3U);
+   /* Make sure that the pvr_frag_km_...() function is returning the correct
+    * offset.
+    */
+   assert((uint8_t *)stream_ptr - (uint8_t *)state->fw_stream ==
+          pvr_frag_km_stream_pbe_reg_words_offset(dev_info));
+
+   STATIC_ASSERT(ARRAY_SIZE(job->pbe_reg_words) == PVR_MAX_COLOR_ATTACHMENTS);
+   STATIC_ASSERT(ARRAY_SIZE(job->pbe_reg_words[0]) ==
+                 ROGUE_NUM_PBESTATE_REG_WORDS);
    STATIC_ASSERT(sizeof(job->pbe_reg_words[0][0]) == sizeof(uint64_t));
    memcpy(stream_ptr, job->pbe_reg_words, sizeof(job->pbe_reg_words));
-   stream_ptr += 8U * 3U * 2U;
+   stream_ptr +=
+      PVR_MAX_COLOR_ATTACHMENTS * ROGUE_NUM_PBESTATE_REG_WORDS * DWORDS_PER_U64;
 
    pvr_csb_pack ((uint64_t *)stream_ptr,
                  CR_TPU_BORDER_COLOUR_TABLE_PDM,
@@ -1211,26 +1268,33 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    }
    stream_ptr += pvr_cmd_length(CR_TPU_BORDER_COLOUR_TABLE_PDM);
 
-   STATIC_ASSERT(ARRAY_SIZE(job->pds_bgnd_reg_values) == 3U);
+   STATIC_ASSERT(ARRAY_SIZE(job->pds_bgnd_reg_values) ==
+                 ROGUE_NUM_CR_PDS_BGRND_WORDS);
    STATIC_ASSERT(sizeof(job->pds_bgnd_reg_values[0]) == sizeof(uint64_t));
    memcpy(stream_ptr,
           job->pds_bgnd_reg_values,
           sizeof(job->pds_bgnd_reg_values));
-   stream_ptr += 3U * 2U;
+   stream_ptr += ROGUE_NUM_CR_PDS_BGRND_WORDS * DWORDS_PER_U64;
 
-   STATIC_ASSERT(ARRAY_SIZE(job->pds_pr_bgnd_reg_values) == 3U);
+   STATIC_ASSERT(ARRAY_SIZE(job->pds_pr_bgnd_reg_values) ==
+                 ROGUE_NUM_CR_PDS_BGRND_WORDS);
    STATIC_ASSERT(sizeof(job->pds_pr_bgnd_reg_values[0]) == sizeof(uint64_t));
    memcpy(stream_ptr,
           job->pds_pr_bgnd_reg_values,
           sizeof(job->pds_pr_bgnd_reg_values));
-   stream_ptr += 3U * 2U;
+   stream_ptr += ROGUE_NUM_CR_PDS_BGRND_WORDS * DWORDS_PER_U64;
 
-   /* Set usc_clear_register array to 0 */
-   memset(stream_ptr, 0, 8U * sizeof(uint32_t));
-   stream_ptr += 8U;
+#undef DWORDS_PER_U64
+
+   memset(stream_ptr,
+          0,
+          PVRX(KMD_STREAM_USC_CLEAR_REGISTER_COUNT) *
+             PVR_DW_TO_BYTES(pvr_cmd_length(CR_USC_CLEAR_REGISTER)));
+   stream_ptr += PVRX(KMD_STREAM_USC_CLEAR_REGISTER_COUNT) *
+                 pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    *stream_ptr = pixel_ctl;
-   stream_ptr++;
+   stream_ptr += pvr_cmd_length(CR_USC_PIXEL_OUTPUT_CTRL);
 
    pvr_csb_pack (stream_ptr, CR_ISP_BGOBJDEPTH, value) {
       const float depth_clear = job->ds_clear_value.depth;
@@ -1240,15 +1304,15 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
        *  - job->depth_clear_value is set to a sensible default in that case.
        */
       switch (zload_format) {
-      case PVRX(CR_ZLOADFORMAT_TYPE_F32Z):
+      case PVRX(CR_ZLS_FORMAT_TYPE_F32Z):
          value.value = fui(depth_clear);
          break;
 
-      case PVRX(CR_ZLOADFORMAT_TYPE_16BITINT):
+      case PVRX(CR_ZLS_FORMAT_TYPE_16BITINT):
          value.value = _mesa_float_to_unorm(depth_clear, 16);
          break;
 
-      case PVRX(CR_ZLOADFORMAT_TYPE_24BITINT):
+      case PVRX(CR_ZLS_FORMAT_TYPE_24BITINT):
          value.value = _mesa_float_to_unorm(depth_clear, 24);
          break;
 
@@ -1281,8 +1345,7 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
        * bias factor of 1.0 equates to 1 ULP of increase to the depth value.
        */
       value.dbias_is_int = PVR_HAS_ERN(dev_info, 42307) &&
-                           (job->ds.vk_format == VK_FORMAT_D16_UNORM ||
-                            job->ds.vk_format == VK_FORMAT_D24_UNORM_S8_UINT);
+                           pvr_zls_format_type_is_int(job->ds.zls_format);
    }
    /* FIXME: When pvr_setup_tiles_in_flight() is refactored it might be
     * possible to fully pack CR_ISP_CTL above rather than having to OR in part
@@ -1303,10 +1366,7 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    stream_ptr += pvr_cmd_length(CR_EVENT_PIXEL_PDS_INFO);
 
    if (PVR_HAS_FEATURE(dev_info, cluster_grouping)) {
-      uint32_t pixel_phantom = 0;
-
-      if (PVR_HAS_FEATURE(dev_info, slc_mcu_cache_controls) &&
-          dev_runtime_info->num_phantoms > 1 && job->frag_uses_atomic_ops) {
+      pvr_csb_pack (stream_ptr, KMD_STREAM_PIXEL_PHANTOM, value) {
          /* Each phantom has its own MCU, so atomicity can only be guaranteed
           * when all work items are processed on the same phantom. This means
           * we need to disable all USCs other than those of the first
@@ -1314,16 +1374,28 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
           * for atomic operations in fragment shaders, since hardware
           * prevents the TA to run on more than one phantom anyway.
           */
-         pixel_phantom = 0xF;
+         /* Note that leaving all phantoms disabled (as csbgen will do by
+          * default since it will zero out things) will set them to their
+          * default state (i.e. enabled) instead of disabling them.
+          */
+         if (PVR_HAS_FEATURE(dev_info, slc_mcu_cache_controls) &&
+             dev_runtime_info->num_phantoms > 1 && job->frag_uses_atomic_ops) {
+            value.phantom_0 = PVRX(KMD_STREAM_PIXEL_PHANTOM_STATE_ENABLED);
+         }
       }
-
-      *stream_ptr = pixel_phantom;
-      stream_ptr++;
+      stream_ptr += pvr_cmd_length(KMD_STREAM_PIXEL_PHANTOM);
    }
 
-   /* Set up view_idx to 0 */
-   *stream_ptr = 0;
-   stream_ptr++;
+   /* clang-format off */
+   pvr_csb_pack (stream_ptr, KMD_STREAM_VIEW_IDX, value);
+   /* clang-format on */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_VIEW_IDX);
+
+   /* Make sure that the pvr_frag_km_...() function is returning the correct
+    * offset.
+    */
+   assert((uint8_t *)stream_ptr - (uint8_t *)state->fw_stream ==
+          pvr_frag_km_stream_pds_eot_data_addr_offset(dev_info));
 
    pvr_csb_pack (stream_ptr, CR_EVENT_PIXEL_PDS_DATA, value) {
       value.addr = PVR_DEV_ADDR(job->pds_pixel_event_data_offset);
@@ -1367,9 +1439,15 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
       stream_ptr++;
    }
 
-   state->fw_stream_len = (uint8_t *)stream_ptr - state->fw_stream;
+   state->fw_stream_len = (uint8_t *)stream_ptr - (uint8_t *)state->fw_stream;
    assert(state->fw_stream_len <= ARRAY_SIZE(state->fw_stream));
+
+   pvr_csb_pack ((uint64_t *)stream_len_ptr, KMD_STREAM_HDR, value) {
+      value.length = state->fw_stream_len;
+   }
 }
+
+#undef DWORDS_PER_U64
 
 static void
 pvr_frag_state_stream_ext_init(struct pvr_render_ctx *ctx,
@@ -1378,13 +1456,16 @@ pvr_frag_state_stream_ext_init(struct pvr_render_ctx *ctx,
 {
    const struct pvr_device_info *dev_info = &ctx->device->pdevice->dev_info;
 
-   uint32_t *ext_stream_ptr = (uint32_t *)state->fw_ext_stream;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((uint64_t *)state->fw_stream, KMD_STREAM_HDR).length;
+   uint32_t *ext_stream_ptr =
+      (uint32_t *)((uint8_t *)state->fw_stream + main_stream_len);
    uint32_t *header0_ptr;
 
    header0_ptr = ext_stream_ptr;
-   ext_stream_ptr += pvr_cmd_length(FW_STREAM_EXTHDR_FRAG0);
+   ext_stream_ptr += pvr_cmd_length(KMD_STREAM_EXTHDR_FRAG0);
 
-   pvr_csb_pack (header0_ptr, FW_STREAM_EXTHDR_FRAG0, header0) {
+   pvr_csb_pack (header0_ptr, KMD_STREAM_EXTHDR_FRAG0, header0) {
       if (PVR_HAS_QUIRK(dev_info, 49927)) {
          header0.has_brn49927 = true;
 
@@ -1398,35 +1479,25 @@ pvr_frag_state_stream_ext_init(struct pvr_render_ctx *ctx,
       }
    }
 
-   state->fw_ext_stream_len = (uint8_t *)ext_stream_ptr - state->fw_ext_stream;
-   assert(state->fw_ext_stream_len <= ARRAY_SIZE(state->fw_ext_stream));
-
-   if ((*header0_ptr & PVRX(FW_STREAM_EXTHDR_DATA_MASK)) == 0)
-      state->fw_ext_stream_len = 0;
+   if ((*header0_ptr & PVRX(KMD_STREAM_EXTHDR_DATA_MASK)) != 0) {
+      state->fw_stream_len =
+         (uint8_t *)ext_stream_ptr - (uint8_t *)state->fw_stream;
+      assert(state->fw_stream_len <= ARRAY_SIZE(state->fw_stream));
+   }
 }
 
-static void pvr_frag_state_flags_init(const struct pvr_render_job *const job,
-                                      uint32_t *const flags)
+static void
+pvr_frag_state_flags_init(const struct pvr_render_job *const job,
+                          struct pvr_winsys_fragment_state_flags *flags)
 {
-   *flags = 0;
-
-   if (job->has_depth_attachment)
-      *flags |= PVR_WINSYS_FRAG_FLAG_DEPTH_BUFFER_PRESENT;
-
-   if (job->has_stencil_attachment)
-      *flags |= PVR_WINSYS_FRAG_FLAG_STENCIL_BUFFER_PRESENT;
-
-   if (job->disable_compute_overlap)
-      *flags |= PVR_WINSYS_FRAG_FLAG_PREVENT_CDM_OVERLAP;
-
-   if (job->frag_uses_atomic_ops)
-      *flags |= PVR_WINSYS_FRAG_FLAG_SINGLE_CORE;
-
-   if (job->get_vis_results)
-      *flags |= PVR_WINSYS_FRAG_FLAG_GET_VIS_RESULTS;
-
-   if (job->requires_spm_scratch_buffer)
-      *flags |= PVR_WINSYS_FRAG_FLAG_SPMSCRATCHBUFFER;
+   *flags = (struct pvr_winsys_fragment_state_flags){
+      .has_depth_buffer = job->has_depth_attachment,
+      .has_stencil_buffer = job->has_stencil_attachment,
+      .prevent_cdm_overlap = job->disable_compute_overlap,
+      .use_single_core = job->frag_uses_atomic_ops,
+      .get_vis_results = job->get_vis_results,
+      .has_spm_scratch_buffer = job->requires_spm_scratch_buffer,
+   };
 }
 
 static void
@@ -1440,6 +1511,53 @@ pvr_render_job_ws_fragment_state_init(struct pvr_render_ctx *ctx,
 
    state->wait = wait;
    pvr_frag_state_flags_init(job, &state->flags);
+}
+
+/**
+ * \brief Sets up the fragment state for a Partial Render (PR) based on the
+ * state for a normal fragment job.
+ *
+ * The state of a fragment PR is almost the same as of that for a normal
+ * fragment job apart the PBE words and the EOT program, both of which are
+ * necessary for the render to use the SPM scratch buffer instead of the final
+ * render targets.
+ *
+ * By basing the fragment PR state on that of a normal fragment state,
+ * repacking of the same words can be avoided as we end up mostly doing copies
+ * instead.
+ */
+static void pvr_render_job_ws_fragment_pr_init_based_on_fragment_state(
+   const struct pvr_render_ctx *ctx,
+   struct pvr_render_job *job,
+   struct vk_sync *wait,
+   struct pvr_winsys_fragment_state *frag,
+   struct pvr_winsys_fragment_state *state)
+{
+   const struct pvr_device_info *const dev_info =
+      &ctx->device->pdevice->dev_info;
+   const uint32_t pbe_reg_byte_offset =
+      pvr_frag_km_stream_pbe_reg_words_offset(dev_info);
+   const uint32_t eot_data_addr_byte_offset =
+      pvr_frag_km_stream_pds_eot_data_addr_offset(dev_info);
+
+   /* Massive copy :( */
+   *state = *frag;
+
+   assert(state->fw_stream_len >=
+          pbe_reg_byte_offset + sizeof(job->pr_pbe_reg_words));
+   memcpy(&state->fw_stream[pbe_reg_byte_offset],
+          job->pr_pbe_reg_words,
+          sizeof(job->pr_pbe_reg_words));
+
+   /* TODO: Update this when csbgen is byte instead of dword granular. */
+   assert(state->fw_stream_len >=
+          eot_data_addr_byte_offset +
+             PVR_DW_TO_BYTES(pvr_cmd_length(CR_EVENT_PIXEL_PDS_DATA)));
+   pvr_csb_pack ((uint32_t *)&state->fw_stream[eot_data_addr_byte_offset],
+                 CR_EVENT_PIXEL_PDS_DATA,
+                 eot_pds_data) {
+      eot_pds_data.addr = PVR_DEV_ADDR(job->pr_pds_pixel_event_data_offset);
+   }
 }
 
 static void pvr_render_job_ws_submit_info_init(
@@ -1462,14 +1580,28 @@ static void pvr_render_job_ws_submit_info_init(
                                          wait_geom,
                                          &submit_info->geometry);
 
-   if (job->run_frag) {
-      submit_info->run_frag = true;
+   submit_info->has_fragment_job = job->run_frag;
 
-      pvr_render_job_ws_fragment_state_init(ctx,
-                                            job,
-                                            wait_frag,
-                                            &submit_info->fragment);
-   }
+   /* TODO: Move the job setup from queue submit into cmd_buffer if possible. */
+
+   /* TODO: See if it's worth avoiding setting up the fragment state and setup
+    * the pr state directly if `!job->run_frag`. For now we'll always set it up.
+    */
+   pvr_render_job_ws_fragment_state_init(ctx,
+                                         job,
+                                         wait_frag,
+                                         &submit_info->fragment);
+
+   /* TODO: In some cases we could eliminate the pr and use the frag directly in
+    * case we enter SPM. There's likely some performance improvement to be had
+    * there. For now we'll always setup the pr.
+    */
+   pvr_render_job_ws_fragment_pr_init_based_on_fragment_state(
+      ctx,
+      job,
+      wait_frag,
+      &submit_info->fragment,
+      &submit_info->fragment_pr);
 }
 
 VkResult pvr_render_job_submit(struct pvr_render_ctx *ctx,

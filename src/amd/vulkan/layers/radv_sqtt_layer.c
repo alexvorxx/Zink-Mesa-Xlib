@@ -160,7 +160,7 @@ radv_sqtt_reloc_graphics_shaders(struct radv_device *device, struct radv_graphic
    }
 
    /* Allocate memory for all shader binaries. */
-   reloc->alloc = radv_alloc_shader_memory(device, code_size, pipeline);
+   reloc->alloc = radv_alloc_shader_memory(device, code_size, false, pipeline);
    if (!reloc->alloc) {
       free(reloc);
       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
@@ -521,20 +521,19 @@ radv_describe_pipeline_bind(struct radv_cmd_buffer *cmd_buffer, VkPipelineBindPo
    radv_emit_sqtt_userdata(cmd_buffer, &marker, sizeof(marker) / 4);
 }
 
-/* TODO: Improve the way to trigger capture (overlay, etc). */
 static void
 radv_handle_sqtt(VkQueue _queue)
 {
    RADV_FROM_HANDLE(radv_queue, queue, _queue);
-   static bool sqtt_enabled = false;
-   static uint64_t num_frames = 0;
-   bool resize_trigger = false;
 
-   if (sqtt_enabled) {
+   bool trigger = queue->device->sqtt_triggered;
+   queue->device->sqtt_triggered = false;
+
+   if (queue->device->sqtt_enabled) {
       struct ac_sqtt_trace sqtt_trace = {0};
 
       radv_end_sqtt(queue);
-      sqtt_enabled = false;
+      queue->device->sqtt_enabled = false;
 
       /* TODO: Do something better than this whole sync. */
       queue->device->vk.dispatch_table.QueueWaitIdle(_queue);
@@ -551,48 +550,26 @@ radv_handle_sqtt(VkQueue _queue)
          /* Trigger a new capture if the driver failed to get
           * the trace because the buffer was too small.
           */
-         resize_trigger = true;
+         trigger = true;
       }
 
       /* Clear resources used for this capture. */
       radv_reset_sqtt_trace(queue->device);
    }
 
-   if (!sqtt_enabled) {
-      bool frame_trigger = num_frames == queue->device->sqtt.start_frame;
-      bool file_trigger = false;
-#ifndef _WIN32
-      if (queue->device->sqtt.trigger_file && access(queue->device->sqtt.trigger_file, W_OK) == 0) {
-         if (unlink(queue->device->sqtt.trigger_file) == 0) {
-            file_trigger = true;
-         } else {
-            /* Do not enable tracing if we cannot remove the file,
-             * because by then we'll trace every frame ... */
-            fprintf(stderr, "RADV: could not remove thread trace trigger file, ignoring\n");
-         }
+   if (trigger) {
+      if (ac_check_profile_state(&queue->device->physical_device->rad_info)) {
+         fprintf(stderr, "radv: Canceling RGP trace request as a hang condition has been "
+                         "detected. Force the GPU into a profiling mode with e.g. "
+                         "\"echo profile_peak  > "
+                         "/sys/class/drm/card0/device/power_dpm_force_performance_level\"\n");
+         return;
       }
-#endif
 
-      if (frame_trigger || file_trigger || resize_trigger) {
-         if (ac_check_profile_state(&queue->device->physical_device->rad_info)) {
-            fprintf(stderr, "radv: Canceling RGP trace request as a hang condition has been "
-                            "detected. Force the GPU into a profiling mode with e.g. "
-                            "\"echo profile_peak  > "
-                            "/sys/class/drm/card0/device/power_dpm_force_performance_level\"\n");
-            return;
-         }
-
-         /* Sample CPU/GPU clocks before starting the trace. */
-         if (!radv_sqtt_sample_clocks(queue->device)) {
-            fprintf(stderr, "radv: Failed to sample clocks\n");
-         }
-
-         radv_begin_sqtt(queue);
-         assert(!sqtt_enabled);
-         sqtt_enabled = true;
-      }
+      radv_begin_sqtt(queue);
+      assert(!queue->device->sqtt_enabled);
+      queue->device->sqtt_enabled = true;
    }
-   num_frames++;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

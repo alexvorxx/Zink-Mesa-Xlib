@@ -4762,8 +4762,6 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
          /* Missing :
           *   - SpvOpGetKernelLocalSizeForSubgroupCount
           *   - SpvOpGetKernelMaxNumSubgroups
-          *   - SpvExecutionModeSubgroupsPerWorkgroup
-          *   - SpvExecutionModeSubgroupsPerWorkgroupId
           */
          vtn_warn("Not fully supported capability: %s",
                   spirv_capability_to_string(cap));
@@ -5442,6 +5440,7 @@ vtn_handle_execution_mode(struct vtn_builder *b, struct vtn_value *entry_point,
 
    case SpvExecutionModeLocalSizeId:
    case SpvExecutionModeLocalSizeHintId:
+   case SpvExecutionModeSubgroupsPerWorkgroupId:
       /* Handled later by vtn_handle_execution_mode_id(). */
       break;
 
@@ -5449,6 +5448,11 @@ vtn_handle_execution_mode(struct vtn_builder *b, struct vtn_value *entry_point,
       vtn_assert(b->shader->info.stage == MESA_SHADER_KERNEL);
       vtn_assert(b->shader->info.subgroup_size == SUBGROUP_SIZE_VARYING);
       b->shader->info.subgroup_size = mode->operands[0];
+      break;
+
+   case SpvExecutionModeSubgroupsPerWorkgroup:
+      vtn_assert(b->shader->info.stage == MESA_SHADER_KERNEL);
+      b->shader->info.num_subgroups = mode->operands[0];
       break;
 
    case SpvExecutionModeSubgroupUniformControlFlowKHR:
@@ -5523,6 +5527,11 @@ vtn_handle_execution_mode_id(struct vtn_builder *b, struct vtn_value *entry_poin
       b->shader->info.cs.workgroup_size_hint[0] = vtn_constant_uint(b, mode->operands[0]);
       b->shader->info.cs.workgroup_size_hint[1] = vtn_constant_uint(b, mode->operands[1]);
       b->shader->info.cs.workgroup_size_hint[2] = vtn_constant_uint(b, mode->operands[2]);
+      break;
+
+   case SpvExecutionModeSubgroupsPerWorkgroupId:
+      vtn_assert(b->shader->info.stage == MESA_SHADER_KERNEL);
+      b->shader->info.num_subgroups = vtn_constant_uint(b, mode->operands[0]);
       break;
 
    default:
@@ -5939,13 +5948,13 @@ ray_query_load_intrinsic_create(struct vtn_builder *b, SpvOp opcode,
       struct vtn_ssa_value *ssa = vtn_create_ssa_value(b, value.glsl_type);
       for (unsigned i = 0; i < elems; i++) {
          ssa->elems[i]->def =
-            nir_build_rq_load(&b->nb,
-                              glsl_get_vector_elements(elem_type),
-                              glsl_get_bit_size(elem_type),
-                              src0,
-                              .ray_query_value = value.nir_value,
-                              .committed = committed,
-                              .column = i);
+            nir_rq_load(&b->nb,
+                        glsl_get_vector_elements(elem_type),
+                        glsl_get_bit_size(elem_type),
+                        src0,
+                        .ray_query_value = value.nir_value,
+                        .committed = committed,
+                        .column = i);
       }
 
       vtn_push_ssa_value(b, w[2], ssa);
@@ -6629,8 +6638,7 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
 
    nir_function *main_entry_point = nir_function_create(b->shader, func_name);
    nir_function_impl *impl = nir_function_impl_create(main_entry_point);
-   nir_builder_init(&b->nb, impl);
-   b->nb.cursor = nir_after_cf_list(&impl->body);
+   b->nb = nir_builder_at(nir_after_cf_list(&impl->body));
    b->func_param_idx = 0;
 
    nir_call_instr *call = nir_call_instr_create(b->nb.shader, entry_point);

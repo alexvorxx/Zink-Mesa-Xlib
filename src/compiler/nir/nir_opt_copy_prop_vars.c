@@ -1368,8 +1368,7 @@ copy_prop_vars_cf_node(struct copy_prop_var_state *state,
 
    case nir_cf_node_block: {
       nir_block *block = nir_cf_node_as_block(cf_node);
-      nir_builder b;
-      nir_builder_init(&b, state->impl);
+      nir_builder b = nir_builder_create(state->impl);
       copy_prop_vars_block(state, &b, block, copies);
       break;
    }
@@ -1475,10 +1474,8 @@ nir_opt_copy_prop_vars(nir_shader *shader)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-      progress |= nir_copy_prop_vars_impl(function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= nir_copy_prop_vars_impl(impl);
    }
 
    return progress;

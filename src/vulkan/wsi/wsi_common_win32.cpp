@@ -112,7 +112,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL
 wsi_GetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice,
                                                  uint32_t queueFamilyIndex)
 {
-   return TRUE;
+   return true;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

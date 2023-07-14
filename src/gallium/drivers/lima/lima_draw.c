@@ -631,7 +631,7 @@ lima_pack_render_state(struct lima_context *ctx, const struct pipe_draw_info *in
       render->depth_test |= 0x801;
    }
 
-   ushort far, near;
+   uint16_t far, near;
 
    near = float_to_ushort(ctx->viewport.near);
    far = float_to_ushort(ctx->viewport.far);

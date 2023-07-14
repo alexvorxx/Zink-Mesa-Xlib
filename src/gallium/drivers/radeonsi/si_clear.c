@@ -10,9 +10,8 @@
 #include "util/u_pack_color.h"
 #include "util/u_surface.h"
 
-enum
-{
-   SI_CLEAR = SI_SAVE_FRAGMENT_STATE,
+enum {
+   SI_CLEAR = SI_SAVE_FRAGMENT_STATE | SI_SAVE_FRAGMENT_CONSTANT,
    SI_CLEAR_SURFACE = SI_SAVE_FRAMEBUFFER | SI_SAVE_FRAGMENT_STATE,
 };
 
@@ -1283,58 +1282,10 @@ static void si_clear_depth_stencil(struct pipe_context *ctx, struct pipe_surface
    si_blitter_end(sctx);
 }
 
-static void si_clear_texture(struct pipe_context *pipe, struct pipe_resource *tex, unsigned level,
-                             const struct pipe_box *box, const void *data)
-{
-   struct pipe_screen *screen = pipe->screen;
-   struct si_texture *stex = (struct si_texture *)tex;
-   struct pipe_surface tmpl = {{0}};
-   struct pipe_surface *sf;
-
-   tmpl.format = tex->format;
-   tmpl.u.tex.first_layer = box->z;
-   tmpl.u.tex.last_layer = box->z + box->depth - 1;
-   tmpl.u.tex.level = level;
-   sf = pipe->create_surface(pipe, tex, &tmpl);
-   if (!sf)
-      return;
-
-   if (stex->is_depth) {
-      unsigned clear;
-      float depth;
-      uint8_t stencil = 0;
-
-      /* Depth is always present. */
-      clear = PIPE_CLEAR_DEPTH;
-      util_format_unpack_z_float(tex->format, &depth, data, 1);
-
-      if (stex->surface.has_stencil) {
-         clear |= PIPE_CLEAR_STENCIL;
-         util_format_unpack_s_8uint(tex->format, &stencil, data, 1);
-      }
-
-      si_clear_depth_stencil(pipe, sf, clear, depth, stencil, box->x, box->y, box->width,
-                             box->height, false);
-   } else {
-      union pipe_color_union color;
-
-      util_format_unpack_rgba(tex->format, color.ui, data, 1);
-
-      if (screen->is_format_supported(screen, tex->format, tex->target, 0, 0,
-                                      PIPE_BIND_RENDER_TARGET)) {
-         si_clear_render_target(pipe, sf, &color, box->x, box->y, box->width, box->height, false);
-      } else {
-         /* Software fallback - just for R9G9B9E5_FLOAT */
-         util_clear_render_target(pipe, sf, &color, box->x, box->y, box->width, box->height);
-      }
-   }
-   pipe_surface_reference(&sf, NULL);
-}
-
 void si_init_clear_functions(struct si_context *sctx)
 {
    sctx->b.clear_render_target = si_clear_render_target;
-   sctx->b.clear_texture = si_clear_texture;
+   sctx->b.clear_texture = u_default_clear_texture;
 
    if (sctx->has_graphics) {
       sctx->b.clear = si_clear;

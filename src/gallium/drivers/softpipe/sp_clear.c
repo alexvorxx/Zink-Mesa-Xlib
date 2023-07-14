@@ -89,5 +89,5 @@ softpipe_clear(struct pipe_context *pipe, unsigned buffers,
       sp_tile_cache_clear(softpipe->zsbuf_cache, &zero, cv);
    }
 
-   softpipe->dirty_render_cache = TRUE;
+   softpipe->dirty_render_cache = true;
 }

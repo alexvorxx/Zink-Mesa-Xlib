@@ -63,13 +63,13 @@ static inline nir_ssa_def *
 brw_nir_rt_load_const(nir_builder *b, unsigned components,
                       nir_ssa_def *addr, nir_ssa_def *pred)
 {
-   return nir_build_load_global_const_block_intel(b, components, addr, pred);
+   return nir_load_global_const_block_intel(b, components, addr, pred);
 }
 
 static inline nir_ssa_def *
 brw_load_btd_dss_id(nir_builder *b)
 {
-   return nir_build_load_topology_id_intel(b, .base = BRW_TOPOLOGY_ID_DSS);
+   return nir_load_topology_id_intel(b, .base = BRW_TOPOLOGY_ID_DSS);
 }
 
 static inline nir_ssa_def *
@@ -84,7 +84,7 @@ brw_nir_rt_load_num_simd_lanes_per_dss(nir_builder *b,
 static inline nir_ssa_def *
 brw_load_eu_thread_simd(nir_builder *b)
 {
-   return nir_build_load_topology_id_intel(b, .base = BRW_TOPOLOGY_ID_EU_THREAD_SIMD);
+   return nir_load_topology_id_intel(b, .base = BRW_TOPOLOGY_ID_EU_THREAD_SIMD);
 }
 
 static inline nir_ssa_def *

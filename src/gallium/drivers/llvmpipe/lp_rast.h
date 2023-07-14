@@ -37,7 +37,7 @@
 #ifndef LP_RAST_H
 #define LP_RAST_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_pack_color.h"
 #include "util/u_rect.h"
 #include "lp_jit.h"

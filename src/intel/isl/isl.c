@@ -115,10 +115,14 @@ isl_device_setup_mocs(struct isl_device *dev)
          dev->mocs.internal = 1 << 1;
          /* Displayables cached to L3+L4:WT */
          dev->mocs.external = 14 << 1;
+         /* Uncached - GO:Mem */
+         dev->mocs.uncached = 5 << 1;
       } else if (intel_device_info_is_dg2(dev->info)) {
          /* L3CC=WB; BSpec: 45101 */
          dev->mocs.internal = 3 << 1;
          dev->mocs.external = 3 << 1;
+         /* UC - Coherent; GO:Memory */
+         dev->mocs.uncached = 1 << 1;
 
          /* XY_BLOCK_COPY_BLT MOCS fields have programming notes which say:
           *
@@ -150,11 +154,15 @@ isl_device_setup_mocs(struct isl_device *dev)
           * and flushed at bottom of each submission.
           */
          dev->mocs.external = 5 << 1;
+         /* UC */
+         dev->mocs.uncached = 1 << 1;
       } else {
          /* TC=1/LLC Only, LeCC=1/UC, LRUM=0, L3CC=3/WB */
          dev->mocs.external = 61 << 1;
          /* TC=LLC/eLLC, LeCC=WB, LRUM=3, L3CC=WB */
          dev->mocs.internal = 2 << 1;
+         /* Uncached */
+         dev->mocs.uncached = 3 << 1;
 
          /* L1 - HDC:L1 + L3 + LLC */
          dev->mocs.l1_hdc_l3_llc = 48 << 1;
@@ -166,6 +174,8 @@ isl_device_setup_mocs(struct isl_device *dev)
       dev->mocs.external = 1 << 1;
       /* TC=LLC/eLLC, LeCC=WB, LRUM=3, L3CC=WB */
       dev->mocs.internal = 2 << 1;
+      /* Uncached */
+      dev->mocs.uncached = (dev->info->ver >= 11 ? 3 : 0) << 1;
    } else if (dev->info->ver >= 8) {
       /* MEMORY_OBJECT_CONTROL_STATE:
        * .MemoryTypeLLCeLLCCacheabilityControl = UCwithFenceifcoherentcycle,
@@ -179,6 +189,20 @@ isl_device_setup_mocs(struct isl_device *dev)
        * .AgeforQUADLRU = 0
        */
       dev->mocs.internal = 0x78;
+      if (dev->info->platform == INTEL_PLATFORM_CHV) {
+         /* MEMORY_OBJECT_CONTROL_STATE:
+          * .MemoryType = UC,
+          * .TargetCache = NoCaching,
+          */
+         dev->mocs.uncached = 0;
+      } else {
+         /* MEMORY_OBJECT_CONTROL_STATE:
+          * .MemoryTypeLLCeLLCCacheabilityControl = UCUncacheable,
+          * .TargetCache = eLLCOnlywheneDRAMispresentelsegetsallocatedinLLC,
+          * .AgeforQUADLRU = 0
+          */
+         dev->mocs.uncached = 0x20;
+      }
    } else if (dev->info->ver >= 7) {
       if (dev->info->platform == INTEL_PLATFORM_HSW) {
          /* MEMORY_OBJECT_CONTROL_STATE:
@@ -187,6 +211,11 @@ isl_device_setup_mocs(struct isl_device *dev)
           */
          dev->mocs.internal = 1;
          dev->mocs.external = 1;
+         /* MEMORY_OBJECT_CONTROL_STATE:
+          * .LLCeLLCCacheabilityControlLLCCC             = 1,
+          * .L3CacheabilityControlL3CC                   = 0,
+          */
+         dev->mocs.uncached = 2;
       } else {
          /* MEMORY_OBJECT_CONTROL_STATE:
           * .GraphicsDataTypeGFDT                        = 0,
@@ -195,10 +224,17 @@ isl_device_setup_mocs(struct isl_device *dev)
           */
          dev->mocs.internal = 1;
          dev->mocs.external = 1;
+         /* MEMORY_OBJECT_CONTROL_STATE:
+          * .GraphicsDataTypeGFDT                        = 0,
+          * .LLCCacheabilityControlLLCCC                 = 0,
+          * .L3CacheabilityControlL3CC                   = 0,
+          */
+         dev->mocs.uncached = 0;
       }
    } else {
       dev->mocs.internal = 0;
       dev->mocs.external = 0;
+      dev->mocs.uncached = 0;
    }
 }
 
@@ -214,6 +250,10 @@ isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
 
    if (external)
       return dev->mocs.external | mask;
+
+   if (intel_device_info_is_mtl(dev->info) &&
+       (usage & ISL_SURF_USAGE_STREAM_OUT_BIT))
+      return dev->mocs.uncached | mask;
 
    if (dev->info->verx10 == 120 && dev->info->platform != INTEL_PLATFORM_DG1) {
       if (usage & ISL_SURF_USAGE_STAGING_BIT)
@@ -494,8 +534,8 @@ isl_tiling_get_info(enum isl_tiling tiling,
 #define tile_extent(bs, cv, cu, a) \
       isl_extent4d((1 << cu) / bs, 1 << cv, 1, a)
 
-      /* Only 2D surfaces are handled. */
-      assert(dim == ISL_SURF_DIM_2D);
+      /* Only 1D and 2D surfaces are handled. */
+      assert(dim != ISL_SURF_DIM_3D);
 
       if (samples == 1 || msaa_layout == ISL_MSAA_LAYOUT_INTERLEAVED) {
          switch (format_bpb) {

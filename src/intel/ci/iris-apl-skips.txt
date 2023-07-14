@@ -2,5 +2,5 @@
 wayland-dEQP-EGL.functional.buffer_age.no_preserve.*
 wayland-dEQP-EGL.functional.query_context.get_current_context.*
 wayland-dEQP-EGL.functional.query_context.get_current_surface.*
-wayland-dEQP-EGL.functional.resize.surface_size.stretch*
+wayland-dEQP-EGL.functional.resize.surface_size.stretch.*
 wayland-dEQP-EGL.functional.swap_buffers_with_damage.*

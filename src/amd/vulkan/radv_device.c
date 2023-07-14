@@ -68,6 +68,7 @@ typedef void *drmDevicePtr;
 #include "util/os_time.h"
 #include "util/timespec.h"
 #include "util/u_atomic.h"
+#include "util/u_process.h"
 #include "vulkan/vk_icd.h"
 #include "winsys/null/radv_null_winsys_public.h"
 #include "git_sha1.h"
@@ -82,9 +83,10 @@ typedef void *drmDevicePtr;
 #endif
 
 static bool
-radv_spm_trace_enabled()
+radv_spm_trace_enabled(struct radv_instance *instance)
 {
-   return radv_sqtt_enabled() && debug_get_bool_option("RADV_THREAD_TRACE_CACHE_COUNTERS", true);
+   return (instance->vk.trace_mode == RADV_TRACE_MODE_RGP) &&
+          debug_get_bool_option("RADV_THREAD_TRACE_CACHE_COUNTERS", true);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -552,14 +554,14 @@ init_dispatch_tables(struct radv_device *device, struct radv_physical_device *ph
       add_entrypoints(&b, &rage2_device_entrypoints, RADV_APP_DISPATCH_TABLE);
    }
 
-   if (radv_sqtt_enabled())
+   if (physical_device->instance->vk.trace_mode & RADV_TRACE_MODE_RGP)
       add_entrypoints(&b, &sqtt_device_entrypoints, RADV_RGP_DISPATCH_TABLE);
 
-   if (radv_rra_trace_enabled() && radv_enable_rt(physical_device, false))
+   if ((physical_device->instance->vk.trace_mode & RADV_TRACE_MODE_RRA) && radv_enable_rt(physical_device, false))
       add_entrypoints(&b, &rra_device_entrypoints, RADV_RRA_DISPATCH_TABLE);
 
 #ifndef _WIN32
-   if (vk_memory_trace_enabled())
+   if (physical_device->instance->vk.trace_mode & VK_TRACE_MODE_RMV)
       add_entrypoints(&b, &rmv_device_entrypoints, RADV_RMV_DISPATCH_TABLE);
 #endif
 
@@ -594,6 +596,49 @@ radv_check_status(struct vk_device *vk_device)
    return VK_SUCCESS;
 }
 
+static VkResult
+capture_trace(VkQueue _queue)
+{
+   RADV_FROM_HANDLE(radv_queue, queue, _queue);
+
+   VkResult result = VK_SUCCESS;
+
+   char filename[2048];
+   struct tm now;
+   time_t t;
+
+   t = time(NULL);
+   now = *localtime(&t);
+
+   if (queue->device->instance->vk.trace_mode & RADV_TRACE_MODE_RRA) {
+      if (_mesa_hash_table_num_entries(queue->device->rra_trace.accel_structs) == 0) {
+         fprintf(stderr, "radv: No acceleration structures captured, not saving RRA trace.\n");
+      } else {
+         snprintf(filename, sizeof(filename), "/tmp/%s_%04d.%02d.%02d_%02d.%02d.%02d.rra", util_get_process_name(),
+                  1900 + now.tm_year, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec);
+
+         result = radv_rra_dump_trace(_queue, filename);
+
+         if (result == VK_SUCCESS)
+            fprintf(stderr, "radv: RRA capture saved to '%s'\n", filename);
+         else
+            fprintf(stderr, "radv: Failed to save RRA capture!\n");
+      }
+   }
+
+   if (queue->device->vk.memory_trace_data.is_enabled) {
+      simple_mtx_lock(&queue->device->vk.memory_trace_data.token_mtx);
+      radv_rmv_collect_trace_events(queue->device);
+      vk_dump_rmv_capture(&queue->device->vk.memory_trace_data);
+      simple_mtx_unlock(&queue->device->vk.memory_trace_data.token_mtx);
+   }
+
+   if (queue->device->instance->vk.trace_mode & RADV_TRACE_MODE_RGP)
+      queue->device->sqtt_triggered = true;
+
+   return result;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
@@ -602,9 +647,8 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    VkResult result;
    struct radv_device *device;
 
+   enum radv_buffer_robustness buffer_robustness = RADV_BUFFER_ROBUSTNESS_DISABLED;
    bool keep_shader_info = false;
-   bool robust_buffer_access = false;
-   bool robust_buffer_access2 = false;
    bool overallocation_disallowed = false;
    bool custom_border_colors = false;
    bool attachment_vrs_enabled = false;
@@ -621,7 +665,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    /* Check enabled features */
    if (pCreateInfo->pEnabledFeatures) {
       if (pCreateInfo->pEnabledFeatures->robustBufferAccess)
-         robust_buffer_access = true;
+         buffer_robustness = MAX2(buffer_robustness, RADV_BUFFER_ROBUSTNESS_1);
    }
 
    vk_foreach_struct_const (ext, pCreateInfo->pNext) {
@@ -629,7 +673,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
          const VkPhysicalDeviceFeatures2 *features = (const void *)ext;
          if (features->features.robustBufferAccess)
-            robust_buffer_access = true;
+            buffer_robustness = MAX2(buffer_robustness, RADV_BUFFER_ROBUSTNESS_1);
          break;
       }
       case VK_STRUCTURE_TYPE_DEVICE_MEMORY_OVERALLOCATION_CREATE_INFO_AMD: {
@@ -651,7 +695,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT: {
          const VkPhysicalDeviceRobustness2FeaturesEXT *features = (const void *)ext;
          if (features->robustBufferAccess2)
-            robust_buffer_access2 = true;
+            buffer_robustness = MAX2(buffer_robustness, RADV_BUFFER_ROBUSTNESS_2);
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT: {
@@ -740,6 +784,8 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
    init_dispatch_tables(device, physical_device);
 
+   device->vk.capture_trace = capture_trace;
+
    device->vk.command_buffer_ops = &radv_cmd_buffer_ops;
    device->vk.check_status = radv_check_status;
 
@@ -765,8 +811,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
                                 device->vk.enabled_extensions.KHR_acceleration_structure ||
                                 device->vk.enabled_extensions.VALVE_descriptor_set_host_mapping;
 
-   device->robust_buffer_access = robust_buffer_access || robust_buffer_access2;
-   device->robust_buffer_access2 = robust_buffer_access2;
+   device->buffer_robustness = buffer_robustness;
 
    device->attachment_vrs_enabled = attachment_vrs_enabled;
 
@@ -889,7 +934,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       radv_dump_enabled_options(device, stderr);
    }
 
-   if (radv_sqtt_enabled()) {
+   if (device->instance->vk.trace_mode & RADV_TRACE_MODE_RGP) {
       if (device->physical_device->rad_info.gfx_level < GFX8 || device->physical_device->rad_info.gfx_level > GFX11) {
          fprintf(stderr, "GPU hardware not supported: refer to "
                          "the RGP documentation for the list of "
@@ -906,9 +951,9 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
               "radv: Thread trace support is enabled (initial buffer size: %u MiB, "
               "instruction timing: %s, cache counters: %s).\n",
               device->sqtt.buffer_size / (1024 * 1024), radv_is_instruction_timing_enabled() ? "enabled" : "disabled",
-              radv_spm_trace_enabled() ? "enabled" : "disabled");
+              radv_spm_trace_enabled(device->instance) ? "enabled" : "disabled");
 
-      if (radv_spm_trace_enabled()) {
+      if (radv_spm_trace_enabled(device->instance)) {
          /* TODO: add SPM counters for GFX11. */
          if (device->physical_device->rad_info.gfx_level == GFX10 ||
              device->physical_device->rad_info.gfx_level == GFX10_3) {
@@ -923,7 +968,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    }
 
 #ifndef _WIN32
-   if (vk_memory_trace_enabled()) {
+   if (physical_device->instance->vk.trace_mode & VK_TRACE_MODE_RMV) {
       struct vk_rmv_device_info info;
       memset(&info, 0, sizeof(struct vk_rmv_device_info));
       radv_rmv_fill_device_info(physical_device, &info);
@@ -1002,7 +1047,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    if (!(device->instance->debug_flags & RADV_DEBUG_NO_IBS))
       radv_create_gfx_config(device);
 
-   struct vk_pipeline_cache_create_info info = {0};
+   struct vk_pipeline_cache_create_info info = {.weak_ref = true};
    device->mem_cache = vk_pipeline_cache_create(&device->vk, &info, NULL);
    if (!device->mem_cache)
       goto fail_meta;
@@ -1032,8 +1077,12 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       }
    }
 
-   if (radv_rra_trace_enabled() && radv_enable_rt(physical_device, false)) {
+   if ((device->instance->vk.trace_mode & RADV_TRACE_MODE_RRA) && radv_enable_rt(physical_device, false)) {
       radv_rra_trace_init(device);
+   }
+
+   if (device->vk.enabled_features.rayTracingPipelineShaderGroupHandleCaptureReplay) {
+      device->capture_replay_arena_vas = _mesa_hash_table_u64_create(NULL);
    }
 
    *pDevice = radv_device_to_handle(device);
@@ -1098,6 +1147,9 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    if (!device)
       return;
+
+   if (device->capture_replay_arena_vas)
+      _mesa_hash_table_u64_destroy(device->capture_replay_arena_vas);
 
    radv_device_finish_perf_counter_lock_cs(device);
    if (device->perf_counter_bo)

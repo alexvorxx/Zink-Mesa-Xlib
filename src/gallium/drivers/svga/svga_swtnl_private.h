@@ -73,8 +73,8 @@ struct svga_vbuf_render {
    unsigned vdecl_offset;
    unsigned vdecl_count;
 
-   ushort min_index;
-   ushort max_index;
+   uint16_t min_index;
+   uint16_t max_index;
 };
 
 /**

@@ -843,7 +843,7 @@ dzn_BindImageMemory2(VkDevice dev,
             .Format = image->desc.Format,
             .SampleDesc = image->desc.SampleDesc,
             .Layout = image->desc.Layout,
-            .Flags = image->desc.Flags,
+            .Flags = image->desc.Flags | mem->res_flags,
          };
 
          hres = ID3D12Device10_CreatePlacedResource2(device->dev10, mem->heap,
@@ -856,9 +856,11 @@ dzn_BindImageMemory2(VkDevice dev,
                                                      &IID_ID3D12Resource,
                                                      (void **)&image->res);
       } else {
+         D3D12_RESOURCE_DESC desc = image->desc;
+         desc.Flags |= mem->res_flags;
          hres = ID3D12Device1_CreatePlacedResource(device->dev, mem->heap,
                                                    bind_info->memoryOffset,
-                                                   &image->desc,
+                                                   &desc,
                                                    D3D12_RESOURCE_STATE_COMMON,
                                                    NULL,
                                                    &IID_ID3D12Resource,

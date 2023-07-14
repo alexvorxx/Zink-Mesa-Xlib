@@ -214,6 +214,8 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
 
    /* Texturing. */
+   case PIPE_CAP_TEXTURE_HALF_FLOAT_LINEAR:
+      return VIV_FEATURE(screen, chipMinorFeatures1, HALF_FLOAT);
    case PIPE_CAP_TEXTURE_SHADOW_MAP:
       return 1;
    case PIPE_CAP_MAX_TEXTURE_2D_SIZE:

@@ -869,8 +869,7 @@ cleanup_culling_shader_after_dce(nir_shader *shader,
    bool uses_tes_patch_id = false;
 
    bool progress = false;
-   nir_builder b;
-   nir_builder_init(&b, function_impl);
+   nir_builder b = nir_builder_create(function_impl);
 
    nir_foreach_block_reverse_safe(block, function_impl) {
       nir_foreach_instr_reverse_safe(instr, block) {
@@ -1076,6 +1075,11 @@ analyze_shader_before_culling_walk(nir_ssa_def *ssa,
          break;
       }
 
+      const unsigned num_srcs = nir_intrinsic_infos[intrin->intrinsic].num_srcs;
+      for (unsigned i = 0; i < num_srcs; ++i) {
+         analyze_shader_before_culling_walk(intrin->src[i].ssa, flag, s);
+      }
+
       break;
    }
    case nir_instr_type_alu: {
@@ -1084,6 +1088,16 @@ analyze_shader_before_culling_walk(nir_ssa_def *ssa,
 
       for (unsigned i = 0; i < num_srcs; ++i) {
          analyze_shader_before_culling_walk(alu->src[i].src.ssa, flag, s);
+      }
+
+      break;
+   }
+   case nir_instr_type_tex: {
+      nir_tex_instr *tex = nir_instr_as_tex(instr);
+      unsigned num_srcs = tex->num_srcs;
+
+      for (unsigned i = 0; i < num_srcs; ++i) {
+         analyze_shader_before_culling_walk(tex->src[i].src.ssa, flag, s);
       }
 
       break;
@@ -1104,6 +1118,8 @@ analyze_shader_before_culling_walk(nir_ssa_def *ssa,
 static void
 analyze_shader_before_culling(nir_shader *shader, lower_ngg_nogs_state *s)
 {
+   /* LCSSA is needed to get correct results from divergence analysis. */
+   nir_convert_to_lcssa(shader, true, true);
    /* We need divergence info for culling shaders. */
    nir_divergence_analysis(shader);
 
@@ -1203,6 +1219,9 @@ save_reusable_variables(nir_builder *b, lower_ngg_nogs_state *s)
    ASSERTED int vec_ok = u_vector_init(&s->reusable_nondeferred_variables, 4, sizeof(reusable_nondeferred_variable));
    assert(vec_ok);
 
+   /* Upper limit on reusable uniforms in order to reduce SGPR spilling. */
+   unsigned remaining_reusable_uniforms = 48;
+
    nir_block *block = nir_start_block(b->impl);
    while (block) {
       /* Process the instructions in the current block. */
@@ -1220,6 +1239,13 @@ save_reusable_variables(nir_builder *b, lower_ngg_nogs_state *s)
          const struct glsl_type *t = glsl_uint_type_for_ssa(ssa);
          if (!t)
             continue;
+
+         if (!ssa->divergent) {
+            if (remaining_reusable_uniforms < ssa->num_components)
+               continue;
+
+            remaining_reusable_uniforms -= ssa->num_components;
+         }
 
          reusable_nondeferred_variable *saved = (reusable_nondeferred_variable *) u_vector_add(&s->reusable_nondeferred_variables);
          assert(saved);
@@ -1882,9 +1908,9 @@ ngg_build_streamout_buffer_info(nir_builder *b,
        */
       nir_if *if_any_overflow = nir_push_if(b, any_overflow);
       {
-         nir_build_xfb_counter_sub_amd(b, nir_vec(b, overflow_amount, 4),
-                                       /* mask of buffers to update */
-                                       .write_mask = info->buffers_written);
+         nir_xfb_counter_sub_amd(b, nir_vec(b, overflow_amount, 4),
+                                 /* mask of buffers to update */
+                                 .write_mask = info->buffers_written);
       }
       nir_pop_if(b, if_any_overflow);
 
@@ -2337,9 +2363,8 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       shader->info.outputs_written |= VARYING_BIT_PRIMITIVE_ID;
    }
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_create(impl);
    nir_builder *b = &builder; /* This is to avoid the & */
-   nir_builder_init(b, impl);
 
    if (options->can_cull) {
       analyze_shader_before_culling(shader, &state);
@@ -3414,10 +3439,8 @@ ac_nir_lower_ngg_gs(nir_shader *shader, const ac_nir_lower_ngg_options *options)
    nir_cf_list extracted;
    nir_cf_extract(&extracted, nir_before_cf_list(&impl->body), nir_after_cf_list(&impl->body));
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_before_cf_list(&impl->body));
    nir_builder *b = &builder; /* This is to avoid the & */
-   nir_builder_init(b, impl);
-   b->cursor = nir_before_cf_list(&impl->body);
 
    /* Workgroup barrier: wait for ES threads */
    nir_scoped_barrier(b, .execution_scope=SCOPE_WORKGROUP, .memory_scope=SCOPE_WORKGROUP,
@@ -4741,10 +4764,8 @@ ac_nir_lower_ngg_ms(nir_shader *shader,
    state.primitive_count_var =
       nir_local_variable_create(impl, glsl_uint_type(), "primitive_count_var");
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_before_cf_list(&impl->body));
    nir_builder *b = &builder; /* This is to avoid the & */
-   nir_builder_init(b, impl);
-   b->cursor = nir_before_cf_list(&impl->body);
 
    handle_smaller_ms_api_workgroup(b, &state);
    ms_emit_legacy_workgroup_index(b, &state);

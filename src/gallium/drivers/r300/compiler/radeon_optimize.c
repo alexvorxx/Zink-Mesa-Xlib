@@ -242,82 +242,6 @@ static int is_src_uniform_constant(struct rc_src_register src,
 	return 1;
 }
 
-static void constant_folding_mad(struct rc_instruction * inst)
-{
-	rc_swizzle swz = 0;
-	unsigned int negate= 0;
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[2], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MUL;
-			return;
-		}
-	}
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[1], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ONE) {
-			inst->U.I.Opcode = RC_OPCODE_ADD;
-			if (negate)
-				inst->U.I.SrcReg[0].Negate ^= RC_MASK_XYZW;
-			inst->U.I.SrcReg[1] = inst->U.I.SrcReg[2];
-			return;
-		} else if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0] = inst->U.I.SrcReg[2];
-			return;
-		}
-	}
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[0], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ONE) {
-			inst->U.I.Opcode = RC_OPCODE_ADD;
-			if (negate)
-				inst->U.I.SrcReg[1].Negate ^= RC_MASK_XYZW;
-			inst->U.I.SrcReg[0] = inst->U.I.SrcReg[2];
-			return;
-		} else if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0] = inst->U.I.SrcReg[2];
-			return;
-		}
-	}
-}
-
-static void constant_folding_mul(struct rc_instruction * inst)
-{
-	rc_swizzle swz = 0;
-	unsigned int negate = 0;
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[0], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ONE) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0] = inst->U.I.SrcReg[1];
-			if (negate)
-				inst->U.I.SrcReg[0].Negate ^= RC_MASK_XYZW;
-			return;
-		} else if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0].Swizzle = RC_SWIZZLE_0000;
-			inst->U.I.SrcReg[0].File = RC_FILE_NONE;
-			return;
-		}
-	}
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[1], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ONE) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			if (negate)
-				inst->U.I.SrcReg[0].Negate ^= RC_MASK_XYZW;
-			return;
-		} else if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0].Swizzle = RC_SWIZZLE_0000;
-			inst->U.I.SrcReg[0].File = RC_FILE_NONE;
-			return;
-		}
-	}
-}
-
 static void constant_folding_add(struct rc_instruction * inst)
 {
 	rc_swizzle swz = 0;
@@ -420,14 +344,8 @@ static void constant_folding(struct radeon_compiler * c, struct rc_instruction *
 		inst->U.I.SrcReg[src] = newsrc;
 	}
 
-	/* Simplify instructions based on constants */
-	if (inst->U.I.Opcode == RC_OPCODE_MAD)
-		constant_folding_mad(inst);
-
-	/* note: MAD can simplify to MUL or ADD */
-	if (inst->U.I.Opcode == RC_OPCODE_MUL)
-		constant_folding_mul(inst);
-	else if (inst->U.I.Opcode == RC_OPCODE_ADD)
+	if (c->type == RC_FRAGMENT_PROGRAM &&
+		inst->U.I.Opcode == RC_OPCODE_ADD)
 		constant_folding_add(inst);
 
 	/* In case this instruction has been converted, make sure all of the

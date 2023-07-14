@@ -39,7 +39,7 @@
  *******************************************/
 
 /* 64KB is MAX anticipated OS page size */
-#define PVR_SRV_RESERVED_SIZE_GRANULARITY 0x10000
+#define PVR_SRV_CARVEOUT_SIZE_GRANULARITY 0x10000
 
 #define PVR_SRV_DEVMEM_HEAPNAME_MAXLENGTH 160
 

@@ -47,6 +47,8 @@
 extern "C" {
 #endif
 
+#define LP_MAX_TEXEL_BUFFER_ELEMENTS 134217728
+
 struct util_format_description;
 struct lp_type;
 struct lp_build_context;
@@ -117,6 +119,10 @@ struct lp_sampler_params
    LLVMValueRef aniso_filter_table;
    const struct lp_derivatives *derivs;
    LLVMValueRef *texel;
+
+   LLVMValueRef texture_resource;
+   LLVMValueRef sampler_resource;
+   LLVMValueRef exec_mask;
 };
 
 /* Parameters used to handle sampler_size instructions */
@@ -128,17 +134,22 @@ struct lp_sampler_size_query_params
    unsigned target;
    LLVMTypeRef resources_type;
    LLVMValueRef resources_ptr;
-   boolean is_sviewinfo;
+   bool is_sviewinfo;
    bool samples_only;
    enum lp_sampler_lod_property lod_property;
    LLVMValueRef explicit_lod;
    LLVMValueRef *sizes_out;
+
+   LLVMValueRef resource;
+   LLVMValueRef exec_mask;
+   enum pipe_format format;
 };
 
 #define LP_IMG_LOAD 0
 #define LP_IMG_STORE 1
 #define LP_IMG_ATOMIC 2
 #define LP_IMG_ATOMIC_CAS 3
+#define LP_IMG_OP_COUNT 4
 
 struct lp_img_params
 {
@@ -158,6 +169,9 @@ struct lp_img_params
    LLVMValueRef indata[4];
    LLVMValueRef indata2[4];
    LLVMValueRef *outdata;
+
+   LLVMValueRef resource;
+   enum pipe_format format;
 };
 
 
@@ -359,6 +373,15 @@ struct lp_sampler_dynamic_state
 };
 
 
+struct lp_build_sampler_soa;
+struct lp_build_image_soa;
+
+struct lp_sampler_dynamic_state *
+lp_build_sampler_soa_dynamic_state(struct lp_build_sampler_soa *sampler);
+
+struct lp_sampler_dynamic_state *
+lp_build_image_soa_dynamic_state(struct lp_build_image_soa *_image);
+
 /**
  * Keep all information for sampling code generation in a single place.
  */
@@ -386,10 +409,10 @@ struct lp_build_sample_context
    unsigned num_lods;
 
    unsigned gather_comp;
-   boolean no_quad_lod;
-   boolean no_brilinear;
-   boolean no_rho_approx;
-   boolean fetch_ms;
+   bool no_quad_lod;
+   bool no_brilinear;
+   bool no_rho_approx;
+   bool fetch_ms;
 
    /** regular scalar float type */
    struct lp_type float_type;
@@ -499,15 +522,15 @@ struct lp_build_img_op_array_switch {
  * We only support a few wrap modes in lp_build_sample_wrap_linear_int() at
  * this time.  Return whether the given mode is supported by that function.
  */
-static inline boolean
+static inline bool
 lp_is_simple_wrap_mode(unsigned mode)
 {
    switch (mode) {
    case PIPE_TEX_WRAP_REPEAT:
    case PIPE_TEX_WRAP_CLAMP_TO_EDGE:
-      return TRUE;
+      return true;
    default:
-      return FALSE;
+      return false;
    }
 }
 
@@ -553,7 +576,7 @@ texture_dims(enum pipe_texture_target tex)
 }
 
 
-static inline boolean
+static inline bool
 has_layer_coord(enum pipe_texture_target tex)
 {
    switch (tex) {
@@ -562,14 +585,14 @@ has_layer_coord(enum pipe_texture_target tex)
    /* cube is not layered but 3rd coord (after cube mapping) behaves the same */
    case PIPE_TEXTURE_CUBE:
    case PIPE_TEXTURE_CUBE_ARRAY:
-      return TRUE;
+      return true;
    default:
-      return FALSE;
+      return false;
    }
 }
 
 
-boolean
+bool
 lp_sampler_wrap_mode_uses_border_color(enum pipe_tex_wrap mode,
                                        enum pipe_tex_filter min_img_filter,
                                        enum pipe_tex_filter mag_img_filter);
@@ -592,7 +615,7 @@ lp_sampler_static_texture_state_image(struct lp_static_texture_state *state,
 
 void
 lp_build_lod_selector(struct lp_build_sample_context *bld,
-                      boolean is_lodq,
+                      bool is_lodq,
                       unsigned sampler_index,
                       LLVMValueRef first_level,
                       LLVMValueRef s,
@@ -676,7 +699,7 @@ lp_build_cube_lookup(struct lp_build_sample_context *bld,
                      LLVMValueRef *coords,
                      const struct lp_derivatives *derivs_in, /* optional */
                      struct lp_derivatives *derivs_out, /* optional */
-                     boolean need_derivs);
+                     bool need_derivs);
 
 
 void
@@ -715,6 +738,28 @@ lp_build_sample_offset(struct lp_build_context *bld,
 
 
 void
+lp_build_sample_soa_code(struct gallivm_state *gallivm,
+                         const struct lp_static_texture_state *static_texture_state,
+                         const struct lp_static_sampler_state *static_sampler_state,
+                         struct lp_sampler_dynamic_state *dynamic_state,
+                         struct lp_type type,
+                         unsigned sample_key,
+                         unsigned texture_index,
+                         unsigned sampler_index,
+                         LLVMTypeRef resources_type,
+                         LLVMValueRef resources_ptr,
+                         LLVMTypeRef thread_data_type,
+                         LLVMValueRef thread_data_ptr,
+                         const LLVMValueRef *coords,
+                         const LLVMValueRef *offsets,
+                         const struct lp_derivatives *derivs, /* optional */
+                         LLVMValueRef lod, /* optional */
+                         LLVMValueRef ms_index, /* optional */
+                         LLVMValueRef aniso_filter_table,
+                         LLVMValueRef texel_out[4]);
+
+
+void
 lp_build_sample_soa(const struct lp_static_texture_state *static_texture_state,
                     const struct lp_static_sampler_state *static_sampler_state,
                     struct lp_sampler_dynamic_state *dynamic_texture_state,
@@ -748,7 +793,7 @@ LLVMValueRef
 lp_build_minify(struct lp_build_context *bld,
                 LLVMValueRef base_size,
                 LLVMValueRef level,
-                boolean lod_scalar);
+                bool lod_scalar);
 
 void
 lp_build_img_op_soa(const struct lp_static_texture_state *static_texture_state,
@@ -829,6 +874,10 @@ lp_build_reduce_filter_3d(struct lp_build_context *bld,
                           LLVMValueRef *v110,
                           LLVMValueRef *v111,
                           LLVMValueRef *out);
+
+struct lp_type
+lp_build_texel_type(struct lp_type texel_type,
+                    const struct util_format_description *format_desc);
 
 const float *lp_build_sample_aniso_filter_table(void);
 #ifdef __cplusplus

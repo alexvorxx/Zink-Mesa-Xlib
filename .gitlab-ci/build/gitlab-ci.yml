@@ -545,6 +545,7 @@ debian-clang:
       -D microsoft-clc=disabled
       -D shared-llvm=enabled
       -D opencl-spirv=true
+      -D shared-glapi=enabled
     GALLIUM_DRIVERS: "iris,nouveau,kmsro,r300,r600,freedreno,swrast,svga,v3d,vc4,virgl,etnaviv,panfrost,lima,zink,radeonsi,tegra,d3d12,crocus,i915,asahi"
     VULKAN_DRIVERS: intel,amd,freedreno,broadcom,virtio,swrast,panfrost,imagination-experimental,microsoft-experimental
     EXTRA_OPTION:
@@ -566,6 +567,22 @@ debian-clang-release:
     DRI_LOADERS: >
       -D glx=xlib
       -D platforms=x11,wayland
+    GALLIUM_ST: >
+      -D dri3=enabled
+      -D gallium-extra-hud=true
+      -D gallium-vdpau=enabled
+      -D gallium-omx=bellagio
+      -D gallium-va=enabled
+      -D gallium-xa=enabled
+      -D gallium-nine=true
+      -D gallium-opencl=icd
+      -D gles1=disabled
+      -D gles2=disabled
+      -D llvm=enabled
+      -D microsoft-clc=disabled
+      -D shared-llvm=enabled
+      -D opencl-spirv=true
+      -D shared-glapi=disabled
 
 windows-vs2019:
   extends:

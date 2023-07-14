@@ -138,11 +138,11 @@ static void
 lp_mesh_llvm_emit_store_output(const struct lp_build_mesh_iface *mesh_iface,
                                 struct lp_build_context *bld,
                                 unsigned name,
-                                boolean is_vindex_indirect,
+                                bool is_vindex_indirect,
                                 LLVMValueRef vertex_index,
-                                boolean is_aindex_indirect,
+                                bool is_aindex_indirect,
                                 LLVMValueRef attrib_index,
-                                boolean is_sindex_indirect,
+                                bool is_sindex_indirect,
                                 LLVMValueRef swizzle_index,
                                 LLVMValueRef value,
                                 LLVMValueRef mask_vec)
@@ -236,7 +236,7 @@ mesh_convert_to_aos(struct gallivm_state *gallivm,
                     LLVMValueRef vertex_index,
                     struct lp_type soa_type,
                     int primid_slot,
-                    boolean need_edgeflag)
+                    bool need_edgeflag)
 {
    LLVMBuilderRef builder = gallivm->builder;
    LLVMValueRef inds[3];
@@ -354,9 +354,9 @@ generate_compute(struct llvmpipe_context *lp,
    assert(lp_native_vector_width / 32 >= 4);
 
    memset(&cs_type, 0, sizeof cs_type);
-   cs_type.floating = TRUE;      /* floating point values */
-   cs_type.sign = TRUE;          /* values are signed */
-   cs_type.norm = FALSE;         /* values are not limited to [0,1] or [-1,1] */
+   cs_type.floating = true;      /* floating point values */
+   cs_type.sign = true;          /* values are signed */
+   cs_type.norm = false;         /* values are not limited to [0,1] or [-1,1] */
    cs_type.width = 32;           /* 32-bit float */
    cs_type.length = MIN2(lp_native_vector_width / 32, 16); /* n*4 elements per vector */
    snprintf(func_name, sizeof(func_name), "cs_variant");
@@ -644,7 +644,6 @@ generate_compute(struct llvmpipe_context *lp,
       alloced_ptr = LLVMBuildGEP2(gallivm->builder, mem_ptr_type, alloced_ptr, &coro_entry, 1, "");
       LLVMValueRef coro_hdl = lp_build_coro_begin(gallivm, coro_id, alloced_ptr);
       LLVMValueRef has_partials = LLVMBuildICmp(gallivm->builder, LLVMIntNE, partials, lp_build_const_int32(gallivm, 0), "");
-      LLVMValueRef tid_vals[3];
       LLVMValueRef tids_x[LP_MAX_VECTOR_LENGTH], tids_y[LP_MAX_VECTOR_LENGTH], tids_z[LP_MAX_VECTOR_LENGTH];
       LLVMValueRef base_val = LLVMBuildMul(gallivm->builder, x_size_arg, vec_length, "");
       for (i = 0; i < cs_type.length; i++) {
@@ -652,22 +651,17 @@ generate_compute(struct llvmpipe_context *lp,
          tids_y[i] = y_size_arg;
          tids_z[i] = z_size_arg;
       }
-      tid_vals[0] = lp_build_gather_values(gallivm, tids_x, cs_type.length);
-      tid_vals[1] = lp_build_gather_values(gallivm, tids_y, cs_type.length);
-      tid_vals[2] = lp_build_gather_values(gallivm, tids_z, cs_type.length);
-      system_values.thread_id = LLVMGetUndef(LLVMArrayType(LLVMVectorType(int32_type, cs_type.length), 3));
-      for (i = 0; i < 3; i++)
-         system_values.thread_id = LLVMBuildInsertValue(builder, system_values.thread_id, tid_vals[i], i, "");
+      system_values.thread_id[0] = lp_build_gather_values(gallivm, tids_x, cs_type.length);
+      system_values.thread_id[1] = lp_build_gather_values(gallivm, tids_y, cs_type.length);
+      system_values.thread_id[2] = lp_build_gather_values(gallivm, tids_z, cs_type.length);
 
-      LLVMValueRef gtids[3] = { grid_x_arg, grid_y_arg, grid_z_arg };
-      system_values.block_id = LLVMGetUndef(LLVMVectorType(int32_type, 3));
-      for (i = 0; i < 3; i++)
-         system_values.block_id = LLVMBuildInsertElement(builder, system_values.block_id, gtids[i], lp_build_const_int32(gallivm, i), "");
+      system_values.block_id[0] = grid_x_arg;
+      system_values.block_id[1] = grid_y_arg;
+      system_values.block_id[2] = grid_z_arg;
 
-      LLVMValueRef gstids[3] = { grid_size_x_arg, grid_size_y_arg, grid_size_z_arg };
-      system_values.grid_size = LLVMGetUndef(LLVMVectorType(int32_type, 3));
-      for (i = 0; i < 3; i++)
-         system_values.grid_size = LLVMBuildInsertElement(builder, system_values.grid_size, gstids[i], lp_build_const_int32(gallivm, i), "");
+      system_values.grid_size[0] = grid_size_x_arg;
+      system_values.grid_size[1] = grid_size_y_arg;
+      system_values.grid_size[2] = grid_size_z_arg;
 
       system_values.work_dim = work_dim_arg;
       system_values.draw_id = draw_id_arg;
@@ -698,10 +692,9 @@ generate_compute(struct llvmpipe_context *lp,
       LLVMValueRef subgroup_cmp = LLVMBuildICmp(gallivm->builder, LLVMIntEQ, num_subgroups, lp_build_const_int32(gallivm, 0), "");
       system_values.num_subgroups = LLVMBuildSelect(builder, subgroup_cmp, lp_build_const_int32(gallivm, 1), num_subgroups, "");
 
-      LLVMValueRef bsize[3] = { block_x_size_arg, block_y_size_arg, block_z_size_arg };
-      system_values.block_size = LLVMGetUndef(LLVMVectorType(int32_type, 3));
-      for (i = 0; i < 3; i++)
-         system_values.block_size = LLVMBuildInsertElement(builder, system_values.block_size, bsize[i], lp_build_const_int32(gallivm, i), "");
+      system_values.block_size[0] = block_x_size_arg;
+      system_values.block_size[1] = block_y_size_arg;
+      system_values.block_size[2] = block_z_size_arg;
 
       LLVMValueRef last_x_loop = LLVMBuildICmp(gallivm->builder, LLVMIntEQ, x_size_arg, LLVMBuildSub(gallivm->builder, num_x_loop, lp_build_const_int32(gallivm, 1), ""), "");
       LLVMValueRef use_partial_mask = LLVMBuildAnd(gallivm->builder, last_x_loop, has_partials, "");
@@ -817,7 +810,7 @@ generate_compute(struct llvmpipe_context *lp,
          io = LLVMBuildIntToPtr(gallivm->builder, io, LLVMPointerType(LLVMVoidTypeInContext(gallivm->context), 0), "");
          mesh_convert_to_aos(gallivm, shader->base.ir.nir, true, variant->jit_vertex_header_type,
                              io, output_array, clipmask,
-                             vertex_loop_state.counter, lp_elem_type(cs_type), -1, FALSE);
+                             vertex_loop_state.counter, lp_elem_type(cs_type), -1, false);
          lp_build_loop_end_cond(&vertex_loop_state,
                                 vertex_count,
                                 NULL,  LLVMIntUGE);
@@ -832,7 +825,7 @@ generate_compute(struct llvmpipe_context *lp,
          io = LLVMBuildIntToPtr(gallivm->builder, io, LLVMPointerType(LLVMVoidTypeInContext(gallivm->context), 0), "");
          mesh_convert_to_aos(gallivm, shader->base.ir.nir, false, variant->jit_prim_type,
                              io, output_array, clipmask,
-                             prim_loop_state.counter, lp_elem_type(cs_type), -1, FALSE);
+                             prim_loop_state.counter, lp_elem_type(cs_type), -1, false);
          lp_build_loop_end_cond(&prim_loop_state,
                                 prim_count,
                                 NULL,  LLVMIntUGE);
@@ -895,6 +888,8 @@ llvmpipe_create_compute_state(struct pipe_context *pipe,
       nir_tgsi_scan_shader(shader->base.ir.nir, &shader->info.base, false);
    }
 
+   llvmpipe_register_shader(pipe, &shader->base, false);
+
    list_inithead(&shader->variants.list);
 
    int nr_samplers = shader->info.base.file_max[TGSI_FILE_SAMPLER] + 1;
@@ -927,7 +922,8 @@ llvmpipe_get_compute_state_info(struct pipe_context *pipe, void *cs,
    struct nir_shader* nir = shader->base.ir.nir;
 
    info->max_threads = 1024;
-   info->preferred_simd_size = 32;
+   info->simd_sizes = lp_native_vector_width / 32;
+   info->preferred_simd_size = info->simd_sizes;
    // TODO: this is a bad estimate, but not much we can do without actually compiling the shaders
    info->private_memory = nir->scratch_size;
 }
@@ -972,6 +968,8 @@ llvmpipe_delete_compute_state(struct pipe_context *pipe,
    struct llvmpipe_context *llvmpipe = llvmpipe_context(pipe);
    struct lp_compute_shader *shader = cs;
    struct lp_cs_variant_list_item *li, *next;
+
+   llvmpipe_register_shader(pipe, &shader->base, true);
 
    if (llvmpipe->cs == cs)
       llvmpipe->cs = NULL;
@@ -1073,17 +1071,17 @@ dump_cs_variant_key(const struct lp_compute_shader_variant_key *key)
       const struct lp_static_sampler_state *sampler = &samplers[i].sampler_state;
       debug_printf("sampler[%u] = \n", i);
       debug_printf("  .wrap = %s %s %s\n",
-                   util_str_tex_wrap(sampler->wrap_s, TRUE),
-                   util_str_tex_wrap(sampler->wrap_t, TRUE),
-                   util_str_tex_wrap(sampler->wrap_r, TRUE));
+                   util_str_tex_wrap(sampler->wrap_s, true),
+                   util_str_tex_wrap(sampler->wrap_t, true),
+                   util_str_tex_wrap(sampler->wrap_r, true));
       debug_printf("  .min_img_filter = %s\n",
-                   util_str_tex_filter(sampler->min_img_filter, TRUE));
+                   util_str_tex_filter(sampler->min_img_filter, true));
       debug_printf("  .min_mip_filter = %s\n",
-                   util_str_tex_mipfilter(sampler->min_mip_filter, TRUE));
+                   util_str_tex_mipfilter(sampler->min_mip_filter, true));
       debug_printf("  .mag_img_filter = %s\n",
-                   util_str_tex_filter(sampler->mag_img_filter, TRUE));
+                   util_str_tex_filter(sampler->mag_img_filter, true));
       if (sampler->compare_mode != PIPE_TEX_COMPARE_NONE)
-         debug_printf("  .compare_func = %s\n", util_str_func(sampler->compare_func, TRUE));
+         debug_printf("  .compare_func = %s\n", util_str_func(sampler->compare_func, true));
       debug_printf("  .normalized_coords = %u\n", sampler->normalized_coords);
       debug_printf("  .min_max_lod_equal = %u\n", sampler->min_max_lod_equal);
       debug_printf("  .lod_bias_non_zero = %u\n", sampler->lod_bias_non_zero);
@@ -1098,7 +1096,7 @@ dump_cs_variant_key(const struct lp_compute_shader_variant_key *key)
       debug_printf("  .format = %s\n",
                    util_format_name(texture->format));
       debug_printf("  .target = %s\n",
-                   util_str_tex_target(texture->target, TRUE));
+                   util_str_tex_target(texture->target, true));
       debug_printf("  .level_zero_only = %u\n",
                    texture->level_zero_only);
       debug_printf("  .pot = %u %u %u\n",
@@ -1113,7 +1111,7 @@ dump_cs_variant_key(const struct lp_compute_shader_variant_key *key)
       debug_printf("  .format = %s\n",
                    util_format_name(image->format));
       debug_printf("  .target = %s\n",
-                   util_str_tex_target(image->target, TRUE));
+                   util_str_tex_target(image->target, true));
       debug_printf("  .level_zero_only = %u\n",
                    image->level_zero_only);
       debug_printf("  .pot = %u %u %u\n",
@@ -1689,11 +1687,11 @@ update_csctx_ssbo(struct llvmpipe_context *llvmpipe,
 {
    for (int i = 0; i < ARRAY_SIZE(csctx->ssbos); ++i) {
       struct pipe_resource *buffer = csctx->ssbos[i].current.buffer;
-      const ubyte *current_data = NULL;
+      const uint8_t *current_data = NULL;
 
       /* resource buffer */
       if (buffer)
-         current_data = (ubyte *) llvmpipe_resource_data(buffer);
+         current_data = (uint8_t *) llvmpipe_resource_data(buffer);
       if (current_data) {
          current_data += csctx->ssbos[i].current.buffer_offset;
 
@@ -1996,6 +1994,8 @@ llvmpipe_create_ts_state(struct pipe_context *pipe,
    if (!shader)
       return NULL;
 
+   llvmpipe_register_shader(pipe, templ, false);
+
    shader->no = task_no++;
    shader->base.type = templ->type;
 
@@ -2030,6 +2030,8 @@ llvmpipe_delete_ts_state(struct pipe_context *pipe, void *_task)
    struct llvmpipe_context *llvmpipe = llvmpipe_context(pipe);
    struct lp_compute_shader *shader = _task;
    struct lp_cs_variant_list_item *li, *next;
+
+   llvmpipe_register_shader(pipe, &shader->base, true);
 
    /* Delete all the variants */
    LIST_FOR_EACH_ENTRY_SAFE(li, next, &shader->variants.list, list) {
@@ -2066,6 +2068,8 @@ llvmpipe_create_ms_state(struct pipe_context *pipe,
    if (!shader)
       return NULL;
 
+   llvmpipe_register_shader(pipe, templ, false);
+
    shader->no = mesh_no++;
    shader->base.type = templ->type;
 
@@ -2077,6 +2081,7 @@ llvmpipe_create_ms_state(struct pipe_context *pipe,
    shader->draw_mesh_data = draw_create_mesh_shader(llvmpipe->draw, templ);
    if (shader->draw_mesh_data == NULL) {
       FREE(shader);
+      llvmpipe_register_shader(pipe, templ, true);
       return NULL;
    }
 
@@ -2109,6 +2114,8 @@ llvmpipe_delete_ms_state(struct pipe_context *pipe, void *_mesh)
    struct llvmpipe_context *llvmpipe = llvmpipe_context(pipe);
    struct lp_compute_shader *shader = _mesh;
    struct lp_cs_variant_list_item *li, *next;
+
+   llvmpipe_register_shader(pipe, &shader->base, true);
 
    /* Delete all the variants */
    LIST_FOR_EACH_ENTRY_SAFE(li, next, &shader->variants.list, list) {

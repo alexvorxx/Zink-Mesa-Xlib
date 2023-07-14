@@ -69,7 +69,7 @@
 #include "cso_cache/cso_context.h"
 #include "compiler/glsl/glsl_parser_extras.h"
 
-DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", FALSE)
+DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", false)
 
 /* The list of state update functions. */
 st_update_func_t st_update_functions[ST_NUM_ATOMS];
@@ -619,8 +619,6 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
       screen->get_param(screen, PIPE_CAP_INDEP_BLEND_ENABLE);
    st->has_indep_blend_func =
       screen->get_param(screen, PIPE_CAP_INDEP_BLEND_FUNC);
-   st->needs_rgb_dst_alpha_override =
-      screen->get_param(screen, PIPE_CAP_RGB_OVERRIDE_DST_ALPHA_BLEND);
    st->can_dither =
       screen->get_param(screen, PIPE_CAP_DITHERING);
    st->lower_flatshade =

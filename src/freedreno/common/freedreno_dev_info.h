@@ -49,6 +49,10 @@ struct fd_dev_info {
 
    uint32_t num_vsc_pipes;
 
+   uint32_t cs_shared_mem_size;
+
+   int wave_granularity;
+
    /* number of CCU is always equal to the number of SP */
    union {
       uint32_t num_sp_cores;
@@ -67,6 +71,10 @@ struct fd_dev_info {
           * on gen3 and later.
           */
          uint32_t instr_cache_size;
+
+         bool has_hw_multiview;
+
+         bool has_fs_tex_prefetch;
 
          /* Whether the PC_MULTIVIEW_MASK register exists. */
          bool supports_multiview_mask;
@@ -153,7 +161,29 @@ struct fd_dev_info {
           * different views.
           */
          bool has_per_view_viewport;
+         bool has_gmem_fast_clear;
 
+         /* Per CCU GMEM amount reserved for each of DEPTH and COLOR caches
+          * in sysmem rendering. */
+         uint32_t sysmem_per_ccu_cache_size;
+         /* Per CCU GMEM amount reserved for color cache used by GMEM resolves
+          * which require color cache (non-BLIT event case).
+          * The size is expressed as a fraction of ccu cache used by sysmem
+          * rendering. If a GMEM resolve requires color cache, the driver needs
+          * to make sure it will not overwrite pixel data in GMEM that is still
+          * needed.
+          */
+         /* see enum a6xx_ccu_color_cache_size */
+         uint32_t gmem_ccu_color_cache_fraction;
+
+         /* Corresponds to HLSQ_CONTROL_1_REG::PRIMALLOCTHRESHOLD */
+         uint32_t prim_alloc_threshold;
+
+         uint32_t vs_max_inputs_count;
+
+         bool supports_double_threadsize;
+
+         bool has_sampler_minmax;
          struct {
             uint32_t PC_POWER_CNTL;
             uint32_t TPL1_DBG_ECO_CNTL;

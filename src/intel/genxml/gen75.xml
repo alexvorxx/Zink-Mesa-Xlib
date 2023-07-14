@@ -323,7 +323,12 @@
   </struct>
   <struct name="MEMORY_OBJECT_CONTROL_STATE" length="1">
     <field name="L3 Cacheability Control (L3CC)" start="0" end="0" type="uint" />
-    <field name="LLC/eLLC Cacheability Control (LLCCC)" start="1" end="2" type="uint" />
+    <field name="LLC/eLLC Cacheability Control (LLCCC)" start="1" end="2" type="uint">
+      <value name="Use PTE values" value="0" />
+      <value name="UC - uncacheable" value="1" />
+      <value name="LLC/eLLC WB cacheable" value="2" />
+      <value name="eLLC WB cacheable (UC in LLC)" value="3" />
+    </field>
   </struct>
   <struct name="MFD_MPEG2_BSD_OBJECT_INLINE_DATA_DESCRIPTION" length="2">
     <field name="First MB Bit Offset" start="0" end="2" type="uint" />

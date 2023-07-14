@@ -163,7 +163,7 @@ struct pvr_transfer_3d_state {
 };
 
 struct pvr_transfer_prep_data {
-   uint32_t flags;
+   struct pvr_winsys_transfer_cmd_flags flags;
    struct pvr_transfer_3d_state state;
 };
 
@@ -2711,19 +2711,19 @@ static VkResult pvr_3d_copy_blit_core(struct pvr_transfer_ctx *ctx,
       if (result != VK_SUCCESS)
          return result;
 
-      pvr_csb_pack (&regs->usc_clear_register0, CR_USC_CLEAR_REGISTER0, reg) {
+      pvr_csb_pack (&regs->usc_clear_register0, CR_USC_CLEAR_REGISTER, reg) {
          reg.val = packed_color[0U];
       }
 
-      pvr_csb_pack (&regs->usc_clear_register1, CR_USC_CLEAR_REGISTER1, reg) {
+      pvr_csb_pack (&regs->usc_clear_register1, CR_USC_CLEAR_REGISTER, reg) {
          reg.val = packed_color[1U];
       }
 
-      pvr_csb_pack (&regs->usc_clear_register2, CR_USC_CLEAR_REGISTER2, reg) {
+      pvr_csb_pack (&regs->usc_clear_register2, CR_USC_CLEAR_REGISTER, reg) {
          reg.val = packed_color[2U];
       }
 
-      pvr_csb_pack (&regs->usc_clear_register3, CR_USC_CLEAR_REGISTER3, reg) {
+      pvr_csb_pack (&regs->usc_clear_register3, CR_USC_CLEAR_REGISTER, reg) {
          reg.val = packed_color[3U];
       }
 
@@ -3994,7 +3994,7 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
 
    /* Allocate space for IPF control stream. */
    result = pvr_cmd_buffer_alloc_mem(transfer_cmd->cmd_buffer,
-                                     ctx->device->heaps.transfer_3d_heap,
+                                     ctx->device->heaps.transfer_frag_heap,
                                      total_stream_size,
                                      &pvr_cs_bo);
    if (result != VK_SUCCESS)
@@ -4002,7 +4002,7 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
 
    stream_base_vaddr =
       PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr -
-                   ctx->device->heaps.transfer_3d_heap->base_addr.addr);
+                   ctx->device->heaps.transfer_frag_heap->base_addr.addr);
 
    cs_ptr = pvr_bo_suballoc_get_map_addr(pvr_cs_bo);
    blk_cs_ptr = cs_ptr + region_arrays_size / sizeof(uint32_t);
@@ -4043,25 +4043,25 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
             fill_mapping.dst_rect = transfer_cmd->scissor;
 
             pvr_csb_pack (&regs->usc_clear_register0,
-                          CR_USC_CLEAR_REGISTER0,
+                          CR_USC_CLEAR_REGISTER,
                           reg) {
                reg.val = packed_color[0U];
             }
 
             pvr_csb_pack (&regs->usc_clear_register1,
-                          CR_USC_CLEAR_REGISTER1,
+                          CR_USC_CLEAR_REGISTER,
                           reg) {
                reg.val = packed_color[1U];
             }
 
             pvr_csb_pack (&regs->usc_clear_register2,
-                          CR_USC_CLEAR_REGISTER2,
+                          CR_USC_CLEAR_REGISTER,
                           reg) {
                reg.val = packed_color[2U];
             }
 
             pvr_csb_pack (&regs->usc_clear_register3,
-                          CR_USC_CLEAR_REGISTER3,
+                          CR_USC_CLEAR_REGISTER,
                           reg) {
                reg.val = packed_color[3U];
             }
@@ -4416,7 +4416,7 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
    pvr_csb_pack (&regs->isp_mtile_base, CR_ISP_MTILE_BASE, reg) {
       reg.addr =
          PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr -
-                      ctx->device->heaps.transfer_3d_heap->base_addr.addr);
+                      ctx->device->heaps.transfer_frag_heap->base_addr.addr);
    }
 
    pvr_csb_pack (&regs->isp_render, CR_ISP_RENDER, reg) {
@@ -5665,6 +5665,10 @@ pvr_submit_info_stream_init(struct pvr_transfer_ctx *ctx,
    const struct pvr_device_info *const dev_info = &pdevice->dev_info;
 
    uint32_t *stream_ptr = (uint32_t *)cmd->fw_stream;
+   uint32_t *stream_len_ptr = stream_ptr;
+
+   /* Leave space for stream header. */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    *(uint64_t *)stream_ptr = regs->pds_bgnd0_base;
    stream_ptr += pvr_cmd_length(CR_PDS_BGRND0_BASE);
@@ -5690,16 +5694,16 @@ pvr_submit_info_stream_init(struct pvr_transfer_ctx *ctx,
    stream_ptr += pvr_cmd_length(CR_USC_PIXEL_OUTPUT_CTRL);
 
    *stream_ptr = regs->usc_clear_register0;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER0);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    *stream_ptr = regs->usc_clear_register1;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER1);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    *stream_ptr = regs->usc_clear_register2;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER2);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    *stream_ptr = regs->usc_clear_register3;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER3);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    *stream_ptr = regs->isp_mtile_size;
    stream_ptr += pvr_cmd_length(CR_ISP_MTILE_SIZE);
@@ -5733,19 +5737,21 @@ pvr_submit_info_stream_init(struct pvr_transfer_ctx *ctx,
       stream_ptr++;
    }
 
-   cmd->fw_stream_len = (uint8_t *)stream_ptr - cmd->fw_stream;
+   cmd->fw_stream_len = (uint8_t *)stream_ptr - (uint8_t *)cmd->fw_stream;
    assert(cmd->fw_stream_len <= ARRAY_SIZE(cmd->fw_stream));
+
+   pvr_csb_pack ((uint64_t *)stream_len_ptr, KMD_STREAM_HDR, value) {
+      value.length = cmd->fw_stream_len;
+   }
 }
 
 static void
 pvr_submit_info_flags_init(const struct pvr_device_info *const dev_info,
                            const struct pvr_transfer_prep_data *const prep_data,
-                           uint32_t *const flags)
+                           struct pvr_winsys_transfer_cmd_flags *flags)
 {
    *flags = prep_data->flags;
-
-   if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support))
-      *flags |= PVR_WINSYS_TRANSFER_FLAG_SINGLE_CORE;
+   flags->use_single_core = PVR_HAS_FEATURE(dev_info, gpu_multicore_support);
 }
 
 static void pvr_transfer_job_ws_submit_info_init(
@@ -5872,7 +5878,7 @@ VkResult pvr_transfer_job_submit(struct pvr_transfer_ctx *ctx,
 {
    list_for_each_entry_safe (struct pvr_transfer_cmd,
                              transfer_cmd,
-                             &sub_cmd->transfer_cmds,
+                             sub_cmd->transfer_cmds,
                              link) {
       /* The fw guarantees that any kick on the same context will be
        * synchronized in submission order. This means only the first kick must
@@ -5882,13 +5888,13 @@ VkResult pvr_transfer_job_submit(struct pvr_transfer_ctx *ctx,
       struct vk_sync *last_cmd_signal_sync = NULL;
       VkResult result;
 
-      if (list_first_entry(&sub_cmd->transfer_cmds,
-                          struct pvr_transfer_cmd,
-                          link) == transfer_cmd) {
+      if (list_first_entry(sub_cmd->transfer_cmds,
+                           struct pvr_transfer_cmd,
+                           link) == transfer_cmd) {
          first_cmd_wait_sync = wait_sync;
       }
 
-      if (list_last_entry(&sub_cmd->transfer_cmds,
+      if (list_last_entry(sub_cmd->transfer_cmds,
                           struct pvr_transfer_cmd,
                           link) == transfer_cmd) {
          last_cmd_signal_sync = signal_sync;

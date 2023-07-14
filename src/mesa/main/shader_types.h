@@ -700,10 +700,10 @@ struct gl_vertex_program
    struct gl_program Base;
 
    uint32_t vert_attrib_mask; /**< mask of sourced vertex attribs */
-   ubyte num_inputs;
+   uint8_t num_inputs;
 
    /** Maps VARYING_SLOT_x to slot */
-   ubyte result_to_output[VARYING_SLOT_MAX];
+   uint8_t result_to_output[VARYING_SLOT_MAX];
 };
 
 /**

@@ -400,22 +400,19 @@ nir_convert_to_lcssa(nir_shader *shader, bool skip_invariants, bool skip_bool_in
    state->skip_invariants = skip_invariants;
    state->skip_bool_invariants = skip_bool_invariants;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl == NULL)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       state->progress = false;
-      nir_metadata_require(function->impl, nir_metadata_block_index);
+      nir_metadata_require(impl, nir_metadata_block_index);
 
-      foreach_list_typed(nir_cf_node, node, node, &function->impl->body)
+      foreach_list_typed(nir_cf_node, node, node, &impl->body)
          convert_to_lcssa(node, state);
 
       if (state->progress) {
          progress = true;
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
+         nir_metadata_preserve(impl, nir_metadata_block_index |
                                                nir_metadata_dominance);
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 

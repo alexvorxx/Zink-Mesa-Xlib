@@ -10,6 +10,7 @@
 #define _RADEON_VCN_ENC_H
 
 #include "radeon_vcn.h"
+#include "util/macros.h"
 
 #define RENCODE_IB_OP_INITIALIZE                                                    0x01000001
 #define RENCODE_IB_OP_CLOSE_SESSION                                                 0x01000002
@@ -176,8 +177,7 @@
 
 #define RENCODE_COLOR_SPACE_YUV                                                     0
 
-#define ALIGN_TO(value, align)                 (((value) + ((align) - 1))/(align))
-#define PIPE_ALIGN_IN_BLOCK_SIZE(value, align) ALIGN_TO(value, align)
+#define PIPE_ALIGN_IN_BLOCK_SIZE(value, alignment) ALIGN_POT(value, alignment)
 
 #define RADEON_ENC_CS(value) (enc->cs.current.buf[enc->cs.current.cdw++] = (value))
 #define RADEON_ENC_BEGIN(cmd)                                                                    \

@@ -38,7 +38,7 @@ spec@ext_texture_env_combine@texture-env-combine
 # Versions / Extensions not supported
 spec@!opengl 3.*
 spec@!opengl 4.*
-spec@!opengl es 3*
+spec@!opengl es 3.*
 spec@arb_gpu_shader5.*
 spec@arb_gpu_shader_fp64.*
 spec@arb_gpu_shader_int64.*

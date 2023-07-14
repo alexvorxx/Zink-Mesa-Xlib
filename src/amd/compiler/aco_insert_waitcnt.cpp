@@ -509,6 +509,25 @@ kill(wait_imm& imm, alu_delay_info& delay, Instruction* instr, wait_ctx& ctx,
       force_waitcnt(ctx, imm);
    }
 
+   /* Make sure POPS coherent memory accesses have reached the L2 cache before letting the
+    * overlapping waves proceed into the ordered section.
+    */
+   if (ctx.program->has_pops_overlapped_waves_wait &&
+       (ctx.gfx_level >= GFX11 ? instr->isEXP() && instr->exp().done
+                               : (instr->opcode == aco_opcode::s_sendmsg &&
+                                  instr->sopp().imm == sendmsg_ordered_ps_done))) {
+      if (ctx.vm_cnt)
+         imm.vm = 0;
+      if (ctx.gfx_level >= GFX10 && ctx.vs_cnt)
+         imm.vs = 0;
+      /* Await SMEM loads too, as it's possible for an application to create them, like using a
+       * scalarization loop - pointless and unoptimal for an inherently divergent address of
+       * per-pixel data, but still can be done at least synthetically and must be handled correctly.
+       */
+      if (ctx.program->has_smem_buffer_or_global_loads && ctx.lgkm_cnt)
+         imm.lgkm = 0;
+   }
+
    check_instr(ctx, imm, delay, instr);
 
    /* It's required to wait for scalar stores before "writing back" data.
@@ -1037,6 +1056,15 @@ insert_wait_states(Program* program)
 
    for (unsigned i = 0; i < program->blocks.size();) {
       Block& current = program->blocks[i++];
+
+      if (current.kind & block_kind_discard_early_exit) {
+         /* Because the jump to the discard early exit block may happen anywhere in a block, it's
+          * not possible to join it with its predecessors this way.
+          * We emit all required waits when emitting the discard block.
+          */
+         continue;
+      }
+
       wait_ctx ctx = in_ctx[current.index];
 
       if (current.kind & block_kind_loop_header) {

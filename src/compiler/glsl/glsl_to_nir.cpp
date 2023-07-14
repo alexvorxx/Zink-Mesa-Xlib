@@ -210,6 +210,12 @@ glsl_to_nir(const struct gl_constants *consts,
 
    MESA_TRACE_FUNC();
 
+   /* NIR cannot handle instructions after a break so we use the GLSL IR do
+    * lower jumps pass to clean those up for now.
+    */
+   do_lower_jumps(sh->ir, true, true, gl_options->EmitNoMainReturn,
+                  gl_options->EmitNoCont);
+
    /* glsl_to_nir can only handle converting certain function paramaters
     * to NIR. If we find something we can't handle then we get the GLSL IR
     * opts to remove it before we continue on.
@@ -249,14 +255,12 @@ glsl_to_nir(const struct gl_constants *consts,
 
    nir_validate_shader(shader, "after function inlining and return lowering");
 
-   /* Now that we have inlined everything remove all of the functions except
-    * main().
+   /* We set func->is_entrypoint after nir_function_create if the function
+    * is named "main", so we can use nir_remove_non_entrypoints() for this.
+    * Now that we have inlined everything remove all of the functions except
+    * func->is_entrypoint.
     */
-   foreach_list_typed_safe(nir_function, function, node, &(shader)->functions){
-      if (strcmp("main", function->name) != 0) {
-         exec_node_remove(&function->node);
-      }
-   }
+   nir_remove_non_entrypoints(shader);
 
    shader->info.name = ralloc_asprintf(shader, "GLSL%d", shader_prog->Name);
    if (shader_prog->Label)
@@ -488,6 +492,9 @@ get_nir_how_declared(unsigned how_declared)
    if (how_declared == ir_var_hidden)
       return nir_var_hidden;
 
+   if (how_declared == ir_var_declared_implicitly)
+      return nir_var_declared_implicitly;
+
    return nir_var_declared_normally;
 }
 
@@ -505,7 +512,6 @@ nir_visitor::visit(ir_variable *ir)
    var->name = ralloc_strdup(var, ir->name);
 
    var->data.assigned = ir->data.assigned;
-   var->data.always_active_io = ir->data.always_active_io;
    var->data.read_only = ir->data.read_only;
    var->data.centroid = ir->data.centroid;
    var->data.sample = ir->data.sample;
@@ -805,8 +811,7 @@ nir_visitor::visit(ir_function_signature *ir)
 
       this->is_global = false;
 
-      nir_builder_init(&b, impl);
-      b.cursor = nir_after_cf_list(&impl->body);
+      b = nir_builder_at(nir_after_cf_list(&impl->body));
 
       unsigned i = (ir->return_type != glsl_type::void_type) ? 1 : 0;
 

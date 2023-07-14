@@ -76,8 +76,7 @@ emit_common_so_memcpy(struct anv_batch *batch, struct anv_device *device,
    /* Disable Mesh, we can't have this and streamout enabled at the same
     * time.
     */
-   if (device->vk.enabled_extensions.NV_mesh_shader ||
-       device->vk.enabled_extensions.EXT_mesh_shader) {
+   if (device->vk.enabled_extensions.EXT_mesh_shader) {
       anv_batch_emit(batch, GENX(3DSTATE_MESH_CONTROL), mesh);
       anv_batch_emit(batch, GENX(3DSTATE_TASK_CONTROL), task);
    }
@@ -184,7 +183,7 @@ emit_so_memcpy(struct anv_batch *batch, struct anv_device *device,
       sob._3DCommandOpcode = 0;
       sob._3DCommandSubOpcode = SO_BUFFER_INDEX_0_CMD;
 #endif
-      sob.MOCS = anv_mocs(device, dst.bo, 0),
+      sob.MOCS = anv_mocs(device, dst.bo, ISL_SURF_USAGE_STREAM_OUT_BIT),
       sob.SurfaceBaseAddress = dst;
 
       sob.SOBufferEnable = true;

@@ -48,7 +48,27 @@ typedef struct nir_builder {
    nir_function_impl *impl;
 } nir_builder;
 
-void nir_builder_init(nir_builder *build, nir_function_impl *impl);
+static inline nir_builder
+nir_builder_create(nir_function_impl *impl)
+{
+   nir_builder b;
+   memset(&b, 0, sizeof(b));
+   b.exact = false;
+   b.impl = impl;
+   b.shader = impl->function->shader;
+   return b;
+}
+
+/* Requires the cursor to be inside a nir_function_impl. */
+static inline nir_builder
+nir_builder_at(nir_cursor cursor)
+{
+   nir_cf_node *current_block = &nir_cursor_current_block(cursor)->cf_node;
+
+   nir_builder b = nir_builder_create(nir_cf_node_get_function(current_block));
+   b.cursor = cursor;
+   return b;
+}
 
 nir_builder MUST_CHECK PRINTFLIKE(3, 4)
 nir_builder_init_simple_shader(gl_shader_stage stage,
@@ -75,25 +95,21 @@ nir_shader_instructions_pass(nir_shader *shader,
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       bool func_progress = false;
-      nir_builder b;
-      nir_builder_init(&b, function->impl);
+      nir_builder b = nir_builder_create(impl);
 
-      nir_foreach_block_safe(block, function->impl) {
+      nir_foreach_block_safe(block, impl) {
          nir_foreach_instr_safe(instr, block) {
             func_progress |= pass(&b, instr, cb_data);
          }
       }
 
       if (func_progress) {
-         nir_metadata_preserve(function->impl, preserved);
+         nir_metadata_preserve(impl, preserved);
          progress = true;
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 
@@ -1471,14 +1487,14 @@ nir_build_deref_follower(nir_builder *b, nir_deref_instr *parent,
 }
 
 static inline nir_ssa_def *
-nir_load_reg(nir_builder *build, nir_register *reg)
+nir_load_register(nir_builder *build, nir_register *reg)
 {
    return nir_ssa_for_src(build, nir_src_for_reg(reg), reg->num_components);
 }
 
 static inline void
-nir_store_reg(nir_builder *build, nir_register *reg,
-              nir_ssa_def *def, nir_component_mask_t write_mask)
+nir_store_register(nir_builder *build, nir_register *reg,
+                   nir_ssa_def *def, nir_component_mask_t write_mask)
 {
    assert(reg->num_components == def->num_components);
    assert(reg->bit_size == def->bit_size);
@@ -1669,6 +1685,48 @@ nir_load_param(nir_builder *build, uint32_t param_idx)
    assert(param_idx < build->impl->function->num_params);
    nir_parameter *param = &build->impl->function->params[param_idx];
    return nir_build_load_param(build, param->num_components, param->bit_size, param_idx);
+}
+
+#undef nir_decl_reg
+static inline nir_ssa_def *
+nir_decl_reg(nir_builder *b, unsigned num_components, unsigned bit_size,
+             unsigned num_array_elems)
+{
+   nir_intrinsic_instr *decl =
+      nir_intrinsic_instr_create(b->shader, nir_intrinsic_decl_reg);
+   nir_intrinsic_set_num_components(decl, num_components);
+   nir_intrinsic_set_bit_size(decl, bit_size);
+   nir_intrinsic_set_num_array_elems(decl, num_array_elems);
+   nir_ssa_dest_init(&decl->instr, &decl->dest, 1, 32);
+
+   nir_instr_insert(nir_before_cf_list(&b->impl->body), &decl->instr);
+
+   return &decl->dest.ssa;
+}
+
+#undef nir_load_reg
+static inline nir_ssa_def *
+nir_load_reg(nir_builder *b, nir_ssa_def *reg)
+{
+   nir_intrinsic_instr *decl = nir_reg_get_decl(reg);
+   unsigned num_components = nir_intrinsic_num_components(decl);
+   unsigned bit_size = nir_intrinsic_bit_size(decl);
+
+   return nir_build_load_reg(b, num_components, bit_size, reg);
+}
+
+#undef nir_store_reg
+static inline void
+nir_store_reg(nir_builder *b, nir_ssa_def *value, nir_ssa_def *reg)
+{
+   ASSERTED nir_intrinsic_instr *decl = nir_reg_get_decl(reg);
+   ASSERTED unsigned num_components = nir_intrinsic_num_components(decl);
+   ASSERTED unsigned bit_size = nir_intrinsic_bit_size(decl);
+
+   assert(value->num_components == num_components);
+   assert(value->bit_size == bit_size);
+
+   nir_build_store_reg(b, value, reg);
 }
 
 static inline nir_tex_src

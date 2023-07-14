@@ -545,8 +545,11 @@ v3d_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
         case PIPE_COMPUTE_CAP_IMAGES_SUPPORTED:
                 RET((uint32_t []) { 1 });
 
-        case PIPE_COMPUTE_CAP_SUBGROUP_SIZE:
+        case PIPE_COMPUTE_CAP_SUBGROUP_SIZES:
                 RET((uint32_t []) { 16 });
+
+        case PIPE_COMPUTE_CAP_MAX_SUBGROUPS:
+                RET((uint32_t []) { 0 });
 
         }
 

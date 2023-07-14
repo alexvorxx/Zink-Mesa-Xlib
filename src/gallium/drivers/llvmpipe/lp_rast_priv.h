@@ -112,8 +112,8 @@ struct lp_rasterizer_task
  */
 struct lp_rasterizer
 {
-   boolean exit_flag;
-   boolean no_rast;  /**< For debugging/profiling */
+   bool exit_flag;
+   bool no_rast;  /**< For debugging/profiling */
 
    /** The incoming queue of scenes ready to rasterize */
    struct lp_scene_queue *full_scenes;

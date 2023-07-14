@@ -394,11 +394,8 @@ nir_lower_gs_intrinsics(nir_shader *shader, nir_lower_gs_intrinsics_flags option
    if (!a_block_needs_set_vertex_and_primitive_count(impl->end_block, per_stream))
       return false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
    state.builder = &b;
-
-   b.cursor = nir_before_cf_list(&impl->body);
 
    for (unsigned i = 0; i < NIR_MAX_XFB_STREAMS; i++) {
       if (per_stream && !(shader->info.gs.active_stream_mask & (1 << i)))

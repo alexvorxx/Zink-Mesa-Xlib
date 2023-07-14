@@ -268,93 +268,6 @@
       - src/gallium/frontends/rusticl/**/*
       when: on_success
 
-# Farm rules
-.microsoft-farm-container-rules:
-  rules:
-    # Allow triggering jobs manually in other cases if any files affecting the
-    # pipeline were changed
-    - exists: [ .ci-farms-disabled/microsoft ]
-      when: never
-    - changes: [ .ci-farms-disabled/microsoft ]
-      when: manual
-    - !reference [.microsoft-farm-rules, rules]
-
-.microsoft-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/microsoft ]  # 1. Is disabled, never run
-      when: never
-    - changes: [ .ci-farms-disabled/microsoft ]  # 2. Removed from disabled, run
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]  # 3. We touched other farms in MR, do not run
-      when: never
-    # 4. Fall-through (other rules or on_success)
-
-.collabora-farm-rules:
-  rules:
-    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
-      exists: [ .ci-farms-disabled/collabora ]
-      when: never
-    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
-      changes: [ .ci-farms-disabled/collabora ]
-      when: on_success
-    - if: '$RUNNER_TAG =~ /^mesa-ci-x86-64-lava-/'
-      changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.igalia-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/igalia ]
-      when: never
-    - changes: [ .ci-farms-disabled/igalia ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.lima-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/lima ]
-      when: never
-    - changes: [ .ci-farms-disabled/lima ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.anholt-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/anholt ]
-      when: never
-    - changes: [ .ci-farms-disabled/anholt ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.valve-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/valve ]
-      when: never
-    - changes: [ .ci-farms-disabled/valve ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.austriancoder-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/austriancoder ]
-      when: never
-    - changes: [ .ci-farms-disabled/austriancoder ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
-.freedreno-farm-rules:
-  rules:
-    - exists: [ .ci-farms-disabled/freedreno ]
-      when: never
-    - changes: [ .ci-farms-disabled/freedreno ]
-      when: on_success
-    - changes: [ .ci-farms-disabled/* ]
-      when: never
-
 # Rules for changes that impact either freedreno or turnip.
 .freedreno-common-rules:
   rules:
@@ -373,7 +286,7 @@
 .freedreno-common-manual-rules:
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.freedreno-farm-rules, rules]
+    - !reference [.freedreno-farm-manual-rules, rules]
     - !reference [.core-manual-rules, rules]
     - changes:
         *freedreno_core_file_list
@@ -463,7 +376,7 @@
   stage: nouveau
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.anholt-farm-rules, rules]
+    - !reference [.anholt-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *nouveau_file_list
@@ -493,7 +406,7 @@
   stage: arm
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes: *panfrost_gallium_file_list
       when: manual
@@ -526,7 +439,7 @@
   stage: arm
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
@@ -564,8 +477,9 @@
     - !reference [.broadcom-common-rules, rules]
     - changes:
       - src/gallium/drivers/vc4/**/*
-      - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/vc4/**/*
+      - src/gallium/auxiliary/renderonly/**/*
+      - src/gallium/winsys/kmsro/**/*
       when: on_success
 
 .v3d-rules:
@@ -576,15 +490,16 @@
     - !reference [.broadcom-common-rules, rules]
     - changes: &v3d_file_list
       - src/gallium/drivers/v3d/**/*
-      - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/v3d/**/*
+      - src/gallium/auxiliary/renderonly/**/*
+      - src/gallium/winsys/kmsro/**/*
       when: on_success
 
 .v3d-manual-rules:
   stage: broadcom
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.igalia-farm-rules, rules]
+    - !reference [.igalia-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *broadcom_file_list
@@ -638,7 +553,7 @@
   stage: amd
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.valve-farm-rules, rules]
+    - !reference [.valve-farm-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - changes:
         *radv_file_list
@@ -673,14 +588,8 @@
 .radeonsi+radv-rules:
   stage: amd
   rules:
-    - !reference [.collabora-farm-rules, rules]
-    - !reference [.gl-rules, rules]
-    - changes:
-        *radeonsi_file_list
-      when: on_success
-    - changes:
-        *radv_file_list
-      when: on_success
+    - !reference [.radeonsi-rules, rules]
+    - !reference [.radv-rules, rules]
 
 .radeonsi-vaapi-rules:
   stage: amd
@@ -698,7 +607,7 @@
 .radeonsi-vaapi-manual-rules:
   stage: amd
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *radeon_vcn_file_list
@@ -713,7 +622,7 @@
 .radeonsi-valve-manual-rules:
   stage: amd
   rules:
-    - !reference [.valve-farm-rules, rules]
+    - !reference [.valve-farm-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - changes:
         *radeonsi_file_list
@@ -753,7 +662,7 @@
   stage: intel
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.anholt-farm-rules, rules]
+    - !reference [.anholt-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *crocus_file_list
@@ -775,7 +684,7 @@
   stage: intel
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *iris_file_list
@@ -788,7 +697,7 @@
   stage: intel
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.performance-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
@@ -816,11 +725,11 @@
   stage: intel
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - changes:
       - src/intel/**/*
-      when: on_success
+      when: manual
 
 .hasvk-rules:
   stage: intel
@@ -835,22 +744,24 @@
   stage: intel
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.anholt-farm-rules, rules]
+    - !reference [.anholt-farm-manual-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - changes:
       - src/intel/**/*
       when: on_success
 
+# ruleset to trigger on changes affecting either anv or iris, for jobs using both (piglit, skqp)
 .intel-rules:
   stage: intel
   rules:
-    - !reference [.collabora-farm-rules, rules]
-    # Note that we trigger on changes both anv and iris, because piglit and skqp jobs test both.
-    - !reference [.vulkan-rules, rules]
-    - !reference [.gl-rules, rules]
-    - changes:
-        *iris_file_list
-      when: on_success
+    - !reference [.iris-rules, rules]
+    - !reference [.anv-rules, rules]
+
+.intel-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.iris-manual-rules, rules]
+    - !reference [.anv-manual-rules, rules]
 
 .virgl-rules:
   stage: layered-backends
@@ -868,7 +779,7 @@
   stage: layered-backends
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *virgl_file_list
@@ -881,7 +792,7 @@
   stage: layered-backends
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.collabora-farm-rules, rules]
+    - !reference [.collabora-farm-manual-rules, rules]
     - !reference [.performance-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
@@ -1039,14 +950,13 @@
       - src/gallium/winsys/etnaviv/**/*
       - src/gallium/auxiliary/renderonly/**/*
       - src/gallium/winsys/kmsro/**/*
-      - src/gallium/winsys/etnaviv/**/*
       when: on_success
 
 .etnaviv-manual-rules:
   stage: etnaviv
   retry: *scheduled-pipeline-retries
   rules:
-    - !reference [.austriancoder-farm-rules, rules]
+    - !reference [.austriancoder-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:
         *etnaviv_file_list
@@ -1110,6 +1020,7 @@
       - .clang-format-include
       - .clang-format-ignore
       - src/**/.clang-format
+      - src/egl/**/*
       - src/**/asahi/**/*
       - src/**/panfrost/**/*
       - src/amd/vulkan/**/*

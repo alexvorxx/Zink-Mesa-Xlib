@@ -8,11 +8,11 @@
 #ifndef AC_NIR_H
 #define AC_NIR_H
 
-#include "nir.h"
-#include "nir_builder.h"
+#include "ac_hw_stage.h"
 #include "ac_shader_args.h"
 #include "ac_shader_util.h"
-#include "amd_family.h"
+#include "nir.h"
+#include "nir_builder.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +65,10 @@ ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct a
                   unsigned rshift, unsigned bitwidth);
 
 bool ac_nir_lower_sin_cos(nir_shader *shader);
+
+bool ac_nir_lower_intrinsics_to_args(nir_shader *shader, const enum amd_gfx_level gfx_level,
+                                     const enum ac_hw_stage hw_stage,
+                                     const struct ac_shader_args *ac_args);
 
 void
 ac_nir_store_var_components(nir_builder *b, nir_variable *var, nir_ssa_def *value,

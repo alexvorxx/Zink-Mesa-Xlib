@@ -452,80 +452,6 @@ nv50_clear_depth_stencil(struct pipe_context *pipe,
 }
 
 void
-nv50_clear_texture(struct pipe_context *pipe,
-                   struct pipe_resource *res,
-                   unsigned level,
-                   const struct pipe_box *box,
-                   const void *data)
-{
-   struct pipe_surface tmpl = {{0}}, *sf;
-
-   tmpl.format = res->format;
-   tmpl.u.tex.first_layer = box->z;
-   tmpl.u.tex.last_layer = box->z + box->depth - 1;
-   tmpl.u.tex.level = level;
-   sf = pipe->create_surface(pipe, res, &tmpl);
-   if (!sf)
-      return;
-
-   if (util_format_is_depth_or_stencil(res->format)) {
-      float depth = 0;
-      uint8_t stencil = 0;
-      unsigned clear = 0;
-      const struct util_format_description *desc =
-         util_format_description(res->format);
-
-      if (util_format_has_depth(desc)) {
-         clear |= PIPE_CLEAR_DEPTH;
-         util_format_unpack_z_float(res->format, &depth, data, 1);
-      }
-      if (util_format_has_stencil(desc)) {
-         clear |= PIPE_CLEAR_STENCIL;
-         util_format_unpack_s_8uint(res->format, &stencil, data, 1);
-      }
-      pipe->clear_depth_stencil(pipe, sf, clear, depth, stencil,
-                                box->x, box->y, box->width, box->height, false);
-   } else {
-      union pipe_color_union color;
-
-      switch (util_format_get_blocksizebits(res->format)) {
-      case 128:
-         sf->format = PIPE_FORMAT_R32G32B32A32_UINT;
-         memcpy(&color.ui, data, 128 / 8);
-         break;
-      case 64:
-         sf->format = PIPE_FORMAT_R32G32_UINT;
-         memcpy(&color.ui, data, 64 / 8);
-         memset(&color.ui[2], 0, 64 / 8);
-         break;
-      case 32:
-         sf->format = PIPE_FORMAT_R32_UINT;
-         memcpy(&color.ui, data, 32 / 8);
-         memset(&color.ui[1], 0, 96 / 8);
-         break;
-      case 16:
-         sf->format = PIPE_FORMAT_R16_UINT;
-         color.ui[0] = util_cpu_to_le32(
-            util_le16_to_cpu(*(unsigned short *)data));
-         memset(&color.ui[1], 0, 96 / 8);
-         break;
-      case 8:
-         sf->format = PIPE_FORMAT_R8_UINT;
-         color.ui[0] = util_cpu_to_le32(*(unsigned char *)data);
-         memset(&color.ui[1], 0, 96 / 8);
-         break;
-      default:
-         assert(!"Unknown texel element size");
-         return;
-      }
-
-      pipe->clear_render_target(pipe, sf, &color,
-                                box->x, box->y, box->width, box->height, false);
-   }
-   pipe->surface_destroy(pipe, sf);
-}
-
-void
 nv50_clear(struct pipe_context *pipe, unsigned buffers, const struct pipe_scissor_state *scissor_state,
            const union pipe_color_union *color,
            double depth, unsigned stencil)
@@ -1748,7 +1674,7 @@ nv50_blit(struct pipe_context *pipe, const struct pipe_blit_info *info)
 {
    struct nv50_context *nv50 = nv50_context(pipe);
    struct nouveau_pushbuf *push = nv50->base.pushbuf;
-   bool eng3d = FALSE;
+   bool eng3d = false;
 
    if (info->src.box.width == 0 || info->src.box.height == 0 ||
        info->dst.box.width == 0 || info->dst.box.height == 0) {
@@ -1906,7 +1832,7 @@ nv50_init_surface_functions(struct nv50_context *nv50)
    pipe->resource_copy_region = nv50_resource_copy_region;
    pipe->blit = nv50_blit;
    pipe->flush_resource = nv50_flush_resource;
-   pipe->clear_texture = nv50_clear_texture;
+   pipe->clear_texture = u_default_clear_texture;
    pipe->clear_render_target = nv50_clear_render_target;
    pipe->clear_depth_stencil = nv50_clear_depth_stencil;
    pipe->clear_buffer = nv50_clear_buffer;

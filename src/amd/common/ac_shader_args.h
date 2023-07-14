@@ -117,6 +117,7 @@ struct ac_shader_args {
    struct ac_arg ancillary;
    struct ac_arg sample_coverage;
    struct ac_arg prim_mask;
+   struct ac_arg pops_collision_wave_id;
    struct ac_arg load_provoking_vtx;
    struct ac_arg persp_sample;
    struct ac_arg persp_center;

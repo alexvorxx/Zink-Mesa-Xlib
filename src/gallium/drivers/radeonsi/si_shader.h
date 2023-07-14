@@ -404,10 +404,10 @@ enum si_color_output_type {
 
 union si_input_info {
    struct {
-      ubyte semantic;
-      ubyte interpolate;
-      ubyte fp16_lo_hi_valid;
-      ubyte usage_mask;
+      uint8_t semantic;
+      uint8_t interpolate;
+      uint8_t fp16_lo_hi_valid;
+      uint8_t usage_mask;
    };
    uint32_t _unused; /* this just forces 4-byte alignment */
 };
@@ -417,18 +417,18 @@ struct si_shader_info {
 
    uint32_t options; /* bitmask of SI_PROFILE_* */
 
-   ubyte num_inputs;
-   ubyte num_outputs;
+   uint8_t num_inputs;
+   uint8_t num_outputs;
    union si_input_info input[PIPE_MAX_SHADER_INPUTS];
-   ubyte output_semantic[PIPE_MAX_SHADER_OUTPUTS];
-   ubyte output_usagemask[PIPE_MAX_SHADER_OUTPUTS];
-   ubyte output_readmask[PIPE_MAX_SHADER_OUTPUTS];
-   ubyte output_streams[PIPE_MAX_SHADER_OUTPUTS];
-   ubyte output_type[PIPE_MAX_SHADER_OUTPUTS]; /* enum nir_alu_type */
+   uint8_t output_semantic[PIPE_MAX_SHADER_OUTPUTS];
+   uint8_t output_usagemask[PIPE_MAX_SHADER_OUTPUTS];
+   uint8_t output_readmask[PIPE_MAX_SHADER_OUTPUTS];
+   uint8_t output_streams[PIPE_MAX_SHADER_OUTPUTS];
+   uint8_t output_type[PIPE_MAX_SHADER_OUTPUTS]; /* enum nir_alu_type */
 
-   ubyte num_vs_inputs;
-   ubyte num_vbos_in_user_sgprs;
-   ubyte num_stream_output_components[4];
+   uint8_t num_vs_inputs;
+   uint8_t num_vbos_in_user_sgprs;
+   uint8_t num_stream_output_components[4];
    uint16_t enabled_streamout_buffer_mask;
 
    uint64_t inputs_read; /* "get_unique_index" bits */
@@ -438,13 +438,13 @@ struct si_shader_info {
    uint64_t outputs_written;           /* "get_unique_index" bits */
    uint32_t patch_outputs_written;     /* "get_unique_index_patch" bits */
 
-   ubyte clipdist_mask;
-   ubyte culldist_mask;
+   uint8_t clipdist_mask;
+   uint8_t culldist_mask;
 
    uint16_t lshs_vertex_stride;
    uint16_t esgs_vertex_stride;
    uint16_t gsvs_vertex_size;
-   ubyte gs_input_verts_per_prim;
+   uint8_t gs_input_verts_per_prim;
    unsigned max_gsvs_emit_size;
 
    /* Set 0xf or 0x0 (4 bits) per each written output.
@@ -454,11 +454,11 @@ struct si_shader_info {
 
    int constbuf0_num_slots;
    uint num_memory_stores;
-   ubyte color_attr_index[2];
-   ubyte color_interpolate[2];
-   ubyte color_interpolate_loc[2];
-   ubyte colors_read; /**< which color components are read by the FS */
-   ubyte colors_written;
+   uint8_t color_attr_index[2];
+   uint8_t color_interpolate[2];
+   uint8_t color_interpolate_loc[2];
+   uint8_t colors_read; /**< which color components are read by the FS */
+   uint8_t colors_written;
    uint16_t output_color_types; /**< Each bit pair is enum si_color_output_type */
    bool vs_needs_prolog;
    bool color0_writes_all_cbufs; /**< gl_FragColor */
@@ -559,13 +559,13 @@ struct si_shader_selector {
    struct si_shader_info info;
 
    enum pipe_shader_type pipe_shader_type;
-   ubyte const_and_shader_buf_descriptors_index;
-   ubyte sampler_and_images_descriptors_index;
-   ubyte cs_shaderbufs_sgpr_index;
-   ubyte cs_num_shaderbufs_in_user_sgprs;
-   ubyte cs_images_sgpr_index;
-   ubyte cs_images_num_sgprs;
-   ubyte cs_num_images_in_user_sgprs;
+   uint8_t const_and_shader_buf_descriptors_index;
+   uint8_t sampler_and_images_descriptors_index;
+   uint8_t cs_shaderbufs_sgpr_index;
+   uint8_t cs_num_shaderbufs_in_user_sgprs;
+   uint8_t cs_images_sgpr_index;
+   uint8_t cs_images_num_sgprs;
+   uint8_t cs_num_images_in_user_sgprs;
    unsigned ngg_cull_vert_threshold; /* UINT32_MAX = disabled */
    enum mesa_prim rast_prim;
 
@@ -815,18 +815,18 @@ union si_shader_key {
 
 /* GCN-specific shader info. */
 struct si_shader_binary_info {
-   ubyte vs_output_param_offset[NUM_TOTAL_VARYING_SLOTS];
+   uint8_t vs_output_param_offset[NUM_TOTAL_VARYING_SLOTS];
    uint32_t vs_output_ps_input_cntl[NUM_TOTAL_VARYING_SLOTS];
-   ubyte num_input_sgprs;
-   ubyte num_input_vgprs;
+   uint8_t num_input_sgprs;
+   uint8_t num_input_vgprs;
    bool uses_vmem_load_other; /* all other VMEM loads and atomics with return */
    bool uses_vmem_sampler_or_bvh;
    signed char face_vgpr_index;
    signed char ancillary_vgpr_index;
    signed char sample_coverage_vgpr_index;
    bool uses_instanceid;
-   ubyte nr_pos_exports;
-   ubyte nr_param_exports;
+   uint8_t nr_pos_exports;
+   uint8_t nr_param_exports;
    unsigned private_mem_vgprs;
    unsigned max_simd_waves;
 };

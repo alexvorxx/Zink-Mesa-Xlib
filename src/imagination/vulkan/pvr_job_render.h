@@ -29,6 +29,7 @@
 #include <vulkan/vulkan.h>
 
 #include "hwdef/rogue_hw_defs.h"
+#include "pvr_csb.h"
 #include "pvr_limits.h"
 #include "pvr_types.h"
 
@@ -85,6 +86,7 @@ struct pvr_render_job {
    };
 
    uint32_t pds_pixel_event_data_offset;
+   uint32_t pr_pds_pixel_event_data_offset;
 
    pvr_dev_addr_t ctrl_stream_addr;
 
@@ -97,15 +99,17 @@ struct pvr_render_job {
     * has_stencil_attachment are false, the contents are undefined.
     */
    struct pvr_ds_attachment {
-      bool load;
-      bool store;
+      struct {
+         bool d : 1;
+         bool s : 1;
+      } load, store;
 
       pvr_dev_addr_t addr;
       uint32_t stride;
       uint32_t height;
       VkExtent2D physical_extent;
       uint32_t layer_size;
-      VkFormat vk_format;
+      enum PVRX(CR_ZLS_FORMAT_TYPE) zls_format;
       /* FIXME: This should be of type 'enum pvr_memlayout', but this is defined
        * in pvr_private.h, which causes a circular include dependency. For now,
        * treat it as a uint32_t. A couple of ways to possibly fix this:
@@ -136,9 +140,25 @@ struct pvr_render_job {
     */
    uint32_t max_tiles_in_flight;
 
+   static_assert(pvr_cmd_length(PBESTATE_REG_WORD0) == 2,
+                 "PBESTATE_REG_WORD0 cannot be stored in uint64_t");
+   static_assert(pvr_cmd_length(PBESTATE_REG_WORD1) == 2,
+                 "PBESTATE_REG_WORD1 cannot be stored in uint64_t");
+   static_assert(ROGUE_NUM_PBESTATE_REG_WORDS >= 2,
+                 "Cannot store both PBESTATE_REG_WORD{0,1}");
    uint64_t pbe_reg_words[PVR_MAX_COLOR_ATTACHMENTS]
                          [ROGUE_NUM_PBESTATE_REG_WORDS];
+   uint64_t pr_pbe_reg_words[PVR_MAX_COLOR_ATTACHMENTS]
+                            [ROGUE_NUM_PBESTATE_REG_WORDS];
 
+   static_assert(pvr_cmd_length(CR_PDS_BGRND0_BASE) == 2,
+                 "CR_PDS_BGRND0_BASE cannot be stored in uint64_t");
+   static_assert(pvr_cmd_length(CR_PDS_BGRND1_BASE) == 2,
+                 "CR_PDS_BGRND1_BASE cannot be stored in uint64_t");
+   static_assert(pvr_cmd_length(CR_PDS_BGRND3_SIZEINFO) == 2,
+                 "CR_PDS_BGRND3_SIZEINFO cannot be stored in uint64_t");
+   static_assert(ROGUE_NUM_CR_PDS_BGRND_WORDS == 3,
+                 "Cannot store all CR_PDS_BGRND words");
    uint64_t pds_bgnd_reg_values[ROGUE_NUM_CR_PDS_BGRND_WORDS];
    uint64_t pds_pr_bgnd_reg_values[ROGUE_NUM_CR_PDS_BGRND_WORDS];
 };

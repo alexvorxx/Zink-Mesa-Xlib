@@ -1027,7 +1027,7 @@ rasterize_bin(struct lp_rasterizer_task *task,
  *
  * Try to avoid doing pointless work in this case.
  */
-static boolean
+static bool
 is_empty_bin(const struct cmd_bin *bin)
 {
    return bin->head == NULL;
@@ -1101,7 +1101,7 @@ lp_rast_queue_scene(struct lp_rasterizer *rast,
 
    lp_fence_reference(&rast->last_fence, scene->fence);
    if (rast->last_fence)
-      rast->last_fence->issued = TRUE;
+      rast->last_fence->issued = true;
 
    if (rast->num_threads == 0) {
       /* no threading */
@@ -1161,7 +1161,7 @@ thread_function(void *init_data)
 {
    struct lp_rasterizer_task *task = (struct lp_rasterizer_task *) init_data;
    struct lp_rasterizer *rast = task->rast;
-   boolean debug = false;
+   bool debug = false;
    char thread_name[16];
 
    snprintf(thread_name, sizeof thread_name, "llvmpipe-%u", task->thread_index);
@@ -1187,7 +1187,7 @@ thread_function(void *init_data)
           *  - get next scene to rasterize
           *  - map the framebuffer surfaces
           */
-         lp_rast_begin(rast, lp_scene_dequeue(rast->full_scenes, TRUE));
+         lp_rast_begin(rast, lp_scene_dequeue(rast->full_scenes, true));
       }
 
       /* Wait for all threads to get here so that threads[1+] don't
@@ -1275,7 +1275,7 @@ lp_rast_create(unsigned num_threads)
 
    rast->num_threads = num_threads;
 
-   rast->no_rast = debug_get_bool_option("LP_NO_RAST", FALSE);
+   rast->no_rast = debug_get_bool_option("LP_NO_RAST", false);
 
    create_rast_threads(rast);
 
@@ -1312,7 +1312,7 @@ lp_rast_destroy(struct lp_rasterizer *rast)
     * Each thread will be woken up, notice that the exit_flag is set and
     * break out of its main loop.  The thread will then exit.
     */
-   rast->exit_flag = TRUE;
+   rast->exit_flag = true;
    for (unsigned i = 0; i < rast->num_threads; i++) {
       util_semaphore_signal(&rast->tasks[i].work_ready);
    }

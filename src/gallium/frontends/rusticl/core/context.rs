@@ -20,7 +20,7 @@ use std::sync::Mutex;
 
 pub struct Context {
     pub base: CLObjectBase<CL_INVALID_CONTEXT>,
-    pub devs: Vec<Arc<Device>>,
+    pub devs: Vec<&'static Device>,
     pub properties: Properties<cl_context_properties>,
     pub dtors: Mutex<Vec<Box<dyn Fn(cl_context)>>>,
     pub svm_ptrs: Mutex<BTreeMap<*const c_void, Layout>>,
@@ -30,7 +30,7 @@ impl_cl_type_trait!(cl_context, Context, CL_INVALID_CONTEXT);
 
 impl Context {
     pub fn new(
-        devs: Vec<Arc<Device>>,
+        devs: Vec<&'static Device>,
         properties: Properties<cl_context_properties>,
     ) -> Arc<Context> {
         Arc::new(Self {
@@ -48,10 +48,10 @@ impl Context {
         user_ptr: *mut c_void,
         copy: bool,
         res_type: ResourceType,
-    ) -> CLResult<HashMap<Arc<Device>, Arc<PipeResource>>> {
+    ) -> CLResult<HashMap<&'static Device, Arc<PipeResource>>> {
         let adj_size: u32 = size.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?;
         let mut res = HashMap::new();
-        for dev in &self.devs {
+        for &dev in &self.devs {
             let mut resource = None;
 
             if !user_ptr.is_null() && !copy {
@@ -65,7 +65,7 @@ impl Context {
             }
 
             let resource = resource.ok_or(CL_OUT_OF_RESOURCES);
-            res.insert(Arc::clone(dev), Arc::new(resource?));
+            res.insert(dev, Arc::new(resource?));
         }
 
         if !user_ptr.is_null() {
@@ -88,7 +88,7 @@ impl Context {
         user_ptr: *mut c_void,
         copy: bool,
         res_type: ResourceType,
-    ) -> CLResult<HashMap<Arc<Device>, Arc<PipeResource>>> {
+    ) -> CLResult<HashMap<&'static Device, Arc<PipeResource>>> {
         let width = desc
             .image_width
             .try_into()
@@ -108,7 +108,7 @@ impl Context {
         let target = cl_mem_type_to_texture_target(desc.image_type);
 
         let mut res = HashMap::new();
-        for dev in &self.devs {
+        for &dev in &self.devs {
             let mut resource = None;
 
             // we can't specify custom pitches/slices, so this won't work for non 1D images
@@ -125,7 +125,7 @@ impl Context {
             }
 
             let resource = resource.ok_or(CL_OUT_OF_RESOURCES);
-            res.insert(Arc::clone(dev), Arc::new(resource?));
+            res.insert(dev, Arc::new(resource?));
         }
 
         if !user_ptr.is_null() {

@@ -53,7 +53,6 @@ wayland-dEQP-EGL.functional.render.multi_thread.gles2.rgb888_window,Fail
 wayland-dEQP-EGL.functional.render.multi_thread.gles2.rgba8888_pbuffer,Fail
 wayland-dEQP-EGL.functional.wide_color.pbuffer_8888_colorspace_srgb,Fail
 wayland-dEQP-EGL.functional.wide_color.window_8888_colorspace_srgb,Fail
-wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail
 
 x11-dEQP-EGL.functional.create_context.no_config,Fail
 x11-dEQP-EGL.functional.image.modify.renderbuffer_depth16_renderbuffer_clear_depth,Fail
@@ -658,6 +657,15 @@ spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_alpha_s3
 spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_alpha_s3tc_dxt3_ext,Fail
 spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_alpha_s3tc_dxt5_ext,Fail
 spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_s3tc_dxt1_ext,Fail
+
+# Expects that some format/internal_format combinations should be supported when they currently aren't.
+spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
+
+# Expects DEPTH_COMPONENT_32F, which is given by ARB_depth_buffer_float and isn't supported by Lima.
+spec@arb_clear_texture@arb_clear_texture-depth,Fail
+
+# Precision issue when lowering GL_RGB16 and GL_RGBA16
+spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
 

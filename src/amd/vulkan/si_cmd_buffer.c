@@ -252,8 +252,6 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       radeon_set_context_reg(cs, R_028244_PA_SC_GENERIC_SCISSOR_BR,
                              S_028244_BR_X(MAX_FRAMEBUFFER_WIDTH) | S_028244_BR_Y(MAX_FRAMEBUFFER_HEIGHT));
       radeon_set_context_reg(cs, R_028030_PA_SC_SCREEN_SCISSOR_TL, 0);
-      radeon_set_context_reg(cs, R_028034_PA_SC_SCREEN_SCISSOR_BR,
-                             S_028034_BR_X(MAX_FRAMEBUFFER_WIDTH) | S_028034_BR_Y(MAX_FRAMEBUFFER_HEIGHT));
    }
 
    if (!has_clear_state) {
@@ -287,16 +285,14 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       radeon_set_uconfig_reg(cs, R_030988_GE_USER_VGPR_EN, 0);
 
       if (physical_device->rad_info.gfx_level < GFX11) {
-         radeon_set_context_reg(cs, R_028038_DB_DFSM_CONTROL,
-                                S_028038_PUNCHOUT_MODE(V_028038_FORCE_OFF) | S_028038_POPS_DRAIN_PS_ON_OVERLAP(1));
+         radeon_set_context_reg(cs, R_028038_DB_DFSM_CONTROL, S_028038_PUNCHOUT_MODE(V_028038_FORCE_OFF));
       }
    } else if (physical_device->rad_info.gfx_level == GFX9) {
       radeon_set_uconfig_reg(cs, R_030920_VGT_MAX_VTX_INDX, ~0);
       radeon_set_uconfig_reg(cs, R_030924_VGT_MIN_VTX_INDX, 0);
       radeon_set_uconfig_reg(cs, R_030928_VGT_INDX_OFFSET, 0);
 
-      radeon_set_context_reg(cs, R_028060_DB_DFSM_CONTROL,
-                             S_028060_PUNCHOUT_MODE(V_028060_FORCE_OFF) | S_028060_POPS_DRAIN_PS_ON_OVERLAP(1));
+      radeon_set_context_reg(cs, R_028060_DB_DFSM_CONTROL, S_028060_PUNCHOUT_MODE(V_028060_FORCE_OFF));
    } else {
       /* These registers, when written, also overwrite the
        * CLEAR_STATE context, so we can't rely on CLEAR_STATE setting

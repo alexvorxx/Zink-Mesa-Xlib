@@ -222,7 +222,9 @@ void v3dv_meta_texel_buffer_copy_finish(struct v3dv_device *device);
 
 bool v3dv_meta_can_use_tlb(struct v3dv_image *image,
                            uint8_t plane,
+                           uint8_t miplevel,
                            const VkOffset3D *offset,
+                           const VkExtent3D *extent,
                            VkFormat *compat_format);
 
 struct v3dv_instance {

@@ -223,6 +223,17 @@ init_program(Program* program, Stage stage, const struct aco_shader_info* info,
 memory_sync_info
 get_sync_info(const Instruction* instr)
 {
+   /* Primitive Ordered Pixel Shading barriers necessary for accesses to memory shared between
+    * overlapping waves in the queue family.
+    */
+   if (instr->opcode == aco_opcode::p_pops_gfx9_overlapped_wave_wait_done ||
+       (instr->opcode == aco_opcode::s_wait_event &&
+        !(instr->sopp().imm & wait_event_imm_dont_wait_export_ready))) {
+      return memory_sync_info(storage_buffer | storage_image, semantic_acquire, scope_queuefamily);
+   } else if (instr->opcode == aco_opcode::p_pops_gfx9_ordered_section_done) {
+      return memory_sync_info(storage_buffer | storage_image, semantic_release, scope_queuefamily);
+   }
+
    switch (instr->format) {
    case Format::SMEM: return instr->smem().sync;
    case Format::MUBUF: return instr->mubuf().sync;

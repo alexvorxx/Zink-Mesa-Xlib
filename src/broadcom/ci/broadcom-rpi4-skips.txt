@@ -1,4 +1,5 @@
 # Slow tests (> 1 minute to run)
+spec@!opengl 1.0@depth-clear-precision-check
 spec@!opengl 1.0@gl-1.0-blend-func
 spec@!opengl 1.1@streaming-texture-leak
 spec@!opengl 1.2@tex3d-maxsize
@@ -106,9 +107,12 @@ dEQP-VK.ssbo.layout.random.all_shared_buffer.5
 dEQP-VK.ssbo.layout.random.arrays_of_arrays.13
 dEQP-VK.ssbo.layout.random.nested_structs_arrays.0
 dEQP-VK.ssbo.layout.random.nested_structs_arrays.17
-dEQP-VK.ssbo.phys.layout.3*
-dEQP-VK.ssbo.phys.layout.basic_unsized_array*
-dEQP-VK.ssbo.phys.layout.single_struct_array*
+dEQP-VK.ssbo.phys.layout.2.*
+dEQP-VK.ssbo.phys.layout.3.*
+dEQP-VK.ssbo.phys.layout.basic_unsized_array.*
+dEQP-VK.ssbo.phys.layout.random.*
+dEQP-VK.ssbo.phys.layout.single_struct_array.*
+dEQP-VK.ssbo.phys.layout.unsized_struct_array.*
 dEQP-VK.synchronization.basic.timeline_semaphore.chain
 dEQP-VK.synchronization2.basic.timeline_semaphore.chain
 dEQP-VK.texture.explicit_lod.2d.sizes.128x128_linear_linear_mipmap_linear_clamp

@@ -9,6 +9,9 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 -->
 
 <domain name="A5XX_CONTROL_REG" width="32">
+	<reg32 name="REG_WRITE_ADDR" offset="0x010"/>
+	<reg32 name="REG_WRITE" offset="0x011"/>
+
 	<reg64 name="IB1_BASE" offset="0x0b0"/>
 	<reg32 name="IB1_DWORDS" offset="0x0b2"/>
 	<reg64 name="IB2_BASE" offset="0x0b4"/>

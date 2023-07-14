@@ -34,7 +34,7 @@
 
 #include "dri_util.h"
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
 #include "frontend/api.h"

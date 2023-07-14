@@ -160,7 +160,7 @@ util_set_passthrough_vertex_shader(struct cso_context *cso,
       TGSI_SEMANTIC_POSITION,
       TGSI_SEMANTIC_GENERIC
    };
-   static const uint vs_indices[] = {0, 0};
+   static const unsigned vs_indices[] = {0, 0};
    void *vs;
 
    vs = util_make_vertex_passthrough_shader(ctx, 2, vs_attribs, vs_indices,
@@ -334,7 +334,7 @@ tgsi_vs_window_space_position(struct pipe_context *ctx)
 
    /* Fragment shader. */
    fs = util_make_fragment_passthrough_shader(ctx, TGSI_SEMANTIC_GENERIC,
-                                       TGSI_INTERPOLATE_LINEAR, TRUE);
+                                       TGSI_INTERPOLATE_LINEAR, true);
    cso_set_fragment_shader_handle(cso, fs);
 
    /* Vertex shader. */
@@ -653,7 +653,7 @@ test_texture_barrier(struct pipe_context *ctx, bool use_fbfetch,
    if (num_samples > 1) {
       void *fs =
          util_make_fragment_passthrough_shader(ctx, TGSI_SEMANTIC_GENERIC,
-                                               TGSI_INTERPOLATE_LINEAR, TRUE);
+                                               TGSI_INTERPOLATE_LINEAR, true);
       cso_set_fragment_shader_handle(cso, fs);
 
       /* Vertex shader. */

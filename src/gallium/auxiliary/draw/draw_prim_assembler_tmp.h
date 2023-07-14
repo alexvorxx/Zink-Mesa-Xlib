@@ -9,7 +9,7 @@
    /* declare more local vars */                                  \
    const enum mesa_prim prim = input_prims->prim;            \
    const unsigned prim_flags = input_prims->flags;                \
-   const boolean last_vertex_last = !asmblr->draw->rasterizer->flatshade_first;  \
+   const bool last_vertex_last = !asmblr->draw->rasterizer->flatshade_first;  \
    switch (prim) {                                                  \
    case MESA_PRIM_POLYGON:                                          \
       assert(!"unexpected primitive type in prim assembler"); \

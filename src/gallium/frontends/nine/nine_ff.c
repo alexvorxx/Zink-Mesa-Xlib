@@ -171,9 +171,9 @@ static bool nine_ff_fvf_key_comp(const void *key1, const void *key2)
 static void nine_ff_prune_vs(struct NineDevice9 *);
 static void nine_ff_prune_ps(struct NineDevice9 *);
 
-static void nine_ureg_tgsi_dump(struct ureg_program *ureg, boolean override)
+static void nine_ureg_tgsi_dump(struct ureg_program *ureg, bool override)
 {
-    if (debug_get_bool_option("NINE_FF_DUMP", FALSE) || override) {
+    if (debug_get_bool_option("NINE_FF_DUMP", false) || override) {
         const struct tgsi_token *toks = ureg_get_tokens(ureg, NULL);
         tgsi_dump(toks, 0);
         ureg_free_tokens(toks);
@@ -343,9 +343,9 @@ nine_ff_build_vs(struct NineDevice9 *device, struct vs_build_ctx *vs)
     struct ureg_dst AR;
     unsigned i, c;
     unsigned label[32], l = 0;
-    boolean need_aNrm = key->lighting || key->passthrough & (1 << NINE_DECLUSAGE_NORMAL);
-    boolean has_aNrm;
-    boolean need_aVtx = key->lighting || key->fog_mode || key->pointscale || key->ucp;
+    bool need_aNrm = key->lighting || key->passthrough & (1 << NINE_DECLUSAGE_NORMAL);
+    bool has_aNrm;
+    bool need_aVtx = key->lighting || key->fog_mode || key->pointscale || key->ucp;
     const unsigned texcoord_sn = get_texcoord_sn(device->screen);
 
     vs->ureg = ureg;
@@ -354,16 +354,16 @@ nine_ff_build_vs(struct NineDevice9 *device, struct vs_build_ctx *vs)
     for (i = 0; i < 8 * 3; i += 3) {
         switch ((key->tc_gen >> i) & 0x7) {
         case NINED3DTSS_TCI_CAMERASPACENORMAL:
-            need_aNrm = TRUE;
+            need_aNrm = true;
             break;
         case NINED3DTSS_TCI_CAMERASPACEPOSITION:
-            need_aVtx = TRUE;
+            need_aVtx = true;
             break;
         case NINED3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR:
-            need_aVtx = need_aNrm = TRUE;
+            need_aVtx = need_aNrm = true;
             break;
         case NINED3DTSS_TCI_SPHEREMAP:
-            need_aVtx = need_aNrm = TRUE;
+            need_aVtx = need_aNrm = true;
             break;
         default:
             break;
@@ -1087,10 +1087,10 @@ nine_ff_build_vs(struct NineDevice9 *device, struct vs_build_ctx *vs)
     }
 
     if (key->position_t && device->driver_caps.window_space_position_support)
-        ureg_property(ureg, TGSI_PROPERTY_VS_WINDOW_SPACE_POSITION, TRUE);
+        ureg_property(ureg, TGSI_PROPERTY_VS_WINDOW_SPACE_POSITION, true);
 
     ureg_END(ureg);
-    nine_ureg_tgsi_dump(ureg, FALSE);
+    nine_ureg_tgsi_dump(ureg, false);
     return nine_create_shader_with_so_and_destroy(ureg, device->context.pipe, NULL);
 }
 
@@ -1210,7 +1210,7 @@ static uint8_t ps_d3dtop_args_mask(D3DTEXTUREOP top)
     }
 }
 
-static inline boolean
+static inline bool
 is_MOV_no_op(struct ureg_dst dst, struct ureg_src src)
 {
     return !dst.WriteMask ||
@@ -1599,7 +1599,7 @@ nine_ff_build_ps(struct NineDevice9 *device, struct nine_ff_ps_key *key)
     }
 
     ureg_END(ureg);
-    nine_ureg_tgsi_dump(ureg, FALSE);
+    nine_ureg_tgsi_dump(ureg, false);
     return nine_create_shader_with_so_and_destroy(ureg, device->context.pipe, NULL);
 }
 
@@ -1611,8 +1611,8 @@ nine_ff_get_vs(struct NineDevice9 *device)
     struct vs_build_ctx bld;
     struct nine_ff_vs_key key;
     unsigned s, i;
-    boolean has_indexes = false;
-    boolean has_weights = false;
+    bool has_indexes = false;
+    bool has_weights = false;
     int8_t input_texture_coord[8];
 
     assert(sizeof(key) <= sizeof(key.value32));
@@ -2013,7 +2013,7 @@ nine_ff_load_tex_matrices(struct NineDevice9 *device)
         return;
     for (s = 0; s < 8; ++s) {
         if (IS_D3DTS_DIRTY(context, TEXTURE0 + s))
-            nine_d3d_matrix_transpose(&M[32 + s], nine_state_access_transform(&context->ff, D3DTS_TEXTURE0 + s, FALSE));
+            nine_d3d_matrix_transpose(&M[32 + s], nine_state_access_transform(&context->ff, D3DTS_TEXTURE0 + s, false));
     }
 }
 
@@ -2125,7 +2125,7 @@ nine_ff_update(struct NineDevice9 *device)
 }
 
 
-boolean
+bool
 nine_ff_init(struct NineDevice9 *device)
 {
     device->ff.ht_vs = _mesa_hash_table_create(NULL, nine_ff_vs_key_hash,

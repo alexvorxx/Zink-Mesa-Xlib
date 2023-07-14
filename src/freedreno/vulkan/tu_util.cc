@@ -38,6 +38,7 @@ static const struct debug_control tu_debug_options[] = {
    { "bos", TU_DEBUG_BOS },
    { "3d_load", TU_DEBUG_3D_LOAD },
    { "fdm", TU_DEBUG_FDM },
+   { "noconform", TU_DEBUG_NOCONFORM },
    { NULL, 0 }
 };
 
@@ -222,7 +223,8 @@ static void
 tu_tiling_config_update_pipe_layout(struct tu_tiling_config *tiling,
                                     const struct tu_device *dev)
 {
-   const uint32_t max_pipe_count = 32; /* A6xx */
+   const uint32_t max_pipe_count =
+      dev->physical_device->info->num_vsc_pipes;
 
    /* start from 1 tile per pipe */
    tiling->pipe0 = (VkExtent2D) {
@@ -248,7 +250,8 @@ static void
 tu_tiling_config_update_pipes(struct tu_tiling_config *tiling,
                               const struct tu_device *dev)
 {
-   const uint32_t max_pipe_count = 32; /* A6xx */
+   const uint32_t max_pipe_count =
+      dev->physical_device->info->num_vsc_pipes;
    const uint32_t used_pipe_count =
       tiling->pipe_count.width * tiling->pipe_count.height;
    const VkExtent2D last_pipe = {

@@ -456,19 +456,20 @@ h265_pred_weight_table(struct vk_video_h265_slice_params *params,
 
    for (i = 0; i < params->num_ref_idx_l0_active; ++i) {
       if (params->luma_weight_l0_flag[i]) {
-         unsigned delta_luma_weight_l0 = vl_rbsp_se(rbsp);
-         params->luma_weight_l0[i] = (1 << params->luma_log2_weight_denom) + delta_luma_weight_l0;
+         params->delta_luma_weight_l0[i] = vl_rbsp_se(rbsp);
+         params->luma_weight_l0[i] = (1 << params->luma_log2_weight_denom) + params->delta_luma_weight_l0[i];
          params->luma_offset_l0[i] = vl_rbsp_se(rbsp);
       }
 
       if (params->chroma_weight_l0_flag[i]) {
          for (j = 0; j < 2; j++) {
-            unsigned delta_chroma_weight_l0 = vl_rbsp_se(rbsp);
-            unsigned delta_chroma_offset_l0 = vl_rbsp_se(rbsp);
+            params->delta_chroma_weight_l0[i][j] = vl_rbsp_se(rbsp);
+            params->delta_chroma_offset_l0[i][j] = vl_rbsp_se(rbsp);
 
-            params->chroma_weight_l0[i][j] = (1 << params->chroma_log2_weight_denom) + delta_chroma_weight_l0;
-            params->chroma_offset_l0[i][j] = delta_chroma_offset_l0 -
-               ((128 * params->chroma_weight_l0[i][j]) >> params->chroma_log2_weight_denom) + 128;
+            params->chroma_weight_l0[i][j] =
+               (1 << params->chroma_log2_weight_denom) + params->delta_chroma_weight_l0[i][j];
+            params->chroma_offset_l0[i][j] = CLAMP(params->delta_chroma_offset_l0[i][j] -
+               ((128 * params->chroma_weight_l0[i][j]) >> params->chroma_log2_weight_denom) + 128, -128, 127);
          }
       } else {
          for (j = 0; j < 2; j++) {
@@ -497,19 +498,21 @@ h265_pred_weight_table(struct vk_video_h265_slice_params *params,
 
       for (i = 0; i < params->num_ref_idx_l1_active; ++i) {
          if (params->luma_weight_l1_flag[i]) {
-            unsigned delta_luma_weight_l1 = vl_rbsp_se(rbsp);
-            params->luma_weight_l1[i] = (1 << params->luma_log2_weight_denom) + delta_luma_weight_l1;
+            params->delta_luma_weight_l1[i] = vl_rbsp_se(rbsp);
+            params->luma_weight_l1[i] =
+               (1 << params->luma_log2_weight_denom) + params->delta_luma_weight_l1[i];
             params->luma_offset_l1[i] = vl_rbsp_se(rbsp);
          }
 
          if (params->chroma_weight_l1_flag[i]) {
             for (j = 0; j < 2; j++) {
-               unsigned delta_chroma_weight_l1 = vl_rbsp_se(rbsp);
-               unsigned delta_chroma_offset_l1 = vl_rbsp_se(rbsp);
+               params->delta_chroma_weight_l1[i][j] = vl_rbsp_se(rbsp);
+               params->delta_chroma_offset_l1[i][j] = vl_rbsp_se(rbsp);
 
-               params->chroma_weight_l1[i][j] = (1 << params->chroma_log2_weight_denom) + delta_chroma_weight_l1;
-               params->chroma_offset_l1[i][j] = delta_chroma_offset_l1 -
-                  ((128 * params->chroma_weight_l1[i][j]) >> params->chroma_log2_weight_denom) + 128;
+               params->chroma_weight_l1[i][j] =
+                  (1 << params->chroma_log2_weight_denom) + params->delta_chroma_weight_l1[i][j];
+               params->chroma_offset_l1[i][j] = CLAMP(params->delta_chroma_offset_l1[i][j] -
+                  ((128 * params->chroma_weight_l1[i][j]) >> params->chroma_log2_weight_denom) + 128, -128, 127);
             }
          } else {
             for (j = 0; j < 2; j++) {

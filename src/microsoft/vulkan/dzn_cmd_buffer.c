@@ -2753,11 +2753,11 @@ dzn_cmd_buffer_blit_prepare_dst_view(struct dzn_cmd_buffer *cmdbuf,
    if (ds) {
       D3D12_DEPTH_STENCIL_VIEW_DESC desc = dzn_image_get_dsv_desc(img, &range, 0);
       D3D12_CPU_DESCRIPTOR_HANDLE handle = dzn_cmd_buffer_get_dsv(cmdbuf, img, &desc);
-      ID3D12GraphicsCommandList1_OMSetRenderTargets(cmdbuf->cmdlist, 0, NULL, TRUE, &handle);
+      ID3D12GraphicsCommandList1_OMSetRenderTargets(cmdbuf->cmdlist, 0, NULL, true, &handle);
    } else {
       D3D12_RENDER_TARGET_VIEW_DESC desc = dzn_image_get_rtv_desc(img, &range, 0);
       D3D12_CPU_DESCRIPTOR_HANDLE handle = dzn_cmd_buffer_get_rtv(cmdbuf, img, &desc);
-      ID3D12GraphicsCommandList1_OMSetRenderTargets(cmdbuf->cmdlist, 1, &handle, FALSE, NULL);
+      ID3D12GraphicsCommandList1_OMSetRenderTargets(cmdbuf->cmdlist, 1, &handle, false, NULL);
    }
 }
 
@@ -4837,7 +4837,7 @@ dzn_CmdBeginRendering(VkCommandBuffer commandBuffer,
    ID3D12GraphicsCommandList1_OMSetRenderTargets(cmdbuf->cmdlist,
                                                  pRenderingInfo->colorAttachmentCount,
                                                  pRenderingInfo->colorAttachmentCount ? rt_handles : NULL,
-                                                 FALSE, zs_handle.ptr ? &zs_handle : NULL);
+                                                 false, zs_handle.ptr ? &zs_handle : NULL);
 
    for (uint32_t a = 0; a < pRenderingInfo->colorAttachmentCount; a++) {
       const VkRenderingAttachmentInfo *att = &pRenderingInfo->pColorAttachments[a];

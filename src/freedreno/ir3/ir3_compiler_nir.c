@@ -1992,6 +1992,63 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
    const unsigned primitive_map = const_state->offsets.primitive_map * 4;
 
    switch (intr->intrinsic) {
+   case nir_intrinsic_decl_reg:
+      /* There's logically nothing to do, but this has a destination in NIR so
+       * plug in something... It will get DCE'd.
+       */
+      dst[0] = create_immed(ctx->block, 0);
+      break;
+
+   case nir_intrinsic_load_reg:
+   case nir_intrinsic_load_reg_indirect: {
+      struct ir3_array *arr = ir3_get_array(ctx, intr->src[0].ssa);
+      struct ir3_instruction *addr = NULL;
+
+      if (intr->intrinsic == nir_intrinsic_load_reg_indirect) {
+         addr = ir3_get_addr0(ctx, ir3_get_src(ctx, &intr->src[1])[0],
+                              dest_components);
+      }
+
+      ASSERTED nir_intrinsic_instr *decl = nir_reg_get_decl(intr->src[0].ssa);
+      assert(dest_components == nir_intrinsic_num_components(decl));
+
+      for (unsigned i = 0; i < dest_components; i++) {
+         unsigned n = nir_intrinsic_base(intr) * dest_components + i;
+         compile_assert(ctx, n < arr->length);
+         dst[i] = ir3_create_array_load(ctx, arr, n, addr);
+      }
+
+      break;
+   }
+
+   case nir_intrinsic_store_reg:
+   case nir_intrinsic_store_reg_indirect: {
+      struct ir3_array *arr = ir3_get_array(ctx, intr->src[1].ssa);
+      unsigned num_components = nir_src_num_components(intr->src[0]);
+      struct ir3_instruction *addr = NULL;
+
+      ASSERTED nir_intrinsic_instr *decl = nir_reg_get_decl(intr->src[1].ssa);
+      assert(num_components == nir_intrinsic_num_components(decl));
+
+      struct ir3_instruction *const *value = ir3_get_src(ctx, &intr->src[0]);
+
+      if (intr->intrinsic == nir_intrinsic_store_reg_indirect) {
+         addr = ir3_get_addr0(ctx, ir3_get_src(ctx, &intr->src[2])[0],
+                              num_components);
+      }
+
+      u_foreach_bit(i, nir_intrinsic_write_mask(intr)) {
+         assert(i < num_components);
+
+         unsigned n = nir_intrinsic_base(intr) * num_components + i;
+         compile_assert(ctx, n < arr->length);
+         if (value[i])
+            ir3_create_array_store(ctx, arr, n, value[i], addr);
+      }
+
+      break;
+   }
+
    case nir_intrinsic_load_uniform:
       idx = nir_intrinsic_base(intr);
       if (nir_src_is_const(intr->src[0])) {
@@ -4377,8 +4434,8 @@ emit_instructions(struct ir3_context *ctx)
    ctx->so->shared_size = ctx->s->info.shared_size;
 
    /* NOTE: need to do something more clever when we support >1 fxn */
-   nir_foreach_register (reg, &fxn->registers) {
-      ir3_declare_array(ctx, reg);
+   nir_foreach_reg_decl (decl, fxn) {
+      ir3_declare_array(ctx, decl);
    }
 
    if (ctx->so->type == MESA_SHADER_TESS_CTRL &&

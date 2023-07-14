@@ -386,7 +386,7 @@ static void bind_vs_pos_only(struct blitter_context_priv *ctx,
       struct pipe_stream_output_info so;
       static const enum tgsi_semantic semantic_names[] =
          { TGSI_SEMANTIC_POSITION };
-      const uint semantic_indices[] = { 0 };
+      const unsigned semantic_indices[] = { 0 };
 
       memset(&so, 0, sizeof(so));
       so.num_outputs = 1;
@@ -410,7 +410,7 @@ static void *get_vs_passthrough_pos_generic(struct blitter_context *blitter)
    if (!ctx->vs) {
       static const enum tgsi_semantic semantic_names[] =
          { TGSI_SEMANTIC_POSITION, TGSI_SEMANTIC_GENERIC };
-      const uint semantic_indices[] = { 0, 0 };
+      const unsigned semantic_indices[] = { 0, 0 };
       ctx->vs =
          util_make_vertex_passthrough_shader(pipe, 2, semantic_names,
                                              semantic_indices, false);
@@ -426,7 +426,7 @@ static void *get_vs_passthrough_pos(struct blitter_context *blitter)
    if (!ctx->vs_nogeneric) {
       static const enum tgsi_semantic semantic_names[] =
          { TGSI_SEMANTIC_POSITION };
-      const uint semantic_indices[] = { 0 };
+      const unsigned semantic_indices[] = { 0 };
 
       ctx->vs_nogeneric =
          util_make_vertex_passthrough_shader(pipe, 1,
@@ -743,7 +743,7 @@ void util_blitter_restore_fragment_states(struct blitter_context *blitter)
 
 static void blitter_check_saved_fb_state(ASSERTED struct blitter_context_priv *ctx)
 {
-   assert(ctx->base.saved_fb_state.nr_cbufs != (ubyte) ~0);
+   assert(ctx->base.saved_fb_state.nr_cbufs != (uint8_t) ~0);
 }
 
 static void blitter_disable_render_cond(struct blitter_context_priv *ctx)
@@ -2388,6 +2388,7 @@ void util_blitter_clear_render_target(struct blitter_context *blitter,
    struct pipe_framebuffer_state fb_state;
    bool msaa;
    unsigned num_layers;
+   blitter_get_vs_func get_vs;
 
    assert(dstsurf->texture);
    if (!dstsurf->texture)
@@ -2419,23 +2420,23 @@ void util_blitter_clear_render_target(struct blitter_context *blitter,
    msaa = util_framebuffer_get_num_samples(&fb_state) > 1;
 
    blitter_set_dst_dimensions(ctx, dstsurf->width, dstsurf->height);
+   blitter_set_common_draw_rect_state(ctx, false, msaa);
 
    union blitter_attrib attrib;
    memcpy(attrib.color, color->ui, sizeof(color->ui));
 
    num_layers = dstsurf->u.tex.last_layer - dstsurf->u.tex.first_layer + 1;
+
    if (num_layers > 1 && ctx->has_layered) {
-      blitter_set_common_draw_rect_state(ctx, false, msaa);
-      blitter->draw_rectangle(blitter, ctx->velem_state, get_vs_layered,
-                              dstx, dsty, dstx+width, dsty+height, 0,
-                              num_layers, UTIL_BLITTER_ATTRIB_COLOR, &attrib);
+      get_vs = get_vs_layered;
    } else {
-      blitter_set_common_draw_rect_state(ctx, false, msaa);
-      blitter->draw_rectangle(blitter, ctx->velem_state,
-                              get_vs_passthrough_pos_generic,
-                              dstx, dsty, dstx+width, dsty+height, 0,
-                              1, UTIL_BLITTER_ATTRIB_COLOR, &attrib);
+      get_vs = get_vs_passthrough_pos_generic;
+      num_layers = 1;
    }
+
+   blitter->draw_rectangle(blitter, ctx->velem_state, get_vs,
+                           dstx, dsty, dstx+width, dsty+height, 0,
+                           num_layers, UTIL_BLITTER_ATTRIB_COLOR, &attrib);
 
    util_blitter_restore_vertex_states(blitter);
    util_blitter_restore_fragment_states(blitter);
@@ -2633,10 +2634,7 @@ void util_blitter_clear_buffer(struct blitter_context *blitter,
    blitter_check_saved_vertex_states(ctx);
    blitter_disable_render_cond(ctx);
 
-   if (ctx->base.saved_vertex_buffer.buffer.resource) {
-      pipe->set_vertex_buffers(pipe, ctx->base.vb_slot, 1, 0, false, &vb);
-   }
-
+   pipe->set_vertex_buffers(pipe, ctx->base.vb_slot, 1, 0, false, &vb);
    pipe->bind_vertex_elements_state(pipe,
                                     ctx->velem_state_readbuf[num_channels-1]);
    bind_vs_pos_only(ctx, num_channels);

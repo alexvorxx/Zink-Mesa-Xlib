@@ -132,7 +132,7 @@ void pvr_winsys_helper_heap_free(struct pvr_winsys_vma *const vma)
    p_atomic_dec(&heap->ref_count);
 }
 
-/* Note: the function assumes the heap allocation in the reserved memory area
+/* Note: the function assumes the heap allocation in the carveout memory area
  * can be freed with the regular heap allocation free function. The free
  * function gets called on mapping failure.
  */
@@ -219,8 +219,8 @@ VkResult pvr_winsys_helper_allocate_static_memory(
    result = pvr_buffer_create_and_map(ws,
                                       heap_alloc_reserved,
                                       general_heap,
-                                      general_heap->reserved_addr,
-                                      general_heap->reserved_size,
+                                      general_heap->static_data_carveout_addr,
+                                      general_heap->static_data_carveout_size,
                                       general_heap->page_size,
                                       &general_vma);
    if (result != VK_SUCCESS)
@@ -229,8 +229,8 @@ VkResult pvr_winsys_helper_allocate_static_memory(
    result = pvr_buffer_create_and_map(ws,
                                       heap_alloc_reserved,
                                       pds_heap,
-                                      pds_heap->reserved_addr,
-                                      pds_heap->reserved_size,
+                                      pds_heap->static_data_carveout_addr,
+                                      pds_heap->static_data_carveout_size,
                                       pds_heap->page_size,
                                       &pds_vma);
    if (result != VK_SUCCESS)
@@ -239,8 +239,8 @@ VkResult pvr_winsys_helper_allocate_static_memory(
    result = pvr_buffer_create_and_map(ws,
                                       heap_alloc_reserved,
                                       usc_heap,
-                                      usc_heap->reserved_addr,
-                                      pds_heap->reserved_size,
+                                      usc_heap->static_data_carveout_addr,
+                                      pds_heap->static_data_carveout_size,
                                       usc_heap->page_size,
                                       &usc_vma);
    if (result != VK_SUCCESS)

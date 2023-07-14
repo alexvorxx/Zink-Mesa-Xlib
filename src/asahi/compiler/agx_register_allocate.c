@@ -1192,6 +1192,11 @@ agx_ra(agx_context *ctx)
       }
    }
 
+   agx_foreach_block(ctx, block) {
+      free(block->ssa_to_reg_out);
+      block->ssa_to_reg_out = NULL;
+   }
+
    free(src_to_collect);
    free(ssa_to_reg);
    free(ncomps);

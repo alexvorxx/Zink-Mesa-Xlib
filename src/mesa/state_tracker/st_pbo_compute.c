@@ -366,11 +366,11 @@ get_buffer_offset(nir_builder *b, nir_ssa_def *coord, struct pbo_shader_data *sd
    bytes_per_row = nir_bcsel(b, nir_ult_imm(b, sd->alignment, 2),
                              bytes_per_row,
                              nir_iand(b,
-                                      nir_isub(b, nir_iadd(b, bytes_per_row, sd->alignment), nir_imm_int(b, 1)),
-                                      nir_inot(b, nir_isub(b, sd->alignment, nir_imm_int(b, 1)))));
+                                      nir_iadd_imm(b, nir_iadd(b, bytes_per_row, sd->alignment), -1),
+                                      nir_inot(b, nir_iadd_imm(b, sd->alignment, -1))));
    nir_ssa_def *bytes_per_image = nir_imul(b, bytes_per_row, nir_channel(b, sd->range, 1));
    bytes_per_row = nir_bcsel(b, sd->invert,
-                             nir_isub(b, nir_imm_int(b, 0), bytes_per_row),
+                             nir_ineg(b, bytes_per_row),
                              bytes_per_row);
    return nir_iadd(b,
                    nir_imul(b, nir_channel(b, coord, 0), sd->blocksize),
@@ -407,7 +407,7 @@ swap2(nir_builder *b, nir_ssa_def *src)
    /* dst[i] = (src[i] >> 8) | ((src[i] << 8) & 0xff00); */
    return nir_ior(b,
                   nir_ushr_imm(b, src, 8),
-                  nir_iand_imm(b, nir_ishl(b, src, nir_imm_int(b, 8)), 0xff00));
+                  nir_iand_imm(b, nir_ishl_imm(b, src, 8), 0xff00));
 }
 
 static nir_ssa_def *
@@ -419,12 +419,12 @@ swap4(nir_builder *b, nir_ssa_def *src)
                   nir_ushr_imm(b, src, 24),
                   nir_ior(b,
                           /* ((b >> 8) & 0xff00) */
-                          nir_iand(b, nir_ushr_imm(b, src, 8), nir_imm_int(b, 0xff00)),
+                          nir_iand_imm(b, nir_ushr_imm(b, src, 8), 0xff00),
                           nir_ior(b,
                                   /* ((b << 8) & 0xff0000) */
-                                  nir_iand(b, nir_ishl(b, src, nir_imm_int(b, 8)), nir_imm_int(b, 0xff0000)),
+                                  nir_iand_imm(b, nir_ishl_imm(b, src, 8), 0xff0000),
                                   /* ((b << 24) & 0xff000000) */
-                                  nir_iand(b, nir_ishl(b, src, nir_imm_int(b, 24)), nir_imm_int(b, 0xff000000)))));
+                                  nir_iand_imm(b, nir_ishl_imm(b, src, 24), 0xff000000))));
 }
 
 /* explode the cf to handle channel counts in the shader */
@@ -608,7 +608,7 @@ do_shader_conversion(nir_builder *b, nir_ssa_def *pixel,
             nir_push_if(b, sd->clamp_uint); //uint -> sint
                CONVERT_SWAP_WRITE(nir_umin(b, pixel, signed_bit_mask));
             nir_push_else(b, NULL);
-               CONVERT_SWAP_WRITE(nir_imin_imax(b, pixel, signed_bit_mask, nir_isub(b, nir_ineg(b, signed_bit_mask), nir_imm_int(b, 1))));
+               CONVERT_SWAP_WRITE(nir_imin_imax(b, pixel, signed_bit_mask, nir_iadd_imm(b, nir_ineg(b, signed_bit_mask), -1)));
             nir_pop_if(b, NULL);
          nir_push_else(b, NULL);
             nir_push_if(b, sd->clamp_uint); //uint

@@ -60,9 +60,7 @@ lower_line_smooth_func(struct lower_line_smooth_state *state,
 {
         bool progress = false;
 
-        nir_builder b;
-
-        nir_builder_init(&b, impl);
+        nir_builder b = nir_builder_create(impl);
 
         nir_foreach_block(block, impl) {
                 nir_foreach_instr_safe(instr, block) {
@@ -90,11 +88,7 @@ static void
 initialise_coverage_var(struct lower_line_smooth_state *state,
                         nir_function_impl *impl)
 {
-        nir_builder b;
-
-        nir_builder_init(&b, impl);
-
-        b.cursor = nir_before_block(nir_start_block(impl));
+        nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
 
         nir_ssa_def *line_width = nir_load_line_width(&b);
 
@@ -157,18 +151,18 @@ v3d_nir_lower_line_smooth(nir_shader *s)
                 .coverage = make_coverage_var(s),
         };
 
-        nir_foreach_function(function, s) {
+        nir_foreach_function_with_impl(function, impl, s) {
                 if (function->is_entrypoint)
-                        initialise_coverage_var(&state, function->impl);
+                        initialise_coverage_var(&state, impl);
 
-                progress |= lower_line_smooth_func(&state, function->impl);
+                progress |= lower_line_smooth_func(&state, impl);
 
                 if (progress) {
-                        nir_metadata_preserve(function->impl,
+                        nir_metadata_preserve(impl,
                                               nir_metadata_block_index |
                                               nir_metadata_dominance);
                 } else {
-                        nir_metadata_preserve(function->impl, nir_metadata_all);
+                        nir_metadata_preserve(impl, nir_metadata_all);
                 }
         }
 

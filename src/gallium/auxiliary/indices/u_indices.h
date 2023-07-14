@@ -25,7 +25,7 @@
 #ifndef U_INDICES_H
 #define U_INDICES_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_defines.h"
 
 /* First/last provoking vertex */

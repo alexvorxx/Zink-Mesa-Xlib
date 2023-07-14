@@ -3,8 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "compiler/glsl/list.h"
 #include "compiler/nir/nir_builder.h"
 #include "agx_compiler.h"
+#include "nir.h"
+#include "nir_builder_opcodes.h"
 #include "nir_intrinsics.h"
 
 /*
@@ -81,7 +84,7 @@ lower_sample_mask_to_zs(nir_builder *b, nir_instr *instr, UNUSED void *data)
     */
    if (intr->intrinsic == nir_intrinsic_store_zs_agx && !depth_written) {
       /* Load the current depth at this pixel */
-      nir_ssa_def *z = nir_channel(b, nir_load_frag_coord(b), 2);
+      nir_ssa_def *z = nir_load_frag_coord_zw(b, .component = 2);
 
       /* Write it out from this store_zs */
       nir_intrinsic_set_base(intr, nir_intrinsic_base(intr) | BASE_Z);
@@ -124,6 +127,32 @@ lower_discard_to_sample_mask_0(nir_builder *b, nir_instr *instr,
    return true;
 }
 
+static nir_intrinsic_instr *
+last_discard_in_block(nir_block *block)
+{
+   nir_foreach_instr_reverse(instr, block) {
+      if (instr->type != nir_instr_type_intrinsic)
+         continue;
+
+      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+      if (intr->intrinsic == nir_intrinsic_discard_agx)
+         return intr;
+   }
+
+   return NULL;
+}
+
+static bool
+cf_node_contains_discard(nir_cf_node *node)
+{
+   nir_foreach_block_in_cf_node(block, node) {
+      if (last_discard_in_block(block))
+         return true;
+   }
+
+   return false;
+}
+
 bool
 agx_nir_lower_sample_mask(nir_shader *shader, unsigned nr_samples)
 {
@@ -146,33 +175,53 @@ agx_nir_lower_sample_mask(nir_shader *shader, unsigned nr_samples)
       return true;
    }
 
-   /* Pessimistic lowering: force late depth/stencil test. TODO: Optimize. */
+   /* We want to run depth/stencil tests as early as possible, but we have to
+    * wait until after the last discard. We find the last discard and
+    * execute depth/stencil tests in the first unconditional block after (if in
+    * conditional control flow), or fuse depth/stencil tests into the sample
+    * instruction (if in unconditional control flow).
+    *
+    * To do so, we walk the root control flow list backwards, looking for the
+    * earliest unconditionally executed instruction after all discard.
+    */
+   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+   nir_builder b = nir_builder_create(impl);
+   foreach_list_typed_reverse(nir_cf_node, node, node, &impl->body) {
+      if (node->type == nir_cf_node_block) {
+         /* Unconditionally executed block */
+         nir_block *block = nir_cf_node_as_block(node);
+         nir_intrinsic_instr *intr = last_discard_in_block(block);
+
+         if (intr) {
+            /* Last discard is executed unconditionally, so fuse tests. */
+            b.cursor = nir_before_instr(&intr->instr);
+
+            nir_ssa_def *all_samples = nir_imm_intN_t(&b, ALL_SAMPLES, 16);
+            nir_ssa_def *killed = intr->src[0].ssa;
+            nir_ssa_def *live = nir_ixor(&b, killed, all_samples);
+
+            nir_sample_mask_agx(&b, all_samples, live);
+            nir_instr_remove(&intr->instr);
+            break;
+         } else {
+            /* Set cursor for insertion due to a preceding conditionally
+             * executed discard.
+             */
+            b.cursor = nir_before_block_after_phis(block);
+         }
+      } else if (cf_node_contains_discard(node)) {
+         /* Conditionally executed block contains the last discard. Test
+          * depth/stencil for remaining samples in unconditional code after.
+          */
+         nir_sample_mask_agx(&b, nir_imm_intN_t(&b, ALL_SAMPLES, 16),
+                             nir_imm_intN_t(&b, ALL_SAMPLES, 16));
+         break;
+      }
+   }
+
    nir_shader_instructions_pass(
       shader, lower_discard_to_sample_mask_0,
       nir_metadata_block_index | nir_metadata_dominance, NULL);
 
-   /* nir_lower_io_to_temporaries ensures that stores are in the last block. */
-   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-   nir_block *block = nir_impl_last_block(impl);
-
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   b.cursor = nir_after_block(block);
-   nir_foreach_instr(instr, block) {
-      if (instr->type != nir_instr_type_intrinsic)
-         continue;
-
-      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-      if (intr->intrinsic != nir_intrinsic_store_local_pixel_agx)
-         continue;
-
-      b.cursor = nir_before_instr(instr);
-      break;
-   }
-
-   /* Run depth/stencil tests for all remaining samples */
-   nir_sample_mask_agx(&b, nir_imm_intN_t(&b, ALL_SAMPLES, 16),
-                       nir_imm_intN_t(&b, ALL_SAMPLES, 16));
    return true;
 }

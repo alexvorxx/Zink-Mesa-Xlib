@@ -64,7 +64,7 @@ lower_point_smooth(nir_builder *b, nir_instr *instr, UNUSED void *_state)
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_ssa_def *coord = nir_build_load_point_coord_maybe_flipped(b);
+   nir_ssa_def *coord = nir_load_point_coord_maybe_flipped(b);
 
    /* point_size = 1.0 / dFdx(gl_PointCoord.x); */
    nir_ssa_def *point_size = nir_frcp(b, nir_fddx(b, nir_channel(b, coord, 0)));

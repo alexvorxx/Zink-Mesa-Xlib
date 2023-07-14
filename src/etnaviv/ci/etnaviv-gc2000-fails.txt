@@ -167,7 +167,6 @@ shaders@glsl-kwin-blur-2,Crash
 shaders@glsl-max-varyings,Crash
 shaders@glsl-max-varyings >max_varying_components,Crash
 shaders@glsl-novertexdata,Fail
-shaders@glsl-routing,Crash
 shaders@glsl-uniform-interstage-limits@subdivide 5- statechanges,Timeout
 shaders@glsl-uniform-interstage-limits@subdivide 5,Timeout
 shaders@glsl-vs-point-size,Fail
@@ -192,10 +191,6 @@ spec@arb_es2_compatibility@texwrap formats bordercolor-swizzled@GL_RGB565- swizz
 spec@arb_fragment_program@fp-fragment-position,Crash
 spec@arb_fragment_program@fp-indirections2,Fail
 spec@arb_fragment_program@sparse-samplers,Crash
-
-# MESA: error: etna_link_shader:1302: Semantic value not found in vertex shader outputs
-# ati_fragment_shader-render-ops: ../src/gallium/drivers/etnaviv/etnaviv_shader.c:141: etna_link_shaders: Assertion `0' failed.
-spec@ati_fragment_shader@ati_fragment_shader-render-ops,Crash
 
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_depth24_stencil8,Fail
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_stencil_index16,Fail
@@ -458,18 +453,14 @@ spec@glsl-1.10@execution@clipping@clip-plane-transformation pos_clipvert,Fail
 spec@glsl-1.10@execution@glsl-fs-convolution-2,Fail
 spec@glsl-1.10@execution@glsl-fs-uniform-array-7,Fail
 spec@glsl-1.10@execution@glsl-vs-large-uniform-array,Fail
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-fixed,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-none,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-vertex,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-smooth-fixed,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-smooth-none,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-smooth-vertex,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-fixed,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-none,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-vertex,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-smooth-fixed,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-smooth-none,Crash
-spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-smooth-vertex,Crash
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-fixed,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-none,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-flat-vertex,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backsecondarycolor-smooth-vertex,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-fixed,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-none,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-vertex,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-smooth-vertex,Fail
 spec@glsl-1.10@execution@interpolation@interpolation-none-gl_frontcolor-flat-fixed,Fail
 spec@glsl-1.10@execution@interpolation@interpolation-none-gl_frontcolor-flat-none,Fail
 spec@glsl-1.10@execution@interpolation@interpolation-none-gl_frontcolor-flat-vertex,Fail
@@ -532,7 +523,9 @@ spec@glsl-1.20@execution@clipping@vs-clip-vertex-primitives,Fail
 spec@glsl-1.20@execution@const-builtin@glsl-const-builtin-normalize,Fail
 spec@glsl-1.20@execution@fs-nan-builtin-max,Fail
 spec@glsl-1.20@execution@fs-nan-builtin-min,Fail
-spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-256-elements,Crash
+spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-064-elements,Fail
+spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-128-elements,Fail
+spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-256-elements,Fail
 spec@glsl-1.20@execution@out-parameter-indexing@fs-inout-index-two-level,Fail
 spec@glsl-1.20@execution@tex-miplevel-selection gl2:texture(bias) 3d,Fail
 spec@glsl-1.20@execution@variable-indexing@fs-temp-array-mat4-col-rd,Fail
@@ -566,10 +559,6 @@ spec@nv_copy_image@nv_copy_image-simple --tex-to-tex,Fail
 spec@nv_fog_distance@simple draw - gl_eye_plane,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-lines,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-triangles,Fail
-
-# MESA: error: etna_link_shader:1302: Semantic value not found in vertex shader outputs
-# nv_texture_env_combine4-combine: ../src/gallium/drivers/etnaviv/etnaviv_shader.c:141: etna_link_shaders: Assertion `0' failed.
-spec@nv_texture_env_combine4@nv_texture_env_combine4-combine,Crash
 
 # segfault
 spec@sgis_generate_mipmap@gen-nonzero-unit,Crash
@@ -2037,20 +2026,12 @@ spec@!opengl 2.0@gl-2.0-edgeflag,Fail
 spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Fail
 spec@!opengl 2.0@gl-2.0-two-sided-stencil,Fail
 spec@!opengl 2.0@occlusion-query-discard,Fail
-spec@!opengl 2.0@vertex-program-two-side back2,Crash
-spec@!opengl 2.0@vertex-program-two-side back back2,Crash
-spec@!opengl 2.0@vertex-program-two-side back,Crash
-spec@!opengl 2.0@vertex-program-two-side back front2 back2,Crash
-spec@!opengl 2.0@vertex-program-two-side back front2,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled back2,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled back back2,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled back,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled back front2 back2,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled back front2,Crash
+spec@!opengl 2.0@vertex-program-two-side enabled back front2 back2,Fail
+spec@!opengl 2.0@vertex-program-two-side enabled back front2 back2@vs and fs,Fail
+spec@!opengl 2.0@vertex-program-two-side enabled front back back2,Fail
+spec@!opengl 2.0@vertex-program-two-side enabled front back back2@vs and fs,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front2 back2,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front2 back2@vs and fs,Fail
-spec@!opengl 2.0@vertex-program-two-side enabled front back2,Crash
-spec@!opengl 2.0@vertex-program-two-side enabled front back back2,Crash
 spec@!opengl 2.0@vertex-program-two-side enabled front back,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front back front2 back2,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front back front2 back2@vs and fs,Fail
@@ -2059,8 +2040,8 @@ spec@!opengl 2.0@vertex-program-two-side enabled front back front2@vs and fs,Fai
 spec@!opengl 2.0@vertex-program-two-side enabled front back@vs and fs,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front front2 back2,Fail
 spec@!opengl 2.0@vertex-program-two-side enabled front front2 back2@vs and fs,Fail
-spec@!opengl 2.0@vertex-program-two-side front back2,Crash
-spec@!opengl 2.0@vertex-program-two-side front back back2,Crash
+spec@!opengl 2.0@vertex-program-two-side front back2,Fail
+spec@!opengl 2.0@vertex-program-two-side front back2@vs and fs,Fail
 spec@!opengl 2.0@vs-point_size-zero,Fail
 spec@!opengl 2.1@pbo,Fail
 spec@!opengl 2.1@pbo@test_polygon_stip,Fail

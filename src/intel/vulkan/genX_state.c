@@ -602,6 +602,24 @@ init_compute_queue_state(struct anv_queue *queue)
 
    genX(emit_pipeline_select)(&batch, GPGPU);
 
+#if GFX_VER == 12
+   if (queue->device->info->has_aux_map) {
+      uint64_t aux_base_addr =
+         intel_aux_map_get_base(queue->device->aux_map_ctx);
+      assert(aux_base_addr % (32 * 1024) == 0);
+      anv_batch_emit(&batch, GENX(MI_LOAD_REGISTER_IMM), lri) {
+         lri.RegisterOffset = GENX(COMPCS0_AUX_TABLE_BASE_ADDR_num);
+         lri.DataDWord = aux_base_addr & 0xffffffff;
+      }
+      anv_batch_emit(&batch, GENX(MI_LOAD_REGISTER_IMM), lri) {
+         lri.RegisterOffset = GENX(COMPCS0_AUX_TABLE_BASE_ADDR_num) + 4;
+         lri.DataDWord = aux_base_addr >> 32;
+      }
+   }
+#else
+   assert(!queue->device->info->has_aux_map);
+#endif
+
    init_common_queue_state(queue, &batch);
 
    anv_batch_emit(&batch, GENX(MI_BATCH_BUFFER_END), bbe);

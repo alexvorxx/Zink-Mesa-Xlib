@@ -32,7 +32,7 @@
 #ifndef _RTASM_EXECMEM_H_
 #define _RTASM_EXECMEM_H_
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 
 
 extern void *

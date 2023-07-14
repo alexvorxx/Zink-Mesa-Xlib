@@ -15,4 +15,4 @@ spec@!opengl 1.0@depth-clear-precision-check
 spec@arb_point_parameters@arb_point_parameters-point-attenuation
 
 # not a flake not an error ... hmmm
-spec@glsl-1.20@execution@tex-miplevel-*
+spec@glsl-1.20@execution@tex-miplevel-.*

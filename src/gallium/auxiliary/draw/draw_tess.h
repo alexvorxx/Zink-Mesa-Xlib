@@ -117,7 +117,7 @@ int draw_tess_eval_shader_run(struct draw_tess_eval_shader *shader,
                               const struct tgsi_shader_info *input_info,
                               struct draw_vertex_info *output_verts,
                               struct draw_prim_info *output_prims,
-                              ushort **elts_out);
+                              uint16_t **elts_out);
 
 #ifdef DRAW_LLVM_AVAILABLE
 void draw_tcs_set_current_variant(struct draw_tess_ctrl_shader *shader,

@@ -18,6 +18,12 @@ You can re-format the code for the components that have opted-in to the
 formatting enforcement (listed in ``.clang-format-include``) by simply
 running ``ninja -C build/ clang-format``.
 
+Since mass-reformatting commits can be an annoying extra jump to go
+through when looking at ``git blame``, you can configure it to ignore
+them by running::
+
+  git config blame.ignoreRevsFile .git-blame-ignore-revs
+
 Most code editors also support automatically formatting code as you
 write it; check your editor or its pluggins to see how to enable this.
 
@@ -92,7 +98,7 @@ commit`` by adding the following in your ``.git/hooks/pre-commit``:
 .. code:: sh
 
    shopt -s globstar
-   git clang-format $upstream -- $(grep -oE '[^#]' .clang-format-include)
+   git clang-format $upstream -- $(grep -E '^[^#]' .clang-format-include)
    # replace $upstream with the name of the remote tracking upstream mesa
    # if you don't know, it's probably `origin`
 

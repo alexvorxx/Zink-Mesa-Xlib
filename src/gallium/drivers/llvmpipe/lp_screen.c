@@ -230,7 +230,7 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 1;
    /* Adressing that many 64bpp texels fits in an i32 so this is a reasonable value */
    case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
-      return 134217728;
+      return LP_MAX_TEXEL_BUFFER_ELEMENTS;
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
       return 16;
    case PIPE_CAP_TEXTURE_TRANSFER_MODES:
@@ -296,8 +296,6 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_CULL_DISTANCE:
       return 1;
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
-      return 1;
-   case PIPE_CAP_CLEAR_TEXTURE:
       return 1;
    case PIPE_CAP_MAX_VARYINGS:
       return 32;
@@ -401,12 +399,12 @@ llvmpipe_get_shader_param(struct pipe_screen *screen,
           * support vertex shader texture lookups when LLVM is enabled in
           * the draw module.
           */
-         if (debug_get_bool_option("DRAW_USE_LLVM", TRUE))
+         if (debug_get_bool_option("DRAW_USE_LLVM", true))
             return PIPE_MAX_SAMPLERS;
          else
             return 0;
       case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
-         if (debug_get_bool_option("DRAW_USE_LLVM", TRUE))
+         if (debug_get_bool_option("DRAW_USE_LLVM", true))
             return PIPE_MAX_SHADER_SAMPLER_VIEWS;
          else
             return 0;
@@ -531,10 +529,16 @@ llvmpipe_get_compute_param(struct pipe_screen *_screen,
       return sizeof(uint32_t);
    case PIPE_COMPUTE_CAP_MAX_VARIABLE_THREADS_PER_BLOCK:
       return 0;
-   case PIPE_COMPUTE_CAP_SUBGROUP_SIZE:
+   case PIPE_COMPUTE_CAP_SUBGROUP_SIZES:
       if (ret) {
          uint32_t *subgroup_size = ret;
-         *subgroup_size = 32;
+         *subgroup_size = lp_native_vector_width / 32;
+      }
+      return sizeof(uint32_t);
+   case PIPE_COMPUTE_CAP_MAX_SUBGROUPS:
+      if (ret) {
+         uint32_t *subgroup_size = ret;
+         *subgroup_size = 1024 / (lp_native_vector_width / 32);
       }
       return sizeof(uint32_t);
    case PIPE_COMPUTE_CAP_MAX_COMPUTE_UNITS:

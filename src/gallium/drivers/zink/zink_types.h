@@ -79,8 +79,8 @@
 /* enum zink_descriptor_type */
 #define ZINK_MAX_DESCRIPTOR_SETS 6
 #define ZINK_MAX_DESCRIPTORS_PER_TYPE (32 * ZINK_GFX_SHADER_COUNT)
-/* max size from gpuinfo */
-#define ZINK_FBFETCH_DESCRIPTOR_SIZE 64
+/* Descriptor size reported by lavapipe. */
+#define ZINK_FBFETCH_DESCRIPTOR_SIZE 280
 
 /* suballocator defines */
 #define NUM_SLAB_ALLOCATORS 3

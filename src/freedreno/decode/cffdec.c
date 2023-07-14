@@ -2203,6 +2203,17 @@ cp_draw_indirect_multi(uint32_t *dwords, uint32_t sizedwords, int level)
 }
 
 static void
+cp_draw_auto(uint32_t *dwords, uint32_t sizedwords, int level)
+{
+   uint32_t prim_type = dwords[0] & 0x1f;
+
+   do_query(rnn_enumname(rnn, "pc_di_primtype", prim_type), 0);
+   print_mode(level);
+
+   dump_register_summary(level);
+}
+
+static void
 cp_run_cl(uint32_t *dwords, uint32_t sizedwords, int level)
 {
    do_query("COMPUTE", 1);
@@ -2371,6 +2382,45 @@ cp_start_bin(uint32_t *dwords, uint32_t sizedwords, int level)
          ibs[ib].base = ibaddr;
          ibs[ib].size = ibsize;
          printl(3, "%sbin %u\n", levels[level], i);
+         dump_commands(ptr, ibsize, level);
+         ibaddr += ibsize;
+         ptr += ibsize;
+      }
+      ib--;
+   } else {
+      fprintf(stderr, "could not find: %016" PRIx64 " (%d)\n", ibaddr, ibsize);
+   }
+}
+
+static void
+cp_fixed_stride_draw_table(uint32_t *dwords, uint32_t sizedwords, int level)
+{
+   uint64_t ibaddr;
+   uint32_t ibsize;
+   uint32_t loopcount;
+   uint32_t *ptr = NULL;
+
+   loopcount = dwords[3];
+   ibaddr = dwords[0];
+   ibaddr |= ((uint64_t)dwords[1]) << 32;
+   ibsize = dwords[2] >> 20;
+
+   /* map gpuaddr back to hostptr: */
+   ptr = hostptr(ibaddr);
+
+   if (ptr) {
+      /* If the GPU hung within the target IB, the trigger point will be
+       * just after the current CP_START_BIN.  Because the IB is
+       * executed but never returns.  Account for this by checking if
+       * the IB returned:
+       */
+      highlight_gpuaddr(gpuaddr(&dwords[5]));
+
+      ib++;
+      for (uint32_t i = 0; i < loopcount; i++) {
+         ibs[ib].base = ibaddr;
+         ibs[ib].size = ibsize;
+         printl(3, "%sdraw %u\n", levels[level], i);
          dump_commands(ptr, ibsize, level);
          ibaddr += ibsize;
          ptr += ibsize;
@@ -2889,10 +2939,13 @@ static const struct type3_op {
    CP(SET_MODE, cp_set_mode),
    CP(SET_MARKER, cp_set_marker),
    CP(REG_WRITE, cp_reg_write),
+   CP(DRAW_AUTO, cp_draw_auto, {.load_all_groups = true}),
 
    CP(SET_CTXSWITCH_IB, cp_set_ctxswitch_ib),
 
    CP(START_BIN, cp_start_bin),
+
+   CP(FIXED_STRIDE_DRAW_TABLE, cp_fixed_stride_draw_table),
 
    /* for a7xx */
    CP(THREAD_CONTROL, cp_set_thread_control),

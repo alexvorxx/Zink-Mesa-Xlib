@@ -944,7 +944,7 @@ fd6_clear_texture(struct pipe_context *pctx, struct pipe_resource *prsc,
    }
 
    if (!can_do_clear(prsc, level, box)) {
-      util_clear_texture(pctx, prsc, level, box, data);
+      u_default_clear_texture(pctx, prsc, level, box, data);
       return;
    }
 

@@ -2264,7 +2264,7 @@ TEST_F(nir_split_vars_test, twolevel_dont_split_lvl_1)
       nir_deref_instr *level0 = nir_build_deref_array_imm(b, temp_deref, i);
       for (int j = 0; j < 6; j++) {
          /* just add the inner index to get some different derefs */
-         nir_deref_instr *level1 = nir_build_deref_array(b, level0, nir_iadd(b, &ind_deref->dest.ssa, nir_imm_int(b, j)));
+         nir_deref_instr *level1 = nir_build_deref_array(b, level0, nir_iadd_imm(b, &ind_deref->dest.ssa, j));
          nir_store_deref(b, level1, nir_load_var(b, in[i]), 1);
       }
    }

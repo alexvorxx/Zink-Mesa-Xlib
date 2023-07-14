@@ -639,8 +639,7 @@ brw_nir_initialize_mue(nir_shader *nir,
 
    nir_builder b;
    nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
-   nir_builder_init(&b, entrypoint);
-   b.cursor = nir_before_block(nir_start_block(entrypoint));
+   b = nir_builder_at(nir_before_block(nir_start_block(entrypoint)));
 
    nir_ssa_def *dw_off = nir_imm_int(&b, 0);
    nir_ssa_def *zerovec = nir_imm_vec4(&b, 0, 0, 0, 0);
@@ -789,12 +788,6 @@ struct index_packing_state {
 static bool
 brw_can_pack_primitive_indices(nir_shader *nir, struct index_packing_state *state)
 {
-   /* NV_mesh_shader primitive indices are stored as a flat array instead
-    * of an array of primitives. Don't bother with this for now.
-    */
-   if (nir->info.mesh.nv)
-      return false;
-
    /* can single index fit into one byte of U888X format? */
    if (nir->info.mesh.max_vertices_out > 255)
       return false;
@@ -820,11 +813,8 @@ brw_can_pack_primitive_indices(nir_shader *nir, struct index_packing_state *stat
    assert(type->without_array()->is_vector());
    assert(type->without_array()->vector_elements == state->vertices_per_primitive);
 
-   nir_foreach_function(function, nir) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -1553,23 +1543,20 @@ fs_visitor::nir_emit_task_mesh_intrinsic(const fs_builder &bld,
       bld.MOV(dest, payload.extended_parameter_0);
       break;
 
-   case nir_intrinsic_load_local_invocation_index:
    case nir_intrinsic_load_local_invocation_id:
+      unreachable("local invocation id should have been lowered earlier");
+      break;
+
+   case nir_intrinsic_load_local_invocation_index:
       dest = retype(dest, BRW_REGISTER_TYPE_UD);
       bld.MOV(dest, payload.local_index);
-      /* Task/Mesh only use one dimension. */
-      if (instr->intrinsic == nir_intrinsic_load_local_invocation_id) {
-         bld.MOV(offset(dest, bld, 1), brw_imm_uw(0));
-         bld.MOV(offset(dest, bld, 2), brw_imm_uw(0));
-      }
       break;
 
    case nir_intrinsic_load_num_workgroups:
-      assert(!nir->info.mesh.nv);
       dest = retype(dest, BRW_REGISTER_TYPE_UD);
-      bld.SHR(offset(dest, bld, 0), retype(brw_vec1_grf(0, 6), dest.type), brw_imm_ud(16));
-      bld.AND(offset(dest, bld, 1), retype(brw_vec1_grf(0, 4), dest.type), brw_imm_ud(0xffff));
-      bld.SHR(offset(dest, bld, 2), retype(brw_vec1_grf(0, 4), dest.type), brw_imm_ud(16));
+      bld.MOV(offset(dest, bld, 0), brw_uw1_grf(0, 13)); /* g0.6 >> 16 */
+      bld.MOV(offset(dest, bld, 1), brw_uw1_grf(0, 8));  /* g0.4 & 0xffff */
+      bld.MOV(offset(dest, bld, 2), brw_uw1_grf(0, 9));  /* g0.4 >> 16 */
       break;
 
    case nir_intrinsic_load_workgroup_index:

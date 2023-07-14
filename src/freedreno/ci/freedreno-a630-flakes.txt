@@ -70,6 +70,9 @@ dEQP-GLES31.functional.layout_binding.ssbo.fragment_binding_array
 dEQP-GLES3.functional.fbo.blit.conversion.rg8i_to_r16i
 dEQP-GLES3.functional.fbo.blit.conversion.rg8_to_r16f
 
+# Noticed on July 2023
+KHR-GL46.buffer_storage.map_persistent_flush
+
 # First noticed Jun 1 2020 on an innocent branch.
 KHR-GL46.packed_depth_stencil.verify_copy_tex_image.depth32f_stencil8
 
@@ -206,3 +209,6 @@ spec@!opengl 1.1@max-texture-size
 
 # First seen 2023-05-05
 gmem-unaligned-dEQP-VK.renderpass.suballocation.load_store_op_none.depthstencil_d32_sfloat_s8_uint_load_op_depth_load_stencil_none_store_op_depth_store_stencil_none_stencil_write_off
+
+KHR-GL46.buffer_storage.map_persistent_dispatch
+KHR-GL46.buffer_storage.map_persistent_flush

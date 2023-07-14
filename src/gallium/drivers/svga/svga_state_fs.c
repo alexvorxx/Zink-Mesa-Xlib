@@ -206,7 +206,7 @@ make_fs_key(const struct svga_context *svga,
     * Do some debug checks/warnings here.
     */
    {
-      static boolean warned = FALSE;
+      static bool warned = false;
       unsigned i, n = MAX2(svga->curr.num_sampler_views[shader],
                            svga->curr.num_samplers[shader]);
       /* Only warn once to prevent too much debug output */
@@ -225,7 +225,7 @@ make_fs_key(const struct svga_context *svga,
                             i, svga->curr.sampler_views[shader][i],
                             i, svga->curr.sampler[shader][i]);
          }
-         warned = TRUE;
+         warned = true;
       }
    }
 #endif
@@ -344,7 +344,7 @@ svga_reemit_fs_bindings(struct svga_context *svga)
    if (ret != PIPE_OK)
       return ret;
 
-   svga->rebind.flags.fs = FALSE;
+   svga->rebind.flags.fs = false;
    return PIPE_OK;
 }
 
@@ -380,7 +380,7 @@ emit_hw_fs(struct svga_context *svga, uint64_t dirty)
          if (ret != PIPE_OK)
             goto done;
       }
-      svga->rebind.flags.fs = FALSE;
+      svga->rebind.flags.fs = false;
       svga->state.hw_draw.fs = NULL;
       goto done;
    }
@@ -412,7 +412,7 @@ emit_hw_fs(struct svga_context *svga, uint64_t dirty)
       if (ret != PIPE_OK)
          goto done;
 
-      svga->rebind.flags.fs = FALSE;
+      svga->rebind.flags.fs = false;
 
       svga->dirty |= SVGA_NEW_FS_VARIANT;
       svga->state.hw_draw.fs = variant;

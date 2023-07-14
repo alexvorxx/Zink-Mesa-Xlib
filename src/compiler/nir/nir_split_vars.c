@@ -34,11 +34,8 @@ get_complex_used_vars(nir_shader *shader, void *mem_ctx)
 {
    struct set *complex_vars = _mesa_pointer_set_create(mem_ctx);
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_deref)
                continue;
@@ -236,8 +233,7 @@ split_struct_derefs_impl(nir_function_impl *impl,
                          nir_variable_mode modes,
                          void *mem_ctx)
 {
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -349,14 +345,11 @@ nir_split_struct_vars(nir_shader *shader, nir_variable_mode modes)
    }
 
    bool progress = false;
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       bool has_local_splits = false;
       if (modes & nir_var_function_temp) {
-         has_local_splits = split_var_list_structs(shader, function->impl,
-                                                   &function->impl->locals,
+         has_local_splits = split_var_list_structs(shader, impl,
+                                                   &impl->locals,
                                                    nir_var_function_temp,
                                                    var_field_map,
                                                    &complex_vars,
@@ -364,14 +357,14 @@ nir_split_struct_vars(nir_shader *shader, nir_variable_mode modes)
       }
 
       if (has_global_splits || has_local_splits) {
-         split_struct_derefs_impl(function->impl, var_field_map,
+         split_struct_derefs_impl(impl, var_field_map,
                                   modes, mem_ctx);
 
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
+         nir_metadata_preserve(impl, nir_metadata_block_index |
                                                nir_metadata_dominance);
          progress = true;
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 
@@ -744,8 +737,7 @@ split_array_copies_impl(nir_function_impl *impl,
                         nir_variable_mode modes,
                         void *mem_ctx)
 {
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -789,8 +781,7 @@ split_array_access_impl(nir_function_impl *impl,
                         nir_variable_mode modes,
                         void *mem_ctx)
 {
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -914,14 +905,11 @@ nir_split_array_vars(nir_shader *shader, nir_variable_mode modes)
    }
 
    bool has_any_array = false;
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       bool has_local_array = false;
       if (modes & nir_var_function_temp) {
          has_local_array = init_var_list_array_infos(shader,
-                                                     &function->impl->locals,
+                                                     &impl->locals,
                                                      nir_var_function_temp,
                                                      var_info_map,
                                                      &complex_vars,
@@ -930,7 +918,7 @@ nir_split_array_vars(nir_shader *shader, nir_variable_mode modes)
 
       if (has_global_array || has_local_array) {
          has_any_array = true;
-         mark_array_usage_impl(function->impl, var_info_map, modes, mem_ctx);
+         mark_array_usage_impl(impl, var_info_map, modes, mem_ctx);
       }
    }
 
@@ -950,27 +938,24 @@ nir_split_array_vars(nir_shader *shader, nir_variable_mode modes)
    }
 
    bool progress = false;
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       bool has_local_splits = false;
       if (modes & nir_var_function_temp) {
-         has_local_splits = split_var_list_arrays(shader, function->impl,
-                                                  &function->impl->locals,
+         has_local_splits = split_var_list_arrays(shader, impl,
+                                                  &impl->locals,
                                                   nir_var_function_temp,
                                                   var_info_map, mem_ctx);
       }
 
       if (has_global_splits || has_local_splits) {
-         split_array_copies_impl(function->impl, var_info_map, modes, mem_ctx);
-         split_array_access_impl(function->impl, var_info_map, modes, mem_ctx);
+         split_array_copies_impl(impl, var_info_map, modes, mem_ctx);
+         split_array_access_impl(impl, var_info_map, modes, mem_ctx);
 
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
+         nir_metadata_preserve(impl, nir_metadata_block_index |
                                                nir_metadata_dominance);
          progress = true;
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 
@@ -1500,8 +1485,7 @@ shrink_vec_var_access_impl(nir_function_impl *impl,
                            struct hash_table *var_usage_map,
                            nir_variable_mode modes)
 {
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -1688,17 +1672,14 @@ nir_shrink_vec_array_vars(nir_shader *shader, nir_variable_mode modes)
       _mesa_pointer_hash_table_create(mem_ctx);
 
    bool has_vars_to_shrink = false;
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       /* Don't even bother crawling the IR if we don't have any variables.
        * Given that this pass deletes any unused variables, it's likely that
        * we will be in this scenario eventually.
        */
-      if (function_impl_has_vars_with_modes(function->impl, modes)) {
+      if (function_impl_has_vars_with_modes(impl, modes)) {
          has_vars_to_shrink = true;
-         find_used_components_impl(function->impl, var_usage_map,
+         find_used_components_impl(impl, var_usage_map,
                                    modes, mem_ctx);
       }
    }
@@ -1716,25 +1697,22 @@ nir_shrink_vec_array_vars(nir_shader *shader, nir_variable_mode modes)
    }
 
    bool progress = false;
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       bool locals_shrunk = false;
       if (modes & nir_var_function_temp) {
-         locals_shrunk = shrink_vec_var_list(&function->impl->locals,
+         locals_shrunk = shrink_vec_var_list(&impl->locals,
                                              nir_var_function_temp,
                                              var_usage_map);
       }
 
       if (globals_shrunk || locals_shrunk) {
-         shrink_vec_var_access_impl(function->impl, var_usage_map, modes);
+         shrink_vec_var_access_impl(impl, var_usage_map, modes);
 
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
+         nir_metadata_preserve(impl, nir_metadata_block_index |
                                                nir_metadata_dominance);
          progress = true;
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 

@@ -445,7 +445,7 @@ tu_cs_reserve_space(struct tu_cs *cs, uint32_t reserved_size)
          cs->cond_dwords[i] = cs->cur;
 
          /* Emit dummy DWORD field here */
-         tu_cs_emit(cs, CP_COND_REG_EXEC_1_DWORDS(0));
+         tu_cs_emit(cs, RENDER_MODE_CP_COND_REG_EXEC_1_DWORDS(0));
       }
 
       /* double the size for the next bo, also there is an upper

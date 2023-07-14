@@ -27,7 +27,7 @@
 
 #if DETECT_ARCH_X86 || DETECT_ARCH_X86_64
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_debug.h"
 #include "util/u_pointer.h"
 

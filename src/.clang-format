@@ -145,6 +145,10 @@ ForEachMacros:
   - nir_foreach_phi_safe
 
   - nir_foreach_function
+  - nir_foreach_function_safe
+  - nir_foreach_function_with_impl
+
+  - nir_foreach_function_impl
 
   - nir_foreach_block_unstructured
   - nir_foreach_block_unstructured_safe
@@ -156,6 +160,16 @@ ForEachMacros:
   - nir_foreach_block_safe
 
   - nir_foreach_src
+
+# egl
+  - egl_relax
+
+# wayland
+  - wl_list_for_each
+  - wl_list_for_each_safe
+  - wl_list_for_each_reverse
+  - wl_list_for_each_reverse_safe
+  - wl_array_for_each
 
 # vulkan
   - vk_foreach_queue

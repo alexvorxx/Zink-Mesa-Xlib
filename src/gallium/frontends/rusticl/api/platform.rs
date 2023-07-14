@@ -20,7 +20,7 @@ impl CLInfo<cl_platform_info> for cl_platform_id {
             CL_PLATFORM_EXTENSIONS_WITH_VERSION => {
                 cl_prop::<Vec<cl_name_version>>(PLATFORM_EXTENSIONS.to_vec())
             }
-            CL_PLATFORM_HOST_TIMER_RESOLUTION => cl_prop::<cl_ulong>(0),
+            CL_PLATFORM_HOST_TIMER_RESOLUTION => cl_prop::<cl_ulong>(1),
             CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
             CL_PLATFORM_NAME => cl_prop("rusticl"),
             CL_PLATFORM_NUMERIC_VERSION => cl_prop::<cl_version>(CLVersion::Cl3_0 as u32),

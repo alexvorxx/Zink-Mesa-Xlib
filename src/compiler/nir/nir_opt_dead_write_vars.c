@@ -251,10 +251,8 @@ nir_opt_dead_write_vars(nir_shader *shader)
    void *mem_ctx = ralloc_context(NULL);
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-      progress |= remove_dead_write_vars_impl(mem_ctx, shader, function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= remove_dead_write_vars_impl(mem_ctx, shader, impl);
    }
 
    ralloc_free(mem_ctx);

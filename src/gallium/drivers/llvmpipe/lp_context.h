@@ -38,6 +38,7 @@
 
 #include "lp_tex_sample.h"
 #include "lp_jit.h"
+#include "lp_texture_handle.h"
 #include "lp_setup.h"
 #include "lp_state_fs.h"
 #include "lp_state_cs.h"
@@ -76,6 +77,8 @@ struct llvmpipe_context {
 
    struct lp_compute_shader *tss;
    struct lp_compute_shader *mhs;
+
+   struct lp_sampler_matrix sampler_matrix;
 
    /** Other rendering state */
    unsigned sample_mask;
@@ -117,7 +120,7 @@ struct llvmpipe_context {
    uint64_t dirty; /**< Mask of LP_NEW_x flags */
    unsigned cs_dirty; /**< Mask of LP_CSNEW_x flags */
    /** Mapped vertex buffers */
-   ubyte *mapped_vbuffer[PIPE_MAX_ATTRIBS];
+   uint8_t *mapped_vbuffer[PIPE_MAX_ATTRIBS];
 
    /** Vertex format */
    struct vertex_info vertex_info;
@@ -143,7 +146,7 @@ struct llvmpipe_context {
    int8_t face_slot;
 
    /** Depth format and bias settings. */
-   boolean floating_point_depth;
+   bool floating_point_depth;
    double mrd;   /**< minimum resolvable depth value, for polygon offset */
 
    /** The tiling engine */
@@ -162,8 +165,8 @@ struct llvmpipe_context {
    unsigned nr_fs_variants;
    unsigned nr_fs_instrs;
 
-   boolean permit_linear_rasterizer;
-   boolean single_vp;
+   bool permit_linear_rasterizer;
+   bool single_vp;
 
    struct lp_setup_variant_list_item setup_variants_list;
    unsigned nr_setup_variants;
@@ -180,7 +183,7 @@ struct llvmpipe_context {
    /** Conditional query object and mode */
    struct pipe_query *render_cond_query;
    enum pipe_render_cond_flag render_cond_mode;
-   boolean render_cond_cond;
+   bool render_cond_cond;
 
    /** VK render cond */
    struct llvmpipe_resource *render_cond_buffer;

@@ -231,6 +231,9 @@ gather_intrinsic_info(const nir_shader *nir, const nir_intrinsic_instr *instr, s
    case nir_intrinsic_load_poly_line_smooth_enabled:
       info->ps.needs_poly_line_smooth = true;
       break;
+   case nir_intrinsic_begin_invocation_interlock:
+      info->ps.pops = true;
+      break;
    default:
       break;
    }
@@ -335,8 +338,12 @@ assign_outinfo_params(struct radv_vs_output_info *outinfo, uint64_t mask, unsign
 }
 
 static uint8_t
-radv_get_wave_size(struct radv_device *device, gl_shader_stage stage, const struct radv_shader_info *info)
+radv_get_wave_size(struct radv_device *device, gl_shader_stage stage, const struct radv_shader_info *info,
+                   const struct radv_shader_stage_key *stage_key)
 {
+   if (stage_key->subgroup_required_size)
+      return stage_key->subgroup_required_size * 32;
+
    if (stage == MESA_SHADER_GEOMETRY && !info->is_ngg)
       return 64;
    else if (stage == MESA_SHADER_COMPUTE)
@@ -352,10 +359,14 @@ radv_get_wave_size(struct radv_device *device, gl_shader_stage stage, const stru
 }
 
 static uint8_t
-radv_get_ballot_bit_size(struct radv_device *device, gl_shader_stage stage, const struct radv_shader_info *info)
+radv_get_ballot_bit_size(struct radv_device *device, gl_shader_stage stage, const struct radv_shader_info *info,
+                         const struct radv_shader_stage_key *stage_key)
 {
    if (stage == MESA_SHADER_COMPUTE && info->cs.subgroup_size)
       return info->cs.subgroup_size;
+
+   if (stage_key->subgroup_required_size)
+      return stage_key->subgroup_required_size * 32;
 
    return 64;
 }
@@ -403,7 +414,7 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir, const s
    }
 
    /* Use per-attribute vertex descriptors to prevent faults and for correct bounds checking. */
-   info->vs.use_per_attribute_vb_descs = device->robust_buffer_access || info->vs.dynamic_inputs;
+   info->vs.use_per_attribute_vb_descs = pipeline_key->vertex_robustness1 || info->vs.dynamic_inputs;
 
    /* We have to ensure consistent input register assignments between the main shader and the
     * prolog.
@@ -587,6 +598,9 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN) ||
         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_HELPER_INVOCATION));
 
+   info->ps.pops_is_per_sample =
+      info->ps.pops && (nir->info.fs.sample_interlock_ordered || nir->info.fs.sample_interlock_unordered);
+
    info->ps.spi_ps_input = radv_compute_spi_ps_input(pipeline_key, info);
 
    info->ps.has_epilog = pipeline_key->ps.has_epilog && info->ps.colors_written;
@@ -638,6 +652,19 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
       }
    }
 
+   /* Disable VRS and use the rates from PS_ITER_SAMPLES if:
+    *
+    * - The fragment shader reads gl_SampleMaskIn because the 16-bit sample coverage mask isn't enough for MSAA8x and
+    *   2x2 coarse shading.
+    * - On GFX10.3, if the fragment shader requests a fragment interlock execution mode even if the ordered section was
+    *   optimized out, to consistently implement fragmentShadingRateWithFragmentShaderInterlock = VK_FALSE.
+    */
+   info->ps.force_sample_iter_shading_rate =
+      (info->ps.reads_sample_mask_in && !info->ps.needs_poly_line_smooth) ||
+      (device->physical_device->rad_info.gfx_level == GFX10_3 &&
+       (nir->info.fs.sample_interlock_ordered || nir->info.fs.sample_interlock_unordered ||
+        nir->info.fs.pixel_interlock_ordered || nir->info.fs.pixel_interlock_unordered));
+
    /* DB_SHADER_CONTROL based on other fragment shader info fields. */
 
    unsigned conservative_z_export = V_02880C_EXPORT_ANY_Z;
@@ -664,7 +691,7 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
       S_02880C_DEPTH_BEFORE_SHADER(info->ps.early_fragment_test) |
       S_02880C_PRE_SHADER_DEPTH_COVERAGE_ENABLE(info->ps.post_depth_coverage) |
       S_02880C_EXEC_ON_HIER_FAIL(info->ps.writes_memory) | S_02880C_EXEC_ON_NOOP(info->ps.writes_memory) |
-      S_02880C_DUAL_QUAD_DISABLE(disable_rbplus);
+      S_02880C_DUAL_QUAD_DISABLE(disable_rbplus) | S_02880C_PRIMITIVE_ORDERED_PIXEL_SHADER(info->ps.pops);
 }
 
 static void
@@ -693,12 +720,14 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const s
    /* Games don't always request full subgroups when they should, which can cause bugs if cswave32
     * is enabled.
     */
-   bool require_full_subgroups =
-      pipeline_key->cs.require_full_subgroups ||
+   const bool require_full_subgroups =
+      pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_require_full ||
       (default_wave_size == 32 && nir->info.uses_wide_subgroup_intrinsics && local_size % RADV_SUBGROUP_SIZE == 0);
 
-   if (pipeline_key->cs.compute_subgroup_size) {
-      info->cs.subgroup_size = pipeline_key->cs.compute_subgroup_size;
+   const unsigned required_subgroup_size = pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_required_size * 32;
+
+   if (required_subgroup_size) {
+      info->cs.subgroup_size = required_subgroup_size;
    } else if (require_full_subgroups) {
       info->cs.subgroup_size = RADV_SUBGROUP_SIZE;
    } else if (device->physical_device->rad_info.gfx_level >= GFX10 && local_size <= 32) {
@@ -948,8 +977,9 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       break;
    }
 
-   info->wave_size = radv_get_wave_size(device, nir->info.stage, info);
-   info->ballot_bit_size = radv_get_ballot_bit_size(device, nir->info.stage, info);
+   const struct radv_shader_stage_key *stage_key = &pipeline_key->stage_info[nir->info.stage];
+   info->wave_size = radv_get_wave_size(device, nir->info.stage, info, stage_key);
+   info->ballot_bit_size = radv_get_ballot_bit_size(device, nir->info.stage, info, stage_key);
 
    switch (nir->info.stage) {
    case MESA_SHADER_COMPUTE:
@@ -1628,5 +1658,51 @@ radv_nir_shader_info_link(struct radv_device *device, const struct radv_pipeline
 
          radv_nir_shader_info_merge(&stages[pre_stage], &stages[MESA_SHADER_GEOMETRY]);
       }
+   }
+}
+
+enum ac_hw_stage
+radv_select_hw_stage(const struct radv_shader_info *const info, const enum amd_gfx_level gfx_level)
+{
+   switch (info->stage) {
+   case MESA_SHADER_VERTEX:
+      if (info->is_ngg)
+         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+      else if (info->vs.as_es)
+         return gfx_level >= GFX9 ? AC_HW_LEGACY_GEOMETRY_SHADER : AC_HW_EXPORT_SHADER;
+      else if (info->vs.as_ls)
+         return gfx_level >= GFX9 ? AC_HW_HULL_SHADER : AC_HW_LOCAL_SHADER;
+      else
+         return AC_HW_VERTEX_SHADER;
+   case MESA_SHADER_TESS_EVAL:
+      if (info->is_ngg)
+         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+      else if (info->tes.as_es)
+         return gfx_level >= GFX9 ? AC_HW_LEGACY_GEOMETRY_SHADER : AC_HW_EXPORT_SHADER;
+      else
+         return AC_HW_VERTEX_SHADER;
+   case MESA_SHADER_TESS_CTRL:
+      return AC_HW_HULL_SHADER;
+   case MESA_SHADER_GEOMETRY:
+      if (info->is_ngg)
+         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+      else
+         return AC_HW_LEGACY_GEOMETRY_SHADER;
+   case MESA_SHADER_MESH:
+      return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
+   case MESA_SHADER_FRAGMENT:
+      return AC_HW_PIXEL_SHADER;
+   case MESA_SHADER_COMPUTE:
+   case MESA_SHADER_KERNEL:
+   case MESA_SHADER_TASK:
+   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_ANY_HIT:
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+   case MESA_SHADER_INTERSECTION:
+   case MESA_SHADER_CALLABLE:
+      return AC_HW_COMPUTE_SHADER;
+   default:
+      unreachable("Unsupported HW stage");
    }
 }

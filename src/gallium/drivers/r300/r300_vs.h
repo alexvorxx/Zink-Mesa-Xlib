@@ -41,9 +41,9 @@ struct r300_vertex_shader_code {
 
     /* Whether the shader was replaced by a dummy one due to a shader
      * compilation failure. */
-    boolean dummy;
+    bool dummy;
 
-    boolean wpos;
+    bool wpos;
 
     /* Numbers of constants for each type. */
     unsigned externals_count;

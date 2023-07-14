@@ -2,7 +2,7 @@
 #ifndef SW_HELPER_H
 #define SW_HELPER_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_debug.h"
 #include "target-helpers/sw_helper_public.h"
 #include "frontend/sw_winsys.h"

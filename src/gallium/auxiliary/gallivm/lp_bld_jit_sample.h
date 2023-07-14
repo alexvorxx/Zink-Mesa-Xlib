@@ -65,4 +65,10 @@ lp_bld_llvm_image_soa_destroy(struct lp_build_image_soa *image)
    FREE(image);
 }
 
+#if LLVM_VERSION_MAJOR >= 15
+#define LP_TOTAL_IMAGE_OP_COUNT ((LP_IMG_OP_COUNT + LLVMAtomicRMWBinOpFMin) * 2)
+#else
+#define LP_TOTAL_IMAGE_OP_COUNT ((LP_IMG_OP_COUNT + 14) * 2)
+#endif
+
 #endif

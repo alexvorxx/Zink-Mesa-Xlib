@@ -694,14 +694,14 @@ ROUND_DOWN_TO(uint64_t value, uint32_t alignment)
 static inline uint32_t
 align(uint32_t value, uint32_t alignment)
 {
-   assert(IS_POT(alignment));
+   assert(util_is_power_of_two_nonzero(alignment));
    return ALIGN_POT(value, alignment);
 }
 
 static inline uint64_t
 align64(uint64_t value, uint64_t alignment)
 {
-   assert(IS_POT(alignment));
+   assert(util_is_power_of_two_nonzero64(alignment));
    return ALIGN_POT(value, alignment);
 }
 

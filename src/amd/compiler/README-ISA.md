@@ -189,6 +189,20 @@ On GFX9, the A16 field enables both 16 bit addresses and derivatives.
 Since GFX10+ these are fully independent of each other, A16 controls 16 bit addresses
 and G16 opcodes 16 bit derivatives. A16 without G16 uses 32 bit derivatives.
 
+## POPS collision wave ID argument (GFX9-10.3)
+
+The 2020 RDNA and RDNA 2 ISA references contain incorrect offsets and widths of
+the fields of the "POPS collision wave ID" SGPR argument.
+
+According to the code generated for Rasterizer Ordered View usage in Direct3D,
+the correct layout is:
+
+* [31]: Whether overlap has occurred.
+* [29:28] (GFX10+) / [28] (GFX9): ID of the packer the wave should be associated
+  with.
+* [25:16]: Newest overlapped wave ID.
+* [9:0]: Current wave ID.
+
 # Hardware Bugs
 
 ## SMEM corrupts VCCZ on SI/CI
@@ -254,8 +268,8 @@ is located at this offset.
 
 ### InstFwdPrefetchBug
 
-According to LLVM, the `s_inst_prefetch` instruction can cause a hang.
-There are no further details.
+According to LLVM, the `s_inst_prefetch` instruction can cause a hang on GFX10.
+Seems to be resolved on GFX10.3+. There are no further details.
 
 ### LdsMisalignedBug
 

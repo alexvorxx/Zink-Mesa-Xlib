@@ -322,8 +322,8 @@ static void r300_update_rs_block(struct r300_context *r300)
     void (*rX00_rs_col_write)(struct r300_rs_block*, int, int, enum r300_rs_col_write_type);
     void (*rX00_rs_tex)(struct r300_rs_block*, int, int, enum r300_rs_swizzle);
     void (*rX00_rs_tex_write)(struct r300_rs_block*, int, int);
-    boolean any_bcolor_used = vs_outputs->bcolor[0] != ATTR_UNUSED ||
-                              vs_outputs->bcolor[1] != ATTR_UNUSED;
+    bool any_bcolor_used = vs_outputs->bcolor[0] != ATTR_UNUSED ||
+                           vs_outputs->bcolor[1] != ATTR_UNUSED;
     int *stream_loc_notcl = r300->stream_loc_notcl;
     uint32_t stuffing_enable = 0;
 
@@ -494,7 +494,7 @@ static void r300_update_rs_block(struct r300_context *r300)
 
     /* Rasterize generics. */
     for (i = gen_offset; i < ATTR_GENERIC_COUNT && tex_count < 8; i++) {
-	boolean sprite_coord = false;
+	bool sprite_coord = false;
 
 	if (fs_inputs->generic[i] != ATTR_UNUSED) {
 	    sprite_coord = !!(r300->sprite_coord_enable & (1 << i)) && r300->is_point;
@@ -598,7 +598,7 @@ static void r300_update_rs_block(struct r300_context *r300)
 
     /* Rasterize texcords. */
     for (i = gen_offset; i < ATTR_TEXCOORD_COUNT && tex_count < 8; i++) {
-        boolean sprite_coord = false;
+        bool sprite_coord = false;
 
         if (fs_inputs->texcoord[i] != ATTR_UNUSED) {
             sprite_coord = !!(r300->sprite_coord_enable & (1 << i)) && r300->is_point;
@@ -784,7 +784,7 @@ static void rgba_to_bgra(float color[4])
 
 static uint32_t r300_get_border_color(enum pipe_format format,
                                       const float border[4],
-                                      boolean is_r500)
+                                      bool is_r500)
 {
     const struct util_format_description *desc = util_format_description(format);
     float border_swizzled[4] = {0};
@@ -933,7 +933,7 @@ static void r300_merge_textures_and_samplers(struct r300_context* r300)
     unsigned base_level, min_level, level_count, i, j, size;
     unsigned count = MIN2(state->sampler_view_count,
                           state->sampler_state_count);
-    boolean has_us_format = r300->screen->caps.has_us_format;
+    bool has_us_format = r300->screen->caps.has_us_format;
 
     /* The KIL opcode fix, see below. */
     if (!count && !r300->screen->caps.is_r500)
@@ -1016,10 +1016,10 @@ static void r300_merge_textures_and_samplers(struct r300_context* r300)
                 if (sampler->state.compare_mode == PIPE_TEX_COMPARE_NONE) {
                     texstate->format.format1 |=
                         r300_get_swizzle_combined(depth_swizzle,
-                                                  view->swizzle, FALSE);
+                                                  view->swizzle, false);
                 } else {
                     texstate->format.format1 |=
-                        r300_get_swizzle_combined(depth_swizzle, NULL, FALSE);
+                        r300_get_swizzle_combined(depth_swizzle, NULL, false);
                 }
             }
 
@@ -1121,7 +1121,7 @@ static void r300_merge_textures_and_samplers(struct r300_context* r300)
                         r300_translate_tex_filters(PIPE_TEX_FILTER_NEAREST,
                                                    PIPE_TEX_FILTER_NEAREST,
                                                    PIPE_TEX_FILTER_NEAREST,
-                                                   FALSE);
+                                                   false);
                 texstate->filter1 = 0;
                 texstate->border_color = 0;
 
@@ -1186,7 +1186,7 @@ static void r300_validate_fragment_shader(struct r300_context *r300)
 
             /* Does Multiwrite need to be changed? */
             if (fb->nr_cbufs > 1) {
-                boolean new_multiwrite =
+                bool new_multiwrite =
                     r300_fragment_shader_writes_all(r300_fs(r300));
 
                 if (r300->fb_multiwrite != new_multiwrite) {

@@ -318,14 +318,14 @@ struct nine_context {
     uint16_t enabled_samplers_mask_ps;
 
     int dummy_vbo_bound_at; /* -1 = not bound , >= 0 = bound index */
-    boolean vbo_bound_done;
+    bool vbo_bound_done;
 
-    boolean inline_constants;
+    bool inline_constants;
 
     struct nine_ff_state ff;
 
     /* software vertex processing */
-    boolean swvp;
+    bool swvp;
 
     uint32_t commit;
     struct {
@@ -514,7 +514,7 @@ nine_context_set_clip_plane(struct NineDevice9 *device,
 
 void
 nine_context_set_swvp(struct NineDevice9 *device,
-                      boolean swvp);
+                      bool swvp);
 
 void
 nine_context_apply_stateblock(struct NineDevice9 *device,
@@ -620,9 +620,9 @@ nine_context_begin_query(struct NineDevice9 *device, unsigned *counter, struct p
 void
 nine_context_end_query(struct NineDevice9 *device, unsigned *counter, struct pipe_query *query);
 
-boolean
+bool
 nine_context_get_query_result(struct NineDevice9 *device, struct pipe_query *query,
-                              unsigned *counter, boolean flush, boolean wait,
+                              unsigned *counter, bool flush, bool wait,
                               union pipe_query_result *result);
 
 void
@@ -630,7 +630,7 @@ nine_context_pipe_flush(struct NineDevice9 *device);
 
 void nine_state_restore_non_cso(struct NineDevice9 *device);
 void nine_state_set_defaults(struct NineDevice9 *, const D3DCAPS9 *,
-                             boolean is_reset);
+                             bool is_reset);
 void nine_device_state_clear(struct NineDevice9 *);
 void nine_context_clear(struct NineDevice9 *);
 void nine_context_update_state(struct NineDevice9 *);
@@ -652,7 +652,7 @@ nine_state_resize_transform(struct nine_ff_state *ff_state, unsigned N);
  */
 D3DMATRIX *
 nine_state_access_transform(struct nine_ff_state *, D3DTRANSFORMSTATETYPE,
-                            boolean alloc);
+                            bool alloc);
 
 HRESULT
 nine_state_set_light(struct nine_ff_state *, DWORD, const D3DLIGHT9 *);

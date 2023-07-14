@@ -251,7 +251,7 @@ fd6_cache_flush(struct fd_batch *batch, struct fd_ringbuffer *ring)
 
    OUT_PKT7(ring, CP_WAIT_REG_MEM, 6);
    OUT_RING(ring, CP_WAIT_REG_MEM_0_FUNCTION(WRITE_EQ) |
-                     CP_WAIT_REG_MEM_0_POLL_MEMORY);
+                     CP_WAIT_REG_MEM_0_POLL(POLL_MEMORY));
    OUT_RELOC(ring, control_ptr(fd6_ctx, seqno));
    OUT_RING(ring, CP_WAIT_REG_MEM_3_REF(seqno));
    OUT_RING(ring, CP_WAIT_REG_MEM_4_MASK(~0));

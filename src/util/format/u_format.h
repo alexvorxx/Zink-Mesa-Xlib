@@ -1233,6 +1233,31 @@ util_format_stencil_only(enum pipe_format format)
    }
 }
 
+static inline enum pipe_format
+util_format_as_renderable(enum pipe_format format)
+{
+   switch (util_format_get_blocksizebits(format)) {
+   case 128:
+      return PIPE_FORMAT_R32G32B32A32_UINT;
+   case 96:
+      return PIPE_FORMAT_R32G32B32_UINT;
+   case 64:
+      return PIPE_FORMAT_R32G32_UINT;
+   case 48:
+      return PIPE_FORMAT_R16G16B16_UINT;
+   case 32:
+      return PIPE_FORMAT_R32_UINT;
+   case 24:
+      return PIPE_FORMAT_R8G8B8_UINT;
+   case 16:
+      return PIPE_FORMAT_R16_UINT;
+   case 8:
+      return PIPE_FORMAT_R8_UINT;
+   default:
+      return PIPE_FORMAT_NONE;
+   }
+}
+
 /**
  * Converts PIPE_FORMAT_*I* to PIPE_FORMAT_*R*.
  * This is identity for non-intensity formats.

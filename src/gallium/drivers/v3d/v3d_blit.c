@@ -56,10 +56,10 @@ v3d_blitter_save(struct v3d_context *v3d, bool op_blit, bool render_cond)
         util_blitter_save_sample_mask(v3d->blitter, v3d->sample_mask, 0);
         util_blitter_save_so_targets(v3d->blitter, v3d->streamout.num_targets,
                                      v3d->streamout.targets);
+        util_blitter_save_framebuffer(v3d->blitter, &v3d->framebuffer);
 
         if (op_blit) {
                 util_blitter_save_scissor(v3d->blitter, &v3d->scissor);
-                util_blitter_save_framebuffer(v3d->blitter, &v3d->framebuffer);
                 util_blitter_save_fragment_sampler_states(v3d->blitter,
                                                           v3d->tex[PIPE_SHADER_FRAGMENT].num_samplers,
                                                           (void **)v3d->tex[PIPE_SHADER_FRAGMENT].samplers);

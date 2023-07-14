@@ -4,6 +4,9 @@
 
 set -ex
 
+# Our rootfs may not have "less", which apitrace uses during apitrace dump
+export PAGER=cat  # FIXME: export everywhere
+
 INSTALL=$(realpath -s "$PWD"/install)
 S3_ARGS="--token-file ${CI_JOB_JWT_FILE}"
 
@@ -30,19 +33,20 @@ esac
 # Avoid asking about Gecko or Mono instalation
 export WINEDLLOVERRIDES="mscoree=d;mshtml=d"  # FIXME: drop, not needed anymore? (wine dir is already created)
 
-# Set environment for DXVK.
-export DXVK_LOG_LEVEL="info"
-export DXVK_LOG="$RESULTS/dxvk"
-[ -d "$DXVK_LOG" ] || mkdir -pv "$DXVK_LOG"
-export DXVK_STATE_CACHE=0
 
-
-# Set up the driver environment.
+# Set up the environment.
 # Modifiying here directly LD_LIBRARY_PATH may cause problems when
 # using a command wrapper. Hence, we will just set it when running the
 # command.
 export __LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$INSTALL/lib/"
-export VK_ICD_FILENAMES="$INSTALL/share/vulkan/icd.d/${VK_DRIVER}_icd.${VK_CPU:-$(uname -m)}.json"
+if [ -n "${VK_DRIVER}" ]; then
+  # Set environment for DXVK.
+  export DXVK_LOG_LEVEL="info"
+  export DXVK_LOG="$RESULTS/dxvk"
+  [ -d "$DXVK_LOG" ] || mkdir -pv "$DXVK_LOG"
+  export DXVK_STATE_CACHE=0
+  export VK_ICD_FILENAMES="$INSTALL/share/vulkan/icd.d/${VK_DRIVER}_icd.${VK_CPU:-$(uname -m)}.json"
+fi
 
 # Sanity check to ensure that our environment is sufficient to make our tests
 # run against the Mesa built by CI, rather than any installed distro version.
@@ -57,22 +61,18 @@ quiet() {
 
 # Set environment for apitrace executable.
 export PATH="/apitrace/build:$PATH"
-
 export PIGLIT_REPLAY_WINE_BINARY=wine
 export PIGLIT_REPLAY_WINE_APITRACE_BINARY="/apitrace-msvc-win64/bin/apitrace.exe"
 export PIGLIT_REPLAY_WINE_D3DRETRACE_BINARY="/apitrace-msvc-win64/bin/d3dretrace.exe"
 
-# Our rootfs may not have "less", which apitrace uses during
-# apitrace dump
-export PAGER=cat
+echo "Version:"
+apitrace version 2>/dev/null || echo "apitrace not found (Linux)"
 
 SANITY_MESA_VERSION_CMD="wflinfo"
 
 HANG_DETECTION_CMD=""
 
-
 # Set up the platform windowing system.
-
 if [ "$EGL_PLATFORM" = "surfaceless" ]; then
     # Use the surfaceless EGL platform.
     export DISPLAY=
@@ -100,7 +100,19 @@ elif [ "$PIGLIT_PLATFORM" = "mixed_glx_egl" ]; then
     SANITY_MESA_VERSION_CMD="$SANITY_MESA_VERSION_CMD --platform glx --api gl"
 else
     SANITY_MESA_VERSION_CMD="$SANITY_MESA_VERSION_CMD --platform glx --api gl --profile core"
-    RUN_CMD_WRAPPER="xvfb-run --server-args=\"-noreset\" sh -c"
+    # copy-paste from init-stage2.sh, please update accordingly
+    {
+      WESTON_X11_SOCK="/tmp/.X11-unix/X0"
+      export WAYLAND_DISPLAY=wayland-0
+      export DISPLAY=:0
+      mkdir -p /tmp/.X11-unix
+
+      env \
+        VK_ICD_FILENAMES="/install/share/vulkan/icd.d/${VK_DRIVER}_icd.$(uname -m).json" \
+	weston -Bheadless-backend.so --use-gl -Swayland-0 --xwayland --idle-time=0 &
+
+      while [ ! -S "$WESTON_X11_SOCK" ]; do sleep 1; done
+    }
 fi
 
 # If the job is parallel at the  gitlab job level, will take the corresponding
@@ -160,10 +172,6 @@ PIGLIT_TESTS=$(printf "%s" "$PIGLIT_TESTS")
 PIGLIT_CMD="./piglit run -l verbose --timeout 300 -j${FDO_CI_CONCURRENT:-4} $PIGLIT_OPTIONS $PIGLIT_TESTS replay "$(/usr/bin/printf "%q" "$RESULTS")
 
 RUN_CMD="export LD_LIBRARY_PATH=$__LD_LIBRARY_PATH; $SANITY_MESA_VERSION_CMD && $HANG_DETECTION_CMD $PIGLIT_CMD"
-
-if [ "$RUN_CMD_WRAPPER" ]; then
-    RUN_CMD="set +e; $RUN_CMD_WRAPPER \"$(/usr/bin/printf "%q" "$RUN_CMD")\"; set -e"
-fi
 
 # The replayer doesn't do any size or checksum verification for the traces in
 # the replayer db, so if we had to restart the system due to intermittent device

@@ -1064,44 +1064,39 @@ bool
 r600_nir_64_to_vec2(nir_shader *sh)
 {
    vector<nir_instr *> intr64bit;
-   nir_foreach_function(function, sh)
+   nir_foreach_function_impl(impl, sh)
    {
-      if (function->impl) {
-         nir_builder b;
-         nir_builder_init(&b, function->impl);
-
-         nir_foreach_block(block, function->impl)
+      nir_foreach_block(block, impl)
+      {
+         nir_foreach_instr_safe(instr, block)
          {
-            nir_foreach_instr_safe(instr, block)
-            {
-               switch (instr->type) {
-               case nir_instr_type_alu: {
+            switch (instr->type) {
+            case nir_instr_type_alu: {
+               bool success = false;
+               nir_foreach_src(instr, store_64bit_intr, &success);
+               if (success)
+                  intr64bit.push_back(instr);
+               break;
+            }
+            case nir_instr_type_intrinsic: {
+               auto ir = nir_instr_as_intrinsic(instr);
+               switch (ir->intrinsic) {
+               case nir_intrinsic_store_output:
+               case nir_intrinsic_store_global:
+               case nir_intrinsic_store_ssbo: {
                   bool success = false;
                   nir_foreach_src(instr, store_64bit_intr, &success);
-                  if (success)
-                     intr64bit.push_back(instr);
+                  if (success) {
+                     auto wm = nir_intrinsic_write_mask(ir);
+                     nir_intrinsic_set_write_mask(ir, (wm == 1) ? 3 : 0xf);
+                     ir->num_components *= 2;
+                  }
                   break;
-               }
-               case nir_instr_type_intrinsic: {
-                  auto ir = nir_instr_as_intrinsic(instr);
-                  switch (ir->intrinsic) {
-                  case nir_intrinsic_store_output:
-                  case nir_intrinsic_store_global:
-                  case nir_intrinsic_store_ssbo: {
-                     bool success = false;
-                     nir_foreach_src(instr, store_64bit_intr, &success);
-                     if (success) {
-                        auto wm = nir_intrinsic_write_mask(ir);
-                        nir_intrinsic_set_write_mask(ir, (wm == 1) ? 3 : 0xf);
-                        ir->num_components *= 2;
-                     }
-                     break;
-                  }
-                  default:;
-                  }
                }
                default:;
                }
+            }
+            default:;
             }
          }
       }
@@ -1184,29 +1179,27 @@ void
 StoreMerger::collect_stores()
 {
    unsigned vertex = 0;
-   nir_foreach_function(function, sh)
+   nir_foreach_function_impl(impl, sh)
    {
-      if (function->impl) {
-         nir_foreach_block(block, function->impl)
+      nir_foreach_block(block, impl)
+      {
+         nir_foreach_instr_safe(instr, block)
          {
-            nir_foreach_instr_safe(instr, block)
-            {
-               if (instr->type != nir_instr_type_intrinsic)
-                  continue;
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
 
-               auto ir = nir_instr_as_intrinsic(instr);
-               if (ir->intrinsic == nir_intrinsic_emit_vertex ||
-                   ir->intrinsic == nir_intrinsic_emit_vertex_with_counter) {
-                  ++vertex;
-                  continue;
-               }
-               if (ir->intrinsic != nir_intrinsic_store_output)
-                  continue;
-
-               unsigned index = nir_intrinsic_base(ir) + 64 * vertex +
-                                8 * 64 * nir_intrinsic_io_semantics(ir).gs_streams;
-               m_stores[index].push_back(ir);
+            auto ir = nir_instr_as_intrinsic(instr);
+            if (ir->intrinsic == nir_intrinsic_emit_vertex ||
+                ir->intrinsic == nir_intrinsic_emit_vertex_with_counter) {
+               ++vertex;
+               continue;
             }
+            if (ir->intrinsic != nir_intrinsic_store_output)
+               continue;
+
+            unsigned index = nir_intrinsic_base(ir) + 64 * vertex +
+                             8 * 64 * nir_intrinsic_io_semantics(ir).gs_streams;
+            m_stores[index].push_back(ir);
          }
       }
    }
@@ -1231,11 +1224,9 @@ StoreMerger::combine_one_slot(vector<nir_intrinsic_instr *>& stores)
 {
    nir_ssa_def *srcs[4] = {nullptr};
 
-   nir_builder b;
-   nir_builder_init(&b, nir_shader_get_entrypoint(sh));
    auto last_store = *stores.rbegin();
 
-   b.cursor = nir_before_instr(&last_store->instr);
+   nir_builder b = nir_builder_at(nir_before_instr(&last_store->instr));
 
    unsigned comps = 0;
    unsigned writemask = 0;

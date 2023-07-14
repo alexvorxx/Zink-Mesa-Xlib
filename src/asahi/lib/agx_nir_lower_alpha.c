@@ -20,8 +20,7 @@ agx_nir_lower_alpha_to_coverage(nir_shader *shader, uint8_t nr_samples)
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_block *block = nir_impl_last_block(impl);
 
-   nir_builder _b;
-   nir_builder_init(&_b, impl);
+   nir_builder _b = nir_builder_create(impl);
    nir_builder *b = &_b;
 
    /* The store is probably at the end of the block, so search in reverse. */
@@ -86,8 +85,7 @@ agx_nir_lower_alpha_to_one(nir_shader *shader)
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_block *block = nir_impl_last_block(impl);
 
-   nir_builder _b;
-   nir_builder_init(&_b, impl);
+   nir_builder _b = nir_builder_create(impl);
    nir_builder *b = &_b;
 
    nir_foreach_instr(instr, block) {

@@ -646,7 +646,10 @@ vc4_clear_render_target(struct pipe_context *pctx, struct pipe_surface *ps,
                         unsigned x, unsigned y, unsigned w, unsigned h,
 			bool render_condition_enabled)
 {
-        fprintf(stderr, "unimpl: clear RT\n");
+        struct vc4_context *vc4 = vc4_context(pctx);
+
+        vc4_blitter_save(vc4);
+        util_blitter_clear_render_target(vc4->blitter, ps, color, x, y, w, h);
 }
 
 static void
@@ -655,7 +658,11 @@ vc4_clear_depth_stencil(struct pipe_context *pctx, struct pipe_surface *ps,
                         unsigned x, unsigned y, unsigned w, unsigned h,
 			bool render_condition_enabled)
 {
-        fprintf(stderr, "unimpl: clear DS\n");
+        struct vc4_context *vc4 = vc4_context(pctx);
+
+        vc4_blitter_save(vc4);
+        util_blitter_clear_depth_stencil(vc4->blitter, ps, buffers, depth,
+                                         stencil, x, y, w, h);
 }
 
 void

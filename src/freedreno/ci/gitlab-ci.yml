@@ -98,10 +98,10 @@ a530_gl:
   extends:
     - .baremetal-deqp-test
     - .a530-test
-    - .freedreno-manual-rules
   variables:
     DEQP_SUITE: freedreno-a530
     PIGLIT_PLATFORM: gbm
+    FDO_CI_CONCURRENT: 3  # if 4, sometimes "deqp-gles31, not enough memory for the allocation" appears
   parallel: 6
 
 # piglit and piglit_gl since it takes a bit under 20 minutes and has a lot of flakes, so
@@ -135,6 +135,8 @@ a530-traces:
     PIGLIT_RESULTS: "freedreno-a530-replay"
 
 .a618-test:
+  extends:
+    .lava-test:arm64
   variables:
     FLAKES_CHANNEL: "#freedreno-ci"
     BOOT_METHOD: depthcharge
@@ -228,7 +230,7 @@ a618_gl:
     # Note that piglit has GL+VK integration testing.
     - .freedreno-turnip-rules
   variables:
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     DEQP_VER: gles2
     PIGLIT_PROFILES: gpu
 
@@ -259,6 +261,9 @@ a618-traces-performance:
     # Always use the same device
     # a618 tag starts with cbg-1 (not cbg-0) for some reason
     LAVA_TAGS: "cbg-1"
+  needs:
+    - !reference [a618-traces, needs]
+    - !reference [.piglit-performance:arm64, needs]
 
 .lava-sm8350-hdk:
   variables:
@@ -282,6 +287,7 @@ a660_gl:
   variables:
     DEQP_SUITE: freedreno-a660
 
+# 6 devices (2023-07-06)
 .a630-test:
   extends:
     - .google-freedreno-test
@@ -338,7 +344,7 @@ a630_skqp:
     # SKQP tests both the GL and VK drivers.
     - .freedreno-turnip-rules
   variables:
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     DEQP_SUITE: freedreno-a630-skqp
 
 a630_vk:
@@ -382,7 +388,7 @@ a630_piglit:
     # Note that piglit has GL+VK integration testing.
     - .freedreno-turnip-rules
   variables:
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     DEQP_SUITE: freedreno-a630-piglit
 
 a630-traces:

@@ -152,6 +152,13 @@ struct vk_video_h265_slice_params {
    uint8_t chroma_weight_l1_flag[16];
    int16_t chroma_weight_l1[16][2];
    int16_t chroma_offset_l1[16][2];
+
+   int8_t delta_luma_weight_l0[16];
+   int8_t delta_luma_weight_l1[16];
+   int8_t delta_chroma_weight_l0[16][2];
+   int8_t delta_chroma_weight_l1[16][2];
+   int16_t delta_chroma_offset_l0[16][2];
+   int16_t delta_chroma_offset_l1[16][2];
 };
 
 void

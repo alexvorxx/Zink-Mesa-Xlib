@@ -280,8 +280,8 @@ pb_cache_init_entry(struct pb_cache *mgr, struct pb_cache_entry *entry,
  * @param can_reclaim     Whether a buffer can be reclaimed (e.g. is not busy)
  */
 void
-pb_cache_init(struct pb_cache *mgr, uint num_heaps,
-              uint usecs, float size_factor,
+pb_cache_init(struct pb_cache *mgr, unsigned num_heaps,
+              unsigned usecs, float size_factor,
               unsigned bypass_usage, uint64_t maximum_cache_size,
               void *winsys,
               void (*destroy_buffer)(void *winsys, struct pb_buffer *buf),

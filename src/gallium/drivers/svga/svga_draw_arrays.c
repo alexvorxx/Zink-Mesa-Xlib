@@ -78,7 +78,7 @@ fail:
 }
 
 
-static boolean
+static bool
 compare(unsigned cached_nr, unsigned nr, unsigned type)
 {
    if (type == U_GENERATE_REUSABLE)
@@ -176,7 +176,7 @@ static enum pipe_error
 simple_draw_arrays(struct svga_hwtnl *hwtnl,
                    enum mesa_prim prim, unsigned start, unsigned count,
                    unsigned start_instance, unsigned instance_count,
-                   ubyte vertices_per_patch)
+                   uint8_t vertices_per_patch)
 {
    SVGA3dPrimitiveRange range;
    unsigned hw_prim;
@@ -210,7 +210,7 @@ enum pipe_error
 svga_hwtnl_draw_arrays(struct svga_hwtnl *hwtnl,
                        enum mesa_prim prim, unsigned start, unsigned count,
                        unsigned start_instance, unsigned instance_count,
-                       ubyte vertices_per_patch)
+                       uint8_t vertices_per_patch)
 {
    enum mesa_prim gen_prim;
    unsigned gen_size, gen_nr;

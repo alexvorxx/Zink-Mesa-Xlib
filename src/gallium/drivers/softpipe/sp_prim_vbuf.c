@@ -85,9 +85,9 @@ sp_vbuf_get_vertex_info(struct vbuf_render *vbr)
 }
 
 
-static boolean
+static bool
 sp_vbuf_allocate_vertices(struct vbuf_render *vbr,
-                          ushort vertex_size, ushort nr_vertices)
+                          uint16_t vertex_size, uint16_t nr_vertices)
 {
    struct softpipe_vbuf_render *cvbr = softpipe_vbuf_render(vbr);
    unsigned size = vertex_size * nr_vertices;
@@ -122,8 +122,8 @@ sp_vbuf_map_vertices(struct vbuf_render *vbr)
 
 static void 
 sp_vbuf_unmap_vertices(struct vbuf_render *vbr, 
-                       ushort min_index,
-                       ushort max_index )
+                       uint16_t min_index,
+                       uint16_t max_index )
 {
    struct softpipe_vbuf_render *cvbr = softpipe_vbuf_render(vbr);
    assert( cvbr->vertex_buffer_size >= (max_index+1) * cvbr->vertex_size );
@@ -157,14 +157,14 @@ static inline cptrf4 get_vert( const void *vertex_buffer,
  * draw elements / indexed primitives
  */
 static void
-sp_vbuf_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
+sp_vbuf_draw_elements(struct vbuf_render *vbr, const uint16_t *indices, uint nr)
 {
    struct softpipe_vbuf_render *cvbr = softpipe_vbuf_render(vbr);
    struct softpipe_context *softpipe = cvbr->softpipe;
    const unsigned stride = softpipe->vertex_info.size * sizeof(float);
    const void *vertex_buffer = cvbr->vertex_buffer;
    struct setup_context *setup = cvbr->setup;
-   const boolean flatshade_first = softpipe->rasterizer->flatshade_first;
+   const bool flatshade_first = softpipe->rasterizer->flatshade_first;
    unsigned i;
 
    switch (cvbr->prim) {
@@ -361,7 +361,7 @@ sp_vbuf_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
    const unsigned stride = softpipe->vertex_info.size * sizeof(float);
    const void *vertex_buffer =
       (void *) get_vert(cvbr->vertex_buffer, start, stride);
-   const boolean flatshade_first = softpipe->rasterizer->flatshade_first;
+   const bool flatshade_first = softpipe->rasterizer->flatshade_first;
    unsigned i;
 
    switch (cvbr->prim) {

@@ -65,8 +65,7 @@ nir_lower_array_deref_of_vec_impl(nir_function_impl *impl,
 {
    bool progress = false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -187,9 +186,8 @@ nir_lower_array_deref_of_vec(nir_shader *shader, nir_variable_mode modes,
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl &&
-          nir_lower_array_deref_of_vec_impl(function->impl, modes, options))
+   nir_foreach_function_impl(impl, shader) {
+      if (nir_lower_array_deref_of_vec_impl(impl, modes, options))
          progress = true;
    }
 

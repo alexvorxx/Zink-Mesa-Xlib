@@ -72,8 +72,7 @@ implicit_downsampled_coord(nir_builder *b,
 {
    return nir_fadd(b,
                    value,
-                   nir_fdiv(b,
-                            nir_imm_float(b, 1.0f),
+                   nir_frcp(b,
                             nir_fmul(b,
                                      nir_imm_float(b, div_scale),
                                      max_value)));

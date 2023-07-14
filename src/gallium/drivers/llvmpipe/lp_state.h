@@ -88,19 +88,19 @@ struct llvmpipe_context;
 
 
 struct lp_geometry_shader {
-   boolean no_tokens;
+   bool no_tokens;
    struct pipe_stream_output_info stream_output;
    struct draw_geometry_shader *dgs;
 };
 
 struct lp_tess_ctrl_shader {
-   boolean no_tokens;
+   bool no_tokens;
    struct pipe_stream_output_info stream_output;
    struct draw_tess_ctrl_shader *dtcs;
 };
 
 struct lp_tess_eval_shader {
-   boolean no_tokens;
+   bool no_tokens;
    struct pipe_stream_output_info stream_output;
    struct draw_tess_eval_shader *dtes;
 };

@@ -176,8 +176,15 @@ lower_offset(nir_builder *b, nir_tex_instr *tex)
       if (tex->sampler_dim == GLSL_SAMPLER_DIM_RECT) {
          offset_coord = nir_fadd(b, coord, nir_i2f32(b, offset));
       } else {
-         nir_ssa_def *txs = nir_i2f32(b, nir_get_texture_size(b, tex));
-         nir_ssa_def *scale = nir_frcp(b, txs);
+         nir_ssa_def *scale = NULL;
+
+         if (b->shader->options->has_texture_scaling) {
+            nir_ssa_def *idx = nir_imm_int(b, tex->texture_index);
+            scale = nir_load_texture_scale(b, 32, idx);
+         } else {
+            nir_ssa_def *txs = nir_i2f32(b, nir_get_texture_size(b, tex));
+            scale = nir_frcp(b, txs);
+         }
 
          offset_coord = nir_fadd(b, coord,
                                  nir_fmul(b,
@@ -235,7 +242,7 @@ lower_rect_tex_scale(nir_builder *b, nir_tex_instr *tex)
    b->cursor = nir_before_instr(&tex->instr);
 
    nir_ssa_def *idx = nir_imm_int(b, tex->texture_index);
-   nir_ssa_def *scale = nir_build_load_texture_rect_scaling(b, 32, idx);
+   nir_ssa_def *scale = nir_load_texture_scale(b, 32, idx);
    int coord_index = nir_tex_instr_src_index(tex, nir_tex_src_coord);
 
    if (coord_index != -1) {
@@ -405,6 +412,25 @@ lower_y_uv_external(nir_builder *b, nir_tex_instr *tex,
 }
 
 static void
+lower_y_vu_external(nir_builder *b, nir_tex_instr *tex,
+                    const nir_lower_tex_options *options,
+                    unsigned texture_index)
+{
+   b->cursor = nir_after_instr(&tex->instr);
+
+   nir_ssa_def *y = sample_plane(b, tex, 0, options);
+   nir_ssa_def *vu = sample_plane(b, tex, 1, options);
+
+   convert_yuv_to_rgb(b, tex,
+                      nir_channel(b, y, 0),
+                      nir_channel(b, vu, 1),
+                      nir_channel(b, vu, 0),
+                      nir_imm_float(b, 1.0f),
+                      options,
+                      texture_index);
+}
+
+static void
 lower_y_u_v_external(nir_builder *b, nir_tex_instr *tex,
                      const nir_lower_tex_options *options,
                      unsigned texture_index)
@@ -444,6 +470,25 @@ lower_yx_xuxv_external(nir_builder *b, nir_tex_instr *tex,
 }
 
 static void
+lower_yx_xvxu_external(nir_builder *b, nir_tex_instr *tex,
+                       const nir_lower_tex_options *options,
+                       unsigned texture_index)
+{
+   b->cursor = nir_after_instr(&tex->instr);
+
+   nir_ssa_def *y = sample_plane(b, tex, 0, options);
+   nir_ssa_def *xvxu = sample_plane(b, tex, 1, options);
+
+   convert_yuv_to_rgb(b, tex,
+                      nir_channel(b, y, 0),
+                      nir_channel(b, xvxu, 3),
+                      nir_channel(b, xvxu, 1),
+                      nir_imm_float(b, 1.0f),
+                      options,
+                      texture_index);
+}
+
+static void
 lower_xy_uxvx_external(nir_builder *b, nir_tex_instr *tex,
                        const nir_lower_tex_options *options,
                        unsigned texture_index)
@@ -457,6 +502,25 @@ lower_xy_uxvx_external(nir_builder *b, nir_tex_instr *tex,
                      nir_channel(b, y, 1),
                      nir_channel(b, uxvx, 0),
                      nir_channel(b, uxvx, 2),
+                     nir_imm_float(b, 1.0f),
+                     options,
+                     texture_index);
+}
+
+static void
+lower_xy_vxux_external(nir_builder *b, nir_tex_instr *tex,
+                       const nir_lower_tex_options *options,
+                       unsigned texture_index)
+{
+  b->cursor = nir_after_instr(&tex->instr);
+
+  nir_ssa_def *y = sample_plane(b, tex, 0, options);
+  nir_ssa_def *vxux = sample_plane(b, tex, 1, options);
+
+  convert_yuv_to_rgb(b, tex,
+                     nir_channel(b, y, 1),
+                     nir_channel(b, vxux, 2),
+                     nir_channel(b, vxux, 0),
                      nir_imm_float(b, 1.0f),
                      options,
                      texture_index);
@@ -546,6 +610,24 @@ lower_yu_yv_external(nir_builder *b, nir_tex_instr *tex,
   convert_yuv_to_rgb(b, tex,
                      nir_channel(b, yuv, 1),
                      nir_channel(b, yuv, 2),
+                     nir_channel(b, yuv, 0),
+                     nir_imm_float(b, 1.0f),
+                     options,
+                     texture_index);
+}
+
+static void
+lower_yv_yu_external(nir_builder *b, nir_tex_instr *tex,
+                     const nir_lower_tex_options *options,
+                     unsigned texture_index)
+{
+  b->cursor = nir_after_instr(&tex->instr);
+
+  nir_ssa_def *yuv = sample_plane(b, tex, 0, options);
+
+  convert_yuv_to_rgb(b, tex,
+                     nir_channel(b, yuv, 2),
+                     nir_channel(b, yuv, 1),
                      nir_channel(b, yuv, 0),
                      nir_imm_float(b, 1.0f),
                      options,
@@ -1419,10 +1501,10 @@ nir_lower_tex_block(nir_block *block, nir_builder *b,
           tex->op != nir_texop_txf) {
          if (nir_tex_instr_is_query(tex))
             tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
-         else if (compiler_options->has_txs)
-            lower_rect(b, tex);
-         else
+         else if (compiler_options->has_texture_scaling)
             lower_rect_tex_scale(b, tex);
+         else
+            lower_rect(b, tex);
 
          progress = true;
       }
@@ -1442,6 +1524,11 @@ nir_lower_tex_block(nir_block *block, nir_builder *b,
          progress = true;
       }
 
+      if (texture_mask & options->lower_y_vu_external) {
+         lower_y_vu_external(b, tex, options, texture_index);
+         progress = true;
+      }
+
       if (texture_mask & options->lower_y_u_v_external) {
          lower_y_u_v_external(b, tex, options, texture_index);
          progress = true;
@@ -1452,8 +1539,18 @@ nir_lower_tex_block(nir_block *block, nir_builder *b,
          progress = true;
       }
 
+      if (texture_mask & options->lower_yx_xvxu_external) {
+         lower_yx_xvxu_external(b, tex, options, texture_index);
+         progress = true;
+      }
+
       if (texture_mask & options->lower_xy_uxvx_external) {
          lower_xy_uxvx_external(b, tex, options, texture_index);
+         progress = true;
+      }
+
+      if (texture_mask & options->lower_xy_vxux_external) {
+         lower_xy_vxux_external(b, tex, options, texture_index);
          progress = true;
       }
 
@@ -1474,6 +1571,11 @@ nir_lower_tex_block(nir_block *block, nir_builder *b,
 
       if ((1 << tex->texture_index) & options->lower_yu_yv_external) {
          lower_yu_yv_external(b, tex, options, texture_index);
+         progress = true;
+      }
+
+      if ((1 << tex->texture_index) & options->lower_yv_yu_external) {
+         lower_yv_yu_external(b, tex, options, texture_index);
          progress = true;
       }
 
@@ -1620,8 +1722,7 @@ nir_lower_tex_impl(nir_function_impl *impl,
                    const struct nir_shader_compiler_options *compiler_options)
 {
    bool progress = false;
-   nir_builder builder;
-   nir_builder_init(&builder, impl);
+   nir_builder builder = nir_builder_create(impl);
 
    nir_foreach_block(block, impl) {
       progress |= nir_lower_tex_block(block, &builder, options, compiler_options);
@@ -1648,9 +1749,8 @@ nir_lower_tex(nir_shader *shader, const nir_lower_tex_options *options)
       progress = nir_lower_tex(shader, &_options);
    }
 
-   nir_foreach_function(function, shader) {
-      if (function->impl)
-         progress |= nir_lower_tex_impl(function->impl, options, shader->options);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= nir_lower_tex_impl(impl, options, shader->options);
    }
 
    return progress;

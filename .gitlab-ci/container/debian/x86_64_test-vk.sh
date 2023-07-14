@@ -48,8 +48,6 @@ STABLE_EPHEMERAL=" \
       python3-setuptools \
       python3-wheel \
       software-properties-common \
-      wine \
-      wine64 \
       wine64-tools \
       xz-utils \
       "
@@ -63,6 +61,10 @@ apt-get install -y --no-remove --no-install-recommends \
       python3-lxml \
       python3-simplejson \
       sysvinit-core \
+      weston \
+      xwayland \
+      wine \
+      wine64 \
       xinit \
       xserver-xorg-video-amdgpu \
       xserver-xorg-video-ati

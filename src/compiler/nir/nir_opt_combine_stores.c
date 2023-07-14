@@ -400,7 +400,7 @@ static bool
 combine_stores_impl(struct combine_stores_state *state, nir_function_impl *impl)
 {
    state->progress = false;
-   nir_builder_init(&state->b, impl);
+   state->b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl)
       combine_stores_block(state, block);
@@ -429,10 +429,8 @@ nir_opt_combine_stores(nir_shader *shader, nir_variable_mode modes)
 
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-      progress |= combine_stores_impl(&state, function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= combine_stores_impl(&state, impl);
    }
 
    ralloc_free(mem_ctx);

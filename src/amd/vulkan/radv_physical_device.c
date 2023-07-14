@@ -53,18 +53,12 @@ typedef void *drmDevicePtr;
 #include "ac_llvm_util.h"
 #endif
 
-bool
-radv_sqtt_enabled(void)
-{
-   return debug_get_num_option("RADV_THREAD_TRACE", -1) >= 0 || getenv("RADV_THREAD_TRACE_TRIGGER");
-}
-
 static bool
 radv_perf_query_supported(const struct radv_physical_device *pdev)
 {
    /* SQTT / SPM interfere with the register states for perf counters, and
     * the code has only been tested on GFX10.3 */
-   return pdev->rad_info.gfx_level == GFX10_3 && !radv_sqtt_enabled();
+   return pdev->rad_info.gfx_level == GFX10_3 && !(pdev->instance->vk.trace_mode & RADV_TRACE_MODE_RGP);
 }
 
 static bool
@@ -83,8 +77,7 @@ radv_vrs_attachment_enabled(const struct radv_physical_device *pdevice)
 static bool
 radv_NV_device_generated_commands_enabled(const struct radv_physical_device *device)
 {
-   return !(device->instance->debug_flags & RADV_DEBUG_NO_IBS) &&
-          driQueryOptionb(&device->instance->dri_options, "radv_dgc");
+   return driQueryOptionb(&device->instance->dri_options, "radv_dgc");
 }
 
 static bool
@@ -477,7 +470,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_conditional_rendering = true,
       .EXT_conservative_rasterization = device->rad_info.gfx_level >= GFX9,
       .EXT_custom_border_color = true,
-      .EXT_debug_marker = radv_sqtt_enabled(),
+      .EXT_debug_marker = device->instance->vk.trace_mode & RADV_TRACE_MODE_RGP,
       .EXT_depth_bias_control = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
@@ -494,6 +487,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_extended_dynamic_state3 = true,
       .EXT_external_memory_dma_buf = true,
       .EXT_external_memory_host = device->rad_info.has_userptr,
+      .EXT_fragment_shader_interlock = radv_has_pops(device),
       .EXT_global_priority = true,
       .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = !device->use_llvm && !(device->instance->debug_flags & RADV_DEBUG_NO_GPL),
@@ -520,6 +514,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_pipeline_creation_cache_control = true,
       .EXT_pipeline_creation_feedback = true,
       .EXT_pipeline_library_group_handles = radv_enable_rt(device, true),
+      .EXT_pipeline_robustness = !device->use_llvm,
       .EXT_post_depth_coverage = device->rad_info.gfx_level >= GFX10,
       .EXT_primitive_topology_list_restart = true,
       .EXT_primitives_generated_query = true,
@@ -594,6 +589,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
    bool has_perf_query = radv_perf_query_supported(pdevice);
    bool has_shader_image_float_minmax = pdevice->rad_info.gfx_level != GFX8 && pdevice->rad_info.gfx_level != GFX9 &&
                                         pdevice->rad_info.gfx_level != GFX11;
+   bool has_fragment_shader_interlock = radv_has_pops(pdevice);
 
    *features = (struct vk_features){
       /* Vulkan 1.0 */
@@ -894,7 +890,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
 
       /* VK_KHR_ray_tracing_pipeline */
       .rayTracingPipeline = true,
-      .rayTracingPipelineShaderGroupHandleCaptureReplay = false,
+      .rayTracingPipelineShaderGroupHandleCaptureReplay = true,
       .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = false,
       .rayTracingPipelineTraceRaysIndirect = true,
       .rayTraversalPrimitiveCulling = true,
@@ -1021,6 +1017,14 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
       .leastRepresentableValueForceUnormRepresentation = true,
       .floatRepresentation = true,
       .depthBiasExact = true,
+
+      /* VK_EXT_fragment_shader_interlock */
+      .fragmentShaderSampleInterlock = has_fragment_shader_interlock,
+      .fragmentShaderPixelInterlock = has_fragment_shader_interlock,
+      .fragmentShaderShadingRateInterlock = false,
+
+      /* VK_EXT_pipeline_robustness */
+      .pipelineRobustness = true,
    };
 }
 
@@ -1386,6 +1390,10 @@ radv_get_physical_device_properties_1_3(struct radv_physical_device *pdevice, Vk
       /* Only GFX10+ supports wave32. */
       p->minSubgroupSize = 32;
       p->requiredSubgroupSizeStages = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      if (radv_taskmesh_enabled(pdevice)) {
+         p->requiredSubgroupSizeStages |= VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+      }
    }
 
    p->maxInlineUniformBlockSize = MAX_INLINE_UNIFORM_BLOCK_SIZE;
@@ -1607,7 +1615,8 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkPhysicalDev
          props->fragmentShadingRateWithSampleMask = true;
          props->fragmentShadingRateWithShaderSampleMask = false;
          props->fragmentShadingRateWithConservativeRasterization = true;
-         props->fragmentShadingRateWithFragmentShaderInterlock = false;
+         props->fragmentShadingRateWithFragmentShaderInterlock =
+            pdevice->rad_info.gfx_level >= GFX11 && radv_has_pops(pdevice);
          props->fragmentShadingRateWithCustomSampleLocations = false;
          props->fragmentShadingRateStrictMultiplyCombiner = true;
          break;
@@ -1668,7 +1677,7 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkPhysicalDev
          /* This isn't strictly necessary, but Doom Eternal breaks if the
           * alignment is any lower. */
          props->shaderGroupBaseAlignment = RADV_RT_HANDLE_SIZE;
-         props->shaderGroupHandleCaptureReplaySize = RADV_RT_HANDLE_SIZE;
+         props->shaderGroupHandleCaptureReplaySize = sizeof(struct radv_rt_capture_replay_handle);
          props->maxRayDispatchInvocationCount = 1024 * 1024 * 64;
          props->shaderGroupHandleAlignment = 16;
          props->maxRayHitAttributeSize = RADV_MAX_HIT_ATTRIB_SIZE;
@@ -1816,6 +1825,15 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkPhysicalDev
          properties->triStripVertexOrderIndependentOfProvokingVertex = false;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_PROPERTIES_EXT: {
+         VkPhysicalDevicePipelineRobustnessPropertiesEXT *properties =
+            (VkPhysicalDevicePipelineRobustnessPropertiesEXT *)ext;
+         properties->defaultRobustnessStorageBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+         properties->defaultRobustnessUniformBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+         properties->defaultRobustnessVertexInputs = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT;
+         properties->defaultRobustnessImages = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_2_EXT;
+         break;
+      }
       default:
          break;
       }
@@ -1886,7 +1904,7 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    device->ws = radv_null_winsys_create();
 #else
    if (drm_device) {
-      bool reserve_vmid = radv_sqtt_enabled();
+      bool reserve_vmid = instance->vk.trace_mode & RADV_TRACE_MODE_RGP;
 
       device->ws = radv_amdgpu_winsys_create(fd, instance->debug_flags, instance->perftest_flags, reserve_vmid);
    } else {
@@ -2476,22 +2494,24 @@ VKAPI_ATTR VkResult VKAPI_CALL
 radv_GetPhysicalDeviceToolProperties(VkPhysicalDevice physicalDevice, uint32_t *pToolCount,
                                      VkPhysicalDeviceToolProperties *pToolProperties)
 {
+   VK_FROM_HANDLE(radv_physical_device, pdevice, physicalDevice);
+
    VK_OUTARRAY_MAKE_TYPED(VkPhysicalDeviceToolProperties, out, pToolProperties, pToolCount);
    bool rgp_enabled, rmv_enabled, rra_enabled;
    uint32_t tool_count = 0;
 
    /* RGP */
-   rgp_enabled = radv_sqtt_enabled();
+   rgp_enabled = pdevice->instance->vk.trace_mode & RADV_TRACE_MODE_RGP;
    if (rgp_enabled)
       tool_count++;
 
    /* RMV */
-   rmv_enabled = vk_memory_trace_enabled();
+   rmv_enabled = pdevice->instance->vk.trace_mode & VK_TRACE_MODE_RMV;
    if (rmv_enabled)
       tool_count++;
 
    /* RRA */
-   rra_enabled = radv_rra_trace_enabled();
+   rra_enabled = pdevice->instance->vk.trace_mode & RADV_TRACE_MODE_RRA;
    if (rra_enabled)
       tool_count++;
 

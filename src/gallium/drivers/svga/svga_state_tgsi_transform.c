@@ -130,7 +130,7 @@ write_vpos(struct svga_context *svga,
            struct svga_shader *shader)
 {
    struct svga_token_key key;
-   boolean use_existing = FALSE;
+   bool use_existing = false;
    struct svga_shader *transform_shader;
    const struct tgsi_shader_info *info = &shader->tgsi_info;
 
@@ -141,7 +141,7 @@ write_vpos(struct svga_context *svga,
    if (shader->next) {
       transform_shader = svga_search_shader_token_key(shader->next, &key);
       if (transform_shader) {
-         use_existing = TRUE;
+         use_existing = true;
       }
    }
 
@@ -177,7 +177,7 @@ transform_dynamic_indexing(struct svga_context *svga,
                            struct svga_shader *shader)
 {
    struct svga_token_key key;
-   boolean use_existing = FALSE;
+   bool use_existing = false;
    struct svga_shader *transform_shader;
    const struct tgsi_shader_info *info = &shader->tgsi_info;
 
@@ -188,7 +188,7 @@ transform_dynamic_indexing(struct svga_context *svga,
    if (shader->next) {
       transform_shader = svga_search_shader_token_key(shader->next, &key);
       if (transform_shader) {
-         use_existing = TRUE;
+         use_existing = true;
       }
    }
 
@@ -332,7 +332,7 @@ emulate_point_sprite(struct svga_context *svga,
          return NULL;
       }
 
-      gs->wide_point = TRUE;
+      gs->wide_point = true;
       gs->aa_point_coord_index = aa_point_coord_index;
       gs->base.token_key = key;
       gs->base.parent = &orig_gs->base;
@@ -406,7 +406,7 @@ add_point_sprite_shader(struct svga_context *svga)
 }
 
 
-static boolean
+static bool
 has_dynamic_indexing(const struct tgsi_shader_info *info)
 {
    return (info->dim_indirect_files & (1u << TGSI_FILE_CONSTANT)) ||

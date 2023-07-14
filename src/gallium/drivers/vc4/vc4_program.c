@@ -1853,7 +1853,7 @@ ntq_emit_intrinsic(struct vc4_compile *c, nir_intrinsic_instr *instr)
                 break;
         }
 
-        case nir_intrinsic_load_texture_rect_scaling: {
+        case nir_intrinsic_load_texture_scale: {
                 assert(nir_src_is_const(instr->src[0]));
                 int sampler = nir_src_as_int(instr->src[0]);
 
@@ -2183,6 +2183,7 @@ static const nir_shader_compiler_options nir_options = {
         .lower_isign = true,
         .has_fsub = true,
         .has_isub = true,
+        .has_texture_scaling = true,
         .lower_mul_high = true,
         .max_unroll_iterations = 32,
         .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
@@ -2200,10 +2201,8 @@ static int
 count_nir_instrs(nir_shader *nir)
 {
         int count = 0;
-        nir_foreach_function(function, nir) {
-                if (!function->impl)
-                        continue;
-                nir_foreach_block(block, function->impl) {
+        nir_foreach_function_impl(impl, nir) {
+                nir_foreach_block(block, impl) {
                         nir_foreach_instr(instr, block)
                                 count++;
                 }
@@ -2335,7 +2334,7 @@ vc4_shader_ntq(struct vc4_context *vc4, enum qstage stage,
 
         NIR_PASS_V(c->s, nir_lower_bool_to_int32);
 
-        NIR_PASS_V(c->s, nir_convert_from_ssa, true);
+        NIR_PASS_V(c->s, nir_convert_from_ssa, true, false);
 
         if (VC4_DBG(NIR)) {
                 fprintf(stderr, "%s prog %d/%d NIR:\n",

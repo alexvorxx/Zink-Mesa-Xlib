@@ -28,63 +28,6 @@
 #include "vk_common_entrypoints.h"
 #include "wsi_common_entrypoints.h"
 
-static void
-radv_rra_handle_trace(VkQueue _queue)
-{
-   RADV_FROM_HANDLE(radv_queue, queue, _queue);
-
-   simple_mtx_lock(&queue->device->rra_trace.data_mtx);
-   /*
-    * TODO: This code is shared with RGP tracing and could be merged in a common helper.
-    */
-   bool frame_trigger = queue->device->rra_trace.elapsed_frames == queue->device->rra_trace.trace_frame;
-   if (queue->device->rra_trace.elapsed_frames <= queue->device->rra_trace.trace_frame)
-      ++queue->device->rra_trace.elapsed_frames;
-
-   bool file_trigger = false;
-#ifndef _WIN32
-   if (queue->device->rra_trace.trigger_file && access(queue->device->rra_trace.trigger_file, W_OK) == 0) {
-      if (unlink(queue->device->rra_trace.trigger_file) == 0) {
-         file_trigger = true;
-      } else {
-         /* Do not enable tracing if we cannot remove the file,
-          * because by then we'll trace every frame ... */
-         fprintf(stderr, "radv: could not remove RRA trace trigger file, ignoring\n");
-      }
-   }
-#endif
-
-   if (!frame_trigger && !file_trigger) {
-      simple_mtx_unlock(&queue->device->rra_trace.data_mtx);
-      return;
-   }
-
-   if (_mesa_hash_table_num_entries(queue->device->rra_trace.accel_structs) == 0) {
-      fprintf(stderr, "radv: No acceleration structures captured, not saving RRA trace.\n");
-      simple_mtx_unlock(&queue->device->rra_trace.data_mtx);
-      return;
-   }
-
-   char filename[2048];
-   struct tm now;
-   time_t t;
-
-   t = time(NULL);
-   now = *localtime(&t);
-
-   snprintf(filename, sizeof(filename), "/tmp/%s_%04d.%02d.%02d_%02d.%02d.%02d.rra", util_get_process_name(),
-            1900 + now.tm_year, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec);
-
-   VkResult result = radv_rra_dump_trace(_queue, filename);
-
-   if (result == VK_SUCCESS)
-      fprintf(stderr, "radv: RRA capture saved to '%s'\n", filename);
-   else
-      fprintf(stderr, "radv: Failed to save RRA capture!\n");
-
-   simple_mtx_unlock(&queue->device->rra_trace.data_mtx);
-}
-
 VKAPI_ATTR VkResult VKAPI_CALL
 rra_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
 {
@@ -92,8 +35,6 @@ rra_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
    VkResult result = queue->device->layer_dispatch.rra.QueuePresentKHR(_queue, pPresentInfo);
    if (result != VK_SUCCESS)
       return result;
-
-   radv_rra_handle_trace(_queue);
 
    if (!queue->device->rra_trace.copy_after_build)
       return VK_SUCCESS;

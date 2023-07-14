@@ -46,7 +46,7 @@
 
 #include "util/u_memory.h"
 
-#include "p_compiler.h"
+#include "util/compiler.h"
 #include "p_defines.h"
 #include "util/format/u_formats.h"
 
@@ -395,7 +395,7 @@ struct pipe_blend_color
 
 struct pipe_stencil_ref
 {
-   ubyte ref_value[2];
+   uint8_t ref_value[2];
 };
 
 
@@ -409,10 +409,10 @@ struct pipe_framebuffer_state
 {
    uint16_t width, height;
    uint16_t layers;  /**< Number of layers  in a no-attachment framebuffer */
-   ubyte samples; /**< Number of samples in a no-attachment framebuffer */
+   uint8_t samples; /**< Number of samples in a no-attachment framebuffer */
 
    /** multiple color buffers for multiple render targets */
-   ubyte nr_cbufs;
+   uint8_t nr_cbufs;
    struct pipe_surface *cbufs[PIPE_MAX_COLOR_BUFS];
 
    struct pipe_surface *zsbuf;      /**< Z/stencil buffer */
@@ -1060,6 +1060,11 @@ struct pipe_compute_state_object_info
     * of the hardware.
     */
    unsigned preferred_simd_size;
+
+   /**
+    * Bitmask of supported SIMD sizes.
+    */
+   unsigned simd_sizes;
 
    /**
     * How much private memory does this CSO require per thread (a.k.a. NIR scratch memory).

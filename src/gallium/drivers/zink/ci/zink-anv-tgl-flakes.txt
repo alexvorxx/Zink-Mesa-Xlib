@@ -1,5 +1,5 @@
 # driver seems flaky
-KHR-GL46.sample_variables.mask.rgba8*.samples.*.mask.*
+KHR-GL46.sample_variables.mask.rgba8.*.samples.*.mask.*
 
 # ???
 spec@arb_query_buffer_object@qbo

@@ -40,7 +40,10 @@ ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct a
                   unsigned rshift, unsigned bitwidth)
 {
    nir_ssa_def *value = ac_nir_load_arg(b, ac_args, arg);
-   return nir_ubfe_imm(b, value, rshift, bitwidth);
+   if (rshift)
+      return nir_ubfe_imm(b, value, rshift, bitwidth);
+   else
+      return nir_iand_imm(b, value, BITFIELD_MASK(bitwidth));
 }
 
 static bool
@@ -62,6 +65,89 @@ bool
 ac_nir_lower_sin_cos(nir_shader *shader)
 {
    return nir_shader_lower_instructions(shader, is_sin_cos, lower_sin_cos, NULL);
+}
+
+typedef struct {
+   const struct ac_shader_args *const args;
+   const enum amd_gfx_level gfx_level;
+   const enum ac_hw_stage hw_stage;
+} lower_intrinsics_to_args_state;
+
+static bool
+lower_intrinsic_to_arg(nir_builder *b, nir_instr *instr, void *state)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   lower_intrinsics_to_args_state *s = (lower_intrinsics_to_args_state *)state;
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   nir_ssa_def *replacement = NULL;
+   b->cursor = nir_after_instr(&intrin->instr);
+
+   switch (intrin->intrinsic) {
+   case nir_intrinsic_load_subgroup_id: {
+      if (s->hw_stage == AC_HW_COMPUTE_SHADER) {
+         assert(s->args->tg_size.used);
+
+         if (s->gfx_level >= GFX10_3) {
+            replacement = ac_nir_unpack_arg(b, s->args, s->args->tg_size, 20, 5);
+         } else {
+            /* GFX6-10 don't actually support a wave id, but we can
+             * use the ordered id because ORDERED_APPEND_* is set to
+             * zero in the compute dispatch initiatior.
+             */
+            replacement = ac_nir_unpack_arg(b, s->args, s->args->tg_size, 6, 6);
+         }
+      } else if (s->hw_stage == AC_HW_HULL_SHADER && s->gfx_level >= GFX11) {
+         assert(s->args->tcs_wave_id.used);
+         replacement = ac_nir_unpack_arg(b, s->args, s->args->tcs_wave_id, 0, 3);
+      } else if (s->hw_stage == AC_HW_LEGACY_GEOMETRY_SHADER ||
+                 s->hw_stage == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
+         assert(s->args->merged_wave_info.used);
+         replacement = ac_nir_unpack_arg(b, s->args, s->args->merged_wave_info, 24, 4);
+      } else {
+         replacement = nir_imm_int(b, 0);
+      }
+
+      break;
+   }
+   case nir_intrinsic_load_num_subgroups: {
+      if (s->hw_stage == AC_HW_COMPUTE_SHADER) {
+         assert(s->args->tg_size.used);
+         replacement = ac_nir_unpack_arg(b, s->args, s->args->tg_size, 0, 6);
+      } else if (s->hw_stage == AC_HW_LEGACY_GEOMETRY_SHADER ||
+                 s->hw_stage == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
+         assert(s->args->merged_wave_info.used);
+         replacement = ac_nir_unpack_arg(b, s->args, s->args->merged_wave_info, 28, 4);
+      } else {
+         replacement = nir_imm_int(b, 1);
+      }
+
+      break;
+   }
+   default:
+      return false;
+   }
+
+   assert(replacement);
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, replacement);
+   nir_instr_remove(&intrin->instr);
+   return true;
+}
+
+bool
+ac_nir_lower_intrinsics_to_args(nir_shader *shader, const enum amd_gfx_level gfx_level,
+                                const enum ac_hw_stage hw_stage,
+                                const struct ac_shader_args *ac_args)
+{
+   lower_intrinsics_to_args_state state = {
+      .gfx_level = gfx_level,
+      .hw_stage = hw_stage,
+      .args = ac_args,
+   };
+
+   return nir_shader_instructions_pass(shader, lower_intrinsic_to_arg,
+                                       nir_metadata_block_index | nir_metadata_dominance, &state);
 }
 
 void
@@ -700,9 +786,7 @@ ac_nir_lower_legacy_vs(nir_shader *nir,
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_metadata preserved = nir_metadata_block_index | nir_metadata_dominance;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
-   b.cursor = nir_after_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_after_cf_list(&impl->body));
 
    nir_alu_type output_types_16bit_lo[16][4];
    nir_alu_type output_types_16bit_hi[16][4];
@@ -1082,11 +1166,8 @@ ac_nir_lower_legacy_gs(nir_shader *nir,
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_after_cf_list(&impl->body));
    nir_builder *b = &builder;
-   nir_builder_init(b, impl);
-
-   b->cursor = nir_after_cf_list(&impl->body);
 
    /* Emit shader query for mix use legacy/NGG GS */
    bool progress = ac_nir_gs_shader_query(b,

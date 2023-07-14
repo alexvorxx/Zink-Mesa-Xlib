@@ -260,7 +260,7 @@ lower_to_shuffle(nir_builder *b, nir_intrinsic_instr *intrin,
       break;
    case nir_intrinsic_quad_broadcast:
       assert(intrin->src[1].is_ssa);
-      index = nir_ior(b, nir_iand(b, index, nir_imm_int(b, ~0x3)),
+      index = nir_ior(b, nir_iand_imm(b, index, ~0x3),
                          intrin->src[1].ssa);
       break;
    case nir_intrinsic_quad_swap_horizontal:
@@ -600,8 +600,7 @@ lower_dynamic_quad_broadcast(nir_builder *b, nir_intrinsic_instr *intrin,
       }
 
       if (i)
-         dst = nir_bcsel(b, nir_ieq(b, intrin->src[1].ssa,
-                                    nir_src_for_ssa(nir_imm_int(b, i)).ssa),
+         dst = nir_bcsel(b, nir_ieq_imm(b, intrin->src[1].ssa, i),
                          qbcst_dst, dst);
       else
          dst = qbcst_dst;

@@ -672,28 +672,32 @@ gc_context(const void *parent)
    return ctx;
 }
 
-static size_t
-gc_bucket_obj_size(unsigned bucket)
+static_assert(UINT32_MAX >= MAX_FREELIST_SIZE, "Freelist sizes use uint32_t");
+
+static uint32_t
+gc_bucket_obj_size(uint32_t bucket)
 {
    return (bucket + 1) * FREELIST_ALIGNMENT;
 }
 
-static unsigned
-gc_bucket_for_size(size_t size)
+static uint32_t
+gc_bucket_for_size(uint32_t size)
 {
    return (size - 1) / FREELIST_ALIGNMENT;
 }
 
-static unsigned
-gc_bucket_num_objs(unsigned bucket)
+static_assert(UINT32_MAX >= SLAB_SIZE, "SLAB_SIZE use uint32_t");
+
+static uint32_t
+gc_bucket_num_objs(uint32_t bucket)
 {
    return (SLAB_SIZE - sizeof(gc_slab)) / gc_bucket_obj_size(bucket);
 }
 
 static gc_block_header *
-alloc_from_slab(gc_slab *slab, unsigned bucket)
+alloc_from_slab(gc_slab *slab, uint32_t bucket)
 {
-   size_t size = gc_bucket_obj_size(bucket);
+   uint32_t size = gc_bucket_obj_size(bucket);
    gc_block_header *header;
    if (slab->freelist) {
       /* Prioritize already-allocated chunks, since they probably have a page
@@ -758,15 +762,15 @@ free_from_slab(gc_block_header *header, bool keep_empty_slabs)
    slab->num_free++;
 }
 
-static unsigned
-get_slab_size(unsigned bucket)
+static uint32_t
+get_slab_size(uint32_t bucket)
 {
    /* SLAB_SIZE rounded down to a multiple of the object size so that it's not larger than what can
     * be used.
     */
-   unsigned obj_size = gc_bucket_obj_size(bucket);
-   unsigned num_objs = gc_bucket_num_objs(bucket);
-   return align64(sizeof(gc_slab) + num_objs * obj_size, alignof(gc_slab));
+   uint32_t obj_size = gc_bucket_obj_size(bucket);
+   uint32_t num_objs = gc_bucket_num_objs(bucket);
+   return align((uint32_t)sizeof(gc_slab) + num_objs * obj_size, alignof(gc_slab));
 }
 
 static gc_slab *
@@ -810,7 +814,7 @@ gc_alloc_size(gc_ctx *ctx, size_t size, size_t align)
 
    gc_block_header *header = NULL;
    if (size <= MAX_FREELIST_SIZE) {
-      unsigned bucket = gc_bucket_for_size(size);
+      uint32_t bucket = gc_bucket_for_size((uint32_t)size);
       if (list_is_empty(&ctx->slabs[bucket].free_slabs) && !create_slab(ctx, bucket))
          return NULL;
       gc_slab *slab = list_first_entry(&ctx->slabs[bucket].free_slabs, gc_slab, free_link);

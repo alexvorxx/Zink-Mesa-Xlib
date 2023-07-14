@@ -283,8 +283,8 @@ struct r600_bytecode {
 	struct r600_isa* isa;
 	struct r600_bytecode_output pending_outputs[5];
 	int n_pending_outputs;
-	boolean			need_wait_ack; /* emit a pending WAIT_ACK prior to control flow */
-	boolean			precise;
+	bool			need_wait_ack; /* emit a pending WAIT_ACK prior to control flow */
+	bool			precise;
 };
 
 /* eg_asm.c */

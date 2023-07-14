@@ -24,10 +24,13 @@
 #include <sys/mman.h>
 #include <xf86drm.h>
 
+#include "common/xe/intel_engine.h"
+
 #include "anv_private.h"
 
 #include "xe/anv_batch_chain.h"
 
+#include "drm-uapi/gpu_scheduler.h"
 #include "drm-uapi/xe_drm.h"
 
 static uint32_t

@@ -38,12 +38,13 @@ y_range(nir_builder *b,
    case VK_SAMPLER_YCBCR_RANGE_ITU_FULL:
       return y_channel;
    case VK_SAMPLER_YCBCR_RANGE_ITU_NARROW:
-      return nir_fmul(b,
-                      nir_fadd(b,
-                               nir_fmul(b, y_channel,
-                                        nir_imm_float(b, pow(2, bpc) - 1)),
-                               nir_imm_float(b, -16.0f * pow(2, bpc - 8))),
-                      nir_frcp(b, nir_imm_float(b, 219.0f * pow(2, bpc - 8))));
+      return nir_fmul_imm(b,
+                          nir_fadd_imm(b,
+                                       nir_fmul_imm(b, y_channel,
+                                                    pow(2, bpc) - 1),
+                                       -16.0f * pow(2, bpc - 8)),
+                          1.0f / (219.0f * pow(2, bpc - 8)));
+
    default:
       unreachable("missing Ycbcr range");
       return NULL;
@@ -61,12 +62,12 @@ chroma_range(nir_builder *b,
       return nir_fadd(b, chroma_channel,
                       nir_imm_float(b, -pow(2, bpc - 1) / (pow(2, bpc) - 1.0f)));
    case VK_SAMPLER_YCBCR_RANGE_ITU_NARROW:
-      return nir_fmul(b,
-                      nir_fadd(b,
-                               nir_fmul(b, chroma_channel,
-                                        nir_imm_float(b, pow(2, bpc) - 1)),
-                               nir_imm_float(b, -128.0f * pow(2, bpc - 8))),
-                      nir_frcp(b, nir_imm_float(b, 224.0f * pow(2, bpc - 8))));
+      return nir_fmul_imm(b,
+                          nir_fadd_imm(b,
+                                       nir_fmul_imm(b, chroma_channel,
+                                                    pow(2, bpc) - 1),
+                                       -128.0f * pow(2, bpc - 8)),
+                          1.0f / (224.0f * pow(2, bpc - 8)));
    default:
       unreachable("missing Ycbcr range");
       return NULL;
@@ -191,8 +192,7 @@ implicit_downsampled_coord(nir_builder *b,
 {
    return nir_fadd(b,
                    value,
-                   nir_fdiv(b,
-                            nir_imm_float(b, 1.0f),
+                   nir_frcp(b,
                             nir_fmul(b,
                                      nir_imm_float(b, div_scale),
                                      max_value)));

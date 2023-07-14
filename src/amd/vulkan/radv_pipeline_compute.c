@@ -113,23 +113,9 @@ radv_compute_generate_pm4(const struct radv_device *device, struct radv_compute_
 }
 
 static struct radv_pipeline_key
-radv_generate_compute_pipeline_key(const struct radv_device *device, struct radv_compute_pipeline *pipeline,
-                                   const VkComputePipelineCreateInfo *pCreateInfo)
+radv_generate_compute_pipeline_key(const struct radv_device *device, const VkComputePipelineCreateInfo *pCreateInfo)
 {
-   const VkPipelineShaderStageCreateInfo *stage = &pCreateInfo->stage;
-   struct radv_pipeline_key key = radv_generate_pipeline_key(device, &pipeline->base, pCreateInfo->flags);
-
-   const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_size =
-      vk_find_struct_const(stage->pNext, PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO);
-
-   if (subgroup_size) {
-      assert(subgroup_size->requiredSubgroupSize == 32 || subgroup_size->requiredSubgroupSize == 64);
-      key.cs.compute_subgroup_size = subgroup_size->requiredSubgroupSize;
-   } else if (stage->flags & VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT) {
-      key.cs.require_full_subgroups = true;
-   }
-
-   return key;
+   return radv_generate_pipeline_key(device, &pCreateInfo->stage, 1, pCreateInfo->flags, pCreateInfo->pNext);
 }
 
 void
@@ -137,7 +123,7 @@ radv_compute_pipeline_init(const struct radv_device *device, struct radv_compute
                            const struct radv_pipeline_layout *layout, struct radv_shader *shader)
 {
    pipeline->base.need_indirect_descriptor_sets |= radv_shader_need_indirect_descriptor_sets(shader);
-   radv_pipeline_init_scratch(device, &pipeline->base);
+   radv_pipeline_init_scratch(device, &pipeline->base, shader);
 
    pipeline->base.push_constant_size = layout->push_constant_size;
    pipeline->base.dynamic_offset_count = layout->dynamic_offset_count;
@@ -217,9 +203,14 @@ radv_compute_pipeline_compile(struct radv_compute_pipeline *pipeline, struct rad
       nir_print_shader(cs_stage.nir, stderr);
 
    /* Compile NIR shader to AMD assembly. */
+   bool dump_shader = radv_can_dump_shader(device, cs_stage.nir, false);
+
+   binaries[MESA_SHADER_COMPUTE] = radv_shader_nir_to_asm(device, &cs_stage, &cs_stage.nir, 1, pipeline_key,
+                                                          keep_executable_info, keep_statistic_info);
    pipeline->base.shaders[MESA_SHADER_COMPUTE] =
-      radv_shader_nir_to_asm(device, cache, &cs_stage, &cs_stage.nir, 1, pipeline_key, keep_executable_info,
-                             keep_statistic_info, &binaries[MESA_SHADER_COMPUTE]);
+      radv_shader_create(device, cache, binaries[MESA_SHADER_COMPUTE], keep_executable_info || dump_shader);
+   radv_shader_generate_debug_info(device, dump_shader, binaries[MESA_SHADER_COMPUTE],
+                                   pipeline->base.shaders[MESA_SHADER_COMPUTE], &cs_stage.nir, 1, &cs_stage.info);
 
    cs_stage.feedback.duration += os_time_get_nano() - stage_start;
 
@@ -280,7 +271,7 @@ radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkC
    const VkPipelineCreationFeedbackCreateInfo *creation_feedback =
       vk_find_struct_const(pCreateInfo->pNext, PIPELINE_CREATION_FEEDBACK_CREATE_INFO);
 
-   struct radv_pipeline_key key = radv_generate_compute_pipeline_key(device, pipeline, pCreateInfo);
+   struct radv_pipeline_key key = radv_generate_compute_pipeline_key(device, pCreateInfo);
 
    result = radv_compute_pipeline_compile(pipeline, pipeline_layout, device, cache, &key, &pCreateInfo->stage,
                                           pCreateInfo->flags, creation_feedback);

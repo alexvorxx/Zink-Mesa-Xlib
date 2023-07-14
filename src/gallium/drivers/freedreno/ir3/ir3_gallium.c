@@ -319,13 +319,21 @@ ir3_shader_compute_state_create(struct pipe_context *pctx,
    if (ctx->screen->gen >= 6)
       ir3_nir_lower_io_to_bindless(nir);
 
+   enum ir3_wavesize_option api_wavesize = IR3_SINGLE_OR_DOUBLE;
+   enum ir3_wavesize_option real_wavesize = IR3_SINGLE_OR_DOUBLE;
+
+   if (ctx->screen->gen >= 6 && !ctx->screen->info->a6xx.supports_double_threadsize) {
+      api_wavesize = IR3_SINGLE_ONLY;
+      real_wavesize = IR3_SINGLE_ONLY;
+   }
+
    struct ir3_shader *shader =
       ir3_shader_from_nir(compiler, nir, &(struct ir3_shader_options){
                               /* TODO: force to single on a6xx with legacy
                                * ballot extension that uses 64-bit masks
                                */
-                              .api_wavesize = IR3_SINGLE_OR_DOUBLE,
-                              .real_wavesize = IR3_SINGLE_OR_DOUBLE,
+                              .api_wavesize = api_wavesize,
+                              .real_wavesize = real_wavesize,
                           }, NULL);
    shader->cs.req_input_mem = align(cso->req_input_mem, 4) / 4;     /* byte->dword */
    shader->cs.req_local_mem = cso->static_shared_mem;

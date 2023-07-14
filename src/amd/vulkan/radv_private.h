@@ -388,7 +388,13 @@ VkResult create_drm_physical_device(struct vk_instance *vk_instance, struct _drm
 
 void radv_physical_device_destroy(struct vk_physical_device *vk_device);
 
-bool radv_sqtt_enabled(void);
+enum radv_trace_mode {
+   /** Radeon GPU Profiler */
+   RADV_TRACE_MODE_RGP = 1 << VK_TRACE_MODE_COUNT,
+
+   /** Radeon Raytracing Analyzer */
+   RADV_TRACE_MODE_RRA = 1 << (VK_TRACE_MODE_COUNT + 1),
+};
 
 struct radv_instance {
    struct vk_instance vk;
@@ -851,6 +857,11 @@ void radv_queue_finish(struct radv_queue *queue);
 
 enum radeon_ctx_priority radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoKHR *pObj);
 
+struct radv_shader_free_list {
+   uint8_t size_mask;
+   struct list_head free_lists[RADV_SHADER_ALLOC_NUM_FREE_LISTS];
+};
+
 struct radv_shader_dma_submission {
    struct list_head list;
 
@@ -912,9 +923,6 @@ struct radv_rra_accel_struct_data {
 void radv_destroy_rra_accel_struct_data(VkDevice device, struct radv_rra_accel_struct_data *data);
 
 struct radv_rra_trace_data {
-   int elapsed_frames;
-   int trace_frame;
-   char *trigger_file;
    struct hash_table *accel_structs;
    struct hash_table_u64 *accel_struct_vas;
    simple_mtx_t data_mtx;
@@ -937,6 +945,12 @@ struct radv_layer_dispatch_tables {
    struct vk_device_dispatch_table rgp;
    struct vk_device_dispatch_table rra;
    struct vk_device_dispatch_table rmv;
+};
+
+enum radv_buffer_robustness {
+   RADV_BUFFER_ROBUSTNESS_DISABLED,
+   RADV_BUFFER_ROBUSTNESS_1, /* robustBufferAccess */
+   RADV_BUFFER_ROBUSTNESS_2, /* robustBufferAccess2 */
 };
 
 struct radv_device {
@@ -989,9 +1003,11 @@ struct radv_device {
    uint32_t fmask_mrt_offset_counter;
 
    struct list_head shader_arenas;
+   struct hash_table_u64 *capture_replay_arena_vas;
    unsigned shader_arena_shift;
    uint8_t shader_free_list_mask;
-   struct list_head shader_free_lists[RADV_SHADER_ALLOC_NUM_FREE_LISTS];
+   struct radv_shader_free_list shader_free_list;
+   struct radv_shader_free_list capture_replay_free_list;
    struct list_head shader_block_obj_pool;
    mtx_t shader_arena_mutex;
 
@@ -1010,8 +1026,7 @@ struct radv_device {
    uint64_t dmesg_timestamp;
 
    /* Whether the app has enabled the robustBufferAccess/robustBufferAccess2 features. */
-   bool robust_buffer_access;
-   bool robust_buffer_access2;
+   enum radv_buffer_robustness buffer_robustness;
 
    /* Whether to inline the compute dispatch size in user sgprs. */
    bool load_grid_size_from_user_sgpr;
@@ -1038,6 +1053,8 @@ struct radv_device {
 
    /* Thread trace. */
    struct ac_sqtt sqtt;
+   bool sqtt_enabled;
+   bool sqtt_triggered;
 
    /* Memory trace. */
    struct radv_memory_trace_data memory_trace;
@@ -2105,20 +2122,18 @@ struct radv_event {
    uint64_t *map;
 };
 
-#define RADV_HASH_SHADER_CS_WAVE32             (1 << 1)
-#define RADV_HASH_SHADER_PS_WAVE32             (1 << 2)
-#define RADV_HASH_SHADER_GE_WAVE32             (1 << 3)
-#define RADV_HASH_SHADER_LLVM                  (1 << 4)
-#define RADV_HASH_SHADER_KEEP_STATISTICS       (1 << 8)
-#define RADV_HASH_SHADER_USE_NGG_CULLING       (1 << 13)
-#define RADV_HASH_SHADER_ROBUST_BUFFER_ACCESS  (1 << 14)
-#define RADV_HASH_SHADER_ROBUST_BUFFER_ACCESS2 (1 << 15)
-#define RADV_HASH_SHADER_EMULATE_RT            (1 << 16)
-#define RADV_HASH_SHADER_SPLIT_FMA             (1 << 17)
-#define RADV_HASH_SHADER_RT_WAVE64             (1 << 18)
-#define RADV_HASH_SHADER_NO_FMASK              (1 << 19)
-#define RADV_HASH_SHADER_NGG_STREAMOUT         (1 << 20)
-#define RADV_HASH_SHADER_NO_RT                 (1 << 21)
+#define RADV_HASH_SHADER_CS_WAVE32       (1 << 1)
+#define RADV_HASH_SHADER_PS_WAVE32       (1 << 2)
+#define RADV_HASH_SHADER_GE_WAVE32       (1 << 3)
+#define RADV_HASH_SHADER_LLVM            (1 << 4)
+#define RADV_HASH_SHADER_KEEP_STATISTICS (1 << 8)
+#define RADV_HASH_SHADER_USE_NGG_CULLING (1 << 13)
+#define RADV_HASH_SHADER_EMULATE_RT      (1 << 16)
+#define RADV_HASH_SHADER_SPLIT_FMA       (1 << 17)
+#define RADV_HASH_SHADER_RT_WAVE64       (1 << 18)
+#define RADV_HASH_SHADER_NO_FMASK        (1 << 19)
+#define RADV_HASH_SHADER_NGG_STREAMOUT   (1 << 20)
+#define RADV_HASH_SHADER_NO_RT           (1 << 21)
 
 struct radv_pipeline_key;
 struct radv_ray_tracing_group;
@@ -2185,6 +2200,18 @@ struct radv_pipeline_group_handle {
    };
 };
 
+struct radv_serialized_shader_arena_block {
+   uint32_t offset;
+   uint32_t size;
+   uint64_t arena_va;
+   uint32_t arena_size;
+};
+
+struct radv_rt_capture_replay_handle {
+   struct radv_serialized_shader_arena_block recursive_shader_alloc;
+   uint32_t non_recursive_idx;
+};
+
 enum radv_depth_clamp_mode {
    RADV_DEPTH_CLAMP_MODE_VIEWPORT = 0,    /* Clamp to the viewport min/max depth bounds */
    RADV_DEPTH_CLAMP_MODE_ZERO_TO_ONE = 1, /* Clamp between 0.0f and 1.0f */
@@ -2194,6 +2221,8 @@ enum radv_depth_clamp_mode {
 struct radv_pipeline {
    struct vk_object_base base;
    enum radv_pipeline_type type;
+
+   struct vk_pipeline_cache_object *cache_object;
 
    bool is_internal;
    bool need_indirect_descriptor_sets;
@@ -2330,6 +2359,10 @@ struct radv_ray_tracing_pipeline {
 
    uint8_t sha1[SHA1_DIGEST_LENGTH];
    uint32_t stack_size;
+
+   /* set if any shaders from this pipeline require robustness2 in the merged traversal shader */
+   bool traversal_storage_robustness2 : 1;
+   bool traversal_uniform_robustness2 : 1;
 };
 
 struct radv_graphics_lib_pipeline {
@@ -2425,7 +2458,9 @@ struct radv_graphics_pipeline_create_info {
 };
 
 struct radv_pipeline_key radv_generate_pipeline_key(const struct radv_device *device,
-                                                    const struct radv_pipeline *pipeline, VkPipelineCreateFlags flags);
+                                                    const VkPipelineShaderStageCreateInfo *stages,
+                                                    const unsigned num_stages, VkPipelineCreateFlags flags,
+                                                    const void *pNext);
 
 void radv_pipeline_init(struct radv_device *device, struct radv_pipeline *pipeline, enum radv_pipeline_type type);
 
@@ -2447,7 +2482,8 @@ VkPipelineShaderStageCreateInfo *radv_copy_shader_stage_create_info(struct radv_
 
 bool radv_shader_need_indirect_descriptor_sets(const struct radv_shader *shader);
 
-void radv_pipeline_init_scratch(const struct radv_device *device, struct radv_pipeline *pipeline);
+void radv_pipeline_init_scratch(const struct radv_device *device, struct radv_pipeline *pipeline,
+                                struct radv_shader *shader);
 
 bool radv_pipeline_has_ngg(const struct radv_graphics_pipeline *pipeline);
 
@@ -3027,10 +3063,6 @@ bool radv_sqtt_sample_clocks(struct radv_device *device);
 void radv_emit_inhibit_clockgating(const struct radv_device *device, struct radeon_cmdbuf *cs, bool inhibit);
 void radv_emit_spi_config_cntl(const struct radv_device *device, struct radeon_cmdbuf *cs, bool enable);
 
-int radv_rra_trace_frame(void);
-char *radv_rra_trace_trigger_file(void);
-bool radv_rra_trace_enabled(void);
-
 void radv_rra_trace_init(struct radv_device *device);
 
 VkResult radv_rra_dump_trace(VkQueue vk_queue, char *filename);
@@ -3579,6 +3611,12 @@ radv_has_shader_buffer_float_minmax(const struct radv_physical_device *pdevice, 
 {
    return (pdevice->rad_info.gfx_level <= GFX7 && !pdevice->use_llvm) || pdevice->rad_info.gfx_level == GFX10 ||
           pdevice->rad_info.gfx_level == GFX10_3 || (pdevice->rad_info.gfx_level == GFX11 && bitsize == 32);
+}
+
+static inline bool
+radv_has_pops(const struct radv_physical_device *pdevice)
+{
+   return pdevice->rad_info.gfx_level >= GFX9 && !pdevice->use_llvm;
 }
 
 /* radv_perfcounter.c */

@@ -324,8 +324,6 @@ The integer capabilities:
 * ``PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS``:
   Whether copying between compressed and plain formats is supported where
   a compressed block is copied to/from a plain pixel of the same size.
-* ``PIPE_CAP_CLEAR_TEXTURE``: Whether ``clear_texture`` will be
-  available in contexts.
 * ``PIPE_CAP_CLEAR_SCISSORED``: Whether ``clear`` can accept a scissored
   bounding box.
 * ``PIPE_CAP_DRAW_PARAMETERS``: Whether ``TGSI_SEMANTIC_BASEVERTEX``,
@@ -544,7 +542,6 @@ The integer capabilities:
   enable :ext:`GL_EXT_multisampled_render_to_texture`.
 * ``PIPE_CAP_IMAGE_ATOMIC_FLOAT_ADD``: Atomic floating point adds are
   supported on images, buffers, and shared memory.
-* ``PIPE_CAP_RGB_OVERRIDE_DST_ALPHA_BLEND``: True if the driver needs blend state to use zero/one instead of destination alpha for RGB/XRGB formats.
 * ``PIPE_CAP_GLSL_TESS_LEVELS_AS_INPUTS``: True if the driver wants TESSINNER and TESSOUTER to be inputs (rather than system values) for tessellation evaluation shaders.
 * ``PIPE_CAP_DEST_SURFACE_SRGB_CONTROL``: Indicates whether the drivers
   supports switching the format between sRGB and linear for a surface that is
@@ -798,10 +795,15 @@ pipe_screen::get_compute_param.
   clock in MHz. Value type: ``uint32_t``
 * ``PIPE_COMPUTE_CAP_MAX_COMPUTE_UNITS``: Maximum number of compute units
   Value type: ``uint32_t``
+* ``PIPE_COMPUTE_CAP_MAX_SUBGROUPS``: The max amount of subgroups there can be
+  inside a block. Non 0 indicates support for OpenCL subgroups including
+  implementing ``get_compute_state_subgroup_size`` if multiple subgroup sizes
+  are supported.
 * ``PIPE_COMPUTE_CAP_IMAGES_SUPPORTED``: Whether images are supported
   non-zero means yes, zero means no. Value type: ``uint32_t``
-* ``PIPE_COMPUTE_CAP_SUBGROUP_SIZE``: The size of a basic execution unit in
-  threads. Also known as wavefront size, warp size or SIMD width.
+* ``PIPE_COMPUTE_CAP_SUBGROUP_SIZES``: Ored power of two sizes of a basic execution
+  unit in threads. Also known as wavefront size, warp size or SIMD width.
+  E.g. `64 | 32`.
 * ``PIPE_COMPUTE_CAP_ADDRESS_BITS``: The default compute device address space
   size specified as an unsigned integer value in bits.
 * ``PIPE_COMPUTE_CAP_MAX_VARIABLE_THREADS_PER_BLOCK``: Maximum variable number

@@ -218,8 +218,7 @@ dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func)
     * First, sink load_invocation_id so that it's present on both sides of barriers.
     * Each use gets a unique load of the invocation ID.
     */
-   nir_builder b;
-   nir_builder_init(&b, patch_const_func_impl);
+   nir_builder b = nir_builder_create(patch_const_func_impl);
    nir_foreach_block(block, patch_const_func_impl) {
       nir_foreach_instr_safe(instr, block) {
          if (instr->type != nir_instr_type_intrinsic)

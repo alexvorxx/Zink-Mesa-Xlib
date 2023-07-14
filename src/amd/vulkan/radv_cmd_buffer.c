@@ -2254,8 +2254,7 @@ radv_should_force_vrs1x1(struct radv_cmd_buffer *cmd_buffer)
    const struct radv_shader *ps = cmd_buffer->state.shaders[MESA_SHADER_FRAGMENT];
 
    return pdevice->rad_info.gfx_level >= GFX10_3 &&
-          (cmd_buffer->state.ms.sample_shading_enable ||
-           (ps && ps->info.ps.reads_sample_mask_in && !ps->info.ps.needs_poly_line_smooth));
+          (cmd_buffer->state.ms.sample_shading_enable || (ps && ps->info.ps.force_sample_iter_shading_rate));
 }
 
 static void
@@ -2314,8 +2313,7 @@ radv_emit_fragment_shading_rate(struct radv_cmd_buffer *cmd_buffer)
    /* Disable VRS and use the rates from PS_ITER_SAMPLES if:
     *
     * 1) sample shading is enabled or per-sample interpolation is used by the fragment shader
-    * 2) the fragment shader reads gl_SampleMaskIn because the 16-bit sample coverage mask isn't
-    *    enough for MSAA8x and 2x2 coarse shading isn't enough.
+    * 2) the fragment shader requires 1x1 shading rate for some other reason
     */
    if (radv_should_force_vrs1x1(cmd_buffer)) {
       pa_cl_vrs_cntl |= S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_OVERRIDE);
@@ -2762,7 +2760,7 @@ radv_emit_fb_color_state(struct radv_cmd_buffer *cmd_buffer, int index, struct r
 
 static void
 radv_update_zrange_precision(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_info *ds,
-                             const struct radv_image_view *iview, VkImageLayout layout, bool requires_cond_exec)
+                             const struct radv_image_view *iview, bool requires_cond_exec)
 {
    const struct radv_image *image = iview->image;
    uint32_t db_z_info = ds->db_z_info;
@@ -2770,11 +2768,6 @@ radv_update_zrange_precision(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_
 
    if (!cmd_buffer->device->physical_device->rad_info.has_tc_compat_zrange_bug || !radv_image_is_tc_compat_htile(image))
       return;
-
-   if (!radv_layout_is_htile_compressed(cmd_buffer->device, image, layout,
-                                        radv_image_queue_family_mask(image, cmd_buffer->qf, cmd_buffer->qf))) {
-      db_z_info &= C_028040_TILE_SURFACE_ENABLE;
-   }
 
    db_z_info &= C_028040_ZRANGE_PRECISION;
 
@@ -2806,8 +2799,6 @@ radv_emit_fb_ds_state(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_
                       VkImageLayout layout)
 {
    const struct radv_image *image = iview->image;
-   uint32_t db_z_info = ds->db_z_info;
-   uint32_t db_stencil_info = ds->db_stencil_info;
    uint32_t db_htile_surface = ds->db_htile_surface;
    uint32_t db_render_control = ds->db_render_control | cmd_buffer->state.db_render_control;
 
@@ -2835,8 +2826,8 @@ radv_emit_fb_ds_state(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_
          radeon_set_context_reg_seq(cmd_buffer->cs, R_02803C_DB_DEPTH_INFO, 7);
          radeon_emit(cmd_buffer->cs, S_02803C_RESOURCE_LEVEL(1));
       }
-      radeon_emit(cmd_buffer->cs, db_z_info);
-      radeon_emit(cmd_buffer->cs, db_stencil_info);
+      radeon_emit(cmd_buffer->cs, ds->db_z_info);
+      radeon_emit(cmd_buffer->cs, ds->db_stencil_info);
       radeon_emit(cmd_buffer->cs, ds->db_z_read_base);
       radeon_emit(cmd_buffer->cs, ds->db_stencil_read_base);
       radeon_emit(cmd_buffer->cs, ds->db_z_read_base);
@@ -2855,8 +2846,8 @@ radv_emit_fb_ds_state(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_
       radeon_emit(cmd_buffer->cs, ds->db_depth_size);
 
       radeon_set_context_reg_seq(cmd_buffer->cs, R_028038_DB_Z_INFO, 10);
-      radeon_emit(cmd_buffer->cs, db_z_info);                                         /* DB_Z_INFO */
-      radeon_emit(cmd_buffer->cs, db_stencil_info);                                   /* DB_STENCIL_INFO */
+      radeon_emit(cmd_buffer->cs, ds->db_z_info);                                     /* DB_Z_INFO */
+      radeon_emit(cmd_buffer->cs, ds->db_stencil_info);                               /* DB_STENCIL_INFO */
       radeon_emit(cmd_buffer->cs, ds->db_z_read_base);                                /* DB_Z_READ_BASE */
       radeon_emit(cmd_buffer->cs, S_028044_BASE_HI(ds->db_z_read_base >> 32));        /* DB_Z_READ_BASE_HI */
       radeon_emit(cmd_buffer->cs, ds->db_stencil_read_base);                          /* DB_STENCIL_READ_BASE */
@@ -2874,8 +2865,8 @@ radv_emit_fb_ds_state(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_
 
       radeon_set_context_reg_seq(cmd_buffer->cs, R_02803C_DB_DEPTH_INFO, 9);
       radeon_emit(cmd_buffer->cs, ds->db_depth_info);         /* R_02803C_DB_DEPTH_INFO */
-      radeon_emit(cmd_buffer->cs, db_z_info);                 /* R_028040_DB_Z_INFO */
-      radeon_emit(cmd_buffer->cs, db_stencil_info);           /* R_028044_DB_STENCIL_INFO */
+      radeon_emit(cmd_buffer->cs, ds->db_z_info);             /* R_028040_DB_Z_INFO */
+      radeon_emit(cmd_buffer->cs, ds->db_stencil_info);       /* R_028044_DB_STENCIL_INFO */
       radeon_emit(cmd_buffer->cs, ds->db_z_read_base);        /* R_028048_DB_Z_READ_BASE */
       radeon_emit(cmd_buffer->cs, ds->db_stencil_read_base);  /* R_02804C_DB_STENCIL_READ_BASE */
       radeon_emit(cmd_buffer->cs, ds->db_z_write_base);       /* R_028050_DB_Z_WRITE_BASE */
@@ -2885,7 +2876,7 @@ radv_emit_fb_ds_state(struct radv_cmd_buffer *cmd_buffer, struct radv_ds_buffer_
    }
 
    /* Update the ZRANGE_PRECISION value for the TC-compat bug. */
-   radv_update_zrange_precision(cmd_buffer, ds, iview, layout, true);
+   radv_update_zrange_precision(cmd_buffer, ds, iview, true);
 }
 
 static void
@@ -2945,8 +2936,7 @@ radv_update_bound_fast_clear_ds(struct radv_cmd_buffer *cmd_buffer, const struct
     * only needed when clearing Z to 0.0.
     */
    if ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) && ds_clear_value.depth == 0.0) {
-      radv_update_zrange_precision(cmd_buffer, &cmd_buffer->state.render.ds_att.ds, iview,
-                                   cmd_buffer->state.render.ds_att.layout, false);
+      radv_update_zrange_precision(cmd_buffer, &cmd_buffer->state.render.ds_att.ds, iview, false);
    }
 
    cmd_buffer->state.context_roll_without_scissor_emitted = true;
@@ -3399,8 +3389,9 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
    unsigned color_invalid = cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11
                                ? S_028C70_FORMAT_GFX11(V_028C70_COLOR_INVALID)
                                : S_028C70_FORMAT_GFX6(V_028C70_COLOR_INVALID);
+   VkExtent2D extent = {MAX_FRAMEBUFFER_WIDTH, MAX_FRAMEBUFFER_HEIGHT};
 
-   ASSERTED unsigned cdw_max = radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, 48 + MAX_RTS * 70);
+   ASSERTED unsigned cdw_max = radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, 51 + MAX_RTS * 70);
 
    for (i = 0; i < render->color_att_count; ++i) {
       struct radv_image_view *iview = render->color_att[i].iview;
@@ -3435,6 +3426,9 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
           */
          disable_constant_encode_ac01 = true;
       }
+
+      extent.width = MIN2(extent.width, iview->vk.extent.width);
+      extent.height = MIN2(extent.height, iview->vk.extent.height);
    }
    for (; i < cmd_buffer->state.last_subpass_color_count; i++) {
       radeon_set_context_reg(cmd_buffer->cs, R_028C70_CB_COLOR0_INFO + i * 0x3C, color_invalid);
@@ -3455,6 +3449,9 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
           */
          radv_load_ds_clear_metadata(cmd_buffer, iview);
       }
+
+      extent.width = MIN2(extent.width, iview->vk.extent.width);
+      extent.height = MIN2(extent.height, iview->vk.extent.height);
    } else if (cmd_buffer->device->physical_device->rad_info.gfx_level == GFX10_3 && render->vrs_att.iview &&
               radv_cmd_buffer_get_vrs_image(cmd_buffer)) {
       /* When a subpass uses a VRS attachment without binding a depth/stencil attachment, we have to
@@ -3534,6 +3531,9 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
                                    S_028424_DISABLE_CONSTANT_ENCODE_REG(disable_constant_encode));
       }
    }
+
+   radeon_set_context_reg(cmd_buffer->cs, R_028034_PA_SC_SCREEN_SCISSOR_BR,
+                          S_028034_BR_X(extent.width) | S_028034_BR_Y(extent.height));
 
    assert(cmd_buffer->cs->cdw <= cdw_max);
 
@@ -6339,8 +6339,8 @@ radv_bind_fragment_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_
    if (!previous_ps || previous_ps->info.ps.reads_fully_covered != ps->info.ps.reads_fully_covered)
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_CONSERVATIVE_RAST_MODE;
 
-   if (gfx_level >= GFX10_3 &&
-       (!previous_ps || previous_ps->info.ps.reads_sample_mask_in != ps->info.ps.reads_sample_mask_in))
+   if (gfx_level >= GFX10_3 && (!previous_ps || previous_ps->info.ps.force_sample_iter_shading_rate !=
+                                                   ps->info.ps.force_sample_iter_shading_rate))
       cmd_buffer->state.dirty |=
          RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES | RADV_CMD_DIRTY_DYNAMIC_FRAGMENT_SHADING_RATE;
 
@@ -6357,7 +6357,8 @@ radv_bind_fragment_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES;
    }
 
-   if (!previous_ps || previous_ps->info.ps.db_shader_control != ps->info.ps.db_shader_control)
+   if (!previous_ps || previous_ps->info.ps.db_shader_control != ps->info.ps.db_shader_control ||
+       previous_ps->info.ps.pops_is_per_sample != ps->info.ps.pops_is_per_sample)
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DB_SHADER_CONTROL;
 
    /* Re-emit the PS epilog when a new fragment shader is bound. */
@@ -8698,6 +8699,7 @@ radv_emit_db_shader_control(struct radv_cmd_buffer *cmd_buffer)
    const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
    const bool uses_ds_feedback_loop =
       !!(d->feedback_loop_aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT));
+   const unsigned rasterization_samples = radv_get_rasterization_samples(cmd_buffer);
 
    uint32_t db_shader_control;
 
@@ -8717,7 +8719,27 @@ radv_emit_db_shader_control(struct radv_cmd_buffer *cmd_buffer)
        (rad_info->gfx_level == GFX6 && d->vk.rs.line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT))
       db_shader_control = (db_shader_control & C_02880C_Z_ORDER) | S_02880C_Z_ORDER(V_02880C_LATE_Z);
 
-   if (rad_info->has_export_conflict_bug && radv_get_rasterization_samples(cmd_buffer) == 1) {
+   if (ps && ps->info.ps.pops) {
+      /* POPS_OVERLAP_NUM_SAMPLES (OVERRIDE_INTRINSIC_RATE on GFX11, must always be enabled for POPS) controls the
+       * interlock granularity.
+       * PixelInterlock: 1x.
+       * SampleInterlock: MSAA_EXPOSED_SAMPLES (much faster at common edges of adjacent primitives with MSAA).
+       */
+      if (rad_info->gfx_level >= GFX11) {
+         db_shader_control |= S_02880C_OVERRIDE_INTRINSIC_RATE_ENABLE(1);
+         if (ps->info.ps.pops_is_per_sample)
+            db_shader_control |= S_02880C_OVERRIDE_INTRINSIC_RATE(util_logbase2(rasterization_samples));
+      } else {
+         if (ps->info.ps.pops_is_per_sample)
+            db_shader_control |= S_02880C_POPS_OVERLAP_NUM_SAMPLES(util_logbase2(rasterization_samples));
+
+         if (rad_info->has_pops_missed_overlap_bug) {
+            radeon_set_context_reg(cmd_buffer->cs, R_028060_DB_DFSM_CONTROL,
+                                   S_028060_PUNCHOUT_MODE(V_028060_FORCE_OFF) |
+                                      S_028060_POPS_DRAIN_PS_ON_OVERLAP(rasterization_samples >= 8));
+         }
+      }
+   } else if (rad_info->has_export_conflict_bug && rasterization_samples == 1) {
       for (uint32_t i = 0; i < MAX_RTS; i++) {
          if (d->vk.cb.attachments[i].write_mask && d->vk.cb.attachments[i].blend_enable) {
             db_shader_control |= S_02880C_OVERRIDE_INTRINSIC_RATE_ENABLE(1) | S_02880C_OVERRIDE_INTRINSIC_RATE(2);

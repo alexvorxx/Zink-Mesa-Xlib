@@ -559,10 +559,8 @@ hs_emit_write_tess_factors(nir_shader *shader,
 
    /* We assume there is always a single end block in the shader. */
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_after_block(last_block));
    nir_builder *b = &builder; /* This is to avoid the & */
-   nir_builder_init(b, impl);
-   b->cursor = nir_after_block(last_block);
 
    /* If tess factors are load from LDS, wait previous LDS stores done. */
    if (!st->tcs_pass_tessfactors_by_reg) {

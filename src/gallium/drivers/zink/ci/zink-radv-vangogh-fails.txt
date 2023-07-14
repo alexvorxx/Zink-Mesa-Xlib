@@ -21,6 +21,9 @@ spec@arb_query_buffer_object@qbo@query-GL_GEOMETRY_SHADER_INVOCATIONS-SYNC-GL_UN
 glx@glx-multi-window-single-context,Crash
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_ust_test,Fail
 
+# Mesa bug not Zink bug. See piglit MR 824
+spec@arb_bindless_texture@compiler@images@return-struct.frag,Crash
+
 # #6115
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-float-index-rd,Crash
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec2-index-rd,Crash
@@ -441,3 +444,8 @@ spec@!opengl 1.0@gl-1.0-polygon-line-aa,Fail
 
 # Regression noticed in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/891104
 spec@arb_viewport_array@display-list,Fail
+
+# Leaks due to test bug https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/825
+spec@ext_transform_feedback@api-errors bind_pipeline,Crash
+spec@ext_transform_feedback@api-errors useprogstage_active,Crash
+spec@ext_transform_feedback@api-errors useprogstage_noactive,Crash

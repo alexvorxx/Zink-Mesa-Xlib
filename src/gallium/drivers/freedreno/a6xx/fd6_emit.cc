@@ -746,16 +746,23 @@ fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
 void
 fd6_emit_ccu_cntl(struct fd_ringbuffer *ring, struct fd_screen *screen, bool gmem)
 {
+   enum a6xx_ccu_color_cache_size cache_size = (a6xx_ccu_color_cache_size)(screen->info->a6xx.gmem_ccu_color_cache_fraction);
    uint32_t offset = gmem ? screen->ccu_offset_gmem : screen->ccu_offset_bypass;
    uint32_t offset_hi = offset >> 21;
    offset &= 0x1fffff;
 
-   OUT_REG(ring, A6XX_RB_CCU_CNTL(
-         .concurrent_resolve = gmem && screen->info->a6xx.concurrent_resolve,
-         .color_offset_hi = offset_hi,
-         .gmem = gmem,
-         .color_offset = offset,
-   ));
+   OUT_REG(ring,
+           A6XX_RB_CCU_CNTL(.gmem_fast_clear_disable =
+                               !screen->info->a6xx.has_gmem_fast_clear,
+                            .concurrent_resolve =
+                               screen->info->a6xx.concurrent_resolve,
+                            .depth_offset_hi = 0,
+                            .color_offset_hi = offset_hi,
+                            .depth_cache_size = 0,
+                            .depth_offset = 0,
+                            .color_cache_size = cache_size,
+                            .color_offset = offset,
+                            ));
 }
 
 template void fd6_emit_cs_state<A6XX>(struct fd_context *ctx, struct fd_ringbuffer *ring, struct fd6_compute_state *cs);
@@ -792,28 +799,28 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
 
    WRITE(REG_A6XX_RB_DBG_ECO_CNTL, screen->info->a6xx.magic.RB_DBG_ECO_CNTL);
    WRITE(REG_A6XX_SP_FLOAT_CNTL, A6XX_SP_FLOAT_CNTL_F16_NO_INF);
-   WRITE(REG_A6XX_SP_DBG_ECO_CNTL, 0);
+   WRITE(REG_A6XX_SP_DBG_ECO_CNTL, screen->info->a6xx.magic.SP_DBG_ECO_CNTL);
    WRITE(REG_A6XX_SP_PERFCTR_ENABLE, 0x3f);
    WRITE(REG_A6XX_TPL1_UNKNOWN_B605, 0x44);
    WRITE(REG_A6XX_TPL1_DBG_ECO_CNTL, screen->info->a6xx.magic.TPL1_DBG_ECO_CNTL);
    WRITE(REG_A6XX_HLSQ_UNKNOWN_BE00, 0x80);
    WRITE(REG_A6XX_HLSQ_UNKNOWN_BE01, 0);
 
-   WRITE(REG_A6XX_VPC_DBG_ECO_CNTL, 0);
-   WRITE(REG_A6XX_GRAS_DBG_ECO_CNTL, 0x880);
-   WRITE(REG_A6XX_HLSQ_DBG_ECO_CNTL, 0x80000);
-   WRITE(REG_A6XX_SP_CHICKEN_BITS, 0x1430);
+   WRITE(REG_A6XX_VPC_DBG_ECO_CNTL, screen->info->a6xx.magic.VPC_DBG_ECO_CNTL);
+   WRITE(REG_A6XX_GRAS_DBG_ECO_CNTL, screen->info->a6xx.magic.GRAS_DBG_ECO_CNTL);
+   WRITE(REG_A6XX_HLSQ_DBG_ECO_CNTL, screen->info->a6xx.magic.HLSQ_DBG_ECO_CNTL);
+   WRITE(REG_A6XX_SP_CHICKEN_BITS, screen->info->a6xx.magic.SP_CHICKEN_BITS);
    WRITE(REG_A6XX_SP_IBO_COUNT, 0);
    WRITE(REG_A6XX_SP_UNKNOWN_B182, 0);
    WRITE(REG_A6XX_HLSQ_SHARED_CONSTS, 0);
-   WRITE(REG_A6XX_UCHE_UNKNOWN_0E12, 0x3200000);
-   WRITE(REG_A6XX_UCHE_CLIENT_PF, 4);
-   WRITE(REG_A6XX_RB_UNKNOWN_8E01, 0x1);
+   WRITE(REG_A6XX_UCHE_UNKNOWN_0E12, screen->info->a6xx.magic.UCHE_UNKNOWN_0E12);
+   WRITE(REG_A6XX_UCHE_CLIENT_PF, screen->info->a6xx.magic.UCHE_CLIENT_PF);
+   WRITE(REG_A6XX_RB_UNKNOWN_8E01, screen->info->a6xx.magic.RB_UNKNOWN_8E01);
    WRITE(REG_A6XX_SP_MODE_CONTROL,
          A6XX_SP_MODE_CONTROL_CONSTANT_DEMOTION_ENABLE | 4);
    WRITE(REG_A6XX_VFD_ADD_OFFSET, A6XX_VFD_ADD_OFFSET_VERTEX);
    WRITE(REG_A6XX_RB_UNKNOWN_8811, 0x00000010);
-   WRITE(REG_A6XX_PC_MODE_CNTL, 0x1f);
+   WRITE(REG_A6XX_PC_MODE_CNTL, screen->info->a6xx.magic.PC_MODE_CNTL);
 
    WRITE(REG_A6XX_GRAS_LRZ_PS_INPUT_CNTL, 0);
    WRITE(REG_A6XX_GRAS_SAMPLE_CNTL, 0);

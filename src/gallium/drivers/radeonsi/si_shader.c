@@ -774,10 +774,6 @@ void si_init_shader_args(struct si_shader *shader, struct si_shader_args *args)
    shader->info.num_input_vgprs -= num_prolog_vgprs;
 }
 
-/* For the UMR disassembler. */
-#define DEBUGGER_END_OF_CODE_MARKER 0xbf9f0000 /* invalid instruction */
-#define DEBUGGER_NUM_MARKERS        5
-
 static unsigned get_lds_granularity(struct si_screen *screen, gl_shader_stage stage)
 {
    return screen->info.gfx_level >= GFX11 && stage == MESA_SHADER_FRAGMENT ? 1024 :
@@ -891,12 +887,14 @@ static bool upload_binary_elf(struct si_screen *sscreen, struct si_shader *shade
    if (!si_shader_binary_open(sscreen, shader, &binary))
       return false;
 
+   unsigned rx_size = ac_align_shader_binary_for_prefetch(&sscreen->info, binary.rx_size);
+
    si_resource_reference(&shader->bo, NULL);
    shader->bo = si_aligned_buffer_create(
       &sscreen->b,
       (sscreen->info.cpdma_prefetch_writes_memory ? 0 : SI_RESOURCE_FLAG_READ_ONLY) |
       SI_RESOURCE_FLAG_DRIVER_INTERNAL | SI_RESOURCE_FLAG_32BIT,
-      PIPE_USAGE_IMMUTABLE, align(binary.rx_size, SI_CPDMA_ALIGNMENT), 256);
+      PIPE_USAGE_IMMUTABLE, align(rx_size, SI_CPDMA_ALIGNMENT), 256);
    if (!shader->bo)
       return false;
 
@@ -1539,9 +1537,6 @@ static bool si_nir_kill_outputs(nir_shader *nir, const union si_shader_key *key)
 
    bool progress = false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
          if (instr->type != nir_instr_type_intrinsic)
@@ -1934,11 +1929,8 @@ static void si_nir_lower_ps_color_input(nir_shader *nir, struct si_shader *shade
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_before_cf_list(&impl->body));
    nir_builder *b = &builder;
-   nir_builder_init(b, impl);
-
-   b->cursor = nir_before_cf_list(&impl->body);
 
    const struct si_shader_selector *sel = shader->selector;
    const union si_shader_key *key = &shader->key;
@@ -2018,11 +2010,8 @@ static void si_nir_emit_polygon_stipple(nir_shader *nir, struct si_shader_args *
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder builder;
+   nir_builder builder = nir_builder_at(nir_before_cf_list(&impl->body));
    nir_builder *b = &builder;
-   nir_builder_init(b, impl);
-
-   b->cursor = nir_before_cf_list(&impl->body);
 
    /* Load the buffer descriptor. */
    nir_ssa_def *desc =
@@ -2277,6 +2266,9 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
                .allow_fp16 = sel->screen->info.gfx_level >= GFX9,
             });
 
+   NIR_PASS(progress2, nir, ac_nir_lower_intrinsics_to_args, sel->screen->info.gfx_level,
+            si_select_hw_stage(nir->info.stage, key, sel->screen->info.gfx_level),
+            &args->ac);
    NIR_PASS(progress2, nir, si_nir_lower_abi, shader, args);
 
    if (progress2 || opt_offsets)
@@ -2418,6 +2410,7 @@ si_nir_generate_gs_copy_shader(struct si_screen *sscreen,
    struct si_shader_args args;
    si_init_shader_args(shader, &args);
 
+   NIR_PASS_V(nir, ac_nir_lower_intrinsics_to_args, sscreen->info.gfx_level, AC_HW_VERTEX_SHADER, &args.ac);
    NIR_PASS_V(nir, si_nir_lower_abi, shader, &args);
 
    si_nir_opts(gs_selector->screen, nir, false);
@@ -2704,7 +2697,7 @@ bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compi
         sel->stage == MESA_SHADER_TESS_EVAL ||
         sel->stage == MESA_SHADER_GEOMETRY) &&
        !shader->key.ge.as_ls && !shader->key.ge.as_es) {
-      ubyte *vs_output_param_offset = shader->info.vs_output_param_offset;
+      uint8_t *vs_output_param_offset = shader->info.vs_output_param_offset;
 
       if (sel->stage == MESA_SHADER_GEOMETRY && !shader->key.ge.as_ngg)
          vs_output_param_offset = shader->gs_copy_shader->info.vs_output_param_offset;
@@ -3025,7 +3018,7 @@ void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *ke
       shader->info.uses_vmem_load_other = true;
 
    if (info->colors_read) {
-      ubyte *color = shader->selector->info.color_attr_index;
+      uint8_t *color = shader->selector->info.color_attr_index;
 
       if (shader->key.ps.part.prolog.color_two_side) {
          /* BCOLORs are stored after the last input. */

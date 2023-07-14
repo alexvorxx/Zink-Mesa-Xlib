@@ -27,7 +27,7 @@
  **************************************************************************/
 
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_memory.h"
 #include "tgsi_strings.h"
 

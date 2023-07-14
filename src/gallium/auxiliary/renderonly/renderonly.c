@@ -43,6 +43,7 @@ renderonly_scanout_destroy(struct renderonly_scanout *scanout,
 {
    struct drm_mode_destroy_dumb destroy_dumb = {0};
 
+   assert(p_atomic_read(&scanout->refcnt) > 0);
    if (p_atomic_dec_return(&scanout->refcnt))
       return;
 
@@ -66,7 +67,7 @@ renderonly_create_kms_dumb_buffer_for_resource(struct pipe_resource *rsc,
                                                struct renderonly *ro,
                                                struct winsys_handle *out_handle)
 {
-   struct renderonly_scanout *scanout;
+   struct renderonly_scanout *scanout = NULL;
    int err;
    struct drm_mode_create_dumb create_dumb = {
       .width = rsc->width0,
@@ -114,7 +115,13 @@ renderonly_create_kms_dumb_buffer_for_resource(struct pipe_resource *rsc,
    return scanout;
 
 free_dumb:
-   destroy_dumb.handle = scanout->handle;
+   /* If an error occured, make sure we reset the scanout object before
+    * leaving.
+    */
+   if (scanout)
+      memset(scanout, 0, sizeof(*scanout));
+
+   destroy_dumb.handle = create_dumb.handle;
    drmIoctl(ro->kms_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
 
    return NULL;
@@ -127,7 +134,7 @@ renderonly_create_gpu_import_for_resource(struct pipe_resource *rsc,
 {
    struct pipe_screen *screen = rsc->screen;
    struct renderonly_scanout *scanout = NULL;
-   boolean status;
+   bool status;
    uint32_t scanout_handle;
    int fd, err;
    struct winsys_handle handle = {

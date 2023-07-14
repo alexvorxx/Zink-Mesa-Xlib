@@ -298,9 +298,8 @@ nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl)
-         progress = lower_phis_to_scalar_impl(function->impl, lower_all) || progress;
+   nir_foreach_function_impl(impl, shader) {
+      progress = lower_phis_to_scalar_impl(impl, lower_all) || progress;
    }
 
    return progress;

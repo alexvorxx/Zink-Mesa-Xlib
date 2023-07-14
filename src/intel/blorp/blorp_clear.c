@@ -1311,8 +1311,7 @@ blorp_ccs_resolve(struct blorp_batch *batch,
 static nir_ssa_def *
 blorp_nir_bit(nir_builder *b, nir_ssa_def *src, unsigned bit)
 {
-   return nir_iand(b, nir_ushr(b, src, nir_imm_int(b, bit)),
-                      nir_imm_int(b, 1));
+   return nir_iand_imm(b, nir_ushr_imm(b, src, bit), 1);
 }
 
 #pragma pack(push, 1)

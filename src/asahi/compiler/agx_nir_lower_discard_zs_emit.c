@@ -13,7 +13,7 @@
 #define BASE_S      2
 
 static bool
-lower_zs_emit(nir_function_impl *impl, nir_block *block)
+lower_zs_emit(nir_block *block)
 {
    nir_intrinsic_instr *zs_emit = NULL;
    bool progress = false;
@@ -31,9 +31,7 @@ lower_zs_emit(nir_function_impl *impl, nir_block *block)
           sem.location != FRAG_RESULT_STENCIL)
          continue;
 
-      nir_builder b;
-      nir_builder_init(&b, impl);
-      b.cursor = nir_before_instr(instr);
+      nir_builder b = nir_builder_at(nir_before_instr(instr));
 
       nir_ssa_def *value = intr->src[0].ssa;
       bool z = (sem.location == FRAG_RESULT_DEPTH);
@@ -119,21 +117,18 @@ agx_nir_lower_zs_emit(nir_shader *s)
 
    bool any_progress = false;
 
-   nir_foreach_function(function, s) {
-      if (!function->impl)
-         continue;
-
+   nir_foreach_function_impl(impl, s) {
       bool progress = false;
 
-      nir_foreach_block(block, function->impl) {
-         progress |= lower_zs_emit(function->impl, block);
+      nir_foreach_block(block, impl) {
+         progress |= lower_zs_emit(block);
       }
 
       if (progress) {
          nir_metadata_preserve(
-            function->impl, nir_metadata_block_index | nir_metadata_dominance);
+            impl, nir_metadata_block_index | nir_metadata_dominance);
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
 
       any_progress |= progress;

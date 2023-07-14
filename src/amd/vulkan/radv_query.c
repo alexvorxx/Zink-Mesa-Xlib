@@ -324,9 +324,9 @@ build_pipeline_statistics_query_shader(struct radv_device *device)
 
       nir_store_var(&b, result, nir_isub(&b, end, start), 0x1);
 
-      nir_push_if(&b, nir_iand(&b, nir_i2b(&b, uses_gds),
-                               nir_ieq_imm(&b, nir_imm_int(&b, 1u << i),
-                                           VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT)));
+      nir_push_if(&b,
+                  nir_iand(&b, nir_i2b(&b, uses_gds),
+                           nir_imm_bool(&b, 1u << i == VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT)));
       {
          /* Compute the GDS result if needed. */
          nir_ssa_def *gds_start_offset = nir_iadd(&b, input_base, nir_imm_int(&b, pipelinestat_block_size * 2));
@@ -637,7 +637,7 @@ build_pg_query_shader(struct radv_device *device)
     *	        }
     *		available = true;
     *	}
-    * 	uint32_t result_size = flags & VK_QUERY_RESULT_64_BIT ? 16 : 8;
+    * 	uint32_t result_size = flags & VK_QUERY_RESULT_64_BIT ? 8 : 4;
     * 	if ((flags & VK_QUERY_RESULT_PARTIAL_BIT) || available) {
     *		if (flags & VK_QUERY_RESULT_64_BIT) {
     *			dst_buf[dst_offset] = result;
@@ -723,7 +723,7 @@ build_pg_query_shader(struct radv_device *device)
 
    /* Determine if result is 64 or 32 bit. */
    nir_ssa_def *result_is_64bit = nir_test_mask(&b, flags, VK_QUERY_RESULT_64_BIT);
-   nir_ssa_def *result_size = nir_bcsel(&b, result_is_64bit, nir_imm_int(&b, 16), nir_imm_int(&b, 8));
+   nir_ssa_def *result_size = nir_bcsel(&b, result_is_64bit, nir_imm_int(&b, 8), nir_imm_int(&b, 4));
 
    /* Store the result if complete or partial results have been requested. */
    nir_push_if(&b, nir_ior(&b, nir_test_mask(&b, flags, VK_QUERY_RESULT_PARTIAL_BIT), nir_load_var(&b, available)));

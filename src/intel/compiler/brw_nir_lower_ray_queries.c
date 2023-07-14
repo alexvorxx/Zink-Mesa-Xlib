@@ -503,9 +503,7 @@ static void
 lower_ray_query_impl(nir_function_impl *impl, struct lowering_state *state)
 {
    nir_builder _b, *b = &_b;
-   nir_builder_init(&_b, impl);
-
-   b->cursor = nir_before_block(nir_start_block(b->impl));
+   _b = nir_builder_at(nir_before_block(nir_start_block(impl)));
 
    state->rq_globals = nir_load_ray_query_global_intel(b);
 

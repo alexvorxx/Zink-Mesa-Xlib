@@ -818,22 +818,21 @@ blorp_nir_manual_blend_bilinear(nir_builder *b, nir_ssa_def *pos,
       sample = nir_f2i32(b, sample);
 
       if (tex_samples == 2) {
-         sample = nir_isub(b, nir_imm_int(b, 1), sample);
+         sample = nir_isub_imm(b, 1, sample);
       } else if (tex_samples == 8) {
-         sample = nir_iand(b, nir_ishr(b, nir_imm_int(b, 0x64210573),
-                                       nir_ishl(b, sample, nir_imm_int(b, 2))),
-                           nir_imm_int(b, 0xf));
+         sample = nir_iand_imm(b, nir_ishr(b, nir_imm_int(b, 0x64210573),
+                                           nir_ishl_imm(b, sample, 2)),
+                               0xf);
       } else if (tex_samples == 16) {
          nir_ssa_def *sample_low =
-            nir_iand(b, nir_ishr(b, nir_imm_int(b, 0xd31479af),
-                                 nir_ishl(b, sample, nir_imm_int(b, 2))),
-                     nir_imm_int(b, 0xf));
+            nir_iand_imm(b, nir_ishr(b, nir_imm_int(b, 0xd31479af),
+                                     nir_ishl_imm(b, sample, 2)),
+                         0xf);
          nir_ssa_def *sample_high =
-            nir_iand(b, nir_ishr(b, nir_imm_int(b, 0xe58b602c),
-                                 nir_ishl(b, nir_iadd(b, sample,
-                                                      nir_imm_int(b, -8)),
-                                          nir_imm_int(b, 2))),
-                     nir_imm_int(b, 0xf));
+            nir_iand_imm(b, nir_ishr(b, nir_imm_int(b, 0xe58b602c),
+                                     nir_ishl_imm(b, nir_iadd_imm(b, sample, -8),
+                                                  2)),
+                         0xf);
 
          sample = nir_bcsel(b, nir_ilt_imm(b, sample, 8),
                             sample_low, sample_high);
@@ -905,8 +904,8 @@ bit_cast_color(struct nir_builder *b, nir_ssa_def *color,
 
          const unsigned chan_start_bit = dst_fmtl->channels_array[c].start_bit;
          const unsigned chan_bits = dst_fmtl->channels_array[c].bits;
-         chans[c] = nir_iand(b, nir_shift_imm(b, packed, -(int)chan_start_bit),
-                                nir_imm_int(b, BITFIELD_MASK(chan_bits)));
+         chans[c] = nir_iand_imm(b, nir_shift_imm(b, packed, -(int)chan_start_bit),
+                                    BITFIELD_MASK(chan_bits));
 
          if (dst_fmtl->channels_array[c].type == ISL_UNORM)
             chans[c] = nir_format_unorm_to_float(b, chans[c], &chan_bits);

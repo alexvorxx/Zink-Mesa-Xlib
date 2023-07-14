@@ -57,4 +57,3 @@ dEQP-GLES31.functional.texture.gather.basic.cube.rgba8ui.no_corners.size_pot.mir
 dEQP-GLES31.functional.texture.gather.basic.cube.rgba8ui.no_corners.size_pot.repeat_mirrored_repeat,Fail
 
 wayland-dEQP-EGL.functional.wide_color.window_888_colorspace_default,Fail
-wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail

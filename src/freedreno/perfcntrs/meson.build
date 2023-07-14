@@ -56,6 +56,7 @@ if dep_libconfig.found() and dep_curses.found()
       inc_gallium_aux,
     ],
     link_with : [
+      libfreedreno_common,
       libfreedreno_drm,
       libfreedreno_perfcntrs,
     ],

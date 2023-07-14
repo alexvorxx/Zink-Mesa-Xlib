@@ -43,11 +43,8 @@ nir_lower_alpha_test(nir_shader *shader, enum compare_func func,
    assert(alpha_ref_state_tokens);
    assert(shader->info.stage == MESA_SHADER_FRAGMENT);
 
-   nir_foreach_function(function, shader) {
-      nir_function_impl *impl = function->impl;
-      nir_builder b;
-      nir_builder_init(&b, impl);
-      b.cursor = nir_before_cf_list(&impl->body);
+   nir_foreach_function_impl(impl, shader) {
+      nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
       nir_foreach_block(block, impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -58,7 +55,7 @@ nir_lower_alpha_test(nir_shader *shader, enum compare_func func,
 
                switch (intr->intrinsic) {
                case nir_intrinsic_store_deref:
-                  out = nir_deref_instr_get_variable(nir_src_as_deref(intr->src[0]));
+                  out = nir_intrinsic_get_var(intr, 0);
                   break;
                case nir_intrinsic_store_output:
                   /* already had i/o lowered.. lookup the matching output var: */

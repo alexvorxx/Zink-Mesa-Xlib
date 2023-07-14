@@ -281,10 +281,21 @@ lvp_CreateImageView(VkDevice _device,
    view->pformat = lvp_vk_format_to_pipe_format(view->vk.format);
    view->image = image;
    view->surface = NULL;
-   if (image->bo->bind & PIPE_BIND_SHADER_IMAGE)
+
+   simple_mtx_lock(&device->queue.lock);
+
+   if (image->bo->bind & PIPE_BIND_SHADER_IMAGE) {
       view->iv = lvp_create_imageview(view);
-   if (image->bo->bind & PIPE_BIND_SAMPLER_VIEW)
+      view->image_handle = (void *)(uintptr_t)device->queue.ctx->create_image_handle(device->queue.ctx, &view->iv);
+   }
+
+   if (image->bo->bind & PIPE_BIND_SAMPLER_VIEW) {
       view->sv = lvp_create_samplerview(device->queue.ctx, view);
+      view->texture_handle = (void *)(uintptr_t)device->queue.ctx->create_texture_handle(device->queue.ctx, view->sv, NULL);
+   }
+
+   simple_mtx_unlock(&device->queue.lock);
+
    *pView = lvp_image_view_to_handle(view);
 
    return VK_SUCCESS;
@@ -300,7 +311,15 @@ lvp_DestroyImageView(VkDevice _device, VkImageView _iview,
    if (!_iview)
      return;
 
+   simple_mtx_lock(&device->queue.lock);
+
+   device->queue.ctx->delete_image_handle(device->queue.ctx, (uint64_t)(uintptr_t)iview->image_handle);
+
    pipe_sampler_view_reference(&iview->sv, NULL);
+   device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)iview->texture_handle);
+
+   simple_mtx_unlock(&device->queue.lock);
+
    pipe_surface_reference(&iview->surface, NULL);
    vk_image_view_destroy(&device->vk, pAllocator, &iview->vk);
 }
@@ -535,10 +554,21 @@ lvp_CreateBufferView(VkDevice _device,
       view->range = view->buffer->size - view->offset;
    else
       view->range = pCreateInfo->range;
-   if (buffer->bo->bind & PIPE_BIND_SAMPLER_VIEW)
+
+   simple_mtx_lock(&device->queue.lock);
+
+   if (buffer->bo->bind & PIPE_BIND_SAMPLER_VIEW) {
       view->sv = lvp_create_samplerview_buffer(device->queue.ctx, view);
-   if (buffer->bo->bind & PIPE_BIND_SHADER_IMAGE)
+      view->texture_handle = (void *)(uintptr_t)device->queue.ctx->create_texture_handle(device->queue.ctx, view->sv, NULL);
+   }
+
+   if (buffer->bo->bind & PIPE_BIND_SHADER_IMAGE) {
       view->iv = lvp_create_imageview_buffer(view);
+      view->image_handle = (void *)(uintptr_t)device->queue.ctx->create_image_handle(device->queue.ctx, &view->iv);
+   }
+
+   simple_mtx_unlock(&device->queue.lock);
+
    *pView = lvp_buffer_view_to_handle(view);
 
    return VK_SUCCESS;
@@ -553,7 +583,16 @@ lvp_DestroyBufferView(VkDevice _device, VkBufferView bufferView,
 
    if (!bufferView)
      return;
+
+   simple_mtx_lock(&device->queue.lock);
+
    pipe_sampler_view_reference(&view->sv, NULL);
+   device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)view->texture_handle);
+
+   device->queue.ctx->delete_image_handle(device->queue.ctx, (uint64_t)(uintptr_t)view->image_handle);
+
+   simple_mtx_unlock(&device->queue.lock);
+
    vk_object_base_finish(&view->base);
    vk_free2(&device->vk.alloc, pAllocator, view);
 }

@@ -989,7 +989,7 @@ void
 nvc0_program_destroy(struct nvc0_context *nvc0, struct nvc0_program *prog)
 {
    const struct pipe_shader_state pipe = prog->pipe;
-   const ubyte type = prog->type;
+   const uint8_t type = prog->type;
 
    if (prog->mem) {
       if (nvc0)

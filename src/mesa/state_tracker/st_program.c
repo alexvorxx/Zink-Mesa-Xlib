@@ -368,8 +368,8 @@ st_prog_to_nir_postprocess(struct st_context *st, nir_shader *nir,
 {
    struct pipe_screen *screen = st->screen;
 
-   NIR_PASS_V(nir, nir_lower_regs_to_ssa);
-   nir_validate_shader(nir, "after st/ptn lower_regs_to_ssa");
+   NIR_PASS_V(nir, nir_lower_reg_intrinsics_to_ssa);
+   nir_validate_shader(nir, "after st/ptn lower_reg_intrinsics_to_ssa");
 
    /* Lower outputs to temporaries to avoid reading from output variables (which
     * is permitted by the language but generally not implemented in HW).
@@ -446,7 +446,7 @@ st_translate_stream_output_info(struct gl_program *prog)
 
    /* Determine the (default) output register mapping for each output. */
    unsigned num_outputs = 0;
-   ubyte output_mapping[VARYING_SLOT_TESS_MAX];
+   uint8_t output_mapping[VARYING_SLOT_TESS_MAX];
    memset(output_mapping, 0, sizeof(output_mapping));
 
    for (unsigned attr = 0; attr < VARYING_SLOT_MAX; attr++) {
@@ -999,24 +999,30 @@ st_create_fp_variant(struct st_context *st,
 
    bool need_lower_tex_src_plane = false;
 
-   if (unlikely(key->external.lower_nv12 || key->external.lower_iyuv ||
+   if (unlikely(key->external.lower_nv12 || key->external.lower_nv21 ||
+                  key->external.lower_iyuv ||
                   key->external.lower_xy_uxvx || key->external.lower_yx_xuxv ||
+                  key->external.lower_yx_xvxu || key->external.lower_xy_vxux ||
                   key->external.lower_ayuv || key->external.lower_xyuv ||
                   key->external.lower_yuv || key->external.lower_yu_yv ||
-                  key->external.lower_y41x)) {
+                  key->external.lower_yv_yu || key->external.lower_y41x)) {
 
       st_nir_lower_samplers(st->screen, state.ir.nir,
                               fp->shader_program, fp);
 
       nir_lower_tex_options options = {0};
       options.lower_y_uv_external = key->external.lower_nv12;
+      options.lower_y_vu_external = key->external.lower_nv21;
       options.lower_y_u_v_external = key->external.lower_iyuv;
       options.lower_xy_uxvx_external = key->external.lower_xy_uxvx;
+      options.lower_xy_vxux_external = key->external.lower_xy_vxux;
       options.lower_yx_xuxv_external = key->external.lower_yx_xuxv;
+      options.lower_yx_xvxu_external = key->external.lower_yx_xvxu;
       options.lower_ayuv_external = key->external.lower_ayuv;
       options.lower_xyuv_external = key->external.lower_xyuv;
       options.lower_yuv_external = key->external.lower_yuv;
       options.lower_yu_yv_external = key->external.lower_yu_yv;
+      options.lower_yv_yu_external = key->external.lower_yv_yu;
       options.lower_y41x_external = key->external.lower_y41x;
       options.bt709_external = key->external.bt709;
       options.bt2020_external = key->external.bt2020;
@@ -1036,8 +1042,9 @@ st_create_fp_variant(struct st_context *st,
    if (unlikely(need_lower_tex_src_plane)) {
       NIR_PASS_V(state.ir.nir, st_nir_lower_tex_src_plane,
                   ~fp->SamplersUsed,
-                  key->external.lower_nv12 | key->external.lower_xy_uxvx |
-                     key->external.lower_yx_xuxv,
+                  key->external.lower_nv12 | key->external.lower_nv21 |
+                     key->external.lower_xy_uxvx | key->external.lower_xy_vxux |
+                     key->external.lower_yx_xuxv | key->external.lower_yx_xvxu,
                   key->external.lower_iyuv);
       finalize = true;
    }
@@ -1228,35 +1235,6 @@ st_destroy_program_variants(struct st_context *st)
                   destroy_shader_program_variants_cb, st);
 }
 
-bool
-st_can_add_pointsize_to_program(struct st_context *st, struct gl_program *prog)
-{
-   nir_shader *nir = prog->nir;
-   if (!nir)
-      return true; //fixedfunction
-   assert(nir->info.stage == MESA_SHADER_VERTEX ||
-          nir->info.stage == MESA_SHADER_TESS_EVAL ||
-          nir->info.stage == MESA_SHADER_GEOMETRY);
-   if (nir->info.outputs_written & VARYING_BIT_PSIZ)
-      return false;
-   unsigned max_components = nir->info.stage == MESA_SHADER_GEOMETRY ?
-                             st->ctx->Const.MaxGeometryTotalOutputComponents :
-                             st->ctx->Const.Program[nir->info.stage].MaxOutputComponents;
-   unsigned num_components = 0;
-   unsigned needed_components = nir->info.stage == MESA_SHADER_GEOMETRY ? nir->info.gs.vertices_out : 1;
-   nir_foreach_shader_out_variable(var, nir) {
-      num_components += glsl_count_dword_slots(var->type, false);
-   }
-   /* Ensure that there is enough attribute space to emit at least one primitive */
-   if (nir->info.stage == MESA_SHADER_GEOMETRY) {
-      if (num_components + needed_components > st->ctx->Const.Program[nir->info.stage].MaxOutputComponents)
-         return false;
-      num_components *= nir->info.gs.vertices_out;
-   }
-
-   return num_components + needed_components <= max_components;
-}
-
 /**
  * Compile one shader variant.
  */
@@ -1396,9 +1374,10 @@ st_program_string_notify( struct gl_context *ctx,
    } else if (target == GL_VERTEX_PROGRAM_ARB) {
       if (!st_translate_vertex_program(st, prog))
          return false;
-      if (st->lower_point_size && st_can_add_pointsize_to_program(st, prog)) {
+      if (st->lower_point_size &&
+          gl_nir_can_add_pointsize_to_program(&st->ctx->Const, prog)) {
          prog->skip_pointsize_xfb = true;
-         NIR_PASS_V(prog->nir, st_nir_add_point_size);
+         NIR_PASS_V(prog->nir, gl_nir_add_point_size);
       }
    }
 

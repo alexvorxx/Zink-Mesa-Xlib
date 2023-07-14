@@ -76,7 +76,7 @@ panfrost_clear(struct pipe_context *pipe, unsigned buffers,
    }
 
    /* Once there is content, clear with a fullscreen quad */
-   panfrost_blitter_save(ctx, false /* render condition */);
+   panfrost_blitter_save(ctx, PAN_RENDER_CLEAR);
 
    perf_debug_ctx(ctx, "Clearing with quad");
    util_blitter_clear(
@@ -886,7 +886,7 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
    gallium->flush = panfrost_flush;
    gallium->clear = panfrost_clear;
-   gallium->clear_texture = util_clear_texture;
+   gallium->clear_texture = u_default_clear_texture;
    gallium->texture_barrier = panfrost_texture_barrier;
    gallium->set_frontend_noop = panfrost_set_frontend_noop;
 

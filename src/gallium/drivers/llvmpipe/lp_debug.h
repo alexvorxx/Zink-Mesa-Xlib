@@ -29,7 +29,7 @@
 #ifndef LP_DEBUG_H
 #define LP_DEBUG_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_debug.h"
 
 #define DEBUG_PIPE      0x1

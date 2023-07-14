@@ -33,9 +33,9 @@
 static struct handle_table *htab = NULL;
 static simple_mtx_t htab_lock = SIMPLE_MTX_INITIALIZER;
 
-boolean vlCreateHTAB(void)
+bool vlCreateHTAB(void)
 {
-   boolean ret;
+   bool ret;
 
    /* Make sure handle table handles match VDPAU handles. */
    assert(sizeof(unsigned) <= sizeof(vlHandle));

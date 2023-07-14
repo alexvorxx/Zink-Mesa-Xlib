@@ -7150,11 +7150,8 @@ brw_compute_barycentric_interp_modes(const struct intel_device_info *devinfo,
 {
    unsigned barycentric_interp_modes = 0;
 
-   nir_foreach_function(f, shader) {
-      if (!f->impl)
-         continue;
-
-      nir_foreach_block(block, f->impl) {
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -7255,11 +7252,8 @@ brw_nir_move_interpolation_to_top(nir_shader *nir)
 {
    bool progress = false;
 
-   nir_foreach_function(f, nir) {
-      if (!f->impl)
-         continue;
-
-      nir_block *top = nir_start_block(f->impl);
+   nir_foreach_function_impl(impl, nir) {
+      nir_block *top = nir_start_block(impl);
       nir_cursor cursor = nir_before_instr(nir_block_first_instr(top));
       bool impl_progress = false;
 
@@ -7300,7 +7294,7 @@ brw_nir_move_interpolation_to_top(nir_shader *nir)
 
       progress = progress || impl_progress;
 
-      nir_metadata_preserve(f->impl, impl_progress ? (nir_metadata_block_index |
+      nir_metadata_preserve(impl, impl_progress ? (nir_metadata_block_index |
                                                       nir_metadata_dominance)
                                                    : nir_metadata_all);
    }
@@ -7309,7 +7303,7 @@ brw_nir_move_interpolation_to_top(nir_shader *nir)
 }
 
 static void
-brw_nir_populate_wm_prog_data(const nir_shader *shader,
+brw_nir_populate_wm_prog_data(nir_shader *shader,
                               const struct intel_device_info *devinfo,
                               const struct brw_wm_prog_key *key,
                               struct brw_wm_prog_data *prog_data,
@@ -7417,6 +7411,35 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
        prog_data->computed_stencil) {
       prog_data->coarse_pixel_dispatch = BRW_NEVER;
    }
+
+   /* ICL PRMs, Volume 9: Render Engine, Shared Functions Pixel Interpolater,
+    * Message Descriptor :
+    *
+    *    "Message Type. Specifies the type of message being sent when
+    *     pixel-rate evaluation is requested :
+    *
+    *     Format = U2
+    *       0: Per Message Offset (eval_snapped with immediate offset)
+    *       1: Sample Position Offset (eval_sindex)
+    *       2: Centroid Position Offset (eval_centroid)
+    *       3: Per Slot Offset (eval_snapped with register offset)
+    *
+    *     Message Type. Specifies the type of message being sent when
+    *     coarse-rate evaluation is requested :
+    *
+    *     Format = U2
+    *       0: Coarse to Pixel Mapping Message (internal message)
+    *       1: Reserved
+    *       2: Coarse Centroid Position (eval_centroid)
+    *       3: Per Slot Coarse Pixel Offset (eval_snapped with register offset)"
+    *
+    * The Sample Position Offset is marked as reserved for coarse rate
+    * evaluation and leads to hangs if we try to use it. So disable coarse
+    * pixel shading if we have any intrinsic that will result in a pixel
+    * interpolater message at sample.
+    */
+   if (brw_nir_pulls_at_sample(shader))
+      prog_data->coarse_pixel_dispatch = BRW_NEVER;
 
    /* We choose to always enable VMask prior to XeHP, as it would cause
     * us to lose out on the eliminate_find_live_channel() optimization.
@@ -7692,11 +7715,7 @@ fs_visitor::emit_work_group_id_setup()
       bld.MOV(offset(id, bld, 1), r0_6);
       bld.MOV(offset(id, bld, 2), r0_7);
    } else {
-      /* NV Task/Mesh have a single Workgroup ID dimension in the HW. */
-      assert(gl_shader_stage_is_mesh(stage));
-      assert(nir->info.mesh.nv);
-      bld.MOV(offset(id, bld, 1), brw_imm_ud(0));
-      bld.MOV(offset(id, bld, 2), brw_imm_ud(0));
+      unreachable("workgroup id should not be used in non-compute stage");
    }
 
    return id;

@@ -98,7 +98,7 @@ lower_64b_intrinsics(nir_builder *b, nir_instr *instr, void *unused)
             nir_intrinsic_set_write_mask(store, 0x3);
          nir_builder_instr_insert(b, &store->instr);
 
-         off = nir_iadd(b, off, nir_imm_intN_t(b, 8, off->bit_size));
+         off = nir_iadd_imm(b, off, 8);
       }
 
       return NIR_LOWER_INSTR_PROGRESS_REPLACE;
@@ -114,12 +114,10 @@ lower_64b_intrinsics(nir_builder *b, nir_instr *instr, void *unused)
    if (intr->intrinsic == nir_intrinsic_load_kernel_input) {
       assert(num_comp == 1);
 
-      nir_ssa_def *offset = nir_iadd(b,
-            nir_ssa_for_src(b, intr->src[0], 1),
-            nir_imm_int(b, 4));
+      nir_ssa_def *offset = nir_iadd_imm(b,
+            nir_ssa_for_src(b, intr->src[0], 1), 4);
 
-      nir_ssa_def *upper = nir_build_load_kernel_input(
-            b, 1, 32, offset);
+      nir_ssa_def *upper = nir_load_kernel_input(b, 1, 32, offset);
 
       return nir_pack_64_2x32_split(b, def, upper);
    }
@@ -151,7 +149,7 @@ lower_64b_intrinsics(nir_builder *b, nir_instr *instr, void *unused)
 
          components[i] = nir_pack_64_2x32(b, &load->dest.ssa);
 
-         off = nir_iadd(b, off, nir_imm_intN_t(b, 8, off->bit_size));
+         off = nir_iadd_imm(b, off, 8);
       }
    } else {
       /* The remaining (non load/store) intrinsics just get zero-
@@ -258,12 +256,12 @@ lower_64b_global(nir_builder *b, nir_instr *instr, void *unused)
     */
 
    if (intr->intrinsic == nir_intrinsic_global_atomic) {
-      return nir_build_global_atomic_ir3(
+      return nir_global_atomic_ir3(
             b, nir_dest_bit_size(intr->dest), addr,
             nir_ssa_for_src(b, intr->src[1], 1),
          .atomic_op = nir_intrinsic_atomic_op(intr));
    } else if (intr->intrinsic == nir_intrinsic_global_atomic_swap) {
-      return nir_build_global_atomic_swap_ir3(
+      return nir_global_atomic_swap_ir3(
          b, nir_dest_bit_size(intr->dest), addr,
          nir_ssa_for_src(b, intr->src[1], 1),
          nir_ssa_for_src(b, intr->src[2], 1),
@@ -275,7 +273,7 @@ lower_64b_global(nir_builder *b, nir_instr *instr, void *unused)
       nir_ssa_def *components[num_comp];
       for (unsigned off = 0; off < num_comp;) {
          unsigned c = MIN2(num_comp - off, 4);
-         nir_ssa_def *val = nir_build_load_global_ir3(
+         nir_ssa_def *val = nir_load_global_ir3(
                b, c, nir_dest_bit_size(intr->dest),
                addr, nir_imm_int(b, off));
          for (unsigned i = 0; i < c; i++) {
@@ -289,7 +287,7 @@ lower_64b_global(nir_builder *b, nir_instr *instr, void *unused)
       for (unsigned off = 0; off < num_comp; off += 4) {
          unsigned c = MIN2(num_comp - off, 4);
          nir_ssa_def *v = nir_channels(b, value, BITFIELD_MASK(c) << off);
-         nir_build_store_global_ir3(b, v, addr, nir_imm_int(b, off));
+         nir_store_global_ir3(b, v, addr, nir_imm_int(b, off));
       }
       return NIR_LOWER_INSTR_PROGRESS_REPLACE;
    }

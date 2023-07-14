@@ -290,10 +290,12 @@ void AddressSplitVisitor::visit(TexInstr *instr)
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
    m_last_non_alu = instr;
+   m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(ExportInstr *instr)
 {
    (void)instr;
+   m_current_addr = nullptr;
 }
 
 void AddressSplitVisitor::visit(FetchInstr *instr)
@@ -301,6 +303,7 @@ void AddressSplitVisitor::visit(FetchInstr *instr)
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
    m_last_non_alu = instr;
+   m_current_addr = nullptr;
 }
 
 void AddressSplitVisitor::visit(Block *instr)
@@ -324,29 +327,35 @@ void AddressSplitVisitor::visit(Block *instr)
 void AddressSplitVisitor::visit(ControlFlowInstr *instr)
 {
     (void)instr;
+   m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(IfInstr *instr)
 {
    visit(instr->predicate());
+   m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(ScratchIOInstr *instr)
 {
     m_last_non_alu = instr;
+    m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(StreamOutInstr *instr)
 {
     m_last_non_alu = instr;
+    m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(MemRingOutInstr *instr)
 {
     m_last_non_alu = instr;
+    m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(EmitVertexInstr *instr)
 {
     m_last_non_alu = instr;
+    m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(GDSInstr *instr)
@@ -354,10 +363,12 @@ void AddressSplitVisitor::visit(GDSInstr *instr)
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
    m_last_non_alu = instr;
+   m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(WriteTFInstr *instr)
 {
     m_last_non_alu = instr;
+    m_current_addr = nullptr;
     (void)instr;
 }
 
@@ -375,6 +386,7 @@ void AddressSplitVisitor::visit(RatInstr *instr)
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
    m_last_non_alu = instr;
+   m_current_addr = nullptr;
 }
 
 }

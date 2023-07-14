@@ -35,11 +35,11 @@
 #include "pan_resource.h"
 #include "pan_texture.h"
 
-#include "pipe/p_compiler.h"
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_screen.h"
 #include "pipe/p_state.h"
+#include "util/compiler.h"
 #include "util/detect.h"
 #include "util/format/u_formats.h"
 #include "util/hash_table.h"

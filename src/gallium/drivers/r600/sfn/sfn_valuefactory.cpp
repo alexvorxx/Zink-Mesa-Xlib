@@ -491,13 +491,13 @@ ValueFactory::ssa_src(const nir_ssa_def& ssa, int chan)
 }
 
 PRegister
-ValueFactory::local_register(const nir_reg_dest& dst, int chan)
+ValueFactory::local_register(const nir_register_dest& dst, int chan)
 {
    return resolve_array(dst.reg, dst.indirect, dst.base_offset, chan);
 }
 
 PRegister
-ValueFactory::local_register(const nir_reg_src& src, int chan)
+ValueFactory::local_register(const nir_register_src& src, int chan)
 {
    return resolve_array(src.reg, src.indirect, src.base_offset, chan);
 }

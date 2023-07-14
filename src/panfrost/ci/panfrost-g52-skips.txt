@@ -34,11 +34,6 @@ glx@glx-make-current
 # So, skip any tests known to crash to make sure the coverage is solid.
 glx@glx-visuals-depth -pixmap
 glx@glx-visuals-stencil -pixmap
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *gradarb 2drect
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *gradarb 2drectshadow
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *projgradarb 2drect
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *projgradarb 2drect_projvec4
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *projgradarb 2drectshadow
 spec@arb_texture_buffer_object@formats (fs- arb)
 spec@arb_texture_buffer_object@formats (vs- arb)
 spec@arb_texture_buffer_object@texture-buffer-size-clamp

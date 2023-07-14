@@ -222,7 +222,7 @@ ir3_nir_lower_ssbo_size_instr(nir_builder *b, nir_instr *instr, void *data)
 {
    uint8_t ssbo_size_to_bytes_shift = *(uint8_t *) data;
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   return nir_ishl(b, &intr->dest.ssa, nir_imm_int(b, ssbo_size_to_bytes_shift));
+   return nir_ishl_imm(b, &intr->dest.ssa, ssbo_size_to_bytes_shift);
 }
 
 static bool
@@ -427,7 +427,7 @@ lower_subgroup_id(nir_builder *b, nir_instr *instr, void *unused)
    if (intr->intrinsic == nir_intrinsic_load_subgroup_invocation) {
       return nir_iand(
          b, nir_load_local_invocation_index(b),
-         nir_isub(b, nir_load_subgroup_size(b), nir_imm_int(b, 1)));
+         nir_iadd_imm(b, nir_load_subgroup_size(b), -1));
    } else if (intr->intrinsic == nir_intrinsic_load_subgroup_id) {
       return nir_ishr(b, nir_load_local_invocation_index(b),
                       nir_load_subgroup_id_shift_ir3(b));

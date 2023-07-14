@@ -110,6 +110,7 @@ for var in \
     SKQP_ASSETS_DIR \
     SKQP_BACKENDS \
     TU_DEBUG \
+    USE_ANGLE \
     VIRGL_HOST_API \
     WAFFLE_PLATFORM \
     VK_CPU \

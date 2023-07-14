@@ -23,7 +23,7 @@ struct QueueState {
 pub struct Queue {
     pub base: CLObjectBase<CL_INVALID_COMMAND_QUEUE>,
     pub context: Arc<Context>,
-    pub device: Arc<Device>,
+    pub device: &'static Device,
     pub props: cl_command_queue_properties,
     pub props_v2: Option<Properties<cl_queue_properties>>,
     state: Mutex<QueueState>,
@@ -43,7 +43,7 @@ fn flush_events(evs: &mut Vec<Arc<Event>>, pipe: &PipeContext) {
 impl Queue {
     pub fn new(
         context: Arc<Context>,
-        device: Arc<Device>,
+        device: &'static Device,
         props: cl_command_queue_properties,
         props_v2: Option<Properties<cl_queue_properties>>,
     ) -> CLResult<Arc<Queue>> {

@@ -2,7 +2,7 @@
 #ifndef INLINE_SW_HELPER_H
 #define INLINE_SW_HELPER_H
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_screen.h"
 #include "util/u_debug.h"
 #include "frontend/sw_winsys.h"

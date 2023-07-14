@@ -42,10 +42,8 @@ lower_rt_derefs(nir_shader *shader)
 
    bool progress = false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
-   b.cursor = nir_before_cf_list(&impl->body);
    nir_ssa_def *arg_offset = nir_load_rt_arg_scratch_offset_amd(&b);
 
    nir_foreach_block (block, impl) {
@@ -246,10 +244,10 @@ get_sbt_ptr(nir_builder *b, nir_ssa_def *idx, enum sbt_type binding)
 {
    nir_ssa_def *desc_base_addr = nir_load_sbt_base_amd(b);
 
-   nir_ssa_def *desc = nir_pack_64_2x32(b, nir_build_load_smem_amd(b, 2, desc_base_addr, nir_imm_int(b, binding)));
+   nir_ssa_def *desc = nir_pack_64_2x32(b, nir_load_smem_amd(b, 2, desc_base_addr, nir_imm_int(b, binding)));
 
    nir_ssa_def *stride_offset = nir_imm_int(b, binding + (binding == SBT_RAYGEN ? 8 : 16));
-   nir_ssa_def *stride = nir_pack_64_2x32(b, nir_build_load_smem_amd(b, 2, desc_base_addr, stride_offset));
+   nir_ssa_def *stride = nir_pack_64_2x32(b, nir_load_smem_amd(b, 2, desc_base_addr, stride_offset));
 
    return nir_iadd(b, desc, nir_imul(b, nir_u2u64(b, idx), stride));
 }
@@ -276,8 +274,7 @@ load_sbt_entry(nir_builder *b, const struct rt_variables *vars, nir_ssa_def *idx
 static void
 lower_rt_instructions(nir_shader *shader, struct rt_variables *vars, unsigned call_idx_base)
 {
-   nir_builder b_shader;
-   nir_builder_init(&b_shader, nir_shader_get_entrypoint(shader));
+   nir_builder b_shader = nir_builder_create(nir_shader_get_entrypoint(shader));
 
    nir_foreach_block (block, nir_shader_get_entrypoint(shader)) {
       nir_foreach_instr_safe (instr, block) {
@@ -692,8 +689,7 @@ lower_hit_attribs(nir_shader *shader, nir_variable **hit_attribs, uint32_t workg
    nir_foreach_variable_with_modes (attrib, shader, nir_var_ray_hit_attrib)
       attrib->data.mode = nir_var_shader_temp;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block (block, impl) {
       nir_foreach_instr_safe (instr, block) {
@@ -826,9 +822,7 @@ radv_parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreat
    if (shader->info.stage == MESA_SHADER_RAYGEN || shader->info.stage == MESA_SHADER_CLOSEST_HIT ||
        shader->info.stage == MESA_SHADER_CALLABLE || shader->info.stage == MESA_SHADER_MISS) {
       nir_block *last_block = nir_impl_last_block(nir_shader_get_entrypoint(shader));
-      nir_builder b_inner;
-      nir_builder_init(&b_inner, nir_shader_get_entrypoint(shader));
-      b_inner.cursor = nir_after_block(last_block);
+      nir_builder b_inner = nir_builder_at(nir_after_block(last_block));
       nir_rt_return_amd(&b_inner);
    }
 
@@ -883,11 +877,8 @@ lower_any_hit_for_intersection(nir_shader *any_hit)
    impl->function->params = ralloc_array(any_hit, nir_parameter, ARRAY_SIZE(params));
    memcpy(impl->function->params, params, sizeof(params));
 
-   nir_builder build;
-   nir_builder_init(&build, impl);
+   nir_builder build = nir_builder_at(nir_before_cf_list(&impl->body));
    nir_builder *b = &build;
-
-   b->cursor = nir_before_cf_list(&impl->body);
 
    nir_ssa_def *commit_ptr = nir_load_param(b, 0);
    nir_ssa_def *hit_t = nir_load_param(b, 1);
@@ -1003,8 +994,7 @@ nir_lower_intersection_shader(nir_shader *intersection, nir_shader *any_hit)
 
    nir_function_impl *impl = nir_shader_get_entrypoint(intersection);
 
-   nir_builder build;
-   nir_builder_init(&build, impl);
+   nir_builder build = nir_builder_create(impl);
    nir_builder *b = &build;
 
    b->cursor = nir_before_cf_list(&impl->body);
@@ -1538,9 +1528,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
                       const struct radv_shader_args *args, const struct radv_shader_info *info, uint32_t *stack_size,
                       bool resume_shader)
 {
-   nir_builder b;
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-   nir_builder_init(&b, impl);
 
    struct rt_variables vars = create_rt_variables(shader, pCreateInfo->flags);
    lower_rt_instructions(shader, &vars, 0);
@@ -1557,7 +1545,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
    nir_cf_extract(&list, nir_before_cf_list(&impl->body), nir_after_cf_list(&impl->body));
 
    /* initialize variables */
-   b.cursor = nir_before_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
    nir_ssa_def *traversal_addr = ac_nir_load_arg(&b, &args->ac, args->ac.rt.traversal_shader);
    nir_store_var(&b, vars.traversal_addr, nir_pack_64_2x32(&b, traversal_addr), 1);

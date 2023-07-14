@@ -26,7 +26,7 @@
  **************************************************************************/
 
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_memory.h"
 #include "util/u_string.h"
 #include "util/format/u_format.h"
@@ -242,55 +242,55 @@ util_dump_format(FILE *stream, enum pipe_format format)
 static void
 util_dump_enum_blend_factor(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_blend_factor(value, TRUE));
+   util_dump_enum(stream, util_str_blend_factor(value, true));
 }
 
 static void
 util_dump_enum_blend_func(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_blend_func(value, TRUE));
+   util_dump_enum(stream, util_str_blend_func(value, true));
 }
 
 static void
 util_dump_enum_func(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_func(value, TRUE));
+   util_dump_enum(stream, util_str_func(value, true));
 }
 
 static void
 util_dump_enum_prim_mode(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_prim_mode(value, TRUE));
+   util_dump_enum(stream, util_str_prim_mode(value, true));
 }
 
 static void
 util_dump_enum_tex_target(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_tex_target(value, TRUE));
+   util_dump_enum(stream, util_str_tex_target(value, true));
 }
 
 static void
 util_dump_enum_tex_filter(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_tex_filter(value, TRUE));
+   util_dump_enum(stream, util_str_tex_filter(value, true));
 }
 
 static void
 util_dump_enum_tex_mipfilter(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_tex_mipfilter(value, TRUE));
+   util_dump_enum(stream, util_str_tex_mipfilter(value, true));
 }
 
 static void
 util_dump_enum_tex_wrap(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_tex_wrap(value, TRUE));
+   util_dump_enum(stream, util_str_tex_wrap(value, true));
 }
 
 static void
 util_dump_enum_stencil_op(FILE *stream, unsigned value)
 {
-   util_dump_enum(stream, util_str_stencil_op(value, TRUE));
+   util_dump_enum(stream, util_str_stencil_op(value, true));
 }
 
 

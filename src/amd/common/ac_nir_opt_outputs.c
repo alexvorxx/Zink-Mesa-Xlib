@@ -291,8 +291,7 @@ bool ac_nir_optimize_outputs(nir_shader *nir, bool sprite_tex_disallowed,
    unsigned i;
    bool progress = false;
 
-   struct nir_builder b;
-   nir_builder_init(&b, impl);
+   struct nir_builder b = nir_builder_create(impl);
 
    /* Optimize outputs. */
    BITSET_FOREACH_SET(i, outputs_optimized, NUM_TOTAL_VARYING_SLOTS) {

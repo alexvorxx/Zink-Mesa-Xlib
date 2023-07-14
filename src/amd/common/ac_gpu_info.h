@@ -91,6 +91,7 @@ struct radeon_info {
    bool has_tc_compat_zrange_bug;
    bool has_small_prim_filter_sample_loc_bug;
    bool has_ls_vgpr_init_bug;
+   bool has_pops_missed_overlap_bug;
    bool has_zero_index_buffer_bug;
    bool has_image_load_dcc_bug;
    bool has_two_planes_iterate256_bug;
@@ -107,6 +108,7 @@ struct radeon_info {
    bool has_export_conflict_bug;
    bool has_vrs_ds_export_bug;
    bool has_taskmesh_indirect0_bug;
+   bool has_set_pairs_packets;
 
    /* conformant_trunc_coord is equal to TA_CNTL2.TRUNCATE_COORD_MODE, which exists since gfx11.
     *

@@ -171,6 +171,7 @@ struct agx_uncompiled_shader {
    enum pipe_shader_type type;
    const struct nir_shader *nir;
    uint8_t nir_sha1[20];
+   struct agx_uncompiled_shader_info info;
    struct hash_table *variants;
 
    /* For compute kernels */
@@ -285,6 +286,8 @@ struct agx_blend {
 struct asahi_vs_shader_key {
    struct agx_vbufs vbuf;
    struct agx_xfb_key xfb;
+   uint64_t outputs_flat_shaded;
+   uint64_t outputs_linear_shaded;
 };
 
 struct asahi_fs_shader_key {
@@ -571,7 +574,7 @@ agx_device(struct pipe_screen *p)
    } while (0)
 
 #define perf_debug_ctx(ctx, ...)                                               \
-   perf_debug(agx_device((ctx)->base.screen), __VA_ARGS__);
+   perf_debug(agx_device((ctx)->base.screen), __VA_ARGS__)
 
 struct agx_resource {
    struct pipe_resource base;

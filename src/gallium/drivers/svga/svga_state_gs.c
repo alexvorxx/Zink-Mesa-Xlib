@@ -180,7 +180,7 @@ emit_hw_gs(struct svga_context *svga, uint64_t dirty)
       if (ret != PIPE_OK)
          goto done;
 
-      svga->rebind.flags.gs = FALSE;
+      svga->rebind.flags.gs = false;
       svga->dirty |= SVGA_NEW_GS_VARIANT;
       svga->state.hw_draw.gs = variant;
    }

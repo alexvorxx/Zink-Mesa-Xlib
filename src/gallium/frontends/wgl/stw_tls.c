@@ -28,7 +28,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/u_debug.h"
 #include "stw_tls.h"
 
@@ -57,12 +57,12 @@ static struct stw_tls_data *
 stw_tls_lookup_pending_data(DWORD dwThreadId);
 
 
-boolean
+bool
 stw_tls_init(void)
 {
    tlsIndex = TlsAlloc();
    if (tlsIndex == TLS_OUT_OF_INDEXES) {
-      return FALSE;
+      return false;
    }
 
    /*
@@ -104,7 +104,7 @@ stw_tls_init(void)
    }
 #endif /* _GAMING_XBOX */
 
-   return TRUE;
+   return true;
 }
 
 
@@ -175,23 +175,23 @@ stw_tls_data_destroy(struct stw_tls_data *data)
    free(data);
 }
 
-boolean
+bool
 stw_tls_init_thread(void)
 {
    struct stw_tls_data *data;
 
    if (tlsIndex == TLS_OUT_OF_INDEXES) {
-      return FALSE;
+      return false;
    }
 
    data = stw_tls_data_create(GetCurrentThreadId());
    if (!data) {
-      return FALSE;
+      return false;
    }
 
    TlsSetValue(tlsIndex, data);
 
-   return TRUE;
+   return true;
 }
 
 void

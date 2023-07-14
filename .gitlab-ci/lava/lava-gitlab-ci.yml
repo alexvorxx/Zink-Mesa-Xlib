@@ -1,3 +1,7 @@
+variables:
+  LAVA_SSH_CLIENT_IMAGE: "${CI_REGISTRY_IMAGE}/alpine/x86_64_lava_ssh_client:${ALPINE_X86_64_LAVA_SSH_TAG}--${MESA_TEMPLATES_COMMIT}"
+
+
 .lava-test:
   # Cancel job if a newer commit is pushed to the same branch
   interruptible: true
@@ -32,6 +36,9 @@
     - $RUNNER_TAG
   after_script:
     - curl -L --retry 4 -f --retry-all-errors --retry-delay 60 -s "https://${JOB_RESULTS_PATH}" | tar --zstd -x
+  needs:
+    - alpine/x86_64_lava_ssh_client
+    - !reference [.required-for-hardware-jobs, needs]
 
 .lava-test:arm32:
   variables:
@@ -46,6 +53,7 @@
     - .lava-test
     - .use-kernel+rootfs-arm
   needs:
+    - !reference [.lava-test, needs]
     - kernel+rootfs_arm32
     - debian/x86_64_build
     - debian-arm32
@@ -71,6 +79,7 @@
   dependencies:
     - debian-arm64
   needs:
+    - !reference [.lava-test, needs]
     - kernel+rootfs_arm64
     - debian/x86_64_build
     - debian-arm64
@@ -94,6 +103,7 @@
     - .lava-test
     - .use-kernel+rootfs-x86_64
   needs:
+    - !reference [.lava-test, needs]
     - kernel+rootfs_x86_64
     - debian-testing
 

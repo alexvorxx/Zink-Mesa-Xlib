@@ -31,7 +31,7 @@
  */
 
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/simple_mtx.h"
 #include "util/u_debug.h"
 #include "util/u_thread.h"

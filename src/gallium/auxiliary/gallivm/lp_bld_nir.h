@@ -161,13 +161,15 @@ struct lp_build_nir_context
 
    LLVMValueRef (*load_reg)(struct lp_build_nir_context *bld_base,
                             struct lp_build_context *reg_bld,
-                            const nir_reg_src *reg,
+                            const nir_intrinsic_instr *decl,
+                            unsigned base,
                             LLVMValueRef indir_src,
                             LLVMValueRef reg_storage);
    void (*store_reg)(struct lp_build_nir_context *bld_base,
                      struct lp_build_context *reg_bld,
-                     const nir_reg_dest *reg,
+                     const nir_intrinsic_instr *decl,
                      unsigned writemask,
+                     unsigned base,
                      LLVMValueRef indir_src,
                      LLVMValueRef reg_storage,
                      LLVMValueRef dst[NIR_MAX_VEC_COMPONENTS]);

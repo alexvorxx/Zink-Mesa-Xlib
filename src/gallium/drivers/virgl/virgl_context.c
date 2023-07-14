@@ -180,7 +180,7 @@ static void virgl_attach_res_framebuffer(struct virgl_context *vctx)
    if (surf) {
       res = virgl_resource(surf->texture);
       if (res) {
-         vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+         vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
          virgl_resource_dirty(res, surf->u.tex.level);
       }
    }
@@ -189,7 +189,7 @@ static void virgl_attach_res_framebuffer(struct virgl_context *vctx)
       if (surf) {
          res = virgl_resource(surf->texture);
          if (res) {
-            vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+            vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
             virgl_resource_dirty(res, surf->u.tex.level);
          }
       }
@@ -206,7 +206,7 @@ static void virgl_attach_res_sampler_views(struct virgl_context *vctx,
    for (int i = 0; i < PIPE_MAX_SHADER_SAMPLER_VIEWS; ++i) {
       if (binding->views[i] && binding->views[i]->texture) {
          struct virgl_resource *res = virgl_resource(binding->views[i]->texture);
-         vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+         vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
       }
    }
 }
@@ -220,7 +220,7 @@ static void virgl_attach_res_vertex_buffers(struct virgl_context *vctx)
    for (i = 0; i < vctx->num_vertex_buffers; i++) {
       res = virgl_resource(vctx->vertex_buffer[i].buffer.resource);
       if (res)
-         vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+         vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -232,7 +232,7 @@ static void virgl_attach_res_index_buffer(struct virgl_context *vctx,
 
    res = virgl_resource(ib->buffer);
    if (res)
-      vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+      vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
 }
 
 static void virgl_attach_res_so_targets(struct virgl_context *vctx)
@@ -244,7 +244,7 @@ static void virgl_attach_res_so_targets(struct virgl_context *vctx)
    for (i = 0; i < vctx->num_so_targets; i++) {
       res = virgl_resource(vctx->so_targets[i].base.buffer);
       if (res)
-         vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+         vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -261,7 +261,7 @@ static void virgl_attach_res_uniform_buffers(struct virgl_context *vctx,
       int i = u_bit_scan(&remaining_mask);
       res = virgl_resource(binding->ubos[i].buffer);
       assert(res);
-      vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+      vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -278,7 +278,7 @@ static void virgl_attach_res_shader_buffers(struct virgl_context *vctx,
       int i = u_bit_scan(&remaining_mask);
       res = virgl_resource(binding->ssbos[i].buffer);
       assert(res);
-      vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+      vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -295,7 +295,7 @@ static void virgl_attach_res_shader_images(struct virgl_context *vctx,
       int i = u_bit_scan(&remaining_mask);
       res = virgl_resource(binding->images[i].resource);
       assert(res);
-      vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+      vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -309,7 +309,7 @@ static void virgl_attach_res_atomic_buffers(struct virgl_context *vctx)
       int i = u_bit_scan(&remaining_mask);
       res = virgl_resource(vctx->atomic_buffers[i].buffer);
       assert(res);
-      vws->emit_res(vws, vctx->cbuf, res->hw_res, FALSE);
+      vws->emit_res(vws, vctx->cbuf, res->hw_res, false);
    }
 }
 
@@ -563,7 +563,7 @@ static void virgl_bind_vertex_elements_state(struct pipe_context *ctx,
    vctx->vertex_elements = state;
    virgl_encode_bind_object(vctx, state ? state->handle : 0,
                             VIRGL_OBJECT_VERTEX_ELEMENTS);
-   vctx->vertex_array_dirty = TRUE;
+   vctx->vertex_array_dirty = true;
 }
 
 static void virgl_set_vertex_buffers(struct pipe_context *ctx,
@@ -590,7 +590,7 @@ static void virgl_set_vertex_buffers(struct pipe_context *ctx,
       }
    }
 
-   vctx->vertex_array_dirty = TRUE;
+   vctx->vertex_array_dirty = true;
 }
 
 static void virgl_hw_set_vertex_buffers(struct virgl_context *vctx)
@@ -609,7 +609,7 @@ static void virgl_hw_set_vertex_buffers(struct virgl_context *vctx)
 
       virgl_attach_res_vertex_buffers(vctx);
 
-      vctx->vertex_array_dirty = FALSE;
+      vctx->vertex_array_dirty = false;
    }
 }
 

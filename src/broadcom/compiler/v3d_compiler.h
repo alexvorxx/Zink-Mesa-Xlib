@@ -693,11 +693,6 @@ struct v3d_compile {
         /* True if a fragment shader reads gl_PrimitiveID */
         bool fs_uses_primitive_id;
 
-        /* If the fragment shader does anything that requires to force
-         * per-sample MSAA, such as reading gl_SampleID.
-         */
-        bool force_per_sample_msaa;
-
         /* Whether we are using the fallback scheduler. This will be set after
          * register allocation has failed once.
          */
@@ -1051,6 +1046,10 @@ struct v3d_fs_prog_data {
         bool uses_center_w;
         bool uses_implicit_point_line_varyings;
         bool lock_scoreboard_on_first_thrsw;
+
+        /* If the fragment shader does anything that requires to force
+         * per-sample MSAA, such as reading gl_SampleID.
+         */
         bool force_per_sample_msaa;
 };
 
@@ -1182,8 +1181,6 @@ bool vir_opt_constant_alu(struct v3d_compile *c);
 bool v3d_nir_lower_io(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_line_smooth(nir_shader *shader);
 bool v3d_nir_lower_logic_ops(nir_shader *s, struct v3d_compile *c);
-bool v3d_nir_lower_robust_buffer_access(nir_shader *s, struct v3d_compile *c);
-bool v3d_nir_lower_robust_image_access(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_scratch(nir_shader *s);
 bool v3d_nir_lower_txf_ms(nir_shader *s);
 bool v3d_nir_lower_image_load_store(nir_shader *s);

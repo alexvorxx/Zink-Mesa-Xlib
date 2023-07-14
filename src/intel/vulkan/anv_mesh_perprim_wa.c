@@ -153,16 +153,14 @@ anv_mesh_convert_attrs_prim_to_vert(struct nir_shader *nir,
          num_mesh_vertices_per_primitive(nir->info.mesh.primitive_type);
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   nir_builder b;
-   nir_builder_init(&b, impl);
-   b.cursor = nir_after_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_after_cf_list(&impl->body));
 
    /* wait for all subgroups to finish */
    nir_scoped_barrier(&b, SCOPE_WORKGROUP);
 
    nir_ssa_def *zero = nir_imm_int(&b, 0);
 
-   nir_ssa_def *local_invocation_index = nir_build_load_local_invocation_index(&b);
+   nir_ssa_def *local_invocation_index = nir_load_local_invocation_index(&b);
 
    nir_ssa_def *cmp = nir_ieq(&b, local_invocation_index, zero);
    nir_if *if_stmt = nir_push_if(&b, cmp);
@@ -230,11 +228,8 @@ anv_mesh_convert_attrs_prim_to_vert(struct nir_shader *nir,
 
       /* Update types of derefs to match type of variables they (de)reference. */
       if (dup_vertices) {
-         nir_foreach_function(function, b.shader) {
-            if (!function->impl)
-               continue;
-
-            nir_foreach_block(block, function->impl) {
+         nir_foreach_function_impl(impl, b.shader) {
+            nir_foreach_block(block, impl) {
                nir_foreach_instr(instr, block) {
                   if (instr->type != nir_instr_type_deref)
                      continue;
@@ -350,20 +345,10 @@ anv_mesh_convert_attrs_prim_to_vert(struct nir_shader *nir,
          nir_ssa_def *src_vertex;
          nir_ssa_def *prim_indices;
 
-         if (nir->info.mesh.nv) {
-            /* flat array, but we can deref each index directly */
-            nir_ssa_def *index_index =
-                  nir_imul(&b, primitive, nir_imm_int(&b, vertices_per_primitive));
-            index_index = nir_iadd(&b, index_index, nir_imm_int(&b, provoking_vertex));
-            indexed_primitive_indices_deref = nir_build_deref_array(&b, primitive_indices_deref, index_index);
-            src_vertex = nir_load_deref(&b, indexed_primitive_indices_deref);
-            prim_indices = NULL;
-         } else {
-            /* array of vectors, we have to extract index out of array deref */
-            indexed_primitive_indices_deref = nir_build_deref_array(&b, primitive_indices_deref, primitive);
-            prim_indices = nir_load_deref(&b, indexed_primitive_indices_deref);
-            src_vertex = nir_channel(&b, prim_indices, provoking_vertex);
-         }
+         /* array of vectors, we have to extract index out of array deref */
+         indexed_primitive_indices_deref = nir_build_deref_array(&b, primitive_indices_deref, primitive);
+         prim_indices = nir_load_deref(&b, indexed_primitive_indices_deref);
+         src_vertex = nir_channel(&b, prim_indices, provoking_vertex);
 
          nir_ssa_def *dst_vertex = nir_load_deref(&b, vertex_deref);
 
@@ -383,17 +368,13 @@ anv_mesh_convert_attrs_prim_to_vert(struct nir_shader *nir,
                nir_copy_deref(&b, dst, src);
             }
 
-            if (nir->info.mesh.nv) {
-               nir_store_deref(&b, indexed_primitive_indices_deref, dst_vertex, 1);
-            } else {
-               /* replace one component of primitive indices vector */
-               nir_ssa_def *new_val =
-                     nir_vector_insert_imm(&b, prim_indices, dst_vertex, provoking_vertex);
+            /* replace one component of primitive indices vector */
+            nir_ssa_def *new_val =
+                  nir_vector_insert_imm(&b, prim_indices, dst_vertex, provoking_vertex);
 
-               /* and store complete vector */
-               nir_store_deref(&b, indexed_primitive_indices_deref, new_val,
-                               BITFIELD_MASK(vertices_per_primitive));
-            }
+            /* and store complete vector */
+            nir_store_deref(&b, indexed_primitive_indices_deref, new_val,
+                            BITFIELD_MASK(vertices_per_primitive));
 
             nir_store_deref(&b, vertex_deref, nir_iadd_imm(&b, dst_vertex, 1), 1);
 
@@ -495,9 +476,7 @@ anv_frag_convert_attrs_prim_to_vert(struct nir_shader *nir,
    nir_deref_instr *new_derefs[VARYING_SLOT_MAX] = {NULL, };
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   nir_builder b;
-   nir_builder_init(&b, impl);
-   b.cursor = nir_before_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
    nir_foreach_shader_in_variable_safe(var, nir) {
       gl_varying_slot location = var->data.location;

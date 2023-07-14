@@ -24,6 +24,7 @@
  *    Rob Clark <robclark@freedesktop.org>
  */
 
+#include "drm/freedreno_ringbuffer.h"
 #define FD_BO_NO_HARDPIN 1
 
 #include "pipe/p_state.h"
@@ -48,7 +49,7 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
    assert_dt
 {
    const struct ir3_info *i = &v->info;
-   enum a6xx_threadsize thrsz = i->double_threadsize ? THREAD128 : THREAD64;
+   enum a6xx_threadsize thrsz_cs = i->double_threadsize ? THREAD128 : THREAD64;
 
    OUT_REG(ring, HLSQ_INVALIDATE_CMD(CHIP, .vs_state = true, .hs_state = true,
                                           .ds_state = true, .gs_state = true,
@@ -73,7 +74,7 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
    OUT_PKT4(ring, REG_A6XX_SP_CS_CTRL_REG0, 1);
    OUT_RING(ring,
-            A6XX_SP_CS_CTRL_REG0_THREADSIZE(thrsz) |
+            A6XX_SP_CS_CTRL_REG0_THREADSIZE(thrsz_cs) |
                A6XX_SP_CS_CTRL_REG0_FULLREGFOOTPRINT(i->max_reg + 1) |
                A6XX_SP_CS_CTRL_REG0_HALFREGFOOTPRINT(i->max_half_reg + 1) |
                COND(v->mergedregs, A6XX_SP_CS_CTRL_REG0_MERGEDREGS) |
@@ -84,6 +85,7 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
       ir3_find_sysval_regid(v, SYSTEM_VALUE_LOCAL_INVOCATION_ID);
    work_group_id = ir3_find_sysval_regid(v, SYSTEM_VALUE_WORKGROUP_ID);
 
+   enum a6xx_threadsize thrsz = ctx->screen->info->a6xx.supports_double_threadsize ? thrsz_cs : THREAD128;
    OUT_PKT4(ring, REG_A6XX_HLSQ_CS_CNTL_0, 2);
    OUT_RING(ring, A6XX_HLSQ_CS_CNTL_0_WGIDCONSTID(work_group_id) |
                      A6XX_HLSQ_CS_CNTL_0_WGSIZECONSTID(regid(63, 0)) |
@@ -91,6 +93,10 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
                      A6XX_HLSQ_CS_CNTL_0_LOCALIDREGID(local_invocation_id));
    OUT_RING(ring, A6XX_HLSQ_CS_CNTL_1_LINEARLOCALIDREGID(regid(63, 0)) |
                      A6XX_HLSQ_CS_CNTL_1_THREADSIZE(thrsz));
+   if (!ctx->screen->info->a6xx.supports_double_threadsize) {
+      OUT_PKT4(ring, REG_A6XX_HLSQ_FS_CNTL_0, 1);
+      OUT_RING(ring, A6XX_HLSQ_FS_CNTL_0_THREADSIZE(thrsz_cs));
+   }
 
    if (ctx->screen->info->a6xx.has_lpac) {
       OUT_PKT4(ring, REG_A6XX_SP_CS_CNTL_0, 2);

@@ -591,7 +591,7 @@ static int check_and_set_bank_swizzle(const struct r600_bytecode *bc,
 	struct alu_bank_swizzle bs;
 	int bank_swizzle[5];
 	int i, r = 0, forced = 1;
-	boolean scalar_only = bc->gfx_level == CAYMAN ? false : true;
+	bool scalar_only = bc->gfx_level == CAYMAN ? false : true;
 	int max_slots = bc->gfx_level == CAYMAN ? 4 : 5;
 	int max_checks = max_slots * 1000;
 
@@ -1443,7 +1443,7 @@ static unsigned r600_bytecode_num_tex_and_vtx_instructions(const struct r600_byt
 	}
 }
 
-static inline boolean last_inst_was_not_vtx_fetch(struct r600_bytecode *bc, bool use_tc)
+static inline bool last_inst_was_not_vtx_fetch(struct r600_bytecode *bc, bool use_tc)
 {
 	return !((r600_isa_cf(bc->cf_last->op)->flags & CF_FETCH) &&
 		 bc->cf_last->op != CF_OP_GDS &&

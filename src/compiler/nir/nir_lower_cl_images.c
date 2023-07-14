@@ -156,8 +156,7 @@ nir_lower_cl_images(nir_shader *shader, bool lower_image_derefs, bool lower_samp
    if (num_samplers)
       BITSET_SET_RANGE(shader->info.samplers_used, 0, num_samplers - 1);
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    /* don't need any lowering if we can keep the derefs */
    if (!lower_image_derefs && !lower_sampler_derefs) {

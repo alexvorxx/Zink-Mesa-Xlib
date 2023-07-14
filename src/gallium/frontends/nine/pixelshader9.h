@@ -47,8 +47,8 @@ struct NinePixelShader9
     uint16_t sampler_mask;
     uint8_t rt_mask;
 
-    boolean int_slots_used[NINE_MAX_CONST_I];
-    boolean bool_slots_used[NINE_MAX_CONST_B];
+    bool int_slots_used[NINE_MAX_CONST_I];
+    bool bool_slots_used[NINE_MAX_CONST_B];
 
     unsigned const_int_slots;
     unsigned const_bool_slots;

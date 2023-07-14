@@ -795,21 +795,33 @@ spec@arb_depth_buffer_float@depthstencil-render-miplevels 1024 s=z24_s8_d=z32f,F
 spec@!opengl 1.1@depthstencil-default_fb-clear samples=2,Fail
 spec@!opengl 1.1@depthstencil-default_fb-clear samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-clear,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4,Fail
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2,Crash
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=4,Crash
 
-spec@!opengl 1.1@draw-pixels,Fail
-spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_line_loop,Fail
+# These non-supported primitives draws are converted by Mesa into
+# indexed draws with supported primitives. But these indexed draws
+# require 4-byte index due the number of vertices to draw, but our
+# hardware is limited to 2-byte indexes at most.
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_polygon,Crash
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_quad_strip,Crash
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_quads,Crash
-spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_triangle_fan,Fail
-spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_line_loop,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_polygon,Crash
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_quad_strip,Crash
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_quads,Crash
+
+# GFXH-515 / SW-5891: binner uses 16-bit index for drawarrays, so the
+# draw is split in multiple calls. For trifans or lineloops it is not
+# supported because the 1st vertex must be always included, which
+# would require creating new vertex buffer to include the remaining
+# vertices plus the 1st one.
+spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_line_loop,Fail
+spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_triangle_fan,Fail
+spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_line_loop,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_triangle_fan,Fail
+
+spec@!opengl 1.1@draw-pixels,Fail
 spec@!opengl 1.1@line-flat-clip-color,Fail
 spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Baseline,Fail

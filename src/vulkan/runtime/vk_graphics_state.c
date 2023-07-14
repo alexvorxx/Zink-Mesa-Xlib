@@ -41,6 +41,7 @@ get_dynamic_state_groups(BITSET_WORD *dynamic,
 
    if (groups & MESA_VK_GRAPHICS_STATE_VERTEX_INPUT_BIT) {
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_VI);
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_VI_BINDINGS_VALID);
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES);
    }
 
@@ -115,6 +116,7 @@ get_dynamic_state_groups(BITSET_WORD *dynamic,
    if (groups & MESA_VK_GRAPHICS_STATE_COLOR_BLEND_BIT) {
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE);
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP);
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT);
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES);
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES);
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS);
@@ -128,7 +130,9 @@ fully_dynamic_state_groups(const BITSET_WORD *dynamic)
 {
    enum mesa_vk_graphics_state_groups groups = 0;
 
-   if (BITSET_TEST(dynamic, MESA_VK_DYNAMIC_VI))
+   if (BITSET_TEST(dynamic, MESA_VK_DYNAMIC_VI) &&
+       BITSET_TEST(dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES) &&
+       BITSET_TEST(dynamic, MESA_VK_DYNAMIC_VI_BINDINGS_VALID))
       groups |= MESA_VK_GRAPHICS_STATE_VERTEX_INPUT_BIT;
 
    if (BITSET_TEST(dynamic, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS) &&
@@ -152,6 +156,7 @@ fully_dynamic_state_groups(const BITSET_WORD *dynamic)
 
    if (BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE) &&
        BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP) &&
+       BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT) &&
        BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) &&
        BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES) &&
        BITSET_TEST(dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS) &&
@@ -203,9 +208,16 @@ vk_get_dynamic_graphics_states(BITSET_WORD *dynamic,
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_##MESA2); \
       break;
 
+#define CASE3(VK, MESA1, MESA2, MESA3) \
+   case VK_DYNAMIC_STATE_##VK: \
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_##MESA1); \
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_##MESA2); \
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_##MESA3); \
+      break;
+
    for (uint32_t i = 0; i < info->dynamicStateCount; i++) {
       switch (info->pDynamicStates[i]) {
-      CASE2(VERTEX_INPUT_EXT,             VI, VI_BINDING_STRIDES)
+      CASE3(VERTEX_INPUT_EXT,             VI, VI_BINDINGS_VALID, VI_BINDING_STRIDES)
       CASE( VERTEX_INPUT_BINDING_STRIDE,  VI_BINDING_STRIDES)
       CASE( VIEWPORT,                     VP_VIEWPORTS)
       CASE( SCISSOR,                      VP_SCISSORS)
@@ -336,6 +348,9 @@ vk_dynamic_graphics_state_init_vi(struct vk_dynamic_graphics_state *dst,
 {
    if (IS_NEEDED(VI))
       *dst->vi = *vi;
+
+   if (IS_NEEDED(VI_BINDINGS_VALID))
+      dst->vi_bindings_valid = vi->bindings_valid;
 
    if (IS_NEEDED(VI_BINDING_STRIDES)) {
       for (uint32_t b = 0; b < MESA_VK_MAX_VERTEX_BINDINGS; b++) {
@@ -989,14 +1004,12 @@ vk_dynamic_graphics_state_init_cb(struct vk_dynamic_graphics_state *dst,
    dst->cb.logic_op_enable = cb->logic_op_enable;
    dst->cb.logic_op = cb->logic_op;
    dst->cb.color_write_enables = cb->color_write_enables;
+   dst->cb.attachment_count = cb->attachment_count;
 
    if (IS_NEEDED(CB_BLEND_ENABLES) ||
        IS_NEEDED(CB_BLEND_EQUATIONS) ||
        IS_NEEDED(CB_WRITE_MASKS)) {
-      dst->cb.attachment_count = cb->attachment_count;
       typed_memcpy(dst->cb.attachments, cb->attachments, cb->attachment_count);
-   } else {
-      dst->cb.attachment_count = 0;
    }
 
    if (IS_NEEDED(CB_BLEND_CONSTANTS))
@@ -1012,8 +1025,8 @@ vk_render_pass_state_is_complete(const struct vk_render_pass_state *rp)
 static void
 vk_render_pass_state_init(struct vk_render_pass_state *rp,
                           const struct vk_render_pass_state *old_rp,
+                          const struct vk_render_pass_state *driver_rp,
                           const VkGraphicsPipelineCreateInfo *info,
-                          const struct vk_subpass_info *sp_info,
                           VkGraphicsPipelineLibraryFlagsEXT lib)
 {
    VkPipelineCreateFlags valid_pipeline_flags = 0;
@@ -1028,7 +1041,8 @@ vk_render_pass_state_init(struct vk_render_pass_state *rp,
          VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
    }
    const VkPipelineCreateFlags pipeline_flags =
-      vk_get_pipeline_rendering_flags(info) & valid_pipeline_flags;
+      (driver_rp ? driver_rp->pipeline_flags :
+       vk_get_pipeline_rendering_flags(info)) & valid_pipeline_flags;
 
    /* If we already have render pass state and it has attachment info, then
     * it's complete and we don't need a new one.  The one caveat here is that
@@ -1048,9 +1062,10 @@ vk_render_pass_state_init(struct vk_render_pass_state *rp,
       .stencil_attachment_format = VK_FORMAT_UNDEFINED,
    };
 
-   if (info->renderPass != VK_NULL_HANDLE && sp_info != NULL) {
-      rp->attachment_aspects = sp_info->attachment_aspects;
-      rp->view_mask = sp_info->view_mask;
+   if (info->renderPass != VK_NULL_HANDLE && driver_rp != NULL) {
+      assert(driver_rp->render_pass == info->renderPass);
+      assert(driver_rp->subpass == info->subpass);
+      *rp = *driver_rp;
       return;
    }
 
@@ -1158,6 +1173,26 @@ vk_graphics_pipeline_state_groups(const struct vk_graphics_pipeline_state *state
    return groups | fully_dynamic_state_groups(state->dynamic);
 }
 
+void
+vk_graphics_pipeline_get_state(const struct vk_graphics_pipeline_state *state,
+                               BITSET_WORD *set_state_out)
+{
+   /* For now, we just validate dynamic state */
+   enum mesa_vk_graphics_state_groups groups = 0;
+
+#define FILL_HAS(STATE, type, s) \
+   if (state->s != NULL) groups |= STATE
+
+   FOREACH_STATE_GROUP(FILL_HAS)
+
+#undef FILL_HAS
+
+   BITSET_DECLARE(set_state, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
+   get_dynamic_state_groups(set_state, groups);
+   BITSET_ANDNOT(set_state, set_state, state->dynamic);
+   memcpy(set_state_out, set_state, sizeof(set_state));
+}
+
 static void
 vk_graphics_pipeline_state_validate(const struct vk_graphics_pipeline_state *state)
 {
@@ -1187,7 +1222,7 @@ VkResult
 vk_graphics_pipeline_state_fill(const struct vk_device *device,
                                 struct vk_graphics_pipeline_state *state,
                                 const VkGraphicsPipelineCreateInfo *info,
-                                const struct vk_subpass_info *sp_info,
+                                const struct vk_render_pass_state *driver_rp,
                                 struct vk_graphics_pipeline_all_state *all,
                                 const VkAllocationCallbacks *alloc,
                                 VkSystemAllocationScope scope,
@@ -1307,7 +1342,7 @@ vk_graphics_pipeline_state_fill(const struct vk_device *device,
    if (lib & (VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
               VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT |
               VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT)) {
-      vk_render_pass_state_init(&rp, state->rp, info, sp_info, lib);
+      vk_render_pass_state_init(&rp, state->rp, driver_rp, info, lib);
 
       needs |= MESA_VK_GRAPHICS_STATE_RENDER_PASS_BIT;
 
@@ -1575,6 +1610,85 @@ vk_graphics_pipeline_state_merge(struct vk_graphics_pipeline_state *dst,
 #undef MERGE
 }
 
+static bool
+is_group_all_dynamic(const struct vk_graphics_pipeline_state *state,
+                     enum mesa_vk_graphics_state_groups group)
+{
+   /* Render pass is a bit special, because it contains always-static state
+    * (e.g. the view mask). It's never all dynamic.
+    */
+   if (group == MESA_VK_GRAPHICS_STATE_RENDER_PASS_BIT)
+      return false;
+
+   BITSET_DECLARE(group_state, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
+   BITSET_DECLARE(dynamic_state, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
+   get_dynamic_state_groups(group_state, group);
+   BITSET_AND(dynamic_state, group_state, state->dynamic);
+   return BITSET_EQUAL(dynamic_state, group_state);
+}
+
+VkResult
+vk_graphics_pipeline_state_copy(const struct vk_device *device,
+                                struct vk_graphics_pipeline_state *state,
+                                const struct vk_graphics_pipeline_state *old_state,
+                                const VkAllocationCallbacks *alloc,
+                                VkSystemAllocationScope scope,
+                                void **alloc_ptr_out)
+{
+   vk_graphics_pipeline_state_validate(old_state);
+
+   VK_MULTIALLOC(ma);
+
+#define ENSURE_STATE_IF_NEEDED(STATE, type, s) \
+   struct type *new_##s = NULL; \
+   if (old_state->s && !is_group_all_dynamic(state, STATE)) { \
+      vk_multialloc_add(&ma, &new_##s, struct type, 1); \
+   }
+
+   FOREACH_STATE_GROUP(ENSURE_STATE_IF_NEEDED)
+
+#undef ENSURE_STATE_IF_NEEDED
+
+   /* Sample locations are a bit special. */
+   struct vk_sample_locations_state *new_sample_locations = NULL;
+   if (old_state->ms && old_state->ms->sample_locations &&
+       !BITSET_TEST(old_state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_LOCATIONS)) {
+      assert(old_state->ms->sample_locations);
+      vk_multialloc_add(&ma, &new_sample_locations,
+                        struct vk_sample_locations_state, 1);
+   }
+
+   if (ma.size > 0) {
+      *alloc_ptr_out = vk_multialloc_alloc2(&ma, &device->alloc, alloc, scope);
+      if (*alloc_ptr_out == NULL)
+         return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   if (new_sample_locations) {
+      *new_sample_locations = *old_state->ms->sample_locations;
+   }
+
+   if (new_ms) {
+      new_ms->sample_locations = new_sample_locations;
+   }
+
+#define COPY_STATE_IF_NEEDED(STATE, type, s) \
+   if (new_##s) { \
+      *new_##s = *old_state->s; \
+   } \
+   state->s = new_##s;
+
+   FOREACH_STATE_GROUP(COPY_STATE_IF_NEEDED)
+
+   state->shader_stages = old_state->shader_stages;
+   BITSET_COPY(state->dynamic, old_state->dynamic);
+
+#undef COPY_STATE_IF_NEEDED
+
+   vk_graphics_pipeline_state_validate(state);
+   return VK_SUCCESS;
+}
+
 const struct vk_dynamic_graphics_state vk_default_dynamic_graphics_state = {
    .rs = {
       .line = {
@@ -1672,8 +1786,25 @@ vk_dynamic_graphics_state_fill(struct vk_dynamic_graphics_state *dyn,
 
 #undef INIT_DYNAMIC_STATE
 
-   /* Mask off all but the groups we actually found */
    get_dynamic_state_groups(dyn->set, groups);
+
+   /* Vertex input state is always included in a complete pipeline. If p->vi
+    * is NULL, that means that it has been precompiled by the driver, but we
+    * should still track vi_bindings_valid.
+    */
+   BITSET_SET(dyn->set, MESA_VK_DYNAMIC_VI_BINDINGS_VALID);
+
+   /* If the pipeline doesn't render any color attachments, we should still
+    * keep track of the fact that it writes 0 attachments, even though none of
+    * the other blend states will be initialized. Normally this would be
+    * initialized with the other blend states.
+    */
+   if (!p->rp || !(p->rp->attachment_aspects & VK_IMAGE_ASPECT_COLOR_BIT)) {
+      dyn->cb.attachment_count = 0;
+      BITSET_SET(dyn->set, MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT);
+   }
+
+   /* Mask off all but the groups we actually found */
    BITSET_AND(dyn->set, dyn->set, needed);
 }
 
@@ -1718,8 +1849,8 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
 #define COPY_IF_SET(STATE, state) \
    if (IS_SET_IN_SRC(STATE)) SET_DYN_VALUE(dst, STATE, state, src->state)
 
-   assert((dst->vi != NULL) == (src->vi != NULL));
-   if (dst->vi != NULL && IS_SET_IN_SRC(VI)) {
+   if (IS_SET_IN_SRC(VI)) {
+      assert(dst->vi != NULL);
       COPY_MEMBER(VI, vi->bindings_valid);
       u_foreach_bit(b, src->vi->bindings_valid) {
          COPY_MEMBER(VI, vi->bindings[b].stride);
@@ -1734,9 +1865,14 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
       }
    }
 
+   if (IS_SET_IN_SRC(VI_BINDINGS_VALID))
+      COPY_MEMBER(VI_BINDINGS_VALID, vi_bindings_valid);
+
    if (IS_SET_IN_SRC(VI_BINDING_STRIDES)) {
-      COPY_ARRAY(VI_BINDING_STRIDES, vi_binding_strides,
-                 MESA_VK_MAX_VERTEX_BINDINGS);
+      assert(IS_SET_IN_SRC(VI_BINDINGS_VALID));
+      u_foreach_bit(a, src->vi_bindings_valid) {
+         COPY_MEMBER(VI_BINDING_STRIDES, vi_binding_strides[a]);
+      }
    }
 
    COPY_IF_SET(IA_PRIMITIVE_TOPOLOGY, ia.primitive_topology);
@@ -1801,10 +1937,8 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
    COPY_IF_SET(MS_ALPHA_TO_ONE_ENABLE, ms.alpha_to_one_enable);
    COPY_IF_SET(MS_SAMPLE_LOCATIONS_ENABLE, ms.sample_locations_enable);
 
-   assert((dst->ms.sample_locations == NULL) ==
-          (src->ms.sample_locations == NULL));
-   if (dst->ms.sample_locations != NULL &&
-       IS_SET_IN_SRC(MS_SAMPLE_LOCATIONS)) {
+   if (IS_SET_IN_SRC(MS_SAMPLE_LOCATIONS)) {
+      assert(dst->ms.sample_locations != NULL);
       COPY_MEMBER(MS_SAMPLE_LOCATIONS, ms.sample_locations->per_pixel);
       COPY_MEMBER(MS_SAMPLE_LOCATIONS, ms.sample_locations->grid_size.width);
       COPY_MEMBER(MS_SAMPLE_LOCATIONS, ms.sample_locations->grid_size.height);
@@ -1849,6 +1983,7 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
 
    COPY_IF_SET(CB_LOGIC_OP_ENABLE, cb.logic_op_enable);
    COPY_IF_SET(CB_LOGIC_OP, cb.logic_op);
+   COPY_IF_SET(CB_ATTACHMENT_COUNT, cb.attachment_count);
    COPY_IF_SET(CB_COLOR_WRITE_ENABLES, cb.color_write_enables);
    if (IS_SET_IN_SRC(CB_BLEND_ENABLES)) {
       for (uint32_t a = 0; a < src->cb.attachment_count; a++)
@@ -1921,15 +2056,16 @@ vk_common_CmdSetVertexInputEXT(VkCommandBuffer commandBuffer,
 
       const uint32_t b = desc->binding;
       bindings_valid |= BITFIELD_BIT(b);
-      SET_DYN_VALUE(dyn, VI, vi->bindings[b].stride, desc->stride);
-      SET_DYN_VALUE(dyn, VI, vi->bindings[b].input_rate, desc->inputRate);
-      SET_DYN_VALUE(dyn, VI, vi->bindings[b].divisor, desc->divisor);
+      dyn->vi->bindings[b].stride = desc->stride;
+      dyn->vi->bindings[b].input_rate = desc->inputRate;
+      dyn->vi->bindings[b].divisor = desc->divisor;
 
       /* Also set bindings_strides in case a driver is keying off that */
-      SET_DYN_VALUE(dyn, VI_BINDING_STRIDES,
-                    vi_binding_strides[b], desc->stride);
+      dyn->vi_binding_strides[b] = desc->stride;
    }
-   SET_DYN_VALUE(dyn, VI, vi->bindings_valid, bindings_valid);
+
+   dyn->vi->bindings_valid = bindings_valid;
+   SET_DYN_VALUE(dyn, VI_BINDINGS_VALID, vi_bindings_valid, bindings_valid);
 
    uint32_t attributes_valid = 0;
    for (uint32_t i = 0; i < vertexAttributeDescriptionCount; i++) {
@@ -1942,11 +2078,16 @@ vk_common_CmdSetVertexInputEXT(VkCommandBuffer commandBuffer,
 
       const uint32_t a = desc->location;
       attributes_valid |= BITFIELD_BIT(a);
-      SET_DYN_VALUE(dyn, VI, vi->attributes[a].binding, desc->binding);
-      SET_DYN_VALUE(dyn, VI, vi->attributes[a].format, desc->format);
-      SET_DYN_VALUE(dyn, VI, vi->attributes[a].offset, desc->offset);
+      dyn->vi->attributes[a].binding = desc->binding;
+      dyn->vi->attributes[a].format = desc->format;
+      dyn->vi->attributes[a].offset = desc->offset;
    }
-   SET_DYN_VALUE(dyn, VI, vi->attributes_valid, attributes_valid);
+   dyn->vi->attributes_valid = attributes_valid;
+
+   BITSET_SET(dyn->set, MESA_VK_DYNAMIC_VI);
+   BITSET_SET(dyn->set, MESA_VK_DYNAMIC_VI_BINDING_STRIDES);
+   BITSET_SET(dyn->dirty, MESA_VK_DYNAMIC_VI);
+   BITSET_SET(dyn->dirty, MESA_VK_DYNAMIC_VI_BINDING_STRIDES);
 }
 
 void

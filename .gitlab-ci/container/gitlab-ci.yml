@@ -276,12 +276,18 @@ debian/arm64_build:
 
 
 # Alpine based x86_64 build image
-alpine/x86_64_build:
+.alpine/x86_64_build-base:
   extends:
     - .fdo.container-build@alpine
     - .container
   variables:
     FDO_DISTRIBUTION_VERSION: "3.18"
+
+# Alpine based x86_64 build image
+alpine/x86_64_build:
+  extends:
+    - .alpine/x86_64_build-base
+  variables:
     MESA_IMAGE_TAG: &alpine-x86_64_build ${ALPINE_X86_64_BUILD_TAG}
 
 .use-alpine/x86_64_build:
@@ -292,6 +298,13 @@ alpine/x86_64_build:
     MESA_IMAGE_TAG: *alpine-x86_64_build
   needs:
     - alpine/x86_64_build
+
+# Alpine based x86_64 image for LAVA SSH dockerized client
+alpine/x86_64_lava_ssh_client:
+  extends:
+    - .alpine/x86_64_build-base
+  variables:
+    MESA_IMAGE_TAG: &alpine-x86_64_lava_ssh_client ${ALPINE_X86_64_LAVA_SSH_TAG}
 
 # Fedora based x86_64 build image
 fedora/x86_64_build:

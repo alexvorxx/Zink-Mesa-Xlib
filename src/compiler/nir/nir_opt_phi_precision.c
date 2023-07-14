@@ -458,24 +458,20 @@ nir_opt_phi_precision(nir_shader *shader)
    if (!(bit_sizes_used & (8 | 16)))
       return false;
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
+   nir_foreach_function_impl(impl, shader) {
+      nir_builder b = nir_builder_create(impl);
 
-      nir_builder b;
-      nir_builder_init(&b, function->impl);
-
-      nir_foreach_block (block, function->impl) {
+      nir_foreach_block (block, impl) {
          nir_foreach_phi_safe (phi, block)
             progress |= lower_phi(&b, phi);
       }
 
       if (progress) {
-         nir_metadata_preserve(function->impl,
+         nir_metadata_preserve(impl,
                                nir_metadata_block_index |
                                nir_metadata_dominance);
       } else {
-         nir_metadata_preserve(function->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
       }
    }
 

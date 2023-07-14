@@ -79,10 +79,6 @@ struct ntv_context {
    SpvId *resident_defs;
    size_t num_defs;
 
-   SpvId *regs;
-   nir_alu_type *reg_types;
-   size_t num_regs;
-
    struct hash_table *vars; /* nir_variable -> SpvId */
    struct hash_table *so_outputs; /* pipe_stream_output -> SpvId */
    unsigned outputs[VARYING_SLOT_MAX * 4];
@@ -165,12 +161,10 @@ get_nir_alu_type(const struct glsl_type *type)
 }
 
 static nir_alu_type
-infer_nir_alu_type_from_uses_ssa(nir_ssa_def *ssa, unsigned depth);
-static nir_alu_type
-infer_nir_alu_type_from_uses_reg(nir_register *reg, unsigned depth);
+infer_nir_alu_type_from_uses_ssa(nir_ssa_def *ssa);
 
 static nir_alu_type
-infer_nir_alu_type_from_use(nir_src *src, unsigned depth)
+infer_nir_alu_type_from_use(nir_src *src)
 {
    nir_instr *instr = src->parent_instr;
    nir_alu_type atype = nir_type_invalid;
@@ -185,16 +179,7 @@ infer_nir_alu_type_from_use(nir_src *src, unsigned depth)
       }
       /* ignore typeless ops */
       if (alu_op_is_typeless(alu->op)) {
-         if (alu->dest.dest.is_ssa) {
-            atype = infer_nir_alu_type_from_uses_ssa(&alu->dest.dest.ssa, depth);
-         } else {
-            /* avoid infinite recursion */
-            if (depth > 10)
-               break;
-            if (!src->is_ssa && src->reg.reg == alu->dest.dest.reg.reg)
-               break;
-            atype = infer_nir_alu_type_from_uses_reg(alu->dest.dest.reg.reg, ++depth);
-         }
+         atype = infer_nir_alu_type_from_uses_ssa(&alu->dest.dest.ssa);
          break;
       }
       for (unsigned i = 0; i < nir_op_infos[alu->op].num_inputs; i++) {
@@ -258,29 +243,14 @@ infer_nir_alu_type_from_use(nir_src *src, unsigned depth)
 }
 
 static nir_alu_type
-infer_nir_alu_type_from_uses_ssa(nir_ssa_def *ssa, unsigned depth)
+infer_nir_alu_type_from_uses_ssa(nir_ssa_def *ssa)
 {
    nir_alu_type atype = nir_type_invalid;
    /* try to infer a type: if it's wrong then whatever, but at least we tried */
    nir_foreach_use_including_if(src, ssa) {
       if (src->is_if)
          return nir_type_bool;
-      atype = infer_nir_alu_type_from_use(src, depth);
-      if (atype)
-         break;
-   }
-   return atype ? atype : nir_type_uint;
-}
-
-static nir_alu_type
-infer_nir_alu_type_from_uses_reg(nir_register *reg, unsigned depth)
-{
-   nir_alu_type atype = nir_type_invalid;
-   /* try to infer a type: if it's wrong then whatever, but at least we tried */
-   nir_foreach_use_including_if(src, reg) {
-      if (src->is_if)
-         return nir_type_bool;
-      atype = infer_nir_alu_type_from_use(src, depth);
+      atype = infer_nir_alu_type_from_use(src);
       if (atype)
          break;
    }
@@ -1400,52 +1370,30 @@ get_src_ssa(struct ntv_context *ctx, const nir_ssa_def *ssa, nir_alu_type *atype
 }
 
 static void
-init_reg(struct ntv_context *ctx, nir_register *reg, nir_alu_type atype)
+init_reg(struct ntv_context *ctx, nir_intrinsic_instr *decl, nir_alu_type atype)
 {
-   if (ctx->regs[reg->index])
+   unsigned index = decl->dest.ssa.index;
+   unsigned num_components = nir_intrinsic_num_components(decl);
+   unsigned bit_size = nir_intrinsic_bit_size(decl);
+
+   if (ctx->defs[index])
       return;
 
-   SpvId type = get_alu_type(ctx, atype, reg->num_components, reg->bit_size);
+   SpvId type = get_alu_type(ctx, atype, num_components, bit_size);
    SpvId pointer_type = spirv_builder_type_pointer(&ctx->builder,
                                                    SpvStorageClassFunction,
                                                    type);
    SpvId var = spirv_builder_emit_var(&ctx->builder, pointer_type,
                                        SpvStorageClassFunction);
 
-   ctx->regs[reg->index] = var;
-   ctx->reg_types[reg->index] = nir_alu_type_get_base_type(atype);
-}
-
-static SpvId
-get_var_from_reg(struct ntv_context *ctx, nir_register *reg, nir_alu_type *atype)
-{
-   assert(reg->index < ctx->num_regs);
-   init_reg(ctx, reg, nir_type_uint);
-   assert(ctx->regs[reg->index] != 0);
-
-   *atype = ctx->reg_types[reg->index];
-   return ctx->regs[reg->index];
-}
-
-static SpvId
-get_src_reg(struct ntv_context *ctx, const nir_reg_src *reg, nir_alu_type *atype)
-{
-   assert(reg->reg);
-   assert(!reg->indirect);
-   assert(!reg->base_offset);
-
-   SpvId var = get_var_from_reg(ctx, reg->reg, atype);
-   SpvId type = get_alu_type(ctx, *atype, reg->reg->num_components, reg->reg->bit_size);
-   return spirv_builder_emit_load(&ctx->builder, type, var);
+   ctx->defs[index] = var;
+   ctx->def_types[index] = nir_alu_type_get_base_type(atype);
 }
 
 static SpvId
 get_src(struct ntv_context *ctx, nir_src *src, nir_alu_type *atype)
 {
-   if (src->is_ssa)
-      return get_src_ssa(ctx, src->ssa, atype);
-   else
-      return get_src_reg(ctx, &src->reg, atype);
+   return get_src_ssa(ctx, src->ssa, atype);
 }
 
 static SpvId
@@ -1573,27 +1521,9 @@ cast_src_to_type(struct ntv_context *ctx, SpvId value, nir_src src, nir_alu_type
 }
 
 static void
-store_reg_def(struct ntv_context *ctx, nir_reg_dest *reg, SpvId result, nir_alu_type atype)
-{
-   atype = nir_alu_type_get_base_type(atype);
-   init_reg(ctx, reg->reg, atype);
-   SpvId var = ctx->regs[reg->reg->index];
-   nir_alu_type vtype = ctx->reg_types[reg->reg->index];
-   if (atype != vtype) {
-      assert(vtype != nir_type_bool);
-      result = emit_bitcast(ctx, get_alu_type(ctx, vtype, reg->reg->num_components, reg->reg->bit_size), result);
-   }
-   assert(var);
-   spirv_builder_emit_store(&ctx->builder, var, result);
-}
-
-static void
 store_dest_raw(struct ntv_context *ctx, nir_dest *dest, SpvId result, nir_alu_type atype)
 {
-   if (dest->is_ssa)
-      store_ssa_def(ctx, &dest->ssa, result, atype);
-   else
-      store_reg_def(ctx, &dest->reg, result, atype);
+   store_ssa_def(ctx, &dest->ssa, result, atype);
 }
 
 static void
@@ -2647,7 +2577,7 @@ emit_load_const(struct ntv_context *ctx, nir_load_const_instr *load_const)
          components[i] = spirv_builder_const_bool(&ctx->builder,
                                                   load_const->value[i].b);
    } else {
-      atype = infer_nir_alu_type_from_uses_ssa(&load_const->def, 0);
+      atype = infer_nir_alu_type_from_uses_ssa(&load_const->def);
       for (int i = 0; i < num_components; i++) {
          switch (atype) {
          case nir_type_uint: {
@@ -2729,7 +2659,7 @@ emit_store_deref(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 
    const struct glsl_type *gtype = nir_src_as_deref(intr->src[0])->type;
    SpvId type = get_glsl_type(ctx, gtype);
-   nir_variable *var = nir_deref_instr_get_variable(nir_src_as_deref(intr->src[0]));
+   nir_variable *var = nir_intrinsic_get_var(intr, 0);
    unsigned wrmask = nir_intrinsic_write_mask(intr);
    if (!glsl_type_is_scalar(gtype) &&
        wrmask != BITFIELD_MASK(glsl_type_is_array(gtype) ? glsl_get_aoa_size(gtype) : glsl_get_vector_elements(gtype))) {
@@ -2986,6 +2916,50 @@ emit_store_global(struct ntv_context *ctx, nir_intrinsic_instr *intr)
    SpvId param = get_src(ctx, &intr->src[0], &atype);
    SpvId ptr = emit_bitcast(ctx, pointer_type, get_src(ctx, &intr->src[1], &atype));
    spirv_builder_emit_store(&ctx->builder, ptr, param);
+}
+
+static void
+emit_load_reg(struct ntv_context *ctx, nir_intrinsic_instr *intr)
+{
+   assert(nir_intrinsic_base(intr) == 0 && "no array registers");
+
+   nir_intrinsic_instr *decl = nir_reg_get_decl(intr->src[0].ssa);
+   unsigned num_components = nir_intrinsic_num_components(decl);
+   unsigned bit_size = nir_intrinsic_bit_size(decl);
+   unsigned index = decl->dest.ssa.index;
+   assert(index < ctx->num_defs);
+
+   init_reg(ctx, decl, nir_type_uint);
+   assert(ctx->defs[index] != 0);
+
+   nir_alu_type atype = ctx->def_types[index];
+   SpvId var = ctx->defs[index];
+   SpvId type = get_alu_type(ctx, atype, num_components, bit_size);
+   SpvId result = spirv_builder_emit_load(&ctx->builder, type, var);
+   store_dest(ctx, &intr->dest, result, atype);
+}
+
+static void
+emit_store_reg(struct ntv_context *ctx, nir_intrinsic_instr *intr)
+{
+   nir_alu_type atype;
+   SpvId param = get_src(ctx, &intr->src[0], &atype);
+
+   nir_intrinsic_instr *decl = nir_reg_get_decl(intr->src[1].ssa);
+   unsigned index = decl->dest.ssa.index;
+   unsigned num_components = nir_intrinsic_num_components(decl);
+   unsigned bit_size = nir_intrinsic_bit_size(decl);
+
+   atype = nir_alu_type_get_base_type(atype);
+   init_reg(ctx, decl, atype);
+   SpvId var = ctx->defs[index];
+   nir_alu_type vtype = ctx->def_types[index];
+   if (atype != vtype) {
+      assert(vtype != nir_type_bool);
+      param = emit_bitcast(ctx, get_alu_type(ctx, vtype, num_components, bit_size), param);
+   }
+   assert(var);
+   spirv_builder_emit_store(&ctx->builder, var, param);
 }
 
 static SpvId
@@ -3567,6 +3541,18 @@ static void
 emit_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 {
    switch (intr->intrinsic) {
+   case nir_intrinsic_decl_reg:
+      /* Nothing to do */
+      break;
+
+   case nir_intrinsic_load_reg:
+      emit_load_reg(ctx, intr);
+      break;
+
+   case nir_intrinsic_store_reg:
+      emit_store_reg(ctx, intr);
+      break;
+
    case nir_intrinsic_discard:
       emit_discard(ctx, intr);
       break;
@@ -5025,8 +5011,8 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
    nir_function_impl *entry = nir_shader_get_entrypoint(s);
    nir_metadata_require(entry, nir_metadata_block_index);
 
-   ctx.defs = ralloc_array_size(ctx.mem_ctx,
-                                sizeof(SpvId), entry->ssa_alloc);
+   ctx.defs = rzalloc_array_size(ctx.mem_ctx,
+                                 sizeof(SpvId), entry->ssa_alloc);
    ctx.def_types = ralloc_array_size(ctx.mem_ctx,
                                      sizeof(nir_alu_type), entry->ssa_alloc);
    if (!ctx.defs || !ctx.def_types)
@@ -5043,15 +5029,6 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
    }
    ctx.num_defs = entry->ssa_alloc;
 
-   nir_index_local_regs(entry);
-   ctx.regs = rzalloc_array_size(ctx.mem_ctx,
-                                 sizeof(SpvId), entry->reg_alloc);
-   ctx.reg_types = ralloc_array_size(ctx.mem_ctx,
-                                     sizeof(nir_alu_type), entry->reg_alloc);
-   if (!ctx.regs || !ctx.reg_types)
-      goto fail;
-   ctx.num_regs = entry->reg_alloc;
-
    SpvId *block_ids = ralloc_array_size(ctx.mem_ctx,
                                         sizeof(SpvId), entry->num_blocks);
    if (!block_ids)
@@ -5067,8 +5044,8 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
    start_block(&ctx, spirv_builder_new_id(&ctx.builder));
    spirv_builder_begin_local_vars(&ctx.builder);
 
-   foreach_list_typed(nir_register, reg, node, &entry->registers) {
-      if (reg->bit_size == 1)
+   nir_foreach_reg_decl(reg, entry) {
+      if (nir_intrinsic_bit_size(reg) == 1)
          init_reg(&ctx, reg, nir_type_bool);
    }
 

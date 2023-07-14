@@ -361,6 +361,18 @@
       <value name="WB" value="3" />
     </field>
   </struct>
+  <struct name="MEMORY_OBJECT_CONTROL_STATE_CHV" length="1">
+    <field name="Target Cache" start="3" end="4" type="uint">
+      <value name="No Caching" value="0" />
+      <value name="No Caching 1" value="1" />
+      <value name="No Caching 2" value="2" />
+      <value name="L3 Cache Allowed" value="3" />
+    </field>
+    <field name="Memory Type" start="5" end="6" type="uint">
+      <value name="UC" value="0" />
+      <value name="WB" value="3" />
+    </field>
+  </struct>
   <struct name="MFD_MPEG2_BSD_OBJECT_INLINE_DATA_DESCRIPTION" length="2">
     <field name="First MB Bit Offset" start="0" end="2" type="uint" />
     <field name="Last MB" start="3" end="3" type="bool" />

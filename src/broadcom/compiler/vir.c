@@ -660,7 +660,7 @@ v3d_lower_nir(struct v3d_compile *c)
                  */
                 const unsigned chunk_size = 16; /* max single store size */
                 NIR_PASS(_, c->s, nir_zero_initialize_shared_memory,
-                         ALIGN(c->s->info.shared_size, chunk_size), chunk_size);
+                         align(c->s->info.shared_size, chunk_size), chunk_size);
         }
 
         NIR_PASS(_, c->s, nir_lower_compute_system_values, NULL);
@@ -840,7 +840,7 @@ v3d_fs_set_prog_data(struct v3d_compile *c,
                 c->uses_implicit_point_line_varyings;
         prog_data->lock_scoreboard_on_first_thrsw =
                 c->lock_scoreboard_on_first_thrsw;
-        prog_data->force_per_sample_msaa = c->force_per_sample_msaa;
+        prog_data->force_per_sample_msaa = c->s->info.fs.uses_sample_shading;
         prog_data->uses_pid = c->fs_uses_primitive_id;
 }
 
@@ -1437,16 +1437,14 @@ v3d_nir_sort_constant_ubo_loads_block(struct v3d_compile *c,
 static bool
 v3d_nir_sort_constant_ubo_loads(nir_shader *s, struct v3d_compile *c)
 {
-        nir_foreach_function(function, s) {
-                if (function->impl) {
-                        nir_foreach_block(block, function->impl) {
-                                c->sorted_any_ubo_loads |=
-                                        v3d_nir_sort_constant_ubo_loads_block(c, block);
-                        }
-                        nir_metadata_preserve(function->impl,
-                                              nir_metadata_block_index |
-                                              nir_metadata_dominance);
+        nir_foreach_function_impl(impl, s) {
+                nir_foreach_block(block, impl) {
+                        c->sorted_any_ubo_loads |=
+                                v3d_nir_sort_constant_ubo_loads_block(c, block);
                 }
+                nir_metadata_preserve(impl,
+                                      nir_metadata_block_index |
+                                      nir_metadata_dominance);
         }
         return c->sorted_any_ubo_loads;
 }
@@ -1506,18 +1504,15 @@ static bool
 v3d_nir_lower_subgroup_intrinsics(nir_shader *s, struct v3d_compile *c)
 {
         bool progress = false;
-        nir_foreach_function(function, s) {
-                if (function->impl) {
-                        nir_builder b;
-                        nir_builder_init(&b, function->impl);
+        nir_foreach_function_impl(impl, s) {
+                nir_builder b = nir_builder_create(impl);
 
-                        nir_foreach_block(block, function->impl)
-                                progress |= lower_subgroup_intrinsics(c, block, &b);
+                nir_foreach_block(block, impl)
+                        progress |= lower_subgroup_intrinsics(c, block, &b);
 
-                        nir_metadata_preserve(function->impl,
-                                              nir_metadata_block_index |
-                                              nir_metadata_dominance);
-                }
+                nir_metadata_preserve(impl,
+                                      nir_metadata_block_index |
+                                      nir_metadata_dominance);
         }
         return progress;
 }
@@ -1582,8 +1577,9 @@ v3d_attempt_compile(struct v3d_compile *c)
         NIR_PASS(_, c->s, nir_lower_idiv, &idiv_options);
         NIR_PASS(_, c->s, nir_lower_alu);
 
-        if (c->key->robust_uniform_access || c->key->robust_storage_access) {
-                /* v3d_nir_lower_robust_buffer_access assumes constant buffer
+        if (c->key->robust_uniform_access || c->key->robust_storage_access ||
+            c->key->robust_image_access) {
+                /* nir_lower_robust_access assumes constant buffer
                  * indices on ubo/ssbo intrinsics so run copy propagation and
                  * constant folding passes before we run the lowering to warrant
                  * this. We also want to run the lowering before v3d_optimize to
@@ -1591,11 +1587,16 @@ v3d_attempt_compile(struct v3d_compile *c)
                  */
                 NIR_PASS(_, c->s, nir_copy_prop);
                 NIR_PASS(_, c->s, nir_opt_constant_folding);
-                NIR_PASS(_, c->s, v3d_nir_lower_robust_buffer_access, c);
-        }
 
-        if (c->key->robust_image_access)
-                NIR_PASS(_, c->s, v3d_nir_lower_robust_image_access, c);
+                nir_lower_robust_access_options opts = {
+                   .lower_image = c->key->robust_image_access,
+                   .lower_ssbo = c->key->robust_storage_access,
+                   .lower_ubo = c->key->robust_uniform_access,
+                   .skip_ubo_0 = c->key->environment == V3D_ENVIRONMENT_VULKAN,
+                };
+
+                NIR_PASS(_, c->s, nir_lower_robust_access, &opts);
+        }
 
         NIR_PASS(_, c->s, nir_lower_wrmasks, should_split_wrmask, c->s);
 
@@ -1623,7 +1624,7 @@ v3d_attempt_compile(struct v3d_compile *c)
         NIR_PASS(_, c->s, nir_lower_bool_to_int32);
         NIR_PASS(_, c->s, nir_convert_to_lcssa, true, true);
         NIR_PASS_V(c->s, nir_divergence_analysis);
-        NIR_PASS(_, c->s, nir_convert_from_ssa, true);
+        NIR_PASS(_, c->s, nir_convert_from_ssa, true, false);
 
         struct nir_schedule_options schedule_options = {
                 /* Schedule for about half our register space, to enable more
@@ -1789,6 +1790,15 @@ skip_compile_strategy(struct v3d_compile *c, uint32_t idx)
            return false;
    };
 }
+
+static inline void
+set_best_compile(struct v3d_compile **best, struct v3d_compile *c)
+{
+   if (*best)
+      vir_compile_destroy(*best);
+   *best = c;
+}
+
 uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                       struct v3d_key *key,
                       struct v3d_prog_data **out_prog_data,
@@ -1853,11 +1863,11 @@ uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                         if (c->spills == 0 ||
                             strategies[strat].min_threads == 4 ||
                             V3D_DBG(OPT_COMPILE_TIME)) {
-                                best_c = c;
+                                set_best_compile(&best_c, c);
                                 break;
                         } else if (c->spills + c->fills <
                                    best_spill_fill_count) {
-                                best_c = c;
+                                set_best_compile(&best_c, c);
                                 best_spill_fill_count = c->spills + c->fills;
                         }
 
@@ -1887,10 +1897,8 @@ uint64_t *v3d_compile(const struct v3d_compiler *compiler,
         }
 
         /* If the best strategy was not the last, choose that */
-        if (best_c && c != best_c) {
-                vir_compile_destroy(c);
-                c = best_c;
-        }
+        if (best_c && c != best_c)
+                set_best_compile(&c, best_c);
 
         if (V3D_DBG(PERF) &&
             c->compilation_result !=

@@ -143,8 +143,8 @@ nir_has_non_uniform_access_impl(nir_function_impl *impl, enum nir_lower_non_unif
 bool
 nir_has_non_uniform_access(nir_shader *shader, enum nir_lower_non_uniform_access_type types)
 {
-   nir_foreach_function(function, shader) {
-      if (function->impl && nir_has_non_uniform_access_impl(function->impl, types))
+   nir_foreach_function_impl(impl, shader) {
+      if (nir_has_non_uniform_access_impl(impl, types))
          return true;
    }
 

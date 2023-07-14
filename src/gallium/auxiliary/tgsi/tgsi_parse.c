@@ -55,7 +55,7 @@ tgsi_parse_free(
 {
 }
 
-boolean
+bool
 tgsi_parse_end_of_tokens(
    struct tgsi_parse_context *ctx )
 {
@@ -143,7 +143,7 @@ tgsi_parse_token(
    case TGSI_TOKEN_TYPE_IMMEDIATE:
    {
       struct tgsi_full_immediate *imm = &ctx->FullToken.FullImmediate;
-      uint imm_count;
+      unsigned imm_count;
 
       memset(imm, 0, sizeof *imm);
       copy_token(&imm->Immediate, &token);
@@ -251,7 +251,7 @@ tgsi_parse_token(
    case TGSI_TOKEN_TYPE_PROPERTY:
    {
       struct tgsi_full_property *prop = &ctx->FullToken.FullProperty;
-      uint prop_count;
+      unsigned prop_count;
 
       memset(prop, 0, sizeof *prop);
       copy_token(&prop->Property, &token);

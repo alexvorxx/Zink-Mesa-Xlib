@@ -58,7 +58,7 @@ struct Shader
    uint type;
    struct pipe_shader_state state;
    unsigned output_mapping[PIPE_MAX_SHADER_OUTPUTS];
-   boolean output_resolved;
+   bool output_resolved;
 };
 
 struct Query;

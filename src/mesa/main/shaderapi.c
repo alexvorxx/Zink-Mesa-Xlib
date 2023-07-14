@@ -69,7 +69,7 @@
 #include "api_exec_decl.h"
 
 #include "state_tracker/st_context.h"
-#include "state_tracker/st_glsl_to_ir.h"
+#include "state_tracker/st_glsl_to_nir.h"
 #include "state_tracker/st_program.h"
 
 #ifdef ENABLE_SHADER_CACHE

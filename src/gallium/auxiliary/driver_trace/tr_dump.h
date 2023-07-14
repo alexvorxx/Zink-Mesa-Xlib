@@ -34,7 +34,7 @@
 #define TR_DUMP_H
 
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "util/format/u_formats.h"
 
 struct pipe_resource;
@@ -82,9 +82,9 @@ void trace_dump_arg_begin(const char *name);
 void trace_dump_arg_end(void);
 void trace_dump_ret_begin(void);
 void trace_dump_ret_end(void);
-void trace_dump_bool(int value);
-void trace_dump_int(long long int value);
-void trace_dump_uint(long long unsigned value);
+void trace_dump_bool(bool value);
+void trace_dump_int(int64_t value);
+void trace_dump_uint(uint64_t value);
 void trace_dump_float(double value);
 void trace_dump_bytes(const void *data, size_t size);
 void trace_dump_box_bytes(const void *data,

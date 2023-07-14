@@ -346,9 +346,6 @@ emit_3dstate_sbe(struct anv_graphics_pipeline *pipeline)
 
    struct GENX(3DSTATE_SBE) sbe = {
       GENX(3DSTATE_SBE_header),
-      /* TODO(mesh): Figure out cases where we need attribute swizzling.  See also
-       * calculate_urb_setup() and related functions.
-       */
       .AttributeSwizzleEnable = anv_pipeline_is_primitive(pipeline),
       .PointSpriteTextureCoordinateOrigin = UPPERLEFT,
       .NumberofSFOutputAttributes = wm_prog_data->num_varying_inputs,

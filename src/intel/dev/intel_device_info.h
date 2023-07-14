@@ -173,6 +173,7 @@ struct intel_device_info
    bool has_mmap_offset;
    bool has_userptr_probe;
    bool has_context_isolation;
+   bool has_set_pat_uapi;
 
    /**
     * \name Intel hardware quirks
@@ -450,6 +451,12 @@ struct intel_device_info
          } mappable, unmappable;
       } sram, vram;
    } mem;
+
+   struct {
+      uint8_t coherent;
+      uint8_t scanout;
+      uint8_t writeback;
+   } pat;
 
    BITSET_DECLARE(workarounds, INTEL_WA_NUM);
    /** @} */

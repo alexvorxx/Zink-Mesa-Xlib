@@ -347,24 +347,24 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
 
          switch (intrin->intrinsic) {
          case nir_intrinsic_store_ssbo:
-            nir_build_ssbo_atomic(b, 32, intrin->src[1].ssa, chunk_offset, iand_mask,
+            nir_ssbo_atomic(b, 32, intrin->src[1].ssa, chunk_offset, iand_mask,
                                   .atomic_op = nir_atomic_op_iand,
                                   .access = nir_intrinsic_access(intrin));
-            nir_build_ssbo_atomic(b, 32, intrin->src[1].ssa, chunk_offset, data,
+            nir_ssbo_atomic(b, 32, intrin->src[1].ssa, chunk_offset, data,
                                   .atomic_op = nir_atomic_op_ior,
                                   .access = nir_intrinsic_access(intrin));
             break;
          case nir_intrinsic_store_global:
-            nir_build_global_atomic(b, 32, chunk_offset, iand_mask,
+            nir_global_atomic(b, 32, chunk_offset, iand_mask,
                                     .atomic_op = nir_atomic_op_iand);
-            nir_build_global_atomic(b, 32, chunk_offset, data,
+            nir_global_atomic(b, 32, chunk_offset, data,
                                     .atomic_op = nir_atomic_op_ior);
             break;
          case nir_intrinsic_store_shared:
-            nir_build_shared_atomic(b, 32, chunk_offset, iand_mask,
+            nir_shared_atomic(b, 32, chunk_offset, iand_mask,
                                     .atomic_op = nir_atomic_op_iand,
                                     .base = nir_intrinsic_base(intrin));
-            nir_build_shared_atomic(b, 32, chunk_offset, data,
+            nir_shared_atomic(b, 32, chunk_offset, data,
                                     .atomic_op = nir_atomic_op_ior,
                                     .base = nir_intrinsic_base(intrin));
             break;

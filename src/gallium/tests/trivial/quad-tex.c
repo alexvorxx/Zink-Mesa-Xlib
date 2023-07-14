@@ -275,7 +275,7 @@ static void init_prog(struct program *p)
 		const enum tgsi_semantic semantic_names[] =
                    { TGSI_SEMANTIC_POSITION, TGSI_SEMANTIC_GENERIC };
 		const uint semantic_indexes[] = { 0, 0 };
-		p->vs = util_make_vertex_passthrough_shader(p->pipe, 2, semantic_names, semantic_indexes, FALSE);
+		p->vs = util_make_vertex_passthrough_shader(p->pipe, 2, semantic_names, semantic_indexes, false);
 	}
 
 	/* fragment shader */

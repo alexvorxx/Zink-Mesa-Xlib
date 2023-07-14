@@ -169,8 +169,8 @@ struct r600_clip_misc_state {
 	unsigned cc_dist_mask;      /* from vertex shader */
 	unsigned clip_dist_write;   /* from vertex shader */
 	unsigned cull_dist_write;   /* from vertex shader */
-	boolean clip_disable;       /* from vertex shader */
-	boolean vs_out_viewport;    /* from vertex shader */
+	bool clip_disable;       /* from vertex shader */
+	bool vs_out_viewport;    /* from vertex shader */
 };
 
 struct r600_alphatest_state {
@@ -233,9 +233,9 @@ struct r600_config_state {
 
 struct r600_stencil_ref
 {
-	ubyte ref_value[2];
-	ubyte valuemask[2];
-	ubyte writemask[2];
+	uint8_t ref_value[2];
+	uint8_t valuemask[2];
+	uint8_t writemask[2];
 };
 
 struct r600_stencil_ref_state {
@@ -293,8 +293,8 @@ struct r600_pipe_sampler_view {
 
 struct r600_rasterizer_state {
 	struct r600_command_buffer	buffer;
-	boolean				flatshade;
-	boolean				two_side;
+	bool				flatshade;
+	bool				two_side;
 	unsigned			sprite_coord_enable;
 	unsigned                        clip_plane_enable;
 	unsigned			pa_sc_line_stipple;
@@ -331,8 +331,8 @@ struct r600_blend_state {
 struct r600_dsa_state {
 	struct r600_command_buffer	buffer;
 	unsigned			alpha_ref;
-	ubyte				valuemask[2];
-	ubyte				writemask[2];
+	uint8_t				valuemask[2];
+	uint8_t				writemask[2];
 	unsigned			zwritemask;
 	unsigned			sx_alpha_test_control;
 };
@@ -388,7 +388,7 @@ struct r600_samplerview_state {
 	uint32_t			dirty_mask;
 	uint32_t			compressed_depthtex_mask; /* which textures are depth */
 	uint32_t			compressed_colortex_mask;
-	boolean				dirty_buffer_constants;
+	bool				dirty_buffer_constants;
 };
 
 struct r600_sampler_states {
@@ -477,14 +477,14 @@ struct r600_image_state {
 	uint32_t                        dirty_mask;
 	uint32_t			compressed_depthtex_mask;
 	uint32_t			compressed_colortex_mask;
-	boolean				dirty_buffer_constants;
+	bool				dirty_buffer_constants;
 	struct r600_image_view views[R600_MAX_IMAGES];
 };
 
 /* Used to spill shader temps */
 struct r600_scratch_buffer {
 	struct r600_resource		*buffer;
-	boolean					dirty;
+	bool					dirty;
 	unsigned				size;
 	unsigned				item_size;
 };
@@ -496,7 +496,7 @@ struct r600_context {
 	struct u_suballocator		allocator_fetch_shader;
 
 	/* Hardware info. */
-	boolean				has_vertex_cache;
+	bool				has_vertex_cache;
 	unsigned			default_gprs[EG_NUM_HW_STAGES];
 	unsigned                        current_gprs[EG_NUM_HW_STAGES];
 	unsigned			r6xx_num_clause_temp_gprs;
@@ -580,7 +580,7 @@ struct r600_context {
 	bool				alpha_to_one;
 	bool				force_blend_disable;
 	bool                            gs_tri_strip_adj_fix;
-	boolean				dual_src_blend;
+	bool				dual_src_blend;
 	unsigned			zwritemask;
 	unsigned			ps_iter_samples;
 
@@ -777,7 +777,7 @@ void r600_context_gfx_flush(void *context, unsigned flags,
 			    struct pipe_fence_handle **fence);
 void r600_begin_new_cs(struct r600_context *ctx);
 void r600_flush_emit(struct r600_context *ctx);
-void r600_need_cs_space(struct r600_context *ctx, unsigned num_dw, boolean count_draw_in, unsigned num_atomics);
+void r600_need_cs_space(struct r600_context *ctx, unsigned num_dw, bool count_draw_in, unsigned num_atomics);
 void r600_emit_pfp_sync_me(struct r600_context *rctx);
 void r600_cp_dma_copy_buffer(struct r600_context *rctx,
 			     struct pipe_resource *dst, uint64_t dst_offset,
@@ -847,7 +847,7 @@ unsigned r600_tex_compare(unsigned compare);
 bool sampler_state_needs_border_color(const struct pipe_sampler_state *state);
 unsigned r600_get_swizzle_combined(const unsigned char *swizzle_format,
 				   const unsigned char *swizzle_view,
-				   boolean vtx);
+				   bool vtx);
 uint32_t r600_translate_texformat(struct pipe_screen *screen, enum pipe_format format,
 				  const unsigned char *swizzle_view,
 				  uint32_t *word4_p, uint32_t *yuv_format_p,

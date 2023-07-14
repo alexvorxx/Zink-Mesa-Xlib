@@ -879,8 +879,7 @@ nir_algebraic_impl(nir_function_impl *impl,
 {
    bool progress = false;
 
-   nir_builder build;
-   nir_builder_init(&build, impl);
+   nir_builder build = nir_builder_create(impl);
 
    /* Note: it's important here that we're allocating a zeroed array, since
     * state 0 is the default state, which means we don't have to visit

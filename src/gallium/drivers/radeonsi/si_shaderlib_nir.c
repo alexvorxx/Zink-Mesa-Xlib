@@ -51,14 +51,14 @@ static nir_ssa_def *get_global_ids(nir_builder *b, unsigned num_components)
 
 static void unpack_2x16(nir_builder *b, nir_ssa_def *src, nir_ssa_def **x, nir_ssa_def **y)
 {
-   *x = nir_iand(b, src, nir_imm_int(b, 0xffff));
-   *y = nir_ushr(b, src, nir_imm_int(b, 16));
+   *x = nir_iand_imm(b, src, 0xffff);
+   *y = nir_ushr_imm(b, src, 16);
 }
 
 static void unpack_2x16_signed(nir_builder *b, nir_ssa_def *src, nir_ssa_def **x, nir_ssa_def **y)
 {
    *x = nir_i2i32(b, nir_u2u16(b, src));
-   *y = nir_ishr(b, src, nir_imm_int(b, 16));
+   *y = nir_ishr_imm(b, src, 16);
 }
 
 static nir_ssa_def *
@@ -238,7 +238,7 @@ void *si_create_clear_buffer_rmw_cs(struct si_context *sctx)
    nir_ssa_def *address = get_global_ids(&b, 1);
 
    /* address = address * 16; (byte offset, loading one vec4 per thread) */
-   address = nir_ishl(&b, address, nir_imm_int(&b, 4));
+   address = nir_ishl_imm(&b, address, 4);
    
    nir_ssa_def *zero = nir_imm_int(&b, 0);
    nir_ssa_def *data = nir_load_ssbo(&b, 4, 32, zero, address, .align_mul = 4);

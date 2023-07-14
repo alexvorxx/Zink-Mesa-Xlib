@@ -39,11 +39,6 @@ rmv_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
 
    vk_rmv_log_misc_token(&device->vk, VK_RMV_MISC_EVENT_TYPE_PRESENT);
 
-   simple_mtx_lock(&device->vk.memory_trace_data.token_mtx);
-   radv_rmv_collect_trace_events(device);
-   vk_rmv_handle_present_locked(&device->vk);
-   simple_mtx_unlock(&device->vk.memory_trace_data.token_mtx);
-
    return VK_SUCCESS;
 }
 

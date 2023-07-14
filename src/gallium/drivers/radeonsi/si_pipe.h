@@ -699,7 +699,7 @@ struct si_sampler_view {
    uint32_t state[8];
    uint32_t fmask_state[8];
    const struct legacy_surf_level *base_level_info;
-   ubyte block_width;
+   uint8_t block_width;
    bool is_stencil_sampler;
    bool dcc_incompatible;
 };
@@ -746,15 +746,15 @@ struct si_framebuffer {
    unsigned spi_shader_col_format_alpha;
    unsigned spi_shader_col_format_blend;
    unsigned spi_shader_col_format_blend_alpha;
-   ubyte nr_samples : 5;   /* at most 16xAA */
-   ubyte log_samples : 3;  /* at most 4 = 16xAA */
-   ubyte nr_color_samples; /* at most 8xAA */
-   ubyte compressed_cb_mask;
-   ubyte uncompressed_cb_mask;
-   ubyte color_is_int8;
-   ubyte color_is_int10;
-   ubyte dirty_cbufs;
-   ubyte min_bytes_per_pixel;
+   uint8_t nr_samples : 5;   /* at most 16xAA */
+   uint8_t log_samples : 3;  /* at most 4 = 16xAA */
+   uint8_t nr_color_samples; /* at most 8xAA */
+   uint8_t compressed_cb_mask;
+   uint8_t uncompressed_cb_mask;
+   uint8_t color_is_int8;
+   uint8_t color_is_int10;
+   uint8_t dirty_cbufs;
+   uint8_t min_bytes_per_pixel;
    bool dirty_zsbuf;
    bool any_dst_linear;
    bool CB_has_shader_readable_metadata;
@@ -1342,7 +1342,8 @@ enum si_blitter_op /* bitmask */
    SI_SAVE_TEXTURES = 1,
    SI_SAVE_FRAMEBUFFER = 2,
    SI_SAVE_FRAGMENT_STATE = 4,
-   SI_DISABLE_RENDER_COND = 8,
+   SI_SAVE_FRAGMENT_CONSTANT = 8,
+   SI_DISABLE_RENDER_COND = 16,
 };
 
 void si_blitter_begin(struct si_context *sctx, enum si_blitter_op op);

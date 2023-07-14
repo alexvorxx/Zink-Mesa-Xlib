@@ -34,6 +34,7 @@
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_format_convert.h"
+#include "util/blend.h"
 #include "nir_lower_blend.h"
 
 struct ctx {
@@ -46,19 +47,19 @@ struct ctx {
 static nir_ssa_def *
 nir_blend_func(
    nir_builder *b,
-   enum blend_func func,
+   enum pipe_blend_func func,
    nir_ssa_def *src, nir_ssa_def *dst)
 {
    switch (func) {
-   case BLEND_FUNC_ADD:
+   case PIPE_BLEND_ADD:
       return nir_fadd(b, src, dst);
-   case BLEND_FUNC_SUBTRACT:
+   case PIPE_BLEND_SUBTRACT:
       return nir_fsub(b, src, dst);
-   case BLEND_FUNC_REVERSE_SUBTRACT:
+   case PIPE_BLEND_REVERSE_SUBTRACT:
       return nir_fsub(b, dst, src);
-   case BLEND_FUNC_MIN:
+   case PIPE_BLEND_MIN:
       return nir_fmin(b, src, dst);
-   case BLEND_FUNC_MAX:
+   case PIPE_BLEND_MAX:
       return nir_fmax(b, src, dst);
    }
 
@@ -68,12 +69,12 @@ nir_blend_func(
 /* Does this blend function multiply by a blend factor? */
 
 static bool
-nir_blend_factored(enum blend_func func)
+nir_blend_factored(enum pipe_blend_func func)
 {
    switch (func) {
-   case BLEND_FUNC_ADD:
-   case BLEND_FUNC_SUBTRACT:
-   case BLEND_FUNC_REVERSE_SUBTRACT:
+   case PIPE_BLEND_ADD:
+   case PIPE_BLEND_SUBTRACT:
+   case PIPE_BLEND_REVERSE_SUBTRACT:
       return true;
    default:
       return false;
@@ -102,32 +103,33 @@ nir_blend_factor_value(
    nir_builder *b,
    nir_ssa_def *src, nir_ssa_def *src1, nir_ssa_def *dst, nir_ssa_def *bconst,
    unsigned chan,
-   enum blend_factor factor)
+   enum pipe_blendfactor factor_without_invert)
 {
-   switch (factor) {
-   case BLEND_FACTOR_ZERO:
-      return nir_imm_floatN_t(b, 0.0, src->bit_size);
-   case BLEND_FACTOR_SRC_COLOR:
+   switch (factor_without_invert) {
+   case PIPE_BLENDFACTOR_ONE:
+      return nir_imm_floatN_t(b, 1.0, src->bit_size);
+   case PIPE_BLENDFACTOR_SRC_COLOR:
       return nir_channel(b, src, chan);
-   case BLEND_FACTOR_SRC1_COLOR:
+   case PIPE_BLENDFACTOR_SRC1_COLOR:
       return nir_channel(b, src1, chan);
-   case BLEND_FACTOR_DST_COLOR:
+   case PIPE_BLENDFACTOR_DST_COLOR:
       return nir_channel(b, dst, chan);
-   case BLEND_FACTOR_SRC_ALPHA:
+   case PIPE_BLENDFACTOR_SRC_ALPHA:
       return nir_channel(b, src, 3);
-   case BLEND_FACTOR_SRC1_ALPHA:
+   case PIPE_BLENDFACTOR_SRC1_ALPHA:
       return nir_channel(b, src1, 3);
-   case BLEND_FACTOR_DST_ALPHA:
+   case PIPE_BLENDFACTOR_DST_ALPHA:
       return nir_channel(b, dst, 3);
-   case BLEND_FACTOR_CONSTANT_COLOR:
+   case PIPE_BLENDFACTOR_CONST_COLOR:
       return nir_channel(b, bconst, chan);
-   case BLEND_FACTOR_CONSTANT_ALPHA:
+   case PIPE_BLENDFACTOR_CONST_ALPHA:
       return nir_channel(b, bconst, 3);
-   case BLEND_FACTOR_SRC_ALPHA_SATURATE:
+   case PIPE_BLENDFACTOR_SRC_ALPHA_SATURATE:
       return nir_alpha_saturate(b, src, dst, chan);
+   default:
+      assert(util_blendfactor_is_inverted(factor_without_invert));
+      unreachable("Unexpected inverted factor");
    }
-
-   unreachable("Invalid blend factor");
 }
 
 static nir_ssa_def *
@@ -154,49 +156,62 @@ nir_fsat_to_format(nir_builder *b, nir_ssa_def *x, enum pipe_format format)
  * clamping a blend factor is needed.
  */
 static bool
-should_clamp_factor(enum blend_factor factor, bool inverted, bool snorm)
+should_clamp_factor(enum pipe_blendfactor factor, bool snorm)
 {
-   switch (factor) {
-   case BLEND_FACTOR_ZERO:
+   switch (util_blendfactor_without_invert(factor)) {
+   case PIPE_BLENDFACTOR_ONE:
       /* 0, 1 are in [0, 1] and [-1, 1] */
       return false;
 
-   case BLEND_FACTOR_SRC_COLOR:
-   case BLEND_FACTOR_SRC1_COLOR:
-   case BLEND_FACTOR_DST_COLOR:
-   case BLEND_FACTOR_SRC_ALPHA:
-   case BLEND_FACTOR_SRC1_ALPHA:
-   case BLEND_FACTOR_DST_ALPHA:
+   case PIPE_BLENDFACTOR_SRC_COLOR:
+   case PIPE_BLENDFACTOR_SRC1_COLOR:
+   case PIPE_BLENDFACTOR_DST_COLOR:
+   case PIPE_BLENDFACTOR_SRC_ALPHA:
+   case PIPE_BLENDFACTOR_SRC1_ALPHA:
+   case PIPE_BLENDFACTOR_DST_ALPHA:
       /* Colours are already clamped. For unorm, the complement of something
        * clamped is still clamped. But for snorm, this is not true. Clamp for
        * snorm only.
        */
-      return inverted && snorm;
+      return util_blendfactor_is_inverted(factor) && snorm;
 
-   case BLEND_FACTOR_CONSTANT_COLOR:
-   case BLEND_FACTOR_CONSTANT_ALPHA:
+   case PIPE_BLENDFACTOR_CONST_COLOR:
+   case PIPE_BLENDFACTOR_CONST_ALPHA:
       /* Constant colours are not yet clamped */
       return true;
 
-   case BLEND_FACTOR_SRC_ALPHA_SATURATE:
+   case PIPE_BLENDFACTOR_SRC_ALPHA_SATURATE:
       /* For unorm, this is in bounds (and hence so is its complement). For
        * snorm, it may not be.
        */
       return snorm;
+
+   default:
+      unreachable("invalid blend factor");
    }
 
-   unreachable("invalid blend factor");
 }
 
 static bool
 channel_uses_dest(nir_lower_blend_channel chan)
 {
-   return chan.src_factor == BLEND_FACTOR_DST_COLOR ||
-          chan.src_factor == BLEND_FACTOR_DST_ALPHA ||
-          chan.src_factor == BLEND_FACTOR_SRC_ALPHA_SATURATE ||
-          !(chan.dst_factor == BLEND_FACTOR_ZERO && !chan.invert_dst_factor) ||
-          chan.func == BLEND_FUNC_MIN ||
-          chan.func == BLEND_FUNC_MAX;
+   /* If blend factors are ignored, dest is used (min/max) */
+   if (!nir_blend_factored(chan.func))
+      return true;
+
+   /* If dest has a nonzero factor, it is used */
+   if (chan.dst_factor != PIPE_BLENDFACTOR_ZERO)
+      return true;
+
+   /* Else, check the source factor */
+   switch (util_blendfactor_without_invert(chan.src_factor)) {
+   case PIPE_BLENDFACTOR_DST_COLOR:
+   case PIPE_BLENDFACTOR_DST_ALPHA:
+   case PIPE_BLENDFACTOR_SRC_ALPHA_SATURATE:
+      return true;
+   default:
+      return false;
+   }
 }
 
 static nir_ssa_def *
@@ -205,17 +220,17 @@ nir_blend_factor(
    nir_ssa_def *raw_scalar,
    nir_ssa_def *src, nir_ssa_def *src1, nir_ssa_def *dst, nir_ssa_def *bconst,
    unsigned chan,
-   enum blend_factor factor,
-   bool inverted,
+   enum pipe_blendfactor factor,
    enum pipe_format format)
 {
    nir_ssa_def *f =
-      nir_blend_factor_value(b, src, src1, dst, bconst, chan, factor);
+      nir_blend_factor_value(b, src, src1, dst, bconst, chan,
+                             util_blendfactor_without_invert(factor));
 
-   if (inverted)
+   if (util_blendfactor_is_inverted(factor))
       f = nir_fadd_imm(b, nir_fneg(b, f), 1.0);
 
-   if (should_clamp_factor(factor, inverted, util_format_is_snorm(format)))
+   if (should_clamp_factor(factor, util_format_is_snorm(format)))
       f = nir_fsat_to_format(b, f, format);
 
    return nir_fmul(b, raw_scalar, f);
@@ -240,7 +255,7 @@ nir_color_mask(
 static nir_ssa_def *
 nir_logicop_func(
    nir_builder *b,
-   unsigned func,
+   enum pipe_logicop func,
    nir_ssa_def *src, nir_ssa_def *dst, nir_ssa_def *bitmask)
 {
    switch (func) {
@@ -440,12 +455,12 @@ nir_blend(
          psrc = nir_blend_factor(
                    b, psrc,
                    src, src1, dst, bconst, c,
-                   chan.src_factor, chan.invert_src_factor, format);
+                   chan.src_factor, format);
 
          pdst = nir_blend_factor(
                    b, pdst,
                    src, src1, dst, bconst, c,
-                   chan.dst_factor, chan.invert_dst_factor, format);
+                   chan.dst_factor, format);
       }
 
       channels[c] = nir_blend_func(b, chan.func, psrc, pdst);
@@ -473,9 +488,9 @@ color_index_for_location(unsigned location)
 static bool
 nir_blend_replace_channel(const nir_lower_blend_channel *c)
 {
-   return (c->func == BLEND_FUNC_ADD) &&
-          (c->src_factor == BLEND_FACTOR_ZERO && c->invert_src_factor) &&
-          (c->dst_factor == BLEND_FACTOR_ZERO && !c->invert_dst_factor);
+   return (c->func == PIPE_BLEND_ADD) &&
+          (c->src_factor == PIPE_BLENDFACTOR_ONE) &&
+          (c->dst_factor == PIPE_BLENDFACTOR_ZERO);
 }
 
 static bool
@@ -514,6 +529,12 @@ nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
     * source colour is already written.
     */
    b->cursor = nir_after_block(instr->block);
+
+   /* Don't bother copying the destination to the source for disabled RTs */
+   if (options->rt[rt].colormask == 0) {
+      nir_instr_remove(instr);
+      return true;
+   }
 
    /* Grab the input color.  We always want 4 channels during blend.  Dead
     * code will clean up any channels we don't need.

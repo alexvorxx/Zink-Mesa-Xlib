@@ -304,3 +304,15 @@ instructions on how to uprev Linux Kernel in the GitLab CI ecosystem.
   :maxdepth: 1
 
   kernel
+
+
+Reusing CI scripts for other projects
+--------------------------------------
+
+The CI scripts in ``.gitlab-ci/`` can be reused for other projects, to
+facilitate reuse of the infrastructure, our scripts can be used as tools
+to create containers and run tests on the available farms.
+
+.. envvar:: EXTRA_LOCAL_PACKAGES
+
+   Define extra Debian packages to be installed in the container.

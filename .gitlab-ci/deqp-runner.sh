@@ -21,6 +21,10 @@ export EGL_PLATFORM=surfaceless
 export VK_ICD_FILENAMES="$PWD"/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-$(uname -m)}.json
 export OCL_ICD_VENDORS="$PWD"/install/etc/OpenCL/vendors/
 
+if [ -n "$USE_ANGLE" ]; then
+  export LD_LIBRARY_PATH=/angle:$LD_LIBRARY_PATH
+fi
+
 RESULTS="$PWD/${DEQP_RESULTS_DIR:-results}"
 mkdir -p "$RESULTS"
 

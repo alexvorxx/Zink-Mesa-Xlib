@@ -34,15 +34,15 @@
 static nir_ssa_def *
 load_ubo(nir_builder *b, nir_intrinsic_instr *intr, nir_variable *var, unsigned offset)
 {
-   return nir_build_load_ubo(b,
-                             nir_dest_num_components(intr->dest),
-                             nir_dest_bit_size(intr->dest),
-                             nir_imm_int(b, var->data.binding),
-                             nir_imm_int(b, offset),
-                             .align_mul = 256,
-                             .align_offset = offset,
-                             .range_base = offset,
-                             .range = nir_dest_bit_size(intr->dest) * nir_dest_num_components(intr->dest) / 8);
+   return nir_load_ubo(b,
+                       nir_dest_num_components(intr->dest),
+                       nir_dest_bit_size(intr->dest),
+                       nir_imm_int(b, var->data.binding),
+                       nir_imm_int(b, offset),
+                       .align_mul = 256,
+                       .align_offset = offset,
+                       .range_base = offset,
+                       .range = nir_dest_bit_size(intr->dest) * nir_dest_num_components(intr->dest) / 8);
 }
 
 static bool
@@ -109,8 +109,7 @@ clc_nir_lower_system_values(nir_shader *nir, nir_variable *var)
          continue;
       assert(func->impl);
 
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
+      nir_builder b = nir_builder_create(func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -193,8 +192,7 @@ clc_nir_lower_kernel_input_loads(nir_shader *nir, nir_variable *var)
          continue;
       assert(func->impl);
 
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
+      nir_builder b = nir_builder_create(func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -232,13 +230,11 @@ clc_lower_printf_base(nir_shader *nir, unsigned uav_id)
 {
    nir_variable *printf_var = NULL;
    nir_ssa_def *printf_deref = NULL;
-   nir_foreach_function(func, nir) {
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
-      b.cursor = nir_before_instr(nir_block_first_instr(nir_start_block(func->impl)));
+   nir_foreach_function_impl(impl, nir) {
+      nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
       bool progress = false;
 
-      nir_foreach_block(block, func->impl) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr_safe(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -257,11 +253,11 @@ clc_lower_printf_base(nir_shader *nir, unsigned uav_id)
       }
 
       if (progress)
-         nir_metadata_preserve(func->impl, nir_metadata_loop_analysis |
-                                           nir_metadata_block_index |
-                                           nir_metadata_dominance);
+         nir_metadata_preserve(impl, nir_metadata_loop_analysis |
+                                     nir_metadata_block_index |
+                                     nir_metadata_dominance);
       else
-         nir_metadata_preserve(func->impl, nir_metadata_all);
+         nir_metadata_preserve(impl, nir_metadata_all);
    }
 
    return printf_var != NULL;

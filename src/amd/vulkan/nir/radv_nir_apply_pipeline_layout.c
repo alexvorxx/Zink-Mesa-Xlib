@@ -518,7 +518,7 @@ radv_nir_apply_pipeline_layout(nir_shader *shader, struct radv_device *device,
       if (!function->impl)
          continue;
 
-      nir_builder_init(&b, function->impl);
+      b = nir_builder_create(function->impl);
 
       /* Iterate in reverse so load_ubo lowering can look at
        * the vulkan_resource_index to tell if it's an inline

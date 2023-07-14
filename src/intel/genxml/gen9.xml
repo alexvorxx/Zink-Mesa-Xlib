@@ -365,13 +365,13 @@
     <field name="CtbPos3+i" start="24" end="31" type="uint" />
   </struct>
   <struct name="HCP_WEIGHTOFFSET_CHROMA_ENTRY" length="1">
-    <field name="Delta Chroma Weight LX[0]" start="0" end="7" type="int" />
+    <field name="Delta Chroma Weight LX[0]" start="0" end="7" type="uint" />
     <field name="Chroma Offset LX[0]" start="8" end="15" type="uint" />
-    <field name="Delta Chroma Weight LX[1]" start="16" end="23" type="int" />
+    <field name="Delta Chroma Weight LX[1]" start="16" end="23" type="uint" />
     <field name="Chroma Offset LX[1]" start="24" end="31" type="uint" />
   </struct>
   <struct name="HCP_WEIGHTOFFSET_LUMA_ENTRY" length="1">
-    <field name="Delta Luma Weight LX" start="0" end="7" type="int" />
+    <field name="Delta Luma Weight LX" start="0" end="7" type="uint" />
     <field name="Luma Offset LX" start="8" end="15" type="uint" />
   </struct>
   <struct name="HEVC_VP9_RDOQ_LAMBDA_FIELDS" length="1">

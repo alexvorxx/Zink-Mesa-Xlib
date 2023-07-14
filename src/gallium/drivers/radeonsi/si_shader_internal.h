@@ -7,6 +7,7 @@
 #ifndef SI_SHADER_PRIVATE_H
 #define SI_SHADER_PRIVATE_H
 
+#include "ac_hw_stage.h"
 #include "ac_shader_abi.h"
 #include "ac_llvm_build.h"
 #include "si_shader.h"
@@ -128,6 +129,8 @@ void si_get_tcs_epilog_key(struct si_shader *shader, union si_shader_part_key *k
 bool si_need_ps_prolog(const union si_shader_part_key *key);
 void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *key);
 void si_get_ps_epilog_key(struct si_shader *shader, union si_shader_part_key *key);
+enum ac_hw_stage si_select_hw_stage(const gl_shader_stage stage, const union si_shader_key *const key,
+                                    const enum amd_gfx_level gfx_level);
 
 /* gfx10_shader_ngg.c */
 unsigned gfx10_ngg_get_vertices_per_prim(struct si_shader *shader);

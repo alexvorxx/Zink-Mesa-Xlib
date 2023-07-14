@@ -133,7 +133,7 @@
 } while (0)
 
 #define radeon_set_or_push_gfx_sh_reg(reg, value) do { \
-   if (GFX_VERSION >= GFX11) { \
+   if (HAS_PAIRS) { \
       radeon_push_gfx_sh_reg(reg, value); \
    } else { \
       radeon_set_sh_reg_seq(reg, 1); \

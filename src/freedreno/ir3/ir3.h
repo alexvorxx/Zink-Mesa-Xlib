@@ -580,7 +580,7 @@ struct ir3_array {
    unsigned length;
    unsigned id;
 
-   struct nir_register *r;
+   struct nir_ssa_def *r;
 
    /* To avoid array write's from getting DCE'd, keep track of the
     * most recent write.  Any array access depends on the most

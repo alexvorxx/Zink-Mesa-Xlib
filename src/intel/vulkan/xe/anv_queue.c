@@ -32,6 +32,22 @@
 #include "drm-uapi/xe_drm.h"
 #include "drm-uapi/gpu_scheduler.h"
 
+static enum drm_sched_priority
+anv_vk_priority_to_drm_sched_priority(VkQueueGlobalPriorityKHR vk_priority)
+{
+   switch (vk_priority) {
+   case VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR:
+      return DRM_SCHED_PRIORITY_MIN;
+   case VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR:
+      return DRM_SCHED_PRIORITY_NORMAL;
+   case VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR:
+      return DRM_SCHED_PRIORITY_HIGH;
+   default:
+      unreachable("Invalid priority");
+      return DRM_SCHED_PRIORITY_MIN;
+   }
+}
+
 VkResult
 anv_xe_create_engine(struct anv_device *device,
                      struct anv_queue *queue,

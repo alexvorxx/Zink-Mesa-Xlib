@@ -114,16 +114,14 @@ nir_lower_pntc_ytransform(nir_shader *shader,
 
    assert(shader->info.stage == MESA_SHADER_FRAGMENT);
 
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         nir_builder_init(&state.b, function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      state.b = nir_builder_create(impl);
 
-         nir_foreach_block(block, function->impl) {
-            lower_pntc_ytransform_block(&state, block);
-         }
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
-                                               nir_metadata_dominance);
+      nir_foreach_block(block, impl) {
+         lower_pntc_ytransform_block(&state, block);
       }
+      nir_metadata_preserve(impl, nir_metadata_block_index |
+                                  nir_metadata_dominance);
    }
 
    return state.pntc_transform != NULL;

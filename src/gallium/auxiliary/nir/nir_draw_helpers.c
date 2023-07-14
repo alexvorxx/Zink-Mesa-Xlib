@@ -104,9 +104,7 @@ static void
 nir_lower_pstipple_impl(nir_function_impl *impl,
                         lower_pstipple *state)
 {
-   nir_builder *b = &state->b;
-
-   nir_builder_init(b, impl);
+   state->b = nir_builder_create(impl);
 
    nir_block *start = nir_start_block(impl);
    nir_lower_pstipple_block(start, state);
@@ -150,10 +148,8 @@ nir_lower_pstipple_fs(struct nir_shader *shader,
    BITSET_SET(shader->info.samplers_used, binding);
    state.stip_tex = tex_var;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         nir_lower_pstipple_impl(function->impl, &state);
-      }
+   nir_foreach_function_impl(impl, shader) {
+      nir_lower_pstipple_impl(impl, &state);
    }
    *samplerUnitOut = binding;
 }
@@ -315,13 +311,10 @@ static void
 nir_lower_aapoint_impl(nir_function_impl *impl, lower_aapoint *state,
                        nir_alu_type bool_type)
 {
-   nir_builder *b = &state->b;
-
-   nir_builder_init(b, impl);
-
    nir_block *block = nir_start_block(impl);
-   b->cursor = nir_before_block(block);
+   state->b = nir_builder_at(nir_before_block(block));
 
+   nir_builder *b = &state->b;
    nir_ssa_def *aainput = nir_load_var(b, state->input);
 
    nir_ssa_def *dist = nir_fadd(b, nir_fmul(b, nir_channel(b, aainput, 0), nir_channel(b, aainput, 0)),
@@ -440,9 +433,7 @@ nir_lower_aapoint_fs(struct nir_shader *shader, int *varying, const nir_alu_type
    *varying = tgsi_get_generic_gl_varying_index(aapoint_input->data.location, true);
    state.input = aapoint_input;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         nir_lower_aapoint_impl(function->impl, &state, bool_type);
-      }
+   nir_foreach_function_impl(impl, shader) {
+      nir_lower_aapoint_impl(impl, &state, bool_type);
    }
 }

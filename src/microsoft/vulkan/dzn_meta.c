@@ -610,7 +610,7 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
       .RasterizerState = {
          .FillMode = D3D12_FILL_MODE_SOLID,
          .CullMode = D3D12_CULL_MODE_NONE,
-         .DepthClipEnable = TRUE,
+         .DepthClipEnable = true,
       },
       .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
       .SampleDesc = {
@@ -669,12 +669,12 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
    } else {
       desc.DSVFormat = key->out_format;
       if (key->loc == FRAG_RESULT_DEPTH) {
-         desc.DepthStencilState.DepthEnable = TRUE;
+         desc.DepthStencilState.DepthEnable = true;
          desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
          desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
       } else {
          assert(key->loc == FRAG_RESULT_STENCIL);
-         desc.DepthStencilState.StencilEnable = TRUE;
+         desc.DepthStencilState.StencilEnable = true;
          desc.DepthStencilState.StencilWriteMask = 0xff;
          desc.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_REPLACE;
          desc.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_REPLACE;

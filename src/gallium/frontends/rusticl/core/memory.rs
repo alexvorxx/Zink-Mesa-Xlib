@@ -18,6 +18,7 @@ use mesa_rust_util::properties::Properties;
 use rusticl_opencl_gen::*;
 
 use std::cmp;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::mem::size_of;
@@ -45,7 +46,7 @@ impl MappingTransfer {
 }
 
 struct Mappings {
-    tx: HashMap<Arc<Device>, MappingTransfer>,
+    tx: HashMap<&'static Device, MappingTransfer>,
     maps: HashMap<*mut c_void, u32>,
 }
 
@@ -92,7 +93,7 @@ impl Mappings {
 
     fn clean_up_tx(&mut self, dev: &Device, ctx: &PipeContext) {
         if self.maps.is_empty() {
-            if let Some(tx) = self.tx.get(dev) {
+            if let Some(tx) = self.tx.get(&dev) {
                 if tx.pending == 0 {
                     self.tx.remove(dev).unwrap().tx.with_ctx(ctx);
                 }
@@ -116,7 +117,7 @@ pub struct Mem {
     pub image_elem_size: u8,
     pub props: Vec<cl_mem_properties>,
     pub cbs: Mutex<Vec<Box<dyn Fn(cl_mem)>>>,
-    res: Option<HashMap<Arc<Device>, Arc<PipeResource>>>,
+    res: Option<HashMap<&'static Device, Arc<PipeResource>>>,
     maps: Mutex<Mappings>,
 }
 
@@ -457,7 +458,7 @@ impl Mem {
 
         assert!(self.is_buffer());
 
-        let tx = if can_map_directly(&q.device, r) {
+        let tx = if can_map_directly(q.device, r) {
             ctx.buffer_map_directly(
                 r,
                 offset.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
@@ -513,10 +514,10 @@ impl Mem {
     ) -> CLResult<(PipeTransfer, Option<PipeResource>)> {
         assert!(!self.is_buffer());
 
-        let r = self.get_res()?.get(&q.device).unwrap();
+        let r = self.get_res()?.get(q.device).unwrap();
         let ctx = q.device.helper_ctx();
 
-        let tx = if can_map_directly(&q.device, r) {
+        let tx = if can_map_directly(q.device, r) {
             ctx.texture_map_directly(r, bx, rw)
         } else {
             None
@@ -573,11 +574,11 @@ impl Mem {
             && bit_check(mem.flags, CL_MEM_USE_HOST_PTR)
     }
 
-    fn get_res(&self) -> CLResult<&HashMap<Arc<Device>, Arc<PipeResource>>> {
+    fn get_res(&self) -> CLResult<&HashMap<&'static Device, Arc<PipeResource>>> {
         self.get_parent().res.as_ref().ok_or(CL_OUT_OF_HOST_MEMORY)
     }
 
-    pub fn get_res_of_dev(&self, dev: &Arc<Device>) -> CLResult<&Arc<PipeResource>> {
+    pub fn get_res_of_dev(&self, dev: &Device) -> CLResult<&Arc<PipeResource>> {
         Ok(self.get_res()?.get(dev).unwrap())
     }
 
@@ -992,17 +993,17 @@ impl Mem {
         ptr: *mut c_void,
     ) -> CLResult<()> {
         let mut lock = self.maps.lock().unwrap();
-        if !lock.increase_ref(&q.device, ptr) {
+        if !lock.increase_ref(q.device, ptr) {
             return Ok(());
         }
 
-        if self.has_user_shadow_buffer(&q.device)? {
+        if self.has_user_shadow_buffer(q.device)? {
             self.read_to_user(q, ctx, 0, self.host_ptr, self.size)
         } else {
             if let Some(shadow) = lock.tx.get(&q.device).and_then(|tx| tx.shadow.as_ref()) {
                 let mut offset = 0;
                 let b = self.to_parent(&mut offset);
-                let res = b.get_res_of_dev(&q.device)?;
+                let res = b.get_res_of_dev(q.device)?;
                 let bx = create_pipe_box(
                     [offset, 0, 0].into(),
                     [self.size, 1, 1].into(),
@@ -1022,11 +1023,11 @@ impl Mem {
         ptr: *mut c_void,
     ) -> CLResult<()> {
         let mut lock = self.maps.lock().unwrap();
-        if !lock.increase_ref(&q.device, ptr) {
+        if !lock.increase_ref(q.device, ptr) {
             return Ok(());
         }
 
-        if self.has_user_shadow_buffer(&q.device)? {
+        if self.has_user_shadow_buffer(q.device)? {
             self.read_to_user_rect(
                 self.host_ptr,
                 q,
@@ -1040,8 +1041,8 @@ impl Mem {
                 self.image_desc.image_slice_pitch,
             )
         } else {
-            if let Some(shadow) = lock.tx.get(&q.device).and_then(|tx| tx.shadow.as_ref()) {
-                let res = self.get_res_of_dev(&q.device)?;
+            if let Some(shadow) = lock.tx.get(q.device).and_then(|tx| tx.shadow.as_ref()) {
+                let res = self.get_res_of_dev(q.device)?;
                 let bx = self.image_desc.bx()?;
                 ctx.resource_copy_region(res, shadow, &[0, 0, 0], &bx);
             }
@@ -1080,7 +1081,7 @@ impl Mem {
         lock: &'a mut MutexGuard<Mappings>,
         rw: RWFlags,
     ) -> CLResult<&'a PipeTransfer> {
-        if !lock.tx.contains_key(&q.device) {
+        if let Entry::Vacant(e) = lock.tx.entry(q.device) {
             let (tx, res) = if self.is_buffer() {
                 self.tx_raw_async(q, rw)?
             } else {
@@ -1088,10 +1089,9 @@ impl Mem {
                 self.tx_image_raw_async(q, &bx, rw)?
             };
 
-            lock.tx
-                .insert(q.device.clone(), MappingTransfer::new(tx, res));
+            e.insert(MappingTransfer::new(tx, res));
         } else {
-            lock.mark_pending(&q.device);
+            lock.mark_pending(q.device);
         }
 
         Ok(&lock.tx.get_mut(&q.device).unwrap().tx)
@@ -1101,7 +1101,7 @@ impl Mem {
         assert!(self.is_buffer());
 
         let mut lock = self.maps.lock().unwrap();
-        let ptr = if self.has_user_shadow_buffer(&q.device)? {
+        let ptr = if self.has_user_shadow_buffer(q.device)? {
             self.host_ptr
         } else {
             let tx = self.map(q, &mut lock, RWFlags::RW)?;
@@ -1125,7 +1125,7 @@ impl Mem {
         let mut lock = self.maps.lock().unwrap();
 
         // we might have a host_ptr shadow buffer or image created from buffer
-        let ptr = if self.has_user_shadow_buffer(&q.device)? || self.is_parent_buffer() {
+        let ptr = if self.has_user_shadow_buffer(q.device)? || self.is_parent_buffer() {
             *row_pitch = self.image_desc.image_row_pitch;
             *slice_pitch = self.image_desc.image_slice_pitch;
 
@@ -1173,12 +1173,12 @@ impl Mem {
             return Ok(());
         }
 
-        let (needs_sync, shadow) = lock.decrease_ref(ptr, &q.device);
+        let (needs_sync, shadow) = lock.decrease_ref(ptr, q.device);
         if needs_sync {
             if let Some(shadow) = shadow {
                 let mut offset = 0;
                 let b = self.to_parent(&mut offset);
-                let res = b.get_res_of_dev(&q.device)?;
+                let res = b.get_res_of_dev(q.device)?;
 
                 let bx = if b.is_buffer() {
                     create_pipe_box(
@@ -1191,7 +1191,7 @@ impl Mem {
                 };
 
                 ctx.resource_copy_region(shadow, res, &[offset as u32, 0, 0], &bx);
-            } else if self.has_user_shadow_buffer(&q.device)? {
+            } else if self.has_user_shadow_buffer(q.device)? {
                 if self.is_buffer() {
                     self.write_from_user(q, ctx, 0, self.host_ptr, self.size)?;
                 } else {
@@ -1211,7 +1211,7 @@ impl Mem {
             }
         }
 
-        lock.clean_up_tx(&q.device, ctx);
+        lock.clean_up_tx(q.device, ctx);
 
         Ok(())
     }

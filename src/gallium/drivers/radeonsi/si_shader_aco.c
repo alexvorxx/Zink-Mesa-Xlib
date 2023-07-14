@@ -24,6 +24,7 @@
 
 #include "si_shader_internal.h"
 #include "si_pipe.h"
+#include "ac_hw_stage.h"
 #include "aco_interface.h"
 
 static void
@@ -55,38 +56,6 @@ si_fill_aco_options(struct si_shader *shader, struct aco_compiler_options *optio
 
    options->debug.func = si_aco_compiler_debug;
    options->debug.private_data = debug;
-}
-
-static enum ac_hw_stage
-si_select_hw_stage(const gl_shader_stage stage, const union si_shader_key *const key,
-                   const enum amd_gfx_level gfx_level)
-{
-   switch (stage) {
-   case MESA_SHADER_VERTEX:
-   case MESA_SHADER_TESS_EVAL:
-      if (key->ge.as_ngg)
-         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
-      else if (key->ge.as_es)
-         return gfx_level >= GFX9 ? AC_HW_LEGACY_GEOMETRY_SHADER : AC_HW_EXPORT_SHADER;
-      else if (key->ge.as_ls)
-         return gfx_level >= GFX9 ? AC_HW_HULL_SHADER : AC_HW_LOCAL_SHADER;
-      else
-         return AC_HW_VERTEX_SHADER;
-   case MESA_SHADER_TESS_CTRL:
-      return AC_HW_HULL_SHADER;
-   case MESA_SHADER_GEOMETRY:
-      if (key->ge.as_ngg)
-         return AC_HW_NEXT_GEN_GEOMETRY_SHADER;
-      else
-         return AC_HW_LEGACY_GEOMETRY_SHADER;
-   case MESA_SHADER_FRAGMENT:
-      return AC_HW_PIXEL_SHADER;
-   case MESA_SHADER_COMPUTE:
-   case MESA_SHADER_KERNEL:
-      return AC_HW_COMPUTE_SHADER;
-   default:
-      unreachable("Unsupported HW stage");
-   }
 }
 
 static void

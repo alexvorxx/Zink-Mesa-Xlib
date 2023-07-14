@@ -1,14 +1,20 @@
 workflow:
   rules:
+    # merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
       variables:
         MESA_CI_PERFORMANCE_ENABLED: 1
+        VALVE_INFRA_VANGOGH_JOB_PRIORITY: ""  # Empty tags are ignored by gitlab
+    # post-merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH
       variables:
         LAVA_JOB_PRIORITY: 40
+        VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
+    # any other pipeline
     - if: $GITLAB_USER_LOGIN != "marge-bot"
       variables:
         LAVA_JOB_PRIORITY: 50
+        VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
     - when: always
 
 variables:
@@ -81,6 +87,7 @@ include:
   - local: '.gitlab-ci/container/gitlab-ci.yml'
   - local: '.gitlab-ci/build/gitlab-ci.yml'
   - local: '.gitlab-ci/test/gitlab-ci.yml'
+  - local: '.gitlab-ci/farm-rules.yml'
   - local: '.gitlab-ci/test-source-dep.yml'
   - local: 'docs/gitlab-ci.yml'
   - local: 'src/amd/ci/gitlab-ci.yml'
@@ -242,3 +249,12 @@ sanity:
     when: on_failure
     reports:
       junit: check-*.xml
+
+
+# Jobs that need to pass before spending hardware resources on further testing
+.required-for-hardware-jobs:
+  needs:
+    - job: clang-format
+      optional: true
+    - job: rustfmt
+      optional: true

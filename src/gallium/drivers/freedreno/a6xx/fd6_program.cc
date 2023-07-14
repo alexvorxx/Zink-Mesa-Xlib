@@ -421,8 +421,8 @@ tex_opc_to_prefetch_cmd(opc_t tex_opc)
 
 template <chip CHIP>
 static void
-setup_stateobj(struct fd_ringbuffer *ring, struct fd_context *ctx,
-               struct fd6_program_state *state,
+setup_stateobj(struct fd_screen *screen, struct fd_ringbuffer *ring,
+               struct fd_context *ctx, struct fd6_program_state *state,
                const struct ir3_cache_key *cache_key,
                bool binning_pass) assert_dt
 {
@@ -890,7 +890,8 @@ setup_stateobj(struct fd_ringbuffer *ring, struct fd_context *ctx,
                      A6XX_PC_VS_OUT_CNTL_CLIP_MASK(clip_cull_mask));
 
    OUT_REG(ring,
-           HLSQ_CONTROL_1_REG(CHIP, 0x7), /* XXX */
+           HLSQ_CONTROL_1_REG(CHIP,
+            screen->info->a6xx.prim_alloc_threshold),
            HLSQ_CONTROL_2_REG(
                  CHIP,
                  .faceregid = face_regid,
@@ -1375,8 +1376,8 @@ fd6_program_create(void *data, struct ir3_shader_variant *bs,
    }
 
    setup_config_stateobj<CHIP>(ctx, state);
-   setup_stateobj<CHIP>(state->binning_stateobj, ctx, state, key, true);
-   setup_stateobj<CHIP>(state->stateobj, ctx, state, key, false);
+   setup_stateobj<CHIP>(screen, state->binning_stateobj, ctx, state, key, true);
+   setup_stateobj<CHIP>(screen, state->stateobj, ctx, state, key, false);
    state->interp_stateobj = create_interp_stateobj(ctx, state);
 
    const struct ir3_stream_output_info *stream_output =

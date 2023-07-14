@@ -2442,10 +2442,7 @@ do_common_optimization(exec_list *ir, bool linked,
    if (options->OptimizeForAOS && !linked)
       OPT(opt_flip_matrices, ir);
 
-   if (linked)
-      OPT(do_dead_code, ir);
-   else
-      OPT(do_dead_code_unlinked, ir);
+   OPT(do_dead_code_unlinked, ir);
    OPT(do_dead_code_local, ir);
    OPT(do_tree_grafting, ir);
    OPT(do_minmax_prune, ir);

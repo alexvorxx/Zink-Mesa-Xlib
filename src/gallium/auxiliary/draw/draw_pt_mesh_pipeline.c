@@ -80,7 +80,7 @@ mesh_middle_end_prepare(struct draw_pt_middle_end *middle,
                                         draw->guard_band_xy,
                            draw->bypass_viewport,
                            draw->rasterizer->clip_halfz,
-                           FALSE);
+                           false);
 
    draw_pt_so_emit_prepare(mpme->so_emit, false);
 

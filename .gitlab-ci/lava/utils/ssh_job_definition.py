@@ -30,11 +30,12 @@ script after sourcing "dut-env-vars.sh" again for the second SSH test case.
 
 from pathlib import Path
 from typing import Any
+
 from .lava_job_definition import (
-    artifact_download_steps,
-    to_yaml_block,
-    generate_metadata,
     NUMBER_OF_ATTEMPTS_LAVA_BOOT,
+    artifact_download_steps,
+    generate_metadata,
+    to_yaml_block,
 )
 
 # Very early SSH server setup. Uses /dut_ready file to flag it is done.
@@ -117,7 +118,7 @@ def generate_docker_test(args):
     init_stages_test = {
         "namespace": "container",
         "timeout": {"minutes": args.job_timeout_min},
-        "failure_retry": 1,
+        "failure_retry": 3,
         "definitions": [
             {
                 "name": "docker_ssh_client",
@@ -134,7 +135,7 @@ def generate_docker_test(args):
             }
         ],
         "docker": {
-            "image": "registry.gitlab.collabora.com/lava/health-check-docker:wip-laura-ping-ssh-support",
+            "image": args.ssh_client_image,
         },
     }
 

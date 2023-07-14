@@ -184,9 +184,8 @@ nir_repair_ssa(nir_shader *shader)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl)
-         progress = nir_repair_ssa_impl(function->impl) || progress;
+   nir_foreach_function_impl(impl, shader) {
+      progress = nir_repair_ssa_impl(impl) || progress;
    }
 
    return progress;

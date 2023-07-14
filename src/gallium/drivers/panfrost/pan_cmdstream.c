@@ -4201,24 +4201,12 @@ panfrost_create_blend_state(struct pipe_context *pipe,
       equation.blend_enable = pipe.blend_enable;
 
       if (pipe.blend_enable) {
-         equation.rgb_func = util_blend_func_to_shader(pipe.rgb_func);
-         equation.rgb_src_factor =
-            util_blend_factor_to_shader(pipe.rgb_src_factor);
-         equation.rgb_invert_src_factor =
-            util_blend_factor_is_inverted(pipe.rgb_src_factor);
-         equation.rgb_dst_factor =
-            util_blend_factor_to_shader(pipe.rgb_dst_factor);
-         equation.rgb_invert_dst_factor =
-            util_blend_factor_is_inverted(pipe.rgb_dst_factor);
-         equation.alpha_func = util_blend_func_to_shader(pipe.alpha_func);
-         equation.alpha_src_factor =
-            util_blend_factor_to_shader(pipe.alpha_src_factor);
-         equation.alpha_invert_src_factor =
-            util_blend_factor_is_inverted(pipe.alpha_src_factor);
-         equation.alpha_dst_factor =
-            util_blend_factor_to_shader(pipe.alpha_dst_factor);
-         equation.alpha_invert_dst_factor =
-            util_blend_factor_is_inverted(pipe.alpha_dst_factor);
+         equation.rgb_func = pipe.rgb_func;
+         equation.rgb_src_factor = pipe.rgb_src_factor;
+         equation.rgb_dst_factor = pipe.rgb_dst_factor;
+         equation.alpha_func = pipe.alpha_func;
+         equation.alpha_src_factor = pipe.alpha_src_factor;
+         equation.alpha_dst_factor = pipe.alpha_dst_factor;
       }
 
       /* Determine some common properties */

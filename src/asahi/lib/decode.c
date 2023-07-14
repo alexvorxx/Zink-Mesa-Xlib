@@ -376,7 +376,7 @@ agxdecode_usc(const uint8_t *map, UNUSED uint64_t *link, UNUSED bool verbose,
       for (unsigned i = 0; i < temp.count; ++i) {
          agx_unpack(agxdecode_dump_stream, tex, TEXTURE, t);
          DUMP_CL(TEXTURE, tex, "Texture");
-         DUMP_CL(RENDER_TARGET, tex, "Render target");
+         DUMP_CL(PBE, tex, "PBE");
 
          tex += AGX_TEXTURE_LENGTH;
       }
@@ -438,8 +438,8 @@ agxdecode_record(uint64_t va, size_t size, bool verbose)
    PPP_PRINT(map, viewport, VIEWPORT, "Viewport");
    PPP_PRINT(map, w_clamp, W_CLAMP, "W clamp");
    PPP_PRINT(map, output_select, OUTPUT_SELECT, "Output select");
-   PPP_PRINT(map, varying_word_0, VARYING_0, "Varying word 0");
-   PPP_PRINT(map, varying_word_1, VARYING_1, "Varying word 1");
+   PPP_PRINT(map, varying_counts_32, VARYING_COUNTS, "Varying counts 32");
+   PPP_PRINT(map, varying_counts_16, VARYING_COUNTS, "Varying counts 16");
    PPP_PRINT(map, cull, CULL, "Cull");
    PPP_PRINT(map, cull_2, CULL_2, "Cull 2");
 

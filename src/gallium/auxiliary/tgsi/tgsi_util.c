@@ -472,8 +472,8 @@ tgsi_is_shadow_target(enum tgsi_texture_type target)
    case TGSI_TEXTURE_SHADOW2D_ARRAY:
    case TGSI_TEXTURE_SHADOWCUBE:
    case TGSI_TEXTURE_SHADOWCUBE_ARRAY:
-      return TRUE;
+      return true;
    default:
-      return FALSE;
+      return false;
    }
 }

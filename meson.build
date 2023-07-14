@@ -779,10 +779,12 @@ if with_clc
 endif
 
 gl_pkgconfig_c_flags = []
+with_glx_indirect_rendering = false
 if with_platform_x11
   if with_glx == 'xlib'
     pre_args += '-DUSE_XSHM'
   else
+    with_glx_indirect_rendering = true
     pre_args += '-DGLX_INDIRECT_RENDERING'
     if with_glx_direct
       pre_args += '-DGLX_DIRECT_RENDERING'
@@ -796,6 +798,13 @@ if with_platform_x11
     endif
   endif
 endif
+
+with_glapi_export_proto_entry_points = false
+if with_shared_glapi and not with_glx_indirect_rendering
+  # Imply !defined(GLX_INDIRECT_RENDERING)
+  with_glapi_export_proto_entry_points = true
+endif
+pre_args += '-DGLAPI_EXPORT_PROTO_ENTRY_POINTS=@0@'.format(with_glapi_export_proto_entry_points ? '1' : '0')
 
 with_android_stub = get_option('android-stub')
 if with_android_stub and not with_platform_android
@@ -1928,6 +1937,7 @@ dep_xext = null_dep
 dep_xfixes = null_dep
 dep_x11_xcb = null_dep
 dep_xcb = null_dep
+dep_xcb_keysyms = null_dep
 dep_xcb_glx = null_dep
 dep_xcb_dri2 = null_dep
 dep_xcb_dri3 = null_dep
@@ -1953,6 +1963,7 @@ if host_machine.cpu_family() == 'x86_64' and cc.get_id() == 'gcc'
 endif
 
 with_dri3_modifiers = false
+with_xcb_keysyms = false
 if with_platform_x11
   if with_glx == 'xlib'
     dep_x11 = dependency('x11')
@@ -1970,6 +1981,11 @@ if with_platform_x11
        (with_gallium_vdpau or with_gallium_va or
         with_gallium_omx != 'disabled'))
     dep_xcb = dependency('xcb')
+    dep_xcb_keysyms = dependency('xcb-keysyms', required : false)
+    with_xcb_keysyms = dep_xcb_keysyms.found()
+    if with_xcb_keysyms
+      pre_args += '-DXCB_KEYSYMS_AVAILABLE'
+    endif
     dep_x11_xcb = dependency('x11-xcb')
     if with_dri_platform == 'drm' and not dep_libdrm.found()
       error('libdrm required for gallium video statetrackers when using x11')
@@ -2200,7 +2216,7 @@ if with_any_vk
     vulkan_summary += {'Layers': get_option('vulkan-layers')}
   endif
   vulkan_summary += {'Video codecs': _codecs.length() != 0 ? _codecs : false}
-  vulkan_summary += {'Ray tracing': with_intel_vk_rt ? 'intel' : false}
+  vulkan_summary += {'Intel Ray tracing': with_intel_vk_rt}
 endif
 summary(vulkan_summary, section: 'Vulkan', bool_yn: true, list_sep: ' ')
 
@@ -2238,7 +2254,7 @@ if with_gallium
     gallium_frontends += 'rusticl'
   endif
   gallium_summary += {'Frontends': gallium_frontends}
-  gallium_summary += {'Off-screen rendering': with_osmesa ? 'lib' + osmesa_lib_name : false}
+  gallium_summary += {'Off-screen rendering (OSMesa)': with_osmesa ? 'lib' + osmesa_lib_name : false}
   gallium_summary += {'HUD lm-sensors': dep_lmsensors.found()}
 endif
 summary(gallium_summary, section: 'Gallium', bool_yn: true, list_sep: ' ')

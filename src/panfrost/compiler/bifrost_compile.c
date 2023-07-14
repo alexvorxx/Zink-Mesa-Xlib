@@ -1456,30 +1456,14 @@ bi_emit_atomic_i32_to(bi_builder *b, bi_index dst, bi_index addr, bi_index arg,
    }
 }
 
-/* gl_FragCoord.xy = u16_to_f32(R59.xy) + 0.5
- * gl_FragCoord.z = ld_vary(fragz)
- * gl_FragCoord.w = ld_vary(fragw)
- */
-
 static void
-bi_emit_load_frag_coord(bi_builder *b, nir_intrinsic_instr *instr)
+bi_emit_load_frag_coord_zw(bi_builder *b, bi_index dst, unsigned channel)
 {
-   bi_index src[4] = {};
-
-   for (unsigned i = 0; i < 2; ++i) {
-      src[i] = bi_fadd_f32(b, bi_u16_to_f32(b, bi_half(bi_preload(b, 59), i)),
-                           bi_imm_f32(0.5f));
-   }
-
-   for (unsigned i = 0; i < 2; ++i) {
-      src[2 + i] = bi_ld_var_special(
-         b, bi_zero(), BI_REGISTER_FORMAT_F32, BI_SAMPLE_CENTER,
-         BI_UPDATE_CLOBBER,
-         (i == 0) ? BI_VARYING_NAME_FRAG_Z : BI_VARYING_NAME_FRAG_W,
-         BI_VECSIZE_NONE);
-   }
-
-   bi_make_vec_to(b, bi_dest_index(&instr->dest), src, NULL, 4, 32);
+   bi_ld_var_special_to(
+      b, dst, bi_zero(), BI_REGISTER_FORMAT_F32, BI_SAMPLE_CENTER,
+      BI_UPDATE_CLOBBER,
+      (channel == 2) ? BI_VARYING_NAME_FRAG_Z : BI_VARYING_NAME_FRAG_W,
+      BI_VECSIZE_NONE);
 }
 
 static void
@@ -1657,8 +1641,13 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       bi_split_dest(b, instr->dest);
       break;
 
-   case nir_intrinsic_load_frag_coord:
-      bi_emit_load_frag_coord(b, instr);
+   case nir_intrinsic_load_pixel_coord:
+      /* Vectorized load of the preloaded i16vec2 */
+      bi_mov_i32_to(b, dst, bi_preload(b, 59));
+      break;
+
+   case nir_intrinsic_load_frag_coord_zw:
+      bi_emit_load_frag_coord_zw(b, dst, nir_intrinsic_component(instr));
       break;
 
    case nir_intrinsic_load_converted_output_pan:
@@ -4763,6 +4752,7 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS_V(nir, nir_lower_flrp, 16 | 32 | 64, false /* always_precise */);
    NIR_PASS_V(nir, nir_lower_var_copies);
    NIR_PASS_V(nir, nir_lower_alu);
+   NIR_PASS_V(nir, nir_lower_frag_coord_to_pixel_coord);
 }
 
 static bi_context *
@@ -4821,19 +4811,16 @@ bi_compile_variant_nir(nir_shader *nir,
 
    ctx->allocated_vec = _mesa_hash_table_u64_create(ctx);
 
-   nir_foreach_function(func, nir) {
-      if (!func->impl)
-         continue;
-
-      nir_index_blocks(func->impl);
+   nir_foreach_function_impl(impl, nir) {
+      nir_index_blocks(impl);
 
       ctx->indexed_nir_blocks =
-         rzalloc_array(ctx, bi_block *, func->impl->num_blocks);
+         rzalloc_array(ctx, bi_block *, impl->num_blocks);
 
-      ctx->ssa_alloc += func->impl->ssa_alloc;
-      ctx->reg_alloc += func->impl->reg_alloc;
+      ctx->ssa_alloc += impl->ssa_alloc;
+      ctx->reg_alloc += impl->reg_alloc;
 
-      emit_cf_list(ctx, &func->impl->body);
+      emit_cf_list(ctx, &impl->body);
       bi_emit_phis_deferred(ctx);
       break; /* TODO: Multi-function shaders */
    }

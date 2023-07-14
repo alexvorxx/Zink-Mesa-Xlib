@@ -26,7 +26,7 @@
 #ifndef SVGA_DRAW_H_
 #define SVGA_DRAW_H_
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_defines.h"
 #include "indices/u_indices.h"
 #include "util/u_prim.h"
@@ -66,7 +66,7 @@ static const unsigned svga_hw_prims =
  */
 static inline SVGA3dPrimitiveType
 svga_translate_prim(unsigned mode, unsigned vcount, unsigned *prim_count,
-                    ubyte vertices_per_patch)
+                    uint8_t vertices_per_patch)
 {
    switch (mode) {
    case MESA_PRIM_POINTS:
@@ -196,13 +196,13 @@ struct svga_hwtnl {
  * Do we need to use the gallium 'indices' helper to render unfilled
  * triangles?
  */
-static inline boolean
+static inline bool
 svga_need_unfilled_fallback(const struct svga_hwtnl *hwtnl,
                             enum mesa_prim prim)
 {
    if (u_reduced_prim(prim) != MESA_PRIM_TRIANGLES) {
       /* if we're drawing points or lines, no fallback needed */
-      return FALSE;
+      return false;
    }
 
    if ((prim == MESA_PRIM_QUADS ||
@@ -243,6 +243,6 @@ svga_hwtnl_simple_draw_range_elements(struct svga_hwtnl *hwtnl,
                                       unsigned count,
                                       unsigned start_instance,
                                       unsigned instance_count,
-                                      ubyte vertices_per_patch);
+                                      uint8_t vertices_per_patch);
 
 #endif

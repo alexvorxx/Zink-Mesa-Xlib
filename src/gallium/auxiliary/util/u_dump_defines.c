@@ -65,7 +65,7 @@ util_dump_enum_continuous(unsigned value,
 
 #define DEFINE_UTIL_STR_CONTINUOUS(_name) \
    const char * \
-   util_str_##_name(unsigned value, boolean shortened) \
+   util_str_##_name(unsigned value, bool shortened) \
    { \
       if(shortened) \
          return util_dump_enum_continuous(value, ARRAY_SIZE(util_##_name##_short_names), util_##_name##_short_names); \
@@ -80,7 +80,7 @@ util_dump_enum_continuous(unsigned value,
  */
 #define DEFINE_UTIL_STR_CONTINUOUS_COUNT(_name, _count) \
    const char * \
-   util_str_##_name(unsigned value, boolean shortened) \
+   util_str_##_name(unsigned value, bool shortened) \
    { \
       STATIC_ASSERT(ARRAY_SIZE(util_##_name##_names) == _count); \
       STATIC_ASSERT(ARRAY_SIZE(util_##_name##_short_names) == _count); \

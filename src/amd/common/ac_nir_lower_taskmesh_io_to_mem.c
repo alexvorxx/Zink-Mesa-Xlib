@@ -272,9 +272,6 @@ ac_nir_lower_task_outputs_to_mem(nir_shader *shader,
    };
 
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-   nir_builder builder;
-   nir_builder *b = &builder; /* This is to avoid the & */
-   nir_builder_init(b, impl);
 
    nir_shader_lower_instructions(shader,
                                  filter_task_intrinsics,

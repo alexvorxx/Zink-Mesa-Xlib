@@ -137,7 +137,21 @@ vlVaSyncSurface(VADriverContextP ctx, VASurfaceID render_target)
       return VA_STATUS_ERROR_UNSUPPORTED_ENTRYPOINT;
    }
 
-   if (context->decoder->entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
+   if (context->decoder->entrypoint == PIPE_VIDEO_ENTRYPOINT_PROCESSING) {
+      /* If driver does not implement get_processor_fence assume no
+       * async work needed to be waited on and return success
+       */
+      int ret = (context->decoder->get_processor_fence) ? 0 : 1;
+
+      if (context->decoder->get_processor_fence)
+         ret = context->decoder->get_processor_fence(context->decoder,
+                                                     surf->fence,
+                                                     PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
+
+      mtx_unlock(&drv->mutex);
+      // Assume that the GPU has hung otherwise.
+      return ret ? VA_STATUS_SUCCESS : VA_STATUS_ERROR_TIMEDOUT;
+   } else if (context->decoder->entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
       int ret = 0;
 
       if (context->decoder->get_decoder_fence)
@@ -245,6 +259,19 @@ vlVaQuerySurfaceStatus(VADriverContextP ctx, VASurfaceID render_target, VASurfac
        * VA_STATUS_SUCCESS, the client would be within his/her rights to use a
        * potentially uninitialized/invalid status value unknowingly.
        */
+         *status = VASurfaceRendering;
+   } else if (context->decoder->entrypoint == PIPE_VIDEO_ENTRYPOINT_PROCESSING) {
+      /* If driver does not implement get_processor_fence assume no
+       * async work needed to be waited on and return surface ready
+       */
+      int ret = (context->decoder->get_processor_fence) ? 0 : 1;
+
+      if (context->decoder->get_processor_fence)
+         ret = context->decoder->get_processor_fence(context->decoder,
+                                                     surf->fence, 0);
+      if (ret)
+         *status = VASurfaceReady;
+      else
          *status = VASurfaceRendering;
    }
 

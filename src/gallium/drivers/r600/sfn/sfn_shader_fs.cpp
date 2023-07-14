@@ -595,7 +595,7 @@ FragmentShader::do_finalize()
       unsigned i = 0;
       unsigned mask = m_color_export_mask;
 
-      while (mask & (1u << (4 * i))) {
+      while (i < m_max_color_exports && (mask & (1u << (4 * i)))) {
          if (!(m_color_export_written_mask & (1u << i))) {
             RegisterVec4 value(0, false, {7, 7, 7, 7});
             m_last_pixel_export = new ExportInstr(ExportInstr::pixel, i, value);

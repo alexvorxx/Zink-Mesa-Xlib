@@ -1808,7 +1808,7 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
                             device,
                             PVR_SUBALLOCATOR_PDS_SIZE);
    pvr_bo_suballocator_init(&device->suballoc_transfer,
-                            device->heaps.transfer_3d_heap,
+                            device->heaps.transfer_frag_heap,
                             device,
                             PVR_SUBALLOCATOR_TRANSFER_SIZE);
    pvr_bo_suballocator_init(&device->suballoc_usc,
@@ -2535,7 +2535,7 @@ VkResult pvr_gpu_upload(struct pvr_device *device,
       allocator = &device->suballoc_general;
    else if (heap == device->heaps.pds_heap)
       allocator = &device->suballoc_pds;
-   else if (heap == device->heaps.transfer_3d_heap)
+   else if (heap == device->heaps.transfer_frag_heap)
       allocator = &device->suballoc_transfer;
    else if (heap == device->heaps.usc_heap)
       allocator = &device->suballoc_usc;

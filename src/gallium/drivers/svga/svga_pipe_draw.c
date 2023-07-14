@@ -61,7 +61,7 @@ static enum pipe_error
 retry_draw_arrays( struct svga_context *svga,
                    enum mesa_prim prim, unsigned start, unsigned count,
                    unsigned start_instance, unsigned instance_count,
-                   ubyte vertices_per_patch)
+                   uint8_t vertices_per_patch)
 {
    enum pipe_error ret;
 
@@ -180,16 +180,16 @@ retry_draw_indirect(struct svga_context *svga,
  * path which breaks the original primitive into sub-primitive at the
  * restart indexes.
  */
-static boolean
+static bool
 need_fallback_prim_restart(const struct svga_context *svga,
                            const struct pipe_draw_info *info)
 {
    if (info->primitive_restart && info->index_size) {
       if (!svga_have_vgpu10(svga))
-         return TRUE;
+         return true;
       else if (!svga->state.sw.need_swtnl) {
          if (info->index_size == 1)
-            return TRUE; /* no device support for 1-byte indexes */
+            return true; /* no device support for 1-byte indexes */
          else if (info->index_size == 2)
             return info->restart_index != 0xffff;
          else
@@ -197,7 +197,7 @@ need_fallback_prim_restart(const struct svga_context *svga,
       }
    }
 
-   return FALSE;
+   return false;
 }
 
 
@@ -235,7 +235,7 @@ svga_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info,
    enum mesa_prim reduced_prim = u_reduced_prim(info->mode);
    unsigned count = draws[0].count;
    enum pipe_error ret = 0;
-   boolean needed_swtnl;
+   bool needed_swtnl;
 
    SVGA_STATS_TIME_PUSH(svga_sws(svga), SVGA_STATS_TIME_DRAWVBO);
 

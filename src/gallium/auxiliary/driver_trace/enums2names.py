@@ -90,10 +90,11 @@ def pkk_get_argparser():
         "example: %(prog)s ../../include/pipe/p_defines.h -C tr_util.c -H tr_util.h"
         )
 
-    optparser.add_argument("in_file",
+    optparser.add_argument("in_files",
         type=str,
-        metavar="infile",
-        help="path to input header file p_defines.h (or '-' for stdin)")
+        metavar="infiles",
+        nargs="+",
+        help="path to input header files (or '-' for stdin)")
 
     optparser.add_argument("-C",
         type=str,
@@ -260,18 +261,20 @@ if __name__ == "__main__":
     optparser = pkk_get_argparser()
     pkk_cfg = optparser.parse_args()
 
-    ### Parse input
-    hdrparser = PKKHeaderParser(pkk_cfg.in_file)
+    ### Parse input files
+    enums = {}
+    for file in pkk_cfg.in_files:
+        hdrparser = PKKHeaderParser(file)
 
-    try:
-        if pkk_cfg.in_file != "-":
-            with open(pkk_cfg.in_file, "r", encoding="UTF-8") as fh:
-                enums = hdrparser.parse_file(fh)
-        else:
-            enums = hdrparser.parse_file(sys.stdin)
-
-    except OSError as e:
-        pkk_fatal(str(e))
+        try:
+            if file != "-":
+                with open(file, "r", encoding="UTF-8") as fh:
+                    enums.update(hdrparser.parse_file(fh))
+            else:
+                enums.update(hdrparser.parse_file(sys.stdin))
+                break
+        except OSError as e:
+            pkk_fatal(str(e))
 
     ### Check if any of the required enums are missing
     errors = False

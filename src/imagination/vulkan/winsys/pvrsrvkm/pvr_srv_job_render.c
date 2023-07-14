@@ -634,7 +634,7 @@ void pvr_srv_winsys_render_ctx_destroy(struct pvr_winsys_render_ctx *ctx)
    vk_free(srv_ws->base.alloc, srv_ctx);
 }
 
-static void
+static uint32_t
 pvr_srv_geometry_cmd_stream_load(struct rogue_fwif_cmd_ta *const cmd,
                                  const uint8_t *const stream,
                                  const uint32_t stream_len,
@@ -642,6 +642,10 @@ pvr_srv_geometry_cmd_stream_load(struct rogue_fwif_cmd_ta *const cmd,
 {
    const uint32_t *stream_ptr = (const uint32_t *)stream;
    struct rogue_fwif_ta_regs *const regs = &cmd->regs;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((const uint64_t *)stream_ptr, KMD_STREAM_HDR).length;
+
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    regs->vdm_ctrl_stream_base = *(const uint64_t *)stream_ptr;
    stream_ptr += pvr_cmd_length(CR_VDM_CTRL_STREAM_BASE);
@@ -661,22 +665,27 @@ pvr_srv_geometry_cmd_stream_load(struct rogue_fwif_cmd_ta *const cmd,
    regs->view_idx = *stream_ptr;
    stream_ptr++;
 
-   assert((const uint8_t *)stream_ptr - stream == stream_len);
+   assert((const uint8_t *)stream_ptr - stream <= stream_len);
+   assert((const uint8_t *)stream_ptr - stream == main_stream_len);
+
+   return main_stream_len;
 }
 
 static void pvr_srv_geometry_cmd_ext_stream_load(
    struct rogue_fwif_cmd_ta *const cmd,
-   const uint8_t *const ext_stream,
-   const uint32_t ext_stream_len,
+   const uint8_t *const stream,
+   const uint32_t stream_len,
+   const uint32_t ext_stream_offset,
    const struct pvr_device_info *const dev_info)
 {
-   const uint32_t *ext_stream_ptr = (const uint32_t *)ext_stream;
+   const uint32_t *ext_stream_ptr =
+      (const uint32_t *)((uint8_t *)stream + ext_stream_offset);
    struct rogue_fwif_ta_regs *const regs = &cmd->regs;
 
-   struct PVRX(FW_STREAM_EXTHDR_GEOM0) header0;
+   struct PVRX(KMD_STREAM_EXTHDR_GEOM0) header0;
 
-   header0 = pvr_csb_unpack(ext_stream_ptr, FW_STREAM_EXTHDR_GEOM0);
-   ext_stream_ptr += pvr_cmd_length(FW_STREAM_EXTHDR_GEOM0);
+   header0 = pvr_csb_unpack(ext_stream_ptr, KMD_STREAM_EXTHDR_GEOM0);
+   ext_stream_ptr += pvr_cmd_length(KMD_STREAM_EXTHDR_GEOM0);
 
    assert(PVR_HAS_QUIRK(dev_info, 49927) == header0.has_brn49927);
    if (header0.has_brn49927) {
@@ -684,7 +693,7 @@ static void pvr_srv_geometry_cmd_ext_stream_load(
       ext_stream_ptr += pvr_cmd_length(CR_TPU);
    }
 
-   assert((const uint8_t *)ext_stream_ptr - ext_stream == ext_stream_len);
+   assert((const uint8_t *)ext_stream_ptr - stream == stream_len);
 }
 
 static void pvr_srv_geometry_cmd_init(
@@ -694,30 +703,32 @@ static void pvr_srv_geometry_cmd_init(
    const struct pvr_device_info *const dev_info)
 {
    const struct pvr_winsys_geometry_state *state = &submit_info->geometry;
+   uint32_t ext_stream_offset;
 
    memset(cmd, 0, sizeof(*cmd));
 
    cmd->cmd_shared.cmn.frame_num = submit_info->frame_num;
 
-   pvr_srv_geometry_cmd_stream_load(cmd,
-                                    state->fw_stream,
-                                    state->fw_stream_len,
-                                    dev_info);
+   ext_stream_offset = pvr_srv_geometry_cmd_stream_load(cmd,
+                                                        state->fw_stream,
+                                                        state->fw_stream_len,
+                                                        dev_info);
 
-   if (state->fw_ext_stream_len) {
+   if (ext_stream_offset < state->fw_stream_len) {
       pvr_srv_geometry_cmd_ext_stream_load(cmd,
-                                           state->fw_ext_stream,
-                                           state->fw_ext_stream_len,
+                                           state->fw_stream,
+                                           state->fw_stream_len,
+                                           ext_stream_offset,
                                            dev_info);
    }
 
-   if (state->flags & PVR_WINSYS_GEOM_FLAG_FIRST_GEOMETRY)
+   if (state->flags.is_first_geometry)
       cmd->flags |= ROGUE_FWIF_TAFLAGS_FIRSTKICK;
 
-   if (state->flags & PVR_WINSYS_GEOM_FLAG_LAST_GEOMETRY)
+   if (state->flags.is_last_geometry)
       cmd->flags |= ROGUE_FWIF_TAFLAGS_LASTKICK;
 
-   if (state->flags & PVR_WINSYS_GEOM_FLAG_SINGLE_CORE)
+   if (state->flags.use_single_core)
       cmd->flags |= ROGUE_FWIF_TAFLAGS_SINGLE_CORE;
 
    cmd->partial_render_ta_3d_fence.ufo_addr.addr =
@@ -725,7 +736,7 @@ static void pvr_srv_geometry_cmd_init(
    cmd->partial_render_ta_3d_fence.value = sync_prim->value;
 }
 
-static void
+static uint32_t
 pvr_srv_fragment_cmd_stream_load(struct rogue_fwif_cmd_3d *const cmd,
                                  const uint8_t *const stream,
                                  const uint32_t stream_len,
@@ -733,6 +744,10 @@ pvr_srv_fragment_cmd_stream_load(struct rogue_fwif_cmd_3d *const cmd,
 {
    const uint32_t *stream_ptr = (const uint32_t *)stream;
    struct rogue_fwif_3d_regs *const regs = &cmd->regs;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((const uint64_t *)stream_ptr, KMD_STREAM_HDR).length;
+
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    regs->isp_scissor_base = *(const uint64_t *)stream_ptr;
    stream_ptr += pvr_cmd_length(CR_ISP_SCISSOR_BASE);
@@ -752,8 +767,10 @@ pvr_srv_fragment_cmd_stream_load(struct rogue_fwif_cmd_3d *const cmd,
    regs->isp_stencil_load_store_base = *(const uint64_t *)stream_ptr;
    stream_ptr += pvr_cmd_length(CR_ISP_STENCIL_LOAD_BASE);
 
-   regs->fb_cdc_zls = *(const uint64_t *)stream_ptr;
-   stream_ptr += 2U;
+   if (PVR_HAS_FEATURE(dev_info, requires_fb_cdc_zls_setup)) {
+      regs->fb_cdc_zls = *(const uint64_t *)stream_ptr;
+      stream_ptr += 2U;
+   }
 
    STATIC_ASSERT(ARRAY_SIZE(regs->pbe_word) == 8U);
    STATIC_ASSERT(ARRAY_SIZE(regs->pbe_word[0]) == 3U);
@@ -831,22 +848,27 @@ pvr_srv_fragment_cmd_stream_load(struct rogue_fwif_cmd_3d *const cmd,
       stream_ptr++;
    }
 
-   assert((const uint8_t *)stream_ptr - stream == stream_len);
+   assert((const uint8_t *)stream_ptr - stream <= stream_len);
+   assert((const uint8_t *)stream_ptr - stream == main_stream_len);
+
+   return main_stream_len;
 }
 
 static void pvr_srv_fragment_cmd_ext_stream_load(
    struct rogue_fwif_cmd_3d *const cmd,
-   const uint8_t *const ext_stream,
-   const uint32_t ext_stream_len,
+   const uint8_t *const stream,
+   const uint32_t stream_len,
+   const uint32_t ext_stream_offset,
    const struct pvr_device_info *const dev_info)
 {
-   const uint32_t *ext_stream_ptr = (const uint32_t *)ext_stream;
+   const uint32_t *ext_stream_ptr =
+      (const uint32_t *)((uint8_t *)stream + ext_stream_offset);
    struct rogue_fwif_3d_regs *const regs = &cmd->regs;
 
-   struct PVRX(FW_STREAM_EXTHDR_FRAG0) header0;
+   struct PVRX(KMD_STREAM_EXTHDR_FRAG0) header0;
 
-   header0 = pvr_csb_unpack(ext_stream_ptr, FW_STREAM_EXTHDR_FRAG0);
-   ext_stream_ptr += pvr_cmd_length(FW_STREAM_EXTHDR_FRAG0);
+   header0 = pvr_csb_unpack(ext_stream_ptr, KMD_STREAM_EXTHDR_FRAG0);
+   ext_stream_ptr += pvr_cmd_length(KMD_STREAM_EXTHDR_FRAG0);
 
    assert(PVR_HAS_QUIRK(dev_info, 49927) == header0.has_brn49927);
    if (header0.has_brn49927) {
@@ -854,48 +876,50 @@ static void pvr_srv_fragment_cmd_ext_stream_load(
       ext_stream_ptr += pvr_cmd_length(CR_TPU);
    }
 
-   assert((const uint8_t *)ext_stream_ptr - ext_stream == ext_stream_len);
+   assert((const uint8_t *)ext_stream_ptr - stream == stream_len);
 }
 
-static void pvr_srv_fragment_cmd_init(
-   const struct pvr_winsys_render_submit_info *submit_info,
-   struct rogue_fwif_cmd_3d *cmd,
-   const struct pvr_device_info *dev_info)
+static void
+pvr_srv_fragment_cmd_init(struct rogue_fwif_cmd_3d *cmd,
+                          const struct pvr_winsys_fragment_state *state,
+                          const struct pvr_device_info *dev_info,
+                          uint32_t frame_num)
 {
-   const struct pvr_winsys_fragment_state *state = &submit_info->fragment;
+   uint32_t ext_stream_offset;
 
    memset(cmd, 0, sizeof(*cmd));
 
-   cmd->cmd_shared.cmn.frame_num = submit_info->frame_num;
+   cmd->cmd_shared.cmn.frame_num = frame_num;
 
-   pvr_srv_fragment_cmd_stream_load(cmd,
-                                    state->fw_stream,
-                                    state->fw_stream_len,
-                                    dev_info);
+   ext_stream_offset = pvr_srv_fragment_cmd_stream_load(cmd,
+                                                        state->fw_stream,
+                                                        state->fw_stream_len,
+                                                        dev_info);
 
-   if (state->fw_ext_stream_len) {
+   if (ext_stream_offset < state->fw_stream_len) {
       pvr_srv_fragment_cmd_ext_stream_load(cmd,
-                                           state->fw_ext_stream,
-                                           state->fw_ext_stream_len,
+                                           state->fw_stream,
+                                           state->fw_stream_len,
+                                           ext_stream_offset,
                                            dev_info);
    }
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_DEPTH_BUFFER_PRESENT)
+   if (state->flags.has_depth_buffer)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_DEPTHBUFFER;
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_STENCIL_BUFFER_PRESENT)
+   if (state->flags.has_stencil_buffer)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_STENCILBUFFER;
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_PREVENT_CDM_OVERLAP)
+   if (state->flags.prevent_cdm_overlap)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_PREVENT_CDM_OVERLAP;
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_SINGLE_CORE)
+   if (state->flags.use_single_core)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_SINGLE_CORE;
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_GET_VIS_RESULTS)
+   if (state->flags.get_vis_results)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_GETVISRESULTS;
 
-   if (state->flags & PVR_WINSYS_FRAG_FLAG_SPMSCRATCHBUFFER)
+   if (state->flags.has_spm_scratch_buffer)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_SPMSCRATCHBUFFER;
 }
 
@@ -920,7 +944,11 @@ VkResult pvr_srv_winsys_render_submit(
    struct pvr_srv_sync *srv_signal_sync_frag;
 
    struct rogue_fwif_cmd_ta geom_cmd;
-   struct rogue_fwif_cmd_3d frag_cmd;
+   struct rogue_fwif_cmd_3d frag_cmd = { 0 };
+   struct rogue_fwif_cmd_3d pr_cmd = { 0 };
+
+   uint8_t *frag_cmd_ptr = NULL;
+   uint32_t frag_cmd_size = 0;
 
    uint32_t current_sync_value = sync_prim->value;
    uint32_t geom_sync_update_value;
@@ -938,10 +966,20 @@ VkResult pvr_srv_winsys_render_submit(
 
    pvr_srv_geometry_cmd_init(submit_info, sync_prim, &geom_cmd, dev_info);
 
-   if (submit_info->run_frag)
-      pvr_srv_fragment_cmd_init(submit_info, &frag_cmd, dev_info);
-   else
-      memset(&frag_cmd, 0, sizeof(frag_cmd));
+   pvr_srv_fragment_cmd_init(&pr_cmd,
+                             &submit_info->fragment_pr,
+                             dev_info,
+                             submit_info->frame_num);
+
+   if (submit_info->has_fragment_job) {
+      pvr_srv_fragment_cmd_init(&frag_cmd,
+                                &submit_info->fragment,
+                                dev_info,
+                                submit_info->frame_num);
+
+      frag_cmd_ptr = (uint8_t *)&frag_cmd;
+      frag_cmd_size = sizeof(frag_cmd);
+   }
 
    if (submit_info->geometry.wait) {
       struct pvr_srv_sync *srv_wait_sync =
@@ -973,7 +1011,7 @@ VkResult pvr_srv_winsys_render_submit(
       }
    }
 
-   if (submit_info->geometry.flags & PVR_WINSYS_GEOM_FLAG_FIRST_GEOMETRY) {
+   if (submit_info->geometry.flags.is_first_geometry) {
       frag_to_geom_fence_count = 1;
       frag_to_geom_fence_value = current_sync_value;
    }
@@ -981,7 +1019,7 @@ VkResult pvr_srv_winsys_render_submit(
    /* Geometery is always kicked */
    geom_sync_update_value = ++current_sync_value;
 
-   if (submit_info->run_frag) {
+   if (submit_info->has_fragment_job) {
       frag_sync_update_count = 1;
       frag_sync_update_value = ++current_sync_value;
    }
@@ -1020,18 +1058,16 @@ VkResult pvr_srv_winsys_render_submit(
                                         "FRAG",
                                         sizeof(geom_cmd),
                                         (uint8_t *)&geom_cmd,
-                                        /* Currently no support for PRs. */
-                                        0,
-                                        /* Currently no support for PRs. */
-                                        NULL,
-                                        sizeof(frag_cmd),
-                                        (uint8_t *)&frag_cmd,
+                                        sizeof(pr_cmd),
+                                        (uint8_t *)&pr_cmd,
+                                        frag_cmd_size,
+                                        frag_cmd_ptr,
                                         submit_info->job_num,
                                         /* Always kick the TA. */
                                         true,
                                         /* Always kick a PR. */
                                         true,
-                                        submit_info->run_frag,
+                                        submit_info->has_fragment_job,
                                         false,
                                         0,
                                         rt_data_handle,

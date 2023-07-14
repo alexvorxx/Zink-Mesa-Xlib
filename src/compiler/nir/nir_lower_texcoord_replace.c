@@ -63,10 +63,7 @@ nir_lower_texcoord_replace_impl(nir_function_impl *impl,
                                 bool point_coord_is_sysval,
                                 bool yinvert)
 {
-   nir_builder b;
-
-   nir_builder_init(&b, impl);
-   b.cursor = nir_before_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
    nir_ssa_def *new_coord;
    if (point_coord_is_sysval) {
@@ -137,9 +134,8 @@ nir_lower_texcoord_replace(nir_shader *s, unsigned coord_replace,
    assert(s->info.stage == MESA_SHADER_FRAGMENT);
    assert(coord_replace != 0);
 
-   nir_foreach_function(function, s) {
-      if (function->impl)
-         nir_lower_texcoord_replace_impl(function->impl, coord_replace,
-                                         point_coord_is_sysval, yinvert);
+   nir_foreach_function_impl(impl, s) {
+      nir_lower_texcoord_replace_impl(impl, coord_replace,
+                                      point_coord_is_sysval, yinvert);
    }
 }

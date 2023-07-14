@@ -89,9 +89,8 @@ nir_opt_combine_barriers(
 
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl &&
-          nir_opt_combine_barriers_impl(function->impl, combine_cb, data)) {
+   nir_foreach_function_impl(impl, shader) {
+      if (nir_opt_combine_barriers_impl(impl, combine_cb, data)) {
          progress = true;
       }
    }

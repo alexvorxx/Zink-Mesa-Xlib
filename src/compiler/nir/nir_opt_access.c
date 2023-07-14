@@ -299,13 +299,11 @@ nir_opt_access(nir_shader *shader, const nir_opt_access_options *options)
    bool var_progress = false;
    bool progress = false;
 
-   nir_foreach_function(func, shader) {
-      if (func->impl) {
-         nir_foreach_block(block, func->impl) {
-            nir_foreach_instr(instr, block) {
-               if (instr->type == nir_instr_type_intrinsic)
-                  gather_intrinsic(&state, nir_instr_as_intrinsic(instr));
-            }
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type == nir_instr_type_intrinsic)
+               gather_intrinsic(&state, nir_instr_as_intrinsic(instr));
          }
       }
    }
@@ -324,18 +322,16 @@ nir_opt_access(nir_shader *shader, const nir_opt_access_options *options)
                                                 nir_var_image)
       var_progress |= process_variable(&state, var);
 
-   nir_foreach_function(func, shader) {
-      if (func->impl) {
-         progress |= opt_access_impl(&state, func->impl);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= opt_access_impl(&state, impl);
 
-         /* If we make a change to the uniforms, update all the impls. */
-         if (var_progress) {
-            nir_metadata_preserve(func->impl,
-                                  nir_metadata_block_index |
-                                  nir_metadata_dominance |
-                                  nir_metadata_live_ssa_defs |
-                                  nir_metadata_loop_analysis);
-         }
+      /* If we make a change to the uniforms, update all the impls. */
+      if (var_progress) {
+         nir_metadata_preserve(impl,
+                               nir_metadata_block_index |
+                               nir_metadata_dominance |
+                               nir_metadata_live_ssa_defs |
+                               nir_metadata_loop_analysis);
       }
    }
 

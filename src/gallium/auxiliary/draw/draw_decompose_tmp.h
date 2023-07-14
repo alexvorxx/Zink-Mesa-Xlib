@@ -48,7 +48,7 @@ static void
 FUNC(FUNC_VARS)
 {
    unsigned idx[6], i;
-   ushort flags;
+   uint16_t flags;
    LOCAL_VARS
 
    FUNC_ENTER;
@@ -278,7 +278,7 @@ FUNC(FUNC_VARS)
 
    case MESA_PRIM_POLYGON:
       if (count >= 3) {
-         ushort edge_next, edge_finish;
+         uint16_t edge_next, edge_finish;
 
          if (last_vertex_last) {
             flags = (DRAW_PIPE_RESET_STIPPLE |

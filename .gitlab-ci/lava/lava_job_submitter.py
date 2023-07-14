@@ -378,6 +378,7 @@ class LAVAJobSubmitter(PathResolver):
     visibility_group: str = None  # Only affects LAVA farm maintainers
     job_rootfs_overlay_url: str = None
     structured_log_file: pathlib.Path = None  # Log file path with structured LAVA log
+    ssh_client_image: str = None  # x86_64 SSH client image to follow the job's output
     __structured_log_context = contextlib.nullcontext()  # Structured Logger context
 
     def __post_init__(self) -> None:

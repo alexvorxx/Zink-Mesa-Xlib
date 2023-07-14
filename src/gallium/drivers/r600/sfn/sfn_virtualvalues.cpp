@@ -877,13 +877,6 @@ LocalArray::LocalArray(int base_sel, int nchannels, int size, int frac):
       for (unsigned i = 0; i < m_size; ++i) {
          PRegister reg = new Register(base_sel + i, c + frac, pin_array);
          m_values[m_size * c + i] = new LocalArrayValue(reg, *this);
-
-         /* Pin the array register on the start, because currently we don't
-          * don't track the first write to an array element as write to all
-          * array elements, and it seems that the one can not just use
-          * registers that are not written to in an array for other purpouses
-          */
-         m_values[m_size * c + i]->set_flag(Register::pin_start);
       }
    }
 }

@@ -139,8 +139,7 @@ remove_phis_block(nir_block *block, nir_builder *b)
 bool
 nir_opt_remove_phis_block(nir_block *block)
 {
-   nir_builder b;
-   nir_builder_init(&b, nir_cf_node_get_function(&block->cf_node));
+   nir_builder b = nir_builder_create(nir_cf_node_get_function(&block->cf_node));
    return remove_phis_block(block, &b);
 }
 
@@ -148,8 +147,7 @@ static bool
 nir_opt_remove_phis_impl(nir_function_impl *impl)
 {
    bool progress = false;
-   nir_builder bld;
-   nir_builder_init(&bld, impl);
+   nir_builder bld = nir_builder_create(impl);
 
    nir_metadata_require(impl, nir_metadata_dominance);
 
@@ -172,9 +170,8 @@ nir_opt_remove_phis(nir_shader *shader)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader)
-      if (function->impl)
-         progress = nir_opt_remove_phis_impl(function->impl) || progress;
+   nir_foreach_function_impl(impl, shader)
+      progress = nir_opt_remove_phis_impl(impl) || progress;
 
    return progress;
 }

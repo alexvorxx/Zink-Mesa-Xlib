@@ -190,7 +190,7 @@ struct iris_bo {
    uint32_t gem_handle;
 
    /**
-    * Virtual address of the buffer inside the PPGTT (Per-Process Graphics
+    * Canonical virtual address of the buffer inside the PPGTT (Per-Process Graphics
     * Translation Table).
     *
     * Although each hardware context has its own VMA, we assign BO's to the
@@ -537,6 +537,22 @@ iris_bo_bump_seqno(struct iris_bo *bo, uint64_t seqno,
    while (prev_seqno < seqno &&
           prev_seqno != (tmp = p_atomic_cmpxchg(last_seqno, prev_seqno, seqno)))
       prev_seqno = tmp;
+}
+
+/**
+ * Return the pat index based on the bo allocation flags.
+ */
+static inline uint32_t
+iris_pat_index_for_bo_flags(const struct intel_device_info *devinfo,
+                            unsigned alloc_flags)
+{
+   if (alloc_flags & BO_ALLOC_COHERENT)
+      return devinfo->pat.coherent;
+
+   if (alloc_flags & (BO_ALLOC_SHARED | BO_ALLOC_SCANOUT))
+      return devinfo->pat.scanout;
+
+   return devinfo->pat.writeback;
 }
 
 enum iris_memory_zone iris_memzone_for_address(uint64_t address);

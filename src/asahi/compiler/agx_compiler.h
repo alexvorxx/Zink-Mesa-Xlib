@@ -378,6 +378,8 @@ typedef struct agx_block {
 typedef struct {
    nir_shader *nir;
    gl_shader_stage stage;
+   bool is_preamble;
+
    struct list_head blocks; /* list of agx_block */
    struct agx_shader_info *out;
    struct agx_shader_key *key;

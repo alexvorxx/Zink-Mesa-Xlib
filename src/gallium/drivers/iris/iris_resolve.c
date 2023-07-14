@@ -709,9 +709,9 @@ iris_hiz_exec(struct iris_context *ice,
    blorp_hiz_op(&blorp_batch, &surf, level, start_layer, num_layers, op);
    blorp_batch_finish(&blorp_batch);
 
-   /* The following stalls and flushes are only documented to be required
-    * for HiZ clear operations.  However, they also seem to be required for
-    * resolve operations.
+   /* For gfx8-11, the following stalls and flushes are only documented to be
+    * required for HiZ clear operations.  However, they also seem to be
+    * required for resolve operations.
     *
     * From the Broadwell PRM, volume 7, "Depth Buffer Clear":
     *
@@ -724,11 +724,20 @@ iris_hiz_exec(struct iris_context *ice,
     *     'full_surf_clear' bit set in the 3DSTATE_WM_HZ_OP."
     *
     * TODO: Such as the spec says, this could be conditional.
+    *
+    * From Bspec 46959, a programming note applicable to Gfx12+:
+    *
+    *    " Since HZ_OP has to be sent twice (first time set the clear/resolve
+    *    state and 2nd time to clear the state), and HW internally flushes the
+    *    depth cache on HZ_OP, there is no need to explicitly send a Depth
+    *    Cache flush after Clear or Resolve."
     */
-   iris_emit_pipe_control_flush(batch,
-                                "hiz op: post flush",
-                                PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-                                PIPE_CONTROL_DEPTH_STALL);
+   if (devinfo->verx10 < 120) {
+      iris_emit_pipe_control_flush(batch,
+                                   "hiz op: post flush",
+                                   PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+                                   PIPE_CONTROL_DEPTH_STALL);
+   }
 
    iris_batch_sync_region_end(batch);
 }

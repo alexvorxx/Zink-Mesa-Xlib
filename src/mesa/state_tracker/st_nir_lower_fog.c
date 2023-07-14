@@ -128,9 +128,8 @@ st_nir_lower_fog(nir_shader *s, enum gl_fog_mode fog_mode, struct gl_program_par
             return false;
       }
 
-      nir_builder b;
-      nir_builder_init(&b, nir_shader_get_entrypoint(s));
-      b.cursor = nir_after_block(nir_impl_last_block(b.impl));
+      nir_function_impl *impl = nir_shader_get_entrypoint(s);
+      nir_builder b = nir_builder_at(nir_after_block(nir_impl_last_block(impl)));
 
       /* Note: while ARB_fragment_program plus ARB_draw_buffers allows an array
        * of result colors, prog_to_nir generates separate vars per slot so we

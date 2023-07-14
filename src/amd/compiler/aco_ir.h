@@ -32,7 +32,7 @@
 #include "util/compiler.h"
 
 #include "ac_binary.h"
-#include "ac_shader_util.h"
+#include "ac_hw_stage.h"
 #include "amd_family.h"
 #include <algorithm>
 #include <bitset>
@@ -285,6 +285,16 @@ struct wait_imm {
    bool empty() const;
 };
 
+/* s_wait_event immediate bits. */
+enum wait_event_imm : uint16_t {
+   /* If this bit is 0, await that the export buffer space has been allocated.
+    * In Primitive Ordered Pixel Shading, export ready means that the overlapped waves have exited
+    * their ordered sections (by performing the `done` export), and that the current wave may enter
+    * its ordered section.
+    */
+   wait_event_imm_dont_wait_export_ready = 0x1,
+};
+
 constexpr Format
 asVOP3(Format format)
 {
@@ -483,6 +493,7 @@ static constexpr PhysReg sgpr_null{125}; /* GFX10+ */
 static constexpr PhysReg exec{126};
 static constexpr PhysReg exec_lo{126};
 static constexpr PhysReg exec_hi{127};
+static constexpr PhysReg pops_exiting_wave_id{239}; /* GFX9-GFX10.3 */
 static constexpr PhysReg vccz{251};
 static constexpr PhysReg execz{252};
 static constexpr PhysReg scc{253};
@@ -2107,6 +2118,8 @@ public:
    Stage stage;
    bool needs_exact = false; /* there exists an instruction with disable_wqm = true */
    bool needs_wqm = false;   /* there exists a p_wqm instruction */
+   bool has_smem_buffer_or_global_loads = false;
+   bool has_pops_overlapped_waves_wait = false;
    bool has_color_exports = false;
 
    std::vector<uint8_t> constant_data;

@@ -1905,7 +1905,7 @@ static struct pb_buffer *rvcn_dec_message_decode(struct radeon_decoder *dec,
                                                  struct pipe_picture_desc *picture)
 {
    DECRYPT_PARAMETERS *decrypt = (DECRYPT_PARAMETERS *)picture->decrypt_key;
-   bool encrypted = (DECRYPT_PARAMETERS *)picture->protected_playback;
+   bool encrypted = picture->protected_playback;
    struct si_texture *luma;
    struct si_texture *chroma;
    struct pipe_video_buffer *out_surf = target;

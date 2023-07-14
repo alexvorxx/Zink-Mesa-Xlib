@@ -37,6 +37,9 @@ macro_rules! compute_param_impl {
             fn compute_param(&self, cap: pipe_compute_cap) -> $ty {
                 let size = self.compute_param_wrapped(cap, ptr::null_mut());
                 let mut d = [0; size_of::<$ty>()];
+                if size == 0 {
+                    return Default::default();
+                }
                 assert_eq!(size as usize, d.len());
                 self.compute_param_wrapped(cap, d.as_mut_ptr().cast());
                 <$ty>::from_ne_bytes(d)
@@ -305,6 +308,15 @@ impl PipeScreen {
         unsafe { s.is_format_supported.unwrap()(self.screen, format, target, 0, 0, bindings) }
     }
 
+    pub fn get_timestamp(&self) -> u64 {
+        // We have get_timestamp in has_required_cbs, so it will exist
+        unsafe {
+            (*self.screen)
+                .get_timestamp
+                .expect("get_timestamp should be required")(self.screen)
+        }
+    }
+
     pub fn nir_shader_compiler_options(
         &self,
         shader: pipe_shader_type,
@@ -376,6 +388,7 @@ fn has_required_cbs(screen: *mut pipe_screen) -> bool {
         & has_required_feature!(screen, get_name)
         & has_required_feature!(screen, get_param)
         & has_required_feature!(screen, get_shader_param)
+        & has_required_feature!(screen, get_timestamp)
         & has_required_feature!(screen, is_format_supported)
         & has_required_feature!(screen, resource_create)
 }

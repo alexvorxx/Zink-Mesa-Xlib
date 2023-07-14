@@ -401,7 +401,19 @@ struct rc_list * rc_get_variables(struct radeon_compiler * c)
 			memset(&reader_data, 0, sizeof(reader_data));
 			rc_get_readers(c, inst, &reader_data, NULL, NULL, NULL);
 			if (reader_data.ReaderCount == 0) {
-				continue;
+				/* Variable is only returned if there is both writer
+				 * and reader. This means dead writes will not get
+				 * register allocated as a result and can overwrite random
+				 * registers. Assert on dead writes insted so we can improve
+				 * the DCE.
+				 */
+				const struct rc_opcode_info *opcode =
+					rc_get_opcode_info(inst->U.I.Opcode);
+				assert(c->type == RC_FRAGMENT_PROGRAM ||
+					!opcode->HasDstReg ||
+					inst->U.I.DstReg.File == RC_FILE_OUTPUT ||
+					inst->U.I.DstReg.File == RC_FILE_ADDRESS);
+                                continue;
 			}
 			new_var = rc_variable(c, inst->U.I.DstReg.File,
 				inst->U.I.DstReg.Index,

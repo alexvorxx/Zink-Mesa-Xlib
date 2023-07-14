@@ -160,6 +160,8 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_depth_clip_control                = true,
    .EXT_depth_range_unrestricted          = true,
    .EXT_dynamic_rendering_unused_attachments = true,
+   .EXT_descriptor_buffer                 = true,
+   .EXT_descriptor_indexing               = true,
    .EXT_extended_dynamic_state            = true,
    .EXT_extended_dynamic_state2           = true,
    .EXT_extended_dynamic_state3           = true,
@@ -178,6 +180,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_mesh_shader                       = true,
    .EXT_multisampled_render_to_single_sampled = true,
    .EXT_multi_draw                        = true,
+   .EXT_mutable_descriptor_type           = true,
    .EXT_non_seamless_cube_map             = true,
 #if DETECT_OS_LINUX
    .EXT_pageable_device_local_memory      = true,
@@ -242,7 +245,6 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
                  struct vk_features *features)
 {
    bool instance_divisor = pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_VERTEX_ELEMENT_INSTANCE_DIVISOR) != 0;
-   bool indirect = false;//pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_GLSL_FEATURE_LEVEL) >= 400;
 
    *features = (struct vk_features){
       /* Vulkan 1.0 */
@@ -278,11 +280,11 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderStorageImageExtendedFormats        = (min_shader_param(pdevice->pscreen, PIPE_SHADER_CAP_MAX_SHADER_IMAGES) != 0),
       .shaderStorageImageMultisample            = (pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_TEXTURE_MULTISAMPLE) != 0),
       .shaderUniformBufferArrayDynamicIndexing  = true,
-      .shaderSampledImageArrayDynamicIndexing   = indirect,
+      .shaderSampledImageArrayDynamicIndexing   = true,
       .shaderStorageBufferArrayDynamicIndexing  = true,
-      .shaderStorageImageArrayDynamicIndexing   = indirect,
-      .shaderStorageImageReadWithoutFormat      = (pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_IMAGE_LOAD_FORMATTED) != 0),
-      .shaderStorageImageWriteWithoutFormat     = (pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_IMAGE_STORE_FORMATTED) != 0),
+      .shaderStorageImageArrayDynamicIndexing   = true,
+      .shaderStorageImageReadWithoutFormat      = true,
+      .shaderStorageImageWriteWithoutFormat     = true,
       .shaderClipDistance                       = true,
       .shaderCullDistance                       = (pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_CULL_DISTANCE) == 1),
       .shaderFloat64                            = (pdevice->pscreen->get_param(pdevice->pscreen, PIPE_CAP_DOUBLES) == 1),
@@ -316,27 +318,27 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderFloat16 = pdevice->pscreen->get_shader_param(pdevice->pscreen, MESA_SHADER_FRAGMENT, PIPE_SHADER_CAP_FP16) != 0,
       .shaderInt8 = true,
 
-      .descriptorIndexing = false,
-      .shaderInputAttachmentArrayDynamicIndexing = false,
-      .shaderUniformTexelBufferArrayDynamicIndexing = false,
-      .shaderStorageTexelBufferArrayDynamicIndexing = false,
-      .shaderUniformBufferArrayNonUniformIndexing = false,
-      .shaderSampledImageArrayNonUniformIndexing = false,
-      .shaderStorageBufferArrayNonUniformIndexing = false,
-      .shaderStorageImageArrayNonUniformIndexing = false,
-      .shaderInputAttachmentArrayNonUniformIndexing = false,
-      .shaderUniformTexelBufferArrayNonUniformIndexing = false,
-      .shaderStorageTexelBufferArrayNonUniformIndexing = false,
-      .descriptorBindingUniformBufferUpdateAfterBind = false,
-      .descriptorBindingSampledImageUpdateAfterBind = false,
-      .descriptorBindingStorageImageUpdateAfterBind = false,
-      .descriptorBindingStorageBufferUpdateAfterBind = false,
-      .descriptorBindingUniformTexelBufferUpdateAfterBind = false,
-      .descriptorBindingStorageTexelBufferUpdateAfterBind = false,
-      .descriptorBindingUpdateUnusedWhilePending = false,
-      .descriptorBindingPartiallyBound = false,
-      .descriptorBindingVariableDescriptorCount = false,
-      .runtimeDescriptorArray = false,
+      .descriptorIndexing = true,
+      .shaderInputAttachmentArrayDynamicIndexing = true,
+      .shaderUniformTexelBufferArrayDynamicIndexing = true,
+      .shaderStorageTexelBufferArrayDynamicIndexing = true,
+      .shaderUniformBufferArrayNonUniformIndexing = true,
+      .shaderSampledImageArrayNonUniformIndexing = true,
+      .shaderStorageBufferArrayNonUniformIndexing = true,
+      .shaderStorageImageArrayNonUniformIndexing = true,
+      .shaderInputAttachmentArrayNonUniformIndexing = true,
+      .shaderUniformTexelBufferArrayNonUniformIndexing = true,
+      .shaderStorageTexelBufferArrayNonUniformIndexing = true,
+      .descriptorBindingUniformBufferUpdateAfterBind = true,
+      .descriptorBindingSampledImageUpdateAfterBind = true,
+      .descriptorBindingStorageImageUpdateAfterBind = true,
+      .descriptorBindingStorageBufferUpdateAfterBind = true,
+      .descriptorBindingUniformTexelBufferUpdateAfterBind = true,
+      .descriptorBindingStorageTexelBufferUpdateAfterBind = true,
+      .descriptorBindingUpdateUnusedWhilePending = true,
+      .descriptorBindingPartiallyBound = true,
+      .descriptorBindingVariableDescriptorCount = true,
+      .runtimeDescriptorArray = true,
 
       .samplerFilterMinmax = true,
       .scalarBlockLayout = true,
@@ -373,6 +375,12 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
 
+      /* VK_EXT_descriptor_buffer */
+      .descriptorBuffer = true,
+      .descriptorBufferCaptureReplay = false,
+      .descriptorBufferPushDescriptors = true,
+      .descriptorBufferImageLayoutIgnored = true,
+
       /* VK_EXT_primitives_generated_query */
       .primitivesGeneratedQuery = true,
       .primitivesGeneratedQueryWithRasterizerDiscard = true,
@@ -407,6 +415,9 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
 
       /* VK_EXT_multisampled_render_to_single_sampled */
       .multisampledRenderToSingleSampled = true,
+
+      /* VK_EXT_mutable_descriptor_type */
+      .mutableDescriptorType = true,
 
       /* VK_EXT_index_type_uint8 */
       .indexTypeUint8 = true,
@@ -636,21 +647,21 @@ lvp_physical_device_init(struct lvp_physical_device *device,
       .bufferImageGranularity                   = 64, /* A cache line */
       .sparseAddressSpaceSize                   = 0,
       .maxBoundDescriptorSets                   = MAX_SETS,
-      .maxPerStageDescriptorSamplers            = min_shader_param(device->pscreen, PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS),
-      .maxPerStageDescriptorUniformBuffers      = min_shader_param(device->pscreen, PIPE_SHADER_CAP_MAX_CONST_BUFFERS) - 1,
-      .maxPerStageDescriptorStorageBuffers      = min_shader_param(device->pscreen, PIPE_SHADER_CAP_MAX_SHADER_BUFFERS),
-      .maxPerStageDescriptorSampledImages       = min_shader_param(device->pscreen, PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS),
-      .maxPerStageDescriptorStorageImages       = min_shader_param(device->pscreen, PIPE_SHADER_CAP_MAX_SHADER_IMAGES),
-      .maxPerStageDescriptorInputAttachments    = 8,
-      .maxPerStageResources                     = 128,
-      .maxDescriptorSetSamplers                 = 32 * 1024,
-      .maxDescriptorSetUniformBuffers           = 256,
-      .maxDescriptorSetUniformBuffersDynamic    = 256,
-      .maxDescriptorSetStorageBuffers           = 256,
-      .maxDescriptorSetStorageBuffersDynamic    = 256,
-      .maxDescriptorSetSampledImages            = 256,
-      .maxDescriptorSetStorageImages            = 256,
-      .maxDescriptorSetInputAttachments         = 256,
+      .maxPerStageDescriptorSamplers            = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorUniformBuffers      = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorStorageBuffers      = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorSampledImages       = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorStorageImages       = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorInputAttachments    = MAX_DESCRIPTORS,
+      .maxPerStageResources                     = MAX_DESCRIPTORS,
+      .maxDescriptorSetSamplers                 = MAX_DESCRIPTORS,
+      .maxDescriptorSetUniformBuffers           = MAX_DESCRIPTORS,
+      .maxDescriptorSetUniformBuffersDynamic    = MAX_DESCRIPTORS,
+      .maxDescriptorSetStorageBuffers           = MAX_DESCRIPTORS,
+      .maxDescriptorSetStorageBuffersDynamic    = MAX_DESCRIPTORS,
+      .maxDescriptorSetSampledImages            = MAX_DESCRIPTORS,
+      .maxDescriptorSetStorageImages            = MAX_DESCRIPTORS,
+      .maxDescriptorSetInputAttachments         = MAX_DESCRIPTORS,
       .maxVertexInputAttributes                 = 32,
       .maxVertexInputBindings                   = 32,
       .maxVertexInputAttributeOffset            = 2047,
@@ -933,7 +944,7 @@ lvp_get_physical_device_properties_1_1(struct lvp_physical_device *pdevice,
    p->deviceNodeMask = 0;
 
    p->subgroupSize = lp_native_vector_width / 32;
-   p->subgroupSupportedStages = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+   p->subgroupSupportedStages = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
    p->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT;
    p->subgroupQuadOperationsInAllStages = false;
 
@@ -945,7 +956,7 @@ lvp_get_physical_device_properties_1_1(struct lvp_physical_device *pdevice,
    p->maxMultiviewViewCount = 6;
    p->maxMultiviewInstanceIndex = INT_MAX;
    p->protectedNoFault = false;
-   p->maxPerSetDescriptors = 1024;
+   p->maxPerSetDescriptors = MAX_DESCRIPTORS;
    p->maxMemoryAllocationSize = (1u << 31);
 }
 
@@ -988,31 +999,29 @@ lvp_get_physical_device_properties_1_2(struct lvp_physical_device *pdevice,
    p->shaderRoundingModeRTZFloat64 = false;
    p->shaderSignedZeroInfNanPreserveFloat64 = true;
 
-   p->maxUpdateAfterBindDescriptorsInAllPools = UINT32_MAX / 64;
-   p->shaderUniformBufferArrayNonUniformIndexingNative = false;
-   p->shaderSampledImageArrayNonUniformIndexingNative = false;
-   p->shaderStorageBufferArrayNonUniformIndexingNative = false;
-   p->shaderStorageImageArrayNonUniformIndexingNative = false;
-   p->shaderInputAttachmentArrayNonUniformIndexingNative = false;
+   p->maxUpdateAfterBindDescriptorsInAllPools = UINT32_MAX;
+   p->shaderUniformBufferArrayNonUniformIndexingNative = true;
+   p->shaderSampledImageArrayNonUniformIndexingNative = true;
+   p->shaderStorageBufferArrayNonUniformIndexingNative = true;
+   p->shaderStorageImageArrayNonUniformIndexingNative = true;
+   p->shaderInputAttachmentArrayNonUniformIndexingNative = true;
    p->robustBufferAccessUpdateAfterBind = true;
-   p->quadDivergentImplicitLod = false;
-
-   size_t max_descriptor_set_size = 65536; //TODO
-   p->maxPerStageDescriptorUpdateAfterBindSamplers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindSampledImages = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageImages = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindInputAttachments = max_descriptor_set_size;
-   p->maxPerStageUpdateAfterBindResources = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindSamplers = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffers = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 16;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffers = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 16;
-   p->maxDescriptorSetUpdateAfterBindSampledImages = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindStorageImages = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindInputAttachments = max_descriptor_set_size;
+   p->quadDivergentImplicitLod = true;
+   p->maxPerStageDescriptorUpdateAfterBindSamplers = MAX_DESCRIPTORS;
+   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = MAX_DESCRIPTORS;
+   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = MAX_DESCRIPTORS;
+   p->maxPerStageDescriptorUpdateAfterBindSampledImages = MAX_DESCRIPTORS;
+   p->maxPerStageDescriptorUpdateAfterBindStorageImages = MAX_DESCRIPTORS;
+   p->maxPerStageDescriptorUpdateAfterBindInputAttachments = MAX_DESCRIPTORS;
+   p->maxPerStageUpdateAfterBindResources = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindSamplers = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffers = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffers = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindSampledImages = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindStorageImages = MAX_DESCRIPTORS;
+   p->maxDescriptorSetUpdateAfterBindInputAttachments = MAX_DESCRIPTORS;
 
    p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_AVERAGE_BIT;
    p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
@@ -1109,6 +1118,34 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceProperties2(
             props->maxVertexAttribDivisor = 1;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES: {
+         VkPhysicalDeviceDescriptorIndexingProperties *props =
+            (VkPhysicalDeviceDescriptorIndexingProperties *)ext;
+         props->maxUpdateAfterBindDescriptorsInAllPools = 1000000;
+         props->shaderUniformBufferArrayNonUniformIndexingNative = true;
+         props->shaderSampledImageArrayNonUniformIndexingNative = true;
+         props->shaderStorageBufferArrayNonUniformIndexingNative = true;
+         props->shaderStorageImageArrayNonUniformIndexingNative = true;
+         props->shaderInputAttachmentArrayNonUniformIndexingNative = true;
+         props->robustBufferAccessUpdateAfterBind = true;
+         props->quadDivergentImplicitLod = true;
+         props->maxPerStageDescriptorUpdateAfterBindSamplers = 1000000;
+         props->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 1000000;
+         props->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 1000000;
+         props->maxPerStageDescriptorUpdateAfterBindSampledImages = 1000000;
+         props->maxPerStageDescriptorUpdateAfterBindStorageImages = 1000000;
+         props->maxPerStageDescriptorUpdateAfterBindInputAttachments = 1000000;
+         props->maxPerStageUpdateAfterBindResources = 1000000;
+         props->maxDescriptorSetUpdateAfterBindSamplers = 1000000;
+         props->maxDescriptorSetUpdateAfterBindUniformBuffers = 1000000;
+         props->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 1000000;
+         props->maxDescriptorSetUpdateAfterBindStorageBuffers = 1000000;
+         props->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 1000000;
+         props->maxDescriptorSetUpdateAfterBindSampledImages = 1000000;
+         props->maxDescriptorSetUpdateAfterBindStorageImages = 1000000;
+         props->maxDescriptorSetUpdateAfterBindInputAttachments = 1000000;
+         break;
+      }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT: {
          VkPhysicalDeviceTransformFeedbackPropertiesEXT *properties =
             (VkPhysicalDeviceTransformFeedbackPropertiesEXT*)ext;
@@ -1198,6 +1235,42 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceProperties2(
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_PROPERTIES_EXT: {
          VkPhysicalDeviceMultiDrawPropertiesEXT *props = (VkPhysicalDeviceMultiDrawPropertiesEXT *)ext;
          props->maxMultiDrawCount = 2048;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT: {
+         VkPhysicalDeviceDescriptorBufferPropertiesEXT *props = (VkPhysicalDeviceDescriptorBufferPropertiesEXT *)ext;
+         props->combinedImageSamplerDescriptorSingleArray = VK_TRUE;
+         props->bufferlessPushDescriptors = VK_TRUE;
+         props->descriptorBufferOffsetAlignment = 4;
+         props->maxDescriptorBufferBindings = MAX_SETS;
+         props->maxResourceDescriptorBufferBindings = MAX_SETS;
+         props->maxSamplerDescriptorBufferBindings = MAX_SETS;
+         props->maxEmbeddedImmutableSamplerBindings = MAX_SETS;
+         props->maxEmbeddedImmutableSamplers = 2032;
+         props->bufferCaptureReplayDescriptorDataSize = 0;
+         props->imageCaptureReplayDescriptorDataSize = 0;
+         props->imageViewCaptureReplayDescriptorDataSize = 0;
+         props->samplerCaptureReplayDescriptorDataSize = 0;
+         props->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+         props->samplerDescriptorSize = sizeof(struct lp_descriptor);
+         props->combinedImageSamplerDescriptorSize = sizeof(struct lp_descriptor);
+         props->sampledImageDescriptorSize = sizeof(struct lp_descriptor);
+         props->storageImageDescriptorSize = sizeof(struct lp_descriptor);
+         props->uniformTexelBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->robustUniformTexelBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->storageTexelBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->robustStorageTexelBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->uniformBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->robustUniformBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->storageBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->robustStorageBufferDescriptorSize = sizeof(struct lp_descriptor);
+         props->inputAttachmentDescriptorSize = sizeof(struct lp_descriptor);
+         props->accelerationStructureDescriptorSize = 0;
+         props->maxSamplerDescriptorBufferRange = 1<<27; //spec minimum
+         props->maxResourceDescriptorBufferRange = 1<<27; //spec minimum
+         props->resourceDescriptorBufferAddressSpaceSize = 1<<27; //spec minimum
+         props->samplerDescriptorBufferAddressSpaceSize = 1<<27; //spec minimum
+         props->descriptorBufferAddressSpaceSize = 1<<27; //spec minimum
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES: {
@@ -1407,11 +1480,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(
 static void
 destroy_pipelines(struct lvp_queue *queue)
 {
-   simple_mtx_lock(&queue->pipeline_lock);
+   simple_mtx_lock(&queue->lock);
    while (util_dynarray_contains(&queue->pipeline_destroys, struct lvp_pipeline*)) {
       lvp_pipeline_destroy(queue->device, util_dynarray_pop(&queue->pipeline_destroys, struct lvp_pipeline*));
    }
-   simple_mtx_unlock(&queue->pipeline_lock);
+   simple_mtx_unlock(&queue->lock);
 }
 
 static VkResult
@@ -1426,12 +1499,16 @@ lvp_queue_submit(struct vk_queue *vk_queue,
    if (result != VK_SUCCESS)
       return result;
 
+   simple_mtx_lock(&queue->lock);
+
    for (uint32_t i = 0; i < submit->command_buffer_count; i++) {
       struct lvp_cmd_buffer *cmd_buffer =
          container_of(submit->command_buffers[i], struct lvp_cmd_buffer, vk);
 
       lvp_execute_cmds(queue->device, queue, cmd_buffer);
    }
+
+   simple_mtx_unlock(&queue->lock);
 
    if (submit->command_buffer_count > 0)
       queue->ctx->flush(queue->ctx, &queue->last_fence, 0);
@@ -1470,7 +1547,7 @@ lvp_queue_init(struct lvp_device *device, struct lvp_queue *queue,
 
    queue->vk.driver_submit = lvp_queue_submit;
 
-   simple_mtx_init(&queue->pipeline_lock, mtx_plain);
+   simple_mtx_init(&queue->lock, mtx_plain);
    util_dynarray_init(&queue->pipeline_destroys, NULL);
 
    return VK_SUCCESS;
@@ -1482,7 +1559,7 @@ lvp_queue_finish(struct lvp_queue *queue)
    vk_queue_finish(&queue->vk);
 
    destroy_pipelines(queue);
-   simple_mtx_destroy(&queue->pipeline_lock);
+   simple_mtx_destroy(&queue->lock);
    util_dynarray_fini(&queue->pipeline_destroys);
 
    u_upload_destroy(queue->uploader);
@@ -1556,6 +1633,14 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDevice(
    uint32_t zero = 0;
    device->zero_buffer = pipe_buffer_create_with_data(device->queue.ctx, 0, PIPE_USAGE_IMMUTABLE, sizeof(uint32_t), &zero);
 
+   device->null_texture_handle = (void *)(uintptr_t)device->queue.ctx->create_texture_handle(device->queue.ctx,
+      &(struct pipe_sampler_view){ 0 }, NULL);
+   device->null_image_handle = (void *)(uintptr_t)device->queue.ctx->create_image_handle(device->queue.ctx,
+      &(struct pipe_image_view){ 0 });
+
+   util_dynarray_init(&device->bda_texture_handles, NULL);
+   util_dynarray_init(&device->bda_image_handles, NULL);
+
    *pDevice = lvp_device_to_handle(device);
 
    return VK_SUCCESS;
@@ -1567,6 +1652,19 @@ VKAPI_ATTR void VKAPI_CALL lvp_DestroyDevice(
    const VkAllocationCallbacks*                pAllocator)
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
+
+   util_dynarray_foreach(&device->bda_texture_handles, struct lp_texture_handle *, handle)
+      device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)*handle);
+
+   util_dynarray_fini(&device->bda_texture_handles);
+
+   util_dynarray_foreach(&device->bda_image_handles, struct lp_texture_handle *, handle)
+      device->queue.ctx->delete_image_handle(device->queue.ctx, (uint64_t)(uintptr_t)*handle);
+
+   util_dynarray_fini(&device->bda_image_handles);
+
+   device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)device->null_texture_handle);
+   device->queue.ctx->delete_image_handle(device->queue.ctx, (uint64_t)(uintptr_t)device->null_image_handle);
 
    device->queue.ctx->delete_fs_state(device->queue.ctx, device->noop_fs);
 
@@ -2201,35 +2299,43 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateSampler(
    vk_object_base_init(&device->vk, &sampler->base,
                        VK_OBJECT_TYPE_SAMPLER);
 
+   struct pipe_sampler_state state;
    VkClearColorValue border_color =
       vk_sampler_border_color_value(pCreateInfo, NULL);
-   STATIC_ASSERT(sizeof(sampler->state.border_color) == sizeof(border_color));
+   STATIC_ASSERT(sizeof(state.border_color) == sizeof(border_color));
 
-   sampler->state.wrap_s = vk_conv_wrap_mode(pCreateInfo->addressModeU);
-   sampler->state.wrap_t = vk_conv_wrap_mode(pCreateInfo->addressModeV);
-   sampler->state.wrap_r = vk_conv_wrap_mode(pCreateInfo->addressModeW);
-   sampler->state.min_img_filter = pCreateInfo->minFilter == VK_FILTER_LINEAR ? PIPE_TEX_FILTER_LINEAR : PIPE_TEX_FILTER_NEAREST;
-   sampler->state.min_mip_filter = pCreateInfo->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? PIPE_TEX_MIPFILTER_LINEAR : PIPE_TEX_MIPFILTER_NEAREST;
-   sampler->state.mag_img_filter = pCreateInfo->magFilter == VK_FILTER_LINEAR ? PIPE_TEX_FILTER_LINEAR : PIPE_TEX_FILTER_NEAREST;
-   sampler->state.min_lod = pCreateInfo->minLod;
-   sampler->state.max_lod = pCreateInfo->maxLod;
-   sampler->state.lod_bias = pCreateInfo->mipLodBias;
+   state.wrap_s = vk_conv_wrap_mode(pCreateInfo->addressModeU);
+   state.wrap_t = vk_conv_wrap_mode(pCreateInfo->addressModeV);
+   state.wrap_r = vk_conv_wrap_mode(pCreateInfo->addressModeW);
+   state.min_img_filter = pCreateInfo->minFilter == VK_FILTER_LINEAR ? PIPE_TEX_FILTER_LINEAR : PIPE_TEX_FILTER_NEAREST;
+   state.min_mip_filter = pCreateInfo->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? PIPE_TEX_MIPFILTER_LINEAR : PIPE_TEX_MIPFILTER_NEAREST;
+   state.mag_img_filter = pCreateInfo->magFilter == VK_FILTER_LINEAR ? PIPE_TEX_FILTER_LINEAR : PIPE_TEX_FILTER_NEAREST;
+   state.min_lod = pCreateInfo->minLod;
+   state.max_lod = pCreateInfo->maxLod;
+   state.lod_bias = pCreateInfo->mipLodBias;
    if (pCreateInfo->anisotropyEnable)
-      sampler->state.max_anisotropy = pCreateInfo->maxAnisotropy;
+      state.max_anisotropy = pCreateInfo->maxAnisotropy;
    else
-      sampler->state.max_anisotropy = 1;
-   sampler->state.unnormalized_coords = pCreateInfo->unnormalizedCoordinates;
-   sampler->state.compare_mode = pCreateInfo->compareEnable ? PIPE_TEX_COMPARE_R_TO_TEXTURE : PIPE_TEX_COMPARE_NONE;
-   sampler->state.compare_func = pCreateInfo->compareOp;
-   sampler->state.seamless_cube_map = !(pCreateInfo->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT);
+      state.max_anisotropy = 1;
+   state.unnormalized_coords = pCreateInfo->unnormalizedCoordinates;
+   state.compare_mode = pCreateInfo->compareEnable ? PIPE_TEX_COMPARE_R_TO_TEXTURE : PIPE_TEX_COMPARE_NONE;
+   state.compare_func = pCreateInfo->compareOp;
+   state.seamless_cube_map = !(pCreateInfo->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT);
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE == (unsigned)PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE);
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_MIN == (unsigned)PIPE_TEX_REDUCTION_MIN);
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_MAX == (unsigned)PIPE_TEX_REDUCTION_MAX);
    if (reduction_mode_create_info)
-      sampler->state.reduction_mode = (enum pipe_tex_reduction_mode)reduction_mode_create_info->reductionMode;
+      state.reduction_mode = (enum pipe_tex_reduction_mode)reduction_mode_create_info->reductionMode;
    else
-      sampler->state.reduction_mode = PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE;
-   memcpy(&sampler->state.border_color, &border_color, sizeof(border_color));
+      state.reduction_mode = PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE;
+   memcpy(&state.border_color, &border_color, sizeof(border_color));
+
+   simple_mtx_lock(&device->queue.lock);
+   sampler->texture_handle = (void *)(uintptr_t)device->queue.ctx->create_texture_handle(device->queue.ctx, NULL, &state);
+   simple_mtx_unlock(&device->queue.lock);
+
+   lp_jit_sampler_from_pipe(&sampler->desc.sampler, &state);
+   sampler->desc.sampler_index = sampler->texture_handle->sampler_index;
 
    *pSampler = lvp_sampler_to_handle(sampler);
 
@@ -2246,6 +2352,11 @@ VKAPI_ATTR void VKAPI_CALL lvp_DestroySampler(
 
    if (!_sampler)
       return;
+
+   simple_mtx_lock(&device->queue.lock);
+   device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)sampler->texture_handle);
+   simple_mtx_unlock(&device->queue.lock);
+
    vk_object_base_finish(&sampler->base);
    vk_free2(&device->vk.alloc, pAllocator, sampler);
 }

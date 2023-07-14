@@ -295,7 +295,7 @@ svga_init_shader_key_common(const struct svga_context *svga,
     * the number of samplers exceeds SVGA limit or the sampler state
     * mapping env is set.
     */
-   boolean sampler_state_mapping =
+   bool sampler_state_mapping =
       svga_use_sampler_state_mapping(svga, svga->curr.num_samplers[shader_type]);
 
    key->sampler_state_mapping =
@@ -390,7 +390,7 @@ svga_init_shader_key_common(const struct svga_context *svga,
              */
             if ((sampler->compare_mode == PIPE_TEX_COMPARE_R_TO_TEXTURE) &&
                 !isValidSampleCFormat(view->format)) {
-               key->tex[i].compare_in_shader = TRUE;
+               key->tex[i].compare_in_shader = true;
             }
          }
 
@@ -409,12 +409,12 @@ svga_init_shader_key_common(const struct svga_context *svga,
                assert(idx < (1 << 5));  /* width_height_idx:5 bitfield */
                key->tex[i].width_height_idx = idx++;
 	    }
-            key->tex[i].unnormalized = TRUE;
+            key->tex[i].unnormalized = true;
             ++key->num_unnormalized_coords;
 
             if (sampler->magfilter == SVGA3D_TEX_FILTER_NEAREST ||
                 sampler->minfilter == SVGA3D_TEX_FILTER_NEAREST) {
-                key->tex[i].texel_bias = TRUE;
+                key->tex[i].texel_bias = true;
             }
          }
 

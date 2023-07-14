@@ -55,22 +55,18 @@ struct tu_descriptor_state
 enum tu_cmd_dirty_bits
 {
    TU_CMD_DIRTY_VERTEX_BUFFERS = BIT(0),
-   TU_CMD_DIRTY_VB_STRIDE = BIT(1),
-   TU_CMD_DIRTY_RAST = BIT(2),
-   TU_CMD_DIRTY_DS = BIT(3),
-   TU_CMD_DIRTY_DESC_SETS = BIT(4),
-   TU_CMD_DIRTY_COMPUTE_DESC_SETS = BIT(5),
-   TU_CMD_DIRTY_SHADER_CONSTS = BIT(6),
-   TU_CMD_DIRTY_LRZ = BIT(7),
-   TU_CMD_DIRTY_VS_PARAMS = BIT(8),
-   TU_CMD_DIRTY_FS_PARAMS = BIT(9),
-   TU_CMD_DIRTY_PC_RASTER_CNTL = BIT(10),
-   TU_CMD_DIRTY_VIEWPORTS = BIT(11),
-   TU_CMD_DIRTY_SCISSORS = BIT(12),
-   TU_CMD_DIRTY_BLEND = BIT(13),
-   TU_CMD_DIRTY_PATCH_CONTROL_POINTS = BIT(14),
+   TU_CMD_DIRTY_DESC_SETS = BIT(1),
+   TU_CMD_DIRTY_COMPUTE_DESC_SETS = BIT(2),
+   TU_CMD_DIRTY_SHADER_CONSTS = BIT(3),
+   TU_CMD_DIRTY_LRZ = BIT(4),
+   TU_CMD_DIRTY_VS_PARAMS = BIT(5),
+   TU_CMD_DIRTY_TESS_PARAMS = BIT(6),
+   TU_CMD_DIRTY_SUBPASS = BIT(7),
+   TU_CMD_DIRTY_FDM = BIT(8),
+   TU_CMD_DIRTY_PER_VIEW_VIEWPORT = BIT(9),
+   TU_CMD_DIRTY_PIPELINE = BIT(10),
    /* all draw states were disabled and need to be re-enabled: */
-   TU_CMD_DIRTY_DRAW_STATE = BIT(15)
+   TU_CMD_DIRTY_DRAW_STATE = BIT(11)
 };
 
 /* There are only three cache domains we have to care about: the CCU, or
@@ -266,11 +262,10 @@ struct tu_vs_params {
    uint32_t draw_id;
 };
 
-struct tu_primitive_params {
+struct tu_tess_params {
    bool valid;
-   bool primitive_restart;
-   bool provoking_vtx_last;
-   bool tess_upper_left_domain_origin;
+   enum a6xx_tess_output output_upper_left, output_lower_left;
+   enum a6xx_tess_spacing spacing;
 };
 
 /* This should be for state that is set inside a renderpass and used at
@@ -411,50 +406,30 @@ struct tu_cmd_state
 {
    uint32_t dirty;
 
-   struct tu_pipeline *pipeline;
-   struct tu_pipeline *compute_pipeline;
+   struct tu_graphics_pipeline *pipeline;
+   struct tu_compute_pipeline *compute_pipeline;
 
    struct tu_render_pass_state rp;
 
-   /* Vertex buffers, viewports, and scissors
+   struct vk_render_pass_state vk_rp;
+   struct vk_vertex_input_state vi;
+   struct vk_sample_locations_state sl;
+
+   struct tu_bandwidth bandwidth;
+
+   /* Vertex buffers
     * the states for these can be updated partially, so we need to save these
     * to be able to emit a complete draw state
     */
    struct {
       uint64_t base;
       uint32_t size;
-      uint32_t stride;
    } vb[MAX_VBS];
 
    uint32_t max_vbs_bound;
 
-   VkViewport viewport[MAX_VIEWPORTS];
-   VkRect2D scissor[MAX_SCISSORS];
-   uint32_t viewport_count, scissor_count;
    bool per_view_viewport;
-
-   /* for dynamic states that can't be emitted directly */
-   uint32_t dynamic_stencil_mask;
-   uint32_t dynamic_stencil_wrmask;
-   uint32_t dynamic_stencil_ref;
-   bool stencil_front_write;
-   bool stencil_back_write;
-
-   uint32_t gras_su_cntl, gras_cl_cntl, rb_depth_cntl, rb_stencil_cntl;
-   uint32_t pc_raster_cntl, vpc_unknown_9107;
-   enum a6xx_polygon_mode polygon_mode;
-   uint32_t rb_mrt_control[MAX_RTS], rb_mrt_blend_control[MAX_RTS];
-   uint32_t rb_mrt_control_rop;
-   uint32_t rb_blend_cntl, sp_blend_cntl;
-   uint32_t pipeline_color_write_enable, blend_enable;
-   uint32_t color_write_enable;
-   bool logic_op_enabled;
-   bool rop_reads_dst;
-   bool alpha_to_coverage;
-   enum pc_di_primtype primtype;
-   bool primitive_restart_enable;
-   bool tess_upper_left_domain_origin;
-   bool provoking_vertex_last;
+   bool pipeline_has_fdm;
 
    /* saved states to re-emit in TU_CMD_DIRTY_DRAW_STATE case */
    struct tu_draw_state dynamic_state[TU_DYNAMIC_STATE_COUNT];
@@ -520,12 +495,10 @@ struct tu_cmd_state
 
    bool tessfactor_addr_set;
    bool predication_active;
-   enum a5xx_line_mode line_mode;
-   VkSampleCountFlagBits samples;
    bool msaa_disable;
-   bool z_negative_one_to_one;
-
-   unsigned patch_control_points;
+   bool blend_reads_dest;
+   bool stencil_front_write;
+   bool stencil_back_write;
 
    /* VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT and
     * VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT are allowed to run simultaniously,
@@ -545,7 +518,7 @@ struct tu_cmd_state
 
    struct tu_vs_params last_vs_params;
 
-   struct tu_primitive_params last_prim_params;
+   struct tu_tess_params tess_params;
 
    uint64_t descriptor_buffer_iova[MAX_SETS];
 };

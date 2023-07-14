@@ -487,13 +487,9 @@ vn_device_init(struct vn_device *dev,
       mtx_init(&pool->mutex, mtx_plain);
    }
 
-   result = vn_buffer_cache_init(dev);
-   if (result != VK_SUCCESS)
-      goto out_memory_pool_fini;
-
    result = vn_device_feedback_pool_init(dev);
    if (result != VK_SUCCESS)
-      goto out_buffer_cache_fini;
+      goto out_memory_pool_fini;
 
    result = vn_feedback_cmd_pools_init(dev);
    if (result != VK_SUCCESS)
@@ -502,6 +498,8 @@ vn_device_init(struct vn_device *dev,
    result = vn_device_init_queues(dev, create_info);
    if (result != VK_SUCCESS)
       goto out_cmd_pools_fini;
+
+   vn_buffer_cache_init(dev);
 
    /* This is a WA to allow fossilize replay to detect if the host side shader
     * cache is no longer up to date.
@@ -515,9 +513,6 @@ out_cmd_pools_fini:
 
 out_feedback_pool_fini:
    vn_device_feedback_pool_fini(dev);
-
-out_buffer_cache_fini:
-   vn_buffer_cache_fini(dev);
 
 out_memory_pool_fini:
    for (uint32_t i = 0; i < ARRAY_SIZE(dev->memory_pools); i++)
@@ -594,14 +589,14 @@ vn_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
    if (!dev)
       return;
 
+   vn_buffer_cache_fini(dev);
+
    for (uint32_t i = 0; i < dev->queue_count; i++)
       vn_queue_fini(&dev->queues[i]);
 
    vn_feedback_cmd_pools_fini(dev);
 
    vn_device_feedback_pool_fini(dev);
-
-   vn_buffer_cache_fini(dev);
 
    for (uint32_t i = 0; i < ARRAY_SIZE(dev->memory_pools); i++)
       vn_device_memory_pool_fini(dev, i);

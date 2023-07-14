@@ -571,6 +571,21 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    if (!upwards && instr->opcode == aco_opcode::p_exit_early_if)
       return hazard_fail_unreorderable;
 
+   /* In Primitive Ordered Pixel Shading, await overlapped waves as late as possible, and notify
+    * overlapping waves that they can continue execution as early as possible.
+    */
+   if (upwards) {
+      if (instr->opcode == aco_opcode::p_pops_gfx9_add_exiting_wave_id ||
+          (instr->opcode == aco_opcode::s_wait_event &&
+           !(instr->sopp().imm & wait_event_imm_dont_wait_export_ready))) {
+         return hazard_fail_unreorderable;
+      }
+   } else {
+      if (instr->opcode == aco_opcode::p_pops_gfx9_ordered_section_done) {
+         return hazard_fail_unreorderable;
+      }
+   }
+
    if (query->uses_exec || query->writes_exec) {
       for (const Definition& def : instr->definitions) {
          if (def.isFixed() && def.physReg() == exec)
@@ -580,7 +595,13 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    if (query->writes_exec && needs_exec_mask(instr))
       return hazard_fail_exec;
 
-   /* don't move exports so that they stay closer together */
+   /* Don't move exports so that they stay closer together.
+    * Also, with Primitive Ordered Pixel Shading on GFX11+, the `done` export must not be moved
+    * above the memory accesses before the queue family scope (more precisely, fragment interlock
+    * scope, but it's not available in ACO) release barrier that is expected to be inserted before
+    * the export, as well as before any `s_wait_event export_ready` which enters the ordered
+    * section, because the `done` export exits the ordered section.
+    */
    if (instr->isEXP())
       return hazard_fail_export;
 

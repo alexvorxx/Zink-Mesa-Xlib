@@ -149,7 +149,7 @@ IaSetVertexBuffers(D3D10DDI_HDEVICE hDevice,                                    
          vb->buffer_offset = pOffsets[i];
          if (vb->is_user_buffer) {
             vb->buffer.resource = NULL;
-            vb->is_user_buffer = FALSE;
+            vb->is_user_buffer = false;
          }
          pipe_resource_reference(&vb->buffer.resource, resource);
       }
@@ -158,7 +158,7 @@ IaSetVertexBuffers(D3D10DDI_HDEVICE hDevice,                                    
          vb->buffer_offset = 0;
          if (!vb->is_user_buffer) {
             pipe_resource_reference(&vb->buffer.resource, NULL);
-            vb->is_user_buffer = TRUE;
+            vb->is_user_buffer = true;
          }
          vb->buffer.user = dummy;
       }
@@ -171,14 +171,14 @@ IaSetVertexBuffers(D3D10DDI_HDEVICE hDevice,                                    
       if (!vb->is_user_buffer && !vb->buffer.resource) {
          vb->stride = 0;
          vb->buffer_offset = 0;
-         vb->is_user_buffer = TRUE;
+         vb->is_user_buffer = true;
          vb->buffer.user = dummy;
       }
    }
 
    /* Resubmit old and new vertex buffers.
     */
-   pipe->set_vertex_buffers(pipe, 0, PIPE_MAX_ATTRIBS, 0, FALSE, pDevice->vertex_buffers);
+   pipe->set_vertex_buffers(pipe, 0, PIPE_MAX_ATTRIBS, 0, false, pDevice->vertex_buffers);
 }
 
 
@@ -285,7 +285,7 @@ CreateElementLayout(
 
       ve->src_offset          = pVertexElement->AlignedByteOffset;
       ve->vertex_buffer_index = pVertexElement->InputSlot;
-      ve->src_format          = FormatTranslate(pVertexElement->Format, FALSE);
+      ve->src_format          = FormatTranslate(pVertexElement->Format, false);
 
       switch (pVertexElement->InputSlotClass) {
       case D3D10_DDI_INPUT_PER_VERTEX_DATA:

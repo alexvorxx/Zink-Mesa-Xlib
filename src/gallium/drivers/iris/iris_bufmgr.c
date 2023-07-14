@@ -314,14 +314,16 @@ static struct bo_cache_bucket *
 bucket_for_size(struct iris_bufmgr *bufmgr, uint64_t size,
                 enum iris_heap heap, unsigned flags)
 {
+   if (flags & BO_ALLOC_PROTECTED)
+      return NULL;
 
-   /* Protected bo needs special handling during allocation.
-    * Exported and scanout bos also need special handling during allocation
-    * in Xe KMD.
-    */
-   if ((flags & BO_ALLOC_PROTECTED) ||
-       ((flags & (BO_ALLOC_SHARED | BO_ALLOC_SCANOUT)) &&
-        bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE))
+   const struct intel_device_info *devinfo = &bufmgr->devinfo;
+   if (devinfo->has_set_pat_uapi &&
+       iris_pat_index_for_bo_flags(devinfo, flags) != devinfo->pat.writeback)
+      return NULL;
+
+   if (devinfo->kmd_type == INTEL_KMD_TYPE_XE &&
+       (flags & (BO_ALLOC_SHARED | BO_ALLOC_SCANOUT)))
       return NULL;
 
    /* Calculating the pages and rounding up to the page size. */
@@ -826,7 +828,7 @@ iris_slab_alloc(void *priv,
       bo->bufmgr = bufmgr;
       bo->hash = _mesa_hash_pointer(bo);
       bo->gem_handle = 0;
-      bo->address = slab->bo->address + i * entry_size;
+      bo->address = intel_canonical_address(slab->bo->address + i * entry_size);
       bo->aux_map_address = 0;
       bo->index = -1;
       bo->refcount = 0;
@@ -2245,7 +2247,9 @@ iris_bo_alloc_aux_map_get_mmap_mode(struct iris_bufmgr *bufmgr,
 {
    switch (bufmgr->devinfo.kmd_type) {
    case INTEL_KMD_TYPE_I915:
-      return heap != IRIS_HEAP_SYSTEM_MEMORY ? IRIS_MMAP_WC : IRIS_MMAP_WB;
+      return heap != IRIS_HEAP_SYSTEM_MEMORY ||
+         bufmgr->devinfo.has_set_pat_uapi ?
+         IRIS_MMAP_WC : IRIS_MMAP_WB;
    case INTEL_KMD_TYPE_XE:
       return iris_xe_bo_flags_to_mmap_mode(bufmgr, heap, 0);
    default:

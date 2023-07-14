@@ -385,9 +385,9 @@ traces:
         One of the material textures appears brighter on freedreno than
         i965 in a way that is probably wrong.
     zink-a618:
-      checksum: 227516d3818969c68a1864aa942119c2
+      checksum: e64bcc59d61d1c75ce5eeb109343d9bd
     zink-a630:
-      checksum: 227516d3818969c68a1864aa942119c2
+      checksum: e64bcc59d61d1c75ce5eeb109343d9bd
 
   gputest/pixmark-volplosion-v2.trace:
     freedreno-a306:

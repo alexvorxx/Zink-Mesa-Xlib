@@ -268,32 +268,30 @@ missing_dual_src_outputs(struct d3d12_context *ctx)
    const nir_shader *s = fs->initial;
 
    unsigned indices_seen = 0;
-   nir_foreach_function(function, s) {
-      if (function->impl) {
-         nir_foreach_block(block, function->impl) {
-            nir_foreach_instr(instr, block) {
-               if (instr->type != nir_instr_type_intrinsic)
-                  continue;
+   nir_foreach_function_impl(impl, s) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
 
-               nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-               if (intr->intrinsic != nir_intrinsic_store_deref)
-                  continue;
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+            if (intr->intrinsic != nir_intrinsic_store_deref)
+               continue;
 
-               nir_variable *var = nir_intrinsic_get_var(intr, 0);
-               if (var->data.mode != nir_var_shader_out)
-                  continue;
+            nir_variable *var = nir_intrinsic_get_var(intr, 0);
+            if (var->data.mode != nir_var_shader_out)
+               continue;
 
-               unsigned index = var->data.index;
-               if (var->data.location > FRAG_RESULT_DATA0)
-                  index = var->data.location - FRAG_RESULT_DATA0;
-               else if (var->data.location != FRAG_RESULT_COLOR &&
-                        var->data.location != FRAG_RESULT_DATA0)
-                  continue;
+            unsigned index = var->data.index;
+            if (var->data.location > FRAG_RESULT_DATA0)
+               index = var->data.location - FRAG_RESULT_DATA0;
+            else if (var->data.location != FRAG_RESULT_COLOR &&
+                     var->data.location != FRAG_RESULT_DATA0)
+               continue;
 
-               indices_seen |= 1u << index;
-               if ((indices_seen & 3) == 3)
-                  return 0;
-            }
+            indices_seen |= 1u << index;
+            if ((indices_seen & 3) == 3)
+               return 0;
          }
       }
    }
@@ -1425,8 +1423,8 @@ static unsigned
 scan_texture_use(nir_shader *nir)
 {
    unsigned result = 0;
-   nir_foreach_function(func, nir) {
-      nir_foreach_block(block, func->impl) {
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type == nir_instr_type_tex) {
                auto tex = nir_instr_as_tex(instr);

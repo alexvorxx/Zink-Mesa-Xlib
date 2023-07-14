@@ -60,6 +60,8 @@ r300_should_vectorize_io(unsigned align, unsigned bit_size,
 static void
 r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
 {
+   bool is_r500 = r300_screen(screen)->caps.is_r500;
+
    bool progress;
    do {
       progress = false;
@@ -68,8 +70,11 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
 
       NIR_PASS(progress, s, nir_copy_prop);
       NIR_PASS(progress, s, nir_opt_algebraic);
-      if (s->info.stage == MESA_SHADER_VERTEX)
+      if (s->info.stage == MESA_SHADER_VERTEX) {
+         if (!is_r500)
+            NIR_PASS(progress, s, r300_nir_lower_bool_to_float);
          NIR_PASS(progress, s, r300_nir_fuse_fround_d3d9);
+      }
       NIR_PASS(progress, s, nir_opt_constant_folding);
       NIR_PASS(progress, s, nir_opt_remove_phis);
       NIR_PASS(progress, s, nir_opt_conditional_discard);
@@ -81,8 +86,7 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       NIR_PASS(progress, s, nir_opt_dead_write_vars);
 
       NIR_PASS(progress, s, nir_opt_if, nir_opt_if_aggressive_last_continue | nir_opt_if_optimize_phi_true_false);
-      NIR_PASS(progress, s, nir_opt_peephole_select,
-               r300_screen(screen)->caps.is_r500 ? 8 : ~0 , true, true);
+      NIR_PASS(progress, s, nir_opt_peephole_select, is_r500 ? 8 : ~0, true, true);
       NIR_PASS(progress, s, nir_opt_algebraic);
       NIR_PASS(progress, s, nir_opt_constant_folding);
       nir_load_store_vectorize_options vectorize_opts = {
@@ -96,6 +100,8 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       NIR_PASS(progress, s, nir_opt_trivial_continues);
       NIR_PASS(progress, s, nir_opt_vectorize, r300_should_vectorize_instr, NULL);
       NIR_PASS(progress, s, nir_opt_undef);
+      if(!progress)
+         NIR_PASS(progress, s, nir_lower_undef_to_zero);
       NIR_PASS(progress, s, nir_opt_loop_unroll);
 
       /* Try to fold addressing math into ubo_vec4's base to avoid load_consts

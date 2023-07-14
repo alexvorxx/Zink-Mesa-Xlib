@@ -169,22 +169,20 @@ static nir_ssa_def *
 find_output(nir_shader *shader, unsigned drvloc)
 {
    nir_ssa_def *def = NULL;
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         nir_foreach_block_reverse(block, function->impl) {
-            nir_ssa_def *new_def = find_output_in_block(block, drvloc);
-            assert(!(new_def && def));
-            def = new_def;
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block_reverse(block, impl) {
+         nir_ssa_def *new_def = find_output_in_block(block, drvloc);
+         assert(!(new_def && def));
+         def = new_def;
 #if !defined(DEBUG)
-            /* for debug builds, scan entire shader to assert
-             * if output is written multiple times.  For release
-             * builds just assume all is well and bail when we
-             * find first:
-             */
-            if (def)
-               break;
+         /* for debug builds, scan entire shader to assert
+          * if output is written multiple times.  For release
+          * builds just assume all is well and bail when we
+          * find first:
+          */
+         if (def)
+            break;
 #endif
-         }
       }
    }
 
@@ -328,7 +326,7 @@ nir_lower_clip_vs(nir_shader *shader, unsigned ucp_enables, bool use_vars,
    if (!ucp_enables)
       return false;
 
-   nir_builder_init(&b, impl);
+   b = nir_builder_create(impl);
 
    /* NIR should ensure that, even in case of loops/if-else, there
     * should be only a single predecessor block to end_block, which
@@ -409,7 +407,7 @@ nir_lower_clip_gs(nir_shader *shader, unsigned ucp_enables,
    create_clipdist_vars(shader, out, ucp_enables, true,
                         use_clipdist_array);
 
-   nir_builder_init(&b, impl);
+   b = nir_builder_create(impl);
 
    nir_foreach_block(block, impl)
       lower_clip_in_gs_block(&b, block, position, clipvertex, out,
@@ -430,10 +428,7 @@ lower_clip_fs(nir_function_impl *impl, unsigned ucp_enables,
               nir_variable **in, bool use_clipdist_array)
 {
    nir_ssa_def *clipdist[MAX_CLIP_PLANES];
-   nir_builder b;
-
-   nir_builder_init(&b, impl);
-   b.cursor = nir_before_cf_list(&impl->body);
+   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
 
    if (!use_clipdist_array) {
       if (ucp_enables & 0x0f)
@@ -505,9 +500,9 @@ nir_lower_clip_fs(nir_shader *shader, unsigned ucp_enables,
    else
       assert(use_clipdist_array);
 
-   nir_foreach_function(function, shader) {
+   nir_foreach_function_with_impl(function, impl, shader) {
       if (!strcmp(function->name, "main"))
-         lower_clip_fs(function->impl, ucp_enables, in, use_clipdist_array);
+         lower_clip_fs(impl, ucp_enables, in, use_clipdist_array);
    }
 
    return true;

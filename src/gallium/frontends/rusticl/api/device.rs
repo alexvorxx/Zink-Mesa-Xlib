@@ -15,7 +15,6 @@ use std::cmp::min;
 use std::ffi::CStr;
 use std::mem::{size_of, MaybeUninit};
 use std::ptr;
-use std::sync::Arc;
 
 const SPIRV_SUPPORT_STRING: &str = "SPIR-V_1.0 SPIR-V_1.1 SPIR-V_1.2 SPIR-V_1.3 SPIR-V_1.4";
 const SPIRV_SUPPORT: [cl_name_version; 5] = [
@@ -171,7 +170,11 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE => cl_prop::<cl_ulong>(dev.const_max_size()),
             CL_DEVICE_MAX_GLOBAL_VARIABLE_SIZE => cl_prop::<usize>(0),
             CL_DEVICE_MAX_MEM_ALLOC_SIZE => cl_prop::<cl_ulong>(dev.max_mem_alloc()),
-            CL_DEVICE_MAX_NUM_SUB_GROUPS => cl_prop::<cl_uint>(0),
+            CL_DEVICE_MAX_NUM_SUB_GROUPS => cl_prop::<cl_uint>(if dev.subgroups_supported() {
+                dev.max_subgroups()
+            } else {
+                0
+            }),
             CL_DEVICE_MAX_ON_DEVICE_EVENTS => cl_prop::<cl_uint>(0),
             CL_DEVICE_MAX_ON_DEVICE_QUEUES => cl_prop::<cl_uint>(0),
             CL_DEVICE_MAX_PARAMETER_SIZE => cl_prop::<usize>(dev.param_max_size()),
@@ -248,7 +251,7 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT => cl_prop::<cl_uint>(1),
             CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_MULTIPLE => {
-                cl_prop::<usize>(dev.subgroups() as usize)
+                cl_prop::<usize>(dev.subgroup_sizes()[0])
             }
             CL_DEVICE_PRINTF_BUFFER_SIZE => cl_prop::<usize>(dev.printf_buffer_size()),
             CL_DEVICE_PROFILE => cl_prop(if dev.embedded {
@@ -256,8 +259,7 @@ impl CLInfo<cl_device_info> for cl_device_id {
             } else {
                 "FULL_PROFILE"
             }),
-            // TODO
-            CL_DEVICE_PROFILING_TIMER_RESOLUTION => cl_prop::<usize>(0),
+            CL_DEVICE_PROFILING_TIMER_RESOLUTION => cl_prop::<usize>(dev.timer_resolution()),
             CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_QUEUE_ON_DEVICE_PROPERTIES => cl_prop::<cl_command_queue_properties>(0),
@@ -275,6 +277,13 @@ impl CLInfo<cl_device_info> for cl_device_id {
                 (CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN) as cl_device_fp_config,
             ),
             CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS => cl_prop::<bool>(false),
+            CL_DEVICE_SUB_GROUP_SIZES_INTEL => {
+                cl_prop::<Vec<usize>>(if dev.subgroups_supported() {
+                    dev.subgroup_sizes()
+                } else {
+                    vec![0; 1]
+                })
+            }
             CL_DEVICE_SVM_CAPABILITIES | CL_DEVICE_SVM_CAPABILITIES_ARM => {
                 cl_prop::<cl_device_svm_capabilities>(
                     if dev.svm_supported() {
@@ -304,17 +313,6 @@ impl CLInfo<cl_device_info> for cl_device_id {
             _ => return Err(CL_INVALID_VALUE),
         })
     }
-}
-
-fn devs() -> &'static Vec<Arc<Device>> {
-    &Platform::get().devs
-}
-
-pub fn get_devs_for_type(device_type: cl_device_type) -> Vec<&'static Arc<Device>> {
-    devs()
-        .iter()
-        .filter(|d| device_type & d.device_type(true) != 0)
-        .collect()
 }
 
 #[cl_entrypoint]
@@ -357,8 +355,7 @@ fn get_device_ids(
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             unsafe {
-                // Note we use as_ptr here which doesn't increase the reference count.
-                *devices.add(i) = cl_device_id::from_ptr(Arc::as_ptr(devs[i]));
+                *devices.add(i) = cl_device_id::from_ptr(devs[i]);
             }
         }
     }
@@ -378,18 +375,48 @@ fn release_device(_device: cl_device_id) -> CLResult<()> {
 
 #[cl_entrypoint]
 fn get_device_and_host_timer(
-    _device: cl_device_id,
-    _device_timestamp: *mut cl_ulong,
-    _host_timestamp: *mut cl_ulong,
+    device: cl_device_id,
+    device_timestamp: *mut cl_ulong,
+    host_timestamp: *mut cl_ulong,
 ) -> CLResult<()> {
-    // TODO: we could support it
-    Err(CL_INVALID_OPERATION)
+    if device_timestamp.is_null() {
+        // CL_INVALID_VALUE if host_timestamp or device_timestamp is NULL
+        return Err(CL_INVALID_VALUE);
+    }
+
+    get_host_timer(device, host_timestamp)?;
+    // There is a requirement that the two timestamps
+    // are synchronised, but don't need to be the same,
+    // but as it is, the same timestamp is the best to
+    // use for both
+
+    // Safe because null check on device_timestamp above
+    // and host_timestamp null check in get_host_timer
+    unsafe {
+        *device_timestamp = *host_timestamp;
+    };
+
+    Ok(())
 }
 
 #[cl_entrypoint]
-fn get_host_timer(_device: cl_device_id, _host_timestamp: *mut cl_ulong) -> CLResult<()> {
-    // TODO: we could support it
-    Err(CL_INVALID_OPERATION)
+fn get_host_timer(device_id: cl_device_id, host_timestamp: *mut cl_ulong) -> CLResult<()> {
+    if host_timestamp.is_null() {
+        // CL_INVALID_VALUE if host_timestamp is NULL
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let device = device_id.get_ref()?;
+
+    if !device.has_timestamp {
+        // CL_INVALID_OPERATION if the platform associated with device does not support device and host timer synchronization
+        return Err(CL_INVALID_OPERATION);
+    }
+
+    // Currently the best clock we have for the host_timestamp
+    host_timestamp.write_checked(device.screen().get_timestamp());
+
+    Ok(())
 }
 
 #[cl_entrypoint]

@@ -416,8 +416,6 @@ bool ac_rtld_open(struct ac_rtld_binary *binary, struct ac_rtld_open_info i)
    binary->rx_size += rx_size;
    binary->exec_size = exec_size;
 
-   binary->rx_size = ac_align_shader_binary_for_prefetch(i.info, binary->rx_size);
-
    return true;
 
 #undef report_if

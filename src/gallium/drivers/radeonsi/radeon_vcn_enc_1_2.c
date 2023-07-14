@@ -1398,7 +1398,7 @@ static int get_picture_storage(struct radeon_encoder *enc)
             if (enc->dpb_info[i].in_use &&
 		enc->dpb_info[i].is_ltr &&
 		enc->enc_pic.ltr_idx == enc->dpb_info[i].pic_num) {
-               enc->dpb_info[i].in_use = FALSE;
+               enc->dpb_info[i].in_use = false;
                return i;
             }
          }
@@ -1423,7 +1423,7 @@ static int get_picture_storage(struct radeon_encoder *enc)
       }
 
    if (oldest_idx >= 0)
-      enc->dpb_info[oldest_idx].in_use = FALSE;
+      enc->dpb_info[oldest_idx].in_use = false;
 
    return oldest_idx;
 }
@@ -1444,14 +1444,14 @@ static void manage_dpb_before_encode(struct radeon_encoder *enc)
    int ref0_idx = find_ref_idx(enc, enc->enc_pic.ref_idx_l0, enc->enc_pic.ref_idx_l0_is_ltr);
 
    if (!enc->enc_pic.not_referenced)
-      enc->dpb_info[current_pic_idx].in_use = TRUE;
+      enc->dpb_info[current_pic_idx].in_use = true;
 
    if (enc->enc_pic.is_ltr) {
       enc->dpb_info[current_pic_idx].pic_num = enc->enc_pic.ltr_idx;
-      enc->dpb_info[current_pic_idx].is_ltr = TRUE;
+      enc->dpb_info[current_pic_idx].is_ltr = true;
    } else {
       enc->dpb_info[current_pic_idx].pic_num = enc->enc_pic.frame_num;
-      enc->dpb_info[current_pic_idx].is_ltr = FALSE;
+      enc->dpb_info[current_pic_idx].is_ltr = false;
    }
 
    if (enc->enc_pic.picture_type == PIPE_H2645_ENC_PICTURE_TYPE_IDR)

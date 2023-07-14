@@ -48,6 +48,7 @@ struct asm_context {
    std::map<unsigned, constaddr_info> constaddrs;
    std::map<unsigned, constaddr_info> resumeaddrs;
    std::vector<struct aco_symbol>* symbols;
+   Block* loop_header;
    const int16_t* opcode;
    // TODO: keep track of branch instructions referring blocks
    // and, when emitting the block, correct the offset in instr
@@ -1217,6 +1218,66 @@ fix_constaddrs(asm_context& ctx, std::vector<uint32_t>& out)
    }
 }
 
+void
+align_block(asm_context& ctx, std::vector<uint32_t>& code, Block& block)
+{
+   if (block.kind & block_kind_loop_exit && ctx.loop_header) {
+      Block* loop_header = ctx.loop_header;
+      ctx.loop_header = NULL;
+      std::vector<uint32_t> nops;
+
+      const unsigned loop_num_cl = DIV_ROUND_UP(block.offset - loop_header->offset, 16);
+
+      /* On GFX10.3+, change the prefetch mode if the loop fits into 2 or 3 cache lines.
+       * Don't use the s_inst_prefetch instruction on GFX10 as it might cause hangs.
+       */
+      const bool change_prefetch =
+         ctx.program->gfx_level >= GFX10_3 && loop_num_cl > 1 && loop_num_cl <= 3;
+
+      if (change_prefetch) {
+         Builder bld(ctx.program);
+         int16_t prefetch_mode = loop_num_cl == 3 ? 0x1 : 0x2;
+         aco_ptr<Instruction> instr(bld.sopp(aco_opcode::s_inst_prefetch, -1, prefetch_mode));
+         emit_instruction(ctx, nops, instr.get());
+         insert_code(ctx, code, loop_header->offset, nops.size(), nops.data());
+
+         /* Change prefetch mode back to default (0x3). */
+         instr->sopp().imm = 0x3;
+         emit_instruction(ctx, code, instr.get());
+      }
+
+      const unsigned loop_start_cl = loop_header->offset >> 4;
+      const unsigned loop_end_cl = (block.offset - 1) >> 4;
+
+      /* Align the loop if it fits into the fetched cache lines or if we can
+       * reduce the number of cache lines with less than 8 NOPs.
+       */
+      const bool align_loop = loop_end_cl - loop_start_cl >= loop_num_cl &&
+                              (loop_num_cl == 1 || change_prefetch || loop_header->offset % 16 > 8);
+
+      if (align_loop) {
+         nops.clear();
+         nops.resize(16 - (loop_header->offset % 16), 0xbf800000u);
+         insert_code(ctx, code, loop_header->offset, nops.size(), nops.data());
+      }
+   }
+
+   if (block.kind & block_kind_loop_header) {
+      /* In case of nested loops, only handle the inner-most loops in order
+       * to not break the alignment of inner loops by handling outer loops.
+       * Also ignore loops without back-edge.
+       */
+      ctx.loop_header = block.linear_preds.size() > 1 ? &block : NULL;
+   }
+
+   /* align resume shaders with cache line */
+   if (block.kind & block_kind_resume) {
+      size_t cache_aligned = align(code.size(), 16);
+      code.resize(cache_aligned, 0xbf800000u); /* s_nop 0 */
+      block.offset = code.size();
+   }
+}
+
 unsigned
 emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct aco_symbol>* symbols)
 {
@@ -1228,6 +1289,7 @@ emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct a
 
    for (Block& block : program->blocks) {
       block.offset = code.size();
+      align_block(ctx, code, block);
       emit_block(ctx, code, block);
    }
 
@@ -1235,13 +1297,8 @@ emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct a
 
    unsigned exec_size = code.size() * sizeof(uint32_t);
 
-   if (program->gfx_level >= GFX10) {
-      /* Pad output with s_code_end so instruction prefetching doesn't cause
-       * page faults */
-      unsigned final_size = align(code.size() + 3 * 16, program->gfx_level >= GFX11 ? 32 : 16);
-      while (code.size() < final_size)
-         code.push_back(0xbf9f0000u);
-   }
+   /* Add end-of-code markers for the UMR disassembler. */
+   code.resize(code.size() + 5, 0xbf9f0000u);
 
    fix_constaddrs(ctx, code);
 

@@ -235,25 +235,9 @@ nir_lower_amul(nir_shader *shader,
       }
    }
 
-   /* clear pass flags: */
-   nir_foreach_function(function, shader) {
-      nir_function_impl *impl = function->impl;
-      if (!impl)
-         continue;
+   nir_shader_clear_pass_flags(shader);
 
-      nir_foreach_block(block, impl) {
-         nir_foreach_instr(instr, block) {
-            instr->pass_flags = 0;
-         }
-      }
-   }
-
-   nir_foreach_function(function, shader) {
-      nir_function_impl *impl = function->impl;
-
-      if (!impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             lower_instr(&state, instr);
@@ -268,12 +252,7 @@ nir_lower_amul(nir_shader *shader,
     * Note the exception for 64b (such as load/store_global where
     * address size is 64b) as imul24 cannot have 64b bitsize
     */
-   nir_foreach_function(function, shader) {
-      nir_function_impl *impl = function->impl;
-
-      if (!impl)
-         continue;
-
+   nir_foreach_function_impl(impl, shader) {
       nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_alu)

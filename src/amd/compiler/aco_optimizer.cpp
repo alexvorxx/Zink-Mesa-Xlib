@@ -3037,78 +3037,6 @@ use_absdiff:
    return true;
 }
 
-/* s_cmp_{lg,eq}(s_and(a, s_lshl(1, b)), 0) -> s_bitcmp[10](a, b)*/
-bool
-combine_s_bitcmp(opt_ctx& ctx, aco_ptr<Instruction>& instr)
-{
-   bool lg = false;
-   bool b64 = false;
-   switch (instr->opcode) {
-   case aco_opcode::s_cmp_lg_i32:
-   case aco_opcode::s_cmp_lg_u32: lg = true; break;
-   case aco_opcode::s_cmp_eq_i32:
-   case aco_opcode::s_cmp_eq_u32: break;
-   case aco_opcode::s_cmp_lg_u64: lg = true; FALLTHROUGH;
-   case aco_opcode::s_cmp_eq_u64: b64 = true; break;
-   default: return false;
-   }
-
-   aco_opcode s_and = b64 ? aco_opcode::s_and_b64 : aco_opcode::s_and_b32;
-   aco_opcode s_lshl = b64 ? aco_opcode::s_lshl_b64 : aco_opcode::s_lshl_b32;
-
-   for (unsigned cmp_idx = 0; cmp_idx < 2; cmp_idx++) {
-      Instruction* and_instr = follow_operand(ctx, instr->operands[cmp_idx], false);
-      if (!and_instr || and_instr->opcode != s_and)
-         continue;
-
-      for (unsigned and_idx = 0; and_idx < 2; and_idx++) {
-         Instruction* lshl_instr = follow_operand(ctx, and_instr->operands[and_idx], true);
-         if (!lshl_instr || lshl_instr->opcode != s_lshl ||
-             !lshl_instr->operands[0].constantEquals(1) ||
-             (lshl_instr->operands[1].isLiteral() && and_instr->operands[!and_idx].isLiteral()))
-            lshl_instr = nullptr;
-
-         uint64_t constant;
-         if (!lshl_instr &&
-             (!is_operand_constant(ctx, and_instr->operands[and_idx], b64 ? 64 : 32, &constant) ||
-              !util_is_power_of_two_or_zero64(constant) || constant == 0))
-            continue;
-
-         bool test1 = false;
-         if (instr->operands[!cmp_idx].constantEquals(0)) {
-            test1 = lg;
-         } else if (lshl_instr && instr->operands[!cmp_idx].isTemp() &&
-                    instr->operands[!cmp_idx].tempId() == lshl_instr->definitions[0].tempId()) {
-            test1 = !lg;
-            ctx.uses[lshl_instr->definitions[0].tempId()]--;
-         } else {
-            continue;
-         }
-
-         if (test1 && b64)
-            instr->opcode = aco_opcode::s_bitcmp1_b64;
-         else if (!test1 && b64)
-            instr->opcode = aco_opcode::s_bitcmp0_b64;
-         else if (test1 && !b64)
-            instr->opcode = aco_opcode::s_bitcmp1_b32;
-         else
-            instr->opcode = aco_opcode::s_bitcmp0_b32;
-
-         instr->operands[0] = copy_operand(ctx, and_instr->operands[!and_idx]);
-         decrease_uses(ctx, and_instr);
-         if (lshl_instr) {
-            instr->operands[1] = copy_operand(ctx, lshl_instr->operands[1]);
-            decrease_op_uses_if_dead(ctx, lshl_instr);
-         } else {
-            instr->operands[1] = Operand::c32(ffsll(constant) - 1);
-         }
-         return true;
-      }
-   }
-
-   return false;
-}
-
 bool
 combine_add_sub_b2i(opt_ctx& ctx, aco_ptr<Instruction>& instr, aco_opcode new_op, uint8_t ops)
 {
@@ -4527,13 +4455,6 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
       }
    } else if (instr->opcode == aco_opcode::s_abs_i32) {
       combine_sabsdiff(ctx, instr);
-   } else if (instr->opcode == aco_opcode::s_cmp_lg_i32 ||
-              instr->opcode == aco_opcode::s_cmp_lg_u32 ||
-              instr->opcode == aco_opcode::s_cmp_lg_u64 ||
-              instr->opcode == aco_opcode::s_cmp_eq_i32 ||
-              instr->opcode == aco_opcode::s_cmp_eq_u32 ||
-              instr->opcode == aco_opcode::s_cmp_eq_u64) {
-      combine_s_bitcmp(ctx, instr);
    } else if (instr->opcode == aco_opcode::v_and_b32) {
       combine_and_subbrev(ctx, instr);
    } else if (instr->opcode == aco_opcode::v_fma_f32 || instr->opcode == aco_opcode::v_fma_f16) {

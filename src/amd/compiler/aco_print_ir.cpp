@@ -389,6 +389,11 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
          }
          break;
       }
+      case aco_opcode::s_wait_event: {
+         if (!(imm & wait_event_imm_dont_wait_export_ready))
+            fprintf(output, " export_ready");
+         break;
+      }
       default: {
          if (imm)
             fprintf(output, " imm:%u", imm);

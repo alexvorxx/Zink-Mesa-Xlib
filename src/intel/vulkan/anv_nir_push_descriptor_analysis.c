@@ -75,11 +75,8 @@ anv_nir_compute_used_push_descriptors(nir_shader *shader,
       }
    }
 
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -119,11 +116,8 @@ anv_nir_loads_push_desc_buffer(nir_shader *nir,
    if (push_set_layout == NULL)
       return false;
 
-   nir_foreach_function(function, nir) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;
@@ -180,11 +174,8 @@ anv_nir_push_desc_ubo_fully_promoted(nir_shader *nir,
          ubos_fully_promoted |= BITFIELD_BIT(bind_layout->descriptor_index);
    }
 
-   nir_foreach_function(function, nir) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;

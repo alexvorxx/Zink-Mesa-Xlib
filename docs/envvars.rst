@@ -341,6 +341,42 @@ Core Mesa environment variables
 
    print debug info about device selection decision-making
 
+.. envvar:: MESA_VK_TRACE
+
+   A comma-separated list of trace types used for offline analysis. The
+   option names are equal to the file extension. Traces are dumped into ``/tmp``.
+   Captures can be triggered by pressing ``F12`` with the application window
+   focused (Currently X11 only) or via :envvar:`MESA_VK_TRACE_FRAME` and
+   :envvar:`MESA_VK_TRACE_TRIGGER`.
+
+   .. list-table::
+      :header-rows: 1
+
+      * - File extension
+        - Offline analysis tool
+        - Supported drivers
+      * - ``rmv``
+        - Radeon Memory Visualizer
+        - ``RADV``
+      * - ``rgp``
+        - Radeon GPU Profiler
+        - ``RADV``
+      * - ``rra``
+        - Radeon Raytracing Analyzer
+        - ``RADV``
+
+   - Creating RMV captures requires the ``scripts/setup.sh`` script in the
+     Radeon Developer Tools folder to be run beforehand
+
+.. envvar:: MESA_VK_TRACE_FRAME
+
+   Specifies a frame index at which a trace capture is automatically triggered.
+
+.. envvar:: MESA_VK_TRACE_TRIGGER
+
+   Specifies a trigger file. Creating the file triggers the capture. (e.g.
+   ``export MESA_VK_TRACE_TRIGGER=/tmp/trigger`` and then ``touch /tmp/trigger``)
+
 .. envvar:: MESA_LOADER_DRIVER_OVERRIDE
 
    chooses a different driver binary such as ``etnaviv`` or ``zink``.
@@ -1085,23 +1121,6 @@ VC4 driver environment variables
    a comma-separated list of named flags, which do various things. Use
    ``VC4_DEBUG=help`` to print a list of available options.
 
-Shared Vulkan driver environment variables
-------------------------------------------
-
-.. envvar:: MESA_VK_MEMORY_TRACE
-
-   enable memory tracing and exporting RMV captures (requires the
-   ``scripts/setup.sh`` script in the Radeon Developer Tools folder to be
-   run beforehand). ``MESA_VK_MEMORY_TRACE=n`` dumps data
-   after n frames. Currently, only RADV implements this.
-
-.. envvar:: MESA_VK_MEMORY_TRACE_TRIGGER
-
-   enable trigger file-based memory tracing. (e.g.
-   ``export MESA_VK_MEMORY_TRACE_TRIGGER=/tmp/memory_trigger`` and then
-   ``touch /tmp/memory_trigger`` to capture a memory trace).
-   Running ``scripts/setup.sh`` beforehand is required.
-
 V3D/V3DV driver environment variables
 -------------------------------------
 
@@ -1250,8 +1269,6 @@ RADV driver environment variables
       enable NGG streamout
    ``nggc``
       enable NGG culling on GPUs where it's not enabled by default (GFX10.1 only).
-   ``rt``
-      enable rt pipelines whose implementation is still experimental.
    ``sam``
       enable optimizations to move more driver internal objects to VRAM.
    ``rtwave64``
@@ -1262,11 +1279,6 @@ RADV driver environment variables
 .. envvar:: RADV_TEX_ANISO
 
    force anisotropy filter (up to 16)
-
-.. envvar:: RADV_THREAD_TRACE
-
-   enable frame based SQTT/RGP captures (e.g. ``export RADV_THREAD_TRACE=100``
-   will capture the frame #100)
 
 .. envvar:: RADV_THREAD_TRACE_BUFFER_SIZE
 
@@ -1280,23 +1292,6 @@ RADV driver environment variables
 .. envvar:: RADV_THREAD_TRACE_INSTRUCTION_TIMING
 
    enable/disable SQTT/RGP instruction timing (enabled by default)
-
-.. envvar:: RADV_THREAD_TRACE_TRIGGER
-
-   enable trigger file based SQTT/RGP captures (e.g.
-   ``export RADV_THREAD_TRACE_TRIGGER=/tmp/radv_sqtt_trigger`` and then
-   ``touch /tmp/radv_sqtt_trigger`` to capture a frame)
-
-.. envvar:: RADV_RRA_TRACE
-
-   enable frame based Radeon Raytracing Analyzer captures
-   (e.g. ``export RADV_RRA_TRACE=100`` will capture the frame #100)
-
-.. envvar:: RADV_RRA_TRACE_TRIGGER
-
-   enable trigger file based RRA captures (e.g.
-   ``export RADV_RRA_TRACE_TRIGGER=/tmp/radv_rra_trigger`` and then
-   ``touch /tmp/radv_rra_trigger`` to capture a frame)
 
 .. envvar:: RADV_RRA_TRACE_VALIDATE
 

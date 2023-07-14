@@ -140,6 +140,10 @@ pvr_srv_transfer_cmd_stream_load(struct rogue_fwif_cmd_transfer *const cmd,
 {
    const uint32_t *stream_ptr = (const uint32_t *)stream;
    struct rogue_fwif_transfer_regs *const regs = &cmd->regs;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((uint64_t *)stream_ptr, KMD_STREAM_HDR).length;
+
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    regs->pds_bgnd0_base = *(uint64_t *)stream_ptr;
    stream_ptr += pvr_cmd_length(CR_PDS_BGRND0_BASE);
@@ -165,16 +169,16 @@ pvr_srv_transfer_cmd_stream_load(struct rogue_fwif_cmd_transfer *const cmd,
    stream_ptr += pvr_cmd_length(CR_USC_PIXEL_OUTPUT_CTRL);
 
    regs->usc_clear_register0 = *stream_ptr;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER0);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    regs->usc_clear_register1 = *stream_ptr;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER1);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    regs->usc_clear_register2 = *stream_ptr;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER2);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    regs->usc_clear_register3 = *stream_ptr;
-   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER3);
+   stream_ptr += pvr_cmd_length(CR_USC_CLEAR_REGISTER);
 
    regs->isp_mtile_size = *stream_ptr;
    stream_ptr += pvr_cmd_length(CR_ISP_MTILE_SIZE);
@@ -209,6 +213,7 @@ pvr_srv_transfer_cmd_stream_load(struct rogue_fwif_cmd_transfer *const cmd,
    }
 
    assert((const uint8_t *)stream_ptr - stream == stream_len);
+   assert((const uint8_t *)stream_ptr - stream == main_stream_len);
 }
 
 static void pvr_srv_transfer_cmds_init(
@@ -230,7 +235,7 @@ static void pvr_srv_transfer_cmds_init(
                                        submit_cmd->fw_stream_len,
                                        dev_info);
 
-      if (submit_info->cmds[i].flags & PVR_WINSYS_TRANSFER_FLAG_SINGLE_CORE)
+      if (submit_info->cmds[i].flags.use_single_core)
          cmd->flags |= ROGUE_FWIF_CMDTRANSFER_SINGLE_CORE;
    }
 }

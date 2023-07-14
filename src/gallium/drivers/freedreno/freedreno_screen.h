@@ -213,13 +213,13 @@ struct pipe_screen *fd_screen_create(int fd,
                                      const struct pipe_screen_config *config,
                                      struct renderonly *ro);
 
-static inline boolean
+static inline bool
 is_a20x(struct fd_screen *screen)
 {
    return (screen->gpu_id >= 200) && (screen->gpu_id < 210);
 }
 
-static inline boolean
+static inline bool
 is_a2xx(struct fd_screen *screen)
 {
    return screen->gen == 2;
@@ -227,38 +227,38 @@ is_a2xx(struct fd_screen *screen)
 
 /* is a3xx patch revision 0? */
 /* TODO a306.0 probably doesn't need this.. be more clever?? */
-static inline boolean
+static inline bool
 is_a3xx_p0(struct fd_screen *screen)
 {
    return (screen->chip_id & 0xff0000ff) == 0x03000000;
 }
 
-static inline boolean
+static inline bool
 is_a3xx(struct fd_screen *screen)
 {
    return screen->gen == 3;
 }
 
-static inline boolean
+static inline bool
 is_a4xx(struct fd_screen *screen)
 {
    return screen->gen == 4;
 }
 
-static inline boolean
+static inline bool
 is_a5xx(struct fd_screen *screen)
 {
    return screen->gen == 5;
 }
 
-static inline boolean
+static inline bool
 is_a6xx(struct fd_screen *screen)
 {
    return screen->gen == 6;
 }
 
 /* is it using the ir3 compiler (shader isa introduced with a3xx)? */
-static inline boolean
+static inline bool
 is_ir3(struct fd_screen *screen)
 {
    return is_a3xx(screen) || is_a4xx(screen) || is_a5xx(screen) ||

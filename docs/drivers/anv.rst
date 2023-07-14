@@ -39,12 +39,6 @@ specific to ANV:
 Experimental features
 ---------------------
 
-:envvar:`ANV_EXPERIMENTAL_NV_MESH_SHADER`
-   If defined to ``1`` or ``true``, this advertise support for
-   :ext:`VK_NV_mesh_shader` extension for platforms that have hardware
-   support for it.
-
-
 .. _`Bindless model`:
 
 Binding Model

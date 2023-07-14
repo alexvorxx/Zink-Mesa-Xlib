@@ -218,11 +218,9 @@ brw_nir_analyze_ubo_ranges(const struct brw_compiler *compiler,
    }
 
    /* Walk the IR, recording how many times each UBO block/offset is used. */
-   nir_foreach_function(function, nir) {
-      if (function->impl) {
-         nir_foreach_block(block, function->impl) {
-            analyze_ubos_block(&state, block);
-         }
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
+         analyze_ubos_block(&state, block);
       }
    }
 

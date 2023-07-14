@@ -568,8 +568,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_pack_sint_2x16:
       src_components = 2;
       break;
-   case nir_op_cube_face_coord_amd:
-   case nir_op_cube_face_index_amd:
+   case nir_op_cube_amd:
       src_components = 3;
       break;
    case nir_op_pack_32_4x8:
@@ -1190,25 +1189,17 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
       break;
    }
 
-   case nir_op_cube_face_coord_amd: {
+   case nir_op_cube_amd: {
       src[0] = ac_to_float(&ctx->ac, src[0]);
-      LLVMValueRef results[3];
+      LLVMValueRef results[4];
       LLVMValueRef in[3];
       for (unsigned chan = 0; chan < 3; chan++)
          in[chan] = ac_llvm_extract_elem(&ctx->ac, src[0], chan);
-      results[0] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubesc", ctx->ac.f32, in, 3, 0);
-      results[1] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubetc", ctx->ac.f32, in, 3, 0);
+      results[0] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubetc", ctx->ac.f32, in, 3, 0);
+      results[1] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubesc", ctx->ac.f32, in, 3, 0);
       results[2] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubema", ctx->ac.f32, in, 3, 0);
-      result = ac_build_gather_values(&ctx->ac, results, 3);
-      break;
-   }
-
-   case nir_op_cube_face_index_amd: {
-      src[0] = ac_to_float(&ctx->ac, src[0]);
-      LLVMValueRef in[3];
-      for (unsigned chan = 0; chan < 3; chan++)
-         in[chan] = ac_llvm_extract_elem(&ctx->ac, src[0], chan);
-      result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubeid", ctx->ac.f32, in, 3, 0);
+      results[3] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubeid", ctx->ac.f32, in, 3, 0);
+      result = ac_build_gather_values(&ctx->ac, results, 4);
       break;
    }
 
@@ -2637,18 +2628,6 @@ static LLVMValueRef visit_load_local_invocation_index(struct ac_nir_context *ctx
                         ac_get_thread_id(&ctx->ac));
 }
 
-static LLVMValueRef visit_load_num_subgroups(struct ac_nir_context *ctx)
-{
-   if (gl_shader_stage_is_compute(ctx->stage)) {
-      return LLVMBuildAnd(ctx->ac.builder, ac_get_arg(&ctx->ac, ctx->args->tg_size),
-                          LLVMConstInt(ctx->ac.i32, 0x3f, false), "");
-   } else if (ctx->args->merged_wave_info.used) {
-      return ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->merged_wave_info), 28, 4);
-   } else {
-      return ctx->ac.i32_1;
-   }
-}
-
 static LLVMValueRef visit_first_invocation(struct ac_nir_context *ctx)
 {
    LLVMValueRef active_set = ac_build_ballot(&ctx->ac, ctx->ac.i32_1);
@@ -3188,12 +3167,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       break;
    case nir_intrinsic_load_local_invocation_index:
       result = visit_load_local_invocation_index(ctx);
-      break;
-   case nir_intrinsic_load_subgroup_id:
-      result = visit_load_subgroup_id(ctx);
-      break;
-   case nir_intrinsic_load_num_subgroups:
-      result = visit_load_num_subgroups(ctx);
       break;
    case nir_intrinsic_first_invocation:
       result = visit_first_invocation(ctx);

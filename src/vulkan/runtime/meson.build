@@ -28,6 +28,8 @@ vulkan_runtime_files = files(
   'rmv/vk_rmv_tokens.h',
   'vk_acceleration_structure.c',
   'vk_acceleration_structure.h',
+  'vk_blend.c',
+  'vk_blend.h',
   'vk_buffer.c',
   'vk_buffer.h',
   'vk_cmd_copy.c',

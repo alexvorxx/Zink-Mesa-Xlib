@@ -315,7 +315,7 @@ get_gpu_scratch_layout(struct anv_address base,
    };
    gpuva_t current = anv_address_physical(base);
 
-   scratch.globals = intel_canonical_address(current);
+   scratch.globals = current;
    current += sizeof(struct Globals);
 
    scratch.primrefs = intel_canonical_address(current);

@@ -147,7 +147,7 @@ mirror(nir_builder *b, nir_ssa_def *coord)
 {
    /* coord if >= 0, otherwise -(1 + coord) */
    return nir_bcsel(b, nir_fge_imm(b, coord, 0.0f), coord,
-                    nir_fneg(b, nir_fadd(b, nir_imm_float(b, 1.0f), coord)));
+                    nir_fneg(b, nir_fadd_imm(b, coord, 1.0f)));
 }
 
 static void

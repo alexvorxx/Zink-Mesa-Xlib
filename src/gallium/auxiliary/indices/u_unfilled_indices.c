@@ -40,21 +40,21 @@ static void translate_ubyte_ushort( const void *in,
                                     unsigned restart_index,
                                     void *out )
 {
-   const ubyte *in_ub = (const ubyte *)in;
-   ushort *out_us = (ushort *)out;
+   const uint8_t *in_ub = (const uint8_t *)in;
+   uint16_t *out_us = (uint16_t *)out;
    unsigned i;
    for (i = 0; i < out_nr; i++)
-      out_us[i] = (ushort) in_ub[i+start];
+      out_us[i] = (uint16_t) in_ub[i+start];
 }
 
 static void generate_linear_ushort( unsigned start,
                                     unsigned nr,
                                     void *out )
 {
-   ushort *out_us = (ushort *)out;
+   uint16_t *out_us = (uint16_t *)out;
    unsigned i;
    for (i = 0; i < nr; i++)
-      out_us[i] = (ushort)(i + start);
+      out_us[i] = (uint16_t)(i + start);
 }
 
 static void generate_linear_uint( unsigned start,

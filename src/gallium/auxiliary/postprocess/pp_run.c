@@ -143,7 +143,7 @@ pp_run(struct pp_queue_t *ppq, struct pipe_resource *in,
    cso_set_tessctrl_shader_handle(cso, NULL);
    cso_set_tesseval_shader_handle(cso, NULL);
    cso_set_geometry_shader_handle(cso, NULL);
-   cso_set_render_condition(cso, NULL, FALSE, 0);
+   cso_set_render_condition(cso, NULL, false, 0);
 
    // Kept only for this frame.
    pipe_resource_reference(&ppq->depth, indepth);
@@ -259,7 +259,7 @@ pp_tgsi_to_state(struct pipe_context *pipe, const char *text, bool isvs,
       return NULL;
    }
 
-   if (tgsi_text_translate(text, tokens, PP_MAX_TOKENS) == FALSE) {
+   if (tgsi_text_translate(text, tokens, PP_MAX_TOKENS) == false) {
       _debug_printf("pp: Failed to translate a shader for %s\n", name);
       return NULL;
    }

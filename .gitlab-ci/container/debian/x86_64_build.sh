@@ -81,7 +81,7 @@ cd shader-db
 make
 popd
 
-git clone https://github.com/microsoft/DirectX-Headers -b v1.610.0 --depth 1
+git clone https://github.com/microsoft/DirectX-Headers -b v1.711.3-preview --depth 1
 pushd DirectX-Headers
 meson setup build --backend=ninja --buildtype=release -Dbuild-test=false
 meson install -C build

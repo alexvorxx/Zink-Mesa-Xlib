@@ -15,6 +15,7 @@ use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::*;
 use mesa_rust::pipe::transfer::*;
 use mesa_rust_gen::*;
+use mesa_rust_util::math::SetBitIndices;
 use mesa_rust_util::static_assert;
 use rusticl_opencl_gen::*;
 
@@ -37,6 +38,7 @@ pub struct Device {
     pub clc_versions: Vec<cl_name_version>,
     pub custom: bool,
     pub embedded: bool,
+    pub has_timestamp: bool, // Cached to keep API fast
     pub extension_string: String,
     pub extensions: Vec<cl_name_version>,
     pub spirv_extensions: Vec<CString>,
@@ -80,6 +82,7 @@ pub trait HelperContextWrapper {
     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
     fn delete_compute_state(&self, cso: *mut c_void);
     fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info;
+    fn compute_state_subgroup_size(&self, state: *mut c_void, block: &[u32; 3]) -> u32;
 
     fn unmap(&self, tx: PipeTransfer);
 }
@@ -168,6 +171,10 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
         self.lock.compute_state_info(state)
     }
 
+    fn compute_state_subgroup_size(&self, state: *mut c_void, block: &[u32; 3]) -> u32 {
+        self.lock.compute_state_subgroup_size(state, block)
+    }
+
     fn unmap(&self, tx: PipeTransfer) {
         tx.with_ctx(&self.lock);
     }
@@ -198,6 +205,7 @@ impl Device {
             clc_versions: Vec::new(),
             custom: false,
             embedded: false,
+            has_timestamp: false,
             extension_string: String::from(""),
             extensions: Vec::new(),
             spirv_extensions: Vec::new(),
@@ -214,6 +222,10 @@ impl Device {
         // check if we have to report it as a custom device
         d.custom = d.check_custom();
 
+        let cap_timestamp = d.screen.param(pipe_cap::PIPE_CAP_QUERY_TIMESTAMP);
+        let cap_timestamp_res = d.timer_resolution();
+        d.has_timestamp = cap_timestamp != 0 && cap_timestamp_res > 0;
+
         // query supported extensions
         d.fill_extensions();
 
@@ -221,6 +233,19 @@ impl Device {
         d.check_version();
 
         Some(Arc::new(d))
+    }
+
+    /// Converts a temporary reference to a static if and only if this device lives inside static
+    /// memory.
+    pub fn to_static(&self) -> Option<&'static Self> {
+        for dev in devs() {
+            let dev = dev.as_ref();
+            if self == dev {
+                return Some(dev);
+            }
+        }
+
+        None
     }
 
     fn fill_format_tables(&mut self) {
@@ -565,6 +590,12 @@ impl Device {
             add_ext(1, 0, 0, "cl_khr_device_uuid");
         }
 
+        if self.subgroups_supported() {
+            // requires CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS
+            //add_ext(1, 0, 0, "cl_khr_subgroups");
+            add_feat(1, 0, 0, "__opencl_c_subgroups");
+        }
+
         if self.svm_supported() {
             add_ext(1, 0, 0, "cl_arm_shared_virtual_memory");
         }
@@ -839,15 +870,39 @@ impl Device {
         &self.screen
     }
 
-    pub fn subgroups(&self) -> u32 {
+    pub fn subgroup_sizes(&self) -> Vec<usize> {
+        let subgroup_size = ComputeParam::<u32>::compute_param(
+            self.screen.as_ref(),
+            pipe_compute_cap::PIPE_COMPUTE_CAP_SUBGROUP_SIZES,
+        );
+
+        SetBitIndices::from_msb(subgroup_size)
+            .map(|bit| 1 << bit)
+            .collect()
+    }
+
+    pub fn max_subgroups(&self) -> u32 {
         ComputeParam::<u32>::compute_param(
             self.screen.as_ref(),
-            pipe_compute_cap::PIPE_COMPUTE_CAP_SUBGROUP_SIZE,
+            pipe_compute_cap::PIPE_COMPUTE_CAP_MAX_SUBGROUPS,
         )
+    }
+
+    pub fn subgroups_supported(&self) -> bool {
+        let subgroup_sizes = self.subgroup_sizes().len();
+
+        // we need to be able to query a CSO for subgroup sizes if multiple sub group sizes are
+        // supported, doing it without shareable shaders isn't practical
+        self.max_subgroups() > 0
+            && (subgroup_sizes == 1 || (subgroup_sizes > 1 && self.shareable_shaders()))
     }
 
     pub fn svm_supported(&self) -> bool {
         self.screen.param(pipe_cap::PIPE_CAP_SYSTEM_SVM) == 1
+    }
+
+    pub fn timer_resolution(&self) -> usize {
+        self.screen.param(pipe_cap::PIPE_CAP_TIMER_RESOLUTION) as usize
     }
 
     pub fn unified_memory(&self) -> bool {
@@ -890,7 +945,20 @@ impl Device {
             images_write_3d: self.image_3d_write_supported(),
             integer_dot_product: true,
             intel_subgroups: false,
-            subgroups: false,
+            subgroups: self.subgroups_supported(),
+            subgroups_ifp: false,
         }
     }
+}
+
+fn devs() -> &'static Vec<Arc<Device>> {
+    &Platform::get().devs
+}
+
+pub fn get_devs_for_type(device_type: cl_device_type) -> Vec<&'static Device> {
+    devs()
+        .iter()
+        .filter(|d| device_type & d.device_type(true) != 0)
+        .map(Arc::as_ref)
+        .collect()
 }

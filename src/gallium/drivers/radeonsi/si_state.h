@@ -109,7 +109,7 @@ struct si_state_dsa {
    /* 0 = without stencil buffer, 1 = when both Z and S buffers are present */
    struct si_dsa_order_invariance order_invariance[2];
 
-   ubyte alpha_func : 3;
+   uint8_t alpha_func : 3;
    bool depth_enabled : 1;
    bool depth_write_enabled : 1;
    bool stencil_enabled : 1;
@@ -468,7 +468,7 @@ struct si_descriptors {
     * to the descriptor array will be stored. */
    short shader_userdata_offset;
    /* The size of one descriptor. */
-   ubyte element_dw_size;
+   uint8_t element_dw_size;
    /* If there is only one slot enabled, bind it directly instead of
     * uploading descriptors. -1 if disabled. */
    signed char slot_index_to_bind_directly;

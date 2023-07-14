@@ -371,7 +371,7 @@ get_src(struct etna_compile *c, nir_src *src)
          return (hw_src) { .use = 1, .rgroup = INST_RGROUP_INTERNAL };
       case nir_intrinsic_load_frag_coord:
          return SRC_REG(0, INST_SWIZ_IDENTITY);
-      case nir_intrinsic_load_texture_rect_scaling: {
+      case nir_intrinsic_load_texture_scale: {
          int sampler = nir_src_as_int(intr->src[0]);
          nir_const_value values[] = {
             TEXSCALE(sampler, 0),
@@ -600,7 +600,7 @@ emit_intrinsic(struct etna_compile *c, nir_intrinsic_instr * intr)
       break;
    case nir_intrinsic_load_input:
    case nir_intrinsic_load_instance_id:
-   case nir_intrinsic_load_texture_rect_scaling:
+   case nir_intrinsic_load_texture_scale:
       break;
    default:
       compile_error(c, "Unhandled NIR intrinsic type: %s\n",
@@ -748,9 +748,7 @@ lower_alu(struct etna_compile *c, nir_alu_instr *alu)
 {
    const nir_op_info *info = &nir_op_infos[alu->op];
 
-   nir_builder b;
-   nir_builder_init(&b, c->impl);
-   b.cursor = nir_before_instr(&alu->instr);
+   nir_builder b = nir_builder_at(nir_before_instr(&alu->instr));
 
    switch (alu->op) {
    case nir_op_vec2:
@@ -898,8 +896,7 @@ emit_shader(struct etna_compile *c, unsigned *num_temps, unsigned *num_consts)
    bool have_indirect_uniform = false;
    unsigned indirect_max = 0;
 
-   nir_builder b;
-   nir_builder_init(&b, c->impl);
+   nir_builder b = nir_builder_create(c->impl);
 
    /* convert non-dynamic uniform loads to constants, etc */
    nir_foreach_block(block, c->impl) {
@@ -987,7 +984,7 @@ emit_shader(struct etna_compile *c, unsigned *num_temps, unsigned *num_consts)
    }
 
    /* call directly to avoid validation (load_const don't pass validation at this point) */
-   nir_convert_from_ssa(shader, true);
+   nir_convert_from_ssa(shader, true, false);
    nir_opt_dce(shader);
 
    etna_ra_assign(c, shader);
@@ -1103,6 +1100,11 @@ etna_compile_shader(struct etna_shader_variant *v)
                  false, v->key.sprite_coord_yinvert);
    }
 
+   /*
+    * Remove any dead in variables before we iterate over them
+    */
+   NIR_PASS_V(s, nir_remove_dead_variables, nir_var_shader_in, NULL);
+
    /* setup input linking */
    struct etna_shader_io_file *sf = &v->infile;
    if (s->info.stage == MESA_SHADER_VERTEX) {
@@ -1186,6 +1188,7 @@ etna_compile_shader(struct etna_shader_variant *v)
     */
 
    NIR_PASS_V(s, nir_opt_dce);
+   NIR_PASS_V(s, nir_opt_cse);
 
    NIR_PASS_V(s, nir_lower_bool_to_bitsize);
    NIR_PASS_V(s, etna_lower_alu, c->specs->has_new_transcendentals);
@@ -1242,10 +1245,30 @@ etna_shader_vs_lookup(const struct etna_shader_variant *sobj,
       if (sobj->outfile.reg[i].slot == in->slot)
          return &sobj->outfile.reg[i];
 
+   /*
+    * There are valid NIR shaders pairs where the vertex shader has
+    * a VARYING_SLOT_BFC0 shader_out and the corresponding framgent
+    * shader has a VARYING_SLOT_COL0 shader_in.
+    * So at link time if there is no matching VARYING_SLOT_BFC[n],
+    * we must map VARYING_SLOT_BFC0[n] to VARYING_SLOT_COL[n].
+    */
+   gl_varying_slot slot;
+
+   if (in->slot == VARYING_SLOT_COL0)
+      slot = VARYING_SLOT_BFC0;
+   else if (in->slot == VARYING_SLOT_COL1)
+      slot = VARYING_SLOT_BFC1;
+   else
+      return NULL;
+
+   for (int i = 0; i < sobj->outfile.num_reg; i++)
+      if (sobj->outfile.reg[i].slot == slot)
+         return &sobj->outfile.reg[i];
+
    return NULL;
 }
 
-bool
+void
 etna_link_shader(struct etna_shader_link_info *info,
                  const struct etna_shader_variant *vs,
                  const struct etna_shader_variant *fs)
@@ -1299,17 +1322,15 @@ etna_link_shader(struct etna_shader_link_info *info,
 	  * but that one removes all FS inputs ... why?
 	  */
       } else {
-         if (vsio == NULL) { /* not found -- link error */
-            BUG("Semantic value not found in vertex shader outputs\n");
-            return true;
-         }
-         varying->reg = vsio->reg;
+         /* pick a random register to use if there is no VS output */
+         if (vsio == NULL)
+            varying->reg = 0;
+         else
+            varying->reg = vsio->reg;
       }
 
       comp_ofs += varying->num_components;
    }
 
    assert(info->num_varyings == fs->infile.num_reg);
-
-   return false;
 }

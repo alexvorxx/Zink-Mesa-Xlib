@@ -25,6 +25,13 @@ import argparse
 import sys
 from math import pi
 
+# Convenience variables
+a = 'a'
+b = 'b'
+c = 'c'
+d = 'd'
+e = 'e'
+
 # Transform input to range [-PI, PI]:
 #
 # y = frac(x / 2PI + 0.5) * 2PI - PI
@@ -64,6 +71,22 @@ def main():
     sys.path.insert(0, args.import_path)
 
     import nir_algebraic  # pylint: disable=import-error
+    ignore_exact = nir_algebraic.ignore_exact
+
+    r300_nir_lower_bool_to_float = [
+        (('bcsel@32(is_only_used_as_float)', ignore_exact('feq', 'a@32', 'b@32'), c, d),
+             ('fadd', ('fmul', c, ('seq', a, b)), ('fsub', d, ('fmul', d, ('seq', a, b)))),
+             "!options->has_fused_comp_and_csel"),
+        (('bcsel@32(is_only_used_as_float)', ignore_exact('fneu', 'a@32', 'b@32'), c, d),
+             ('fadd', ('fmul', c, ('sne', a, b)), ('fsub', d, ('fmul', d, ('sne', a, b)))),
+          "!options->has_fused_comp_and_csel"),
+        (('bcsel@32(is_only_used_as_float)', ignore_exact('flt', 'a@32', 'b@32'), c, d),
+             ('fadd', ('fmul', c, ('slt', a, b)), ('fsub', d, ('fmul', d, ('slt', a, b)))),
+          "!options->has_fused_comp_and_csel"),
+        (('bcsel@32(is_only_used_as_float)', ignore_exact('fge', 'a@32', 'b@32'), c, d),
+             ('fadd', ('fmul', c, ('sge', a, b)), ('fsub', d, ('fmul', d, ('sge', a, b)))),
+          "!options->has_fused_comp_and_csel"),
+]
 
     with open(args.output, 'w') as f:
         f.write('#include "compiler/r300_nir.h"')
@@ -76,6 +99,9 @@ def main():
 
         f.write(nir_algebraic.AlgebraicPass("r300_nir_fuse_fround_d3d9",
                                             r300_nir_fuse_fround_d3d9).render())
+
+        f.write(nir_algebraic.AlgebraicPass("r300_nir_lower_bool_to_float",
+                                            r300_nir_lower_bool_to_float).render())
 
 if __name__ == '__main__':
     main()

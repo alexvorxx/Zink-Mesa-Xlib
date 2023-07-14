@@ -119,20 +119,11 @@ etna_link_shaders(struct etna_context *ctx, struct compiled_shader_state *cs,
                   struct etna_shader_variant *vs, struct etna_shader_variant *fs)
 {
    struct etna_shader_link_info link = { };
-   bool failed;
 
    assert(vs->stage == MESA_SHADER_VERTEX);
    assert(fs->stage == MESA_SHADER_FRAGMENT);
 
-   failed = etna_link_shader(&link, vs, fs);
-
-   if (failed) {
-      /* linking failed: some fs inputs do not have corresponding
-       * vs outputs */
-      assert(0);
-
-      return false;
-   }
+   etna_link_shader(&link, vs, fs);
 
    if (DBG_ENABLED(ETNA_DBG_LINKER_MSGS)) {
       debug_printf("link result:\n");

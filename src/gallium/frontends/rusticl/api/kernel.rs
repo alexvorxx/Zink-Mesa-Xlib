@@ -10,6 +10,7 @@ use rusticl_opencl_gen::*;
 use rusticl_proc_macros::cl_entrypoint;
 use rusticl_proc_macros::cl_info_entrypoint;
 
+use std::cmp;
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
 use std::ptr;
@@ -21,13 +22,13 @@ impl CLInfo<cl_kernel_info> for cl_kernel {
     fn query(&self, q: cl_kernel_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let kernel = self.get_ref()?;
         Ok(match q {
-            CL_KERNEL_ATTRIBUTES => cl_prop::<&str>(&kernel.attributes_string),
+            CL_KERNEL_ATTRIBUTES => cl_prop::<&str>(&kernel.build.attributes_string),
             CL_KERNEL_CONTEXT => {
                 let ptr = Arc::as_ptr(&kernel.prog.context);
                 cl_prop::<cl_context>(cl_context::from_ptr(ptr))
             }
             CL_KERNEL_FUNCTION_NAME => cl_prop::<&str>(&kernel.name),
-            CL_KERNEL_NUM_ARGS => cl_prop::<cl_uint>(kernel.args.len() as cl_uint),
+            CL_KERNEL_NUM_ARGS => cl_prop::<cl_uint>(kernel.build.args.len() as cl_uint),
             CL_KERNEL_PROGRAM => {
                 let ptr = Arc::as_ptr(&kernel.prog);
                 cl_prop::<cl_program>(cl_program::from_ptr(ptr))
@@ -45,7 +46,7 @@ impl CLInfoObj<cl_kernel_arg_info, cl_uint> for cl_kernel {
         let kernel = self.get_ref()?;
 
         // CL_INVALID_ARG_INDEX if arg_index is not a valid argument index.
-        if idx as usize >= kernel.args.len() {
+        if idx as usize >= kernel.build.args.len() {
             return Err(CL_INVALID_ARG_INDEX);
         }
 
@@ -81,10 +82,10 @@ impl CLInfoObj<cl_kernel_work_group_info, cl_device_id> for cl_kernel {
             if kernel.prog.devs.len() > 1 {
                 return Err(CL_INVALID_DEVICE);
             } else {
-                kernel.prog.devs[0].clone()
+                kernel.prog.devs[0]
             }
         } else {
-            dev.get_arc()?
+            dev.get_ref()?
         };
 
         // CL_INVALID_DEVICE if device is not in the list of devices associated with kernel
@@ -94,28 +95,127 @@ impl CLInfoObj<cl_kernel_work_group_info, cl_device_id> for cl_kernel {
 
         Ok(match *q {
             CL_KERNEL_COMPILE_WORK_GROUP_SIZE => cl_prop::<[usize; 3]>(kernel.work_group_size),
-            CL_KERNEL_LOCAL_MEM_SIZE => cl_prop::<cl_ulong>(kernel.local_mem_size(&dev)),
+            CL_KERNEL_LOCAL_MEM_SIZE => cl_prop::<cl_ulong>(kernel.local_mem_size(dev)),
             CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE => {
-                cl_prop::<usize>(kernel.preferred_simd_size(&dev))
+                cl_prop::<usize>(kernel.preferred_simd_size(dev))
             }
-            CL_KERNEL_PRIVATE_MEM_SIZE => cl_prop::<cl_ulong>(kernel.priv_mem_size(&dev)),
-            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(kernel.max_threads_per_block(&dev)),
+            CL_KERNEL_PRIVATE_MEM_SIZE => cl_prop::<cl_ulong>(kernel.priv_mem_size(dev)),
+            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(kernel.max_threads_per_block(dev)),
             // CL_INVALID_VALUE if param_name is not one of the supported values
             _ => return Err(CL_INVALID_VALUE),
         })
     }
 }
 
-impl CLInfoObj<cl_kernel_sub_group_info, (cl_device_id, usize, *const c_void)> for cl_kernel {
+impl CLInfoObj<cl_kernel_sub_group_info, (cl_device_id, usize, *const c_void, usize)>
+    for cl_kernel
+{
     fn query(
         &self,
-        (d, _input_value_size, _input_value): (cl_device_id, usize, *const c_void),
-        _q: cl_program_build_info,
+        (dev, input_value_size, input_value, output_value_size): (
+            cl_device_id,
+            usize,
+            *const c_void,
+            usize,
+        ),
+        q: cl_program_build_info,
     ) -> CLResult<Vec<MaybeUninit<u8>>> {
-        let _kernel = self.get_ref()?;
-        let _dev = d.get_arc()?;
+        let kernel = self.get_ref()?;
 
-        Err(CL_INVALID_OPERATION)
+        // CL_INVALID_DEVICE [..] if device is NULL but there is more than one device associated
+        // with kernel.
+        let dev = if dev.is_null() {
+            if kernel.prog.devs.len() > 1 {
+                return Err(CL_INVALID_DEVICE);
+            } else {
+                kernel.prog.devs[0]
+            }
+        } else {
+            dev.get_ref()?
+        };
+
+        // CL_INVALID_DEVICE if device is not in the list of devices associated with kernel
+        if !kernel.prog.devs.contains(&dev) {
+            return Err(CL_INVALID_DEVICE);
+        }
+
+        // CL_INVALID_OPERATION if device does not support subgroups.
+        if !dev.subgroups_supported() {
+            return Err(CL_INVALID_OPERATION);
+        }
+
+        let usize_byte = mem::size_of::<usize>();
+        // first we have to convert the input to a proper thing
+        let input: &[usize] = match q {
+            CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE | CL_KERNEL_SUB_GROUP_COUNT_FOR_NDRANGE => {
+                // CL_INVALID_VALUE if param_name is CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE,
+                // CL_KERNEL_SUB_GROUP_COUNT_FOR_NDRANGE or ... and the size in bytes specified by
+                // input_value_size is not valid or if input_value is NULL.
+                if ![usize_byte, 2 * usize_byte, 3 * usize_byte].contains(&input_value_size) {
+                    return Err(CL_INVALID_VALUE);
+                }
+                // SAFETY: we verified the size as best as possible, with the rest we trust the client
+                unsafe { slice::from_raw_parts(input_value.cast(), input_value_size / usize_byte) }
+            }
+            CL_KERNEL_LOCAL_SIZE_FOR_SUB_GROUP_COUNT => {
+                // CL_INVALID_VALUE if param_name is ... CL_KERNEL_LOCAL_SIZE_FOR_SUB_GROUP_COUNT
+                // and the size in bytes specified by input_value_size is not valid or if
+                // input_value is NULL.
+                if input_value_size != usize_byte || input_value.is_null() {
+                    return Err(CL_INVALID_VALUE);
+                }
+                // SAFETY: we trust the client here
+                unsafe { slice::from_raw_parts(input_value.cast(), 1) }
+            }
+            _ => &[],
+        };
+
+        Ok(match q {
+            CL_KERNEL_SUB_GROUP_COUNT_FOR_NDRANGE => {
+                cl_prop::<usize>(kernel.subgroups_for_block(dev, input))
+            }
+            CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE => {
+                cl_prop::<usize>(kernel.subgroup_size_for_block(dev, input))
+            }
+            CL_KERNEL_LOCAL_SIZE_FOR_SUB_GROUP_COUNT => {
+                let subgroups = input[0];
+                let mut res = vec![0; 3];
+
+                for subgroup_size in kernel.subgroup_sizes(dev) {
+                    let threads = subgroups * subgroup_size;
+
+                    if threads > dev.max_threads_per_block() {
+                        continue;
+                    }
+
+                    let block = [threads, 1, 1];
+                    let real_subgroups = kernel.subgroups_for_block(dev, &block);
+
+                    if real_subgroups == subgroups {
+                        res = block.to_vec();
+                        break;
+                    }
+                }
+
+                res.truncate(output_value_size / usize_byte);
+                cl_prop::<Vec<usize>>(res)
+            }
+            CL_KERNEL_MAX_NUM_SUB_GROUPS => {
+                let threads = kernel.max_threads_per_block(dev);
+                let max_groups = dev.max_subgroups();
+
+                let mut result = 0;
+                for sgs in kernel.subgroup_sizes(dev) {
+                    result = cmp::max(result, threads / sgs);
+                    result = cmp::min(result, max_groups as usize);
+                }
+                cl_prop::<usize>(result)
+            }
+            CL_KERNEL_COMPILE_NUM_SUB_GROUPS => cl_prop::<usize>(kernel.num_subgroups),
+            CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL => cl_prop::<usize>(kernel.subgroup_size),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
     }
 }
 
@@ -229,7 +329,7 @@ fn set_kernel_arg(
     let k = kernel.get_arc()?;
 
     // CL_INVALID_ARG_INDEX if arg_index is not a valid argument index.
-    if let Some(arg) = k.args.get(arg_index as usize) {
+    if let Some(arg) = k.build.args.get(arg_index as usize) {
         // CL_INVALID_ARG_SIZE if arg_size does not match the size of the data type for an argument
         // that is not a memory object or if the argument is a memory object and
         // arg_size != sizeof(cl_mem) or if arg_size is zero and the argument is declared with the
@@ -329,7 +429,7 @@ fn set_kernel_arg_svm_pointer(
         return Err(CL_INVALID_OPERATION);
     }
 
-    if let Some(arg) = kernel.args.get(arg_index) {
+    if let Some(arg) = kernel.build.args.get(arg_index) {
         if !matches!(
             arg.kind,
             KernelArgType::MemConstant | KernelArgType::MemGlobal
@@ -412,7 +512,7 @@ fn enqueue_ndrange_kernel(
 
     // CL_INVALID_PROGRAM_EXECUTABLE if there is no successfully built program executable available
     // for device associated with command_queue.
-    if k.prog.status(&q.device) != CL_BUILD_SUCCESS as cl_build_status {
+    if k.prog.status(q.device) != CL_BUILD_SUCCESS as cl_build_status {
         return Err(CL_INVALID_PROGRAM_EXECUTABLE);
     }
 

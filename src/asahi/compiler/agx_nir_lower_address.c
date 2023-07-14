@@ -88,7 +88,23 @@ match_soa(nir_builder *b, struct match *match, unsigned format_shift)
       if (!nir_ssa_scalar_is_const(summands[i]))
          continue;
 
-      unsigned offset = nir_ssa_scalar_as_uint(summands[i]);
+      /* Note: This is treated as signed regardless of the sign of the match.
+       * The final addition into the base can be signed or unsigned, but when
+       * we shift right by the format shift below we need to always sign extend
+       * to ensure that any negative offset remains negative when added into
+       * the index. That is, in:
+       *
+       * addr = base + (u64)((index + offset) << shift)
+       *
+       * `index` and `offset` are always 32 bits, and a negative `offset` needs
+       * to subtract from the index, so it needs to be sign extended when we
+       * apply the format shift regardless of the fact that the later conversion
+       * to 64 bits does not sign extend.
+       *
+       * TODO: We need to confirm how the hardware handles 32-bit overflow when
+       * applying the format shift, which might need rework here again.
+       */
+      int offset = nir_ssa_scalar_as_int(summands[i]);
       nir_ssa_scalar variable;
       uint32_t multiplier;
 
@@ -96,7 +112,7 @@ match_soa(nir_builder *b, struct match *match, unsigned format_shift)
       if (!match_imul_imm(summands[1 - i], &variable, &multiplier))
          return false;
 
-      unsigned offset_shifted = offset >> format_shift;
+      int offset_shifted = offset >> format_shift;
       uint32_t multiplier_shifted = multiplier >> format_shift;
 
       /* If the multiplier or the offset are not aligned, we can't rewrite */

@@ -218,7 +218,7 @@ BEGIN_TEST(assembler.long_jump.constaddr)
    bld.reset(program->create_and_insert_block());
 
    //>> s_getpc_b64 s[0:1]                                          ; be801f00
-   //! s_add_u32 s0, s0, 0xe4                                      ; 8000ff00 000000e4
+   //! s_add_u32 s0, s0, 32                                         ; 8000ff00 00000020
    bld.sop1(aco_opcode::p_constaddr_getpc, Definition(PhysReg(0), s2), Operand::zero());
    bld.sop2(aco_opcode::p_constaddr_addlo, Definition(PhysReg(0), s1), bld.def(s1, scc),
             Operand(PhysReg(0), s1), Operand::zero(), Operand::zero());
@@ -336,11 +336,11 @@ BEGIN_TEST(assembler.p_constaddr)
    dst1.setFixed(PhysReg(2));
 
    //>> s_getpc_b64 s[0:1] ; be801c00
-   //! s_add_u32 s0, s0, 24 ; 8000ff00 00000018
+   //! s_add_u32 s0, s0, 44 ; 8000ff00 0000002c
    bld.pseudo(aco_opcode::p_constaddr, dst0, Operand::zero());
 
    //! s_getpc_b64 s[2:3] ; be821c00
-   //! s_add_u32 s2, s2, 44 ; 8002ff02 0000002c
+   //! s_add_u32 s2, s2, 64 ; 8002ff02 00000040
    bld.pseudo(aco_opcode::p_constaddr, dst1, Operand::c32(32));
 
    aco::lower_to_hw_instr(program.get());

@@ -494,10 +494,6 @@ update_render_cntl(struct fd_batch *batch, struct pipe_framebuffer_state *pfb,
    }
 }
 
-/* extra size to store VSC_DRAW_STRM_SIZE: */
-#define VSC_DRAW_STRM_SIZE(pitch) ((pitch)*32 + 0x100)
-#define VSC_PRIM_STRM_SIZE(pitch) ((pitch)*32)
-
 static void
 update_vsc_pipe(struct fd_batch *batch)
 {
@@ -505,6 +501,7 @@ update_vsc_pipe(struct fd_batch *batch)
    struct fd6_context *fd6_ctx = fd6_context(ctx);
    const struct fd_gmem_stateobj *gmem = batch->gmem_state;
    struct fd_ringbuffer *ring = batch->gmem;
+   unsigned max_vsc_pipes = batch->ctx->screen->info->num_vsc_pipes;
    int i;
 
    if (batch->draw_strm_bits / 8 > fd6_ctx->vsc_draw_strm_pitch) {
@@ -530,27 +527,31 @@ update_vsc_pipe(struct fd_batch *batch)
    }
 
    if (!fd6_ctx->vsc_draw_strm) {
-      fd6_ctx->vsc_draw_strm = fd_bo_new(
-         ctx->screen->dev, VSC_DRAW_STRM_SIZE(fd6_ctx->vsc_draw_strm_pitch),
-         FD_BO_NOMAP, "vsc_draw_strm");
+      /* We also use four bytes per vsc pipe at the end of the draw
+       * stream buffer for VSC_DRAW_STRM_SIZE written back by hw
+       * (see VSC_DRAW_STRM_SIZE_ADDRESS)
+       */
+      unsigned sz = (max_vsc_pipes * fd6_ctx->vsc_draw_strm_pitch) +
+                    (max_vsc_pipes * 4);
+      fd6_ctx->vsc_draw_strm =
+         fd_bo_new(ctx->screen->dev, sz, FD_BO_NOMAP, "vsc_draw_strm");
    }
 
    if (!fd6_ctx->vsc_prim_strm) {
-      fd6_ctx->vsc_prim_strm = fd_bo_new(
-         ctx->screen->dev, VSC_PRIM_STRM_SIZE(fd6_ctx->vsc_prim_strm_pitch),
-         FD_BO_NOMAP, "vsc_prim_strm");
+      unsigned sz = max_vsc_pipes * fd6_ctx->vsc_prim_strm_pitch;
+      fd6_ctx->vsc_prim_strm =
+         fd_bo_new(ctx->screen->dev, sz, FD_BO_NOMAP, "vsc_prim_strm");
    }
 
-   OUT_REG(
-      ring, A6XX_VSC_BIN_SIZE(.width = gmem->bin_w, .height = gmem->bin_h),
-      A6XX_VSC_DRAW_STRM_SIZE_ADDRESS(.bo = fd6_ctx->vsc_draw_strm,
-                                      .bo_offset =
-                                         32 * fd6_ctx->vsc_draw_strm_pitch));
+   OUT_REG(ring, A6XX_VSC_BIN_SIZE(.width = gmem->bin_w, .height = gmem->bin_h),
+           A6XX_VSC_DRAW_STRM_SIZE_ADDRESS(.bo = fd6_ctx->vsc_draw_strm,
+                                           .bo_offset = max_vsc_pipes *
+                                              fd6_ctx->vsc_draw_strm_pitch));
 
    OUT_REG(ring, A6XX_VSC_BIN_COUNT(.nx = gmem->nbins_x, .ny = gmem->nbins_y));
 
-   OUT_PKT4(ring, REG_A6XX_VSC_PIPE_CONFIG_REG(0), 32);
-   for (i = 0; i < 32; i++) {
+   OUT_PKT4(ring, REG_A6XX_VSC_PIPE_CONFIG_REG(0), max_vsc_pipes);
+   for (i = 0; i < max_vsc_pipes; i++) {
       const struct fd_vsc_pipe *pipe = &gmem->vsc_pipe[i];
       OUT_RING(ring, A6XX_VSC_PIPE_CONFIG_REG_X(pipe->x) |
                         A6XX_VSC_PIPE_CONFIG_REG_Y(pipe->y) |
@@ -770,7 +771,7 @@ emit_conditional_ib(struct fd_batch *batch, const struct fd_tile *tile,
 
    OUT_PKT7(ring, CP_COND_REG_EXEC, 2);
    OUT_RING(ring, CP_COND_REG_EXEC_0_MODE(PRED_TEST));
-   OUT_RING(ring, CP_COND_REG_EXEC_1_DWORDS(4 * count));
+   OUT_RING(ring, PRED_TEST_CP_COND_REG_EXEC_1_DWORDS(4 * count));
 
    for (unsigned i = 0; i < count; i++) {
       uint32_t dwords;
@@ -1088,6 +1089,7 @@ fd6_emit_tile_prep(struct fd_batch *batch, const struct fd_tile *tile)
 
    if (use_hw_binning(batch)) {
       const struct fd_vsc_pipe *pipe = &gmem->vsc_pipe[tile->p];
+      unsigned num_vsc_pipes = ctx->screen->info->num_vsc_pipes;
 
       OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
 
@@ -1099,9 +1101,10 @@ fd6_emit_tile_prep(struct fd_batch *batch, const struct fd_tile *tile)
                         CP_SET_BIN_DATA5_0_VSC_N(tile->n));
       OUT_RELOC(ring, fd6_ctx->vsc_draw_strm, /* per-pipe draw-stream address */
                 (tile->p * fd6_ctx->vsc_draw_strm_pitch), 0, 0);
-      OUT_RELOC(ring,
-                fd6_ctx->vsc_draw_strm, /* VSC_DRAW_STRM_ADDRESS + (p * 4) */
-                (tile->p * 4) + (32 * fd6_ctx->vsc_draw_strm_pitch), 0, 0);
+      OUT_RELOC(
+         ring, fd6_ctx->vsc_draw_strm, /* VSC_DRAW_STRM_ADDRESS + (p * 4) */
+         (tile->p * 4) + (num_vsc_pipes * fd6_ctx->vsc_draw_strm_pitch),
+         0, 0);
       OUT_RELOC(ring, fd6_ctx->vsc_prim_strm,
                 (tile->p * fd6_ctx->vsc_prim_strm_pitch), 0, 0);
 

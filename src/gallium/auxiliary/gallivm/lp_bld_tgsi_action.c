@@ -1627,7 +1627,7 @@ log_emit_cpu(
    LLVMValueRef src0 = emit_data->args[0];
 
    lp_build_log2_approx(&bld_base->base, src0,
-                        &p_exp, &p_floor_log2, &p_log2, FALSE);
+                        &p_exp, &p_floor_log2, &p_log2, false);
 
    emit_data->output[TGSI_CHAN_X] = p_floor_log2;
 

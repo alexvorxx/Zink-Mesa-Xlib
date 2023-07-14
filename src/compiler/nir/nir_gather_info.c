@@ -1023,10 +1023,8 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
 
       shader->info.ray_queries += MAX2(glsl_get_aoa_size(var->type), 1);
    }
-   nir_foreach_function(func, shader) {
-      if (!func->impl)
-         continue;
-      nir_foreach_function_temp_variable(var, func->impl) {
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_function_temp_variable(var, impl) {
          if (!var->data.ray_query)
             continue;
 

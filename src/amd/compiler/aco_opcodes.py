@@ -293,6 +293,34 @@ opcode("p_cbranch_nz", format=Format.PSEUDO_BRANCH)
 
 opcode("p_barrier", format=Format.PSEUDO_BARRIER)
 
+# Primitive Ordered Pixel Shading pseudo-instructions.
+
+# For querying whether the current wave can enter the ordered section on GFX9-10.3, doing
+# s_add_i32(pops_exiting_wave_id, op0), but in a way that it's different from a usual SALU
+# instruction so that it's easier to maintain the volatility of pops_exiting_wave_id and to handle
+# the polling specially in scheduling.
+# Definitions:
+# - Result SGPR;
+# - Clobbered SCC.
+# Operands:
+# - s1 value to add, usually -(current_wave_ID + 1) (or ~current_wave_ID) to remap the exiting wave
+#   ID from wrapping [0, 0x3FF] to monotonic [0, 0xFFFFFFFF].
+opcode("p_pops_gfx9_add_exiting_wave_id")
+
+# Indicates that the wait for the completion of the ordered section in overlapped waves has been
+# finished on GFX9-10.3. Not lowered to any hardware instructions.
+opcode("p_pops_gfx9_overlapped_wave_wait_done")
+
+# Indicates that a POPS ordered section has ended, hints that overlapping waves can possibly
+# continue execution. The overlapping waves may actually be resumed by this instruction or anywhere
+# later, however, especially taking into account the fact that there can be multiple ordered
+# sections in a wave (for instance, if one is chosen in divergent control flow in the source
+# shader), thus multiple p_pops_gfx9_ordered_section_done instructions. At least one must be present
+# in the program if POPS is used, however, otherwise the location of the end of the ordered section
+# will be undefined. Only needed on GFX9-10.3 (GFX11+ ordered section is until the last export,
+# can't be exited early). Not lowered to any hardware instructions.
+opcode("p_pops_gfx9_ordered_section_done")
+
 opcode("p_spill")
 opcode("p_reload")
 

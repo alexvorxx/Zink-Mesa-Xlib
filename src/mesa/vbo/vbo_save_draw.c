@@ -207,6 +207,7 @@ vbo_save_playback_vertex_list_gallium(struct gl_context *ctx,
     * which attribs have stride = 0 and whether edge flags are enabled.
     */
    const GLbitfield enabled = node->enabled_attribs[mode];
+   const GLbitfield saved_varying_vp_inputs = ctx->VertexProgram._VaryingInputs;
    _mesa_set_varying_vp_inputs(ctx, enabled);
 
    if (ctx->NewState)
@@ -291,8 +292,9 @@ vbo_save_playback_vertex_list_gallium(struct gl_context *ctx,
                                          NULL, 1);
    }
 
-   /* Restore edge flag state. */
+   /* Restore edge flag state and ctx->VertexProgram._VaryingInputs. */
    _mesa_update_edgeflag_state_vao(ctx);
+   _mesa_set_varying_vp_inputs(ctx, saved_varying_vp_inputs);
 
    if (copy_to_current)
       playback_copy_to_current(ctx, node);

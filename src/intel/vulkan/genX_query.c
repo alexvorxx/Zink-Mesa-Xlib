@@ -1894,8 +1894,12 @@ genX(CmdWriteAccelerationStructuresPropertiesKHR)(
       }
    }
 
+   /* TODO: Figure out why MTL needs ANV_PIPE_DATA_CACHE_FLUSH_BIT in order
+    * to not lose the availability bit.
+    */
    anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                             ANV_PIPE_END_OF_PIPE_SYNC_BIT |
+                             ANV_PIPE_DATA_CACHE_FLUSH_BIT,
                              "after write acceleration struct props");
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 

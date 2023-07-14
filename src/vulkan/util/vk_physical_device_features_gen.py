@@ -45,6 +45,9 @@ RENAMED_FEATURES = {
 
     ('MeshShaderFeaturesNV', 'taskShader'): 'taskShaderNV',
     ('MeshShaderFeaturesNV', 'meshShader'): 'meshShaderNV',
+
+    ('CooperativeMatrixFeaturesNV', 'cooperativeMatrix'): 'cooperativeMatrixNV',
+    ('CooperativeMatrixFeaturesNV', 'cooperativeMatrixRobustBufferAccess'): 'cooperativeMatrixRobustBufferAccessNV',
 }
 
 KNOWN_ALIASES = [

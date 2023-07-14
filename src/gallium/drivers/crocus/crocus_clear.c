@@ -101,8 +101,8 @@ can_fast_clear_color(struct crocus_context *ice,
     * during resolves because the resolve operations only know about the
     * resource and not the renderbuffer.
     */
-   if (isl_format_srgb_to_linear(render_format) !=
-       isl_format_srgb_to_linear(format)) {
+   if (!crocus_render_formats_color_compatible(render_format, res->surf.format,
+                                             color)) {
       return false;
    }
 
@@ -705,8 +705,7 @@ crocus_clear_texture(struct pipe_context *ctx,
    struct crocus_resource *res = (void *) p_res;
 
    if (devinfo->ver < 6) {
-      util_clear_texture(ctx, p_res,
-                         level, box, data);
+      u_default_clear_texture(ctx, p_res, level, box, data);
       return;
    }
 

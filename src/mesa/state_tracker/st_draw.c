@@ -403,8 +403,8 @@ st_get_draw_context(struct st_context *st)
     */
    draw_wide_line_threshold(st->draw, 1000.0f);
    draw_wide_point_threshold(st->draw, 1000.0f);
-   draw_enable_line_stipple(st->draw, FALSE);
-   draw_enable_point_sprites(st->draw, FALSE);
+   draw_enable_line_stipple(st->draw, false);
+   draw_enable_point_sprites(st->draw, false);
 
    return st->draw;
 }

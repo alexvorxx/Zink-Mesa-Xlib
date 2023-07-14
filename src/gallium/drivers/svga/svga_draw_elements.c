@@ -188,7 +188,7 @@ svga_hwtnl_simple_draw_range_elements(struct svga_hwtnl *hwtnl,
                                       unsigned count,
                                       unsigned start_instance,
                                       unsigned instance_count,
-                                      ubyte vertices_per_patch)
+                                      uint8_t vertices_per_patch)
 {
    SVGA3dPrimitiveRange range;
    unsigned hw_prim;

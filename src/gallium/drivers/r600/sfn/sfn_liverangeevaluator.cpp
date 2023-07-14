@@ -445,7 +445,7 @@ LiveRangeInstrVisitor::record_write(const Register *reg)
 
       for (auto i = 0u; i < array.size(); ++i) {
          auto& rav = m_register_access(array(i, reg->chan()));
-         rav.record_write(m_line, m_current_scope);
+         rav.record_write(m_line > 0 ? m_line - 1 : 0, m_current_scope);
       }
    } else {
       auto& ra = m_register_access(*reg);
@@ -476,7 +476,7 @@ LiveRangeInstrVisitor::record_read(const Register *reg, LiveRangeEntry::EUse use
 
       for (auto i = 0u; i < array.size(); ++i) {
          auto& rav = m_register_access(array(i, reg->chan()));
-         rav.record_read(m_line, m_current_scope, use);
+         rav.record_read(m_line + 1, m_current_scope, use);
       }
    } else {
       sfn_log << SfnLog::merge << *reg << " read:" << m_line << "\n";

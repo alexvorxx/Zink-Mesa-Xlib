@@ -144,7 +144,7 @@ enum {
    lp_build_struct_get2(_variant->gallivm, _variant->context_type, _ptr, DRAW_GS_JIT_CTX_EMITTED_PRIMS, "emitted_prims")
 
 
-typedef boolean
+typedef bool
 (*draw_jit_vert_func)(struct draw_vs_jit_context *context,
                       const struct lp_jit_resources *resources,
                       struct vertex_header *io,
@@ -542,7 +542,7 @@ struct draw_llvm {
    struct draw_context *draw;
 
    LLVMContextRef context;
-   boolean context_owned;
+   bool context_owned;
 
    struct draw_vs_jit_context vs_jit_context;
    struct draw_gs_jit_context gs_jit_context;
@@ -687,7 +687,7 @@ draw_store_aos_array(struct gallivm_state *gallivm,
                      LLVMValueRef* aos,
                      int attrib,
                      LLVMValueRef clipmask,
-                     boolean need_edgeflag,
+                     bool need_edgeflag,
                      bool per_prim);
 
 #endif

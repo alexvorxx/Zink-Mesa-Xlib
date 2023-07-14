@@ -131,7 +131,7 @@ i915_vbuf_render_get_vertex_info(struct vbuf_render *render)
       i915_update_derived(i915);
    }
 
-   return &i915->current.vertex_info;
+   return &i915->current.vertex_info.draw;
 }
 
 /**
@@ -200,9 +200,9 @@ i915_vbuf_render_new_buf(struct i915_vbuf_render *i915_render, size_t size)
  *    a new buffer. Also updates may update the vbo state
  *    on the i915 context.
  */
-static boolean
+static bool
 i915_vbuf_render_allocate_vertices(struct vbuf_render *render,
-                                   ushort vertex_size, ushort nr_vertices)
+                                   uint16_t vertex_size, uint16_t nr_vertices)
 {
    struct i915_vbuf_render *i915_render = i915_vbuf_render(render);
    size_t size = (size_t)vertex_size * (size_t)nr_vertices;
@@ -234,8 +234,8 @@ i915_vbuf_render_allocate_vertices(struct vbuf_render *render,
    i915_vbuf_update_vbo_state(render);
 
    if (!i915_render->vbo)
-      return FALSE;
-   return TRUE;
+      return false;
+   return true;
 }
 
 static void *
@@ -251,8 +251,8 @@ i915_vbuf_render_map_vertices(struct vbuf_render *render)
 }
 
 static void
-i915_vbuf_render_unmap_vertices(struct vbuf_render *render, ushort min_index,
-                                ushort max_index)
+i915_vbuf_render_unmap_vertices(struct vbuf_render *render, uint16_t min_index,
+                                uint16_t max_index)
 {
    struct i915_vbuf_render *i915_render = i915_vbuf_render(render);
 
@@ -497,7 +497,7 @@ out:
  * If type is zero normal operation assumed.
  */
 static void
-draw_generate_indices(struct vbuf_render *render, const ushort *indices,
+draw_generate_indices(struct vbuf_render *render, const uint16_t *indices,
                       uint32_t nr_indices, unsigned type)
 {
    struct i915_vbuf_render *i915_render = i915_vbuf_render(render);
@@ -564,7 +564,7 @@ draw_calc_nr_indices(uint32_t nr_indices, unsigned type)
 
 static void
 i915_vbuf_render_draw_elements(struct vbuf_render *render,
-                               const ushort *indices, uint32_t nr_indices)
+                               const uint16_t *indices, uint32_t nr_indices)
 {
    struct i915_vbuf_render *i915_render = i915_vbuf_render(render);
    struct i915_context *i915 = i915_render->i915;

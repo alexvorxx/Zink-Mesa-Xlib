@@ -263,8 +263,7 @@ clc_lower_images(nir_shader *nir, struct clc_image_lower_context *context)
          continue;
       assert(func->impl);
 
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
+      nir_builder b = nir_builder_create(func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -285,8 +284,7 @@ static void
 clc_lower_64bit_semantics(nir_shader *nir)
 {
    nir_foreach_function(func, nir) {
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
+      nir_builder b = nir_builder_create(func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -332,8 +330,7 @@ clc_lower_nonnormalized_samplers(nir_shader *nir,
          continue;
       assert(func->impl);
 
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
+      nir_builder b = nir_builder_create(func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr_safe(instr, block) {
@@ -458,9 +455,6 @@ clc_lower_constant_to_ssbo(nir_shader *nir,
          continue;
 
       assert(func->impl);
-
-      nir_builder b;
-      nir_builder_init(&b, func->impl);
 
       nir_foreach_block(block, func->impl) {
          nir_foreach_instr(instr, block) {

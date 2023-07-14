@@ -18,8 +18,6 @@ use std::ffi::CString;
 use std::mem::size_of;
 use std::ptr;
 use std::slice;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -62,9 +60,8 @@ pub enum ProgramSourceType {
 pub struct Program {
     pub base: CLObjectBase<CL_INVALID_PROGRAM>,
     pub context: Arc<Context>,
-    pub devs: Vec<Arc<Device>>,
+    pub devs: Vec<&'static Device>,
     pub src: ProgramSourceType,
-    pub kernel_count: AtomicU32,
     build: Mutex<ProgramBuild>,
 }
 
@@ -72,21 +69,21 @@ impl_cl_type_trait!(cl_program, Program, CL_INVALID_PROGRAM);
 
 #[derive(Clone)]
 pub struct NirKernelBuild {
-    pub nirs: HashMap<Arc<Device>, Arc<NirShader>>,
+    pub nirs: HashMap<&'static Device, Arc<NirShader>>,
     pub args: Vec<KernelArg>,
     pub internal_args: Vec<InternalKernelArg>,
     pub attributes_string: String,
 }
 
 pub(super) struct ProgramBuild {
-    builds: HashMap<Arc<Device>, ProgramDevBuild>,
+    builds: HashMap<&'static Device, ProgramDevBuild>,
     spec_constants: HashMap<u32, nir_const_value>,
     kernels: Vec<String>,
-    kernel_builds: HashMap<String, NirKernelBuild>,
+    kernel_builds: HashMap<String, Arc<NirKernelBuild>>,
 }
 
 impl ProgramBuild {
-    fn attribute_str(&self, kernel: &str, d: &Arc<Device>) -> String {
+    fn attribute_str(&self, kernel: &str, d: &Device) -> String {
         let info = self.dev_build(d);
 
         let attributes_strings = [
@@ -103,7 +100,7 @@ impl ProgramBuild {
         attributes_strings.join(",")
     }
 
-    fn args(&self, dev: &Arc<Device>, kernel: &str) -> Vec<spirv::SPIRVKernelArg> {
+    fn args(&self, dev: &Device, kernel: &str) -> Vec<spirv::SPIRVKernelArg> {
         self.dev_build(dev).spirv.as_ref().unwrap().args(kernel)
     }
 
@@ -125,7 +122,7 @@ impl ProgramBuild {
             for d in self.devs_with_build() {
                 let (nir, args, internal_args) = convert_spirv_to_nir(self, kernel_name, &args, d);
                 let attributes_string = self.attribute_str(kernel_name, d);
-                nirs.insert(d.clone(), Arc::new(nir));
+                nirs.insert(d, Arc::new(nir));
                 args_set.insert(args);
                 internal_args_set.insert(internal_args);
                 attributes_string_set.insert(attributes_string);
@@ -148,12 +145,12 @@ impl ProgramBuild {
 
             self.kernel_builds.insert(
                 kernel_name.clone(),
-                NirKernelBuild {
+                Arc::new(NirKernelBuild {
                     nirs: nirs,
                     args: args,
                     internal_args: internal_args,
                     attributes_string: attributes_string,
-                },
+                }),
             );
         }
     }
@@ -166,15 +163,15 @@ impl ProgramBuild {
         self.builds.get_mut(dev).unwrap()
     }
 
-    fn devs_with_build(&self) -> Vec<&Arc<Device>> {
+    fn devs_with_build(&self) -> Vec<&'static Device> {
         self.builds
             .iter()
             .filter(|(_, build)| build.status == CL_BUILD_SUCCESS as cl_build_status)
-            .map(|(d, _)| d)
+            .map(|(&d, _)| d)
             .collect()
     }
 
-    pub fn hash_key(&self, dev: &Arc<Device>, name: &str) -> Option<cache_key> {
+    pub fn hash_key(&self, dev: &Device, name: &str) -> Option<cache_key> {
         if let Some(cache) = dev.screen().shader_cache() {
             let info = self.dev_build(dev);
             assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
@@ -197,7 +194,7 @@ impl ProgramBuild {
         }
     }
 
-    pub fn to_nir(&self, kernel: &str, d: &Arc<Device>) -> NirShader {
+    pub fn to_nir(&self, kernel: &str, d: &Device) -> NirShader {
         let mut spec_constants: Vec<_> = self
             .spec_constants
             .iter()
@@ -288,11 +285,13 @@ fn prepare_options(options: &str, dev: &Device) -> Vec<CString> {
 }
 
 impl Program {
-    fn create_default_builds(devs: &[Arc<Device>]) -> HashMap<Arc<Device>, ProgramDevBuild> {
+    fn create_default_builds(
+        devs: &[&'static Device],
+    ) -> HashMap<&'static Device, ProgramDevBuild> {
         devs.iter()
-            .map(|d| {
+            .map(|&d| {
                 (
-                    d.clone(),
+                    d,
                     ProgramDevBuild {
                         spirv: None,
                         status: CL_BUILD_NONE,
@@ -305,13 +304,12 @@ impl Program {
             .collect()
     }
 
-    pub fn new(context: &Arc<Context>, devs: &[Arc<Device>], src: CString) -> Arc<Program> {
+    pub fn new(context: &Arc<Context>, devs: &[&'static Device], src: CString) -> Arc<Program> {
         Arc::new(Self {
             base: CLObjectBase::new(),
             context: context.clone(),
             devs: devs.to_vec(),
             src: ProgramSourceType::Src(src),
-            kernel_count: AtomicU32::new(0),
             build: Mutex::new(ProgramBuild {
                 builds: Self::create_default_builds(devs),
                 spec_constants: HashMap::new(),
@@ -323,13 +321,13 @@ impl Program {
 
     pub fn from_bins(
         context: Arc<Context>,
-        devs: Vec<Arc<Device>>,
+        devs: Vec<&'static Device>,
         bins: &[&[u8]],
     ) -> Arc<Program> {
         let mut builds = HashMap::new();
         let mut kernels = HashSet::new();
 
-        for (d, b) in devs.iter().zip(bins) {
+        for (&d, b) in devs.iter().zip(bins) {
             let mut ptr = b.as_ptr();
             let bin_type;
             let spirv;
@@ -368,7 +366,7 @@ impl Program {
             }
 
             builds.insert(
-                d.clone(),
+                d,
                 ProgramDevBuild {
                     spirv: spirv,
                     status: CL_BUILD_SUCCESS as cl_build_status,
@@ -392,7 +390,6 @@ impl Program {
             context: context,
             devs: devs,
             src: ProgramSourceType::Binary,
-            kernel_count: AtomicU32::new(0),
             build: Mutex::new(build),
         })
     }
@@ -404,7 +401,6 @@ impl Program {
             devs: context.devs.clone(),
             context: context,
             src: ProgramSourceType::Il(SPIRVBin::from_bin(spirv)),
-            kernel_count: AtomicU32::new(0),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
                 spec_constants: HashMap::new(),
@@ -418,24 +414,24 @@ impl Program {
         self.build.lock().unwrap()
     }
 
-    pub fn get_nir_kernel_build(&self, name: &str) -> NirKernelBuild {
+    pub fn get_nir_kernel_build(&self, name: &str) -> Arc<NirKernelBuild> {
         let info = self.build_info();
         info.kernel_builds.get(name).unwrap().clone()
     }
 
-    pub fn status(&self, dev: &Arc<Device>) -> cl_build_status {
+    pub fn status(&self, dev: &Device) -> cl_build_status {
         self.build_info().dev_build(dev).status
     }
 
-    pub fn log(&self, dev: &Arc<Device>) -> String {
+    pub fn log(&self, dev: &Device) -> String {
         self.build_info().dev_build(dev).log.clone()
     }
 
-    pub fn bin_type(&self, dev: &Arc<Device>) -> cl_program_binary_type {
+    pub fn bin_type(&self, dev: &Device) -> cl_program_binary_type {
         self.build_info().dev_build(dev).bin_type
     }
 
-    pub fn options(&self, dev: &Arc<Device>) -> String {
+    pub fn options(&self, dev: &Device) -> String {
         self.build_info().dev_build(dev).options.clone()
     }
 
@@ -514,10 +510,13 @@ impl Program {
     }
 
     pub fn active_kernels(&self) -> bool {
-        self.kernel_count.load(Ordering::Relaxed) != 0
+        self.build_info()
+            .kernel_builds
+            .values()
+            .any(|b| Arc::strong_count(b) > 1)
     }
 
-    pub fn build(&self, dev: &Arc<Device>, options: String) -> bool {
+    pub fn build(&self, dev: &Device, options: String) -> bool {
         let lib = options.contains("-create-library");
         let mut info = self.build_info();
         if !self.do_compile(dev, options, &Vec::new(), &mut info) {
@@ -525,6 +524,16 @@ impl Program {
         }
 
         let mut d = info.dev_build_mut(dev);
+
+        // skip compilation if we already have the right thing.
+        if self.is_bin() {
+            if d.bin_type == CL_PROGRAM_BINARY_TYPE_EXECUTABLE && !lib
+                || d.bin_type == CL_PROGRAM_BINARY_TYPE_LIBRARY && lib
+            {
+                return true;
+            }
+        }
+
         let spirvs = [d.spirv.as_ref().unwrap()];
         let (spirv, log) = spirv::SPIRVBin::link(&spirvs, lib);
 
@@ -550,7 +559,7 @@ impl Program {
 
     fn do_compile(
         &self,
-        dev: &Arc<Device>,
+        dev: &Device,
         options: String,
         headers: &[spirv::CLCHeader],
         info: &mut MutexGuard<ProgramBuild>,
@@ -612,28 +621,22 @@ impl Program {
         }
     }
 
-    pub fn compile(
-        &self,
-        dev: &Arc<Device>,
-        options: String,
-        headers: &[spirv::CLCHeader],
-    ) -> bool {
+    pub fn compile(&self, dev: &Device, options: String, headers: &[spirv::CLCHeader]) -> bool {
         self.do_compile(dev, options, headers, &mut self.build_info())
     }
 
     pub fn link(
         context: Arc<Context>,
-        devs: &[Arc<Device>],
+        devs: &[&'static Device],
         progs: &[Arc<Program>],
         options: String,
     ) -> Arc<Program> {
-        let devs: Vec<Arc<Device>> = devs.iter().map(|d| (*d).clone()).collect();
         let mut builds = HashMap::new();
         let mut kernels = HashSet::new();
         let mut locks: Vec<_> = progs.iter().map(|p| p.build_info()).collect();
         let lib = options.contains("-create-library");
 
-        for d in &devs {
+        for &d in devs {
             let bins: Vec<_> = locks
                 .iter_mut()
                 .map(|l| l.dev_build(d).spirv.as_ref().unwrap())
@@ -659,7 +662,7 @@ impl Program {
             };
 
             builds.insert(
-                d.clone(),
+                d,
                 ProgramDevBuild {
                     spirv: spirv,
                     status: status,
@@ -683,11 +686,14 @@ impl Program {
         Arc::new(Self {
             base: CLObjectBase::new(),
             context: context,
-            devs: devs,
+            devs: devs.to_owned(),
             src: ProgramSourceType::Linked,
-            kernel_count: AtomicU32::new(0),
             build: Mutex::new(build),
         })
+    }
+
+    pub fn is_bin(&self) -> bool {
+        matches!(self.src, ProgramSourceType::Binary)
     }
 
     pub fn is_il(&self) -> bool {

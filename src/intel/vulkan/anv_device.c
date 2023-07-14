@@ -201,8 +201,6 @@ get_device_extensions(const struct anv_physical_device *device,
     */
    const bool mesh_shader_enabled = device->info.has_mesh_shading &&
       debug_get_bool_option("ANV_MESH_SHADER", false);
-   const bool nv_mesh_shading_enabled =
-      debug_get_bool_option("ANV_EXPERIMENTAL_NV_MESH_SHADER", false);
 
    *ext = (struct vk_device_extension_table) {
       .KHR_8bit_storage                      = true,
@@ -384,8 +382,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .INTEL_shader_integer_functions2       = true,
       .EXT_multi_draw                        = true,
       .NV_compute_shader_derivatives         = true,
-      .NV_mesh_shader                        = mesh_shader_enabled &&
-                                               nv_mesh_shading_enabled,
       .VALVE_mutable_descriptor_type         = true,
    };
 }
@@ -404,8 +400,7 @@ get_features(const struct anv_physical_device *pdevice,
    const bool rt_enabled = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
 
    const bool mesh_shader =
-      pdevice->vk.supported_extensions.EXT_mesh_shader ||
-      pdevice->vk.supported_extensions.NV_mesh_shader;
+      pdevice->vk.supported_extensions.EXT_mesh_shader;
 
    *features = (struct vk_features) {
       /* Vulkan 1.0 */
@@ -632,8 +627,8 @@ get_features(const struct anv_physical_device *pdevice,
       .stippledSmoothLines = false,
 
       /* VK_NV_mesh_shader */
-      .taskShaderNV = mesh_shader,
-      .meshShaderNV = mesh_shader,
+      .taskShaderNV = false,
+      .meshShaderNV = false,
 
       /* VK_EXT_mesh_shader */
       .taskShader = mesh_shader,
@@ -1146,12 +1141,23 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
          };
       }
       if (v_count > 0 && pdevice->video_decode_enabled) {
+         /* HEVC support on Gfx9 is only available on VCS0. So limit the number of video queues
+          * to the first VCS engine instance.
+          *
+          * We should be able to query HEVC support from the kernel using the engine query uAPI,
+          * but this appears to be broken :
+          *    https://gitlab.freedesktop.org/drm/intel/-/issues/8832
+          *
+          * When this bug is fixed we should be able to check HEVC support to determine the
+          * correct number of queues.
+          */
          pdevice->queue.families[family_count++] = (struct anv_queue_family) {
             .queueFlags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
-            .queueCount = v_count,
+            .queueCount = pdevice->info.ver == 9 ? MIN2(1, v_count) : v_count,
             .engine_class = INTEL_ENGINE_CLASS_VIDEO,
          };
       }
+
       /* Increase count below when other families are added as a reminder to
        * increase the ANV_MAX_QUEUE_FAMILIES value.
        */
@@ -1801,8 +1807,7 @@ anv_get_physical_device_properties_1_1(struct anv_physical_device *pdevice,
                        VK_SHADER_STAGE_INTERSECTION_BIT_KHR |
                        VK_SHADER_STAGE_CALLABLE_BIT_KHR;
    }
-   if (pdevice->vk.supported_extensions.NV_mesh_shader ||
-       pdevice->vk.supported_extensions.EXT_mesh_shader) {
+   if (pdevice->vk.supported_extensions.EXT_mesh_shader) {
       scalar_stages |= VK_SHADER_STAGE_TASK_BIT_EXT |
                        VK_SHADER_STAGE_MESH_BIT_EXT;
    }
@@ -2216,66 +2221,6 @@ void anv_GetPhysicalDeviceProperties2(
          VkPhysicalDeviceMaintenance4Properties *properties =
             (VkPhysicalDeviceMaintenance4Properties *)ext;
          properties->maxBufferSize = pdevice->isl_dev.max_buffer_size;
-         break;
-      }
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_NV: {
-         VkPhysicalDeviceMeshShaderPropertiesNV *props =
-            (VkPhysicalDeviceMeshShaderPropertiesNV *)ext;
-
-         /* Bounded by the maximum representable size in
-          * 3DSTATE_MESH_SHADER_BODY::SharedLocalMemorySize.  Same for Task.
-          */
-         const uint32_t max_slm_size = 64 * 1024;
-
-         /* Bounded by the maximum representable size in
-          * 3DSTATE_MESH_SHADER_BODY::LocalXMaximum.  Same for Task.
-          */
-         const uint32_t max_workgroup_size = 1 << 10;
-
-         /* Bounded by the maximum representable count in
-          * 3DSTATE_MESH_SHADER_BODY::MaximumPrimitiveCount.
-          */
-         const uint32_t max_primitives = 1024;
-
-         /* TODO(mesh): Multiview. */
-         const uint32_t max_view_count = 1;
-
-         props->maxDrawMeshTasksCount = UINT32_MAX;
-
-         /* TODO(mesh): Implement workgroup Y and Z sizes larger than one by
-          * mapping them to/from the single value that HW provides us
-          * (currently used for X).
-          */
-
-         props->maxTaskWorkGroupInvocations = max_workgroup_size;
-         props->maxTaskWorkGroupSize[0] = max_workgroup_size;
-         props->maxTaskWorkGroupSize[1] = 1;
-         props->maxTaskWorkGroupSize[2] = 1;
-         props->maxTaskTotalMemorySize = max_slm_size;
-         props->maxTaskOutputCount = UINT16_MAX;
-
-         props->maxMeshWorkGroupInvocations = max_workgroup_size;
-         props->maxMeshWorkGroupSize[0] = max_workgroup_size;
-         props->maxMeshWorkGroupSize[1] = 1;
-         props->maxMeshWorkGroupSize[2] = 1;
-         props->maxMeshTotalMemorySize = max_slm_size / max_view_count;
-         props->maxMeshOutputPrimitives = max_primitives / max_view_count;
-         props->maxMeshMultiviewViewCount = max_view_count;
-
-         /* Depends on what indices can be represented with IndexFormat.  For
-          * now we always use U32, so bound to the maximum unique vertices we
-          * need for the maximum primitives.
-          *
-          * TODO(mesh): Revisit this if we drop "U32" IndexFormat when adding
-          * support for others.
-          */
-         props->maxMeshOutputVertices = 3 * props->maxMeshOutputPrimitives;
-
-
-         props->meshOutputPerVertexGranularity = 32;
-         props->meshOutputPerPrimitiveGranularity = 32;
-
          break;
       }
 
@@ -2881,18 +2826,37 @@ decode_get_bo(void *v_batch, bool ppgtt, uint64_t address)
    if (!device->cmd_buffer_being_decoded)
       return (struct intel_batch_decode_bo) { };
 
-   struct anv_batch_bo **bo;
-
-   u_vector_foreach(bo, &device->cmd_buffer_being_decoded->seen_bbos) {
+   struct anv_batch_bo **bbo;
+   u_vector_foreach(bbo, &device->cmd_buffer_being_decoded->seen_bbos) {
       /* The decoder zeroes out the top 16 bits, so we need to as well */
-      uint64_t bo_address = (*bo)->bo->offset & (~0ull >> 16);
+      uint64_t bo_address = (*bbo)->bo->offset & (~0ull >> 16);
 
-      if (address >= bo_address && address < bo_address + (*bo)->bo->size) {
+      if (address >= bo_address && address < bo_address + (*bbo)->bo->size) {
          return (struct intel_batch_decode_bo) {
             .addr = bo_address,
-            .size = (*bo)->bo->size,
-            .map = (*bo)->bo->map,
+            .size = (*bbo)->bo->size,
+            .map = (*bbo)->bo->map,
          };
+      }
+
+      uint32_t dep_words = (*bbo)->relocs.dep_words;
+      BITSET_WORD *deps = (*bbo)->relocs.deps;
+      for (uint32_t w = 0; w < dep_words; w++) {
+         BITSET_WORD mask = deps[w];
+         while (mask) {
+            int i = u_bit_scan(&mask);
+            uint32_t gem_handle = w * BITSET_WORDBITS + i;
+            struct anv_bo *bo = anv_device_lookup_bo(device, gem_handle);
+            assert(bo->refcount > 0);
+            bo_address = bo->offset & (~0ull >> 16);
+            if (address >= bo_address && address < bo_address + bo->size) {
+               return (struct intel_batch_decode_bo) {
+                  .addr = bo_address,
+                  .size = bo->size,
+                  .map = bo->map,
+               };
+            }
+         }
       }
    }
 
@@ -3098,15 +3062,8 @@ VkResult anv_CreateDevice(
          &pCreateInfo->pQueueCreateInfos[i];
 
       for (uint32_t j = 0; j < queueCreateInfo->queueCount; j++) {
-         /* When using legacy contexts, we use I915_EXEC_RENDER but, with
-          * engine-based contexts, the bottom 6 bits of exec_flags are used
-          * for the engine ID.
-          */
-         uint32_t exec_flags = device->physical->engine_info ?
-                               device->queue_count : I915_EXEC_RENDER;
-
          result = anv_queue_init(device, &device->queues[device->queue_count],
-                                 exec_flags, queueCreateInfo, j);
+                                 queueCreateInfo, j);
          if (result != VK_SUCCESS)
             goto fail_queues;
 

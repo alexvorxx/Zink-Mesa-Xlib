@@ -294,6 +294,7 @@ static void si_get_compute_state_info(struct pipe_context *ctx, void *state,
    uint8_t wave_size = program->shader.wave_size;
    info->private_memory = DIV_ROUND_UP(program->shader.config.scratch_bytes_per_wave, wave_size);
    info->preferred_simd_size = wave_size;
+   info->simd_sizes = wave_size;
    info->max_threads = si_get_max_workgroup_size(&program->shader);
 }
 
@@ -500,7 +501,7 @@ static bool si_switch_compute_shader(struct si_context *sctx, struct si_compute 
    radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, shader->bo,
                              RADEON_USAGE_READ | RADEON_PRIO_SHADER_BINARY);
 
-   if (sctx->gfx_level >= GFX11) {
+   if (sctx->screen->info.has_set_pairs_packets) {
       radeon_push_compute_sh_reg(R_00B830_COMPUTE_PGM_LO, shader_va >> 8);
       radeon_opt_push_compute_sh_reg(R_00B848_COMPUTE_PGM_RSRC1,
                                      SI_TRACKED_COMPUTE_PGM_RSRC1, config->rsrc1);
@@ -528,11 +529,19 @@ static bool si_switch_compute_shader(struct si_context *sctx, struct si_compute 
       radeon_opt_set_sh_reg(sctx, R_00B860_COMPUTE_TMPRING_SIZE,
                             SI_TRACKED_COMPUTE_TMPRING_SIZE, tmpring_size);
 
-      if (sctx->family >= CHIP_GFX940 && !sctx->screen->info.has_graphics && shader->scratch_bo) {
+      if (shader->scratch_bo &&
+          (sctx->gfx_level >= GFX11 ||
+           (sctx->family >= CHIP_GFX940 && !sctx->screen->info.has_graphics))) {
          radeon_opt_set_sh_reg2(sctx, R_00B840_COMPUTE_DISPATCH_SCRATCH_BASE_LO,
                                 SI_TRACKED_COMPUTE_DISPATCH_SCRATCH_BASE_LO,
                                 sctx->compute_scratch_buffer->gpu_address >> 8,
                                 sctx->compute_scratch_buffer->gpu_address >> 40);
+      }
+
+      if (sctx->gfx_level >= GFX11) {
+         radeon_opt_set_sh_reg(sctx, R_00B8A0_COMPUTE_PGM_RSRC3,
+                               SI_TRACKED_COMPUTE_PGM_RSRC3,
+                               S_00B8A0_INST_PREF_SIZE(si_get_shader_prefetch_size(shader)));
       }
       radeon_end();
    }
@@ -732,7 +741,7 @@ static void si_setup_nir_user_data(struct si_context *sctx, const struct pipe_gr
          }
          radeon_begin_again(cs);
       } else {
-         if (sctx->gfx_level >= GFX11) {
+         if (sctx->screen->info.has_set_pairs_packets) {
             radeon_push_compute_sh_reg(grid_size_reg, info->grid[0]);
             radeon_push_compute_sh_reg(grid_size_reg + 4, info->grid[1]);
             radeon_push_compute_sh_reg(grid_size_reg + 8, info->grid[2]);
@@ -748,7 +757,7 @@ static void si_setup_nir_user_data(struct si_context *sctx, const struct pipe_gr
    if (sel->info.uses_variable_block_size) {
       uint32_t value = info->block[0] | (info->block[1] << 10) | (info->block[2] << 20);
 
-      if (sctx->gfx_level >= GFX11) {
+      if (sctx->screen->info.has_set_pairs_packets) {
          radeon_push_compute_sh_reg(block_size_reg, value);
       } else {
          radeon_set_sh_reg(block_size_reg, value);
@@ -758,7 +767,7 @@ static void si_setup_nir_user_data(struct si_context *sctx, const struct pipe_gr
    if (sel->info.base.cs.user_data_components_amd) {
       unsigned num = sel->info.base.cs.user_data_components_amd;
 
-      if (sctx->gfx_level >= GFX11) {
+      if (sctx->screen->info.has_set_pairs_packets) {
          for (unsigned i = 0; i < num; i++)
             radeon_push_compute_sh_reg(cs_user_data_reg + i * 4, sctx->cs_user_data[i]);
       } else {
@@ -794,7 +803,7 @@ static void si_emit_dispatch_packets(struct si_context *sctx, const struct pipe_
                                      sctx->cs_max_waves_per_sh,
                                      threadgroups_per_cu);
 
-   if (sctx->gfx_level >= GFX11) {
+   if (sctx->screen->info.has_set_pairs_packets) {
       radeon_opt_push_compute_sh_reg(R_00B854_COMPUTE_RESOURCE_LIMITS,
                                      SI_TRACKED_COMPUTE_RESOURCE_LIMITS,
                                      compute_resource_limits);
@@ -839,7 +848,7 @@ static void si_emit_dispatch_packets(struct si_context *sctx, const struct pipe_
       num_threads[2] = S_00B824_NUM_THREAD_FULL(info->block[2]);
    }
 
-   if (sctx->gfx_level >= GFX11) {
+   if (sctx->screen->info.has_set_pairs_packets) {
       radeon_opt_push_compute_sh_reg(R_00B81C_COMPUTE_NUM_THREAD_X,
                                      SI_TRACKED_COMPUTE_NUM_THREAD_X, num_threads[0]);
       radeon_opt_push_compute_sh_reg(R_00B820_COMPUTE_NUM_THREAD_Y,

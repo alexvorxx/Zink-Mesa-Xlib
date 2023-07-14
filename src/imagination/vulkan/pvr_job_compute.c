@@ -49,6 +49,10 @@ pvr_submit_info_stream_init(struct pvr_compute_ctx *ctx,
    const struct pvr_compute_ctx_switch *const ctx_switch = &ctx->ctx_switch;
 
    uint32_t *stream_ptr = (uint32_t *)submit_info->fw_stream;
+   uint32_t *stream_len_ptr = stream_ptr;
+
+   /* Leave space for stream header. */
+   stream_ptr += pvr_cmd_length(KMD_STREAM_HDR);
 
    pvr_csb_pack ((uint64_t *)stream_ptr,
                  CR_TPU_BORDER_COLOUR_TABLE_CDM,
@@ -122,8 +126,13 @@ pvr_submit_info_stream_init(struct pvr_compute_ctx *ctx,
       stream_ptr++;
    }
 
-   submit_info->fw_stream_len = (uint8_t *)stream_ptr - submit_info->fw_stream;
+   submit_info->fw_stream_len =
+      (uint8_t *)stream_ptr - (uint8_t *)submit_info->fw_stream;
    assert(submit_info->fw_stream_len <= ARRAY_SIZE(submit_info->fw_stream));
+
+   pvr_csb_pack ((uint64_t *)stream_len_ptr, KMD_STREAM_HDR, value) {
+      value.length = submit_info->fw_stream_len;
+   }
 }
 
 static void pvr_submit_info_ext_stream_init(
@@ -133,13 +142,17 @@ static void pvr_submit_info_ext_stream_init(
    const struct pvr_device_info *const dev_info =
       &ctx->device->pdevice->dev_info;
 
-   uint32_t *ext_stream_ptr = (uint32_t *)submit_info->fw_ext_stream;
+   uint32_t *stream_ptr = (uint32_t *)submit_info->fw_stream;
+   uint32_t main_stream_len =
+      pvr_csb_unpack((uint64_t *)stream_ptr, KMD_STREAM_HDR).length;
+   uint32_t *ext_stream_ptr =
+      (uint32_t *)((uint8_t *)stream_ptr + main_stream_len);
    uint32_t *header0_ptr;
 
    header0_ptr = ext_stream_ptr;
-   ext_stream_ptr += pvr_cmd_length(FW_STREAM_EXTHDR_COMPUTE0);
+   ext_stream_ptr += pvr_cmd_length(KMD_STREAM_EXTHDR_COMPUTE0);
 
-   pvr_csb_pack (header0_ptr, FW_STREAM_EXTHDR_COMPUTE0, header0) {
+   pvr_csb_pack (header0_ptr, KMD_STREAM_EXTHDR_COMPUTE0, header0) {
       if (PVR_HAS_QUIRK(dev_info, 49927)) {
          header0.has_brn49927 = true;
 
@@ -150,29 +163,23 @@ static void pvr_submit_info_ext_stream_init(
       }
    }
 
-   submit_info->fw_ext_stream_len =
-      (uint8_t *)ext_stream_ptr - submit_info->fw_ext_stream;
-   assert(submit_info->fw_ext_stream_len <=
-          ARRAY_SIZE(submit_info->fw_ext_stream));
-
-   if ((*header0_ptr & PVRX(FW_STREAM_EXTHDR_DATA_MASK)) == 0)
-      submit_info->fw_ext_stream_len = 0;
+   if ((*header0_ptr & PVRX(KMD_STREAM_EXTHDR_DATA_MASK)) != 0) {
+      submit_info->fw_stream_len =
+         (uint8_t *)ext_stream_ptr - (uint8_t *)submit_info->fw_stream;
+      assert(submit_info->fw_stream_len <= ARRAY_SIZE(submit_info->fw_stream));
+   }
 }
 
 static void
 pvr_submit_info_flags_init(const struct pvr_device_info *const dev_info,
                            const struct pvr_sub_cmd_compute *const sub_cmd,
-                           uint32_t *const flags)
+                           struct pvr_winsys_compute_submit_flags *flags)
 {
-   *flags = 0;
-
-   if (sub_cmd->uses_barrier)
-      *flags |= PVR_WINSYS_COMPUTE_FLAG_PREVENT_ALL_OVERLAP;
-
-   if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support) &&
-       sub_cmd->uses_atomic_ops) {
-      *flags |= PVR_WINSYS_COMPUTE_FLAG_SINGLE_CORE;
-   }
+   *flags = (struct pvr_winsys_compute_submit_flags){
+      .prevent_all_overlap = sub_cmd->uses_barrier,
+      .use_single_core = PVR_HAS_FEATURE(dev_info, gpu_multicore_support) &&
+                         sub_cmd->uses_atomic_ops,
+   };
 }
 
 static void pvr_compute_job_ws_submit_info_init(

@@ -40,7 +40,7 @@ lower_impl(nir_function_impl *impl,
    nir_builder b;
    nir_variable *in, *new_out = NULL;
 
-   nir_builder_init(&b, impl);
+   b = nir_builder_create(impl);
 
    in = nir_state_variable_create(shader, glsl_vec4_type(),
                                   "gl_PointSizeClampedMESA",

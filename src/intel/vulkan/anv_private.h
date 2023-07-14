@@ -419,7 +419,7 @@ struct anv_bo {
 
    /* Last known offset.  This value is provided by the kernel when we
     * execbuf and is used as the presumed offset for the next bunch of
-    * relocations.
+    * relocations, in canonical address format.
     */
    uint64_t offset;
 
@@ -596,7 +596,7 @@ struct anv_block_pool {
 
    uint64_t size;
 
-   /* The address where the start of the pool is pinned. The various bos that
+   /* The canonical address where the start of the pool is pinned. The various bos that
     * are created as the pool grows will have addresses in the range
     * [start_address, start_address + BLOCK_POOL_MEMFD_SIZE).
     */
@@ -1387,7 +1387,6 @@ VkResult anv_device_wait(struct anv_device *device, struct anv_bo *bo,
                          int64_t timeout);
 
 VkResult anv_queue_init(struct anv_device *device, struct anv_queue *queue,
-                        uint32_t exec_flags,
                         const VkDeviceQueueCreateInfo *pCreateInfo,
                         uint32_t index_in_family);
 void anv_queue_finish(struct anv_queue *queue);
@@ -1671,7 +1670,27 @@ struct anv_storage_image_descriptor {
     */
    uint32_t vanilla;
 
-   uint32_t pad;
+   /** Image depth
+    *
+    * By default the HW RESINFO message allows us to query the depth of an image :
+    *
+    * From the Kaby Lake docs for the RESINFO message:
+    *
+    *    "Surface Type | ... | Blue
+    *    --------------+-----+----------------
+    *    SURFTYPE_3D  | ... | (Depth+1)»LOD"
+    *
+    * With VK_EXT_sliced_view_of_3d, we have to support a slice of a 3D image,
+    * meaning at a depth offset with a new depth value potentially reduced
+    * from the original image. Unfortunately if we change the Depth value of
+    * the image, we then run into issues with Yf/Ys tilings where the HW fetch
+    * data at incorrect locations.
+    *
+    * To solve this, we put the slice depth in the descriptor and recompose
+    * the vec3 (width, height, depth) using this field for z and xy using the
+    * RESINFO result.
+    */
+   uint32_t image_depth;
 };
 
 /** Struct representing a address/range descriptor
@@ -2200,6 +2219,11 @@ enum anv_pipe_bits {
     * This bit flush data-port's Untyped L1 data cache (LSC L1).
     */
    ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT = (1 << 16),
+
+   /* This bit controls the flushing of the engine (Render, Compute) specific
+    * entries from the compression cache.
+    */
+   ANV_PIPE_CCS_CACHE_FLUSH_BIT              = (1 << 17),
 
    ANV_PIPE_CS_STALL_BIT                     = (1 << 20),
    ANV_PIPE_END_OF_PIPE_SYNC_BIT             = (1 << 21),

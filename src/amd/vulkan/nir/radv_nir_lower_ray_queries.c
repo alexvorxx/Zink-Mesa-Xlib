@@ -641,8 +641,7 @@ radv_nir_lower_ray_queries(struct nir_shader *shader, struct radv_device *device
       if (!function->impl)
          continue;
 
-      nir_builder builder;
-      nir_builder_init(&builder, function->impl);
+      nir_builder builder = nir_builder_create(function->impl);
 
       nir_foreach_variable_in_list (var, &function->impl->locals) {
          if (!var->data.ray_query)

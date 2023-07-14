@@ -42,13 +42,13 @@ build_cube_select(nir_builder *b, nir_ssa_def *ma, nir_ssa_def *id, nir_ssa_def 
    nir_ssa_def *deriv_y = nir_channel(b, deriv, 1);
    nir_ssa_def *deriv_z = nir_channel(b, deriv, 2);
 
-   nir_ssa_def *is_ma_positive = nir_fge(b, ma, nir_imm_float(b, 0.0));
+   nir_ssa_def *is_ma_positive = nir_fge_imm(b, ma, 0.0);
    nir_ssa_def *sgn_ma =
       nir_bcsel(b, is_ma_positive, nir_imm_float(b, 1.0), nir_imm_float(b, -1.0));
    nir_ssa_def *neg_sgn_ma = nir_fneg(b, sgn_ma);
 
-   nir_ssa_def *is_ma_z = nir_fge(b, id, nir_imm_float(b, 4.0));
-   nir_ssa_def *is_ma_y = nir_fge(b, id, nir_imm_float(b, 2.0));
+   nir_ssa_def *is_ma_z = nir_fge_imm(b, id, 4.0);
+   nir_ssa_def *is_ma_y = nir_fge_imm(b, id, 2.0);
    is_ma_y = nir_iand(b, is_ma_y, nir_inot(b, is_ma_z));
    nir_ssa_def *is_not_ma_x = nir_ior(b, is_ma_z, is_ma_y);
 
@@ -98,12 +98,12 @@ prepare_cube_coords(nir_builder *b, nir_tex_instr *tex, nir_ssa_def **coord, nir
    if (tex->is_array && options->gfx_level <= GFX8 && coords[3])
       coords[3] = nir_fmax(b, coords[3], nir_imm_float(b, 0.0));
 
-   nir_ssa_def *cube_coords = nir_cube_face_coord_amd(b, nir_vec(b, coords, 3));
-   nir_ssa_def *sc = nir_channel(b, cube_coords, 0);
-   nir_ssa_def *tc = nir_channel(b, cube_coords, 1);
+   nir_ssa_def *cube_coords = nir_cube_amd(b, nir_vec(b, coords, 3));
+   nir_ssa_def *sc = nir_channel(b, cube_coords, 1);
+   nir_ssa_def *tc = nir_channel(b, cube_coords, 0);
    nir_ssa_def *ma = nir_channel(b, cube_coords, 2);
    nir_ssa_def *invma = nir_frcp(b, nir_fabs(b, ma));
-   nir_ssa_def *id = nir_cube_face_index_amd(b, nir_vec(b, coords, 3));
+   nir_ssa_def *id = nir_channel(b, cube_coords, 3);
 
    if (ddx || ddy) {
       sc = nir_fmul(b, sc, invma);
@@ -523,7 +523,7 @@ ac_nir_lower_tex(nir_shader *nir, const ac_nir_lower_tex_options *options)
       nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
       struct move_tex_coords_state state;
-      nir_builder_init(&state.toplevel_b, impl);
+      state.toplevel_b = nir_builder_create(impl);
       state.options = options;
       state.num_wqm_vgprs = 0;
 

@@ -1921,10 +1921,13 @@ invalidate_buffer(struct zink_context *ctx, struct zink_resource *res)
       debug_printf("new backing resource alloc failed!\n");
       return false;
    }
+   bool needs_bda = !!res->obj->bda;
    /* this ref must be transferred before rebind or else BOOM */
    zink_batch_reference_resource_move(&ctx->batch, res);
    res->obj = new_obj;
    res->queue = VK_QUEUE_FAMILY_IGNORED;
+   if (needs_bda)
+      zink_resource_get_address(screen, res);
    zink_resource_rebind(ctx, res);
    return true;
 }
@@ -2424,7 +2427,7 @@ zink_resource_copy_box_intersects(struct zink_resource *res, unsigned level, con
       return true;
    struct pipe_box *b = res->obj->copies[level].data;
    unsigned num_boxes = util_dynarray_num_elements(&res->obj->copies[level], struct pipe_box);
-   boolean (*intersect)(const struct pipe_box *, const struct pipe_box *);
+   bool (*intersect)(const struct pipe_box *, const struct pipe_box *);
    /* determine intersection function based on dimensionality */
    switch (res->base.b.target) {
    case PIPE_BUFFER:

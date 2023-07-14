@@ -46,7 +46,7 @@ struct lp_line_info {
    float dx;
    float dy;
    float oneoverarea;
-   boolean frontfacing;
+   bool frontfacing;
 
    const float (*v1)[4];
    const float (*v2)[4];
@@ -263,7 +263,7 @@ print_line(struct lp_setup_context *setup,
 }
 
 
-static inline boolean
+static inline bool
 sign(float x)
 {
    return x >= 0;
@@ -279,7 +279,7 @@ fracf(float f)
 }
 
 
-static boolean
+static bool
 try_setup_line(struct lp_setup_context *setup,
                const float (*v1)[4],
                const float (*v2)[4])
@@ -299,7 +299,7 @@ try_setup_line(struct lp_setup_context *setup,
    if (lp_setup_zero_sample_mask(setup)) {
       if (0) debug_printf("zero sample mask\n");
       LP_COUNT(nr_culled_tris);
-      return TRUE;
+      return true;
    }
 
    const float (*pv)[4];
@@ -326,7 +326,7 @@ try_setup_line(struct lp_setup_context *setup,
    const float area = dx * dx + dy * dy;
    if (area == 0) {
       LP_COUNT(nr_culled_tris);
-      return TRUE;
+      return true;
    }
 
    struct lp_line_info info;
@@ -599,12 +599,12 @@ try_setup_line(struct lp_setup_context *setup,
    if (!u_rect_test_intersection(&setup->draw_regions[viewport_index], &bbox)) {
       if (0) debug_printf("no intersection\n");
       LP_COUNT(nr_culled_tris);
-      return TRUE;
+      return true;
    }
 
    int max_szorig = ((bbox.x1 - (bbox.x0 & ~3)) |
                      (bbox.y1 - (bbox.y0 & ~3)));
-   boolean use_32bits = max_szorig <= MAX_FIXED_LENGTH32;
+   bool use_32bits = max_szorig <= MAX_FIXED_LENGTH32;
    bboxpos = bbox;
 
    /* Can safely discard negative regions:
@@ -619,7 +619,7 @@ try_setup_line(struct lp_setup_context *setup,
     */
    const struct u_rect *scissor = &setup->draw_regions[viewport_index];
 
-   boolean s_planes[4];
+   bool s_planes[4];
    scissor_planes_needed(s_planes, &bboxpos, scissor);
    nr_planes += s_planes[0] + s_planes[1] + s_planes[2] + s_planes[3];
 
@@ -627,7 +627,7 @@ try_setup_line(struct lp_setup_context *setup,
                                                            key->num_inputs,
                                                            nr_planes);
    if (!line)
-      return FALSE;
+      return false;
 
 #ifdef DEBUG
    line->v[0][0] = v1[0][0];
@@ -654,7 +654,7 @@ try_setup_line(struct lp_setup_context *setup,
        setup->face_slot > 0) {
       line->inputs.frontfacing = v1[setup->face_slot][0];
    } else {
-      line->inputs.frontfacing = TRUE;
+      line->inputs.frontfacing = true;
    }
 
    /* Setup parameter interpolants:
@@ -665,7 +665,7 @@ try_setup_line(struct lp_setup_context *setup,
    info.frontfacing = line->inputs.frontfacing;
    setup_line_coefficients(setup, &info);
 
-   line->inputs.disable = FALSE;
+   line->inputs.disable = false;
    line->inputs.layer = layer;
    line->inputs.viewport_index = viewport_index;
    line->inputs.view_index = setup->view_index;

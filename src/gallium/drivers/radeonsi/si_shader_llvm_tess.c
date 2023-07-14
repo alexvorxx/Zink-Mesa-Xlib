@@ -215,7 +215,7 @@ static LLVMValueRef si_nir_load_tcs_varyings(struct ac_shader_abi *abi, LLVMType
 
    assert(ctx->shader->key.ge.opt.same_patch_vertices && !param_index);
 
-   ubyte semantic = info->input[driver_location].semantic;
+   uint8_t semantic = info->input[driver_location].semantic;
    /* Load the TCS input from a VGPR. */
    unsigned func_param = ctx->args->ac.tcs_rel_ids.arg_index + 1 +
       si_shader_io_get_unique_index(semantic) * 4;

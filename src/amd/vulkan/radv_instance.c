@@ -94,7 +94,6 @@ static const struct debug_control radv_perftest_options[] = {{"localbos", RADV_P
                                                              {"gewave32", RADV_PERFTEST_GE_WAVE_32},
                                                              {"nosam", RADV_PERFTEST_NO_SAM},
                                                              {"sam", RADV_PERFTEST_SAM},
-                                                             {"rt", RADV_PERFTEST_RT},
                                                              {"nggc", RADV_PERFTEST_NGGC},
                                                              {"emulate_rt", RADV_PERFTEST_EMULATE_RT},
                                                              {"rtwave64", RADV_PERFTEST_RT_WAVE_64},
@@ -109,6 +108,12 @@ radv_get_perftest_option_name(int id)
    assert(id < ARRAY_SIZE(radv_perftest_options) - 1);
    return radv_perftest_options[id].string;
 }
+
+static const struct debug_control trace_options[] = {
+   {"rgp", RADV_TRACE_MODE_RGP},
+   {"rra", RADV_TRACE_MODE_RRA},
+   {NULL, 0},
+};
 
 // clang-format off
 static const driOptionDescription radv_dri_options[] = {
@@ -143,7 +148,6 @@ static const driOptionDescription radv_dri_options[] = {
       DRI_CONF_RADV_FLUSH_BEFORE_QUERY_COPY(false)
       DRI_CONF_RADV_ENABLE_UNIFIED_HEAP_ON_APU(false)
       DRI_CONF_RADV_TEX_NON_UNIFORM(false)
-      DRI_CONF_RADV_RT(false)
       DRI_CONF_RADV_FLUSH_BEFORE_TIMESTAMP_WRITE(false)
       DRI_CONF_RADV_RT_WAVE64(false)
       DRI_CONF_RADV_APP_LAYER()
@@ -241,6 +245,17 @@ static const struct vk_instance_extension_table radv_instance_extensions_support
 #endif
 };
 
+static void
+radv_handle_legacy_sqtt_trigger(struct vk_instance *instance)
+{
+   char *trigger_file = getenv("RADV_THREAD_TRACE_TRIGGER");
+   if (trigger_file) {
+      instance->trace_trigger_file = trigger_file;
+      instance->trace_mode |= RADV_TRACE_MODE_RGP;
+      fprintf(stderr, "WARNING: RADV_THREAD_TRACE_TRIGGER is deprecated, please use MESA_VK_TRACE_TRIGGER instead.\n");
+   }
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
                     VkInstance *pInstance)
@@ -265,6 +280,9 @@ radv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationC
       vk_free(pAllocator, instance);
       return vk_error(NULL, result);
    }
+
+   vk_instance_add_driver_trace_modes(&instance->vk, trace_options);
+   radv_handle_legacy_sqtt_trigger(&instance->vk);
 
    instance->debug_flags = parse_debug_string(getenv("RADV_DEBUG"), radv_debug_options);
    instance->perftest_flags = parse_debug_string(getenv("RADV_PERFTEST"), radv_perftest_options);

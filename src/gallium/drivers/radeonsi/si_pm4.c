@@ -35,16 +35,13 @@ static unsigned packed_opcode_to_unpacked(unsigned opcode)
 
 static unsigned unpacked_opcode_to_packed(struct si_pm4_state *state, unsigned opcode)
 {
-   switch (opcode) {
-   case PKT3_SET_CONTEXT_REG:
-      if (state->screen->info.gfx_level >= GFX11)
+   if (state->screen->info.has_set_pairs_packets) {
+      switch (opcode) {
+      case PKT3_SET_CONTEXT_REG:
          return PKT3_SET_CONTEXT_REG_PAIRS_PACKED;
-      break;
-   case PKT3_SET_SH_REG:
-      if (state->screen->info.gfx_level >= GFX11 &&
-          state->screen->info.register_shadowing_required)
+      case PKT3_SET_SH_REG:
          return PKT3_SET_SH_REG_PAIRS_PACKED;
-      break;
+      }
    }
 
    return opcode;

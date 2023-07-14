@@ -110,7 +110,7 @@ static void pvr_cmd_buffer_free_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
       case PVR_SUB_CMD_TYPE_TRANSFER:
          list_for_each_entry_safe (struct pvr_transfer_cmd,
                                    transfer_cmd,
-                                   &sub_cmd->transfer.transfer_cmds,
+                                   sub_cmd->transfer.transfer_cmds,
                                    link) {
             list_del(&transfer_cmd->link);
             if (!transfer_cmd->is_deferred_clear)
@@ -506,10 +506,11 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
 
    assert(emit_count > 0);
 
-   pvr_uscgen_per_job_eot(emit_count,
-                          pbe_cs_words,
-                          &usc_temp_count,
-                          &eot_program_bin);
+   pvr_uscgen_eot("per-job EOT",
+                  emit_count,
+                  pbe_cs_words,
+                  &usc_temp_count,
+                  &eot_program_bin);
 
    result = pvr_cmd_buffer_upload_usc(cmd_buffer,
                                       eot_program_bin.data,
@@ -1080,6 +1081,17 @@ pvr_pass_get_pixel_output_width(const struct pvr_render_pass *pass,
    return util_next_power_of_two(width);
 }
 
+static inline bool
+pvr_ds_attachment_requires_zls(const struct pvr_ds_attachment *attachment)
+{
+   bool zls_used;
+
+   zls_used = attachment->load.d || attachment->load.s;
+   zls_used |= attachment->store.d || attachment->store.s;
+
+   return zls_used;
+}
+
 /**
  * \brief If depth and/or stencil attachment dimensions are not tile-aligned,
  * then we may need to insert some additional transfer subcommands.
@@ -1119,7 +1131,7 @@ static bool pvr_sub_cmd_gfx_requires_ds_subtile_alignment(
 
    /* No ZLS functions enabled; nothing to do. */
    if ((!job->has_depth_attachment && !job->has_stencil_attachment) ||
-       (!job->ds.load && !job->ds.store)) {
+       !pvr_ds_attachment_requires_zls(&job->ds)) {
       return false;
    }
 
@@ -1151,7 +1163,7 @@ pvr_sub_cmd_gfx_align_ds_subtiles(struct pvr_cmd_buffer *const cmd_buffer,
    assert(list_last_entry(&cmd_buffer->sub_cmds, struct pvr_sub_cmd, link) ==
           prev_sub_cmd);
 
-   if (!ds->load && !ds->store)
+   if (!pvr_ds_attachment_requires_zls(ds))
       return VK_SUCCESS;
 
    rogue_get_zls_tile_size_xy(&cmd_buffer->device->pdevice->dev_info,
@@ -1203,7 +1215,7 @@ pvr_sub_cmd_gfx_align_ds_subtiles(struct pvr_cmd_buffer *const cmd_buffer,
       },
    };
 
-   if (ds->load) {
+   if (ds->load.d || ds->load.s) {
       cmd_buffer->state.current_sub_cmd = NULL;
 
       result =
@@ -1235,7 +1247,7 @@ pvr_sub_cmd_gfx_align_ds_subtiles(struct pvr_cmd_buffer *const cmd_buffer,
       cmd_buffer->state.current_sub_cmd = prev_sub_cmd;
    }
 
-   if (ds->store) {
+   if (ds->store.d || ds->store.s) {
       cmd_buffer->state.current_sub_cmd = NULL;
 
       result =
@@ -1375,29 +1387,49 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
    struct pvr_framebuffer *framebuffer = render_pass_info->framebuffer;
    struct pvr_spm_bgobj_state *spm_bgobj_state =
       &framebuffer->spm_bgobj_state_per_render[sub_cmd->hw_render_idx];
-   struct pvr_emit_state emit_state = { 0 };
    struct pvr_render_target *render_target;
    VkResult result;
 
-   pvr_setup_emit_state(dev_info, hw_render, render_pass_info, &emit_state);
+   if (sub_cmd->barrier_store) {
+      /* There can only ever be one frag job running on the hardware at any one
+       * time, and a context switch is not allowed mid-tile, so instead of
+       * allocating a new scratch buffer we can reuse the SPM scratch buffer to
+       * perform the store.
+       * So use the SPM EOT program with the SPM PBE reg words in order to store
+       * the render to the SPM scratch buffer.
+       */
 
-   memcpy(job->pbe_reg_words,
-          emit_state.pbe_reg_words,
-          sizeof(emit_state.pbe_reg_words));
+      memcpy(job->pbe_reg_words,
+             &framebuffer->spm_eot_state_per_render[0].pbe_reg_words,
+             sizeof(job->pbe_reg_words));
+      job->pds_pixel_event_data_offset =
+         framebuffer->spm_eot_state_per_render[0]
+            .pixel_event_program_data_offset;
+   } else {
+      struct pvr_emit_state emit_state = { 0 };
 
-   result = pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
-      cmd_buffer,
-      emit_state.emit_count,
-      emit_state.pbe_cs_words[0],
-      &pds_pixel_event_program);
-   if (result != VK_SUCCESS)
-      return result;
+      pvr_setup_emit_state(dev_info, hw_render, render_pass_info, &emit_state);
 
-   job->pds_pixel_event_data_offset = pds_pixel_event_program.data_offset;
+      memcpy(job->pbe_reg_words,
+             emit_state.pbe_reg_words,
+             sizeof(job->pbe_reg_words));
+
+      result = pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
+         cmd_buffer,
+         emit_state.emit_count,
+         emit_state.pbe_cs_words[0],
+         &pds_pixel_event_program);
+      if (result != VK_SUCCESS)
+         return result;
+
+      job->pds_pixel_event_data_offset = pds_pixel_event_program.data_offset;
+   }
 
    if (sub_cmd->barrier_load) {
       job->enable_bg_tag = true;
       job->process_empty_tiles = true;
+
+      /* Load the previously stored render from the SPM scratch buffer. */
 
       STATIC_ASSERT(ARRAY_SIZE(job->pds_bgnd_reg_values) ==
                     ARRAY_SIZE(spm_bgobj_state->pds_reg_values));
@@ -1426,6 +1458,22 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
                               &load_op_program,
                               job->pds_bgnd_reg_values);
    }
+
+   /* TODO: In some cases a PR can be removed by storing to the color attachment
+    * and have the background object load directly from it instead of using the
+    * scratch buffer. In those cases we can also set this to "false" and avoid
+    * extra fw overhead.
+    */
+   /* The scratch buffer is always needed and allocated to avoid data loss in
+    * case SPM is hit so set the flag unconditionally.
+    */
+   job->requires_spm_scratch_buffer = true;
+
+   memcpy(job->pr_pbe_reg_words,
+          &framebuffer->spm_eot_state_per_render[0].pbe_reg_words,
+          sizeof(job->pbe_reg_words));
+   job->pr_pds_pixel_event_data_offset =
+      framebuffer->spm_eot_state_per_render[0].pixel_event_program_data_offset;
 
    STATIC_ASSERT(ARRAY_SIZE(job->pds_pr_bgnd_reg_values) ==
                  ARRAY_SIZE(spm_bgobj_state->pds_reg_values));
@@ -1501,7 +1549,24 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
                job->ds_clear_value.stencil = clear_values->stencil;
          }
 
-         job->ds.vk_format = ds_iview->vk.format;
+         switch (ds_iview->vk.format) {
+         case VK_FORMAT_D16_UNORM:
+            job->ds.zls_format = PVRX(CR_ZLS_FORMAT_TYPE_16BITINT);
+            break;
+
+         case VK_FORMAT_S8_UINT:
+         case VK_FORMAT_D32_SFLOAT:
+            job->ds.zls_format = PVRX(CR_ZLS_FORMAT_TYPE_F32Z);
+            break;
+
+         case VK_FORMAT_D24_UNORM_S8_UINT:
+            job->ds.zls_format = PVRX(CR_ZLS_FORMAT_TYPE_24BITINT);
+            break;
+
+         default:
+            unreachable("Unsupported depth stencil format");
+         }
+
          job->ds.memlayout = ds_image->memlayout;
 
          if (job->has_depth_attachment) {
@@ -1557,14 +1622,34 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
             }
          }
 
-         if (job->has_depth_attachment && job->has_stencil_attachment)
-            assert(d_store == s_store && d_load == s_load);
+         job->ds.load.d = d_load;
+         job->ds.load.s = s_load;
+         job->ds.store.d = d_store;
+         job->ds.store.s = s_store;
 
-         job->ds.store = d_store || s_store;
-         job->ds.load = d_load || s_load;
+         /* ZLS can't do masked writes for packed depth stencil formats so if
+          * we store anything, we have to store everything.
+          */
+         if ((job->ds.store.d || job->ds.store.s) &&
+             pvr_zls_format_type_is_packed(job->ds.zls_format)) {
+            job->ds.store.d = true;
+            job->ds.store.s = true;
 
-         if (job->ds.load || job->ds.store || store_was_optimised_out)
+            /* In case we are only operating on one aspect of the attachment we
+             * need to load the unused one in order to preserve its contents due
+             * to the forced store which might otherwise corrupt it.
+             */
+            if (hw_render->depth_init != VK_ATTACHMENT_LOAD_OP_CLEAR)
+               job->ds.load.d = true;
+
+            if (hw_render->stencil_init != VK_ATTACHMENT_LOAD_OP_CLEAR)
+               job->ds.load.s = true;
+         }
+
+         if (pvr_ds_attachment_requires_zls(&job->ds) ||
+             store_was_optimised_out) {
             job->process_empty_tiles = true;
+         }
 
          if (pvr_sub_cmd_gfx_requires_ds_subtile_alignment(dev_info, job)) {
             result = pvr_sub_cmd_gfx_align_ds_subtiles(cmd_buffer, sub_cmd);
@@ -1624,20 +1709,6 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
    job->max_shared_registers = cmd_buffer->state.max_shared_regs;
    job->run_frag = true;
    job->geometry_terminate = true;
-
-   /* TODO: In some cases a PR can be removed by storing to the color attachment
-    * and have the background object load directly from it instead of using the
-    * scratch buffer. In those cases we can also set this to "false" and avoid
-    * extra fw overhead.
-    */
-   /* The scratch buffer is always needed and allocated to avoid data loss in
-    * case SPM is hit so set the flag unconditionally.
-    */
-   job->requires_spm_scratch_buffer = true;
-   /* FIXME: We should be using the SPM PBE reg words and the SPM EOT PDS data
-    * section instead of the regular, but for now we don't have an actual
-    * SPM EOT USC shader so that would cause problems.
-    */
 
    return VK_SUCCESS;
 }
@@ -2298,7 +2369,8 @@ VkResult pvr_cmd_buffer_start_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
       break;
 
    case PVR_SUB_CMD_TYPE_TRANSFER:
-      list_inithead(&sub_cmd->transfer.transfer_cmds);
+      sub_cmd->transfer.transfer_cmds = &sub_cmd->transfer.transfer_cmds_priv;
+      list_inithead(sub_cmd->transfer.transfer_cmds);
       break;
 
    case PVR_SUB_CMD_TYPE_EVENT:
@@ -2329,7 +2401,7 @@ VkResult pvr_cmd_buffer_alloc_mem(struct pvr_cmd_buffer *cmd_buffer,
       allocator = &cmd_buffer->device->suballoc_general;
    else if (heap == cmd_buffer->device->heaps.pds_heap)
       allocator = &cmd_buffer->device->suballoc_pds;
-   else if (heap == cmd_buffer->device->heaps.transfer_3d_heap)
+   else if (heap == cmd_buffer->device->heaps.transfer_frag_heap)
       allocator = &cmd_buffer->device->suballoc_transfer;
    else if (heap == cmd_buffer->device->heaps.usc_heap)
       allocator = &cmd_buffer->device->suballoc_usc;
@@ -3207,7 +3279,7 @@ VkResult pvr_cmd_buffer_add_transfer_cmd(struct pvr_cmd_buffer *cmd_buffer,
 
    sub_cmd = &cmd_buffer->state.current_sub_cmd->transfer;
 
-   list_addtail(&transfer_cmd->link, &sub_cmd->transfer_cmds);
+   list_addtail(&transfer_cmd->link, sub_cmd->transfer_cmds);
 
    return VK_SUCCESS;
 }
@@ -3341,7 +3413,8 @@ pvr_setup_vertex_buffers(struct pvr_cmd_buffer *cmd_buffer,
 
          if (binding->buffer->vk.size <
              (attribute->offset + attribute->component_size_in_bytes)) {
-            /* Replace with load from robustness buffer when no attribute is in range
+            /* Replace with load from robustness buffer when no attribute is in
+             * range
              */
             addr = PVR_DEV_ADDR_OFFSET(
                cmd_buffer->device->robustness_buffer->vma->dev_addr,
@@ -3400,6 +3473,7 @@ pvr_setup_vertex_buffers(struct pvr_cmd_buffer *cmd_buffer,
                    attribute->const_offset,
                    pds_info->data_size_in_dwords);
 
+         entries += sizeof(*attribute);
          break;
       }
 

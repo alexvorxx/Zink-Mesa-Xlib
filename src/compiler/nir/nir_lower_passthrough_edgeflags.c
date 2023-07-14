@@ -32,8 +32,7 @@ lower_impl(nir_function_impl *impl)
    nir_variable *in, *out;
    nir_ssa_def *def;
 
-   nir_builder_init(&b, impl);
-   b.cursor = nir_before_cf_list(&impl->body);
+   b = nir_builder_at(nir_before_cf_list(&impl->body));
 
    /* The edge flag is the last input in st/mesa.  This code is also called by
     * i965 which calls it before any input locations are assigned.

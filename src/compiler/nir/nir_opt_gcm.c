@@ -884,9 +884,8 @@ nir_opt_gcm(nir_shader *shader, bool value_number)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl)
-         progress |= opt_gcm_impl(shader, function->impl, value_number);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= opt_gcm_impl(shader, impl, value_number);
    }
 
    return progress;

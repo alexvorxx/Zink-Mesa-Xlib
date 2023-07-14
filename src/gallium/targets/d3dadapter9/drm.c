@@ -167,7 +167,7 @@ read_descriptor( struct d3dadapter9_context *ctx,
                  "%s", ctx->hal->get_name(ctx->hal));
 
     if (override_vendorid > 0) {
-        found = FALSE;
+        found = false;
         /* fill in device_id and card name for fake vendor */
         for (i = 0; i < sizeof(fallback_cards)/sizeof(fallback_cards[0]); i++) {
             if (fallback_cards[i].vendor_id == override_vendorid) {
@@ -179,7 +179,7 @@ read_descriptor( struct d3dadapter9_context *ctx,
                 drvid->DeviceId = fallback_cards[i].device_id;
                 snprintf(drvid->Description, sizeof(drvid->Description),
                              "%s", fallback_cards[i].name);
-                found = TRUE;
+                found = true;
                 break;
             }
         }
@@ -269,9 +269,9 @@ drm_create_adapter( int fd,
     if (driCheckOption(&userInitOptions, "throttle_value", DRI_INT)) {
         throttling_value_user = driQueryOptioni(&userInitOptions, "throttle_value");
         if (throttling_value_user == -1)
-            ctx->base.throttling = FALSE;
+            ctx->base.throttling = false;
         else if (throttling_value_user >= 0) {
-            ctx->base.throttling = TRUE;
+            ctx->base.throttling = true;
             ctx->base.throttling_value = throttling_value_user;
         }
     }
@@ -285,7 +285,7 @@ drm_create_adapter( int fd,
 
     if (ctx->base.tearfree_discard && !ctx->base.discard_delayed_release) {
         ERR("tearfree_discard requires discard_delayed_release\n");
-        ctx->base.tearfree_discard = FALSE;
+        ctx->base.tearfree_discard = false;
     }
 
     ctx->base.csmt_force = driQueryOptioni(&userInitOptions, "csmt_force");

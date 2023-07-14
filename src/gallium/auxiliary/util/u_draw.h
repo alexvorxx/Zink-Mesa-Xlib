@@ -29,7 +29,7 @@
 #define U_DRAW_H
 
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
 
@@ -51,8 +51,8 @@ util_draw_init_info(struct pipe_draw_info *info)
 static inline void
 util_draw_arrays(struct pipe_context *pipe,
                  enum mesa_prim mode,
-                 uint start,
-                 uint count)
+                 unsigned start,
+                 unsigned count)
 {
    struct pipe_draw_info info;
    struct pipe_draw_start_count_bias draw;
@@ -74,8 +74,8 @@ util_draw_elements(struct pipe_context *pipe,
                    void *indices,
                    unsigned index_size,
                    int index_bias, enum mesa_prim mode,
-                   uint start,
-                   uint count)
+                   unsigned start,
+                   unsigned count)
 {
    struct pipe_draw_info info;
    struct pipe_draw_start_count_bias draw;
@@ -96,10 +96,10 @@ util_draw_elements(struct pipe_context *pipe,
 static inline void
 util_draw_arrays_instanced(struct pipe_context *pipe,
                            enum mesa_prim mode,
-                           uint start,
-                           uint count,
-                           uint start_instance,
-                           uint instance_count)
+                           unsigned start,
+                           unsigned count,
+                           unsigned start_instance,
+                           unsigned instance_count)
 {
    struct pipe_draw_info info;
    struct pipe_draw_start_count_bias draw;
@@ -125,10 +125,10 @@ util_draw_elements_instanced(struct pipe_context *pipe,
                              unsigned index_size,
                              int index_bias,
                              enum mesa_prim mode,
-                             uint start,
-                             uint count,
-                             uint start_instance,
-                             uint instance_count)
+                             unsigned start,
+                             unsigned count,
+                             unsigned start_instance,
+                             unsigned instance_count)
 {
    struct pipe_draw_info info;
    struct pipe_draw_start_count_bias draw;

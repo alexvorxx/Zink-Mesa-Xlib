@@ -55,10 +55,9 @@ build_umod(nir_builder *b, nir_ssa_def *n, uint64_t d)
    if (d == 0) {
       return nir_imm_intN_t(b, 0, n->bit_size);
    } else if (util_is_power_of_two_or_zero64(d)) {
-      return nir_iand(b, n, nir_imm_intN_t(b, d - 1, n->bit_size));
+      return nir_iand_imm(b, n, d - 1);
    } else {
-      return nir_isub(b, n, nir_imul(b, build_udiv(b, n, d),
-                                        nir_imm_intN_t(b, d, n->bit_size)));
+      return nir_isub(b, n, nir_imul_imm(b, build_udiv(b, n, d), d));
    }
 }
 
@@ -115,8 +114,7 @@ build_irem(nir_builder *b, nir_ssa_def *n, int64_t d)
                                       nir_iadd_imm(b, n, d - 1), n);
          return nir_isub(b, n, nir_iand_imm(b, tmp, -d));
       } else {
-         return nir_isub(b, n, nir_imul(b, build_idiv(b, n, d),
-                                        nir_imm_intN_t(b, d, n->bit_size)));
+         return nir_isub(b, n, nir_imul_imm(b, build_idiv(b, n, d), d));
       }
    }
 }
@@ -133,7 +131,7 @@ build_imod(nir_builder *b, nir_ssa_def *n, int64_t d)
       nir_ssa_def *is_zero = nir_ieq_imm(b, n, 0);
       return nir_bcsel(b, nir_ior(b, is_neg_not_int_min, is_zero), n, nir_iadd(b, int_min_def, n));
    } else if (d > 0 && util_is_power_of_two_or_zero64(d)) {
-      return nir_iand(b, n, nir_imm_intN_t(b, d - 1, n->bit_size));
+      return nir_iand_imm(b, n, d - 1);
    } else if (d < 0 && util_is_power_of_two_or_zero64(-d)) {
       nir_ssa_def *d_def = nir_imm_intN_t(b, d, n->bit_size);
       nir_ssa_def *res = nir_ior(b, n, d_def);

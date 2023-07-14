@@ -156,7 +156,7 @@ u_prims_for_vertices(enum mesa_prim prim, unsigned num)
    return 1 + ((num - info->min) / info->incr);
 }
 
-static inline boolean
+static inline bool
 u_validate_pipe_prim(enum mesa_prim pipe_prim, unsigned nr)
 {
    const struct u_prim_vertex_count *count = u_prim_vertex_count(pipe_prim);
@@ -165,7 +165,7 @@ u_validate_pipe_prim(enum mesa_prim pipe_prim, unsigned nr)
 }
 
 
-static inline boolean
+static inline bool
 u_trim_pipe_prim(enum mesa_prim pipe_prim, unsigned *nr)
 {
    const struct u_prim_vertex_count *count = u_prim_vertex_count(pipe_prim);
@@ -173,11 +173,11 @@ u_trim_pipe_prim(enum mesa_prim pipe_prim, unsigned *nr)
    if (count && *nr >= count->min) {
       if (count->incr > 1)
          *nr -= (*nr % count->incr);
-      return TRUE;
+      return true;
    }
    else {
       *nr = 0;
-      return FALSE;
+      return false;
    }
 }
 

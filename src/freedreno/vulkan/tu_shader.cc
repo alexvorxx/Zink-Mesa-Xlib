@@ -156,7 +156,7 @@ lower_load_push_constant(struct tu_device *dev,
    nir_ssa_def *load =
       nir_load_uniform(b, instr->num_components,
             instr->dest.ssa.bit_size,
-            nir_ushr(b, instr->src[0].ssa, nir_imm_int(b, 2)),
+            nir_ushr_imm(b, instr->src[0].ssa, 2),
             .base = base);
 
    nir_ssa_def_rewrite_uses(&instr->dest.ssa, load);
@@ -283,7 +283,7 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
        intrin->intrinsic == nir_intrinsic_load_ssbo &&
        (nir_intrinsic_access(intrin) & ACCESS_CAN_REORDER) &&
        intrin->dest.ssa.bit_size > 16) {
-      descriptor_idx = nir_iadd(b, descriptor_idx, nir_imm_int(b, 1));
+      descriptor_idx = nir_iadd_imm(b, descriptor_idx, 1);
    }
 
    nir_ssa_def *results[MAX_SETS + 1] = { NULL };
@@ -374,8 +374,7 @@ build_bindless(struct tu_device *dev, nir_builder *b,
          return nir_imm_int(b, idx);
 
       nir_ssa_def *arr_index = nir_ssa_for_src(b, deref->arr.index, 1);
-      return nir_iadd(b, nir_imm_int(b, idx),
-                      nir_imul_imm(b, arr_index, 2));
+      return nir_iadd_imm(b, nir_imul_imm(b, arr_index, 2), idx);
    }
 
    shader->active_desc_sets |= 1u << set;

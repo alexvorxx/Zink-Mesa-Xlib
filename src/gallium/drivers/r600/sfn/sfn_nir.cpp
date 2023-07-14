@@ -102,7 +102,7 @@ r600_nir_lower_scratch_address_impl(nir_builder *b, nir_intrinsic_instr *instr)
    }
 
    nir_ssa_def *address = instr->src[address_index].ssa;
-   nir_ssa_def *new_address = nir_ishr(b, address, nir_imm_int(b, 4 * align));
+   nir_ssa_def *new_address = nir_ishr_imm(b, address, 4 * align);
 
    nir_instr_rewrite_src(&instr->instr,
                          &instr->src[address_index],
@@ -113,12 +113,11 @@ bool
 r600_lower_scratch_addresses(nir_shader *shader)
 {
    bool progress = false;
-   nir_foreach_function(function, shader)
+   nir_foreach_function_impl(impl, shader)
    {
-      nir_builder build;
-      nir_builder_init(&build, function->impl);
+      nir_builder build = nir_builder_create(impl);
 
-      nir_foreach_block(block, function->impl)
+      nir_foreach_block(block, impl)
       {
          nir_foreach_instr(instr, block)
          {
@@ -415,7 +414,7 @@ r600_lower_deref_instr(nir_builder *b, nir_instr *instr_, UNUSED void *cb_data)
          array_stride *= glsl_get_aoa_size(d->type);
 
       offset =
-         nir_iadd(b, offset, nir_imul(b, d->arr.index.ssa, nir_imm_int(b, array_stride)));
+         nir_iadd(b, offset, nir_imul_imm(b, d->arr.index.ssa, array_stride));
    }
 
    /* Since the first source is a deref and the first source in the lowered
@@ -504,13 +503,12 @@ r600_get_natural_size_align_bytes(const struct glsl_type *type,
 }
 
 static bool
-r600_lower_shared_io_impl(nir_function *func)
+r600_lower_shared_io_impl(nir_function_impl *impl)
 {
-   nir_builder b;
-   nir_builder_init(&b, func->impl);
+   nir_builder b = nir_builder_create(impl);
 
    bool progress = false;
-   nir_foreach_block(block, func->impl)
+   nir_foreach_block(block, impl)
    {
       nir_foreach_instr_safe(instr, block)
       {
@@ -571,7 +569,7 @@ r600_lower_shared_io_impl(nir_function *func)
                bool start_even = (writemask & (1u << (2 * i)));
 
                auto addr2 =
-                  nir_iadd(&b, addr, nir_imm_int(&b, 8 * i + (start_even ? 0 : 4)));
+                  nir_iadd_imm(&b, addr, 8 * i + (start_even ? 0 : 4));
                store->src[1] = nir_src_for_ssa(addr2);
 
                nir_builder_instr_insert(&b, &store->instr);
@@ -588,9 +586,9 @@ static bool
 r600_lower_shared_io(nir_shader *nir)
 {
    bool progress = false;
-   nir_foreach_function(function, nir)
+   nir_foreach_function_impl(impl, nir)
    {
-      if (function->impl && r600_lower_shared_io_impl(function))
+      if (r600_lower_shared_io_impl(impl))
          progress = true;
    }
    return progress;
@@ -736,8 +734,6 @@ r600_lower_to_scalar_instr_filter(const nir_instr *instr, const void *)
    case nir_op_fddy_coarse:
    case nir_op_fddy_fine:
       return nir_src_bit_size(alu->src[0].src) == 64;
-   case nir_op_cube_r600:
-      return false;
    default:
       return true;
    }
@@ -939,8 +935,8 @@ r600_shader_from_nir(struct r600_context *rctx,
 
    NIR_PASS_V(sh, nir_lower_bool_to_int32);
 
-   NIR_PASS_V(sh, nir_lower_locals_to_regs);
-   NIR_PASS_V(sh, nir_convert_from_ssa, true);
+   NIR_PASS_V(sh, nir_lower_locals_to_regs, 32);
+   NIR_PASS_V(sh, nir_convert_from_ssa, true, false);
    NIR_PASS_V(sh, nir_opt_dce);
 
    if (rctx->screen->b.debug_flags & DBG_ALL_SHADERS) {

@@ -1127,8 +1127,7 @@ try_vectorize(nir_function_impl *impl, struct vectorize_ctx *ctx,
    unsigned new_num_components = new_size / new_bit_size;
 
    /* vectorize the loads/stores */
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    if (first->is_store)
       vectorize_stores(&b, ctx, low, high, first, second,
@@ -1141,7 +1140,7 @@ try_vectorize(nir_function_impl *impl, struct vectorize_ctx *ctx,
 }
 
 static bool
-try_vectorize_shared2(nir_function_impl *impl, struct vectorize_ctx *ctx,
+try_vectorize_shared2(struct vectorize_ctx *ctx,
                       struct entry *low, struct entry *high,
                       struct entry *first, struct entry *second)
 {
@@ -1179,10 +1178,7 @@ try_vectorize_shared2(nir_function_impl *impl, struct vectorize_ctx *ctx,
    }
 
    /* vectorize the accesses */
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   b.cursor = nir_after_instr(first->is_store ? second->instr : first->instr);
+   nir_builder b = nir_builder_at(nir_after_instr(first->is_store ? second->instr : first->instr));
 
    nir_ssa_def *offset = first->intrin->src[first->is_store].ssa;
    offset = nir_iadd_imm(&b, offset, nir_intrinsic_base(first->intrin));
@@ -1249,7 +1245,7 @@ vectorize_sorted_entries(struct vectorize_ctx *ctx, nir_function_impl *impl,
                 get_variable_mode(first) != nir_var_mem_shared)
                break;
 
-            if (try_vectorize_shared2(impl, ctx, low, high, first, second)) {
+            if (try_vectorize_shared2(ctx, low, high, first, second)) {
                low = NULL;
                *util_dynarray_element(arr, struct entry *, second_idx) = NULL;
                progress = true;
@@ -1457,19 +1453,17 @@ nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_
 
    nir_shader_index_vars(shader, options->modes);
 
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         if (options->modes & nir_var_function_temp)
-            nir_function_impl_index_vars(function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      if (options->modes & nir_var_function_temp)
+         nir_function_impl_index_vars(impl);
 
-         nir_foreach_block(block, function->impl)
-            progress |= process_block(function->impl, ctx, block);
+      nir_foreach_block(block, impl)
+         progress |= process_block(impl, ctx, block);
 
-         nir_metadata_preserve(function->impl,
-                               nir_metadata_block_index |
-                               nir_metadata_dominance |
-                               nir_metadata_live_ssa_defs);
-      }
+      nir_metadata_preserve(impl,
+                            nir_metadata_block_index |
+                            nir_metadata_dominance |
+                            nir_metadata_live_ssa_defs);
    }
 
    ralloc_free(ctx);

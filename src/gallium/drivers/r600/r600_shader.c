@@ -397,12 +397,12 @@ struct r600_shader_src {
 	unsigned				abs;
 	unsigned				rel;
 	unsigned				kc_bank;
-	boolean					kc_rel; /* true if cache bank is indexed */
+	bool					kc_rel; /* true if cache bank is indexed */
 	uint32_t				value[4];
 };
 
 struct eg_interp {
-	boolean					enabled;
+	bool					enabled;
 	unsigned				ij_index;
 };
 

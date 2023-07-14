@@ -38,6 +38,94 @@ struct lower_context {
    std::vector<aco_ptr<Instruction>> instructions;
 };
 
+/* Class for obtaining where s_sendmsg(MSG_ORDERED_PS_DONE) must be done in a Primitive Ordered
+ * Pixel Shader on GFX9-10.3.
+ *
+ * MSG_ORDERED_PS_DONE must be sent once after the ordered section is done along all execution paths
+ * from the POPS packer ID hardware register setting to s_endpgm. It is, however, also okay to send
+ * it if the packer ID is not going to be set at all by the wave, so some conservativeness is fine.
+ *
+ * For simplicity, sending the message from top-level blocks as dominance and post-dominance
+ * checking for any location in the shader is trivial in them. Also, for simplicity, sending it
+ * regardless of whether the POPS packer ID hardware register has already potentially been set up.
+ *
+ * Note that there can be multiple interlock end instructions in the shader.
+ * SPV_EXT_fragment_shader_interlock requires OpEndInvocationInterlockEXT to be executed exactly
+ * once by the invocation. However, there may be, for instance, multiple ordered sections, and which
+ * one will be executed may depend on divergent control flow (some lanes may execute one ordered
+ * section, other lanes may execute another). MSG_ORDERED_PS_DONE, however, is sent via a scalar
+ * instruction, so it must be ensured that the message is sent after the last ordered section in the
+ * entire wave.
+ */
+class gfx9_pops_done_msg_bounds {
+public:
+   explicit gfx9_pops_done_msg_bounds() = default;
+
+   explicit gfx9_pops_done_msg_bounds(const Program* const program)
+   {
+      /* Find the top-level location after the last ordered section end pseudo-instruction in the
+       * program.
+       * Consider `p_pops_gfx9_overlapped_wave_wait_done` a boundary too - make sure the message
+       * isn't sent if any wait hasn't been fully completed yet (if a begin-end-begin situation
+       * occurs somehow, as the location of `p_pops_gfx9_ordered_section_done` is controlled by the
+       * application) for safety, assuming that waits are the only thing that need the packer
+       * hardware register to be set at some point during or before them, and it won't be set
+       * anymore after the last wait.
+       */
+      int last_top_level_block_idx = -1;
+      for (int block_idx = (int)program->blocks.size() - 1; block_idx >= 0; block_idx--) {
+         const Block& block = program->blocks[block_idx];
+         if (block.kind & block_kind_top_level) {
+            last_top_level_block_idx = block_idx;
+         }
+         for (size_t instr_idx = block.instructions.size() - 1; instr_idx + size_t(1) > 0;
+              instr_idx--) {
+            const aco_opcode opcode = block.instructions[instr_idx]->opcode;
+            if (opcode == aco_opcode::p_pops_gfx9_ordered_section_done ||
+                opcode == aco_opcode::p_pops_gfx9_overlapped_wave_wait_done) {
+               end_block_idx_ = last_top_level_block_idx;
+               /* The same block if it's already a top-level block, or the beginning of the next
+                * top-level block.
+                */
+               instr_after_end_idx_ = block_idx == end_block_idx_ ? instr_idx + 1 : 0;
+               break;
+            }
+         }
+         if (end_block_idx_ != -1) {
+            break;
+         }
+      }
+   }
+
+   /* If this is not -1, during the normal execution flow (not early exiting), MSG_ORDERED_PS_DONE
+    * must be sent in this block.
+    */
+   int end_block_idx() const { return end_block_idx_; }
+
+   /* If end_block_idx() is an existing block, during the normal execution flow (not early exiting),
+    * MSG_ORDERED_PS_DONE must be sent before this instruction in the block end_block_idx().
+    * If this is out of the bounds of the instructions in the end block, it must be sent in the end
+    * of that block.
+    */
+   size_t instr_after_end_idx() const { return instr_after_end_idx_; }
+
+   /* Whether an instruction doing early exit (such as discard) needs to send MSG_ORDERED_PS_DONE
+    * before actually ending the program.
+    */
+   bool early_exit_needs_done_msg(const int block_idx, const size_t instr_idx) const
+   {
+      return block_idx <= end_block_idx_ &&
+             (block_idx != end_block_idx_ || instr_idx < instr_after_end_idx_);
+   }
+
+private:
+   /* Initialize to an empty range for which "is inside" comparisons will be failing for any
+    * block.
+    */
+   int end_block_idx_ = -1;
+   size_t instr_after_end_idx_ = 0;
+};
+
 /* used by handle_operands() indirectly through Builder::copy */
 uint8_t int8_mul_table[512] = {
    0, 20,  1,  1,   1,  2,   1,  3,   1,  4,   1, 5,   1,  6,   1,  7,   1,  8,   1,  9,
@@ -2205,7 +2293,13 @@ lower_image_sample(lower_context* ctx, aco_ptr<Instruction>& instr)
 void
 lower_to_hw_instr(Program* program)
 {
-   Block* discard_block = NULL;
+   gfx9_pops_done_msg_bounds pops_done_msg_bounds;
+   if (program->has_pops_overlapped_waves_wait && program->gfx_level < GFX11) {
+      pops_done_msg_bounds = gfx9_pops_done_msg_bounds(program);
+   }
+
+   Block* discard_exit_block = NULL;
+   Block* discard_pops_done_and_exit_block = NULL;
 
    bool should_dealloc_vgprs = dealloc_vgprs(program);
 
@@ -2221,6 +2315,19 @@ lower_to_hw_instr(Program* program)
 
       for (size_t instr_idx = 0; instr_idx < block->instructions.size(); instr_idx++) {
          aco_ptr<Instruction>& instr = block->instructions[instr_idx];
+
+         /* Send the ordered section done message from the middle of the block if needed (if the
+          * ordered section is ended by an instruction inside this block).
+          * Also make sure the done message is sent if it's needed in case early exit happens for
+          * any reason.
+          */
+         if ((block_idx == pops_done_msg_bounds.end_block_idx() &&
+              instr_idx == pops_done_msg_bounds.instr_after_end_idx()) ||
+             (instr->opcode == aco_opcode::s_endpgm &&
+              pops_done_msg_bounds.early_exit_needs_done_msg(block_idx, instr_idx))) {
+            bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_ordered_ps_done);
+         }
+
          aco_ptr<Instruction> mov;
          if (instr->isPseudo() && instr->opcode != aco_opcode::p_unit_test) {
             Pseudo_instruction* pi = &instr->pseudo();
@@ -2339,12 +2446,39 @@ lower_to_hw_instr(Program* program)
                      break;
                }
 
+               const bool discard_sends_pops_done =
+                  pops_done_msg_bounds.early_exit_needs_done_msg(block_idx, instr_idx);
+
+               Block* discard_block =
+                  discard_sends_pops_done ? discard_pops_done_and_exit_block : discard_exit_block;
                if (!discard_block) {
                   discard_block = program->create_and_insert_block();
                   discard_block->kind = block_kind_discard_early_exit;
+                  if (discard_sends_pops_done) {
+                     discard_pops_done_and_exit_block = discard_block;
+                  } else {
+                     discard_exit_block = discard_block;
+                  }
                   block = &program->blocks[block_idx];
 
                   bld.reset(discard_block);
+                  if (program->has_pops_overlapped_waves_wait &&
+                      (program->gfx_level >= GFX11 || discard_sends_pops_done)) {
+                     /* If this discard early exit potentially exits the POPS ordered section, do
+                      * the waitcnt necessary before resuming overlapping waves as the normal
+                      * waitcnt insertion doesn't work in a discard early exit block.
+                      */
+                     if (program->gfx_level >= GFX10)
+                        bld.sopk(aco_opcode::s_waitcnt_vscnt, Definition(sgpr_null, s1), 0);
+                     wait_imm pops_exit_wait_imm;
+                     pops_exit_wait_imm.vm = 0;
+                     if (program->has_smem_buffer_or_global_loads)
+                        pops_exit_wait_imm.lgkm = 0;
+                     bld.sopp(aco_opcode::s_waitcnt, -1,
+                              pops_exit_wait_imm.pack(program->gfx_level));
+                  }
+                  if (discard_sends_pops_done)
+                     bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_ordered_ps_done);
                   unsigned target = V_008DFC_SQ_EXP_NULL;
                   if (program->gfx_level >= GFX11)
                      target =
@@ -2404,6 +2538,11 @@ lower_to_hw_instr(Program* program)
                               Operand(PhysReg{instr->operands[0].physReg() + i}, v1));
                   }
                }
+               break;
+            }
+            case aco_opcode::p_pops_gfx9_add_exiting_wave_id: {
+               bld.sop2(aco_opcode::s_add_i32, instr->definitions[0], instr->definitions[1],
+                        Operand(pops_exiting_wave_id, s1), instr->operands[0]);
                break;
             }
             case aco_opcode::p_bpermute_gfx6: {
@@ -2605,6 +2744,9 @@ lower_to_hw_instr(Program* program)
                break;
             }
             case aco_opcode::p_jump_to_epilog: {
+               if (pops_done_msg_bounds.early_exit_needs_done_msg(block_idx, instr_idx)) {
+                  bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_ordered_ps_done);
+               }
                bld.sop1(aco_opcode::s_setpc_b64, instr->operands[0]);
                break;
             }
@@ -2771,7 +2913,8 @@ lower_to_hw_instr(Program* program)
                      bool is_break_continue =
                         program->blocks[i].kind & (block_kind_break | block_kind_continue);
                      bool discard_early_exit =
-                        discard_block && (unsigned)inst->sopp().block == discard_block->index;
+                        inst->sopp().block != -1 &&
+                        (program->blocks[inst->sopp().block].kind & block_kind_discard_early_exit);
                      if ((inst->opcode != aco_opcode::s_cbranch_scc0 &&
                           inst->opcode != aco_opcode::s_cbranch_scc1) ||
                          (!discard_early_exit && !is_break_continue))
@@ -2895,6 +3038,16 @@ lower_to_hw_instr(Program* program)
             ctx.instructions.emplace_back(std::move(instr));
          }
       }
+
+      /* Send the ordered section done message from this block if it's needed in this block, but
+       * instr_after_end_idx() points beyond the end of its instructions. This may commonly happen
+       * if the common post-dominator of multiple end locations turns out to be an empty block.
+       */
+      if (block_idx == pops_done_msg_bounds.end_block_idx() &&
+          pops_done_msg_bounds.instr_after_end_idx() >= block->instructions.size()) {
+         bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_ordered_ps_done);
+      }
+
       block->instructions = std::move(ctx.instructions);
    }
 }

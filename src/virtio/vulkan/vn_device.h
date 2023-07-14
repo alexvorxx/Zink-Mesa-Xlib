@@ -38,8 +38,6 @@ struct vn_device {
 
    struct vn_device_memory_pool memory_pools[VK_MAX_MEMORY_TYPES];
 
-   struct vn_buffer_cache buffer_cache;
-
    struct vn_feedback_pool feedback_pool;
 
    /* feedback cmd pool per queue family used by the device
@@ -50,6 +48,8 @@ struct vn_device {
 
    struct vn_queue *queues;
    uint32_t queue_count;
+
+   struct vn_buffer_cache buffer_cache;
 };
 VK_DEFINE_HANDLE_CASTS(vn_device,
                        base.base.base,

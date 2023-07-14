@@ -72,7 +72,7 @@ svga_create_uav_buffer(struct svga_context *svga,
 
    /* Mark this buffer as a uav bound buffer */
    struct svga_buffer *sbuf = svga_buffer(buf->buffer);
-   sbuf->uav = TRUE;
+   sbuf->uav = true;
 
    return uaViewId;
 }
@@ -198,7 +198,7 @@ svga_set_hw_atomic_buffers(struct pipe_context *pipe,
              * the uav buffer can be updated at each draw.
              */
             struct svga_buffer *sbuf = svga_buffer(cbuf->desc.buffer);
-            sbuf->uav = TRUE;
+            sbuf->uav = true;
          }
          else {
             cbuf->desc.buffer = NULL;

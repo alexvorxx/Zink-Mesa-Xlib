@@ -2445,7 +2445,7 @@ glsl_type::explicit_size(bool align_to_stride) const
 
       assert(this->length > 0);
       unsigned elem_size = align_to_stride ? this->explicit_stride : this->fields.array->explicit_size();
-      assert(this->explicit_stride >= elem_size);
+      assert(this->explicit_stride == 0 || this->explicit_stride >= elem_size);
 
       return this->explicit_stride * (this->length - 1) + elem_size;
    } else if (this->is_matrix()) {
@@ -2697,7 +2697,7 @@ glsl_type::get_explicit_type_for_size_align(glsl_type_size_align_func type_info,
          malloc(sizeof(struct glsl_struct_field) * this->length);
 
       *size = 0;
-      *alignment = 0;
+      *alignment = 1;
       for (unsigned i = 0; i < this->length; i++) {
          fields[i] = this->fields.structure[i];
          assert(fields[i].matrix_layout != GLSL_MATRIX_LAYOUT_ROW_MAJOR);

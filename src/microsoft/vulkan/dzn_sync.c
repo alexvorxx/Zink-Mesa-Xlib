@@ -140,7 +140,7 @@ dzn_sync_wait(struct vk_device *device,
    struct dzn_device *ddev = container_of(device, struct dzn_device, vk);
 
 #ifdef _WIN32
-   HANDLE event = CreateEventA(NULL, FALSE, FALSE, NULL);
+   HANDLE event = CreateEventA(NULL, false, false, NULL);
    if (event == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 #else
@@ -253,7 +253,7 @@ dzn_sync_export_win32_handle(struct vk_device *device, struct vk_sync *sync, HAN
    if (dsync->export_handle) {
       if (!DuplicateHandle(GetCurrentProcess(), dsync->export_handle,
                            GetCurrentProcess(), handle,
-                           0, FALSE, DUPLICATE_SAME_ACCESS))
+                           0, false, DUPLICATE_SAME_ACCESS))
          return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
       return VK_SUCCESS;
    }

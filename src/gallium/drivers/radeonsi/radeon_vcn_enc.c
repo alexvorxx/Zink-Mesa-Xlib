@@ -719,10 +719,10 @@ static int setup_dpb(struct radeon_encoder *enc)
 
    offset = 0;
    if (enc_pic->quality_modes.pre_encode_mode) {
-      uint32_t pre_size  = ALIGN_TO((aligned_width >> 2), rec_alignment) *
-                           ALIGN_TO((aligned_height >> 2), rec_alignment);
-      uint32_t full_size = ALIGN_TO(aligned_width, rec_alignment) *
-                           ALIGN_TO(aligned_height, rec_alignment);
+      uint32_t pre_size  = ALIGN_POT((aligned_width >> 2), rec_alignment) *
+                           ALIGN_POT((aligned_height >> 2), rec_alignment);
+      uint32_t full_size = ALIGN_POT(aligned_width, rec_alignment) *
+                           ALIGN_POT(aligned_height, rec_alignment);
       pre_size  = align(pre_size, 4);
       full_size = align(full_size, 4);
 
@@ -1168,7 +1168,7 @@ static void radeon_enc_av1_bs_copy_end(struct radeon_encoder *enc, uint32_t bits
 {
    assert(bits > 0);
    /* it must be dword aligned at the end */
-   *enc->enc_pic.copy_start = ALIGN_TO(bits, 32) * 4 + 12;
+   *enc->enc_pic.copy_start = ALIGN_POT(bits, 32) * 4 + 12;
    *(enc->enc_pic.copy_start + 2) = bits;
 }
 

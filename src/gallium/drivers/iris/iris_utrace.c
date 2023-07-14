@@ -228,6 +228,7 @@ iris_utrace_pipe_flush_bit_to_ds_stall_flag(uint32_t flags)
       { .iris = PIPE_CONTROL_FLUSH_HDC,                    .ds = INTEL_DS_HDC_PIPELINE_FLUSH_BIT, },
       { .iris = PIPE_CONTROL_STALL_AT_SCOREBOARD,          .ds = INTEL_DS_STALL_AT_SCOREBOARD_BIT, },
       { .iris = PIPE_CONTROL_UNTYPED_DATAPORT_CACHE_FLUSH, .ds = INTEL_DS_UNTYPED_DATAPORT_CACHE_FLUSH_BIT, },
+      { .iris = PIPE_CONTROL_CCS_CACHE_FLUSH,              .ds = INTEL_DS_CCS_CACHE_FLUSH_BIT, },
    };
 
    enum intel_ds_stall_flag ret = 0;

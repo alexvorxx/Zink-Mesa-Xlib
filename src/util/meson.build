@@ -33,6 +33,7 @@ files_mesa_util = files(
   'bitscan.c',
   'bitscan.h',
   'bitset.h',
+  'blend.h',
   'blob.c',
   'blob.h',
   'build_id.c',

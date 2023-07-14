@@ -24,15 +24,6 @@
 
 #include "nir_builder.h"
 
-void
-nir_builder_init(nir_builder *build, nir_function_impl *impl)
-{
-   memset(build, 0, sizeof(*build));
-   build->exact = false;
-   build->impl = impl;
-   build->shader = impl->function->shader;
-}
-
 nir_builder MUST_CHECK PRINTFLIKE(3, 4)
 nir_builder_init_simple_shader(gl_shader_stage stage,
                                const nir_shader_compiler_options *options,

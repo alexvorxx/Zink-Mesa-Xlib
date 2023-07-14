@@ -2576,15 +2576,15 @@ struct gl_renderbuffer
    /**
     * Used only when hardware accumulation buffers are not supported.
     */
-   boolean software;
+   bool software;
    void *data;
 
    bool use_readpix_cache;
 
    /* Inputs from Driver.RenderTexture, don't use directly. */
-   boolean is_rtt; /**< whether Driver.RenderTexture was called */
+   bool is_rtt; /**< whether Driver.RenderTexture was called */
    unsigned rtt_face, rtt_slice;
-   boolean rtt_layered; /**< whether glFramebufferTexture was called */
+   bool rtt_layered; /**< whether glFramebufferTexture was called */
    unsigned rtt_nr_samples; /**< from FramebufferTexture2DMultisampleEXT */
 };
 

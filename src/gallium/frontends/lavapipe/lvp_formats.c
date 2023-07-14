@@ -122,11 +122,9 @@ lvp_physical_device_get_format_properties(struct lvp_physical_device *physical_d
 
    if (pscreen->is_format_supported(pscreen, pformat, PIPE_BUFFER, 0, 0,
                                     PIPE_BIND_SHADER_IMAGE)) {
-      buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT;
-      if (pscreen->get_param(pscreen, PIPE_CAP_IMAGE_LOAD_FORMATTED))
-         buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT;
-      if (pscreen->get_param(pscreen, PIPE_CAP_IMAGE_STORE_FORMATTED))
-         buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+      buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+                         VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+                         VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
    }
 
    if (pscreen->is_format_supported(pscreen, pformat, PIPE_TEXTURE_2D, 0, 0,
@@ -151,11 +149,9 @@ lvp_physical_device_get_format_properties(struct lvp_physical_device *physical_d
 
    if (pscreen->is_format_supported(pscreen, pformat, PIPE_TEXTURE_2D, 0, 0,
                                     PIPE_BIND_SHADER_IMAGE)) {
-      features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT;
-      if (pscreen->get_param(pscreen, PIPE_CAP_IMAGE_LOAD_FORMATTED))
-         features |= VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT;
-      if (pscreen->get_param(pscreen, PIPE_CAP_IMAGE_STORE_FORMATTED))
-         features |= VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+      features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
    }
 
    if (pformat == PIPE_FORMAT_R32_UINT ||

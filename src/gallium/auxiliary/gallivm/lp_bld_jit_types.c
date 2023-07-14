@@ -21,7 +21,7 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "gallivm/lp_bld.h"
 #include "gallivm/lp_bld_init.h"
 #include "gallivm/lp_bld_struct.h"
@@ -56,6 +56,30 @@ lp_build_create_jit_buffer_type(struct gallivm_state *gallivm)
    return buffer_type;
 }
 
+LLVMValueRef
+lp_llvm_descriptor_base(struct gallivm_state *gallivm,
+                        LLVMValueRef buffers_ptr,
+                        LLVMValueRef index, unsigned buffers_limit)
+{
+   LLVMBuilderRef builder = gallivm->builder;
+
+   LLVMValueRef desc_set_index = LLVMBuildExtractValue(builder, index, 0, "");
+   if (LLVMGetTypeKind(LLVMTypeOf(desc_set_index)) == LLVMVectorTypeKind)
+      desc_set_index = LLVMBuildExtractElement(builder, desc_set_index, lp_build_const_int32(gallivm, 0), "");
+   LLVMValueRef desc_set_base = lp_llvm_buffer_base(gallivm, buffers_ptr, desc_set_index, buffers_limit);
+
+   LLVMValueRef binding_index = LLVMBuildExtractValue(builder, index, 1, "");
+   if (LLVMGetTypeKind(LLVMTypeOf(binding_index)) == LLVMVectorTypeKind)
+      binding_index = LLVMBuildExtractElement(builder, binding_index, lp_build_const_int32(gallivm, 0), "");
+
+   LLVMValueRef binding_offset = LLVMBuildMul(builder, binding_index, lp_build_const_int32(gallivm, sizeof(struct lp_descriptor)), "");
+   LLVMTypeRef int64_type = LLVMInt64TypeInContext(gallivm->context);
+   binding_offset = LLVMBuildIntCast2(builder, binding_offset, int64_type, false, "");
+
+   LLVMValueRef desc_ptr = LLVMBuildPtrToInt(builder, desc_set_base, int64_type, "");
+   return LLVMBuildAdd(builder, desc_ptr, binding_offset, "");
+}
+
 static LLVMValueRef
 lp_llvm_buffer_member(struct gallivm_state *gallivm,
                       LLVMValueRef buffers_ptr,
@@ -65,16 +89,32 @@ lp_llvm_buffer_member(struct gallivm_state *gallivm,
                       const char *member_name)
 {
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[3];
-
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, buffers_offset, lp_build_const_int32(gallivm, buffers_limit), "");
-   indices[1] = LLVMBuildSelect(gallivm->builder, cond, buffers_offset, lp_build_const_int32(gallivm, 0), "");
-   indices[2] = lp_build_const_int32(gallivm, member_index);
 
    LLVMTypeRef buffer_type = lp_build_create_jit_buffer_type(gallivm);
-   LLVMTypeRef buffers_type = LLVMArrayType(buffer_type, buffers_limit);
-   LLVMValueRef ptr = LLVMBuildGEP2(builder, buffers_type, buffers_ptr, indices, ARRAY_SIZE(indices), "");
+
+   LLVMValueRef ptr;
+   if (LLVMGetTypeKind(LLVMTypeOf(buffers_offset)) == LLVMArrayTypeKind) {
+      LLVMValueRef desc_ptr = lp_llvm_descriptor_base(gallivm, buffers_ptr, buffers_offset, buffers_limit);
+
+      LLVMTypeRef buffer_ptr_type = LLVMPointerType(buffer_type, 0);
+      desc_ptr = LLVMBuildIntToPtr(builder, desc_ptr, buffer_ptr_type, "");
+
+      LLVMValueRef indices[2] = {
+         lp_build_const_int32(gallivm, 0),
+         lp_build_const_int32(gallivm, member_index),
+      };
+      ptr = LLVMBuildGEP2(builder, buffer_type, desc_ptr, indices, ARRAY_SIZE(indices), "");
+   } else {
+      LLVMValueRef indices[3];
+
+      indices[0] = lp_build_const_int32(gallivm, 0);
+      LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, buffers_offset, lp_build_const_int32(gallivm, buffers_limit), "");
+      indices[1] = LLVMBuildSelect(gallivm->builder, cond, buffers_offset, lp_build_const_int32(gallivm, 0), "");
+      indices[2] = lp_build_const_int32(gallivm, member_index);
+
+      LLVMTypeRef buffers_type = LLVMArrayType(buffer_type, buffers_limit);
+      ptr = LLVMBuildGEP2(builder, buffers_type, buffers_ptr, indices, ARRAY_SIZE(indices), "");
+   }
 
    LLVMTypeRef res_type = LLVMStructGetTypeAtIndex(buffer_type, member_index);
    LLVMValueRef res = LLVMBuildLoad2(builder, res_type, ptr, "");
@@ -305,37 +345,55 @@ lp_build_llvm_texture_member(struct gallivm_state *gallivm,
                              LLVMValueRef texture_unit_offset,
                              unsigned member_index,
                              const char *member_name,
-                             boolean emit_load,
+                             bool emit_load,
                              LLVMTypeRef *out_type)
 {
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
 
-   assert(texture_unit < PIPE_MAX_SHADER_SAMPLER_VIEWS);
+   LLVMValueRef ptr;
+   if (gallivm->texture_descriptor) {
+      static_assert(offsetof(struct lp_descriptor, texture) == 0, "Invalid texture offset!");
+      LLVMValueRef texture_ptr = gallivm->texture_descriptor;
 
-   /* resources[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* resources[0].textures */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_TEXTURES);
-   /* resources[0].textures[unit] */
-   indices[2] = lp_build_const_int32(gallivm, texture_unit);
-   if (texture_unit_offset) {
-      indices[2] = LLVMBuildAdd(gallivm->builder, indices[2],
-                                texture_unit_offset, "");
-      LLVMValueRef cond =
-         LLVMBuildICmp(gallivm->builder, LLVMIntULT,
-                       indices[2],
-                       lp_build_const_int32(gallivm,
-                                            PIPE_MAX_SHADER_SAMPLER_VIEWS), "");
-      indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2],
-                                   lp_build_const_int32(gallivm,
-                                                        texture_unit), "");
+      LLVMTypeRef texture_ptr_type = LLVMStructGetTypeAtIndex(resources_type, LP_JIT_RES_TEXTURES);
+      LLVMTypeRef texture_type = LLVMGetElementType(texture_ptr_type);
+      texture_ptr_type = LLVMPointerType(texture_type, 0);
+
+      texture_ptr = LLVMBuildIntToPtr(builder, texture_ptr, texture_ptr_type, "");
+
+      LLVMValueRef indices[2] = {
+         lp_build_const_int32(gallivm, 0),
+         lp_build_const_int32(gallivm, member_index),
+      };
+      ptr = LLVMBuildGEP2(builder, texture_type, texture_ptr, indices, ARRAY_SIZE(indices), "");
+   } else {
+      LLVMValueRef indices[4];
+
+      assert(texture_unit < PIPE_MAX_SHADER_SAMPLER_VIEWS);
+
+      /* resources[0] */
+      indices[0] = lp_build_const_int32(gallivm, 0);
+      /* resources[0].textures */
+      indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_TEXTURES);
+      /* resources[0].textures[unit] */
+      indices[2] = lp_build_const_int32(gallivm, texture_unit);
+      if (texture_unit_offset) {
+         indices[2] = LLVMBuildAdd(gallivm->builder, indices[2],
+                                   texture_unit_offset, "");
+         LLVMValueRef cond =
+            LLVMBuildICmp(gallivm->builder, LLVMIntULT,
+                          indices[2],
+                          lp_build_const_int32(gallivm,
+                                               PIPE_MAX_SHADER_SAMPLER_VIEWS), "");
+         indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2],
+                                      lp_build_const_int32(gallivm,
+                                                           texture_unit), "");
+      }
+      /* resources[0].textures[unit].member */
+      indices[3] = lp_build_const_int32(gallivm, member_index);
+
+      ptr = LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
    }
-   /* resources[0].textures[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
-
-   LLVMValueRef ptr =
-      LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
 
    LLVMValueRef res;
    if (emit_load) {
@@ -393,17 +451,17 @@ lp_build_llvm_texture_member(struct gallivm_state *gallivm,
                                           _index, #_name, _emit_load, out_type ); \
    }
 
-LP_BUILD_LLVM_TEXTURE_MEMBER(width,      LP_JIT_TEXTURE_WIDTH, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(height,     LP_JIT_TEXTURE_HEIGHT, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(depth,      LP_JIT_TEXTURE_DEPTH, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(first_level, LP_JIT_TEXTURE_FIRST_LEVEL, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(last_level, LP_JIT_TEXTURE_LAST_LEVEL, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(base_ptr,   LP_JIT_TEXTURE_BASE, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(row_stride, LP_JIT_TEXTURE_ROW_STRIDE, FALSE)
-LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(img_stride, LP_JIT_TEXTURE_IMG_STRIDE, FALSE)
-LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(mip_offsets, LP_JIT_TEXTURE_MIP_OFFSETS, FALSE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(num_samples, LP_JIT_TEXTURE_NUM_SAMPLES, TRUE)
-LP_BUILD_LLVM_TEXTURE_MEMBER(sample_stride, LP_JIT_TEXTURE_SAMPLE_STRIDE, TRUE)
+LP_BUILD_LLVM_TEXTURE_MEMBER(width,      LP_JIT_TEXTURE_WIDTH, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(height,     LP_JIT_TEXTURE_HEIGHT, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(depth,      LP_JIT_TEXTURE_DEPTH, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(first_level, LP_JIT_TEXTURE_FIRST_LEVEL, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(last_level, LP_JIT_TEXTURE_LAST_LEVEL, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(base_ptr,   LP_JIT_TEXTURE_BASE, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(row_stride, LP_JIT_TEXTURE_ROW_STRIDE, false)
+LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(img_stride, LP_JIT_TEXTURE_IMG_STRIDE, false)
+LP_BUILD_LLVM_TEXTURE_MEMBER_OUTTYPE(mip_offsets, LP_JIT_TEXTURE_MIP_OFFSETS, false)
+LP_BUILD_LLVM_TEXTURE_MEMBER(num_samples, LP_JIT_TEXTURE_NUM_SAMPLES, true)
+LP_BUILD_LLVM_TEXTURE_MEMBER(sample_stride, LP_JIT_TEXTURE_SAMPLE_STRIDE, true)
 
 /**
  * Fetch the specified member of the lp_jit_sampler structure.
@@ -420,24 +478,42 @@ lp_build_llvm_sampler_member(struct gallivm_state *gallivm,
                              unsigned sampler_unit,
                              unsigned member_index,
                              const char *member_name,
-                             boolean emit_load)
+                             bool emit_load)
 {
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
 
-   assert(sampler_unit < PIPE_MAX_SAMPLERS);
+   LLVMValueRef ptr;
+   if (gallivm->sampler_descriptor) {
+      LLVMValueRef sampler_offset = lp_build_const_int64(gallivm, offsetof(struct lp_descriptor, sampler));
+      LLVMValueRef sampler_ptr = LLVMBuildAdd(builder, gallivm->sampler_descriptor, sampler_offset, "");
 
-   /* resources[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* resources[0].samplers */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_SAMPLERS);
-   /* resources[0].samplers[unit] */
-   indices[2] = lp_build_const_int32(gallivm, sampler_unit);
-   /* resources[0].samplers[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
+      LLVMTypeRef sampler_ptr_type = LLVMStructGetTypeAtIndex(resources_type, LP_JIT_RES_SAMPLERS);
+      LLVMTypeRef sampler_type = LLVMGetElementType(sampler_ptr_type);
+      sampler_ptr_type = LLVMPointerType(sampler_type, 0);
 
-   LLVMValueRef ptr =
-      LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
+      sampler_ptr = LLVMBuildIntToPtr(builder, sampler_ptr, sampler_ptr_type, "");
+
+      LLVMValueRef indices[2] = {
+         lp_build_const_int32(gallivm, 0),
+         lp_build_const_int32(gallivm, member_index),
+      };
+      ptr = LLVMBuildGEP2(builder, sampler_type, sampler_ptr, indices, ARRAY_SIZE(indices), "");
+   } else {
+      LLVMValueRef indices[4];
+
+      assert(sampler_unit < PIPE_MAX_SAMPLERS);
+
+      /* resources[0] */
+      indices[0] = lp_build_const_int32(gallivm, 0);
+      /* resources[0].samplers */
+      indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_SAMPLERS);
+      /* resources[0].samplers[unit] */
+      indices[2] = lp_build_const_int32(gallivm, sampler_unit);
+      /* resources[0].samplers[unit].member */
+      indices[3] = lp_build_const_int32(gallivm, member_index);
+
+      ptr = LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
+   }
 
    LLVMValueRef res;
    if (emit_load) {
@@ -465,11 +541,11 @@ lp_build_llvm_sampler_member(struct gallivm_state *gallivm,
    }
 
 
-LP_BUILD_LLVM_SAMPLER_MEMBER(min_lod,    LP_JIT_SAMPLER_MIN_LOD, TRUE)
-LP_BUILD_LLVM_SAMPLER_MEMBER(max_lod,    LP_JIT_SAMPLER_MAX_LOD, TRUE)
-LP_BUILD_LLVM_SAMPLER_MEMBER(lod_bias,   LP_JIT_SAMPLER_LOD_BIAS, TRUE)
-LP_BUILD_LLVM_SAMPLER_MEMBER(border_color, LP_JIT_SAMPLER_BORDER_COLOR, FALSE)
-LP_BUILD_LLVM_SAMPLER_MEMBER(max_aniso, LP_JIT_SAMPLER_MAX_ANISO, TRUE)
+LP_BUILD_LLVM_SAMPLER_MEMBER(min_lod,    LP_JIT_SAMPLER_MIN_LOD, true)
+LP_BUILD_LLVM_SAMPLER_MEMBER(max_lod,    LP_JIT_SAMPLER_MAX_LOD, true)
+LP_BUILD_LLVM_SAMPLER_MEMBER(lod_bias,   LP_JIT_SAMPLER_LOD_BIAS, true)
+LP_BUILD_LLVM_SAMPLER_MEMBER(border_color, LP_JIT_SAMPLER_BORDER_COLOR, false)
+LP_BUILD_LLVM_SAMPLER_MEMBER(max_aniso, LP_JIT_SAMPLER_MAX_ANISO, true)
 
 /**
  * Fetch the specified member of the lp_jit_image structure.
@@ -487,29 +563,47 @@ lp_build_llvm_image_member(struct gallivm_state *gallivm,
                            LLVMValueRef image_unit_offset,
                            unsigned member_index,
                            const char *member_name,
-                           boolean emit_load)
+                           bool emit_load)
 {
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
 
-   assert(image_unit < PIPE_MAX_SHADER_IMAGES);
+   LLVMValueRef ptr;
+   if (gallivm->texture_descriptor) {
+      LLVMValueRef image_offset = lp_build_const_int64(gallivm, offsetof(struct lp_descriptor, image));
+      LLVMValueRef image_ptr = LLVMBuildAdd(builder, gallivm->texture_descriptor, image_offset, "");
 
-   /* resources[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* resources[0].images */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_IMAGES);
-   /* resources[0].images[unit] */
-   indices[2] = lp_build_const_int32(gallivm, image_unit);
-   if (image_unit_offset) {
-      indices[2] = LLVMBuildAdd(gallivm->builder, indices[2], image_unit_offset, "");
-      LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, indices[2], lp_build_const_int32(gallivm, PIPE_MAX_SHADER_IMAGES), "");
-      indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2], lp_build_const_int32(gallivm, image_unit), "");
+      LLVMTypeRef image_ptr_type = LLVMStructGetTypeAtIndex(resources_type, LP_JIT_RES_IMAGES);
+      LLVMTypeRef image_type = LLVMGetElementType(image_ptr_type);
+      image_ptr_type = LLVMPointerType(image_type, 0);
+
+      image_ptr = LLVMBuildIntToPtr(builder, image_ptr, image_ptr_type, "");
+
+      LLVMValueRef indices[2] = {
+         lp_build_const_int32(gallivm, 0),
+         lp_build_const_int32(gallivm, member_index),
+      };
+      ptr = LLVMBuildGEP2(builder, image_type, image_ptr, indices, ARRAY_SIZE(indices), "");
+   } else {
+      LLVMValueRef indices[4];
+
+      assert(image_unit < PIPE_MAX_SHADER_IMAGES);
+
+      /* resources[0] */
+      indices[0] = lp_build_const_int32(gallivm, 0);
+      /* resources[0].images */
+      indices[1] = lp_build_const_int32(gallivm, LP_JIT_RES_IMAGES);
+      /* resources[0].images[unit] */
+      indices[2] = lp_build_const_int32(gallivm, image_unit);
+      if (image_unit_offset) {
+         indices[2] = LLVMBuildAdd(gallivm->builder, indices[2], image_unit_offset, "");
+         LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, indices[2], lp_build_const_int32(gallivm, PIPE_MAX_SHADER_IMAGES), "");
+         indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2], lp_build_const_int32(gallivm, image_unit), "");
+      }
+      /* resources[0].images[unit].member */
+      indices[3] = lp_build_const_int32(gallivm, member_index);
+
+      ptr = LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
    }
-   /* resources[0].images[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
-
-   LLVMValueRef ptr =
-      LLVMBuildGEP2(builder, resources_type, resources_ptr, indices, ARRAY_SIZE(indices), "");
 
    LLVMValueRef res;
    if (emit_load) {
@@ -559,14 +653,14 @@ lp_build_llvm_image_member(struct gallivm_state *gallivm,
                                         _index, #_name, _emit_load );   \
    }
 
-LP_BUILD_LLVM_IMAGE_MEMBER(width,      LP_JIT_IMAGE_WIDTH, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER(height,     LP_JIT_IMAGE_HEIGHT, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER(depth,      LP_JIT_IMAGE_DEPTH, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER(base_ptr,   LP_JIT_IMAGE_BASE, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER_OUTTYPE(row_stride, LP_JIT_IMAGE_ROW_STRIDE, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER_OUTTYPE(img_stride, LP_JIT_IMAGE_IMG_STRIDE, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER(num_samples, LP_JIT_IMAGE_NUM_SAMPLES, TRUE)
-LP_BUILD_LLVM_IMAGE_MEMBER(sample_stride, LP_JIT_IMAGE_SAMPLE_STRIDE, TRUE)
+LP_BUILD_LLVM_IMAGE_MEMBER(width,      LP_JIT_IMAGE_WIDTH, true)
+LP_BUILD_LLVM_IMAGE_MEMBER(height,     LP_JIT_IMAGE_HEIGHT, true)
+LP_BUILD_LLVM_IMAGE_MEMBER(depth,      LP_JIT_IMAGE_DEPTH, true)
+LP_BUILD_LLVM_IMAGE_MEMBER(base_ptr,   LP_JIT_IMAGE_BASE, true)
+LP_BUILD_LLVM_IMAGE_MEMBER_OUTTYPE(row_stride, LP_JIT_IMAGE_ROW_STRIDE, true)
+LP_BUILD_LLVM_IMAGE_MEMBER_OUTTYPE(img_stride, LP_JIT_IMAGE_IMG_STRIDE, true)
+LP_BUILD_LLVM_IMAGE_MEMBER(num_samples, LP_JIT_IMAGE_NUM_SAMPLES, true)
+LP_BUILD_LLVM_IMAGE_MEMBER(sample_stride, LP_JIT_IMAGE_SAMPLE_STRIDE, true)
 
 void
 lp_build_jit_fill_sampler_dynamic_state(struct lp_sampler_dynamic_state *state)
@@ -650,4 +744,130 @@ lp_build_create_jit_vertex_header_type(struct gallivm_state *gallivm, int data_e
           offsetof(struct vertex_header, data[data_elems]));
 
    return vertex_header;
+}
+
+LLVMTypeRef
+lp_build_sample_function_type(struct gallivm_state *gallivm, uint32_t sample_key)
+{
+   struct lp_type type;
+   memset(&type, 0, sizeof type);
+   type.floating = true;      /* floating point values */
+   type.sign = true;          /* values are signed */
+   type.norm = false;         /* values are not limited to [0,1] or [-1,1] */
+   type.width = 32;           /* 32-bit float */
+   type.length = MIN2(lp_native_vector_width / 32, 16); /* n*4 elements per vector */
+
+   enum lp_sampler_op_type op_type = (sample_key & LP_SAMPLER_OP_TYPE_MASK) >> LP_SAMPLER_OP_TYPE_SHIFT;
+   enum lp_sampler_lod_control lod_control = (sample_key & LP_SAMPLER_LOD_CONTROL_MASK) >> LP_SAMPLER_LOD_CONTROL_SHIFT;
+
+   LLVMTypeRef arg_types[LP_MAX_TEX_FUNC_ARGS];
+   LLVMTypeRef ret_type;
+   LLVMTypeRef val_type[4];
+   uint32_t num_params = 0;
+
+   LLVMTypeRef coord_type;
+   if (op_type == LP_SAMPLER_OP_FETCH)
+      coord_type = lp_build_vec_type(gallivm, lp_int_type(type));
+   else
+      coord_type = lp_build_vec_type(gallivm, type);
+
+   arg_types[num_params++] = LLVMInt64TypeInContext(gallivm->context);
+   arg_types[num_params++] = LLVMInt64TypeInContext(gallivm->context);
+
+   arg_types[num_params++] = LLVMPointerType(LLVMFloatTypeInContext(gallivm->context), 0);
+
+   for (unsigned i = 0; i < 4; i++)
+      arg_types[num_params++] = coord_type;
+
+   if (sample_key & LP_SAMPLER_SHADOW)
+      arg_types[num_params++] = lp_build_vec_type(gallivm, type);
+
+   if (sample_key & LP_SAMPLER_FETCH_MS)
+      arg_types[num_params++] = lp_build_vec_type(gallivm, lp_uint_type(type));
+
+   if (sample_key & LP_SAMPLER_OFFSETS)
+      for (uint32_t i = 0; i < 3; i++)
+         arg_types[num_params++] = lp_build_int_vec_type(gallivm, type);
+
+   if (lod_control == LP_SAMPLER_LOD_BIAS || lod_control == LP_SAMPLER_LOD_EXPLICIT)
+      arg_types[num_params++] = coord_type;
+
+   val_type[0] = val_type[1] = val_type[2] = val_type[3] = lp_build_vec_type(gallivm, type);
+   ret_type = LLVMStructTypeInContext(gallivm->context, val_type, 4, 0);
+   return LLVMFunctionType(ret_type, arg_types, num_params, false);
+}
+
+LLVMTypeRef
+lp_build_size_function_type(struct gallivm_state *gallivm,
+                            const struct lp_sampler_size_query_params *params)
+{
+   struct lp_type type;
+   memset(&type, 0, sizeof type);
+   type.floating = true;      /* floating point values */
+   type.sign = true;          /* values are signed */
+   type.norm = false;         /* values are not limited to [0,1] or [-1,1] */
+   type.width = 32;           /* 32-bit float */
+   type.length = MIN2(lp_native_vector_width / 32, 16); /* n*4 elements per vector */
+
+   LLVMTypeRef arg_types[LP_MAX_TEX_FUNC_ARGS];
+   LLVMTypeRef ret_type;
+   LLVMTypeRef val_type[4];
+   uint32_t num_params = 0;
+
+   arg_types[num_params++] = LLVMInt64TypeInContext(gallivm->context);
+
+   if (!params->samples_only)
+      arg_types[num_params++] = lp_build_int_vec_type(gallivm, type);
+
+   val_type[0] = val_type[1] = val_type[2] = val_type[3] = lp_build_int_vec_type(gallivm, type);
+   ret_type = LLVMStructTypeInContext(gallivm->context, val_type, 4, 0);
+   return LLVMFunctionType(ret_type, arg_types, num_params, false);
+}
+
+LLVMTypeRef
+lp_build_image_function_type(struct gallivm_state *gallivm,
+                             const struct lp_img_params *params, bool ms)
+{
+   struct lp_type type;
+   memset(&type, 0, sizeof type);
+   type.floating = true;      /* floating point values */
+   type.sign = true;          /* values are signed */
+   type.norm = false;         /* values are not limited to [0,1] or [-1,1] */
+   type.width = 32;           /* 32-bit float */
+   type.length = MIN2(lp_native_vector_width / 32, 16); /* n*4 elements per vector */
+
+   LLVMTypeRef arg_types[LP_MAX_TEX_FUNC_ARGS];
+   LLVMTypeRef ret_type;
+   uint32_t num_params = 0;
+
+   arg_types[num_params++] = LLVMInt64TypeInContext(gallivm->context);
+
+   if (params->img_op != LP_IMG_LOAD)
+      arg_types[num_params++] = lp_build_int_vec_type(gallivm, type);
+
+   for (uint32_t i = 0; i < 3; i++)
+      arg_types[num_params++] = lp_build_vec_type(gallivm, lp_uint_type(type));
+
+   if (ms)
+      arg_types[num_params++] = lp_build_vec_type(gallivm, lp_uint_type(type));
+
+   uint32_t num_inputs = params->img_op != LP_IMG_LOAD ? 4 : 0;
+   if (params->img_op == LP_IMG_ATOMIC_CAS)
+      num_inputs = 8;
+
+   const struct util_format_description *desc = util_format_description(params->format);
+   LLVMTypeRef component_type = lp_build_vec_type(gallivm, lp_build_texel_type(type, desc));
+
+   for (uint32_t i = 0; i < num_inputs; i++)
+      arg_types[num_params++] = component_type;
+
+   if (params->img_op != LP_IMG_STORE) {
+      LLVMTypeRef val_type[4];
+      val_type[0] = val_type[1] = val_type[2] = val_type[3] = component_type;
+      ret_type = LLVMStructTypeInContext(gallivm->context, val_type, 4, 0);
+   } else  {
+      ret_type = LLVMVoidTypeInContext(gallivm->context);
+   }
+
+   return LLVMFunctionType(ret_type, arg_types, num_params, false);
 }

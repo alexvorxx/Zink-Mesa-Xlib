@@ -66,7 +66,7 @@ ResolveState(Device *pDevice)
        pDevice->bound_vs->state.tokens) {
       Shader *gs = pDevice->bound_empty_gs;
       Shader *vs = pDevice->bound_vs;
-      boolean remapped = FALSE;
+      bool remapped = false;
       struct pipe_context *pipe = pDevice->pipe;
       if (!gs->output_resolved) {
          for (unsigned i = 0; i < gs->state.stream_output.num_outputs; ++i) {
@@ -74,14 +74,14 @@ ResolveState(Device *pDevice)
                ShaderFindOutputMapping(vs, gs->state.stream_output.output[i].register_index);
             if (mapping != gs->state.stream_output.output[i].register_index) {
                gs->state.stream_output.output[i].register_index = mapping;
-               remapped = TRUE;
+               remapped = true;
             }
          }
          if (remapped) {
             pipe->delete_gs_state(pipe, gs->handle);
             gs->handle = pipe->create_gs_state(pipe, &gs->state);
          }
-         gs->output_resolved = TRUE;
+         gs->output_resolved = true;
       }
       pipe->bind_gs_state(pipe, gs->handle);
    }
@@ -186,7 +186,7 @@ DrawIndexed(D3D10DDI_HDEVICE hDevice,  // IN
    draw.count = IndexCount;
    info.index.resource = null_ib ? null_ib : pDevice->index_buffer;
    draw.index_bias = BaseVertexLocation;
-   info.primitive_restart = TRUE;
+   info.primitive_restart = true;
    info.restart_index = restart_index;
 
    pDevice->pipe->draw_vbo(pDevice->pipe, &info, 0, NULL, &draw, 1);
@@ -289,7 +289,7 @@ DrawIndexedInstanced(D3D10DDI_HDEVICE hDevice,   // IN
    draw.index_bias = BaseVertexLocation;
    info.start_instance = StartInstanceLocation;
    info.instance_count = InstanceCount;
-   info.primitive_restart = TRUE;
+   info.primitive_restart = true;
    info.restart_index = restart_index;
 
    pDevice->pipe->draw_vbo(pDevice->pipe, &info, 0, NULL, &draw, 1);

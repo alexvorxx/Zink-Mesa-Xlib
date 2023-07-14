@@ -9,6 +9,7 @@
     HWCI_FREQ_MAX: "true"
     HWCI_KERNEL_MODULES: amdgpu
     KERNEL_IMAGE_TYPE: ""
+    FLAKES_CHANNEL: "#amd-ci"
 
 .radeonsi-stoney-test:x86_64:
   extends:
@@ -44,6 +45,26 @@ radv-stoney-vkcts:x86_64:
   variables:
     DEQP_FRACTION: 11
 
+radv-stoney-angle:
+  extends:
+    - .lava-test-deqp:x86_64
+    - .radv-stoney-test:x86_64
+    - .radeonsi+radv-rules # Note: Xorg uses radeonsi, so depend on both gl and vulkan
+  variables:
+    DEQP_SUITE: radv-stoney-angle
+    USE_ANGLE: 1
+    HWCI_START_XORG: 1
+    GPU_VERSION: angle-radv-stoney-aco
+
+radv-stoney-angle-full:
+  extends:
+    - radv-stoney-angle
+    - .radv-valve-manual-rules
+  parallel: 2
+  variables:
+    DEQP_SUITE: radv-stoney-angle-full
+    JOB_TIMEOUT: 60
+
 radeonsi-stoney-gl:x86_64:
   extends:
     - .lava-test-deqp:x86_64
@@ -51,7 +72,7 @@ radeonsi-stoney-gl:x86_64:
   parallel: 11
   variables:
     DEQP_SUITE: radeonsi-stoney
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
 
 radeonsi-stoney-traces:x86_64:
   extends:
@@ -95,6 +116,7 @@ radeonsi-stoney-traces:x86_64:
   extends:
     - .radv-collabora-rules
   variables:
+    DRIVER_NAME: radv
     GPU_VERSION: radv-raven
     VK_DRIVER: radeon
 
@@ -150,7 +172,7 @@ radeonsi-raven-piglit-quick_gl:x86_64:
   variables:
     PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_PROFILES: quick_gl
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
 
 radeonsi-raven-piglit-quick_shader:x86_64:
   extends:
@@ -216,12 +238,14 @@ radeonsi-raven-va-full:x86_64:
 
 .kabini-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: mupuf
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=8g'
   tags:
     - amdgpu:codename:KABINI
 
 .polaris10-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: keywords
     FDO_CI_CONCURRENT: 16
     B2C_TIMEOUT_BOOT_RETRIES: 4
     # (2022-01) tsc=unstable was added in response to this message in kmsg,
@@ -232,6 +256,7 @@ radeonsi-raven-va-full:x86_64:
 
 .vega10-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: keywords
     FDO_CI_CONCURRENT: 16
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
@@ -239,6 +264,7 @@ radeonsi-raven-va-full:x86_64:
 
 .renoir-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: mupuf
     FDO_CI_CONCURRENT: 24
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
     B2C_TIMEOUT_BOOT_MINUTES: 60
@@ -248,6 +274,7 @@ radeonsi-raven-va-full:x86_64:
 
 .navi10-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: mupuf
     FDO_CI_CONCURRENT: 24
     # (2022-01) noapic is set because the serial adapter on this
     # machine is using non-MSI IRQs and is generating a lot of
@@ -259,6 +286,7 @@ radeonsi-raven-va-full:x86_64:
 
 .navi21-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: keywords
     FDO_CI_CONCURRENT: 32
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
@@ -266,13 +294,14 @@ radeonsi-raven-va-full:x86_64:
 
 .vangogh-test-valve:
   variables:
+    RUNNER_FARM_LOCATION: mupuf
     FDO_CI_CONCURRENT: 8
     B2C_TIMEOUT_BOOT_MINUTES: 85
     B2C_TIMEOUT_OVERALL_MINUTES: 120
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
     - amdgpu:codename:VANGOGH
-    - priority:low
+    - $VALVE_INFRA_VANGOGH_JOB_PRIORITY
 
 ############### VKCTS tests ###############
 
@@ -373,7 +402,6 @@ vkcts-navi21-valve:
     - .navi21-test-valve
   variables:
     GPU_VERSION: radv-navi21-aco
-    RADV_PERFTEST: rt
 
 # Disabled due to its extremelly-broken nature
 .vkcts-navi21-llvm-valve:
@@ -492,7 +520,6 @@ vkd3d-navi21-valve:
     - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi21-vkd3d
-    RADV_PERFTEST: rt
     VKD3D_CONFIG: dxr11
 
 vkd3d-vangogh-valve:

@@ -436,3 +436,8 @@ spec@!opengl 1.0@gl-1.0-polygon-line-aa,Fail
 
 # Regression noticed in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/891104
 spec@arb_viewport_array@display-list,Fail
+
+# Leaks due to test bug https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/825
+spec@ext_transform_feedback@api-errors bind_pipeline,Crash
+spec@ext_transform_feedback@api-errors useprogstage_active,Crash
+spec@ext_transform_feedback@api-errors useprogstage_noactive,Crash

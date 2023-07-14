@@ -58,7 +58,12 @@ struct clc_optional_features {
    bool images_write_3d;
    bool integer_dot_product;
    bool intel_subgroups;
+   /* OpenCL core subgroups */
    bool subgroups;
+   /* OpenCL extension cl_khr_subgroups, which requires independent forward
+    * progress
+    */
+   bool subgroups_ifp;
 };
 
 struct clc_compile_args {

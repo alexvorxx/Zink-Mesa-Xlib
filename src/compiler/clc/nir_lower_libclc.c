@@ -73,8 +73,7 @@ nir_lower_libclc_impl(nir_function_impl *impl,
                       const nir_shader *clc_shader,
                       struct hash_table *copy_vars)
 {
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    bool progress = false;
    nir_foreach_block_safe(block, impl) {
@@ -106,9 +105,8 @@ nir_lower_libclc(nir_shader *shader,
    /* do progress passes inside the pass */
    do {
       progress = false;
-      nir_foreach_function(function, shader) {
-         if (function->impl)
-            progress |= nir_lower_libclc_impl(function->impl, clc_shader, copy_vars);
+      nir_foreach_function_impl(impl, shader) {
+         progress |= nir_lower_libclc_impl(impl, clc_shader, copy_vars);
       }
       overall_progress |= progress;
    } while (progress);

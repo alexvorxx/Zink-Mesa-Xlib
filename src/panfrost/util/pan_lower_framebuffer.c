@@ -266,14 +266,12 @@ pan_pack_unorm_1010102(nir_builder *b, nir_ssa_def *v)
 
    nir_ssa_def *bottom2 = nir_iand(b, s, nir_imm_ivec4(b, 0x3, 0x3, 0x3, 0x3));
 
-   nir_ssa_def *top = nir_ior(
-      b,
+   nir_ssa_def *top =
       nir_ior(b,
-              nir_ishl(b, nir_channel(b, bottom2, 0), nir_imm_int(b, 24 + 0)),
-              nir_ishl(b, nir_channel(b, bottom2, 1), nir_imm_int(b, 24 + 2))),
-      nir_ior(b,
-              nir_ishl(b, nir_channel(b, bottom2, 2), nir_imm_int(b, 24 + 4)),
-              nir_ishl(b, nir_channel(b, bottom2, 3), nir_imm_int(b, 24 + 6))));
+              nir_ior(b, nir_ishl_imm(b, nir_channel(b, bottom2, 0), 24 + 0),
+                      nir_ishl_imm(b, nir_channel(b, bottom2, 1), 24 + 2)),
+              nir_ior(b, nir_ishl_imm(b, nir_channel(b, bottom2, 2), 24 + 4),
+                      nir_ishl_imm(b, nir_channel(b, bottom2, 3), 24 + 6)));
 
    nir_ssa_def *p = nir_ior(b, top, top8_rgb);
    return nir_replicate(b, p, 4);

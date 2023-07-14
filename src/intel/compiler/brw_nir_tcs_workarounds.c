@@ -111,8 +111,7 @@ brw_nir_apply_tcs_quads_workaround(nir_shader *nir)
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    /* emit_quads_workaround() inserts an if statement into each block,
     * which splits it in two.  This changes the set of predecessors of

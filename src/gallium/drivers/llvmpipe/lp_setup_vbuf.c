@@ -72,15 +72,15 @@ lp_setup_get_vertex_info(struct vbuf_render *vbr)
    /* Vertex size/info depends on the latest state.
     * The draw module may have issued additional state-change commands.
     */
-   lp_setup_update_state(setup, FALSE);
+   lp_setup_update_state(setup, false);
 
    return setup->vertex_info;
 }
 
 
-static boolean
+static bool
 lp_setup_allocate_vertices(struct vbuf_render *vbr,
-                          ushort vertex_size, ushort nr_vertices)
+                          uint16_t vertex_size, uint16_t nr_vertices)
 {
    struct lp_setup_context *setup = lp_setup_context(vbr);
    unsigned size = vertex_size * nr_vertices;
@@ -115,8 +115,8 @@ lp_setup_map_vertices(struct vbuf_render *vbr)
 
 static void
 lp_setup_unmap_vertices(struct vbuf_render *vbr,
-                        ushort min_index,
-                        ushort max_index)
+                        uint16_t min_index,
+                        uint16_t max_index)
 {
    ASSERTED struct lp_setup_context *setup = lp_setup_context(vbr);
    assert(setup->vertex_buffer_size >= (max_index+1) * setup->vertex_size);
@@ -169,17 +169,17 @@ rect(struct lp_setup_context *setup,
  * draw elements / indexed primitives
  */
 static void
-lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
+lp_setup_draw_elements(struct vbuf_render *vbr, const uint16_t *indices, uint nr)
 {
    struct lp_setup_context *setup = lp_setup_context(vbr);
    const unsigned stride = setup->vertex_info->size * sizeof(float);
    const void *vertex_buffer = setup->vertex_buffer;
-   const boolean flatshade_first = setup->flatshade_first;
+   const bool flatshade_first = setup->flatshade_first;
    unsigned i;
 
    assert(setup->setup.variant);
 
-   if (!lp_setup_update_state(setup, TRUE))
+   if (!lp_setup_update_state(setup, true))
       return;
 
    const bool uses_constant_interp =
@@ -384,10 +384,10 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
    const unsigned stride = setup->vertex_info->size * sizeof(float);
    const void *vertex_buffer =
       (void *) get_vert(setup->vertex_buffer, start, stride);
-   const boolean flatshade_first = setup->flatshade_first;
+   const bool flatshade_first = setup->flatshade_first;
    unsigned i;
 
-   if (!lp_setup_update_state(setup, TRUE))
+   if (!lp_setup_update_state(setup, true))
       return;
 
    const bool uses_constant_interp =

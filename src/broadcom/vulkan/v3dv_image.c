@@ -140,17 +140,17 @@ v3d_setup_plane_slices(struct v3dv_image *image, uint8_t plane,
    for (int32_t i = image->vk.mip_levels - 1; i >= 0; i--) {
       struct v3d_resource_slice *slice = &image->planes[plane].slices[i];
 
+      slice->width = u_minify(width, i);
+      slice->height = u_minify(height, i);
+
       uint32_t level_width, level_height, level_depth;
       if (i < 2) {
-         level_width = u_minify(width, i);
-         level_height = u_minify(height, i);
+         level_width = slice->width;
+         level_height = slice->height;
       } else {
          level_width = u_minify(pot_width, i);
          level_height = u_minify(pot_height, i);
       }
-
-      slice->width = level_width;
-      slice->height = level_height;
 
       if (i < 1)
          level_depth = u_minify(depth, i);

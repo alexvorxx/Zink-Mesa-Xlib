@@ -204,8 +204,7 @@ nir_lower_non_uniform_access_impl(nir_function_impl *impl,
 {
    bool progress = false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    nir_foreach_block_safe(block, impl) {
       nir_foreach_instr_safe(instr, block) {
@@ -329,9 +328,8 @@ nir_lower_non_uniform_access(nir_shader *shader,
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl &&
-          nir_lower_non_uniform_access_impl(function->impl, options))
+   nir_foreach_function_impl(impl, shader) {
+      if (nir_lower_non_uniform_access_impl(impl, options))
          progress = true;
    }
 

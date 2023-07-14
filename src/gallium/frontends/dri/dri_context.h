@@ -33,7 +33,7 @@
 #define DRI_CONTEXT_H
 
 #include "dri_util.h"
-#include "pipe/p_compiler.h"
+#include "util/compiler.h"
 #include "hud/hud_context.h"
 
 struct pipe_context;

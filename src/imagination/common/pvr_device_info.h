@@ -255,6 +255,8 @@ struct pvr_device_features {
    bool has_compute_morton_capable : 1;
    bool has_compute_overlap : 1;
    bool has_eight_output_registers : 1;
+   bool has_fb_cdc_v4 : 1;
+   bool has_fbcdc_algorithm;
    bool has_gpu_multicore_support : 1;
    bool has_gs_rta_support : 1;
    bool has_ipf_creq_pf : 1;
@@ -303,6 +305,7 @@ struct pvr_device_features {
    bool has_zls_subtile : 1;
 
    uint32_t common_store_size_in_dwords;
+   uint32_t fbcdc_algorithm;
    uint32_t isp_max_tiles_in_flight;
    uint32_t isp_samples_per_pixel;
    uint32_t max_instances_per_pds_task;
@@ -325,6 +328,7 @@ struct pvr_device_features {
    uint32_t xpu_max_slaves;
 
    /* Derived features. */
+   bool has_requires_fb_cdc_zls_setup : 1;
    bool has_s8xe : 1;
 };
 

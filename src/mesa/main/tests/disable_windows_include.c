@@ -169,7 +169,7 @@
 #include <mesa/state_tracker/st_extensions.h>
 #include <mesa/state_tracker/st_format.h>
 #include <mesa/state_tracker/st_gen_mipmap.h>
-#include <mesa/state_tracker/st_glsl_to_ir.h>
+#include <mesa/state_tracker/st_glsl_to_nir.h>
 #include <mesa/state_tracker/st_manager.h>
 #include <mesa/state_tracker/st_nir.h>
 #include <mesa/state_tracker/st_pbo.h>

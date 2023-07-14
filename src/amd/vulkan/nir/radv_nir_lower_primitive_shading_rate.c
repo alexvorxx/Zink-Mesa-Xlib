@@ -31,8 +31,7 @@ radv_nir_lower_primitive_shading_rate(nir_shader *nir, enum amd_gfx_level gfx_le
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    bool progress = false;
 
-   nir_builder b;
-   nir_builder_init(&b, impl);
+   nir_builder b = nir_builder_create(impl);
 
    /* Iterate in reverse order since there should be only one deref store to PRIMITIVE_SHADING_RATE
     * after lower_io_to_temporaries for vertex shaders.

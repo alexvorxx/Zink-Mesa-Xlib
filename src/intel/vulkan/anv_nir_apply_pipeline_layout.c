@@ -436,6 +436,51 @@ build_load_render_surface_state_address(nir_builder *b,
    return nir_vec4(b, addr_ldw, addr_udw, length, nir_imm_int(b, 0));
 }
 
+/* Load the depth of a 3D storage image.
+ *
+ * Either by reading the indirect descriptor value, or reading the value from
+ * RENDER_SURFACE_STATE.
+ *
+ * This is necessary for VK_EXT_image_sliced_view_of_3d.
+ */
+static nir_ssa_def *
+build_load_storage_3d_image_depth(nir_builder *b,
+                                  nir_ssa_def *desc_addr,
+                                  nir_ssa_def *resinfo_depth,
+                                  struct apply_pipeline_layout_state *state)
+
+{
+   const struct intel_device_info *devinfo = &state->pdevice->info;
+
+   if (state->layout->type == ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_INDIRECT) {
+      return build_load_descriptor_mem(
+         b, desc_addr,
+         offsetof(struct anv_storage_image_descriptor, image_depth),
+         1, 32, state);
+   } else {
+      nir_ssa_def *data = build_load_descriptor_mem(
+         b, desc_addr,
+         RENDER_SURFACE_STATE_RenderTargetViewExtent_start(devinfo) / 8,
+         1, 32, state);
+      nir_ssa_def *depth =
+         nir_ushr_imm(
+            b, data,
+            RENDER_SURFACE_STATE_RenderTargetViewExtent_start(devinfo) % 32);
+      depth = nir_iand_imm(
+         b, depth,
+         (1u << RENDER_SURFACE_STATE_RenderTargetViewExtent_bits(devinfo)) - 1);
+      depth = nir_iadd_imm(b, depth, 1);
+
+      /* Return the minimum between the RESINFO value and the
+       * RENDER_SURFACE_STATE::RenderTargetViewExtent value.
+       *
+       * Both are expressed for the current view LOD, but in the case of a
+       * SURFTYPE_NULL, RESINFO will return the right value, while the -1
+       * value in RENDER_SURFACE_STATE should be ignored.
+       */
+      return nir_umin(b, resinfo_depth, depth);
+   }
+}
 /** Build a Vulkan resource index
  *
  * A "resource index" is the term used by our SPIR-V parser and the relevant
@@ -723,8 +768,9 @@ build_surface_index_for_binding(nir_builder *b,
 
          /* With bindless indexes are offsets in the descriptor buffer */
          surface_index =
-            nir_iadd(b, nir_imm_int(b, bind_layout->descriptor_offset),
-                     nir_imul_imm(b, array_index, bind_layout->descriptor_stride));
+            nir_iadd_imm(b,
+                         nir_imul_imm(b, array_index, bind_layout->descriptor_stride),
+                         bind_layout->descriptor_offset);
          if (plane != 0) {
             assert(plane < bind_layout->max_plane_count);
             surface_index = nir_iadd_imm(b, surface_index,
@@ -1479,6 +1525,58 @@ lower_image_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 static bool
+lower_image_size_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
+                           struct apply_pipeline_layout_state *state)
+{
+   if (nir_intrinsic_image_dim(intrin) != GLSL_SAMPLER_DIM_3D)
+      return lower_image_intrinsic(b, intrin, state);
+
+   nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   bool non_uniform = nir_intrinsic_access(intrin) & ACCESS_NON_UNIFORM;
+   bool is_bindless;
+   nir_ssa_def *handle =
+      build_load_var_deref_surface_handle(b, deref, non_uniform,
+                                          &is_bindless, state);
+   nir_rewrite_image_intrinsic(intrin, handle, is_bindless);
+
+   nir_variable *var = nir_deref_instr_get_variable(deref);
+   const uint32_t set = var->data.descriptor_set;
+   const uint32_t binding = var->data.binding;
+
+   nir_ssa_def *array_index;
+   if (deref->deref_type != nir_deref_type_var) {
+      assert(deref->deref_type == nir_deref_type_array);
+      assert(nir_deref_instr_parent(deref)->deref_type == nir_deref_type_var);
+      assert(deref->arr.index.is_ssa);
+      array_index = deref->arr.index.ssa;
+   } else {
+      array_index = nir_imm_int(b, 0);
+   }
+
+   nir_ssa_def *desc_addr = build_desc_addr_for_binding(
+      b, set, binding, array_index, state);
+
+   b->cursor = nir_after_instr(&intrin->instr);
+
+   nir_ssa_def *image_depth =
+      build_load_storage_3d_image_depth(b, desc_addr,
+                                        nir_channel(b, &intrin->dest.ssa, 2),
+                                        state);
+
+   nir_ssa_def *comps[4] = {};
+   for (unsigned c = 0; c < intrin->dest.ssa.num_components; c++)
+      comps[c] = c == 2 ? image_depth : nir_channel(b, &intrin->dest.ssa, c);
+
+   nir_ssa_def *vec = nir_vec(b, comps, intrin->dest.ssa.num_components);
+   nir_ssa_def_rewrite_uses_after(&intrin->dest.ssa, vec, vec->parent_instr);
+
+   return true;
+}
+
+static bool
 lower_load_constant(nir_builder *b, nir_intrinsic_instr *intrin,
                     struct apply_pipeline_layout_state *state)
 {
@@ -1674,12 +1772,13 @@ apply_pipeline_layout(nir_builder *b, nir_instr *instr, void *_state)
       case nir_intrinsic_image_deref_store:
       case nir_intrinsic_image_deref_atomic:
       case nir_intrinsic_image_deref_atomic_swap:
-      case nir_intrinsic_image_deref_size:
       case nir_intrinsic_image_deref_samples:
       case nir_intrinsic_image_deref_load_param_intel:
       case nir_intrinsic_image_deref_load_raw_intel:
       case nir_intrinsic_image_deref_store_raw_intel:
          return lower_image_intrinsic(b, intrin, state);
+      case nir_intrinsic_image_deref_size:
+         return lower_image_size_intrinsic(b, intrin, state);
       case nir_intrinsic_load_constant:
          return lower_load_constant(b, intrin, state);
       case nir_intrinsic_load_base_workgroup_id:
@@ -1722,11 +1821,8 @@ static void
 anv_validate_pipeline_layout(const struct anv_pipeline_sets_layout *layout,
                              nir_shader *shader)
 {
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
+   nir_foreach_function_impl(impl, shader) {
+      nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;

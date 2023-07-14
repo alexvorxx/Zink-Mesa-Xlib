@@ -1380,7 +1380,7 @@ tc_create_vertex_elements_state(struct pipe_context *_pipe, unsigned count,
 
 struct tc_sampler_states {
    struct tc_call_base base;
-   ubyte shader, start, count;
+   uint8_t shader, start, count;
    void *slot[0]; /* more will be allocated if needed */
 };
 
@@ -1533,7 +1533,7 @@ tc_set_tess_state(struct pipe_context *_pipe,
 
 struct tc_patch_vertices {
    struct tc_call_base base;
-   ubyte patch_vertices;
+   uint8_t patch_vertices;
 };
 
 static uint16_t
@@ -1556,7 +1556,7 @@ tc_set_patch_vertices(struct pipe_context *_pipe, uint8_t patch_vertices)
 
 struct tc_constant_buffer_base {
    struct tc_call_base base;
-   ubyte shader, index;
+   uint8_t shader, index;
    bool is_null;
 };
 
@@ -1639,8 +1639,8 @@ tc_set_constant_buffer(struct pipe_context *_pipe,
 
 struct tc_inlinable_constants {
    struct tc_call_base base;
-   ubyte shader;
-   ubyte num_values;
+   uint8_t shader;
+   uint8_t num_values;
    uint32_t values[MAX_INLINABLE_UNIFORMS];
 };
 
@@ -1696,7 +1696,7 @@ tc_set_sample_locations(struct pipe_context *_pipe, size_t size, const uint8_t *
 
 struct tc_scissors {
    struct tc_call_base base;
-   ubyte start, count;
+   uint8_t start, count;
    struct pipe_scissor_state slot[0]; /* more will be allocated if needed */
 };
 
@@ -1725,7 +1725,7 @@ tc_set_scissor_states(struct pipe_context *_pipe,
 
 struct tc_viewports {
    struct tc_call_base base;
-   ubyte start, count;
+   uint8_t start, count;
    struct pipe_viewport_state slot[0]; /* more will be allocated if needed */
 };
 
@@ -1758,7 +1758,7 @@ tc_set_viewport_states(struct pipe_context *_pipe,
 struct tc_window_rects {
    struct tc_call_base base;
    bool include;
-   ubyte count;
+   uint8_t count;
    struct pipe_scissor_state slot[0]; /* more will be allocated if needed */
 };
 
@@ -1787,7 +1787,7 @@ tc_set_window_rectangles(struct pipe_context *_pipe, bool include,
 
 struct tc_sampler_views {
    struct tc_call_base base;
-   ubyte shader, start, count, unbind_num_trailing_slots;
+   uint8_t shader, start, count, unbind_num_trailing_slots;
    struct pipe_sampler_view *slot[0]; /* more will be allocated if needed */
 };
 
@@ -1864,8 +1864,8 @@ tc_set_sampler_views(struct pipe_context *_pipe,
 
 struct tc_shader_images {
    struct tc_call_base base;
-   ubyte shader, start, count;
-   ubyte unbind_num_trailing_slots;
+   uint8_t shader, start, count;
+   uint8_t unbind_num_trailing_slots;
    struct pipe_image_view slot[0]; /* more will be allocated if needed */
 };
 
@@ -1955,7 +1955,7 @@ tc_set_shader_images(struct pipe_context *_pipe,
 
 struct tc_shader_buffers {
    struct tc_call_base base;
-   ubyte shader, start, count;
+   uint8_t shader, start, count;
    bool unbind;
    unsigned writable_bitmask;
    struct pipe_shader_buffer slot[0]; /* more will be allocated if needed */
@@ -2039,8 +2039,8 @@ tc_set_shader_buffers(struct pipe_context *_pipe,
 
 struct tc_vertex_buffers {
    struct tc_call_base base;
-   ubyte start, count;
-   ubyte unbind_num_trailing_slots;
+   uint8_t start, count;
+   uint8_t unbind_num_trailing_slots;
    struct pipe_vertex_buffer slot[0]; /* more will be allocated if needed */
 };
 

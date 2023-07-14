@@ -1815,7 +1815,7 @@ nvc0_init_surface_functions(struct nvc0_context *nvc0)
    pipe->flush_resource = nvc0_flush_resource;
    pipe->clear_render_target = nvc0_clear_render_target;
    pipe->clear_depth_stencil = nvc0_clear_depth_stencil;
-   pipe->clear_texture = nv50_clear_texture;
+   pipe->clear_texture = u_default_clear_texture;
    pipe->clear_buffer = nvc0_clear_buffer;
    if (nvc0->screen->base.class_3d >= GM200_3D_CLASS)
       pipe->evaluate_depth_buffer = gm200_evaluate_depth_buffer;

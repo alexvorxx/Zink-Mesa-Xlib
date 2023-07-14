@@ -105,6 +105,8 @@ llvmpipe_destroy(struct pipe_context *pipe)
 
    lp_delete_setup_variants(llvmpipe);
 
+   llvmpipe_sampler_matrix_destroy(llvmpipe);
+
 #ifndef USE_GLOBAL_LLVM_CONTEXT
    LLVMContextDispose(llvmpipe->context);
 #endif
@@ -252,6 +254,8 @@ llvmpipe_create_context(struct pipe_screen *screen, void *priv,
    llvmpipe_init_context_resource_funcs(&llvmpipe->pipe);
    llvmpipe_init_surface_functions(llvmpipe);
 
+   llvmpipe_init_sampler_matrix(llvmpipe);
+
 #ifdef USE_GLOBAL_LLVM_CONTEXT
    llvmpipe->context = LLVMGetGlobalContext();
 #else
@@ -321,13 +325,13 @@ llvmpipe_create_context(struct pipe_screen *screen, void *priv,
    /* convert points and lines into triangles:
     * (otherwise, draw points and lines natively)
     */
-   draw_wide_point_sprites(llvmpipe->draw, FALSE);
-   draw_enable_point_sprites(llvmpipe->draw, FALSE);
+   draw_wide_point_sprites(llvmpipe->draw, false);
+   draw_enable_point_sprites(llvmpipe->draw, false);
    draw_wide_point_threshold(llvmpipe->draw, 10000.0);
    draw_wide_line_threshold(llvmpipe->draw, 10000.0);
 
    /* initial state for clipping - enabled, with no guardband */
-   draw_set_driver_clipping(llvmpipe->draw, FALSE, FALSE, FALSE, TRUE);
+   draw_set_driver_clipping(llvmpipe->draw, false, false, false, true);
 
    lp_reset_counters();
 

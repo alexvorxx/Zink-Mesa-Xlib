@@ -106,7 +106,7 @@ struct softpipe_context {
    unsigned active_query_count;
 
    /** Mapped vertex buffers */
-   ubyte *mapped_vbuffer[PIPE_MAX_ATTRIBS];
+   uint8_t *mapped_vbuffer[PIPE_MAX_ATTRIBS];
 
    /** Mapped constant buffers */
    struct tgsi_exec_consts_info mapped_constants[PIPE_SHADER_TYPES][PIPE_MAX_CONSTANT_BUFFERS];
@@ -173,7 +173,7 @@ struct softpipe_context {
 
    struct blitter_context *blitter;
 
-   boolean dirty_render_cache;
+   bool dirty_render_cache;
 
    struct softpipe_tile_cache *cbuf_cache[PIPE_MAX_COLOR_BUFS];
    struct softpipe_tile_cache *zsbuf_cache;

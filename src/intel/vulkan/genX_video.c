@@ -756,12 +756,12 @@ anv_h265_decode_video(struct anv_cmd_buffer *cmd_buffer,
             w.ReferencePictureListSelect = 0;
 
             for (unsigned i = 0; i < ANV_VIDEO_H265_MAX_NUM_REF_FRAME; i++) {
-               w.LumaOffsets->DeltaLumaWeightLX = slice_params[s].luma_weight_l0[i];
-               w.LumaOffsets->LumaOffsetLX = slice_params[s].luma_offset_l0[i];
-               w.ChromaOffsets->DeltaChromaWeightLX0 = slice_params[s].chroma_weight_l0[i][0];
-               w.ChromaOffsets->DeltaChromaWeightLX1 = slice_params[s].chroma_weight_l0[i][1];
-               w.ChromaOffsets->ChromaOffsetLX0 = slice_params[s].chroma_offset_l0[i][0];
-               w.ChromaOffsets->ChromaOffsetLX1 = slice_params[s].chroma_offset_l0[i][1];
+               w.LumaOffsets[i].DeltaLumaWeightLX = slice_params[s].delta_luma_weight_l0[i] & 0xff;
+               w.LumaOffsets[i].LumaOffsetLX = slice_params[s].luma_offset_l0[i] & 0xff;
+               w.ChromaOffsets[i].DeltaChromaWeightLX0 = slice_params[s].delta_chroma_weight_l0[i][0] & 0xff;
+               w.ChromaOffsets[i].ChromaOffsetLX0 = slice_params[s].chroma_offset_l0[i][0] & 0xff;
+               w.ChromaOffsets[i].DeltaChromaWeightLX1 = slice_params[s].delta_chroma_weight_l0[i][1] & 0xff;
+               w.ChromaOffsets[i].ChromaOffsetLX1 = slice_params[s].chroma_offset_l0[i][1] & 0xff;
             }
          }
 
@@ -770,12 +770,12 @@ anv_h265_decode_video(struct anv_cmd_buffer *cmd_buffer,
                w.ReferencePictureListSelect = 1;
 
                for (unsigned i = 0; i < ANV_VIDEO_H265_MAX_NUM_REF_FRAME; i++) {
-                  w.LumaOffsets->DeltaLumaWeightLX = slice_params[s].luma_weight_l1[i];
-                  w.LumaOffsets->LumaOffsetLX = slice_params[s].luma_offset_l1[i];
-                  w.ChromaOffsets->DeltaChromaWeightLX0 = slice_params[s].chroma_weight_l1[i][0];
-                  w.ChromaOffsets->DeltaChromaWeightLX1 = slice_params[s].chroma_weight_l1[i][1];
-                  w.ChromaOffsets->ChromaOffsetLX0 = slice_params[s].chroma_offset_l1[i][0];
-                  w.ChromaOffsets->ChromaOffsetLX1 = slice_params[s].chroma_offset_l1[i][1];
+                  w.LumaOffsets[i].DeltaLumaWeightLX = slice_params[s].delta_luma_weight_l1[i] & 0xff;
+                  w.LumaOffsets[i].LumaOffsetLX = slice_params[s].luma_offset_l1[i] & 0xff;
+                  w.ChromaOffsets[i].DeltaChromaWeightLX0 = slice_params[s].delta_chroma_weight_l1[i][0] & 0xff;
+                  w.ChromaOffsets[i].DeltaChromaWeightLX1 = slice_params[s].delta_chroma_weight_l1[i][1] & 0xff;
+                  w.ChromaOffsets[i].ChromaOffsetLX0 = slice_params[s].chroma_offset_l1[i][0] & 0xff;
+                  w.ChromaOffsets[i].ChromaOffsetLX1 = slice_params[s].chroma_offset_l1[i][1] & 0xff;
                }
             }
          }

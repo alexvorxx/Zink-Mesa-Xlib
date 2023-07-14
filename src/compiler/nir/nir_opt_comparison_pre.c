@@ -379,7 +379,7 @@ nir_opt_comparison_pre_impl(nir_function_impl *impl)
    nir_builder bld;
 
    block_queue_init(&bq);
-   nir_builder_init(&bld, impl);
+   bld = nir_builder_create(impl);
 
    nir_metadata_require(impl, nir_metadata_dominance);
 
@@ -403,9 +403,8 @@ nir_opt_comparison_pre(nir_shader *shader)
 {
    bool progress = false;
 
-   nir_foreach_function(function, shader) {
-      if (function->impl)
-         progress |= nir_opt_comparison_pre_impl(function->impl);
+   nir_foreach_function_impl(impl, shader) {
+      progress |= nir_opt_comparison_pre_impl(impl);
    }
 
    return progress;

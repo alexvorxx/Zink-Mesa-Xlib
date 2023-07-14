@@ -448,9 +448,9 @@
     </group>
   </struct>
   <struct name="HCP_WEIGHTOFFSET_CHROMA_ENTRY" length="1">
-    <field name="Delta Chroma Weight LX[0]" start="0" end="7" type="int" />
+    <field name="Delta Chroma Weight LX[0]" start="0" end="7" type="uint" />
     <field name="Chroma Offset LX[0]" start="8" end="15" type="uint" />
-    <field name="Delta Chroma Weight LX[1]" start="16" end="23" type="int" />
+    <field name="Delta Chroma Weight LX[1]" start="16" end="23" type="uint" />
     <field name="Chroma Offset LX[1]" start="24" end="31" type="uint" />
   </struct>
   <struct name="HCP_WEIGHTOFFSET_CHROMA_EXT_ENTRY" length="1">
@@ -460,7 +460,7 @@
     <field name="Chroma Offset LX[1] MSByte [i+1]" start="24" end="31" type="uint" />
   </struct>
   <struct name="HCP_WEIGHTOFFSET_LUMA_ENTRY" length="1">
-    <field name="Delta Luma Weight LX" start="0" end="7" type="int" />
+    <field name="Delta Luma Weight LX" start="0" end="7" type="uint" />
     <field name="Luma Offset LX" start="8" end="15" type="uint" />
     <field name="Luma Offset LX MSByte" start="24" end="31" type="uint" />
   </struct>
@@ -756,17 +756,11 @@
     <field name="Corner Texel Mode" start="50" end="50" type="uint" />
     <field name="Base Mip Level" start="51" end="55" type="u4.1" />
     <field name="MOCS" start="56" end="62" type="uint" nonzero="true" />
-    <field name="Enable Unorm Path In Color Pipe" start="63" end="63" type="bool" />
     <field name="Width" start="64" end="77" type="uint" />
     <field name="Height" start="80" end="93" type="uint" />
     <field name="Depth Stencil Resource" start="95" end="95" type="bool" />
     <field name="Surface Pitch" start="96" end="113" type="uint" />
     <field name="Null Probing Enable" start="114" end="114" type="uint" />
-    <field name="Standard Tiling Mode Extensions" start="115" end="115" type="uint" />
-    <field name="Tile Address Mapping Mode" start="116" end="116" type="uint">
-      <value name="Gfx9" value="0" />
-      <value name="Gfx10+" value="1" />
-    </field>
     <field name="Depth" start="117" end="127" type="uint" />
     <field name="Multisample Position Palette Index" start="128" end="130" type="uint" />
     <field name="Number of Multisamples" start="131" end="133" type="uint">
@@ -792,10 +786,7 @@
     <field name="MIP Count / LOD" start="160" end="163" type="uint" />
     <field name="Surface Min LOD" start="164" end="167" type="uint" />
     <field name="Mip Tail Start LOD" start="168" end="171" type="uint" />
-    <field name="Coherency Type" start="174" end="174" type="uint">
-      <value name="GPU coherent" value="0" />
-      <value name="IA coherent" value="1" />
-    </field>
+    <field name="Coherency Type" start="174" end="174" type="mbz" />
     <field name="L1 Cache Control" start="176" end="178" type="uint" prefix="L1CC">
       <value name="WBP" value="0" />
       <value name="UC" value="1" />
@@ -827,11 +818,10 @@
     <field name="Shader Channel Select Red" start="249" end="251" type="Shader Channel Select" />
     <field name="Memory Compression Enable" start="254" end="254" type="bool" />
     <field name="Memory Compression Mode" start="255" end="255" type="uint">
-      <value name="Horizontal" value="0" />
+      <value name="Media Compression" value="0" />
+      <value name="3D Compression" value="1" />
     </field>
     <field name="Surface Base Address" start="256" end="319" type="address" />
-    <field name="Quilt Width" start="320" end="324" type="uint" />
-    <field name="Quilt Height" start="325" end="329" type="uint" />
     <field name="Clear Value Address Enable" start="330" end="330" type="bool" />
     <field name="Caching Expanded Formats" start="331" end="331" type="uint" />
     <field name="Auxiliary Surface Base Address" start="332" end="383" type="address" />
@@ -1488,7 +1478,7 @@
     <field name="Command Type" start="29" end="31" type="uint" default="3" />
     <field name="Pointer to VS Binding Table" start="37" end="52" type="offset" />
   </instruction>
-  <instruction name="3DSTATE_BINDING_TABLE_POOL_ALLOC" bias="2" length="4" engine="render">
+  <instruction name="3DSTATE_BINDING_TABLE_POOL_ALLOC" bias="2" length="4" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="2" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="25" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -1509,7 +1499,7 @@
     <field name="Blend State Pointer Valid" start="32" end="32" type="bool" />
     <field name="Blend State Pointer" start="38" end="63" type="offset" />
   </instruction>
-  <instruction name="3DSTATE_BTD" bias="2" length="6" engine="render">
+  <instruction name="3DSTATE_BTD" bias="2" length="6" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="4" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="6" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -1540,7 +1530,7 @@
     <field name="Color Calc State Pointer Valid" start="32" end="32" type="bool" />
     <field name="Color Calc State Pointer" start="38" end="63" type="offset" />
   </instruction>
-  <instruction name="3DSTATE_CHROMA_KEY" bias="2" length="4" engine="render">
+  <instruction name="3DSTATE_CHROMA_KEY" bias="2" length="4" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="2" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="4" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -2212,7 +2202,7 @@
       <field name="Inline Data" start="0" end="31" type="uint" />
     </group>
   </instruction>
-  <instruction name="3DSTATE_MONOFILTER_SIZE" bias="2" length="2" engine="render">
+  <instruction name="3DSTATE_MONOFILTER_SIZE" bias="2" length="2" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="0" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="17" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -6215,7 +6205,7 @@
     <field name="Display Buffer Base Address" start="76" end="95" type="address" />
     <field name="Left Eye Display Buffer Base Address" start="108" end="127" type="address" />
   </instruction>
-  <instruction name="MI_FLUSH_DW" bias="2" length="5" engine="blitter|video">
+  <instruction name="MI_FLUSH_DW" bias="2" length="5" engine="blitter|compute|video">
     <field name="DWord Length" start="0" end="5" type="uint" default="3" />
     <field name="Video Pipeline Cache Invalidate" start="7" end="7" type="bool" />
     <field name="Notify Enable" start="8" end="8" type="bool" />
@@ -6345,7 +6335,7 @@
     <field name="MI Command Opcode" start="23" end="28" type="uint" default="7" />
     <field name="Command Type" start="29" end="31" type="uint" default="0" />
   </instruction>
-  <instruction name="MI_REPORT_PERF_COUNT" bias="2" length="4" engine="render">
+  <instruction name="MI_REPORT_PERF_COUNT" bias="2" length="4" engine="render|compute">
     <field name="DWord Length" start="0" end="5" type="uint" default="2" />
     <field name="MI Command Opcode" start="23" end="28" type="uint" default="40" />
     <field name="Command Type" start="29" end="31" type="uint" default="0" />
@@ -6531,7 +6521,7 @@
     <field name="MI Command Opcode" start="23" end="28" type="uint" default="4" />
     <field name="Command Type" start="29" end="31" type="uint" default="0" />
   </instruction>
-  <instruction name="PIPELINE_SELECT" bias="1" length="1" engine="render">
+  <instruction name="PIPELINE_SELECT" bias="1" length="1" engine="render|compute">
     <field name="Pipeline Selection" start="0" end="1" type="uint">
       <value name="3D" value="0" />
       <value name="Media" value="1" />
@@ -6545,11 +6535,12 @@
     <field name="Command SubType" start="27" end="28" type="uint" default="1" />
     <field name="Command Type" start="29" end="31" type="uint" default="3" />
   </instruction>
-  <instruction name="PIPE_CONTROL" bias="2" length="6" engine="render">
+  <instruction name="PIPE_CONTROL" bias="2" length="6" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="4" />
     <field name="HDC Pipeline Flush Enable" start="9" end="9" type="bool" />
     <field name="L3 Read Only Cache Invalidation Enable" start="10" end="10" type="bool" />
     <field name="Untyped Data Port Cache Flush Enable" start="11" end="11" type="bool" />
+    <field name="CCS Flush Enable" start="13" end="13" type="bool" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="0" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="2" />
     <field name="Command SubType" start="27" end="28" type="uint" default="3" />
@@ -6790,7 +6781,7 @@
     <field name="Output Surface Y Offset for V" start="992" end="1005" type="uint" />
     <field name="Output Surface X Offset for V" start="1008" end="1021" type="uint" />
   </instruction>
-  <instruction name="STATE_BASE_ADDRESS" bias="2" length="22" engine="render">
+  <instruction name="STATE_BASE_ADDRESS" bias="2" length="22" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="20" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="1" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -6836,7 +6827,7 @@
     <field name="Bindless Sampler State Base Address" start="620" end="671" type="address" />
     <field name="Bindless Sampler State Buffer Size" start="684" end="703" type="uint" />
   </instruction>
-  <instruction name="STATE_SIP" bias="2" length="3" engine="render">
+  <instruction name="STATE_SIP" bias="2" length="3" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="1" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="2" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="1" />
@@ -7354,6 +7345,9 @@
     <field name="Destination Depth/Stencil Resource" start="498" end="498" type="bool" />
     <field name="Destination Array Index" start="501" end="511" type="uint" />
   </instruction>
+  <register name="BCS_CCS_AUX_INV" length="1" num="0x4248">
+    <field name="Aux Inv" start="0" end="0" type="bool" />
+  </register>
   <register name="BCS_INSTDONE" length="1" num="0x2206c">
     <field name="Ring Enable" start="0" end="0" type="bool" />
     <field name="Blitter IDLE" start="1" end="1" type="bool" default="1" />
@@ -7421,6 +7415,12 @@
   <register name="COMMON_SLICE_CHICKEN4" length="1" num="0x7300">
     <field name="Enable Hardware Filtering in WM" start="5" end="5" type="bool" />
     <field name="Enable Hardware Filtering in WM Mask" start="21" end="21" type="bool" />
+  </register>
+  <register name="COMPCS0_AUX_TABLE_BASE_ADDR" length="2" num="0x42C0">
+    <field name="Address" start="0" end="63" type="uint" />
+  </register>
+  <register name="COMPCS0_CCS_AUX_INV" length="1" num="0x42C8">
+    <field name="Aux Inv" start="0" end="0" type="bool" />
   </register>
   <register name="CS_CHICKEN1" length="1" num="0x2580">
     <field name="Replay Mode" start="0" end="0" type="uint">

@@ -28,7 +28,7 @@
 #ifndef PIPE_CONTEXT_H
 #define PIPE_CONTEXT_H
 
-#include "p_compiler.h"
+#include "util/compiler.h"
 #include "util/format/u_formats.h"
 #include "p_video_enums.h"
 #include "p_defines.h"
@@ -945,6 +945,9 @@ struct pipe_context {
 
    void (*get_compute_state_info)(struct pipe_context *, void *,
                                   struct pipe_compute_state_object_info *);
+
+   uint32_t (*get_compute_state_subgroup_size)(struct pipe_context *, void *,
+                                               const uint32_t block[3]);
 
    /**
     * Bind an array of shader resources that will be used by the
