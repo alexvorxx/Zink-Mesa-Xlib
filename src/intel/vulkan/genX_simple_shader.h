@@ -450,12 +450,14 @@ genX(emit_simple_shader_dispatch)(struct anv_simple_shader *state,
       }
 #endif
 
+      genX(emit_breakpoint)(batch, device, true);
       anv_batch_emit(batch, GENX(3DPRIMITIVE), prim) {
          prim.VertexAccessType         = SEQUENTIAL;
          prim.PrimitiveTopologyType    = _3DPRIM_RECTLIST;
          prim.VertexCountPerInstance   = 3;
          prim.InstanceCount            = 1;
       }
+      genX(emit_breakpoint)(batch, device, false);
    } else {
       const struct intel_device_info *devinfo = device->info;
       const struct brw_cs_prog_data *prog_data =

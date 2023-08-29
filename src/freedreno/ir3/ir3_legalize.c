@@ -400,7 +400,7 @@ apply_fine_deriv_macro(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
          struct ir3_instruction *op_p = ir3_instr_clone(n);
          op_p->flags = IR3_INSTR_P;
 
-         ctx->so->need_fine_derivatives = true;
+         ctx->so->need_full_quad = true;
       }
    }
 
@@ -908,6 +908,215 @@ nop_sched(struct ir3 *ir, struct ir3_shader_variant *so)
    }
 }
 
+struct ir3_helper_block_data {
+   /* Whether helper invocations may be used on any path starting at the
+    * beginning of the block.
+    */
+   bool uses_helpers_beginning;
+
+   /* Whether helper invocations may be used by the end of the block. Branch
+    * instructions are considered to be "between" blocks, because (eq) has to be
+    * inserted after them in the successor blocks, so branch instructions using
+    * helpers will result in uses_helpers_end = true for their block.
+    */
+   bool uses_helpers_end;
+};
+
+/* Insert (eq) after the last instruction using the results of helper
+ * invocations. Use a backwards dataflow analysis to determine at which points
+ * in the program helper invocations are definitely never used, and then insert
+ * (eq) at the point where we cross from a point where they may be used to a
+ * point where they are never used.
+ */
+static void
+helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
+             struct ir3_shader_variant *so)
+{
+   bool non_prefetch_helpers = false;
+
+   foreach_block (block, &ir->block_list) {
+      struct ir3_helper_block_data *bd =
+         rzalloc(ctx, struct ir3_helper_block_data);
+      foreach_instr (instr, &block->instr_list) {
+         if (uses_helpers(instr)) {
+            bd->uses_helpers_beginning = true;
+            if (instr->opc != OPC_META_TEX_PREFETCH) {
+               non_prefetch_helpers = true;
+               break;
+            }
+         }
+
+         if (instr->opc == OPC_SHPE) {
+            /* (eq) is not allowed in preambles, mark the whole preamble as
+             * requiring helpers to avoid putting it there.
+             */
+            bd->uses_helpers_beginning = true;
+            bd->uses_helpers_end = true;
+         }
+      }
+
+      if (block->brtype == IR3_BRANCH_ALL ||
+          block->brtype == IR3_BRANCH_ANY ||
+          block->brtype == IR3_BRANCH_GETONE) {
+         bd->uses_helpers_end = true;
+      }
+
+      block->data = bd;
+   }
+
+   /* If only prefetches use helpers then we can disable them in the shader via
+    * a register setting.
+    */
+   if (!non_prefetch_helpers) {
+      so->prefetch_end_of_quad = true;
+      return;
+   }
+
+   bool progress;
+   do {
+      progress = false;
+      foreach_block_rev (block, &ir->block_list) {
+         struct ir3_helper_block_data *bd = block->data;
+
+         if (!bd->uses_helpers_beginning)
+            continue;
+
+         for (unsigned i = 0; i < block->predecessors_count; i++) {
+            struct ir3_block *pred = block->predecessors[i];
+            struct ir3_helper_block_data *pred_bd = pred->data;
+            if (!pred_bd->uses_helpers_end) {
+               pred_bd->uses_helpers_end = true;
+            }
+            if (!pred_bd->uses_helpers_beginning) {
+               pred_bd->uses_helpers_beginning = true;
+               progress = true;
+            }
+         }
+      }
+   } while (progress);
+
+   /* Now, we need to determine the points where helper invocations become
+    * unused.
+    */
+   foreach_block (block, &ir->block_list) {
+      struct ir3_helper_block_data *bd = block->data;
+      if (bd->uses_helpers_end)
+         continue;
+
+      /* We need to check the predecessors because of situations with critical
+       * edges like this that can occur after optimizing jumps:
+       *
+       *    br p0.x, #endif
+       *    ...
+       *    sam ...
+       *    ...
+       *    endif:
+       *    ...
+       *    end
+       *
+       * The endif block will have uses_helpers_beginning = false and
+       * uses_helpers_end = false, but because we jump to there from the
+       * beginning of the if where uses_helpers_end = true, we still want to
+       * add an (eq) at the beginning of the block:
+       *
+       *    br p0.x, #endif
+       *    ...
+       *    sam ...
+       *    (eq)nop
+       *    ...
+       *    endif:
+       *    (eq)nop
+       *    ...
+       *    end
+       *
+       * This an extra nop in the case where the branch isn't taken, but that's
+       * probably preferable to adding an extra jump instruction which is what
+       * would happen if we ran this pass before optimizing jumps:
+       *
+       *    br p0.x, #else
+       *    ...
+       *    sam ...
+       *    (eq)nop
+       *    ...
+       *    jump #endif
+       *    else:
+       *    (eq)nop
+       *    endif:
+       *    ...
+       *    end
+       *
+       * We also need this to make sure we insert (eq) after branches which use
+       * helper invocations.
+       */
+      bool pred_uses_helpers = bd->uses_helpers_beginning;
+      for (unsigned i = 0; i < block->predecessors_count; i++) {
+         struct ir3_block *pred = block->predecessors[i];
+         struct ir3_helper_block_data *pred_bd = pred->data;
+         if (pred_bd->uses_helpers_end) {
+            pred_uses_helpers = true;
+            break;
+         }
+      }
+
+      if (!pred_uses_helpers)
+         continue;
+
+      /* The last use of helpers is somewhere between the beginning and the
+       * end. first_instr will be the first instruction where helpers are no
+       * longer required, or NULL if helpers are not required just at the end.
+       */
+      struct ir3_instruction *first_instr = NULL;
+      foreach_instr_rev (instr, &block->instr_list) {
+         /* Skip prefetches because they actually execute before the block
+          * starts and at this stage they aren't guaranteed to be at the start
+          * of the block.
+          */
+         if (uses_helpers(instr) && instr->opc != OPC_META_TEX_PREFETCH)
+            break;
+         first_instr = instr;
+      }
+
+      bool killed = false;
+      bool expensive_instruction_in_block = false;
+      if (first_instr) {
+         foreach_instr_from (instr, first_instr, &block->instr_list) {
+            /* If there's already a nop, we don't have to worry about whether to
+             * insert one.
+             */
+            if (instr->opc == OPC_NOP) {
+               instr->flags |= IR3_INSTR_EQ;
+               killed = true;
+               break;
+            }
+
+            /* ALU and SFU instructions probably aren't going to benefit much
+             * from killing helper invocations, because they complete at least
+             * an entire quad in a cycle and don't access any quad-divergent
+             * memory, so delay emitting (eq) in the hopes that we find a nop
+             * afterwards.
+             */
+            if (is_alu(instr) || is_sfu(instr))
+               continue;
+
+            expensive_instruction_in_block = true;
+            break;
+         }
+      }
+
+      /* If this block isn't the last block before the end instruction, assume
+       * that there may be expensive instructions in later blocks so it's worth
+       * it to insert a nop.
+       */
+      if (!killed && (expensive_instruction_in_block ||
+                      block->successors[0] != ir3_end_block(ir))) {
+         struct ir3_instruction *nop = ir3_NOP(block);
+         nop->flags |= IR3_INSTR_EQ;
+         if (first_instr)
+            ir3_instr_move_before(nop, first_instr);
+      }
+   }
+}
+
 bool
 ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
 {
@@ -975,6 +1184,11 @@ ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
 
    while (opt_jump(ir))
       ;
+
+   /* TODO: does (eq) exist before a6xx? */
+   if (so->type == MESA_SHADER_FRAGMENT && so->need_pixlod &&
+       so->compiler->gen >= 6)
+      helper_sched(ctx, ir, so);
 
    ir3_count_instructions(ir);
    resolve_jumps(ir);

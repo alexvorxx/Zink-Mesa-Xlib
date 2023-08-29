@@ -279,9 +279,9 @@ intel_measure_snapshot_string(enum intel_measure_snapshot_type type)
  */
 bool
 intel_measure_state_changed(const struct intel_measure_batch *batch,
-                            uintptr_t vs, uintptr_t tcs, uintptr_t tes,
-                            uintptr_t gs, uintptr_t fs, uintptr_t cs,
-                            uintptr_t ms, uintptr_t ts)
+                            uint32_t vs, uint32_t tcs, uint32_t tes,
+                            uint32_t gs, uint32_t fs, uint32_t cs,
+                            uint32_t ms, uint32_t ts)
 {
    if (batch->index == 0) {
       /* always record the first event */
@@ -320,14 +320,14 @@ intel_measure_state_changed(const struct intel_measure_batch *batch,
       return true;
    }
 
-   return (last_snap->vs  != (uintptr_t) vs ||
-           last_snap->tcs != (uintptr_t) tcs ||
-           last_snap->tes != (uintptr_t) tes ||
-           last_snap->gs  != (uintptr_t) gs ||
-           last_snap->fs  != (uintptr_t) fs ||
-           last_snap->cs  != (uintptr_t) cs ||
-           last_snap->ms  != (uintptr_t) ms ||
-           last_snap->ts  != (uintptr_t) ts);
+   return (last_snap->vs  != vs ||
+           last_snap->tcs != tcs ||
+           last_snap->tes != tes ||
+           last_snap->gs  != gs ||
+           last_snap->fs  != fs ||
+           last_snap->cs  != cs ||
+           last_snap->ms  != ms ||
+           last_snap->ts  != ts);
 }
 
 /**
@@ -626,9 +626,8 @@ print_combined_results(struct intel_measure_device *measure_device,
            start_result->frame, start_result->batch_count,
            renderpass, start_result->event_index, event_count,
            begin->event_name, begin->count,
-           (uint32_t)begin->vs, (uint32_t)begin->tcs, (uint32_t)begin->tes,
-           (uint32_t)begin->gs, (uint32_t)begin->fs, (uint32_t)begin->cs,
-           (uint32_t)begin->ms, (uint32_t)begin->ts,
+           begin->vs, begin->tcs, begin->tes, begin->gs,
+           begin->fs, begin->cs, begin->ms, begin->ts,
            (double)duration_idle_ns / 1000.0,
            (double)duration_time_ns / 1000.0);
 }

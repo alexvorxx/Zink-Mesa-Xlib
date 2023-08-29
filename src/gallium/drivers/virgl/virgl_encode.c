@@ -312,6 +312,11 @@ static const enum virgl_formats virgl_formats_conv_table[PIPE_FORMAT_COUNT] = {
    CONV_FORMAT(ASTC_10x10_SRGB)
    CONV_FORMAT(ASTC_12x10_SRGB)
    CONV_FORMAT(ASTC_12x12_SRGB)
+   CONV_FORMAT(P010)
+   CONV_FORMAT(Y8_400_UNORM)
+   CONV_FORMAT(YUYV)
+   CONV_FORMAT(Y8_U8_V8_444_UNORM)
+   CONV_FORMAT(R8G8_R8B8_UNORM)
 };
 
 enum virgl_formats pipe_to_virgl_format(enum pipe_format format)
@@ -755,7 +760,7 @@ int virgl_encoder_set_vertex_buffers(struct virgl_context *ctx,
    virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_SET_VERTEX_BUFFERS, 0, VIRGL_SET_VERTEX_BUFFERS_SIZE(num_buffers)));
    for (i = 0; i < num_buffers; i++) {
       struct virgl_resource *res = virgl_resource(buffers[i].buffer.resource);
-      virgl_encoder_write_dword(ctx->cbuf, buffers[i].stride);
+      virgl_encoder_write_dword(ctx->cbuf, ctx->vertex_elements ? ctx->vertex_elements->strides[i] : 0);
       virgl_encoder_write_dword(ctx->cbuf, buffers[i].buffer_offset);
       virgl_encoder_write_res(ctx, res);
    }

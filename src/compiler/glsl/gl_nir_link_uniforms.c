@@ -47,6 +47,15 @@ struct uniform_array_info {
    BITSET_WORD *indices;
 };
 
+/**
+ * Built-in / reserved GL variables names start with "gl_"
+ */
+static inline bool
+is_gl_identifier(const char *s)
+{
+   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
+}
+
 static unsigned
 uniform_storage_size(const struct glsl_type *type)
 {
@@ -740,6 +749,34 @@ get_next_index(struct nir_link_uniforms_state *state,
    return index;
 }
 
+static gl_texture_index
+texture_index_for_type(const struct glsl_type *type)
+{
+   const bool sampler_array = glsl_sampler_type_is_array(type);
+   switch (glsl_get_sampler_dim(type)) {
+   case GLSL_SAMPLER_DIM_1D:
+      return sampler_array ? TEXTURE_1D_ARRAY_INDEX : TEXTURE_1D_INDEX;
+   case GLSL_SAMPLER_DIM_2D:
+      return sampler_array ? TEXTURE_2D_ARRAY_INDEX : TEXTURE_2D_INDEX;
+   case GLSL_SAMPLER_DIM_3D:
+      return TEXTURE_3D_INDEX;
+   case GLSL_SAMPLER_DIM_CUBE:
+      return sampler_array ? TEXTURE_CUBE_ARRAY_INDEX : TEXTURE_CUBE_INDEX;
+   case GLSL_SAMPLER_DIM_RECT:
+      return TEXTURE_RECT_INDEX;
+   case GLSL_SAMPLER_DIM_BUF:
+      return TEXTURE_BUFFER_INDEX;
+   case GLSL_SAMPLER_DIM_EXTERNAL:
+      return TEXTURE_EXTERNAL_INDEX;
+   case GLSL_SAMPLER_DIM_MS:
+      return sampler_array ? TEXTURE_2D_MULTISAMPLE_ARRAY_INDEX :
+                             TEXTURE_2D_MULTISAMPLE_INDEX;
+   default:
+      assert(!"Should not get here.");
+      return TEXTURE_BUFFER_INDEX;
+   }
+}
+
 /* Update the uniforms info for the current shader stage */
 static void
 update_uniforms_shader_info(struct gl_shader_program *prog,
@@ -777,7 +814,7 @@ update_uniforms_shader_info(struct gl_shader_program *prog,
             for (unsigned j = sh->Program->sh.NumBindlessSamplers;
                  j < state->next_bindless_sampler_index; j++) {
                sh->Program->sh.BindlessSamplers[j].target =
-                  glsl_get_sampler_target(type_no_array);
+                  texture_index_for_type(type_no_array);
             }
 
             sh->Program->sh.NumBindlessSamplers =
@@ -797,7 +834,7 @@ update_uniforms_shader_info(struct gl_shader_program *prog,
             for (unsigned i = sampler_index;
                  i < MIN2(state->next_sampler_index, MAX_SAMPLERS); i++) {
                sh->Program->sh.SamplerTargets[i] =
-                  glsl_get_sampler_target(type_no_array);
+                  texture_index_for_type(type_no_array);
                state->shader_samplers_used |= 1U << i;
                state->shader_shadow_samplers |= shadow << i;
             }
@@ -1517,7 +1554,7 @@ gl_nir_link_uniforms(const struct gl_constants *consts,
    /* Iterate through all linked shaders */
    struct nir_link_uniforms_state state = {0,};
 
-   if (!prog->data->spirv && !consts->DisableUniformArrayResize) {
+   if (!prog->data->spirv) {
       /* Gather information on uniform use */
       for (unsigned stage = 0; stage < MESA_SHADER_STAGES; stage++) {
          struct gl_linked_shader *sh = prog->_LinkedShaders[stage];
@@ -1532,14 +1569,16 @@ gl_nir_link_uniforms(const struct gl_constants *consts,
          add_var_use_shader(nir, state.referenced_uniforms[stage]);
       }
 
-      /* Resize uniform arrays based on the maximum array index */
-      for (unsigned stage = 0; stage < MESA_SHADER_STAGES; stage++) {
-         struct gl_linked_shader *sh = prog->_LinkedShaders[stage];
-         if (!sh)
-            continue;
+      if(!consts->DisableUniformArrayResize) {
+         /* Resize uniform arrays based on the maximum array index */
+         for (unsigned stage = 0; stage < MESA_SHADER_STAGES; stage++) {
+            struct gl_linked_shader *sh = prog->_LinkedShaders[stage];
+            if (!sh)
+               continue;
 
-         nir_foreach_gl_uniform_variable(var, sh->Program->nir)
-            update_array_sizes(prog, var, state.referenced_uniforms, stage);
+            nir_foreach_gl_uniform_variable(var, sh->Program->nir)
+               update_array_sizes(prog, var, state.referenced_uniforms, stage);
+         }
       }
    }
 

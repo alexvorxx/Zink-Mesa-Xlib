@@ -32,6 +32,7 @@ struct radeon_info {
    const char *name;
    char lowercase_name[32];
    const char *marketing_name;
+   char dev_filename[32];
    uint32_t num_se;           /* only enabled SEs */
    uint32_t num_rb;           /* only enabled RBs */
    uint32_t num_cu;           /* only enabled CUs */
@@ -74,6 +75,7 @@ struct radeon_info {
    uint32_t chip_rev; /* 0 = A0, 1 = A1, etc. */
 
    /* Flags. */
+   bool family_overridden; /* AMD_FORCE_FAMILY was used, skip command submission */
    bool is_pro_graphics;
    bool has_graphics; /* false if the chip is compute-only */
    uint32_t ib_pad_dw_mask[AMD_NUM_IP_TYPES];
@@ -273,8 +275,8 @@ struct radeon_info {
    bool has_fw_based_shadowing;
 };
 
-bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info);
-bool ac_query_pci_bus_info(int fd, struct radeon_info *info);
+bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+                       bool require_pci_bus_info);
 
 void ac_compute_driver_uuid(char *uuid, size_t size);
 

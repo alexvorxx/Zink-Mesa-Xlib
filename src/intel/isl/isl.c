@@ -289,6 +289,7 @@ isl_device_init(struct isl_device *dev,
    dev->info = info;
    dev->use_separate_stencil = ISL_GFX_VER(dev) >= 6;
    dev->has_bit6_swizzling = info->has_bit6_swizzle;
+   dev->buffer_length_in_aux_addr = false;
 
    /* The ISL_DEV macros may be defined in the CFLAGS, thus hardcoding some
     * device properties at buildtime. Verify that the macros with the device
@@ -306,8 +307,7 @@ isl_device_init(struct isl_device *dev,
    dev->ss.size = RENDER_SURFACE_STATE_length(info) * 4;
    dev->ss.align = isl_align(dev->ss.size, 32);
 
-   dev->ss.clear_color_state_size =
-      isl_align(CLEAR_COLOR_length(info) * 4, 64);
+   dev->ss.clear_color_state_size = CLEAR_COLOR_length(info) * 4;
    dev->ss.clear_color_state_offset =
       RENDER_SURFACE_STATE_ClearValueAddress_start(info) / 32 * 4;
 
@@ -2247,6 +2247,9 @@ isl_surf_get_hiz_surf(const struct isl_device *dev,
                       const struct isl_surf *surf,
                       struct isl_surf *hiz_surf)
 {
+   if (INTEL_DEBUG(DEBUG_NO_HIZ))
+      return false;
+
    /* HiZ support does not exist prior to Gfx5 */
    if (ISL_GFX_VER(dev) < 5)
       return false;
@@ -2326,8 +2329,8 @@ isl_surf_get_mcs_surf(const struct isl_device *dev,
    if (surf->msaa_layout != ISL_MSAA_LAYOUT_ARRAY)
       return false;
 
-   /* We are seeing failures with mcs on dg2/mtl, so disable it for now. */
-   if (ISL_GFX_VERX10(dev) == 125)
+   /* We are seeing failures with mcs on dg2, so disable it for now. */
+   if (intel_device_info_is_dg2(dev->info))
       return false;
 
    /* The following are true of all multisampled surfaces */
@@ -2365,6 +2368,9 @@ isl_surf_supports_ccs(const struct isl_device *dev,
                       const struct isl_surf *surf,
                       const struct isl_surf *hiz_or_mcs_surf)
 {
+   if (INTEL_DEBUG(DEBUG_NO_CCS))
+      return false;
+
    if (surf->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)
       return false;
 
@@ -3725,4 +3731,24 @@ isl_aux_op_to_name(enum isl_aux_op op)
    };
    assert(op < ARRAY_SIZE(names));
    return names[op];
+}
+
+const char *
+isl_tiling_to_name(enum isl_tiling tiling)
+{
+   static const char *names[] = {
+      [ISL_TILING_LINEAR]    = "linear",
+      [ISL_TILING_W]         = "W",
+      [ISL_TILING_X]         = "X",
+      [ISL_TILING_Y0]        = "Y0",
+      [ISL_TILING_Yf]        = "Yf",
+      [ISL_TILING_Ys]        = "Ys",
+      [ISL_TILING_4]         = "4",
+      [ISL_TILING_64]        = "64",
+      [ISL_TILING_HIZ]       = "hiz",
+      [ISL_TILING_CCS]       = "ccs",
+      [ISL_TILING_GFX12_CCS] = "gfx12-ccs",
+   };
+   assert(tiling < ARRAY_SIZE(names));
+   return names[tiling];
 }

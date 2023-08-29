@@ -78,19 +78,19 @@ anv_xe_create_engine(struct anv_device *device,
    }
 
    assert(device->vm_id != 0);
-   struct drm_xe_engine_create create = {
+   struct drm_xe_exec_queue_create create = {
          /* Allows KMD to pick one of those engines for the submission queue */
          .instances = (uintptr_t)instances,
          .vm_id = device->vm_id,
          .width = 1,
          .num_placements = count,
    };
-   int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_ENGINE_CREATE, &create);
+   int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_CREATE, &create);
    vk_free(&device->vk.alloc, instances);
    if (ret)
-      return vk_errorf(device, VK_ERROR_UNKNOWN, "Unable to create engine");
+      return vk_errorf(device, VK_ERROR_UNKNOWN, "Unable to create exec queue");
 
-   queue->engine_id = create.engine_id;
+   queue->exec_queue_id = create.exec_queue_id;
 
    const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
       vk_find_struct_const(pCreateInfo->pNext,
@@ -108,13 +108,13 @@ anv_xe_create_engine(struct anv_device *device,
       if (priority > physical->max_context_priority)
          goto priority_error;
 
-      struct drm_xe_engine_set_property engine_property = {
-         .engine_id = create.engine_id,
-         .property = XE_ENGINE_SET_PROPERTY_PRIORITY,
+      struct drm_xe_exec_queue_set_property exec_queue_property = {
+         .exec_queue_id = create.exec_queue_id,
+         .property = XE_EXEC_QUEUE_SET_PROPERTY_PRIORITY,
          .value = anv_vk_priority_to_drm_sched_priority(priority),
       };
-      ret = intel_ioctl(device->fd, DRM_IOCTL_XE_ENGINE_SET_PROPERTY,
-                        &engine_property);
+      ret = intel_ioctl(device->fd, DRM_XE_EXEC_QUEUE_SET_PROPERTY,
+                        &exec_queue_property);
       if (ret && priority > VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR)
          goto priority_error;
    }
@@ -129,8 +129,8 @@ priority_error:
 void
 anv_xe_destroy_engine(struct anv_device *device, struct anv_queue *queue)
 {
-   struct drm_xe_engine_destroy destroy = {
-      .engine_id = queue->engine_id,
+   struct drm_xe_exec_queue_destroy destroy = {
+      .exec_queue_id = queue->exec_queue_id,
    };
-   intel_ioctl(device->fd, DRM_IOCTL_XE_ENGINE_DESTROY, &destroy);
+   intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_DESTROY, &destroy);
 }

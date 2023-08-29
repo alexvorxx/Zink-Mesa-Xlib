@@ -1,4 +1,76 @@
+.zink-common-rules:
+  rules:
+    - !reference [.gl-rules, rules]
+    - changes:
+      - src/gallium/drivers/zink/**/*
+      when: on_success
+
+.zink-common-manual-rules:
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+      - src/gallium/drivers/zink/**/*
+      when: manual
+
+.zink-lvp-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.lavapipe-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-anv-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.anv-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-anv-manual-rules:
+  stage: layered-backends
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.anv-manual-rules, rules]
+    - !reference [.zink-common-manual-rules, rules]
+
+.zink-anv-rules-restricted:
+  stage: layered-backends
+  rules:
+    - !reference [.restricted-rules, rules]
+    - !reference [.anv-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-turnip-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.collabora-turnip-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-turnip-manual-rules:
+  stage: layered-backends
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-turnip-manual-rules, rules]
+    - !reference [.zink-common-manual-rules, rules]
+
+.zink-radv-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.radv-valve-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-radv-manual-rules:
+  stage: layered-backends
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.radv-valve-manual-rules, rules]
+    - !reference [.zink-common-manual-rules, rules]
+    - changes:
+      - .gitlab-ci/container/build-piglit.sh
+      when: manual
+
+
 .zink-test:
+  timeout: 30m
   variables:
     MESA_LOADER_DRIVER_OVERRIDE: "zink"
     FLAKES_CHANNEL: "#zink-ci"
@@ -55,6 +127,7 @@ zink-lvp:
 zink-anv-tgl:
   extends:
     - .zink-anv-test
+  timeout: 1h
   variables:
     DEQP_SUITE: zink-anv-tgl
     PIGLIT_NO_WINDOW: 1
@@ -140,16 +213,9 @@ zink-tu-a618-traces-performance:
     - !reference [zink-tu-a618-traces, needs]
     - !reference [.piglit-performance:arm64, needs]
 
-.zink-freedreno-a630-traces:
-  extends:
-    - a630-traces
-    - .zink-turnip-rules
-    - .zink-trace-test
-  variables:
-    PIGLIT_REPLAY_DEVICE_NAME: "zink-a630"
-
 ############### Combined testing (GL, GLES, Piglit) on RADV
 .radv-zink-test-valve:
+  timeout: 30m
   extends:
     - .zink-test
     - .test-radv
@@ -159,6 +225,7 @@ zink-tu-a618-traces-performance:
     PIGLIT_PLATFORM: gbm
     HWCI_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
     B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
+    B2C_TIMEOUT_OVERALL_MINUTES: 20
 
     # Disable reporting, since DUTs don't have internet access
     FLAKES_CHANNEL: ""

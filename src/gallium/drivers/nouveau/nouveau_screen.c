@@ -145,6 +145,21 @@ nouveau_screen_bo_get_handle(struct pipe_screen *pscreen,
    if (whandle->type == WINSYS_HANDLE_TYPE_SHARED) {
       return nouveau_bo_name_get(bo, &whandle->handle) == 0;
    } else if (whandle->type == WINSYS_HANDLE_TYPE_KMS) {
+      int fd;
+      int ret;
+
+      /* The handle is exported in this case, but the global list of
+       * handles is in libdrm and there is no libdrm API to add
+       * handles to the list without additional side effects. The
+       * closest API available also gets a fd for the handle, which
+       * is not necessary in this case. Call it and close the fd.
+       */
+      ret = nouveau_bo_set_prime(bo, &fd);
+      if (ret != 0)
+        return false;
+
+      close(fd);
+
       whandle->handle = bo->handle;
       return true;
    } else if (whandle->type == WINSYS_HANDLE_TYPE_FD) {
@@ -281,9 +296,6 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
       nouveau_mesa_debug = atoi(nv_dbg);
 
    screen->force_enable_cl = debug_get_bool_option("NOUVEAU_ENABLE_CL", false);
-   if (screen->force_enable_cl)
-      glsl_type_singleton_init_or_ref();
-
    screen->disable_fences = debug_get_bool_option("NOUVEAU_DISABLE_FENCES", false);
 
    /* These must be set before any failure is possible, as the cleanup
@@ -429,6 +441,9 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
                                        NOUVEAU_BO_GART | NOUVEAU_BO_MAP,
                                        &mm_config);
    screen->mm_VRAM = nouveau_mm_create(dev, NOUVEAU_BO_VRAM, &mm_config);
+
+   glsl_type_singleton_init_or_ref();
+
    return 0;
 
 err:
@@ -442,8 +457,7 @@ nouveau_screen_fini(struct nouveau_screen *screen)
 {
    int fd = screen->drm->fd;
 
-   if (screen->force_enable_cl)
-      glsl_type_singleton_decref();
+   glsl_type_singleton_decref();
    if (screen->has_svm)
       os_munmap(screen->svm_cutout, screen->svm_cutout_size);
 

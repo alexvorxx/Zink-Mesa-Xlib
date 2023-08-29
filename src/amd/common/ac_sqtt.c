@@ -121,7 +121,7 @@ ac_get_expected_buffer_size(struct radeon_info *rad_info, const struct ac_sqtt_d
 }
 
 bool
-ac_sqtt_add_pso_correlation(struct ac_sqtt *sqtt, uint64_t pipeline_hash)
+ac_sqtt_add_pso_correlation(struct ac_sqtt *sqtt, uint64_t pipeline_hash, uint64_t api_hash)
 {
    struct rgp_pso_correlation *pso_correlation = &sqtt->rgp_pso_correlation;
    struct rgp_pso_correlation_record *record;
@@ -130,7 +130,7 @@ ac_sqtt_add_pso_correlation(struct ac_sqtt *sqtt, uint64_t pipeline_hash)
    if (!record)
       return false;
 
-   record->api_pso_hash = pipeline_hash;
+   record->api_pso_hash = api_hash;
    record->pipeline_hash[0] = pipeline_hash;
    record->pipeline_hash[1] = pipeline_hash;
    memset(record->api_level_obj_name, 0, sizeof(record->api_level_obj_name));

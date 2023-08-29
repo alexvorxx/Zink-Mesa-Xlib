@@ -53,22 +53,25 @@
 
 VkResult
 anv_reloc_list_init(struct anv_reloc_list *list,
-                    const VkAllocationCallbacks *alloc)
+                    const VkAllocationCallbacks *alloc,
+                    bool uses_relocs)
 {
+   assert(alloc != NULL);
    memset(list, 0, sizeof(*list));
+   list->uses_relocs = uses_relocs;
+   list->alloc = alloc;
    return VK_SUCCESS;
 }
 
 static VkResult
 anv_reloc_list_init_clone(struct anv_reloc_list *list,
-                          const VkAllocationCallbacks *alloc,
                           const struct anv_reloc_list *other_list)
 {
    list->dep_words = other_list->dep_words;
 
    if (list->dep_words > 0) {
       list->deps =
-         vk_alloc(alloc, list->dep_words * sizeof(BITSET_WORD), 8,
+         vk_alloc(list->alloc, list->dep_words * sizeof(BITSET_WORD), 8,
                   VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       memcpy(list->deps, other_list->deps,
              list->dep_words * sizeof(BITSET_WORD));
@@ -80,15 +83,13 @@ anv_reloc_list_init_clone(struct anv_reloc_list *list,
 }
 
 void
-anv_reloc_list_finish(struct anv_reloc_list *list,
-                      const VkAllocationCallbacks *alloc)
+anv_reloc_list_finish(struct anv_reloc_list *list)
 {
-   vk_free(alloc, list->deps);
+   vk_free(list->alloc, list->deps);
 }
 
 static VkResult
 anv_reloc_list_grow_deps(struct anv_reloc_list *list,
-                         const VkAllocationCallbacks *alloc,
                          uint32_t min_num_words)
 {
    if (min_num_words <= list->dep_words)
@@ -99,7 +100,7 @@ anv_reloc_list_grow_deps(struct anv_reloc_list *list,
       new_length *= 2;
 
    BITSET_WORD *new_deps =
-      vk_realloc(alloc, list->deps, new_length * sizeof(BITSET_WORD), 8,
+      vk_realloc(list->alloc, list->deps, new_length * sizeof(BITSET_WORD), 8,
                  VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (new_deps == NULL)
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -113,15 +114,12 @@ anv_reloc_list_grow_deps(struct anv_reloc_list *list,
    return VK_SUCCESS;
 }
 
-#define READ_ONCE(x) (*(volatile __typeof__(x) *)&(x))
-
 VkResult
-anv_reloc_list_add_bo(struct anv_reloc_list *list,
-                      const VkAllocationCallbacks *alloc,
-                      struct anv_bo *target_bo)
+anv_reloc_list_add_bo_impl(struct anv_reloc_list *list,
+                           struct anv_bo *target_bo)
 {
    uint32_t idx = target_bo->gem_handle;
-   VkResult result = anv_reloc_list_grow_deps(list, alloc,
+   VkResult result = anv_reloc_list_grow_deps(list,
                                               (idx / BITSET_WORDBITS) + 1);
    if (unlikely(result != VK_SUCCESS))
       return result;
@@ -140,10 +138,9 @@ anv_reloc_list_clear(struct anv_reloc_list *list)
 
 static VkResult
 anv_reloc_list_append(struct anv_reloc_list *list,
-                      const VkAllocationCallbacks *alloc,
                       struct anv_reloc_list *other)
 {
-   anv_reloc_list_grow_deps(list, alloc, other->dep_words);
+   anv_reloc_list_grow_deps(list, other->dep_words);
    for (uint32_t w = 0; w < other->dep_words; w++)
       list->deps[w] |= other->deps[w];
 
@@ -229,8 +226,7 @@ anv_batch_emit_batch(struct anv_batch *batch, struct anv_batch *other)
    VG(VALGRIND_CHECK_MEM_IS_DEFINED(other->start, size));
    memcpy(batch->next, other->start, size);
 
-   VkResult result = anv_reloc_list_append(batch->relocs, batch->alloc,
-                                           other->relocs);
+   VkResult result = anv_reloc_list_append(batch->relocs, other->relocs);
    if (result != VK_SUCCESS) {
       anv_batch_set_error(batch, result);
       return;
@@ -260,7 +256,8 @@ anv_batch_bo_create(struct anv_cmd_buffer *cmd_buffer,
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
-   result = anv_reloc_list_init(&bbo->relocs, &cmd_buffer->vk.pool->alloc);
+   const bool uses_relocs = cmd_buffer->device->physical->uses_relocs;
+   result = anv_reloc_list_init(&bbo->relocs, &cmd_buffer->vk.pool->alloc, uses_relocs);
    if (result != VK_SUCCESS)
       goto fail_bo_alloc;
 
@@ -293,8 +290,7 @@ anv_batch_bo_clone(struct anv_cmd_buffer *cmd_buffer,
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
-   result = anv_reloc_list_init_clone(&bbo->relocs, &cmd_buffer->vk.pool->alloc,
-                                      &other_bbo->relocs);
+   result = anv_reloc_list_init_clone(&bbo->relocs, &other_bbo->relocs);
    if (result != VK_SUCCESS)
       goto fail_bo_alloc;
 
@@ -368,7 +364,7 @@ static void
 anv_batch_bo_destroy(struct anv_batch_bo *bbo,
                      struct anv_cmd_buffer *cmd_buffer)
 {
-   anv_reloc_list_finish(&bbo->relocs, &cmd_buffer->vk.pool->alloc);
+   anv_reloc_list_finish(&bbo->relocs);
    anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool, bbo->bo);
    vk_free(&cmd_buffer->vk.pool->alloc, bbo);
 }
@@ -856,8 +852,9 @@ anv_cmd_buffer_init_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
    if (!success)
       goto fail_seen_bbos;
 
+   const bool uses_relocs = cmd_buffer->device->physical->uses_relocs;
    result = anv_reloc_list_init(&cmd_buffer->surface_relocs,
-                                &cmd_buffer->vk.pool->alloc);
+                                &cmd_buffer->vk.pool->alloc, uses_relocs);
    if (result != VK_SUCCESS)
       goto fail_bt_blocks;
 
@@ -881,7 +878,7 @@ anv_cmd_buffer_fini_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
       anv_binding_table_pool_free(cmd_buffer->device, *bt_block);
    u_vector_finish(&cmd_buffer->bt_block_states);
 
-   anv_reloc_list_finish(&cmd_buffer->surface_relocs, &cmd_buffer->vk.pool->alloc);
+   anv_reloc_list_finish(&cmd_buffer->surface_relocs);
 
    u_vector_finish(&cmd_buffer->seen_bbos);
 
@@ -1147,8 +1144,7 @@ anv_cmd_buffer_add_secondary(struct anv_cmd_buffer *primary,
       assert(!"Invalid execution mode");
    }
 
-   anv_reloc_list_append(&primary->surface_relocs, &primary->vk.pool->alloc,
-                         &secondary->surface_relocs);
+   anv_reloc_list_append(&primary->surface_relocs, &secondary->surface_relocs);
 }
 
 void
@@ -1261,6 +1257,17 @@ anv_queue_submit_locked(struct anv_queue *queue,
                         struct vk_queue_submit *submit)
 {
    VkResult result;
+
+   if (unlikely((submit->buffer_bind_count ||
+                 submit->image_opaque_bind_count ||
+                 submit->image_bind_count))) {
+      if (INTEL_DEBUG(DEBUG_SPARSE))
+         fprintf(stderr, "=== application submitting sparse operations: "
+               "buffer_bind:%d image_opaque_bind:%d image_bind:%d\n",
+               submit->buffer_bind_count, submit->image_opaque_bind_count,
+               submit->image_bind_count);
+      fprintf(stderr, "Error: Using sparse operation. Sparse binding not supported.\n");
+   }
 
    if (submit->command_buffer_count == 0) {
       result = anv_queue_exec_locked(queue, submit->wait_count, submit->waits,

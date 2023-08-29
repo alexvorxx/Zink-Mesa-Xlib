@@ -175,16 +175,14 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
    }
    if (flushes & TU_CMD_FLAG_WAIT_MEM_WRITES)
       tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
-   if ((flushes & TU_CMD_FLAG_WAIT_FOR_IDLE) ||
-       (cmd_buffer->device->physical_device->info->a6xx.has_ccu_flush_bug &&
-        (flushes & (TU_CMD_FLAG_CCU_FLUSH_COLOR | TU_CMD_FLAG_CCU_FLUSH_DEPTH))))
+   if (flushes & TU_CMD_FLAG_WAIT_FOR_IDLE)
       tu_cs_emit_wfi(cs);
    if (flushes & TU_CMD_FLAG_WAIT_FOR_ME)
       tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
 }
 
 /* "Normal" cache flushes outside the renderpass, that don't require any special handling */
-static void
+void
 tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer)
 {
    tu6_emit_flushes(cmd_buffer, &cmd_buffer->cs, &cmd_buffer->state.cache);
@@ -758,7 +756,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
 
 /* Optimization: there is no reason to load gmem if there is no
  * geometry to process. COND_REG_EXEC predicate is set here,
- * but the actual skip happens in tu6_emit_tile_load() and tile_store_cs,
+ * but the actual skip happens in tu_load_gmem_attachment() and tile_store_cs,
  * for each blit separately.
  */
 static void
@@ -958,17 +956,6 @@ tu6_emit_sysmem_resolves(struct tu_cmd_buffer *cmd,
          tu6_emit_sysmem_resolve(cmd, cs, subpass->multiview_mask, a, gmem_a);
       }
    }
-}
-
-static void
-tu6_emit_tile_load(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
-{
-   tu6_emit_blit_scissor(cmd, cs, true);
-
-   const bool cond_exec_allowed = cmd->state.tiling->binning &&
-                                  cmd->state.pass->has_cond_load_store;
-   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
-      tu_load_gmem_attachment(cmd, cs, i, cond_exec_allowed, false);
 }
 
 static void
@@ -1464,35 +1451,8 @@ tu_set_input_attachments(struct tu_cmd_buffer *cmd, const struct tu_subpass *sub
 
 
 static void
-tu_emit_renderpass_begin(struct tu_cmd_buffer *cmd,
-                         const VkClearValue *clear_values)
+tu_emit_renderpass_begin(struct tu_cmd_buffer *cmd)
 {
-   struct tu_cs *cs = &cmd->draw_cs;
-
-   if (cmd->state.pass->has_fdm)
-      tu_cs_set_writeable(cs, true);
-
-   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
-
-   tu6_emit_tile_load(cmd, cs);
-
-   tu6_emit_blit_scissor(cmd, cs, false);
-
-   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
-      tu_clear_gmem_attachment(cmd, cs, i, &clear_values[i]);
-
-   tu_cond_exec_end(cs);
-
-   if (cmd->state.pass->has_fdm)
-      tu_cs_set_writeable(cs, false);
-
-   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
-
-   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
-      tu_clear_sysmem_attachment(cmd, cs, i, &clear_values[i]);
-
-   tu_cond_exec_end(cs);
-
    /* We need to re-emit any draw states that are patched in order for them to
     * be correctly added to the per-renderpass patchpoint list, even if they
     * are the same as before.
@@ -1808,6 +1768,7 @@ static void tu_reset_render_pass(struct tu_cmd_buffer *cmd_buffer)
    cmd_buffer->state.subpass = NULL;
    cmd_buffer->state.framebuffer = NULL;
    cmd_buffer->state.attachments = NULL;
+   cmd_buffer->state.clear_values = NULL;
    cmd_buffer->state.gmem_layout = TU_GMEM_LAYOUT_COUNT; /* invalid value to prevent looking up gmem offsets */
    memset(&cmd_buffer->state.rp, 0, sizeof(cmd_buffer->state.rp));
 
@@ -3207,59 +3168,45 @@ sanitize_dst_stage(VkPipelineStageFlags2 stage_mask)
 static enum tu_stage
 vk2tu_single_stage(VkPipelineStageFlags2 vk_stage, bool dst)
 {
+   /* If the destination stage is executed on the CP, then the CP also has to
+    * wait for any WFI's to finish. This is already done for draw calls,
+    * including before indirect param reads, for the most part, so we just
+    * need to WFI and can use TU_STAGE_GPU.
+    *
+    * However, some indirect draw opcodes, depending on firmware, don't have
+    * implicit CP_WAIT_FOR_ME so we have to handle it manually.
+    *
+    * Transform feedback counters are read via CP_MEM_TO_REG, which implicitly
+    * does CP_WAIT_FOR_ME, so we don't include them here.
+    *
+    * Currently we read the draw predicate using CP_MEM_TO_MEM, which
+    * also implicitly does CP_WAIT_FOR_ME. However CP_DRAW_PRED_SET does *not*
+    * implicitly do CP_WAIT_FOR_ME, it seems to only wait for counters to
+    * complete since it's written for DX11 where you can only predicate on the
+    * result of a query object. So if we implement 64-bit comparisons in the
+    * future, or if CP_DRAW_PRED_SET grows the capability to do 32-bit
+    * comparisons, then this will have to be dealt with.
+    */
    if (vk_stage == VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT ||
        vk_stage == VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT ||
        vk_stage == VK_PIPELINE_STAGE_2_FRAGMENT_DENSITY_PROCESS_BIT_EXT)
       return TU_STAGE_CP;
 
-   if (vk_stage == VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT)
-      return TU_STAGE_FE;
-
-   if (vk_stage == VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT)
-      return TU_STAGE_SP_VS;
-
-   if (vk_stage == VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)
-      return TU_STAGE_SP_PS;
-
-   if (vk_stage == VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT || /* Yes, really */
-   /* See comment in TU_STAGE_GRAS about early fragment tests */
-       vk_stage == VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT)
-
-      return TU_STAGE_PS;
-
-   if (vk_stage == VK_PIPELINE_STAGE_2_COPY_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_BLIT_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_RESOLVE_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_CLEAR_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT)
-      /* Blits read in SP_PS and write in PS, in both 2d and 3d cases */
-      return dst ? TU_STAGE_SP_PS : TU_STAGE_PS;
-
    if (vk_stage == VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT ||
        vk_stage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
-      /* Be conservative */
-      return dst ? TU_STAGE_CP : TU_STAGE_PS;
+      return dst ? TU_STAGE_CP : TU_STAGE_GPU;
 
    if (vk_stage == VK_PIPELINE_STAGE_2_HOST_BIT)
-      return dst ? TU_STAGE_PS : TU_STAGE_CP;
+      return dst ? TU_STAGE_BOTTOM : TU_STAGE_CP;
 
-   unreachable("unknown pipeline stage");
+   return TU_STAGE_GPU;
 }
 
 static enum tu_stage
-vk2tu_src_stage(VkPipelineStageFlags vk_stages)
+vk2tu_src_stage(VkPipelineStageFlags2 vk_stages)
 {
    enum tu_stage stage = TU_STAGE_CP;
-   u_foreach_bit (bit, vk_stages) {
+   u_foreach_bit64 (bit, vk_stages) {
       enum tu_stage new_stage = vk2tu_single_stage(1ull << bit, false);
       stage = MAX2(stage, new_stage);
    }
@@ -3268,10 +3215,10 @@ vk2tu_src_stage(VkPipelineStageFlags vk_stages)
 }
 
 static enum tu_stage
-vk2tu_dst_stage(VkPipelineStageFlags vk_stages)
+vk2tu_dst_stage(VkPipelineStageFlags2 vk_stages)
 {
-   enum tu_stage stage = TU_STAGE_PS;
-   u_foreach_bit (bit, vk_stages) {
+   enum tu_stage stage = TU_STAGE_BOTTOM;
+   u_foreach_bit64 (bit, vk_stages) {
       enum tu_stage new_stage = vk2tu_single_stage(1ull << bit, true);
       stage = MIN2(stage, new_stage);
    }
@@ -3283,34 +3230,14 @@ static void
 tu_flush_for_stage(struct tu_cache_state *cache,
                    enum tu_stage src_stage, enum tu_stage dst_stage)
 {
-   /* As far as we know, flushes take place in the last stage so if there are
-    * any pending flushes then we have to move down the source stage, because
-    * the data only becomes available when the flush finishes. In particular
-    * this can matter when the CP writes something and we need to invalidate
-    * UCHE to read it.
+   /* Even if the source is the host or CP, the destination access could
+    * generate invalidates that we have to wait to complete.
     */
-   if (cache->flush_bits & (TU_CMD_FLAG_ALL_FLUSH | TU_CMD_FLAG_ALL_INVALIDATE))
-      src_stage = TU_STAGE_PS;
+   if (src_stage == TU_STAGE_CP &&
+       (cache->flush_bits & TU_CMD_FLAG_ALL_INVALIDATE))
+      src_stage = TU_STAGE_GPU;
 
-   /* Note: if the destination stage is the CP, then the CP also has to wait
-    * for any WFI's to finish. This is already done for draw calls, including
-    * before indirect param reads, for the most part, so we just need to WFI.
-    *
-    * However, some indirect draw opcodes, depending on firmware, don't have
-    * implicit CP_WAIT_FOR_ME so we have to handle it manually.
-    *
-    * Transform feedback counters are read via CP_MEM_TO_REG, which implicitly
-    * does CP_WAIT_FOR_ME, but we still need a WFI if the GPU writes it.
-    *
-    * Currently we read the draw predicate using CP_MEM_TO_MEM, which
-    * also implicitly does CP_WAIT_FOR_ME. However CP_DRAW_PRED_SET does *not*
-    * implicitly do CP_WAIT_FOR_ME, it seems to only wait for counters to
-    * complete since it's written for DX11 where you can only predicate on the
-    * result of a query object. So if we implement 64-bit comparisons in the
-    * future, or if CP_DRAW_PRED_SET grows the capability to do 32-bit
-    * comparisons, then this will have to be dealt with.
-    */
-   if (src_stage > dst_stage) {
+   if (src_stage >= dst_stage) {
       cache->flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
       if (dst_stage == TU_STAGE_CP)
          cache->pending_flush_bits |= TU_CMD_FLAG_WAIT_FOR_ME;
@@ -3636,13 +3563,86 @@ tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
    tu_flush_for_stage(cache, src_stage, dst_stage);
 }
 
-/* emit mrt/zs/msaa/ubwc state for the subpass that is starting (either at
- * vkCmdBeginRenderPass2() or vkCmdNextSubpass2())
+static void
+tu_emit_subpass_begin_gmem(struct tu_cmd_buffer *cmd)
+{
+   struct tu_cs *cs = &cmd->draw_cs;
+   uint32_t subpass_idx = cmd->state.subpass - cmd->state.pass->subpasses;
+
+   /* If we might choose to bin, then put the loads under a check for geometry
+    * having been binned to this tile.  If we don't choose to bin in the end,
+    * then we will have manually set those registers to say geometry is present.
+    *
+    * However, if the draw CS has a write to the condition for some other reason
+    * (perf queries), then we can't do this optimization since the
+    * start-of-the-CS geometry condition will have been overwritten.
+    */
+   bool cond_load_allowed = cmd->state.tiling->binning &&
+                            cmd->state.pass->has_cond_load_store &&
+                            !cmd->state.rp.draw_cs_writes_to_cond_pred;
+
+   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
+
+   /* Emit gmem loads that are first used in this subpass. */
+   bool emitted_scissor = false;
+   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i) {
+      struct tu_render_pass_attachment *att = &cmd->state.pass->attachments[i];
+      if ((att->load || att->load_stencil) && att->first_subpass_idx == subpass_idx) {
+         if (!emitted_scissor) {
+            tu6_emit_blit_scissor(cmd, cs, true);
+            emitted_scissor = true;
+         }
+         tu_load_gmem_attachment(cmd, cs, i, cond_load_allowed, false);
+      }
+   }
+
+   /* Emit gmem clears that are first used in this subpass. */
+   emitted_scissor = false;
+   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i) {
+      struct tu_render_pass_attachment *att = &cmd->state.pass->attachments[i];
+      if (att->clear_mask && att->first_subpass_idx == subpass_idx) {
+         if (!emitted_scissor) {
+            tu6_emit_blit_scissor(cmd, cs, false);
+            emitted_scissor = true;
+         }
+         tu_clear_gmem_attachment(cmd, cs, i);
+      }
+   }
+
+   tu_cond_exec_end(cs); /* CP_COND_EXEC_0_RENDER_MODE_GMEM */
+}
+
+/* Emits sysmem clears that are first used in this subpass. */
+static void
+tu_emit_subpass_begin_sysmem(struct tu_cmd_buffer *cmd)
+{
+   struct tu_cs *cs = &cmd->draw_cs;
+   uint32_t subpass_idx = cmd->state.subpass - cmd->state.pass->subpasses;
+
+   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
+   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i) {
+      struct tu_render_pass_attachment *att = &cmd->state.pass->attachments[i];
+      if (att->clear_mask && att->first_subpass_idx == subpass_idx)
+         tu_clear_sysmem_attachment(cmd, cs, i);
+   }
+   tu_cond_exec_end(cs); /* sysmem */
+}
+
+/* emit loads, clears, and mrt/zs/msaa/ubwc state for the subpass that is
+ * starting (either at vkCmdBeginRenderPass2() or vkCmdNextSubpass2())
+ *
+ * Clears and loads have to happen at this point, because with
+ * VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT the loads may depend on the output of
+ * a previous aliased attachment's store.
  */
 static void
 tu_emit_subpass_begin(struct tu_cmd_buffer *cmd)
 {
    tu_fill_render_pass_state(&cmd->state.vk_rp, cmd->state.pass, cmd->state.subpass);
+
+   tu_emit_subpass_begin_gmem(cmd);
+   tu_emit_subpass_begin_sysmem(cmd);
+
    tu6_emit_zs(cmd, cmd->state.subpass, &cmd->draw_cs);
    tu6_emit_mrt(cmd, cmd->state.subpass, &cmd->draw_cs);
    tu6_emit_render_cntl(cmd, cmd->state.subpass, &cmd->draw_cs, false);
@@ -3677,12 +3677,13 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
    cmd->state.framebuffer = fb;
    cmd->state.render_area = pRenderPassBegin->renderArea;
 
-   cmd->state.attachments = (const struct tu_image_view **)
-      vk_alloc(&cmd->vk.pool->alloc, pass->attachment_count *
-               sizeof(cmd->state.attachments[0]), 8,
-               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-
-   if (!cmd->state.attachments) {
+   VK_MULTIALLOC(ma);
+   vk_multialloc_add(&ma, &cmd->state.attachments,
+                     const struct tu_image_view *, pass->attachment_count);
+   vk_multialloc_add(&ma, &cmd->state.clear_values, VkClearValue,
+                     pRenderPassBegin->clearValueCount);
+   if (!vk_multialloc_alloc(&ma, &cmd->vk.pool->alloc,
+                            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT)) {
       vk_command_buffer_set_error(&cmd->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       return;
    }
@@ -3696,6 +3697,9 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
          tu_image_view_from_handle(pAttachmentInfo->pAttachments[i]) :
          cmd->state.framebuffer->attachments[i].attachment;
    }
+   for (unsigned i = 0; i < pRenderPassBegin->clearValueCount; i++)
+         cmd->state.clear_values[i] = pRenderPassBegin->pClearValues[i];
+
    tu_choose_gmem_layout(cmd);
 
    trace_start_render_pass(&cmd->trace, &cmd->cs, cmd->state.framebuffer,
@@ -3713,11 +3717,11 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
    if (pass->subpasses[0].feedback_invalidate)
       cmd->state.renderpass_cache.flush_bits |= TU_CMD_FLAG_CACHE_INVALIDATE;
 
-   tu_lrz_begin_renderpass(cmd, pRenderPassBegin->pClearValues);
+   tu_lrz_begin_renderpass(cmd);
 
    cmd->trace_renderpass_start = u_trace_end_iterator(&cmd->trace);
 
-   tu_emit_renderpass_begin(cmd, pRenderPassBegin->pClearValues);
+   tu_emit_renderpass_begin(cmd);
    tu_emit_subpass_begin(cmd);
 
    if (pass->has_fdm)
@@ -3729,7 +3733,6 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
                      const VkRenderingInfo *pRenderingInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   VkClearValue clear_values[2 * (MAX_RTS + 1)];
 
    tu_setup_dynamic_render_pass(cmd, pRenderingInfo);
    tu_setup_dynamic_framebuffer(cmd, pRenderingInfo);
@@ -3740,16 +3743,19 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
    cmd->state.render_area = pRenderingInfo->renderArea;
 
    cmd->state.attachments = cmd->dynamic_attachments;
+   cmd->state.clear_values = cmd->dynamic_clear_values;
 
    for (unsigned i = 0; i < pRenderingInfo->colorAttachmentCount; i++) {
       uint32_t a = cmd->dynamic_subpass.color_attachments[i].attachment;
       if (!pRenderingInfo->pColorAttachments[i].imageView)
          continue;
 
+      cmd->state.clear_values[a] =
+         pRenderingInfo->pColorAttachments[i].clearValue;
+
       TU_FROM_HANDLE(tu_image_view, view,
                      pRenderingInfo->pColorAttachments[i].imageView);
       cmd->state.attachments[a] = view;
-      clear_values[a] = pRenderingInfo->pColorAttachments[i].clearValue;
 
       a = cmd->dynamic_subpass.resolve_attachments[i].attachment;
       if (a != VK_ATTACHMENT_UNUSED) {
@@ -3770,12 +3776,12 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
          TU_FROM_HANDLE(tu_image_view, view, common_info->imageView);
          cmd->state.attachments[a] = view;
          if (pRenderingInfo->pDepthAttachment) {
-            clear_values[a].depthStencil.depth =
+            cmd->state.clear_values[a].depthStencil.depth =
                pRenderingInfo->pDepthAttachment->clearValue.depthStencil.depth;
          }
 
          if (pRenderingInfo->pStencilAttachment) {
-            clear_values[a].depthStencil.stencil =
+            cmd->state.clear_values[a].depthStencil.stencil =
                pRenderingInfo->pStencilAttachment->clearValue.depthStencil.stencil;
          }
 
@@ -3824,9 +3830,9 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
       cmd->state.lrz.valid = false;
    } else {
       if (resuming)
-         tu_lrz_begin_resumed_renderpass(cmd, clear_values);
+         tu_lrz_begin_resumed_renderpass(cmd);
       else
-         tu_lrz_begin_renderpass(cmd, clear_values);
+         tu_lrz_begin_renderpass(cmd);
    }
 
 
@@ -3848,7 +3854,7 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
    }
 
    if (!resuming) {
-      tu_emit_renderpass_begin(cmd, clear_values);
+      tu_emit_renderpass_begin(cmd);
       tu_emit_subpass_begin(cmd);
    }
 

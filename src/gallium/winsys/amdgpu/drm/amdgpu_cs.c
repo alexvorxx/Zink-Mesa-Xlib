@@ -271,7 +271,8 @@ radeon_to_amdgpu_priority(enum radeon_ctx_priority radeon_priority)
 }
 
 static struct radeon_winsys_ctx *amdgpu_ctx_create(struct radeon_winsys *ws,
-                                                   enum radeon_ctx_priority priority)
+                                                   enum radeon_ctx_priority priority,
+                                                   bool allow_context_lost)
 {
    struct amdgpu_ctx *ctx = CALLOC_STRUCT(amdgpu_ctx);
    int r;
@@ -284,7 +285,7 @@ static struct radeon_winsys_ctx *amdgpu_ctx_create(struct radeon_winsys *ws,
 
    ctx->ws = amdgpu_winsys(ws);
    ctx->refcount = 1;
-   ctx->initial_num_total_rejected_cs = ctx->ws->num_total_rejected_cs;
+   ctx->allow_context_lost = allow_context_lost;
 
    r = amdgpu_cs_ctx_create2(ctx->ws->dev, amdgpu_priority, &ctx->ctx);
    if (r) {
@@ -410,6 +411,33 @@ destroy_ctx:
    return r;
 }
 
+static void
+amdgpu_ctx_set_sw_reset_status(struct radeon_winsys_ctx *rwctx, enum pipe_reset_status status,
+                               const char *format, ...)
+{
+   struct amdgpu_ctx *ctx = (struct amdgpu_ctx*)rwctx;
+
+   /* Don't overwrite the last reset status. */
+   if (ctx->sw_status != PIPE_NO_RESET)
+      return;
+
+   ctx->sw_status = status;
+
+   if (!ctx->allow_context_lost) {
+      va_list args;
+
+      va_start(args, format);
+      vfprintf(stderr, format, args);
+      va_end(args);
+
+      /* Non-robust contexts are allowed to terminate the process. The only alternative is
+       * to skip command submission, which would look like a freeze because nothing is drawn,
+       * which looks like a hang without any reset.
+       */
+      abort();
+   }
+}
+
 static enum pipe_reset_status
 amdgpu_ctx_query_reset_status(struct radeon_winsys_ctx *rwctx, bool full_reset_only,
                               bool *needs_reset, bool *reset_completed)
@@ -426,8 +454,7 @@ amdgpu_ctx_query_reset_status(struct radeon_winsys_ctx *rwctx, bool full_reset_o
    if (ctx->ws->info.drm_minor >= 24) {
       uint64_t flags;
 
-      if (full_reset_only &&
-          ctx->initial_num_total_rejected_cs == ctx->ws->num_total_rejected_cs) {
+      if (full_reset_only && ctx->sw_status == PIPE_NO_RESET) {
          /* If the caller is only interested in full reset (= wants to ignore soft
           * recoveries), we can use the rejected cs count as a quick first check.
           */
@@ -488,12 +515,11 @@ amdgpu_ctx_query_reset_status(struct radeon_winsys_ctx *rwctx, bool full_reset_o
       }
    }
 
-   /* Return a failure due to a rejected command submission. */
-   if (ctx->ws->num_total_rejected_cs > ctx->initial_num_total_rejected_cs) {
+   /* Return a failure due to SW issues. */
+   if (ctx->sw_status != PIPE_NO_RESET) {
       if (needs_reset)
          *needs_reset = true;
-      return ctx->rejected_any_cs ? PIPE_GUILTY_CONTEXT_RESET :
-                                    PIPE_INNOCENT_CONTEXT_RESET;
+      return ctx->sw_status;
    }
    if (needs_reset)
       *needs_reset = false;
@@ -1045,8 +1071,7 @@ amdgpu_cs_create(struct radeon_cmdbuf *rcs,
                  enum amd_ip_type ip_type,
                  void (*flush)(void *ctx, unsigned flags,
                                struct pipe_fence_handle **fence),
-                 void *flush_ctx,
-                 bool allow_context_lost)
+                 void *flush_ctx)
 {
    struct amdgpu_ctx *ctx = (struct amdgpu_ctx*)rwctx;
    struct amdgpu_cs *cs;
@@ -1063,7 +1088,6 @@ amdgpu_cs_create(struct radeon_cmdbuf *rcs,
    cs->flush_cs = flush;
    cs->flush_data = flush_ctx;
    cs->ip_type = ip_type;
-   cs->allow_context_lost = allow_context_lost;
    cs->noop = ctx->ws->noop_cs;
    cs->has_chaining = ctx->ws->info.gfx_level >= GFX7 &&
                       (ip_type == AMD_IP_GFX || ip_type == AMD_IP_COMPUTE);
@@ -1693,7 +1717,7 @@ static void amdgpu_cs_submit_ib(void *job, void *gdata, int thread_index)
 
    assert(num_chunks <= ARRAY_SIZE(chunks));
 
-   if (unlikely(acs->ctx->rejected_any_cs)) {
+   if (unlikely(acs->ctx->sw_status != PIPE_NO_RESET)) {
       r = -ECANCELED;
    } else if (unlikely(noop)) {
       r = 0;
@@ -1737,20 +1761,9 @@ static void amdgpu_cs_submit_ib(void *job, void *gdata, int thread_index)
 
 cleanup:
    if (unlikely(r)) {
-      if (!acs->allow_context_lost) {
-         /* Non-robust contexts are allowed to terminate the process. The only alternative is
-          * to skip command submission, which would look like a freeze because nothing is drawn,
-          * which is not a useful state to be in under any circumstances.
-          */
-         fprintf(stderr, "amdgpu: The CS has been rejected (%i), but the context isn't robust.\n", r);
-         fprintf(stderr, "amdgpu: The process will be terminated.\n");
-         exit(1);
-      }
-
-      fprintf(stderr, "amdgpu: The CS has been rejected (%i). Recreate the context.\n", r);
-      if (!acs->ctx->rejected_any_cs)
-         ws->num_total_rejected_cs++;
-      acs->ctx->rejected_any_cs = true;
+      amdgpu_ctx_set_sw_reset_status((struct radeon_winsys_ctx*)acs->ctx,
+                                     PIPE_GUILTY_CONTEXT_RESET,
+                                     "amdgpu: The CS has been rejected (%i).\n", r);
    }
 
    /* If there was an error, signal the fence, because it won't be signalled
@@ -1956,6 +1969,7 @@ void amdgpu_cs_init_functions(struct amdgpu_screen_winsys *ws)
 {
    ws->base.ctx_create = amdgpu_ctx_create;
    ws->base.ctx_destroy = amdgpu_ctx_destroy;
+   ws->base.ctx_set_sw_reset_status = amdgpu_ctx_set_sw_reset_status;
    ws->base.ctx_query_reset_status = amdgpu_ctx_query_reset_status;
    ws->base.cs_create = amdgpu_cs_create;
    ws->base.cs_setup_preemption = amdgpu_cs_setup_preemption;

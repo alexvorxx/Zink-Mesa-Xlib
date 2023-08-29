@@ -1,3 +1,95 @@
+.radeonsi-rules:
+  stage: amd
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-rules, rules]
+    - changes: &radeonsi_file_list
+      - src/gallium/drivers/radeonsi/**/*
+      - src/gallium/include/winsys/**/*
+      - src/gallium/winsys/amdgpu/**/*
+      - src/amd/*
+      - src/amd/addrlib/**/*
+      - src/amd/ci/*
+      - src/amd/common/**/*
+      - src/amd/llvm/**/*
+      - src/amd/registers/**/*
+      when: on_success
+
+.radv-rules:
+  stage: amd
+  rules:
+    - !reference [.vulkan-rules, rules]
+    - changes: &radv_file_list
+      - src/amd/**/*
+      - src/vulkan/**/*
+      when: on_success
+
+.radv-collabora-rules:
+  stage: amd
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.radv-rules, rules]
+
+.radv-valve-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.radv-rules, rules]
+
+.radv-valve-manual-rules:
+  stage: amd
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.valve-farm-manual-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+        *radv_file_list
+      when: manual
+
+.radeonsi+radv-rules:
+  stage: amd
+  rules:
+    - !reference [.radeonsi-rules, rules]
+    - !reference [.radv-rules, rules]
+
+.radeonsi-vaapi-rules:
+  stage: amd
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-rules, rules]
+    - changes:
+        *radeonsi_file_list
+      when: on_success
+    - changes: &radeon_vcn_file_list
+      - src/gallium/frontends/va/**/*
+      - src/gallium/targets/va/**/*
+      when: on_success
+
+.radeonsi-vaapi-manual-rules:
+  stage: amd
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *radeon_vcn_file_list
+      when: manual
+
+.radeonsi-valve-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.radeonsi-rules, rules]
+
+.radeonsi-valve-manual-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-manual-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+        *radeonsi_file_list
+      when: manual
+
+
 ############### LAVA
 # job prefixes: radeonsi (OpenGL), radv (Vulkan), amd (radeonsi+radv)
 .stoney-test:x86_64:
@@ -207,6 +299,7 @@ radeonsi-raven-va-full:x86_64:
     - radeonsi-raven-va:x86_64
     - .radeonsi-vaapi-manual-rules
   variables:
+    JOB_TIMEOUT: 60
     GTEST_FRACTION: null
 
 ############### Valve Infra

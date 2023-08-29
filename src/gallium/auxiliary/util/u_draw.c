@@ -97,10 +97,10 @@ util_draw_max_index(
 
       buffer_size -= format_size;
 
-      if (buffer->stride != 0) {
+      if (element->src_stride != 0) {
          unsigned buffer_max_index;
 
-         buffer_max_index = buffer_size / buffer->stride;
+         buffer_max_index = buffer_size / element->src_stride;
 
          if (element->instance_divisor == 0) {
             /* Per-vertex data */
@@ -222,6 +222,9 @@ util_draw_indirect(struct pipe_context *pipe,
          draw_count = dc_param[0];
       pipe_buffer_unmap(pipe, dc_transfer);
    }
+
+   if (!draw_count)
+      return;
 
    if (indirect->stride)
       num_params = MIN2(indirect->stride / 4, num_params);

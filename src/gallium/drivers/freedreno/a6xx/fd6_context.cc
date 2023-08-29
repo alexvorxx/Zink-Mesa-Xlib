@@ -83,7 +83,7 @@ fd6_vertex_state_create(struct pipe_context *pctx, unsigned num_elements,
    memcpy(state->base.pipe, elements, sizeof(*elements) * num_elements);
    state->base.num_elements = num_elements;
    state->stateobj =
-      fd_ringbuffer_new_object(ctx->pipe, 4 * (num_elements * 2 + 1));
+      fd_ringbuffer_new_object(ctx->pipe, 4 * (num_elements * 4 + 1));
    struct fd_ringbuffer *ring = state->stateobj;
 
    OUT_PKT4(ring, REG_A6XX_VFD_DECODE(0), 2 * num_elements);
@@ -104,6 +104,13 @@ fd6_vertex_state_create(struct pipe_context *pctx, unsigned num_elements,
                         COND(!isint, A6XX_VFD_DECODE_INSTR_FLOAT));
       OUT_RING(ring,
                MAX2(1, elem->instance_divisor)); /* VFD_DECODE[j].STEP_RATE */
+   }
+
+   for (int32_t i = 0; i < num_elements; i++) {
+      const struct pipe_vertex_element *elem = &elements[i];
+
+      OUT_PKT4(ring, REG_A6XX_VFD_FETCH_STRIDE(elem->vertex_buffer_index), 1);
+      OUT_RING(ring, elem->src_stride);
    }
 
    return state;

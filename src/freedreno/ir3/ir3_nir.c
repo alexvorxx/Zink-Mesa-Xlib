@@ -37,13 +37,15 @@ ir3_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
                              nir_intrinsic_instr *low,
                              nir_intrinsic_instr *high, void *data)
 {
+   struct ir3_compiler *compiler = data;
    unsigned byte_size = bit_size / 8;
 
    /* Don't vectorize load_ssbo's that we could otherwise lower to isam,
     * as the tex cache benefit outweighs the benefit of vectorizing
     */
    if ((low->intrinsic == nir_intrinsic_load_ssbo) &&
-       (nir_intrinsic_access(low) & ACCESS_CAN_REORDER)) {
+       (nir_intrinsic_access(low) & ACCESS_CAN_REORDER) &&
+       compiler->has_isam_ssbo) {
       return false;
    }
 
@@ -158,6 +160,7 @@ ir3_optimize_loop(struct ir3_compiler *compiler, nir_shader *s)
          .callback = ir3_nir_should_vectorize_mem,
          .robust_modes = compiler->options.robust_buffer_access2 ?
                nir_var_mem_ubo | nir_var_mem_ssbo : 0,
+         .cb_data = compiler,
       };
       progress |= OPT(s, nir_opt_load_store_vectorize, &vectorize_opts);
 
@@ -217,12 +220,12 @@ ir3_nir_lower_ssbo_size_filter(const nir_instr *instr, const void *data)
              nir_intrinsic_get_ssbo_size;
 }
 
-static nir_ssa_def *
+static nir_def *
 ir3_nir_lower_ssbo_size_instr(nir_builder *b, nir_instr *instr, void *data)
 {
    uint8_t ssbo_size_to_bytes_shift = *(uint8_t *) data;
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   return nir_ishl_imm(b, &intr->dest.ssa, ssbo_size_to_bytes_shift);
+   return nir_ishl_imm(b, &intr->def, ssbo_size_to_bytes_shift);
 }
 
 static bool
@@ -306,13 +309,13 @@ ir3_nir_lower_array_sampler_cb(struct nir_builder *b, nir_instr *instr, void *_d
    b->cursor = nir_before_instr(&tex->instr);
 
    unsigned ncomp = tex->coord_components;
-   nir_ssa_def *src = nir_ssa_for_src(b, tex->src[coord_idx].src, ncomp);
+   nir_def *src = nir_ssa_for_src(b, tex->src[coord_idx].src, ncomp);
 
    assume(ncomp >= 1);
-   nir_ssa_def *ai = nir_channel(b, src, ncomp - 1);
+   nir_def *ai = nir_channel(b, src, ncomp - 1);
    ai = nir_fadd_imm(b, ai, 0.5);
-   nir_instr_rewrite_src(&tex->instr, &tex->src[coord_idx].src,
-                         nir_src_for_ssa(nir_vector_insert_imm(b, src, ai, ncomp - 1)));
+   nir_src_rewrite(&tex->src[coord_idx].src,
+                   nir_vector_insert_imm(b, src, ai, ncomp - 1));
    return true;
 }
 
@@ -418,7 +421,7 @@ lower_subgroup_id_filter(const nir_instr *instr, const void *unused)
           intr->intrinsic == nir_intrinsic_load_num_subgroups;
 }
 
-static nir_ssa_def *
+static nir_def *
 lower_subgroup_id(nir_builder *b, nir_instr *instr, void *unused)
 {
    (void)unused;
@@ -437,12 +440,12 @@ lower_subgroup_id(nir_builder *b, nir_instr *instr, void *unused)
        * nir_lower_compute_system_values() will replace local_size with a
        * constant so this can mostly be constant folded away.
        */
-      nir_ssa_def *local_size = nir_load_workgroup_size(b);
-      nir_ssa_def *size =
+      nir_def *local_size = nir_load_workgroup_size(b);
+      nir_def *size =
          nir_imul24(b, nir_channel(b, local_size, 0),
                     nir_imul24(b, nir_channel(b, local_size, 1),
                                nir_channel(b, local_size, 2)));
-      nir_ssa_def *one = nir_imm_int(b, 1);
+      nir_def *one = nir_imm_int(b, 1);
       return nir_iadd(b, one,
                       nir_ishr(b, nir_isub(b, size, one),
                                nir_load_subgroup_id_shift_ir3(b)));
@@ -647,7 +650,7 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
 
    bool progress = false;
 
-   NIR_PASS_V(s, nir_lower_io_to_scalar, nir_var_mem_ssbo);
+   NIR_PASS_V(s, nir_lower_io_to_scalar, nir_var_mem_ssbo, NULL, NULL);
 
    if (so->key.has_gs || so->key.tessellation) {
       switch (so->type) {
@@ -658,7 +661,7 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
          break;
       case MESA_SHADER_TESS_CTRL:
          NIR_PASS_V(s, nir_lower_io_to_scalar,
-                     nir_var_shader_in | nir_var_shader_out);
+                     nir_var_shader_in | nir_var_shader_out, NULL, NULL);
          NIR_PASS_V(s, ir3_nir_lower_tess_ctrl, so, so->key.tessellation);
          NIR_PASS_V(s, ir3_nir_lower_to_explicit_input, so);
          progress = true;

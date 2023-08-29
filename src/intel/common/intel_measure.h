@@ -113,7 +113,7 @@ struct intel_measure_snapshot {
    unsigned count, event_count;
    const char* event_name;
    uint32_t renderpass;
-   uintptr_t vs, tcs, tes, gs, fs, cs, ms, ts;
+   uint32_t vs, tcs, tes, gs, fs, cs, ms, ts;
    /* for vulkan secondary command buffers */
    struct intel_measure_batch *secondary;
 };
@@ -163,9 +163,9 @@ struct intel_measure_batch {
 void intel_measure_init(struct intel_measure_device *device);
 const char * intel_measure_snapshot_string(enum intel_measure_snapshot_type type);
 bool intel_measure_state_changed(const struct intel_measure_batch *batch,
-                                 uintptr_t vs, uintptr_t tcs, uintptr_t tes,
-                                 uintptr_t gs, uintptr_t fs, uintptr_t cs,
-                                 uintptr_t ms, uintptr_t ts);
+                                 uint32_t vs, uint32_t tcs, uint32_t tes,
+                                 uint32_t gs, uint32_t fs, uint32_t cs,
+                                 uint32_t ms, uint32_t ts);
 void intel_measure_frame_transition(unsigned frame);
 
 bool intel_measure_ready(struct intel_measure_batch *batch);

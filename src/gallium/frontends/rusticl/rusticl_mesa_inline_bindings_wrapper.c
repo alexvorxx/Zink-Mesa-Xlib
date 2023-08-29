@@ -31,6 +31,18 @@ pipe_resource_reference(struct pipe_resource **dst, struct pipe_resource *src)
    __pipe_resource_reference_wraped(dst, src);
 }
 
+bool
+should_skip_nir(const char *name)
+{
+    return __should_skip_nir(name);
+}
+
+bool
+should_print_nir(nir_shader *shader)
+{
+    return __should_print_nir(shader);
+}
+
 void
 util_format_pack_rgba(enum pipe_format format, void *dst, const void *src, unsigned w)
 {

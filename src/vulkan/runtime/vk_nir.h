@@ -36,6 +36,9 @@ extern "C" {
 
 uint32_t vk_spirv_version(const uint32_t *spirv_data, size_t spirv_size_B);
 
+bool
+nir_vk_is_not_xfb_output(nir_variable *var, void *data);
+
 nir_shader *
 vk_spirv_to_nir(struct vk_device *device,
                 const uint32_t *spirv_data, size_t spirv_size_B,

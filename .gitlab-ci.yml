@@ -1,5 +1,8 @@
 workflow:
   rules:
+    # do not duplicate pipelines on merge pipelines
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push" && $GITLAB_USER_LOGIN == "marge-bot"
+      when: never
     # merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
       variables:
@@ -8,12 +11,12 @@ workflow:
     # post-merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH
       variables:
-        LAVA_JOB_PRIORITY: 40
+        JOB_PRIORITY: 40
         VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
     # any other pipeline
     - if: $GITLAB_USER_LOGIN != "marge-bot"
       variables:
-        LAVA_JOB_PRIORITY: 50
+        JOB_PRIORITY: 50
         VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
     - when: always
 
@@ -32,6 +35,7 @@ variables:
   PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
   # per-job artifact storage on MinIO
   JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
+  KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/gfx-ci/linux/${KERNEL_TAG}
   # reference images stored for traces
   PIGLIT_REPLAY_REFERENCE_IMAGES_BASE: "${S3_HOST}/mesa-tracie-results/$FDO_UPSTREAM_REPO"
   # For individual CI farm status see .ci-farms folder
@@ -49,6 +53,9 @@ default:
       unset CI_JOB_JWT  # Unsetting vulnerable env variables
 
   after_script:
+    # Work around https://gitlab.com/gitlab-org/gitlab/-/issues/20338
+    - find -name '*.log' -exec mv {} {}.txt \;
+
     - >
       set +x
 
@@ -225,6 +232,8 @@ make git archive:
   script:
     # Compactify the .git directory
     - git gc --aggressive
+    # Download & cache the perfetto subproject as well.
+    - rm -rf subprojects/perfetto ; mkdir -p subprojects/perfetto && curl https://android.googlesource.com/platform/external/perfetto/+archive/$(grep 'revision =' subprojects/perfetto.wrap | cut -d ' ' -f3).tar.gz | tar zxf - -C subprojects/perfetto
     # compress the current folder
     - tar -cvzf ../$CI_PROJECT_NAME.tar.gz .
 

@@ -53,7 +53,7 @@ lower_clc_call_instr(nir_instr *instr, nir_builder *b,
       return false;
    }
 
-   nir_ssa_def **params = rzalloc_array(b->shader, nir_ssa_def*, call->num_params);
+   nir_def **params = rzalloc_array(b->shader, nir_def*, call->num_params);
 
    for (unsigned i = 0; i < call->num_params; i++) {
       params[i] = nir_ssa_for_src(b, call->params[i],
@@ -85,7 +85,6 @@ nir_lower_libclc_impl(nir_function_impl *impl,
 
    if (progress) {
       nir_index_ssa_defs(impl);
-      nir_index_local_regs(impl);
       nir_metadata_preserve(impl, nir_metadata_none);
    } else {
       nir_metadata_preserve(impl, nir_metadata_all);

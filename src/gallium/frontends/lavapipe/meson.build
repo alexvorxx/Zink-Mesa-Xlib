@@ -20,6 +20,7 @@ liblvp_files = files(
     'lvp_image.c',
     'lvp_formats.c',
     'lvp_inline_uniforms.c',
+    'lvp_lower_exec_graph.c',
     'lvp_lower_vulkan_resource.c',
     'lvp_lower_vulkan_resource.h',
     'lvp_lower_input_attachments.c',

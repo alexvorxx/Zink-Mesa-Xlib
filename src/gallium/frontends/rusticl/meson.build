@@ -267,9 +267,12 @@ rusticl_mesa_bindings_rs = rust.bindgen(
 
     # nir and spirv
     '--allowlist-function',     'nir_.*',
+    '--allowlist-var',          'nir_debug',
+    '--allowlist-var',          'NIR_DEBUG_.*',
     '--bitfield-enum',          'nir_lower_int64_options',
     '--bitfield-enum',          'nir_opt_if_options',
     '--bitfield-enum',          'nir_variable_mode',
+    '--allowlist-function',     'should_.*_nir',
     '--allowlist-function',     'spirv_.*',
 
     # gallium
@@ -277,6 +280,8 @@ rusticl_mesa_bindings_rs = rust.bindgen(
     '--allowlist-var',          'PIPE_.*',
     '--allowlist-type',         'pipe_endian',
     '--bitfield-enum',          'pipe_map_flags',
+    '--allowlist-type',         'pipe_query_type',
+    '--constified-enum-module', 'pipe_query_type',
     '--allowlist-type',         'pipe_resource_usage',
     '--bitfield-enum',          'pipe_resource_usage',
     '--allowlist-type',         'pipe_tex_filter',

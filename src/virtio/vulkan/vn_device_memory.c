@@ -153,12 +153,15 @@ vn_device_memory_pool_suballocate(struct vn_device *dev,
                                   uint32_t mem_type_index)
 {
    const VkDeviceSize pool_size = 16 * 1024 * 1024;
-   /* XXX We don't know the alignment requirement.  Use 64K because some GPUs
-    * have 64K pages.  It is also required by newer Intel GPUs.  But really we
-    * should require kernel 5.12+, where there is no KVM memslot limit, and
-    * remove this whole thing.
+   /* TODO fix https://gitlab.freedesktop.org/mesa/mesa/-/issues/9351
+    * Before that, we use 64K default alignment because some GPUs have 64K
+    * pages. It is also required by newer Intel GPUs. Meanwhile, use prior 4K
+    * align on implementations known to fit.
     */
-   const VkDeviceSize pool_align = 64 * 1024;
+   const VkDeviceSize pool_align =
+      dev->physical_device->renderer_driver_id == VK_DRIVER_ID_ARM_PROPRIETARY
+         ? 4096
+         : 64 * 1024;
    struct vn_device_memory_pool *pool = &dev->memory_pools[mem_type_index];
 
    assert(mem->size <= pool_size);
@@ -503,6 +506,15 @@ vn_AllocateMemory(VkDevice device,
    struct vn_device *dev = vn_device_from_handle(device);
    const VkAllocationCallbacks *alloc =
       pAllocator ? pAllocator : &dev->base.base.alloc;
+
+   /* see vn_physical_device_init_memory_properties */
+   VkMemoryAllocateInfo local_info;
+   if (pAllocateInfo->memoryTypeIndex ==
+       dev->physical_device->incoherent_cached) {
+      local_info = *pAllocateInfo;
+      local_info.memoryTypeIndex = dev->physical_device->coherent_uncached;
+      pAllocateInfo = &local_info;
+   }
 
    const VkExportMemoryAllocateInfo *export_info = NULL;
    const VkImportAndroidHardwareBufferInfoANDROID *import_ahb_info = NULL;

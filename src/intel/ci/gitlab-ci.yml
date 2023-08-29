@@ -1,3 +1,139 @@
+.i915g-rules:
+  stage: intel
+  rules:
+    - !reference [.gl-rules, rules]
+    - changes: &i915g_file_list
+      - src/gallium/drivers/i915/**/*
+      - src/gallium/winsys/i915/**/*
+      - src/intel/**/*
+      when: on_success
+
+.i915g-manual-rules:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *i915g_file_list
+      when: manual
+
+.crocus-rules:
+  stage: intel
+  rules:
+    - !reference [.anholt-farm-rules, rules]
+    - !reference [.gl-rules, rules]
+    - changes: &crocus_file_list
+      - src/gallium/drivers/crocus/**/*
+      - src/gallium/winsys/crocus/**/*
+      - src/intel/**/*
+      when: on_success
+
+.crocus-manual-rules:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.anholt-farm-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *crocus_file_list
+      when: manual
+
+.iris-rules:
+  stage: intel
+  rules:
+    - !reference [.no_scheduled_pipelines-rules, rules]
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-rules, rules]
+    - changes: &iris_file_list
+      - src/gallium/drivers/iris/**/*
+      - src/gallium/winsys/iris/**/*
+      - src/intel/**/*
+      when: on_success
+
+.iris-manual-rules:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *iris_file_list
+      when: manual
+
+# Unfortunately we can't sed the on_success from another rules set, so we have
+# to do duplicate the files lists to set the job to manual (see
+# .performance-rules)
+.iris-rules-performance:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.performance-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *iris_file_list
+      when: manual
+  allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    JOB_PRIORITY: 40
+    S3_ARTIFACT_NAME: "mesa-x86_64-default-release"
+  needs:
+    - kernel+rootfs_x86_64
+    - debian-release
+
+.anv-rules:
+  stage: intel
+  rules:
+    - !reference [.no_scheduled_pipelines-rules, rules]
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.vulkan-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: on_success
+
+.anv-manual-rules:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: manual
+
+.hasvk-rules:
+  stage: intel
+  rules:
+    - !reference [.anholt-farm-rules, rules]
+    - !reference [.vulkan-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: on_success
+
+.hasvk-manual-rules:
+  stage: intel
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.anholt-farm-manual-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: on_success
+
+# ruleset to trigger on changes affecting either anv or iris, for jobs using both (piglit, skqp)
+.intel-rules:
+  stage: intel
+  rules:
+    - !reference [.iris-rules, rules]
+    - !reference [.anv-rules, rules]
+
+.intel-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.iris-manual-rules, rules]
+    - !reference [.anv-manual-rules, rules]
+
+
 .intel-common-test:
   extends:
     - .lava-test-deqp:x86_64
@@ -220,12 +356,12 @@ iris-cml-deqp:
     DEQP_SUITE: iris-cml
   parallel: 4
 
-#iris-jsl-deqp:
-#  extends:
-#    - .iris-jsl-test
-#  variables:
-#    DEQP_SUITE: iris-jsl
-#  parallel: 8
+iris-jsl-deqp:
+  extends:
+    - .iris-jsl-test
+  variables:
+    DEQP_SUITE: iris-jsl
+  parallel: 8
 
 iris-amly-egl:
   extends:
@@ -311,7 +447,7 @@ iris-cml-traces:
     # We don't want for more than one workload to be submitted to the GPU at a time
     FDO_CI_CONCURRENT: 1
     # Piglit is very sparse in its status output and downloads of big traces can take a while
-    LAVA_DEVICE_HANGING_TIMEOUT_SEC: 600
+    DEVICE_HANGING_TIMEOUT_SEC: 600
     # So we aren't capped by VSync by the X server
     EGL_PLATFORM: surfaceless
     GIT_STRATEGY: none

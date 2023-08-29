@@ -146,6 +146,7 @@ util_set_interleaved_vertex_elements(struct cso_context *cso,
    for (i = 0; i < num_elements; i++) {
       velem.velems[i].src_format = PIPE_FORMAT_R32G32B32A32_FLOAT;
       velem.velems[i].src_offset = i * 16;
+      velem.velems[i].src_stride = num_elements * 4 * sizeof(float);
    }
 
    cso_set_vertex_elements(cso, &velem);

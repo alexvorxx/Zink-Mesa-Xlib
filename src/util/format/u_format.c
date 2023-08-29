@@ -38,10 +38,6 @@
 #include "util/format/u_format_s3tc.h"
 #include "util/u_math.h"
 
-#include "pipe/p_defines.h"
-#include "pipe/p_screen.h"
-
-
 /**
  * Copy 2D rect from one place to another.
  * Position and sizes are in pixels.

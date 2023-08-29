@@ -668,6 +668,7 @@ iris_screen_destroy(struct iris_screen *screen)
    util_queue_destroy(&screen->shader_compiler_queue);
    glsl_type_singleton_decref();
    iris_bo_unreference(screen->workaround_bo);
+   iris_bo_unreference(screen->breakpoint_bo);
    u_transfer_helper_destroy(screen->base.transfer_helper);
    iris_bufmgr_unref(screen->bufmgr);
    disk_cache_destroy(screen->disk_cache);
@@ -848,6 +849,11 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       iris_bo_alloc(screen->bufmgr, "workaround", 4096, 4096,
                     IRIS_MEMZONE_OTHER, BO_ALLOC_NO_SUBALLOC);
    if (!screen->workaround_bo)
+      return NULL;
+
+   screen->breakpoint_bo = iris_bo_alloc(screen->bufmgr, "breakpoint", 4, 4,
+                                         IRIS_MEMZONE_OTHER, BO_ALLOC_ZEROED);
+   if (!screen->breakpoint_bo)
       return NULL;
 
    if (!iris_init_identifier_bo(screen))

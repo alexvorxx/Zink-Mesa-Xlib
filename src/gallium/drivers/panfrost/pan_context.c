@@ -114,7 +114,7 @@ panfrost_flush(struct pipe_context *pipe, struct pipe_fence_handle **fence,
    }
 
    if (dev->debug & PAN_DBG_TRACE)
-      pandecode_next_frame();
+      pandecode_next_frame(dev->decode_ctx);
 }
 
 static void
@@ -326,8 +326,7 @@ panfrost_bind_sampler_states(struct pipe_context *pctx,
 }
 
 static void
-panfrost_set_vertex_buffers(struct pipe_context *pctx, unsigned start_slot,
-                            unsigned num_buffers,
+panfrost_set_vertex_buffers(struct pipe_context *pctx, unsigned num_buffers,
                             unsigned unbind_num_trailing_slots,
                             bool take_ownership,
                             const struct pipe_vertex_buffer *buffers)
@@ -335,8 +334,8 @@ panfrost_set_vertex_buffers(struct pipe_context *pctx, unsigned start_slot,
    struct panfrost_context *ctx = pan_context(pctx);
 
    util_set_vertex_buffers_mask(ctx->vertex_buffers, &ctx->vb_mask, buffers,
-                                start_slot, num_buffers,
-                                unbind_num_trailing_slots, take_ownership);
+                                num_buffers, unbind_num_trailing_slots,
+                                take_ownership);
 
    ctx->dirty |= PAN_DIRTY_VERTEX;
 }

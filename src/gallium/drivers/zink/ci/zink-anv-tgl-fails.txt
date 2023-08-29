@@ -1,7 +1,3 @@
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_scissored_masked,Fail
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_scissored,Fail
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_stencil_scissored,Fail
-
 # "Fail, buffer content is not well preserved when age > 0 (Fail)"
 dEQP-EGL.functional.buffer_age.no_preserve.no_resize.odd_clear_clear_even_clear_clear,Fail
 dEQP-EGL.functional.buffer_age.no_preserve.no_resize.odd_clear_clear_even_clear,Fail
@@ -181,19 +177,12 @@ spec@!opengl 2.1@polygon-stipple-fs,Fail
 
 spec@!opengl 3.0@clearbuffer-depth-cs-probe,Fail
 
-spec@!opengl 3.2@gl-3.2-adj-prims cull-back pv-first,Fail
-spec@!opengl 3.2@gl-3.2-adj-prims cull-front pv-first,Fail
-spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-first,Fail
-spec@!opengl 3.2@gl-3.2-adj-prims line cull-front pv-first,Fail
-spec@!opengl 3.2@gl-3.2-adj-prims pv-first,Fail
-
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index,Fail
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index2,Fail
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-non-const-uniform-index,Fail
 
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
 
-spec@arb_gl_spirv@execution@xfb@vs_block_array,Fail
 
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_gpu_shader_fp64@execution@glsl-fs-loop-unroll-mul-fp64,Fail

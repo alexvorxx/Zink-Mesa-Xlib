@@ -329,7 +329,6 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    VkPipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo = {0};
    pipelineDynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    pipelineDynamicStateCreateInfo.pDynamicStates = dynamicStateEnables;
-   pipelineDynamicStateCreateInfo.dynamicStateCount = state_count;
 
    VkGraphicsPipelineCreateInfo pci = {0};
    pci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -368,6 +367,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    pci.pViewportState = &viewport_state;
    pci.pDepthStencilState = &depth_stencil_state;
    pci.pDynamicState = &pipelineDynamicStateCreateInfo;
+   pipelineDynamicStateCreateInfo.dynamicStateCount = state_count;
 
    VkPipelineTessellationStateCreateInfo tci = {0};
    VkPipelineTessellationDomainOriginStateCreateInfo tdci = {0};
@@ -428,8 +428,10 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    }
 
    VkPipeline pipeline;
+   u_rwlock_wrlock(&prog->base.pipeline_cache_lock);
    VkResult result = VKSCR(CreateGraphicsPipelines)(screen->dev, prog->base.pipeline_cache,
                                                     1, &pci, NULL, &pipeline);
+   u_rwlock_wrunlock(&prog->base.pipeline_cache_lock);
    if (result != VK_SUCCESS) {
       mesa_loge("ZINK: vkCreateGraphicsPipelines failed (%s)", vk_Result_to_str(result));
       return VK_NULL_HANDLE;
@@ -472,8 +474,10 @@ zink_create_compute_pipeline(struct zink_screen *screen, struct zink_compute_pro
    pci.stage = stage;
 
    VkPipeline pipeline;
+   u_rwlock_wrlock(&comp->base.pipeline_cache_lock);
    VkResult result = VKSCR(CreateComputePipelines)(screen->dev, comp->base.pipeline_cache,
                                                    1, &pci, NULL, &pipeline);
+   u_rwlock_wrunlock(&comp->base.pipeline_cache_lock);
    if (result != VK_SUCCESS) {
       mesa_loge("ZINK: vkCreateComputePipelines failed (%s)", vk_Result_to_str(result));
       return VK_NULL_HANDLE;
@@ -560,7 +564,6 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
    VkPipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo = {0};
    pipelineDynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    pipelineDynamicStateCreateInfo.pDynamicStates = dynamicStateEnables;
-   pipelineDynamicStateCreateInfo.dynamicStateCount = state_count;
 
    VkGraphicsPipelineCreateInfo pci = {0};
    pci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -585,6 +588,7 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
    }
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
       pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+   pipelineDynamicStateCreateInfo.dynamicStateCount = state_count;
    pci.pColorBlendState = &blend_state;
    pci.pMultisampleState = &ms_state;
    pci.pDynamicState = &pipelineDynamicStateCreateInfo;
@@ -813,7 +817,10 @@ create_gfx_pipeline_library(struct zink_screen *screen, struct zink_shader_objec
 VkPipeline
 zink_create_gfx_pipeline_library(struct zink_screen *screen, struct zink_gfx_program *prog)
 {
-   return create_gfx_pipeline_library(screen, prog->objs, prog->base.layout, prog->base.pipeline_cache);
+   u_rwlock_wrlock(&prog->base.pipeline_cache_lock);
+   VkPipeline pipeline = create_gfx_pipeline_library(screen, prog->objs, prog->base.layout, prog->base.pipeline_cache);
+   u_rwlock_wrunlock(&prog->base.pipeline_cache_lock);
+   return pipeline;
 }
 
 VkPipeline
@@ -851,11 +858,14 @@ zink_create_gfx_pipeline_combined(struct zink_screen *screen, struct zink_gfx_pr
       pci.flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
 
    VkPipeline pipeline;
+   u_rwlock_wrlock(&prog->base.pipeline_cache_lock);
    if (VKSCR(CreateGraphicsPipelines)(screen->dev, prog->base.pipeline_cache, 1, &pci,
                                       NULL, &pipeline) != VK_SUCCESS) {
       mesa_loge("ZINK: vkCreateGraphicsPipelines failed");
+      u_rwlock_wrunlock(&prog->base.pipeline_cache_lock);
       return VK_NULL_HANDLE;
    }
+   u_rwlock_wrunlock(&prog->base.pipeline_cache_lock);
 
    return pipeline;
 }

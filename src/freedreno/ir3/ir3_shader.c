@@ -836,7 +836,7 @@ ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
               const_state->immediates[i * 4 + 3]);
    }
 
-   isa_decode(bin, so->info.sizedwords * 4, out,
+   isa_disasm(bin, so->info.sizedwords * 4, out,
               &(struct isa_decode_options){
                  .gpu_id = ir->compiler->gen * 100,
                  .show_errors = true,
@@ -872,9 +872,10 @@ ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
       so->info.cov_count, so->info.sizedwords);
 
    fprintf(out,
-           "; %s prog %d/%d: %u last-baryf, %d half, %d full, %u constlen\n",
+           "; %s prog %d/%d: %u last-baryf, %u last-helper, %d half, %d full, %u constlen\n",
            type, so->shader_id, so->id, so->info.last_baryf,
-           so->info.max_half_reg + 1, so->info.max_reg + 1, so->constlen);
+           so->info.last_helper, so->info.max_half_reg + 1,
+           so->info.max_reg + 1, so->constlen);
 
    fprintf(
       out,

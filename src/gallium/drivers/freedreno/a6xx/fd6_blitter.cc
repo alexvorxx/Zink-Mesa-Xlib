@@ -546,7 +546,8 @@ fd6_clear_ubwc(struct fd_batch *batch, struct fd_resource *rsc) assert_dt
    fd6_emit_flushes(batch->ctx, ring,
                     FD6_FLUSH_CCU_COLOR |
                     FD6_FLUSH_CCU_DEPTH |
-                    FD6_FLUSH_CACHE);
+                    FD6_FLUSH_CACHE |
+                    FD6_WAIT_FOR_IDLE);
 }
 
 static void
@@ -1006,7 +1007,8 @@ fd6_clear_texture(struct pipe_context *pctx, struct pipe_resource *prsc,
    fd6_emit_flushes(batch->ctx, batch->draw,
                     FD6_FLUSH_CCU_COLOR |
                     FD6_FLUSH_CCU_DEPTH |
-                    FD6_FLUSH_CACHE);
+                    FD6_FLUSH_CACHE |
+                    FD6_WAIT_FOR_IDLE);
 
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);
@@ -1095,7 +1097,8 @@ fd6_resolve_tile(struct fd_batch *batch, struct fd_ringbuffer *ring,
     * sysmem, and we generally assume that GMEM renderpasses leave their
     * results in sysmem, so we need to flush manually here.
     */
-   fd6_emit_flushes(batch->ctx, ring, FD6_FLUSH_CCU_COLOR);
+   fd6_emit_flushes(batch->ctx, ring,
+                    FD6_FLUSH_CCU_COLOR | FD6_WAIT_FOR_IDLE);
 }
 
 template void fd6_resolve_tile<A6XX>(struct fd_batch *batch, struct fd_ringbuffer *ring,
@@ -1164,7 +1167,8 @@ handle_rgba_blit(struct fd_context *ctx,
    fd6_emit_flushes(batch->ctx, batch->draw,
                     FD6_FLUSH_CCU_COLOR |
                     FD6_FLUSH_CCU_DEPTH |
-                    FD6_FLUSH_CACHE);
+                    FD6_FLUSH_CACHE |
+                    FD6_WAIT_FOR_IDLE);
 
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);

@@ -1,10 +1,12 @@
 # No GPU hang, looked like cache flushing fail.
 dEQP-GLES3.functional.fbo.blit.conversion.rgba4_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.rgba8_to_.*
 dEQP-GLES3.functional.fbo.blit.conversion.r16f_to_.*
 dEQP-GLES3.functional.fbo.blit.conversion.r16i_to_.*
 dEQP-GLES3.functional.fbo.blit.conversion.r16ui_to.*
 dEQP-GLES3.functional.fbo.blit.conversion.rgb5_a1_to_.*
 dEQP-GLES3.functional.fbo.blit.conversion.rgb565_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.srgb8_alpha8_to_rgb565
 
 # No GPU hang, looks like one 2x2 quad was colored slightly off?
 dEQP-GLES3.functional.fbo.msaa.4_samples.depth_component16
@@ -50,3 +52,8 @@ KHR-GLES31.core.texture_cube_map_array.color_depth_attachments
 dEQP-GLES31.functional.texture.specification.texstorage3d.format.rgb5_a1_cube_array
 dEQP-GLES31.functional.copy_image.compressed.viewclass_astc_4x4_rgba.rgba_astc_4x4_khr_srgb8_alpha8_astc_4x4_khr.texture2d_array_to_texture3d
 dEQP-GLES31.functional.image_load_store.2d.format_reinterpret.r32ui_r32f
+
+dEQP-GLES3.functional.fbo.color.tex2d.rgb565
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/9707
+dEQP-GLES3.functional.texture.specification.teximage2d_align.cube_rgba4_51_2

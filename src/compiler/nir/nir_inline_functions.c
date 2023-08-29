@@ -26,21 +26,22 @@
 #include "nir_control_flow.h"
 #include "nir_vla.h"
 
-static bool function_ends_in_jump(nir_function_impl *impl)
+static bool
+function_ends_in_jump(nir_function_impl *impl)
 {
    nir_block *last_block = nir_impl_last_block(impl);
    return nir_block_ends_in_jump(last_block);
 }
 
-void nir_inline_function_impl(struct nir_builder *b,
-                              const nir_function_impl *impl,
-                              nir_ssa_def **params,
-                              struct hash_table *shader_var_remap)
+void
+nir_inline_function_impl(struct nir_builder *b,
+                         const nir_function_impl *impl,
+                         nir_def **params,
+                         struct hash_table *shader_var_remap)
 {
    nir_function_impl *copy = nir_function_impl_clone(b->shader, impl);
 
    exec_list_append(&b->impl->locals, &copy->locals);
-   exec_list_append(&b->impl->registers, &copy->registers);
 
    nir_foreach_block(block, copy) {
       nir_foreach_instr_safe(instr, block) {
@@ -83,9 +84,8 @@ void nir_inline_function_impl(struct nir_builder *b,
 
             unsigned param_idx = nir_intrinsic_param_idx(load);
             assert(param_idx < impl->function->num_params);
-            assert(load->dest.is_ssa);
-            nir_ssa_def_rewrite_uses(&load->dest.ssa,
-                                     params[param_idx]);
+            nir_def_rewrite_uses(&load->def,
+                                 params[param_idx]);
 
             /* Remove any left-over load_param intrinsics because they're soon
              * to be in another function and therefore no longer valid.
@@ -159,7 +159,7 @@ inline_functions_block(nir_block *block, nir_builder *b,
        * to an SSA value first.
        */
       const unsigned num_params = call->num_params;
-      NIR_VLA(nir_ssa_def *, params, num_params);
+      NIR_VLA(nir_def *, params, num_params);
       for (unsigned i = 0; i < num_params; i++) {
          params[i] = nir_ssa_for_src(b, call->params[i],
                                      call->callee->params[i].num_components);
@@ -185,9 +185,8 @@ inline_function_impl(nir_function_impl *impl, struct set *inlined)
    }
 
    if (progress) {
-      /* SSA and register indices are completely messed up now */
+      /* Indices are completely messed up now */
       nir_index_ssa_defs(impl);
-      nir_index_local_regs(impl);
 
       nir_metadata_preserve(impl, nir_metadata_none);
    } else {

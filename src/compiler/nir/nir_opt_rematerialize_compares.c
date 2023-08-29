@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "nir.h"
 #include "nir/nir_builder.h"
+#include "nir.h"
 #include "nir_constant_expressions.h"
 #include "nir_control_flow.h"
 #include "nir_loop_analyze.h"
@@ -58,24 +58,9 @@ is_two_src_comparison(const nir_alu_instr *instr)
 }
 
 static bool
-all_srcs_are_ssa(const nir_alu_instr *instr)
-{
-   for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; i++) {
-      if (!instr->src[i].src.is_ssa)
-         return false;
-   }
-
-   return true;
-}
-
-
-static bool
 all_uses_are_bcsel(const nir_alu_instr *instr)
 {
-   if (!instr->dest.dest.is_ssa)
-      return false;
-
-   nir_foreach_use(use, &instr->dest.dest.ssa) {
+   nir_foreach_use(use, &instr->def) {
       if (use->parent_instr->type != nir_instr_type_alu)
          return false;
 
@@ -87,7 +72,7 @@ all_uses_are_bcsel(const nir_alu_instr *instr)
       /* Not only must the result be used by a bcsel, but it must be used as
        * the first source (the condition).
        */
-      if (alu->src[0].src.ssa != &instr->dest.dest.ssa)
+      if (alu->src[0].src.ssa != &instr->def)
          return false;
    }
 
@@ -108,9 +93,6 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
          if (!is_two_src_comparison(alu))
             continue;
 
-         if (!all_srcs_are_ssa(alu))
-            continue;
-
          if (!all_uses_are_bcsel(alu))
             continue;
 
@@ -124,7 +106,7 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
           * instruction must be duplicated only once in each block because CSE
           * cannot be run after this pass.
           */
-         nir_foreach_use_including_if_safe(use, &alu->dest.dest.ssa) {
+         nir_foreach_use_including_if_safe(use, &alu->def) {
             if (use->is_if) {
                nir_if *const if_stmt = use->parent_if;
 
@@ -141,8 +123,7 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
 
                nir_instr_insert_after_block(prev_block, &clone->instr);
 
-               nir_if_rewrite_condition(if_stmt,
-                                        nir_src_for_ssa(&clone->dest.dest.ssa));
+               nir_src_rewrite(&if_stmt->condition, &clone->def);
                progress = true;
             } else {
                nir_instr *const use_instr = use->parent_instr;
@@ -159,10 +140,8 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
 
                nir_alu_instr *const use_alu = nir_instr_as_alu(use_instr);
                for (unsigned i = 0; i < nir_op_infos[use_alu->op].num_inputs; i++) {
-                  if (use_alu->src[i].src.ssa == &alu->dest.dest.ssa) {
-                     nir_instr_rewrite_src(&use_alu->instr,
-                                           &use_alu->src[i].src,
-                                           nir_src_for_ssa(&clone->dest.dest.ssa));
+                  if (use_alu->src[i].src.ssa == &alu->def) {
+                     nir_src_rewrite(&use_alu->src[i].src, &clone->def);
                      progress = true;
                   }
                }
@@ -173,7 +152,7 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
 
    if (progress) {
       nir_metadata_preserve(impl, nir_metadata_block_index |
-                                  nir_metadata_dominance);
+                                     nir_metadata_dominance);
    } else {
       nir_metadata_preserve(impl, nir_metadata_all);
    }

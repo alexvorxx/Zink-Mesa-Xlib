@@ -22,6 +22,7 @@
  */
 
 #include "util/format/u_format.h"
+#include "util/macros.h"
 #include "v3d_context.h"
 #include "broadcom/common/v3d_tiling.h"
 #include "broadcom/common/v3d_macros.h"
@@ -539,8 +540,6 @@ v3d_emit_z_stencil_config(struct v3d_job *job, struct v3d_surface *surf,
 }
 #endif /* V3D_VERSION < 40 */
 
-#define div_round_up(a, b) (((a) + (b) - 1) / b)
-
 static bool
 supertile_in_job_scissors(struct v3d_job *job,
                           uint32_t x, uint32_t y, uint32_t w, uint32_t h)
@@ -607,9 +606,9 @@ emit_render_layer(struct v3d_job *job, uint32_t layer)
 
                 /* Size up our supertiles until we get under the limit. */
                 for (;;) {
-                        frame_w_in_supertiles = div_round_up(job->draw_tiles_x,
+                        frame_w_in_supertiles = DIV_ROUND_UP(job->draw_tiles_x,
                                                              supertile_w);
-                        frame_h_in_supertiles = div_round_up(job->draw_tiles_y,
+                        frame_h_in_supertiles = DIV_ROUND_UP(job->draw_tiles_y,
                                                              supertile_h);
                         if (frame_w_in_supertiles *
                                 frame_h_in_supertiles < max_supertiles) {

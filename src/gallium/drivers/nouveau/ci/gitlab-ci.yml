@@ -1,3 +1,26 @@
+.nouveau-rules:
+  stage: nouveau
+  rules:
+    - !reference [.anholt-farm-rules, rules]
+    - !reference [.gl-rules, rules]
+    - changes: &nouveau_file_list
+      - src/nouveau/**/*
+      - src/gallium/drivers/nouveau/**/*
+      - src/gallium/winsys/kmsro/**/*
+      - src/gallium/winsys/nouveau/**/*
+      when: on_success
+
+.nouveau-manual-rules:
+  stage: nouveau
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.anholt-farm-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *nouveau_file_list
+      when: manual
+
+
 # General settings for bare-metal nouveau testing on either arm64 or arm32.
 .nouveau-bm-test:
   extends:
@@ -45,6 +68,7 @@ gk20a-gles:
   extends:
     - .gk20a-test
   parallel: 4
+  timeout: 30m
   variables:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     DEQP_SUITE: nouveau-gk20a
@@ -63,6 +87,6 @@ gk20a-gles:
 .gm20b-gles:
   extends:
     - .gm20b-gles-full
-  timeout: 60m
+  timeout: 30m
   variables:
     DEQP_FRACTION: 10

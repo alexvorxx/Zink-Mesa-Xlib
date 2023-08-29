@@ -562,11 +562,18 @@ _eglQuerySurface(_EGLDisplay *disp, _EGLSurface *surface, EGLint attribute,
           ctx->DrawSurface != surface)
          return _eglError(EGL_BAD_SURFACE, "eglQuerySurface");
 
-      EGLint result = 0;
-      if (!disp->Options.GalliumHud)
-         result = disp->Driver->QueryBufferAge(disp, surface);
+      EGLint result = disp->Driver->QueryBufferAge(disp, surface);
       if (result < 0)
          return EGL_FALSE;
+
+      if (disp->Options.GalliumHudWarn && result > 0) {
+         _eglLog(_EGL_WARNING,
+                 "GALLIUM_HUD is not accounted for when querying "
+                 "buffer age, possibly causing artifacts, try running with "
+                 "MESA_EXTENSION_OVERRIDE=\"-EGL_EXT_buffer_age "
+                 "-EGL_KHR_partial_update\"");
+         disp->Options.GalliumHudWarn = EGL_FALSE;
+      }
 
       *value = result;
       surface->BufferAgeRead = EGL_TRUE;

@@ -105,7 +105,9 @@ void pvr_csb_init(struct pvr_device *device,
 void pvr_csb_finish(struct pvr_csb *csb)
 {
 #if defined(DEBUG)
-   assert(csb->relocation_mark_status == PVR_CSB_RELOCATION_MARK_CLEARED);
+   assert(csb->relocation_mark_status ==
+             PVR_CSB_RELOCATION_MARK_UNINITIALIZED ||
+          csb->relocation_mark_status == PVR_CSB_RELOCATION_MARK_CLEARED);
 #endif
 
    if (csb->stream_type == PVR_CMD_STREAM_TYPE_GRAPHICS_DEFERRED) {

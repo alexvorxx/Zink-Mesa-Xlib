@@ -944,6 +944,11 @@ static const struct {
       .internal_format =        GL_RGB5_A1,
    },
    {
+      .image_format    = __DRI_IMAGE_FORMAT_ABGR1555,
+      .mesa_format     =        MESA_FORMAT_R5G5B5A1_UNORM,
+      .internal_format =        GL_RGB5_A1,
+   },
+   {
       .image_format    = __DRI_IMAGE_FORMAT_XRGB8888,
       .mesa_format     =        MESA_FORMAT_B8G8R8X8_UNORM,
       .internal_format =        GL_RGB8,
@@ -956,7 +961,7 @@ static const struct {
    {
       .image_format    = __DRI_IMAGE_FORMAT_XBGR16161616F,
       .mesa_format     =        MESA_FORMAT_RGBX_FLOAT16,
-      .internal_format =        GL_RGBA16F,
+      .internal_format =        GL_RGB16F,
    },
    {
       .image_format    = __DRI_IMAGE_FORMAT_ABGR16161616,
@@ -966,7 +971,7 @@ static const struct {
    {
       .image_format    = __DRI_IMAGE_FORMAT_XBGR16161616,
       .mesa_format     =        MESA_FORMAT_RGBX_UNORM16,
-      .internal_format =        GL_RGBA16,
+      .internal_format =        GL_RGB16,
    },
    {
       .image_format    = __DRI_IMAGE_FORMAT_ARGB2101010,
@@ -976,7 +981,7 @@ static const struct {
    {
       .image_format    = __DRI_IMAGE_FORMAT_XRGB2101010,
       .mesa_format     =        MESA_FORMAT_B10G10R10X2_UNORM,
-      .internal_format =        GL_RGB10_A2,
+      .internal_format =        GL_RGB10,
    },
    {
       .image_format    = __DRI_IMAGE_FORMAT_ABGR2101010,
@@ -986,7 +991,7 @@ static const struct {
    {
       .image_format    = __DRI_IMAGE_FORMAT_XBGR2101010,
       .mesa_format     =        MESA_FORMAT_R10G10B10X2_UNORM,
-      .internal_format =        GL_RGB10_A2,
+      .internal_format =        GL_RGB10,
    },
    {
       .image_format    = __DRI_IMAGE_FORMAT_ARGB8888,
@@ -1038,7 +1043,7 @@ static const struct {
    {
       .image_format = __DRI_IMAGE_FORMAT_SXRGB8,
       .mesa_format  =           MESA_FORMAT_B8G8R8X8_SRGB,
-      .internal_format =        GL_SRGB8_ALPHA8,
+      .internal_format =        GL_SRGB8,
    },
    {
       .image_format    = __DRI_IMAGE_FORMAT_R16,
@@ -1062,6 +1067,16 @@ static const struct {
       .internal_format =        GL_RG16,
    },
 #endif
+   {
+      .image_format    = __DRI_IMAGE_FORMAT_ARGB4444,
+      .mesa_format     =        MESA_FORMAT_B4G4R4A4_UNORM,
+      .internal_format =        GL_RGBA4,
+   },
+   {
+      .image_format    = __DRI_IMAGE_FORMAT_ABGR4444,
+      .mesa_format     =        MESA_FORMAT_R4G4B4A4_UNORM,
+      .internal_format =        GL_RGBA4,
+   },
 };
 
 uint32_t

@@ -107,8 +107,8 @@ typedef struct MKSGuestStatCounterTime {
 #define MKS_GUEST_STAT_FLAG_NONE    0
 #define MKS_GUEST_STAT_FLAG_TIME    (1U << 0)
 
-typedef __attribute__((aligned(32))) struct MKSGuestStatInfoEntry {
-   union {
+typedef struct MKSGuestStatInfoEntry {
+   alignas(32) union {
       const char *s;
       uint64_t u;
    } name;
@@ -123,6 +123,7 @@ typedef __attribute__((aligned(32))) struct MKSGuestStatInfoEntry {
       uint64_t u;
    } stat;
 } MKSGuestStatInfoEntry;
+static_assert(alignof(struct MKSGuestStatInfoEntry) == 32, "");
 
 static thread_local struct svga_winsys_stats_timeframe *mksstat_tls_global = NULL;
 

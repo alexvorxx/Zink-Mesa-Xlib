@@ -144,7 +144,7 @@ deprecated_texture(const _mesa_glsl_parse_state *state)
 static bool
 deprecated_texture_derivatives_only(const _mesa_glsl_parse_state *state)
 {
-   return deprecated_texture(state) && derivatives_only(state);
+   return (deprecated_texture(state) && derivatives_only(state)) || state->allow_vertex_texture_bias;
 }
 
 static bool

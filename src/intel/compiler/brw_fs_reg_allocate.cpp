@@ -1308,7 +1308,7 @@ fs_reg_alloc::assign_regs(bool allow_spilling, bool spill_all)
 {
    build_interference_graph(fs->spilled_any_registers || spill_all);
 
-   bool spilled = false;
+   unsigned spilled = 0;
    while (1) {
       /* Debug of register spilling: Go spill everything. */
       if (unlikely(spill_all)) {
@@ -1325,24 +1325,33 @@ fs_reg_alloc::assign_regs(bool allow_spilling, bool spill_all)
       if (!allow_spilling)
          return false;
 
-      /* Failed to allocate registers.  Spill a reg, and the caller will
+      /* Failed to allocate registers.  Spill some regs, and the caller will
        * loop back into here to try again.
        */
-      int reg = choose_spill_reg();
-      if (reg == -1)
-         return false;
+      unsigned nr_spills = 1;
+      if (compiler->spilling_rate)
+         nr_spills = MAX2(1, spilled / compiler->spilling_rate);
 
-      /* If we're going to spill but we've never spilled before, we need to
-       * re-build the interference graph with MRFs enabled to allow spilling.
-       */
-      if (!fs->spilled_any_registers) {
-         discard_interference_graph();
-         build_interference_graph(true);
+      for (unsigned j = 0; j < nr_spills; j++) {
+         int reg = choose_spill_reg();
+         if (reg == -1) {
+            if (j == 0)
+               return false; /* Nothing to spill */
+            break;
+         }
+
+         /* If we're going to spill but we've never spilled before, we need
+          * to re-build the interference graph with MRFs enabled to allow
+          * spilling.
+          */
+         if (!fs->spilled_any_registers) {
+            discard_interference_graph();
+            build_interference_graph(true);
+         }
+
+         spill_reg(reg);
+         spilled++;
       }
-
-      spilled = true;
-
-      spill_reg(reg);
    }
 
    if (spilled)

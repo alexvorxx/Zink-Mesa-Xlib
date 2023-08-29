@@ -52,7 +52,7 @@ emit_intrinsic_load_ssbo(struct ir3_context *ctx, nir_intrinsic_instr *intr,
    ldib->dsts[0]->wrmask = MASK(intr->num_components);
    ldib->cat6.iim_val = intr->num_components;
    ldib->cat6.d = 1;
-   ldib->cat6.type = intr->dest.ssa.bit_size == 16 ? TYPE_U16 : TYPE_U32;
+   ldib->cat6.type = intr->def.bit_size == 16 ? TYPE_U16 : TYPE_U32;
    ldib->barrier_class = IR3_BARRIER_BUFFER_R;
    ldib->barrier_conflict = IR3_BARRIER_BUFFER_W;
    ir3_handle_bindless_cat6(ldib, intr->src[0]);
@@ -352,7 +352,7 @@ emit_intrinsic_load_global_ir3(struct ir3_context *ctx,
                    create_immed(b, 0), 0, create_immed(b, dest_components), 0);
    }
 
-   load->cat6.type = type_uint_size(intr->dest.ssa.bit_size);
+   load->cat6.type = type_uint_size(intr->def.bit_size);
    load->dsts[0]->wrmask = MASK(dest_components);
 
    load->barrier_class = IR3_BARRIER_BUFFER_R;

@@ -266,8 +266,9 @@ validate_ir(Program* program)
                                    instr->opcode == aco_opcode::p_create_vector ||
                                    instr->opcode == aco_opcode::p_jump_to_epilog ||
                                    instr->opcode == aco_opcode::p_dual_src_export_gfx11 ||
+                                   instr->opcode == aco_opcode::p_end_with_regs ||
                                    (instr->opcode == aco_opcode::p_interp_gfx11 && i == 0) ||
-                                   (instr->opcode == aco_opcode::p_bpermute_gfx11w64 && i == 0) ||
+                                   (instr->opcode == aco_opcode::p_bpermute_permlane && i == 0) ||
                                    (flat && i == 1) || (instr->isMIMG() && (i == 1 || i == 2)) ||
                                    ((instr->isMUBUF() || instr->isMTBUF()) && i == 1) ||
                                    (instr->isScratch() && i == 0) || (instr->isDS() && i == 0) ||
@@ -550,9 +551,11 @@ validate_ir(Program* program)
                         instr->operands[0].size() == 2,
                      "First operand of p_jump_to_epilog must be a SGPR", instr.get());
                for (unsigned i = 1; i < instr->operands.size(); i++) {
-                  check(
-                     instr->operands[i].isOfType(RegType::vgpr) || instr->operands[i].isUndefined(),
-                     "Other operands of p_jump_to_epilog must be VGPRs or undef", instr.get());
+                  check(instr->operands[i].isOfType(RegType::vgpr) ||
+                           instr->operands[i].isOfType(RegType::sgpr) ||
+                           instr->operands[i].isUndefined(),
+                        "Other operands of p_jump_to_epilog must be VGPRs, SGPRs or undef",
+                        instr.get());
                }
             } else if (instr->opcode == aco_opcode::p_dual_src_export_gfx11) {
                check(instr->definitions.size() == 6,

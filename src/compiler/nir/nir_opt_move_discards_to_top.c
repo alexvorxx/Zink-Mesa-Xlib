@@ -54,9 +54,6 @@ nir_texop_implies_derivative(nir_texop op)
 static bool
 can_move_src(nir_src *src, void *worklist)
 {
-   if (!src->is_ssa)
-      return false;
-
    nir_instr *instr = src->ssa->parent_instr;
    if (instr->pass_flags)
       return true;
@@ -156,7 +153,7 @@ opt_move_discards_to_top_impl(nir_function_impl *impl)
 
          case nir_instr_type_deref:
          case nir_instr_type_load_const:
-         case nir_instr_type_ssa_undef:
+         case nir_instr_type_undef:
          case nir_instr_type_phi:
             /* These are all safe */
             continue;
@@ -243,7 +240,7 @@ nir_opt_move_discards_to_top(nir_shader *shader)
    nir_foreach_function_impl(impl, shader) {
       if (opt_move_discards_to_top_impl(impl)) {
          nir_metadata_preserve(impl, nir_metadata_block_index |
-                                     nir_metadata_dominance);
+                                        nir_metadata_dominance);
          progress = true;
       }
    }

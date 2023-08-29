@@ -114,6 +114,7 @@ class BitSetField(object):
             self.params.append([name, aas])
         self.expr = None
         self.display = None
+        self.call = 'call' in xml.attrib and xml.attrib['call'] == 'true'
         if 'display' in xml.attrib:
             self.display = xml.attrib['display'].strip()
 
@@ -176,6 +177,7 @@ class BitSetDerivedField(BitSetField):
         self.display = None
         if 'display' in xml.attrib:
             self.display = xml.attrib['display'].strip()
+        self.call = 'call' in xml.attrib and xml.attrib['call'] == 'true'
 
 class BitSetCase(object):
     """Class that encapsulates a single bitset case
@@ -240,6 +242,14 @@ class BitSetEncode(object):
             if 'force' in map.attrib and map.attrib['force']  == 'true':
                 self.forced[name] = 'true'
 
+class BitSetDecode(object):
+    """Additional data that may be associated with a root bitset node
+       to provide additional information needed to generate helpers
+       to decode the bitset.
+    """
+    def __init__(self, xml):
+        pass
+
 class BitSet(object):
     """Class that encapsulates a single bitset rule
     """
@@ -247,6 +257,7 @@ class BitSet(object):
         self.isa = isa
         self.xml = xml
         self.name = xml.attrib['name']
+        self.display_name = xml.attrib['displayname'] if 'displayname' in xml.attrib else self.name
 
         # Used for generated encoder, to de-duplicate encoding for
         # similar instructions:
@@ -263,6 +274,9 @@ class BitSet(object):
         self.encode = None
         if xml.find('encode') is not None:
             self.encode = BitSetEncode(xml.find('encode'))
+        self.decode = None
+        if xml.find('decode') is not None:
+            self.decode = BitSetDecode(xml.find('encode'))
 
         self.gen_min = 0
         self.gen_max = (1 << 32) - 1
@@ -491,7 +505,7 @@ class ISA(object):
 
         # Validate that all bitset fields have valid types, and in
         # the case of bitset type, the sizes match:
-        builtin_types = ['branch', 'int', 'uint', 'hex', 'offset', 'uoffset', 'float', 'bool', 'enum']
+        builtin_types = ['branch', 'absbranch', 'int', 'uint', 'hex', 'offset', 'uoffset', 'float', 'bool', 'enum', 'custom']
         for bitset_name, bitset in self.bitsets.items():
             if bitset.extends is not None:
                 assert bitset.extends in self.bitsets, "{} extends invalid type: {}".format(

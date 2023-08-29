@@ -466,8 +466,7 @@ static void si_llvm_emit_polygon_stipple(struct si_shader_context *ctx,
  * overridden by other states. (e.g. per-sample interpolation)
  * Interpolated colors are stored after the preloaded VGPRs.
  */
-void si_llvm_build_ps_prolog(struct si_shader_context *ctx, union si_shader_part_key *key,
-                             bool separate_prolog)
+void si_llvm_build_ps_prolog(struct si_shader_context *ctx, union si_shader_part_key *key)
 {
    LLVMValueRef ret, func;
    int num_returns, i, num_color_channels;
@@ -591,13 +590,13 @@ void si_llvm_build_ps_prolog(struct si_shader_context *ctx, union si_shader_part
 
       /* Read LINEAR_SAMPLE. */
       for (i = 0; i < 2; i++)
-         linear_sample[i] = LLVMGetParam(func, base + (separate_prolog ? 6 : 9) + i);
+         linear_sample[i] = LLVMGetParam(func, base + 6 + i);
       /* Overwrite LINEAR_CENTER. */
       for (i = 0; i < 2; i++)
-         ret = LLVMBuildInsertValue(ctx->ac.builder, ret, linear_sample[i], base + (separate_prolog ? 8 : 11) + i, "");
+         ret = LLVMBuildInsertValue(ctx->ac.builder, ret, linear_sample[i], base + 8 + i, "");
       /* Overwrite LINEAR_CENTROID. */
       for (i = 0; i < 2; i++)
-         ret = LLVMBuildInsertValue(ctx->ac.builder, ret, linear_sample[i], base + (separate_prolog ? 10 : 13) + i, "");
+         ret = LLVMBuildInsertValue(ctx->ac.builder, ret, linear_sample[i], base + 10 + i, "");
    }
 
    /* Force center interpolation. */
@@ -715,8 +714,7 @@ void si_llvm_build_ps_prolog(struct si_shader_context *ctx, union si_shader_part
  * Build the pixel shader epilog function. This handles everything that must be
  * emulated for pixel shader exports. (alpha-test, format conversions, etc)
  */
-void si_llvm_build_ps_epilog(struct si_shader_context *ctx, union si_shader_part_key *key,
-                             UNUSED bool separate_epilog)
+void si_llvm_build_ps_epilog(struct si_shader_context *ctx, union si_shader_part_key *key)
 {
    int i;
    struct si_ps_exports exp = {};

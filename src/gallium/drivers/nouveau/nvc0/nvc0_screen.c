@@ -790,6 +790,7 @@ static int
 nvc0_screen_init_compute(struct nvc0_screen *screen)
 {
    const struct nouveau_mclass computes[] = {
+      { AD102_COMPUTE_CLASS, -1 },
       { GA102_COMPUTE_CLASS, -1 },
       { TU102_COMPUTE_CLASS, -1 },
       { GV100_COMPUTE_CLASS, -1 },
@@ -981,6 +982,7 @@ nvc0_screen_create(struct nouveau_device *dev)
    case 0x140:
    case 0x160:
    case 0x170:
+   case 0x190:
       break;
    default:
       return NULL;
@@ -1129,6 +1131,7 @@ nvc0_screen_create(struct nouveau_device *dev)
    PUSH_DATA (push, screen->fence.bo->offset + 16);
 
    const struct nouveau_mclass threeds[] = {
+      { AD102_3D_CLASS, -1 },
       { GA102_3D_CLASS, -1 },
       { TU102_3D_CLASS, -1 },
       { GV100_3D_CLASS, -1 },

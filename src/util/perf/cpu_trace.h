@@ -7,6 +7,7 @@
 #define CPU_TRACE_H
 
 #include "u_perfetto.h"
+#include "u_gpuvis.h"
 
 #include "util/macros.h"
 
@@ -47,6 +48,31 @@
 
 #endif /* HAVE_PERFETTO */
 
+#if defined(HAVE_GPUVIS)
+
+#define _MESA_GPUVIS_TRACE_BEGIN(name) util_gpuvis_begin(name)
+#define _MESA_GPUVIS_TRACE_END() util_gpuvis_end()
+
+#else
+
+#define _MESA_GPUVIS_TRACE_BEGIN(name)
+#define _MESA_GPUVIS_TRACE_END()
+
+#endif /* HAVE_GPUVIS */
+
+
+#define _MESA_COMBINED_TRACE_BEGIN(category, name)                           \
+   do {                                                                      \
+      _MESA_TRACE_BEGIN(category, name);                                     \
+      _MESA_GPUVIS_TRACE_BEGIN(name);                                        \
+   } while (0)
+
+#define _MESA_COMBINED_TRACE_END(category)                                   \
+   do {                                                                      \
+      _MESA_GPUVIS_TRACE_END();                                              \
+      _MESA_TRACE_END(category);                                             \
+   } while (0)
+
 #if __has_attribute(cleanup) && __has_attribute(unused)
 
 #define _MESA_TRACE_SCOPE_VAR_CONCAT(name, suffix) name##suffix
@@ -69,7 +95,7 @@ static inline int
 _mesa_trace_scope_begin(enum util_perfetto_category category,
                         const char *name)
 {
-   _MESA_TRACE_BEGIN(category, name);
+   _MESA_COMBINED_TRACE_BEGIN(category, name);
    return category;
 }
 
@@ -77,7 +103,7 @@ static inline void
 _mesa_trace_scope_end(int *scope)
 {
    /* we save the category in the scope variable */
-   _MESA_TRACE_END((enum util_perfetto_category) * scope);
+   _MESA_COMBINED_TRACE_END((enum util_perfetto_category) * scope);
 }
 
 #else
@@ -90,8 +116,9 @@ _mesa_trace_scope_end(int *scope)
  * define their own categories/macros.
  */
 #define MESA_TRACE_BEGIN(name)                                               \
-   _MESA_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_DEFAULT, name)
-#define MESA_TRACE_END() _MESA_TRACE_END(UTIL_PERFETTO_CATEGORY_DEFAULT)
+   _MESA_COMBINED_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_DEFAULT, name)
+#define MESA_TRACE_END()                                                     \
+  _MESA_COMBINED_TRACE_END(UTIL_PERFETTO_CATEGORY_DEFAULT)
 #define MESA_TRACE_SCOPE(name)                                               \
    _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_DEFAULT, name)
 #define MESA_TRACE_FUNC()                                                    \
@@ -99,11 +126,19 @@ _mesa_trace_scope_end(int *scope)
 
 /* these use the slow category */
 #define MESA_TRACE_BEGIN_SLOW(name)                                          \
-   _MESA_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_SLOW, name)
-#define MESA_TRACE_END_SLOW() _MESA_TRACE_END(UTIL_PERFETTO_CATEGORY_SLOW)
+   _MESA_COMBINED_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_SLOW, name)
+#define MESA_TRACE_END_SLOW()                                                \
+  _MESA_COMBINED_TRACE_END(UTIL_PERFETTO_CATEGORY_SLOW)
 #define MESA_TRACE_SCOPE_SLOW(name)                                          \
    _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_SLOW, name)
 #define MESA_TRACE_FUNC_SLOW()                                               \
    _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_SLOW, __func__)
+
+static inline void
+util_cpu_trace_init()
+{
+   util_perfetto_init();
+   util_gpuvis_init();
+}
 
 #endif /* CPU_TRACE_H */

@@ -2039,7 +2039,7 @@ tc_set_shader_buffers(struct pipe_context *_pipe,
 
 struct tc_vertex_buffers {
    struct tc_call_base base;
-   uint8_t start, count;
+   uint8_t count;
    uint8_t unbind_num_trailing_slots;
    struct pipe_vertex_buffer slot[0]; /* more will be allocated if needed */
 };
@@ -2051,22 +2051,20 @@ tc_call_set_vertex_buffers(struct pipe_context *pipe, void *call, uint64_t *last
    unsigned count = p->count;
 
    if (!count) {
-      pipe->set_vertex_buffers(pipe, p->start, 0,
-                               p->unbind_num_trailing_slots, false, NULL);
+      pipe->set_vertex_buffers(pipe, 0, p->unbind_num_trailing_slots, false, NULL);
       return call_size(tc_vertex_buffers);
    }
 
    for (unsigned i = 0; i < count; i++)
       tc_assert(!p->slot[i].is_user_buffer);
 
-   pipe->set_vertex_buffers(pipe, p->start, count,
-                            p->unbind_num_trailing_slots, true, p->slot);
+   pipe->set_vertex_buffers(pipe, count, p->unbind_num_trailing_slots, true, p->slot);
    return p->base.num_slots;
 }
 
 static void
 tc_set_vertex_buffers(struct pipe_context *_pipe,
-                      unsigned start, unsigned count,
+                      unsigned count,
                       unsigned unbind_num_trailing_slots,
                       bool take_ownership,
                       const struct pipe_vertex_buffer *buffers)
@@ -2079,7 +2077,6 @@ tc_set_vertex_buffers(struct pipe_context *_pipe,
    if (count && buffers) {
       struct tc_vertex_buffers *p =
          tc_add_slot_based_call(tc, TC_CALL_set_vertex_buffers, tc_vertex_buffers, count);
-      p->start = start;
       p->count = count;
       p->unbind_num_trailing_slots = unbind_num_trailing_slots;
 
@@ -2092,9 +2089,9 @@ tc_set_vertex_buffers(struct pipe_context *_pipe,
             struct pipe_resource *buf = buffers[i].buffer.resource;
 
             if (buf) {
-               tc_bind_buffer(tc, &tc->vertex_buffers[start + i], next, buf);
+               tc_bind_buffer(tc, &tc->vertex_buffers[i], next, buf);
             } else {
-               tc_unbind_buffer(&tc->vertex_buffers[start + i]);
+               tc_unbind_buffer(&tc->vertex_buffers[i]);
             }
          }
       } else {
@@ -2104,29 +2101,27 @@ tc_set_vertex_buffers(struct pipe_context *_pipe,
             struct pipe_resource *buf = src->buffer.resource;
 
             tc_assert(!src->is_user_buffer);
-            dst->stride = src->stride;
             dst->is_user_buffer = false;
             tc_set_resource_reference(&dst->buffer.resource, buf);
             dst->buffer_offset = src->buffer_offset;
 
             if (buf) {
-               tc_bind_buffer(tc, &tc->vertex_buffers[start + i], next, buf);
+               tc_bind_buffer(tc, &tc->vertex_buffers[i], next, buf);
             } else {
-               tc_unbind_buffer(&tc->vertex_buffers[start + i]);
+               tc_unbind_buffer(&tc->vertex_buffers[i]);
             }
          }
       }
 
-      tc_unbind_buffers(&tc->vertex_buffers[start + count],
+      tc_unbind_buffers(&tc->vertex_buffers[count],
                         unbind_num_trailing_slots);
    } else {
       struct tc_vertex_buffers *p =
          tc_add_slot_based_call(tc, TC_CALL_set_vertex_buffers, tc_vertex_buffers, 0);
-      p->start = start;
       p->count = 0;
       p->unbind_num_trailing_slots = count + unbind_num_trailing_slots;
 
-      tc_unbind_buffers(&tc->vertex_buffers[start],
+      tc_unbind_buffers(&tc->vertex_buffers[0],
                         count + unbind_num_trailing_slots);
    }
 }

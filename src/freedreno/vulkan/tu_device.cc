@@ -497,7 +497,6 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_provoking_vertex */
    features->provokingVertexLast = true;
-   features->transformFeedbackPreservesProvokingVertex = true;
 
    /* VK_EXT_mutable_descriptor_type */
    features->mutableDescriptorType = true;
@@ -678,6 +677,7 @@ tu_physical_device_init(struct tu_physical_device *device,
    result = vk_physical_device_init(&device->vk, &instance->vk,
                                     &supported_extensions,
                                     &supported_features,
+                                    NULL,
                                     &dispatch_table);
    if (result != VK_SUCCESS)
       goto fail_free_name;
@@ -820,6 +820,8 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
 #ifdef HAVE_PERFETTO
    tu_perfetto_init();
 #endif
+
+   util_gpuvis_init();
 
    return VK_SUCCESS;
 }
@@ -1580,6 +1582,7 @@ tu_queue_init(struct tu_device *device,
       return result;
 
    queue->device = device;
+   queue->priority = priority;
    queue->vk.driver_submit = tu_queue_submit;
 
    int ret = tu_drm_submitqueue_new(device, priority, &queue->msm_queue_id);
@@ -2391,6 +2394,13 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    tu_bo_suballocator_finish(&device->pipeline_suballoc);
    tu_bo_suballocator_finish(&device->autotune_suballoc);
 
+   for (unsigned i = 0; i < TU_MAX_QUEUE_FAMILIES; i++) {
+      for (unsigned q = 0; q < device->queue_count[i]; q++)
+         tu_queue_finish(&device->queues[i][q]);
+      if (device->queue_count[i])
+         vk_free(&device->vk.alloc, device->queues[i]);
+   }
+
    tu_drm_device_finish(device);
 
    if (device->physical_device->has_set_iova)
@@ -2400,13 +2410,6 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    u_rwlock_destroy(&device->dma_bo_lock);
 
    u_vector_finish(&device->zombie_vmas);
-
-   for (unsigned i = 0; i < TU_MAX_QUEUE_FAMILIES; i++) {
-      for (unsigned q = 0; q < device->queue_count[i]; q++)
-         tu_queue_finish(&device->queues[i][q]);
-      if (device->queue_count[i])
-         vk_free(&device->vk.alloc, device->queues[i]);
-   }
 
    pthread_cond_destroy(&device->timeline_cond);
    _mesa_hash_table_destroy(device->bo_sizes, NULL);

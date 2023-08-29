@@ -240,13 +240,6 @@ def parse_args() -> None:
     )
     parser.add_argument("--target", metavar="target-job", help="Target job")
     parser.add_argument(
-        "--rev", metavar="revision", help="repository git revision (default: HEAD)"
-    )
-    parser.add_argument(
-        "--pipeline-url",
-        help="URL of the pipeline to use, instead of auto-detecting it.",
-    )
-    parser.add_argument(
         "--token",
         metavar="token",
         help="force GitLab token, otherwise it's read from ~/.config/gitlab-token",
@@ -255,6 +248,16 @@ def parse_args() -> None:
         "--force-manual", action="store_true", help="Force jobs marked as manual"
     )
     parser.add_argument("--stress", action="store_true", help="Stresstest job(s)")
+
+    mutex_group1 = parser.add_mutually_exclusive_group()
+    mutex_group1.add_argument(
+        "--rev", metavar="revision", help="repository git revision (default: HEAD)"
+    )
+    mutex_group1.add_argument(
+        "--pipeline-url",
+        help="URL of the pipeline to use, instead of auto-detecting it.",
+    )
+
     return parser.parse_args()
 
 
@@ -289,9 +292,6 @@ if __name__ == "__main__":
                            retry_transient_errors=True)
 
         REV: str = args.rev
-        if not REV:
-            REV = check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-        print(f"Revision: {REV}")
 
         if args.pipeline_url:
             assert args.pipeline_url.startswith(GITLAB_URL)
@@ -303,9 +303,14 @@ if __name__ == "__main__":
             pipeline_id = int(url_path_components[5])
             cur_project = gl.projects.get(project_name)
             pipe = cur_project.pipelines.get(pipeline_id)
+            REV = pipe.sha
         else:
             cur_project = get_gitlab_project(gl, "mesa")
+            if not REV:
+                REV = check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
             pipe = wait_for_pipeline(cur_project, REV)
+
+        print(f"Revision: {REV}")
         print(f"Pipeline: {pipe.web_url}")
 
         deps = set()

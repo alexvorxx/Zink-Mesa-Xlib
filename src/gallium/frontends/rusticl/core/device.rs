@@ -304,10 +304,11 @@ impl Device {
 
         // CL_DEVICE_MAX_PARAMETER_SIZE
         // For this minimum value, only a maximum of 128 arguments can be passed to a kernel
-        if screen.shader_param(
+        if (screen.shader_param(
             pipe_shader_type::PIPE_SHADER_COMPUTE,
             pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE,
-        ) < 128
+        ) as u32)
+            < 128
         {
             return false;
         }
@@ -541,6 +542,7 @@ impl Device {
         add_ext(1, 0, 0, "cl_khr_local_int32_base_atomics");
         add_ext(1, 0, 0, "cl_khr_local_int32_extended_atomics");
 
+        add_spirv("SPV_KHR_expect_assume");
         add_spirv("SPV_KHR_float_controls");
         add_spirv("SPV_KHR_integer_dot_product");
         add_spirv("SPV_KHR_no_integer_wrap_decoration");
@@ -839,7 +841,7 @@ impl Device {
 
     pub fn param_max_size(&self) -> usize {
         min(
-            self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE),
+            self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE) as u32,
             32 * 1024,
         ) as usize
     }

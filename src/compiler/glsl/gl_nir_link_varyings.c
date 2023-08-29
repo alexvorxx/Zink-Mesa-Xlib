@@ -1778,6 +1778,15 @@ varying_matches_compute_packing_order(const nir_variable *var)
 }
 
 /**
+ * Built-in / reserved GL variables names start with "gl_"
+ */
+static bool
+is_gl_identifier(const char *s)
+{
+   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
+}
+
+/**
  * Record the given producer/consumer variable pair in the list of variables
  * that should later be assigned locations.
  *
@@ -2601,10 +2610,10 @@ replace_unused_interpolate_at_with_undef(nir_builder *b, nir_instr *instr,
          nir_variable *var = nir_intrinsic_get_var(intrin, 0);
          if (var->data.mode == nir_var_shader_temp) {
             /* Create undef and rewrite the interp uses */
-            nir_ssa_def *undef =
-               nir_ssa_undef(b, intrin->dest.ssa.num_components,
-                             intrin->dest.ssa.bit_size);
-            nir_ssa_def_rewrite_uses(&intrin->dest.ssa, undef);
+            nir_def *undef =
+               nir_undef(b, intrin->def.num_components,
+                             intrin->def.bit_size);
+            nir_def_rewrite_uses(&intrin->def, undef);
 
             nir_instr_remove(&intrin->instr);
             return true;

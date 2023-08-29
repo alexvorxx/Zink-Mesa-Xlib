@@ -1580,11 +1580,11 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 	</reg32>
 	<reg32 offset="2" name="2">
 	</reg32>
+	<reg32 offset="3" name="3"/>
 	<!-- second buffer looks like some cmdstream.. length in dwords: -->
-	<reg32 offset="3" name="3">
+	<reg32 offset="4" name="4">
 		<bitfield name="ADDR_1_LEN" low="0" high="31" type="uint"/>
 	</reg32>
-	<reg32 offset="4" name="4"/>
 	<reg32 offset="5" name="5">
 		<bitfield name="ADDR_1_LO" low="0" high="31"/>
 	</reg32>

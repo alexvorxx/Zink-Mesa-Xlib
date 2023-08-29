@@ -151,7 +151,7 @@ gl_nir_can_add_pointsize_to_program(const struct gl_constants *consts,
    }
 
    /* Ensure that there is enough attribute space to emit at least one primitive */
-   if (nir->info.stage == MESA_SHADER_GEOMETRY) {
+   if (num_components && nir->info.stage == MESA_SHADER_GEOMETRY) {
       if (num_components + needed_components > consts->Program[nir->info.stage].MaxOutputComponents)
          return false;
       num_components *= nir->info.gs.vertices_out;
@@ -297,6 +297,15 @@ disable_varying_optimizations_for_sso(struct gl_shader_program *prog)
                               nir_var_shader_out);
       }
    }
+}
+
+/**
+ * Built-in / reserved GL variables names start with "gl_"
+ */
+static inline bool
+is_gl_identifier(const char *s)
+{
+   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
 }
 
 static bool
@@ -580,6 +589,7 @@ add_vars_with_modes(const struct gl_constants *consts,
          resource_name_updated(&sh_var->name);
          sh_var->type = var->type;
          sh_var->location = var->data.location - loc_bias;
+         sh_var->explicit_location = var->data.explicit_location;
          sh_var->index = var->data.index;
 
          if (!link_util_add_program_resource(prog, resource_set,
@@ -926,7 +936,7 @@ static void
 zero_array_members(nir_builder *b, nir_variable *var)
 {
    nir_deref_instr *deref = nir_build_deref_var(b, var);
-   nir_ssa_def *zero = nir_imm_zero(b, 4, 32);
+   nir_def *zero = nir_imm_zero(b, 4, 32);
    for (int i = 0; i < glsl_array_size(var->type); i++) {
       nir_deref_instr *arr = nir_build_deref_array_imm(b, deref, i);
       uint32_t mask = BITFIELD_MASK(glsl_get_vector_elements(arr->type));
@@ -1082,10 +1092,11 @@ prelink_lowering(const struct gl_constants *consts,
          consts->ShaderCompilerOptions[shader->Stage].NirOptions;
       struct gl_program *prog = shader->Program;
 
-      /* ES vertex shaders still have dead varyings but its now safe to remove
-       * them as validation is now done according to the spec.
+      /* ES 3.0+ vertex shaders may still have dead varyings but its now safe
+       * to remove them as validation is now done according to the spec.
        */
-      if (shader_program->IsES && i == MESA_SHADER_VERTEX)
+      if (shader_program->IsES && shader_program->GLSL_Version >= 300 &&
+          i == MESA_SHADER_VERTEX)
          remove_dead_varyings_pre_linking(prog->nir);
 
       preprocess_shader(consts, exts, prog, shader_program, shader->Stage);
@@ -1348,7 +1359,7 @@ gl_nir_link_glsl(const struct gl_constants *consts,
           * Because of this rule, we don't remove dead attributes before
           * attribute assignment for vertex shader inputs here.
           */
-         if (!(prog->IsES && i == MESA_SHADER_VERTEX))
+         if (!(prog->IsES && prog->GLSL_Version >= 300 && i == MESA_SHADER_VERTEX))
             remove_dead_varyings_pre_linking(prog->_LinkedShaders[i]->Program->nir);
       }
    }

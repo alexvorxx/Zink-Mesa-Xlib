@@ -26,8 +26,8 @@
 #define NIR_BLEND_H
 
 #include "compiler/nir/nir.h"
-#include "util/format/u_formats.h"
 #include "util/blend.h"
+#include "util/format/u_formats.h"
 
 /* These structs encapsulates the blend state such that it can be lowered
  * cleanly

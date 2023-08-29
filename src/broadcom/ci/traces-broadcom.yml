@@ -120,7 +120,7 @@ traces:
 
   minetest/minetest-v2.trace:
     broadcom-rpi4:
-      checksum: 0e00019366845e1fae9727df8b24c149
+      checksum: 09e693eae151f992c621ad8d0da3151d
 
   neverball/neverball-v2.trace:
     broadcom-rpi4:

@@ -495,7 +495,7 @@ r2d_run(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 
 /* r3d_ = shader path operations */
 
-static nir_ssa_def *
+static nir_def *
 load_const(nir_builder *b, unsigned base, unsigned components)
 {
    return nir_load_uniform(b, components, 32, nir_imm_int(b, 0),
@@ -515,11 +515,11 @@ build_blit_vs_shader(void)
                           "gl_Position");
    out_pos->data.location = VARYING_SLOT_POS;
 
-   nir_ssa_def *vert0_pos = load_const(b, 0, 2);
-   nir_ssa_def *vert1_pos = load_const(b, 4, 2);
-   nir_ssa_def *vertex = nir_load_vertex_id(b);
+   nir_def *vert0_pos = load_const(b, 0, 2);
+   nir_def *vert1_pos = load_const(b, 4, 2);
+   nir_def *vertex = nir_load_vertex_id(b);
 
-   nir_ssa_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
+   nir_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
    pos = nir_vec4(b, nir_channel(b, pos, 0),
                      nir_channel(b, pos, 1),
                      nir_imm_float(b, 0.0),
@@ -532,13 +532,13 @@ build_blit_vs_shader(void)
                           "coords");
    out_coords->data.location = VARYING_SLOT_VAR0;
 
-   nir_ssa_def *vert0_coords = load_const(b, 2, 2);
-   nir_ssa_def *vert1_coords = load_const(b, 6, 2);
+   nir_def *vert0_coords = load_const(b, 2, 2);
+   nir_def *vert1_coords = load_const(b, 6, 2);
 
    /* Only used with "z scale" blit path which uses a 3d texture */
-   nir_ssa_def *z_coord = load_const(b, 8, 1);
+   nir_def *z_coord = load_const(b, 8, 1);
 
-   nir_ssa_def *coords = nir_bcsel(b, nir_i2b(b, vertex), vert1_coords, vert0_coords);
+   nir_def *coords = nir_bcsel(b, nir_i2b(b, vertex), vert1_coords, vert0_coords);
    coords = nir_vec3(b, nir_channel(b, coords, 0), nir_channel(b, coords, 1),
                      z_coord);
 
@@ -560,13 +560,13 @@ build_clear_vs_shader(void)
                           "gl_Position");
    out_pos->data.location = VARYING_SLOT_POS;
 
-   nir_ssa_def *vert0_pos = load_const(b, 0, 2);
-   nir_ssa_def *vert1_pos = load_const(b, 4, 2);
+   nir_def *vert0_pos = load_const(b, 0, 2);
+   nir_def *vert1_pos = load_const(b, 4, 2);
    /* c0.z is used to clear depth */
-   nir_ssa_def *depth = load_const(b, 2, 1);
-   nir_ssa_def *vertex = nir_load_vertex_id(b);
+   nir_def *depth = load_const(b, 2, 1);
+   nir_def *vertex = nir_load_vertex_id(b);
 
-   nir_ssa_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
+   nir_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
    pos = nir_vec4(b, nir_channel(b, pos, 0),
                      nir_channel(b, pos, 1),
                      depth, nir_imm_float(b, 1.0));
@@ -577,7 +577,7 @@ build_clear_vs_shader(void)
       nir_variable_create(b->shader, nir_var_shader_out, glsl_uint_type(),
                           "gl_Layer");
    out_layer->data.location = VARYING_SLOT_LAYER;
-   nir_ssa_def *layer = load_const(b, 3, 1);
+   nir_def *layer = load_const(b, 3, 1);
    nir_store_var(b, out_layer, layer, 1);
 
    return b->shader;
@@ -623,10 +623,10 @@ build_blit_fs_shader(bool zscale)
                                      nir_load_var(b, in_coords));
    tex->coord_components = coord_components;
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
+   nir_def_init(&tex->instr, &tex->def, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
 
-   nir_store_var(b, out_color, &tex->dest.ssa, 0xf);
+   nir_store_var(b, out_color, &tex->def, 0xf);
 
    return b->shader;
 }
@@ -673,7 +673,7 @@ build_ms_copy_fs_shader(void)
    BITSET_SET(b->shader->info.textures_used, 0);
    BITSET_SET(b->shader->info.textures_used_by_txf, 0);
 
-   nir_ssa_def *coord = nir_f2i32(b, nir_load_var(b, in_coords));
+   nir_def *coord = nir_f2i32(b, nir_load_var(b, in_coords));
 
    tex->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
    tex->coord_components = 2;
@@ -681,10 +681,10 @@ build_ms_copy_fs_shader(void)
    tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
                                      nir_load_sample_id(b));
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
+   nir_def_init(&tex->instr, &tex->def, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
 
-   nir_store_var(b, out_color, &tex->dest.ssa, 0xf);
+   nir_store_var(b, out_color, &tex->def, 0xf);
 
    return b->shader;
 }
@@ -704,7 +704,7 @@ build_clear_fs_shader(unsigned mrts)
                              "color");
       out_color->data.location = FRAG_RESULT_DATA0 + i;
 
-      nir_ssa_def *color = load_const(b, 4 * i, 4);
+      nir_def *color = load_const(b, 4 * i, 4);
       nir_store_var(b, out_color, color, 0xf);
    }
 
@@ -3110,7 +3110,6 @@ clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
                         struct tu_cs *cs,
                         VkFormat vk_format,
                         VkImageAspectFlags clear_mask,
-                        const VkClearValue *value,
                         uint32_t a,
                         bool separate_ds)
 {
@@ -3119,6 +3118,7 @@ clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
    const struct tu_image_view *iview = cmd->state.attachments[a];
    const uint32_t clear_views = cmd->state.pass->attachments[a].clear_views;
    const struct blit_ops *ops = &r2d_ops;
+   const VkClearValue *value = &cmd->state.clear_values[a];
    if (cmd->state.pass->attachments[a].samples > 1)
       ops = &r3d_ops;
 
@@ -3152,8 +3152,7 @@ clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
 void
 tu_clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
                            struct tu_cs *cs,
-                           uint32_t a,
-                           const VkClearValue *value)
+                           uint32_t a)
 {
    const struct tu_render_pass_attachment *attachment =
       &cmd->state.pass->attachments[a];
@@ -3164,15 +3163,15 @@ tu_clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
    if (attachment->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
       if (attachment->clear_mask & VK_IMAGE_ASPECT_DEPTH_BIT) {
          clear_sysmem_attachment(cmd, cs, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT,
-                                 value, a, true);
+                                 a, true);
       }
       if (attachment->clear_mask & VK_IMAGE_ASPECT_STENCIL_BIT) {
          clear_sysmem_attachment(cmd, cs, VK_FORMAT_S8_UINT, VK_IMAGE_ASPECT_COLOR_BIT,
-                                 value, a, true);
+                                 a, true);
       }
    } else {
       clear_sysmem_attachment(cmd, cs, attachment->format, attachment->clear_mask,
-                              value, a, false);
+                              a, false);
    }
 
    /* The spec doesn't explicitly say, but presumably the initial renderpass
@@ -3193,15 +3192,13 @@ tu_clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
       tu6_emit_event_write(cmd, cs, PC_CCU_INVALIDATE_COLOR);
    }
 
-   if (cmd->device->physical_device->info->a6xx.has_ccu_flush_bug)
-      tu_cs_emit_wfi(cs);
+   tu_cs_emit_wfi(cs);
 }
 
 void
 tu_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                          struct tu_cs *cs,
-                         uint32_t a,
-                         const VkClearValue *value)
+                         uint32_t a)
 {
    const struct tu_render_pass_attachment *attachment =
       &cmd->state.pass->attachments[a];
@@ -3211,7 +3208,8 @@ tu_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
 
    tu_emit_clear_gmem_attachment(cmd, cs, a, 0, cmd->state.framebuffer->layers,
                                  attachment->clear_views,
-                                 attachment->clear_mask, value);
+                                 attachment->clear_mask,
+                                 &cmd->state.clear_values[a]);
 }
 
 static void
@@ -3296,6 +3294,7 @@ blit_can_resolve(VkFormat format)
    case VK_FORMAT_R8G8_UNORM:
    case VK_FORMAT_R8G8_UINT:
    case VK_FORMAT_R8G8_SINT:
+   case VK_FORMAT_R8G8_SRGB:
    /* TODO: this one should be able to work? */
    case VK_FORMAT_D24_UNORM_S8_UINT:
       return false;

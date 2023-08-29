@@ -11,6 +11,7 @@
 
 #include "tu_common.h"
 
+#include "util/macros.h"
 #include "util/u_math.h"
 #include "util/format/u_format_pack.h"
 #include "util/format/u_format_zs.h"
@@ -356,7 +357,7 @@ tu6_polygon_mode(VkPolygonMode mode)
 }
 
 struct bcolor_entry {
-   uint32_t fp32[4];
+   alignas(128) uint32_t fp32[4];
    uint64_t ui16;
    uint64_t si16;
    uint64_t fp16;
@@ -370,7 +371,8 @@ struct bcolor_entry {
    uint32_t z24; /* also s8? */
    uint64_t srgb;
    uint8_t  __pad1[56];
-} __attribute__((aligned(128)));
+};
+static_assert(alignof(struct bcolor_entry) == 128, "");
 
 /* vulkan does not want clamping of integer clear values, differs from u_format
  * see spec for VkClearColorValue

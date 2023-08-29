@@ -732,6 +732,9 @@ pvr_spm_init_eot_state(struct pvr_device *device,
                                usc_shader_binary.size,
                                16,
                                &spm_eot_state->usc_eot_program);
+
+   util_dynarray_fini(&usc_shader_binary);
+
    if (result != VK_SUCCESS)
       return result;
 

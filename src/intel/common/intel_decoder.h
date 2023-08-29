@@ -55,7 +55,7 @@ struct intel_spec *intel_spec_load(const struct intel_device_info *devinfo);
 struct intel_spec *
 intel_spec_load_from_path(const struct intel_device_info *devinfo,
                           const char *path);
-struct intel_spec *intel_spec_load_filename(const char *filename);
+struct intel_spec *intel_spec_load_filename(const char *dir, const char *name);
 void intel_spec_destroy(struct intel_spec *spec);
 uint32_t intel_spec_get_gen(struct intel_spec *spec);
 struct intel_group *intel_spec_find_instruction(struct intel_spec *spec,
@@ -65,9 +65,9 @@ struct intel_group *intel_spec_find_register(struct intel_spec *spec, uint32_t o
 struct intel_group *intel_spec_find_register_by_name(struct intel_spec *spec, const char *name);
 struct intel_enum *intel_spec_find_enum(struct intel_spec *spec, const char *name);
 
-int intel_group_get_length(struct intel_group *group, const uint32_t *p);
-const char *intel_group_get_name(struct intel_group *group);
-uint32_t intel_group_get_opcode(struct intel_group *group);
+int intel_group_get_length(const struct intel_group *group, const uint32_t *p);
+const char *intel_group_get_name(const struct intel_group *group);
+uint32_t intel_group_get_opcode(const struct intel_group *group);
 struct intel_field *intel_group_find_field(struct intel_group *group, const char *name);
 struct intel_enum *intel_spec_find_enum(struct intel_spec *spec, const char *name);
 
@@ -216,7 +216,18 @@ enum intel_batch_decode_flags {
    INTEL_BATCH_DECODE_OFFSETS   = (1 << 2),
    /** Guess when a value is a float and print it as such */
    INTEL_BATCH_DECODE_FLOATS    = (1 << 3),
+   /** Print surface states */
+   INTEL_BATCH_DECODE_SURFACES  = (1 << 4),
+   /** Print sampler states */
+   INTEL_BATCH_DECODE_SAMPLERS  = (1 << 5),
 };
+
+#define INTEL_BATCH_DECODE_DEFAULT_FLAGS \
+   (INTEL_BATCH_DECODE_FULL |            \
+    INTEL_BATCH_DECODE_OFFSETS |         \
+    INTEL_BATCH_DECODE_FLOATS |          \
+    INTEL_BATCH_DECODE_SURFACES |        \
+    INTEL_BATCH_DECODE_SAMPLERS)
 
 struct intel_batch_decode_bo {
    uint64_t addr;

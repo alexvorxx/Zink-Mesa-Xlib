@@ -95,8 +95,8 @@ static const nir_shader_compiler_options ir3_base_options = {
    .lower_insert_byte = true,
    .lower_insert_word = true,
    .lower_helper_invocation = true,
-   .lower_bitfield_insert_to_shifts = true,
-   .lower_bitfield_extract_to_shifts = true,
+   .lower_bitfield_insert = true,
+   .lower_bitfield_extract = true,
    .lower_pack_half_2x16 = true,
    .lower_pack_snorm_4x8 = true,
    .lower_pack_snorm_2x16 = true,
@@ -188,9 +188,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       /* TODO: implement clip+cull distances on earlier gen's */
       compiler->has_clip_cull = true;
 
-      /* TODO: implement private memory on earlier gen's */
-      compiler->has_pvtmem = true;
-
       compiler->has_preamble = true;
 
       compiler->tess_use_shared = dev_info->a6xx.tess_use_shared;
@@ -216,6 +213,13 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
        */
       compiler->max_const_safe = 256;
    }
+
+   /* This is just a guess for a4xx. */
+   compiler->pvtmem_per_fiber_align = compiler->gen >= 4 ? 512 : 128;
+   /* TODO: implement private memory on earlier gen's */
+   compiler->has_pvtmem = compiler->gen >= 5;
+
+   compiler->has_isam_ssbo = compiler->gen >= 6;
 
    if (compiler->gen >= 6) {
       compiler->reg_size_vec4 = dev_info->a6xx.reg_size_vec4;

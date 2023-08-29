@@ -157,7 +157,7 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
    if (src->format != zink_get_format(screen, info->src.format) ||
        dst->format != zink_get_format(screen, info->dst.format))
       return false;
-   if (zink_format_is_emulated_alpha(info->src.format))
+   if (src->format != VK_FORMAT_A8_UNORM_KHR && zink_format_is_emulated_alpha(info->src.format))
       return false;
 
    if (!(src->obj->vkfeats & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
@@ -416,15 +416,7 @@ zink_blit(struct pipe_context *pctx,
       ctx->queries_disabled = true;
       ctx->batch.state->has_barriers = true;
       ctx->pipeline_changed[0] = true;
-      struct zink_screen *screen = zink_screen(pctx->screen);
-      if (screen->info.have_EXT_extended_dynamic_state3) {
-         if (screen->have_full_ds3)
-            ctx->ds3_states = UINT32_MAX;
-         else
-            ctx->ds3_states = BITFIELD_MASK(ZINK_DS3_BLEND_A2C);
-         if (!screen->info.dynamic_state3_feats.extendedDynamicState3AlphaToOneEnable)
-            ctx->ds3_states &= ~BITFIELD_BIT(ZINK_DS3_BLEND_A21);
-      }
+      zink_reset_ds3_states(ctx);
       zink_select_draw_vbo(ctx);
    }
    zink_blit_begin(ctx, ZINK_BLIT_SAVE_FB | ZINK_BLIT_SAVE_FS | ZINK_BLIT_SAVE_TEXTURES);

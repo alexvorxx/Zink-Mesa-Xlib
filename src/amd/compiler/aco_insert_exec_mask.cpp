@@ -103,7 +103,8 @@ needs_exact(aco_ptr<Instruction>& instr)
        * epilog without considering the exec mask.
        */
       return instr->isEXP() || instr->opcode == aco_opcode::p_jump_to_epilog ||
-             instr->opcode == aco_opcode::p_dual_src_export_gfx11;
+             instr->opcode == aco_opcode::p_dual_src_export_gfx11 ||
+             instr->opcode == aco_opcode::p_end_with_regs;
    }
 }
 
@@ -262,7 +263,12 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
 
       /* exec seems to need to be manually initialized with combined shaders */
       if (ctx.program->stage.num_sw_stages() > 1 ||
-          ctx.program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER) {
+          ctx.program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER ||
+          (ctx.program->stage.sw == SWStage::VS &&
+           (ctx.program->stage.hw == AC_HW_HULL_SHADER ||
+            ctx.program->stage.hw == AC_HW_LEGACY_GEOMETRY_SHADER)) ||
+          (ctx.program->stage.sw == SWStage::TES &&
+           ctx.program->stage.hw == AC_HW_LEGACY_GEOMETRY_SHADER)) {
          start_exec = Operand::c32_or_c64(-1u, bld.lm == s2);
          bld.copy(Definition(exec, bld.lm), start_exec);
       }

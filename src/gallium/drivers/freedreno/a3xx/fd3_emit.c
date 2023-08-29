@@ -428,7 +428,7 @@ fd3_emit_vertex_bufs(struct fd_ringbuffer *ring, struct fd3_emit *emit)
 
          OUT_PKT0(ring, REG_A3XX_VFD_FETCH(j), 2);
          OUT_RING(ring, A3XX_VFD_FETCH_INSTR_0_FETCHSIZE(fs - 1) |
-                           A3XX_VFD_FETCH_INSTR_0_BUFSTRIDE(vb->stride) |
+                           A3XX_VFD_FETCH_INSTR_0_BUFSTRIDE(elem->src_stride) |
                            COND(switchnext, A3XX_VFD_FETCH_INSTR_0_SWITCHNEXT) |
                            A3XX_VFD_FETCH_INSTR_0_INDEXCODE(j) |
                            COND(elem->instance_divisor,

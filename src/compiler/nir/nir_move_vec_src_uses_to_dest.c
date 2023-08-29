@@ -46,7 +46,7 @@
  * considered to *not* dominate the instruction that defines it.
  */
 static bool
-ssa_def_dominates_instr(nir_ssa_def *def, nir_instr *instr)
+ssa_def_dominates_instr(nir_def *def, nir_instr *instr)
 {
    if (instr->index <= def->parent_instr->index) {
       return false;
@@ -77,26 +77,11 @@ move_vec_src_uses_to_dest_block(nir_block *block)
          continue; /* The loop */
       }
 
-      /* Can't handle non-SSA vec operations */
-      if (!vec->dest.dest.is_ssa)
-         continue;
-
-      /* Can't handle saturation */
-      if (vec->dest.saturate)
-         continue;
-
       /* First, mark all of the sources we are going to consider for rewriting
        * to the destination
        */
       int srcs_remaining = 0;
       for (unsigned i = 0; i < nir_op_infos[vec->op].num_inputs; i++) {
-         /* We can't rewrite a source if it's not in SSA form */
-         if (!vec->src[i].src.is_ssa)
-            continue;
-
-         /* We can't rewrite a source if it has modifiers */
-         if (vec->src[i].abs || vec->src[i].negate)
-            continue;
 
          srcs_remaining |= 1 << i;
       }
@@ -125,14 +110,12 @@ move_vec_src_uses_to_dest_block(nir_block *block)
                continue;
 
             /* We need to dominate the use if we are going to rewrite it */
-            if (!ssa_def_dominates_instr(&vec->dest.dest.ssa, use->parent_instr))
+            if (!ssa_def_dominates_instr(&vec->def, use->parent_instr))
                continue;
 
             /* For now, we'll just rewrite ALU instructions */
             if (use->parent_instr->type != nir_instr_type_alu)
                continue;
-
-            assert(use->is_ssa);
 
             nir_alu_instr *use_alu = nir_instr_as_alu(use->parent_instr);
 
@@ -159,8 +142,7 @@ move_vec_src_uses_to_dest_block(nir_block *block)
              * reswizzled to actually use the destination of the vecN operation.
              * Go ahead and rewrite it as needed.
              */
-            nir_instr_rewrite_src(use->parent_instr, use,
-                                  nir_src_for_ssa(&vec->dest.dest.ssa));
+            nir_src_rewrite(use, &vec->def);
             for (unsigned j = 0; j < 4; j++) {
                if (!nir_alu_instr_channel_used(use_alu, src_idx, j))
                   continue;
@@ -189,7 +171,7 @@ nir_move_vec_src_uses_to_dest_impl(nir_shader *shader, nir_function_impl *impl)
    }
 
    nir_metadata_preserve(impl, nir_metadata_block_index |
-                               nir_metadata_dominance);
+                                  nir_metadata_dominance);
 
    return progress;
 }

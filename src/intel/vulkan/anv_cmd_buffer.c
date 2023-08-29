@@ -403,13 +403,11 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
 
       /* Add the ray query buffers to the batch list. */
       anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
-                            cmd_buffer->batch.alloc,
                             cmd_buffer->state.ray_query_shadow_bo);
    }
 
    /* Add the HW buffer to the list of BO used. */
    anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
-                         cmd_buffer->batch.alloc,
                          device->ray_query_bo);
 
    /* Fill the push constants & mark them dirty. */
@@ -641,7 +639,6 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
 
          if (set_addr.bo) {
             anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
-                                  cmd_buffer->batch.alloc,
                                   set_addr.bo);
          }
       }

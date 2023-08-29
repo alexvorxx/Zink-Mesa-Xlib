@@ -25,7 +25,6 @@
  *    Rob Clark <robclark@freedesktop.org>
  */
 
-#include "pipe/p_defines.h"
 #include "util/format/u_format.h"
 
 #include "fd6_format_table.h"

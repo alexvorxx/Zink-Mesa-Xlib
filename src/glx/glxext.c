@@ -791,7 +791,7 @@ AllocAndFetchScreenConfigs(Display * dpy, struct glx_display * priv)
    if (!priv->screens)
       return GL_FALSE;
 
-   for (i = 0; i < screens; i++, psc++) {
+   for (i = 0; i < screens; i++) {
       psc = NULL;
 #if defined(GLX_DIRECT_RENDERING) && !defined(GLX_USE_APPLEGL)
 #if defined(GLX_USE_DRM)

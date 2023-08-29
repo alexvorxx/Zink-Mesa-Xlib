@@ -168,6 +168,8 @@
 #define MAX_ATOMIC_COUNTERS            4096
 /* 6 is for vertex, hull, domain, geometry, fragment, and compute shader. */
 #define MAX_COMBINED_ATOMIC_BUFFERS    (MAX_UNIFORM_BUFFERS * 6)
+/* Size of an atomic counter in bytes according to ARB_shader_atomic_counters */
+#define ATOMIC_COUNTER_SIZE            4
 #define MAX_IMAGE_UNIFORMS             32
 /* 6 is for vertex, hull, domain, geometry, fragment, and compute shader. */
 #define MAX_IMAGE_UNITS                (MAX_IMAGE_UNIFORMS * 6)
@@ -251,6 +253,7 @@
 #define MIN_FRAGMENT_INTERPOLATION_OFFSET   -0.5
 #define MAX_FRAGMENT_INTERPOLATION_OFFSET   0.5
 #define FRAGMENT_INTERPOLATION_OFFSET_BITS  4
+#define MAX_VERTEX_STREAMS                  4
 /*@}*/
 
 /** For GL_ARB_shader_subroutine */

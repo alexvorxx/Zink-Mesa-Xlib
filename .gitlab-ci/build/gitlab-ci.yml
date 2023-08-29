@@ -80,7 +80,7 @@ debian-testing:
       -D dri3=enabled
       -D gallium-va=enabled
     GALLIUM_DRIVERS: "swrast,virgl,radeonsi,zink,crocus,iris,i915"
-    VULKAN_DRIVERS: "swrast,amd,intel,intel_hasvk,virtio"
+    VULKAN_DRIVERS: "swrast,amd,intel,intel_hasvk,virtio,nouveau-experimental"
     BUILDTYPE: "debugoptimized"
     EXTRA_OPTION: >
       -D spirv-to-dxil=true
@@ -203,6 +203,7 @@ debian-build-testing:
     .gitlab-ci/meson/build.sh
     section_switch shader-db "shader-db"
     .gitlab-ci/run-shader-db.sh
+  timeout: 30m
 
 # Test a release build with -Werror so new warnings don't sneak in.
 debian-release:
@@ -665,7 +666,7 @@ debian-vulkan:
       -D c_args=-fno-sanitize-recover=all
       -D cpp_args=-fno-sanitize-recover=all
     UBSAN_OPTIONS: "print_stacktrace=1"
-    VULKAN_DRIVERS: intel,amd,freedreno,broadcom,virtio,imagination-experimental,microsoft-experimental
+    VULKAN_DRIVERS: amd,broadcom,freedreno,intel,intel_hasvk,virtio,imagination-experimental,microsoft-experimental
     EXTRA_OPTION: >
       -D vulkan-layers=device-select,overlay
       -D build-aco-tests=true

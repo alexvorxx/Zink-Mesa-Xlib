@@ -76,11 +76,11 @@ blorp_params_get_clear_kernel_fs(struct blorp_batch *batch,
 
    nir_variable *v_color =
       BLORP_CREATE_NIR_INPUT(b.shader, clear_color, glsl_vec4_type());
-   nir_ssa_def *color = nir_load_var(&b, v_color);
+   nir_def *color = nir_load_var(&b, v_color);
 
    if (clear_rgb_as_red) {
-      nir_ssa_def *pos = nir_f2i32(&b, nir_load_frag_coord(&b));
-      nir_ssa_def *comp = nir_umod_imm(&b, nir_channel(&b, pos, 0), 3);
+      nir_def *pos = nir_f2i32(&b, nir_load_frag_coord(&b));
+      nir_def *comp = nir_umod_imm(&b, nir_channel(&b, pos, 0), 3);
       color = nir_pad_vec4(&b, nir_vector_extract(&b, color, comp));
    }
 
@@ -137,19 +137,19 @@ blorp_params_get_clear_kernel_cs(struct blorp_batch *batch,
    blorp_nir_init_shader(&b, mem_ctx, MESA_SHADER_COMPUTE, "BLORP-gpgpu-clear");
    blorp_set_cs_dims(b.shader, blorp_key.local_y);
 
-   nir_ssa_def *dst_pos = nir_load_global_invocation_id(&b, 32);
+   nir_def *dst_pos = nir_load_global_invocation_id(&b, 32);
 
    nir_variable *v_color =
       BLORP_CREATE_NIR_INPUT(b.shader, clear_color, glsl_vec4_type());
-   nir_ssa_def *color = nir_load_var(&b, v_color);
+   nir_def *color = nir_load_var(&b, v_color);
 
    nir_variable *v_bounds_rect =
       BLORP_CREATE_NIR_INPUT(b.shader, bounds_rect, glsl_vec4_type());
-   nir_ssa_def *bounds_rect = nir_load_var(&b, v_bounds_rect);
-   nir_ssa_def *in_bounds = blorp_check_in_bounds(&b, bounds_rect, dst_pos);
+   nir_def *bounds_rect = nir_load_var(&b, v_bounds_rect);
+   nir_def *in_bounds = blorp_check_in_bounds(&b, bounds_rect, dst_pos);
 
    if (clear_rgb_as_red) {
-      nir_ssa_def *comp = nir_umod_imm(&b, nir_channel(&b, dst_pos, 0), 3);
+      nir_def *comp = nir_umod_imm(&b, nir_channel(&b, dst_pos, 0), 3);
       color = nir_pad_vec4(&b, nir_vector_extract(&b, color, comp));
    }
 
@@ -248,9 +248,9 @@ blorp_params_get_layer_offset_vs(struct blorp_batch *batch,
    v_layer->data.location = VARYING_SLOT_LAYER;
 
    /* Compute the layer id */
-   nir_ssa_def *header = nir_load_var(&b, a_header);
-   nir_ssa_def *base_layer = nir_channel(&b, header, 0);
-   nir_ssa_def *instance = nir_channel(&b, header, 1);
+   nir_def *header = nir_load_var(&b, a_header);
+   nir_def *base_layer = nir_channel(&b, header, 0);
+   nir_def *instance = nir_channel(&b, header, 1);
    nir_store_var(&b, v_layer, nir_iadd(&b, instance, base_layer), 0x1);
 
    /* Then we copy the vertex from the next slot to VARYING_SLOT_POS */
@@ -968,17 +968,14 @@ blorp_can_hiz_clear_depth(const struct intel_device_info *devinfo,
        */
       if (x0 % 8 || y0 % 4 || x1 % 8 || y1 % 4)
          return false;
-   } else if (aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT) {
+   } else if (isl_aux_usage_has_ccs(aux_usage)) {
       /* We have to set the WM_HZ_OP::FullSurfaceDepthandStencilClear bit
        * whenever we clear an uninitialized HIZ buffer (as some drivers
        * currently do). However, this bit seems liable to clear 16x8 pixels in
-       * the ZCS on Gfx12 - greater than the slice alignments for depth
+       * the ZCS on Gfx12 - greater than the slice alignments of many depth
        * buffers.
-       */
-      assert(surf->image_alignment_el.w % 16 != 0 ||
-             surf->image_alignment_el.h % 8 != 0);
-
-      /* This is the hypothesis behind some corruption that was seen with the
+       *
+       * This is the hypothesis behind some corruption that was seen with the
        * amd_vertex_shader_layer-layered-depth-texture-render piglit test.
        *
        * From the Compressed Depth Buffers section of the Bspec, under the
@@ -1001,7 +998,6 @@ blorp_can_hiz_clear_depth(const struct intel_device_info *devinfo,
                                    surf->dim == ISL_SURF_DIM_3D ? 0 : layer,
                                    surf->dim == ISL_SURF_DIM_3D ? layer: 0,
                                    &slice_x0, &slice_y0, &slice_z0, &slice_a0);
-      assert(slice_z0 == 0 && slice_a0 == 0);
       const bool max_x1_y1 =
          x1 == u_minify(surf->logical_level0_px.width, level) &&
          y1 == u_minify(surf->logical_level0_px.height, level);
@@ -1306,10 +1302,23 @@ blorp_ccs_resolve(struct blorp_batch *batch,
       return;
 
    batch->blorp->exec(batch, &params);
+
+   if (batch->blorp->isl_dev->info->ver <= 8) {
+      assert(surf->aux_usage == ISL_AUX_USAGE_CCS_D);
+      assert(resolve_op == ISL_AUX_OP_FULL_RESOLVE);
+      /* ISL's state-machine of CCS_D describes full resolves as leaving the
+       * aux buffer in the pass-through state. Hardware doesn't behave this
+       * way on Broadwell however. On that platform, full resolves transition
+       * the aux buffer to the resolved state. We assume that gfx7 behaves the
+       * same. Use an ambiguate to match driver expectations.
+       */
+      for (int l = 0; l < num_layers; l++)
+         blorp_ccs_ambiguate(batch, surf, level, start_layer + l);
+   }
 }
 
-static nir_ssa_def *
-blorp_nir_bit(nir_builder *b, nir_ssa_def *src, unsigned bit)
+static nir_def *
+blorp_nir_bit(nir_builder *b, nir_def *src, unsigned bit)
 {
    return nir_iand_imm(b, nir_ushr_imm(b, src, bit), 1);
 }
@@ -1355,16 +1364,16 @@ blorp_params_get_mcs_partial_resolve_kernel(struct blorp_batch *batch,
    frag_color->data.location = FRAG_RESULT_COLOR;
 
    /* Do an MCS fetch and check if it is equal to the magic clear value */
-   nir_ssa_def *mcs =
+   nir_def *mcs =
       blorp_nir_txf_ms_mcs(&b, nir_f2i32(&b, nir_load_frag_coord(&b)),
                                nir_load_layer_id(&b));
-   nir_ssa_def *is_clear =
+   nir_def *is_clear =
       blorp_nir_mcs_is_clear_color(&b, mcs, blorp_key.num_samples);
 
    /* If we aren't the clear value, discard. */
    nir_discard_if(&b, nir_inot(&b, is_clear));
 
-   nir_ssa_def *clear_color = nir_load_var(&b, v_color);
+   nir_def *clear_color = nir_load_var(&b, v_color);
    if (blorp_key.indirect_clear_color && blorp->isl_dev->info->ver <= 8) {
       /* Gfx7-8 clear colors are stored as single 0/1 bits */
       clear_color = nir_vec4(&b, blorp_nir_bit(&b, clear_color, 31),

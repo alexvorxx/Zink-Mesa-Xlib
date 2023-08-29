@@ -2,6 +2,7 @@ use crate::api::icd::*;
 use crate::core::context::*;
 use crate::core::device::*;
 use crate::core::event::*;
+use crate::core::platform::*;
 use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::context::PipeContext;
@@ -96,9 +97,7 @@ impl Queue {
 
                             e.call(&pipe);
 
-                            if !e.is_user() {
-                                flushed.push(e);
-                            } else {
+                            if e.is_user() {
                                 // On each user event we flush our events as application might
                                 // wait on them before signaling user events.
                                 flush_events(&mut flushed, &pipe);
@@ -106,6 +105,11 @@ impl Queue {
                                 // Wait on user events as they are synchronization points in the
                                 // application's control.
                                 e.wait();
+                            } else if Platform::dbg().sync_every_event {
+                                flushed.push(e);
+                                flush_events(&mut flushed, &pipe);
+                            } else {
+                                flushed.push(e);
                             }
                         }
 
@@ -118,6 +122,9 @@ impl Queue {
     }
 
     pub fn queue(&self, e: Arc<Event>) {
+        if self.is_profiling_enabled() {
+            e.set_time(EventTimes::Queued, self.device.screen().get_timestamp());
+        }
         self.state.lock().unwrap().pending.push(e);
     }
 
@@ -148,6 +155,10 @@ impl Queue {
         let mut queues = Event::deep_unflushed_queues(&state.pending);
         queues.remove(self);
         queues
+    }
+
+    pub fn is_profiling_enabled(&self) -> bool {
+        (self.props & (CL_QUEUE_PROFILING_ENABLE as u64)) != 0
     }
 }
 

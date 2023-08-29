@@ -163,7 +163,7 @@ _eglAddDRMDevice(drmDevicePtr device, _EGLDevice **out_dev)
  * If a software device, the fd is ignored.
  */
 _EGLDevice *
-_eglAddDevice(int fd, bool software)
+_eglFindDevice(int fd, bool software)
 {
    _EGLDevice *dev;
 
@@ -184,9 +184,15 @@ _eglAddDevice(int fd, bool software)
       goto out;
    }
 
-   /* Device is not added - error or already present */
-   if (_eglAddDRMDevice(device, &dev) != 0)
-      drmFreeDevice(&device);
+   while (dev->Next) {
+      dev = dev->Next;
+
+      if (_eglDeviceSupports(dev, _EGL_DEVICE_DRM) &&
+          drmDevicesEqual(device, dev->device) != 0) {
+         goto out;
+      }
+   }
+
 #else
    _eglLog(_EGL_FATAL,
            "Driver bug: Built without libdrm, yet looking for HW device");
@@ -196,6 +202,26 @@ _eglAddDevice(int fd, bool software)
 out:
    simple_mtx_unlock(_eglGlobal.Mutex);
    return dev;
+}
+
+#ifdef HAVE_LIBDRM
+drmDevicePtr
+_eglDeviceDrm(_EGLDevice *dev)
+{
+   if (!dev)
+      return NULL;
+
+   return dev->device;
+}
+#endif
+
+_EGLDevice *
+_eglDeviceNext(_EGLDevice *dev)
+{
+   if (!dev)
+      return NULL;
+
+   return dev->Next;
 }
 
 EGLBoolean
@@ -264,8 +290,8 @@ _eglQueryDeviceStringEXT(_EGLDevice *dev, EGLint name)
  *
  * Must be called with the global lock held.
  */
-static int
-_eglRefreshDeviceList(void)
+int
+_eglDeviceRefreshList(void)
 {
    ASSERTED _EGLDevice *dev;
    int count = 0;
@@ -314,7 +340,7 @@ _eglQueryDevicesEXT(EGLint max_devices, _EGLDevice **devices,
 
    simple_mtx_lock(_eglGlobal.Mutex);
 
-   num_devs = _eglRefreshDeviceList();
+   num_devs = _eglDeviceRefreshList();
    devs = _eglGlobal.DeviceList;
 
 #ifdef GALLIUM_SOFTPIPE

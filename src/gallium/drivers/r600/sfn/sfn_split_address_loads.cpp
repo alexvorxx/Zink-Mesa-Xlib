@@ -84,7 +84,7 @@ private:
    unsigned m_last_idx_load_index[2] {0,0};
    AluInstr *m_last_idx_load[2] {nullptr, nullptr};
    std::list<Instr *> m_last_idx_use[2];
-   Instr *m_last_non_alu{nullptr};
+   std::list<Instr *> m_prev_non_alu;
 
 };
 
@@ -271,8 +271,8 @@ void AddressSplitVisitor::load_ar(Instr *instr, PRegister addr)
    for (auto& i : m_last_ar_use) {
       m_last_ar_load->add_required_instr(i);
    }
-   if (m_last_non_alu) {
-      m_last_ar_load->add_required_instr(m_last_non_alu);
+   for (auto na: m_prev_non_alu) {
+      m_last_ar_load->add_required_instr(na);
    }
    m_last_ar_use.clear();
 }
@@ -289,7 +289,7 @@ void AddressSplitVisitor::visit(TexInstr *instr)
 {
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
-   m_last_non_alu = instr;
+   m_prev_non_alu.push_back(instr);
    m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(ExportInstr *instr)
@@ -302,7 +302,7 @@ void AddressSplitVisitor::visit(FetchInstr *instr)
 {
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
-   m_last_non_alu = instr;
+   m_prev_non_alu.push_back(instr);
    m_current_addr = nullptr;
 }
 
@@ -336,25 +336,25 @@ void AddressSplitVisitor::visit(IfInstr *instr)
 }
 void AddressSplitVisitor::visit(ScratchIOInstr *instr)
 {
-    m_last_non_alu = instr;
+    m_prev_non_alu.push_back(instr);
     m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(StreamOutInstr *instr)
 {
-    m_last_non_alu = instr;
+    m_prev_non_alu.push_back(instr);
     m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(MemRingOutInstr *instr)
 {
-    m_last_non_alu = instr;
+    m_prev_non_alu.push_back(instr);
     m_current_addr = nullptr;
     (void)instr;
 }
 void AddressSplitVisitor::visit(EmitVertexInstr *instr)
 {
-    m_last_non_alu = instr;
+    m_prev_non_alu.push_back(instr);
     m_current_addr = nullptr;
     (void)instr;
 }
@@ -362,12 +362,12 @@ void AddressSplitVisitor::visit(GDSInstr *instr)
 {
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
-   m_last_non_alu = instr;
+   m_prev_non_alu.push_back(instr);
    m_current_addr = nullptr;
 }
 void AddressSplitVisitor::visit(WriteTFInstr *instr)
 {
-    m_last_non_alu = instr;
+    m_prev_non_alu.push_back(instr);
     m_current_addr = nullptr;
     (void)instr;
 }
@@ -385,7 +385,7 @@ void AddressSplitVisitor::visit(RatInstr *instr)
 {
    if (instr->resource_offset())
       load_index_register(instr, instr->resource_offset());
-   m_last_non_alu = instr;
+   m_prev_non_alu.push_back(instr);
    m_current_addr = nullptr;
 }
 

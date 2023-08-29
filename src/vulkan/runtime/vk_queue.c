@@ -23,6 +23,7 @@
 
 #include "vk_queue.h"
 
+#include "util/perf/cpu_trace.h"
 #include "util/u_debug.h"
 #include <inttypes.h>
 
@@ -1293,6 +1294,8 @@ get_cpu_wait_type(struct vk_physical_device *pdevice)
 VKAPI_ATTR VkResult VKAPI_CALL
 vk_common_QueueWaitIdle(VkQueue _queue)
 {
+   MESA_TRACE_FUNC();
+
    VK_FROM_HANDLE(vk_queue, queue, _queue);
    VkResult result;
 

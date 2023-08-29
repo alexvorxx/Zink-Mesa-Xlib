@@ -363,8 +363,7 @@ lp_build_nir_aos(struct gallivm_state *gallivm,
                  LLVMValueRef consts_ptr,
                  const LLVMValueRef *inputs,
                  LLVMValueRef *outputs,
-                 const struct lp_build_sampler_aos *sampler,
-                 const struct tgsi_shader_info *info)
+                 const struct lp_build_sampler_aos *sampler)
 {
    struct lp_build_nir_aos_context bld;
 

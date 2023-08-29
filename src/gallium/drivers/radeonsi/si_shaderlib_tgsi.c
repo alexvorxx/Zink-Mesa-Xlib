@@ -39,6 +39,10 @@ void *si_get_blitter_vs(struct si_context *sctx, enum blitter_attrib_type type, 
    if (!ureg)
       return NULL;
 
+   /* Add 1 for the attribute ring address. */
+   if (sctx->gfx_level >= GFX11 && type != UTIL_BLITTER_ATTRIB_NONE)
+      vs_blit_property++;
+
    /* Tell the shader to load VS inputs from SGPRs: */
    ureg_property(ureg, TGSI_PROPERTY_VS_BLIT_SGPRS_AMD, vs_blit_property);
    ureg_property(ureg, TGSI_PROPERTY_VS_WINDOW_SPACE_POSITION, true);

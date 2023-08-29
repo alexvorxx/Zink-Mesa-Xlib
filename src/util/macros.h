@@ -317,6 +317,12 @@ do {                       \
 #define ASSERTED
 #endif
 
+#ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
+#define NONNULL __attribute__((__nonnull__))
+#else
+#define NONNULL
+#endif
+
 #ifdef HAVE_FUNC_ATTRIBUTE_WARN_UNUSED_RESULT
 #define MUST_CHECK __attribute__((warn_unused_result))
 #else

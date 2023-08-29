@@ -77,6 +77,12 @@ void aco_compile_ps_epilog(const struct aco_compiler_options* options,
                            const struct ac_shader_args* args,
                            aco_shader_part_callback* build_epilog, void** binary);
 
+void aco_compile_tcs_epilog(const struct aco_compiler_options* options,
+                            const struct aco_shader_info* info,
+                            const struct aco_tcs_epilog_info* epilog_info,
+                            const struct ac_shader_args* args,
+                            aco_shader_part_callback* build_epilog, void** binary);
+
 uint64_t aco_get_codegen_flags();
 
 #ifdef __cplusplus

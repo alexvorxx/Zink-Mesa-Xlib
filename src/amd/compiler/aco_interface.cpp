@@ -236,7 +236,11 @@ aco_compile_shader(const struct aco_compiler_options* options, const struct aco_
    /* assembly */
    std::vector<uint32_t> code;
    std::vector<struct aco_symbol> symbols;
-   unsigned exec_size = aco::emit_program(program.get(), code, &symbols);
+   /* OpenGL combine multi shader parts into one continous code block,
+    * so only last part need the s_endpgm instruction.
+    */
+   bool append_endpgm = !(options->is_opengl && info->has_epilog);
+   unsigned exec_size = aco::emit_program(program.get(), code, &symbols, append_endpgm);
 
    if (program->collect_statistics)
       aco::collect_postasm_stats(program.get(), code);
@@ -284,7 +288,7 @@ aco_compile_rt_prolog(const struct aco_compiler_options* options,
    /* assembly */
    std::vector<uint32_t> code;
    code.reserve(align(program->blocks[0].instructions.size() * 2, 16));
-   unsigned exec_size = aco::emit_program(program.get(), code, NULL);
+   unsigned exec_size = aco::emit_program(program.get(), code);
 
    bool get_disasm = options->dump_shader || options->record_ir;
 
@@ -322,7 +326,7 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
    /* assembly */
    std::vector<uint32_t> code;
    code.reserve(align(program->blocks[0].instructions.size() * 2, 16));
-   unsigned exec_size = aco::emit_program(program.get(), code, NULL);
+   unsigned exec_size = aco::emit_program(program.get(), code);
 
    bool get_disasm = options->dump_shader || options->record_ir;
 
@@ -334,11 +338,17 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
                    disasm.data(), disasm.size());
 }
 
-void
-aco_compile_ps_epilog(const struct aco_compiler_options* options,
-                      const struct aco_shader_info* info, const struct aco_ps_epilog_info* pinfo,
-                      const struct ac_shader_args* args, aco_shader_part_callback* build_epilog,
-                      void** binary)
+typedef void(select_shader_part_callback)(aco::Program* program, void* pinfo,
+                                          ac_shader_config* config,
+                                          const struct aco_compiler_options* options,
+                                          const struct aco_shader_info* info,
+                                          const struct ac_shader_args* args);
+
+static void
+aco_compile_shader_part(const struct aco_compiler_options* options,
+                        const struct aco_shader_info* info, const struct ac_shader_args* args,
+                        select_shader_part_callback select_shader_part, void* pinfo,
+                        aco_shader_part_callback* build_epilog, void** binary)
 {
    aco::init();
 
@@ -353,13 +363,13 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
    program->debug.private_data = options->debug.private_data;
 
    /* Instruction selection */
-   aco::select_ps_epilog(program.get(), pinfo, &config, options, info, args);
+   select_shader_part(program.get(), pinfo, &config, options, info, args);
 
    aco_postprocess_shader(options, info, program);
 
    /* assembly */
    std::vector<uint32_t> code;
-   unsigned exec_size = aco::emit_program(program.get(), code, NULL);
+   unsigned exec_size = aco::emit_program(program.get(), code);
 
    bool get_disasm = options->dump_shader || options->record_ir;
 
@@ -369,4 +379,24 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
 
    (*build_epilog)(binary, config.num_sgprs, config.num_vgprs, code.data(), code.size(),
                    disasm.data(), disasm.size());
+}
+
+void
+aco_compile_ps_epilog(const struct aco_compiler_options* options,
+                      const struct aco_shader_info* info, const struct aco_ps_epilog_info* pinfo,
+                      const struct ac_shader_args* args, aco_shader_part_callback* build_epilog,
+                      void** binary)
+{
+   aco_compile_shader_part(options, info, args, aco::select_ps_epilog, (void*)pinfo, build_epilog,
+                           binary);
+}
+
+void
+aco_compile_tcs_epilog(const struct aco_compiler_options* options,
+                       const struct aco_shader_info* info, const struct aco_tcs_epilog_info* pinfo,
+                       const struct ac_shader_args* args, aco_shader_part_callback* build_epilog,
+                       void** binary)
+{
+   aco_compile_shader_part(options, info, args, aco::select_tcs_epilog, (void*)pinfo, build_epilog,
+                           binary);
 }

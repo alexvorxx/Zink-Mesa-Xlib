@@ -47,6 +47,8 @@ struct pipe_context;
 #define VL_COMPOSITOR_MIN_DIRTY (0)
 #define VL_COMPOSITOR_MAX_DIRTY (1 << 15)
 
+#define VL_COMPOSITOR_VB_STRIDE (sizeof(struct vertex2f) + sizeof(struct vertex4f) * 2)
+
 /* deinterlace allgorithem */
 enum vl_compositor_deinterlace
 {

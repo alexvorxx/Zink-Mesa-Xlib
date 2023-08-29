@@ -324,10 +324,15 @@ static const char *amdgpu_get_marketing_name(amdgpu_device_handle dev)
 {
    return NULL;
 }
+static intptr_t readlink(const char *path, char *buf, size_t bufsiz)
+{
+   return -1;
+}
 #else
 #include "drm-uapi/amdgpu_drm.h"
 #include <amdgpu.h>
 #include <xf86drm.h>
+#include <unistd.h>
 #endif
 
 #define CIK_TILE_MODE_COLOR_2D 14
@@ -542,7 +547,7 @@ static void set_custom_cu_en_mask(struct radeon_info *info)
    }
 }
 
-bool ac_query_pci_bus_info(int fd, struct radeon_info *info)
+static bool ac_query_pci_bus_info(int fd, struct radeon_info *info)
 {
    drmDevicePtr devinfo;
 
@@ -563,7 +568,31 @@ bool ac_query_pci_bus_info(int fd, struct radeon_info *info)
    return true;
 }
 
-bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
+static void handle_env_var_force_family(struct radeon_info *info)
+{
+   const char *family = debug_get_option("AMD_FORCE_FAMILY", NULL);
+
+   if (!family)
+      return;
+
+   for (unsigned i = CHIP_TAHITI; i < CHIP_LAST; i++) {
+      if (!strcmp(family, ac_get_llvm_processor_name(i))) {
+         /* Override family and gfx_level. */
+         info->family = i;
+         info->name = "NOOP";
+         info->gfx_level = ac_get_gfx_level(i);
+         info->family_id = ac_get_family_id(i);
+         info->family_overridden = true;
+         return;
+      }
+   }
+
+   fprintf(stderr, "radeonsi: Unknown family: %s\n", family);
+   exit(1);
+}
+
+bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+                       bool require_pci_bus_info)
 {
    struct amdgpu_gpu_info amdinfo;
    struct drm_amdgpu_info_device device_info = {0};
@@ -581,6 +610,13 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_DEC == AMD_IP_VCN_DEC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_ENC == AMD_IP_VCN_ENC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_JPEG == AMD_IP_VCN_JPEG);
+
+   handle_env_var_force_family(info);
+
+   if (!ac_query_pci_bus_info(fd, info)) {
+      if (require_pci_bus_info)
+         return false;
+   }
 
    assert(info->drm_major == 3);
    info->is_amdgpu = true;
@@ -734,80 +770,110 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    }
 #define identify_chip(chipname) identify_chip2(chipname, chipname)
 
-   switch (device_info.family) {
-   case FAMILY_SI:
-      identify_chip(TAHITI);
-      identify_chip(PITCAIRN);
-      identify_chip2(CAPEVERDE, VERDE);
-      identify_chip(OLAND);
-      identify_chip(HAINAN);
-      break;
-   case FAMILY_CI:
-      identify_chip(BONAIRE);
-      identify_chip(HAWAII);
-      break;
-   case FAMILY_KV:
-      identify_chip2(SPECTRE, KAVERI);
-      identify_chip2(SPOOKY, KAVERI);
-      identify_chip2(KALINDI, KABINI);
-      identify_chip2(GODAVARI, KABINI);
-      break;
-   case FAMILY_VI:
-      identify_chip(ICELAND);
-      identify_chip(TONGA);
-      identify_chip(FIJI);
-      identify_chip(POLARIS10);
-      identify_chip(POLARIS11);
-      identify_chip(POLARIS12);
-      identify_chip(VEGAM);
-      break;
-   case FAMILY_CZ:
-      identify_chip(CARRIZO);
-      identify_chip(STONEY);
-      break;
-   case FAMILY_AI:
-      identify_chip(VEGA10);
-      identify_chip(VEGA12);
-      identify_chip(VEGA20);
-      identify_chip(MI100);
-      identify_chip(MI200);
-      identify_chip(GFX940);
-      break;
-   case FAMILY_RV:
-      identify_chip(RAVEN);
-      identify_chip(RAVEN2);
-      identify_chip(RENOIR);
-      break;
-   case FAMILY_NV:
-      identify_chip(NAVI10);
-      identify_chip(NAVI12);
-      identify_chip(NAVI14);
-      identify_chip(NAVI21);
-      identify_chip(NAVI22);
-      identify_chip(NAVI23);
-      identify_chip(NAVI24);
-      break;
-   case FAMILY_VGH:
-      identify_chip(VANGOGH);
-      break;
-   case FAMILY_RMB:
-      identify_chip(REMBRANDT);
-      break;
-   case FAMILY_RPL:
-      identify_chip2(RAPHAEL, RAPHAEL_MENDOCINO);
-      break;
-   case FAMILY_MDN:
-      identify_chip2(MENDOCINO, RAPHAEL_MENDOCINO);
-      break;
-   case FAMILY_GFX1100:
-      identify_chip(GFX1100);
-      identify_chip(GFX1101);
-      identify_chip(GFX1102);
-      break;
-   case FAMILY_GFX1103:
-      identify_chip(GFX1103_R1);
-      identify_chip(GFX1103_R2);
-      break;
+   if (!info->family_overridden) {
+      switch (device_info.family) {
+      case FAMILY_SI:
+         identify_chip(TAHITI);
+         identify_chip(PITCAIRN);
+         identify_chip2(CAPEVERDE, VERDE);
+         identify_chip(OLAND);
+         identify_chip(HAINAN);
+         break;
+      case FAMILY_CI:
+         identify_chip(BONAIRE);
+         identify_chip(HAWAII);
+         break;
+      case FAMILY_KV:
+         identify_chip2(SPECTRE, KAVERI);
+         identify_chip2(SPOOKY, KAVERI);
+         identify_chip2(KALINDI, KABINI);
+         identify_chip2(GODAVARI, KABINI);
+         break;
+      case FAMILY_VI:
+         identify_chip(ICELAND);
+         identify_chip(TONGA);
+         identify_chip(FIJI);
+         identify_chip(POLARIS10);
+         identify_chip(POLARIS11);
+         identify_chip(POLARIS12);
+         identify_chip(VEGAM);
+         break;
+      case FAMILY_CZ:
+         identify_chip(CARRIZO);
+         identify_chip(STONEY);
+         break;
+      case FAMILY_AI:
+         identify_chip(VEGA10);
+         identify_chip(VEGA12);
+         identify_chip(VEGA20);
+         identify_chip(MI100);
+         identify_chip(MI200);
+         identify_chip(GFX940);
+         break;
+      case FAMILY_RV:
+         identify_chip(RAVEN);
+         identify_chip(RAVEN2);
+         identify_chip(RENOIR);
+         break;
+      case FAMILY_NV:
+         identify_chip(NAVI10);
+         identify_chip(NAVI12);
+         identify_chip(NAVI14);
+         identify_chip(NAVI21);
+         identify_chip(NAVI22);
+         identify_chip(NAVI23);
+         identify_chip(NAVI24);
+         break;
+      case FAMILY_VGH:
+         identify_chip(VANGOGH);
+         break;
+      case FAMILY_RMB:
+         identify_chip(REMBRANDT);
+         break;
+      case FAMILY_RPL:
+         identify_chip2(RAPHAEL, RAPHAEL_MENDOCINO);
+         break;
+      case FAMILY_MDN:
+         identify_chip2(MENDOCINO, RAPHAEL_MENDOCINO);
+         break;
+      case FAMILY_GFX1100:
+         identify_chip(GFX1100);
+         identify_chip(GFX1101);
+         identify_chip(GFX1102);
+         break;
+      case FAMILY_GFX1103:
+         identify_chip(GFX1103_R1);
+         identify_chip(GFX1103_R2);
+         break;
+      }
+
+      if (info->ip[AMD_IP_GFX].ver_major == 11)
+         info->gfx_level = GFX11;
+      else if (info->ip[AMD_IP_GFX].ver_major == 10 && info->ip[AMD_IP_GFX].ver_minor == 3)
+         info->gfx_level = GFX10_3;
+      else if (info->ip[AMD_IP_GFX].ver_major == 10 && info->ip[AMD_IP_GFX].ver_minor == 1)
+         info->gfx_level = GFX10;
+      else if (info->ip[AMD_IP_GFX].ver_major == 9 || info->ip[AMD_IP_COMPUTE].ver_major == 9)
+         info->gfx_level = GFX9;
+      else if (info->ip[AMD_IP_GFX].ver_major == 8)
+         info->gfx_level = GFX8;
+      else if (info->ip[AMD_IP_GFX].ver_major == 7)
+         info->gfx_level = GFX7;
+      else if (info->ip[AMD_IP_GFX].ver_major == 6)
+         info->gfx_level = GFX6;
+      else {
+         fprintf(stderr, "amdgpu: Unknown gfx version: %u.%u\n",
+                 info->ip[AMD_IP_GFX].ver_major, info->ip[AMD_IP_GFX].ver_minor);
+         return false;
+      }
+
+      info->family_id = device_info.family;
+      info->chip_external_rev = device_info.external_rev;
+      info->chip_rev = device_info.chip_rev;
+      info->marketing_name = amdgpu_get_marketing_name(dev);
+      info->is_pro_graphics = info->marketing_name && (strstr(info->marketing_name, "Pro") ||
+                                                       strstr(info->marketing_name, "PRO") ||
+                                                       strstr(info->marketing_name, "Frontier"));
    }
 
    if (!info->name) {
@@ -820,25 +886,9 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    for (unsigned i = 0; info->name[i] && i < ARRAY_SIZE(info->lowercase_name) - 1; i++)
       info->lowercase_name[i] = tolower(info->name[i]);
 
-   if (info->ip[AMD_IP_GFX].ver_major == 11)
-      info->gfx_level = GFX11;
-   else if (info->ip[AMD_IP_GFX].ver_major == 10 && info->ip[AMD_IP_GFX].ver_minor == 3)
-      info->gfx_level = GFX10_3;
-   else if (info->ip[AMD_IP_GFX].ver_major == 10 && info->ip[AMD_IP_GFX].ver_minor == 1)
-      info->gfx_level = GFX10;
-   else if (info->ip[AMD_IP_GFX].ver_major == 9 || info->ip[AMD_IP_COMPUTE].ver_major == 9)
-      info->gfx_level = GFX9;
-   else if (info->ip[AMD_IP_GFX].ver_major == 8)
-      info->gfx_level = GFX8;
-   else if (info->ip[AMD_IP_GFX].ver_major == 7)
-      info->gfx_level = GFX7;
-   else if (info->ip[AMD_IP_GFX].ver_major == 6)
-      info->gfx_level = GFX6;
-   else {
-      fprintf(stderr, "amdgpu: Unknown gfx version: %u.%u\n",
-              info->ip[AMD_IP_GFX].ver_major, info->ip[AMD_IP_GFX].ver_minor);
-      return false;
-   }
+   char proc_fd[64];
+   snprintf(proc_fd, sizeof(proc_fd), "/proc/self/fd/%u", fd);
+   UNUSED int _result = readlink(proc_fd, info->dev_filename, sizeof(info->dev_filename));
 
 #define VCN_IP_VERSION(mj, mn, rv) (((mj) << 16) | ((mn) << 8) | (rv))
 
@@ -911,14 +961,6 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       }
       break;
    }
-
-   info->family_id = device_info.family;
-   info->chip_external_rev = device_info.external_rev;
-   info->chip_rev = device_info.chip_rev;
-   info->marketing_name = amdgpu_get_marketing_name(dev);
-   info->is_pro_graphics = info->marketing_name && (strstr(info->marketing_name, "Pro") ||
-                                                    strstr(info->marketing_name, "PRO") ||
-                                                    strstr(info->marketing_name, "Frontier"));
 
    /* Set which chips have dedicated VRAM. */
    info->has_dedicated_vram = !(device_info.ids_flags & AMDGPU_IDS_FLAGS_FUSION);
@@ -1516,9 +1558,6 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       info->conformant_trunc_coord =
          info->drm_minor >= 52 &&
          device_info.ids_flags & AMDGPU_IDS_FLAGS_CONFORMANT_TRUNC_COORD;
-   } else {
-      /* This should be non-zero for SI_FORCE_FAMILY not to crash. */
-      info->attribute_ring_size_per_se = 64 * 1024;
    }
 
    if (info->gfx_level >= GFX11 && device_info.shadow_size > 0) {
@@ -1593,6 +1632,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "Device info:\n");
    fprintf(f, "    name = %s\n", info->name);
    fprintf(f, "    marketing_name = %s\n", info->marketing_name);
+   fprintf(f, "    dev_filename = %s\n", info->dev_filename);
    fprintf(f, "    num_se = %i\n", info->num_se);
    fprintf(f, "    num_rb = %i\n", info->num_rb);
    fprintf(f, "    num_cu = %i\n", info->num_cu);
@@ -1664,6 +1704,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    chip_rev = %i\n", info->chip_rev);
 
    fprintf(f, "Flags:\n");
+   fprintf(f, "    family_overridden = %u\n", info->family_overridden);
    fprintf(f, "    is_pro_graphics = %u\n", info->is_pro_graphics);
    fprintf(f, "    has_graphics = %i\n", info->has_graphics);
    fprintf(f, "    has_clear_state = %u\n", info->has_clear_state);

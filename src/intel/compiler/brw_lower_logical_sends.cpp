@@ -806,7 +806,8 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
                                 const fs_reg &tg4_offset,
                                 unsigned payload_type_bit_size,
                                 unsigned coord_components,
-                                unsigned grad_components)
+                                unsigned grad_components,
+                                bool residency)
 {
    const brw_compiler *compiler = bld.shader->compiler;
    const intel_device_info *devinfo = bld.shader->devinfo;
@@ -830,7 +831,8 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
        inst->offset != 0 || inst->eot ||
        op == SHADER_OPCODE_SAMPLEINFO ||
        sampler_handle.file != BAD_FILE ||
-       is_high_sampler(devinfo, sampler)) {
+       is_high_sampler(devinfo, sampler) ||
+       residency) {
       /* For general texture offsets (no txf workaround), we need a header to
        * put them in.
        *
@@ -847,11 +849,15 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
        * and we have an explicit header, we need to set up the sampler
        * writemask.  It's reversed from normal: 1 means "don't write".
        */
-      if (!inst->eot && regs_written(inst) != 4 * reg_width) {
-         assert(regs_written(inst) % reg_width == 0);
-         unsigned mask = ~((1 << (regs_written(inst) / reg_width)) - 1) & 0xf;
+      unsigned reg_count = regs_written(inst) - residency;
+      if (!inst->eot && reg_count < 4 * reg_width) {
+         assert(reg_count % reg_width == 0);
+         unsigned mask = ~((1 << (reg_count / reg_width)) - 1) & 0xf;
          inst->offset |= mask << 12;
       }
+
+      if (residency)
+         inst->offset |= 1 << 23; /* g0.2 bit23 : Pixel Null Mask Enable */
 
       /* Build the actual header */
       const fs_builder ubld = bld.exec_all().group(8, 0);
@@ -1021,14 +1027,32 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
           *
           *    ld2dms_w   si  mcs0 mcs1 mcs2  mcs3  u  v  r
           */
-         if (devinfo->verx10 >= 125 && op == SHADER_OPCODE_TXF_CMS_W)
-            num_mcs_components = 4;
-         else if (op == SHADER_OPCODE_TXF_CMS_W)
+         if (op == SHADER_OPCODE_TXF_CMS_W)
             num_mcs_components = 2;
 
          for (unsigned i = 0; i < num_mcs_components; ++i) {
-            bld.MOV(retype(sources[length++], payload_unsigned_type),
-                    mcs.file == IMM ? mcs : offset(mcs, bld, i));
+            /* Sampler always writes 4/8 register worth of data but for ld_mcs
+             * only valid data is in first two register. So with 16-bit
+             * payload, we need to split 2-32bit register into 4-16-bit
+             * payload.
+             *
+             * From the Gfx12HP BSpec: Render Engine - 3D and GPGPU Programs -
+             * Shared Functions - 3D Sampler - Messages - Message Format:
+             *
+             *    ld2dms_w   si  mcs0 mcs1 mcs2  mcs3  u  v  r
+             */
+            if (devinfo->verx10 >= 125 && op == SHADER_OPCODE_TXF_CMS_W) {
+               fs_reg tmp = offset(mcs, bld, i);
+               bld.MOV(retype(sources[length++], payload_unsigned_type),
+                       mcs.file == IMM ? mcs :
+                       subscript(tmp, payload_unsigned_type, 0));
+               bld.MOV(retype(sources[length++], payload_unsigned_type),
+                       mcs.file == IMM ? mcs :
+                       subscript(tmp, payload_unsigned_type, 1));
+            } else {
+               bld.MOV(retype(sources[length++], payload_unsigned_type),
+                       mcs.file == IMM ? mcs : offset(mcs, bld, i));
+            }
          }
       }
 
@@ -1283,6 +1307,10 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst, opcode op)
    const unsigned coord_components = inst->src[TEX_LOGICAL_SRC_COORD_COMPONENTS].ud;
    assert(inst->src[TEX_LOGICAL_SRC_GRAD_COMPONENTS].file == IMM);
    const unsigned grad_components = inst->src[TEX_LOGICAL_SRC_GRAD_COMPONENTS].ud;
+   assert(inst->src[TEX_LOGICAL_SRC_RESIDENCY].file == IMM);
+   const bool residency = inst->src[TEX_LOGICAL_SRC_RESIDENCY].ud != 0;
+   /* residency is only supported on Gfx8+ */
+   assert(!residency || devinfo->ver >= 8);
 
    if (devinfo->ver >= 7) {
       const unsigned msg_payload_type_bit_size =
@@ -1298,7 +1326,8 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst, opcode op)
                                       surface_handle, sampler_handle,
                                       tg4_offset,
                                       msg_payload_type_bit_size,
-                                      coord_components, grad_components);
+                                      coord_components, grad_components,
+                                      residency);
    } else if (devinfo->ver >= 5) {
       lower_sampler_logical_send_gfx5(bld, inst, op, coordinate,
                                       shadow_c, lod, lod2, sample_index,
@@ -1326,6 +1355,7 @@ emit_predicate_on_vector_mask(const fs_builder &bld, fs_inst *inst)
 
    const fs_visitor *v = static_cast<const fs_visitor *>(bld.shader);
    const fs_reg vector_mask = ubld.vgrf(BRW_REGISTER_TYPE_UW);
+   ubld.UNDEF(vector_mask);
    ubld.emit(SHADER_OPCODE_READ_SR_REG, vector_mask, brw_imm_ud(3));
    const unsigned subreg = sample_mask_flag_subreg(v);
 
@@ -3003,9 +3033,11 @@ fs_visitor::lower_logical_sends()
  * mask, since a later instruction will use one of the result channels as a
  * source operand for all 8 or 16 of its channels.
  */
-void
+bool
 fs_visitor::lower_uniform_pull_constant_loads()
 {
+   bool progress = false;
+
    foreach_block_and_inst (block, fs_inst, inst, cfg) {
       if (inst->opcode != FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD)
          continue;
@@ -3095,5 +3127,9 @@ fs_visitor::lower_uniform_pull_constant_loads()
          inst->base_mrf = FIRST_PULL_LOAD_MRF(devinfo->ver) + 1;
          inst->mlen = 1;
       }
+
+      progress = true;
    }
+
+   return progress;
 }

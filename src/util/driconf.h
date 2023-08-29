@@ -168,6 +168,13 @@
    DRI_CONF_OPT_B(disable_uniform_array_resize, def, \
                   "Disable the glsl optimisation that resizes uniform arrays")
 
+#define DRI_CONF_ALIAS_SHADER_EXTENSION() \
+   DRI_CONF_OPT_S_NODEF(alias_shader_extension, "Allow  alias for shader extensions")
+
+#define DRI_CONF_ALLOW_VERTEX_TEXTURE_BIAS(def) \
+   DRI_CONF_OPT_B(allow_vertex_texture_bias, def, \
+                  "Allow GL2 vertex shaders to have access to texture2D/textureCube with bias variants")
+
 #define DRI_CONF_FORCE_GLSL_VERSION(def) \
    DRI_CONF_OPT_I(force_glsl_version, def, 0, 999, \
                   "Force a default GLSL version for shaders that lack an explicit #version line")
@@ -313,6 +320,10 @@
 #define DRI_CONF_FORCE_VK_VENDOR(def) \
    DRI_CONF_OPT_I(force_vk_vendor, 0, -1, 2147483647, "Override GPU vendor id")
 
+#define DRI_CONF_FAKE_SPARSE(def) \
+   DRI_CONF_OPT_B(fake_sparse, def, \
+                  "Advertise support for sparse binding of textures regardless of real support")
+
 /**
  * \brief Image quality-related options
  */
@@ -411,7 +422,9 @@
    DRI_CONF_OPT_B(mesa_no_error, def, \
                   "Disable GL driver error checking")
 
-
+#define DRI_CONF_SHADER_SPILLING_RATE(def) \
+   DRI_CONF_OPT_I(shader_spilling_rate, def, 0, 100, \
+                  "Speed up shader compilation by increasing number of spilled registers after ra_allocate failure")
 /**
  * \brief Miscellaneous configuration options
  */

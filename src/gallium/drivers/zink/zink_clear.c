@@ -148,6 +148,7 @@ get_clear_data(struct zink_context *ctx, struct zink_framebuffer_clear *fb_clear
 static void
 convert_color(struct pipe_surface *psurf, union pipe_color_union *color)
 {
+   struct zink_resource *res = zink_resource(psurf->texture);
    const struct util_format_description *desc = util_format_description(psurf->format);
    union pipe_color_union tmp = *color;
 
@@ -174,6 +175,12 @@ convert_color(struct pipe_surface *psurf, union pipe_color_union *color)
    }
    for (unsigned i = 0; i < 4; i++)
       zink_format_clamp_channel_color(desc, color, &tmp, i);
+
+   /* manually swizzle R -> A for true A8 */
+   if (res->format == VK_FORMAT_A8_UNORM_KHR) {
+      color->ui[3] = color->ui[0];
+      color->ui[0] = 0;
+   }
 }
 
 void

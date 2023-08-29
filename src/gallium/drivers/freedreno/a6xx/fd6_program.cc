@@ -104,25 +104,9 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
       fd_emit_string5(ring, name, strlen(name));
 #endif
 
-   uint32_t fibers_per_sp = ctx->screen->info->a6xx.fibers_per_sp;
-   uint32_t num_sp_cores = ctx->screen->info->num_sp_cores;
+   ir3_get_private_mem(ctx, so);
 
-   uint32_t per_fiber_size = ALIGN(so->pvtmem_size, 512);
-   if (per_fiber_size > ctx->pvtmem[so->pvtmem_per_wave].per_fiber_size) {
-      if (ctx->pvtmem[so->pvtmem_per_wave].bo)
-         fd_bo_del(ctx->pvtmem[so->pvtmem_per_wave].bo);
-      ctx->pvtmem[so->pvtmem_per_wave].per_fiber_size = per_fiber_size;
-      uint32_t total_size =
-         ALIGN(per_fiber_size * fibers_per_sp, 1 << 12) * num_sp_cores;
-      ctx->pvtmem[so->pvtmem_per_wave].bo = fd_bo_new(
-         ctx->screen->dev, total_size, FD_BO_NOMAP,
-         "pvtmem_%s_%d", so->pvtmem_per_wave ? "per_wave" : "per_fiber",
-         per_fiber_size);
-   } else {
-      per_fiber_size = ctx->pvtmem[so->pvtmem_per_wave].per_fiber_size;
-   }
-
-   uint32_t per_sp_size = ALIGN(per_fiber_size * fibers_per_sp, 1 << 12);
+   uint32_t per_sp_size = ctx->pvtmem[so->pvtmem_per_wave].per_sp_size;
 
    OUT_PKT4(ring, instrlen, 1);
    OUT_RING(ring, so->instrlen);
@@ -130,7 +114,7 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
    OUT_PKT4(ring, first_exec_offset, 7);
    OUT_RING(ring, 0);                /* SP_xS_OBJ_FIRST_EXEC_OFFSET */
    OUT_RELOC(ring, so->bo, 0, 0, 0); /* SP_xS_OBJ_START_LO */
-   OUT_RING(ring, A6XX_SP_VS_PVT_MEM_PARAM_MEMSIZEPERITEM(per_fiber_size));
+   OUT_RING(ring, A6XX_SP_VS_PVT_MEM_PARAM_MEMSIZEPERITEM(ctx->pvtmem[so->pvtmem_per_wave].per_fiber_size));
    if (so->pvtmem_size > 0) { /* SP_xS_PVT_MEM_ADDR */
       OUT_RELOC(ring, ctx->pvtmem[so->pvtmem_per_wave].bo, 0, 0, 0);
       fd_ringbuffer_attach_bo(ring, ctx->pvtmem[so->pvtmem_per_wave].bo);
@@ -569,7 +553,9 @@ setup_stateobj(struct fd_screen *screen, struct fd_ringbuffer *ring,
    OUT_PKT4(ring, REG_A6XX_SP_FS_PREFETCH_CNTL, 1 + fs->num_sampler_prefetch);
    OUT_RING(ring, A6XX_SP_FS_PREFETCH_CNTL_COUNT(fs->num_sampler_prefetch) |
                      COND(!VALIDREG(ij_regid[IJ_PERSP_PIXEL]),
-                          A6XX_SP_FS_PREFETCH_CNTL_IJ_WRITE_DISABLE));
+                          A6XX_SP_FS_PREFETCH_CNTL_IJ_WRITE_DISABLE) |
+                     COND(fs->prefetch_end_of_quad,
+                          A6XX_SP_FS_PREFETCH_CNTL_ENDOFQUAD));
    for (int i = 0; i < fs->num_sampler_prefetch; i++) {
       const struct ir3_sampler_prefetch *prefetch = &fs->sampler_prefetch[i];
       OUT_RING(ring, SP_FS_PREFETCH_CMD(
@@ -933,7 +919,7 @@ setup_stateobj(struct fd_screen *screen, struct fd_ringbuffer *ring,
       ring,
       A6XX_SP_FS_CTRL_REG0_THREADSIZE(fssz) |
          COND(enable_varyings, A6XX_SP_FS_CTRL_REG0_VARYING) | 0x1000000 |
-         COND(fs->need_fine_derivatives, A6XX_SP_FS_CTRL_REG0_DIFF_FINE) |
+         COND(fs->need_full_quad, A6XX_SP_FS_CTRL_REG0_LODPIXMASK) |
          A6XX_SP_FS_CTRL_REG0_FULLREGFOOTPRINT(fs->info.max_reg + 1) |
          A6XX_SP_FS_CTRL_REG0_HALFREGFOOTPRINT(fs->info.max_half_reg + 1) |
          COND(fs->mergedregs, A6XX_SP_FS_CTRL_REG0_MERGEDREGS) |

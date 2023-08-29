@@ -122,6 +122,7 @@ static int parse_reg(const char *str)
 "(neg_infinity)"                  return TOKEN(T_NEG_INFINITY);
 "(ei)"                            return TOKEN(T_EI);
 "(jp)"                            return TOKEN(T_JP);
+"(eq)"                            return TOKEN(T_EQ_FLAG);
 "(sat)"                           return TOKEN(T_SAT);
 "(rpt"[0-7]")"                    ir3_yylval.num = strtol(yytext+4, NULL, 10); return T_RPT;
 "(nop"[0-7]")"                    ir3_yylval.num = strtol(yytext+4, NULL, 10); return T_NOP;

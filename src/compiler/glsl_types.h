@@ -54,9 +54,6 @@ glsl_type_singleton_decref();
 extern void
 _mesa_glsl_initialize_types(struct _mesa_glsl_parse_state *state);
 
-void
-glsl_print_type(FILE *f, const struct glsl_type *t);
-
 void encode_type_to_blob(struct blob *blob, const struct glsl_type *type);
 
 const struct glsl_type *decode_type_from_blob(struct blob_reader *blob);
@@ -283,15 +280,6 @@ enum {
    GLSL_PRECISION_MEDIUM,
    GLSL_PRECISION_LOW
 };
-
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static inline bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -939,11 +927,6 @@ public:
    bool contains_array() const;
 
    /**
-    * Get the Mesa texture target index for a sampler type.
-    */
-   gl_texture_index sampler_index() const;
-
-   /**
     * Query whether or not type is an image, or for struct, interface and
     * array types, contains an image.
     */
@@ -1076,7 +1059,7 @@ public:
    unsigned atomic_size() const
    {
       if (is_atomic_uint())
-         return ATOMIC_COUNTER_SIZE;
+         return 4; /* ATOMIC_COUNTER_SIZE */
       else if (is_array())
          return length * fields.array->atomic_size();
       else
@@ -1338,6 +1321,10 @@ private:
    friend void glsl_type_singleton_decref(void);
    friend void _mesa_glsl_initialize_types(struct _mesa_glsl_parse_state *);
    /*@}*/
+
+   static const glsl_type *get_explicit_matrix_instance(unsigned int base_type, unsigned int rows, unsigned int columns,
+                                                        unsigned int explicit_stride, bool row_major,
+                                                        unsigned int explicit_alignment);
 };
 
 #undef DECL_TYPE

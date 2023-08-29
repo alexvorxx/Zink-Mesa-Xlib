@@ -178,10 +178,6 @@ finished:
 static bool
 is_fs_input(const nir_src *src)
 {
-   if (!src->is_ssa) {
-      return false;
-   }
-
    const nir_instr *parent = src->ssa[0].parent_instr;
    if (!parent) {
       return false;
@@ -232,10 +228,6 @@ get_nir_input_info(const nir_alu_src *src,
                    unsigned *input_index,
                    int *input_component)
 {
-   if (!src->src.is_ssa) {
-      return false;
-   }
-
    // The parent instr should be a nir_intrinsic_load_deref.
    const nir_instr *parent = src->src.ssa[0].parent_instr;
    if (!parent || parent->type != nir_instr_type_intrinsic) {
@@ -243,8 +235,7 @@ get_nir_input_info(const nir_alu_src *src,
    }
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(parent);
    if (!intrin ||
-       intrin->intrinsic != nir_intrinsic_load_deref ||
-       !intrin->src[0].is_ssa) {
+       intrin->intrinsic != nir_intrinsic_load_deref) {
       return false;
    }
 
@@ -513,6 +504,14 @@ llvmpipe_nir_is_linear_compat(struct nir_shader *shader,
                               struct lp_tgsi_info *info)
 {
    int num_tex = info->num_texs;
+
+   if (util_bitcount64(shader->info.inputs_read) > LP_MAX_LINEAR_INPUTS)
+      return false;
+   
+   if (!shader->info.outputs_written || shader->info.fs.color_is_dual_source ||
+       (shader->info.outputs_written & ~BITFIELD64_BIT(FRAG_RESULT_DATA0)))
+      return false;
+
    info->num_texs = 0;
    nir_foreach_function_impl(impl, shader) {
       if (!llvmpipe_nir_fn_is_linear_compat(shader, impl, info))
@@ -530,11 +529,7 @@ llvmpipe_nir_is_linear_compat(struct nir_shader *shader,
 void
 llvmpipe_fs_analyse_nir(struct lp_fragment_shader *shader)
 {
-   if (shader->info.base.num_inputs <= LP_MAX_LINEAR_INPUTS &&
-       shader->info.base.num_outputs == 1 &&
-       shader->info.base.output_semantic_name[0] == TGSI_SEMANTIC_COLOR &&
-       shader->info.base.output_semantic_index[0] == 0 &&
-       !shader->info.indirect_textures &&
+   if (!shader->info.indirect_textures &&
        !shader->info.sampler_texture_units_different &&
        shader->info.num_texs <= LP_MAX_LINEAR_TEXTURES &&
        llvmpipe_nir_is_linear_compat(shader->base.ir.nir, &shader->info)) {

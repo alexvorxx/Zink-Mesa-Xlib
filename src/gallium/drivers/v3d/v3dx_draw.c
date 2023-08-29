@@ -743,7 +743,7 @@ v3d_emit_gl_shader_state(struct v3d_context *v3d,
                 cl_emit_with_prepacked(&job->indirect,
                                        GL_SHADER_STATE_ATTRIBUTE_RECORD,
                                        &vtx->attrs[i * size], attr) {
-                        attr.stride = vb->stride;
+                        attr.stride = elem->src_stride;
                         attr.address = cl_address(rsc->bo,
                                                   vb->buffer_offset +
                                                   elem->src_offset);

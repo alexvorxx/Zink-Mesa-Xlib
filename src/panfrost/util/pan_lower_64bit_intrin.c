@@ -34,13 +34,9 @@
  */
 
 static bool
-nir_lower_64bit_intrin_instr(nir_builder *b, nir_instr *instr, void *data)
+nir_lower_64bit_intrin_instr(nir_builder *b, nir_intrinsic_instr *intr,
+                             void *data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-
    switch (intr->intrinsic) {
    case nir_intrinsic_load_global_invocation_id:
    case nir_intrinsic_load_global_invocation_id_zero_base:
@@ -52,17 +48,16 @@ nir_lower_64bit_intrin_instr(nir_builder *b, nir_instr *instr, void *data)
       return false;
    }
 
-   if (nir_dest_bit_size(intr->dest) != 64)
+   if (intr->def.bit_size != 64)
       return false;
 
-   b->cursor = nir_after_instr(instr);
+   b->cursor = nir_after_instr(&intr->instr);
 
-   assert(intr->dest.is_ssa);
-   intr->dest.ssa.bit_size = 32;
+   intr->def.bit_size = 32;
 
-   nir_ssa_def *conv = nir_u2u64(b, &intr->dest.ssa);
+   nir_def *conv = nir_u2u64(b, &intr->def);
 
-   nir_ssa_def_rewrite_uses_after(&intr->dest.ssa, conv, conv->parent_instr);
+   nir_def_rewrite_uses_after(&intr->def, conv, conv->parent_instr);
 
    return true;
 }
@@ -70,7 +65,7 @@ nir_lower_64bit_intrin_instr(nir_builder *b, nir_instr *instr, void *data)
 bool
 pan_nir_lower_64bit_intrin(nir_shader *shader)
 {
-   return nir_shader_instructions_pass(
+   return nir_shader_intrinsics_pass(
       shader, nir_lower_64bit_intrin_instr,
       nir_metadata_block_index | nir_metadata_dominance, NULL);
 }

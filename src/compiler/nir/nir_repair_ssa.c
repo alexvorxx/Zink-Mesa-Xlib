@@ -67,7 +67,7 @@ get_src_block(nir_src *src)
 }
 
 static bool
-repair_ssa_def(nir_ssa_def *def, void *void_state)
+repair_ssa_def(nir_def *def, void *void_state)
 {
    struct repair_ssa_state *state = void_state;
 
@@ -103,7 +103,7 @@ repair_ssa_def(nir_ssa_def *def, void *void_state)
          continue;
       }
 
-      nir_ssa_def *block_def =
+      nir_def *block_def =
          nir_phi_builder_value_get_block_def(val, block);
       if (block_def == def)
          continue;
@@ -126,17 +126,17 @@ repair_ssa_def(nir_ssa_def *def, void *void_state)
          cast->parent = nir_src_for_ssa(block_def);
          cast->cast.ptr_stride = nir_deref_instr_array_stride(deref);
 
-         nir_ssa_dest_init(&cast->instr, &cast->dest, def->num_components,
-                           def->bit_size);
+         nir_def_init(&cast->instr, &cast->def, def->num_components,
+                      def->bit_size);
          nir_instr_insert(nir_before_instr(src->parent_instr),
                           &cast->instr);
-         block_def = &cast->dest.ssa;
+         block_def = &cast->def;
       }
 
       if (src->is_if)
-         nir_if_rewrite_condition(src->parent_if, nir_src_for_ssa(block_def));
+         nir_src_rewrite(&src->parent_if->condition, block_def);
       else
-         nir_instr_rewrite_src(src->parent_instr, src, nir_src_for_ssa(block_def));
+         nir_src_rewrite(src, block_def);
    }
 
    return true;
@@ -152,17 +152,17 @@ nir_repair_ssa_impl(nir_function_impl *impl)
    state.progress = false;
 
    nir_metadata_require(impl, nir_metadata_block_index |
-                              nir_metadata_dominance);
+                                 nir_metadata_dominance);
 
    nir_foreach_block(block, impl) {
       nir_foreach_instr_safe(instr, block) {
-         nir_foreach_ssa_def(instr, repair_ssa_def, &state);
+         nir_foreach_def(instr, repair_ssa_def, &state);
       }
    }
 
    if (state.progress)
       nir_metadata_preserve(impl, nir_metadata_block_index |
-                                  nir_metadata_dominance);
+                                     nir_metadata_dominance);
 
    if (state.phi_builder) {
       nir_phi_builder_finish(state.phi_builder);

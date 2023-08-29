@@ -243,7 +243,7 @@ VkResult pvr_GetQueryPoolResults(VkDevice _device,
          result = VK_NOT_READY;
 
       if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
-         pvr_write_query_to_buffer(data, flags, idx++, count);
+         pvr_write_query_to_buffer(data, flags, idx++, is_available);
 
       data += stride;
    }

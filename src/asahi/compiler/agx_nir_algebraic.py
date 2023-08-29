@@ -39,6 +39,15 @@ lower_pack = [
     (('u2f32', ('u2u32', a)), ('u2f32', a)),
     (('i2f32', ('i2i32', a)), ('i2f32', a)),
 
+    # Chew through some 8-bit before the backend has to deal with it
+    (('f2u8', a), ('u2u8', ('f2u16', a))),
+    (('f2i8', a), ('i2i8', ('f2i16', a))),
+
+    # Based on the VIR lowering
+    (('f2f16_rtz', 'a@32'),
+     ('bcsel', ('flt', ('fabs', a), ('fabs', ('f2f32', ('f2f16_rtne', a)))),
+      ('isub', ('f2f16_rtne', a), 1), ('f2f16_rtne', a))),
+
     # These are based on the lowerings from nir_opt_algebraic, but conditioned
     # on the number of bits not being constant. If the bit count is constant
     # (the happy path) we can use our native instruction instead.

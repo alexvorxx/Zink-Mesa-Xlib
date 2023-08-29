@@ -92,6 +92,15 @@ initialise_varying_info(struct varying_info *info, nir_variable_mode mode,
    memset(info->backcolor, 0, sizeof(info->backcolor));
 }
 
+/**
+ * Built-in / reserved GL variables names start with "gl_"
+ */
+static bool
+is_gl_identifier(const char *s)
+{
+   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
+}
+
 static void
 gather_info_on_varying_deref(struct varying_info *info, nir_deref_instr *deref)
 {
@@ -289,7 +298,7 @@ rewrite_varying_deref(nir_builder *b, struct replace_varyings_data *rv_data,
       unsigned i = nir_src_as_uint(deref->arr.index);
       nir_deref_instr *new_deref =
          nir_build_deref_var(b, rv_data->new_texcoord[i]);
-      nir_ssa_def_rewrite_uses(&deref->dest.ssa, &new_deref->dest.ssa);
+      nir_def_rewrite_uses(&deref->def, &new_deref->def);
       return;
    }
 }

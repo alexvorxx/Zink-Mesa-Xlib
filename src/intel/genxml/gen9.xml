@@ -1745,7 +1745,7 @@
       <value name="CENTER" value="0" />
       <value name="UL_CORNER" value="1" />
     </field>
-    <field name="Pixel Position Offset Enable" start="37" end="37" type="bool" />
+    <field name="Pixel Position Offset Enable" start="37" end="37" type="bool" default="0" />
   </instruction>
   <instruction name="3DSTATE_POLY_STIPPLE_OFFSET" bias="2" length="2" engine="render">
     <field name="DWord Length" start="0" end="7" type="uint" default="0" />
@@ -3787,7 +3787,7 @@
       </field>
     </group>
     <group count="16" start="96" size="16">
-      <field name="LTST Frame Number List" start="0" end="15" type="uint"/>
+      <field name="LTST Frame Number List" start="0" end="15" type="uint" />
     </group>
     <group count="16" start="352" size="16">
       <field name="View ID" start="0" end="15" type="uint" />

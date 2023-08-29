@@ -57,6 +57,7 @@ dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertuvec2.st
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.nostore.multi.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.nostore.single.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.store.multi.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.load.store.single.std140.vert_offset_nonzero
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.comp
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.frag
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.vert

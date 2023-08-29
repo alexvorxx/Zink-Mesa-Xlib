@@ -39,6 +39,7 @@
 #include "util/os_file.h"
 
 #include "egl_dri2.h"
+#include "egldevice.h"
 #include "loader.h"
 
 static struct gbm_bo *
@@ -56,7 +57,7 @@ lock_front_buffer(struct gbm_surface *_surf)
 
    bo = dri2_surf->current->bo;
 
-   if (device->dri2) {
+   if (!device->swrast) {
       dri2_surf->current->locked = true;
       dri2_surf->current = NULL;
    }
@@ -284,100 +285,6 @@ get_swrast_front_bo(struct dri2_egl_surface *dri2_surf)
       return -1;
 
    return 0;
-}
-
-static void
-back_bo_to_dri_buffer(struct dri2_egl_surface *dri2_surf, __DRIbuffer *buffer)
-{
-   struct dri2_egl_display *dri2_dpy =
-      dri2_egl_display(dri2_surf->base.Resource.Display);
-   struct gbm_dri_bo *bo;
-   int name, pitch;
-
-   bo = gbm_dri_bo(dri2_surf->back->bo);
-
-   dri2_dpy->image->queryImage(bo->image, __DRI_IMAGE_ATTRIB_NAME, &name);
-   dri2_dpy->image->queryImage(bo->image, __DRI_IMAGE_ATTRIB_STRIDE, &pitch);
-
-   buffer->attachment = __DRI_BUFFER_BACK_LEFT;
-   buffer->name = name;
-   buffer->pitch = pitch;
-   buffer->cpp = 4;
-   buffer->flags = 0;
-}
-
-static __DRIbuffer *
-dri2_drm_get_buffers_with_format(__DRIdrawable *driDrawable, int *width,
-                                 int *height, unsigned int *attachments,
-                                 int count, int *out_count, void *loaderPrivate)
-{
-   struct dri2_egl_surface *dri2_surf = loaderPrivate;
-   int i, j;
-
-   for (i = 0, j = 0; i < 2 * count; i += 2, j++) {
-      __DRIbuffer *local;
-
-      assert(attachments[i] < __DRI_BUFFER_COUNT);
-      assert(j < ARRAY_SIZE(dri2_surf->buffers));
-
-      switch (attachments[i]) {
-      case __DRI_BUFFER_BACK_LEFT:
-         if (get_back_bo(dri2_surf) < 0) {
-            _eglError(EGL_BAD_ALLOC, "failed to allocate color buffer");
-            return NULL;
-         }
-         back_bo_to_dri_buffer(dri2_surf, &dri2_surf->buffers[j]);
-         break;
-      default:
-         local = dri2_egl_surface_alloc_local_buffer(dri2_surf, attachments[i],
-                                                     attachments[i + 1]);
-
-         if (!local) {
-            _eglError(EGL_BAD_ALLOC, "failed to allocate local buffer");
-            return NULL;
-         }
-         dri2_surf->buffers[j] = *local;
-         break;
-      }
-   }
-
-   *out_count = j;
-   if (j == 0)
-      return NULL;
-
-   *width = dri2_surf->base.Width;
-   *height = dri2_surf->base.Height;
-
-   return dri2_surf->buffers;
-}
-
-static __DRIbuffer *
-dri2_drm_get_buffers(__DRIdrawable *driDrawable, int *width, int *height,
-                     unsigned int *attachments, int count, int *out_count,
-                     void *loaderPrivate)
-{
-   unsigned int *attachments_with_format;
-   __DRIbuffer *buffer;
-   const unsigned int format = 32;
-
-   attachments_with_format = calloc(count, 2 * sizeof(unsigned int));
-   if (!attachments_with_format) {
-      *out_count = 0;
-      return NULL;
-   }
-
-   for (int i = 0; i < count; ++i) {
-      attachments_with_format[2 * i] = attachments[i];
-      attachments_with_format[2 * i + 1] = format;
-   }
-
-   buffer = dri2_drm_get_buffers_with_format(driDrawable, width, height,
-                                             attachments_with_format, count,
-                                             out_count, loaderPrivate);
-
-   free(attachments_with_format);
-
-   return buffer;
 }
 
 static int
@@ -673,10 +580,28 @@ dri2_initialize_drm(_EGLDisplay *disp)
 
    gbm = disp->PlatformDisplay;
    if (gbm == NULL) {
-      char buf[64];
-      int n = snprintf(buf, sizeof(buf), DRM_DEV_NAME, DRM_DIR_NAME, 0);
-      if (n != -1 && n < sizeof(buf))
-         dri2_dpy->fd_render_gpu = loader_open_device(buf);
+      if (disp->Device) {
+         drmDevicePtr drm = _eglDeviceDrm(disp->Device);
+
+         if (!_eglDeviceSupports(disp->Device, _EGL_DEVICE_DRM)) {
+            err = "DRI2: Device isn't of _EGL_DEVICE_DRM type";
+            goto cleanup;
+         }
+
+         if (!(drm->available_nodes & (1 << DRM_NODE_PRIMARY))) {
+            err = "DRI2: Device does not have DRM_NODE_PRIMARY node";
+            goto cleanup;
+         }
+
+         dri2_dpy->fd_render_gpu =
+            loader_open_device(drm->nodes[DRM_NODE_PRIMARY]);
+      } else {
+         char buf[64];
+         int n = snprintf(buf, sizeof(buf), DRM_DEV_NAME, DRM_DIR_NAME, 0);
+         if (n != -1 && n < sizeof(buf))
+            dri2_dpy->fd_render_gpu = loader_open_device(buf);
+      }
+
       gbm = gbm_create_device(dri2_dpy->fd_render_gpu);
       if (gbm == NULL) {
          err = "DRI2: failed to create gbm device";
@@ -698,7 +623,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
       goto cleanup;
    }
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, dri2_dpy->gbm_dri->software);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, dri2_dpy->gbm_dri->software);
    if (!dev) {
       err = "DRI2: failed to find EGLDevice";
       goto cleanup;
@@ -710,23 +635,14 @@ dri2_initialize_drm(_EGLDisplay *disp)
    dri2_dpy->is_render_node =
       drmGetNodeTypeFromFd(dri2_dpy->fd_render_gpu) == DRM_NODE_RENDER;
 
-   /* render nodes cannot use Gem names, and thus do not support
-    * the __DRI_DRI2_LOADER extension */
-   if (!dri2_dpy->is_render_node) {
-      if (!dri2_load_driver(disp)) {
-         err = "DRI2: failed to load driver";
-         goto cleanup;
-      }
-   } else {
-      if (!dri2_load_driver_dri3(disp)) {
-         err = "DRI3: failed to load driver";
-         goto cleanup;
-      }
+   if (!dri2_load_driver_dri3(disp)) {
+      err = "DRI3: failed to load driver";
+      goto cleanup;
    }
 
    dri2_dpy->dri_screen_render_gpu = dri2_dpy->gbm_dri->screen;
    dri2_dpy->core = dri2_dpy->gbm_dri->core;
-   dri2_dpy->dri2 = dri2_dpy->gbm_dri->dri2;
+   dri2_dpy->image_driver = dri2_dpy->gbm_dri->image_driver;
    dri2_dpy->swrast = dri2_dpy->gbm_dri->swrast;
    dri2_dpy->kopper = dri2_dpy->gbm_dri->kopper;
    dri2_dpy->driver_configs = dri2_dpy->gbm_dri->driver_configs;
@@ -736,10 +652,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
    dri2_dpy->gbm_dri->lookup_image_validated = dri2_lookup_egl_image_validated;
    dri2_dpy->gbm_dri->lookup_user_data = disp;
 
-   dri2_dpy->gbm_dri->get_buffers = dri2_drm_get_buffers;
    dri2_dpy->gbm_dri->flush_front_buffer = dri2_drm_flush_front_buffer;
-   dri2_dpy->gbm_dri->get_buffers_with_format =
-      dri2_drm_get_buffers_with_format;
    dri2_dpy->gbm_dri->image_get_buffers = dri2_drm_image_get_buffers;
    dri2_dpy->gbm_dri->swrast_put_image2 = swrast_put_image2;
    dri2_dpy->gbm_dri->swrast_get_image = swrast_get_image;
@@ -761,7 +674,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
    }
 
    disp->Extensions.KHR_image_pixmap = EGL_TRUE;
-   if (dri2_dpy->dri2)
+   if (dri2_dpy->image_driver)
       disp->Extensions.EXT_buffer_age = EGL_TRUE;
 
 #ifdef HAVE_WAYLAND_PLATFORM

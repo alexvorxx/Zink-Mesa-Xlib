@@ -12,13 +12,13 @@
 #include "common/freedreno_guardband.h"
 
 #include "ir3/ir3_nir.h"
-#include "main/menums.h"
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "nir/nir_serialize.h"
 #include "spirv/nir_spirv.h"
 #include "util/u_debug.h"
 #include "util/mesa-sha1.h"
+#include "vk_nir.h"
 #include "vk_pipeline.h"
 #include "vk_render_pass.h"
 #include "vk_util.h"
@@ -496,7 +496,7 @@ tu6_emit_xs(struct tu_cs *cs,
                .branchstack = ir3_shader_branchstack_hw(xs),
                .threadsize = thrsz,
                .varying = xs->total_in != 0,
-               .diff_fine = xs->need_fine_derivatives,
+               .lodpixmask = xs->need_full_quad,
                /* unknown bit, seems unnecessary */
                .unk24 = true,
                .pixlodenable = xs->need_pixlod,
@@ -1477,7 +1477,9 @@ tu6_emit_fs_inputs(struct tu_cs *cs, const struct ir3_shader_variant *fs)
    tu_cs_emit_pkt4(cs, REG_A6XX_SP_FS_PREFETCH_CNTL, 1 + fs->num_sampler_prefetch);
    tu_cs_emit(cs, A6XX_SP_FS_PREFETCH_CNTL_COUNT(fs->num_sampler_prefetch) |
                      COND(!VALIDREG(ij_regid[IJ_PERSP_PIXEL]),
-                          A6XX_SP_FS_PREFETCH_CNTL_IJ_WRITE_DISABLE));
+                          A6XX_SP_FS_PREFETCH_CNTL_IJ_WRITE_DISABLE) |
+                     COND(fs->prefetch_end_of_quad,
+                          A6XX_SP_FS_PREFETCH_CNTL_ENDOFQUAD));
    for (int i = 0; i < fs->num_sampler_prefetch; i++) {
       const struct ir3_sampler_prefetch *prefetch = &fs->sampler_prefetch[i];
       tu_cs_emit(cs, A6XX_SP_FS_PREFETCH_CMD_SRC(prefetch->src) |
@@ -1983,7 +1985,7 @@ tu_setup_pvtmem(struct tu_device *dev,
          util_next_power_of_two(ALIGN(pvtmem_bytes, 512));
       pvtmem_bo->per_sp_size =
          ALIGN(pvtmem_bo->per_fiber_size *
-                  dev->physical_device->info->a6xx.fibers_per_sp,
+                  dev->physical_device->info->fibers_per_sp,
                1 << 12);
       uint32_t total_size =
          dev->physical_device->info->num_sp_cores * pvtmem_bo->per_sp_size;
@@ -2250,12 +2252,6 @@ tu_append_executable(struct tu_pipeline *pipeline, struct ir3_shader_variant *va
    util_dynarray_append(&pipeline->executables, struct tu_pipeline_executable, exe);
 }
 
-static bool
-can_remove_out_var(nir_variable *var, void *data)
-{
-   return !var->data.explicit_xfb_buffer && !var->data.explicit_xfb_stride;
-}
-
 static void
 tu_link_shaders(struct tu_pipeline_builder *builder,
                 nir_shader **shaders, unsigned shaders_count)
@@ -2279,7 +2275,7 @@ tu_link_shaders(struct tu_pipeline_builder *builder,
       }
 
       const nir_remove_dead_variables_options out_var_opts = {
-         .can_remove_var = can_remove_out_var,
+         .can_remove_var = nir_vk_is_not_xfb_output,
       };
       NIR_PASS_V(producer, nir_remove_dead_variables, nir_var_shader_out, &out_var_opts);
 
@@ -5716,6 +5712,22 @@ tu_GetPipelineExecutableStatisticsKHR(
                 "shader executable.");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = exe->stats.max_half_reg + 1;
+   }
+
+   vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
+      WRITE_STR(stat->name, "Last interpolation instruction");
+      WRITE_STR(stat->description,
+                "The instruction where varying storage in Local Memory is released");
+      stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      stat->value.u64 = exe->stats.last_baryf;
+   }
+
+   vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
+      WRITE_STR(stat->name, "Last helper instruction");
+      WRITE_STR(stat->description,
+                "The instruction where helper invocations are killed");
+      stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      stat->value.u64 = exe->stats.last_helper;
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {

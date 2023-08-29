@@ -34,6 +34,7 @@ static const struct debug_control debug_control[] = {
    { "full",     INTEL_BATCH_DECODE_FULL },
    { "offsets",  INTEL_BATCH_DECODE_OFFSETS },
    { "floats",   INTEL_BATCH_DECODE_FLOATS },
+   { "surfaces", INTEL_BATCH_DECODE_SURFACES },
    { NULL,    0 }
 };
 
@@ -356,7 +357,8 @@ dump_binding_table(struct intel_batch_decode_ctx *ctx,
       }
 
       fprintf(ctx->fp, "pointer %u: 0x%08x\n", i, pointers[i]);
-      ctx_print_group(ctx, strct, addr, bo.map + (addr - bo.addr));
+      if (ctx->flags & INTEL_BATCH_DECODE_SURFACES)
+         ctx_print_group(ctx, strct, addr, bo.map + (addr - bo.addr));
    }
 }
 
@@ -391,7 +393,8 @@ dump_samplers(struct intel_batch_decode_ctx *ctx, uint32_t offset, int count)
 
    for (int i = 0; i < count; i++) {
       fprintf(ctx->fp, "sampler state %d\n", i);
-      ctx_print_group(ctx, strct, state_addr, state_map);
+      if (ctx->flags & INTEL_BATCH_DECODE_SAMPLERS)
+         ctx_print_group(ctx, strct, state_addr, state_map);
       state_addr += sampler_state_size;
       state_map += sampler_state_size;
    }

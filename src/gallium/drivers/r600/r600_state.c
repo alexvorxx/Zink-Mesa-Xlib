@@ -1663,13 +1663,15 @@ static void r600_emit_config_state(struct r600_context *rctx, struct r600_atom *
 static void r600_emit_vertex_buffers(struct r600_context *rctx, struct r600_atom *atom)
 {
 	struct radeon_cmdbuf *cs = &rctx->b.gfx.cs;
-	uint32_t dirty_mask = rctx->vertex_buffer_state.dirty_mask;
+	struct r600_fetch_shader *shader = (struct r600_fetch_shader*)rctx->vertex_fetch_shader.cso;
+	uint32_t dirty_mask = rctx->vertex_buffer_state.dirty_mask & shader->buffer_mask;
 
 	while (dirty_mask) {
 		struct pipe_vertex_buffer *vb;
 		struct r600_resource *rbuffer;
 		unsigned offset;
 		unsigned buffer_index = u_bit_scan(&dirty_mask);
+		unsigned stride = shader->strides[buffer_index];
 
 		vb = &rctx->vertex_buffer_state.vb[buffer_index];
 		rbuffer = (struct r600_resource*)vb->buffer.resource;
@@ -1684,7 +1686,7 @@ static void r600_emit_vertex_buffers(struct r600_context *rctx, struct r600_atom
 		radeon_emit(cs, rbuffer->b.b.width0 - offset - 1); /* RESOURCEi_WORD1 */
 		radeon_emit(cs, /* RESOURCEi_WORD2 */
 				 S_038008_ENDIAN_SWAP(r600_endian_swap(32)) |
-				 S_038008_STRIDE(vb->stride));
+				 S_038008_STRIDE(stride));
 		radeon_emit(cs, 0); /* RESOURCEi_WORD3 */
 		radeon_emit(cs, 0); /* RESOURCEi_WORD4 */
 		radeon_emit(cs, 0); /* RESOURCEi_WORD5 */

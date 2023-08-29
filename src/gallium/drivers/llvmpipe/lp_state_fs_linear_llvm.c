@@ -176,8 +176,7 @@ llvm_fragment_body(struct lp_build_context *bld,
       lp_build_nir_aos(gallivm, clone, fs_type,
                        rgba_order ? rgba_swizzles : bgra_swizzles,
                        consts_ptr, inputs, outputs,
-                       &sampler->base,
-                       &shader->info.base);
+                       &sampler->base);
       ralloc_free(clone);
    }
 

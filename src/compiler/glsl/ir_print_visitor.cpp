@@ -45,6 +45,20 @@ ir_instruction::fprint(FILE *f) const
    deconsted->accept(&v);
 }
 
+static void
+glsl_print_type(FILE *f, const glsl_type *t)
+{
+   if (t->is_array()) {
+      fprintf(f, "(array ");
+      glsl_print_type(f, t->fields.array);
+      fprintf(f, " %u)", t->length);
+   } else if (t->is_struct() && !is_gl_identifier(t->name)) {
+      fprintf(f, "%s@%p", t->name, (void *) t);
+   } else {
+      fprintf(f, "%s", t->name);
+   }
+}
+
 extern "C" {
 void
 _mesa_print_ir(FILE *f, exec_list *instructions,

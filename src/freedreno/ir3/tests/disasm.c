@@ -64,6 +64,7 @@ static const struct test {
    /* cat0 */
    INSTR_6XX(00000000_00000000, "nop"),
    INSTR_6XX(00000200_00000000, "(rpt2)nop"),
+   INSTR_6XX(00010000_00000000, "(eq)nop"),
    INSTR_6XX(03000000_00000000, "end"),
    INSTR_6XX(00800000_00000004, "br p0.x, #4"),
    INSTR_6XX(00800000_fffffffc, "br p0.x, #-4"),
@@ -496,7 +497,7 @@ main(int argc, char **argv)
          strtoll(&test->instr[9], NULL, 16),
          strtoll(&test->instr[0], NULL, 16),
       };
-      isa_decode(code, 8, fdisasm,
+      isa_disasm(code, 8, fdisasm,
                  &(struct isa_decode_options){
                     .gpu_id = test->gpu_id,
                     .show_errors = true,

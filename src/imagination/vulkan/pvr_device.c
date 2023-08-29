@@ -39,7 +39,6 @@
 #include <xf86drm.h>
 
 #include "hwdef/rogue_hw_utils.h"
-#include "pipe/p_defines.h"
 #include "pvr_bo.h"
 #include "pvr_border.h"
 #include "pvr_clear.h"
@@ -88,7 +87,15 @@
 #define PVR_GLOBAL_FREE_LIST_GROW_THRESHOLD 13U
 
 #if defined(VK_USE_PLATFORM_DISPLAY_KHR)
-#   define PVR_USE_WSI_PLATFORM
+#   define PVR_USE_WSI_PLATFORM_DISPLAY true
+#else
+#   define PVR_USE_WSI_PLATFORM_DISPLAY false
+#endif
+
+#if PVR_USE_WSI_PLATFORM_DISPLAY
+#   define PVR_USE_WSI_PLATFORM true
+#else
+#   define PVR_USE_WSI_PLATFORM false
 #endif
 
 #define PVR_API_VERSION VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION)
@@ -132,14 +139,12 @@ static const struct pvr_drm_device_config pvr_drm_configs[] = {
 #undef DEF_CONFIG
 
 static const struct vk_instance_extension_table pvr_instance_extensions = {
-#if defined(VK_USE_PLATFORM_DISPLAY_KHR)
-   .KHR_display = true,
-#endif
+   .KHR_display = PVR_USE_WSI_PLATFORM_DISPLAY,
    .KHR_external_memory_capabilities = true,
+   .KHR_get_display_properties2 = PVR_USE_WSI_PLATFORM_DISPLAY,
    .KHR_get_physical_device_properties2 = true,
-#if defined(PVR_USE_WSI_PLATFORM)
-   .KHR_surface = true,
-#endif
+   .KHR_get_surface_capabilities2 = PVR_USE_WSI_PLATFORM,
+   .KHR_surface = PVR_USE_WSI_PLATFORM,
    .EXT_debug_report = true,
    .EXT_debug_utils = true,
 };
@@ -149,12 +154,12 @@ static void pvr_physical_device_get_supported_extensions(
 {
    /* clang-format off */
    *extensions = (struct vk_device_extension_table){
+      .KHR_copy_commands2 = true,
       .KHR_external_memory = true,
       .KHR_external_memory_fd = true,
+      .KHR_get_memory_requirements2 = true,
+      .KHR_swapchain = PVR_USE_WSI_PLATFORM,
       .KHR_timeline_semaphore = true,
-#if defined(PVR_USE_WSI_PLATFORM)
-      .KHR_swapchain = true,
-#endif
       .EXT_external_memory_dma_buf = true,
       .EXT_private_data = true,
    };
@@ -188,7 +193,7 @@ static void pvr_physical_device_get_supported_features(
       .multiViewport = false,
       .samplerAnisotropy = false,
       .textureCompressionETC2 = true,
-      .textureCompressionASTC_LDR = PVR_HAS_FEATURE(dev_info, astc),
+      .textureCompressionASTC_LDR = false,
       .textureCompressionBC = false,
       .occlusionQueryPrecise = false,
       .pipelineStatisticsQuery = false,
@@ -422,6 +427,7 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
                                     &instance->vk,
                                     &supported_extensions,
                                     &supported_features,
+                                    NULL,
                                     &dispatch_table);
    if (result != VK_SUCCESS)
       goto err_pvr_winsys_destroy;
@@ -852,10 +858,35 @@ pvr_get_physical_device_descriptor_limits(struct pvr_physical_device *pdevice)
    return &descriptor_limits[cs_level];
 }
 
-void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
-                                      VkPhysicalDeviceProperties2 *pProperties)
+static void
+pvr_get_physical_device_properties_1_1(struct pvr_physical_device *pdevice,
+                                       VkPhysicalDeviceVulkan11Properties *p)
+{
+   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
+}
+
+static void
+pvr_get_physical_device_properties_1_2(struct pvr_physical_device *pdevice,
+                                       VkPhysicalDeviceVulkan12Properties *p)
+{
+   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES);
+
+   /* VK_KHR_timeline_semaphore */
+   p->maxTimelineSemaphoreValueDifference = UINT64_MAX;
+}
+
+static void
+pvr_get_physical_device_properties_1_3(struct pvr_physical_device *pdevice,
+                                       VkPhysicalDeviceVulkan13Properties *p)
+{
+   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES);
+}
+
+void pvr_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
+                                     VkPhysicalDeviceProperties *pProperties)
 {
    PVR_FROM_HANDLE(pvr_physical_device, pdevice, physicalDevice);
+
    const struct pvr_descriptor_limits *descriptor_limits =
       pvr_get_physical_device_descriptor_limits(pdevice);
 
@@ -1064,7 +1095,7 @@ void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
       .nonCoherentAtomSize = 1U,
    };
 
-   pProperties->properties = (VkPhysicalDeviceProperties){
+   *pProperties = (VkPhysicalDeviceProperties){
       .apiVersion = PVR_API_VERSION,
       .driverVersion = vk_get_driver_version(),
       .vendorID = VK_VENDOR_ID_IMAGINATION,
@@ -1074,23 +1105,49 @@ void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
       .sparseProperties = { 0 },
    };
 
-   snprintf(pProperties->properties.deviceName,
-            sizeof(pProperties->properties.deviceName),
+   snprintf(pProperties->deviceName,
+            sizeof(pProperties->deviceName),
             "%s",
             pdevice->name);
 
-   memcpy(pProperties->properties.pipelineCacheUUID,
+   memcpy(pProperties->pipelineCacheUUID,
           pdevice->pipeline_cache_uuid,
           VK_UUID_SIZE);
+}
+
+void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
+                                      VkPhysicalDeviceProperties2 *pProperties)
+{
+   PVR_FROM_HANDLE(pvr_physical_device, pdevice, physicalDevice);
+
+   VkPhysicalDeviceVulkan11Properties core_1_1 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES,
+   };
+
+   VkPhysicalDeviceVulkan12Properties core_1_2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
+   };
+
+   VkPhysicalDeviceVulkan13Properties core_1_3 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
+   };
+
+   pvr_GetPhysicalDeviceProperties(physicalDevice, &pProperties->properties);
+   pvr_get_physical_device_properties_1_1(pdevice, &core_1_1);
+   pvr_get_physical_device_properties_1_2(pdevice, &core_1_2);
+   pvr_get_physical_device_properties_1_3(pdevice, &core_1_3);
 
    vk_foreach_struct (ext, pProperties->pNext) {
+      if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1))
+         continue;
+
+      if (vk_get_physical_device_core_1_2_property_ext(ext, &core_1_2))
+         continue;
+
+      if (vk_get_physical_device_core_1_3_property_ext(ext, &core_1_3))
+         continue;
+
       switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES: {
-         VkPhysicalDeviceTimelineSemaphoreProperties *pProperties =
-            (VkPhysicalDeviceTimelineSemaphoreProperties *)ext;
-         pProperties->maxTimelineSemaphoreValueDifference = UINT64_MAX;
-         break;
-      }
       default: {
          pvr_debug_ignored_stype(ext->sType);
          break;

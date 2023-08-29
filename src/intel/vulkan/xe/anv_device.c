@@ -164,14 +164,14 @@ anv_xe_device_check_status(struct vk_device *vk_device)
    VkResult result = VK_SUCCESS;
 
    for (uint32_t i = 0; i < device->queue_count; i++) {
-      struct drm_xe_engine_get_property engine_get_property = {
-         .engine_id = device->queues[i].engine_id,
-         .property = XE_ENGINE_GET_PROPERTY_BAN,
+      struct drm_xe_exec_queue_get_property exec_queue_get_property = {
+         .exec_queue_id = device->queues[i].exec_queue_id,
+         .property = XE_EXEC_QUEUE_GET_PROPERTY_BAN,
       };
-      int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_ENGINE_GET_PROPERTY,
-                            &engine_get_property);
+      int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_GET_PROPERTY,
+                            &exec_queue_get_property);
 
-      if (ret || engine_get_property.value) {
+      if (ret || exec_queue_get_property.value) {
          result = vk_device_set_lost(&device->vk, "One or more queues banned");
          break;
       }

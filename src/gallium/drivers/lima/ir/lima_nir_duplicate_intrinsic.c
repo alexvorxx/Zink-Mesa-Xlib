@@ -32,7 +32,7 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
    nir_intrinsic_instr *last_dupl = NULL;
    nir_instr *last_parent_instr = NULL;
 
-   nir_foreach_use_safe(use_src, &itr->dest.ssa) {
+   nir_foreach_use_safe(use_src, &itr->def) {
       nir_intrinsic_instr *dupl;
 
       if (last_parent_instr != use_src->parent_instr) {
@@ -41,14 +41,10 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
          dupl = nir_intrinsic_instr_create(b->shader, op);
          dupl->num_components = itr->num_components;
          memcpy(dupl->const_index, itr->const_index, sizeof(itr->const_index));
-         dupl->src[0].is_ssa = itr->src[0].is_ssa;
-         if (itr->src[0].is_ssa)
-            dupl->src[0].ssa = itr->src[0].ssa;
-         else
-            dupl->src[0].reg = itr->src[0].reg;
+         dupl->src[0].ssa = itr->src[0].ssa;
 
-         nir_ssa_dest_init(&dupl->instr, &dupl->dest, dupl->num_components,
-                           itr->dest.ssa.bit_size);
+         nir_def_init(&dupl->instr, &dupl->def, dupl->num_components,
+                      itr->def.bit_size);
 
          dupl->instr.pass_flags = 1;
          nir_builder_instr_insert(b, &dupl->instr);
@@ -57,7 +53,7 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
          dupl = last_dupl;
       }
 
-      nir_instr_rewrite_src(use_src->parent_instr, use_src, nir_src_for_ssa(&dupl->dest.ssa));
+      nir_src_rewrite(use_src, &dupl->def);
       last_parent_instr = use_src->parent_instr;
       last_dupl = dupl;
    }
@@ -65,7 +61,7 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
    last_dupl = NULL;
    last_parent_instr = NULL;
 
-   nir_foreach_if_use_safe(use_src, &itr->dest.ssa) {
+   nir_foreach_if_use_safe(use_src, &itr->def) {
       nir_intrinsic_instr *dupl;
 
       if (last_parent_instr != use_src->parent_instr) {
@@ -74,14 +70,10 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
          dupl = nir_intrinsic_instr_create(b->shader, op);
          dupl->num_components = itr->num_components;
          memcpy(dupl->const_index, itr->const_index, sizeof(itr->const_index));
-         dupl->src[0].is_ssa = itr->src[0].is_ssa;
-         if (itr->src[0].is_ssa)
-            dupl->src[0].ssa = itr->src[0].ssa;
-         else
-            dupl->src[0].reg = itr->src[0].reg;
+         dupl->src[0].ssa = itr->src[0].ssa;
 
-         nir_ssa_dest_init(&dupl->instr, &dupl->dest, dupl->num_components,
-                           itr->dest.ssa.bit_size);
+         nir_def_init(&dupl->instr, &dupl->def, dupl->num_components,
+                      itr->def.bit_size);
 
          dupl->instr.pass_flags = 1;
          nir_builder_instr_insert(b, &dupl->instr);
@@ -90,7 +82,7 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
          dupl = last_dupl;
       }
 
-      nir_if_rewrite_condition(use_src->parent_if, nir_src_for_ssa(&dupl->dest.ssa));
+      nir_src_rewrite(&use_src->parent_if->condition, &dupl->def);
       last_parent_instr = use_src->parent_instr;
       last_dupl = dupl;
    }
@@ -122,9 +114,6 @@ lima_nir_duplicate_intrinsic_impl(nir_shader *shader, nir_function_impl *impl,
          if (itr->instr.pass_flags)
             continue;
 
-         if (!itr->dest.is_ssa)
-            continue;
-
          lima_nir_duplicate_intrinsic(&builder, itr, op);
       }
    }
@@ -139,10 +128,8 @@ lima_nir_duplicate_intrinsic_impl(nir_shader *shader, nir_function_impl *impl,
 void
 lima_nir_duplicate_load_uniforms(nir_shader *shader)
 {
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         lima_nir_duplicate_intrinsic_impl(shader, function->impl, nir_intrinsic_load_uniform);
-      }
+   nir_foreach_function_impl(impl, shader) {
+      lima_nir_duplicate_intrinsic_impl(shader, impl, nir_intrinsic_load_uniform);
    }
 }
 
@@ -152,9 +139,7 @@ lima_nir_duplicate_load_uniforms(nir_shader *shader)
 void
 lima_nir_duplicate_load_inputs(nir_shader *shader)
 {
-   nir_foreach_function(function, shader) {
-      if (function->impl) {
-         lima_nir_duplicate_intrinsic_impl(shader, function->impl, nir_intrinsic_load_input);
-      }
+   nir_foreach_function_impl(impl, shader) {
+      lima_nir_duplicate_intrinsic_impl(shader, impl, nir_intrinsic_load_input);
    }
 }

@@ -186,6 +186,11 @@ int egcm_load_index_reg(struct r600_bytecode *bc, unsigned id, bool inside_alu_c
 	if (bc->index_loaded[id])
 		return 0;
 
+	/* Hack to put MOVA and SET_CF_IDX in the same clause as AR only persists for one clause */
+	if (bc->gfx_level == EVERGREEN && (bc->cf_last == NULL || (bc->cf_last->ndw >> 1) >= 110)) {
+		bc->force_add_cf = 1;
+	}
+
 	memset(&alu, 0, sizeof(alu));
 	alu.op = ALU_OP1_MOVA_INT;
 	alu.src[0].sel = bc->index_reg[id];

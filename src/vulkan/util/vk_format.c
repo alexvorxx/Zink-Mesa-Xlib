@@ -266,9 +266,9 @@ vk_format_to_pipe_format(enum VkFormat vkformat)
       case VK_FORMAT_R10X6G10X6_UNORM_2PACK16:
          return PIPE_FORMAT_R16G16_UNORM;
       case VK_FORMAT_G8B8G8R8_422_UNORM:
-         return PIPE_FORMAT_YUYV;
+         return PIPE_FORMAT_G8B8_G8R8_UNORM;
       case VK_FORMAT_B8G8R8G8_422_UNORM:
-         return PIPE_FORMAT_UYVY;
+         return PIPE_FORMAT_B8G8_R8G8_UNORM;
       case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
          return PIPE_FORMAT_IYUV;
       case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
@@ -295,6 +295,10 @@ vk_format_to_pipe_format(enum VkFormat vkformat)
          return PIPE_FORMAT_B4G4R4A4_UNORM;
       case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
          return PIPE_FORMAT_R4G4B4A4_UNORM;
+      case VK_FORMAT_A8_UNORM_KHR:
+         return PIPE_FORMAT_A8_UNORM;
+      case VK_FORMAT_A1B5G5R5_UNORM_PACK16_KHR:
+         return PIPE_FORMAT_R5G5B5A1_UNORM;
       default:
          return PIPE_FORMAT_NONE;
       }
@@ -471,9 +475,9 @@ vk_component_mapping_to_pipe_swizzle(VkComponentMapping mapping,
 
 static const struct vk_format_ycbcr_info ycbcr_infos[] = {
    ycbcr_fmt(VK_FORMAT_G8B8G8R8_422_UNORM, 1,
-             y_plane(VK_FORMAT_G8B8G8R8_422_UNORM, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
+             y_plane(VK_FORMAT_G8B8G8R8_422_UNORM, YCBCR_SWIZ(R, G, B, ZERO), 1, 1)),
    ycbcr_fmt(VK_FORMAT_B8G8R8G8_422_UNORM, 1,
-             y_plane(VK_FORMAT_B8G8R8G8_422_UNORM, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
+             y_plane(VK_FORMAT_B8G8R8G8_422_UNORM, YCBCR_SWIZ(R, G, B, ZERO), 1, 1)),
    ycbcr_fmt(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, 3,
              y_plane(VK_FORMAT_R8_UNORM, YCBCR_SWIZ(G, ZERO, ZERO, ZERO), 1, 1),
              c_plane(VK_FORMAT_R8_UNORM, YCBCR_SWIZ(B, ZERO, ZERO, ZERO), 2, 2),
@@ -496,8 +500,11 @@ static const struct vk_format_ycbcr_info ycbcr_infos[] = {
    fmt_unsupported(VK_FORMAT_R10X6_UNORM_PACK16),
    fmt_unsupported(VK_FORMAT_R10X6G10X6_UNORM_2PACK16),
    fmt_unsupported(VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16),
-   fmt_unsupported(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16),
-   fmt_unsupported(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16),
+
+   ycbcr_fmt(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16, 1,
+             y_plane(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
+   ycbcr_fmt(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16, 1,
+             y_plane(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
 
    ycbcr_fmt(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16, 3,
              y_plane(VK_FORMAT_R10X6_UNORM_PACK16, YCBCR_SWIZ(G, ZERO, ZERO, ZERO), 1, 1),
@@ -521,8 +528,11 @@ static const struct vk_format_ycbcr_info ycbcr_infos[] = {
    fmt_unsupported(VK_FORMAT_R12X4_UNORM_PACK16),
    fmt_unsupported(VK_FORMAT_R12X4G12X4_UNORM_2PACK16),
    fmt_unsupported(VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16),
-   fmt_unsupported(VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16),
-   fmt_unsupported(VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16),
+
+   ycbcr_fmt(VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16, 1,
+             y_plane(VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
+   ycbcr_fmt(VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16, 1,
+             y_plane(VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
 
    ycbcr_fmt(VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16, 3,
              y_plane(VK_FORMAT_R12X4_UNORM_PACK16, YCBCR_SWIZ(G, ZERO, ZERO, ZERO), 1, 1),
@@ -543,8 +553,10 @@ static const struct vk_format_ycbcr_info ycbcr_infos[] = {
              c_plane(VK_FORMAT_R12X4_UNORM_PACK16, YCBCR_SWIZ(B, ZERO, ZERO, ZERO), 1, 1),
              c_plane(VK_FORMAT_R12X4_UNORM_PACK16, YCBCR_SWIZ(R, ZERO, ZERO, ZERO), 1, 1)),
 
-   fmt_unsupported(VK_FORMAT_G16B16G16R16_422_UNORM),
-   fmt_unsupported(VK_FORMAT_B16G16R16G16_422_UNORM),
+   ycbcr_fmt(VK_FORMAT_G16B16G16R16_422_UNORM, 1,
+             y_plane(VK_FORMAT_G16B16G16R16_422_UNORM, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
+   ycbcr_fmt(VK_FORMAT_B16G16R16G16_422_UNORM, 1,
+             y_plane(VK_FORMAT_B16G16R16G16_422_UNORM, YCBCR_SWIZ(B, G, R, ZERO), 1, 1)),
 
    ycbcr_fmt(VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM, 3,
              y_plane(VK_FORMAT_R16_UNORM, YCBCR_SWIZ(G, ZERO, ZERO, ZERO), 1, 1),
@@ -611,4 +623,33 @@ vk_format_get_ycbcr_info(VkFormat format)
       return NULL;
 
    return info;
+}
+
+static uint32_t
+swizzled_color_component(const VkClearColorValue *color,
+                         VkComponentSwizzle swizzle,
+                         uint32_t comp, bool is_int)
+{
+   switch (swizzle) {
+   case VK_COMPONENT_SWIZZLE_IDENTITY: return color->uint32[comp];
+   case VK_COMPONENT_SWIZZLE_ZERO:     return 0;
+   case VK_COMPONENT_SWIZZLE_ONE:      return is_int ? 1 : 0x3f800000;
+   case VK_COMPONENT_SWIZZLE_R:        return color->uint32[0];
+   case VK_COMPONENT_SWIZZLE_G:        return color->uint32[1];
+   case VK_COMPONENT_SWIZZLE_B:        return color->uint32[2];
+   case VK_COMPONENT_SWIZZLE_A:        return color->uint32[3];
+   default: unreachable("Invalid component swizzle");
+   }
+}
+
+VkClearColorValue
+vk_swizzle_color_value(VkClearColorValue color,
+                       VkComponentMapping swizzle, bool is_int)
+{
+   return (VkClearColorValue) { .uint32 = {
+      swizzled_color_component(&color, swizzle.r, 0, is_int),
+      swizzled_color_component(&color, swizzle.g, 1, is_int),
+      swizzled_color_component(&color, swizzle.b, 2, is_int),
+      swizzled_color_component(&color, swizzle.a, 3, is_int),
+   }};
 }

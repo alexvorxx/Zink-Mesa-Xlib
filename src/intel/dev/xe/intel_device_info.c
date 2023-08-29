@@ -106,13 +106,16 @@ intel_device_info_xe_query_regions(int fd, struct intel_device_info *devinfo,
          if (!update) {
             devinfo->mem.vram.mem.klass = region->mem_class;
             devinfo->mem.vram.mem.instance = region->instance;
-            devinfo->mem.vram.mappable.size = region->total_size;
+            devinfo->mem.vram.mappable.size = region->cpu_visible_size;
+            devinfo->mem.vram.unmappable.size = region->total_size - region->cpu_visible_size;
          } else {
             assert(devinfo->mem.vram.mem.klass == region->mem_class);
             assert(devinfo->mem.vram.mem.instance == region->instance);
-            assert(devinfo->mem.vram.mappable.size == region->total_size);
+            assert(devinfo->mem.vram.mappable.size == region->cpu_visible_size);
+            assert(devinfo->mem.vram.unmappable.size == (region->total_size - region->cpu_visible_size));
          }
-         devinfo->mem.vram.mappable.free = region->total_size - region->used;
+         devinfo->mem.vram.mappable.free = devinfo->mem.vram.mappable.size - region->cpu_visible_used;
+         devinfo->mem.vram.unmappable.free = devinfo->mem.vram.unmappable.size - (region->used - region->cpu_visible_used);
          break;
       }
       default:
@@ -143,11 +146,18 @@ xe_query_gts(int fd, struct intel_device_info *devinfo)
    return true;
 }
 
+void *
+intel_device_info_xe_query_hwconfig(int fd, int32_t *len)
+{
+   return xe_query_alloc_fetch(fd, DRM_XE_DEVICE_QUERY_HWCONFIG, len);
+}
+
 static bool
-xe_query_hwconfig(int fd, struct intel_device_info *devinfo)
+xe_query_process_hwconfig(int fd, struct intel_device_info *devinfo)
 {
    int32_t len;
-   void *data = xe_query_alloc_fetch(fd, DRM_XE_DEVICE_QUERY_HWCONFIG, &len);
+   void *data = intel_device_info_xe_query_hwconfig(fd, &len);
+
    if (!data)
       return false;
 
@@ -303,7 +313,7 @@ intel_device_info_xe_get_info_from_fd(int fd, struct intel_device_info *devinfo)
    if (!xe_query_gts(fd, devinfo))
       return false;
 
-   if (xe_query_hwconfig(fd, devinfo))
+   if (xe_query_process_hwconfig(fd, devinfo))
       intel_device_info_update_after_hwconfig(devinfo);
 
    if (!xe_query_topology(fd, devinfo))

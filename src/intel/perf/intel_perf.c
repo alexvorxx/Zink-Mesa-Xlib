@@ -36,6 +36,7 @@
 #include <drm-uapi/i915_drm.h>
 
 #include "common/intel_gem.h"
+#include "common/i915/intel_gem.h"
 
 #include "dev/intel_debug.h"
 #include "dev/intel_device_info.h"
@@ -480,6 +481,7 @@ get_register_queries_function(const struct intel_device_info *devinfo)
    case INTEL_PLATFORM_DG1:
       return intel_oa_register_queries_dg1;
    case INTEL_PLATFORM_ADL:
+   case INTEL_PLATFORM_RPL:
       return intel_oa_register_queries_adl;
    case INTEL_PLATFORM_DG2_G10:
       return intel_oa_register_queries_acmgt3;

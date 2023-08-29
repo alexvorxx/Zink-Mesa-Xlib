@@ -162,14 +162,15 @@ enum radv_ud_index {
    AC_UD_INDIRECT_DESCRIPTOR_SETS = 3,
    AC_UD_VIEW_INDEX = 4,
    AC_UD_STREAMOUT_BUFFERS = 5,
-   AC_UD_NGG_QUERY_STATE = 6,
+   AC_UD_SHADER_QUERY_STATE = 6,
    AC_UD_NGG_PROVOKING_VTX = 7,
    AC_UD_NGG_CULLING_SETTINGS = 8,
    AC_UD_NGG_VIEWPORT = 9,
    AC_UD_FORCE_VRS_RATES = 10,
    AC_UD_TASK_RING_ENTRY = 11,
    AC_UD_NUM_VERTS_PER_PRIM = 12,
-   AC_UD_SHADER_START = 13,
+   AC_UD_NEXT_STAGE_PC = 13,
+   AC_UD_SHADER_START = 14,
    AC_UD_VS_VERTEX_BUFFERS = AC_UD_SHADER_START,
    AC_UD_VS_BASE_VERTEX_START_INSTANCE,
    AC_UD_VS_PROLOG_INPUTS,
@@ -188,8 +189,9 @@ enum radv_ud_index {
    AC_UD_CS_MAX_UD,
    AC_UD_GS_MAX_UD,
    AC_UD_TCS_OFFCHIP_LAYOUT = AC_UD_VS_MAX_UD,
+   AC_UD_TCS_EPILOG_PC,
    AC_UD_TCS_MAX_UD,
-   AC_UD_TES_NUM_PATCHES = AC_UD_SHADER_START,
+   AC_UD_TES_STATE = AC_UD_SHADER_START,
    AC_UD_TES_MAX_UD,
    AC_UD_MAX_UD = AC_UD_CS_MAX_UD,
 };
@@ -199,7 +201,16 @@ enum radv_ud_index {
 #define TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS__SHIFT 0
 #define TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS__MASK  0x3f
 #define TCS_OFFCHIP_LAYOUT_NUM_PATCHES__SHIFT          6
-#define TCS_OFFCHIP_LAYOUT_NUM_PATCHES__MASK           0xff
+#define TCS_OFFCHIP_LAYOUT_NUM_PATCHES__MASK           0x3f
+#define TCS_OFFCHIP_LAYOUT_LSHS_VERTEX_STRIDE__SHIFT   12
+#define TCS_OFFCHIP_LAYOUT_LSHS_VERTEX_STRIDE__MASK    0xff /* max 32 * 4 + 1 (to reduce LDS bank conflicts) */
+
+#define TES_STATE_NUM_PATCHES__SHIFT      0
+#define TES_STATE_NUM_PATCHES__MASK       0xff
+#define TES_STATE_TCS_VERTICES_OUT__SHIFT 8
+#define TES_STATE_TCS_VERTICES_OUT__MASK  0xff
+#define TES_STATE_NUM_TCS_OUTPUTS__SHIFT  16
+#define TES_STATE_NUM_TCS_OUTPUTS__MASK   0xff
 
 #define PS_STATE_NUM_SAMPLES__SHIFT    0
 #define PS_STATE_NUM_SAMPLES__MASK     0xf
@@ -241,7 +252,6 @@ struct radv_vs_output_info {
    bool writes_primitive_shading_rate;
    bool writes_primitive_shading_rate_per_primitive;
    bool export_prim_id;
-   bool export_clip_dists;
    unsigned pos_exports;
 };
 
@@ -288,8 +298,8 @@ struct radv_shader_info {
    bool is_ngg_passthrough;
    bool has_ngg_culling;
    bool has_ngg_early_prim_export;
-   bool has_ngg_prim_query;
-   bool has_ngg_xfb_query;
+   bool has_prim_query;
+   bool has_xfb_query;
    uint32_t num_tess_patches;
    uint32_t esgs_itemsize; /* Only for VS or TES as ES */
    struct radv_vs_output_info outinfo;
@@ -299,6 +309,10 @@ struct radv_shader_info {
    gl_shader_stage next_stage;
    enum radv_shader_type type;
    uint32_t user_data_0;
+   bool inputs_linked;
+   bool outputs_linked;
+   bool has_epilog;    /* Only for TCS or PS */
+   bool is_monolithic; /* False only for merged shaders which are compiled separately */
 
    struct {
       uint8_t input_usage_mask[RADV_VERT_ATTRIB_MAX];
@@ -332,7 +346,7 @@ struct radv_shader_info {
       unsigned invocations;
       unsigned es_type; /* GFX9: VS or TES */
       uint8_t num_linked_inputs;
-      bool has_ngg_pipeline_stat_query;
+      bool has_pipeline_stat_query;
    } gs;
    struct {
       uint8_t output_usage_mask[VARYING_SLOT_VAR31 + 1];
@@ -341,8 +355,9 @@ struct radv_shader_info {
       enum gl_tess_spacing spacing;
       bool ccw;
       bool point_mode;
+      bool reads_tess_factors;
+      unsigned tcs_vertices_out;
       uint8_t num_linked_inputs;
-      uint8_t num_linked_patch_inputs;
       uint8_t num_linked_outputs;
    } tes;
    struct {
@@ -388,7 +403,6 @@ struct radv_shader_info {
       bool allow_flat_shading;
       bool pops; /* Uses Primitive Ordered Pixel Shading (fragment shader interlock) */
       bool pops_is_per_sample;
-      bool has_epilog;
       bool mrt0_is_dual_src;
       unsigned spi_ps_input;
       unsigned colors_written;
@@ -471,6 +485,12 @@ struct radv_vs_prolog_key {
    bool is_ngg;
    bool wave32;
    gl_shader_stage next_stage;
+};
+
+struct radv_tcs_epilog_key {
+   enum tess_primitive_mode primitive_mode;
+   bool tes_reads_tessfactors;
+   bool tcs_out_patch_fits_subgroup;
 };
 
 enum radv_shader_binary_type { RADV_BINARY_TYPE_LEGACY, RADV_BINARY_TYPE_RTLD };
@@ -597,25 +617,25 @@ struct radv_shader_part {
 };
 
 struct radv_pipeline_layout;
-struct radv_pipeline_stage;
+struct radv_shader_stage;
 
 void radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively);
 void radv_optimize_nir_algebraic(nir_shader *shader, bool opt_offsets);
 
-void radv_postprocess_nir(struct radv_device *device, const struct radv_pipeline_layout *pipeline_layout,
-                          const struct radv_pipeline_key *pipeline_key, unsigned last_vgt_api_stage,
-                          struct radv_pipeline_stage *stage);
+void radv_postprocess_nir(struct radv_device *device, const struct radv_pipeline_key *pipeline_key,
+                          struct radv_shader_stage *stage);
 
 nir_shader *radv_parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo *sinfo,
-                                const struct radv_pipeline_key *key);
+                                const struct radv_pipeline_key *key,
+                                const struct radv_pipeline_layout *pipeline_layout);
 
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
                            uint32_t *stack_size, bool resume_shader);
 
-struct radv_pipeline_stage;
+struct radv_shader_stage;
 
-nir_shader *radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_stage *stage,
+nir_shader *radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_stage *stage,
                                      const struct radv_pipeline_key *key, bool is_internal);
 
 void radv_init_shader_arenas(struct radv_device *device);
@@ -632,7 +652,7 @@ VkResult radv_shader_create_uncached(struct radv_device *device, const struct ra
                                      bool replayable, struct radv_serialized_shader_arena_block *replay_block,
                                      struct radv_shader **out_shader);
 
-struct radv_shader_binary *radv_shader_nir_to_asm(struct radv_device *device, struct radv_pipeline_stage *pl_stage,
+struct radv_shader_binary *radv_shader_nir_to_asm(struct radv_device *device, struct radv_shader_stage *pl_stage,
                                                   struct nir_shader *const *shaders, int shader_count,
                                                   const struct radv_pipeline_key *key, bool keep_shader_info,
                                                   bool keep_statistic_info);
@@ -677,12 +697,16 @@ struct radv_shader_part *radv_create_vs_prolog(struct radv_device *device, const
 struct radv_shader_part *radv_create_ps_epilog(struct radv_device *device, const struct radv_ps_epilog_key *key,
                                                struct radv_shader_part_binary **binary_out);
 
+struct radv_shader_part *radv_create_tcs_epilog(struct radv_device *device, const struct radv_tcs_epilog_key *key);
+
 void radv_shader_part_destroy(struct radv_device *device, struct radv_shader_part *shader_part);
 
 uint64_t radv_shader_get_va(const struct radv_shader *shader);
 struct radv_shader *radv_find_shader(struct radv_device *device, uint64_t pc);
 
 unsigned radv_get_max_waves(const struct radv_device *device, struct radv_shader *shader, gl_shader_stage stage);
+
+unsigned radv_get_max_scratch_waves(const struct radv_device *device, struct radv_shader *shader);
 
 const char *radv_get_shader_name(const struct radv_shader_info *info, gl_shader_stage stage);
 
@@ -818,7 +842,7 @@ get_tcs_num_patches(unsigned tcs_num_input_vertices, unsigned tcs_num_output_ver
    return num_patches;
 }
 
-void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_stage,
+void radv_lower_ngg(struct radv_device *device, struct radv_shader_stage *ngg_stage,
                     const struct radv_pipeline_key *pl_key);
 
 bool radv_consider_culling(const struct radv_physical_device *pdevice, struct nir_shader *nir, uint64_t ps_inputs_read,

@@ -39,6 +39,13 @@ libtu_files = files(
   'tu_util.cc',
 )
 
+libtu_includes = [
+    inc_include,
+    inc_src,
+    inc_compiler,
+    inc_freedreno,
+]
+
 tu_deps = []
 tu_flags = []
 
@@ -78,7 +85,14 @@ endif
 
 if freedreno_kmds.contains('msm')
   tu_flags += '-DTU_HAS_MSM'
-  libtu_files += files('tu_knl_drm_msm.cc')
+  libtu_files += files('tu_knl_drm_msm.cc', 'tu_knl_drm.cc')
+  tu_deps += dep_libdrm
+endif
+
+if freedreno_kmds.contains('virtio')
+  tu_flags += '-DTU_HAS_VIRTIO'
+  libtu_files += files('tu_knl_drm_virtio.cc', 'tu_knl_drm.cc')
+  libtu_includes += inc_virtio_gpu
   tu_deps += dep_libdrm
 endif
 
@@ -134,16 +148,7 @@ endif
 libvulkan_freedreno = shared_library(
   'vulkan_freedreno',
   [libtu_files, tu_entrypoints, tu_tracepoints, freedreno_xml_header_files, sha1_h, u_format_pack_h],
-  include_directories : [
-    inc_include,
-    inc_src,
-    inc_mapi,
-    inc_mesa,
-    inc_gallium,
-    inc_gallium_aux,
-    inc_compiler,
-    inc_freedreno,
-  ],
+  include_directories : libtu_includes,
   link_with : [
     libfreedreno_ir3,
     libfreedreno_layout,

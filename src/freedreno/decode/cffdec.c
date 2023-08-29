@@ -2764,11 +2764,15 @@ cp_compute_checkpoint(uint32_t *dwords, uint32_t sizedwords, int level)
    assert(is_64b());
    assert(options->gpu_id >= 500);
 
-   assert(sizedwords == 8);
-
-   addr = dwords[5];
-   addr |= ((uint64_t)dwords[6]) << 32;
-   len = dwords[7];
+   if (sizedwords == 8) {
+      addr = dwords[5];
+      addr |= ((uint64_t)dwords[6]) << 32;
+      len = dwords[7];
+   } else {
+      addr = dwords[5];
+      addr |= ((uint64_t)dwords[6]) << 32;
+      len = dwords[4];
+   }
 
    printl(3, "%saddr: 0x%016" PRIx64 "\n", levels[level], addr);
    printl(3, "%slen:  0x%x\n", levels[level], len);

@@ -40,6 +40,102 @@ impl<'a, T: 'a> Iterator for ExecListIter<'a, T> {
     }
 }
 
+#[macro_export]
+#[cfg(debug_assertions)]
+macro_rules! nir_pass_impl {
+    ($nir:ident, $pass:ident, $func:ident $(,$arg:expr)* $(,)?) => {
+        {
+            let func_str = ::std::stringify!($func);
+            let func_cstr = ::std::ffi::CString::new(func_str).unwrap();
+            let res = if unsafe { should_skip_nir(func_cstr.as_ptr()) } {
+                println!("skipping {}", func_str);
+                false
+            } else {
+                $nir.metadata_set_validation_flag();
+                if $nir.should_print() {
+                    println!("{}", func_str);
+                }
+                if $nir.$pass($func $(,$arg)*) {
+                    $nir.validate(&format!("after {} in {}:{}", func_str, file!(), line!()));
+                    if $nir.should_print() {
+                        $nir.print();
+                    }
+                    $nir.metadata_check_validation_flag();
+                    true
+                } else {
+                    false
+                }
+            };
+
+            // SAFETY: mutable static can't be read safely, but this value isn't going to change
+            let ndebug = unsafe { nir_debug };
+            if ndebug & NIR_DEBUG_CLONE != 0 {
+                $nir.validate_clone();
+            }
+
+            if ndebug & NIR_DEBUG_SERIALIZE != 0 {
+                $nir.validate_serialize_deserialize();
+            }
+
+            res
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(not(debug_assertions))]
+macro_rules! nir_pass_impl {
+    ($nir:ident, $pass:ident, $func:ident $(,$arg:expr)* $(,)?) => {
+        $nir.$pass($func $(,$arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! nir_pass {
+    ($nir:ident, $func:ident $(,)?) => {
+        $crate::nir_pass_impl!($nir, pass0, $func)
+    };
+
+    ($nir:ident, $func:ident, $a:expr $(,)?) => {
+        $crate::nir_pass_impl!($nir, pass1, $func, $a)
+    };
+
+    ($nir:ident, $func:ident, $a:expr, $b:expr $(,)?) => {
+        $crate::nir_pass_impl!($nir, pass2, $func, $a, $b)
+    };
+
+    ($nir:ident, $func:ident, $a:expr, $b:expr, $c:expr $(,)?) => {
+        $crate::nir_pass_impl!($nir, pass3, $func, $a, $b, $c)
+    };
+}
+
+pub struct NirPrintfInfo {
+    count: usize,
+    printf_info: *mut u_printf_info,
+}
+
+impl NirPrintfInfo {
+    pub fn u_printf(&self, buf: &[u8]) {
+        unsafe {
+            u_printf(
+                stdout_ptr(),
+                buf.as_ptr().cast(),
+                buf.len(),
+                self.printf_info.cast(),
+                self.count as u32,
+            );
+        }
+    }
+}
+
+impl Drop for NirPrintfInfo {
+    fn drop(&mut self) {
+        unsafe {
+            ralloc_free(self.printf_info.cast());
+        };
+    }
+}
+
 pub struct NirShader {
     nir: NonNull<nir_shader>,
 }
@@ -123,23 +219,60 @@ impl NirShader {
         unsafe { pass(self.nir.as_ptr(), a, b, c) }
     }
 
+    #[cfg(debug_assertions)]
+    pub fn metadata_check_validation_flag(&self) {
+        unsafe { nir_metadata_check_validation_flag(self.nir.as_ptr()) }
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn metadata_set_validation_flag(&mut self) {
+        unsafe { nir_metadata_set_validation_flag(self.nir.as_ptr()) }
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn validate(&self, when: &str) {
+        let cstr = CString::new(when).unwrap();
+        unsafe { nir_validate_shader(self.nir.as_ptr(), cstr.as_ptr()) }
+    }
+
+    pub fn should_print(&self) -> bool {
+        unsafe { should_print_nir(self.nir.as_ptr()) }
+    }
+
+    pub fn validate_serialize_deserialize(&self) {
+        unsafe { nir_shader_serialize_deserialize(self.nir.as_ptr()) }
+    }
+
+    pub fn validate_clone(&mut self) {
+        unsafe {
+            let nir_ptr = self.nir.as_ptr();
+            let clone = nir_shader_clone(ralloc_parent(nir_ptr.cast()), nir_ptr);
+            nir_shader_replace(nir_ptr, clone)
+        }
+    }
+
     pub fn entrypoint(&self) -> *mut nir_function_impl {
         unsafe { nir_shader_get_entrypoint(self.nir.as_ptr()) }
     }
 
     pub fn structurize(&mut self) {
-        self.pass0(nir_lower_goto_ifs);
-        self.pass0(nir_opt_dead_cf);
+        nir_pass!(self, nir_lower_goto_ifs);
+        nir_pass!(self, nir_opt_dead_cf);
     }
 
     pub fn inline(&mut self, libclc: &NirShader) {
-        self.pass1(
+        nir_pass!(
+            self,
             nir_lower_variable_initializers,
             nir_variable_mode::nir_var_function_temp,
         );
-        self.pass0(nir_lower_returns);
-        self.pass1(nir_lower_libclc, libclc.nir.as_ptr());
-        self.pass0(nir_inline_functions);
+        nir_pass!(self, nir_lower_returns);
+        nir_pass!(self, nir_lower_libclc, libclc.nir.as_ptr());
+        nir_pass!(self, nir_inline_functions);
+    }
+
+    pub fn gather_info(&mut self) {
+        unsafe { nir_shader_gather_info(self.nir.as_ptr(), self.entrypoint()) }
     }
 
     pub fn remove_non_entrypoints(&mut self) {
@@ -256,15 +389,33 @@ impl NirShader {
         }
     }
 
-    pub fn printf_format(&self) -> &[u_printf_info] {
-        if self.has_printf() {
-            unsafe {
-                let nir = self.nir.as_ref();
-                slice::from_raw_parts(nir.printf_info, nir.printf_info_count as usize)
-            }
-        } else {
-            &[]
+    pub fn take_printf_info(&mut self) -> Option<NirPrintfInfo> {
+        let nir = unsafe { self.nir.as_mut() };
+
+        let info = nir.printf_info;
+        if info.is_null() {
+            return None;
         }
+        let count = nir.printf_info_count as usize;
+
+        unsafe {
+            ralloc_steal(ptr::null(), info.cast());
+
+            for i in 0..count {
+                ralloc_steal(info.cast(), (*info.add(i)).arg_sizes.cast());
+                ralloc_steal(info.cast(), (*info.add(i)).strings.cast());
+            }
+        };
+
+        let result = Some(NirPrintfInfo {
+            count: count,
+            printf_info: info,
+        });
+
+        nir.printf_info_count = 0;
+        nir.printf_info = ptr::null_mut();
+
+        result
     }
 
     pub fn get_constant_buffer(&self) -> &[u8] {
@@ -298,14 +449,6 @@ impl NirShader {
             let var = nir_variable_create(self.nir.as_ptr(), mode, glsl_type, name.as_ptr());
             (*var).data.location = loc.try_into().unwrap();
             var
-        }
-    }
-}
-
-impl Clone for NirShader {
-    fn clone(&self) -> Self {
-        Self {
-            nir: NonNull::new(self.dup_for_driver()).unwrap(),
         }
     }
 }

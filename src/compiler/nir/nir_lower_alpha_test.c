@@ -81,7 +81,7 @@ nir_lower_alpha_test(nir_shader *shader, enum compare_func func,
 
                b.cursor = nir_before_instr(&intr->instr);
 
-               nir_ssa_def *alpha;
+               nir_def *alpha;
                if (alpha_to_one) {
                   alpha = nir_imm_float(&b, 1.0);
                } else if (intr->intrinsic == nir_intrinsic_store_deref) {
@@ -95,9 +95,9 @@ nir_lower_alpha_test(nir_shader *shader, enum compare_func func,
                nir_variable *var = nir_state_variable_create(shader, glsl_float_type(),
                                                              "gl_AlphaRefMESA",
                                                              alpha_ref_state_tokens);
-               nir_ssa_def *alpha_ref = nir_load_var(&b, var);
+               nir_def *alpha_ref = nir_load_var(&b, var);
 
-               nir_ssa_def *condition =
+               nir_def *condition =
                   nir_compare_func(&b, func, alpha, alpha_ref);
 
                nir_discard_if(&b, nir_inot(&b, condition));
@@ -107,6 +107,6 @@ nir_lower_alpha_test(nir_shader *shader, enum compare_func func,
       }
 
       nir_metadata_preserve(impl, nir_metadata_block_index |
-                            nir_metadata_dominance);
+                                     nir_metadata_dominance);
    }
 }

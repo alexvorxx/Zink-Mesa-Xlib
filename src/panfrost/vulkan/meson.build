@@ -145,7 +145,7 @@ panfrost_icd = custom_target(
   output : 'panfrost_icd.@0@.json'.format(host_machine.cpu()),
   command : [
     prog_python, '@INPUT0@',
-    '--api-version', '1.1', '--xml', '@INPUT1@',
+    '--api-version', '1.0', '--xml', '@INPUT1@',
     '--lib-path', join_paths(get_option('prefix'), get_option('libdir'),
                              'libvulkan_panfrost.so'),
     '--out', '@OUTPUT@',
@@ -162,7 +162,7 @@ _dev_icd = custom_target(
   output : _dev_icdname,
   command : [
     prog_python, '@INPUT0@',
-    '--api-version', '1.1', '--xml', '@INPUT1@',
+    '--api-version', '1.0', '--xml', '@INPUT1@',
     '--lib-path', meson.current_build_dir() / 'libvulkan_panfrost.so',
     '--out', '@OUTPUT@',
   ],

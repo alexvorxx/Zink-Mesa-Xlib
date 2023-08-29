@@ -226,6 +226,8 @@ union ac_hw_cache_flags ac_get_hw_cache_flags(const struct radeon_info *info,
 
 unsigned ac_get_all_edge_flag_bits(void);
 
+unsigned ac_shader_io_get_unique_index_patch(unsigned semantic);
+
 #ifdef __cplusplus
 }
 #endif

@@ -75,7 +75,8 @@ lp_llvm_sampler_soa_create(const struct lp_sampler_static_state *static_state,
    sampler = lp_bld_llvm_sampler_soa_create(static_state, nr_samplers);
 
 #if LP_USE_TEXTURE_CACHE
-   sampler->dynamic_state.base.cache_ptr = lp_llvm_texture_cache_ptr;
+   struct lp_sampler_dynamic_state *dynamic_state = lp_build_sampler_soa_dynamic_state(sampler);
+   dynamic_state->cache_ptr = lp_llvm_texture_cache_ptr;
 #endif
    return sampler;
 }

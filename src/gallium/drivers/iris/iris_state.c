@@ -380,6 +380,8 @@ emit_state(struct iris_batch *batch,
 #define cso_changed(x) (!old_cso || (old_cso->x != new_cso->x))
 #define cso_changed_memcmp(x) \
    (!old_cso || memcmp(old_cso->x, new_cso->x, sizeof(old_cso->x)) != 0)
+#define cso_changed_memcmp_elts(x, n) \
+   (!old_cso || memcmp(old_cso->x, new_cso->x, n * sizeof(old_cso->x[0])) != 0)
 
 static void
 flush_before_state_base_change(struct iris_batch *batch)
@@ -430,6 +432,7 @@ flush_before_state_base_change(struct iris_batch *batch)
 static void
 flush_after_state_base_change(struct iris_batch *batch)
 {
+   const struct intel_device_info *devinfo = batch->screen->devinfo;
    /* After re-setting the surface state base address, we have to do some
     * cache flusing so that the sampler engine will pick up the new
     * SURFACE_STATE objects and binding tables. From the Broadwell PRM,
@@ -467,7 +470,7 @@ flush_after_state_base_change(struct iris_batch *batch)
     * units cache the binding table in the texture cache.  However, we have
     * yet to be able to actually confirm this.
     *
-    * Wa_14013910100:
+    * Wa_16013000631:
     *
     *  "DG2 128/256/512-A/B: S/W must program STATE_BASE_ADDRESS command twice
     *   or program pipe control with Instruction cache invalidate post
@@ -478,8 +481,8 @@ flush_after_state_base_change(struct iris_batch *batch)
                               PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
                               PIPE_CONTROL_CONST_CACHE_INVALIDATE |
                               PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-                              (GFX_VERx10 != 125 ? 0 :
-                               PIPE_CONTROL_INSTRUCTION_INVALIDATE));
+                              (intel_needs_workaround(devinfo, 16013000631) ?
+                               PIPE_CONTROL_INSTRUCTION_INVALIDATE : 0));
 }
 
 static void
@@ -1338,6 +1341,11 @@ iris_init_render_context(struct iris_batch *batch)
    /* TODO: may need to set an offset for origin-UL framebuffers */
    iris_emit_cmd(batch, GENX(3DSTATE_POLY_STIPPLE_OFFSET), foo);
 
+#if GFX_VERx10 >= 125
+   iris_emit_cmd(batch, GENX(3DSTATE_MESH_CONTROL), foo);
+   iris_emit_cmd(batch, GENX(3DSTATE_TASK_CONTROL), foo);
+#endif
+
    iris_alloc_push_constants(batch);
 
 
@@ -1384,6 +1392,13 @@ iris_init_compute_context(struct iris_batch *batch)
 
 #if GFX_VER >= 12
    init_aux_map_state(batch);
+#endif
+
+#if GFX_VERx10 >= 125
+   iris_emit_cmd(batch, GENX(CFE_STATE), cfe) {
+      cfe.MaximumNumberofThreads =
+         devinfo->max_cs_threads * devinfo->subslice_total;
+   }
 #endif
 
    iris_batch_sync_region_end(batch);
@@ -1669,6 +1684,9 @@ struct iris_depth_stencil_alpha_state {
 
    /** Outbound to Gfx8-9 PMA stall equations */
    bool depth_test_enabled;
+
+   /** Tracking state of DS writes for Wa_18019816803. */
+   bool ds_write_state;
 };
 
 /**
@@ -1685,6 +1703,46 @@ iris_create_zsa_state(struct pipe_context *ctx,
       malloc(sizeof(struct iris_depth_stencil_alpha_state));
 
    bool two_sided_stencil = state->stencil[1].enabled;
+
+   bool depth_write_enabled = false;
+   bool stencil_write_enabled = false;
+
+   /* Depth writes enabled? */
+   if (state->depth_writemask &&
+      ((!state->depth_enabled) ||
+      ((state->depth_func != PIPE_FUNC_NEVER) &&
+        (state->depth_func != PIPE_FUNC_EQUAL))))
+      depth_write_enabled = true;
+
+   bool stencil_all_keep =
+      state->stencil[0].fail_op == PIPE_STENCIL_OP_KEEP &&
+      state->stencil[0].zfail_op == PIPE_STENCIL_OP_KEEP &&
+      state->stencil[0].zpass_op == PIPE_STENCIL_OP_KEEP &&
+      (!two_sided_stencil ||
+       (state->stencil[1].fail_op == PIPE_STENCIL_OP_KEEP &&
+        state->stencil[1].zfail_op == PIPE_STENCIL_OP_KEEP &&
+        state->stencil[1].zpass_op == PIPE_STENCIL_OP_KEEP));
+
+   bool stencil_mask_zero =
+      state->stencil[0].writemask == 0 ||
+      (!two_sided_stencil || state->stencil[1].writemask  == 0);
+
+   bool stencil_func_never =
+      state->stencil[0].func == PIPE_FUNC_NEVER &&
+      state->stencil[0].fail_op == PIPE_STENCIL_OP_KEEP &&
+      (!two_sided_stencil ||
+       (state->stencil[1].func == PIPE_FUNC_NEVER &&
+        state->stencil[1].fail_op == PIPE_STENCIL_OP_KEEP));
+
+   /* Stencil writes enabled? */
+   if (state->stencil[0].writemask != 0 ||
+      ((two_sided_stencil && state->stencil[1].writemask != 0) &&
+       (!stencil_all_keep &&
+        !stencil_mask_zero &&
+        !stencil_func_never)))
+      stencil_write_enabled = true;
+
+   cso->ds_write_state = depth_write_enabled || stencil_write_enabled;
 
    cso->alpha_enabled = state->alpha_enabled;
    cso->alpha_func = state->alpha_func;
@@ -1767,6 +1825,12 @@ iris_bind_zsa_state(struct pipe_context *ctx, void *state)
 
       ice->state.depth_writes_enabled = new_cso->depth_writes_enabled;
       ice->state.stencil_writes_enabled = new_cso->stencil_writes_enabled;
+
+      /* State ds_write_enable changed, need to flag dirty DS. */
+      if (!old_cso || (ice->state.ds_write_state != new_cso->ds_write_state)) {
+         ice->state.dirty |= IRIS_DIRTY_DS_WRITE_ENABLE;
+         ice->state.ds_write_state = new_cso->ds_write_state;
+      }
 
 #if GFX_VER >= 12
       if (cso_changed(depth_bounds))
@@ -3881,7 +3945,7 @@ iris_delete_state(struct pipe_context *ctx, void *state)
  */
 static void
 iris_set_vertex_buffers(struct pipe_context *ctx,
-                        unsigned start_slot, unsigned count,
+                        unsigned count,
                         unsigned unbind_num_trailing_slots,
                         bool take_ownership,
                         const struct pipe_vertex_buffer *buffers)
@@ -3891,12 +3955,12 @@ iris_set_vertex_buffers(struct pipe_context *ctx,
    struct iris_genx_state *genx = ice->state.genx;
 
    ice->state.bound_vertex_buffers &=
-      ~u_bit_consecutive64(start_slot, count + unbind_num_trailing_slots);
+      ~u_bit_consecutive64(0, count + unbind_num_trailing_slots);
 
    for (unsigned i = 0; i < count; i++) {
       const struct pipe_vertex_buffer *buffer = buffers ? &buffers[i] : NULL;
       struct iris_vertex_buffer_state *state =
-         &genx->vertex_buffers[start_slot + i];
+         &genx->vertex_buffers[i];
 
       if (!buffer) {
          pipe_resource_reference(&state->resource, NULL);
@@ -3921,14 +3985,14 @@ iris_set_vertex_buffers(struct pipe_context *ctx,
       state->offset = (int) buffer->buffer_offset;
 
       if (res) {
-         ice->state.bound_vertex_buffers |= 1ull << (start_slot + i);
+         ice->state.bound_vertex_buffers |= 1ull << i;
          res->bind_history |= PIPE_BIND_VERTEX_BUFFER;
       }
 
       iris_pack_state(GENX(VERTEX_BUFFER_STATE), state->state, vb) {
-         vb.VertexBufferIndex = start_slot + i;
+         vb.VertexBufferIndex = i;
          vb.AddressModifyEnable = true;
-         vb.BufferPitch = buffer->stride;
+         /* vb.BufferPitch is merged in dynamically from VE state later */
          if (res) {
             vb.BufferSize = res->base.b.width0 - (int) buffer->buffer_offset;
             vb.BufferStartingAddress =
@@ -3948,7 +4012,7 @@ iris_set_vertex_buffers(struct pipe_context *ctx,
 
    for (unsigned i = 0; i < unbind_num_trailing_slots; i++) {
       struct iris_vertex_buffer_state *state =
-         &genx->vertex_buffers[start_slot + count + i];
+         &genx->vertex_buffers[count + i];
 
       pipe_resource_reference(&state->resource, NULL);
    }
@@ -3964,6 +4028,8 @@ struct iris_vertex_element_state {
    uint32_t vf_instancing[33 * GENX(3DSTATE_VF_INSTANCING_length)];
    uint32_t edgeflag_ve[GENX(VERTEX_ELEMENT_STATE_length)];
    uint32_t edgeflag_vfi[GENX(3DSTATE_VF_INSTANCING_length)];
+   uint32_t stride[PIPE_MAX_ATTRIBS];
+   unsigned vb_count;
    unsigned count;
 };
 
@@ -3986,9 +4052,10 @@ iris_create_vertex_elements(struct pipe_context *ctx,
    struct iris_screen *screen = (struct iris_screen *)ctx->screen;
    const struct intel_device_info *devinfo = screen->devinfo;
    struct iris_vertex_element_state *cso =
-      malloc(sizeof(struct iris_vertex_element_state));
+      calloc(1, sizeof(struct iris_vertex_element_state));
 
    cso->count = count;
+   cso->vb_count = 0;
 
    iris_pack_command(GENX(3DSTATE_VERTEX_ELEMENTS), cso->vertex_elements, ve) {
       ve.DWordLength =
@@ -4047,6 +4114,8 @@ iris_create_vertex_elements(struct pipe_context *ctx,
 
       ve_pack_dest += GENX(VERTEX_ELEMENT_STATE_length);
       vfi_pack_dest += GENX(3DSTATE_VF_INSTANCING_length);
+      cso->stride[state[i].vertex_buffer_index] = state[i].src_stride;
+      cso->vb_count = MAX2(state[i].vertex_buffer_index + 1, cso->vb_count);
    }
 
    /* An alternative version of the last VE and VFI is stored so it
@@ -4097,6 +4166,12 @@ iris_bind_vertex_elements_state(struct pipe_context *ctx, void *state)
 
    ice->state.cso_vertex_elements = state;
    ice->state.dirty |= IRIS_DIRTY_VERTEX_ELEMENTS;
+   if (new_cso) {
+      /* re-emit vertex buffer state if stride changes */
+      if (cso_changed(vb_count) ||
+          cso_changed_memcmp_elts(stride, new_cso->vb_count))
+         ice->state.dirty |= IRIS_DIRTY_VERTEX_BUFFERS;
+   }
 }
 
 /**
@@ -6308,6 +6383,16 @@ iris_upload_dirty_render_state(struct iris_context *ice,
    struct iris_screen *screen = batch->screen;
    struct iris_border_color_pool *border_color_pool =
       iris_bufmgr_get_border_color_pool(screen->bufmgr);
+
+   /* Re-emit 3DSTATE_DS before any 3DPRIMITIVE when tessellation is on */
+   /* FIXME: WA framework doesn't know about 14019750404 yet.
+    * if (intel_needs_workaround(batch->screen->devinfo, 14019750404) &&
+    *     ice->shaders.prog[MESA_SHADER_TESS_EVAL])
+    */
+   if (batch->screen->devinfo->has_mesh_shading &&
+       ice->shaders.prog[MESA_SHADER_TESS_EVAL])
+      ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TES;
+
    const uint64_t dirty = ice->state.dirty;
    const uint64_t stage_dirty = ice->state.stage_dirty;
 
@@ -7062,6 +7147,14 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       iris_batch_emit(batch, cso->wmds, sizeof(cso->wmds));
 #endif
 
+   /* Depth or stencil write changed in cso. */
+   if (intel_needs_workaround(batch->screen->devinfo, 18019816803) &&
+       (dirty & IRIS_DIRTY_DS_WRITE_ENABLE)) {
+      iris_emit_pipe_control_flush(
+         batch, "workaround: PSS stall after DS write enable change",
+         PIPE_CONTROL_PSS_STALL_SYNC);
+   }
+
 #if GFX_VER >= 12
       iris_batch_emit(batch, cso->depth_bounds, sizeof(cso->depth_bounds));
 #endif
@@ -7129,6 +7222,14 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
 
       iris_batch_emit(batch, cso_z->packets, sizeof(cso_z->packets));
+
+      /* Wa_14016712196:
+       * Emit depth flush after state that sends implicit depth flush.
+       */
+      if (intel_needs_workaround(batch->screen->devinfo, 14016712196)) {
+         iris_emit_pipe_control_flush(batch, "Wa_14016712196",
+                                      PIPE_CONTROL_DEPTH_CACHE_FLUSH);
+      }
 
       if (zres)
          genX(emit_depth_state_workarounds)(ice, batch, &zres->surf);
@@ -7289,11 +7390,25 @@ iris_upload_dirty_render_state(struct iris_context *ice,
          }
          map += 1;
 
+         const struct iris_vertex_element_state *cso_ve =
+            ice->state.cso_vertex_elements;
+
          bound = dynamic_bound;
          while (bound) {
             const int i = u_bit_scan64(&bound);
-            memcpy(map, genx->vertex_buffers[i].state,
-                   sizeof(uint32_t) * vb_dwords);
+
+            uint32_t vb_stride[GENX(VERTEX_BUFFER_STATE_length)];
+            struct iris_bo *bo =
+               iris_resource_bo(genx->vertex_buffers[i].resource);
+            iris_pack_state(GENX(VERTEX_BUFFER_STATE), &vb_stride, vbs) {
+               vbs.BufferPitch = cso_ve->stride[i];
+               /* Unnecessary except to defeat the genxml nonzero checker */
+               vbs.MOCS = iris_mocs(bo, &screen->isl_dev,
+                                    ISL_SURF_USAGE_VERTEX_BUFFER_BIT);
+            }
+            for (unsigned d = 0; d < vb_dwords; d++)
+               map[d] = genx->vertex_buffers[i].state[d] | vb_stride[d];
+
             map += vb_dwords;
          }
       }
@@ -7502,6 +7617,28 @@ point_or_line_list(enum mesa_prim prim_type)
    return false;
 }
 
+void
+genX(emit_breakpoint)(struct iris_batch *batch, bool emit_before_draw)
+{
+   struct iris_context *ice = batch->ice;
+   uint32_t draw_count = emit_before_draw ?
+                         p_atomic_inc_return(&ice->draw_call_count) :
+                         p_atomic_read(&ice->draw_call_count);
+
+   if (((draw_count == intel_debug_bkp_before_draw_count &&
+         emit_before_draw) ||
+        (draw_count == intel_debug_bkp_after_draw_count &&
+         !emit_before_draw)))  {
+      iris_emit_cmd(batch, GENX(MI_SEMAPHORE_WAIT), sem) {
+         sem.WaitMode            = PollingMode;
+         sem.CompareOperation    = COMPARE_SAD_EQUAL_SDD;
+         sem.SemaphoreDataDword  = 0x1;
+         sem.SemaphoreAddress    = rw_bo(batch->screen->breakpoint_bo, 0,
+                                         IRIS_DOMAIN_OTHER_WRITE);
+      };
+   }
+}
+
 static void
 iris_upload_render_state(struct iris_context *ice,
                          struct iris_batch *batch,
@@ -7510,6 +7647,7 @@ iris_upload_render_state(struct iris_context *ice,
                          const struct pipe_draw_indirect_info *indirect,
                          const struct pipe_draw_start_count_bias *sc)
 {
+   UNUSED const struct intel_device_info *devinfo = batch->screen->devinfo;
    bool use_predicate = ice->state.predicate == IRIS_PREDICATE_STATE_USE_BIT;
 
    trace_intel_begin_draw(&batch->trace);
@@ -7623,6 +7761,7 @@ iris_upload_render_state(struct iris_context *ice,
 #define _3DPRIM_BASE_VERTEX         0x2440
 
    struct mi_builder b;
+   uint32_t mocs;
    mi_builder_init(&b, batch->screen->devinfo, batch);
 
    if (indirect && !indirect->count_from_stream_output) {
@@ -7633,6 +7772,8 @@ iris_upload_render_state(struct iris_context *ice,
             iris_resource_bo(indirect->indirect_draw_count);
          unsigned draw_count_offset =
             indirect->indirect_draw_count_offset;
+         mocs = iris_mocs(draw_count_bo, &batch->screen->isl_dev, 0);
+         mi_builder_set_mocs(&b, mocs);
 
          if (ice->state.predicate == IRIS_PREDICATE_STATE_USE_BIT) {
             /* comparison = draw id < draw count */
@@ -7677,6 +7818,9 @@ iris_upload_render_state(struct iris_context *ice,
       struct iris_bo *bo = iris_resource_bo(indirect->buffer);
       assert(bo);
 
+      mocs = iris_mocs(bo, &batch->screen->isl_dev, 0);
+      mi_builder_set_mocs(&b, mocs);
+
       mi_store(&b, mi_reg32(_3DPRIM_VERTEX_COUNT),
                mi_mem32(ro_bo(bo, indirect->offset + 0)));
       mi_store(&b, mi_reg32(_3DPRIM_INSTANCE_COUNT),
@@ -7698,6 +7842,9 @@ iris_upload_render_state(struct iris_context *ice,
          (void *) indirect->count_from_stream_output;
       struct iris_bo *so_bo = iris_resource_bo(so->offset.res);
 
+      mocs = iris_mocs(so_bo, &batch->screen->isl_dev, 0);
+      mi_builder_set_mocs(&b, mocs);
+
       iris_emit_buffer_barrier_for(batch, so_bo, IRIS_DOMAIN_OTHER_READ);
 
       struct iris_address addr = ro_bo(so_bo, so->offset.offset);
@@ -7713,6 +7860,8 @@ iris_upload_render_state(struct iris_context *ice,
    }
 
    iris_measure_snapshot(ice, batch, INTEL_SNAPSHOT_DRAW, draw, indirect, sc);
+
+   genX(maybe_emit_breakpoint)(batch, true);
 
    iris_emit_cmd(batch, GENX(3DPRIMITIVE), prim) {
       prim.VertexAccessType = draw->index_size > 0 ? RANDOM : SEQUENTIAL;
@@ -7733,10 +7882,13 @@ iris_upload_render_state(struct iris_context *ice,
       }
    }
 
+   genX(maybe_emit_breakpoint)(batch, false);
+
 #if GFX_VERx10 == 125
-   if (point_or_line_list(ice->state.prim_mode) ||
-       indirect || (sc->count == 1 || sc->count == 2)) {
-         iris_emit_pipe_control_write(batch, "Wa_14016118574",
+   if (intel_needs_workaround(devinfo, 22014412737) &&
+       (point_or_line_list(ice->state.prim_mode) || indirect ||
+        (sc->count == 1 || sc->count == 2))) {
+         iris_emit_pipe_control_write(batch, "Wa_22014412737",
                                       PIPE_CONTROL_WRITE_IMMEDIATE,
                                       batch->screen->workaround_bo,
                                       batch->screen->workaround_address.offset,
@@ -7747,7 +7899,7 @@ iris_upload_render_state(struct iris_context *ice,
    iris_batch_sync_region_end(batch);
 
    uint32_t count = (sc) ? sc->count : 0;
-   count *= (draw && draw->instance_count) ? draw->instance_count : 1;
+   count *= draw->instance_count ? draw->instance_count : 1;
    trace_intel_end_draw(&batch->trace, count);
 }
 

@@ -242,6 +242,7 @@ with_broadcom_vk = _vulkan_drivers.contains('broadcom')
 with_imagination_vk = _vulkan_drivers.contains('imagination-experimental')
 with_imagination_srv = get_option('imagination-srv')
 with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
+with_nouveau_vk = _vulkan_drivers.contains('nouveau-experimental')
 with_any_vk = _vulkan_drivers.length() != 0
 
 with_any_broadcom = [
@@ -258,6 +259,13 @@ with_any_intel = [
   with_intel_tools,
   with_intel_vk,
 ].contains(true)
+with_any_nouveau = with_gallium_nouveau or with_nouveau_vk
+
+if with_nouveau_vk and get_option('nvk-legacy-uapi')
+  pre_args += '-DNVK_NEW_UAPI=0'
+else
+  pre_args += '-DNVK_NEW_UAPI=1'
+endif
 
 if with_swrast_vk and not with_gallium_softpipe
   error('swrast vulkan requires gallium swrast')
@@ -764,8 +772,8 @@ if with_gallium_rusticl
     error('rusticl requires at least one gallium driver.')
   endif
 
-  if meson.version().version_compare('< 1.0.0')
-    error('rusticl requires meson 1.0.0 or newer')
+  if meson.version().version_compare('< 1.2')
+    error('rusticl requires meson 1.2.0 or newer')
   endif
 
   add_languages('rust', required: true)
@@ -908,6 +916,7 @@ endforeach
 _attributes = [
   'const', 'flatten', 'malloc', 'pure', 'unused', 'warn_unused_result',
   'weak', 'format', 'packed', 'returns_nonnull', 'alias', 'noreturn',
+  'nonnull',
 ]
 foreach a : cc.get_supported_function_attributes(_attributes)
   pre_args += '-DHAVE_FUNC_ATTRIBUTE_@0@'.format(a.to_upper())
@@ -1575,7 +1584,7 @@ _libdrm_checks = [
   ['intel', with_gallium_i915],
   ['amdgpu', (with_amd_vk and not with_platform_windows) or with_gallium_radeonsi],
   ['radeon', (with_gallium_radeonsi or with_gallium_r300 or with_gallium_r600)],
-  ['nouveau', with_gallium_nouveau],
+  ['nouveau', with_any_nouveau],
 ]
 
 # Loop over the enables versions and get the highest libdrm requirement for all
@@ -1742,7 +1751,7 @@ else
   draw_with_llvm = false
 endif
 
-with_opencl_spirv = (_opencl != 'disabled' and get_option('opencl-spirv')) or with_clc
+with_opencl_spirv = (_opencl != 'disabled' and get_option('opencl-spirv')) or with_intel_clc or with_microsoft_clc or with_gallium_rusticl
 if with_opencl_spirv
   chosen_llvm_version_array = dep_llvm.version().split('.')
   chosen_llvm_version_major = chosen_llvm_version_array[0].to_int()
@@ -1922,7 +1931,7 @@ if with_platform_wayland
   else
     wl_scanner_arg = 'code'
   endif
-  dep_wl_protocols = dependency('wayland-protocols', version : '>= 1.24')
+  dep_wl_protocols = dependency('wayland-protocols', version : '>= 1.30')
   dep_wayland_client = dependency('wayland-client', version : '>=1.18')
   dep_wayland_server = dependency('wayland-server', version : '>=1.18')
   if with_egl
@@ -2071,6 +2080,11 @@ if with_perfetto
   pre_args += '-DHAVE_PERFETTO'
 endif
 
+with_gpuvis = get_option('gpuvis')
+if with_gpuvis
+  pre_args += '-DHAVE_GPUVIS'
+endif
+
 add_project_arguments(pre_args, language : ['c', 'cpp'])
 add_project_arguments(c_cpp_args, language : ['c', 'cpp'])
 
@@ -2165,6 +2179,7 @@ summary(
     'ES1': with_gles1,
     'ES2': with_gles2,
     'Shared glapi': with_shared_glapi,
+    'GLVND': with_glvnd,
   },
   section: 'OpenGL', bool_yn: true
 )

@@ -2339,6 +2339,13 @@ static const struct name_address_pair GLX_functions[] = {
    GLX_FUNCTION(glXQueryCurrentRendererIntegerMESA),
    GLX_FUNCTION(glXQueryCurrentRendererStringMESA),
 
+   /*** GLX_MESA_gl_interop ***/
+#if defined(GLX_DIRECT_RENDERING) && !defined(GLX_USE_APPLEGL)
+   GLX_FUNCTION2(glXGLInteropQueryDeviceInfoMESA, MesaGLInteropGLXQueryDeviceInfo),
+   GLX_FUNCTION2(glXGLInteropExportObjectMESA, MesaGLInteropGLXExportObject),
+   GLX_FUNCTION2(glXGLInteropFlushObjectsMESA, MesaGLInteropGLXFlushObjects),
+#endif
+
    {NULL, NULL}                 /* end of list */
 };
 
@@ -2445,6 +2452,32 @@ MesaGLInteropGLXExportObject(Display *dpy, GLXContext context,
    }
 
    ret = gc->vtable->interop_export_object(gc, in, out);
+   __glXUnlock();
+   return ret;
+}
+
+PUBLIC int
+MesaGLInteropGLXFlushObjects(Display *dpy, GLXContext context,
+                             unsigned count,
+                             struct mesa_glinterop_export_in *resources,
+                             GLsync *sync)
+{
+   struct glx_context *gc = (struct glx_context*)context;
+   int ret;
+
+   __glXLock();
+
+   if (!gc || gc->xid == None || !gc->isDirect) {
+      __glXUnlock();
+      return MESA_GLINTEROP_INVALID_CONTEXT;
+   }
+
+   if (!gc->vtable->interop_flush_objects) {
+      __glXUnlock();
+      return MESA_GLINTEROP_UNSUPPORTED;
+   }
+
+   ret = gc->vtable->interop_flush_objects(gc, count, resources, sync);
    __glXUnlock();
    return ret;
 }

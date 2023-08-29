@@ -42,6 +42,7 @@
 #include "util/hash_table.h"
 #include "util/list.h"
 #include "util/log.h"
+#include "util/rwlock.h"
 #include "util/set.h"
 #include "util/simple_mtx.h"
 #include "util/slab.h"
@@ -300,6 +301,7 @@ struct zink_vertex_elements_hw_state {
       struct {
          VkVertexInputBindingDivisorDescriptionEXT divisors[PIPE_MAX_ATTRIBS];
          VkVertexInputBindingDescription bindings[PIPE_MAX_ATTRIBS]; // combination of element_state and stride
+         unsigned strides[PIPE_MAX_ATTRIBS];
          uint8_t divisors_present;
       } b;
       VkVertexInputBindingDescription2EXT dynbindings[PIPE_MAX_ATTRIBS];
@@ -754,14 +756,11 @@ struct zink_framebuffer_clear {
 
 /** compiler types */
 struct zink_shader_info {
-   struct pipe_stream_output_info so_info;
-   unsigned so_info_slots[PIPE_MAX_SO_OUTPUTS];
-   uint32_t so_propagate; //left shifted by 32
+   uint16_t stride[PIPE_MAX_SO_BUFFERS];
    uint32_t sampler_mask;
-   bool last_vertex;
-   bool have_xfb;
    bool have_sparse;
    bool have_vulkan_memory_model;
+   bool have_workgroup_memory_explicit_layout;
    unsigned bindless_set_idx;
 };
 
@@ -994,6 +993,7 @@ struct zink_program {
    struct zink_context *ctx;
    unsigned char sha1[20];
    struct util_queue_fence cache_fence;
+   struct u_rwlock pipeline_cache_lock;
    VkPipelineCache pipeline_cache;
    size_t pipeline_cache_size;
    struct zink_batch_usage *batch_uses;
@@ -1126,6 +1126,8 @@ struct zink_compute_program {
    struct zink_program base;
 
    bool use_local_size;
+
+   unsigned scratch_size;
 
    unsigned num_inlinable_uniforms;
    nir_shader *nir; //only until precompile finishes
@@ -1514,6 +1516,7 @@ struct zink_screen {
        * HI TURNIP
        */
       bool broken_cache_semantics;
+      bool missing_a8_unorm;
       bool implicit_sync;
       bool disable_optimized_compile;
       bool always_feedback_loop;
@@ -1876,13 +1879,18 @@ struct zink_context {
    };
 
    struct zink_vk_query *curr_xfb_queries[PIPE_MAX_VERTEX_STREAMS];
+   struct zink_shader *null_fs;
+   struct zink_shader *saved_fs;
 
    struct list_head query_pools;
    struct list_head suspended_queries;
    struct list_head primitives_generated_queries;
    struct zink_query *vertices_query;
+   bool disable_fs;
    bool disable_color_writes;
    bool was_line_loop;
+   bool fs_query_active;
+   bool occlusion_query_active;
    bool primitives_generated_active;
    bool primitives_generated_suspended;
    bool queries_disabled, render_condition_active;
@@ -1985,7 +1993,7 @@ struct zink_context {
    uint32_t ds3_states;
 
    uint32_t num_so_targets;
-   struct pipe_stream_output_target *so_targets[PIPE_MAX_SO_OUTPUTS];
+   struct pipe_stream_output_target *so_targets[PIPE_MAX_SO_BUFFERS];
    bool dirty_so_targets;
 
    bool gfx_dirty;

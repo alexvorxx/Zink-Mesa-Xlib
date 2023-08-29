@@ -141,6 +141,7 @@ struct _egl_extensions {
    EGLBoolean KHR_wait_sync;
 
    EGLBoolean MESA_drm_image;
+   EGLBoolean MESA_gl_interop;
    EGLBoolean MESA_image_dma_buf_export;
    EGLBoolean MESA_query_driver;
 
@@ -194,11 +195,11 @@ struct _egl_display {
 
    /* options that affect how the driver initializes the display */
    struct {
-      EGLBoolean Zink;          /**< Use kopper only */
-      EGLBoolean ForceSoftware; /**< Use software path only */
-      EGLBoolean GalliumHud;    /**< Using gallium hud, disable buffer age */
-      EGLAttrib *Attribs;       /**< Platform-specific options */
-      int fd;                   /**< Platform device specific, local fd */
+      EGLBoolean Zink;           /**< Use kopper only */
+      EGLBoolean ForceSoftware;  /**< Use software path only */
+      EGLBoolean GalliumHudWarn; /**< Using hud, warn when querying buffer age */
+      EGLAttrib *Attribs;        /**< Platform-specific options */
+      int fd;                    /**< Platform device specific, local fd */
    } Options;
 
    /* these fields are set by the driver during init */

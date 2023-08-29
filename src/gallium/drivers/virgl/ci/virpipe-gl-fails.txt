@@ -285,16 +285,12 @@ spec@arb_program_interface_query@arb_program_interface_query-getprogramresourcei
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
 
 spec@arb_sample_shading@builtin-gl-sample-position 2,Fail
-spec@arb_shader_image_load_store@early-z,Fail
-spec@arb_shader_image_load_store@early-z@occlusion query test/early-z pass,Fail
 
 spec@arb_shader_image_load_store@layer,Fail
 spec@arb_shader_image_load_store@layer@image2DMS/layered binding test,Fail
 spec@arb_shader_image_load_store@layer@image2DMS/non-layered binding test,Fail
 spec@arb_shader_image_load_store@layer@image2DMSArray/layered binding test,Fail
 spec@arb_shader_image_load_store@layer@image2DMSArray/non-layered binding test,Fail
-spec@arb_shader_image_load_store@max-images,Fail
-spec@arb_shader_image_load_store@max-images@Combined max image uniforms test,Fail
 spec@arb_shader_image_load_store@max-size,Fail
 spec@arb_shader_image_load_store@max-size@image2DMS max size test/4x16384x8x1,Fail
 spec@arb_shader_image_load_store@max-size@image2DMS max size test/4x8x16384x1,Fail
@@ -303,7 +299,6 @@ spec@arb_shader_image_load_store@semantics,Fail
 spec@arb_shader_image_load_store@semantics@imageLoad/Vertex shader/rgba32f/image2DMS test,Fail
 spec@arb_shader_image_load_store@semantics@imageLoad/Vertex shader/rgba32f/image2DMSArray test,Fail
 spec@arb_shader_storage_buffer_object@execution@ssbo-atomiccompswap-int,Fail
-spec@arb_shader_storage_buffer_object@maxblocks,Fail
 spec@arb_shader_texture_image_samples@builtin-image,Fail
 spec@arb_shader_texture_image_samples@builtin-image@r8/Compute/image2DMS samples test/2x8x96x1,Fail
 spec@arb_shader_texture_image_samples@builtin-image@r8/Compute/image2DMSArray samples test/2x8x16x6,Fail
@@ -683,3 +678,4 @@ spec@arb_viewport_array@display-list,Fail
 
 spec@arb_gl_spirv@execution@ssbo@unsized-array,Fail
 spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail
+spec@!opengl 1.1@line-flat-clip-color,Fail

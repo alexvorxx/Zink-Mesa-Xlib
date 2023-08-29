@@ -799,6 +799,16 @@ struct gl_constants
    bool DisableUniformArrayResize;
 
    /**
+    * Alias extension e.g. GL_ATI_shader_texture_lod to GL_ARB_shader_texture_lod.
+    */
+   char *AliasShaderExtension;
+
+   /**
+    * Allow fs-only bias argument in vertex shaders.
+    */
+   GLboolean AllowVertexTextureBias;
+
+   /**
     * Align varyings to POT in a slot
     *
     * Drivers that prefer varyings to be aligned to POT must set this value to GL_TRUE

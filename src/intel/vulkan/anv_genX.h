@@ -152,8 +152,6 @@ genX(emit_urb_setup)(struct anv_device *device, struct anv_batch *batch,
                      const unsigned entry_size[4],
                      enum intel_urb_deref_block_size *deref_block_size);
 
-void genX(emit_multisample)(struct anv_batch *batch, uint32_t samples);
-
 void genX(emit_sample_pattern)(struct anv_batch *batch,
                                const struct vk_sample_locations_state *sl);
 
@@ -180,13 +178,6 @@ void genX(batch_emit_dummy_post_sync_op)(struct anv_batch *batch,
                                          struct anv_device *device,
                                          uint32_t primitive_topology,
                                          uint32_t vertex_count);
-
-void
-genX(rasterization_mode)(VkPolygonMode raster_mode,
-                         VkLineRasterizationModeEXT line_mode,
-                         float line_width,
-                         uint32_t *api_mode,
-                         bool *msaa_rasterization_enable);
 
 VkPolygonMode
 genX(raster_polygon_mode)(struct anv_graphics_pipeline *pipeline,
@@ -218,7 +209,9 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline);
 })
 
 void
-genX(batch_set_preemption)(struct anv_batch *batch, bool value);
+genX(batch_set_preemption)(struct anv_batch *batch,
+                           const struct intel_device_info *devinfo,
+                           bool value);
 
 void
 genX(cmd_buffer_set_preemption)(struct anv_cmd_buffer *cmd_buffer, bool value);
@@ -235,3 +228,16 @@ genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
                                     struct anv_address address,
                                     uint32_t imm_data,
                                     enum anv_pipe_bits bits);
+
+void genX(batch_emit_breakpoint)(struct anv_batch *batch,
+                                 struct anv_device *device,
+                                 bool emit_before_draw);
+
+static inline void
+genX(emit_breakpoint)(struct anv_batch *batch,
+                      struct anv_device *device,
+                      bool emit_before_draw)
+{
+   if (INTEL_DEBUG(DEBUG_DRAW_BKP))
+      genX(batch_emit_breakpoint)(batch, device, emit_before_draw);
+}

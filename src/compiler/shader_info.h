@@ -101,6 +101,7 @@ struct spirv_supported_capabilities {
    bool ray_tracing_position_fetch;
    bool runtime_descriptor_array;
    bool shader_clock;
+   bool shader_enqueue;
    bool shader_viewport_index_layer;
    bool shader_viewport_mask_nv;
    bool sparse_residency;
@@ -529,6 +530,15 @@ typedef struct shader_info {
           *   AddressingModelPhysical64: 64
           */
          unsigned ptr_size;
+
+         /** Index provided by VkPipelineShaderStageNodeCreateInfoAMDX or ShaderIndexAMDX */
+         uint32_t shader_index;
+
+         /** Maximum size required by any output node payload array */
+         uint32_t node_payloads_size;
+
+         /** Static workgroup count for overwriting the enqueued workgroup count. (0 if dynamic) */
+         uint32_t workgroup_count[3];
       } cs;
 
       /* Applies to both TCS and TES. */

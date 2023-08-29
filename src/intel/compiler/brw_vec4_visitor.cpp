@@ -819,7 +819,7 @@ vec4_visitor::emit_ndc_computation()
    dst_reg ndc_w = ndc;
    ndc_w.writemask = WRITEMASK_W;
    src_reg pos_w = pos;
-   pos_w.swizzle = BRW_SWIZZLE4(SWIZZLE_W, SWIZZLE_W, SWIZZLE_W, SWIZZLE_W);
+   pos_w.swizzle = BRW_SWIZZLE4(BRW_SWIZZLE_W, BRW_SWIZZLE_W, BRW_SWIZZLE_W, BRW_SWIZZLE_W);
    emit_math(SHADER_OPCODE_RCP, ndc_w, pos_w);
 
    dst_reg ndc_xyz = ndc;
@@ -1369,15 +1369,13 @@ vec4_visitor::emit_shader_float_controls_execution_mode()
 }
 
 vec4_visitor::vec4_visitor(const struct brw_compiler *compiler,
-                           void *log_data,
+                           const struct brw_compile_params *params,
                            const struct brw_sampler_prog_key_data *key_tex,
                            struct brw_vue_prog_data *prog_data,
                            const nir_shader *shader,
-			   void *mem_ctx,
                            bool no_spills,
                            bool debug_enabled)
-   : backend_shader(compiler, log_data, mem_ctx, shader, &prog_data->base,
-                    debug_enabled),
+   : backend_shader(compiler, params, shader, &prog_data->base, debug_enabled),
      key_tex(key_tex),
      prog_data(prog_data),
      fail_msg(NULL),
@@ -1400,7 +1398,6 @@ vec4_visitor::vec4_visitor(const struct brw_compiler *compiler,
 
    this->uniforms = 0;
 
-   this->nir_locals = NULL;
    this->nir_ssa_values = NULL;
 }
 

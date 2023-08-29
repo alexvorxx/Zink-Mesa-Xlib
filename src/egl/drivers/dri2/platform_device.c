@@ -242,7 +242,7 @@ device_get_fd(_EGLDisplay *disp, _EGLDevice *dev)
        *
        * Add a trivial sanity check since it doesn't cost us anything.
        */
-      if (dev != _eglAddDevice(fd, false))
+      if (dev != _eglFindDevice(fd, false))
          return -1;
 
       /* kms_swrast only work with primary node. It used to work with render

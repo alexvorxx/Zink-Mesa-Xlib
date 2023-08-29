@@ -790,10 +790,35 @@ static void
 tu_subpass_use_attachment(struct tu_render_pass *pass, int i, uint32_t a, const VkRenderPassCreateInfo2 *pCreateInfo)
 {
    struct tu_subpass *subpass = &pass->subpasses[i];
+   struct tu_render_pass_attachment *att = &pass->attachments[a];
 
-   pass->attachments[a].gmem = true;
+   att->gmem = true;
    update_samples(subpass, pCreateInfo->pAttachments[a].samples);
-   pass->attachments[a].clear_views |= subpass->multiview_mask;
+   att->clear_views |= subpass->multiview_mask;
+
+   /* Loads and clears are emitted at the start of the subpass that needs them. */
+   att->first_subpass_idx = MIN2(i, att->first_subpass_idx);
+
+   /* Stores are emitted at vkEndRenderPass() time. */
+   if (att->store || att->store_stencil)
+      att->last_subpass_idx = pass->subpass_count - 1;
+   else
+      att->last_subpass_idx = MAX2(i, att->last_subpass_idx);
+}
+
+static void
+tu_subpass_resolve_attachment(struct tu_render_pass *pass, int i, uint32_t dst_a, uint32_t src_a)
+{
+   if (src_a != VK_ATTACHMENT_UNUSED && dst_a != VK_ATTACHMENT_UNUSED) {
+      struct tu_render_pass_attachment *src_att = &pass->attachments[src_a];
+      struct tu_render_pass_attachment *dst_att = &pass->attachments[dst_a];
+      src_att->will_be_resolved = true;
+
+      src_att->first_subpass_idx = MIN2(i, src_att->first_subpass_idx);
+      src_att->last_subpass_idx = MAX2(i, src_att->last_subpass_idx);
+      dst_att->first_subpass_idx = MIN2(i, dst_att->first_subpass_idx);
+      dst_att->last_subpass_idx = MAX2(i, dst_att->last_subpass_idx);
+   }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -851,6 +876,9 @@ tu_CreateRenderPass2(VkDevice _device,
       attachment_set_ops(device, att, loadOp, stencilLoadOp,
                          pCreateInfo->pAttachments[i].storeOp,
                          pCreateInfo->pAttachments[i].stencilStoreOp);
+
+      att->first_subpass_idx = VK_SUBPASS_EXTERNAL;
+      att->last_subpass_idx = 0;
    }
    uint32_t subpass_attachment_count = 0;
    struct tu_subpass_attachment *p;
@@ -921,10 +949,15 @@ tu_CreateRenderPass2(VkDevice _device,
          for (uint32_t j = 0; j < desc->inputAttachmentCount; j++) {
             uint32_t a = desc->pInputAttachments[j].attachment;
             subpass->input_attachments[j].attachment = a;
-            /* Note: attachments only used as input attachments will be read
-             * directly instead of through gmem, so we don't mark input
-             * attachments as needing gmem.
-             */
+            if (a != VK_ATTACHMENT_UNUSED) {
+               struct tu_render_pass_attachment *att = &pass->attachments[a];
+               /* Note: attachments only used as input attachments will be read
+                * directly instead of through gmem, so we don't mark input
+                * attachments as needing gmem.
+                */
+               att->first_subpass_idx = MIN2(i, att->first_subpass_idx);
+               att->last_subpass_idx = MAX2(i, att->last_subpass_idx);
+            }
          }
       }
 
@@ -950,14 +983,11 @@ tu_CreateRenderPass2(VkDevice _device,
          p += desc->colorAttachmentCount;
          subpass->resolve_count += desc->colorAttachmentCount;
          for (uint32_t j = 0; j < desc->colorAttachmentCount; j++) {
-            subpass->resolve_attachments[j].attachment =
-                  desc->pResolveAttachments[j].attachment;
-
+            uint32_t a = desc->pResolveAttachments[j].attachment;
             uint32_t src_a = desc->pColorAttachments[j].attachment;
-            if (src_a != VK_ATTACHMENT_UNUSED) {
-               pass->attachments[src_a].will_be_resolved =
-                  desc->pResolveAttachments[j].attachment != VK_ATTACHMENT_UNUSED;
-            }
+            subpass->resolve_attachments[j].attachment = a;
+
+            tu_subpass_resolve_attachment(pass, i, a, src_a);
          }
       }
 
@@ -965,12 +995,10 @@ tu_CreateRenderPass2(VkDevice _device,
          p++;
          subpass->resolve_count++;
          uint32_t a = ds_resolve->pDepthStencilResolveAttachment->attachment;
+         uint32_t src_a = desc->pDepthStencilAttachment->attachment;
          subpass->resolve_attachments[subpass->resolve_count - 1].attachment = a;
 
-         uint32_t src_a = desc->pDepthStencilAttachment->attachment;
-         if (src_a != VK_ATTACHMENT_UNUSED) {
-            pass->attachments[src_a].will_be_resolved = a != VK_ATTACHMENT_UNUSED;
-         }
+         tu_subpass_resolve_attachment(pass, i, a, src_a);
       }
 
       uint32_t a = desc->pDepthStencilAttachment ?

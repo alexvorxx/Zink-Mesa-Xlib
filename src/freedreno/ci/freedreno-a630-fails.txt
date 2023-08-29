@@ -173,8 +173,6 @@ spec@ext_external_objects@vk-semaphores-2,Fail
 spec@ext_external_objects@vk-stencil-display,Fail
 spec@ext_external_objects@vk-stencil-display@D24S8,Fail
 
-spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
-
 spec@ext_framebuffer_multisample@alpha-to-coverage-dual-src-blend 2,Fail
 spec@ext_framebuffer_multisample@alpha-to-coverage-dual-src-blend 4,Fail
 spec@ext_framebuffer_multisample@alpha-to-coverage-no-draw-buffer-zero 2,Fail
@@ -352,16 +350,6 @@ spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_R
 spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
 spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
 
-# Excerpt:
-# Image comparison failed: reference = -0.000488281, expected = 0:0:0:0, result = 0:0:0:3
-# Image comparison failed: reference = 0, expected = 0:0:0:0, result = 0:0:0:3
-# Image comparison failed: reference = 0.000488281, expected = 0:1:0:0, result = 0:1:0:3
-# Image comparison failed: reference = 0.000976562, expected = 1:1:0:0, result = 1:1:0:3
-wayland-dEQP-EGL.functional.wide_color.pbuffer_888_colorspace_default,Fail
-
-# Failing (Color test failed) since wayland platform was enabled in arm builds
-wayland-dEQP-EGL.functional.wide_color.window_888_colorspace_default,Fail
-
 # skqp failure:
 # SRGBReadWritePixels FAILED (7 errors)
 # ../../tests/SRGBReadWritePixelsTest.cpp:214	Could not create sRGB surface context. [OpenGL]
@@ -369,12 +357,11 @@ SRGBReadWritePixels,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
 
-# New CTS failures in 1.3.5.0
-dEQP-VK.transform_feedback.simple.lines_or_triangles_line_strip_1,Fail
-dEQP-VK.transform_feedback.simple.lines_or_triangles_line_strip_3,Fail
+# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4578
 dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
 dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_3,Fail
 gmem-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
+
 spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-01,Crash
 spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-02,Crash
 
@@ -383,13 +370,5 @@ dynamic-dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_s
 # since Debian 12 (bookworm) uprev
 dEQP-VK.api.driver_properties.conformance_version,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/9049
-dEQP-VK.api.device_init.create_instance_device_intentional_alloc_fail.basic,Crash
-dEQP-VK.api.object_management.alloc_callback_fail.device_group,Crash
-dEQP-VK.api.object_management.alloc_callback_fail.device,Crash
-dEQP-VK.api.object_management.multithreaded_per_thread_resources.descriptor_pool_free_descriptor_set,Crash
-dEQP-VK.api.object_management.multithreaded_per_thread_resources.descriptor_pool,Crash
-dEQP-VK.api.object_management.multithreaded_per_thread_resources.event,Crash
-dEQP-VK.api.object_management.multithreaded_shared_resources.descriptor_pool,Crash
-dEQP-VK.api.object_management.multithreaded_shared_resources.event,Crash
 dEQP-VK.binding_model.descriptor_buffer.basic.limits,Fail
+gmem-dEQP-VK.binding_model.descriptor_buffer.basic.limits,Fail

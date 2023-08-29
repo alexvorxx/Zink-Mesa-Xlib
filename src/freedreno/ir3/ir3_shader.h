@@ -98,7 +98,7 @@ enum ir3_driver_param {
 #define IR3_MAX_SHADER_IMAGES   32
 #define IR3_MAX_SO_BUFFERS      4
 #define IR3_MAX_SO_STREAMS      4
-#define IR3_MAX_SO_OUTPUTS      64
+#define IR3_MAX_SO_OUTPUTS      128
 #define IR3_MAX_UBO_PUSH_RANGES 32
 
 /* mirrors SYSTEM_VALUE_BARYCENTRIC_ but starting from 0 */
@@ -573,7 +573,7 @@ struct ir3_shader_variant {
     */
    unsigned constlen;
 
-   /* The private memory size in bytes */
+   /* The private memory size in bytes per fiber */
    unsigned pvtmem_size;
    /* Whether we should use the new per-wave layout rather than per-fiber. */
    bool pvtmem_per_wave;
@@ -688,7 +688,7 @@ struct ir3_shader_variant {
    /* do we need derivatives: */
    bool need_pixlod;
 
-   bool need_fine_derivatives;
+   bool need_full_quad;
 
    /* do we need VS driver params? */
    bool need_driver_params;
@@ -731,6 +731,12 @@ struct ir3_shader_variant {
    /* texture sampler pre-dispatches */
    uint32_t num_sampler_prefetch;
    struct ir3_sampler_prefetch sampler_prefetch[IR3_MAX_SAMPLER_PREFETCH];
+
+   /* If true, the last use of helper invocations is the texture prefetch and
+    * they should be disabled for the actual shader. Equivalent to adding
+    * (eq)nop at the beginning of the shader.
+    */
+   bool prefetch_end_of_quad;
 
    uint16_t local_size[3];
    bool local_size_variable;

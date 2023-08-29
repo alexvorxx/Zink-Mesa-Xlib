@@ -122,6 +122,9 @@ struct spirv_to_nir_options {
     * but continue executing other tests.
     */
    bool skip_os_break_in_debug_build;
+
+   /* Shader index provided by VkPipelineShaderStageNodeCreateInfoAMDX */
+   uint32_t shader_index;
 };
 
 enum spirv_verify_result {

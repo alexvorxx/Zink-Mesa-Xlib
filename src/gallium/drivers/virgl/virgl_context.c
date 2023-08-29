@@ -50,12 +50,6 @@
 #include "virgl_staging_mgr.h"
 #include "virgl_video.h"
 
-struct virgl_vertex_elements_state {
-   uint32_t handle;
-   uint8_t binding_map[PIPE_MAX_ATTRIBS];
-   uint8_t num_bindings;
-};
-
 static uint32_t next_handle;
 uint32_t virgl_object_assign_handle(void)
 {
@@ -523,20 +517,22 @@ static void *virgl_create_vertex_elements_state(struct pipe_context *ctx,
 
    for (int i = 0; i < num_elements; ++i) {
       if (elements[i].instance_divisor) {
-	 /* Virglrenderer doesn't deal with instance_divisor correctly if
-	  * there isn't a 1:1 relationship between elements and bindings.
-	  * So let's make sure there is, by duplicating bindings.
-	  */
-	 for (int j = 0; j < num_elements; ++j) {
+         /* Virglrenderer doesn't deal with instance_divisor correctly if
+         * there isn't a 1:1 relationship between elements and bindings.
+         * So let's make sure there is, by duplicating bindings.
+         */
+         for (int j = 0; j < num_elements; ++j) {
             new_elements[j] = elements[j];
             new_elements[j].vertex_buffer_index = j;
             state->binding_map[j] = elements[j].vertex_buffer_index;
-	 }
-	 elements = new_elements;
-	 state->num_bindings = num_elements;
-	 break;
+         }
+         elements = new_elements;
+         state->num_bindings = num_elements;
+         break;
       }
    }
+   for (int i = 0; i < num_elements; ++i)
+      state->strides[elements[i].vertex_buffer_index] = elements[i].src_stride;
 
    state->handle = virgl_object_assign_handle();
    virgl_encoder_create_vertex_elements(vctx, state->handle,
@@ -567,7 +563,6 @@ static void virgl_bind_vertex_elements_state(struct pipe_context *ctx,
 }
 
 static void virgl_set_vertex_buffers(struct pipe_context *ctx,
-                                    unsigned start_slot,
                                     unsigned num_buffers,
                                      unsigned unbind_num_trailing_slots,
                                      bool take_ownership,
@@ -577,7 +572,7 @@ static void virgl_set_vertex_buffers(struct pipe_context *ctx,
 
    util_set_vertex_buffers_count(vctx->vertex_buffer,
                                  &vctx->num_vertex_buffers,
-                                 buffers, start_slot, num_buffers,
+                                 buffers, num_buffers,
                                  unbind_num_trailing_slots,
                                  take_ownership);
 
@@ -596,7 +591,7 @@ static void virgl_set_vertex_buffers(struct pipe_context *ctx,
 static void virgl_hw_set_vertex_buffers(struct virgl_context *vctx)
 {
    if (vctx->vertex_array_dirty) {
-      struct virgl_vertex_elements_state *ve = vctx->vertex_elements;
+      const struct virgl_vertex_elements_state *ve = vctx->vertex_elements;
 
       if (ve->num_bindings) {
          struct pipe_vertex_buffer vertex_buffers[PIPE_MAX_ATTRIBS];

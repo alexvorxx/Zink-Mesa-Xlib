@@ -39,12 +39,9 @@
 #include "shaders/query_copy_fragment_spv.h"
 
 static bool
-lower_vulkan_descriptors_instr(nir_builder *b, nir_instr *instr, void *cb_data)
+lower_vulkan_descriptors_instr(nir_builder *b, nir_intrinsic_instr *intrin,
+                               void *cb_data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
    if (intrin->intrinsic != nir_intrinsic_load_vulkan_descriptor)
       return false;
 
@@ -54,13 +51,13 @@ lower_vulkan_descriptors_instr(nir_builder *b, nir_instr *instr, void *cb_data)
       nir_instr_as_intrinsic(res_index_instr);
    assert(res_index_intrin->intrinsic == nir_intrinsic_vulkan_resource_index);
 
-   b->cursor = nir_after_instr(instr);
+   b->cursor = nir_after_instr(&intrin->instr);
 
    const struct anv_internal_kernel_bind_map *bind_map = cb_data;
    uint32_t binding = nir_intrinsic_binding(res_index_intrin);
    assert(binding < bind_map->num_bindings);
 
-   nir_ssa_def *desc_value = NULL;
+   nir_def *desc_value = NULL;
    if (bind_map->bindings[binding].push_constant) {
       desc_value =
          nir_vec2(b,
@@ -93,7 +90,7 @@ lower_vulkan_descriptors_instr(nir_builder *b, nir_instr *instr, void *cb_data)
                   nir_imm_int(b, 0));
    }
 
-   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, desc_value);
+   nir_def_rewrite_uses(&intrin->def, desc_value);
 
    return true;
 }
@@ -102,50 +99,42 @@ static bool
 lower_vulkan_descriptors(nir_shader *shader,
                          const struct anv_internal_kernel_bind_map *bind_map)
 {
-   return nir_shader_instructions_pass(shader,
-                                       lower_vulkan_descriptors_instr,
+   return nir_shader_intrinsics_pass(shader, lower_vulkan_descriptors_instr,
                                        nir_metadata_block_index |
                                        nir_metadata_dominance,
                                        (void *)bind_map);
 }
 
 static bool
-lower_base_workgroup_id(nir_builder *b, nir_instr *instr, UNUSED void *data)
+lower_base_workgroup_id(nir_builder *b, nir_intrinsic_instr *intrin,
+                        UNUSED void *data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-
    if (intrin->intrinsic != nir_intrinsic_load_base_workgroup_id)
       return false;
 
    b->cursor = nir_instr_remove(&intrin->instr);
-   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, nir_imm_zero(b, 3, 32));
+   nir_def_rewrite_uses(&intrin->def, nir_imm_zero(b, 3, 32));
    return true;
 }
 
 static bool
-lower_load_ubo_to_uniforms(nir_builder *b, nir_instr *instr, void *cb_data)
+lower_load_ubo_to_uniforms(nir_builder *b, nir_intrinsic_instr *intrin,
+                           void *cb_data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
    if (intrin->intrinsic != nir_intrinsic_load_ubo)
       return false;
 
-   b->cursor = nir_instr_remove(instr);
+   b->cursor = nir_instr_remove(&intrin->instr);
 
-   nir_ssa_def_rewrite_uses(
-      &intrin->dest.ssa,
+   nir_def_rewrite_uses(
+      &intrin->def,
       nir_load_uniform(b,
-                       intrin->dest.ssa.num_components,
-                       intrin->dest.ssa.bit_size,
+                       intrin->def.num_components,
+                       intrin->def.bit_size,
                        intrin->src[1].ssa,
                        .base = 0,
-                       .range = intrin->dest.ssa.num_components *
-                                intrin->dest.ssa.bit_size / 8));
+                       .range = intrin->def.num_components *
+                                intrin->def.bit_size / 8));
 
    return true;
 }
@@ -210,7 +199,7 @@ compile_upload_spirv(struct anv_device *device,
          .lower_workgroup_id_to_index = true,
       };
       NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
-      NIR_PASS_V(nir, nir_shader_instructions_pass, lower_base_workgroup_id,
+      NIR_PASS_V(nir, nir_shader_intrinsics_pass, lower_base_workgroup_id,
                  nir_metadata_block_index | nir_metadata_dominance, NULL);
    }
 
@@ -238,8 +227,7 @@ compile_upload_spirv(struct anv_device *device,
    NIR_PASS_V(nir, nir_opt_dce);
 
    if (stage == MESA_SHADER_COMPUTE) {
-      NIR_PASS_V(nir, nir_shader_instructions_pass,
-                 lower_load_ubo_to_uniforms,
+      NIR_PASS_V(nir, nir_shader_intrinsics_pass, lower_load_ubo_to_uniforms,
                  nir_metadata_block_index | nir_metadata_dominance,
                  NULL);
       NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics);
@@ -259,14 +247,16 @@ compile_upload_spirv(struct anv_device *device,
    if (stage == MESA_SHADER_FRAGMENT) {
       struct brw_compile_stats stats[3];
       struct brw_compile_fs_params params = {
-         .nir = nir,
+         .base = {
+            .nir = nir,
+            .log_data = device,
+            .debug_flag = DEBUG_WM,
+            .stats = stats,
+         },
          .key = &key.wm,
          .prog_data = &prog_data.wm,
-         .stats = stats,
-         .log_data = device,
-         .debug_flag = DEBUG_WM,
       };
-      program = brw_compile_fs(compiler, nir, &params);
+      program = brw_compile_fs(compiler, &params);
 
       unsigned stat_idx = 0;
       if (prog_data.wm.dispatch_8) {
@@ -290,14 +280,16 @@ compile_upload_spirv(struct anv_device *device,
    } else {
       struct brw_compile_stats stats;
       struct brw_compile_cs_params params = {
-         .nir = nir,
+         .base = {
+            .nir = nir,
+            .stats = &stats,
+            .log_data = device,
+            .debug_flag = DEBUG_CS,
+         },
          .key = &key.cs,
          .prog_data = &prog_data.cs,
-         .stats = &stats,
-         .log_data = device,
-         .debug_flag = DEBUG_CS,
       };
-      program = brw_compile_cs(compiler, nir, &params);
+      program = brw_compile_cs(compiler, &params);
 
       assert(stats.spills == 0);
       assert(stats.fills == 0);

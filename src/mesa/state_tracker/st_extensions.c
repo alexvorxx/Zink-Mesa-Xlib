@@ -1468,6 +1468,11 @@ void st_init_extensions(struct pipe_screen *screen,
    if (options->disable_uniform_array_resize)
       consts->DisableUniformArrayResize = 1;
 
+   consts->AliasShaderExtension = options->alias_shader_extension;
+
+   if (options->allow_vertex_texture_bias)
+      consts->AllowVertexTextureBias = GL_TRUE;
+
    if (options->allow_glsl_extension_directive_midshader)
       consts->AllowGLSLExtensionDirectiveMidShader = GL_TRUE;
 

@@ -1049,6 +1049,11 @@ insert_wait_states(Program* program)
    std::stack<unsigned, std::vector<unsigned>> loop_header_indices;
    unsigned loop_progress = 0;
 
+   if (program->pending_lds_access) {
+      update_barrier_imm(in_ctx[0], get_counters_for_event(event_lds), event_lds,
+                         memory_sync_info(storage_shared));
+   }
+
    for (Definition def : program->args_pending_vmem) {
       update_counters(in_ctx[0], event_vmem);
       insert_wait_entry(in_ctx[0], def, event_vmem);

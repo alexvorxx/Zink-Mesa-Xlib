@@ -423,7 +423,7 @@ static void si_emit_dpbb_disable(struct si_context *sctx)
    radeon_end_update_context_roll(sctx);
 }
 
-void si_emit_dpbb_state(struct si_context *sctx)
+void si_emit_dpbb_state(struct si_context *sctx, unsigned index)
 {
    struct si_screen *sscreen = sctx->screen;
    struct si_state_blend *blend = sctx->queued.named.blend;

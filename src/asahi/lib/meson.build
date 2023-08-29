@@ -41,17 +41,24 @@ idep_agx_pack = declare_dependency(
 libasahi_decode = static_library(
   'asahi_decode',
   [libasahi_decode_files, agx_pack],
-  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_asahi],
   dependencies : [dep_valgrind, idep_mesautil],
   c_args : [no_override_init_args],
   gnu_symbol_visibility : 'hidden',
   build_by_default : false,
 )
 
+libasahi_decode_shared = shared_library(
+  'asahi_decode',
+  [libasahi_decode_files, agx_pack],
+  dependencies : [dep_valgrind, idep_mesautil],
+  c_args : [no_override_init_args],
+  build_by_default : with_tools.contains('asahi'),
+)
+
 libasahi_lib = static_library(
   'asahi_lib',
   [libasahi_lib_files, agx_pack],
-  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_asahi],
+  include_directories : inc_asahi,
   c_args : [no_override_init_args],
   gnu_symbol_visibility : 'hidden',
   link_with: [libasahi_decode],
@@ -70,7 +77,6 @@ if with_tests
       ),
       c_args : [c_msvc_compat_args, no_override_init_args],
       gnu_symbol_visibility : 'hidden',
-      include_directories : [inc_include, inc_src, inc_mesa],
       dependencies: [idep_gtest, idep_agx_pack, idep_mesautil],
       link_with : [libasahi_lib],
     ),
@@ -83,7 +89,7 @@ if dep_iokit.found()
   libasahi_wrap = shared_library(
     'wrap',
     'wrap.c',
-    include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_asahi],
+    include_directories : [inc_src, inc_asahi],
     dependencies : [idep_mesautil, dep_iokit],
     c_args : [no_override_init_args, '-Wno-missing-prototypes'],
     gnu_symbol_visibility : 'hidden',

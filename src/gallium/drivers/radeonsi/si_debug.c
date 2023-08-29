@@ -7,7 +7,6 @@
 #include "ac_debug.h"
 #include "ac_rtld.h"
 #include "driver_ddebug/dd_util.h"
-#include "si_compute.h"
 #include "si_pipe.h"
 #include "sid.h"
 #include "sid_tables.h"

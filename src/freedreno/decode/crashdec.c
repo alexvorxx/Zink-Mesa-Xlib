@@ -345,9 +345,11 @@ dump_cmdstream(void)
    printf("got rb_base=%" PRIx64 "\n", rb_base);
 
    options.ibs[1].base = regval64("CP_IB1_BASE");
-   options.ibs[1].rem = regval("CP_IB1_REM_SIZE");
+   if (is_a6xx())
+      options.ibs[1].rem = regval("CP_IB1_REM_SIZE");
    options.ibs[2].base = regval64("CP_IB2_BASE");
-   options.ibs[2].rem = regval("CP_IB2_REM_SIZE");
+   if (is_a6xx())
+      options.ibs[2].rem = regval("CP_IB2_REM_SIZE");
 
    /* Adjust remaining size to account for cmdstream slurped into ROQ
     * but not yet consumed by SQE

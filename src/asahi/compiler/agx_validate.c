@@ -20,10 +20,11 @@
  * block contains control flow, it must come after a p_logical_end marker.
  * Therefore the form of a valid block is:
  *
+ *       Control flow instructions (else)
  *       Phi nodes
  *       General instructions
  *       Logical end
- *       Control flow instructions
+ *       Control flow instructions (except else)
  *
  * Validate that this form is satisfied.
  *
@@ -31,20 +32,29 @@
  * that should be deferred though?
  */
 enum agx_block_state {
-   AGX_BLOCK_STATE_PHI = 0,
-   AGX_BLOCK_STATE_BODY = 1,
-   AGX_BLOCK_STATE_CF = 2
+   AGX_BLOCK_STATE_CF_ELSE = 0,
+   AGX_BLOCK_STATE_PHI = 1,
+   AGX_BLOCK_STATE_BODY = 2,
+   AGX_BLOCK_STATE_CF = 3
 };
 
 static bool
 agx_validate_block_form(agx_block *block)
 {
-   enum agx_block_state state = AGX_BLOCK_STATE_PHI;
+   enum agx_block_state state = AGX_BLOCK_STATE_CF_ELSE;
 
    agx_foreach_instr_in_block(block, I) {
       switch (I->op) {
+      case AGX_OPCODE_ELSE_ICMP:
+      case AGX_OPCODE_ELSE_FCMP:
+         agx_validate_assert(state == AGX_BLOCK_STATE_CF_ELSE);
+         break;
+
       case AGX_OPCODE_PHI:
-         agx_validate_assert(state == AGX_BLOCK_STATE_PHI);
+         agx_validate_assert(state == AGX_BLOCK_STATE_CF_ELSE ||
+                             state == AGX_BLOCK_STATE_PHI);
+
+         state = AGX_BLOCK_STATE_PHI;
          break;
 
       default:
@@ -61,10 +71,8 @@ agx_validate_block_form(agx_block *block)
       case AGX_OPCODE_JMP_EXEC_NONE:
       case AGX_OPCODE_POP_EXEC:
       case AGX_OPCODE_IF_ICMP:
-      case AGX_OPCODE_ELSE_ICMP:
       case AGX_OPCODE_WHILE_ICMP:
       case AGX_OPCODE_IF_FCMP:
-      case AGX_OPCODE_ELSE_FCMP:
       case AGX_OPCODE_WHILE_FCMP:
       case AGX_OPCODE_STOP:
          agx_validate_assert(state == AGX_BLOCK_STATE_CF);
@@ -181,7 +189,7 @@ agx_validate_predecessors(agx_block *block)
          has_later_preds = true;
    }
 
-   if (block->loop_header != has_later_preds)
+   if (has_later_preds && !block->loop_header)
       return false;
 
    /* Successors and predecessors are found together */

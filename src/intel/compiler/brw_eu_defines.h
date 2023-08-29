@@ -883,6 +883,8 @@ enum tex_logical_srcs {
    TEX_LOGICAL_SRC_COORD_COMPONENTS,
    /** REQUIRED: Number of derivative components (as UD immediate) */
    TEX_LOGICAL_SRC_GRAD_COMPONENTS,
+   /** REQUIRED: request residency (as UD immediate) */
+   TEX_LOGICAL_SRC_RESIDENCY,
 
    TEX_LOGICAL_NUM_SRCS,
 };

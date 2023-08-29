@@ -38,10 +38,12 @@
 /* runtime-optimized pipeline state hashing */
 template <zink_dynamic_state DYNAMIC_STATE>
 static uint32_t
-hash_gfx_pipeline_state(const void *key)
+hash_gfx_pipeline_state(const void *key, struct zink_screen *screen)
 {
    const struct zink_gfx_pipeline_state *state = (const struct zink_gfx_pipeline_state *)key;
-   uint32_t hash = _mesa_hash_data(key, offsetof(struct zink_gfx_pipeline_state, hash));
+   uint32_t hash = _mesa_hash_data(key, screen->have_full_ds3 ?
+                                        offsetof(struct zink_gfx_pipeline_state, sample_mask) :
+                                        offsetof(struct zink_gfx_pipeline_state, hash));
    if (DYNAMIC_STATE < ZINK_DYNAMIC_STATE2)
       hash = XXH32(&state->dyn_state3, sizeof(state->dyn_state3), hash);
    if (DYNAMIC_STATE < ZINK_DYNAMIC_STATE3)
@@ -82,7 +84,7 @@ check_vertex_strides(struct zink_context *ctx)
    const struct zink_vertex_elements_state *ves = ctx->element_state;
    for (unsigned i = 0; i < ves->hw_state.num_bindings; i++) {
       const struct pipe_vertex_buffer *vb = ctx->vertex_buffers + ves->hw_state.binding_map[i];
-      unsigned stride = vb->buffer.resource ? vb->stride : 0;
+      unsigned stride = vb->buffer.resource ? ves->hw_state.b.strides[ves->hw_state.binding_map[i]] : 0;
       if (stride && stride < ves->min_stride[i])
          return false;
    }
@@ -119,15 +121,16 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    if (state->dirty) {
       if (state->pipeline) //avoid on first hash
          state->final_hash ^= state->hash;
-      state->hash = hash_gfx_pipeline_state<DYNAMIC_STATE>(state);
+      state->hash = hash_gfx_pipeline_state<DYNAMIC_STATE>(state, screen);
       state->final_hash ^= state->hash;
       state->dirty = false;
    }
    /* extra safety asserts for optimal path to catch refactoring bugs */
    if (prog->optimal_keys) {
       ASSERTED const union zink_shader_key_optimal *opt = (union zink_shader_key_optimal*)&prog->last_variant_hash;
-      assert(opt->val == state->shader_keys_optimal.key.val);
-      assert(state->optimal_key == state->shader_keys_optimal.key.val);
+      ASSERTED uint32_t sanitized = zink_sanitize_optimal_key(ctx->gfx_stages, ctx->gfx_pipeline_state.shader_keys_optimal.key.val);
+      assert(opt->val == sanitized);
+      assert(state->optimal_key == sanitized);
    }
    /* recalc vertex state if missing optimal extensions */
    if (DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT2 && DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT && ctx->vertex_state_changed) {
@@ -145,7 +148,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
          for (unsigned i = 0; i < state->element_state->num_bindings; i++) {
             const unsigned buffer_id = ctx->element_state->hw_state.binding_map[i];
             struct pipe_vertex_buffer *vb = ctx->vertex_buffers + buffer_id;
-            state->vertex_strides[buffer_id] = vb->buffer.resource ? vb->stride : 0;
+            state->vertex_strides[buffer_id] = vb->buffer.resource ? state->element_state->b.strides[buffer_id] : 0;
             hash = XXH32(&state->vertex_strides[buffer_id], sizeof(uint32_t), hash);
          }
          state->vertex_hash = hash ^ state->element_state->hash;

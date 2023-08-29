@@ -262,6 +262,7 @@ struct svga_velems_state {
    unsigned count;
    struct pipe_vertex_element velem[PIPE_MAX_ATTRIBS];
    SVGA3dDeclType decl_type[PIPE_MAX_ATTRIBS]; /**< vertex attrib formats */
+   uint16_t strides[PIPE_MAX_ATTRIBS];
 
    /** Bitmasks indicating which attributes need format conversion */
    unsigned adjust_attrib_range;     /**< range adjustment */

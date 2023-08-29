@@ -451,7 +451,7 @@ fd_set_viewport_states(struct pipe_context *pctx, unsigned start_slot,
 }
 
 static void
-fd_set_vertex_buffers(struct pipe_context *pctx, unsigned start_slot,
+fd_set_vertex_buffers(struct pipe_context *pctx,
                       unsigned count, unsigned unbind_num_trailing_slots,
                       bool take_ownership,
                       const struct pipe_vertex_buffer *vb) in_dt
@@ -467,17 +467,15 @@ fd_set_vertex_buffers(struct pipe_context *pctx, unsigned start_slot,
    if (ctx->screen->gen < 3) {
       for (i = 0; i < count; i++) {
          bool new_enabled = vb && vb[i].buffer.resource;
-         bool old_enabled = so->vb[start_slot + i].buffer.resource != NULL;
-         uint32_t new_stride = vb ? vb[i].stride : 0;
-         uint32_t old_stride = so->vb[start_slot + i].stride;
-         if ((new_enabled != old_enabled) || (new_stride != old_stride)) {
+         bool old_enabled = so->vb[i].buffer.resource != NULL;
+         if (new_enabled != old_enabled) {
             fd_context_dirty(ctx, FD_DIRTY_VTXSTATE);
             break;
          }
       }
    }
 
-   util_set_vertex_buffers_mask(so->vb, &so->enabled_mask, vb, start_slot,
+   util_set_vertex_buffers_mask(so->vb, &so->enabled_mask, vb,
                                 count, unbind_num_trailing_slots,
                                 take_ownership);
    so->count = util_last_bit(so->enabled_mask);
@@ -497,7 +495,7 @@ fd_set_vertex_buffers(struct pipe_context *pctx, unsigned start_slot,
        */
       if (vb[i].buffer.resource &&
           unlikely(vb[i].buffer_offset >= vb[i].buffer.resource->width0)) {
-         so->vb[start_slot + i].buffer_offset = 0;
+         so->vb[i].buffer_offset = 0;
       }
    }
 }
@@ -595,6 +593,8 @@ fd_vertex_state_create(struct pipe_context *pctx, unsigned num_elements,
 
    memcpy(so->pipe, elements, sizeof(*elements) * num_elements);
    so->num_elements = num_elements;
+   for (unsigned i = 0; i < num_elements; i++)
+      so->strides[elements[i].vertex_buffer_index] = elements[i].src_stride;
 
    return so;
 }

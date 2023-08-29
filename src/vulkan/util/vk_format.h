@@ -238,6 +238,10 @@ vk_format_get_plane_count(VkFormat format)
    return ycbcr_info ? ycbcr_info->n_planes : 1;
 }
 
+VkClearColorValue
+vk_swizzle_color_value(VkClearColorValue color,
+                       VkComponentMapping swizzle, bool is_int);
+
 #ifdef __cplusplus
 }
 #endif

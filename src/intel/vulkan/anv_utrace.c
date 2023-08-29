@@ -84,7 +84,7 @@ anv_utrace_delete_submit(struct u_trace_context *utctx, void *submit_data)
       anv_bo_pool_free(&device->utrace_bo_pool, submit->trace_bo);
 
    if (submit->batch_bo) {
-      anv_reloc_list_finish(&submit->relocs, &device->vk.alloc);
+      anv_reloc_list_finish(&submit->relocs);
       anv_bo_pool_free(&device->utrace_bo_pool, submit->batch_bo);
    }
 
@@ -167,7 +167,8 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
       if (result != VK_SUCCESS)
          goto error_batch_buf;
 
-      result = anv_reloc_list_init(&submit->relocs, &device->vk.alloc);
+      const bool uses_relocs = device->physical->uses_relocs;
+      result = anv_reloc_list_init(&submit->relocs, &device->vk.alloc, uses_relocs);
       if (result != VK_SUCCESS)
          goto error_reloc_list;
 
@@ -216,7 +217,7 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
    return VK_SUCCESS;
 
  error_batch:
-   anv_reloc_list_finish(&submit->relocs, &device->vk.alloc);
+   anv_reloc_list_finish(&submit->relocs);
  error_reloc_list:
    anv_bo_pool_free(&device->utrace_bo_pool, submit->batch_bo);
  error_batch_buf:
@@ -463,7 +464,8 @@ anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool beg
    if (result != VK_SUCCESS)
       goto error_sync;
 
-   result = anv_reloc_list_init(&submit->relocs, &device->vk.alloc);
+   const bool uses_relocs = device->physical->uses_relocs;
+   result = anv_reloc_list_init(&submit->relocs, &device->vk.alloc, uses_relocs);
    if (result != VK_SUCCESS)
       goto error_batch_bo;
 
@@ -507,7 +509,7 @@ anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool beg
    return;
 
  error_reloc_list:
-   anv_reloc_list_finish(&submit->relocs, &device->vk.alloc);
+   anv_reloc_list_finish(&submit->relocs);
  error_batch_bo:
    anv_bo_pool_free(&device->utrace_bo_pool, submit->batch_bo);
  error_sync:

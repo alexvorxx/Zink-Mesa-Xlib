@@ -454,7 +454,7 @@ agx_size_for_bits(unsigned bits)
 }
 
 static inline agx_index
-agx_nir_ssa_index(nir_ssa_def *ssa)
+agx_def_index(nir_def *ssa)
 {
    return agx_get_index(ssa->index, agx_size_for_bits(ssa->bit_size));
 }
@@ -462,26 +462,19 @@ agx_nir_ssa_index(nir_ssa_def *ssa)
 static inline agx_index
 agx_src_index(nir_src *src)
 {
-   assert(src->is_ssa);
-   return agx_nir_ssa_index(src->ssa);
+   return agx_def_index(src->ssa);
 }
 
 static inline agx_index
-agx_dest_index(nir_dest *dst)
+agx_vec_for_def(agx_context *ctx, nir_def *def)
 {
-   return agx_nir_ssa_index(&dst->ssa);
-}
-
-static inline agx_index
-agx_vec_for_dest(agx_context *ctx, nir_dest *dest)
-{
-   return agx_temp(ctx, agx_size_for_bits(nir_dest_bit_size(*dest)));
+   return agx_temp(ctx, agx_size_for_bits(def->bit_size));
 }
 
 static inline agx_index
 agx_vec_for_intr(agx_context *ctx, nir_intrinsic_instr *instr)
 {
-   return agx_vec_for_dest(ctx, &instr->dest);
+   return agx_vec_for_def(ctx, &instr->def);
 }
 
 static inline unsigned
@@ -570,17 +563,14 @@ agx_start_block(agx_context *ctx)
    agx_foreach_dest(ins, v)                                                    \
       if (ins->dest[v].type == AGX_INDEX_NORMAL)
 
-/* Phis only come at the start so we stop as soon as we hit a non-phi */
+/* Phis only come at the start (after else instructions) so we stop as soon as
+ * we hit a non-phi
+ */
 #define agx_foreach_phi_in_block(block, v)                                     \
    agx_foreach_instr_in_block(block, v)                                        \
-      if (v->op != AGX_OPCODE_PHI)                                             \
-         break;                                                                \
-      else
-
-/* Everything else comes after, so we stop as soon as we hit a phi in reverse */
-#define agx_foreach_non_phi_in_block_rev(block, v)                             \
-   agx_foreach_instr_in_block_rev(block, v)                                    \
-      if (v->op == AGX_OPCODE_PHI)                                             \
+      if (v->op == AGX_OPCODE_ELSE_ICMP || v->op == AGX_OPCODE_ELSE_FCMP)      \
+         continue;                                                             \
+      else if (v->op != AGX_OPCODE_PHI)                                        \
          break;                                                                \
       else
 
@@ -772,6 +762,7 @@ void agx_dce(agx_context *ctx, bool partial);
 void agx_ra(agx_context *ctx);
 void agx_lower_64bit_postra(agx_context *ctx);
 void agx_insert_waits(agx_context *ctx);
+void agx_opt_empty_else(agx_context *ctx);
 void agx_pack_binary(agx_context *ctx, struct util_dynarray *emission);
 
 #ifndef NDEBUG

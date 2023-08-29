@@ -34,14 +34,12 @@ tu_resolve_sysmem(struct tu_cmd_buffer *cmd,
 void
 tu_clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
                            struct tu_cs *cs,
-                           uint32_t a,
-                           const VkClearValue *value);
+                           uint32_t a);
 
 void
 tu_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                          struct tu_cs *cs,
-                         uint32_t a,
-                         const VkClearValue *value);
+                         uint32_t a);
 
 void
 tu_load_gmem_attachment(struct tu_cmd_buffer *cmd,

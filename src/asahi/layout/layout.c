@@ -164,6 +164,12 @@ ail_initialize_twiddled(struct ail_layout *layout)
        !util_format_is_depth_or_stencil(layout->format))
       layout->page_aligned_layers = false;
 
+   /* For writable images, we require page-aligned layers. This appears to be
+    * required for PBE stores.
+    */
+   if (layout->writeable_image)
+      layout->page_aligned_layers = true;
+
    if (layout->page_aligned_layers)
       layout->layer_stride_B = ALIGN_POT(offset_B, AIL_PAGESIZE);
    else
@@ -234,6 +240,10 @@ ail_make_miptree(struct ail_layout *layout)
       assert(layout->levels >= 1 && "Invalid dimensions");
       assert(layout->sample_count_sa >= 1 && "Invalid sample count");
    }
+
+   assert(!(layout->writeable_image &&
+            layout->tiling == AIL_TILING_TWIDDLED_COMPRESSED) &&
+          "Writeable images must not be compressed");
 
    /* Hardware strides are based on the maximum number of levels, so always
     * allocate them all.

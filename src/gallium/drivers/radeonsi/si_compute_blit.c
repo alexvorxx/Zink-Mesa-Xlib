@@ -163,6 +163,9 @@ static void si_launch_grid_internal(struct si_context *sctx, const struct pipe_g
    if (sctx->num_hw_pipestat_streamout_queries)
       sctx->flags |= SI_CONTEXT_STOP_PIPELINE_STATS;
 
+   if (sctx->flags)
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
+
    if (!(flags & SI_OP_CS_RENDER_COND_ENABLE))
       sctx->render_cond_enabled = false;
 
@@ -213,6 +216,9 @@ static void si_launch_grid_internal(struct si_context *sctx, const struct pipe_g
          sctx->flags |= SI_CONTEXT_INV_SCACHE | SI_CONTEXT_INV_VCACHE | SI_CONTEXT_PFP_SYNC_ME;
       }
    }
+
+   if (sctx->flags)
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
 }
 
 void si_launch_grid_internal_ssbos(struct si_context *sctx, struct pipe_grid_info *info,
@@ -220,8 +226,10 @@ void si_launch_grid_internal_ssbos(struct si_context *sctx, struct pipe_grid_inf
                                    unsigned num_buffers, const struct pipe_shader_buffer *buffers,
                                    unsigned writeable_bitmask)
 {
-   if (!(flags & SI_OP_SKIP_CACHE_INV_BEFORE))
+   if (!(flags & SI_OP_SKIP_CACHE_INV_BEFORE)) {
       sctx->flags |= si_get_flush_flags(sctx, coher, SI_COMPUTE_DST_CACHE_POLICY);
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
+   }
 
    /* Save states. */
    struct pipe_shader_buffer saved_sb[3] = {};
@@ -243,8 +251,10 @@ void si_launch_grid_internal_ssbos(struct si_context *sctx, struct pipe_grid_inf
 
    /* Do cache flushing at the end. */
    if (get_cache_policy(sctx, coher, 0) == L2_BYPASS) {
-      if (flags & SI_OP_SYNC_AFTER)
+      if (flags & SI_OP_SYNC_AFTER) {
          sctx->flags |= SI_CONTEXT_WB_L2;
+         si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
+      }
    } else {
       while (writeable_bitmask)
          si_resource(buffers[u_bit_scan(&writeable_bitmask)].buffer)->TC_L2_dirty = true;
@@ -527,7 +537,7 @@ void si_copy_buffer(struct si_context *sctx, struct pipe_resource *dst, struct p
    }
 }
 
-static void
+static unsigned
 set_work_size(struct pipe_grid_info *info, unsigned block_x, unsigned block_y, unsigned block_z,
               unsigned work_x, unsigned work_y, unsigned work_z)
 {
@@ -540,6 +550,8 @@ set_work_size(struct pipe_grid_info *info, unsigned block_x, unsigned block_y, u
       info->last_block[i] = work[i] % info->block[i];
       info->grid[i] = DIV_ROUND_UP(work[i], info->block[i]);
    }
+
+   return work_z > 1 ? 3 : (work_y > 1 ? 2 : 1);
 }
 
 static void si_launch_grid_internal_images(struct si_context *sctx,
@@ -754,12 +766,13 @@ bool si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, u
    sctx->cs_user_data[1] = src_box->y | (dsty << 16);
    sctx->cs_user_data[2] = src_box->z | (dstz << 16);
 
-   set_work_size(&info, block_x, block_y, block_z,
-                 src_box->width, src_box->height, src_box->depth);
+   unsigned wg_dim =
+      set_work_size(&info, block_x, block_y, block_z,
+                    src_box->width, src_box->height, src_box->depth);
 
-   void **copy_image_cs_ptr = &sctx->cs_copy_image[src_is_1d][dst_is_1d];
+   void **copy_image_cs_ptr = &sctx->cs_copy_image[wg_dim - 1][src_is_1d][dst_is_1d];
    if (!*copy_image_cs_ptr)
-      *copy_image_cs_ptr = si_create_copy_image_cs(sctx, src_is_1d, dst_is_1d);
+      *copy_image_cs_ptr = si_create_copy_image_cs(sctx, wg_dim, src_is_1d, dst_is_1d);
 
    assert(*copy_image_cs_ptr);
 
@@ -1108,6 +1121,11 @@ bool si_compute_blit(struct si_context *sctx, const struct pipe_blit_info *info,
    image[1].u.tex.first_layer = 0;
    image[1].u.tex.last_layer = util_max_layer(info->dst.resource, info->dst.level);
 
+   struct pipe_grid_info grid = {0};
+   unsigned wg_dim =
+      set_work_size(&grid, 8, 8, 1, info->dst.box.width, info->dst.box.height,
+                    info->dst.box.depth);
+
    /* Get the shader key. */
    const struct util_format_description *dst_desc = util_format_description(info->dst.format);
    unsigned i = util_format_get_first_non_void_channel(info->dst.format);
@@ -1115,6 +1133,7 @@ bool si_compute_blit(struct si_context *sctx, const struct pipe_blit_info *info,
    options.key = 0;
 
    options.always_true = true;
+   options.wg_dim = wg_dim;
    options.src_is_1d = info->src.resource->target == PIPE_TEXTURE_1D ||
                        info->src.resource->target == PIPE_TEXTURE_1D_ARRAY;
    options.dst_is_1d = info->dst.resource->target == PIPE_TEXTURE_1D ||
@@ -1163,9 +1182,6 @@ bool si_compute_blit(struct si_context *sctx, const struct pipe_blit_info *info,
    sctx->cs_user_data[0] = (info->src.box.x & 0xffff) | ((info->dst.box.x & 0xffff) << 16);
    sctx->cs_user_data[1] = (info->src.box.y & 0xffff) | ((info->dst.box.y & 0xffff) << 16);
    sctx->cs_user_data[2] = (info->src.box.z & 0xffff) | ((info->dst.box.z & 0xffff) << 16);
-
-   struct pipe_grid_info grid = {0};
-   set_work_size(&grid, 8, 8, 1, info->dst.box.width, info->dst.box.height, info->dst.box.depth);
 
    si_launch_grid_internal_images(sctx, image, 2, &grid, shader,
                                   SI_OP_SYNC_BEFORE_AFTER |

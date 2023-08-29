@@ -58,7 +58,7 @@ struct tu_memory_heap {
     *
     * Align it to 64 bits to make atomic operations faster on 32 bit platforms.
     */
-   VkDeviceSize      used __attribute__ ((aligned (8)));
+   alignas(8) VkDeviceSize used;
 };
 
 struct tu_physical_device
@@ -153,6 +153,7 @@ struct tu_queue
    struct tu_device *device;
 
    uint32_t msm_queue_id;
+   uint32_t priority;
 
    int fence;           /* timestamp/fence of the last queue submission */
 };
@@ -201,6 +202,9 @@ struct tu6_global
    volatile uint32_t breadcrumb_cpu_sync_seqno;
    uint32_t _pad4;
 
+   volatile uint32_t userspace_fence;
+   uint32_t _pad5;
+
    /* note: larger global bo will be used for customBorderColors */
    struct bcolor_entry bcolor_builtin[TU_BORDER_COLOR_BUILTIN], bcolor[];
 };
@@ -223,6 +227,8 @@ enum tu_gralloc_type
    TU_GRALLOC_OTHER,
 };
 #endif
+
+struct tu_virtio_device;
 
 struct tu_device
 {
@@ -347,6 +353,10 @@ struct tu_device
 #ifdef ANDROID
    const void *gralloc;
    enum tu_gralloc_type gralloc_type;
+#endif
+
+#ifdef TU_HAS_VIRTIO
+   struct tu_virtio_device *vdev;
 #endif
 
    uint32_t submit_count;

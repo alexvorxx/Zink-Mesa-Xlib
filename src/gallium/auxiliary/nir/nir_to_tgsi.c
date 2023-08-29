@@ -550,22 +550,13 @@ ntt_allocate_regs_unoptimized(struct ntt_compile *c, nir_function_impl *impl)
 static const uint32_t
 ntt_extract_const_src_offset(nir_src *src)
 {
-   if (!src->is_ssa)
-      return 0;
+   nir_scalar s = nir_get_scalar(src->ssa, 0);
 
-   nir_ssa_scalar s = nir_get_ssa_scalar(src->ssa, 0);
-
-   while (nir_ssa_scalar_is_alu(s)) {
+   while (nir_scalar_is_alu(s)) {
       nir_alu_instr *alu = nir_instr_as_alu(s.def->parent_instr);
-
-      for (int i = 0; i < nir_op_infos[alu->op].num_inputs; i++) {
-         if (!alu->src[i].src.is_ssa)
-            return 0;
-      }
 
       if (alu->op == nir_op_iadd) {
          for (int i = 0; i < 2; i++) {
-            assert(!alu->src[i].negate && !alu->src[i].abs);
             nir_const_value *v = nir_src_as_const_value(alu->src[i].src);
             if (v != NULL) {
                *src = alu->src[1 - i].src;
@@ -576,12 +567,9 @@ ntt_extract_const_src_offset(nir_src *src)
          return 0;
       }
 
-      /* We'd like to reuse nir_ssa_scalar_chase_movs(), but it assumes SSA and that
+      /* We'd like to reuse nir_scalar_chase_movs(), but it assumes SSA and that
        * seems reasonable for something used in inner loops of the compiler.
        */
-      if (!nir_alu_instr_is_copy(alu))
-         return 0;
-
       if (alu->op == nir_op_mov) {
          s.def = alu->src[0].src.ssa;
          s.comp = alu->src[0].swizzle[s.comp];
@@ -813,7 +801,7 @@ ntt_try_store_reg_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
    nir_src *use = NULL;
    nir_foreach_reg_load(src, reg_decl) {
       nir_intrinsic_instr *load = nir_instr_as_intrinsic(src->parent_instr);
-      nir_foreach_use_including_if(load_use, &load->dest.ssa) {
+      nir_foreach_use_including_if(load_use, &load->def) {
          /* We can only have one use */
          if (use != NULL)
             return false;
@@ -834,7 +822,7 @@ ntt_try_store_reg_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
  */
 static bool
 ntt_try_store_ssa_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
-                                 nir_ssa_def *def)
+                                 nir_def *def)
 {
    *dst = ureg_dst_undef();
 
@@ -1125,14 +1113,14 @@ ntt_setup_uniforms(struct ntt_compile *c)
 }
 
 static void
-ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
+ntt_setup_registers(struct ntt_compile *c)
 {
    assert(c->num_temps == 0);
 
    nir_foreach_reg_decl_safe(nir_reg, nir_shader_get_entrypoint(c->s)) {
       /* Permanently allocate all the array regs at the start. */
       unsigned num_array_elems = nir_intrinsic_num_array_elems(nir_reg);
-      unsigned index = nir_reg->dest.ssa.index;
+      unsigned index = nir_reg->def.index;
 
       if (num_array_elems != 0) {
          struct ureg_dst decl = ureg_DECL_array_temporary(c->ureg, num_array_elems, true);
@@ -1150,7 +1138,7 @@ ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
       unsigned num_array_elems = nir_intrinsic_num_array_elems(nir_reg);
       unsigned num_components = nir_intrinsic_num_components(nir_reg);
       unsigned bit_size = nir_intrinsic_bit_size(nir_reg);
-      unsigned index = nir_reg->dest.ssa.index;
+      unsigned index = nir_reg->def.index;
 
       /* We already handled arrays */
       if (num_array_elems == 0) {
@@ -1277,17 +1265,14 @@ ntt_get_alu_src(struct ntt_compile *c, nir_alu_instr *instr, int i)
     * the specific swizzles from an undef don't matter)
     */
    if (nir_src_bit_size(instr->src[i].src) == 64 &&
-      !(src.src.is_ssa && src.src.ssa->parent_instr->type == nir_instr_type_ssa_undef)) {
-      int chan0 = 0, chan1 = 1;
+      !(src.src.is_ssa && src.src.ssa->parent_instr->type == nir_instr_type_undef)) {
+      int chan1 = 1;
       if (nir_op_infos[instr->op].input_sizes[i] == 0) {
-         chan0 = ffs(instr->dest.write_mask) - 1;
-         chan1 = ffs(instr->dest.write_mask & ~(1 << chan0)) - 1;
-         if (chan1 == -1)
-            chan1 = chan0;
+         chan1 = instr->def.num_components > 1 ? 1 : 0;
       }
       usrc = ureg_swizzle(usrc,
-                          src.swizzle[chan0] * 2,
-                          src.swizzle[chan0] * 2 + 1,
+                          src.swizzle[0] * 2,
+                          src.swizzle[0] * 2 + 1,
                           src.swizzle[chan1] * 2,
                           src.swizzle[chan1] * 2 + 1);
    } else {
@@ -1322,7 +1307,7 @@ ntt_swizzle_for_write_mask(struct ureg_src src, uint32_t write_mask)
 }
 
 static struct ureg_dst
-ntt_get_ssa_def_decl(struct ntt_compile *c, nir_ssa_def *ssa)
+ntt_get_ssa_def_decl(struct ntt_compile *c, nir_def *ssa)
 {
    uint32_t writemask = BITSET_MASK(ssa->num_components);
    if (ssa->bit_size == 64)
@@ -1364,16 +1349,16 @@ ntt_get_chased_dest(struct ntt_compile *c, nir_legacy_dest *dest)
 }
 
 static struct ureg_dst
-ntt_get_dest(struct ntt_compile *c, nir_dest *dest)
+ntt_get_dest(struct ntt_compile *c, nir_def *def)
 {
-   nir_legacy_dest chased = nir_legacy_chase_dest(dest);
+   nir_legacy_dest chased = nir_legacy_chase_dest(def);
    return ntt_get_chased_dest(c, &chased);
 }
 
 static struct ureg_dst
-ntt_get_alu_dest(struct ntt_compile *c, nir_dest *dest)
+ntt_get_alu_dest(struct ntt_compile *c, nir_def *def)
 {
-   nir_legacy_alu_dest chased = nir_legacy_chase_alu_dest(dest);
+   nir_legacy_alu_dest chased = nir_legacy_chase_alu_dest(def);
    struct ureg_dst dst = ntt_get_chased_dest(c, &chased.dest);
 
    if (chased.fsat)
@@ -1383,7 +1368,7 @@ ntt_get_alu_dest(struct ntt_compile *c, nir_dest *dest)
    if (chased.dest.is_ssa)
       return dst;
 
-   int dst_64 = nir_dest_bit_size(*dest) == 64;
+   int dst_64 = def->bit_size == 64;
    unsigned write_mask = chased.write_mask;
 
    if (dst_64)
@@ -1396,7 +1381,7 @@ ntt_get_alu_dest(struct ntt_compile *c, nir_dest *dest)
  * a copy of the ureg_src.
  */
 static void
-ntt_store_def(struct ntt_compile *c, nir_ssa_def *def, struct ureg_src src)
+ntt_store_def(struct ntt_compile *c, nir_def *def, struct ureg_src src)
 {
    if (!src.Indirect && !src.DimIndirect) {
       switch (src.File) {
@@ -1413,9 +1398,9 @@ ntt_store_def(struct ntt_compile *c, nir_ssa_def *def, struct ureg_src src)
 }
 
 static void
-ntt_store(struct ntt_compile *c, nir_dest *dest, struct ureg_src src)
+ntt_store(struct ntt_compile *c, nir_def *def, struct ureg_src src)
 {
-   nir_legacy_dest chased = nir_legacy_chase_dest(dest);
+   nir_legacy_dest chased = nir_legacy_chase_dest(def);
 
    if (chased.is_ssa)
       ntt_store_def(c, chased.ssa, src);
@@ -1454,7 +1439,7 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
    struct ureg_src src[4];
    struct ureg_dst dst;
    unsigned i;
-   int dst_64 = nir_dest_bit_size(instr->dest.dest) == 64;
+   int dst_64 = instr->def.bit_size == 64;
    int src_64 = nir_src_bit_size(instr->src[0].src) == 64;
    int num_srcs = nir_op_infos[instr->op].num_inputs;
 
@@ -1470,7 +1455,7 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
    for (; i < ARRAY_SIZE(src); i++)
       src[i] = ureg_src_undef();
 
-   dst = ntt_get_alu_dest(c, &instr->dest.dest);
+   dst = ntt_get_alu_dest(c, &instr->def);
 
    static enum tgsi_opcode op_map[][2] = {
       [nir_op_mov] = { TGSI_OPCODE_MOV, TGSI_OPCODE_MOV },
@@ -1891,7 +1876,7 @@ ntt_shift_by_frac(struct ureg_src src, unsigned frac, unsigned num_components)
 static void
 ntt_emit_load_ubo(struct ntt_compile *c, nir_intrinsic_instr *instr)
 {
-   int bit_size = nir_dest_bit_size(instr->dest);
+   int bit_size = instr->def.bit_size;
    assert(bit_size == 32 || instr->num_components <= 2);
 
    struct ureg_src src = ureg_src_register(TGSI_FILE_CONSTANT, 0);
@@ -1935,14 +1920,14 @@ ntt_emit_load_ubo(struct ntt_compile *c, nir_intrinsic_instr *instr)
       src = ntt_shift_by_frac(src, start_component,
                               instr->num_components * bit_size / 32);
 
-      ntt_store(c, &instr->dest, src);
+      ntt_store(c, &instr->def, src);
    } else {
       /* PIPE_CAP_LOAD_CONSTBUF: Not necessarily vec4 aligned, emit a
        * TGSI_OPCODE_LOAD instruction from the const file.
        */
       struct ntt_insn *insn =
          ntt_insn(c, TGSI_OPCODE_LOAD,
-                  ntt_get_dest(c, &instr->dest),
+                  ntt_get_dest(c, &instr->def),
                   src, ntt_get_src(c, instr->src[1]),
                   ureg_src_undef(), ureg_src_undef());
       insn->is_mem = true;
@@ -2124,7 +2109,7 @@ ntt_emit_mem(struct ntt_compile *c, nir_intrinsic_instr *instr,
          write_mask = ntt_64bit_write_mask(write_mask);
       dst = ureg_writemask(dst, write_mask);
    } else {
-      dst = ntt_get_dest(c, &instr->dest);
+      dst = ntt_get_dest(c, &instr->def);
    }
 
    struct ntt_insn *insn = ntt_insn(c, opcode, dst, src[0], src[1], src[2], src[3]);
@@ -2169,7 +2154,7 @@ ntt_emit_image_load_store(struct ntt_compile *c, nir_intrinsic_instr *instr)
       dst = ureg_dst(resource);
    } else {
       srcs[num_src++] = resource;
-      dst = ntt_get_dest(c, &instr->dest);
+      dst = ntt_get_dest(c, &instr->def);
    }
    struct ureg_dst opcode_dst = dst;
 
@@ -2246,7 +2231,7 @@ ntt_emit_load_input(struct ntt_compile *c, nir_intrinsic_instr *instr)
    unsigned base = nir_intrinsic_base(instr);
    struct ureg_src input;
    nir_io_semantics semantics = nir_intrinsic_io_semantics(instr);
-   bool is_64 = nir_dest_bit_size(instr->dest) == 64;
+   bool is_64 = instr->def.bit_size == 64;
 
    if (c->s->info.stage == MESA_SHADER_VERTEX) {
       input = ureg_DECL_vs_input(c->ureg, base);
@@ -2281,13 +2266,13 @@ ntt_emit_load_input(struct ntt_compile *c, nir_intrinsic_instr *instr)
    switch (instr->intrinsic) {
    case nir_intrinsic_load_input:
       input = ntt_ureg_src_indirect(c, input, instr->src[0], 0);
-      ntt_store(c, &instr->dest, input);
+      ntt_store(c, &instr->def, input);
       break;
 
    case nir_intrinsic_load_per_vertex_input:
       input = ntt_ureg_src_indirect(c, input, instr->src[1], 0);
       input = ntt_ureg_src_dimension_indirect(c, input, instr->src[0]);
-      ntt_store(c, &instr->dest, input);
+      ntt_store(c, &instr->def, input);
       break;
 
    case nir_intrinsic_load_interpolated_input: {
@@ -2302,7 +2287,7 @@ ntt_emit_load_input(struct ntt_compile *c, nir_intrinsic_instr *instr)
          /* For these, we know that the barycentric load matches the
           * interpolation on the input declaration, so we can use it directly.
           */
-         ntt_store(c, &instr->dest, input);
+         ntt_store(c, &instr->def, input);
          break;
 
       case nir_intrinsic_load_barycentric_centroid:
@@ -2311,21 +2296,21 @@ ntt_emit_load_input(struct ntt_compile *c, nir_intrinsic_instr *instr)
           * input.
           */
          if (c->centroid_inputs & (1ull << nir_intrinsic_base(instr))) {
-            ntt_store(c, &instr->dest, input);
+            ntt_store(c, &instr->def, input);
          } else {
-            ntt_INTERP_CENTROID(c, ntt_get_dest(c, &instr->dest), input);
+            ntt_INTERP_CENTROID(c, ntt_get_dest(c, &instr->def), input);
          }
          break;
 
       case nir_intrinsic_load_barycentric_at_sample:
          /* We stored the sample in the fake "bary" dest. */
-         ntt_INTERP_SAMPLE(c, ntt_get_dest(c, &instr->dest), input,
+         ntt_INTERP_SAMPLE(c, ntt_get_dest(c, &instr->def), input,
                             ntt_get_src(c, instr->src[0]));
          break;
 
       case nir_intrinsic_load_barycentric_at_offset:
          /* We stored the offset in the fake "bary" dest. */
-         ntt_INTERP_OFFSET(c, ntt_get_dest(c, &instr->dest), input,
+         ntt_INTERP_OFFSET(c, ntt_get_dest(c, &instr->def), input,
                             ntt_get_src(c, instr->src[0]));
          break;
 
@@ -2395,7 +2380,7 @@ ntt_emit_load_output(struct ntt_compile *c, nir_intrinsic_instr *instr)
       out = ntt_ureg_dst_indirect(c, out, instr->src[0]);
    }
 
-   struct ureg_dst dst = ntt_get_dest(c, &instr->dest);
+   struct ureg_dst dst = ntt_get_dest(c, &instr->def);
    struct ureg_src out_src = ureg_src(out);
 
    /* Don't swizzling unavailable channels of the output in the writemasked-out
@@ -2426,7 +2411,7 @@ ntt_emit_load_sysval(struct ntt_compile *c, nir_intrinsic_instr *instr)
     * aren't defined, even if they aren't really read.  (GLSL compile fails on
     * gl_NumWorkGroups.w, for example).
     */
-   uint32_t write_mask = BITSET_MASK(nir_dest_num_components(instr->dest));
+   uint32_t write_mask = BITSET_MASK(instr->def.num_components);
    sv = ntt_swizzle_for_write_mask(sv, write_mask);
 
    /* TGSI and NIR define these intrinsics as always loading ints, but they can
@@ -2438,7 +2423,7 @@ ntt_emit_load_sysval(struct ntt_compile *c, nir_intrinsic_instr *instr)
       switch (instr->intrinsic) {
       case nir_intrinsic_load_vertex_id:
       case nir_intrinsic_load_instance_id:
-         ntt_U2F(c, ntt_get_dest(c, &instr->dest), sv);
+         ntt_U2F(c, ntt_get_dest(c, &instr->def), sv);
          return;
 
       default:
@@ -2446,7 +2431,7 @@ ntt_emit_load_sysval(struct ntt_compile *c, nir_intrinsic_instr *instr)
       }
    }
 
-   ntt_store(c, &instr->dest, sv);
+   ntt_store(c, &instr->def, sv);
 }
 
 static void
@@ -2575,26 +2560,26 @@ ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
    }
 
    case nir_intrinsic_is_helper_invocation:
-      ntt_READ_HELPER(c, ntt_get_dest(c, &instr->dest));
+      ntt_READ_HELPER(c, ntt_get_dest(c, &instr->def));
       break;
 
    case nir_intrinsic_vote_all:
-      ntt_VOTE_ALL(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c,instr->src[0]));
+      ntt_VOTE_ALL(c, ntt_get_dest(c, &instr->def), ntt_get_src(c,instr->src[0]));
       return;
    case nir_intrinsic_vote_any:
-      ntt_VOTE_ANY(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c, instr->src[0]));
+      ntt_VOTE_ANY(c, ntt_get_dest(c, &instr->def), ntt_get_src(c, instr->src[0]));
       return;
    case nir_intrinsic_vote_ieq:
-      ntt_VOTE_EQ(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c, instr->src[0]));
+      ntt_VOTE_EQ(c, ntt_get_dest(c, &instr->def), ntt_get_src(c, instr->src[0]));
       return;
    case nir_intrinsic_ballot:
-      ntt_BALLOT(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c, instr->src[0]));
+      ntt_BALLOT(c, ntt_get_dest(c, &instr->def), ntt_get_src(c, instr->src[0]));
       return;
    case nir_intrinsic_read_first_invocation:
-      ntt_READ_FIRST(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c, instr->src[0]));
+      ntt_READ_FIRST(c, ntt_get_dest(c, &instr->def), ntt_get_src(c, instr->src[0]));
       return;
    case nir_intrinsic_read_invocation:
-      ntt_READ_INVOC(c, ntt_get_dest(c, &instr->dest), ntt_get_src(c, instr->src[0]), ntt_get_src(c, instr->src[1]));
+      ntt_READ_INVOC(c, ntt_get_dest(c, &instr->def), ntt_get_src(c, instr->src[0]), ntt_get_src(c, instr->src[1]));
       return;
 
    case nir_intrinsic_load_ssbo:
@@ -2644,7 +2629,7 @@ ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
       ntt_emit_image_load_store(c, instr);
       break;
 
-   case nir_intrinsic_scoped_barrier:
+   case nir_intrinsic_barrier:
       ntt_emit_barrier(c, instr);
       break;
 
@@ -2666,11 +2651,11 @@ ntt_emit_intrinsic(struct ntt_compile *c, nir_intrinsic_instr *instr)
       break;
    case nir_intrinsic_load_barycentric_at_sample:
    case nir_intrinsic_load_barycentric_at_offset:
-      ntt_store(c, &instr->dest, ntt_get_src(c, instr->src[0]));
+      ntt_store(c, &instr->def, ntt_get_src(c, instr->src[0]));
       break;
 
    case nir_intrinsic_shader_clock:
-      ntt_CLOCK(c, ntt_get_dest(c, &instr->dest));
+      ntt_CLOCK(c, ntt_get_dest(c, &instr->def));
       break;
 
    case nir_intrinsic_decl_reg:
@@ -2726,7 +2711,7 @@ ntt_push_tex_arg(struct ntt_compile *c,
 static void
 ntt_emit_texture(struct ntt_compile *c, nir_tex_instr *instr)
 {
-   struct ureg_dst dst = ntt_get_dest(c, &instr->dest);
+   struct ureg_dst dst = ntt_get_dest(c, &instr->def);
    enum tgsi_texture_type target = tgsi_texture_type_from_sampler_dim(instr->sampler_dim, instr->is_array, instr->is_shadow);
    unsigned tex_opcode;
 
@@ -2916,7 +2901,7 @@ ntt_emit_jump(struct ntt_compile *c, nir_jump_instr *jump)
 }
 
 static void
-ntt_emit_ssa_undef(struct ntt_compile *c, nir_ssa_undef_instr *instr)
+ntt_emit_ssa_undef(struct ntt_compile *c, nir_undef_instr *instr)
 {
    /* Nothing to do but make sure that we have some storage to deref. */
    (void)ntt_get_ssa_def_decl(c, &instr->def);
@@ -2953,8 +2938,8 @@ ntt_emit_instr(struct ntt_compile *c, nir_instr *instr)
       ntt_emit_jump(c, nir_instr_as_jump(instr));
       break;
 
-   case nir_instr_type_ssa_undef:
-      ntt_emit_ssa_undef(c, nir_instr_as_ssa_undef(instr));
+   case nir_instr_type_undef:
+      ntt_emit_ssa_undef(c, nir_instr_as_undef(instr));
       break;
 
    default:
@@ -3178,7 +3163,7 @@ ntt_emit_impl(struct ntt_compile *c, nir_function_impl *impl)
    }
 
 
-   ntt_setup_registers(c, &impl->registers);
+   ntt_setup_registers(c);
 
    c->cur_block = ntt_block_from_nir(c, nir_start_block(impl));
    ntt_setup_inputs(c);
@@ -3238,7 +3223,7 @@ ntt_should_vectorize_instr(const nir_instr *instr, const void *data)
    }
 
    int src_bit_size = nir_src_bit_size(alu->src[0].src);
-   int dst_bit_size = nir_dest_bit_size(alu->dest.dest);
+   int dst_bit_size = alu->def.bit_size;
 
    if (src_bit_size == 64 || dst_bit_size == 64) {
       /* Avoid vectorizing 64-bit instructions at all.  Despite tgsi.rst
@@ -3378,7 +3363,7 @@ scalarize_64bit(const nir_instr *instr, const void *data)
 {
    const nir_alu_instr *alu = nir_instr_as_alu(instr);
 
-   return (nir_dest_bit_size(alu->dest.dest) == 64 ||
+   return (alu->def.bit_size == 64 ||
            nir_src_bit_size(alu->src[0].src) == 64);
 }
 
@@ -3407,7 +3392,7 @@ nir_to_tgsi_lower_64bit_intrinsic(nir_builder *b, nir_intrinsic_instr *instr)
 
    bool has_dest = nir_intrinsic_infos[instr->intrinsic].has_dest;
    if (has_dest) {
-      if (nir_dest_bit_size(instr->dest) != 64)
+      if (instr->def.bit_size != 64)
          return false;
    } else  {
       if (nir_src_bit_size(instr->src[0]) != 64)
@@ -3440,8 +3425,8 @@ nir_to_tgsi_lower_64bit_intrinsic(nir_builder *b, nir_intrinsic_instr *instr)
    first->num_components = 2;
    second->num_components -= 2;
    if (has_dest) {
-      first->dest.ssa.num_components = 2;
-      second->dest.ssa.num_components -= 2;
+      first->def.num_components = 2;
+      second->def.num_components -= 2;
    }
 
    nir_builder_instr_insert(b, &first->instr);
@@ -3449,31 +3434,29 @@ nir_to_tgsi_lower_64bit_intrinsic(nir_builder *b, nir_intrinsic_instr *instr)
 
    if (has_dest) {
       /* Merge the two loads' results back into a vector. */
-      nir_ssa_scalar channels[4] = {
-         nir_get_ssa_scalar(&first->dest.ssa, 0),
-         nir_get_ssa_scalar(&first->dest.ssa, 1),
-         nir_get_ssa_scalar(&second->dest.ssa, 0),
-         nir_get_ssa_scalar(&second->dest.ssa, second->num_components > 1 ? 1 : 0),
+      nir_scalar channels[4] = {
+         nir_get_scalar(&first->def, 0),
+         nir_get_scalar(&first->def, 1),
+         nir_get_scalar(&second->def, 0),
+         nir_get_scalar(&second->def, second->num_components > 1 ? 1 : 0),
       };
-      nir_ssa_def *new = nir_vec_scalars(b, channels, instr->num_components);
-      nir_ssa_def_rewrite_uses(&instr->dest.ssa, new);
+      nir_def *new = nir_vec_scalars(b, channels, instr->num_components);
+      nir_def_rewrite_uses(&instr->def, new);
    } else {
       /* Split the src value across the two stores. */
       b->cursor = nir_before_instr(&instr->instr);
 
-      nir_ssa_def *src0 = instr->src[0].ssa;
-      nir_ssa_scalar channels[4] = { 0 };
+      nir_def *src0 = instr->src[0].ssa;
+      nir_scalar channels[4] = { 0 };
       for (int i = 0; i < instr->num_components; i++)
-         channels[i] = nir_get_ssa_scalar(src0, i);
+         channels[i] = nir_get_scalar(src0, i);
 
       nir_intrinsic_set_write_mask(first, nir_intrinsic_write_mask(instr) & 3);
       nir_intrinsic_set_write_mask(second, nir_intrinsic_write_mask(instr) >> 2);
 
-      nir_instr_rewrite_src(&first->instr, &first->src[0],
-                            nir_src_for_ssa(nir_vec_scalars(b, channels, 2)));
-      nir_instr_rewrite_src(&second->instr, &second->src[0],
-                            nir_src_for_ssa(nir_vec_scalars(b, &channels[2],
-                                                           second->num_components)));
+      nir_src_rewrite(&first->src[0], nir_vec_scalars(b, channels, 2));
+      nir_src_rewrite(&second->src[0],
+                      nir_vec_scalars(b, &channels[2], second->num_components));
    }
 
    int offset_src = -1;
@@ -3496,10 +3479,9 @@ nir_to_tgsi_lower_64bit_intrinsic(nir_builder *b, nir_intrinsic_instr *instr)
    }
    if (offset_src != -1) {
       b->cursor = nir_before_instr(&second->instr);
-      nir_ssa_def *second_offset =
+      nir_def *second_offset =
          nir_iadd_imm(b, second->src[offset_src].ssa, offset_amount);
-      nir_instr_rewrite_src(&second->instr, &second->src[offset_src],
-                            nir_src_for_ssa(second_offset));
+      nir_src_rewrite(&second->src[offset_src], second_offset);
    }
 
    /* DCE stores we generated with no writemask (nothing else does this
@@ -3541,14 +3523,14 @@ nir_to_tgsi_lower_64bit_load_const(nir_builder *b, nir_load_const_instr *instr)
    nir_builder_instr_insert(b, &first->instr);
    nir_builder_instr_insert(b, &second->instr);
 
-   nir_ssa_def *channels[4] = {
+   nir_def *channels[4] = {
       nir_channel(b, &first->def, 0),
       nir_channel(b, &first->def, 1),
       nir_channel(b, &second->def, 0),
       num_components == 4 ? nir_channel(b, &second->def, 1) : NULL,
    };
-   nir_ssa_def *new = nir_vec(b, channels, num_components);
-   nir_ssa_def_rewrite_uses(&instr->def, new);
+   nir_def *new = nir_vec(b, channels, num_components);
+   nir_def_rewrite_uses(&instr->def, new);
    nir_instr_remove(&instr->instr);
 
    return true;
@@ -3580,7 +3562,7 @@ nir_to_tgsi_lower_64bit_to_vec2(nir_shader *s)
 }
 
 struct ntt_lower_tex_state {
-   nir_ssa_scalar channels[8];
+   nir_scalar channels[8];
    unsigned i;
 };
 
@@ -3594,11 +3576,9 @@ nir_to_tgsi_lower_tex_instr_arg(nir_builder *b,
    if (tex_src < 0)
       return;
 
-   assert(instr->src[tex_src].src.is_ssa);
-
-   nir_ssa_def *def = instr->src[tex_src].src.ssa;
+   nir_def *def = instr->src[tex_src].src.ssa;
    for (int i = 0; i < def->num_components; i++) {
-      s->channels[s->i++] = nir_get_ssa_scalar(def, i);
+      s->channels[s->i++] = nir_get_scalar(def, i);
    }
 
    nir_tex_instr_remove_src(instr, tex_src);
@@ -3652,9 +3632,11 @@ nir_to_tgsi_lower_tex_instr(nir_builder *b, nir_instr *instr, void *data)
          s.channels[i] = s.channels[0];
    }
 
-   nir_tex_instr_add_src(tex, nir_tex_src_backend1, nir_src_for_ssa(nir_vec_scalars(b, s.channels, MIN2(s.i, 4))));
+   nir_tex_instr_add_src(tex, nir_tex_src_backend1,
+                         nir_vec_scalars(b, s.channels, MIN2(s.i, 4)));
    if (s.i > 4)
-      nir_tex_instr_add_src(tex, nir_tex_src_backend2, nir_src_for_ssa(nir_vec_scalars(b, &s.channels[4], s.i - 4)));
+      nir_tex_instr_add_src(tex, nir_tex_src_backend2,
+                            nir_vec_scalars(b, &s.channels[4], s.i - 4));
 
    return true;
 }
@@ -3732,12 +3714,12 @@ ntt_lower_atomic_pre_dec_filter(const nir_instr *instr, const void *_data)
            nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_atomic_counter_pre_dec);
 }
 
-static nir_ssa_def *
+static nir_def *
 ntt_lower_atomic_pre_dec_lower(nir_builder *b, nir_instr *instr, void *_data)
 {
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
-   nir_ssa_def *old_result = &intr->dest.ssa;
+   nir_def *old_result = &intr->def;
    intr->intrinsic = nir_intrinsic_atomic_counter_post_dec;
 
    return nir_iadd_imm(b, old_result, -1);
@@ -3797,7 +3779,7 @@ nir_lower_primid_sysval_to_input_filter(const nir_instr *instr, const void *_dat
            nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_load_primitive_id);
 }
 
-static nir_ssa_def *
+static nir_def *
 nir_lower_primid_sysval_to_input_lower(nir_builder *b, nir_instr *instr, void *data)
 {
    nir_variable *var = nir_get_variable_with_location(b->shader, nir_var_shader_in,
@@ -3838,7 +3820,7 @@ ntt_vec_to_mov_writemask_cb(const nir_instr *instr, unsigned writemask, UNUSED c
       return false;
 
    nir_alu_instr *alu = nir_instr_as_alu(instr);
-   int dst_32 = nir_dest_bit_size(alu->dest.dest) == 32;
+   int dst_32 = alu->def.bit_size == 32;
    int src_64 = nir_src_bit_size(alu->src[0].src) == 64;
 
    if (src_64 && dst_32) {
@@ -3972,12 +3954,12 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
    NIR_PASS_V(s, nir_opt_move, move_all);
 
-   NIR_PASS_V(s, nir_convert_from_ssa, true, true);
+   NIR_PASS_V(s, nir_convert_from_ssa, true);
    NIR_PASS_V(s, nir_lower_vec_to_regs, ntt_vec_to_mov_writemask_cb, NULL);
 
    /* locals_to_reg_intrinsics will leave dead derefs that are good to clean up.
     */
-   NIR_PASS_V(s, nir_lower_locals_to_reg_intrinsics, 32);
+   NIR_PASS_V(s, nir_lower_locals_to_regs, 32);
    NIR_PASS_V(s, nir_opt_dce);
 
    /* See comment in ntt_get_alu_src for supported modifiers */

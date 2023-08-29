@@ -968,8 +968,12 @@ rra_copy_context_init(struct rra_copy_context *ctx)
 
    VkBufferCreateInfo buffer_create_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .pNext =
+         &(VkBufferUsageFlags2CreateInfoKHR){
+            .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO_KHR,
+            .usage = VK_BUFFER_USAGE_2_TRANSFER_DST_BIT_KHR,
+         },
       .size = max_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
    };
 
    result = radv_CreateBuffer(ctx->device, &buffer_create_info, NULL, &ctx->buffer);

@@ -326,9 +326,9 @@ static const struct anv_format _4444_formats[] = {
 
 static const struct anv_format ycbcr_formats[] = {
    ycbcr_fmt(VK_FORMAT_G8B8G8R8_422_UNORM, 1, true, false,
-             ycbcr_plane(0, ISL_FORMAT_YCRCB_SWAPUV, RGBA)),
+             ycbcr_plane(0, ISL_FORMAT_YCRCB_NORMAL, RGBA)),
    ycbcr_fmt(VK_FORMAT_B8G8R8G8_422_UNORM, 1, true, false,
-             ycbcr_plane(0, ISL_FORMAT_YCRCB_SWAPUVY, RGBA)),
+             ycbcr_plane(0, ISL_FORMAT_YCRCB_SWAPY, RGBA)),
    ycbcr_fmt(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, 3, true, false,
              ycbcr_plane(0, ISL_FORMAT_R8_UNORM, RGBA),
              ycbcr_plane(1, ISL_FORMAT_R8_UNORM, RGBA),
@@ -577,11 +577,16 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
    enum isl_format base_isl_format = base_plane_format.isl_format;
 
    if (isl_format_supports_sampling(devinfo, plane_format.isl_format)) {
-      /* ASTC textures must be in Y-tiled memory, and we reject compressed
-       * formats with modifiers. We do however interpret ASTC textures with
-       * uncompressed formats during data transfers.
+
+      /* Unlike other surface formats, our sampler requires that the ASTC
+       * format only be used on surfaces in non-linearly-tiled memory.
+       * Thankfully, we can make an exception for linearly-tiled images that
+       * are only used for transfers. blorp_copy will reinterpret any
+       * compressed format to an uncompressed one.
+       *
+       * We handle modifier tilings further down in this function.
        */
-      if (vk_tiling != VK_IMAGE_TILING_OPTIMAL &&
+      if (vk_tiling == VK_IMAGE_TILING_LINEAR &&
           isl_format_get_layout(plane_format.isl_format)->txc == ISL_TXC_ASTC)
          return VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
                 VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
@@ -770,17 +775,17 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
           * planes and aux planes due to the lack of defined ABI for external
           * multi-planar images.
           */
-         if (isl_mod_info->aux_usage != ISL_AUX_USAGE_NONE) {
+         if (isl_drm_modifier_has_aux(isl_mod_info->modifier)) {
             return 0;
          }
       }
 
-      if (isl_aux_usage_has_ccs_e(isl_mod_info->aux_usage) &&
-          !isl_format_supports_ccs_e(devinfo, plane_format.isl_format)) {
+      if (isl_drm_modifier_has_aux(isl_mod_info->modifier) &&
+          !anv_format_supports_ccs_e(devinfo, plane_format.isl_format)) {
          return 0;
       }
 
-      if (isl_mod_info->aux_usage != ISL_AUX_USAGE_NONE) {
+      if (isl_drm_modifier_has_aux(isl_mod_info->modifier)) {
          /* Rejection DISJOINT for consistency with the GL driver. In
           * eglCreateImage, we require that the dma_buf for the primary surface
           * and the dma_buf for its aux surface refer to the same bo.
@@ -890,9 +895,10 @@ get_drm_format_modifier_properties_list(const struct anv_physical_device *physic
       if (!features)
          continue;
 
-      uint32_t planes = anv_format->n_planes;
-      if (isl_mod_info->aux_usage != ISL_AUX_USAGE_NONE)
-         ++planes;
+      const uint32_t planes =
+         isl_drm_modifier_get_plane_count(&physical_device->info,
+                                          isl_mod_info->modifier,
+                                          anv_format->n_planes);
 
       vk_outarray_append_typed(VkDrmFormatModifierPropertiesEXT, &out, out_props) {
          *out_props = (VkDrmFormatModifierPropertiesEXT) {
@@ -923,9 +929,10 @@ get_drm_format_modifier_properties_list_2(const struct anv_physical_device *phys
       if (!features2)
          continue;
 
-      uint32_t planes = anv_format->n_planes;
-      if (isl_mod_info->aux_usage != ISL_AUX_USAGE_NONE)
-         ++planes;
+      const uint32_t planes =
+         isl_drm_modifier_get_plane_count(&physical_device->info,
+                                          isl_mod_info->modifier,
+                                          anv_format->n_planes);
 
       vk_outarray_append_typed(VkDrmFormatModifierProperties2EXT, &out, out_props) {
          *out_props = (VkDrmFormatModifierProperties2EXT) {
@@ -1333,7 +1340,7 @@ anv_get_image_format_properties(
       maxMipLevels = 1;
       sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 
-      if (isl_mod_info->aux_usage == ISL_AUX_USAGE_CCS_E &&
+      if (isl_drm_modifier_has_aux(isl_mod_info->modifier) &&
           !anv_formats_ccs_e_compatible(devinfo, info->flags, info->format,
                                         info->tiling, info->usage,
                                         format_list_info)) {
@@ -1398,7 +1405,7 @@ anv_get_image_format_properties(
       }
 
       if (info->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT &&
-          isl_mod_info->aux_usage != ISL_AUX_USAGE_NONE) {
+          isl_drm_modifier_has_aux(isl_mod_info->modifier)) {
          /* Rejection DISJOINT for consistency with the GL driver. In
           * eglCreateImage, we require that the dma_buf for the primary surface
           * and the dma_buf for its aux surface refer to the same bo.
@@ -1727,11 +1734,13 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
           * requires support for VK_IMAGE_TILING_OPTIMAL. Android systems
           * communicate the image's memory layout through backdoor channels.
           */
-         if (ahw_supported && external_props) {
-            external_props->externalMemoryProperties = android_image_props;
-            if (anv_ahb_format_for_vk_format(base_info->format)) {
-               external_props->externalMemoryProperties.externalMemoryFeatures |=
-                  VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+         if (ahw_supported) {
+            if (external_props) {
+               external_props->externalMemoryProperties = android_image_props;
+               if (anv_ahb_format_for_vk_format(base_info->format)) {
+                  external_props->externalMemoryProperties.externalMemoryFeatures |=
+                     VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+               }
             }
             break;
          }
@@ -1778,6 +1787,8 @@ void anv_GetPhysicalDeviceSparseImageFormatProperties(
     uint32_t*                                   pNumProperties,
     VkSparseImageFormatProperties*              pProperties)
 {
+   if (INTEL_DEBUG(DEBUG_SPARSE))
+      fprintf(stderr, "=== [%s:%d] [%s]\n", __FILE__, __LINE__, __func__);
    /* Sparse images are not yet supported. */
    *pNumProperties = 0;
 }
@@ -1788,6 +1799,9 @@ void anv_GetPhysicalDeviceSparseImageFormatProperties2(
     uint32_t*                                   pPropertyCount,
     VkSparseImageFormatProperties2*             pProperties)
 {
+   if (INTEL_DEBUG(DEBUG_SPARSE))
+      fprintf(stderr, "=== [%s:%d] [%s]\n", __FILE__, __LINE__, __func__);
+
    /* Sparse images are not yet supported. */
    *pPropertyCount = 0;
 }

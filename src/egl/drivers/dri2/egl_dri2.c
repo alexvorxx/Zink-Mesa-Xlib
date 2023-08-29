@@ -732,6 +732,7 @@ static const struct dri_extension_match swrast_driver_extensions[] = {
 
 static const struct dri_extension_match swrast_core_extensions[] = {
    {__DRI_TEX_BUFFER, 2, offsetof(struct dri2_egl_display, tex_buffer), false},
+   {__DRI_IMAGE, 6, offsetof(struct dri2_egl_display, image), true},
 };
 
 static const struct dri_extension_match optional_core_extensions[] = {
@@ -740,7 +741,6 @@ static const struct dri_extension_match optional_core_extensions[] = {
    {__DRI2_BUFFER_DAMAGE, 1, offsetof(struct dri2_egl_display, buffer_damage),
     true},
    {__DRI2_INTEROP, 1, offsetof(struct dri2_egl_display, interop), true},
-   {__DRI_IMAGE, 6, offsetof(struct dri2_egl_display, image), true},
    {__DRI2_FLUSH_CONTROL, 1, offsetof(struct dri2_egl_display, flush_control),
     true},
    {__DRI2_BLOB, 1, offsetof(struct dri2_egl_display, blob), true},
@@ -869,6 +869,10 @@ dri2_setup_screen(_EGLDisplay *disp)
    disp->Extensions.KHR_create_context_no_error = EGL_TRUE;
    disp->Extensions.KHR_no_config_context = EGL_TRUE;
    disp->Extensions.KHR_surfaceless_context = EGL_TRUE;
+
+   if (dri2_dpy->interop) {
+      disp->Extensions.MESA_gl_interop = EGL_TRUE;
+   }
 
    if (dri2_dpy->configOptions) {
       disp->Extensions.MESA_query_driver = EGL_TRUE;
@@ -1595,8 +1599,13 @@ dri2_create_drawable(struct dri2_egl_display *dri2_dpy,
    if (dri2_dpy->kopper) {
       dri2_surf->dri_drawable = dri2_dpy->kopper->createNewDrawable(
          dri2_dpy->dri_screen_render_gpu, config, loaderPrivate,
-         dri2_surf->base.Type == EGL_PBUFFER_BIT ||
-            dri2_surf->base.Type == EGL_PIXMAP_BIT);
+         &(__DRIkopperDrawableInfo){
+#ifdef HAVE_X11_PLATFORM
+            .multiplanes_available = dri2_dpy->multibuffers_available,
+#endif
+            .is_pixmap = dri2_surf->base.Type == EGL_PBUFFER_BIT ||
+                         dri2_surf->base.Type == EGL_PIXMAP_BIT,
+         });
    } else {
       __DRIcreateNewDrawableFunc createNewDrawable;
       if (dri2_dpy->image_driver)
@@ -2946,7 +2955,8 @@ dri2_export_drm_image_mesa(_EGLDisplay *disp, _EGLImage *img, EGLint *name,
 
    if (name && !dri2_dpy->image->queryImage(dri2_img->dri_image,
                                             __DRI_IMAGE_ATTRIB_NAME, name))
-      return _eglError(EGL_BAD_ALLOC, "dri2_export_drm_image_mesa");
+      return dri2_egl_error_unlock(dri2_dpy, EGL_BAD_ALLOC,
+                                   "dri2_export_drm_image_mesa");
 
    if (handle)
       dri2_dpy->image->queryImage(dri2_img->dri_image,
@@ -3035,8 +3045,10 @@ dri2_export_dma_buf_image_mesa(_EGLDisplay *disp, _EGLImage *img, int *fds,
    struct dri2_egl_image *dri2_img = dri2_egl_image(img);
    EGLint nplanes;
 
-   if (!dri2_can_export_dma_buf_image(disp, img))
+   if (!dri2_can_export_dma_buf_image(disp, img)) {
+      mtx_unlock(&dri2_dpy->lock);
       return EGL_FALSE;
+   }
 
    /* EGL_MESA_image_dma_buf_export spec says:
     *    "If the number of fds is less than the number of planes, then

@@ -20,10 +20,3 @@ KHR-GLES3.packed_pixels.varied_rectangle.rgba8_snorm,Fail
 # https://bugs.chromium.org/p/angleproject/issues/detail?id=7877
 KHR-GLES31.core.texture_border_clamp.Texture2DDC16Linear,Fail
 KHR-GLES31.core.texture_border_clamp.Texture2DDC32FLinear,Fail
-
-# Regression between ANGLE db67df60f8c8020017c36b2dd446bc3d86614ffe and
-# 82f1cee01a9ea24960e8f23b24d348fccbe0aae0
-# Fails the same, with no validation complaints on ADL.  Doesn't fail on CFL.
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_scissored,Fail
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_scissored_masked,Fail
-multisample-dEQP-GLES3.functional.depth_stencil_clear.depth_stencil_scissored,Fail

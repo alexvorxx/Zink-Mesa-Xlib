@@ -21,6 +21,7 @@ spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.0@rasterpos,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_gs_linked,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked,Fail
+spec@arb_bindless_texture@compiler@images@return-struct.frag,Crash
 spec@arb_bindless_texture@compiler@samplers@arith-bound-sampler-texture2d.frag,Crash
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -141,8 +142,8 @@ spec@egl 1.4@egl-ext_egl_image_storage,Crash
 
 KHR-GL46.transform_feedback_overflow_query_ARB.advanced-single-stream-interleaved-attribs,Fail
 KHR-GL46.transform_feedback_overflow_query_ARB.advanced-single-stream-separate-attribs,Fail
-KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-multiple-buffers-per-stream,Crash
-KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-one-buffer-per-stream,Crash
+KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-multiple-buffers-per-stream,Fail
+KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-one-buffer-per-stream,Fail
 
 dEQP-GLES31.functional.separate_shader.random.113,Fail
 dEQP-GLES31.functional.separate_shader.random.82,Fail

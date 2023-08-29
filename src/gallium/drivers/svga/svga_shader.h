@@ -346,7 +346,6 @@ struct svga_shader_info
    struct {
       enum mesa_prim prim_mode;
       bool reads_control_point;
-      bool reads_tess_factor;
    } tes;
 };
 

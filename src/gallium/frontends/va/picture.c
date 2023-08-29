@@ -389,6 +389,9 @@ handleVASliceDataBufferType(vlVaContext *context, vlVaBuffer *buf)
          sizes[num_buffers++] = context->mpeg4.start_code_size;
          break;
       case PIPE_VIDEO_FORMAT_JPEG:
+         if (bufHasStartcode(buf, 0xffd8ffdb, 32))
+            break;
+
          vlVaGetJpegSliceHeader(context);
          buffers[num_buffers] = (void *)context->mjpeg.slice_header;
          sizes[num_buffers++] = context->mjpeg.slice_header_size;
@@ -702,6 +705,12 @@ handleVAEncPackedHeaderParameterBufferType(vlVaContext *context, vlVaBuffer *buf
    VAEncPackedHeaderParameterBuffer *param = buf->data;
 
    switch (u_reduce_video_profile(context->templat.profile)) {
+   case PIPE_VIDEO_FORMAT_MPEG4_AVC:
+      if (param->type == VAEncPackedHeaderSequence)
+         context->packed_header_type = param->type;
+      else
+         status = VA_STATUS_ERROR_UNIMPLEMENTED;
+      break;
    case PIPE_VIDEO_FORMAT_HEVC:
       if (param->type == VAEncPackedHeaderSequence)
          context->packed_header_type = param->type;
@@ -725,6 +734,13 @@ handleVAEncPackedHeaderDataBufferType(vlVaContext *context, vlVaBuffer *buf)
    VAStatus status = VA_STATUS_SUCCESS;
 
    switch (u_reduce_video_profile(context->templat.profile)) {
+   case PIPE_VIDEO_FORMAT_MPEG4_AVC:
+      if (context->packed_header_type != VAEncPackedHeaderSequence)
+         return VA_STATUS_ERROR_UNIMPLEMENTED;
+
+      status = vlVaHandleVAEncPackedHeaderDataBufferTypeH264(context, buf);
+      break;
+
    case PIPE_VIDEO_FORMAT_HEVC:
       if (context->packed_header_type != VAEncPackedHeaderSequence)
          return VA_STATUS_ERROR_UNIMPLEMENTED;
@@ -893,6 +909,23 @@ static bool vlVaQueryApplyFilmGrainAV1(vlVaContext *context,
    return true;
 }
 
+static bool vlVaQueryDecodeInterlacedH264(vlVaContext *context)
+{
+   struct pipe_h264_picture_desc *h264 = NULL;
+
+   if (u_reduce_video_profile(context->templat.profile) != PIPE_VIDEO_FORMAT_MPEG4_AVC ||
+       context->decoder->entrypoint != PIPE_VIDEO_ENTRYPOINT_BITSTREAM)
+      return false;
+
+   h264 = &context->desc.h264;
+
+   if (h264->pps->sps->frame_mbs_only_flag)
+      return false;
+
+   return h264->field_pic_flag || /* PAFF */
+      h264->pps->sps->mb_adaptive_frame_field_flag; /* MBAFF */
+}
+
 VAStatus
 vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
 {
@@ -908,6 +941,7 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
    enum pipe_format format;
    struct pipe_video_buffer **out_target;
    int output_id;
+   bool decode_interlaced;
 
    if (!ctx)
       return VA_STATUS_ERROR_INVALID_CONTEXT;
@@ -933,6 +967,7 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
    output_id = context->target_id;
    out_target = &context->target;
    apply_av1_fg = vlVaQueryApplyFilmGrainAV1(context, &output_id, &out_target);
+   decode_interlaced = vlVaQueryDecodeInterlacedH264(context);
 
    mtx_lock(&drv->mutex);
    surf = handle_table_get(drv->htab, output_id);
@@ -951,7 +986,7 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
    screen = context->decoder->context->screen;
    supported = screen->get_video_param(screen, context->decoder->profile,
                                        context->decoder->entrypoint,
-                                       surf->buffer->interlaced ?
+                                       decode_interlaced || surf->buffer->interlaced ?
                                        PIPE_VIDEO_CAP_SUPPORTS_INTERLACED :
                                        PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE);
 
@@ -960,6 +995,9 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
                                        context->decoder->profile,
                                        context->decoder->entrypoint,
                                        PIPE_VIDEO_CAP_PREFERS_INTERLACED);
+      realloc = surf->templat.interlaced != surf->buffer->interlaced;
+   } else if (decode_interlaced && !surf->buffer->interlaced) {
+      surf->templat.interlaced = true;
       realloc = true;
    }
 
@@ -1076,6 +1114,7 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
       }
 
       context->desc.base.input_format = surf->buffer->buffer_format;
+      context->desc.base.input_full_range = surf->full_range;
       context->desc.base.output_format = surf->encoder_format;
 
       context->decoder->begin_frame(context->decoder, context->target, &context->desc.base);

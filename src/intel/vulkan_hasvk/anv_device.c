@@ -725,7 +725,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       &dispatch_table, &wsi_physical_device_entrypoints, false);
 
    result = vk_physical_device_init(&device->vk, &instance->vk,
-                                    NULL, NULL, /* We set up extensions later */
+                                    NULL, NULL, NULL, /* We set up extensions later */
                                     &dispatch_table);
    if (result != VK_SUCCESS) {
       vk_error(instance, result);
@@ -2729,11 +2729,7 @@ VkResult anv_CreateDevice(
       goto fail_alloc;
 
    if (INTEL_DEBUG(DEBUG_BATCH)) {
-      const unsigned decode_flags =
-         INTEL_BATCH_DECODE_FULL |
-         (INTEL_DEBUG(DEBUG_COLOR) ? INTEL_BATCH_DECODE_IN_COLOR : 0) |
-         INTEL_BATCH_DECODE_OFFSETS |
-         INTEL_BATCH_DECODE_FLOATS;
+      const unsigned decode_flags = INTEL_BATCH_DECODE_DEFAULT_FLAGS;
 
       intel_batch_decode_ctx_init(&device->decoder_ctx,
                                   &physical_device->compiler->isa,
@@ -2976,6 +2972,10 @@ VkResult anv_CreateDevice(
       result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_default_pipeline_cache;
    }
+
+   device->robust_buffer_access =
+      device->vk.enabled_features.robustBufferAccess ||
+      device->vk.enabled_features.nullDescriptor;
 
    anv_device_init_blorp(device);
 

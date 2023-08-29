@@ -32,10 +32,6 @@
 
 /* Project-wide (GL and Vulkan) maximum. */
 #define MAX_DRAW_BUFFERS 8
-/* Size of an atomic counter in bytes according to ARB_shader_atomic_counters */
-#define ATOMIC_COUNTER_SIZE 4
-/** For GL_ARB_gpu_shader5 */
-#define MAX_VERTEX_STREAMS 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -535,6 +531,27 @@ _mesa_varying_slot_in_fs(gl_varying_slot slot)
 /*@}*/
 
 /**
+ * Writemask values, 1 bit per component.
+ */
+/*@{*/
+#define WRITEMASK_X     0x1
+#define WRITEMASK_Y     0x2
+#define WRITEMASK_XY    0x3
+#define WRITEMASK_Z     0x4
+#define WRITEMASK_XZ    0x5
+#define WRITEMASK_YZ    0x6
+#define WRITEMASK_XYZ   0x7
+#define WRITEMASK_W     0x8
+#define WRITEMASK_XW    0x9
+#define WRITEMASK_YW    0xa
+#define WRITEMASK_XYW   0xb
+#define WRITEMASK_ZW    0xc
+#define WRITEMASK_XZW   0xd
+#define WRITEMASK_YZW   0xe
+#define WRITEMASK_XYZW  0xf
+/*@}*/
+
+/**
  * If the gl_register_file is PROGRAM_SYSTEM_VALUE, the register index will be
  * one of these values.  If a NIR variable's mode is nir_var_system_value, it
  * will be one of these values.
@@ -898,6 +915,10 @@ typedef enum
     */
    SYSTEM_VALUE_FRAG_SIZE,
    SYSTEM_VALUE_FRAG_INVOCATION_COUNT,
+
+   /* SPV_AMDX_shader_enqueue */
+   SYSTEM_VALUE_SHADER_INDEX,
+   SYSTEM_VALUE_COALESCED_INPUT_COUNT,
 
    SYSTEM_VALUE_MAX             /**< Number of values */
 } gl_system_value;
@@ -1330,28 +1351,6 @@ enum ENUM_PACKED gl_subgroup_size
    SUBGROUP_SIZE_REQUIRE_64  = 64,  /**< VK_EXT_subgroup_size_control */
    SUBGROUP_SIZE_REQUIRE_128 = 128, /**< VK_EXT_subgroup_size_control */
 };
-
-/**
- * An index for each type of texture object.  These correspond to the GL
- * texture target enums, such as GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP, etc.
- * Note: the order is from highest priority to lowest priority.
- */
-typedef enum
-{
-   TEXTURE_2D_MULTISAMPLE_INDEX,
-   TEXTURE_2D_MULTISAMPLE_ARRAY_INDEX,
-   TEXTURE_CUBE_ARRAY_INDEX,
-   TEXTURE_BUFFER_INDEX,
-   TEXTURE_2D_ARRAY_INDEX,
-   TEXTURE_1D_ARRAY_INDEX,
-   TEXTURE_EXTERNAL_INDEX,
-   TEXTURE_CUBE_INDEX,
-   TEXTURE_3D_INDEX,
-   TEXTURE_RECT_INDEX,
-   TEXTURE_2D_INDEX,
-   TEXTURE_1D_INDEX,
-   NUM_TEXTURE_TARGETS
-} gl_texture_index;
 
 /* Ordered from narrower to wider scope. */
 typedef enum {

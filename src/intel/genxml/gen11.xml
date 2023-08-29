@@ -1930,7 +1930,7 @@
       <value name="CENTER" value="0" />
       <value name="UL_CORNER" value="1" />
     </field>
-    <field name="Pixel Position Offset Enable" start="37" end="37" type="bool" />
+    <field name="Pixel Position Offset Enable" start="37" end="37" type="bool" default="0" />
   </instruction>
   <instruction name="3DSTATE_POLY_STIPPLE_OFFSET" bias="2" length="2" engine="render">
     <field name="DWord Length" start="0" end="7" type="uint" default="0" />

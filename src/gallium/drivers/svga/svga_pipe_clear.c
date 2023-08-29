@@ -549,6 +549,6 @@ svga_clear_render_target(struct pipe_context *pipe,
 void svga_init_clear_functions(struct svga_context *svga)
 {
    svga->pipe.clear_render_target = svga_clear_render_target;
-   svga->pipe.clear_texture = svga_clear_texture;
+   svga->pipe.clear_texture = svga_have_vgpu10(svga) ? svga_clear_texture : NULL;
    svga->pipe.clear = svga_clear;
 }

@@ -27,6 +27,7 @@
 #include "zink_clear.h"
 #include "zink_context.h"
 #include "zink_fence.h"
+#include "zink_format.h"
 #include "zink_program.h"
 #include "zink_screen.h"
 #include "zink_kopper.h"
@@ -421,7 +422,7 @@ get_image_usage_for_feats(struct zink_screen *screen, VkFormatFeatureFlags feats
          usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
       else
          return 0;
-      if (screen->info.have_EXT_attachment_feedback_loop_layout)
+      if (screen->info.have_EXT_attachment_feedback_loop_layout && !(bind & ZINK_BIND_TRANSIENT))
          usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
    /* this is unlikely to occur and has been included for completeness */
    } else if (bind & PIPE_BIND_SAMPLER_VIEW && !(usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
@@ -567,7 +568,74 @@ get_image_usage(struct zink_screen *screen, VkImageCreateInfo *ici, const struct
 }
 
 static uint64_t
-create_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_resource *templ, bool dmabuf, unsigned bind, unsigned modifiers_count, uint64_t *modifiers, bool *success)
+eval_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_resource *templ, unsigned bind, unsigned modifiers_count, uint64_t *modifiers, bool *success)
+{
+   /* sampleCounts will be set to VK_SAMPLE_COUNT_1_BIT if at least one of the following conditions is true:
+    * - flags contains VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT
+    *
+    * 44.1.1. Supported Sample Counts
+    */
+   bool want_cube = ici->samples == 1 &&
+                    (templ->target == PIPE_TEXTURE_CUBE ||
+                    templ->target == PIPE_TEXTURE_CUBE_ARRAY ||
+                    (templ->target == PIPE_TEXTURE_2D_ARRAY && ici->extent.width == ici->extent.height && ici->arrayLayers >= 6));
+
+   if (ici->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+      modifiers_count = 0;
+
+   bool first = true;
+   bool tried[2] = {0};
+   uint64_t mod = DRM_FORMAT_MOD_INVALID;
+retry:
+   while (!ici->usage) {
+      if (!first) {
+         switch (ici->tiling) {
+         case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
+            ici->tiling = VK_IMAGE_TILING_OPTIMAL;
+            modifiers_count = 0;
+            break;
+         case VK_IMAGE_TILING_OPTIMAL:
+            ici->tiling = VK_IMAGE_TILING_LINEAR;
+            break;
+         case VK_IMAGE_TILING_LINEAR:
+            if (bind & PIPE_BIND_LINEAR) {
+               *success = false;
+               return DRM_FORMAT_MOD_INVALID;
+            }
+            ici->tiling = VK_IMAGE_TILING_OPTIMAL;
+            break;
+         default:
+            unreachable("unhandled tiling mode");
+         }
+         if (tried[ici->tiling]) {
+            if (ici->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) {
+               *success = false;
+               return DRM_FORMAT_MOD_INVALID;
+            }
+            ici->flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+            tried[0] = false;
+            tried[1] = false;
+            first = true;
+            goto retry;
+         }
+      }
+      ici->usage = get_image_usage(screen, ici, templ, bind, modifiers_count, modifiers, &mod);
+      first = false;
+      if (ici->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+         tried[ici->tiling] = true;
+   }
+   if (want_cube) {
+      ici->flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+      if (get_image_usage(screen, ici, templ, bind, modifiers_count, modifiers, &mod) != ici->usage)
+         ici->flags &= ~VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+   }
+
+   *success = true;
+   return mod;
+}
+
+static void
+init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_resource *templ, unsigned bind, unsigned modifiers_count)
 {
    ici->sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
    /* pNext may already be set */
@@ -650,71 +718,8 @@ create_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe
    ici->sharingMode = VK_SHARING_MODE_EXCLUSIVE;
    ici->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-   /* sampleCounts will be set to VK_SAMPLE_COUNT_1_BIT if at least one of the following conditions is true:
-    * - flags contains VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT
-    *
-    * 44.1.1. Supported Sample Counts
-    */
-   bool want_cube = ici->samples == 1 &&
-                    (templ->target == PIPE_TEXTURE_CUBE ||
-                    templ->target == PIPE_TEXTURE_CUBE_ARRAY ||
-                    (templ->target == PIPE_TEXTURE_2D_ARRAY && ici->extent.width == ici->extent.height && ici->arrayLayers >= 6));
-
    if (templ->target == PIPE_TEXTURE_CUBE)
       ici->arrayLayers *= 6;
-
-   if (ici->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
-      modifiers_count = 0;
-
-   bool first = true;
-   bool tried[2] = {0};
-   uint64_t mod = DRM_FORMAT_MOD_INVALID;
-retry:
-   while (!ici->usage) {
-      if (!first) {
-         switch (ici->tiling) {
-         case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
-            ici->tiling = VK_IMAGE_TILING_OPTIMAL;
-            modifiers_count = 0;
-            break;
-         case VK_IMAGE_TILING_OPTIMAL:
-            ici->tiling = VK_IMAGE_TILING_LINEAR;
-            break;
-         case VK_IMAGE_TILING_LINEAR:
-            if (bind & PIPE_BIND_LINEAR) {
-               *success = false;
-               return DRM_FORMAT_MOD_INVALID;
-            }
-            ici->tiling = VK_IMAGE_TILING_OPTIMAL;
-            break;
-         default:
-            unreachable("unhandled tiling mode");
-         }
-         if (tried[ici->tiling]) {
-            if (ici->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) {
-               *success = false;
-               return DRM_FORMAT_MOD_INVALID;
-            }
-            ici->flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-            tried[0] = false;
-            tried[1] = false;
-            first = true;
-            goto retry;
-         }
-      }
-      ici->usage = get_image_usage(screen, ici, templ, bind, modifiers_count, modifiers, &mod);
-      first = false;
-      if (ici->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
-         tried[ici->tiling] = true;
-   }
-   if (want_cube) {
-      ici->flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-      if (get_image_usage(screen, ici, templ, bind, modifiers_count, modifiers, &mod) != ici->usage)
-         ici->flags &= ~VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-   }
-
-   *success = true;
-   return mod;
 }
 
 static struct zink_resource_object *
@@ -880,8 +885,12 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       } else {
          ici.pNext = NULL;
       }
-      uint64_t mod = create_ici(screen, &ici, templ, external == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-                                templ->bind, ici_modifier_count, ici_modifiers, &success);
+      init_ici(screen, &ici, templ, templ->bind, ici_modifier_count);
+      uint64_t mod = eval_ici(screen, &ici, templ, templ->bind, ici_modifier_count, ici_modifiers, &success);
+      if (ici.format == VK_FORMAT_A8_UNORM_KHR && !success) {
+         ici.format = zink_get_format(screen, zink_format_get_emulated_alpha(templ->format));
+         mod = eval_ici(screen, &ici, templ, templ->bind, ici_modifier_count, ici_modifiers, &success);
+      }
       if (ici.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT && srgb &&
           util_format_get_nr_components(srgb) == 4 &&
           !(ici.flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) {
@@ -1500,8 +1509,10 @@ resource_create(struct pipe_screen *pscreen,
       res->swapchain = true;
    }
 
-   if (!res->obj->host_visible)
+   if (!res->obj->host_visible) {
       res->base.b.flags |= PIPE_RESOURCE_FLAG_DONT_MAP_DIRECTLY;
+      res->base.allow_cpu_storage = false;
+   }
    if (res->obj->is_buffer) {
       res->base.buffer_id_unique = util_idalloc_mt_alloc(&screen->buffer_ids);
       _mesa_hash_table_init(&res->bufferview_cache, NULL, NULL, equals_bvci);

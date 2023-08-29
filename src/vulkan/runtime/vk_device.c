@@ -33,6 +33,7 @@
 #include "vk_util.h"
 #include "util/u_debug.h"
 #include "util/hash_table.h"
+#include "util/perf/cpu_trace.h"
 #include "util/ralloc.h"
 
 static enum vk_device_timeline_mode
@@ -522,6 +523,8 @@ vk_common_GetImageSparseMemoryRequirements(VkDevice _device,
 VKAPI_ATTR VkResult VKAPI_CALL
 vk_common_DeviceWaitIdle(VkDevice _device)
 {
+   MESA_TRACE_FUNC();
+
    VK_FROM_HANDLE(vk_device, device, _device);
    const struct vk_device_dispatch_table *disp = &device->dispatch_table;
 

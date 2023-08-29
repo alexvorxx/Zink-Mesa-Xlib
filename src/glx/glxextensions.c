@@ -105,6 +105,7 @@ static const struct extension_info known_glx_extensions[] = {
    { GLX(ATI_pixel_format_float),         N, N },
    { GLX(INTEL_swap_event),               N, N },
    { GLX(MESA_copy_sub_buffer),           N, N },
+   { GLX(MESA_gl_interop),                N, Y },
    { GLX(MESA_query_renderer),            N, Y },
    { GLX(MESA_swap_control),              N, Y },
    { GLX(NV_float_buffer),                N, N },

@@ -635,12 +635,12 @@ radv_emit_graphics_scratch(struct radv_device *device, struct radeon_cmdbuf *cs,
       waves /= info->num_se;
 
       radeon_set_context_reg_seq(cs, R_0286E8_SPI_TMPRING_SIZE, 3);
-      radeon_emit(cs, S_0286E8_WAVES(waves) | S_0286E8_WAVESIZE(round_up_u32(size_per_wave, 256)));
+      radeon_emit(cs, S_0286E8_WAVES(waves) | S_0286E8_WAVESIZE(DIV_ROUND_UP(size_per_wave, 256)));
       radeon_emit(cs, va >> 8);  /* SPI_GFX_SCRATCH_BASE_LO */
       radeon_emit(cs, va >> 40); /* SPI_GFX_SCRATCH_BASE_HI */
    } else {
       radeon_set_context_reg(cs, R_0286E8_SPI_TMPRING_SIZE,
-                             S_0286E8_WAVES(waves) | S_0286E8_WAVESIZE(round_up_u32(size_per_wave, 1024)));
+                             S_0286E8_WAVES(waves) | S_0286E8_WAVESIZE(DIV_ROUND_UP(size_per_wave, 1024)));
    }
 }
 
@@ -679,7 +679,7 @@ radv_emit_compute_scratch(struct radv_device *device, struct radeon_cmdbuf *cs, 
 
    radeon_set_sh_reg(
       cs, R_00B860_COMPUTE_TMPRING_SIZE,
-      S_00B860_WAVES(waves) | S_00B860_WAVESIZE(round_up_u32(size_per_wave, info->gfx_level >= GFX11 ? 256 : 1024)));
+      S_00B860_WAVES(waves) | S_00B860_WAVESIZE(DIV_ROUND_UP(size_per_wave, info->gfx_level >= GFX11 ? 256 : 1024)));
 }
 
 static void
@@ -1633,7 +1633,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       const bool last_submit = j + advance == cmd_buffer_count;
       bool submit_ace = false;
       unsigned num_submitted_cs = 0;
-      unsigned cs_idx = 0;
 
       if (queue->device->trace_bo)
          *queue->device->trace_id_ptr = 0;
@@ -1662,7 +1661,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
             cs_array[num_submitted_cs++] = cmd_buffer->cs;
 
          chainable = can_chain_next ? cmd_buffer->cs : NULL;
-         cs_idx = num_submitted_cs - 1;
       }
 
       submit.cs_count = num_submitted_cs;
@@ -1677,7 +1675,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          goto fail;
 
       if (queue->device->trace_bo) {
-         radv_check_gpu_hangs(queue, cs_array[cs_idx]);
+         radv_check_gpu_hangs(queue, &submit);
       }
 
       if (queue->device->tma_bo) {

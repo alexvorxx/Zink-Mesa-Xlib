@@ -34,8 +34,6 @@
 #include "util/timespec.h"
 #include "util/vma.h"
 
-#include "pipe/p_defines.h"
-
 #include "drm-uapi/virtgpu_drm.h"
 /* We also use some types/defines from the host drm/msm uabi: */
 #include "drm-uapi/msm_drm.h"

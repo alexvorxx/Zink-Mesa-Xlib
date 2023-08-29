@@ -2145,6 +2145,9 @@ public:
 
    std::vector<Definition> args_pending_vmem;
 
+   /* For shader part with previous shader part that has lds access. */
+   bool pending_lds_access = false;
+
    struct {
       FILE* output = stderr;
       bool shorten_messages = false;
@@ -2228,9 +2231,13 @@ void select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo,
                       ac_shader_config* config, const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* args);
 
-void select_ps_epilog(Program* program, const struct aco_ps_epilog_info* epilog_info,
-                      ac_shader_config* config, const struct aco_compiler_options* options,
+void select_ps_epilog(Program* program, void* pinfo, ac_shader_config* config,
+                      const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* args);
+
+void select_tcs_epilog(Program* program, void* pinfo, ac_shader_config* config,
+                       const struct aco_compiler_options* options,
+                       const struct aco_shader_info* info, const struct ac_shader_args* args);
 
 void lower_phis(Program* program);
 void calc_min_waves(Program* program);
@@ -2255,7 +2262,7 @@ bool dealloc_vgprs(Program* program);
 void insert_NOPs(Program* program);
 void form_hard_clauses(Program* program);
 unsigned emit_program(Program* program, std::vector<uint32_t>& code,
-                      std::vector<struct aco_symbol>* symbols);
+                      std::vector<struct aco_symbol>* symbols = NULL, bool append_endpgm = true);
 /**
  * Returns true if print_asm can disassemble the given program for the current build/runtime
  * configuration
@@ -2329,6 +2336,8 @@ uint16_t get_vgpr_alloc(Program* program, uint16_t addressable_vgprs);
 /* return number of addressable sgprs/vgprs for max_waves */
 uint16_t get_addr_sgpr_from_waves(Program* program, uint16_t max_waves);
 uint16_t get_addr_vgpr_from_waves(Program* program, uint16_t max_waves);
+
+bool uses_scratch(Program* program);
 
 typedef struct {
    const int16_t opcode_gfx7[static_cast<int>(aco_opcode::num_opcodes)];

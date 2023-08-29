@@ -304,7 +304,18 @@ static void radeon_enc_nalu_sps(struct radeon_encoder *enc)
          }
       }
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* overscan info present flag */
-      radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* video signal type present flag  */
+      /* video signal type present flag  */
+      radeon_enc_code_fixed_bits(enc, pic->vui_info.flags.video_signal_type_present_flag, 1);
+      if (pic->vui_info.flags.video_signal_type_present_flag) {
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.video_format, 3);
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.video_full_range_flag, 1);
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.flags.colour_description_present_flag, 1);
+         if (pic->vui_info.flags.colour_description_present_flag) {
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.colour_primaries, 8);
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.transfer_characteristics, 8);
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.matrix_coefficients, 8);
+         }
+      }
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* chroma loc info present flag */
       /* timing info present flag */
       radeon_enc_code_fixed_bits(enc, (pic->vui_info.flags.timing_info_present_flag), 1);
@@ -433,7 +444,18 @@ static void radeon_enc_nalu_sps_hevc(struct radeon_encoder *enc)
          }
       }
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* overscan info present flag */
-      radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* video signal type present flag */
+      /* video signal type present flag  */
+      radeon_enc_code_fixed_bits(enc, pic->vui_info.flags.video_signal_type_present_flag, 1);
+      if (pic->vui_info.flags.video_signal_type_present_flag) {
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.video_format, 3);
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.video_full_range_flag, 1);
+         radeon_enc_code_fixed_bits(enc, pic->vui_info.flags.colour_description_present_flag, 1);
+         if (pic->vui_info.flags.colour_description_present_flag) {
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.colour_primaries, 8);
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.transfer_characteristics, 8);
+            radeon_enc_code_fixed_bits(enc, pic->vui_info.matrix_coefficients, 8);
+         }
+      }
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* chroma loc info present flag */
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* neutral chroma indication flag */
       radeon_enc_code_fixed_bits(enc, 0x0, 1);  /* field seq flag */
@@ -1195,14 +1217,16 @@ static void radeon_enc_encode_params(struct radeon_encoder *enc)
 
    enc->enc_pic.enc_params.allowed_max_bitstream_size = enc->bs_size;
    enc->enc_pic.enc_params.input_pic_luma_pitch = enc->luma->u.gfx9.surf_pitch;
-   enc->enc_pic.enc_params.input_pic_chroma_pitch = enc->chroma->u.gfx9.surf_pitch;
+   enc->enc_pic.enc_params.input_pic_chroma_pitch = enc->chroma ?
+      enc->chroma->u.gfx9.surf_pitch : enc->luma->u.gfx9.surf_pitch;
    enc->enc_pic.enc_params.input_pic_swizzle_mode = enc->luma->u.gfx9.swizzle_mode;
 
    RADEON_ENC_BEGIN(enc->cmd.enc_params);
    RADEON_ENC_CS(enc->enc_pic.enc_params.pic_type);
    RADEON_ENC_CS(enc->enc_pic.enc_params.allowed_max_bitstream_size);
    RADEON_ENC_READ(enc->handle, RADEON_DOMAIN_VRAM, enc->luma->u.gfx9.surf_offset);
-   RADEON_ENC_READ(enc->handle, RADEON_DOMAIN_VRAM, enc->chroma->u.gfx9.surf_offset);
+   RADEON_ENC_READ(enc->handle, RADEON_DOMAIN_VRAM, enc->chroma ?
+      enc->chroma->u.gfx9.surf_offset : enc->luma->u.gfx9.surf_pitch);
    RADEON_ENC_CS(enc->enc_pic.enc_params.input_pic_luma_pitch);
    RADEON_ENC_CS(enc->enc_pic.enc_params.input_pic_chroma_pitch);
    RADEON_ENC_CS(enc->enc_pic.enc_params.input_pic_swizzle_mode);

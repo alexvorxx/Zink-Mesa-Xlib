@@ -28,9 +28,9 @@
 #include "anv_private.h"
 
 static void
-stub_gem_close(struct anv_device *device, uint32_t gem_handle)
+stub_gem_close(struct anv_device *device, struct anv_bo *bo)
 {
-   close(gem_handle);
+   close(bo->gem_handle);
 }
 
 static uint32_t
@@ -102,8 +102,8 @@ anv_gem_munmap(struct anv_device *device, void *p, uint64_t size)
    munmap(p, size);
 }
 
-uint32_t
-anv_gem_userptr(struct anv_device *device, void *mem, size_t size)
+static uint32_t
+stub_gem_create_userptr(struct anv_device *device, void *mem, uint64_t size)
 {
    int fd = os_create_anonymous_file(size, "fake bo");
    if (fd == -1)
@@ -168,6 +168,7 @@ const struct anv_kmd_backend *anv_stub_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend stub_backend = {
       .gem_create = stub_gem_create,
+      .gem_create_userptr = stub_gem_create_userptr,
       .gem_close = stub_gem_close,
       .gem_mmap = stub_gem_mmap,
       .gem_vm_bind = stub_gem_vm_bind,

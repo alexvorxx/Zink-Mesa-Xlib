@@ -28,6 +28,7 @@
 #include "i915/anv_batch_chain.h"
 
 #include "drm-uapi/i915_drm.h"
+#include "intel/common/i915/intel_gem.h"
 
 static uint32_t
 i915_gem_create(struct anv_device *device,
@@ -84,9 +85,9 @@ i915_gem_create(struct anv_device *device,
          set_pat_param.pat_index = device->info->pat.scanout;
       else
          set_pat_param.pat_index = device->info->pat.writeback;
-      intel_gem_add_ext(&gem_create.extensions,
-                        I915_GEM_CREATE_EXT_SET_PAT,
-                        &set_pat_param.base);
+      intel_i915_gem_add_ext(&gem_create.extensions,
+                             I915_GEM_CREATE_EXT_SET_PAT,
+                             &set_pat_param.base);
    }
 
    if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &gem_create))
@@ -97,10 +98,10 @@ i915_gem_create(struct anv_device *device,
 }
 
 static void
-i915_gem_close(struct anv_device *device, uint32_t handle)
+i915_gem_close(struct anv_device *device, struct anv_bo *bo)
 {
    struct drm_gem_close close = {
-      .handle = handle,
+      .handle = bo->gem_handle,
    };
 
    intel_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
@@ -179,11 +180,31 @@ i915_gem_vm_unbind(struct anv_device *device, struct anv_bo *bo)
    return 0;
 }
 
+static uint32_t
+i915_gem_create_userptr(struct anv_device *device, void *mem, uint64_t size)
+{
+   struct drm_i915_gem_userptr userptr = {
+      .user_ptr = (__u64)((unsigned long) mem),
+      .user_size = size,
+      .flags = 0,
+   };
+
+   if (device->physical->info.has_userptr_probe)
+      userptr.flags |= I915_USERPTR_PROBE;
+
+   int ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_USERPTR, &userptr);
+   if (ret == -1)
+      return 0;
+
+   return userptr.handle;
+}
+
 const struct anv_kmd_backend *
 anv_i915_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend i915_backend = {
       .gem_create = i915_gem_create,
+      .gem_create_userptr = i915_gem_create_userptr,
       .gem_close = i915_gem_close,
       .gem_mmap = i915_gem_mmap,
       .gem_vm_bind = i915_gem_vm_bind,

@@ -109,7 +109,7 @@ class GPUInfo(Struct):
     def __init__(self, chip, gmem_align_w, gmem_align_h,
                  tile_align_w, tile_align_h,
                  tile_max_w, tile_max_h, num_vsc_pipes,
-                 cs_shared_mem_size, wave_granularity):
+                 cs_shared_mem_size, num_sp_cores, wave_granularity, fibers_per_sp):
         self.chip          = chip.value
         self.gmem_align_w  = gmem_align_w
         self.gmem_align_h  = gmem_align_h
@@ -119,7 +119,9 @@ class GPUInfo(Struct):
         self.tile_max_h    = tile_max_h
         self.num_vsc_pipes = num_vsc_pipes
         self.cs_shared_mem_size = cs_shared_mem_size
+        self.num_sp_cores  = num_sp_cores
         self.wave_granularity = wave_granularity
+        self.fibers_per_sp = fibers_per_sp
 
         s.gpu_infos.append(self)
 
@@ -129,7 +131,7 @@ class A6xxGPUInfo(GPUInfo):
        into distinct sub-generations.  The template parameter avoids
        duplication of parameters that are unique to the sub-generation.
     """
-    def __init__(self, chip, template, num_ccu, tile_align_w, tile_align_h, num_vsc_pipes, cs_shared_mem_size, wave_granularity, magic_regs):
+    def __init__(self, chip, template, num_ccu, tile_align_w, tile_align_h, num_vsc_pipes, cs_shared_mem_size, wave_granularity, fibers_per_sp, magic_regs):
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
                          tile_align_h = tile_align_h,
@@ -137,9 +139,10 @@ class A6xxGPUInfo(GPUInfo):
                          tile_max_h   = max_bitfield_val(14, 8, 4),
                          num_vsc_pipes = num_vsc_pipes,
                          cs_shared_mem_size = cs_shared_mem_size,
-                         wave_granularity   = wave_granularity)
-        # The # of SP cores seems to always match # of CCU
-        self.num_sp_cores = num_ccu
+                         num_sp_cores = num_ccu, # The # of SP cores seems to always match # of CCU
+                         wave_granularity   = wave_granularity,
+                         fibers_per_sp      = fibers_per_sp)
+
         self.num_ccu = num_ccu
 
         self.a6xx = Struct()
@@ -185,7 +188,9 @@ add_gpus([
         tile_max_h   = ~0, # TODO
         num_vsc_pipes = 8,
         cs_shared_mem_size = 0,
-        wave_granularity = 2
+        num_sp_cores = 0, # TODO
+        wave_granularity = 2,
+        fibers_per_sp = 0, # TODO
     ))
 
 add_gpus([
@@ -201,7 +206,9 @@ add_gpus([
         tile_max_h   = max_bitfield_val(9, 5, 5),
         num_vsc_pipes = 8,
         cs_shared_mem_size = 32 * 1024,
-        wave_granularity = 2
+        num_sp_cores = 0, # TODO
+        wave_granularity = 2,
+        fibers_per_sp = 0, # TODO
     ))
 
 add_gpus([
@@ -216,15 +223,45 @@ add_gpus([
         tile_max_h   = max_bitfield_val(9, 5, 5),
         num_vsc_pipes = 8,
         cs_shared_mem_size = 32 * 1024,
-        wave_granularity = 2
+        num_sp_cores = 0, # TODO
+        wave_granularity = 2,
+        fibers_per_sp = 0, # TODO
     ))
 
 add_gpus([
         GPUId(506),
         GPUId(508),
         GPUId(509),
+    ], GPUInfo(
+        CHIP.A5XX,
+        gmem_align_w = 64,  gmem_align_h = 32,
+        tile_align_w = 64,  tile_align_h = 32,
+        tile_max_w   = 1024, # max_bitfield_val(7, 0, 5)
+        tile_max_h   = max_bitfield_val(16, 9, 5),
+        num_vsc_pipes = 16,
+        cs_shared_mem_size = 32 * 1024,
+        num_sp_cores = 1,
+        wave_granularity = 2,
+        fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
+    ))
+
+add_gpus([
         GPUId(510),
         GPUId(512),
+    ], GPUInfo(
+        CHIP.A5XX,
+        gmem_align_w = 64,  gmem_align_h = 32,
+        tile_align_w = 64,  tile_align_h = 32,
+        tile_max_w   = 1024, # max_bitfield_val(7, 0, 5)
+        tile_max_h   = max_bitfield_val(16, 9, 5),
+        num_vsc_pipes = 16,
+        cs_shared_mem_size = 32 * 1024,
+        num_sp_cores = 2,
+        wave_granularity = 2,
+        fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
+    ))
+
+add_gpus([
         GPUId(530),
         GPUId(540),
     ], GPUInfo(
@@ -235,7 +272,9 @@ add_gpus([
         tile_max_h   = max_bitfield_val(16, 9, 5),
         num_vsc_pipes = 16,
         cs_shared_mem_size = 32 * 1024,
-        wave_granularity = 2
+        num_sp_cores = 4,
+        wave_granularity = 2,
+        fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
     ))
 
 # a6xx can be divided into distinct sub-generations, where certain device-
@@ -244,7 +283,6 @@ add_gpus([
 
 # a615, a616, a618, a619, a620 and a630:
 a6xx_gen1 = dict(
-        fibers_per_sp = 128 * 16,
         reg_size_vec4 = 96,
         instr_cache_size = 64,
         concurrent_resolve = False,
@@ -268,7 +306,6 @@ a6xx_gen1_low = {**a6xx_gen1, **dict(
 
 # a640, a680:
 a6xx_gen2 = dict(
-        fibers_per_sp = 128 * 4 * 16,
         reg_size_vec4 = 96,
         instr_cache_size = 64, # TODO
         supports_multiview_mask = True,
@@ -282,7 +319,6 @@ a6xx_gen2 = dict(
 
 # a650:
 a6xx_gen3 = dict(
-        fibers_per_sp = 128 * 2 * 16,
         reg_size_vec4 = 64,
         # Blob limits it to 128 but we hang with 128
         instr_cache_size = 127,
@@ -293,7 +329,6 @@ a6xx_gen3 = dict(
         has_tex_filter_cubic = True,
         has_separate_chroma_filter = True,
         has_sample_locations = True,
-        has_ccu_flush_bug = True,
         has_8bpp_ubwc = False,
         has_dp2acc = True,
         has_lrz_dir_tracking = True,
@@ -305,7 +340,6 @@ a6xx_gen3 = dict(
 
 # a635, a660:
 a6xx_gen4 = dict(
-        fibers_per_sp = 128 * 2 * 16,
         reg_size_vec4 = 64,
         # Blob limits it to 128 but we hang with 128
         instr_cache_size = 127,
@@ -316,7 +350,6 @@ a6xx_gen4 = dict(
         has_tex_filter_cubic = True,
         has_separate_chroma_filter = True,
         has_sample_locations = True,
-        has_ccu_flush_bug = True,
         has_cp_reg_write = False,
         has_8bpp_ubwc = False,
         has_lpac = True,
@@ -344,6 +377,7 @@ add_gpus([
         num_vsc_pipes = 16,
         cs_shared_mem_size = 16 * 1024,
         wave_granularity = 1,
+        fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
             TPL1_DBG_ECO_CNTL = 0,
@@ -375,6 +409,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
             TPL1_DBG_ECO_CNTL = 0x00108000,
@@ -403,6 +438,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
             TPL1_DBG_ECO_CNTL = 0x01008000,
@@ -431,6 +467,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
             TPL1_DBG_ECO_CNTL = 0x00108000,
@@ -459,6 +496,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 4 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
             TPL1_DBG_ECO_CNTL = 0x00008000,
@@ -487,6 +525,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 4 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 3,
             TPL1_DBG_ECO_CNTL = 0x00108000,
@@ -515,6 +554,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
             # this seems to be a chicken bit that fixes cubic filtering:
@@ -548,6 +588,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
             TPL1_DBG_ECO_CNTL = 0x05008000,
@@ -576,6 +617,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
             TPL1_DBG_ECO_CNTL = 0x05008000,
@@ -604,6 +646,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 7,
             TPL1_DBG_ECO_CNTL = 0x01008000,
@@ -634,6 +677,7 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict()
     ))
 

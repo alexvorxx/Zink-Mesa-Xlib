@@ -14,6 +14,7 @@ EPHEMERAL=(
         "pkgconfig(epoxy)"
         "pkgconfig(gbm)"
         "pkgconfig(openssl)"
+        python3-pip
         unzip
         xz
 )
@@ -30,7 +31,7 @@ DEPS=(
     glslang
     kernel-headers
     llvm-devel
-    meson
+    ninja-build
     "pkgconfig(LLVMSPIRVLib)"
     "pkgconfig(SPIRV-Tools)"
     "pkgconfig(dri2proto)"
@@ -89,6 +90,9 @@ curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
 tar -xvf $XORGMACROS_VERSION.tar.bz2 && rm $XORGMACROS_VERSION.tar.bz2
 cd $XORGMACROS_VERSION; ./configure; make install; cd ..
 rm -rf $XORGMACROS_VERSION
+
+# We need at least 1.2 for Rust's `debug_assertions`
+pip install meson==1.2.0
 
 . .gitlab-ci/container/build-mold.sh
 

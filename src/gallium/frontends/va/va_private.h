@@ -382,7 +382,7 @@ typedef struct {
 } vlVaConfig;
 
 typedef struct {
-   struct pipe_video_buffer templat, *buffer;
+   struct pipe_video_buffer templat, *buffer, *deint_buffer;
    struct util_dynarray subpics; /* vlVaSubpicture */
    VAContextID ctx;
    vlVaBuffer *coded_buf;
@@ -391,6 +391,7 @@ typedef struct {
    bool force_flushed;
    struct pipe_video_buffer *obsolete_buf;
    enum pipe_format encoder_format;
+   bool full_range;
    struct pipe_fence_handle *fence;
 } vlVaSurface;
 
@@ -540,6 +541,7 @@ VAStatus vlVaHandleVAEncSliceParameterBufferTypeH264(vlVaDriver *drv, vlVaContex
 VAStatus vlVaHandleVAEncSequenceParameterBufferTypeH264(vlVaDriver *drv, vlVaContext *context, vlVaBuffer *buf);
 VAStatus vlVaHandleVAEncMiscParameterTypeRateControlH264(vlVaContext *context, VAEncMiscParameterBuffer *buf);
 VAStatus vlVaHandleVAEncMiscParameterTypeFrameRateH264(vlVaContext *context, VAEncMiscParameterBuffer *buf);
+VAStatus vlVaHandleVAEncPackedHeaderDataBufferTypeH264(vlVaContext *context, vlVaBuffer *buf);
 VAStatus vlVaHandleVAEncMiscParameterTypeTemporalLayerH264(vlVaContext *context, VAEncMiscParameterBuffer *buf);
 VAStatus vlVaHandleVAEncMiscParameterTypeQualityLevelH264(vlVaContext *context, VAEncMiscParameterBuffer *buf);
 VAStatus vlVaHandleVAEncMiscParameterTypeMaxFrameSizeH264(vlVaContext *context, VAEncMiscParameterBuffer *buf);

@@ -183,7 +183,8 @@ Core Mesa environment variables
 
    if set to ``true``, disables the on-disk shader cache. If set to
    ``false``, enables the on-disk shader cache when it is disabled by
-   default.
+   default.  Note that EGL_ANDROID_blob_cache is still enabled even
+   if on-disk shader cache is disabled.
 
 .. envvar:: MESA_SHADER_CACHE_MAX_SIZE
 
@@ -345,7 +346,7 @@ Core Mesa environment variables
 
    A comma-separated list of trace types used for offline analysis. The
    option names are equal to the file extension. Traces are dumped into ``/tmp``.
-   Captures can be triggered by pressing ``F12`` with the application window
+   Captures can be triggered by pressing ``F1`` with the application window
    focused (Currently X11 only) or via :envvar:`MESA_VK_TRACE_FRAME` and
    :envvar:`MESA_VK_TRACE_TRIGGER`.
 
@@ -516,6 +517,12 @@ Intel driver environment variables
    ``do32``
       generate compute shader SIMD32 programs even if workgroup size
       doesn't exceed the SIMD16 limit
+   ``draw_bkp``
+      Add semaphore wait before/after draw call count.
+      ``INTEL_DEBUG_BKP_BEFORE_DRAW_COUNT`` or
+      ``INTEL_DEBUG_BKP_AFTER_DRAW_COUNT`` can control draw call number.
+      To make test wait forever, we need to set preempt_timeout_ms and
+      i915.enable_hangcheck to zero.
    ``fall``
       emit messages about performance issues (same as ``perf``)
    ``fs``
@@ -571,6 +578,8 @@ Intel driver environment variables
       the SF program)
    ``soft64``
       enable implementation of software 64bit floating point support
+   ``sparse``
+      dump usage of sparse resources
    ``spill_fs``
       force spilling of all registers in the scalar backend (useful to
       debug spilling code)
@@ -704,6 +713,22 @@ Intel driver environment variables
 
    if set to 1, true or yes, then the driver prefers accuracy over
    performance in trig functions.
+
+.. envvar:: INTEL_SHADER_OPTIMIZER_PATH
+
+   if set, determines the directory to be used for overriding shader
+   assembly. The binaries with custom assembly should be placed in
+   this folder and have a name formatted as ``sha1_of_assembly.bin``.
+   The SHA-1 of a shader assembly is printed when assembly is dumped via
+   corresponding :envvar:`INTEL_DEBUG` flag (e.g. ``vs`` for vertex shader).
+   A binary could be generated from a dumped assembly by ``i965_asm``.
+   For :envvar:`INTEL_SHADER_ASM_READ_PATH` to work it is necessary to enable
+   dumping of corresponding shader stages via :envvar:`INTEL_DEBUG`.
+   It is advised to use ``nocompact`` flag of :envvar:`INTEL_DEBUG` when
+   dumping and overriding shader assemblies.
+   The success of assembly override would be signified by "Successfully
+   overrode shader with sha1 <SHA-1>" in stderr replacing the original
+   assembly.
 
 .. envvar:: INTEL_SHADER_ASM_READ_PATH
 
@@ -984,6 +1009,7 @@ Rusticl environment variables
    - ``allow_invalid_spirv`` disables validation of any input SPIR-V
    - ``clc`` dumps all OpenCL C source being compiled
    - ``program`` dumps compilation logs to stderr
+   - ``sync`` waits on the GPU to complete after every event
 
 .. _clc-env-var:
 

@@ -956,7 +956,7 @@ i915_delete_rasterizer_state(struct pipe_context *pipe, void *raster)
 }
 
 static void
-i915_set_vertex_buffers(struct pipe_context *pipe, unsigned start_slot,
+i915_set_vertex_buffers(struct pipe_context *pipe,
                         unsigned count, unsigned unbind_num_trailing_slots,
                         bool take_ownership,
                         const struct pipe_vertex_buffer *buffers)
@@ -965,11 +965,11 @@ i915_set_vertex_buffers(struct pipe_context *pipe, unsigned start_slot,
    struct draw_context *draw = i915->draw;
 
    util_set_vertex_buffers_count(i915->vertex_buffers, &i915->nr_vertex_buffers,
-                                 buffers, start_slot, count,
+                                 buffers, count,
                                  unbind_num_trailing_slots, take_ownership);
 
    /* pass-through to draw module */
-   draw_set_vertex_buffers(draw, start_slot, count, unbind_num_trailing_slots,
+   draw_set_vertex_buffers(draw, count, unbind_num_trailing_slots,
                            buffers);
 }
 

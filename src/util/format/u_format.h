@@ -31,14 +31,9 @@
 
 
 #include "util/format/u_formats.h"
-#include "pipe/p_defines.h"
 #include "util/u_debug.h"
 
 #include "c99_compat.h"
-
-union pipe_color_union;
-struct pipe_screen;
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -468,6 +463,25 @@ util_format_short_name(enum pipe_format format)
    }
 
    return desc->short_name;
+}
+
+static inline const char *
+util_chroma_format_name(enum pipe_video_chroma_format chroma_format)
+{
+   switch (chroma_format) {
+   case PIPE_VIDEO_CHROMA_FORMAT_400:
+      return "PIPE_VIDEO_CHROMA_FORMAT_400";
+   case PIPE_VIDEO_CHROMA_FORMAT_420:
+      return "PIPE_VIDEO_CHROMA_FORMAT_420";
+   case PIPE_VIDEO_CHROMA_FORMAT_422:
+      return "PIPE_VIDEO_CHROMA_FORMAT_422";
+   case PIPE_VIDEO_CHROMA_FORMAT_444:
+      return "PIPE_VIDEO_CHROMA_FORMAT_444";
+   case PIPE_VIDEO_CHROMA_FORMAT_NONE:
+      return "PIPE_VIDEO_CHROMA_FORMAT_NONE";
+   default:
+      return "PIPE_VIDEO_CHROMA_FORMAT_???";
+   }
 }
 
 /**

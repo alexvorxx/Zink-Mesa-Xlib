@@ -118,7 +118,7 @@ foreach g : [['90', ['gfx8_cmd_buffer.c']],
     'anv_per_hw_ver@0@'.format(_gfx_ver),
     [anv_per_hw_ver_files, g[1], anv_entrypoints[0], anv_internal_spvs, ],
     include_directories : [
-      inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_compiler, inc_intel,
+      inc_include, inc_src, inc_compiler, inc_intel,
     ],
     c_args : anv_flags + ['-DGFX_VERx10=@0@'.format(_gfx_ver)],
     gnu_symbol_visibility : 'hidden',
@@ -225,7 +225,7 @@ libanv_common = static_library(
     anv_internal_spvs,
   ],
   include_directories : [
-    inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel, inc_compiler,
     inc_util,
   ],
   c_args : anv_flags,
@@ -238,7 +238,7 @@ libvulkan_intel = shared_library(
   'vulkan_intel',
   [files('anv_gem.c'), anv_entrypoints[0]],
   include_directories : [
-    inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel, inc_compiler,
   ],
   link_whole : [libanv_common, libanv_per_hw_ver_libs] + optional_libgrl,
   link_with : [
@@ -275,7 +275,7 @@ if with_tests
     'vulkan_intel_test',
     [files('anv_gem_stubs.c'), anv_entrypoints[0]],
     include_directories : [
-      inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel, inc_compiler,
+      inc_include, inc_src, inc_intel, inc_compiler,
     ],
     link_whole : libanv_common,
     link_with : [
@@ -291,26 +291,34 @@ if with_tests
     gnu_symbol_visibility : 'hidden',
   )
 
-  foreach t : ['block_pool_no_free', 'block_pool_grow_first',
-               'state_pool_no_free', 'state_pool_free_list_only',
-               'state_pool', 'state_pool_padding']
-    test(
-      'anv_@0@'.format(t),
-      executable(
-        t,
-        ['tests/@0@.c'.format(t), anv_entrypoints[0]],
-        c_args : [ sse2_args ],
-        link_with : libvulkan_intel_test,
-        dependencies : [
-          dep_libdrm, dep_thread, dep_m, dep_valgrind,
-          idep_vulkan_util, idep_vulkan_wsi_headers,
-          idep_vulkan_runtime, idep_intel_driver_ds, idep_intel_dev,
-        ],
-        include_directories : [
-          inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel, inc_compiler,
-        ],
-      ),
-      suite : ['intel'],
-    )
-  endforeach
+  files_anv_tests = files(
+    'tests/anv_tests.cpp',
+
+    'tests/state_pool.c',
+    'tests/state_pool_free_list_only.c',
+    'tests/state_pool_no_free.c',
+    'tests/state_pool_padding.c',
+    'tests/block_pool_no_free.c',
+    'tests/block_pool_grow_first.c',
+  )
+
+  test(
+    'anv_tests',
+    executable(
+      'anv_tests',
+      [files_anv_tests, anv_entrypoints[0]],
+      c_args : [ sse2_args ],
+      link_with : libvulkan_intel_test,
+      dependencies : [
+        idep_gtest, dep_libdrm, dep_thread, dep_m, dep_valgrind,
+        idep_vulkan_util, idep_vulkan_wsi_headers,
+        idep_vulkan_runtime, idep_intel_driver_ds, idep_intel_dev,
+      ],
+      include_directories : [
+        inc_include, inc_src, inc_intel, inc_compiler,
+      ],
+    ),
+    suite : ['intel'],
+    protocol : 'gtest',
+  )
 endif

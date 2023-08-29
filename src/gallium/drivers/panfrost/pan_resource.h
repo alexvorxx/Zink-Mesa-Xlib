@@ -143,6 +143,9 @@ void panfrost_resource_set_damage_region(struct pipe_screen *screen,
                                          unsigned int nrects,
                                          const struct pipe_box *rects);
 
+void panfrost_set_image_view_planes(struct pan_image_view *iview,
+                                    struct pipe_resource *texture);
+
 static inline enum mali_texture_dimension
 panfrost_translate_texture_dimension(enum pipe_texture_target t)
 {

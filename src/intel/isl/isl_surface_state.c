@@ -928,25 +928,6 @@ isl_genX(buffer_fill_state_s)(const struct isl_device *dev, void *state,
    s.Depth = ((num_elements - 1) >> 20) & 0x7f;
 #endif
 
-   if (GFX_VER == 12 && dev->info->revision == 0) {
-      /* TGL-LP A0 has a HW bug (fixed in later HW) which causes buffer
-       * textures with very close base addresses (delta < 64B) to corrupt each
-       * other.  We can sort-of work around this by making small buffer
-       * textures 1D textures instead.  This doesn't fix the problem for large
-       * buffer textures but the liklihood of large, overlapping, and very
-       * close buffer textures is fairly low and the point is to hack around
-       * the bug so we can run apps and tests.
-       */
-       if (info->format != ISL_FORMAT_RAW &&
-           info->stride_B == isl_format_get_layout(info->format)->bpb / 8 &&
-           num_elements <= (1 << 14)) {
-         s.SurfaceType = SURFTYPE_1D;
-         s.Width = num_elements - 1;
-         s.Height = 0;
-         s.Depth = 0;
-      }
-   }
-
 #if GFX_VER >= 6
    s.NumberofMultisamples = MULTISAMPLECOUNT_1;
 #endif
@@ -966,6 +947,17 @@ isl_genX(buffer_fill_state_s)(const struct isl_device *dev, void *state,
    s.SurfaceBaseAddress = info->address;
 #if GFX_VER >= 6
    s.MOCS = info->mocs;
+#endif
+
+#if GFX_VER >= 9
+   /* Store the buffer size in the upper dword of the AUX surface base
+    * address. Only enabled on Gfx9+ since Gfx8 has an Atom version with only
+    * 32bits of address space.
+    */
+   if (dev->buffer_length_in_aux_addr)
+      s.AuxiliarySurfaceBaseAddress = info->size_B << 32;
+#else
+   assert(!dev->buffer_length_in_aux_addr);
 #endif
 
 #if GFX_VERx10 >= 125

@@ -73,7 +73,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDescriptorSetLayout(
 
    size_t size = sizeof(struct lvp_descriptor_set_layout) +
                  num_bindings * sizeof(set_layout->binding[0]) +
-                 immutable_sampler_count * sizeof(struct lp_descriptor*);
+                 immutable_sampler_count * sizeof(struct lvp_sampler *);
 
    set_layout = vk_descriptor_set_layout_zalloc(&device->vk, size);
    if (!set_layout)
@@ -81,8 +81,8 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDescriptorSetLayout(
 
    set_layout->immutable_sampler_count = immutable_sampler_count;
    /* We just allocate all the samplers at the end of the struct */
-   struct lp_descriptor **samplers =
-      (struct lp_descriptor **)&set_layout->binding[num_bindings];
+   struct lvp_sampler **samplers =
+      (struct lvp_sampler **)&set_layout->binding[num_bindings];
 
    set_layout->binding_count = num_bindings;
    set_layout->shader_stages = 0;
@@ -132,7 +132,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDescriptorSetLayout(
             for (uint32_t i = 0; i < binding->descriptorCount; i++) {
                if (binding->pImmutableSamplers[i])
                   set_layout->binding[b].immutable_samplers[i] =
-                     &lvp_sampler_from_handle(binding->pImmutableSamplers[i])->desc;
+                     lvp_sampler_from_handle(binding->pImmutableSamplers[i]);
                else
                   set_layout->binding[b].immutable_samplers[i] = NULL;
             }
@@ -351,7 +351,7 @@ lvp_descriptor_set_create(struct lvp_device *device,
 
       for (uint32_t sampler_index = 0; sampler_index < bind_layout->array_size; sampler_index++) {
          if (bind_layout->immutable_samplers[sampler_index])
-            desc[sampler_index] = *bind_layout->immutable_samplers[sampler_index];
+            desc[sampler_index] = bind_layout->immutable_samplers[sampler_index]->desc;
       }
    }
 
@@ -449,12 +449,13 @@ VKAPI_ATTR void VKAPI_CALL lvp_UpdateDescriptorSets(
 
       switch (write->descriptorType) {
       case VK_DESCRIPTOR_TYPE_SAMPLER:
-         for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            LVP_FROM_HANDLE(lvp_sampler, sampler,
-                            write->pImageInfo[j].sampler);
+         if (!bind_layout->immutable_samplers) {
+            for (uint32_t j = 0; j < write->descriptorCount; j++) {
+               LVP_FROM_HANDLE(lvp_sampler, sampler, write->pImageInfo[j].sampler);
 
-            desc[j].sampler = sampler->desc.sampler;
-            desc[j].sampler_index = sampler->desc.sampler_index;
+               desc[j].sampler = sampler->desc.sampler;
+               desc[j].sampler_index = sampler->desc.sampler_index;
+            }
          }
          break;
 

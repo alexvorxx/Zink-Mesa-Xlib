@@ -289,6 +289,8 @@ enum
    SI_VS_BLIT_SGPRS_POS = 3,
    SI_VS_BLIT_SGPRS_POS_COLOR = 7,
    SI_VS_BLIT_SGPRS_POS_TEXCOORD = 9,
+
+   MAX_SI_VS_BLIT_SGPRS = 10, /* +1 for the attribute ring address */
 };
 
 #define SI_NGG_CULL_TRIANGLES                (1 << 0)   /* this implies W, view.xy, and small prim culling */
@@ -490,7 +492,7 @@ struct si_shader_info {
    bool uses_block_id[3];
    bool uses_variable_block_size;
    bool uses_grid_size;
-   bool uses_subgroup_info;
+   bool uses_tg_size;
    bool writes_position;
    bool writes_psize;
    bool writes_clipvertex;
@@ -842,6 +844,7 @@ struct si_shader_binary {
    /* Depends on binary type, either ELF or raw buffer. */
    const char *code_buffer;
    size_t code_size;
+   uint32_t exec_size;
 
    char *uploaded_code;
    size_t uploaded_code_size;
@@ -1005,7 +1008,6 @@ bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compi
 bool si_create_shader_variant(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
                               struct si_shader *shader, struct util_debug_callback *debug);
 void si_shader_destroy(struct si_shader *shader);
-unsigned si_shader_io_get_unique_index_patch(unsigned semantic);
 unsigned si_shader_io_get_unique_index(unsigned semantic);
 bool si_shader_binary_upload(struct si_screen *sscreen, struct si_shader *shader,
                              uint64_t scratch_va);

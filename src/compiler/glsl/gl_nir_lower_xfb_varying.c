@@ -140,11 +140,11 @@ copy_to_new_var(nir_builder *b, nir_deref_instr *deref,
          nir_deref_instr *new_var_m_deref =
             nir_build_deref_array(b, new_var_deref, &c->def);
 
-         nir_ssa_def *value = nir_load_deref(b, m_deref);
+         nir_def *value = nir_load_deref(b, m_deref);
          nir_store_deref(b, new_var_m_deref, value, writemask);
       }
    } else {
-      nir_ssa_def *value = nir_load_deref(b, deref);
+      nir_def *value = nir_load_deref(b, deref);
       nir_store_deref(b, new_var_deref, value, writemask);
    }
 }

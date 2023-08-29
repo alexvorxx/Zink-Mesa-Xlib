@@ -137,6 +137,12 @@ iris_destroy_batch_measure(struct iris_measure_batch *batch)
    free(batch);
 }
 
+static uint32_t
+fetch_hash(const struct iris_uncompiled_shader *uncompiled)
+{
+   return (uncompiled) ? uncompiled->source_hash : 0;
+}
+
 static void
 measure_start_snapshot(struct iris_context *ice,
                        struct iris_batch *batch,
@@ -202,13 +208,13 @@ measure_start_snapshot(struct iris_context *ice,
    snapshot->renderpass = renderpass;
 
    if (type == INTEL_SNAPSHOT_COMPUTE) {
-      snapshot->cs = (uintptr_t) ice->shaders.prog[MESA_SHADER_COMPUTE];
-   } else {
-      snapshot->vs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_VERTEX];
-      snapshot->tcs = (uintptr_t) ice->shaders.prog[MESA_SHADER_TESS_CTRL];
-      snapshot->tes = (uintptr_t) ice->shaders.prog[MESA_SHADER_TESS_EVAL];
-      snapshot->gs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_GEOMETRY];
-      snapshot->fs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_FRAGMENT];
+      snapshot->cs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_COMPUTE]);
+   } else if (type == INTEL_SNAPSHOT_DRAW) {
+      snapshot->vs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_VERTEX]);
+      snapshot->tcs = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_TESS_CTRL]);
+      snapshot->tes = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_TESS_EVAL]);
+      snapshot->gs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_GEOMETRY]);
+      snapshot->fs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_FRAGMENT]);
    }
 }
 
@@ -244,13 +250,13 @@ state_changed(const struct iris_context *ice,
    uintptr_t vs=0, tcs=0, tes=0, gs=0, fs=0, cs=0;
 
    if (type == INTEL_SNAPSHOT_COMPUTE) {
-      cs = (uintptr_t) ice->shaders.prog[MESA_SHADER_COMPUTE];
+      cs = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_COMPUTE]);
    } else if (type == INTEL_SNAPSHOT_DRAW) {
-      vs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_VERTEX];
-      tcs = (uintptr_t) ice->shaders.prog[MESA_SHADER_TESS_CTRL];
-      tes = (uintptr_t) ice->shaders.prog[MESA_SHADER_TESS_EVAL];
-      gs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_GEOMETRY];
-      fs  = (uintptr_t) ice->shaders.prog[MESA_SHADER_FRAGMENT];
+      vs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_VERTEX]);
+      tcs = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_TESS_CTRL]);
+      tes = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_TESS_EVAL]);
+      gs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_GEOMETRY]);
+      fs  = fetch_hash(ice->shaders.uncompiled[MESA_SHADER_FRAGMENT]);
    }
    /* else blorp, all programs NULL */
 

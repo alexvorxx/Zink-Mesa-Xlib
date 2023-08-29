@@ -1186,6 +1186,15 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
    while (idx < block->instructions.size()) {
       aco_ptr<Instruction>& instr = block->instructions[idx];
 
+      /* Spilling is handled as part of phis (they should always have the same or higher register
+       * demand). If we try to spill here, we might not be able to reduce the register demand enough
+       * because there is no path to spill constant/undef phi operands. */
+      if (instr->opcode == aco_opcode::p_branch) {
+         instructions.emplace_back(std::move(instr));
+         idx++;
+         continue;
+      }
+
       std::map<Temp, std::pair<Temp, uint32_t>> reloads;
 
       /* rename and reload operands */

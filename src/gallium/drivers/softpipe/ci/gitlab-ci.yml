@@ -1,3 +1,13 @@
+.softpipe-rules:
+  stage: software-renderer
+  rules:
+    - !reference [.gl-rules, rules]
+    - changes: &softpipe_file_list
+      - src/gallium/drivers/softpipe/**/*
+      - src/gallium/winsys/sw/**/*
+      when: on_success
+
+
 .softpipe-test:
   variables:
     GPU_VERSION: softpipe

@@ -64,6 +64,28 @@ _mesa_is_api_gles2(gl_api api)
 }
 
 /**
+ * An index for each type of texture object.  These correspond to the GL
+ * texture target enums, such as GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP, etc.
+ * Note: the order is from highest priority to lowest priority.
+ */
+typedef enum
+{
+   TEXTURE_2D_MULTISAMPLE_INDEX,
+   TEXTURE_2D_MULTISAMPLE_ARRAY_INDEX,
+   TEXTURE_CUBE_ARRAY_INDEX,
+   TEXTURE_BUFFER_INDEX,
+   TEXTURE_2D_ARRAY_INDEX,
+   TEXTURE_1D_ARRAY_INDEX,
+   TEXTURE_EXTERNAL_INDEX,
+   TEXTURE_CUBE_INDEX,
+   TEXTURE_3D_INDEX,
+   TEXTURE_RECT_INDEX,
+   TEXTURE_2D_INDEX,
+   TEXTURE_1D_INDEX,
+   NUM_TEXTURE_TARGETS
+} gl_texture_index;
+
+/**
  * Remapped color logical operations
  *
  * With the exception of NVIDIA hardware, which consumes the OpenGL enumerants

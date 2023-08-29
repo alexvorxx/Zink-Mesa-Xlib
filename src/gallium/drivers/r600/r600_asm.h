@@ -215,6 +215,7 @@ struct r600_bytecode_cf {
 	unsigned isa[2];
 	unsigned nlds_read;
 	unsigned nqueue_read;
+	unsigned clause_local_written;
 };
 
 #define FC_NONE				0

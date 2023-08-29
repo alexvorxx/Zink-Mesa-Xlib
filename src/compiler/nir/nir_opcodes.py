@@ -332,12 +332,12 @@ unop_convert("frexp_sig", tfloat, tfloat, "int n; dst = frexp(src0, &n);")
 deriv_template = """
 Calculate the screen-space partial derivative using {} derivatives of the input
 with respect to the {}-axis. The constant folding is trivial as the derivative
-of a constant is 0.
+of a constant is 0 if the constant is not Inf or NaN.
 """
 
 for mode, suffix in [("either fine or coarse", ""), ("fine", "_fine"), ("coarse", "_coarse")]:
     for axis in ["x", "y"]:
-        unop(f"fdd{axis}{suffix}", tfloat, "0.0",
+        unop(f"fdd{axis}{suffix}", tfloat, "isfinite(src0) ? 0.0 : NAN",
              description = deriv_template.format(mode, axis.upper()))
 
 # Floating point pack and unpack operations.

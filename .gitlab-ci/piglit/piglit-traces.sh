@@ -221,5 +221,5 @@ find "$RESULTS"/summary -type f -name "*.html" -print0 \
 
 echo "Failures in traces:"
 cat $RESULTSFILE
-error echo "Review the image changes and get the new checksums at: ${ARTIFACTS_BASE_URL}/results/summary/problems.html"
+error echo "Review the image changes and get the new checksums at: ${ARTIFACTS_BASE_URL}/results/summary/problems.html "
 exit 1

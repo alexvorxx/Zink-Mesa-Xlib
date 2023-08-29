@@ -118,6 +118,11 @@ struct ail_layout {
 
    /* Size of entire texture */
    uint32_t size_B;
+
+   /* Must the layout support writeable images? If false, the layout MUST NOT be
+    * used as a writeable image (either PBE or image atomics).
+    */
+   bool writeable_image;
 };
 
 static inline uint32_t

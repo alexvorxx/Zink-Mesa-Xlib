@@ -1517,7 +1517,7 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
    if (!dri2_get_xcb_connection(disp, dri2_dpy))
       goto cleanup;
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, true);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, true);
    if (!dev) {
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
       goto cleanup;
@@ -1610,7 +1610,7 @@ dri2_initialize_x11_dri3(_EGLDisplay *disp)
    if (!dri3_x11_connect(dri2_dpy))
       goto cleanup;
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, false);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, false);
    if (!dev) {
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
       goto cleanup;
@@ -1723,7 +1723,7 @@ dri2_initialize_x11_dri2(_EGLDisplay *disp)
    if (!dri2_x11_connect(dri2_dpy))
       goto cleanup;
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, false);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, false);
    if (!dev) {
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
       goto cleanup;

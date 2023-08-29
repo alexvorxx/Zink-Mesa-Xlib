@@ -66,11 +66,11 @@ struct gcm_instr_info {
 
 /* Flags used in the instr->pass_flags field for various instruction states */
 enum {
-   GCM_INSTR_PINNED =                (1 << 0),
+   GCM_INSTR_PINNED = (1 << 0),
    GCM_INSTR_SCHEDULE_EARLIER_ONLY = (1 << 1),
-   GCM_INSTR_SCHEDULED_EARLY =       (1 << 2),
-   GCM_INSTR_SCHEDULED_LATE =        (1 << 3),
-   GCM_INSTR_PLACED =                (1 << 4),
+   GCM_INSTR_SCHEDULED_EARLY = (1 << 2),
+   GCM_INSTR_SCHEDULED_LATE = (1 << 3),
+   GCM_INSTR_PLACED = (1 << 4),
 };
 
 struct gcm_state {
@@ -165,7 +165,6 @@ gcm_build_block_info(struct exec_list *cf_list, struct gcm_state *state,
 static bool
 is_src_scalarizable(nir_src *src)
 {
-   assert(src->is_ssa);
 
    nir_instr *src_instr = src->ssa->parent_instr;
    switch (src_instr->type) {
@@ -187,7 +186,7 @@ is_src_scalarizable(nir_src *src)
       /* These are trivially scalarizable */
       return true;
 
-   case nir_instr_type_ssa_undef:
+   case nir_instr_type_undef:
       return true;
 
    case nir_instr_type_intrinsic: {
@@ -384,7 +383,7 @@ gcm_pin_instructions(nir_function_impl *impl, struct gcm_state *state)
             break;
 
          case nir_instr_type_jump:
-         case nir_instr_type_ssa_undef:
+         case nir_instr_type_undef:
          case nir_instr_type_phi:
             instr->pass_flags = GCM_INSTR_PLACED;
             break;
@@ -427,8 +426,6 @@ gcm_schedule_early_src(nir_src *src, void *void_state)
 {
    struct gcm_state *state = void_state;
    nir_instr *instr = state->instr;
-
-   assert(src->is_ssa);
 
    gcm_schedule_early_instr(src->ssa->parent_instr, void_state);
 
@@ -540,7 +537,7 @@ set_block_for_loop_instr(struct gcm_state *state, nir_instr *instr,
 }
 
 static bool
-set_block_to_if_block(struct gcm_state *state,  nir_instr *instr,
+set_block_to_if_block(struct gcm_state *state, nir_instr *instr,
                       nir_block *block)
 {
    if (instr->type == nir_instr_type_load_const)
@@ -573,17 +570,17 @@ gcm_choose_block_for_instr(nir_instr *instr, nir_block *early_block,
          continue;
 
       if (state->blocks[block->index].if_depth >=
-          state->blocks[best->index].if_depth &&
+             state->blocks[best->index].if_depth &&
           set_block_to_if_block(state, instr, block)) {
-            /* If we are pushing the instruction into an if we want it to be
-             * in the earliest block not the latest to avoid creating register
-             * pressure issues. So we don't break unless we come across the
-             * block the instruction was originally in.
-             */
-            best = block;
-            block_set = true;
-            if (block == instr->block)
-               break;
+         /* If we are pushing the instruction into an if we want it to be
+          * in the earliest block not the latest to avoid creating register
+          * pressure issues. So we don't break unless we come across the
+          * block the instruction was originally in.
+          */
+         best = block;
+         block_set = true;
+         if (block == instr->block)
+            break;
       } else if (block == instr->block) {
          /* If we couldn't push the instruction later just put is back where it
           * was previously.
@@ -628,7 +625,7 @@ gcm_schedule_late_instr(nir_instr *instr, struct gcm_state *state);
  * as close to the LCA as possible while trying to stay out of loops.
  */
 static bool
-gcm_schedule_late_def(nir_ssa_def *def, void *void_state)
+gcm_schedule_late_def(nir_def *def, void *void_state)
 {
    struct gcm_state *state = void_state;
 
@@ -732,22 +729,22 @@ gcm_schedule_late_instr(nir_instr *instr, struct gcm_state *state)
        instr->pass_flags & GCM_INSTR_PINNED)
       return;
 
-   nir_foreach_ssa_def(instr, gcm_schedule_late_def, state);
+   nir_foreach_def(instr, gcm_schedule_late_def, state);
 }
 
 static bool
-gcm_replace_def_with_undef(nir_ssa_def *def, void *void_state)
+gcm_replace_def_with_undef(nir_def *def, void *void_state)
 {
    struct gcm_state *state = void_state;
 
-   if (nir_ssa_def_is_unused(def))
+   if (nir_def_is_unused(def))
       return true;
 
-   nir_ssa_undef_instr *undef =
-      nir_ssa_undef_instr_create(state->impl->function->shader,
-                                 def->num_components, def->bit_size);
+   nir_undef_instr *undef =
+      nir_undef_instr_create(state->impl->function->shader,
+                             def->num_components, def->bit_size);
    nir_instr_insert(nir_before_cf_list(&state->impl->body), &undef->instr);
-   nir_ssa_def_rewrite_uses(def, &undef->def);
+   nir_def_rewrite_uses(def, &undef->def);
 
    return true;
 }
@@ -772,7 +769,7 @@ gcm_place_instr(nir_instr *instr, struct gcm_state *state)
    instr->pass_flags |= GCM_INSTR_PLACED;
 
    if (instr->block == NULL) {
-      nir_foreach_ssa_def(instr, gcm_replace_def_with_undef, state);
+      nir_foreach_def(instr, gcm_replace_def_with_undef, state);
       nir_instr_remove(instr);
       return;
    }
@@ -811,7 +808,7 @@ static bool
 opt_gcm_impl(nir_shader *shader, nir_function_impl *impl, bool value_number)
 {
    nir_metadata_require(impl, nir_metadata_block_index |
-                              nir_metadata_dominance);
+                                 nir_metadata_dominance);
    nir_metadata_require(impl, nir_metadata_loop_analysis,
                         shader->options->force_indirect_unrolling,
                         shader->options->force_indirect_unrolling_sampler);
@@ -873,8 +870,8 @@ opt_gcm_impl(nir_shader *shader, nir_function_impl *impl, bool value_number)
    ralloc_free(state.instr_infos);
 
    nir_metadata_preserve(impl, nir_metadata_block_index |
-                               nir_metadata_dominance |
-                               nir_metadata_loop_analysis);
+                                  nir_metadata_dominance |
+                                  nir_metadata_loop_analysis);
 
    return state.progress;
 }

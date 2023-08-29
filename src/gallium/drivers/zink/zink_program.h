@@ -428,6 +428,21 @@ zink_driver_thread_add_job(struct pipe_screen *pscreen, void *data,
                            const size_t job_size);
 equals_gfx_pipeline_state_func
 zink_get_gfx_pipeline_eq_func(struct zink_screen *screen, struct zink_gfx_program *prog);
+
+static inline uint32_t
+zink_sanitize_optimal_key(struct zink_shader **shaders, uint32_t val)
+{
+   union zink_shader_key_optimal k;
+   if (shaders[MESA_SHADER_TESS_EVAL] && !shaders[MESA_SHADER_TESS_CTRL])
+      k.val = val;
+   else
+      k.val = zink_shader_key_optimal_no_tcs(val);
+   if (!(shaders[MESA_SHADER_FRAGMENT]->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)))
+      k.fs.samples = false;
+   if (!(shaders[MESA_SHADER_FRAGMENT]->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_DATA1)))
+      k.fs.force_dual_color_blend = false;
+   return k.val;
+}
 #ifdef __cplusplus
 }
 #endif

@@ -4,21 +4,20 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "nir_legacy.h"
 #include "nir.h"
 #include "nir_builder.h"
-#include "nir_legacy.h"
 
 bool
 nir_legacy_float_mod_folds(nir_alu_instr *mod)
 {
    assert(mod->op == nir_op_fabs || mod->op == nir_op_fneg);
-   assert(mod->dest.dest.is_ssa);
 
    /* No legacy user supports fp64 modifiers */
-   if (mod->dest.dest.ssa.bit_size == 64)
+   if (mod->def.bit_size == 64)
       return false;
 
-   nir_foreach_use_including_if(src, &mod->dest.dest.ssa) {
+   nir_foreach_use_including_if(src, &mod->def) {
       if (src->is_if)
          return false;
 
@@ -43,24 +42,22 @@ nir_legacy_float_mod_folds(nir_alu_instr *mod)
 static nir_legacy_alu_src
 chase_alu_src_helper(const nir_src *src)
 {
-   assert(src->is_ssa && "registers lowered to intrinsics");
    nir_intrinsic_instr *load = nir_load_reg_for_def(src->ssa);
 
    if (load) {
       bool indirect = (load->intrinsic == nir_intrinsic_load_reg_indirect);
 
-      return (nir_legacy_alu_src) {
+      return (nir_legacy_alu_src){
          .src.is_ssa = false,
          .src.reg = {
             .handle = load->src[0].ssa,
             .base_offset = nir_intrinsic_base(load),
-            .indirect = indirect ? load->src[1].ssa : NULL
-         },
+            .indirect = indirect ? load->src[1].ssa : NULL },
          .fabs = nir_intrinsic_legacy_fabs(load),
          .fneg = nir_intrinsic_legacy_fneg(load),
       };
    } else {
-      return (nir_legacy_alu_src) {
+      return (nir_legacy_alu_src){
          .src.is_ssa = true,
          .src.ssa = src->ssa,
       };
@@ -68,7 +65,7 @@ chase_alu_src_helper(const nir_src *src)
 }
 
 static inline bool
-chase_source_mod(nir_ssa_def **ssa, nir_op op, uint8_t *swizzle)
+chase_source_mod(nir_def **ssa, nir_op op, uint8_t *swizzle)
 {
    if ((*ssa)->parent_instr->type != nir_instr_type_alu)
       return false;
@@ -93,7 +90,6 @@ chase_source_mod(nir_ssa_def **ssa, nir_op op, uint8_t *swizzle)
    for (unsigned i = 0; i < NIR_MAX_VEC_COMPONENTS; ++i)
       swizzle[i] = alu->src[0].swizzle[swizzle[i]];
 
-   assert(alu->src[0].src.is_ssa && "registers lowered to intrinsics");
    *ssa = alu->src[0].src.ssa;
    return true;
 }
@@ -101,10 +97,6 @@ chase_source_mod(nir_ssa_def **ssa, nir_op op, uint8_t *swizzle)
 nir_legacy_alu_src
 nir_legacy_chase_alu_src(const nir_alu_src *src, bool fuse_fabs)
 {
-   assert(!src->abs && "source modifiers must be ALU");
-   assert(!src->negate && "source modifiers must be ALU");
-   assert(src->src.is_ssa && "registers lowered to intrinsics");
-
    if (src->src.ssa->parent_instr->type == nir_instr_type_alu) {
       nir_legacy_alu_src out = {
          .src.is_ssa = true,
@@ -130,29 +122,27 @@ nir_legacy_chase_alu_src(const nir_alu_src *src, bool fuse_fabs)
 }
 
 static nir_legacy_alu_dest
-chase_alu_dest_helper(nir_dest *dest)
+chase_alu_dest_helper(nir_def *def)
 {
-   assert(dest->is_ssa && "registers lowered to intrinsics");
-   nir_intrinsic_instr *store = nir_store_reg_for_def(&dest->ssa);
+   nir_intrinsic_instr *store = nir_store_reg_for_def(def);
 
    if (store) {
       bool indirect = (store->intrinsic == nir_intrinsic_store_reg_indirect);
 
-      return (nir_legacy_alu_dest) {
+      return (nir_legacy_alu_dest){
          .dest.is_ssa = false,
          .dest.reg = {
             .handle = store->src[1].ssa,
             .base_offset = nir_intrinsic_base(store),
-            .indirect = indirect ? store->src[2].ssa : NULL
-         },
+            .indirect = indirect ? store->src[2].ssa : NULL },
          .fsat = nir_intrinsic_legacy_fsat(store),
          .write_mask = nir_intrinsic_write_mask(store),
       };
    } else {
-      return (nir_legacy_alu_dest) {
+      return (nir_legacy_alu_dest){
          .dest.is_ssa = true,
-         .dest.ssa = &dest->ssa,
-         .write_mask = nir_component_mask(dest->ssa.num_components),
+         .dest.ssa = def,
+         .write_mask = nir_component_mask(def->num_components),
       };
    }
 }
@@ -161,7 +151,7 @@ bool
 nir_legacy_fsat_folds(nir_alu_instr *fsat)
 {
    assert(fsat->op == nir_op_fsat);
-   nir_ssa_def *def = fsat->src[0].src.ssa;
+   nir_def *def = fsat->src[0].src.ssa;
 
    /* No legacy user supports fp64 modifiers */
    if (def->bit_size == 64)
@@ -190,8 +180,8 @@ nir_legacy_fsat_folds(nir_alu_instr *fsat)
       return false;
 
    /* We can't do expansions without a move in the middle */
-   unsigned nr_components = nir_dest_num_components(generate_alu->dest.dest);
-   if (fsat->dest.dest.ssa.num_components != nr_components)
+   unsigned nr_components = generate_alu->def.num_components;
+   if (fsat->def.num_components != nr_components)
       return false;
 
    /* We don't handle swizzles here, so check for the identity */
@@ -204,7 +194,7 @@ nir_legacy_fsat_folds(nir_alu_instr *fsat)
 }
 
 static inline bool
-chase_fsat(nir_ssa_def **def)
+chase_fsat(nir_def **def)
 {
    /* No legacy user supports fp64 modifiers */
    if ((*def)->bit_size == 64)
@@ -223,27 +213,23 @@ chase_fsat(nir_ssa_def **def)
 
    /* Otherwise, we're good */
    nir_alu_instr *alu = nir_instr_as_alu(use->parent_instr);
-   assert(alu->dest.dest.is_ssa);
-   *def = &alu->dest.dest.ssa;
+   *def = &alu->def;
    return true;
 }
 
 nir_legacy_alu_dest
-nir_legacy_chase_alu_dest(nir_dest *dest)
+nir_legacy_chase_alu_dest(nir_def *def)
 {
-   assert(dest->is_ssa && "registers lowered to intrinsics");
-   nir_ssa_def *def = &dest->ssa;
-
    /* Try SSA fsat. No users support 64-bit modifiers. */
    if (chase_fsat(&def)) {
-      return (nir_legacy_alu_dest) {
+      return (nir_legacy_alu_dest){
          .dest.is_ssa = true,
          .dest.ssa = def,
          .fsat = true,
          .write_mask = nir_component_mask(def->num_components),
       };
    } else {
-      return chase_alu_dest_helper(dest);
+      return chase_alu_dest_helper(def);
    }
 }
 
@@ -256,12 +242,11 @@ nir_legacy_chase_src(const nir_src *src)
 }
 
 nir_legacy_dest
-nir_legacy_chase_dest(nir_dest *dest)
+nir_legacy_chase_dest(nir_def *def)
 {
-   nir_legacy_alu_dest alu_dest = chase_alu_dest_helper(dest);
+   nir_legacy_alu_dest alu_dest = chase_alu_dest_helper(def);
    assert(!alu_dest.fsat);
-   assert(alu_dest.write_mask ==
-          nir_component_mask(nir_dest_num_components(*dest)));
+   assert(alu_dest.write_mask == nir_component_mask(def->num_components));
 
    return alu_dest.dest;
 }
@@ -280,7 +265,6 @@ fuse_mods_with_registers(nir_builder *b, nir_instr *instr, void *fuse_fabs_)
        * this for loads in the same block as the use because uses of loads
        * which cross block boundaries aren't trivial anyway.
        */
-      assert(alu->src[0].src.is_ssa);
       nir_intrinsic_instr *load = nir_load_reg_for_def(alu->src[0].src.ssa);
       if (load != NULL) {
          /* Duplicate the load before changing it in case there are other
@@ -305,11 +289,11 @@ fuse_mods_with_registers(nir_builder *b, nir_instr *instr, void *fuse_fabs_)
           * already know that they're all float ALU instructions because
           * nir_legacy_float_mod_folds() returned true.
           */
-         nir_foreach_use_including_if_safe(use, &alu->dest.dest.ssa) {
+         nir_foreach_use_including_if_safe(use, &alu->def) {
             assert(!use->is_if);
             assert(use->parent_instr->type == nir_instr_type_alu);
             nir_alu_src *alu_use = list_entry(use, nir_alu_src, src);
-            nir_src_rewrite_ssa(&alu_use->src, &load->dest.ssa);
+            nir_src_rewrite(&alu_use->src, &load->def);
             for (unsigned i = 0; i < NIR_MAX_VEC_COMPONENTS; ++i)
                alu_use->swizzle[i] = alu->src[0].swizzle[alu_use->swizzle[i]];
          }
@@ -323,14 +307,13 @@ fuse_mods_with_registers(nir_builder *b, nir_instr *instr, void *fuse_fabs_)
       }
    }
 
-   nir_legacy_alu_dest dest = nir_legacy_chase_alu_dest(&alu->dest.dest);
+   nir_legacy_alu_dest dest = nir_legacy_chase_alu_dest(&alu->def);
    if (dest.fsat) {
-      assert(dest.dest.is_ssa && "not fully chased");
       nir_intrinsic_instr *store = nir_store_reg_for_def(dest.dest.ssa);
 
       if (store) {
          nir_intrinsic_set_legacy_fsat(store, true);
-         nir_src_rewrite_ssa(&store->src[0], &alu->dest.dest.ssa);
+         nir_src_rewrite(&store->src[0], &alu->def);
          return true;
       }
    }
@@ -345,8 +328,9 @@ nir_legacy_trivialize(nir_shader *s, bool fuse_fabs)
     * chase registers recursively, allowing registers to be trivialized easier.
     */
    if (nir_shader_instructions_pass(s, fuse_mods_with_registers,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance, &fuse_fabs)) {
+                                    nir_metadata_block_index |
+                                       nir_metadata_dominance,
+                                    &fuse_fabs)) {
       /* If we made progress, we likely left dead loads. Clean them up. */
       NIR_PASS_V(s, nir_opt_dce);
    }

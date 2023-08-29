@@ -8,6 +8,7 @@ files_asahi = files(
   'agx_fence.c',
   'agx_pipe.c',
   'agx_nir_lower_sysvals.c',
+  'agx_nir_lower_bindings.c',
   'agx_query.c',
   'agx_state.c',
   'agx_streamout.c',

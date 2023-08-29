@@ -77,6 +77,7 @@ vlVaQueryConfigEntrypoints(VADriverContextP ctx, VAProfile profile,
 {
    struct pipe_screen *pscreen;
    enum pipe_video_profile p;
+   bool check_av1enc_support = false;
 
    if (!ctx)
       return VA_STATUS_ERROR_INVALID_CONTEXT;
@@ -98,8 +99,14 @@ vlVaQueryConfigEntrypoints(VADriverContextP ctx, VAProfile profile,
    if (vl_codec_supported(pscreen, p, false))
       entrypoint_list[(*num_entrypoints)++] = VAEntrypointVLD;
 
-   if (vl_codec_supported(pscreen, p, true))
-      entrypoint_list[(*num_entrypoints)++] = VAEntrypointEncSlice;
+#if VA_CHECK_VERSION(1, 16, 0)
+   if (p == PIPE_VIDEO_PROFILE_AV1_MAIN)
+      check_av1enc_support = true;
+#endif
+
+   if (p != PIPE_VIDEO_PROFILE_AV1_MAIN || check_av1enc_support == true)
+      if (vl_codec_supported(pscreen, p, true))
+         entrypoint_list[(*num_entrypoints)++] = VAEntrypointEncSlice;
 
    if (*num_entrypoints == 0)
       return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
@@ -235,6 +242,8 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
             break;
          case VAConfigAttribEncPackedHeaders:
             value = VA_ENC_PACKED_HEADER_NONE;
+            if ((u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_MPEG4_AVC))
+               value |= VA_ENC_PACKED_HEADER_SEQUENCE;
             if ((u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_HEVC))
                value |= VA_ENC_PACKED_HEADER_SEQUENCE;
             else if (u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_AV1)
@@ -620,6 +629,8 @@ vlVaCreateConfig(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoin
       if (attrib_list[i].type == VAConfigAttribEncPackedHeaders) {
          if (config->entrypoint != PIPE_VIDEO_ENTRYPOINT_ENCODE ||
              (((attrib_list[i].value != 0)) &&
+              ((attrib_list[i].value != 1) || u_reduce_video_profile(ProfileToPipe(profile))
+               != PIPE_VIDEO_FORMAT_MPEG4_AVC) &&
               ((attrib_list[i].value != 1) || u_reduce_video_profile(ProfileToPipe(profile))
                != PIPE_VIDEO_FORMAT_HEVC) &&
               ((attrib_list[i].value != 3) || u_reduce_video_profile(ProfileToPipe(profile))

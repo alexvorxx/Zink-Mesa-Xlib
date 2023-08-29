@@ -293,6 +293,7 @@ ir3_collect_info(struct ir3_shader_variant *v)
    info->sizedwords = info->size / 4;
 
    bool in_preamble = false;
+   bool has_eq = false;
 
    foreach_block (block, &shader->block_list) {
       int sfu_delay = 0, mem_delay = 0;
@@ -324,6 +325,15 @@ ir3_collect_info(struct ir3_shader_variant *v)
          if ((instr->opc == OPC_BARY_F || instr->opc == OPC_FLAT_B) &&
              (instr->dsts[0]->flags & IR3_REG_EI))
             info->last_baryf = info->instrs_count;
+
+         if ((instr->opc == OPC_NOP) && (instr->flags & IR3_INSTR_EQ)) {
+            info->last_helper = info->instrs_count;
+            has_eq = true;
+         }
+
+         if (v->type == MESA_SHADER_FRAGMENT && v->need_pixlod &&
+             instr->opc == OPC_END && !v->prefetch_end_of_quad && !has_eq)
+            info->last_helper = info->instrs_count;
 
          if (instr->opc == OPC_SHPS)
             in_preamble = true;

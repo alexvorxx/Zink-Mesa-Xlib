@@ -45,7 +45,7 @@ xe_execute_simple_batch(struct anv_queue *queue, struct anv_bo *batch_bo,
       .handle = syncobj_handle,
    };
    struct drm_xe_exec exec = {
-      .engine_id = queue->engine_id,
+      .exec_queue_id = queue->exec_queue_id,
       .num_batch_buffer = 1,
       .address = batch_bo->offset,
       .num_syncs = 1,
@@ -186,7 +186,7 @@ xe_queue_exec_utrace_locked(struct anv_queue *queue,
 #endif
 
    struct drm_xe_exec exec = {
-      .engine_id = queue->engine_id,
+      .exec_queue_id = queue->exec_queue_id,
       .num_batch_buffer = 1,
       .syncs = (uintptr_t)&xe_sync,
       .num_syncs = 1,
@@ -234,7 +234,7 @@ xe_queue_exec_locked(struct anv_queue *queue,
       utrace_submit = NULL;
 
    struct drm_xe_exec exec = {
-      .engine_id = queue->engine_id,
+      .exec_queue_id = queue->exec_queue_id,
       .num_batch_buffer = 1,
       .syncs = (uintptr_t)xe_syncs,
       .num_syncs = xe_syncs_count,

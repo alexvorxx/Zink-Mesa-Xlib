@@ -68,26 +68,17 @@ build_vbo_state(struct fd6_emit *emit) assert_dt
 {
    const struct fd_vertex_state *vtx = &emit->ctx->vtx;
 
-   /* Limit PKT4 size, because at max count (32) we would overflow the
-    * size of the PKT4 size field:
-    */
-   const unsigned maxcnt = 16;
    const unsigned cnt = vtx->vertexbuf.count;
-   const unsigned dwords = (cnt * 4) /* per vbo: reg64 + two reg32 */
-               + (1 + cnt / maxcnt); /* PKT4 hdr every 16 vbo's */
+   const unsigned dwords = cnt * 4;  /* per vbo: reg64 + one reg32 + pkt hdr */
 
    struct fd_ringbuffer *ring = fd_submit_new_ringbuffer(
       emit->ctx->batch->submit, 4 * dwords, FD_RINGBUFFER_STREAMING);
 
    for (int32_t j = 0; j < cnt; j++) {
-      if ((j % maxcnt) == 0) {
-         unsigned sz = MIN2(maxcnt, cnt - j);
-         OUT_PKT4(ring, REG_A6XX_VFD_FETCH(j), 4 * sz);
-      }
+      OUT_PKT4(ring, REG_A6XX_VFD_FETCH(j), 3);
       const struct pipe_vertex_buffer *vb = &vtx->vertexbuf.vb[j];
       struct fd_resource *rsc = fd_resource(vb->buffer.resource);
       if (rsc == NULL) {
-         OUT_RING(ring, 0);
          OUT_RING(ring, 0);
          OUT_RING(ring, 0);
          OUT_RING(ring, 0);
@@ -97,7 +88,6 @@ build_vbo_state(struct fd6_emit *emit) assert_dt
 
          OUT_RELOC(ring, rsc->bo, off, 0, 0);
          OUT_RING(ring, size);       /* VFD_FETCH[j].SIZE */
-         OUT_RING(ring, vb->stride); /* VFD_FETCH[j].STRIDE */
       }
    }
 

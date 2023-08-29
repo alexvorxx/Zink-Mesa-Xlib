@@ -55,25 +55,6 @@ anv_gem_munmap(struct anv_device *device, void *p, uint64_t size)
    munmap(p, size);
 }
 
-uint32_t
-anv_gem_userptr(struct anv_device *device, void *mem, size_t size)
-{
-   struct drm_i915_gem_userptr userptr = {
-      .user_ptr = (__u64)((unsigned long) mem),
-      .user_size = size,
-      .flags = 0,
-   };
-
-   if (device->physical->info.has_userptr_probe)
-      userptr.flags |= I915_USERPTR_PROBE;
-
-   int ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_USERPTR, &userptr);
-   if (ret == -1)
-      return 0;
-
-   return userptr.handle;
-}
-
 int
 anv_gem_set_caching(struct anv_device *device,
                     uint32_t gem_handle, uint32_t caching)

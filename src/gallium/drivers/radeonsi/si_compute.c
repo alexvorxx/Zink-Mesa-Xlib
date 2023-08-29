@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "si_compute.h"
-
 #include "ac_rtld.h"
 #include "amd_kernel_code_t.h"
 #include "nir/tgsi_to_nir.h"
@@ -195,7 +193,7 @@ static void si_create_compute_state_async(void *job, void *gdata, int thread_ind
                              S_00B84C_TGID_X_EN(sel->info.uses_block_id[0]) |
                              S_00B84C_TGID_Y_EN(sel->info.uses_block_id[1]) |
                              S_00B84C_TGID_Z_EN(sel->info.uses_block_id[2]) |
-                             S_00B84C_TG_SIZE_EN(sel->info.uses_subgroup_info) |
+                             S_00B84C_TG_SIZE_EN(sel->info.uses_tg_size) |
                              S_00B84C_TIDIG_COMP_CNT(sel->info.uses_thread_id[2]
                                                         ? 2
                                                         : sel->info.uses_thread_id[1] ? 1 : 0) |
@@ -949,8 +947,10 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
    bool cs_regalloc_hang = sscreen->info.has_cs_regalloc_hang_bug &&
                            info->block[0] * info->block[1] * info->block[2] > 256;
 
-   if (cs_regalloc_hang)
+   if (cs_regalloc_hang) {
       sctx->flags |= SI_CONTEXT_PS_PARTIAL_FLUSH | SI_CONTEXT_CS_PARTIAL_FLUSH;
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
+   }
 
    if (program->ir_type != PIPE_SHADER_IR_NATIVE && program->shader.compilation_failed)
       return;
@@ -974,16 +974,11 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
          gfx11_decompress_textures(sctx, 1 << PIPE_SHADER_COMPUTE);
    }
 
-   /* Add buffer sizes for memory checking in need_cs_space. */
-   si_context_add_resource_size(sctx, &program->shader.bo->b.b);
-   /* TODO: add the scratch buffer */
-
    if (info->indirect) {
-      si_context_add_resource_size(sctx, info->indirect);
-
       /* Indirect buffers use TC L2 on GFX9, but not older hw. */
       if (sctx->gfx_level <= GFX8 && si_resource(info->indirect)->TC_L2_dirty) {
          sctx->flags |= SI_CONTEXT_WB_L2;
+         si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
          si_resource(info->indirect)->TC_L2_dirty = false;
       }
    }
@@ -1003,13 +998,16 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
    if (sctx->bo_list_add_all_compute_resources)
       si_compute_resources_add_all_to_bo_list(sctx);
 
+   /* Don't optimize any registers on certain CDNA chips, otherwise it would break. */
+   if (sctx->family >= CHIP_GFX940 && !sctx->screen->info.has_graphics)
+      sctx->tracked_regs.other_reg_saved_mask = 0;
+
    /* First emit registers. */
    bool prefetch;
    if (!si_switch_compute_shader(sctx, program, &program->shader, code_object, info->pc, &prefetch,
                                  info->variable_shared_mem))
       return;
 
-   si_upload_compute_shader_descriptors(sctx);
    si_emit_compute_shader_pointers(sctx);
 
    if (program->ir_type == PIPE_SHADER_IR_NATIVE &&
@@ -1028,10 +1026,10 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
 
    /* Registers that are not read from memory should be set before this: */
    if (sctx->flags)
-      sctx->emit_cache_flush(sctx, &sctx->gfx_cs);
+      si_emit_cache_flush_direct(sctx);
 
    if (sctx->has_graphics && si_is_atom_dirty(sctx, &sctx->atoms.s.render_cond)) {
-      sctx->atoms.s.render_cond.emit(sctx);
+      sctx->atoms.s.render_cond.emit(sctx, -1);
       si_set_atom_dirty(sctx, &sctx->atoms.s.render_cond, false);
    }
 
@@ -1064,8 +1062,10 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
    sctx->compute_is_busy = true;
    sctx->num_compute_calls++;
 
-   if (cs_regalloc_hang)
+   if (cs_regalloc_hang) {
       sctx->flags |= SI_CONTEXT_CS_PARTIAL_FLUSH;
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);
+   }
 }
 
 void si_destroy_compute(struct si_compute *program)

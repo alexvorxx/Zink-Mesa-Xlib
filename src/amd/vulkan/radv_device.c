@@ -269,6 +269,30 @@ radv_device_finish_ps_epilogs(struct radv_device *device)
    }
 }
 
+static VkResult
+radv_device_init_tcs_epilogs(struct radv_device *device)
+{
+   u_rwlock_init(&device->tcs_epilogs_lock);
+
+   device->tcs_epilogs = _mesa_hash_table_create(NULL, &radv_hash_tcs_epilog, &radv_cmp_tcs_epilog);
+   if (!device->tcs_epilogs)
+      return vk_error(device->physical_device->instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   return VK_SUCCESS;
+}
+
+static void
+radv_device_finish_tcs_epilogs(struct radv_device *device)
+{
+   if (device->tcs_epilogs) {
+      hash_table_foreach (device->tcs_epilogs, entry) {
+         free((void *)entry->key);
+         radv_shader_part_unref(device, entry->data);
+      }
+      _mesa_hash_table_destroy(device->tcs_epilogs, NULL);
+   }
+}
+
 VkResult
 radv_device_init_vrs_state(struct radv_device *device)
 {
@@ -301,8 +325,12 @@ radv_device_init_vrs_state(struct radv_device *device)
 
    VkBufferCreateInfo buffer_create_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .pNext =
+         &(VkBufferUsageFlags2CreateInfoKHR){
+            .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO_KHR,
+            .usage = VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR,
+         },
       .size = radv_image_from_handle(image)->planes[0].surface.meta_size,
-      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
    };
 
@@ -654,6 +682,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    bool attachment_vrs_enabled = false;
    bool image_float32_atomics = false;
    bool vs_prologs = false;
+   UNUSED bool tcs_epilogs = false; /* TODO: Enable for shader object */
    bool ps_epilogs = false;
    bool global_bo_list = false;
    bool image_2d_view_of_3d = false;
@@ -1038,6 +1067,12 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
          goto fail;
    }
 
+   if (tcs_epilogs) {
+      result = radv_device_init_tcs_epilogs(device);
+      if (result != VK_SUCCESS)
+         goto fail;
+   }
+
    if (ps_epilogs) {
       result = radv_device_init_ps_epilogs(device);
       if (result != VK_SUCCESS)
@@ -1049,8 +1084,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
    struct vk_pipeline_cache_create_info info = {.weak_ref = true};
    device->mem_cache = vk_pipeline_cache_create(&device->vk, &info, NULL);
-   if (!device->mem_cache)
+   if (!device->mem_cache) {
+      result = VK_ERROR_OUT_OF_HOST_MEMORY;
       goto fail_meta;
+   }
 
    device->force_aniso = MIN2(16, (int)debug_get_num_option("RADV_TEX_ANISO", -1));
    if (device->force_aniso >= 0) {
@@ -1108,6 +1145,7 @@ fail:
 
    radv_device_finish_notifier(device);
    radv_device_finish_vs_prologs(device);
+   radv_device_finish_tcs_epilogs(device);
    radv_device_finish_ps_epilogs(device);
    radv_device_finish_border_color(device);
 
@@ -1160,6 +1198,7 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    radv_device_finish_notifier(device);
    radv_device_finish_vs_prologs(device);
+   radv_device_finish_tcs_epilogs(device);
    radv_device_finish_ps_epilogs(device);
    radv_device_finish_border_color(device);
    radv_device_finish_vrs_image(device);
@@ -2072,12 +2111,12 @@ radv_GetMemoryFdPropertiesKHR(VkDevice _device, VkExternalMemoryHandleTypeFlagBi
    }
 }
 
-#ifndef _WIN32
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_GetCalibratedTimestampsEXT(VkDevice _device, uint32_t timestampCount,
                                 const VkCalibratedTimestampInfoEXT *pTimestampInfos, uint64_t *pTimestamps,
                                 uint64_t *pMaxDeviation)
 {
+#ifndef _WIN32
    RADV_FROM_HANDLE(radv_device, device, _device);
    uint32_t clock_crystal_freq = device->physical_device->rad_info.clock_crystal_freq;
    int d;
@@ -2122,8 +2161,10 @@ radv_GetCalibratedTimestampsEXT(VkDevice _device, uint32_t timestampCount,
    *pMaxDeviation = vk_time_max_deviation(begin, end, max_clock_period);
 
    return VK_SUCCESS;
-}
+#else
+   return VK_ERROR_FEATURE_NOT_PRESENT;
 #endif
+}
 
 bool
 radv_device_set_pstate(struct radv_device *device, bool enable)
@@ -2182,4 +2223,20 @@ radv_ReleaseProfilingLockKHR(VkDevice _device)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
    radv_device_release_performance_counters(device);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+radv_GetDeviceImageSubresourceLayoutKHR(VkDevice device, const VkDeviceImageSubresourceInfoKHR *pInfo,
+                                        VkSubresourceLayout2KHR *pLayout)
+{
+   UNUSED VkResult result;
+   VkImage image;
+
+   result =
+      radv_image_create(device, &(struct radv_image_create_info){.vk_info = pInfo->pCreateInfo}, NULL, &image, true);
+   assert(result == VK_SUCCESS);
+
+   radv_GetImageSubresourceLayout2KHR(device, image, pInfo->pSubresource, pLayout);
+
+   radv_DestroyImage(device, image, NULL);
 }

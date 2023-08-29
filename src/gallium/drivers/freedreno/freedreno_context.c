@@ -588,9 +588,9 @@ fd_context_setup_common_vbos(struct fd_context *ctx)
          .vertex_buffer_index = 0,
          .src_offset = 0,
          .src_format = PIPE_FORMAT_R32G32B32_FLOAT,
+         .src_stride = 12,
       }});
    ctx->solid_vbuf_state.vertexbuf.count = 1;
-   ctx->solid_vbuf_state.vertexbuf.vb[0].stride = 12;
    ctx->solid_vbuf_state.vertexbuf.vb[0].buffer.resource = ctx->solid_vbuf;
 
    /* setup blit_vbuf_state: */
@@ -601,17 +601,17 @@ fd_context_setup_common_vbos(struct fd_context *ctx)
             .vertex_buffer_index = 0,
             .src_offset = 0,
             .src_format = PIPE_FORMAT_R32G32_FLOAT,
+            .src_stride = 8,
          },
          {
             .vertex_buffer_index = 1,
             .src_offset = 0,
             .src_format = PIPE_FORMAT_R32G32B32_FLOAT,
+            .src_stride = 12,
          }});
    ctx->blit_vbuf_state.vertexbuf.count = 2;
-   ctx->blit_vbuf_state.vertexbuf.vb[0].stride = 8;
    ctx->blit_vbuf_state.vertexbuf.vb[0].buffer.resource =
       ctx->blit_texcoord_vbuf;
-   ctx->blit_vbuf_state.vertexbuf.vb[1].stride = 12;
    ctx->blit_vbuf_state.vertexbuf.vb[1].buffer.resource = ctx->solid_vbuf;
 }
 

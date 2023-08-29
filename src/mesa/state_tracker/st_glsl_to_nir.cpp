@@ -231,10 +231,10 @@ st_nir_assign_uniform_locations(struct gl_context *ctx,
 }
 
 static bool
-dest_is_64bit(nir_dest *dest, void *state)
+def_is_64bit(nir_def *def, void *state)
 {
    bool *lower = (bool *)state;
-   if (dest && (nir_dest_bit_size(*dest) == 64)) {
+   if (def && (def->bit_size == 64)) {
       *lower = true;
       return false;
    }
@@ -260,7 +260,7 @@ filter_64_bit_instr(const nir_instr *const_instr, UNUSED const void *data)
     * doesn't have const variants, so do the ugly const_cast here. */
    nir_instr *instr = const_cast<nir_instr *>(const_instr);
 
-   nir_foreach_dest(instr, dest_is_64bit, &lower);
+   nir_foreach_def(instr, def_is_64bit, &lower);
    if (lower)
       return true;
    nir_foreach_src(instr, src_is_64bit, &lower);

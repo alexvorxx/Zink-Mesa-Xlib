@@ -241,9 +241,7 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radeon_decoder *dec,
 
    /* if reference picture exists, however no reference picture found at the end
       curr_pic_ref_frame_num == 0, which is not reasonable, should be corrected. */
-   /* one exeption for I frames which is valid situation and should be skipped. */
-   if ((result.curr_field_order_cnt_list[0] == result.curr_field_order_cnt_list[1])
-      && result.used_for_reference_flags && (result.curr_pic_ref_frame_num == 0)) {
+   if (result.used_for_reference_flags && (result.curr_pic_ref_frame_num == 0)) {
       for (i = 0; i < ARRAY_SIZE(result.ref_frame_list); i++) {
          result.ref_frame_list[i] = pic->ref[i] ?
                 (uintptr_t)vl_video_buffer_get_associated_data(pic->ref[i], &dec->base) : 0xff;
@@ -2529,7 +2527,7 @@ static void send_msg_buf(struct radeon_decoder *dec)
 static void next_buffer(struct radeon_decoder *dec)
 {
    ++dec->cur_buffer;
-   dec->cur_buffer %= NUM_BUFFERS;
+   dec->cur_buffer %= dec->num_dec_bufs;
 }
 
 static unsigned calc_ctx_size_h264_perf(struct radeon_decoder *dec)
@@ -2740,8 +2738,10 @@ static void radeon_dec_destroy(struct pipe_video_codec *decoder)
       send_msg_buf(dec);
       flush(dec, 0, &dec->destroy_fence);
       dec->ws->fence_wait(dec->ws, dec->destroy_fence, PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
+      dec->ws->fence_reference(&dec->destroy_fence, NULL);
    }
 
+   dec->ws->fence_reference(&dec->prev_fence, NULL);
    dec->ws->cs_destroy(&dec->cs);
 
    if (dec->stream_type == RDECODE_CODEC_JPEG) {
@@ -2751,10 +2751,15 @@ static void radeon_dec_destroy(struct pipe_video_codec *decoder)
       }
    }
 
-   for (i = 0; i < NUM_BUFFERS; ++i) {
-      si_vid_destroy_buffer(&dec->msg_fb_it_probs_buffers[i]);
-      si_vid_destroy_buffer(&dec->bs_buffers[i]);
+   if (dec->msg_fb_it_probs_buffers && dec->bs_buffers) {
+      for (i = 0; i < dec->num_dec_bufs; ++i) {
+            si_vid_destroy_buffer(&dec->msg_fb_it_probs_buffers[i]);
+            si_vid_destroy_buffer(&dec->bs_buffers[i]);
+      }
+      FREE(dec->msg_fb_it_probs_buffers);
+      FREE(dec->bs_buffers);
    }
+   dec->num_dec_bufs = 0;
 
    if (dec->dpb_type != DPB_DYNAMIC_TIER_2) {
       si_vid_destroy_buffer(&dec->dpb);
@@ -2914,9 +2919,9 @@ static void radeon_dec_end_frame(struct pipe_video_codec *decoder, struct pipe_v
       return;
 
    dec->send_cmd(dec, target, picture);
-   flush(dec, PIPE_FLUSH_ASYNC, picture->fence);
+   flush(dec, PIPE_FLUSH_ASYNC, &dec->prev_fence);
    if (picture->fence)
-      dec->prev_fence = *picture->fence;
+      *picture->fence = dec->prev_fence;
    next_buffer(dec);
 }
 
@@ -2960,6 +2965,9 @@ static int radeon_dec_get_decoder_fence(struct pipe_video_codec *decoder,
                                         uint64_t timeout) {
 
    struct radeon_decoder *dec = (struct radeon_decoder *)decoder;
+   /* Only last fence is valid */
+   if (fence != dec->prev_fence)
+      return true;
    return dec->ws->fence_wait(dec->ws, fence, timeout);
 }
 
@@ -3067,7 +3075,7 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
    dec->sq.ib_total_size_in_dw = NULL;
    dec->sq.ib_checksum = NULL;
 
-   if (!ws->cs_create(&dec->cs, sctx->ctx, ring, NULL, NULL, false)) {
+   if (!ws->cs_create(&dec->cs, sctx->ctx, ring, NULL, NULL)) {
       RVID_ERR("Can't get command submission context.\n");
       goto error;
    }
@@ -3088,10 +3096,11 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
          goto err;
       for (i = 0; i < dec->njctx; i++) {
       /* Initialize the context handle and the command stream. */
-         dec->jctx[i] = dec->ws->ctx_create(dec->ws, RADEON_CTX_PRIORITY_MEDIUM);
+         dec->jctx[i] = dec->ws->ctx_create(dec->ws, RADEON_CTX_PRIORITY_MEDIUM,
+                                            sctx->context_flags & PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET);
          if (!sctx->ctx)
             goto error;
-         if (!dec->ws->cs_create(&dec->jcs[i], dec->jctx[i], ring, NULL, NULL, false)) {
+         if (!dec->ws->cs_create(&dec->jcs[i], dec->jctx[i], ring, NULL, NULL)) {
             RVID_ERR("Can't get additional command submission context for mJPEG.\n");
             goto error;
          }
@@ -3110,8 +3119,21 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
          dec->h264_valid_poc_num[i] = (unsigned) -1;
    }
 
+   if (dec->stream_type == RDECODE_CODEC_JPEG) {
+      if (sctx->vcn_ip_ver == VCN_4_0_3)
+         dec->num_dec_bufs = dec->njctx;
+      else
+         dec->num_dec_bufs = dec->njctx * NUM_BUFFERS;
+   } else
+      dec->num_dec_bufs = NUM_BUFFERS;
+
    bs_buf_size = align(width * height / 32, 128);
-   for (i = 0; i < NUM_BUFFERS; ++i) {
+   dec->msg_fb_it_probs_buffers = (struct rvid_buffer *) CALLOC(dec->num_dec_bufs, sizeof(struct rvid_buffer));
+   dec->bs_buffers = (struct rvid_buffer *) CALLOC(dec->num_dec_bufs, sizeof(struct rvid_buffer));
+   if(!dec->msg_fb_it_probs_buffers || !dec->bs_buffers)
+      goto error;
+
+   for (i = 0; i < dec->num_dec_bufs; ++i) {
       unsigned msg_fb_it_probs_size = FB_BUFFER_OFFSET + FB_BUFFER_SIZE;
       if (have_it(dec))
          msg_fb_it_probs_size += IT_SCALING_TABLE_SIZE;
@@ -3308,9 +3330,13 @@ error:
       }
    }
 
-   for (i = 0; i < NUM_BUFFERS; ++i) {
-      si_vid_destroy_buffer(&dec->msg_fb_it_probs_buffers[i]);
-      si_vid_destroy_buffer(&dec->bs_buffers[i]);
+   if (dec->msg_fb_it_probs_buffers && dec->bs_buffers) {
+      for (i = 0; i < dec->num_dec_bufs; ++i) {
+            si_vid_destroy_buffer(&dec->msg_fb_it_probs_buffers[i]);
+            si_vid_destroy_buffer(&dec->bs_buffers[i]);
+      }
+      FREE(dec->msg_fb_it_probs_buffers);
+      FREE(dec->bs_buffers);
    }
 
    if (dec->dpb_type != DPB_DYNAMIC_TIER_2)

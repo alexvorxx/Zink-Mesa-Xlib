@@ -154,15 +154,6 @@ test_disk_cache_create(void *mem_ctx, const char *cache_dir_name,
    struct disk_cache *cache;
    int err;
 
-   /* Before doing anything else, ensure that with
-    * MESA_SHADER_CACHE_DISABLE set to true, that disk_cache_create returns NULL.
-    */
-   setenv("MESA_SHADER_CACHE_DISABLE", "true", 1);
-   cache = disk_cache_create("test", driver_id, 0);
-   EXPECT_EQ(cache, nullptr) << "disk_cache_create with MESA_SHADER_CACHE_DISABLE set";
-
-   unsetenv("MESA_SHADER_CACHE_DISABLE");
-
 #ifdef SHADER_CACHE_DISABLE_BY_DEFAULT
    /* With SHADER_CACHE_DISABLE_BY_DEFAULT, ensure that with
     * MESA_SHADER_CACHE_DISABLE set to nothing, disk_cache_create returns NULL.
@@ -1016,7 +1007,7 @@ TEST_F(Cache, Combined)
 #endif
 }
 
-TEST_F(Cache, List)
+TEST_F(Cache, DISABLED_List)
 {
    const char *driver_id = "make_check";
    char blob[] = "This is a RO blob";

@@ -49,12 +49,12 @@ impl CLInfo<cl_profiling_info> for cl_event {
         }
 
         Ok(match *q {
-            // TODO
-            CL_PROFILING_COMMAND_QUEUED => cl_prop::<cl_ulong>(0),
-            CL_PROFILING_COMMAND_SUBMIT => cl_prop::<cl_ulong>(1),
-            CL_PROFILING_COMMAND_START => cl_prop::<cl_ulong>(2),
-            CL_PROFILING_COMMAND_END => cl_prop::<cl_ulong>(3),
-            CL_PROFILING_COMMAND_COMPLETE => cl_prop::<cl_ulong>(3),
+            CL_PROFILING_COMMAND_QUEUED => cl_prop::<cl_ulong>(event.get_time(EventTimes::Queued)),
+            CL_PROFILING_COMMAND_SUBMIT => cl_prop::<cl_ulong>(event.get_time(EventTimes::Submit)),
+            CL_PROFILING_COMMAND_START => cl_prop::<cl_ulong>(event.get_time(EventTimes::Start)),
+            CL_PROFILING_COMMAND_END => cl_prop::<cl_ulong>(event.get_time(EventTimes::End)),
+            // For now, we treat Complete the same as End
+            CL_PROFILING_COMMAND_COMPLETE => cl_prop::<cl_ulong>(event.get_time(EventTimes::End)),
             _ => return Err(CL_INVALID_VALUE),
         })
     }

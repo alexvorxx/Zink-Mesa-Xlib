@@ -142,7 +142,7 @@ copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
                                 .baseMipLevel = region->imageSubresource.mipLevel,
                                 .levelCount = 1,
                                 .baseArrayLayer = region->imageSubresource.baseArrayLayer,
-                                .layerCount = region->imageSubresource.layerCount,
+                                .layerCount = vk_image_subresource_layer_count(&image->vk, &region->imageSubresource),
                              });
          img_bsurf.disable_compression = true;
 
@@ -164,7 +164,7 @@ copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
       img_bsurf.layer = img_offset_el.z;
    /* Loop through each 3D or array slice */
    unsigned num_slices_3d = img_extent_el.depth;
-   unsigned num_slices_array = region->imageSubresource.layerCount;
+   unsigned num_slices_array = vk_image_subresource_layer_count(&image->vk, &region->imageSubresource);
    unsigned slice_3d = 0;
    unsigned slice_array = 0;
    while (slice_3d < num_slices_3d && slice_array < num_slices_array) {
@@ -291,7 +291,7 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
                                 .baseMipLevel = region->imageSubresource.mipLevel,
                                 .levelCount = 1,
                                 .baseArrayLayer = region->imageSubresource.baseArrayLayer,
-                                .layerCount = region->imageSubresource.layerCount,
+                                .layerCount = vk_image_subresource_layer_count(&image->vk, &region->imageSubresource),
                              });
          img_info.disable_compression = true;
 
@@ -312,7 +312,7 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
       img_info.layer = img_offset_el.z;
    /* Loop through each 3D or array slice */
    unsigned num_slices_3d = img_extent_el.depth;
-   unsigned num_slices_array = region->imageSubresource.layerCount;
+   unsigned num_slices_array = vk_image_subresource_layer_count(&image->vk, &region->imageSubresource);
    unsigned slice_3d = 0;
    unsigned slice_array = 0;
    while (slice_3d < num_slices_3d && slice_array < num_slices_array) {
@@ -384,15 +384,16 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image, VkI
 
          u_foreach_bit (i, region->dstSubresource.aspectMask) {
             unsigned aspect_mask = 1u << i;
-            radv_expand_depth_stencil(cmd_buffer, dst_image,
-                                      &(VkImageSubresourceRange){
-                                         .aspectMask = aspect_mask,
-                                         .baseMipLevel = region->dstSubresource.mipLevel,
-                                         .levelCount = 1,
-                                         .baseArrayLayer = region->dstSubresource.baseArrayLayer,
-                                         .layerCount = region->dstSubresource.layerCount,
-                                      },
-                                      NULL);
+            radv_expand_depth_stencil(
+               cmd_buffer, dst_image,
+               &(VkImageSubresourceRange){
+                  .aspectMask = aspect_mask,
+                  .baseMipLevel = region->dstSubresource.mipLevel,
+                  .levelCount = 1,
+                  .baseArrayLayer = region->dstSubresource.baseArrayLayer,
+                  .layerCount = vk_image_subresource_layer_count(&dst_image->vk, &region->dstSubresource),
+               },
+               NULL);
          }
 
          radv_describe_barrier_end(cmd_buffer);
@@ -445,7 +446,7 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image, VkI
                                 .baseMipLevel = region->dstSubresource.mipLevel,
                                 .levelCount = 1,
                                 .baseArrayLayer = region->dstSubresource.baseArrayLayer,
-                                .layerCount = region->dstSubresource.layerCount,
+                                .layerCount = vk_image_subresource_layer_count(&dst_image->vk, &region->dstSubresource),
                              });
          b_dst.format = b_src.format;
          b_dst.disable_compression = true;
@@ -482,7 +483,7 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image, VkI
          .height = img_extent_el.height,
       };
 
-      unsigned num_slices = region->srcSubresource.layerCount;
+      unsigned num_slices = vk_image_subresource_layer_count(&src_image->vk, &region->srcSubresource);
 
       if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
          b_src.layer = src_offset_el.z;
@@ -527,7 +528,7 @@ copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image, VkI
             .baseMipLevel = region->dstSubresource.mipLevel,
             .levelCount = 1,
             .baseArrayLayer = region->dstSubresource.baseArrayLayer,
-            .layerCount = region->dstSubresource.layerCount,
+            .layerCount = vk_image_subresource_layer_count(&dst_image->vk, &region->dstSubresource),
          };
 
          uint32_t htile_value = radv_get_htile_initial_value(cmd_buffer->device, dst_image);

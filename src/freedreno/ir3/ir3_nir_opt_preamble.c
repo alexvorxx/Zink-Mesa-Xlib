@@ -33,7 +33,7 @@
  */
 
 static void
-def_size(nir_ssa_def *def, unsigned *size, unsigned *align)
+def_size(nir_def *def, unsigned *size, unsigned *align)
 {
    unsigned bit_size = def->bit_size == 1 ? 32 : def->bit_size;
    /* Due to the implicit const file promotion we want to expand 16-bit values
@@ -45,7 +45,7 @@ def_size(nir_ssa_def *def, unsigned *size, unsigned *align)
 }
 
 static bool
-all_uses_float(nir_ssa_def *def, bool allow_src2)
+all_uses_float(nir_def *def, bool allow_src2)
 {
    nir_foreach_use_including_if (use, def) {
       if (use->is_if)
@@ -75,7 +75,7 @@ all_uses_float(nir_ssa_def *def, bool allow_src2)
 }
 
 static bool
-all_uses_bit(nir_ssa_def *def)
+all_uses_bit(nir_def *def)
 {
    nir_foreach_use_including_if (use, def) {
       if (use->is_if)
@@ -123,7 +123,7 @@ instr_cost(nir_instr *instr, const void *data)
    switch (instr->type) {
    case nir_instr_type_alu: {
       nir_alu_instr *alu = nir_instr_as_alu(instr);
-      unsigned components = alu->dest.dest.ssa.num_components;
+      unsigned components = alu->def.num_components;
       switch (alu->op) {
       /* cat4 */
       case nir_op_frcp:
@@ -145,13 +145,13 @@ instr_cost(nir_instr *instr, const void *data)
       case nir_op_f2f16:
       case nir_op_f2fmp:
       case nir_op_fneg:
-         return all_uses_float(&alu->dest.dest.ssa, true) ? 0 : 1 * components;
+         return all_uses_float(&alu->def, true) ? 0 : 1 * components;
 
       case nir_op_fabs:
-         return all_uses_float(&alu->dest.dest.ssa, false) ? 0 : 1 * components;
+         return all_uses_float(&alu->def, false) ? 0 : 1 * components;
 
       case nir_op_inot:
-         return all_uses_bit(&alu->dest.dest.ssa) ? 0 : 1 * components;
+         return all_uses_bit(&alu->def) ? 0 : 1 * components;
 
       /* Instructions that become vector split/collect */
       case nir_op_vec2:
@@ -215,7 +215,7 @@ instr_cost(nir_instr *instr, const void *data)
 }
 
 static float
-rewrite_cost(nir_ssa_def *def, const void *data)
+rewrite_cost(nir_def *def, const void *data)
 {
    /* We always have to expand booleans */
    if (def->bit_size == 1)
@@ -322,12 +322,12 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
          if (intrin->intrinsic != nir_intrinsic_load_preamble)
             continue;
 
-         nir_ssa_def *dest = &intrin->dest.ssa;
+         nir_def *dest = &intrin->def;
 
          unsigned offset = preamble_base + nir_intrinsic_base(intrin);
          b->cursor = nir_before_instr(instr);
 
-         nir_ssa_def *new_dest =
+         nir_def *new_dest =
             nir_load_uniform(b, dest->num_components, 32, nir_imm_int(b, 0),
                              .base = offset);
 
@@ -343,7 +343,7 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
             }
          }
 
-         nir_ssa_def_rewrite_uses(dest, new_dest);
+         nir_def_rewrite_uses(dest, new_dest);
          nir_instr_remove(instr);
          nir_instr_free(instr);
       }
@@ -361,7 +361,7 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
          if (intrin->intrinsic != nir_intrinsic_store_preamble)
             continue;
 
-         nir_ssa_def *src = intrin->src[0].ssa;
+         nir_def *src = intrin->src[0].ssa;
          unsigned offset = preamble_base + nir_intrinsic_base(intrin);
 
          b->cursor = nir_before_instr(instr);

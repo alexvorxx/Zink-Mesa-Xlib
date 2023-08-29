@@ -215,9 +215,9 @@ cs_program_emit(struct fd_ringbuffer *ring, struct kernel *kernel)
    OUT_RELOC(ring, v->bo, 0, 0, 0);
 
    if (v->pvtmem_size > 0) {
-      uint32_t per_fiber_size = ALIGN(v->pvtmem_size, 512);
+      uint32_t per_fiber_size = v->pvtmem_size;
       uint32_t per_sp_size =
-         ALIGN(per_fiber_size * a6xx_backend->info->a6xx.fibers_per_sp, 1 << 12);
+         ALIGN(per_fiber_size * a6xx_backend->info->fibers_per_sp, 1 << 12);
       uint32_t total_size = per_sp_size * a6xx_backend->info->num_sp_cores;
 
       struct fd_bo *pvtmem = fd_bo_new(a6xx_backend->dev, total_size, 0, "pvtmem");

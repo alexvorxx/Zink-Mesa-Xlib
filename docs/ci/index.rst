@@ -13,15 +13,18 @@ modified and thus is unreliable).
 
 The CI runs a number of tests, from trivial build-testing to complex GPU rendering:
 
-- Build testing for a number of build systems, configurations and platforms
+- Build testing for a number of configurations and platforms
 - Sanity checks (``meson test``)
-- Some drivers (Softpipe, LLVMpipe, Freedreno and Panfrost) are also tested
-  using `VK-GL-CTS <https://github.com/KhronosGroup/VK-GL-CTS>`__
+- Most drivers are also tested using several test suites, such as the
+  `Vulkan/GL/GLES conformance test suite <https://github.com/KhronosGroup/VK-GL-CTS>`__,
+  `Piglit <https://gitlab.freedesktop.org/mesa/piglit>`__, and others.
 - Replay of application traces
 
 A typical run takes between 20 and 30 minutes, although it can go up very quickly
 if the GitLab runners are overwhelmed, which happens sometimes. When it does happen,
 not much can be done besides waiting it out, or cancel it.
+You can do your part by only running the jobs you care about by using `our
+tool <#running-specific-ci-jobs>`__.
 
 Due to limited resources, we currently do not run the CI automatically
 on every push; instead, we only run it automatically once the MR has

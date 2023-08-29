@@ -49,7 +49,8 @@ struct anv_kmd_backend {
                           uint16_t num_regions, uint64_t size,
                           enum anv_bo_alloc_flags alloc_flags,
                           uint64_t *actual_size);
-   void (*gem_close)(struct anv_device *device, uint32_t handle);
+   uint32_t (*gem_create_userptr)(struct anv_device *device, void *mem, uint64_t size);
+   void (*gem_close)(struct anv_device *device, struct anv_bo *bo);
    /* Returns MAP_FAILED on error */
    void *(*gem_mmap)(struct anv_device *device, struct anv_bo *bo,
                      uint64_t offset, uint64_t size,

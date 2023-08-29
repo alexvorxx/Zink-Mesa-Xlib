@@ -288,9 +288,10 @@ write_ubo_ssbo_uniforms(struct v3dv_cmd_buffer *cmd_buffer,
                                offset + dynamic_offset);
    } else {
       if (content == QUNIFORM_UBO_ADDR) {
-         /* We reserve index 0 for push constants and artificially increase our
-          * indices by one for that reason, fix that now before accessing the
-          * descriptor map.
+         /* We reserve UBO index 0 for push constants in Vulkan (and for the
+          * constant buffer in GL) so the compiler always adds one to all UBO
+          * indices, fix it up before we access the descriptor map, since
+          * indices start from 0 there.
           */
          assert(index > 0);
          index--;

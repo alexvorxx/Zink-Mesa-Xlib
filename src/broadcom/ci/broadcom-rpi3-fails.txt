@@ -112,6 +112,7 @@ glx@glx_arb_create_context_no_error@no error,Fail
 # piglit: error: Test timed out.
 glx@glx_arb_sync_control@waitformsc,Fail
 
+glslparsertest@glsl2@gst-gl-text-download-i420-yv12.frag,Fail
 glx@glx_ext_import_context@free context,Fail
 glx@glx_ext_import_context@get context id,Fail
 glx@glx_ext_import_context@get current display,Fail
@@ -782,8 +783,13 @@ spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)-
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right bottom PV: FIRST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right middle PV: FIRST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: FIRST,Fail
-
-glslparsertest@glsl2@gst-gl-text-download-i420-yv12.frag,Fail
+spec@arb_clear_texture@arb_clear_texture-3d,Fail
+spec@arb_clear_texture@arb_clear_texture-base-formats,Fail
+spec@arb_clear_texture@arb_clear_texture-depth,Fail
+spec@arb_clear_texture@arb_clear_texture-depth-stencil,Fail
+spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
+spec@arb_clear_texture@arb_clear_texture-srgb,Fail
+spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
 spec@glsl-1.10@execution@glsl-fs-inline-explosion,Crash
 spec@glsl-1.10@execution@glsl-vs-inline-explosion,Crash
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail

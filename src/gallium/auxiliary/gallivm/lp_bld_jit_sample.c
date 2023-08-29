@@ -101,7 +101,7 @@ widen_to_simd_width(struct gallivm_state *gallivm, LLVMValueRef value)
          if (i < element_count)
             elements[i] = LLVMBuildExtractElement(builder, value, lp_build_const_int32(gallivm, i), "");
          else
-            elements[i] = elements[0];
+            elements[i] = LLVMConstNull(element_type);
       }
 
       LLVMTypeRef result_type = LLVMVectorType(element_type, lp_native_vector_width / 32);

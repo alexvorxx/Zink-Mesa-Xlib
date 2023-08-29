@@ -1017,16 +1017,18 @@ static void pvr_setup_pbe_state(
       break;
    }
 
+#define PVR_DEC_IF_NOT_ZERO(_v) (((_v) > 0) ? (_v)-1 : 0)
+
    render_params.min_x_clip = MAX2(0, render_area->offset.x);
    render_params.min_y_clip = MAX2(0, render_area->offset.y);
-   render_params.max_x_clip =
-      MIN2(framebuffer->width,
-           render_area->offset.x + render_area->extent.width) -
-      1;
-   render_params.max_y_clip =
-      MIN2(framebuffer->height,
-           render_area->offset.y + render_area->extent.height) -
-      1;
+   render_params.max_x_clip = MIN2(
+      framebuffer->width - 1,
+      PVR_DEC_IF_NOT_ZERO(render_area->offset.x + render_area->extent.width));
+   render_params.max_y_clip = MIN2(
+      framebuffer->height - 1,
+      PVR_DEC_IF_NOT_ZERO(render_area->offset.y + render_area->extent.height));
+
+#undef PVR_DEC_IF_NOT_ZERO
 
    render_params.slice = 0;
    render_params.mrt_index = mrt_index;
@@ -4425,7 +4427,7 @@ void pvr_compute_update_kernel_private(
       .sd_type = PVRX(CDMCTRL_SD_TYPE_NONE),
 
       .usc_unified_size =
-         DIV_ROUND_UP(pipeline->coeff_regs_count << 2U,
+         DIV_ROUND_UP(pipeline->unified_store_regs_count << 2U,
                       PVRX(CDMCTRL_KERNEL0_USC_UNIFIED_SIZE_UNIT_SIZE)),
 
       /* clang-format off */

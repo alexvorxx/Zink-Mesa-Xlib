@@ -330,6 +330,11 @@ d3d12_video_decoder_decode_bitstream(struct pipe_video_codec *codec,
       debug_printf("[d3d12_video_decoder] d3d12_video_decoder_decode_bitstream finalized for fenceValue: %d\n",
                    pD3D12Dec->m_fenceValue);
    }
+
+   if (pD3D12Dec->m_d3d12DecProfileType == d3d12_video_decode_profile_type_h264) {
+      struct pipe_h264_picture_desc *h264 = (pipe_h264_picture_desc*) picture;
+      target->interlaced = !h264->pps->sps->frame_mbs_only_flag && (h264->field_pic_flag || /* PAFF */ h264->pps->sps->mb_adaptive_frame_field_flag); /* MBAFF */
+   }
 }
 
 void
@@ -1107,7 +1112,7 @@ d3d12_video_decoder_reconfigure_dpb(struct d3d12_video_decoder *pD3D12Dec,
    ID3D12Resource *pPipeD3D12DstResource = d3d12_resource_resource(pD3D12VideoBuffer->texture);
    D3D12_RESOURCE_DESC outputResourceDesc = GetDesc(pPipeD3D12DstResource);
 
-   pD3D12VideoBuffer->base.interlaced = isInterlaced;
+   assert(pD3D12VideoBuffer->base.interlaced == isInterlaced);
    D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE interlaceTypeRequested =
       isInterlaced ? D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_FIELD_BASED : D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
    if ((pD3D12Dec->m_decodeFormat != outputResourceDesc.Format) ||

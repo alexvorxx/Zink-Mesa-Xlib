@@ -71,6 +71,7 @@ public:
       force_cf,
       ack_rat_return_write,
       helper,
+      no_lds_or_addr_group,
       nflags
    };
 
@@ -101,6 +102,8 @@ public:
    bool is_dead() const { return m_instr_flags.test(dead); }
    bool is_scheduled() const { return m_instr_flags.test(scheduled); }
    bool keep() const { return m_instr_flags.test(always_keep); }
+   bool can_start_alu_block() { return m_instr_flags.test(no_lds_or_addr_group);}
+   bool group_force_alu_cf() { return m_instr_flags.test(force_cf);}
 
    bool has_instr_flag(Flags f) const { return m_instr_flags.test(f); }
    void set_instr_flag(Flags f) { m_instr_flags.set(f); }
@@ -135,9 +138,12 @@ public:
       (void)addr;
       unreachable("Instruction type has no indirect addess");
    };
+   const InstrList& required_instr() const { return m_required_instr; }
+
+   virtual AluGroup *as_alu_group() { return nullptr;}
 
 protected:
-   const InstrList& required_instr() const { return m_required_instr; }
+
 
 private:
    virtual void forward_set_blockid(int id, int index);
@@ -202,9 +208,9 @@ public:
 
    int id() const { return m_id; }
 
-   auto type() const { return m_blocK_type; }
-   void set_type(Type t);
-   uint32_t remaining_slots() const { return m_remaining_slots; }
+   auto type() const {return m_block_type; }
+   void set_type(Type t, r600_chip_class chip_class);
+   int32_t remaining_slots() const { return m_remaining_slots;}
 
    bool try_reserve_kcache(const AluGroup& instr);
    bool try_reserve_kcache(const AluInstr& group);
@@ -242,7 +248,7 @@ private:
    int m_id;
    int m_next_index;
 
-   Type m_blocK_type{unknown};
+   Type m_block_type{unknown};
    uint32_t m_remaining_slots{0xffff};
 
    std::array<KCacheLine, 4> m_kcache;

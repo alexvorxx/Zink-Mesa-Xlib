@@ -347,9 +347,9 @@ etna_shader_update_vs_inputs(struct compiled_shader_state *cs,
 }
 
 static inline const char *
-etna_shader_stage(struct etna_shader_variant *shader)
+etna_shader_stage(struct etna_shader *shader)
 {
-   switch (shader->stage) {
+   switch (shader->nir->info.stage) {
    case MESA_SHADER_VERTEX:     return "VERT";
    case MESA_SHADER_FRAGMENT:   return "FRAG";
    case MESA_SHADER_COMPUTE:    return "CL";
@@ -368,7 +368,7 @@ dump_shader_info(struct etna_shader_variant *v, struct util_debug_callback *debu
    util_debug_message(debug, SHADER_INFO,
          "%s shader: %u instructions, %u temps, "
          "%u immediates, %u loops",
-         etna_shader_stage(v),
+         etna_shader_stage(v->shader),
          v->code_size / 4,
          v->num_temps,
          v->uniforms.count,
@@ -445,7 +445,7 @@ etna_shader_variant(struct etna_shader *shader,
       perf_debug_message(debug, SHADER_INFO,
                          "%s shader: recompiling at draw time: global "
                          "0x%08x\n",
-                         etna_shader_stage(v), key->global);
+                         etna_shader_stage(shader), key->global);
    }
 
    return v;
@@ -558,7 +558,8 @@ etna_set_max_shader_compiler_threads(struct pipe_screen *pscreen,
 {
    struct etna_screen *screen = etna_screen(pscreen);
 
-   util_queue_adjust_num_threads(&screen->shader_compiler_queue, max_threads);
+   util_queue_adjust_num_threads(&screen->shader_compiler_queue, max_threads,
+                                 false);
 }
 
 static bool

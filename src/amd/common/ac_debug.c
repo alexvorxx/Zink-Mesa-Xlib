@@ -86,10 +86,10 @@ static void print_value(FILE *file, uint32_t value, int bits)
    }
 }
 
-static void print_reserved_dword(FILE *file, uint32_t value)
+static void print_data_dword(FILE *file, uint32_t value, const char *comment)
 {
    print_spaces(file, INDENT_PKT);
-   fprintf(file, "(reserved)\n");
+   fprintf(file, "(%s)\n", comment);
 }
 
 static void print_named_value(FILE *file, const char *name, uint32_t value, int bits)
@@ -272,6 +272,15 @@ static void ac_parse_set_reg_packet(FILE *f, unsigned count, unsigned reg_offset
       ac_dump_reg(f, ib->gfx_level, ib->family, reg + i * 4, ac_ib_get(ib), ~0);
 }
 
+static void ac_parse_set_reg_pairs_packet(FILE *f, unsigned count, unsigned reg_base,
+                                          struct ac_ib_parser *ib)
+{
+   for (unsigned i = 0; i < (count + 1) / 2; i++) {
+      unsigned reg_offset = (ac_ib_get(ib) << 2) + reg_base;
+      ac_dump_reg(f, ib->gfx_level, ib->family, reg_offset, ac_ib_get(ib), ~0);
+   }
+}
+
 static void ac_parse_set_reg_pairs_packed_packet(FILE *f, unsigned count, unsigned reg_base,
                                                  struct ac_ib_parser *ib)
 {
@@ -309,8 +318,15 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
       if (packet3_table[i].op == op)
          break;
 
-   const char *pkt_name = i < ARRAY_SIZE(packet3_table) ? sid_strings + packet3_table[i].name_offset
-                                                        : "UNKNOWN";
+   char unknown_name[32];
+   const char *pkt_name;
+
+   if (i < ARRAY_SIZE(packet3_table)) {
+      pkt_name = sid_strings + packet3_table[i].name_offset;
+   } else {
+      snprintf(unknown_name, sizeof(unknown_name), "UNKNOWN(0x%02X)", op);
+      pkt_name = unknown_name;
+   }
    const char *color;
 
    if (strstr(pkt_name, "DRAW") || strstr(pkt_name, "DISPATCH"))
@@ -340,6 +356,12 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
    case PKT3_SET_SH_REG:
    case PKT3_SET_SH_REG_INDEX:
       ac_parse_set_reg_packet(f, count, SI_SH_REG_OFFSET, ib);
+      break;
+   case PKT3_SET_CONTEXT_REG_PAIRS:
+      ac_parse_set_reg_pairs_packet(f, count, SI_CONTEXT_REG_OFFSET, ib);
+      break;
+   case PKT3_SET_SH_REG_PAIRS:
+      ac_parse_set_reg_pairs_packet(f, count, SI_SH_REG_OFFSET, ib);
       break;
    case PKT3_SET_CONTEXT_REG_PAIRS_PACKED:
       ac_parse_set_reg_pairs_packed_packet(f, count, SI_CONTEXT_REG_OFFSET, ib);
@@ -481,7 +503,8 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
       ac_dump_reg(f, ib->gfx_level, ib->family, R_370_CONTROL, ac_ib_get(ib), ~0);
       ac_dump_reg(f, ib->gfx_level, ib->family, R_371_DST_ADDR_LO, ac_ib_get(ib), ~0);
       ac_dump_reg(f, ib->gfx_level, ib->family, R_372_DST_ADDR_HI, ac_ib_get(ib), ~0);
-      /* The payload is written automatically */
+      while (ib->cur_dw <= first_dw + count)
+          print_data_dword(f, ac_ib_get(ib), "data");
       break;
    case PKT3_CP_DMA:
       ac_dump_reg(f, ib->gfx_level, ib->family, R_410_CP_DMA_WORD0, ac_ib_get(ib), ~0);
@@ -491,11 +514,11 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
       ac_dump_reg(f, ib->gfx_level, ib->family, R_415_COMMAND, ac_ib_get(ib), ~0);
       break;
    case PKT3_DMA_DATA:
-      ac_dump_reg(f, ib->gfx_level, ib->family, R_500_DMA_DATA_WORD0, ac_ib_get(ib), ~0);
-      ac_dump_reg(f, ib->gfx_level, ib->family, R_501_SRC_ADDR_LO, ac_ib_get(ib), ~0);
-      ac_dump_reg(f, ib->gfx_level, ib->family, R_502_SRC_ADDR_HI, ac_ib_get(ib), ~0);
-      ac_dump_reg(f, ib->gfx_level, ib->family, R_503_DST_ADDR_LO, ac_ib_get(ib), ~0);
-      ac_dump_reg(f, ib->gfx_level, ib->family, R_504_DST_ADDR_HI, ac_ib_get(ib), ~0);
+      ac_dump_reg(f, ib->gfx_level, ib->family, R_501_DMA_DATA_WORD0, ac_ib_get(ib), ~0);
+      ac_dump_reg(f, ib->gfx_level, ib->family, R_502_SRC_ADDR_LO, ac_ib_get(ib), ~0);
+      ac_dump_reg(f, ib->gfx_level, ib->family, R_503_SRC_ADDR_HI, ac_ib_get(ib), ~0);
+      ac_dump_reg(f, ib->gfx_level, ib->family, R_505_DST_ADDR_LO, ac_ib_get(ib), ~0);
+      ac_dump_reg(f, ib->gfx_level, ib->family, R_506_DST_ADDR_HI, ac_ib_get(ib), ~0);
       ac_dump_reg(f, ib->gfx_level, ib->family, R_415_COMMAND, ac_ib_get(ib), ~0);
       break;
    case PKT3_INDIRECT_BUFFER_SI:
@@ -545,7 +568,7 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
    case PKT3_CLEAR_STATE:
    case PKT3_INCREMENT_DE_COUNTER:
    case PKT3_PFP_SYNC_ME:
-      print_reserved_dword(f, ac_ib_get(ib));
+      print_data_dword(f, ac_ib_get(ib), "reserved");
       break;
    case PKT3_NOP:
       if (header == PKT3_NOP_PAD) {
@@ -578,7 +601,9 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
                                  "by the CP !!!!!%s\n",
                     O_COLOR_RED, O_COLOR_RESET);
          }
-         break;
+      } else {
+         while (ib->cur_dw <= first_dw + count)
+             print_data_dword(f, ac_ib_get(ib), "unused");
       }
       break;
    case PKT3_DISPATCH_DIRECT:
@@ -596,6 +621,29 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
    case PKT3_SET_BASE:
       tmp = ac_ib_get(ib);
       print_string_value(f, "BASE_INDEX", tmp == 1 ? "INDIRECT_BASE" : COLOR_RED "UNKNOWN" COLOR_RESET);
+      break;
+   case PKT3_PRIME_UTCL2:
+      tmp = ac_ib_get(ib);
+      print_named_value(f, "CACHE_PERM[rwx]", tmp & 0x7, 3);
+      print_string_value(f, "PRIME_MODE", tmp & 0x8 ? "WAIT_FOR_XACK" : "DONT_WAIT_FOR_XACK");
+      print_named_value(f, "ENGINE_SEL", tmp >> 30, 2);
+      print_named_value(f, "ADDR_LO", ac_ib_get(ib), 32);
+      print_named_value(f, "ADDR_HI", ac_ib_get(ib), 32);
+      print_named_value(f, "REQUESTED_PAGES", ac_ib_get(ib), 14);
+      break;
+   case PKT3_ATOMIC_MEM:
+      tmp = ac_ib_get(ib);
+      print_named_value(f, "ATOMIC", tmp & 0x7f, 7);
+      print_named_value(f, "COMMAND", (tmp >> 8) & 0xf, 4);
+      print_named_value(f, "CACHE_POLICY", (tmp >> 25) & 0x3, 2);
+      print_named_value(f, "ENGINE_SEL", tmp >> 30, 2);
+      print_named_value(f, "ADDR_LO", ac_ib_get(ib), 32);
+      print_named_value(f, "ADDR_HI", ac_ib_get(ib), 32);
+      print_named_value(f, "SRC_DATA_LO", ac_ib_get(ib), 32);
+      print_named_value(f, "SRC_DATA_HI", ac_ib_get(ib), 32);
+      print_named_value(f, "CMP_DATA_LO", ac_ib_get(ib), 32);
+      print_named_value(f, "CMP_DATA_HI", ac_ib_get(ib), 32);
+      print_named_value(f, "LOOP_INTERVAL", ac_ib_get(ib) & 0x1fff, 13);
       break;
    }
 

@@ -169,11 +169,20 @@ static void radeon_vcn_enc_h264_get_vui_param(struct radeon_encoder *enc,
       pic->seq.vui_flags.aspect_ratio_info_present_flag;
    enc->enc_pic.vui_info.flags.timing_info_present_flag =
       pic->seq.vui_flags.timing_info_present_flag;
+   enc->enc_pic.vui_info.flags.video_signal_type_present_flag =
+      pic->seq.vui_flags.video_signal_type_present_flag;
+   enc->enc_pic.vui_info.flags.colour_description_present_flag =
+      pic->seq.vui_flags.colour_description_present_flag;
    enc->enc_pic.vui_info.aspect_ratio_idc = pic->seq.aspect_ratio_idc;
    enc->enc_pic.vui_info.sar_width = pic->seq.sar_width;
    enc->enc_pic.vui_info.sar_height = pic->seq.sar_height;
    enc->enc_pic.vui_info.num_units_in_tick = pic->seq.num_units_in_tick;
    enc->enc_pic.vui_info.time_scale = pic->seq.time_scale;
+   enc->enc_pic.vui_info.video_format = pic->seq.video_format;
+   enc->enc_pic.vui_info.video_full_range_flag = pic->seq.video_full_range_flag;
+   enc->enc_pic.vui_info.colour_primaries = pic->seq.colour_primaries;
+   enc->enc_pic.vui_info.transfer_characteristics = pic->seq.transfer_characteristics;
+   enc->enc_pic.vui_info.matrix_coefficients = pic->seq.matrix_coefficients;
 }
 
 /* only checking the first slice to get num of mbs in slice to
@@ -198,18 +207,20 @@ static void radeon_vcn_enc_h264_get_slice_ctrl_param(struct radeon_encoder *enc,
    enc->enc_pic.slice_ctrl.num_mbs_per_slice = num_mbs_in_slice;
 }
 
-static void radeon_vcn_enc_get_output_format_param(struct radeon_encoder *enc)
+static void radeon_vcn_enc_get_output_format_param(struct radeon_encoder *enc, bool full_range)
 {
    switch (enc->enc_pic.bit_depth_luma_minus8) {
    case 2: /* 10 bits */
       enc->enc_pic.enc_output_format.output_color_volume = RENCODE_COLOR_VOLUME_G22_BT709;
-      enc->enc_pic.enc_output_format.output_color_range = RENCODE_COLOR_RANGE_FULL;
+      enc->enc_pic.enc_output_format.output_color_range = full_range ?
+         RENCODE_COLOR_RANGE_FULL : RENCODE_COLOR_RANGE_STUDIO;
       enc->enc_pic.enc_output_format.output_chroma_location = RENCODE_CHROMA_LOCATION_INTERSTITIAL;
       enc->enc_pic.enc_output_format.output_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_10_BIT;
       break;
    default: /* 8 bits */
       enc->enc_pic.enc_output_format.output_color_volume = RENCODE_COLOR_VOLUME_G22_BT709;
-      enc->enc_pic.enc_output_format.output_color_range = RENCODE_COLOR_RANGE_FULL;
+      enc->enc_pic.enc_output_format.output_color_range = full_range ?
+         RENCODE_COLOR_RANGE_FULL : RENCODE_COLOR_RANGE_STUDIO;
       enc->enc_pic.enc_output_format.output_chroma_location = RENCODE_CHROMA_LOCATION_INTERSTITIAL;
       enc->enc_pic.enc_output_format.output_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
       break;
@@ -223,18 +234,36 @@ static void radeon_vcn_enc_get_input_format_param(struct radeon_encoder *enc,
    case PIPE_FORMAT_P010:
       enc->enc_pic.enc_input_format.input_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_10_BIT;
       enc->enc_pic.enc_input_format.input_color_packing_format = RENCODE_COLOR_PACKING_FORMAT_P010;
+      enc->enc_pic.enc_input_format.input_chroma_subsampling = RENCODE_CHROMA_SUBSAMPLING_4_2_0;
+      enc->enc_pic.enc_input_format.input_color_space = RENCODE_COLOR_SPACE_YUV;
+      break;
+   case PIPE_FORMAT_B8G8R8A8_UNORM:
+   case PIPE_FORMAT_B8G8R8X8_UNORM:
+      enc->enc_pic.enc_input_format.input_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
+      enc->enc_pic.enc_input_format.input_chroma_subsampling = RENCODE_CHROMA_SUBSAMPLING_4_4_4;
+      enc->enc_pic.enc_input_format.input_color_packing_format = RENCODE_COLOR_PACKING_FORMAT_A8R8G8B8;
+      enc->enc_pic.enc_input_format.input_color_space = RENCODE_COLOR_SPACE_RGB;
+      break;
+   case PIPE_FORMAT_R8G8B8A8_UNORM:
+   case PIPE_FORMAT_R8G8B8X8_UNORM:
+      enc->enc_pic.enc_input_format.input_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
+      enc->enc_pic.enc_input_format.input_chroma_subsampling = RENCODE_CHROMA_SUBSAMPLING_4_4_4;
+      enc->enc_pic.enc_input_format.input_color_packing_format = RENCODE_COLOR_PACKING_FORMAT_A8B8G8R8;
+      enc->enc_pic.enc_input_format.input_color_space = RENCODE_COLOR_SPACE_RGB;
       break;
    case PIPE_FORMAT_NV12: /* FALL THROUGH */
    default:
       enc->enc_pic.enc_input_format.input_color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
       enc->enc_pic.enc_input_format.input_color_packing_format = RENCODE_COLOR_PACKING_FORMAT_NV12;
+      enc->enc_pic.enc_input_format.input_chroma_subsampling = RENCODE_CHROMA_SUBSAMPLING_4_2_0;
+      enc->enc_pic.enc_input_format.input_color_space = RENCODE_COLOR_SPACE_YUV;
       break;
    }
-   enc->enc_pic.enc_input_format.input_color_volume = RENCODE_COLOR_VOLUME_G22_BT709;
-   enc->enc_pic.enc_input_format.input_color_range = RENCODE_COLOR_RANGE_FULL;
-   enc->enc_pic.enc_input_format.input_chroma_subsampling = RENCODE_CHROMA_SUBSAMPLING_4_2_0;
+
+  enc->enc_pic.enc_input_format.input_color_volume = RENCODE_COLOR_VOLUME_G22_BT709;
+  enc->enc_pic.enc_input_format.input_color_range = pic_base->input_full_range ?
+     RENCODE_COLOR_RANGE_FULL : RENCODE_COLOR_RANGE_STUDIO;
    enc->enc_pic.enc_input_format.input_chroma_location = RENCODE_CHROMA_LOCATION_INTERSTITIAL;
-   enc->enc_pic.enc_input_format.input_color_space = RENCODE_COLOR_SPACE_YUV;
 }
 
 static void radeon_vcn_enc_h264_get_param(struct radeon_encoder *enc,
@@ -262,7 +291,7 @@ static void radeon_vcn_enc_h264_get_param(struct radeon_encoder *enc,
    radeon_vcn_enc_h264_get_vui_param(enc, pic);
    radeon_vcn_enc_h264_get_slice_ctrl_param(enc, pic);
    radeon_vcn_enc_get_input_format_param(enc, &pic->base);
-   radeon_vcn_enc_get_output_format_param(enc);
+   radeon_vcn_enc_get_output_format_param(enc, pic->seq.video_full_range_flag);
 }
 
 static void radeon_vcn_enc_hevc_get_cropping_param(struct radeon_encoder *enc,
@@ -368,11 +397,20 @@ static void radeon_vcn_enc_hevc_get_vui_param(struct radeon_encoder *enc,
       pic->seq.vui_flags.aspect_ratio_info_present_flag;
    enc->enc_pic.vui_info.flags.timing_info_present_flag =
       pic->seq.vui_flags.timing_info_present_flag;
+   enc->enc_pic.vui_info.flags.video_signal_type_present_flag =
+      pic->seq.vui_flags.video_signal_type_present_flag;
+   enc->enc_pic.vui_info.flags.colour_description_present_flag =
+      pic->seq.vui_flags.colour_description_present_flag;
    enc->enc_pic.vui_info.aspect_ratio_idc = pic->seq.aspect_ratio_idc;
    enc->enc_pic.vui_info.sar_width = pic->seq.sar_width;
    enc->enc_pic.vui_info.sar_height = pic->seq.sar_height;
    enc->enc_pic.vui_info.num_units_in_tick = pic->seq.num_units_in_tick;
    enc->enc_pic.vui_info.time_scale = pic->seq.time_scale;
+   enc->enc_pic.vui_info.video_format = pic->seq.video_format;
+   enc->enc_pic.vui_info.video_full_range_flag = pic->seq.video_full_range_flag;
+   enc->enc_pic.vui_info.colour_primaries = pic->seq.colour_primaries;
+   enc->enc_pic.vui_info.transfer_characteristics = pic->seq.transfer_characteristics;
+   enc->enc_pic.vui_info.matrix_coefficients = pic->seq.matrix_coefficients;
 }
 
 /* only checking the first slice to get num of ctbs in slice to
@@ -460,7 +498,7 @@ static void radeon_vcn_enc_hevc_get_param(struct radeon_encoder *enc,
    radeon_vcn_enc_hevc_get_vui_param(enc, pic);
    radeon_vcn_enc_hevc_get_slice_ctrl_param(enc, pic);
    radeon_vcn_enc_get_input_format_param(enc, &pic->base);
-   radeon_vcn_enc_get_output_format_param(enc);
+   radeon_vcn_enc_get_output_format_param(enc, pic->seq.video_full_range_flag);
 }
 
 static void radeon_vcn_enc_av1_get_spec_misc_param(struct radeon_encoder *enc,
@@ -504,9 +542,9 @@ static void radeon_vcn_enc_av1_color_description(struct radeon_encoder *enc,
       enc->enc_pic.av1_color_description.color_primaries = pic->seq.color_config.color_primaries;
       enc->enc_pic.av1_color_description.transfer_characteristics = pic->seq.color_config.transfer_characteristics;
       enc->enc_pic.av1_color_description.maxtrix_coefficients = pic->seq.color_config.matrix_coefficients;
-      enc->enc_pic.av1_color_description.color_range = pic->seq.color_config.color_range;
-      enc->enc_pic.av1_color_description.chroma_sample_position = pic->seq.color_config.chroma_sample_position;
    }
+   enc->enc_pic.av1_color_description.color_range = pic->seq.color_config.color_range;
+   enc->enc_pic.av1_color_description.chroma_sample_position = pic->seq.color_config.chroma_sample_position;
 }
 
 static void radeon_vcn_enc_av1_get_rc_param(struct radeon_encoder *enc,
@@ -603,7 +641,7 @@ static void radeon_vcn_enc_av1_get_param(struct radeon_encoder *enc,
    radeon_vcn_enc_av1_color_description(enc, pic);
    radeon_vcn_enc_av1_get_rc_param(enc, pic);
    radeon_vcn_enc_get_input_format_param(enc, &pic->base);
-   radeon_vcn_enc_get_output_format_param(enc);
+   radeon_vcn_enc_get_output_format_param(enc, pic->seq.color_config.color_range);
 }
 
 static void radeon_vcn_enc_get_param(struct radeon_encoder *enc, struct pipe_picture_desc *picture)
@@ -719,10 +757,10 @@ static int setup_dpb(struct radeon_encoder *enc)
 
    offset = 0;
    if (enc_pic->quality_modes.pre_encode_mode) {
-      uint32_t pre_size  = ALIGN_POT((aligned_width >> 2), rec_alignment) *
-                           ALIGN_POT((aligned_height >> 2), rec_alignment);
-      uint32_t full_size = ALIGN_POT(aligned_width, rec_alignment) *
-                           ALIGN_POT(aligned_height, rec_alignment);
+      uint32_t pre_size  = DIV_ROUND_UP((aligned_width >> 2), rec_alignment) *
+                           DIV_ROUND_UP((aligned_height >> 2), rec_alignment);
+      uint32_t full_size = DIV_ROUND_UP(aligned_width, rec_alignment) *
+                           DIV_ROUND_UP(aligned_height, rec_alignment);
       pre_size  = align(pre_size, 4);
       full_size = align(full_size, 4);
 
@@ -789,7 +827,10 @@ static void radeon_enc_begin_frame(struct pipe_video_codec *encoder,
          (enc->enc_pic.rc_layer_init[0].frame_rate_den != pic->rate_ctrl[0].frame_rate_den);
    } else if (u_reduce_video_profile(picture->profile) == PIPE_VIDEO_FORMAT_HEVC) {
       struct pipe_h265_enc_picture_desc *pic = (struct pipe_h265_enc_picture_desc *)picture;
-      need_rate_control = enc->enc_pic.rc_layer_init[0].target_bit_rate != pic->rc.target_bitrate;
+      need_rate_control =
+         (enc->enc_pic.rc_layer_init[0].target_bit_rate != pic->rc.target_bitrate) ||
+         (enc->enc_pic.rc_layer_init[0].frame_rate_num != pic->rc.frame_rate_num) ||
+         (enc->enc_pic.rc_layer_init[0].frame_rate_den != pic->rc.frame_rate_den);
    } else if (u_reduce_video_profile(picture->profile) == PIPE_VIDEO_FORMAT_AV1) {
       struct pipe_av1_enc_picture_desc *pic = (struct pipe_av1_enc_picture_desc *)picture;
       need_rate_control =
@@ -817,8 +858,16 @@ static void radeon_enc_begin_frame(struct pipe_video_codec *encoder,
       }
    }
 
-   enc->get_buffer(vid_buf->resources[0], &enc->handle, &enc->luma);
-   enc->get_buffer(vid_buf->resources[1], NULL, &enc->chroma);
+   if (source->buffer_format == PIPE_FORMAT_NV12 ||
+       source->buffer_format == PIPE_FORMAT_P010 ||
+       source->buffer_format == PIPE_FORMAT_P016) {
+      enc->get_buffer(vid_buf->resources[0], &enc->handle, &enc->luma);
+      enc->get_buffer(vid_buf->resources[1], NULL, &enc->chroma);
+   }
+   else {
+      enc->get_buffer(vid_buf->resources[0], &enc->handle, &enc->luma);
+      enc->chroma = NULL;
+   }
 
    enc->need_feedback = false;
 
@@ -968,7 +1017,7 @@ struct pipe_video_codec *radeon_create_encoder(struct pipe_context *context,
 
    if (!ws->cs_create(&enc->cs,
        (sctx->vcn_has_ctx) ? ((struct si_context *)enc->ectx)->ctx : sctx->ctx,
-       AMD_IP_VCN_ENC, radeon_enc_cs_flush, enc, false)) {
+       AMD_IP_VCN_ENC, radeon_enc_cs_flush, enc)) {
       RVID_ERR("Can't get command submission context.\n");
       goto error;
    }
@@ -1168,7 +1217,7 @@ static void radeon_enc_av1_bs_copy_end(struct radeon_encoder *enc, uint32_t bits
 {
    assert(bits > 0);
    /* it must be dword aligned at the end */
-   *enc->enc_pic.copy_start = ALIGN_POT(bits, 32) * 4 + 12;
+   *enc->enc_pic.copy_start = DIV_ROUND_UP(bits, 32) * 4 + 12;
    *(enc->enc_pic.copy_start + 2) = bits;
 }
 

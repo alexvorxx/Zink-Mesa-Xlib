@@ -186,6 +186,46 @@ static const struct dri2_wl_visual {
       {11, 5, 0, -1},
       {5, 6, 5, 0},
    },
+   {
+      "ARGB1555",
+      WL_DRM_FORMAT_ARGB1555,
+      WL_SHM_FORMAT_ARGB1555,
+      __DRI_IMAGE_FORMAT_ARGB1555,
+      __DRI_IMAGE_FORMAT_ABGR1555,
+      16,
+      {10, 5, 0, 15},
+      {5, 5, 5, 1},
+   },
+   {
+      "XRGB1555",
+      WL_DRM_FORMAT_XRGB1555,
+      WL_SHM_FORMAT_XRGB1555,
+      __DRI_IMAGE_FORMAT_XRGB1555,
+      __DRI_IMAGE_FORMAT_XBGR1555,
+      16,
+      {10, 5, 0, -1},
+      {5, 5, 5, 0},
+   },
+   {
+      "ARGB4444",
+      WL_DRM_FORMAT_ARGB4444,
+      WL_SHM_FORMAT_ARGB4444,
+      __DRI_IMAGE_FORMAT_ARGB4444,
+      __DRI_IMAGE_FORMAT_XBGR4444,
+      16,
+      {8, 4, 0, 12},
+      {4, 4, 4, 4},
+   },
+   {
+      "XRGB4444",
+      WL_DRM_FORMAT_XRGB4444,
+      WL_SHM_FORMAT_XRGB4444,
+      __DRI_IMAGE_FORMAT_XRGB4444,
+      __DRI_IMAGE_FORMAT_XBGR4444,
+      16,
+      {8, 4, 0, -1},
+      {4, 4, 4, 0},
+   },
 };
 
 static int
@@ -1274,80 +1314,6 @@ update_buffers_if_needed(struct dri2_egl_surface *dri2_surf)
    return update_buffers(dri2_surf);
 }
 
-static __DRIbuffer *
-dri2_wl_get_buffers_with_format(__DRIdrawable *driDrawable, int *width,
-                                int *height, unsigned int *attachments,
-                                int count, int *out_count, void *loaderPrivate)
-{
-   struct dri2_egl_surface *dri2_surf = loaderPrivate;
-   int i, j;
-
-   if (update_buffers_if_needed(dri2_surf) < 0)
-      return NULL;
-
-   for (i = 0, j = 0; i < 2 * count; i += 2, j++) {
-      __DRIbuffer *local;
-
-      switch (attachments[i]) {
-      case __DRI_BUFFER_BACK_LEFT:
-         back_bo_to_dri_buffer(dri2_surf, &dri2_surf->buffers[j]);
-         break;
-      default:
-         local = dri2_egl_surface_alloc_local_buffer(dri2_surf, attachments[i],
-                                                     attachments[i + 1]);
-
-         if (!local) {
-            _eglError(EGL_BAD_ALLOC, "failed to allocate local buffer");
-            return NULL;
-         }
-         dri2_surf->buffers[j] = *local;
-         break;
-      }
-   }
-
-   *out_count = j;
-   if (j == 0)
-      return NULL;
-
-   *width = dri2_surf->base.Width;
-   *height = dri2_surf->base.Height;
-
-   return dri2_surf->buffers;
-}
-
-static __DRIbuffer *
-dri2_wl_get_buffers(__DRIdrawable *driDrawable, int *width, int *height,
-                    unsigned int *attachments, int count, int *out_count,
-                    void *loaderPrivate)
-{
-   struct dri2_egl_surface *dri2_surf = loaderPrivate;
-   unsigned int *attachments_with_format;
-   __DRIbuffer *buffer;
-   int visual_idx = dri2_wl_visual_idx_from_fourcc(dri2_surf->format);
-
-   if (visual_idx == -1)
-      return NULL;
-
-   attachments_with_format = calloc(count, 2 * sizeof(unsigned int));
-   if (!attachments_with_format) {
-      *out_count = 0;
-      return NULL;
-   }
-
-   for (int i = 0; i < count; ++i) {
-      attachments_with_format[2 * i] = attachments[i];
-      attachments_with_format[2 * i + 1] = dri2_wl_visuals[visual_idx].bpp;
-   }
-
-   buffer = dri2_wl_get_buffers_with_format(driDrawable, width, height,
-                                            attachments_with_format, count,
-                                            out_count, loaderPrivate);
-
-   free(attachments_with_format);
-
-   return buffer;
-}
-
 static int
 image_get_buffers(__DRIdrawable *driDrawable, unsigned int format,
                   uint32_t *stamp, void *loaderPrivate, uint32_t buffer_mask,
@@ -1383,15 +1349,6 @@ dri2_wl_get_capability(void *loaderPrivate, enum dri_loader_cap cap)
       return 0;
    }
 }
-
-static const __DRIdri2LoaderExtension dri2_loader_extension = {
-   .base = {__DRI_DRI2_LOADER, 4},
-
-   .getBuffers = dri2_wl_get_buffers,
-   .flushFrontBuffer = dri2_wl_flush_front_buffer,
-   .getBuffersWithFormat = dri2_wl_get_buffers_with_format,
-   .getCapability = dri2_wl_get_capability,
-};
 
 static const __DRIimageLoaderExtension image_loader_extension = {
    .base = {__DRI_IMAGE_LOADER, 2},
@@ -1447,6 +1404,7 @@ create_wl_buffer(struct dri2_egl_display *dri2_dpy,
    EGLBoolean query;
    int width, height, fourcc, num_planes;
    uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+   int mod_hi, mod_lo;
 
    query = dri2_dpy->image->queryImage(image, __DRI_IMAGE_ATTRIB_WIDTH, &width);
    query &=
@@ -1460,16 +1418,12 @@ create_wl_buffer(struct dri2_egl_display *dri2_dpy,
    if (!query)
       num_planes = 1;
 
-   if (dri2_dpy->image->base.version >= 15) {
-      int mod_hi, mod_lo;
-
-      query = dri2_dpy->image->queryImage(
-         image, __DRI_IMAGE_ATTRIB_MODIFIER_UPPER, &mod_hi);
-      query &= dri2_dpy->image->queryImage(
-         image, __DRI_IMAGE_ATTRIB_MODIFIER_LOWER, &mod_lo);
-      if (query) {
-         modifier = combine_u32_into_u64(mod_hi, mod_lo);
-      }
+   query = dri2_dpy->image->queryImage(image, __DRI_IMAGE_ATTRIB_MODIFIER_UPPER,
+                                       &mod_hi);
+   query &= dri2_dpy->image->queryImage(
+      image, __DRI_IMAGE_ATTRIB_MODIFIER_LOWER, &mod_lo);
+   if (query) {
+      modifier = combine_u32_into_u64(mod_hi, mod_lo);
    }
 
    bool supported_modifier = false;
@@ -2074,14 +2028,6 @@ static const struct dri2_egl_display_vtbl dri2_wl_display_vtbl = {
 };
 
 static const __DRIextension *dri2_loader_extensions[] = {
-   &dri2_loader_extension.base,
-   &image_loader_extension.base,
-   &image_lookup_extension.base,
-   &use_invalidate.base,
-   NULL,
-};
-
-static const __DRIextension *image_loader_extensions[] = {
    &image_loader_extension.base,
    &image_lookup_extension.base,
    &use_invalidate.base,
@@ -2252,7 +2198,7 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
    loader_get_user_preferred_fd(&dri2_dpy->fd_render_gpu,
                                 &dri2_dpy->fd_display_gpu);
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, false);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, false);
    if (!dev) {
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
       goto cleanup;
@@ -2284,20 +2230,10 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
       goto cleanup;
    }
 
-   /* render nodes cannot use Gem names, and thus do not support
-    * the __DRI_DRI2_LOADER extension */
-   if (!dri2_dpy->is_render_node) {
-      dri2_dpy->loader_extensions = dri2_loader_extensions;
-      if (!dri2_load_driver(disp)) {
-         _eglError(EGL_BAD_ALLOC, "DRI2: failed to load driver");
-         goto cleanup;
-      }
-   } else {
-      dri2_dpy->loader_extensions = image_loader_extensions;
-      if (!dri2_load_driver_dri3(disp)) {
-         _eglError(EGL_BAD_ALLOC, "DRI3: failed to load driver");
-         goto cleanup;
-      }
+   dri2_dpy->loader_extensions = dri2_loader_extensions;
+   if (!dri2_load_driver_dri3(disp)) {
+      _eglError(EGL_BAD_ALLOC, "DRI2: failed to load driver");
+      goto cleanup;
    }
 
    if (!dri2_create_screen(disp))
@@ -2316,7 +2252,6 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
        * We deprecated the support to GEM names API, so we bail out if the
        * driver does not support Prime. */
       if (!(dri2_dpy->capabilities & WL_DRM_CAPABILITY_PRIME) ||
-          (dri2_dpy->image->base.version < 7) ||
           (dri2_dpy->image->createImageFromFds == NULL)) {
          _eglLog(_EGL_WARNING, "wayland-egl: display does not support prime");
          goto cleanup;
@@ -2324,12 +2259,10 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
    }
 
    if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu &&
-       (dri2_dpy->image->base.version < 9 ||
-        dri2_dpy->image->blitImage == NULL)) {
+       dri2_dpy->image->blitImage == NULL) {
       _eglLog(_EGL_WARNING, "wayland-egl: Different GPU selected, but the "
                             "Image extension in the driver is not "
-                            "compatible. Version 9 or later and blitImage() "
-                            "are required");
+                            "compatible. blitImage() is required");
       goto cleanup;
    }
 
@@ -2454,7 +2387,7 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
    }
 
    /* else choose any another free location */
-   if (!dri2_surf->back) {
+   while (!dri2_surf->back) {
       for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
          if (!dri2_surf->color_buffers[i].locked) {
             dri2_surf->back = &dri2_surf->color_buffers[i];
@@ -2472,11 +2405,15 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
             break;
          }
       }
-   }
 
-   if (!dri2_surf->back) {
-      _eglError(EGL_BAD_ALLOC, "failed to find free buffer");
-      return -1;
+      /* wait for the compositor to release a buffer */
+      if (!dri2_surf->back) {
+         if (wl_display_dispatch_queue(dri2_dpy->wl_dpy, dri2_surf->wl_queue) ==
+             -1) {
+            _eglError(EGL_BAD_ALLOC, "waiting for a free buffer failed");
+            return -1;
+         }
+      }
    }
 
    dri2_surf->back->locked = true;
@@ -2767,6 +2704,7 @@ static const __DRIkopperLoaderExtension kopper_loader_extension = {
 static const __DRIextension *swrast_loader_extensions[] = {
    &swrast_loader_extension.base,
    &image_lookup_extension.base,
+   &image_loader_extension.base,
    &kopper_loader_extension.base,
    NULL,
 };
@@ -2782,6 +2720,7 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
       return _eglError(EGL_BAD_ALLOC, "eglInitialize");
 
    dri2_dpy->fd_render_gpu = -1;
+   dri2_dpy->fd_display_gpu = -1;
    disp->DriverData = (void *)dri2_dpy;
 
    if (dri2_wl_formats_init(&dri2_dpy->formats) < 0)
@@ -2796,7 +2735,7 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
       dri2_dpy->wl_dpy = disp->PlatformDisplay;
    }
 
-   dev = _eglAddDevice(dri2_dpy->fd_render_gpu, true);
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, true);
    if (!dev) {
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
       goto cleanup;

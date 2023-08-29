@@ -73,8 +73,7 @@ zink_shader_compile(struct zink_screen *screen, bool can_shobj, struct zink_shad
 struct zink_shader_object
 zink_shader_compile_separate(struct zink_screen *screen, struct zink_shader *zs);
 struct zink_shader *
-zink_shader_create(struct zink_screen *screen, struct nir_shader *nir,
-                 const struct pipe_stream_output_info *so_info);
+zink_shader_create(struct zink_screen *screen, struct nir_shader *nir);
 
 char *
 zink_shader_finalize(struct pipe_screen *pscreen, void *nirptr);

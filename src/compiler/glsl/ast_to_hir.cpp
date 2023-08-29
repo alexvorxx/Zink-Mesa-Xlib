@@ -3753,6 +3753,22 @@ apply_bindless_qualifier_to_variable(const struct ast_type_qualifier *qual,
                         state->bound_sampler_specified ||
                         state->bound_image_specified;
    }
+
+   /* ARB_bindless_texture spec says:
+    *
+    *    "When used as shader inputs, outputs, uniform block members,
+    *     or temporaries, the value of the sampler is a 64-bit unsigned
+    *     integer handle and never refers to a texture image unit."
+    *
+    * The spec doesn't reference images defined inside structs but it was
+    * clarified with the authors that bindless images are allowed in structs.
+    * So we treat these images as implicitly bindless just like the types
+    * in the spec quote above.
+    */
+   if (!var->data.bindless && var->type->is_struct() &&
+       var->type->contains_image()) {
+      var->data.bindless = true;
+   }
 }
 
 static void

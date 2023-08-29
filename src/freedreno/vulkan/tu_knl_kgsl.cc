@@ -38,7 +38,7 @@ safe_ioctl(int fd, unsigned long request, void *arg)
 }
 
 static int
-kgsl_submitqueue_new(const struct tu_device *dev,
+kgsl_submitqueue_new(struct tu_device *dev,
                      int priority,
                      uint32_t *queue_id)
 {
@@ -58,7 +58,7 @@ kgsl_submitqueue_new(const struct tu_device *dev,
 }
 
 static void
-kgsl_submitqueue_close(const struct tu_device *dev, uint32_t queue_id)
+kgsl_submitqueue_close(struct tu_device *dev, uint32_t queue_id)
 {
    struct kgsl_drawctxt_destroy req = {
       .drawctxt_id = queue_id,

@@ -82,6 +82,8 @@ public:
    AluInstr *predicate() const { return m_predicate; }
    AluInstr *predicate() { return m_predicate; }
 
+   uint32_t slots() const override;
+
    void accept(ConstInstrVisitor& visitor) const override;
    void accept(InstrVisitor& visitor) override;
 

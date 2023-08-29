@@ -36,7 +36,7 @@ gen_xml_rt_files = [
   'gen125_rt.xml',
 ]
 
-gen_pack_header_deps = files('util.py')
+gen_pack_header_deps = files('intel_genxml.py', 'util.py')
 
 genX_xml_h = custom_target(
   'genX_xml.h',

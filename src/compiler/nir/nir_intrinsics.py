@@ -415,7 +415,7 @@ barrier("terminate")
 # OpMemoryBarrier and OpControlBarrier, used to implement Vulkan Memory Model.
 # Storage that the barrier applies is represented using NIR variable modes.
 # For an OpMemoryBarrier, set EXECUTION_SCOPE to SCOPE_NONE.
-intrinsic("scoped_barrier",
+intrinsic("barrier",
           indices=[EXECUTION_SCOPE, MEMORY_SCOPE, MEMORY_SEMANTICS, MEMORY_MODES])
 
 # Shader clock intrinsic with semantics analogous to the clock2x32ARB()
@@ -839,6 +839,8 @@ system_value("sample_mask_in", 1)
 system_value("primitive_id", 1)
 system_value("invocation_id", 1)
 system_value("tess_coord", 3)
+# First 2 components of tess_coord only
+system_value("tess_coord_xy", 2)
 system_value("tess_level_outer", 4)
 system_value("tess_level_inner", 2)
 system_value("tess_level_outer_default", 4)
@@ -957,6 +959,14 @@ system_value("color1", 4)
 
 # System value for internal compute shaders in radeonsi.
 system_value("user_data_amd", 4)
+
+# In a fragment shader, the current sample mask. At the beginning of the shader,
+# this is the same as load_sample_mask_in, but as the shader is executed, it may
+# be affected by writes, discards, etc.
+#
+# No frontend generates this, but drivers may use it for internal lowerings.
+intrinsic("load_sample_mask", [], 1, [], flags=[CAN_ELIMINATE], sysval=True,
+          bit_sizes=[32])
 
 # Barycentric coordinate intrinsics.
 #
@@ -1327,10 +1337,6 @@ system_value("sample_positions_pan", 1, bit_sizes=[64])
 # In a fragment shader, is the framebuffer single-sampled? 0/~0 bool
 system_value("multisampled_pan", 1, bit_sizes=[32])
 
-# In a fragment shader, the current coverage mask. Affected by writes.
-intrinsic("load_coverage_mask_pan", [], 1, [], flags=[CAN_ELIMINATE],
-          sysval=True, bit_sizes=[32])
-
 # R600 specific instrincs
 #
 # location where the tesselation data is stored in LDS
@@ -1338,9 +1344,6 @@ system_value("tcs_in_param_base_r600", 4)
 system_value("tcs_out_param_base_r600", 4)
 system_value("tcs_rel_patch_id_r600", 1)
 system_value("tcs_tess_factor_base_r600", 1)
-
-# the tess coords come as xy only, z has to be calculated
-system_value("tess_coord_r600", 2)
 
 # load as many components as needed giving per-component addresses
 intrinsic("load_local_shared_r600", src_comp=[0], dest_comp=0, indices = [], flags = [CAN_ELIMINATE])
@@ -1652,6 +1655,15 @@ store("tlb_sample_color_v3d", [1], [BASE, COMPONENT, SRC_TYPE], [])
 # the target framebuffer
 intrinsic("load_fb_layers_v3d", dest_comp=1, flags=[CAN_ELIMINATE, CAN_REORDER])
 
+# Load the coefficient register corresponding to a given fragment shader input.
+# Coefficient registers are vec3s that are dotted with <x, y, 1> to interpolate
+# the input, where x and y are relative to the 32x32 supertile.
+intrinsic("load_coefficients_agx",
+          bit_sizes = [32],
+          dest_comp = 3,
+          indices=[COMPONENT, IO_SEMANTICS, INTERP_MODE],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
+
 # Load/store a pixel in local memory. This operation is formatted, with
 # conversion between the specified format and the implied register format of the
 # source/destination (for store/loads respectively). This mostly matters for
@@ -1722,15 +1734,14 @@ store("agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND])
 # Logical complement of load_front_face, mapping to an AGX system value
 system_value("back_face_agx", 1, bit_sizes=[1, 32])
 
-# Loads the texture descriptor base for indexed (non-bindless) textures. On G13,
-# the referenced array has stride 24.
-system_value("texture_base_agx", 1, bit_sizes=[64])
-
-# Load the base address of an indexed UBO/VBO (for lowering UBOs/VBOs)
-intrinsic("load_ubo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
-          flags=[CAN_ELIMINATE, CAN_REORDER])
+# Load the base address of an indexed VBO (for lowering VBOs)
 intrinsic("load_vbo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
           flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Load a driver-internal system value from a given system value set at a given
+# binding within the set. This is used for correctness when lowering things like
+# UBOs with merged shaders.
+load("sysval_agx", [], [DESC_SET, BINDING], [CAN_REORDER, CAN_ELIMINATE])
 
 # Write out a sample mask for a targeted subset of samples, specified in the two
 # masks. Maps to the corresponding AGX instruction, the actual workings are
@@ -1748,6 +1759,19 @@ system_value("api_sample_mask_agx", 1, bit_sizes=[16])
 
 # Loads the sample position array as fixed point packed into a 32-bit word
 system_value("sample_positions_agx", 1, bit_sizes=[32])
+
+# Image loads go through the texture cache, which is not coherent with the PBE
+# or memory access, so fencing is necessary for writes to become visible.
+
+# Make writes via main memory (image atomics) visible for texturing.
+barrier("fence_pbe_to_tex_agx")
+
+# Make writes from global memory instructions (atomics) visible for texturing.
+barrier("fence_mem_to_tex_agx")
+
+# Variant of fence_pbe_to_tex_agx specialized to stores in pixel shaders that
+# act like render target writes, in conjunction with fragment interlock.
+barrier("fence_pbe_to_tex_pixel_agx")
 
 # Intel-specific query for loading from the brw_image_param struct passed
 # into the shader as a uniform.  The variable is a deref to the image
@@ -1889,3 +1913,33 @@ system_value("ray_query_global_intel", 1, bit_sizes=[64])
 # is defined to be whatever thing the hardware can easily give you, so long as
 # it's in normalized coordinates in the range [0, 1] across the point.
 intrinsic("load_point_coord_maybe_flipped", dest_comp=2, bit_sizes=[32])
+
+
+# Load texture size values:
+#
+# Takes a sampler # and returns width, height and depth.  If texture is a array
+# texture it returns width, height and array size.  Used for txs lowering.
+intrinsic("load_texture_size_etna", src_comp=[1], dest_comp=3,
+          flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Zink specific intrinsics
+
+# src[] = { field }.
+load("push_constant_zink", [1], [COMPONENT], [CAN_ELIMINATE, CAN_REORDER])
+
+system_value("shader_index", 1, bit_sizes=[32])
+
+system_value("coalesced_input_count", 1, bit_sizes=[32])
+
+# Initialize a payload array per scope
+#
+#   0. Payloads deref
+#   1. Payload count
+#   2. Node index
+intrinsic("initialize_node_payloads", src_comp=[-1, 1, 1], indices=[EXECUTION_SCOPE])
+
+# Optionally enqueue payloads after shader finished writing to them
+intrinsic("enqueue_node_payloads", src_comp=[-1])
+
+# Returns true if it has been called for every payload.
+intrinsic("finalize_incoming_node_payload", src_comp=[-1], dest_comp=1)

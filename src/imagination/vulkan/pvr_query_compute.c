@@ -553,6 +553,7 @@ VkResult pvr_add_query_program(struct pvr_cmd_buffer *cmd_buffer,
    pipeline.pds_temps_used = query_prog->primary_num_temps;
 
    pipeline.coeff_regs_count = shader_factory_info->coeff_regs;
+   pipeline.unified_store_regs_count = shader_factory_info->input_regs;
    pipeline.const_shared_regs_count = shader_factory_info->const_shared_regs;
 
    const_buffer = vk_alloc(&cmd_buffer->vk.pool->alloc,

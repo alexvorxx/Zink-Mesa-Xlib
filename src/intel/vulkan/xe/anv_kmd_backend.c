@@ -40,6 +40,14 @@ xe_gem_create(struct anv_device *device,
               enum anv_bo_alloc_flags alloc_flags,
               uint64_t *actual_size)
 {
+   uint32_t flags = 0;
+   if (alloc_flags & ANV_BO_ALLOC_SCANOUT)
+      flags |= XE_GEM_CREATE_FLAG_SCANOUT;
+   if ((alloc_flags & (ANV_BO_ALLOC_MAPPED | ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE)) &&
+       !(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM) &&
+       device->physical->vram_non_mappable.size > 0)
+      flags |= XE_GEM_CREATE_FLAG_NEEDS_VISIBLE_VRAM;
+
    struct drm_xe_gem_create gem_create = {
      /* From xe_drm.h: If a VM is specified, this BO must:
       * 1. Only ever be bound to that VM.
@@ -47,7 +55,7 @@ xe_gem_create(struct anv_device *device,
       */
      .vm_id = alloc_flags & ANV_BO_ALLOC_EXTERNAL ? 0 : device->vm_id,
      .size = align64(size, device->info->mem_alignment),
-     .flags = alloc_flags & ANV_BO_ALLOC_SCANOUT ? XE_GEM_CREATE_FLAG_SCANOUT : 0,
+     .flags = flags,
    };
    for (uint16_t i = 0; i < regions_count; i++)
       gem_create.flags |= BITFIELD_BIT(regions[i]->instance);
@@ -60,10 +68,13 @@ xe_gem_create(struct anv_device *device,
 }
 
 static void
-xe_gem_close(struct anv_device *device, uint32_t handle)
+xe_gem_close(struct anv_device *device, struct anv_bo *bo)
 {
+   if (bo->from_host_ptr)
+      return;
+
    struct drm_gem_close close = {
-      .handle = handle,
+      .handle = bo->gem_handle,
    };
    intel_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
@@ -91,6 +102,15 @@ xe_gem_vm_bind_op(struct anv_device *device, struct anv_bo *bo, uint32_t op)
    if (ret)
       return ret;
 
+   uint32_t obj = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
+   uint64_t obj_offset = 0;
+   if (bo->from_host_ptr) {
+      obj = 0;
+      obj_offset = (uintptr_t)bo->map;
+      if (op == XE_VM_BIND_OP_MAP)
+         op = XE_VM_BIND_OP_MAP_USERPTR;
+   }
+
    struct drm_xe_sync sync = {
       .flags = DRM_XE_SYNC_SYNCOBJ | DRM_XE_SYNC_SIGNAL,
       .handle = syncobj_handle,
@@ -98,8 +118,8 @@ xe_gem_vm_bind_op(struct anv_device *device, struct anv_bo *bo, uint32_t op)
    struct drm_xe_vm_bind args = {
       .vm_id = device->vm_id,
       .num_binds = 1,
-      .bind.obj = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle,
-      .bind.obj_offset = 0,
+      .bind.obj = obj,
+      .bind.obj_offset = obj_offset,
       .bind.range = bo->actual_size,
       .bind.addr = intel_48b_address(bo->offset),
       .bind.op = op,
@@ -135,11 +155,22 @@ static int xe_gem_vm_unbind(struct anv_device *device, struct anv_bo *bo)
    return xe_gem_vm_bind_op(device, bo, XE_VM_BIND_OP_UNMAP);
 }
 
+static uint32_t
+xe_gem_create_userptr(struct anv_device *device, void *mem, uint64_t size)
+{
+   /* We return the workaround BO gem_handle here, because Xe doesn't
+    * create handles for userptrs. But we still need to make it look
+    * to the rest of Anv that the operation succeeded.
+    */
+   return device->workaround_bo->gem_handle;
+}
+
 const struct anv_kmd_backend *
 anv_xe_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend xe_backend = {
       .gem_create = xe_gem_create,
+      .gem_create_userptr = xe_gem_create_userptr,
       .gem_close = xe_gem_close,
       .gem_mmap = xe_gem_mmap,
       .gem_vm_bind = xe_gem_vm_bind,

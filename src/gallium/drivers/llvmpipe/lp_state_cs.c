@@ -28,8 +28,6 @@
 #include "util/u_dump.h"
 #include "util/u_prim.h"
 #include "util/u_string.h"
-#include "tgsi/tgsi_dump.h"
-#include "tgsi/tgsi_parse.h"
 #include "gallivm/lp_bld_const.h"
 #include "gallivm/lp_bld_debug.h"
 #include "gallivm/lp_bld_intr.h"
@@ -51,6 +49,7 @@
 #include "lp_cs_tpool.h"
 #include "frontend/sw_winsys.h"
 #include "nir/nir_to_tgsi_info.h"
+#include "nir/tgsi_to_nir.h"
 #include "util/mesa-sha1.h"
 #include "nir_serialize.h"
 
@@ -746,7 +745,6 @@ generate_compute(struct llvmpipe_context *lp,
       params.resources_type = variant->jit_resources_type;
       params.resources_ptr = resources_ptr;
       params.sampler = sampler;
-      params.info = &shader->info.base;
       params.ssbo_ptr = ssbo_ptr;
       params.image = image;
       params.shared_ptr = shared_ptr;
@@ -758,11 +756,8 @@ generate_compute(struct llvmpipe_context *lp,
                                                                       resources_ptr);
       params.mesh_iface = &mesh_iface.base;
 
-      if (shader->base.type == PIPE_SHADER_IR_TGSI)
-         lp_build_tgsi_soa(gallivm, shader->base.tokens, &params, NULL);
-      else
-         lp_build_nir_soa(gallivm, shader->base.ir.nir, &params,
-                          NULL);
+      lp_build_nir_soa(gallivm, shader->base.ir.nir, &params,
+		       NULL);
 
       if (is_mesh) {
          LLVMTypeRef i32t = LLVMInt32TypeInContext(gallivm->context);
@@ -856,13 +851,18 @@ llvmpipe_create_compute_state(struct pipe_context *pipe,
                               const struct pipe_compute_state *templ)
 {
    struct lp_compute_shader *shader = CALLOC_STRUCT(lp_compute_shader);
+   struct nir_shader *nir = NULL;
    if (!shader)
       return NULL;
 
    shader->no = cs_no++;
 
    shader->base.type = templ->ir_type;
-   if (templ->ir_type == PIPE_SHADER_IR_NIR_SERIALIZED) {
+
+   if (shader->base.type == PIPE_SHADER_IR_TGSI) {
+      shader->base.ir.nir = tgsi_to_nir(templ->prog, pipe->screen, false);
+      shader->base.type = PIPE_SHADER_IR_NIR;
+   } else if (templ->ir_type == PIPE_SHADER_IR_NIR_SERIALIZED) {
       struct blob_reader reader;
       const struct pipe_binary_program_header *hdr = templ->prog;
 
@@ -875,26 +875,21 @@ llvmpipe_create_compute_state(struct pipe_context *pipe,
       shader->zero_initialize_shared_memory = ((struct nir_shader *)shader->base.ir.nir)->info.zero_initialize_shared_memory;
    } else if (templ->ir_type == PIPE_SHADER_IR_NIR) {
       shader->base.ir.nir = (struct nir_shader *)templ->prog;
+   }
+
+   if (shader->base.type == PIPE_SHADER_IR_NIR) {
       shader->req_local_mem += ((struct nir_shader *)shader->base.ir.nir)->info.shared_size;
       shader->zero_initialize_shared_memory = ((struct nir_shader *)shader->base.ir.nir)->info.zero_initialize_shared_memory;
    }
-   if (shader->base.type == PIPE_SHADER_IR_TGSI) {
-      /* get/save the summary info for this shader */
-      lp_build_tgsi_info(templ->prog, &shader->info);
 
-      /* we need to keep a local copy of the tokens */
-      shader->base.tokens = tgsi_dup_tokens(templ->prog);
-   } else {
-      nir_tgsi_scan_shader(shader->base.ir.nir, &shader->info.base, false);
-   }
-
+   nir = (struct nir_shader *)shader->base.ir.nir;
    llvmpipe_register_shader(pipe, &shader->base, false);
 
    list_inithead(&shader->variants.list);
 
-   int nr_samplers = shader->info.base.file_max[TGSI_FILE_SAMPLER] + 1;
-   int nr_sampler_views = shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] + 1;
-   int nr_images = shader->info.base.file_max[TGSI_FILE_IMAGE] + 1;
+   int nr_samplers = BITSET_LAST_BIT(nir->info.samplers_used);
+   int nr_sampler_views = BITSET_LAST_BIT(nir->info.textures_used);
+   int nr_images = BITSET_LAST_BIT(nir->info.images_used);
    shader->variant_key_size = lp_cs_variant_key_size(MAX2(nr_samplers, nr_sampler_views), nr_images);
 
    return shader;
@@ -981,9 +976,7 @@ llvmpipe_delete_compute_state(struct pipe_context *pipe,
    LIST_FOR_EACH_ENTRY_SAFE(li, next, &shader->variants.list, list) {
       llvmpipe_remove_cs_shader_variant(llvmpipe, li->base);
    }
-   if (shader->base.ir.nir)
-      ralloc_free(shader->base.ir.nir);
-   tgsi_free_tokens(shader->base.tokens);
+   ralloc_free(shader->base.ir.nir);
    FREE(shader);
 }
 
@@ -998,19 +991,18 @@ make_variant_key(struct llvmpipe_context *lp,
       (struct lp_compute_shader_variant_key *)store;
    memset(key, 0, sizeof(*key));
 
+   struct nir_shader *nir = (struct nir_shader *)shader->base.ir.nir;
    /* This value will be the same for all the variants of a given shader:
     */
-   key->nr_samplers = shader->info.base.file_max[TGSI_FILE_SAMPLER] + 1;
-
-   if (shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] != -1)
-      key->nr_sampler_views = shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] + 1;
+   key->nr_samplers = BITSET_LAST_BIT(nir->info.samplers_used);
+   key->nr_sampler_views = BITSET_LAST_BIT(nir->info.textures_used);
    struct lp_sampler_static_state *cs_sampler;
 
    cs_sampler = lp_cs_variant_key_samplers(key);
 
    memset(cs_sampler, 0, MAX2(key->nr_samplers, key->nr_sampler_views) * sizeof *cs_sampler);
    for (unsigned i = 0; i < key->nr_samplers; ++i) {
-      if (shader->info.base.file_mask[TGSI_FILE_SAMPLER] & (1 << i)) {
+      if (BITSET_TEST(nir->info.samplers_used, i)) {
          lp_sampler_static_sampler_state(&cs_sampler[i].sampler_state,
                                          lp->samplers[sh_type][i]);
       }
@@ -1021,14 +1013,14 @@ make_variant_key(struct llvmpipe_context *lp,
     * are dx10-style? Can't really have mixed opcodes, at least not
     * if we want to skip the holes here (without rescanning tgsi).
     */
-   if (shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] != -1) {
+   if (!BITSET_IS_EMPTY(nir->info.textures_used)) {
       for (unsigned i = 0; i < key->nr_sampler_views; ++i) {
          /*
           * Note sview may exceed what's representable by file_mask.
           * This will still work, the only downside is that not actually
           * used views may be included in the shader key.
           */
-         if ((shader->info.base.file_mask[TGSI_FILE_SAMPLER_VIEW] & (1u << (i & 31))) || i > 31) {
+         if (BITSET_TEST(nir->info.textures_used, i)) {
             lp_sampler_static_texture_state(&cs_sampler[i].texture_state,
                                             lp->sampler_views[sh_type][i]);
          }
@@ -1036,7 +1028,7 @@ make_variant_key(struct llvmpipe_context *lp,
    } else {
       key->nr_sampler_views = key->nr_samplers;
       for (unsigned i = 0; i < key->nr_sampler_views; ++i) {
-         if ((shader->info.base.file_mask[TGSI_FILE_SAMPLER] & (1 << i)) || i > 31) {
+         if (BITSET_TEST(nir->info.samplers_used, i)) {
             lp_sampler_static_texture_state(&cs_sampler[i].texture_state,
                                             lp->sampler_views[sh_type][i]);
          }
@@ -1045,13 +1037,13 @@ make_variant_key(struct llvmpipe_context *lp,
 
    struct lp_image_static_state *lp_image;
    lp_image = lp_cs_variant_key_images(key);
-   key->nr_images = shader->info.base.file_max[TGSI_FILE_IMAGE] + 1;
+   key->nr_images = BITSET_LAST_BIT(nir->info.images_used);
 
    if (key->nr_images)
       memset(lp_image, 0,
              key->nr_images * sizeof *lp_image);
    for (unsigned i = 0; i < key->nr_images; ++i) {
-      if ((shader->info.base.file_mask[TGSI_FILE_IMAGE] & (1 << i)) || i > 31) {
+      if (BITSET_TEST(nir->info.images_used, i)) {
          lp_sampler_static_texture_state_image(&lp_image[i].image_state,
                                                &lp->images[sh_type][i]);
       }
@@ -1127,10 +1119,7 @@ lp_debug_cs_variant(const struct lp_compute_shader_variant *variant)
 {
    debug_printf("llvmpipe: Compute shader #%u variant #%u:\n",
                 variant->shader->no, variant->no);
-   if (variant->shader->base.type == PIPE_SHADER_IR_TGSI)
-      tgsi_dump(variant->shader->base.tokens, 0);
-   else
-      nir_print_shader(variant->shader->base.ir.nir, stderr);
+   nir_print_shader(variant->shader->base.ir.nir, stderr);
    dump_cs_variant_key(&variant->key);
    debug_printf("\n");
 }
@@ -2001,12 +1990,12 @@ llvmpipe_create_ts_state(struct pipe_context *pipe,
 
    shader->base.ir.nir = templ->ir.nir;
    shader->req_local_mem += ((struct nir_shader *)shader->base.ir.nir)->info.shared_size;
-   nir_tgsi_scan_shader(shader->base.ir.nir, &shader->info.base, false);
    list_inithead(&shader->variants.list);
 
-   int nr_samplers = shader->info.base.file_max[TGSI_FILE_SAMPLER] + 1;
-   int nr_sampler_views = shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] + 1;
-   int nr_images = shader->info.base.file_max[TGSI_FILE_IMAGE] + 1;
+   struct nir_shader *nir = shader->base.ir.nir;
+   int nr_samplers = BITSET_LAST_BIT(nir->info.samplers_used);
+   int nr_sampler_views = BITSET_LAST_BIT(nir->info.textures_used);
+   int nr_images = BITSET_LAST_BIT(nir->info.images_used);
    shader->variant_key_size = lp_cs_variant_key_size(MAX2(nr_samplers, nr_sampler_views), nr_images);
    return shader;
 }
@@ -2075,7 +2064,6 @@ llvmpipe_create_ms_state(struct pipe_context *pipe,
 
    shader->base.ir.nir = templ->ir.nir;
    shader->req_local_mem += ((struct nir_shader *)shader->base.ir.nir)->info.shared_size;
-   nir_tgsi_scan_shader(shader->base.ir.nir, &shader->info.base, false);
    list_inithead(&shader->variants.list);
 
    shader->draw_mesh_data = draw_create_mesh_shader(llvmpipe->draw, templ);
@@ -2085,9 +2073,10 @@ llvmpipe_create_ms_state(struct pipe_context *pipe,
       return NULL;
    }
 
-   int nr_samplers = shader->info.base.file_max[TGSI_FILE_SAMPLER] + 1;
-   int nr_sampler_views = shader->info.base.file_max[TGSI_FILE_SAMPLER_VIEW] + 1;
-   int nr_images = shader->info.base.file_max[TGSI_FILE_IMAGE] + 1;
+   struct nir_shader *nir = shader->base.ir.nir;
+   int nr_samplers = BITSET_LAST_BIT(nir->info.samplers_used);
+   int nr_sampler_views = BITSET_LAST_BIT(nir->info.textures_used);
+   int nr_images = BITSET_LAST_BIT(nir->info.images_used);
    shader->variant_key_size = lp_cs_variant_key_size(MAX2(nr_samplers, nr_sampler_views), nr_images);
    return shader;
 }

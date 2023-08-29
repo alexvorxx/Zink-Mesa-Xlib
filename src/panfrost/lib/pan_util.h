@@ -52,6 +52,8 @@
 #define PAN_DBG_OVERFLOW 0x8000
 #endif
 
+#define PAN_DBG_YUV 0x20000
+
 struct panfrost_device;
 
 unsigned panfrost_translate_swizzle_4(const unsigned char swizzle[4]);

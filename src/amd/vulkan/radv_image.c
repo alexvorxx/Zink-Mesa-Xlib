@@ -99,6 +99,12 @@ radv_use_tc_compat_htile_for_image(struct radv_device *device, const VkImageCrea
        */
       if (format != VK_FORMAT_D32_SFLOAT_S8_UINT && format != VK_FORMAT_D32_SFLOAT && format != VK_FORMAT_D16_UNORM)
          return false;
+
+      /* TC-compat HTILE for layered images can have interleaved slices (see sliceInterleaved flag
+       * in addrlib).  radv_clear_htile does not work.
+       */
+      if (pCreateInfo->arrayLayers > 1)
+         return false;
    }
 
    return true;
@@ -834,15 +840,16 @@ si_set_mutable_tex_desc_fields(struct radv_device *device, struct radv_image *im
    }
 
    /* GFX10.3+ can set a custom pitch for 1D and 2D non-array, but it must be a multiple
-    * of 256B. Only set it for 2D linear for multi-GPU interop.
+    * of 256B.
     *
     * If an imported image is used with VK_IMAGE_VIEW_TYPE_2D_ARRAY, it may hang due to VM faults
     * because DEPTH means pitch with 2D, but it means depth with 2D array.
     */
-   if (device->physical_device->rad_info.gfx_level >= GFX10_3 && image->vk.image_type == VK_IMAGE_TYPE_2D &&
-       plane->surface.is_linear && util_is_power_of_two_nonzero(plane->surface.bpe) &&
-       G_00A00C_TYPE(state[3]) == V_008F1C_SQ_RSRC_IMG_2D) {
+   if (device->physical_device->rad_info.gfx_level >= GFX10_3 && plane->surface.u.gfx9.uses_custom_pitch) {
       assert((plane->surface.u.gfx9.surf_pitch * plane->surface.bpe) % 256 == 0);
+      assert(image->vk.image_type == VK_IMAGE_TYPE_2D);
+      assert(plane->surface.is_linear);
+      assert(G_00A00C_TYPE(state[3]) == V_008F1C_SQ_RSRC_IMG_2D);
       unsigned pitch = plane->surface.u.gfx9.surf_pitch;
 
       /* Subsampled images have the pitch in the units of blocks. */
@@ -2216,8 +2223,8 @@ radv_image_view_init(struct radv_image_view *iview, struct radv_device *device,
       unsigned img_bw = vk_format_get_blockwidth(image->planes[iview->plane_id].format);
       unsigned img_bh = vk_format_get_blockheight(image->planes[iview->plane_id].format);
 
-      iview->extent.width = round_up_u32(iview->extent.width * view_bw, img_bw);
-      iview->extent.height = round_up_u32(iview->extent.height * view_bh, img_bh);
+      iview->extent.width = DIV_ROUND_UP(iview->extent.width * view_bw, img_bw);
+      iview->extent.height = DIV_ROUND_UP(iview->extent.height * view_bh, img_bh);
 
       /* Comment ported from amdvlk -
        * If we have the following image:
@@ -2257,8 +2264,8 @@ radv_image_view_init(struct radv_image_view *iview, struct radv_device *device,
             unsigned lvl_width = radv_minify(image->vk.extent.width, range->baseMipLevel);
             unsigned lvl_height = radv_minify(image->vk.extent.height, range->baseMipLevel);
 
-            lvl_width = round_up_u32(lvl_width * view_bw, img_bw);
-            lvl_height = round_up_u32(lvl_height * view_bh, img_bh);
+            lvl_width = DIV_ROUND_UP(lvl_width * view_bw, img_bw);
+            lvl_height = DIV_ROUND_UP(lvl_height * view_bh, img_bh);
 
             iview->extent.width = CLAMP(lvl_width << range->baseMipLevel, iview->extent.width,
                                         iview->image->planes[0].surface.u.gfx9.base_mip_width);
@@ -2507,38 +2514,38 @@ radv_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks 
 }
 
 VKAPI_ATTR void VKAPI_CALL
-radv_GetImageSubresourceLayout(VkDevice _device, VkImage _image, const VkImageSubresource *pSubresource,
-                               VkSubresourceLayout *pLayout)
+radv_GetImageSubresourceLayout2KHR(VkDevice _device, VkImage _image, const VkImageSubresource2KHR *pSubresource,
+                                   VkSubresourceLayout2KHR *pLayout)
 {
    RADV_FROM_HANDLE(radv_image, image, _image);
    RADV_FROM_HANDLE(radv_device, device, _device);
-   int level = pSubresource->mipLevel;
-   int layer = pSubresource->arrayLayer;
+   int level = pSubresource->imageSubresource.mipLevel;
+   int layer = pSubresource->imageSubresource.arrayLayer;
 
    unsigned plane_id = 0;
    if (vk_format_get_plane_count(image->vk.format) > 1)
-      plane_id = radv_plane_from_aspect(pSubresource->aspectMask);
+      plane_id = radv_plane_from_aspect(pSubresource->imageSubresource.aspectMask);
 
    struct radv_image_plane *plane = &image->planes[plane_id];
    struct radeon_surf *surface = &plane->surface;
 
    if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
-      unsigned mem_plane_id = radv_plane_from_aspect(pSubresource->aspectMask);
+      unsigned mem_plane_id = radv_plane_from_aspect(pSubresource->imageSubresource.aspectMask);
 
       assert(level == 0);
       assert(layer == 0);
 
-      pLayout->offset =
+      pLayout->subresourceLayout.offset =
          ac_surface_get_plane_offset(device->physical_device->rad_info.gfx_level, surface, mem_plane_id, 0);
-      pLayout->rowPitch =
+      pLayout->subresourceLayout.rowPitch =
          ac_surface_get_plane_stride(device->physical_device->rad_info.gfx_level, surface, mem_plane_id, level);
-      pLayout->arrayPitch = 0;
-      pLayout->depthPitch = 0;
-      pLayout->size = ac_surface_get_plane_size(surface, mem_plane_id);
+      pLayout->subresourceLayout.arrayPitch = 0;
+      pLayout->subresourceLayout.depthPitch = 0;
+      pLayout->subresourceLayout.size = ac_surface_get_plane_size(surface, mem_plane_id);
    } else if (device->physical_device->rad_info.gfx_level >= GFX9) {
       uint64_t level_offset = surface->is_linear ? surface->u.gfx9.offset[level] : 0;
 
-      pLayout->offset =
+      pLayout->subresourceLayout.offset =
          ac_surface_get_plane_offset(device->physical_device->rad_info.gfx_level, &plane->surface, 0, layer) +
          level_offset;
       if (image->vk.format == VK_FORMAT_R32G32B32_UINT || image->vk.format == VK_FORMAT_R32G32B32_SINT ||
@@ -2547,28 +2554,28 @@ radv_GetImageSubresourceLayout(VkDevice _device, VkImage _image, const VkImageSu
           * the pitch is actually the number of components per
           * row.
           */
-         pLayout->rowPitch = surface->u.gfx9.surf_pitch * surface->bpe / 3;
+         pLayout->subresourceLayout.rowPitch = surface->u.gfx9.surf_pitch * surface->bpe / 3;
       } else {
          uint32_t pitch = surface->is_linear ? surface->u.gfx9.pitch[level] : surface->u.gfx9.surf_pitch;
 
          assert(util_is_power_of_two_nonzero(surface->bpe));
-         pLayout->rowPitch = pitch * surface->bpe;
+         pLayout->subresourceLayout.rowPitch = pitch * surface->bpe;
       }
 
-      pLayout->arrayPitch = surface->u.gfx9.surf_slice_size;
-      pLayout->depthPitch = surface->u.gfx9.surf_slice_size;
-      pLayout->size = surface->u.gfx9.surf_slice_size;
+      pLayout->subresourceLayout.arrayPitch = surface->u.gfx9.surf_slice_size;
+      pLayout->subresourceLayout.depthPitch = surface->u.gfx9.surf_slice_size;
+      pLayout->subresourceLayout.size = surface->u.gfx9.surf_slice_size;
       if (image->vk.image_type == VK_IMAGE_TYPE_3D)
-         pLayout->size *= u_minify(image->vk.extent.depth, level);
+         pLayout->subresourceLayout.size *= u_minify(image->vk.extent.depth, level);
    } else {
-      pLayout->offset = (uint64_t)surface->u.legacy.level[level].offset_256B * 256 +
-                        (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4 * layer;
-      pLayout->rowPitch = surface->u.legacy.level[level].nblk_x * surface->bpe;
-      pLayout->arrayPitch = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
-      pLayout->depthPitch = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
-      pLayout->size = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
+      pLayout->subresourceLayout.offset = (uint64_t)surface->u.legacy.level[level].offset_256B * 256 +
+                                          (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4 * layer;
+      pLayout->subresourceLayout.rowPitch = surface->u.legacy.level[level].nblk_x * surface->bpe;
+      pLayout->subresourceLayout.arrayPitch = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
+      pLayout->subresourceLayout.depthPitch = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
+      pLayout->subresourceLayout.size = (uint64_t)surface->u.legacy.level[level].slice_size_dw * 4;
       if (image->vk.image_type == VK_IMAGE_TYPE_3D)
-         pLayout->size *= u_minify(image->vk.extent.depth, level);
+         pLayout->subresourceLayout.size *= u_minify(image->vk.extent.depth, level);
    }
 }
 
@@ -2622,18 +2629,17 @@ radv_buffer_view_init(struct radv_buffer_view *view, struct radv_device *device,
    RADV_FROM_HANDLE(radv_buffer, buffer, pCreateInfo->buffer);
    uint64_t va = radv_buffer_get_va(buffer->bo) + buffer->offset;
 
-   vk_object_base_init(&device->vk, &view->base, VK_OBJECT_TYPE_BUFFER_VIEW);
+   vk_buffer_view_init(&device->vk, &view->vk, pCreateInfo);
 
    view->bo = buffer->bo;
-   view->range = vk_buffer_range(&buffer->vk, pCreateInfo->offset, pCreateInfo->range);
 
-   radv_make_texel_buffer_descriptor(device, va, pCreateInfo->format, pCreateInfo->offset, view->range, view->state);
+   radv_make_texel_buffer_descriptor(device, va, view->vk.format, view->vk.offset, view->vk.range, view->state);
 }
 
 void
 radv_buffer_view_finish(struct radv_buffer_view *view)
 {
-   vk_object_base_finish(&view->base);
+   vk_buffer_view_finish(&view->vk);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

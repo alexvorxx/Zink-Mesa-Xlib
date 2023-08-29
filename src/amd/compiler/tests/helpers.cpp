@@ -269,7 +269,7 @@ finish_assembler_test()
 {
    finish_program(program.get());
    std::vector<uint32_t> binary;
-   unsigned exec_size = emit_program(program.get(), binary, NULL);
+   unsigned exec_size = emit_program(program.get(), binary);
 
    /* we could use CLRX for disassembly but that would require it to be
     * installed */

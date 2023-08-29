@@ -1371,7 +1371,7 @@ anv_bo_unmap_close(struct anv_device *device, struct anv_bo *bo)
       anv_device_unmap_bo(device, bo, bo->map, bo->size);
 
    assert(bo->gem_handle != 0);
-   device->kmd_backend->gem_close(device, bo->gem_handle);
+   device->kmd_backend->gem_close(device, bo);
 }
 
 static void
@@ -1525,7 +1525,7 @@ anv_device_alloc_bo(struct anv_device *device,
       VkResult result = anv_device_map_bo(device, &new_bo, 0, size,
                                           0 /* propertyFlags */, &new_bo.map);
       if (unlikely(result != VK_SUCCESS)) {
-         device->kmd_backend->gem_close(device, new_bo.gem_handle);
+         device->kmd_backend->gem_close(device, &new_bo);
          return result;
       }
    }
@@ -1634,13 +1634,24 @@ anv_device_import_bo_from_host_ptr(struct anv_device *device,
       anv_bo_alloc_flags_to_bo_flags(device, alloc_flags);
    assert(bo_flags == (bo_flags & ANV_BO_CACHE_SUPPORTED_FLAGS));
 
-   uint32_t gem_handle = anv_gem_userptr(device, host_ptr, size);
+   uint32_t gem_handle = device->kmd_backend->gem_create_userptr(device, host_ptr, size);
    if (!gem_handle)
       return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
 
    pthread_mutex_lock(&cache->mutex);
 
-   struct anv_bo *bo = anv_device_lookup_bo(device, gem_handle);
+   struct anv_bo *bo = NULL;
+   if (device->info->kmd_type == INTEL_KMD_TYPE_XE) {
+      bo = vk_zalloc(&device->vk.alloc, sizeof(*bo), 8,
+                     VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (!bo) {
+         pthread_mutex_unlock(&cache->mutex);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
+   } else {
+      bo = anv_device_lookup_bo(device, gem_handle);
+   }
+
    if (bo->refcount > 0) {
       /* VK_EXT_external_memory_host doesn't require handling importing the
        * same pointer twice at the same time, but we don't get in the way.  If
@@ -1691,6 +1702,13 @@ anv_device_import_bo_from_host_ptr(struct anv_device *device,
       if (result != VK_SUCCESS) {
          pthread_mutex_unlock(&cache->mutex);
          return result;
+      }
+
+      if (device->kmd_backend->gem_vm_bind(device, &new_bo)) {
+         VkResult res = vk_errorf(device, VK_ERROR_UNKNOWN, "vm bind failed: %m");
+         anv_bo_vma_free(device, &new_bo);
+         pthread_mutex_unlock(&cache->mutex);
+         return res;
       }
 
       *bo = new_bo;
@@ -1789,25 +1807,25 @@ anv_device_import_bo(struct anv_device *device,
 
       __sync_fetch_and_add(&bo->refcount, 1);
    } else {
-      off_t size = lseek(fd, 0, SEEK_END);
-      if (size == (off_t)-1) {
-         device->kmd_backend->gem_close(device, gem_handle);
-         pthread_mutex_unlock(&cache->mutex);
-         return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
-      }
-
       struct anv_bo new_bo = {
          .name = "imported",
          .gem_handle = gem_handle,
          .refcount = 1,
          .offset = -1,
-         .size = size,
-         .actual_size = size,
          .flags = bo_flags,
          .is_external = true,
          .has_client_visible_address =
             (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) != 0,
       };
+
+      off_t size = lseek(fd, 0, SEEK_END);
+      if (size == (off_t)-1) {
+         device->kmd_backend->gem_close(device, &new_bo);
+         pthread_mutex_unlock(&cache->mutex);
+         return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
+      }
+      new_bo.size = size;
+      new_bo.actual_size = size;
 
       assert(new_bo._ccs_size == 0);
       VkResult result = anv_bo_vma_alloc_or_close(device, &new_bo,
@@ -1909,7 +1927,10 @@ anv_device_release_bo(struct anv_device *device,
                       struct anv_bo *bo)
 {
    struct anv_bo_cache *cache = &device->bo_cache;
-   assert(anv_device_lookup_bo(device, bo->gem_handle) == bo);
+   const bool bo_is_xe_userptr = device->info->kmd_type == INTEL_KMD_TYPE_XE &&
+                                 bo->from_host_ptr;
+   assert(bo_is_xe_userptr ||
+          anv_device_lookup_bo(device, bo->gem_handle) == bo);
 
    /* Try to decrement the counter but don't go below one.  If this succeeds
     * then the refcount has been decremented and we are not the last
@@ -1948,7 +1969,10 @@ anv_device_release_bo(struct anv_device *device,
     */
    struct anv_bo old_bo = *bo;
 
-   memset(bo, 0, sizeof(*bo));
+   if (bo_is_xe_userptr)
+      vk_free(&device->vk.alloc, bo);
+   else
+      memset(bo, 0, sizeof(*bo));
 
    anv_bo_finish(device, &old_bo);
 

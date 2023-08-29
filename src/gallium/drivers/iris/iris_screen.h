@@ -232,6 +232,8 @@ struct iris_screen {
 
    /** Every screen on a bufmgr has an unique ID assigned by the bufmgr. */
    int id;
+
+   struct iris_bo *breakpoint_bo;
 };
 
 struct pipe_screen *

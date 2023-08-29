@@ -32,6 +32,8 @@ vulkan_runtime_files = files(
   'vk_blend.h',
   'vk_buffer.c',
   'vk_buffer.h',
+  'vk_buffer_view.c',
+  'vk_buffer_view.h',
   'vk_cmd_copy.c',
   'vk_cmd_enqueue.c',
   'vk_command_buffer.c',
@@ -66,10 +68,15 @@ vulkan_runtime_files = files(
   'vk_instance.h',
   'vk_log.c',
   'vk_log.h',
-  'vk_nir_convert_ycbcr.c',
-  'vk_nir_convert_ycbcr.h',
+  'vk_meta.c',
+  'vk_meta.h',
+  'vk_meta_blit_resolve.c',
+  'vk_meta_draw_rects.c',
+  'vk_meta_clear.c',
   'vk_nir.c',
   'vk_nir.h',
+  'vk_nir_convert_ycbcr.c',
+  'vk_nir_convert_ycbcr.h',
   'vk_object.c',
   'vk_object.h',
   'vk_pipeline.c',
@@ -80,6 +87,8 @@ vulkan_runtime_files = files(
   'vk_physical_device.h',
   'vk_pipeline_layout.c',
   'vk_pipeline_layout.h',
+  'vk_query_pool.c',
+  'vk_query_pool.h',
   'vk_queue.c',
   'vk_queue.h',
   'vk_render_pass.c',
@@ -185,6 +194,18 @@ vk_physical_device_features = custom_target(
   depend_files : vk_physical_device_features_gen_depend_files,
 )
 
+vk_physical_device_properties = custom_target(
+  'vk_physical_device_properties',
+  input : [vk_physical_device_properties_gen, vk_api_xml],
+  output : ['vk_physical_device_properties.c', 'vk_physical_device_properties.h'],
+  command : [
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@',
+    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
+    '--beta', with_vulkan_beta.to_string()
+  ],
+  depend_files : vk_physical_device_properties_gen_depend_files,
+)
+
 vk_format_info = custom_target(
   'vk_format_info',
   input : ['vk_format_info_gen.py', vk_api_xml],
@@ -200,7 +221,7 @@ libvulkan_runtime = static_library(
   [vulkan_runtime_files, vk_common_entrypoints,
    vk_cmd_queue, vk_cmd_enqueue_entrypoints,
    vk_dispatch_trampolines, vk_physical_device_features,
-   vk_format_info],
+   vk_physical_device_properties, vk_format_info],
   include_directories : [inc_include, inc_src, inc_gallium],
   dependencies : vulkan_runtime_deps,
   # For glsl_type_singleton
@@ -211,7 +232,7 @@ libvulkan_runtime = static_library(
 )
 
 idep_vulkan_runtime_headers = declare_dependency(
-  sources : [vk_cmd_queue[1], vk_physical_device_features[1]],
+  sources : [vk_cmd_queue[1], vk_physical_device_features[1], vk_physical_device_properties[1]],
   include_directories : include_directories('.'),
 )
 

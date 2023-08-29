@@ -296,15 +296,27 @@ Block::erase(iterator node)
 }
 
 void
-Block::set_type(Type t)
+Block::set_type(Type t, r600_chip_class chip_class)
 {
-   m_blocK_type = t;
+   m_block_type = t;
    switch (t) {
    case vtx:
+      /* In theory on >= EG VTX support 16 slots, but with vertex fetch
+       * instructions the register pressure increases fast - i.e. in the worst
+       * case four register more get used, so stick to 8 slots for now.
+       * TODO: think about some trickery in the schedler to make use of up
+       * to 16 slots if the register pressure doesn't get too high.
+       */
+      m_remaining_slots = 8;
+      break;
    case gds:
    case tex:
-      m_remaining_slots = 8;
-      break; /* TODO: 16 for >= EVERGREEN */
+      m_remaining_slots = chip_class >= ISA_CC_EVERGREEN ? 16 : 8;
+      break;
+   case alu:
+      /* 128 but a follow up block might need to emit and ADDR + INDEX load */
+      m_remaining_slots = 118;
+      break;
    default:
       m_remaining_slots = 0xffff;
    }
@@ -408,6 +420,10 @@ Block::try_reserve_kcache(const UniformValue& u, std::array<KCacheLine, 4>& kcac
    int bank = u.kcache_bank();
    int sel = (u.sel() - 512);
    int line = sel >> 4;
+   EBufferIndexMode index_mode = bim_none;
+
+   if (auto addr = u.buf_addr())
+      index_mode = addr->sel() == AddressRegister::idx0 ?  bim_zero : bim_one;
 
    bool found = false;
 
@@ -416,6 +432,12 @@ Block::try_reserve_kcache(const UniformValue& u, std::array<KCacheLine, 4>& kcac
          if (kcache[i].bank < bank)
             continue;
 
+
+         if (kcache[i].bank == bank &&
+             kcache[i].index_mode != bim_none &&
+             kcache[i].index_mode != index_mode) {
+            return false;
+         }
          if ((kcache[i].bank == bank && kcache[i].addr > line + 1) ||
              kcache[i].bank > bank) {
             if (kcache[kcache_banks - 1].mode)
@@ -427,6 +449,7 @@ Block::try_reserve_kcache(const UniformValue& u, std::array<KCacheLine, 4>& kcac
             kcache[i].mode = KCacheLine::lock_1;
             kcache[i].bank = bank;
             kcache[i].addr = line;
+            kcache[i].index_mode = index_mode;
             return true;
          }
 
@@ -457,6 +480,7 @@ Block::try_reserve_kcache(const UniformValue& u, std::array<KCacheLine, 4>& kcac
          kcache[i].mode = KCacheLine::lock_1;
          kcache[i].bank = bank;
          kcache[i].addr = line;
+         kcache[i].index_mode = index_mode;
          return true;
       }
    }

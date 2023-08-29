@@ -243,21 +243,23 @@ init_buffers(struct vl_compositor *c)
    /*
     * Create our vertex buffer and vertex buffer elements
     */
-   c->vertex_buf.stride = sizeof(struct vertex2f) + sizeof(struct vertex4f) * 2;
    c->vertex_buf.buffer_offset = 0;
    c->vertex_buf.buffer.resource = NULL;
    c->vertex_buf.is_user_buffer = false;
 
    if (c->pipe_gfx_supported) {
            vertex_elems[0].src_offset = 0;
+           vertex_elems[0].src_stride = VL_COMPOSITOR_VB_STRIDE;
            vertex_elems[0].instance_divisor = 0;
            vertex_elems[0].vertex_buffer_index = 0;
            vertex_elems[0].src_format = PIPE_FORMAT_R32G32_FLOAT;
            vertex_elems[1].src_offset = sizeof(struct vertex2f);
+           vertex_elems[1].src_stride = VL_COMPOSITOR_VB_STRIDE;
            vertex_elems[1].instance_divisor = 0;
            vertex_elems[1].vertex_buffer_index = 0;
            vertex_elems[1].src_format = PIPE_FORMAT_R32G32B32A32_FLOAT;
            vertex_elems[2].src_offset = sizeof(struct vertex2f) + sizeof(struct vertex4f);
+           vertex_elems[1].src_stride = VL_COMPOSITOR_VB_STRIDE;
            vertex_elems[2].instance_divisor = 0;
            vertex_elems[2].vertex_buffer_index = 0;
            vertex_elems[2].src_format = PIPE_FORMAT_R32G32B32A32_FLOAT;
@@ -384,8 +386,6 @@ set_rgb_to_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
                      unsigned layer, struct pipe_sampler_view *v,
                      struct u_rect *src_rect, struct u_rect *dst_rect, bool y)
 {
-   vl_csc_matrix csc_matrix;
-
    assert(s && c && v);
 
    assert(layer < VL_COMPOSITOR_MAX_LAYERS);
@@ -393,9 +393,6 @@ set_rgb_to_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
    s->used_layers |= 1 << layer;
 
    s->layers[layer].fs = y? c->fs_rgb_yuv.y : c->fs_rgb_yuv.uv;
-
-   vl_csc_get_matrix(VL_CSC_COLOR_STANDARD_BT_709_REV, NULL, false, &csc_matrix);
-   vl_compositor_set_csc_matrix(s, (const vl_csc_matrix *)&csc_matrix, 1.0f, 0.0f);
 
    s->layers[layer].samplers[0] = c->sampler_linear;
    s->layers[layer].samplers[1] = NULL;

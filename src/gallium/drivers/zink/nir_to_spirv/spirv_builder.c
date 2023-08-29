@@ -469,6 +469,12 @@ spirv_builder_emit_load(struct spirv_builder *b, SpvId result_type,
    return spirv_builder_emit_unop(b, SpvOpLoad, result_type, pointer);
 }
 
+SpvId
+spirv_builder_emit_load_aligned(struct spirv_builder *b, SpvId result_type, SpvId pointer, unsigned alignment)
+{
+   return spirv_builder_emit_triop(b, SpvOpLoad, result_type, pointer, SpvMemoryAccessAlignedMask, alignment);
+}
+
 void
 spirv_builder_emit_store(struct spirv_builder *b, SpvId pointer, SpvId object)
 {
@@ -476,6 +482,17 @@ spirv_builder_emit_store(struct spirv_builder *b, SpvId pointer, SpvId object)
    spirv_buffer_emit_word(&b->instructions, SpvOpStore | (3 << 16));
    spirv_buffer_emit_word(&b->instructions, pointer);
    spirv_buffer_emit_word(&b->instructions, object);
+}
+
+void
+spirv_builder_emit_store_aligned(struct spirv_builder *b, SpvId pointer, SpvId object, unsigned alignment)
+{
+   spirv_buffer_prepare(&b->instructions, b->mem_ctx, 5);
+   spirv_buffer_emit_word(&b->instructions, SpvOpStore | (5 << 16));
+   spirv_buffer_emit_word(&b->instructions, pointer);
+   spirv_buffer_emit_word(&b->instructions, object);
+   spirv_buffer_emit_word(&b->instructions, SpvMemoryAccessAlignedMask);
+   spirv_buffer_emit_word(&b->instructions, alignment);
 }
 
 void

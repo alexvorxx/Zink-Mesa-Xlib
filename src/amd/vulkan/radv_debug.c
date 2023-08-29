@@ -697,7 +697,7 @@ radv_gpu_hang_occurred(struct radv_queue *queue, enum amd_ip_type ring)
 }
 
 void
-radv_check_gpu_hangs(struct radv_queue *queue, struct radeon_cmdbuf *cs)
+radv_check_gpu_hangs(struct radv_queue *queue, const struct radv_winsys_submit_info *submit_info)
 {
    struct radv_device *device = queue->device;
    enum amd_ip_type ring;
@@ -741,7 +741,7 @@ radv_check_gpu_hangs(struct radv_queue *queue, struct radeon_cmdbuf *cs)
    snprintf(dump_path, sizeof(dump_path), "%s/%s", dump_dir, "trace.log");
    f = fopen(dump_path, "w+");
    if (f) {
-      radv_dump_trace(queue->device, cs, f);
+      radv_dump_trace(queue->device, submit_info->cs_array[0], f);
       fclose(f);
    }
 

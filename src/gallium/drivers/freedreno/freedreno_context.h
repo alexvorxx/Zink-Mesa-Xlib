@@ -88,6 +88,7 @@ struct fd_vertexbuf_stateobj {
 
 struct fd_vertex_stateobj {
    struct pipe_vertex_element pipe[PIPE_MAX_ATTRIBS];
+   unsigned strides[PIPE_MAX_ATTRIBS];
    unsigned num_elements;
 };
 
@@ -526,6 +527,7 @@ struct fd_context {
    struct {
       struct fd_bo *bo;
       uint32_t per_fiber_size;
+      uint32_t per_sp_size;
    } pvtmem[2] dt;
 
    /* maps per-shader-stage state plus variant key to hw

@@ -278,6 +278,7 @@ _mesa_bind_vertex_buffer(struct gl_context *ctx,
    if (binding->BufferObj != vbo ||
        binding->Offset != offset ||
        binding->Stride != stride) {
+      bool stride_changed = binding->Stride != stride;
 
       if (take_vbo_ownership) {
          _mesa_reference_buffer_object(ctx, &binding->BufferObj, NULL);
@@ -298,8 +299,10 @@ _mesa_bind_vertex_buffer(struct gl_context *ctx,
 
       if (vao->Enabled & binding->_BoundArrays) {
          ctx->NewDriverState |= ST_NEW_VERTEX_ARRAYS;
-         /* Non-dynamic VAOs merge vertex buffers, which affects vertex elements. */
-         if (!vao->IsDynamic)
+         /* Non-dynamic VAOs merge vertex buffers, which affects vertex elements.
+          * stride changes also require new vertex elements
+          */
+         if (!vao->IsDynamic || stride_changed)
             ctx->Array.NewVertexElements = true;
       }
 
@@ -2159,9 +2162,6 @@ _mesa_enable_vertex_array_attribs(struct gl_context *ctx,
 
       vao->_EnabledWithMapMode =
          _mesa_vao_enable_to_vp_inputs(vao->_AttributeMapMode, vao->Enabled);
-
-      _mesa_set_varying_vp_inputs(ctx, ctx->VertexProgram._VPModeInputFilter &
-                                  vao->_EnabledWithMapMode);
    }
 }
 
@@ -2265,9 +2265,6 @@ _mesa_disable_vertex_array_attribs(struct gl_context *ctx,
 
       vao->_EnabledWithMapMode =
          _mesa_vao_enable_to_vp_inputs(vao->_AttributeMapMode, vao->Enabled);
-
-      _mesa_set_varying_vp_inputs(ctx, ctx->VertexProgram._VPModeInputFilter &
-                                  vao->_EnabledWithMapMode);
    }
 }
 

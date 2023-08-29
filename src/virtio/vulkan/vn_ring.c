@@ -151,11 +151,11 @@ vn_ring_get_layout(size_t buf_size,
 {
    /* this can be changed/extended quite freely */
    struct layout {
-      uint32_t head __attribute__((aligned(64)));
-      uint32_t tail __attribute__((aligned(64)));
-      uint32_t status __attribute__((aligned(64)));
+      alignas(64) uint32_t head;
+      alignas(64) uint32_t tail;
+      alignas(64) uint32_t status;
 
-      uint8_t buffer[] __attribute__((aligned(64)));
+      alignas(64) uint8_t buffer[];
    };
 
    assert(buf_size && util_is_power_of_two_or_zero(buf_size));

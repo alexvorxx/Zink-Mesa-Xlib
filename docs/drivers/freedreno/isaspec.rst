@@ -184,6 +184,19 @@ decoding.  The display template consists of references to fields (which may
 be derived fields) specified as ``{FIELDNAME}`` and other characters
 which are just echoed through to the resulting decoded bitset.
 
+The special field reference ``{NAME}`` prints the name of the bitset. This is
+often useful when the ``<display>`` element is at a higher level than the
+leaves of the hierarchy, for example a whole class of similar instructions that
+only differ in opcode.
+
+Sometimes there may be multiple variants of an instruction that must be
+different bitsets, for example because they are so different that they must
+derive from different bitsets, but they have the same name. Because bitset
+names must be unique in the encoder, this can be a problem, but this can worked
+around with the ``displayname`` attribute on the ``bitset`` which changes how
+``{NAME}`` is displayed but not the name used in the encoder. ``displayname``
+is only useful for leaf bitsets.
+
 It is possible to define a line column alignment value per field to influence
 the visual output. It needs to be specified as ``{FIELDNAME:align=xx}``.
 
@@ -230,6 +243,62 @@ which can reference fields (including other derived fields) with the same
 In the case of ``<override>`` elements, the override applies if the expression
 evaluates to non-zero.  In the case of ``<derived>`` fields, the expression
 evaluates to the value of the derived field.
+
+Branching
+---------
+
+isaspec supports a few special field types for printing branch destinations. If
+``isaspec_decode_options::branch_labels`` is true, a pre-pass over the program
+to be disassembled determines which instructions are branch destinations and
+then they are printed when disassembling, in addition to printing the name of
+the destination when printing the field itself.
+
+There are two different types, which affect how the destination is computed. If
+the field type is ``branch``, then the field is interpreted as a signed offset
+from the current instruction. If the type is ``absbranch``, then it is
+interpreted as an offset from the first instruction to be disassembled. In
+either case, the offset is multiplied by the instruction size.
+
+For example, here is what a signed-offset unconditional jump instruction might
+look like:
+
+.. code-block:: xml
+
+   <bitset name="jump" extends="#instruction">
+      <display>
+         jump #{OFFSET}
+      </display>
+      <pattern low="26" high="31">110010</pattern> <!-- opcode goes here -->
+      <field name="OFFSET" low="0" high="25" type="branch"/>
+   </bitset>
+
+This would produce a disassembly like ``jump #l42`` if the destination is 42
+instructions after the start of the disassembly. The destination would be
+preceded by a line with just ``l42:``.
+
+``branch`` and ``absbranch`` fields can additionally have a ``call="true"``
+attribute. For now, this just changes the disassembly. In particular the label
+prefix is changed to ``fxn`` and an extra empty line before the destination is
+added to visually seperate the disassembly into functions. So, for example, a
+call instruction defined like this:
+
+.. code-block:: xml
+
+   <bitset name="call" extends="#instruction">
+      <display>
+         call #{OFFSET}
+      </display>
+      <pattern low="26" high="31">110010</pattern> <!-- opcode goes here -->
+      <field name="OFFSET" low="0" high="25" type="branch" call="true"/>
+   </bitset>
+
+will disassemble to ``call #fxn42``.
+
+Finally, users with special knowledge about where execution may start can define
+"entrypoints" when disassembling which are printed like function call
+destinations, with an extra empty line, but with an arbitrary user-defined
+name. Names that are ``fxn`` or ``l`` followed by a number are discouraged
+because they may clash with automatically-generated names.
 
 Encoding
 --------

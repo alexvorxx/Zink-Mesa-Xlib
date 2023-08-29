@@ -426,6 +426,11 @@ AssamblerVisitor::emit_alu_op(const AluInstr& ai)
       }
    }
 
+   if (alu.dst.sel >= g_clause_local_start && alu.dst.sel < g_clause_local_end) {
+      int clidx = 4 * (alu.dst.sel - g_clause_local_start) + alu.dst.chan;
+      m_bc->cf_last->clause_local_written |= 1 << clidx;
+   }
+
    if (ai.opcode() == op1_set_cf_idx0) {
       m_bc->index_loaded[0] = 1;
       m_bc->index_reg[0] = -1;
@@ -445,24 +450,38 @@ AssamblerVisitor::visit(const AluGroup& group)
    if (group.slots() == 0)
       return;
 
-   if (group.has_lds_group_start()) {
-      if (m_bc->cf_last->ndw + 2 * (*group.begin())->required_slots() > 220) {
-         assert(m_bc->cf_last->nlds_read == 0);
-         m_bc->force_add_cf = 1;
-         m_last_addr = nullptr;
-      }
-   } else if (m_bc->cf_last) {
-      if (m_bc->cf_last->ndw + 2 * group.slots() > 240) {
-         assert(m_bc->cf_last->nlds_read == 0);
-         m_bc->force_add_cf = 1;
-         m_last_addr = nullptr;
-      } else {
-         auto instr = *group.begin();
-         if (instr && !instr->has_alu_flag(alu_is_lds) &&
-             instr->opcode() == op0_group_barrier && m_bc->cf_last->ndw + 14 > 240) {
+
+   static const unsigned slot_limit = r600::sfn_log.has_debug_flag(r600::SfnLog::noaddrsplit) ?
+                                         248 : 256;
+
+   if (m_bc->cf_last && !m_bc->force_add_cf) {
+      if (group.has_lds_group_start()) {
+         if (m_bc->cf_last->ndw + 2 * (*group.begin())->required_slots() > slot_limit) {
             assert(m_bc->cf_last->nlds_read == 0);
+            assert(0 && "Not allowed to start new alu group here");
             m_bc->force_add_cf = 1;
             m_last_addr = nullptr;
+         }
+      } else {
+         if (m_bc->cf_last->ndw + 2 * group.slots() > slot_limit) {
+            std::cerr << "m_bc->cf_last->ndw = " << m_bc->cf_last->ndw
+                      << " group.slots() = " << group.slots()
+                      << " -> " << m_bc->cf_last->ndw + 2 * group.slots()
+                      << "> slot_limit = " << slot_limit << "\n";
+            assert(m_bc->cf_last->nlds_read == 0);
+            assert(0 && "Not allowed to start new alu group here");
+            m_bc->force_add_cf = 1;
+            m_last_addr = nullptr;
+         } else {
+            auto instr = *group.begin();
+            if (instr && !instr->has_alu_flag(alu_is_lds) &&
+                instr->opcode() == op0_group_barrier && m_bc->cf_last->ndw + 14 > slot_limit) {
+               assert(0 && "Not allowed to start new alu group here");
+               assert(m_bc->cf_last->nlds_read == 0);
+               assert(r600::sfn_log.has_debug_flag(r600::SfnLog::noaddrsplit));
+               m_bc->force_add_cf = 1;
+               m_last_addr = nullptr;
+            }
          }
       }
    }
@@ -876,7 +895,11 @@ AssamblerVisitor::visit(const Block& block)
    if (block.empty())
       return;
 
-   m_bc->force_add_cf = block.has_instr_flag(Instr::force_cf);
+   if (block.has_instr_flag(Instr::force_cf)) {
+      m_bc->force_add_cf = 1;
+      m_bc->ar_loaded = 0;
+      m_last_addr = nullptr;
+   }
    sfn_log << SfnLog::assembly << "Translate block  size: " << block.size()
            << " new_cf:" << m_bc->force_add_cf << "\n";
 
@@ -927,6 +950,7 @@ AssamblerVisitor::visit(const IfInstr& instr)
    if (needs_workaround) {
       r600_bytecode_add_cfinst(m_bc, CF_OP_PUSH);
       m_bc->cf_last->cf_addr = m_bc->cf_last->id + 2;
+      r600_bytecode_add_cfinst(m_bc, CF_OP_ALU);
       pred->set_cf_type(cf_alu);
    }
 
@@ -1192,9 +1216,9 @@ AssamblerVisitor::emit_loop_cont()
 bool
 AssamblerVisitor::copy_dst(r600_bytecode_alu_dst& dst, const Register& d, bool write)
 {
-   if (write && d.sel() > 124) {
-      R600_ERR("shader_from_nir: Don't support more then 124 GPRs, but try "
-               "using %d\n",
+   if (write && d.sel() > g_clause_local_end) {
+      R600_ERR("shader_from_nir: Don't support more then 124 GPRs + 2 claus "
+               "local, but try using %d\n",
                d.sel());
       m_result = false;
       return false;
@@ -1262,6 +1286,13 @@ AssamblerVisitor::copy_src(r600_bytecode_alu_src& src, const VirtualValue& s)
    src.sel = s.sel();
    src.chan = s.chan();
 
+   if (s.sel() >= g_clause_local_start && s.sel() < g_clause_local_end ) {
+      assert(m_bc->cf_last);
+      int clidx = 4 * (s.sel() - g_clause_local_start) + s.chan();
+      /* Ensure that the clause local register was already written */
+      assert(m_bc->cf_last->clause_local_written & (1 << clidx));
+   }
+
    s.accept(visitor);
    return visitor.m_buffer_offset;
 }
@@ -1275,7 +1306,7 @@ EncodeSourceVisitor::EncodeSourceVisitor(r600_bytecode_alu_src& s, r600_bytecode
 void
 EncodeSourceVisitor::visit(const Register& value)
 {
-   assert(value.sel() <= 124 && "Only have 124 registers");
+   assert(value.sel() < g_clause_local_end && "Only have 124 reisters + 4 clause local");
 }
 
 void

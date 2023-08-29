@@ -28,12 +28,14 @@
 #include "dev/intel_device_info.h"
 
 #include "util/macros.h" /* Needed for MAX3 and MAX2 for format_rgb9e5 */
-#include "util/format_srgb.h"
-#include "util/format_rgb9e5.h"
-#include "util/format_r11g11b10f.h"
 
-/* Header-only format conversion include */
-#include "main/format_utils.h"
+#include "util/format/format_utils.h"
+#include "util/format_r11g11b10f.h"
+#include "util/format_rgb9e5.h"
+#include "util/format_srgb.h"
+#include "util/half_float.h"
+#include "util/rounding.h"
+#include "util/u_math.h"
 
 struct surface_format_info {
    bool exists;
@@ -876,12 +878,8 @@ bool
 isl_format_supports_ccs_e(const struct intel_device_info *devinfo,
                           enum isl_format format)
 {
-   /* Wa_14017353530: Disable compression on MTL until B0 */
-   if (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4)
-      return false;
-
-   /* Wa_22011186057: Disable compression on ADL-P A0 */
-   if (devinfo->platform == INTEL_PLATFORM_ADL && devinfo->gt == 2 && devinfo->revision == 0)
+   /* Disable compression on MTL until B0 */
+   if (intel_needs_workaround(devinfo, 14017240301))
       return false;
 
    if (!format_info_exists(format))

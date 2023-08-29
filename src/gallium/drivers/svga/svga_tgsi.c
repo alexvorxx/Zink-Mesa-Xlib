@@ -497,7 +497,6 @@ svga_tgsi_scan_shader(struct svga_shader *shader)
    case PIPE_SHADER_TESS_EVAL:
       info->tes.prim_mode =
          tgsi_info->properties[TGSI_PROPERTY_TES_PRIM_MODE];
-      info->tes.reads_tess_factor = tgsi_info->reads_tess_factors;
 
       for (unsigned i = 0; i < info->num_inputs; i++) {
          switch (tgsi_info->input_semantic_name[i]) {

@@ -1148,6 +1148,9 @@ can_fast_clear_color_att(struct anv_cmd_buffer *cmd_buffer,
                          const VkClearAttachment *attachment,
                          uint32_t rectCount, const VkClearRect *pRects)
 {
+   if (INTEL_DEBUG(DEBUG_NO_FAST_CLEAR))
+      return false;
+
    /* We don't support fast clearing with conditional rendering at the
     * moment. All the tracking done around fast clears (clear color updates
     * and fast-clear type updates) happens unconditionally.
@@ -1248,6 +1251,62 @@ exec_ccs_op(struct anv_cmd_buffer *cmd_buffer,
 
    switch (ccs_op) {
    case ISL_AUX_OP_FAST_CLEAR:
+      /* From the ICL PRMs, Volume 9: Render Engine, State Caching :
+       *
+       *    "Any values referenced by pointers within the RENDER_SURFACE_STATE
+       *     or SAMPLER_STATE (e.g. Clear Color Pointer, Border Color or
+       *     Indirect State Pointer) are considered to be part of that state
+       *     and any changes to these referenced values requires an
+       *     invalidation of the L1 state cache to ensure the new values are
+       *     being used as part of the state. In the case of surface data
+       *     pointed to by the Surface Base Address in RENDER SURFACE STATE,
+       *     the Texture Cache must be invalidated if the surface data
+       *     changes."
+       *
+       * and From the Render Target Fast Clear section,
+       *
+       *   "HwManaged FastClear allows SW to store FastClearValue in separate
+       *   graphics allocation, instead of keeping them in
+       *   RENDER_SURFACE_STATE. This behavior can be enabled by setting
+       *   ClearValueAddressEnable in RENDER_SURFACE_STATE.
+       *
+       *    Proper sequence of commands is as follows:
+       *
+       *       1. Storing clear color to allocation
+       *       2. Ensuring that step 1. is finished and visible for TextureCache
+       *       3. Performing FastClear
+       *
+       *    Step 2. is required on products with ClearColorConversion feature.
+       *    This feature is enabled by setting ClearColorConversionEnable.
+       *    This causes HW to read stored color from ClearColorAllocation and
+       *    write back with the native format or RenderTarget - and clear
+       *    color needs to be present and visible. Reading is done from
+       *    TextureCache, writing is done to RenderCache."
+       *
+       * We're going to change the clear color. Invalidate the texture cache
+       * now to ensure the clear color conversion feature works properly.
+       * Although the docs seem to require invalidating the texture cache
+       * after updating the clear color allocation, we can do this beforehand
+       * so long as we ensure:
+       *
+       *    1. Step 1 is complete before the texture cache is accessed in step 3
+       *    2. We don't access the texture cache between invalidation and step 3
+       *
+       * The second requirement is satisfied because we'll be performing step
+       * 1 and 3 right after invalidating. The first is satisfied because
+       * BLORP updates the clear color before performing the fast clear and it
+       * performs the synchronizations suggested by the Render Target Fast
+       * Clear section (not quoted here) to ensure its completion.
+       *
+       * While we're here, also invalidate the state cache as suggested.
+       */
+      if (devinfo->ver >= 11) {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_STATE_CACHE_INVALIDATE_BIT |
+                                   ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT,
+                                   "before blorp clear color update");
+      }
+
       blorp_fast_clear(batch, &surf, format, swizzle,
                        level, base_layer, layer_count,
                        0, 0, level_width, level_height);
@@ -1346,6 +1405,62 @@ exec_mcs_op(struct anv_cmd_buffer *cmd_buffer,
 
    switch (mcs_op) {
    case ISL_AUX_OP_FAST_CLEAR:
+      /* From the ICL PRMs, Volume 9: Render Engine, State Caching :
+       *
+       *    "Any values referenced by pointers within the RENDER_SURFACE_STATE
+       *     or SAMPLER_STATE (e.g. Clear Color Pointer, Border Color or
+       *     Indirect State Pointer) are considered to be part of that state
+       *     and any changes to these referenced values requires an
+       *     invalidation of the L1 state cache to ensure the new values are
+       *     being used as part of the state. In the case of surface data
+       *     pointed to by the Surface Base Address in RENDER SURFACE STATE,
+       *     the Texture Cache must be invalidated if the surface data
+       *     changes."
+       *
+       * and From the Render Target Fast Clear section,
+       *
+       *   "HwManaged FastClear allows SW to store FastClearValue in separate
+       *   graphics allocation, instead of keeping them in
+       *   RENDER_SURFACE_STATE. This behavior can be enabled by setting
+       *   ClearValueAddressEnable in RENDER_SURFACE_STATE.
+       *
+       *    Proper sequence of commands is as follows:
+       *
+       *       1. Storing clear color to allocation
+       *       2. Ensuring that step 1. is finished and visible for TextureCache
+       *       3. Performing FastClear
+       *
+       *    Step 2. is required on products with ClearColorConversion feature.
+       *    This feature is enabled by setting ClearColorConversionEnable.
+       *    This causes HW to read stored color from ClearColorAllocation and
+       *    write back with the native format or RenderTarget - and clear
+       *    color needs to be present and visible. Reading is done from
+       *    TextureCache, writing is done to RenderCache."
+       *
+       * We're going to change the clear color. Invalidate the texture cache
+       * now to ensure the clear color conversion feature works properly.
+       * Although the docs seem to require invalidating the texture cache
+       * after updating the clear color allocation, we can do this beforehand
+       * so long as we ensure:
+       *
+       *    1. Step 1 is complete before the texture cache is accessed in step 3
+       *    2. We don't access the texture cache between invalidation and step 3
+       *
+       * The second requirement is satisfied because we'll be performing step
+       * 1 and 3 right after invalidating. The first is satisfied because
+       * BLORP updates the clear color before performing the fast clear and it
+       * performs the synchronizations suggested by the Render Target Fast
+       * Clear section (not quoted here) to ensure its completion.
+       *
+       * While we're here, also invalidate the state cache as suggested.
+       */
+      if (devinfo->ver >= 11) {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_STATE_CACHE_INVALIDATE_BIT |
+                                   ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT,
+                                   "before blorp clear color update");
+      }
+
       blorp_fast_clear(batch, &surf, format, swizzle,
                        0, base_layer, layer_count,
                        0, 0, image->vk.extent.width, image->vk.extent.height);
@@ -1584,6 +1699,9 @@ can_hiz_clear_att(struct anv_cmd_buffer *cmd_buffer,
                   const VkClearAttachment *attachment,
                   uint32_t rectCount, const VkClearRect *pRects)
 {
+   if (INTEL_DEBUG(DEBUG_NO_FAST_CLEAR))
+      return false;
+
    /* From Bspec's section MI_PREDICATE:
     *
     *    "The MI_PREDICATE command is used to control the Predicate state bit,

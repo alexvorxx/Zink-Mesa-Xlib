@@ -281,6 +281,40 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
 }
 
 static void
+genX(emit_gs)(struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY)) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_GS), gs);
+      return;
+   }
+
+   uint32_t dwords[GENX(3DSTATE_GS_length)];
+   const struct vk_dynamic_graphics_state *dyn =
+      &cmd_buffer->vk.dynamic_graphics_state;
+
+   struct GENX(3DSTATE_GS) gs = {
+      GENX(3DSTATE_GS_header),
+   };
+
+   switch (dyn->rs.provoking_vertex) {
+   case VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT:
+      gs.ReorderMode = LEADING;
+      break;
+
+   case VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT:
+      gs.ReorderMode = TRAILING;
+      break;
+
+   default:
+      unreachable("Invalid provoking vertex mode");
+   }
+
+   GENX(3DSTATE_GS_pack)(NULL, dwords, &gs);
+   anv_batch_emit_merge(&cmd_buffer->batch, dwords, pipeline->gfx8.gs);
+}
+
+static void
 genX(cmd_emit_sample_mask)(struct anv_cmd_buffer *cmd_buffer)
 {
    const struct vk_dynamic_graphics_state *dyn =
@@ -411,6 +445,55 @@ static const uint32_t genX(vk_to_intel_blend_op)[] = {
    [VK_BLEND_OP_MAX]                         = BLENDFUNCTION_MAX,
 };
 
+static void
+genX(rasterization_mode)(VkPolygonMode raster_mode,
+                         VkLineRasterizationModeEXT line_mode,
+                         float line_width,
+                         uint32_t *api_mode,
+                         bool *msaa_rasterization_enable)
+{
+   if (raster_mode == VK_POLYGON_MODE_LINE) {
+      /* Unfortunately, configuring our line rasterization hardware on gfx8
+       * and later is rather painful.  Instead of giving us bits to tell the
+       * hardware what line mode to use like we had on gfx7, we now have an
+       * arcane combination of API Mode and MSAA enable bits which do things
+       * in a table which are expected to magically put the hardware into the
+       * right mode for your API.  Sadly, Vulkan isn't any of the APIs the
+       * hardware people thought of so nothing works the way you want it to.
+       *
+       * Look at the table titled "Multisample Rasterization Modes" in Vol 7
+       * of the Skylake PRM for more details.
+       */
+      switch (line_mode) {
+      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT:
+         *api_mode = DX101;
+#if GFX_VER <= 9
+         /* Prior to ICL, the algorithm the HW uses to draw wide lines
+          * doesn't quite match what the CTS expects, at least for rectangular
+          * lines, so we set this to false here, making it draw parallelograms
+          * instead, which work well enough.
+          */
+         *msaa_rasterization_enable = line_width < 1.0078125;
+#else
+         *msaa_rasterization_enable = true;
+#endif
+         break;
+
+      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT:
+      case VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT:
+         *api_mode = DX9OGL;
+         *msaa_rasterization_enable = false;
+         break;
+
+      default:
+         unreachable("Unsupported line rasterization mode");
+      }
+   } else {
+      *api_mode = DX101;
+      *msaa_rasterization_enable = true;
+   }
+}
+
 void
 genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -451,6 +534,11 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_TS_DOMAIN_ORIGIN)) {
       genX(cmd_emit_te)(cmd_buffer);
+   }
+
+   if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
+      genX(emit_gs)(cmd_buffer);
    }
 
 #if GFX_VER >= 11
@@ -509,7 +597,8 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_POLYGON_MODE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_LINE_MODE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE) ||
-       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_CONSERVATIVE_MODE)) {
       /* Take dynamic primitive topology in to account with
        *    3DSTATE_RASTER::APIMode
        *    3DSTATE_RASTER::DXMultisampleRasterizationEnable
@@ -568,6 +657,8 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
          .BackFaceFillMode = genX(vk_to_intel_fillmode)[dyn->rs.polygon_mode],
          .ViewportZFarClipTestEnable = depth_clip_enable,
          .ViewportZNearClipTestEnable = depth_clip_enable,
+         .ConservativeRasterizationEnable = dyn->rs.conservative_mode !=
+                                            VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT,
       };
       GENX(3DSTATE_RASTER_pack)(NULL, raster_dw, &raster);
       anv_batch_emit_merge(&cmd_buffer->batch, raster_dw,
@@ -647,6 +738,17 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
          ds.BackfaceStencilPassDepthFailOp = genX(vk_to_intel_stencil_op)[opt_ds.stencil.back.op.depth_fail];
          ds.BackfaceStencilTestFunction = genX(vk_to_intel_compare_op)[opt_ds.stencil.back.op.compare];
       }
+
+#if INTEL_NEEDS_WA_18019816803
+      if (intel_needs_workaround(cmd_buffer->device->info, 18019816803)) {
+         bool ds_write_state = opt_ds.depth.write_enable || opt_ds.stencil.write_enable;
+         if (cmd_buffer->state.gfx.ds_write_state != ds_write_state) {
+            genX(batch_emit_pipe_control)(&cmd_buffer->batch, cmd_buffer->device->info,
+                                          ANV_PIPE_PSS_STALL_SYNC_BIT);
+            cmd_buffer->state.gfx.ds_write_state = ds_write_state;
+         }
+      }
+#endif
 
       const bool pma = want_stencil_pma_fix(cmd_buffer, &opt_ds);
       genX(cmd_buffer_enable_pma_fix)(cmd_buffer, pma);

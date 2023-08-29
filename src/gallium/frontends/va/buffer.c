@@ -57,7 +57,11 @@ vlVaCreateBuffer(VADriverContextP ctx, VAContextID context, VABufferType type,
    buf->type = type;
    buf->size = size;
    buf->num_elements = num_elements;
-   buf->data = MALLOC(size * num_elements);
+
+   if (buf->type == VAEncCodedBufferType)
+      buf->data = CALLOC(1, sizeof(VACodedBufferSegment));
+   else
+      buf->data = MALLOC(size * num_elements);
 
    if (!buf->data) {
       FREE(buf);
@@ -131,6 +135,7 @@ vlVaMapBuffer(VADriverContextP ctx, VABufferID buf_id, void **pbuff)
    if (buf->derived_surface.resource) {
       struct pipe_resource *resource;
       struct pipe_box box;
+      unsigned usage;
       void *(*map_func)(struct pipe_context *,
              struct pipe_resource *resource,
              unsigned level,
@@ -149,9 +154,19 @@ vlVaMapBuffer(VADriverContextP ctx, VABufferID buf_id, void **pbuff)
       else
          map_func = drv->pipe->texture_map;
 
-      *pbuff = map_func(drv->pipe, resource, 0,
-                        buf->type == VAEncCodedBufferType ?
-                        PIPE_MAP_READ : PIPE_MAP_WRITE,
+      switch (buf->type) {
+      case VAEncCodedBufferType:
+         usage = PIPE_MAP_READ;
+         break;
+      case VAImageBufferType:
+         usage = PIPE_MAP_READ_WRITE;
+         break;
+      default:
+         usage = PIPE_MAP_WRITE;
+         break;
+      }
+
+      *pbuff = map_func(drv->pipe, resource, 0, usage,
                         &box, &buf->derived_surface.transfer);
       mtx_unlock(&drv->mutex);
 
@@ -161,7 +176,6 @@ vlVaMapBuffer(VADriverContextP ctx, VABufferID buf_id, void **pbuff)
       if (buf->type == VAEncCodedBufferType) {
          ((VACodedBufferSegment*)buf->data)->buf = *pbuff;
          ((VACodedBufferSegment*)buf->data)->size = buf->coded_size;
-         ((VACodedBufferSegment*)buf->data)->next = NULL;
          *pbuff = buf->data;
       }
    } else {

@@ -1,3 +1,44 @@
+.virgl-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.gl-rules, rules]
+    - !reference [.llvmpipe-rules, rules]
+    - changes: &virgl_file_list
+      - src/gallium/drivers/virgl/**/*
+      - src/gallium/winsys/virgl/**/*
+      when: on_success
+
+.virgl-iris-manual-rules:
+  stage: layered-backends
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *virgl_file_list
+      when: manual
+    - !reference [.iris-manual-rules, rules]
+
+.virgl-iris-rules-performance:
+  stage: layered-backends
+  retry: !reference [.scheduled_pipeline-rules, retry]
+  rules:
+    - !reference [.collabora-farm-manual-rules, rules]
+    - !reference [.performance-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - !reference [.llvmpipe-manual-rules, rules]
+    - changes:
+        *virgl_file_list
+      when: manual
+  allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    JOB_PRIORITY: 40
+    S3_ARTIFACT_NAME: "mesa-x86_64-default-release"
+  needs:
+    - kernel+rootfs_x86_64
+    - debian-release
+
+
 .virpipe-test:
   extends:
     - .test-gl

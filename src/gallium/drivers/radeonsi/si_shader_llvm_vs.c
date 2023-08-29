@@ -73,8 +73,7 @@ static LLVMValueRef get_vertex_index(struct si_shader_context *ctx,
  *   (InstanceID + StartInstance),
  *   (InstanceID / 2 + StartInstance)
  */
-void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key,
-                             UNUSED bool separate_prolog)
+void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key)
 {
    LLVMTypeRef *returns;
    LLVMValueRef ret, func;

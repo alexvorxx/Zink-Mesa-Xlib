@@ -76,8 +76,7 @@ blorp_emit_reloc(struct blorp_batch *batch,
       .bo = address.buffer,
       .offset = address.offset,
    };
-   anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
-                         cmd_buffer->batch.alloc, anv_addr.bo);
+   anv_reloc_list_add_bo(cmd_buffer->batch.relocs, anv_addr.bo);
    return anv_address_physical(anv_address_add(anv_addr, delta));
 }
 
@@ -88,7 +87,6 @@ blorp_surface_reloc(struct blorp_batch *batch, uint32_t ss_offset,
    struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
 
    VkResult result = anv_reloc_list_add_bo(&cmd_buffer->surface_relocs,
-                                           &cmd_buffer->vk.pool->alloc,
                                            address.buffer);
    if (unlikely(result != VK_SUCCESS))
       anv_batch_set_error(&cmd_buffer->batch, result);
@@ -296,6 +294,15 @@ blorp_exec_on_render(struct blorp_batch *batch,
    }
 #endif
 
+   /* Check if blorp ds state matches ours. */
+   if (intel_needs_workaround(cmd_buffer->device->info, 18019816803)) {
+      bool blorp_ds_state = params->depth.enabled || params->stencil.enabled;
+      if (cmd_buffer->state.gfx.ds_write_state != blorp_ds_state) {
+         batch->flags |= BLORP_BATCH_NEED_PSS_STALL_SYNC;
+         cmd_buffer->state.gfx.ds_write_state = blorp_ds_state;
+      }
+   }
+
    if (params->depth.enabled &&
        !(batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))
       genX(cmd_buffer_emit_gfx12_depth_wa)(cmd_buffer, &params->depth.surf);
@@ -397,4 +404,18 @@ genX(blorp_exec)(struct blorp_batch *batch,
       blorp_exec_on_compute(batch, params);
    else
       blorp_exec_on_render(batch, params);
+}
+
+static void
+blorp_emit_breakpoint_pre_draw(struct blorp_batch *batch)
+{
+   struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
+   genX(emit_breakpoint)(&cmd_buffer->batch, cmd_buffer->device, true);
+}
+
+static void
+blorp_emit_breakpoint_post_draw(struct blorp_batch *batch)
+{
+   struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
+   genX(emit_breakpoint)(&cmd_buffer->batch, cmd_buffer->device, false);
 }

@@ -252,7 +252,7 @@ vtn_foreach_instruction(struct vtn_builder *b, const uint32_t *start,
 
 struct vtn_ssa_value {
    union {
-      nir_ssa_def *def;
+      nir_def *def;
       struct vtn_ssa_value **elems;
    };
 
@@ -455,6 +455,7 @@ enum vtn_variable_mode {
    vtn_variable_mode_ray_payload_in,
    vtn_variable_mode_hit_attrib,
    vtn_variable_mode_shader_record,
+   vtn_variable_mode_node_payload,
 };
 
 struct vtn_pointer {
@@ -483,8 +484,8 @@ struct vtn_pointer {
    nir_deref_instr *deref;
 
    /** A (block_index, offset) pair representing a UBO or SSBO position. */
-   struct nir_ssa_def *block_index;
-   struct nir_ssa_def *offset;
+   struct nir_def *block_index;
+   struct nir_def *offset;
 
    /* Access qualifiers */
    enum gl_access_qualifier access;
@@ -536,9 +537,9 @@ vtn_translate_scope(struct vtn_builder *b, SpvScope scope);
 
 struct vtn_image_pointer {
    nir_deref_instr *image;
-   nir_ssa_def *coord;
-   nir_ssa_def *sample;
-   nir_ssa_def *lod;
+   nir_def *coord;
+   nir_def *sample;
+   nir_def *lod;
 };
 
 struct vtn_value {
@@ -625,14 +626,6 @@ struct vtn_builder {
    int line, col;
 
    /*
-    * In SPIR-V, constants are global, whereas in NIR, the load_const
-    * instruction we use is per-function. So while we parse each function, we
-    * keep a hash table of constants we've resolved to nir_ssa_value's so
-    * far, and we lazily resolve them when we see them used in a function.
-    */
-   struct hash_table *const_table;
-
-   /*
     * Map from phi instructions (pointer to the start of the instruction)
     * to the variable corresponding to it.
     */
@@ -698,10 +691,10 @@ const char *
 vtn_string_literal(struct vtn_builder *b, const uint32_t *words,
                    unsigned word_count, unsigned *words_used);
 
-nir_ssa_def *
+nir_def *
 vtn_pointer_to_ssa(struct vtn_builder *b, struct vtn_pointer *ptr);
 struct vtn_pointer *
-vtn_pointer_from_ssa(struct vtn_builder *b, nir_ssa_def *ssa,
+vtn_pointer_from_ssa(struct vtn_builder *b, nir_def *ssa,
                      struct vtn_type *ptr_type);
 
 struct vtn_ssa_value *
@@ -782,7 +775,7 @@ vtn_value_to_pointer(struct vtn_builder *b, struct vtn_value *value)
 {
    if (value->is_null_constant) {
       vtn_assert(glsl_type_is_vector_or_scalar(value->type->type));
-      nir_ssa_def *const_ssa =
+      nir_def *const_ssa =
          vtn_const_ssa_value(b, value->constant, value->type->type)->def;
       return vtn_pointer_from_ssa(b, const_ssa, value->type);
    }
@@ -860,9 +853,9 @@ struct vtn_ssa_value *vtn_ssa_value(struct vtn_builder *b, uint32_t value_id);
 struct vtn_value *vtn_push_ssa_value(struct vtn_builder *b, uint32_t value_id,
                                      struct vtn_ssa_value *ssa);
 
-nir_ssa_def *vtn_get_nir_ssa(struct vtn_builder *b, uint32_t value_id);
+nir_def *vtn_get_nir_ssa(struct vtn_builder *b, uint32_t value_id);
 struct vtn_value *vtn_push_nir_ssa(struct vtn_builder *b, uint32_t value_id,
-                                   nir_ssa_def *def);
+                                   nir_def *def);
 
 struct vtn_value *vtn_push_pointer(struct vtn_builder *b,
                                    uint32_t value_id,
@@ -873,7 +866,7 @@ struct vtn_sampled_image {
    nir_deref_instr *sampler;
 };
 
-nir_ssa_def *vtn_sampled_image_to_nir_ssa(struct vtn_builder *b,
+nir_def *vtn_sampled_image_to_nir_ssa(struct vtn_builder *b,
                                           struct vtn_sampled_image si);
 
 void
@@ -890,9 +883,9 @@ nir_deref_instr *vtn_nir_deref(struct vtn_builder *b, uint32_t id);
 
 nir_deref_instr *vtn_pointer_to_deref(struct vtn_builder *b,
                                       struct vtn_pointer *ptr);
-nir_ssa_def *
+nir_def *
 vtn_pointer_to_offset(struct vtn_builder *b, struct vtn_pointer *ptr,
-                      nir_ssa_def **index_out);
+                      nir_def **index_out);
 
 nir_deref_instr *
 vtn_get_call_payload_for_location(struct vtn_builder *b, uint32_t location_id);
@@ -1016,8 +1009,8 @@ void vtn_emit_memory_barrier(struct vtn_builder *b, SpvScope scope,
                              SpvMemorySemanticsMask semantics);
 
 bool vtn_value_is_relaxed_precision(struct vtn_builder *b, struct vtn_value *val);
-nir_ssa_def *
-vtn_mediump_downconvert(struct vtn_builder *b, enum glsl_base_type base_type, nir_ssa_def *def);
+nir_def *
+vtn_mediump_downconvert(struct vtn_builder *b, enum glsl_base_type base_type, nir_def *def);
 struct vtn_ssa_value *
 vtn_mediump_downconvert_value(struct vtn_builder *b, struct vtn_ssa_value *src);
 void vtn_mediump_upconvert_value(struct vtn_builder *b, struct vtn_ssa_value *value);

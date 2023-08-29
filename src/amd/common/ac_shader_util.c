@@ -1159,3 +1159,25 @@ unsigned ac_get_all_edge_flag_bits(void)
    /* This will be extended in the future. */
    return (1u << 9) | (1u << 19) | (1u << 29);
 }
+
+/**
+ * Returns a unique index for a per-patch semantic name and index. The index
+ * must be less than 32, so that a 32-bit bitmask of used inputs or outputs
+ * can be calculated.
+ */
+unsigned
+ac_shader_io_get_unique_index_patch(unsigned semantic)
+{
+   switch (semantic) {
+   case VARYING_SLOT_TESS_LEVEL_OUTER:
+      return 0;
+   case VARYING_SLOT_TESS_LEVEL_INNER:
+      return 1;
+   default:
+      if (semantic >= VARYING_SLOT_PATCH0 && semantic < VARYING_SLOT_PATCH0 + 30)
+         return 2 + (semantic - VARYING_SLOT_PATCH0);
+
+      assert(!"invalid semantic");
+      return 0;
+   }
+}

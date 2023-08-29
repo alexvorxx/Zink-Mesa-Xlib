@@ -50,7 +50,7 @@ struct pan_tristate {
  * Try to set a tristate value to a desired boolean value. Returns whether the
  * operation is successful.
  */
-static bool
+static inline bool
 pan_tristate_set(struct pan_tristate *state, bool value)
 {
    switch (state->v) {
@@ -73,7 +73,7 @@ pan_tristate_set(struct pan_tristate *state, bool value)
  * Read the boolean value of a tristate. Return value undefined in the don't
  * care state.
  */
-static bool
+static inline bool
 pan_tristate_get(struct pan_tristate state)
 {
    return (state.v == PAN_TRISTATE_TRUE);

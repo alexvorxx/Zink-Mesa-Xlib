@@ -38,10 +38,6 @@ computerator = executable(
     inc_freedreno,
     inc_include,
     inc_src,
-    inc_mapi,
-    inc_mesa,
-    inc_gallium,
-    inc_gallium_aux,
   ],
   link_with : [
     libfreedreno_drm,

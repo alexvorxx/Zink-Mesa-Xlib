@@ -165,19 +165,24 @@
 #define RENCODE_COLOR_VOLUME_G22_BT709                                              0
 
 #define RENCODE_COLOR_RANGE_FULL                                                    0
+#define RENCODE_COLOR_RANGE_STUDIO                                                  1
 #define RENCODE_CHROMA_LOCATION_INTERSTITIAL                                        0
 
 #define RENCODE_COLOR_BIT_DEPTH_8_BIT                                               0
 #define RENCODE_COLOR_BIT_DEPTH_10_BIT                                              1
 
 #define RENCODE_CHROMA_SUBSAMPLING_4_2_0                                            0
+#define RENCODE_CHROMA_SUBSAMPLING_4_4_4                                            1
 
 #define RENCODE_COLOR_PACKING_FORMAT_NV12                                           0
 #define RENCODE_COLOR_PACKING_FORMAT_P010                                           1
+#define RENCODE_COLOR_PACKING_FORMAT_A8R8G8B8                                       4
+#define RENCODE_COLOR_PACKING_FORMAT_A8B8G8R8                                       7
 
 #define RENCODE_COLOR_SPACE_YUV                                                     0
+#define RENCODE_COLOR_SPACE_RGB                                                     1
 
-#define PIPE_ALIGN_IN_BLOCK_SIZE(value, alignment) ALIGN_POT(value, alignment)
+#define PIPE_ALIGN_IN_BLOCK_SIZE(value, alignment) DIV_ROUND_UP(value, alignment)
 
 #define RADEON_ENC_CS(value) (enc->cs.current.buf[enc->cs.current.cdw++] = (value))
 #define RADEON_ENC_BEGIN(cmd)                                                                    \
@@ -558,12 +563,19 @@ typedef struct rvcn_enc_vui_info_s
    struct {
       uint32_t aspect_ratio_info_present_flag : 1;
       uint32_t timing_info_present_flag : 1;
+      uint32_t video_signal_type_present_flag : 1;
+      uint32_t colour_description_present_flag : 1;
    } flags;
    uint32_t aspect_ratio_idc;
    uint32_t sar_width;
    uint32_t sar_height;
    uint32_t num_units_in_tick;
    uint32_t time_scale;
+   uint32_t video_format;
+   uint32_t video_full_range_flag;
+   uint32_t colour_primaries;
+   uint32_t transfer_characteristics;
+   uint32_t matrix_coefficients;
 }rvcn_enc_vui_info;
 
 typedef struct rvcn_enc_input_format_s

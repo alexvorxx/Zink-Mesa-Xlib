@@ -79,8 +79,10 @@ bi_apply_swizzle(uint32_t value, enum bi_swizzle swz)
    const uint16_t *h = (const uint16_t *)&value;
    const uint8_t *b = (const uint8_t *)&value;
 
-#define H(h0, h1)         (h[h0] | (h[h1] << 16))
-#define B(b0, b1, b2, b3) (b[b0] | (b[b1] << 8) | (b[b2] << 16) | (b[b3] << 24))
+#define H(h0, h1) (h[h0] | ((uint32_t)h[h1] << 16))
+#define B(b0, b1, b2, b3)                                                      \
+   (b[b0] | ((uint32_t)b[b1] << 8) | ((uint32_t)b[b2] << 16) |                 \
+    ((uint32_t)b[b3] << 24))
 
    switch (swz) {
    case BI_SWIZZLE_H00:
@@ -944,6 +946,12 @@ bi_temp(bi_context *ctx)
    return bi_get_index(ctx->ssa_alloc++);
 }
 
+static inline bi_index
+bi_def_index(nir_def *def)
+{
+   return bi_get_index(def->index);
+}
+
 /* Inline constants automatically, will be lowered out by bi_lower_fau where a
  * constant is not allowed. load_const_to_scalar gaurantees that this makes
  * sense */
@@ -954,16 +962,8 @@ bi_src_index(nir_src *src)
    if (nir_src_is_const(*src) && nir_src_bit_size(*src) <= 32) {
       return bi_imm_u32(nir_src_as_uint(*src));
    } else {
-      assert(src->is_ssa);
-      return bi_get_index(src->ssa->index);
+      return bi_def_index(src->ssa);
    }
-}
-
-static inline bi_index
-bi_dest_index(nir_dest *dst)
-{
-   assert(dst->is_ssa);
-   return bi_get_index(dst->ssa.index);
 }
 
 /* Iterators for Bifrost IR */

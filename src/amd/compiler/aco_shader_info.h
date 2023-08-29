@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-#define ACO_MAX_SO_OUTPUTS     64
+#define ACO_MAX_SO_OUTPUTS     128
 #define ACO_MAX_SO_BUFFERS     4
 #define ACO_MAX_VERTEX_ATTRIBS 32
 #define ACO_MAX_VBS            32
@@ -77,6 +77,23 @@ struct aco_ps_epilog_info {
    bool mrt0_is_dual_src;
 };
 
+struct aco_tcs_epilog_info {
+   bool pass_tessfactors_by_reg;
+   bool tcs_out_patch_fits_subgroup;
+   enum tess_primitive_mode primitive_mode;
+   unsigned tess_offchip_ring_size;
+   bool tes_reads_tessfactors;
+
+   struct ac_arg invocation_id;
+   struct ac_arg rel_patch_id;
+   struct ac_arg tcs_out_current_patch_data_offset;
+   struct ac_arg patch_base;
+   struct ac_arg tess_lvl_in[2];
+   struct ac_arg tess_lvl_out[4];
+   struct ac_arg tcs_out_lds_layout;
+   struct ac_arg tcs_offchip_layout;
+};
+
 struct aco_shader_info {
    enum ac_hw_stage hw_stage;
    uint8_t wave_size;
@@ -84,17 +101,31 @@ struct aco_shader_info {
    bool has_ngg_early_prim_export;
    bool image_2d_view_of_3d;
    unsigned workgroup_size;
+   bool has_epilog; /* Only for TCS or PS. */
+   bool is_monolithic;
+   struct ac_arg next_stage_pc;
    struct {
       bool tcs_in_out_eq;
       uint64_t tcs_temp_only_input_mask;
       bool has_prolog;
    } vs;
    struct {
+      struct ac_arg tcs_offchip_layout;
+
+      /* Vulkan only */
       uint32_t num_lds_blocks;
-      unsigned tess_input_vertices;
+      struct ac_arg epilog_pc;
+      uint32_t num_linked_outputs;
+      uint32_t num_linked_patch_outputs;
+      uint32_t tcs_vertices_out;
+
+      /* OpenGL only */
+      bool pass_tessfactors_by_reg;
+      unsigned patch_stride;
+      struct ac_arg tes_offchip_addr;
+      struct ac_arg vs_state_bits;
    } tcs;
    struct {
-      bool has_epilog;
       struct ac_arg epilog_pc;
       uint32_t num_interp;
       unsigned spi_ps_input;
@@ -154,6 +185,7 @@ enum aco_symbol_id {
    aco_symbol_scratch_addr_hi,
    aco_symbol_lds_ngg_scratch_base,
    aco_symbol_lds_ngg_gs_out_vertex_base,
+   aco_symbol_const_data_addr,
 };
 
 struct aco_symbol {

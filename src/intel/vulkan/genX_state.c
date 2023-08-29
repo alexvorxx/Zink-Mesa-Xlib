@@ -194,7 +194,7 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
    }
 #endif
 
-#if GFX_VER >= 125
+#if GFX_VERx10 == 125
    /* Wa_14014427904 - We need additional invalidate/flush when
     * emitting NP state commands with ATS-M in compute mode.
     */
@@ -210,7 +210,6 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
           ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT |
           ANV_PIPE_HDC_PIPELINE_FLUSH_BIT);
       }
-   }
 #endif
 
    /* Emit STATE_BASE_ADDRESS on Gfx12+ because we set a default CPS_STATE and
@@ -344,6 +343,7 @@ static VkResult
 init_render_queue_state(struct anv_queue *queue)
 {
    struct anv_device *device = queue->device;
+   UNUSED const struct intel_device_info *devinfo = queue->device->info;
    uint32_t cmds[128];
    struct anv_batch batch = {
       .start = cmds,
@@ -405,7 +405,7 @@ init_render_queue_state(struct anv_queue *queue)
     *
     * Emit this before 3DSTATE_WM_HZ_OP below.
     */
-   genX(emit_multisample)(&batch, 1);
+   anv_batch_emit(&batch, GENX(3DSTATE_MULTISAMPLE), ms);
 
    /* The BDW+ docs describe how to use the 3DSTATE_WM_HZ_OP instruction in the
     * section titled, "Optimized Depth Buffer Clear and/or Stencil Buffer
@@ -473,7 +473,7 @@ init_render_queue_state(struct anv_queue *queue)
 #endif
    }
 
-#if GFX_VERx10 == 120
+#if INTEL_NEEDS_WA_1806527549
    /* Wa_1806527549 says to disable the following HiZ optimization when the
     * depth buffer is D16_UNORM. We've found the WA to help with more depth
     * buffer configurations however, so we always disable it just to be safe.
@@ -584,6 +584,25 @@ init_render_queue_state(struct anv_queue *queue)
    }
 #endif
 
+#if GFX_VERx10 >= 125
+   anv_batch_emit(&batch, GENX(3DSTATE_MESH_CONTROL), zero);
+   anv_batch_emit(&batch, GENX(3DSTATE_TASK_CONTROL), zero);
+   genX(batch_emit_pipe_control_write)(&batch, device->info, NoWrite,
+                                       ANV_NULL_ADDRESS,
+                                       0,
+                                       ANV_PIPE_FLUSH_BITS | ANV_PIPE_INVALIDATE_BITS);
+   genX(emit_pipeline_select)(&batch, GPGPU);
+   anv_batch_emit(&batch, GENX(CFE_STATE), cfe) {
+      cfe.MaximumNumberofThreads =
+         devinfo->max_cs_threads * devinfo->subslice_total;
+   }
+   genX(batch_emit_pipe_control_write)(&batch, device->info, NoWrite,
+                                       ANV_NULL_ADDRESS,
+                                       0,
+                                       ANV_PIPE_FLUSH_BITS | ANV_PIPE_INVALIDATE_BITS);
+   genX(emit_pipeline_select)(&batch, _3D);
+#endif
+
    anv_batch_emit(&batch, GENX(MI_BATCH_BUFFER_END), bbe);
 
    assert(batch.next <= batch.end);
@@ -595,6 +614,7 @@ static VkResult
 init_compute_queue_state(struct anv_queue *queue)
 {
    struct anv_batch batch;
+   UNUSED const struct intel_device_info *devinfo = queue->device->info;
 
    uint32_t cmds[64];
    batch.start = batch.next = cmds;
@@ -621,6 +641,13 @@ init_compute_queue_state(struct anv_queue *queue)
 #endif
 
    init_common_queue_state(queue, &batch);
+
+#if GFX_VERx10 >= 125
+   anv_batch_emit(&batch, GENX(CFE_STATE), cfe) {
+      cfe.MaximumNumberofThreads =
+         devinfo->max_cs_threads * devinfo->subslice_total;
+   }
+#endif
 
    anv_batch_emit(&batch, GENX(MI_BATCH_BUFFER_END), bbe);
 
@@ -770,14 +797,14 @@ genX(emit_l3_config)(struct anv_batch *batch,
 #if GFX_VER < 11
          l3cr.SLMEnable = cfg->n[INTEL_L3P_SLM];
 #endif
-#if GFX_VER == 11
+#if INTEL_NEEDS_WA_1406697149
          /* Wa_1406697149: Bit 9 "Error Detection Behavior Control" must be
           * set in L3CNTLREG register. The default setting of the bit is not
           * the desirable behavior.
           */
          l3cr.ErrorDetectionBehaviorControl = true;
          l3cr.UseFullWays = true;
-#endif /* GFX_VER == 11 */
+#endif /* INTEL_NEEDS_WA_1406697149 */
          assert(cfg->n[INTEL_L3P_IS] == 0);
          assert(cfg->n[INTEL_L3P_C] == 0);
          assert(cfg->n[INTEL_L3P_T] == 0);
@@ -786,23 +813,6 @@ genX(emit_l3_config)(struct anv_batch *batch,
          l3cr.DCAllocation = cfg->n[INTEL_L3P_DC];
          l3cr.AllAllocation = cfg->n[INTEL_L3P_ALL];
       }
-   }
-}
-
-void
-genX(emit_multisample)(struct anv_batch *batch, uint32_t samples)
-{
-   anv_batch_emit(batch, GENX(3DSTATE_MULTISAMPLE), ms) {
-      ms.NumberofMultisamples       = __builtin_ffs(samples) - 1;
-
-      ms.PixelLocation              = CENTER;
-
-      /* The PRM says that this bit is valid only for DX9:
-       *
-       *    SW can choose to set this bit only for DX9 API. DX10/OGL API's
-       *    should not have any effect by setting or not setting this bit.
-       */
-      ms.PixelPositionOffsetEnable  = false;
    }
 }
 
@@ -947,105 +957,51 @@ VkResult genX(CreateSampler)(
    ANV_FROM_HANDLE(anv_device, device, _device);
    struct anv_sampler *sampler;
 
-   assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
-
-   sampler = vk_object_zalloc(&device->vk, pAllocator, sizeof(*sampler),
-                              VK_OBJECT_TYPE_SAMPLER);
+   sampler = vk_sampler_create(&device->vk, pCreateInfo,
+                               pAllocator, sizeof(*sampler));
    if (!sampler)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   sampler->n_planes = 1;
+   const struct vk_format_ycbcr_info *ycbcr_info =
+      sampler->vk.format != VK_FORMAT_UNDEFINED ?
+      vk_format_get_ycbcr_info(sampler->vk.format) : NULL;
+   assert((ycbcr_info == NULL) == (sampler->vk.ycbcr_conversion == NULL));
+
+   sampler->n_planes = ycbcr_info ? ycbcr_info->n_planes : 1;
 
    uint32_t border_color_stride = 64;
    uint32_t border_color_offset;
-   ASSERTED bool has_custom_color = false;
-   if (pCreateInfo->borderColor <= VK_BORDER_COLOR_INT_OPAQUE_WHITE) {
+   if (sampler->vk.border_color <= VK_BORDER_COLOR_INT_OPAQUE_WHITE) {
       border_color_offset = device->border_colors.offset +
                             pCreateInfo->borderColor *
                             border_color_stride;
    } else {
+      assert(vk_border_color_is_custom(sampler->vk.border_color));
       sampler->custom_border_color =
          anv_state_reserved_pool_alloc(&device->custom_border_colors);
       border_color_offset = sampler->custom_border_color.offset;
+
+      union isl_color_value color = { .u32 = {
+         sampler->vk.border_color_value.uint32[0],
+         sampler->vk.border_color_value.uint32[1],
+         sampler->vk.border_color_value.uint32[2],
+         sampler->vk.border_color_value.uint32[3],
+      } };
+
+      const struct anv_format *format_desc =
+         sampler->vk.format != VK_FORMAT_UNDEFINED ?
+         anv_get_format(sampler->vk.format) : NULL;
+
+      if (format_desc && format_desc->n_planes == 1 &&
+          !isl_swizzle_is_identity(format_desc->planes[0].swizzle)) {
+         const struct anv_format_plane *fmt_plane = &format_desc->planes[0];
+
+         assert(!isl_format_has_int_channel(fmt_plane->isl_format));
+         color = isl_color_value_swizzle(color, fmt_plane->swizzle, true);
+      }
+
+      memcpy(sampler->custom_border_color.map, color.u32, sizeof(color));
    }
-
-   unsigned sampler_reduction_mode = STD_FILTER;
-   bool enable_sampler_reduction = false;
-
-   const struct vk_format_ycbcr_info *ycbcr_info = NULL;
-   vk_foreach_struct_const(ext, pCreateInfo->pNext) {
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO: {
-         VkSamplerYcbcrConversionInfo *pSamplerConversion =
-            (VkSamplerYcbcrConversionInfo *) ext;
-         VK_FROM_HANDLE(vk_ycbcr_conversion, conversion,
-                        pSamplerConversion->conversion);
-
-         /* Ignore conversion for non-YUV formats. This fulfills a requirement
-          * for clients that want to utilize same code path for images with
-          * external formats (VK_FORMAT_UNDEFINED) and "regular" RGBA images
-          * where format is known.
-          */
-         if (conversion == NULL)
-            break;
-
-         ycbcr_info = vk_format_get_ycbcr_info(conversion->state.format);
-         if (ycbcr_info == NULL)
-            break;
-
-         sampler->n_planes = ycbcr_info->n_planes;
-         sampler->conversion = conversion;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO: {
-         VkSamplerReductionModeCreateInfo *sampler_reduction =
-            (VkSamplerReductionModeCreateInfo *) ext;
-         sampler_reduction_mode =
-            vk_to_intel_sampler_reduction_mode[sampler_reduction->reductionMode];
-         enable_sampler_reduction = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT: {
-         VkSamplerCustomBorderColorCreateInfoEXT *custom_border_color =
-            (VkSamplerCustomBorderColorCreateInfoEXT *) ext;
-         if (sampler->custom_border_color.map == NULL)
-            break;
-
-         union isl_color_value color = { .u32 = {
-            custom_border_color->customBorderColor.uint32[0],
-            custom_border_color->customBorderColor.uint32[1],
-            custom_border_color->customBorderColor.uint32[2],
-            custom_border_color->customBorderColor.uint32[3],
-         } };
-
-         const struct anv_format *format_desc =
-            custom_border_color->format != VK_FORMAT_UNDEFINED ?
-            anv_get_format(custom_border_color->format) : NULL;
-
-         /* For formats with a swizzle, it does not carry over to the sampler
-          * for border colors, so we need to do the swizzle ourselves here.
-          */
-         if (format_desc && format_desc->n_planes == 1 &&
-             !isl_swizzle_is_identity(format_desc->planes[0].swizzle)) {
-            const struct anv_format_plane *fmt_plane = &format_desc->planes[0];
-
-            assert(!isl_format_has_int_channel(fmt_plane->isl_format));
-            color = isl_color_value_swizzle(color, fmt_plane->swizzle, true);
-         }
-
-         memcpy(sampler->custom_border_color.map, color.u32, sizeof(color));
-         has_custom_color = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT:
-         break;
-      default:
-         anv_debug_ignored_stype(ext->sType);
-         break;
-      }
-   }
-
-   assert((sampler->custom_border_color.map == NULL) || has_custom_color);
 
    /* If we have bindless, allocate enough samplers.  We allocate 32 bytes
     * for each sampler instead of 16 bytes because we want all bindless
@@ -1063,16 +1019,18 @@ VkResult genX(CreateSampler)(
       const bool plane_has_chroma =
          ycbcr_info && ycbcr_info->planes[p].has_chroma;
       const VkFilter min_filter =
-         plane_has_chroma ? sampler->conversion->state.chroma_filter : pCreateInfo->minFilter;
+         plane_has_chroma ? sampler->vk.ycbcr_conversion->state.chroma_filter :
+                            pCreateInfo->minFilter;
       const VkFilter mag_filter =
-         plane_has_chroma ? sampler->conversion->state.chroma_filter : pCreateInfo->magFilter;
+         plane_has_chroma ? sampler->vk.ycbcr_conversion->state.chroma_filter :
+                            pCreateInfo->magFilter;
       const bool enable_min_filter_addr_rounding = min_filter != VK_FILTER_NEAREST;
       const bool enable_mag_filter_addr_rounding = mag_filter != VK_FILTER_NEAREST;
       /* From Broadwell PRM, SAMPLER_STATE:
        *   "Mip Mode Filter must be set to MIPFILTER_NONE for Planar YUV surfaces."
        */
-      enum isl_format plane0_isl_format = sampler->conversion ?
-         anv_get_format(sampler->conversion->state.format)->planes[0].isl_format :
+      enum isl_format plane0_isl_format = sampler->vk.ycbcr_conversion ?
+         anv_get_format(sampler->vk.format)->planes[0].isl_format :
          ISL_FORMAT_UNSUPPORTED;
       const bool isl_format_is_planar_yuv =
          plane0_isl_format != ISL_FORMAT_UNSUPPORTED &&
@@ -1126,8 +1084,10 @@ VkResult genX(CreateSampler)(
          .TCYAddressControlMode = vk_to_intel_tex_address[pCreateInfo->addressModeV],
          .TCZAddressControlMode = vk_to_intel_tex_address[pCreateInfo->addressModeW],
 
-         .ReductionType = sampler_reduction_mode,
-         .ReductionTypeEnable = enable_sampler_reduction,
+         .ReductionType =
+            vk_to_intel_sampler_reduction_mode[sampler->vk.reduction_mode],
+         .ReductionTypeEnable =
+            sampler->vk.reduction_mode != VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE,
       };
 
       GENX(SAMPLER_STATE_pack)(NULL, sampler->state[p], &sampler_state);
@@ -1151,9 +1111,12 @@ VkResult genX(CreateSampler)(
 void
 genX(apply_task_urb_workaround)(struct anv_cmd_buffer *cmd_buffer)
 {
-#if GFX_VERx10 != 125
-   return;
-#else
+#if GFX_VERx10 >= 125
+   const struct intel_device_info *devinfo = &cmd_buffer->device->physical->info;
+
+   if (!intel_needs_workaround(devinfo, 16014390852))
+      return;
+
    if (cmd_buffer->state.current_pipeline != _3D ||
        !cmd_buffer->state.gfx.used_task_shader)
       return;

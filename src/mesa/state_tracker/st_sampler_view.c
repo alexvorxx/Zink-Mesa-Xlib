@@ -387,12 +387,17 @@ st_get_sampler_view_format(const struct st_context *st,
       }
       FALLTHROUGH;
    case PIPE_FORMAT_NV21:
-      if (texObj->pt->format == PIPE_FORMAT_G8_B8R8_420_UNORM) {
-         format = PIPE_FORMAT_G8_B8R8_420_UNORM;
+      if (texObj->pt->format == PIPE_FORMAT_R8_B8G8_420_UNORM) {
+         format = PIPE_FORMAT_R8_B8G8_420_UNORM;
          break;
       }
       FALLTHROUGH;
    case PIPE_FORMAT_IYUV:
+      if (texObj->pt->format == PIPE_FORMAT_R8_G8_B8_420_UNORM ||
+          texObj->pt->format == PIPE_FORMAT_R8_B8_G8_420_UNORM) {
+         format = texObj->pt->format;
+         break;
+      }
       format = PIPE_FORMAT_R8_UNORM;
       break;
    case PIPE_FORMAT_P010:

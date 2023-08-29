@@ -3498,11 +3498,22 @@ to upconvert to 32b float internally?
 		<bitfield name="THREADSIZE" pos="20" type="a6xx_threadsize"/>
 		<bitfield name="UNK21" pos="21" type="boolean"/>
 		<bitfield name="VARYING" pos="22" type="boolean"/>
-		<bitfield name="DIFF_FINE" pos="23" type="boolean"/>
+		<bitfield name="LODPIXMASK" pos="23" type="boolean">
+			<doc>
+				Enable ALL helper invocations in a quad. Necessary for
+				fine derivatives and quad subgroup ops.
+			</doc>
+		</bitfield>
 		<!-- note: vk blob uses bit24 -->
 		<bitfield name="UNK24" pos="24" type="boolean"/>
 		<bitfield name="UNK25" pos="25" type="boolean"/>
-		<bitfield name="PIXLODENABLE" pos="26" type="boolean"/>
+		<bitfield name="PIXLODENABLE" pos="26" type="boolean">
+			<doc>
+				Enable helper invocations. Enables 3 out of 4 fragments,
+				because the coarse derivatives only use half of the quad
+				and so one pixel's value is always unused.
+			</doc>
+		</bitfield>
 		<bitfield name="UNK27" pos="27" type="boolean"/>
 		<bitfield name="EARLYPREAMBLE" pos="28" type="boolean"/>
 		<bitfield name="MERGEDREGS" pos="31" type="boolean"/>
@@ -3573,25 +3584,18 @@ to upconvert to 32b float internally?
 		<bitfield name="COUNT" low="0" high="2" type="uint"/>
 		<bitfield name="IJ_WRITE_DISABLE" pos="3" type="boolean"/>
 		<doc>
-			Seem to break derivatives when there is a helper invocation
-			in the quad. Though from tests it doesn't seem to be
-			"disable helper invocations" flag.
+			Similar to "(eq)" flag but disables helper invocations
+			after the texture prefetch.
 		</doc>
-		<bitfield name="UNK4" pos="4" type="boolean" />
+		<bitfield name="ENDOFQUAD" pos="4" type="boolean" />
 		<doc>
-			Bypass writing to regs and overwrite output with tex color.
-			TODO: How does it work with multiple prefetches?
+			Bypass writing to regs and overwrite output with color from
+			CONSTSLOTID const regs.
 		</doc>
 		<bitfield name="WRITE_COLOR_TO_OUTPUT" pos="5" type="boolean"/>
-		<doc>
-			Doesn't seem to be a reg, size doesn't match and it doesn't do
-			anything observable.
-		</doc>
-		<bitfield name="UNK6" low="6" high="14" type="uint"/>
-		<doc>
-			Same as UNK6?
-		</doc>
-		<bitfield name="UNK16" low="16" high="24" type="uint"/>
+		<bitfield name="CONSTSLOTID" low="6" high="14" type="uint"/>
+		<!-- Blob never uses it -->
+		<bitfield name="CONSTSLOTID4COORD" low="16" high="24" type="uint" variants="A7XX-"/>
 	</reg32>
 	<array offset="0xa99f" name="SP_FS_PREFETCH" stride="1" length="4" variants="A6XX" usage="rp_blit">
 		<reg32 offset="0" name="CMD" variants="A6XX">

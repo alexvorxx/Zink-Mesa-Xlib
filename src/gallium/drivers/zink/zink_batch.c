@@ -510,8 +510,10 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(ctx->flags & ZINK_CONTEXT_COPY_ONLY))
       zink_batch_bind_db(ctx);
    /* zero init for unordered blits */
-   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state)
+   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
+      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->cmdbuf, 0);
       VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->barrier_cmdbuf, 0);
+   }
 }
 
 /* common operations to run post submit; split out for clarity */

@@ -190,11 +190,6 @@ struct radeon_winsys_bo {
    enum radeon_bo_domain initial_domain;
 };
 
-struct radv_winsys_bo_list {
-   struct radeon_winsys_bo **bos;
-   unsigned count;
-};
-
 struct radv_winsys_submit_info {
    enum amd_ip_type ip_type;
    int queue_index;

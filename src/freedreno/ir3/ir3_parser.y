@@ -373,6 +373,7 @@ static void print_token(FILE *file, int type, YYSTYPE value)
 %token <tok> T_SY
 %token <tok> T_SS
 %token <tok> T_JP
+%token <tok> T_EQ_FLAG
 %token <tok> T_SAT
 %token <num> T_RPT
 %token <tok> T_UL
@@ -805,6 +806,7 @@ tex_header:        T_A_TEX '(' T_REGISTER ')'
 iflag:             T_SY   { iflags.flags |= IR3_INSTR_SY; }
 |                  T_SS   { iflags.flags |= IR3_INSTR_SS; }
 |                  T_JP   { iflags.flags |= IR3_INSTR_JP; }
+|                  T_EQ_FLAG { iflags.flags |= IR3_INSTR_EQ; }
 |                  T_SAT  { iflags.flags |= IR3_INSTR_SAT; }
 |                  T_RPT  { iflags.repeat = $1; }
 |                  T_UL   { iflags.flags |= IR3_INSTR_UL; }

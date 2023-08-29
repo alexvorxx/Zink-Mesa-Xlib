@@ -33,8 +33,8 @@ if with_ld_version_script
   gallium_dri_link_depends += files('dri.sym')
 endif
 if with_ld_dynamic_list
-  gallium_dri_ld_args += ['-Wl,--dynamic-list', join_paths(meson.current_source_dir(), '../dri-vdpau.dyn')]
-  gallium_dri_link_depends += files('../dri-vdpau.dyn')
+  gallium_dri_ld_args += ['-Wl,--dynamic-list', join_paths(meson.current_source_dir(), '../dri.dyn')]
+  gallium_dri_link_depends += files('../dri.dyn')
 endif
 
 libgallium_dri = shared_library(
@@ -91,7 +91,7 @@ foreach d : [[with_gallium_kmsro, [
                'st7586_dri.so',
                'st7735r_dri.so',
                'stm_dri.so',
-	       'sun4i-drm_dri.so',
+               'sun4i-drm_dri.so',
              ]],
              [with_gallium_radeonsi, 'radeonsi_dri.so'],
              [with_gallium_nouveau, 'nouveau_dri.so'],

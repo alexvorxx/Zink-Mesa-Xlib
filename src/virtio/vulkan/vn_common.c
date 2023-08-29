@@ -32,6 +32,7 @@ static const struct debug_control vn_debug_options[] = {
    { "no_abort", VN_DEBUG_NO_ABORT },
    { "log_ctx_info", VN_DEBUG_LOG_CTX_INFO },
    { "cache", VN_DEBUG_CACHE },
+   { "no_sparse", VN_DEBUG_NO_SPARSE },
    { NULL, 0 },
    /* clang-format on */
 };
@@ -93,7 +94,7 @@ vn_trace_init(void)
 #ifdef ANDROID
    atrace_init();
 #else
-   util_perfetto_init();
+   util_cpu_trace_init();
 #endif
 }
 
