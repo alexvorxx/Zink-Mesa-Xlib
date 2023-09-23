@@ -39,7 +39,7 @@ namespace r600 {
 
 GDSInstr::GDSInstr(
    ESDOp op, Register *dest, const RegisterVec4& src, int uav_base, PRegister uav_id):
-    InstrWithResource(uav_base, uav_id),
+    Resource(this, uav_base, uav_id),
     m_op(op),
     m_dest(dest),
     m_src(src)
@@ -91,7 +91,7 @@ GDSInstr::do_print(std::ostream& os) const
    else
       os << "___";
    os << " " << m_src;
-   os << " BASE:" << resource_base();
+   os << " BASE:" << resource_id();
 
    print_resource_offset(os);
 }
@@ -373,6 +373,12 @@ GDSInstr::emit_atomic_pre_dec(nir_intrinsic_instr *instr, Shader& shader)
    return true;
 }
 
+void GDSInstr::update_indirect_addr(PRegister old_reg, PRegister addr)
+{
+   (void)old_reg;
+   set_resource_offset(addr);
+}
+
 RatInstr::RatInstr(ECFOpCode cf_opcode,
                    ERatOp rat_op,
                    const RegisterVec4& data,
@@ -382,7 +388,7 @@ RatInstr::RatInstr(ECFOpCode cf_opcode,
                    int burst_count,
                    int comp_mask,
                    int element_size):
-    InstrWithResource(rat_id, rat_id_offset),
+    Resource(this, rat_id, rat_id_offset),
     m_cf_opcode(cf_opcode),
     m_rat_op(rat_op),
     m_data(data),
@@ -433,13 +439,18 @@ RatInstr::do_ready() const
 void
 RatInstr::do_print(std::ostream& os) const
 {
-   os << "MEM_RAT RAT " << resource_base();
+   os << "MEM_RAT RAT " << resource_id();
    print_resource_offset(os);
    os << " @" << m_index;
    os << " OP:" << m_rat_op << " " << m_data;
    os << " BC:" << m_burst_count << " MASK:" << m_comp_mask << " ES:" << m_element_size;
    if (m_need_ack)
       os << " ACK";
+}
+
+void RatInstr::update_indirect_addr(UNUSED PRegister old_reg, PRegister addr)
+{
+   set_resource_offset(addr);
 }
 
 static RatInstr::ERatOp
@@ -918,7 +929,6 @@ RatInstr::emit_image_size(nir_intrinsic_instr *intrin, Shader& shader)
                                               dest,
                                               {0, 1, 7, 3},
                                               src,
-                                              0 /* ?? */,
                                               res_id,
                                               dyn_offset));
 
@@ -982,7 +992,6 @@ RatInstr::emit_image_size(nir_intrinsic_instr *intrin, Shader& shader)
                                               dest,
                                               {0, 1, 2, 3},
                                               src,
-                                              0 /* ?? */,
                                               res_id,
                                               dyn_offset));
       }
@@ -1013,7 +1022,6 @@ RatInstr::emit_image_samples(nir_intrinsic_instr *intrin, Shader& shader)
                                         tmp,
                                         {3, 7, 7, 7},
                                         src,
-                                        0 /* ?? */,
                                         res_id,
                                         dyn_offset));
 

@@ -61,6 +61,12 @@ void isa_decode_bitset(void *out, const struct isa_bitset **bitsets, struct deco
 /**
  * Used by generated decode functions
  */
+uint32_t isa_get_gpu_id(struct decode_scope *scope);
+
+/**
+ * Allows to use gpu_id in expr functions
+ */
+#define ISA_GPU_ID() isa_get_gpu_id(scope)
 
 /**
  * For bitset fields, there are some cases where we want to "remap" field

@@ -391,6 +391,11 @@ store_instruction(BITSET_WORD *dst, bitmask_t instr)
  */
 struct encode_state;
 
+/**
+ * Allows to use gpu_id in expr functions
+ */
+#define ISA_GPU_ID() s->gen
+
 struct bitset_params;
 
 static bitmask_t

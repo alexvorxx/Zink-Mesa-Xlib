@@ -1263,8 +1263,7 @@ print_block_ppp_state_isp(struct pvr_dump_csb_ctx *const csb_ctx,
    pvr_dump_field_member_u32(base_ctx, &isp_ctl, validid);
 
    if (!has_fa || has_fb != isp_ctl.bpres || has_ba != isp_ctl.two_sided ||
-       has_bb != (isp_ctl.bpres && isp_ctl.two_sided) ||
-       has_dbsc != (isp_ctl.dbenable || isp_ctl.scenable)) {
+       has_bb != (isp_ctl.bpres && isp_ctl.two_sided)) {
       pvr_dump_error(
          base_ctx,
          "words declared by ppp header do not match requirements of ispctl word");

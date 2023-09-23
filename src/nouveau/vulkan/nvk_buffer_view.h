@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_BUFFER_VIEW_H
 #define NVK_BUFFER_VIEW_H 1
 

@@ -2458,6 +2458,23 @@ ntt_emit_barrier(struct ntt_compile *c, nir_intrinsic_instr *intr)
       if (modes & nir_var_mem_global)
          membar |= TGSI_MEMBAR_SHADER_BUFFER;
 
+      /* Hack for virglrenderer: the GLSL specific memory barrier functions,
+       * memoryBarrier{Buffer,Image,Shared,AtomicCounter}(), are only
+       * available in compute shaders prior to GLSL 4.30.  In other stages,
+       * it needs to use the full memoryBarrier().  It may be possible to
+       * make them available via #extension directives in older versions,
+       * but it's confusingly underspecified, and Mesa/virglrenderer don't
+       * currently agree on how to do it.  So, just promote partial memory
+       * barriers back to full ones outside of compute shaders when asked.
+       */
+      if (membar && !compute &&
+          c->options->non_compute_membar_needs_all_modes) {
+         membar |= TGSI_MEMBAR_SHADER_BUFFER |
+                   TGSI_MEMBAR_ATOMIC_BUFFER |
+                   TGSI_MEMBAR_SHADER_IMAGE |
+                   TGSI_MEMBAR_SHARED;
+      }
+
       /* If we only need workgroup scope (not device-scope), we might be able to
        * optimize a bit.
        */

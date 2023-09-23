@@ -61,8 +61,7 @@ agx_nir_wrap_per_sample_loop(nir_shader *shader, uint8_t nr_samples)
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
 
    nir_cf_list list;
-   nir_cf_extract(&list, nir_before_block(nir_start_block(impl)),
-                  nir_after_block(nir_impl_last_block(impl)));
+   nir_cf_extract(&list, nir_before_impl(impl), nir_after_impl(impl));
 
    /* Create a builder for the wrapped function */
    nir_builder b = nir_builder_at(nir_after_block(nir_start_block(impl)));
@@ -162,7 +161,7 @@ insert_sample_mask_write(nir_shader *s)
 {
    nir_builder b;
    nir_function_impl *impl = nir_shader_get_entrypoint(s);
-   b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   b = nir_builder_at(nir_before_impl(impl));
 
    /* Kill samples that are NOT covered by the mask */
    nir_discard_agx(&b, nir_inot(&b, nir_load_api_sample_mask_agx(&b)));

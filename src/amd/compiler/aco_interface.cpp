@@ -348,7 +348,8 @@ static void
 aco_compile_shader_part(const struct aco_compiler_options* options,
                         const struct aco_shader_info* info, const struct ac_shader_args* args,
                         select_shader_part_callback select_shader_part, void* pinfo,
-                        aco_shader_part_callback* build_epilog, void** binary)
+                        aco_shader_part_callback* build_binary, void** binary,
+                        bool is_prolog = false)
 {
    aco::init();
 
@@ -362,6 +363,8 @@ aco_compile_shader_part(const struct aco_compiler_options* options,
    program->debug.func = options->debug.func;
    program->debug.private_data = options->debug.private_data;
 
+   program->is_prolog = is_prolog;
+
    /* Instruction selection */
    select_shader_part(program.get(), pinfo, &config, options, info, args);
 
@@ -369,7 +372,8 @@ aco_compile_shader_part(const struct aco_compiler_options* options,
 
    /* assembly */
    std::vector<uint32_t> code;
-   unsigned exec_size = aco::emit_program(program.get(), code);
+   bool append_endpgm = !(options->is_opengl && is_prolog);
+   unsigned exec_size = aco::emit_program(program.get(), code, NULL, append_endpgm);
 
    bool get_disasm = options->dump_shader || options->record_ir;
 
@@ -377,7 +381,7 @@ aco_compile_shader_part(const struct aco_compiler_options* options,
    if (get_disasm)
       disasm = get_disasm_string(program.get(), code, exec_size);
 
-   (*build_epilog)(binary, config.num_sgprs, config.num_vgprs, code.data(), code.size(),
+   (*build_binary)(binary, config.num_sgprs, config.num_vgprs, code.data(), code.size(),
                    disasm.data(), disasm.size());
 }
 
@@ -399,4 +403,15 @@ aco_compile_tcs_epilog(const struct aco_compiler_options* options,
 {
    aco_compile_shader_part(options, info, args, aco::select_tcs_epilog, (void*)pinfo, build_epilog,
                            binary);
+}
+
+void
+aco_compile_gl_vs_prolog(const struct aco_compiler_options* options,
+                         const struct aco_shader_info* info,
+                         const struct aco_gl_vs_prolog_info* pinfo,
+                         const struct ac_shader_args* args, aco_shader_part_callback* build_prolog,
+                         void** binary)
+{
+   aco_compile_shader_part(options, info, args, aco::select_gl_vs_prolog, (void*)pinfo,
+                           build_prolog, binary, true);
 }

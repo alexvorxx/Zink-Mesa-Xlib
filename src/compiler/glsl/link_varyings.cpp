@@ -103,9 +103,9 @@ cross_validate_types_and_qualifiers(const struct gl_constants *consts,
                   "declared as struct `%s'\n",
                   _mesa_shader_stage_to_string(producer_stage),
                   output->name,
-                  output->type->name,
+                  glsl_get_type_name(output->type),
                   _mesa_shader_stage_to_string(consumer_stage),
-                  input->type->name);
+                  glsl_get_type_name(input->type));
          }
       } else if (!output->type->is_array() || !is_gl_identifier(output->name)) {
          /* There is a bit of a special case for gl_TexCoord.  This
@@ -131,9 +131,9 @@ cross_validate_types_and_qualifiers(const struct gl_constants *consts,
                       "but %s shader input declared as type `%s'\n",
                       _mesa_shader_stage_to_string(producer_stage),
                       output->name,
-                      output->type->name,
+                      glsl_get_type_name(output->type),
                       _mesa_shader_stage_to_string(consumer_stage),
-                      input->type->name);
+                      glsl_get_type_name(input->type));
          return;
       }
    }
@@ -523,7 +523,7 @@ validate_explicit_variable_location(const struct gl_constants *consts,
    const glsl_type *type_without_array = type->without_array();
    if (type_without_array->is_interface()) {
       for (unsigned i = 0; i < type_without_array->length; i++) {
-         glsl_struct_field *field = &type_without_array->fields.structure[i];
+         const glsl_struct_field *field = &type_without_array->fields.structure[i];
          unsigned field_location = field->location -
             (field->patch ? VARYING_SLOT_PATCH0 : VARYING_SLOT_VAR0);
          unsigned field_slots = field->type->count_attribute_slots(false);
@@ -552,59 +552,6 @@ validate_explicit_variable_location(const struct gl_constants *consts,
    }
 
    return true;
-}
-
-/**
- * Validate explicit locations for the inputs to the first stage and the
- * outputs of the last stage in a program, if those are not the VS and FS
- * shaders.
- */
-void
-validate_first_and_last_interface_explicit_locations(const struct gl_constants *consts,
-                                                     struct gl_shader_program *prog,
-                                                     gl_shader_stage first_stage,
-                                                     gl_shader_stage last_stage)
-{
-   /* VS inputs and FS outputs are validated in
-    * assign_attribute_or_color_locations()
-    */
-   bool validate_first_stage = first_stage != MESA_SHADER_VERTEX;
-   bool validate_last_stage = last_stage != MESA_SHADER_FRAGMENT;
-   if (!validate_first_stage && !validate_last_stage)
-      return;
-
-   struct explicit_location_info explicit_locations[MAX_VARYING][4];
-
-   gl_shader_stage stages[2] = { first_stage, last_stage };
-   bool validate_stage[2] = { validate_first_stage, validate_last_stage };
-   ir_variable_mode var_direction[2] = { ir_var_shader_in, ir_var_shader_out };
-
-   for (unsigned i = 0; i < 2; i++) {
-      if (!validate_stage[i])
-         continue;
-
-      gl_shader_stage stage = stages[i];
-
-      gl_linked_shader *sh = prog->_LinkedShaders[stage];
-      assert(sh);
-
-      memset(explicit_locations, 0, sizeof(explicit_locations));
-
-      foreach_in_list(ir_instruction, node, sh->ir) {
-         ir_variable *const var = node->as_variable();
-
-         if (var == NULL ||
-             !var->data.explicit_location ||
-             var->data.location < VARYING_SLOT_VAR0 ||
-             var->data.mode != var_direction[i])
-            continue;
-
-         if (!validate_explicit_variable_location(
-               consts, explicit_locations, var, prog, sh)) {
-            return;
-         }
-      }
-   }
 }
 
 /**

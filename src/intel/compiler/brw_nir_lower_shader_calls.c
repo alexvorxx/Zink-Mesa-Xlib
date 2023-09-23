@@ -337,7 +337,7 @@ brw_nir_create_trivial_return_shader(const struct brw_compiler *compiler,
 
       nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-      b->cursor = nir_before_block(nir_start_block(impl));
+      b->cursor = nir_before_impl(impl);
 
       nir_def *shader_type = nir_load_btd_shader_type_intel(b);
 

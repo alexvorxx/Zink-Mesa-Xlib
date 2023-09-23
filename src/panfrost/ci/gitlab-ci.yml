@@ -191,10 +191,10 @@ panfrost-g52-gl:arm64:
     PAN_MESA_DEBUG: "deqp,sync,indirect"
 
 panfrost-g52-vk:arm64:
-  parallel: 2
   extends:
     - .lava-test-deqp:arm64
     - .lava-meson-g12b-a311d-khadas-vim3
+    - .panfrost-bifrost-manual-rules
   variables:
     VK_DRIVER: panfrost
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1

@@ -1012,6 +1012,9 @@ fs_inst::flags_written(const intel_device_info *devinfo) const
    /* On Gfx4 and Gfx5, sel.l (for min) and sel.ge (for max) are implemented
     * using a separate cmpn and sel instruction.  This lowering occurs in
     * fs_vistor::lower_minmax which is called very, very late.
+    *
+    * FIND_LIVE_CHANNEL & FIND_LAST_LIVE_CHANNEL are lowered in
+    * lower_find_live_channel() on Gfx8+ and do not use the flag registers.
     */
    if ((conditional_mod && ((opcode != BRW_OPCODE_SEL || devinfo->ver <= 5) &&
                             opcode != BRW_OPCODE_CSEL &&
@@ -1019,8 +1022,9 @@ fs_inst::flags_written(const intel_device_info *devinfo) const
                             opcode != BRW_OPCODE_WHILE)) ||
        opcode == FS_OPCODE_FB_WRITE) {
       return flag_mask(this, 1);
-   } else if (opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL ||
-              opcode == SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL ||
+   } else if ((devinfo->ver <= 7 &&
+               (opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL ||
+                opcode == SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL)) ||
               opcode == FS_OPCODE_LOAD_LIVE_CHANNELS) {
       return flag_mask(this, 32);
    } else {
@@ -1626,7 +1630,7 @@ fs_visitor::assign_curb_setup()
        * TODO: Support inline data and push at the same time.
        */
       assert(devinfo->verx10 >= 125);
-      assert(uniform_push_length <= 1);
+      assert(uniform_push_length <= reg_unit(devinfo));
    } else if (is_compute && devinfo->verx10 >= 125) {
       assert(devinfo->has_lsc);
       fs_builder ubld = bld.exec_all().group(1, 0).at(
@@ -1805,7 +1809,7 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
       nir->info.inputs_read & ~nir->info.per_primitive_inputs;
 
    /* Figure out where each of the incoming setup attributes lands. */
-   if (mue_map) {
+   if (key->mesh_input != BRW_NEVER) {
       /* Per-Primitive Attributes are laid out by Hardware before the regular
        * attributes, so order them like this to make easy later to map setup
        * into real HW registers.
@@ -1814,9 +1818,6 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
          uint64_t per_prim_inputs_read =
                nir->info.inputs_read & nir->info.per_primitive_inputs;
 
-         unsigned per_prim_start_dw = mue_map->per_primitive_start_dw;
-         unsigned per_prim_size_dw = mue_map->per_primitive_pitch_dw;
-
          /* In Mesh, PRIMITIVE_SHADING_RATE, VIEWPORT and LAYER slots
           * are always at the beginning, because they come from MUE
           * Primitive Header, not Per-Primitive Attributes.
@@ -1824,46 +1825,67 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
          const uint64_t primitive_header_bits = VARYING_BIT_VIEWPORT |
                                                 VARYING_BIT_LAYER |
                                                 VARYING_BIT_PRIMITIVE_SHADING_RATE;
-         bool reads_header = (per_prim_inputs_read & primitive_header_bits) != 0;
 
-         if (reads_header || mue_map->user_data_in_primitive_header) {
-            /* Primitive Shading Rate, Layer and Viewport live in the same
-             * 4-dwords slot (psr is dword 0, layer is dword 1, and viewport
-             * is dword 2).
-             */
-            if (per_prim_inputs_read & VARYING_BIT_PRIMITIVE_SHADING_RATE)
-               prog_data->urb_setup[VARYING_SLOT_PRIMITIVE_SHADING_RATE] = 0;
+         if (mue_map) {
+            unsigned per_prim_start_dw = mue_map->per_primitive_start_dw;
+            unsigned per_prim_size_dw = mue_map->per_primitive_pitch_dw;
 
-            if (per_prim_inputs_read & VARYING_BIT_LAYER)
-               prog_data->urb_setup[VARYING_SLOT_LAYER] = 0;
+            bool reads_header = (per_prim_inputs_read & primitive_header_bits) != 0;
 
-            if (per_prim_inputs_read & VARYING_BIT_VIEWPORT)
-               prog_data->urb_setup[VARYING_SLOT_VIEWPORT] = 0;
+            if (reads_header || mue_map->user_data_in_primitive_header) {
+               /* Primitive Shading Rate, Layer and Viewport live in the same
+                * 4-dwords slot (psr is dword 0, layer is dword 1, and viewport
+                * is dword 2).
+                */
+               if (per_prim_inputs_read & VARYING_BIT_PRIMITIVE_SHADING_RATE)
+                  prog_data->urb_setup[VARYING_SLOT_PRIMITIVE_SHADING_RATE] = 0;
 
-            per_prim_inputs_read &= ~primitive_header_bits;
+               if (per_prim_inputs_read & VARYING_BIT_LAYER)
+                  prog_data->urb_setup[VARYING_SLOT_LAYER] = 0;
+
+               if (per_prim_inputs_read & VARYING_BIT_VIEWPORT)
+                  prog_data->urb_setup[VARYING_SLOT_VIEWPORT] = 0;
+
+               per_prim_inputs_read &= ~primitive_header_bits;
+            } else {
+               /* If fs doesn't need primitive header, then it won't be made
+                * available through SBE_MESH, so we have to skip them when
+                * calculating offset from start of per-prim data.
+                */
+               per_prim_start_dw += mue_map->per_primitive_header_size_dw;
+               per_prim_size_dw -= mue_map->per_primitive_header_size_dw;
+            }
+
+            u_foreach_bit64(i, per_prim_inputs_read) {
+               int start = mue_map->start_dw[i];
+
+               assert(start >= 0);
+               assert(mue_map->len_dw[i] > 0);
+
+               assert(unsigned(start) >= per_prim_start_dw);
+               unsigned pos_dw = unsigned(start) - per_prim_start_dw;
+
+               prog_data->urb_setup[i] = urb_next + pos_dw / 4;
+               prog_data->urb_setup_channel[i] = pos_dw % 4;
+            }
+
+            urb_next = per_prim_size_dw / 4;
          } else {
-            /* If fs doesn't need primitive header, then it won't be made
-             * available through SBE_MESH, so we have to skip them when
-             * calculating offset from start of per-prim data.
+            /* With no MUE map, we never read the primitive header, and
+             * per-primitive attributes won't be packed either, so just lay
+             * them in varying order.
              */
-            per_prim_start_dw += mue_map->per_primitive_header_size_dw;
-            per_prim_size_dw -= mue_map->per_primitive_header_size_dw;
+            per_prim_inputs_read &= ~primitive_header_bits;
+
+            for (unsigned i = 0; i < VARYING_SLOT_MAX; i++) {
+               if (per_prim_inputs_read & BITFIELD64_BIT(i)) {
+                  prog_data->urb_setup[i] = urb_next++;
+               }
+            }
+
+            /* The actual setup attributes later must be aligned to a full GRF. */
+            urb_next = ALIGN(urb_next, 2);
          }
-
-         u_foreach_bit64(i, per_prim_inputs_read) {
-            int start = mue_map->start_dw[i];
-
-            assert(start >= 0);
-            assert(mue_map->len_dw[i] > 0);
-
-            assert(unsigned(start) >= per_prim_start_dw);
-            unsigned pos_dw = unsigned(start) - per_prim_start_dw;
-
-            prog_data->urb_setup[i] = urb_next + pos_dw / 4;
-            prog_data->urb_setup_channel[i] = pos_dw % 4;
-         }
-
-         urb_next = per_prim_size_dw / 4;
 
          prog_data->num_per_primitive_inputs = urb_next;
       }
@@ -1874,52 +1896,68 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
       uint64_t unique_fs_attrs = inputs_read & BRW_FS_VARYING_INPUT_MASK;
 
       if (inputs_read & clip_dist_bits) {
-         assert(mue_map->per_vertex_header_size_dw > 8);
+         assert(!mue_map || mue_map->per_vertex_header_size_dw > 8);
          unique_fs_attrs &= ~clip_dist_bits;
       }
 
-      unsigned per_vertex_start_dw = mue_map->per_vertex_start_dw;
-      unsigned per_vertex_size_dw = mue_map->per_vertex_pitch_dw;
+      if (mue_map) {
+         unsigned per_vertex_start_dw = mue_map->per_vertex_start_dw;
+         unsigned per_vertex_size_dw = mue_map->per_vertex_pitch_dw;
 
-      /* Per-Vertex header is available to fragment shader only if there's
-       * user data there.
-       */
-      if (!mue_map->user_data_in_vertex_header) {
-         per_vertex_start_dw += 8;
-         per_vertex_size_dw -= 8;
+         /* Per-Vertex header is available to fragment shader only if there's
+          * user data there.
+          */
+         if (!mue_map->user_data_in_vertex_header) {
+            per_vertex_start_dw += 8;
+            per_vertex_size_dw -= 8;
+         }
+
+         /* In Mesh, CLIP_DIST slots are always at the beginning, because
+          * they come from MUE Vertex Header, not Per-Vertex Attributes.
+          */
+         if (inputs_read & clip_dist_bits) {
+            prog_data->urb_setup[VARYING_SLOT_CLIP_DIST0] = urb_next;
+            prog_data->urb_setup[VARYING_SLOT_CLIP_DIST1] = urb_next + 1;
+         } else if (mue_map && mue_map->per_vertex_header_size_dw > 8) {
+            /* Clip distances are in MUE, but we are not reading them in FS. */
+            per_vertex_start_dw += 8;
+            per_vertex_size_dw -= 8;
+         }
+
+         /* Per-Vertex attributes are laid out ordered.  Because we always link
+          * Mesh and Fragment shaders, the which slots are written and read by
+          * each of them will match. */
+         u_foreach_bit64(i, unique_fs_attrs) {
+            int start = mue_map->start_dw[i];
+
+            assert(start >= 0);
+            assert(mue_map->len_dw[i] > 0);
+
+            assert(unsigned(start) >= per_vertex_start_dw);
+            unsigned pos_dw = unsigned(start) - per_vertex_start_dw;
+
+            prog_data->urb_setup[i] = urb_next + pos_dw / 4;
+            prog_data->urb_setup_channel[i] = pos_dw % 4;
+         }
+
+         urb_next += per_vertex_size_dw / 4;
+      } else {
+         /* If we don't have an MUE map, just lay down the inputs the FS reads
+          * in varying order, as we do for the legacy pipeline.
+          */
+         if (inputs_read & clip_dist_bits) {
+            prog_data->urb_setup[VARYING_SLOT_CLIP_DIST0] = urb_next++;
+            prog_data->urb_setup[VARYING_SLOT_CLIP_DIST1] = urb_next++;
+         }
+
+         for (unsigned int i = 0; i < VARYING_SLOT_MAX; i++) {
+            if (unique_fs_attrs & BITFIELD64_BIT(i))
+               prog_data->urb_setup[i] = urb_next++;
+         }
       }
-
-      /* In Mesh, CLIP_DIST slots are always at the beginning, because
-       * they come from MUE Vertex Header, not Per-Vertex Attributes.
-       */
-      if (inputs_read & clip_dist_bits) {
-         prog_data->urb_setup[VARYING_SLOT_CLIP_DIST0] = urb_next;
-         prog_data->urb_setup[VARYING_SLOT_CLIP_DIST1] = urb_next + 1;
-      } else if (mue_map->per_vertex_header_size_dw > 8) {
-         /* Clip distances are in MUE, but we are not reading them in FS. */
-         per_vertex_start_dw += 8;
-         per_vertex_size_dw -= 8;
-      }
-
-      /* Per-Vertex attributes are laid out ordered.  Because we always link
-       * Mesh and Fragment shaders, the which slots are written and read by
-       * each of them will match. */
-
-      u_foreach_bit64(i, unique_fs_attrs) {
-         int start = mue_map->start_dw[i];
-
-         assert(start >= 0);
-         assert(mue_map->len_dw[i] > 0);
-
-         assert(unsigned(start) >= per_vertex_start_dw);
-         unsigned pos_dw = unsigned(start) - per_vertex_start_dw;
-
-         prog_data->urb_setup[i] = urb_next + pos_dw / 4;
-         prog_data->urb_setup_channel[i] = pos_dw % 4;
-      }
-
-      urb_next += per_vertex_size_dw / 4;
    } else if (devinfo->ver >= 6) {
+      assert(!nir->info.per_primitive_inputs);
+
       uint64_t vue_header_bits =
          VARYING_BIT_PSIZ | VARYING_BIT_LAYER | VARYING_BIT_VIEWPORT;
 
@@ -2282,7 +2320,7 @@ fs_visitor::split_virtual_grfs()
          if (split_points[reg]) {
             has_splits = true;
             vgrf_has_split[i] = true;
-            assert(offset <= MAX_VGRF_SIZE);
+            assert(offset <= MAX_VGRF_SIZE(devinfo));
             unsigned grf = alloc.allocate(offset);
             for (unsigned k = reg - offset; k < reg; k++)
                new_virtual_grf[k] = grf;
@@ -2294,7 +2332,7 @@ fs_visitor::split_virtual_grfs()
       }
 
       /* The last one gets the original register number */
-      assert(offset <= MAX_VGRF_SIZE);
+      assert(offset <= MAX_VGRF_SIZE(devinfo));
       alloc.sizes[i] = offset;
       for (unsigned k = reg - offset; k < reg; k++)
          new_virtual_grf[k] = i;
@@ -3129,7 +3167,7 @@ fs_visitor::opt_split_sends()
       next_ip++;
 
       if (send->opcode != SHADER_OPCODE_SEND ||
-          send->mlen == 1 || send->ex_mlen > 0)
+          send->mlen <= reg_unit(devinfo) || send->ex_mlen > 0)
          continue;
 
       /* Don't split payloads which are also read later. */
@@ -4375,7 +4413,9 @@ fs_visitor::lower_mul_qword_inst(fs_inst *inst, bblock_t *block)
    } else {
       fs_reg bd_high(VGRF, alloc.allocate(d_regs), BRW_REGISTER_TYPE_UD);
       fs_reg bd_low(VGRF, alloc.allocate(d_regs), BRW_REGISTER_TYPE_UD);
-      fs_reg acc = retype(brw_acc_reg(inst->exec_size), BRW_REGISTER_TYPE_UD);
+      const unsigned acc_width = reg_unit(devinfo) * 8;
+      fs_reg acc = suboffset(retype(brw_acc_reg(inst->exec_size), BRW_REGISTER_TYPE_UD),
+                             inst->group % acc_width);
 
       fs_inst *mul = ibld.MUL(acc,
                             subscript(inst->src[0], BRW_REGISTER_TYPE_UD, 0),
@@ -4431,7 +4471,9 @@ fs_visitor::lower_mulh_inst(fs_inst *inst, bblock_t *block)
 
    /* Should have been lowered to 8-wide. */
    assert(inst->exec_size <= get_lowered_simd_width(compiler, inst));
-   const fs_reg acc = retype(brw_acc_reg(inst->exec_size), inst->dst.type);
+   const unsigned acc_width = reg_unit(devinfo) * 8;
+   const fs_reg acc = suboffset(retype(brw_acc_reg(inst->exec_size), inst->dst.type),
+                                inst->group % acc_width);
    fs_inst *mul = ibld.MUL(acc, inst->src[0], inst->src[1]);
    fs_inst *mach = ibld.MACH(inst->dst, inst->src[0], inst->src[1]);
 
@@ -4858,8 +4900,9 @@ get_fpu_lowered_simd_width(const struct brw_compiler *compiler,
    /* Calculate the maximum execution size of the instruction based on the
     * factor by which it goes over the hardware limit of 2 GRFs.
     */
-   if (reg_count > 2)
-      max_width = MIN2(max_width, inst->exec_size / DIV_ROUND_UP(reg_count, 2));
+   const unsigned max_reg_count = 2 * reg_unit(devinfo);
+   if (reg_count > max_reg_count)
+      max_width = MIN2(max_width, inst->exec_size / DIV_ROUND_UP(reg_count, max_reg_count));
 
    /* According to the IVB PRMs:
     *  "When destination spans two registers, the source MUST span two
@@ -4936,7 +4979,8 @@ get_fpu_lowered_simd_width(const struct brw_compiler *compiler,
     * From the BDW PRMs (applies to later hardware too):
     *  "Ternary instruction with condition modifiers must not use SIMD32."
     */
-   if (inst->conditional_mod && (devinfo->ver < 8 || inst->is_3src(compiler)))
+   if (inst->conditional_mod && (devinfo->ver < 8 ||
+                                 (inst->is_3src(compiler) && devinfo->ver < 12)))
       max_width = MIN2(max_width, 16);
 
    /* From the IVB PRMs (applies to other devices that don't have the
@@ -4999,7 +5043,7 @@ get_fpu_lowered_simd_width(const struct brw_compiler *compiler,
     * instructions do not support HF types and conversions from/to F are
     * required.
     */
-   if (is_mixed_float_with_fp32_dst(inst))
+   if (is_mixed_float_with_fp32_dst(inst) && devinfo->ver < 20)
       max_width = MIN2(max_width, 8);
 
    /* From the SKL PRM, Special Restrictions for Handling Mixed Mode
@@ -5008,7 +5052,7 @@ get_fpu_lowered_simd_width(const struct brw_compiler *compiler,
     *    "No SIMD16 in mixed mode when destination is packed f16 for both
     *     Align1 and Align16."
     */
-   if (is_mixed_float_with_packed_fp16_dst(inst))
+   if (is_mixed_float_with_packed_fp16_dst(inst) && devinfo->ver < 20)
       max_width = MIN2(max_width, 8);
 
    /* Only power-of-two execution sizes are representable in the instruction
@@ -6943,7 +6987,7 @@ fs_visitor::run_vs()
 {
    assert(stage == MESA_SHADER_VERTEX);
 
-   payload_ = new vs_thread_payload();
+   payload_ = new vs_thread_payload(*this);
 
    emit_nir_code();
 
@@ -7101,7 +7145,7 @@ fs_visitor::run_tes()
 {
    assert(stage == MESA_SHADER_TESS_EVAL);
 
-   payload_ = new tes_thread_payload();
+   payload_ = new tes_thread_payload(*this);
 
    emit_nir_code();
 
@@ -7324,7 +7368,7 @@ fs_visitor::run_bs(bool allow_spilling)
 {
    assert(stage >= MESA_SHADER_RAYGEN && stage <= MESA_SHADER_CALLABLE);
 
-   payload_ = new bs_thread_payload();
+   payload_ = new bs_thread_payload(*this);
 
    emit_nir_code();
 
@@ -7831,7 +7875,10 @@ brw_compile_fs(const struct brw_compiler *compiler,
       return NULL;
    } else if (INTEL_SIMD(FS, 8)) {
       simd8_cfg = v8->cfg;
-      prog_data->base.dispatch_grf_start_reg = v8->payload().num_regs;
+
+      assert(v8->payload().num_regs % reg_unit(devinfo) == 0);
+      prog_data->base.dispatch_grf_start_reg = v8->payload().num_regs / reg_unit(devinfo);
+
       prog_data->reg_blocks_8 = brw_register_blocks(v8->grf_used);
       const performance &perf = v8->performance_analysis.require();
       throughput = MAX2(throughput, perf.throughput);
@@ -7876,7 +7923,10 @@ brw_compile_fs(const struct brw_compiler *compiler,
                              v16->fail_msg);
       } else {
          simd16_cfg = v16->cfg;
-         prog_data->dispatch_grf_start_reg_16 = v16->payload().num_regs;
+
+         assert(v16->payload().num_regs % reg_unit(devinfo) == 0);
+         prog_data->dispatch_grf_start_reg_16 = v16->payload().num_regs / reg_unit(devinfo);
+
          prog_data->reg_blocks_16 = brw_register_blocks(v16->grf_used);
          const performance &perf = v16->performance_analysis.require();
          throughput = MAX2(throughput, perf.throughput);
@@ -7910,7 +7960,10 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                 "SIMD32 shader inefficient\n");
          } else {
             simd32_cfg = v32->cfg;
-            prog_data->dispatch_grf_start_reg_32 = v32->payload().num_regs;
+
+            assert(v32->payload().num_regs % reg_unit(devinfo) == 0);
+            prog_data->dispatch_grf_start_reg_32 = v32->payload().num_regs / reg_unit(devinfo);
+
             prog_data->reg_blocks_32 = brw_register_blocks(v32->grf_used);
             throughput = MAX2(throughput, perf.throughput);
          }
@@ -8149,7 +8202,6 @@ brw_compile_cs(const struct brw_compiler *compiler,
    }
 
    brw_simd_selection_state simd_state{
-      .mem_ctx = params->base.mem_ctx,
       .devinfo = compiler->devinfo,
       .prog_data = prog_data,
       .required_width = brw_required_dispatch_width(&nir->info),
@@ -8207,7 +8259,8 @@ brw_compile_cs(const struct brw_compiler *compiler,
    if (selected_simd < 0) {
       params->base.error_str =
          ralloc_asprintf(params->base.mem_ctx,
-                         "Can't compile shader: %s, %s and %s.\n",
+                         "Can't compile shader: "
+                         "SIMD8 '%s', SIMD16 '%s' and SIMD32 '%s'.\n",
                          simd_state.error[0], simd_state.error[1],
                          simd_state.error[2]);
       return NULL;
@@ -8300,7 +8353,6 @@ compile_single_bs(const struct brw_compiler *compiler,
                        key->base.robust_flags);
 
    brw_simd_selection_state simd_state{
-      .mem_ctx = params->base.mem_ctx,
       .devinfo = compiler->devinfo,
       .prog_data = prog_data,
 
@@ -8343,7 +8395,8 @@ compile_single_bs(const struct brw_compiler *compiler,
    if (selected_simd < 0) {
       params->base.error_str =
          ralloc_asprintf(params->base.mem_ctx,
-                         "Can't compile shader: %s and %s.",
+                         "Can't compile shader: "
+                         "SIMD8 '%s' and SIMD16 '%s'.\n",
                          simd_state.error[0], simd_state.error[1]);
       return 0;
    }

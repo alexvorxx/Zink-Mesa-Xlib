@@ -2735,7 +2735,8 @@ fs_visitor::get_tcs_multi_patch_icp_handle(const fs_builder &bld,
     */
    bld.emit(SHADER_OPCODE_MOV_INDIRECT, icp_handle, start,
             icp_offset_bytes,
-            brw_imm_ud(brw_tcs_prog_key_input_vertices(tcs_key) * REG_SIZE));
+            brw_imm_ud(brw_tcs_prog_key_input_vertices(tcs_key) * REG_SIZE *
+                       reg_unit(devinfo)));
 
    return icp_handle;
 }
@@ -2843,7 +2844,7 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
       if (inst->offset == 0 && indirect_offset.file == BAD_FILE) {
          assert(type_sz(dst.type) == 4);
          inst->dst = bld.vgrf(dst.type, 4);
-         inst->size_written = 4 * REG_SIZE;
+         inst->size_written = 4 * REG_SIZE * reg_unit(devinfo);
          bld.MOV(dst, offset(inst->dst, bld, 3));
       }
       break;
@@ -2874,7 +2875,7 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
                fs_reg tmp = bld.vgrf(dst.type, read_components);
                inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, tmp,
                                srcs, ARRAY_SIZE(srcs));
-               inst->size_written = read_components * REG_SIZE;
+               inst->size_written = read_components * REG_SIZE * reg_unit(devinfo);
                for (unsigned i = 0; i < instr->num_components; i++) {
                   bld.MOV(offset(dst, bld, i),
                           offset(tmp, bld, i + first_component));
@@ -2882,7 +2883,7 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
             } else {
                inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dst,
                                srcs, ARRAY_SIZE(srcs));
-               inst->size_written = instr->num_components * REG_SIZE;
+               inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
             }
             inst->offset = imm_offset;
             inst->mlen = 1;
@@ -2899,7 +2900,7 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
             fs_reg tmp = bld.vgrf(dst.type, read_components);
             inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, tmp,
                             srcs, ARRAY_SIZE(srcs));
-            inst->size_written = read_components * REG_SIZE;
+            inst->size_written = read_components * REG_SIZE * reg_unit(devinfo);
             for (unsigned i = 0; i < instr->num_components; i++) {
                bld.MOV(offset(dst, bld, i),
                        offset(tmp, bld, i + first_component));
@@ -2907,7 +2908,7 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
          } else {
             inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dst,
                             srcs, ARRAY_SIZE(srcs));
-            inst->size_written = instr->num_components * REG_SIZE;
+            inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
          }
          inst->offset = imm_offset;
          inst->mlen = 2;
@@ -3026,7 +3027,7 @@ fs_visitor::nir_emit_tes_intrinsic(const fs_builder &bld,
                fs_reg tmp = bld.vgrf(dest.type, read_components);
                inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, tmp,
                                srcs, ARRAY_SIZE(srcs));
-               inst->size_written = read_components * REG_SIZE;
+               inst->size_written = read_components * REG_SIZE * reg_unit(devinfo);
                for (unsigned i = 0; i < instr->num_components; i++) {
                   bld.MOV(offset(dest, bld, i),
                           offset(tmp, bld, i + first_component));
@@ -3034,7 +3035,7 @@ fs_visitor::nir_emit_tes_intrinsic(const fs_builder &bld,
             } else {
                inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dest,
                                srcs, ARRAY_SIZE(srcs));
-               inst->size_written = instr->num_components * REG_SIZE;
+               inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
             }
             inst->mlen = 1;
             inst->offset = imm_offset;
@@ -3486,6 +3487,45 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       unsigned comp = nir_intrinsic_component(instr);
       unsigned num_components = instr->num_components;
 
+      const struct brw_wm_prog_key *wm_key = (brw_wm_prog_key*) this->key;
+
+      if (wm_key->mesh_input == BRW_SOMETIMES) {
+         assert(devinfo->verx10 >= 125);
+         /* The FS payload gives us the viewport and layer clamped to valid
+          * ranges, but the spec for gl_ViewportIndex and gl_Layer includes
+          * the language:
+          *   the fragment stage will read the same value written by the
+          *   geometry stage, even if that value is out of range.
+          *
+          * Which is why these are normally passed as regular attributes.
+          * This isn't tested anywhere except some GL-only piglit tests
+          * though, so for the case where the FS may be used against either a
+          * traditional pipeline or a mesh one, where the position of these
+          * will change depending on the previous stage, read them from the
+          * payload to simplify things until the requisite magic is in place.
+          */
+         if (base == VARYING_SLOT_LAYER || base == VARYING_SLOT_VIEWPORT) {
+            assert(num_components == 1);
+            fs_reg g1(retype(brw_vec1_grf(1, 1), BRW_REGISTER_TYPE_UD));
+
+            unsigned mask, shift_count;
+            if (base == VARYING_SLOT_LAYER) {
+               shift_count = 16;
+               mask = 0x7ff << shift_count;
+            } else {
+               shift_count = 27;
+               mask = 0xf << shift_count;
+            }
+
+            fs_reg vp_or_layer = bld.vgrf(BRW_REGISTER_TYPE_UD);
+            bld.AND(vp_or_layer, g1, brw_imm_ud(mask));
+            fs_reg shifted_value = bld.vgrf(BRW_REGISTER_TYPE_UD);
+            bld.SHR(shifted_value, vp_or_layer, brw_imm_ud(shift_count));
+            bld.MOV(offset(dest, bld, 0), retype(shifted_value, dest.type));
+            break;
+         }
+      }
+
       /* TODO(mesh): Multiview. Verify and handle these special cases for Mesh. */
 
       /* Special case fields in the VUE header */
@@ -3536,66 +3576,23 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       const glsl_interp_mode interpolation =
          (enum glsl_interp_mode) nir_intrinsic_interp_mode(instr);
 
+      fs_reg msg_data;
       if (nir_src_is_const(instr->src[0])) {
-         unsigned msg_data = nir_src_as_uint(instr->src[0]) << 4;
-
-         emit_pixel_interpolater_send(bld,
-                                      FS_OPCODE_INTERPOLATE_AT_SAMPLE,
-                                      dest,
-                                      fs_reg(), /* src */
-                                      brw_imm_ud(msg_data),
-                                      interpolation);
+         msg_data = brw_imm_ud(nir_src_as_uint(instr->src[0]) << 4);
       } else {
          const fs_reg sample_src = retype(get_nir_src(instr->src[0]),
                                           BRW_REGISTER_TYPE_UD);
-
-         if (nir_src_is_always_uniform(instr->src[0])) {
-            const fs_reg sample_id = bld.emit_uniformize(sample_src);
-            const fs_reg msg_data = vgrf(glsl_type::uint_type);
-            bld.exec_all().group(1, 0)
-               .SHL(msg_data, sample_id, brw_imm_ud(4u));
-            emit_pixel_interpolater_send(bld,
-                                         FS_OPCODE_INTERPOLATE_AT_SAMPLE,
-                                         dest,
-                                         fs_reg(), /* src */
-                                         component(msg_data, 0),
-                                         interpolation);
-         } else {
-            /* Make a loop that sends a message to the pixel interpolater
-             * for the sample number in each live channel. If there are
-             * multiple channels with the same sample number then these
-             * will be handled simultaneously with a single iteration of
-             * the loop.
-             */
-            bld.emit(BRW_OPCODE_DO);
-
-            /* Get the next live sample number into sample_id_reg */
-            const fs_reg sample_id = bld.emit_uniformize(sample_src);
-
-            /* Set the flag register so that we can perform the send
-             * message on all channels that have the same sample number
-             */
-            bld.CMP(bld.null_reg_ud(),
-                    sample_src, sample_id,
-                    BRW_CONDITIONAL_EQ);
-            const fs_reg msg_data = vgrf(glsl_type::uint_type);
-            bld.exec_all().group(1, 0)
-               .SHL(msg_data, sample_id, brw_imm_ud(4u));
-            fs_inst *inst =
-               emit_pixel_interpolater_send(bld,
-                                            FS_OPCODE_INTERPOLATE_AT_SAMPLE,
-                                            dest,
-                                            fs_reg(), /* src */
-                                            component(msg_data, 0),
-                                            interpolation);
-            set_predicate(BRW_PREDICATE_NORMAL, inst);
-
-            /* Continue the loop if there are any live channels left */
-            set_predicate_inv(BRW_PREDICATE_NORMAL,
-                              true, /* inverse */
-                              bld.emit(BRW_OPCODE_WHILE));
-         }
+         const fs_reg sample_id = bld.emit_uniformize(sample_src);
+         msg_data = component(bld.group(8, 0).vgrf(BRW_REGISTER_TYPE_UD), 0);
+         bld.exec_all().group(1, 0).SHL(msg_data, sample_id, brw_imm_ud(4u));
       }
+
+      emit_pixel_interpolater_send(bld,
+                                   FS_OPCODE_INTERPOLATE_AT_SAMPLE,
+                                   dest,
+                                   fs_reg(), /* src */
+                                   msg_data,
+                                   interpolation);
       break;
    }
 
@@ -3880,9 +3877,10 @@ emit_rt_lsc_fence(const fs_builder &bld,
                              brw_vec8_grf(0, 0) /* payload */);
    send->sfid = GFX12_SFID_UGM;
    send->desc = lsc_fence_msg_desc(devinfo, scope, flush_type, true);
-   send->mlen = 1; /* g0 header */
+   send->mlen = reg_unit(devinfo); /* g0 header */
    send->ex_mlen = 0;
-   send->size_written = REG_SIZE; /* Temp write for scheduling */
+   /* Temp write for scheduling */
+   send->size_written = REG_SIZE * reg_unit(devinfo);
    send->send_has_side_effects = true;
 
    ubld.emit(FS_OPCODE_SCHEDULING_FENCE, ubld.null_reg_ud(), tmp);
@@ -4302,7 +4300,6 @@ lsc_fence_descriptor_for_intrinsic(const struct intel_device_info *devinfo,
          break;
       case SCOPE_WORKGROUP:
          scope = LSC_FENCE_THREADGROUP;
-         flush_type = LSC_FLUSH_TYPE_EVICT;
          break;
       case SCOPE_SHADER_CALL:
       case SCOPE_INVOCATION:
@@ -4476,7 +4473,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       /* Since the image size is always uniform, we can just emit a SIMD8
        * query instruction and splat the result out.
        */
-      const fs_builder ubld = bld.exec_all().group(8, 0);
+      const fs_builder ubld = bld.exec_all().group(8 * reg_unit(devinfo), 0);
 
       fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 4);
       fs_inst *inst = ubld.emit(SHADER_OPCODE_IMAGE_SIZE_LOGICAL,
@@ -4960,6 +4957,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          const unsigned ubo_block =
             brw_nir_ubo_surface_index_get_push_block(instr->src[0]);
          const unsigned offset_256b = load_offset / 32;
+         const unsigned end_256b =
+            DIV_ROUND_UP(load_offset + type_size * instr->num_components, 32);
 
          /* See if we've selected this as a push constant candidate */
          fs_reg push_reg;
@@ -4967,7 +4966,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
             const struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
             if (range->block == ubo_block &&
                 offset_256b >= range->start &&
-                offset_256b < range->start + range->length) {
+                end_256b <= range->start + range->length) {
 
                push_reg = fs_reg(UNIFORM, UBO_START + i, dest.type);
                push_reg.offset = load_offset - 32 * range->start;
@@ -5295,7 +5294,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          srcs[SURFACE_LOGICAL_SRC_SURFACE] = fs_reg(brw_imm_ud(GFX7_BTI_SLM));
       }
 
-      const unsigned total_dwords = ALIGN(instr->num_components, REG_SIZE / 4);
+      const unsigned total_dwords = ALIGN(instr->num_components,
+                                          REG_SIZE * reg_unit(devinfo) / 4);
       unsigned loaded_dwords = 0;
 
       const fs_builder ubld1 = bld.exec_all().group(1, 0);
@@ -5326,7 +5326,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          const fs_builder &ubld = block <= 8 ? ubld8 : ubld16;
          ubld.emit(SHADER_OPCODE_UNALIGNED_OWORD_BLOCK_READ_LOGICAL,
                    retype(byte_offset(packed_consts, loaded_dwords * 4), BRW_REGISTER_TYPE_UD),
-                   srcs, SURFACE_LOGICAL_NUM_SRCS)->size_written = align(block_bytes, REG_SIZE);
+                   srcs, SURFACE_LOGICAL_NUM_SRCS)->size_written =
+            align(block_bytes, REG_SIZE * reg_unit(devinfo));
 
          loaded_dwords += block;
 
@@ -5377,7 +5378,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        * for SURFTYPE_BUFFER, we can just use the SIMD8 variant regardless of
        * the dispatch width.
        */
-      const fs_builder ubld = bld.exec_all().group(8, 0);
+      const fs_builder ubld = bld.exec_all().group(8 * reg_unit(devinfo), 0);
       fs_reg src_payload = ubld.vgrf(BRW_REGISTER_TYPE_UD);
       fs_reg ret_payload = ubld.vgrf(BRW_REGISTER_TYPE_UD, 4);
 
@@ -5393,8 +5394,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       fs_inst *inst = ubld.emit(SHADER_OPCODE_GET_BUFFER_SIZE, ret_payload,
                                 srcs, GET_BUFFER_SIZE_SRCS);
       inst->header_size = 0;
-      inst->mlen = 1;
-      inst->size_written = 4 * REG_SIZE;
+      inst->mlen = reg_unit(devinfo);
+      inst->size_written = 4 * REG_SIZE * reg_unit(devinfo);
 
       /* SKL PRM, vol07, 3D Media GPGPU Engine, Bounds Checking and Faulting:
        *
@@ -6183,7 +6184,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        * bindless shader or a regular compute shader.
        */
       bld.MOV(retype(dest, BRW_REGISTER_TYPE_UD),
-              retype(brw_vec8_grf(1, 0), BRW_REGISTER_TYPE_UW));
+              retype(brw_vec8_grf(1 * reg_unit(devinfo), 0), BRW_REGISTER_TYPE_UW));
       break;
 
    case nir_intrinsic_btd_spawn_intel:

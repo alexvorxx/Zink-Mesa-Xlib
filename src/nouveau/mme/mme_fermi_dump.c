@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Mary Guillemard
+ * SPDX-License-Identifier: MIT
+ */
 #include "mme_fermi.h"
 
 #include "mme_fermi_isa.h"

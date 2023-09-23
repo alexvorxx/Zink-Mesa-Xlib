@@ -184,6 +184,11 @@ struct fd_dev_info {
             uint32_t VPC_DBG_ECO_CNTL;
             uint32_t UCHE_UNKNOWN_0E12;
          } magic;
+
+         struct {
+               uint32_t reg;
+               uint32_t value;
+         } magic_raw[32];
       } a6xx;
    };
 };

@@ -84,6 +84,7 @@ struct si_state_rasterizer {
    unsigned polygon_mode_is_lines : 1;
    unsigned polygon_mode_is_points : 1;
    unsigned perpendicular_end_caps : 1;
+   unsigned bottom_edge_rule : 1;
 };
 
 struct si_dsa_stencil_ref_part {

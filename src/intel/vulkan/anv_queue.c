@@ -68,12 +68,20 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
                uint32_t index_in_family)
 {
    struct anv_physical_device *pdevice = device->physical;
+   assert(queue->vk.queue_family_index < pdevice->queue.family_count);
+   struct anv_queue_family *queue_family =
+      &device->physical->queue.families[pCreateInfo->queueFamilyIndex];
    VkResult result;
 
    result = vk_queue_init(&queue->vk, &device->vk, pCreateInfo,
                           index_in_family);
    if (result != VK_SUCCESS)
       return result;
+
+   queue->vk.driver_submit = anv_queue_submit;
+   queue->device = device;
+   queue->family = queue_family;
+   queue->decoder = &device->decoder[queue->vk.queue_family_index];
 
    result = anv_create_engine(device, queue, pCreateInfo);
    if (result != VK_SUCCESS) {
@@ -91,14 +99,16 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
       }
    }
 
-   queue->vk.driver_submit = anv_queue_submit;
-
-   queue->device = device;
-
-   assert(queue->vk.queue_family_index < pdevice->queue.family_count);
-   queue->family = &pdevice->queue.families[queue->vk.queue_family_index];
-
-   queue->decoder = &device->decoder[queue->vk.queue_family_index];
+   if (queue_family->engine_class == INTEL_ENGINE_CLASS_COPY ||
+       queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      result = vk_sync_create(&device->vk,
+                              &device->physical->sync_syncobj_type,
+                              0, 0, &queue->companion_sync);
+      if (result != VK_SUCCESS) {
+         anv_queue_finish(queue);
+         return result;
+      }
+   }
 
    return VK_SUCCESS;
 }
@@ -108,6 +118,9 @@ anv_queue_finish(struct anv_queue *queue)
 {
    if (queue->sync)
       vk_sync_destroy(&queue->device->vk, queue->sync);
+
+   if (queue->companion_sync)
+      vk_sync_destroy(&queue->device->vk, queue->companion_sync);
 
    anv_destroy_engine(queue);
    vk_queue_finish(&queue->vk);

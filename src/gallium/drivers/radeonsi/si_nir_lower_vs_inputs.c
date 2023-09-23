@@ -89,7 +89,7 @@ get_vertex_index_for_all_inputs(nir_shader *nir, struct lower_vs_inputs_state *s
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder builder = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder builder = nir_builder_at(nir_before_impl(impl));
    nir_builder *b = &builder;
 
    const struct si_shader_selector *sel = s->shader->selector;
@@ -399,7 +399,7 @@ opencoded_load_format(nir_builder *b, nir_def *rsrc, nir_def *vindex,
          /* 2_10_10_10 data formats */
          unsigned bits = log_size == 3 ? (chan == 3 ? 2 : 10) : (8 << log_size);
          nir_def *tmp = nir_u2f32(b, loads[chan]);
-         loads[chan] = nir_fmul_imm(b, tmp, 1.0 / BITFIELD64_MASK(bits));
+         loads[chan] = nir_fmul_imm(b, tmp, 1.0 / (double)BITFIELD64_MASK(bits));
       }
       break;
    case AC_FETCH_FORMAT_SNORM:
@@ -407,7 +407,7 @@ opencoded_load_format(nir_builder *b, nir_def *rsrc, nir_def *vindex,
          /* 2_10_10_10 data formats */
          unsigned bits = log_size == 3 ? (chan == 3 ? 2 : 10) : (8 << log_size);
          nir_def *tmp = nir_i2f32(b, loads[chan]);
-         tmp = nir_fmul_imm(b, tmp, 1.0 / BITFIELD64_MASK(bits - 1));
+         tmp = nir_fmul_imm(b, tmp, 1.0 / (double)BITFIELD64_MASK(bits - 1));
          /* Clamp to [-1, 1] */
          tmp = nir_fmax(b, tmp, nir_imm_float(b, -1));
          loads[chan] = nir_fmin(b, tmp, nir_imm_float(b, 1));

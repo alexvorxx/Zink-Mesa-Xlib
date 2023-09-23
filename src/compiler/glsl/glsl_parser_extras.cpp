@@ -1200,7 +1200,8 @@ _mesa_ast_process_interface_block(YYLTYPE *locp,
       block->default_layout.stream = state->out_qualifier->stream;
    }
 
-   if (state->has_enhanced_layouts() && block->default_layout.flags.q.out) {
+   if (state->has_enhanced_layouts() && block->default_layout.flags.q.out &&
+       state->exts->ARB_transform_feedback3) {
       /* Assign global layout's xfb_buffer value. */
       block->default_layout.flags.q.xfb_buffer = 1;
       block->default_layout.flags.q.explicit_xfb_buffer = 0;
@@ -2107,11 +2108,11 @@ _mesa_glsl_copy_symbols_from_table(struct exec_list *shader_ir,
       const glsl_type *iface =
          src->get_interface("gl_PerVertex", ir_var_shader_in);
       if (iface)
-         dest->add_interface(iface->name, iface, ir_var_shader_in);
+         dest->add_interface(glsl_get_type_name(iface), iface, ir_var_shader_in);
 
       iface = src->get_interface("gl_PerVertex", ir_var_shader_out);
       if (iface)
-         dest->add_interface(iface->name, iface, ir_var_shader_out);
+         dest->add_interface(glsl_get_type_name(iface), iface, ir_var_shader_out);
    }
 }
 

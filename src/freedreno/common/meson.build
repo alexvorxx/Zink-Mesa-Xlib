@@ -22,7 +22,11 @@ freedreno_devices_h = custom_target(
   'freedreno_devices.h',
   input: 'freedreno_devices.py',
   output: 'freedreno_devices.h',
-  command: [prog_python, '@INPUT@'],
+  command: [
+    prog_python, '@INPUT@',
+    '-p', join_paths(meson.project_build_root(), 'src/freedreno/registers/adreno/')
+  ],
+  depends: freedreno_py_header_files,
   capture: true,
 )
 

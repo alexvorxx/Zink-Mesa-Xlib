@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Mary Guillemard
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef MME_BUILDER_H
 #error "This file must only be included by mme_builder.h"
 #endif

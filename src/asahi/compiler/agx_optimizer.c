@@ -243,6 +243,85 @@ agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
    }
 }
 
+/*
+ * Fuse conditions into if. Specifically, acts on if_icmp and fuses:
+ *
+ *    if_icmp(cmp(x, y, *), 0, ne) -> if_cmp(x, y, *)
+ */
+static void
+agx_optimizer_if_cmp(agx_instr **defs, agx_instr *I)
+{
+   /* Check for unfused if */
+   if (!agx_is_equiv(I->src[1], agx_zero()) || I->icond != AGX_ICOND_UEQ ||
+       !I->invert_cond || I->src[0].type != AGX_INDEX_NORMAL)
+      return;
+
+   /* Check for condition */
+   agx_instr *def = defs[I->src[0].value];
+   if (def->op != AGX_OPCODE_ICMP && def->op != AGX_OPCODE_FCMP)
+      return;
+
+   /* Fuse */
+   I->src[0] = def->src[0];
+   I->src[1] = def->src[1];
+   I->invert_cond = def->invert_cond;
+
+   if (def->op == AGX_OPCODE_ICMP) {
+      I->op = AGX_OPCODE_IF_ICMP;
+      I->icond = def->icond;
+   } else {
+      I->op = AGX_OPCODE_IF_FCMP;
+      I->fcond = def->fcond;
+   }
+}
+
+/*
+ * Fuse conditions into select. Specifically, acts on icmpsel and fuses:
+ *
+ *    icmpsel(cmp(x, y, *), 0, z, w, eq) -> cmpsel(x, y, w, z, *)
+ *
+ * Care must be taken to invert the condition by swapping cmpsel arguments.
+ */
+static void
+agx_optimizer_cmpsel(agx_instr **defs, agx_instr *I)
+{
+   /* Check for unfused select */
+   if (!agx_is_equiv(I->src[1], agx_zero()) || I->icond != AGX_ICOND_UEQ ||
+       I->src[0].type != AGX_INDEX_NORMAL)
+      return;
+
+   /* Check for condition */
+   agx_instr *def = defs[I->src[0].value];
+   if (def->op != AGX_OPCODE_ICMP && def->op != AGX_OPCODE_FCMP)
+      return;
+
+   /* Fuse */
+   I->src[0] = def->src[0];
+   I->src[1] = def->src[1];
+
+   /* In the unfused select, the condition is inverted due to the form:
+    *
+    *    (cond == 0) ? x : y
+    *
+    * So we need to swap the arguments when fusing to become cond ? y : x. If
+    * the condition was supposed to be inverted, we don't swap since it's
+    * already inverted. cmpsel does not have an invert_cond bit to use.
+    */
+   if (!def->invert_cond) {
+      agx_index temp = I->src[2];
+      I->src[2] = I->src[3];
+      I->src[3] = temp;
+   }
+
+   if (def->op == AGX_OPCODE_ICMP) {
+      I->op = AGX_OPCODE_ICMPSEL;
+      I->icond = def->icond;
+   } else {
+      I->op = AGX_OPCODE_FCMPSEL;
+      I->fcond = def->fcond;
+   }
+}
+
 static void
 agx_optimizer_forward(agx_context *ctx)
 {
@@ -269,6 +348,11 @@ agx_optimizer_forward(agx_context *ctx)
           I->op != AGX_OPCODE_UNIFORM_STORE &&
           I->op != AGX_OPCODE_BLOCK_IMAGE_STORE)
          agx_optimizer_inline_imm(defs, I, info.nr_srcs, info.is_float);
+
+      if (I->op == AGX_OPCODE_IF_ICMP)
+         agx_optimizer_if_cmp(defs, I);
+      else if (I->op == AGX_OPCODE_ICMPSEL)
+         agx_optimizer_cmpsel(defs, I);
    }
 
    free(defs);

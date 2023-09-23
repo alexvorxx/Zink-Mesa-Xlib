@@ -478,6 +478,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
       break;
 
    /* Intrinsics which are always divergent */
+   case nir_intrinsic_inverse_ballot:
    case nir_intrinsic_load_color0:
    case nir_intrinsic_load_color1:
    case nir_intrinsic_load_param:

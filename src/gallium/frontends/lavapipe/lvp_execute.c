@@ -493,6 +493,9 @@ static void emit_state(struct rendering_state *state)
       state->stencil_ref_dirty = false;
    }
 
+   if (state->ve_dirty)
+      update_vertex_elements_buffer_index(state);
+
    if (state->vb_strides_dirty) {
       for (unsigned i = 0; i < state->velem.count; i++)
          state->velem.velems[i].src_stride = state->vb_strides[state->velem.velems[i].vertex_buffer_index];
@@ -505,7 +508,6 @@ static void emit_state(struct rendering_state *state)
    }
 
    if (state->ve_dirty) {
-      update_vertex_elements_buffer_index(state);
       cso_set_vertex_elements(state->cso, &state->velem);
       state->ve_dirty = false;
    }
@@ -870,8 +872,6 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
       state->dsa_dirty = true;
    }
 
-   state->blend_state.independent_blend_enable = ps->rp->color_attachment_count > 1;
-
    if (ps->cb) {
       if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE))
          state->blend_state.logicop_enable = ps->cb->logic_op_enable;
@@ -969,16 +969,6 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
       state->rs_dirty = true;
    }
 
-   if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES)) {
-      if (ps->vi) {
-         u_foreach_bit(a, ps->vi->attributes_valid) {
-            uint32_t b = ps->vi->attributes[a].binding;
-            state->velem.velems[a].src_stride = ps->vi->bindings[b].stride;
-         }
-         state->vb_dirty = true;
-      }
-   }
-
    if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_VI) && ps->vi) {
       u_foreach_bit(a, ps->vi->attributes_valid) {
          uint32_t b = ps->vi->attributes[a].binding;
@@ -998,6 +988,12 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
             break;
          default:
             unreachable("Invalid vertex input rate");
+         }
+
+         if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES)) {
+            state->vb_strides[b] = ps->vi->bindings[b].stride;
+            state->vb_strides_dirty = true;
+            state->ve_dirty = true;
          }
       }
 
@@ -3341,6 +3337,7 @@ static void handle_set_vertex_input(struct vk_cmd_queue_entry *cmd,
          max_location = location;
    }
    state->velem.count = max_location + 1;
+   state->vb_strides_dirty = false;
    state->vb_dirty = true;
    state->ve_dirty = true;
 }
@@ -3707,7 +3704,6 @@ handle_shaders(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
    }
 
    if (gfx) {
-      state->blend_state.independent_blend_enable = true;
       state->push_size[0] = 0;
       for (unsigned i = 0; i < ARRAY_SIZE(state->gfx_push_sizes); i++)
          state->push_size[0] += state->gfx_push_sizes[i];
@@ -4784,6 +4780,9 @@ VkResult lvp_execute_cmds(struct lvp_device *device,
    util_dynarray_init(&state->push_desc_sets, NULL);
 
    /* default values */
+   state->min_sample_shading = 1;
+   state->num_viewports = 1;
+   state->num_scissors = 1;
    state->rs_state.line_width = 1.0;
    state->rs_state.flatshade_first = true;
    state->rs_state.clip_halfz = true;
@@ -4793,6 +4792,7 @@ VkResult lvp_execute_cmds(struct lvp_device *device,
    state->rs_state.half_pixel_center = true;
    state->rs_state.scissor = true;
    state->rs_state.no_ms_sample_mask_out = true;
+   state->blend_state.independent_blend_enable = true;
 
    /* create a gallium context */
    lvp_execute_cmd_buffer(&cmd_buffer->vk.cmd_queue.cmds, state, device->print_cmds);

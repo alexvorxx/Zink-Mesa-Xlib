@@ -2395,8 +2395,7 @@ lower_to_hw_instr(Program* program)
                handle_operands(copy_operations, &ctx, program->gfx_level, pi);
                break;
             }
-            case aco_opcode::p_parallelcopy:
-            case aco_opcode::p_wqm: {
+            case aco_opcode::p_parallelcopy: {
                std::map<PhysReg, copy_operation> copy_operations;
                for (unsigned j = 0; j < instr->operands.size(); j++) {
                   assert(instr->definitions[j].bytes() == instr->operands[j].bytes());

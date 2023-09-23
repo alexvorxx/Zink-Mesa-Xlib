@@ -1,8 +1,14 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_cmd_buffer.h"
 #include "nvk_descriptor_set.h"
 #include "nvk_descriptor_set_layout.h"
 #include "nvk_shader.h"
+
 #include "vk_pipeline.h"
+#include "vk_pipeline_layout.h"
 
 #include "nir_builder.h"
 #include "nir_deref.h"
@@ -302,6 +308,39 @@ lower_image_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 static bool
+lower_interp_at_sample(nir_builder *b, nir_intrinsic_instr *interp,
+                       const struct lower_descriptors_ctx *ctx)
+{
+   const uint32_t root_table_offset =
+      nvk_root_descriptor_offset(draw.sample_locations);
+
+   nir_def *sample = interp->src[1].ssa;
+
+   b->cursor = nir_before_instr(&interp->instr);
+
+   nir_def *loc = nir_load_ubo(b, 1, 64,
+                               nir_imm_int(b, 0), /* Root table */
+                               nir_imm_int(b, root_table_offset),
+                               .align_mul = 8,
+                               .align_offset = 0,
+                               .range = root_table_offset + 8);
+
+   /* Yay little endian */
+   loc = nir_ushr(b, loc, nir_imul_imm(b, sample, 8));
+   nir_def *loc_x_u4 = nir_iand_imm(b, loc, 0xf);
+   nir_def *loc_y_u4 = nir_iand_imm(b, nir_ushr_imm(b, loc, 4), 0xf);
+   nir_def *loc_u4 = nir_vec2(b, loc_x_u4, loc_y_u4);
+   nir_def *loc_f = nir_fmul_imm(b, nir_i2f32(b, loc_u4), 1.0 / 16.0);
+   nir_def *offset = nir_fadd_imm(b, loc_f, -0.5);
+
+   assert(interp->intrinsic == nir_intrinsic_interp_deref_at_sample);
+   interp->intrinsic = nir_intrinsic_interp_deref_at_offset;
+   nir_src_rewrite(&interp->src[1], offset);
+
+   return true;
+}
+
+static bool
 try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
                  const struct lower_descriptors_ctx *ctx)
 {
@@ -334,6 +373,9 @@ try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
    case nir_intrinsic_image_deref_load_raw_intel:
    case nir_intrinsic_image_deref_store_raw_intel:
       return lower_image_intrin(b, intrin, ctx);
+
+   case nir_intrinsic_interp_deref_at_sample:
+      return lower_interp_at_sample(b, intrin, ctx);
 
    default:
       return false;

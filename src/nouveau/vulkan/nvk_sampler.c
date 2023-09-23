@@ -1,14 +1,21 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_sampler.h"
 
 #include "nvk_device.h"
+#include "nvk_entrypoints.h"
 #include "nvk_physical_device.h"
+
+#include "vk_format.h"
+#include "vk_sampler.h"
+
 #include "nouveau_context.h"
 
 #include "util/bitpack_helpers.h"
 #include "util/format/format_utils.h"
 #include "util/format_srgb.h"
-#include "vk_format.h"
-#include "vk_sampler.h"
 
 #include "cla097.h"
 #include "clb197.h"

@@ -317,6 +317,7 @@ generate_compute(struct llvmpipe_context *lp,
                  struct lp_compute_shader_variant *variant)
 {
    struct gallivm_state *gallivm = variant->gallivm;
+   struct nir_shader *nir = shader->base.ir.nir;
    const struct lp_compute_shader_variant_key *key = &variant->key;
    char func_name[64], func_name_coro[64];
    LLVMTypeRef arg_types[CS_ARG_MAX];
@@ -334,16 +335,10 @@ generate_compute(struct llvmpipe_context *lp,
    LLVMValueRef function, coro;
    struct lp_type cs_type;
    struct lp_mesh_llvm_iface mesh_iface;
-   bool is_mesh = false;
+   bool is_mesh = nir->info.stage == MESA_SHADER_MESH;
    unsigned i;
 
    LLVMValueRef output_array = NULL;
-   if (shader->base.type == PIPE_SHADER_IR_NIR) {
-      struct nir_shader *nir = shader->base.ir.nir;
-      if (nir->info.stage == MESA_SHADER_MESH) {
-         is_mesh = true;
-      }
-   }
 
    /*
     * This function has two parts
@@ -447,6 +442,111 @@ generate_compute(struct llvmpipe_context *lp,
    lp_build_name(thread_data_ptr, "thread_data");
    lp_build_name(io_ptr, "vertex_io");
 
+   lp_build_nir_prepasses(nir);
+   struct hash_table *fns = _mesa_pointer_hash_table_create(NULL);
+
+   if (exec_list_length(&nir->functions) > 1) {
+      LLVMTypeRef call_context_type = lp_build_cs_func_call_context(gallivm, cs_type.length,
+                                                                    variant->jit_cs_context_type,
+                                                                    variant->jit_resources_type);
+      nir_foreach_function(func, nir) {
+         if (func->is_entrypoint)
+            continue;
+
+         LLVMTypeRef args[32];
+         int num_args;
+
+         num_args = func->num_params + LP_RESV_FUNC_ARGS;
+
+         args[0] = LLVMVectorType(LLVMInt32TypeInContext(gallivm->context), cs_type.length); /* mask */
+         args[1] = LLVMPointerType(call_context_type, 0);
+         for (int i = 0; i < func->num_params; i++) {
+            args[i + LP_RESV_FUNC_ARGS] = LLVMVectorType(LLVMIntTypeInContext(gallivm->context, func->params[i].bit_size), cs_type.length);
+            if (func->params[i].num_components > 1)
+               args[i + LP_RESV_FUNC_ARGS] = LLVMArrayType(args[i + LP_RESV_FUNC_ARGS], func->params[i].num_components);
+         }
+
+         LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(gallivm->context),
+                                                  args, num_args, 0);
+         LLVMValueRef lfunc = LLVMAddFunction(gallivm->module, func->name, func_type);
+         LLVMSetFunctionCallConv(lfunc, LLVMCCallConv);
+
+         struct lp_build_fn *new_fn = ralloc(fns, struct lp_build_fn);
+         new_fn->fn_type = func_type;
+         new_fn->fn = lfunc;
+         _mesa_hash_table_insert(fns, func, new_fn);
+      }
+
+      nir_foreach_function(func, nir) {
+         if (func->is_entrypoint)
+            continue;
+
+         struct hash_entry *entry = _mesa_hash_table_search(fns, func);
+         assert(entry);
+         struct lp_build_fn *new_fn = entry->data;
+         LLVMValueRef lfunc = new_fn->fn;
+         block = LLVMAppendBasicBlockInContext(gallivm->context, lfunc, "entry");
+
+         builder = gallivm->builder;
+         LLVMPositionBuilderAtEnd(builder, block);
+         LLVMValueRef mask_param = LLVMGetParam(lfunc, 0);
+         LLVMValueRef call_context_ptr = LLVMGetParam(lfunc, 1);
+         LLVMValueRef call_context = LLVMBuildLoad2(builder, call_context_type, call_context_ptr, "");
+         struct lp_build_mask_context mask;
+         struct lp_bld_tgsi_system_values system_values;
+
+         memset(&system_values, 0, sizeof(system_values));
+
+         lp_build_mask_begin(&mask, gallivm, cs_type, mask_param);
+         lp_build_mask_check(&mask);
+
+         struct lp_build_tgsi_params params;
+         memset(&params, 0, sizeof(params));
+         params.type = cs_type;
+         params.mask = &mask;
+         params.fns = fns;
+         params.current_func = lfunc;
+         params.context_type = variant->jit_cs_context_type;
+         params.resources_type = variant->jit_resources_type;
+         params.call_context_ptr = call_context_ptr;
+         params.context_ptr = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_CONTEXT, "");
+         params.resources_ptr = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_RESOURCES, "");
+         params.shared_ptr = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_SHARED, "");
+         params.scratch_ptr = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_SCRATCH, "");
+         system_values.work_dim = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_WORK_DIM, "");
+         system_values.thread_id[0] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_THREAD_ID_0, "");
+         system_values.thread_id[1] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_THREAD_ID_1, "");
+         system_values.thread_id[2] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_THREAD_ID_2, "");
+         system_values.block_id[0] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_ID_0, "");
+         system_values.block_id[1] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_ID_1, "");
+         system_values.block_id[2] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_ID_2, "");
+         system_values.grid_size[0] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_GRID_SIZE_0, "");
+         system_values.grid_size[1] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_GRID_SIZE_1, "");
+         system_values.grid_size[2] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_GRID_SIZE_2, "");
+         system_values.block_size[0] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_SIZE_0, "");
+         system_values.block_size[1] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_SIZE_1, "");
+         system_values.block_size[2] = LLVMBuildExtractValue(builder, call_context, LP_NIR_CALL_CONTEXT_BLOCK_SIZE_2, "");
+
+         params.system_values = &system_values;
+
+         params.consts_ptr = lp_jit_resources_constants(gallivm,
+                                                        variant->jit_resources_type,
+                                                        params.resources_ptr);
+         params.ssbo_ptr = lp_jit_resources_ssbos(gallivm,
+                                                  variant->jit_resources_type,
+                                                  params.resources_ptr);
+         lp_build_nir_soa_func(gallivm, shader->base.ir.nir,
+                               func->impl,
+                               &params,
+                               NULL);
+
+         lp_build_mask_end(&mask);
+
+         LLVMBuildRetVoid(builder);
+         gallivm_verify_function(gallivm, lfunc);
+      }
+   }
+
    block = LLVMAppendBasicBlockInContext(gallivm->context, function, "entry");
    builder = gallivm->builder;
    assert(builder);
@@ -457,7 +557,6 @@ generate_compute(struct llvmpipe_context *lp,
    image = lp_bld_llvm_image_soa_create(lp_cs_variant_key_images(key), key->nr_images);
 
    if (is_mesh) {
-      struct nir_shader *nir = shader->base.ir.nir;
       LLVMTypeRef output_type = create_mesh_jit_output_type_deref(gallivm);
       output_array = lp_build_array_alloca(gallivm, output_type, lp_build_const_int32(gallivm, align(MAX2(nir->info.mesh.max_primitives_out, nir->info.mesh.max_vertices_out), 8)), "outputs");
    }
@@ -756,8 +855,11 @@ generate_compute(struct llvmpipe_context *lp,
                                                                       resources_ptr);
       params.mesh_iface = &mesh_iface.base;
 
-      lp_build_nir_soa(gallivm, shader->base.ir.nir, &params,
-		       NULL);
+      params.current_func = NULL;
+      params.fns = fns;
+      lp_build_nir_soa_func(gallivm, nir,
+                            nir_shader_get_entrypoint(nir),
+                            &params, NULL);
 
       if (is_mesh) {
          LLVMTypeRef i32t = LLVMInt32TypeInContext(gallivm->context);
@@ -789,7 +891,6 @@ generate_compute(struct llvmpipe_context *lp,
          vertex_count = LLVMBuildLoad2(gallivm->builder, i32t, vert_count_ptr, "");
          prim_count = LLVMBuildLoad2(gallivm->builder, i32t, prim_count_ptr, "");
 
-         nir_shader *nir = shader->base.ir.nir;
          int per_prim_count = util_bitcount64(nir->info.per_primitive_outputs);
          int out_count = util_bitcount64(nir->info.outputs_written);
          int per_vert_count = out_count - per_prim_count;
@@ -840,6 +941,7 @@ generate_compute(struct llvmpipe_context *lp,
 
    lp_bld_llvm_sampler_soa_destroy(sampler);
    lp_bld_llvm_image_soa_destroy(image);
+   _mesa_hash_table_destroy(fns, NULL);
 
    gallivm_verify_function(gallivm, coro);
    gallivm_verify_function(gallivm, function);
@@ -857,32 +959,26 @@ llvmpipe_create_compute_state(struct pipe_context *pipe,
 
    shader->no = cs_no++;
 
-   shader->base.type = templ->ir_type;
+   shader->base.type = PIPE_SHADER_IR_NIR;
 
-   if (shader->base.type == PIPE_SHADER_IR_TGSI) {
+   if (templ->ir_type == PIPE_SHADER_IR_TGSI) {
       shader->base.ir.nir = tgsi_to_nir(templ->prog, pipe->screen, false);
-      shader->base.type = PIPE_SHADER_IR_NIR;
    } else if (templ->ir_type == PIPE_SHADER_IR_NIR_SERIALIZED) {
       struct blob_reader reader;
       const struct pipe_binary_program_header *hdr = templ->prog;
 
       blob_reader_init(&reader, hdr->blob, hdr->num_bytes);
       shader->base.ir.nir = nir_deserialize(NULL, pipe->screen->get_compiler_options(pipe->screen, PIPE_SHADER_IR_NIR, PIPE_SHADER_COMPUTE), &reader);
-      shader->base.type = PIPE_SHADER_IR_NIR;
 
       pipe->screen->finalize_nir(pipe->screen, shader->base.ir.nir);
-      shader->req_local_mem += ((struct nir_shader *)shader->base.ir.nir)->info.shared_size;
-      shader->zero_initialize_shared_memory = ((struct nir_shader *)shader->base.ir.nir)->info.zero_initialize_shared_memory;
    } else if (templ->ir_type == PIPE_SHADER_IR_NIR) {
       shader->base.ir.nir = (struct nir_shader *)templ->prog;
    }
 
-   if (shader->base.type == PIPE_SHADER_IR_NIR) {
-      shader->req_local_mem += ((struct nir_shader *)shader->base.ir.nir)->info.shared_size;
-      shader->zero_initialize_shared_memory = ((struct nir_shader *)shader->base.ir.nir)->info.zero_initialize_shared_memory;
-   }
-
    nir = (struct nir_shader *)shader->base.ir.nir;
+   shader->req_local_mem += nir->info.shared_size;
+   shader->zero_initialize_shared_memory = nir->info.zero_initialize_shared_memory;
+
    llvmpipe_register_shader(pipe, &shader->base, false);
 
    list_inithead(&shader->variants.list);
@@ -1175,13 +1271,12 @@ generate_variant(struct llvmpipe_context *lp,
    unsigned char ir_sha1_cache_key[20];
    struct lp_cached_code cached = { 0 };
    bool needs_caching = false;
-   if (shader->base.ir.nir) {
-      lp_cs_get_ir_cache_key(variant, ir_sha1_cache_key);
 
-      lp_disk_cache_find_shader(screen, &cached, ir_sha1_cache_key);
-      if (!cached.data_size)
-         needs_caching = true;
-   }
+   lp_cs_get_ir_cache_key(variant, ir_sha1_cache_key);
+
+   lp_disk_cache_find_shader(screen, &cached, ir_sha1_cache_key);
+   if (!cached.data_size)
+      needs_caching = true;
 
    variant->gallivm = gallivm_create(module_name, lp->context, &cached);
    if (!variant->gallivm) {
@@ -2026,8 +2121,7 @@ llvmpipe_delete_ts_state(struct pipe_context *pipe, void *_task)
    LIST_FOR_EACH_ENTRY_SAFE(li, next, &shader->variants.list, list) {
       llvmpipe_remove_cs_shader_variant(llvmpipe, li->base);
    }
-   if (shader->base.ir.nir)
-      ralloc_free(shader->base.ir.nir);
+   ralloc_free(shader->base.ir.nir);
    FREE(shader);
 }
 
@@ -2112,8 +2206,7 @@ llvmpipe_delete_ms_state(struct pipe_context *pipe, void *_mesh)
    }
 
    draw_delete_mesh_shader(llvmpipe->draw, shader->draw_mesh_data);
-   if (shader->base.ir.nir)
-      ralloc_free(shader->base.ir.nir);
+   ralloc_free(shader->base.ir.nir);
 
    FREE(shader);
 }

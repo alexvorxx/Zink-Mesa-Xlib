@@ -1932,7 +1932,11 @@ vtn_handle_type(struct vtn_builder *b, SpvOp opcode,
 
    case SpvOpTypeEvent:
       val->type->base_type = vtn_base_type_event;
-      val->type->type = glsl_int_type();
+      /*
+       * this makes the event type compatible with pointer size due to LLVM 16.
+       * llvm 17 fixes this properly, but with 16 and opaque ptrs it's still wrong.
+       */
+      val->type->type = b->shader->info.cs.ptr_size == 64 ? glsl_int64_t_type() : glsl_int_type();
       break;
 
    case SpvOpTypeDeviceEvent:
@@ -6696,7 +6700,7 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
 
    nir_function *main_entry_point = nir_function_create(b->shader, func_name);
    nir_function_impl *impl = nir_function_impl_create(main_entry_point);
-   b->nb = nir_builder_at(nir_after_cf_list(&impl->body));
+   b->nb = nir_builder_at(nir_after_impl(impl));
    b->func_param_idx = 0;
 
    nir_call_instr *call = nir_call_instr_create(b->nb.shader, entry_point);
@@ -6899,6 +6903,7 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
       nir_function *entry_point = b->entry_point->func->nir_func;
       vtn_assert(entry_point);
 
+      entry_point->dont_inline = false;
       /* post process entry_points with input params */
       if (entry_point->num_params && b->shader->info.stage == MESA_SHADER_KERNEL)
          entry_point = vtn_emit_kernel_entry_point_wrapper(b, entry_point);

@@ -396,6 +396,11 @@ static const struct anv_format ycbcr_formats[] = {
              ycbcr_plane(2, ISL_FORMAT_R16_UNORM, RGBA)),
 };
 
+static const struct anv_format maintenance5_formats[] = {
+   fmt1(VK_FORMAT_A8_UNORM_KHR,                   ISL_FORMAT_A8_UNORM),
+   swiz_fmt1(VK_FORMAT_A1B5G5R5_UNORM_PACK16_KHR, ISL_FORMAT_B5G5R5A1_UNORM, BGRA)
+};
+
 #undef _fmt
 #undef swiz_fmt1
 #undef fmt1
@@ -411,6 +416,8 @@ static const struct {
                                                  .n_formats = ARRAY_SIZE(_4444_formats), },
    [_VK_KHR_sampler_ycbcr_conversion_number] = { .formats = ycbcr_formats,
                                                  .n_formats = ARRAY_SIZE(ycbcr_formats), },
+   [_VK_KHR_maintenance5_number]             = { .formats = maintenance5_formats,
+                                                 .n_formats = ARRAY_SIZE(maintenance5_formats), },
 };
 
 const struct anv_format *

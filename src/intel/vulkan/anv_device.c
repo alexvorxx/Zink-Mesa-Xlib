@@ -48,18 +48,24 @@
 #include "util/os_file.h"
 #include "util/os_misc.h"
 #include "util/u_atomic.h"
+#ifdef ANDROID
+#include "util/u_gralloc/u_gralloc.h"
+#endif
 #include "util/u_string.h"
 #include "util/driconf.h"
 #include "git_sha1.h"
+#include "vk_common_entrypoints.h"
 #include "vk_util.h"
 #include "vk_deferred_operation.h"
 #include "vk_drm_syncobj.h"
 #include "common/intel_aux_map.h"
 #include "common/intel_uuid.h"
+#include "common/i915/intel_gem.h"
 #include "perf/intel_perf.h"
 
 #include "i915/anv_device.h"
 #include "xe/anv_device.h"
+#include "xe/anv_queue.h"
 
 #include "genxml/gen7_pack.h"
 #include "genxml/genX_bits.h"
@@ -85,6 +91,7 @@ static const driOptionDescription anv_dri_options[] = {
    DRI_CONF_SECTION_DEBUG
       DRI_CONF_ALWAYS_FLUSH_CACHE(false)
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
+      DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(false)
       DRI_CONF_LIMIT_TRIG_INPUT_RANGE(false)
       DRI_CONF_ANV_MESH_CONV_PRIM_ATTRS_TO_VERT_ATTRS(-2)
       DRI_CONF_FORCE_VK_VENDOR(0)
@@ -202,12 +209,6 @@ get_device_extensions(const struct anv_physical_device *device,
 
    const bool rt_enabled = ANV_SUPPORT_RT && device->info.has_ray_tracing;
 
-   /* We are still seeing some failures with mesh and graphics pipeline
-    * libraries used together, so disable mesh by default.
-    */
-   const bool mesh_shader_enabled = device->info.has_mesh_shading &&
-      debug_get_bool_option("ANV_MESH_SHADER", false);
-
    *ext = (struct vk_device_extension_table) {
       .KHR_8bit_storage                      = true,
       .KHR_16bit_storage                     = !device->instance->no_16bit,
@@ -242,6 +243,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_maintenance2                      = true,
       .KHR_maintenance3                      = true,
       .KHR_maintenance4                      = true,
+      .KHR_maintenance5                      = true,
       .KHR_map_memory2                       = true,
       .KHR_multiview                         = true,
       .KHR_performance_query =
@@ -342,7 +344,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_memory_budget                     = (!device->info.has_local_mem ||
                                                 device->vram_mappable.available > 0) &&
                                                device->sys.available,
-      .EXT_mesh_shader                       = mesh_shader_enabled,
+      .EXT_mesh_shader                       = device->info.has_mesh_shading,
       .EXT_mutable_descriptor_type           = true,
       .EXT_non_seamless_cube_map             = true,
       .EXT_pci_bus_info                      = true,
@@ -837,6 +839,9 @@ get_features(const struct anv_physical_device *pdevice,
 
       /* VK_EXT_pipeline_robustness */
       .pipelineRobustness = true,
+
+      /* VK_KHR_maintenance5 */
+      .maintenance5 = true,
    };
 
    /* The new DOOM and Wolfenstein games require depthBounds without
@@ -969,7 +974,7 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
       if ((props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
           !(props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
-         device->memory.need_clflush = true;
+         device->memory.need_flush = true;
 #else
          return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                           "Memory configuration requires flushing, but it's not implemented for this architecture");
@@ -2263,6 +2268,18 @@ void anv_GetPhysicalDeviceProperties2(
          break;
       }
 
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_PROPERTIES_KHR: {
+         VkPhysicalDeviceMaintenance5PropertiesKHR *properties =
+            (VkPhysicalDeviceMaintenance5PropertiesKHR *)ext;
+         properties->earlyFragmentMultisampleCoverageAfterSampleCounting = false;
+         properties->earlyFragmentSampleMaskTestBeforeSampleCounting = false;
+         properties->depthStencilSwizzleOneSupport = true;
+         properties->polygonModePointSize = true;
+         properties->nonStrictSinglePixelWideLinesUseParallelogram = false;
+         properties->nonStrictWideLinesUseParallelogram = false;
+         break;
+      }
+
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT: {
          VkPhysicalDeviceMeshShaderPropertiesEXT *properties =
             (VkPhysicalDeviceMeshShaderPropertiesEXT *)ext;
@@ -2433,15 +2450,23 @@ void anv_GetPhysicalDeviceProperties2(
          break;
       }
 
+#ifdef ANDROID
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENTATION_PROPERTIES_ANDROID: {
          VkPhysicalDevicePresentationPropertiesANDROID *props =
             (VkPhysicalDevicePresentationPropertiesANDROID *)ext;
-         props->sharedImage = VK_FALSE;
+         uint64_t front_rendering_usage = 0;
+         struct u_gralloc *gralloc = u_gralloc_create(U_GRALLOC_TYPE_AUTO);
+         if (gralloc != NULL) {
+            u_gralloc_get_front_rendering_usage(gralloc, &front_rendering_usage);
+            u_gralloc_destroy(&gralloc);
+         }
+         props->sharedImage = front_rendering_usage ? VK_TRUE : VK_FALSE;
          break;
       }
 #pragma GCC diagnostic pop
+#endif
 
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_PROPERTIES_EXT: {
          VkPhysicalDeviceProvokingVertexPropertiesEXT *properties =
@@ -2825,8 +2850,8 @@ anv_device_init_trivial_batch(struct anv_device *device)
    anv_batch_emit(&batch, GFX7_MI_NOOP, noop);
 
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
-   if (device->physical->memory.need_clflush)
-      intel_clflush_range(batch.start, batch.next - batch.start);
+   if (device->physical->memory.need_flush)
+      intel_flush_range(batch.start, batch.next - batch.start);
 #endif
 
    return VK_SUCCESS;
@@ -2976,7 +3001,10 @@ anv_device_destroy_context_or_vm(struct anv_device *device)
 {
    switch (device->info->kmd_type) {
    case INTEL_KMD_TYPE_I915:
-      return intel_gem_destroy_context(device->fd, device->context_id);
+      if (device->physical->has_vm_control)
+         return anv_i915_device_destroy_vm(device);
+      else
+         return intel_gem_destroy_context(device->fd, device->context_id);
    case INTEL_KMD_TYPE_XE:
       return anv_xe_device_destroy_vm(device);
    default:
@@ -3043,7 +3071,7 @@ VkResult anv_CreateDevice(
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
-   if (INTEL_DEBUG(DEBUG_BATCH)) {
+   if (INTEL_DEBUG(DEBUG_BATCH | DEBUG_BATCH_STATS)) {
       for (unsigned i = 0; i < physical_device->queue.family_count; i++) {
          struct intel_batch_decode_ctx *decoder = &device->decoder[i];
 
@@ -3054,6 +3082,7 @@ VkResult anv_CreateDevice(
                                      &physical_device->info,
                                      stderr, decode_flags, NULL,
                                      decode_get_bo, NULL, device);
+         intel_batch_stats_reset(decoder);
 
          decoder->engine = physical_device->queue.families[i].engine_class;
          decoder->dynamic_base = physical_device->va.dynamic_state_pool.addr;
@@ -3431,6 +3460,10 @@ VkResult anv_CreateDevice(
       goto fail_internal_cache;
    }
 
+#ifdef ANDROID
+   device->u_gralloc = u_gralloc_create(U_GRALLOC_TYPE_AUTO);
+#endif
+
    device->robust_buffer_access =
       device->vk.enabled_features.robustBufferAccess ||
       device->vk.enabled_features.nullDescriptor;
@@ -3438,6 +3471,22 @@ VkResult anv_CreateDevice(
    device->breakpoint = anv_state_pool_alloc(&device->dynamic_state_pool, 4,
                                              4);
    p_atomic_set(&device->draw_call_count, 0);
+
+   /* Create a separate command pool for companion RCS command buffer. */
+   if (device->info->verx10 >= 125) {
+      VkCommandPoolCreateInfo pool_info = {
+         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+         .queueFamilyIndex =
+             anv_get_first_render_queue_index(device->physical),
+      };
+
+      result = vk_common_CreateCommandPool(anv_device_to_handle(device),
+                                           &pool_info, NULL,
+                                           &device->companion_rcs_cmd_pool);
+      if (result != VK_SUCCESS) {
+         goto fail_internal_cache;
+      }
+   }
 
    anv_device_init_blorp(device);
 
@@ -3448,6 +3497,34 @@ VkResult anv_CreateDevice(
    anv_device_perf_init(device);
 
    anv_device_utrace_init(device);
+
+   BITSET_ONES(device->gfx_dirty_state);
+   BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_INDEX_BUFFER);
+   BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_SO_DECL_LIST);
+   if (device->info->ver < 11)
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_VF_SGVS_2);
+   if (device->info->ver < 12) {
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_PRIMITIVE_REPLICATION);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_DEPTH_BOUNDS);
+   }
+   if (!device->vk.enabled_extensions.EXT_sample_locations)
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_SAMPLE_PATTERN);
+   if (!device->vk.enabled_extensions.KHR_fragment_shading_rate)
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_CPS);
+   if (!device->vk.enabled_extensions.EXT_mesh_shader) {
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_SBE_MESH);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_CLIP_MESH);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_MESH_CONTROL);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_MESH_SHADER);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_MESH_DISTRIB);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_TASK_CONTROL);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_TASK_SHADER);
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_TASK_REDISTRIB);
+   }
+   if (!intel_needs_workaround(device->info, 18019816803))
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_WA_18019816803);
+   if (device->info->ver > 9)
+      BITSET_CLEAR(device->gfx_dirty_state, ANV_GFX_STATE_PMA_FIX);
 
    *pDevice = anv_device_to_handle(device);
 
@@ -3530,6 +3607,10 @@ void anv_DestroyDevice(
    if (!device)
       return;
 
+#ifdef ANDROID
+   u_gralloc_destroy(&device->u_gralloc);
+#endif
+
    struct anv_physical_device *pdevice = device->physical;
 
    anv_device_utrace_finish(device);
@@ -3545,6 +3626,11 @@ void anv_DestroyDevice(
 
    if (ANV_SUPPORT_RT && device->info->has_ray_tracing)
       anv_device_release_bo(device, device->btd_fifo_bo);
+
+   if (device->info->verx10 >= 125) {
+      vk_common_DestroyCommandPool(anv_device_to_handle(device),
+                                   device->companion_rcs_cmd_pool, NULL);
+   }
 
 #ifdef HAVE_VALGRIND
    /* We only need to free these to prevent valgrind errors.  The backing
@@ -3608,9 +3694,12 @@ void anv_DestroyDevice(
 
    anv_device_destroy_context_or_vm(device);
 
-   if (INTEL_DEBUG(DEBUG_BATCH)) {
-      for (unsigned i = 0; i < pdevice->queue.family_count; i++)
+   if (INTEL_DEBUG(DEBUG_BATCH | DEBUG_BATCH_STATS)) {
+      for (unsigned i = 0; i < pdevice->queue.family_count; i++) {
+         if (INTEL_DEBUG(DEBUG_BATCH_STATS))
+            intel_batch_print_stats(&device->decoder[i]);
          intel_batch_decode_ctx_finish(&device->decoder[i]);
+      }
    }
 
    close(device->fd);
@@ -4160,7 +4249,7 @@ VkResult anv_FlushMappedMemoryRanges(
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    ANV_FROM_HANDLE(anv_device, device, _device);
 
-   if (!device->physical->memory.need_clflush)
+   if (!device->physical->memory.need_flush)
       return VK_SUCCESS;
 
    /* Make sure the writes we're flushing have landed. */
@@ -4175,9 +4264,9 @@ VkResult anv_FlushMappedMemoryRanges(
       if (map_offset >= mem->map_size)
          continue;
 
-      intel_clflush_range(mem->map + map_offset,
-                          MIN2(pMemoryRanges[i].size,
-                               mem->map_size - map_offset));
+      intel_flush_range(mem->map + map_offset,
+                        MIN2(pMemoryRanges[i].size,
+                             mem->map_size - map_offset));
    }
 #endif
    return VK_SUCCESS;
@@ -4191,7 +4280,7 @@ VkResult anv_InvalidateMappedMemoryRanges(
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    ANV_FROM_HANDLE(anv_device, device, _device);
 
-   if (!device->physical->memory.need_clflush)
+   if (!device->physical->memory.need_flush)
       return VK_SUCCESS;
 
    for (uint32_t i = 0; i < memoryRangeCount; i++) {

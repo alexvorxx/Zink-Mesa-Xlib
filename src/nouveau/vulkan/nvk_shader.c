@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_shader.h"
 
 #include "nvk_cmd_buffer.h"
@@ -7,17 +11,16 @@
 #include "nvk_pipeline.h"
 #include "nvk_sampler.h"
 
-#include "nouveau_bo.h"
-#include "nouveau_context.h"
 #include "vk_nir_convert_ycbcr.h"
 #include "vk_pipeline.h"
+#include "vk_pipeline_layout.h"
 #include "vk_shader_module.h"
 #include "vk_ycbcr_conversion.h"
 
 #include "nir.h"
 #include "nir_builder.h"
+#include "nir_xfb_info.h"
 #include "compiler/spirv/nir_spirv.h"
-#include "compiler/nir/nir_xfb_info.h"
 
 #include "nv50_ir_driver.h"
 
@@ -943,7 +946,8 @@ nvk_hdr_interp_mode(const struct nv50_ir_varying *var)
 
 
 static int
-nvk_fs_gen_header(struct nvk_shader *fs, struct nv50_ir_prog_info_out *info)
+nvk_fs_gen_header(struct nvk_shader *fs, const struct nvk_fs_key *key,
+                  struct nv50_ir_prog_info_out *info)
 {
    unsigned i, c, a, m;
 
@@ -951,7 +955,7 @@ nvk_fs_gen_header(struct nvk_shader *fs, struct nv50_ir_prog_info_out *info)
    fs->hdr[0] = 0x20062 | (5 << 10);
    fs->hdr[5] = 0x80000000; /* getting a trap if FRAG_COORD_UMASK.w = 0 */
 
-   if (info->prop.fp.usesDiscard)
+   if (info->prop.fp.usesDiscard || key->zs_self_dep)
       fs->hdr[0] |= 0x8000;
    if (!info->prop.fp.separateFragData)
       fs->hdr[0] |= 0x4000;
@@ -1004,7 +1008,9 @@ nvk_fs_gen_header(struct nvk_shader *fs, struct nv50_ir_prog_info_out *info)
     * executed. It seems like it wants to think that it has some color
     * outputs in order to actually run.
     */
-   if (info->prop.fp.numColourResults == 0 && !info->prop.fp.writesDepth)
+   if (info->prop.fp.numColourResults == 0 &&
+       !info->prop.fp.writesDepth &&
+       info->io.sampleMask >= 80 /* PIPE_MAX_SHADER_OUTPUTS */)
       fs->hdr[18] |= 0xf;
 
    fs->fs.early_z = info->prop.fp.earlyFragTests;
@@ -1139,7 +1145,7 @@ nvk_compile_nir(struct nvk_physical_device *pdev, nir_shader *nir,
       ret = nvk_vs_gen_header(shader, &info_out);
       break;
    case PIPE_SHADER_FRAGMENT:
-      ret = nvk_fs_gen_header(shader, &info_out);
+      ret = nvk_fs_gen_header(shader, fs_key, &info_out);
       shader->fs.uses_sample_shading = nir->info.fs.uses_sample_shading;
       break;
    case PIPE_SHADER_GEOMETRY:

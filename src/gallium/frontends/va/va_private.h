@@ -372,6 +372,7 @@ typedef struct {
    bool needs_begin_frame;
    void *blit_cs;
    int packed_header_type;
+   struct set *surfaces;
 } vlVaContext;
 
 typedef struct {
@@ -384,7 +385,7 @@ typedef struct {
 typedef struct {
    struct pipe_video_buffer templat, *buffer, *deint_buffer;
    struct util_dynarray subpics; /* vlVaSubpicture */
-   VAContextID ctx;
+   vlVaContext *ctx;
    vlVaBuffer *coded_buf;
    void *feedback;
    unsigned int frame_num_cnt;

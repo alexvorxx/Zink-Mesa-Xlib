@@ -1,20 +1,28 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_query_pool.h"
 
 #include "nvk_buffer.h"
 #include "nvk_cmd_buffer.h"
 #include "nvk_device.h"
+#include "nvk_entrypoints.h"
 #include "nvk_event.h"
 #include "nvk_mme.h"
 #include "nvk_physical_device.h"
 #include "nvk_pipeline.h"
 
-#include "compiler/nir/nir.h"
-#include "compiler/nir/nir_builder.h"
-#include "nouveau_bo.h"
-#include "nouveau_context.h"
-#include "util/os_time.h"
 #include "vk_meta.h"
 #include "vk_pipeline.h"
+
+#include "compiler/nir/nir.h"
+#include "compiler/nir/nir_builder.h"
+
+#include "nouveau_bo.h"
+#include "nouveau_context.h"
+
+#include "util/os_time.h"
 
 #include "nvk_cl906f.h"
 #include "nvk_cl9097.h"

@@ -1,19 +1,14 @@
+/*
+ * Copyright © 2022 Collabora, Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_PRIVATE_H
 #define NVK_PRIVATE_H 1
 
 #include <assert.h>
 
-#include "nvk_entrypoints.h"
-
-#include "util/log.h"
-#include "util/u_memory.h"
-#include "vulkan/runtime/vk_log.h"
-#include "vulkan/util/vk_alloc.h"
-#include "vulkan/util/vk_util.h"
-#include "vulkan/runtime/vk_pipeline_layout.h"
-
-#include <fcntl.h>
-#include <xf86drm.h>
+#include "vk_log.h"
+#include "vk_util.h"
 
 #define NVK_MAX_SETS 8
 #define NVK_MAX_PUSH_SIZE 128

@@ -579,7 +579,7 @@ tu_get_features(struct tu_physical_device *pdevice,
 }
 
 static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {
-   &tu_shaders_ops,
+   &tu_shader_ops,
    &tu_nir_shaders_ops,
    NULL,
 };
@@ -612,7 +612,8 @@ tu_physical_device_init(struct tu_physical_device *device,
       goto fail_free_name;
    }
    switch (fd_dev_gen(&device->dev_id)) {
-   case 6: {
+   case 6:
+   case 7: {
       device->info = info;
       uint32_t depth_cache_size =
          device->info->num_ccu * device->info->a6xx.sysmem_per_ccu_cache_size;
@@ -744,6 +745,7 @@ static const driOptionDescription tu_dri_options[] = {
 
    DRI_CONF_SECTION_DEBUG
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
+      DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(false)
       DRI_CONF_VK_DONT_CARE_AS_LOAD(false)
    DRI_CONF_SECTION_END
 
@@ -1477,7 +1479,7 @@ tu_GetPhysicalDeviceQueueFamilyProperties2(
 }
 
 uint64_t
-tu_get_system_heap_size()
+tu_get_system_heap_size(struct tu_physical_device *physical_device)
 {
    struct sysinfo info;
    sysinfo(&info);
@@ -1493,6 +1495,9 @@ tu_get_system_heap_size()
    else
       available_ram = total_ram * 3 / 4;
 
+   if (physical_device->va_size)
+      available_ram = MIN2(available_ram, physical_device->va_size);
+
    return available_ram;
 }
 
@@ -1505,6 +1510,9 @@ tu_get_budget_memory(struct tu_physical_device *physical_device)
    ASSERTED bool has_available_memory =
       os_get_available_system_memory(&sys_available);
    assert(has_available_memory);
+
+   if (physical_device->va_size)
+      sys_available = MIN2(sys_available, physical_device->va_size);
 
    /*
     * Let's not incite the app to starve the system: report at most 90% of
@@ -1951,8 +1959,8 @@ tu_init_dbg_reg_stomper(struct tu_device *device)
    tu_cs_begin(rp_cs);
 
    bool inverse = debug_flags & TU_DEBUG_REG_STOMP_INVERSE;
-   tu_cs_dbg_stomp_regs<A6XX>(cmdbuf_cs, false, first_reg, last_reg, inverse);
-   tu_cs_dbg_stomp_regs<A6XX>(rp_cs, true, first_reg, last_reg, inverse);
+   TU_CALLX(device, tu_cs_dbg_stomp_regs)(cmdbuf_cs, false, first_reg, last_reg, inverse);
+   TU_CALLX(device, tu_cs_dbg_stomp_regs)(rp_cs, true, first_reg, last_reg, inverse);
 
    tu_cs_end(cmdbuf_cs);
    tu_cs_end(rp_cs);
@@ -2290,6 +2298,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    device->use_z24uint_s8uint =
       physical_device->info->a6xx.has_z24uint_s8uint &&
       !border_color_without_format;
+   device->use_lrz =
+      !TU_DEBUG(NOLRZ) && device->physical_device->info->chip == 6;
 
    tu_gpu_tracepoint_config_variable();
 

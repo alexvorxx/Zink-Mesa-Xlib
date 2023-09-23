@@ -11,6 +11,8 @@
 #define TU_SHADER_H
 
 #include "tu_common.h"
+#include "tu_cs.h"
+#include "tu_suballoc.h"
 
 struct tu_inline_ubo
 {
@@ -44,10 +46,21 @@ struct tu_const_state
 
 struct tu_shader
 {
-   struct ir3_shader *ir3_shader;
+   struct vk_pipeline_cache_object base;
+
+   const struct ir3_shader_variant *variant;
+   const struct ir3_shader_variant *safe_const_variant;
+
+   struct tu_suballoc_bo bo;
+   struct tu_cs cs;
+   struct tu_bo *pvtmem_bo;
+
+   struct tu_draw_state state;
+   struct tu_draw_state safe_const_state;
+   struct tu_draw_state binning_state;
 
    struct tu_const_state const_state;
-   unsigned reserved_user_consts_vec4;
+   uint32_t view_mask;
    uint8_t active_desc_sets;
 };
 
@@ -59,6 +72,7 @@ struct tu_shader_key {
    enum ir3_wavesize_option api_wavesize, real_wavesize;
 };
 
+extern const struct vk_pipeline_cache_object_ops tu_shader_ops;
 bool
 tu_nir_lower_multiview(nir_shader *nir, uint32_t mask, struct tu_device *dev);
 
@@ -68,16 +82,52 @@ tu_spirv_to_nir(struct tu_device *dev,
                 const VkPipelineShaderStageCreateInfo *stage_info,
                 gl_shader_stage stage);
 
-struct tu_shader *
+void
+tu6_emit_xs(struct tu_cs *cs,
+            gl_shader_stage stage,
+            const struct ir3_shader_variant *xs,
+            const struct tu_pvtmem_config *pvtmem,
+            uint64_t binary_iova);
+
+template <chip CHIP>
+void
+tu6_emit_vs(struct tu_cs *cs, const struct ir3_shader_variant *vs,
+            uint32_t view_mask);
+
+template <chip CHIP>
+void
+tu6_emit_hs(struct tu_cs *cs, const struct ir3_shader_variant *hs);
+
+template <chip CHIP>
+void
+tu6_emit_ds(struct tu_cs *cs, const struct ir3_shader_variant *hs);
+
+template <chip CHIP>
+void
+tu6_emit_gs(struct tu_cs *cs, const struct ir3_shader_variant *hs);
+
+template <chip CHIP>
+void
+tu6_emit_fs(struct tu_cs *cs, const struct ir3_shader_variant *fs);
+
+VkResult
 tu_shader_create(struct tu_device *dev,
+                 struct tu_shader **shader_out,
                  nir_shader *nir,
                  const struct tu_shader_key *key,
+                 const struct ir3_shader_key *ir3_key,
+                 const void *key_data,
+                 size_t key_size,
                  struct tu_pipeline_layout *layout,
-                 const VkAllocationCallbacks *alloc);
+                 bool executable_info);
+
+VkResult
+tu_empty_shader_create(struct tu_device *device,
+                       struct tu_shader **shader_out,
+                       gl_shader_stage stage);
 
 void
 tu_shader_destroy(struct tu_device *dev,
-                  struct tu_shader *shader,
-                  const VkAllocationCallbacks *alloc);
+                  struct tu_shader *shader);
 
 #endif /* TU_SHADER_H */

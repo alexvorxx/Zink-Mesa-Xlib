@@ -189,19 +189,6 @@ lower_cs_intrinsics_convert_block(struct lower_intrinsics_state *state,
 
       nir_def *sysval;
       switch (intrinsic->intrinsic) {
-      case nir_intrinsic_load_workgroup_size:
-      case nir_intrinsic_load_workgroup_id:
-      case nir_intrinsic_load_num_workgroups:
-         /* Convert this to 32-bit if it's not */
-         if (intrinsic->def.bit_size == 64) {
-            intrinsic->def.bit_size = 32;
-            sysval = nir_u2u64(b, &intrinsic->def);
-            nir_def_rewrite_uses_after(&intrinsic->def,
-                                           sysval,
-                                           sysval->parent_instr);
-         }
-         continue;
-
       case nir_intrinsic_load_local_invocation_index:
       case nir_intrinsic_load_local_invocation_id: {
          if (!local_index && !nir->info.workgroup_size_variable) {

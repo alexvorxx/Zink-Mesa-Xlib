@@ -248,6 +248,7 @@ def parse_args() -> None:
         "--force-manual", action="store_true", help="Force jobs marked as manual"
     )
     parser.add_argument("--stress", action="store_true", help="Stresstest job(s)")
+    parser.add_argument("--project", default="mesa", help="GitLab project name")
 
     mutex_group1 = parser.add_mutually_exclusive_group()
     mutex_group1.add_argument(
@@ -258,7 +259,16 @@ def parse_args() -> None:
         help="URL of the pipeline to use, instead of auto-detecting it.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # argparse doesn't support groups inside add_mutually_exclusive_group(),
+    # which means we can't just put `--project` and `--rev` in a group together,
+    # we have to do this by heand instead.
+    if args.pipeline_url and args.project != parser.get_default("project"):
+        # weird phrasing but it's the error add_mutually_exclusive_group() gives
+        parser.error("argument --project: not allowed with argument --pipeline-url")
+
+    return args
 
 
 def find_dependencies(target_job: str, project_path: str, sha: str) -> set[str]:
@@ -305,10 +315,15 @@ if __name__ == "__main__":
             pipe = cur_project.pipelines.get(pipeline_id)
             REV = pipe.sha
         else:
-            cur_project = get_gitlab_project(gl, "mesa")
             if not REV:
                 REV = check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-            pipe = wait_for_pipeline(cur_project, REV)
+            # Look for an MR pipeline first
+            cur_project = gl.projects.get("mesa/mesa")
+            pipe = wait_for_pipeline(cur_project, REV, timeout=10)
+            if not pipe:
+                # Fallback to a pipeline in the user's fork
+                cur_project = get_gitlab_project(gl, args.project)
+                pipe = wait_for_pipeline(cur_project, REV)
 
         print(f"Revision: {REV}")
         print(f"Pipeline: {pipe.web_url}")

@@ -861,6 +861,7 @@ needs_exec_mask(const Instruction* instr)
       case aco_opcode::p_logical_start:
       case aco_opcode::p_logical_end:
       case aco_opcode::p_startpgm:
+      case aco_opcode::p_end_wqm:
       case aco_opcode::p_init_scratch: return instr->reads_exec();
       case aco_opcode::p_start_linear_vgpr: return instr->operands.size();
       default: break;

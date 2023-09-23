@@ -87,8 +87,7 @@ dx_get_texture_lod(nir_builder *b, nir_tex_instr *tex)
    int coord_index = nir_tex_instr_src_index(tex, nir_tex_src_coord);
    nir_def *ssa_src = nir_trim_vector(b, tex->src[coord_index].src.ssa,
                                           coord_components);
-   nir_src src = nir_src_for_ssa(ssa_src);
-   nir_src_copy(&tql->src[0].src, &src, &tql->instr);
+   tql->src[0].src = nir_src_for_ssa(ssa_src);
    tql->src[0].src_type = nir_tex_src_coord;
 
    unsigned idx = 1;
@@ -99,7 +98,7 @@ dx_get_texture_lod(nir_builder *b, nir_tex_instr *tex)
           tex->src[i].src_type == nir_tex_src_sampler_offset ||
           tex->src[i].src_type == nir_tex_src_texture_handle ||
           tex->src[i].src_type == nir_tex_src_sampler_handle) {
-         nir_src_copy(&tql->src[idx].src, &tex->src[i].src, &tql->instr);
+         tql->src[idx].src = nir_src_for_ssa(tex->src[i].src.ssa);
          tql->src[idx].src_type = tex->src[i].src_type;
          idx++;
       }
@@ -290,7 +289,7 @@ create_txf_from_tex(nir_builder *b, nir_tex_instr *tex)
       if (tex->src[i].src_type == nir_tex_src_texture_deref ||
           tex->src[i].src_type == nir_tex_src_texture_offset ||
           tex->src[i].src_type == nir_tex_src_texture_handle) {
-         nir_src_copy(&txf->src[idx].src, &tex->src[i].src, &txf->instr);
+         txf->src[idx].src = nir_src_for_ssa(tex->src[i].src.ssa);
          txf->src[idx].src_type = tex->src[i].src_type;
          idx++;
       }

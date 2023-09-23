@@ -9,7 +9,6 @@
 /* Results of pattern matching */
 struct match {
    nir_scalar base, offset;
-   bool has_offset;
    bool sign_extend;
 
    /* Signed shift. A negative shift indicates that the offset needs ushr
@@ -253,12 +252,8 @@ format_for_bitsize(unsigned bitsize)
 }
 
 static bool
-pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
+pass(struct nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
    if (intr->intrinsic != nir_intrinsic_load_global &&
        intr->intrinsic != nir_intrinsic_load_global_constant &&
        intr->intrinsic != nir_intrinsic_global_atomic &&
@@ -266,7 +261,7 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
        intr->intrinsic != nir_intrinsic_store_global)
       return false;
 
-   b->cursor = nir_before_instr(instr);
+   b->cursor = nir_before_instr(&intr->instr);
 
    unsigned bitsize = intr->intrinsic == nir_intrinsic_store_global
                          ? nir_src_bit_size(intr->src[0])
@@ -346,13 +341,13 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
    if (repl)
       nir_def_rewrite_uses(&intr->def, repl);
 
-   nir_instr_remove(instr);
+   nir_instr_remove(&intr->instr);
    return true;
 }
 
 bool
 agx_nir_lower_address(nir_shader *shader)
 {
-   return nir_shader_instructions_pass(
+   return nir_shader_intrinsics_pass(
       shader, pass, nir_metadata_block_index | nir_metadata_dominance, NULL);
 }

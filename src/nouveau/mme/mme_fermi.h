@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Mary Guillemard
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef MME_FERMI_H
 #define MME_FERMI_H
 

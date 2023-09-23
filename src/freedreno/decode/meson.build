@@ -70,28 +70,48 @@ if dep_libarchive.found()
     build_by_default: false,
   )
 
-  replay = executable(
-    'replay',
-    [
-      'replay.c'
-    ],
-    include_directories: [
-      inc_freedreno,
-      inc_include,
-      inc_src,
-    ],
-    c_args : [no_override_init_args],
-    gnu_symbol_visibility: 'hidden',
-    dependencies: [
-      dep_libdrm,
-    ],
-    link_with: [
-      libfreedreno_cffdec,
-      libfreedreno_io,
-    ],
-    build_by_default: with_tools.contains('freedreno'),
-    install: install_fd_decode_tools,
-  )
+  foreach kmd : freedreno_kmds
+    if not (kmd in ['kgsl', 'msm'])
+      warning('replay not supported for ' + kmd + ' KMD')
+      continue
+    endif
+
+    # Only append the KMD name if there are multiple KMDs
+    if freedreno_kmds.length() == 1
+      replay_name = 'replay'
+    else
+      replay_name = 'replay-' + kmd
+    endif
+
+    replay_flags = []
+    replay_deps = []
+    if kmd == 'kgsl'
+      replay_flags += '-DFD_REPLAY_KGSL'
+    elif kmd == 'msm'
+      replay_deps += dep_libdrm
+    endif
+
+    replay = executable(
+      replay_name,
+      [
+        'replay.c'
+      ],
+      include_directories: [
+        inc_freedreno,
+        inc_include,
+        inc_src,
+      ],
+      c_args : [no_override_init_args, replay_flags],
+      gnu_symbol_visibility: 'hidden',
+      dependencies: replay_deps,
+      link_with: [
+        libfreedreno_cffdec,
+        libfreedreno_io,
+      ],
+      build_by_default: with_tools.contains('freedreno'),
+      install: install_fd_decode_tools,
+    )
+  endforeach
 
   rddecompiler = executable(
     'rddecompiler',
@@ -117,6 +137,8 @@ if dep_libarchive.found()
     build_by_default: with_tools.contains('freedreno'),
     install: install_fd_decode_tools,
   )
+else
+  warning('libarchive not found, not building replay or rddecompiler')
 endif
 
 if dep_lua.found() and dep_libarchive.found()
@@ -177,6 +199,8 @@ if dep_lua.found() and dep_libarchive.found()
 
     endforeach
   endif
+else
+  warning('lua or libarchive not found, not building cffdump')
 endif
 
 crashdec = executable(
@@ -269,4 +293,6 @@ if dep_libarchive.found()
     build_by_default: with_tools.contains('freedreno'),
     install: false,
   )
+else
+  warning('libarchive not found, not building pgmdump')
 endif

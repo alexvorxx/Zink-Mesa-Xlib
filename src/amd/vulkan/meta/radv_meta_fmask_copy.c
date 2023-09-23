@@ -43,7 +43,7 @@ build_fmask_copy_compute_shader(struct radv_device *dev, int samples)
    output_img->data.binding = 1;
 
    nir_def *invoc_id = nir_load_local_invocation_id(&b);
-   nir_def *wg_id = nir_load_workgroup_id(&b, 32);
+   nir_def *wg_id = nir_load_workgroup_id(&b);
    nir_def *block_size = nir_imm_ivec3(&b, b.shader->info.workgroup_size[0], b.shader->info.workgroup_size[1],
                                        b.shader->info.workgroup_size[2]);
 

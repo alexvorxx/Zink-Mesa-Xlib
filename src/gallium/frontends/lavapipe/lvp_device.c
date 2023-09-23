@@ -123,6 +123,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_maintenance3                      = true,
    .KHR_maintenance4                      = true,
    .KHR_maintenance5                      = true,
+   .KHR_map_memory2                       = true,
    .KHR_multiview                         = true,
    .KHR_push_descriptor                   = true,
    .KHR_pipeline_library                  = true,
@@ -175,6 +176,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_image_robustness                  = true,
    .EXT_index_type_uint8                  = true,
    .EXT_inline_uniform_block              = true,
+   .EXT_load_store_op_none                = true,
    .EXT_memory_budget                     = true,
 #if DETECT_OS_LINUX
    .EXT_memory_priority                   = true,
@@ -596,7 +598,6 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
 extern unsigned lp_native_vector_width;
 
 static VkImageLayout lvp_host_copy_image_layouts[] = {
-   VK_IMAGE_LAYOUT_UNDEFINED,
    VK_IMAGE_LAYOUT_GENERAL,
    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -1247,10 +1248,10 @@ lvp_device_get_cache_uuid(void *uuid)
    memset(uuid, 'a', VK_UUID_SIZE);
    if (MESA_GIT_SHA1[0])
       /* debug build */
-      memcpy(uuid, &MESA_GIT_SHA1[4], strlen(MESA_GIT_SHA1) - 4);
+      memcpy(uuid, &MESA_GIT_SHA1[4], MIN2(strlen(MESA_GIT_SHA1) - 4, VK_UUID_SIZE));
    else
       /* release build */
-      memcpy(uuid, PACKAGE_VERSION, strlen(PACKAGE_VERSION));
+      memcpy(uuid, PACKAGE_VERSION, MIN2(strlen(PACKAGE_VERSION), VK_UUID_SIZE));
 }
 
 VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceQueueFamilyProperties2(
@@ -1794,16 +1795,13 @@ VKAPI_ATTR void VKAPI_CALL lvp_FreeMemory(
 
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL lvp_MapMemory(
-   VkDevice                                    _device,
-   VkDeviceMemory                              _memory,
-   VkDeviceSize                                offset,
-   VkDeviceSize                                size,
-   VkMemoryMapFlags                            flags,
-   void**                                      ppData)
+VKAPI_ATTR VkResult VKAPI_CALL lvp_MapMemory2KHR(
+    VkDevice                                    _device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData)
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
-   LVP_FROM_HANDLE(lvp_device_memory, mem, _memory);
+   LVP_FROM_HANDLE(lvp_device_memory, mem, pMemoryMapInfo->memory);
    void *map;
    if (mem == NULL) {
       *ppData = NULL;
@@ -1812,21 +1810,22 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_MapMemory(
 
    map = device->pscreen->map_memory(device->pscreen, mem->pmem);
 
-   *ppData = (char *)map + offset;
+   *ppData = (char *)map + pMemoryMapInfo->offset;
    return VK_SUCCESS;
 }
 
-VKAPI_ATTR void VKAPI_CALL lvp_UnmapMemory(
-   VkDevice                                    _device,
-   VkDeviceMemory                              _memory)
+VKAPI_ATTR VkResult VKAPI_CALL lvp_UnmapMemory2KHR(
+    VkDevice                                    _device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo)
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
-   LVP_FROM_HANDLE(lvp_device_memory, mem, _memory);
+   LVP_FROM_HANDLE(lvp_device_memory, mem, pMemoryUnmapInfo->memory);
 
    if (mem == NULL)
-      return;
+      return VK_SUCCESS;
 
    device->pscreen->unmap_memory(device->pscreen, mem->pmem);
+   return VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL lvp_FlushMappedMemoryRanges(

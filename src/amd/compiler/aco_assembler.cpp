@@ -1017,6 +1017,13 @@ fix_exports(asm_context& ctx, std::vector<uint32_t>& out, Program* program)
              * exports MRTZ (if present) and the epilog exports colors.
              */
             exported |= program->stage.hw == AC_HW_PIXEL_SHADER && program->info.has_epilog;
+
+            /* Do not abort for VS/TES as NGG if they are non-monolithic shaders
+             * because a jump would be emitted.
+             */
+            exported |= (program->stage.sw == SWStage::VS || program->stage.sw == SWStage::TES) &&
+                        program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER &&
+                        program->info.merged_shader_compiled_separately;
          }
          ++it;
       }
@@ -1291,8 +1298,10 @@ emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct a
 {
    asm_context ctx(program, symbols);
 
-   if (program->stage.hw == AC_HW_VERTEX_SHADER || program->stage.hw == AC_HW_PIXEL_SHADER ||
-       program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER)
+   /* Prolog has no exports. */
+   if (!program->is_prolog &&
+       (program->stage.hw == AC_HW_VERTEX_SHADER || program->stage.hw == AC_HW_PIXEL_SHADER ||
+        program->stage.hw == AC_HW_NEXT_GEN_GEOMETRY_SHADER))
       fix_exports(ctx, code, program);
 
    for (Block& block : program->blocks) {

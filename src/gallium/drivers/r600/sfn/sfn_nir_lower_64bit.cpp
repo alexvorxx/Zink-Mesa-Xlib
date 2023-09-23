@@ -188,12 +188,12 @@ class LowerSplit64op : public NirLowerInstruction {
          case nir_op_bcsel: {
             auto lo =
                nir_bcsel(b,
-                         nir_ssa_for_src(b, alu->src[0].src, 1),
+                         alu->src[0].src.ssa,
                          nir_unpack_64_2x32_split_x(b, nir_ssa_for_alu_src(b, alu, 1)),
                          nir_unpack_64_2x32_split_x(b, nir_ssa_for_alu_src(b, alu, 2)));
             auto hi =
                nir_bcsel(b,
-                         nir_ssa_for_src(b, alu->src[0].src, 1),
+                         alu->src[0].src.ssa,
                          nir_unpack_64_2x32_split_y(b, nir_ssa_for_alu_src(b, alu, 1)),
                          nir_unpack_64_2x32_split_y(b, nir_ssa_for_alu_src(b, alu, 2)));
             return nir_pack_64_2x32_split(b, lo, hi);
@@ -253,8 +253,8 @@ class LowerSplit64op : public NirLowerInstruction {
             &phi_hi->instr, &phi_hi->def, phi->def.num_components * 2, 32);
          nir_foreach_phi_src(s, phi)
          {
-            auto lo = nir_unpack_32_2x16_split_x(b, nir_ssa_for_src(b, s->src, 1));
-            auto hi = nir_unpack_32_2x16_split_x(b, nir_ssa_for_src(b, s->src, 1));
+            auto lo = nir_unpack_32_2x16_split_x(b, s->src.ssa);
+            auto hi = nir_unpack_32_2x16_split_x(b, s->src.ssa);
             nir_phi_instr_add_src(phi_lo, s->pred, lo);
             nir_phi_instr_add_src(phi_hi, s->pred, hi);
          }
@@ -398,12 +398,12 @@ LowerSplit64BitVar::split_load_deref_array(nir_intrinsic_instr *intr, nir_src& i
    auto vars = get_var_pair(old_var);
 
    auto deref1 = nir_build_deref_var(b, vars.first);
-   auto deref_array1 = nir_build_deref_array(b, deref1, nir_ssa_for_src(b, index, 1));
+   auto deref_array1 = nir_build_deref_array(b, deref1, index.ssa);
    auto load1 =
       nir_build_load_deref(b, 2, 64, &deref_array1->def, (enum gl_access_qualifier)0);
 
    auto deref2 = nir_build_deref_var(b, vars.second);
-   auto deref_array2 = nir_build_deref_array(b, deref2, nir_ssa_for_src(b, index, 1));
+   auto deref_array2 = nir_build_deref_array(b, deref2, index.ssa);
 
    auto load2 = nir_build_load_deref(
       b, old_components - 2, 64, &deref_array2->def, (enum gl_access_qualifier)0);
@@ -426,13 +426,13 @@ LowerSplit64BitVar::split_store_deref_array(nir_intrinsic_instr *intr,
 
    auto deref1 = nir_build_deref_var(b, vars.first);
    auto deref_array1 =
-      nir_build_deref_array(b, deref1, nir_ssa_for_src(b, deref->arr.index, 1));
+      nir_build_deref_array(b, deref1, deref->arr.index.ssa);
 
    nir_build_store_deref(b, &deref_array1->def, src_xy, 3);
 
    auto deref2 = nir_build_deref_var(b, vars.second);
    auto deref_array2 =
-      nir_build_deref_array(b, deref2, nir_ssa_for_src(b, deref->arr.index, 1));
+      nir_build_deref_array(b, deref2, deref->arr.index.ssa);
 
    if (old_components == 3)
       nir_build_store_deref(b,
@@ -669,11 +669,11 @@ LowerSplit64BitVar::split_reduction3(nir_alu_instr *alu,
 {
    nir_def *src[2][2];
 
-   src[0][0] = nir_trim_vector(b, nir_ssa_for_src(b, alu->src[0].src, 2), 2);
-   src[0][1] = nir_trim_vector(b, nir_ssa_for_src(b, alu->src[1].src, 2), 2);
+   src[0][0] = nir_trim_vector(b, alu->src[0].src.ssa, 2);
+   src[0][1] = nir_trim_vector(b, alu->src[1].src.ssa, 2);
 
-   src[1][0] = nir_channel(b, nir_ssa_for_src(b, alu->src[0].src, 3), 2);
-   src[1][1] = nir_channel(b, nir_ssa_for_src(b, alu->src[1].src, 3), 2);
+   src[1][0] = nir_channel(b, alu->src[0].src.ssa, 2);
+   src[1][1] = nir_channel(b, alu->src[1].src.ssa, 2);
 
    return split_reduction(src, op1, op2, reduction);
 }
@@ -686,11 +686,11 @@ LowerSplit64BitVar::split_reduction4(nir_alu_instr *alu,
 {
    nir_def *src[2][2];
 
-   src[0][0] = nir_trim_vector(b, nir_ssa_for_src(b, alu->src[0].src, 2), 2);
-   src[0][1] = nir_trim_vector(b, nir_ssa_for_src(b, alu->src[1].src, 2), 2);
+   src[0][0] = nir_trim_vector(b, alu->src[0].src.ssa, 2);
+   src[0][1] = nir_trim_vector(b, alu->src[1].src.ssa, 2);
 
-   src[1][0] = nir_channels(b, nir_ssa_for_src(b, alu->src[0].src, 4), 0xc);
-   src[1][1] = nir_channels(b, nir_ssa_for_src(b, alu->src[1].src, 4), 0xc);
+   src[1][0] = nir_channels(b, alu->src[0].src.ssa, 0xc);
+   src[1][1] = nir_channels(b, alu->src[1].src.ssa, 0xc);
 
    return split_reduction(src, op1, op2, reduction);
 }

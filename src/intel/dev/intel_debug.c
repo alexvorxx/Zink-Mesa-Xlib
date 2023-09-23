@@ -105,6 +105,7 @@ static const struct debug_control debug_control[] = {
    { "isl",         DEBUG_ISL },
    { "sparse",      DEBUG_SPARSE },
    { "draw_bkp",    DEBUG_DRAW_BKP },
+   { "bat-stats",   DEBUG_BATCH_STATS },
    { NULL,    0 }
 };
 

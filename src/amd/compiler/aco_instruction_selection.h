@@ -102,6 +102,10 @@ struct isel_context {
    /* I/O information */
    shader_io_state inputs;
    shader_io_state outputs;
+
+   /* WQM information */
+   uint32_t wqm_block_idx;
+   uint32_t wqm_instruction_idx;
 };
 
 inline Temp
@@ -118,8 +122,8 @@ isel_context setup_isel_context(Program* program, unsigned shader_count,
                                 struct nir_shader* const* shaders, ac_shader_config* config,
                                 const struct aco_compiler_options* options,
                                 const struct aco_shader_info* info,
-                                const struct ac_shader_args* args, bool is_ps_epilog,
-                                bool is_tcs_epilog);
+                                const struct ac_shader_args* args,
+                                SWStage sw_stage = SWStage::None);
 
 } // namespace aco
 

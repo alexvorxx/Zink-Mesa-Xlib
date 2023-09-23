@@ -37,7 +37,8 @@ bool anv_xe_device_destroy_vm(struct anv_device *device)
 VkResult anv_xe_device_setup_vm(struct anv_device *device)
 {
    struct drm_xe_vm_create create = {
-      .flags = DRM_XE_VM_CREATE_SCRATCH_PAGE,
+      .flags = DRM_XE_VM_CREATE_SCRATCH_PAGE |
+               DRM_XE_VM_CREATE_ASYNC_BIND_OPS,
    };
    if (intel_ioctl(device->fd, DRM_IOCTL_XE_VM_CREATE, &create) != 0)
       return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
@@ -157,6 +158,23 @@ anv_xe_physical_device_init_memory_types(struct anv_physical_device *device)
    return VK_SUCCESS;
 }
 
+static VkResult
+anv_xe_get_device_status(struct anv_device *device, uint32_t exec_queue_id)
+{
+   VkResult result = VK_SUCCESS;
+   struct drm_xe_exec_queue_get_property exec_queue_get_property = {
+      .exec_queue_id = exec_queue_id,
+      .property = XE_EXEC_QUEUE_GET_PROPERTY_BAN,
+   };
+   int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_GET_PROPERTY,
+                         &exec_queue_get_property);
+
+   if (ret || exec_queue_get_property.value)
+      result = vk_device_set_lost(&device->vk, "One or more queues banned");
+
+   return result;
+}
+
 VkResult
 anv_xe_device_check_status(struct vk_device *vk_device)
 {
@@ -164,16 +182,15 @@ anv_xe_device_check_status(struct vk_device *vk_device)
    VkResult result = VK_SUCCESS;
 
    for (uint32_t i = 0; i < device->queue_count; i++) {
-      struct drm_xe_exec_queue_get_property exec_queue_get_property = {
-         .exec_queue_id = device->queues[i].exec_queue_id,
-         .property = XE_EXEC_QUEUE_GET_PROPERTY_BAN,
-      };
-      int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_GET_PROPERTY,
-                            &exec_queue_get_property);
+      result = anv_xe_get_device_status(device, device->queues[i].exec_queue_id);
+      if (result != VK_SUCCESS)
+         return result;
 
-      if (ret || exec_queue_get_property.value) {
-         result = vk_device_set_lost(&device->vk, "One or more queues banned");
-         break;
+      if (device->queues[i].companion_rcs_id != 0) {
+         uint32_t exec_queue_id = device->queues[i].companion_rcs_id;
+         result = anv_xe_get_device_status(device, exec_queue_id);
+         if (result != VK_SUCCESS)
+            return result;
       }
    }
 

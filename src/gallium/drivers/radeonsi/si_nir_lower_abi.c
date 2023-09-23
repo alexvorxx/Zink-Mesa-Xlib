@@ -297,7 +297,7 @@ static void preload_reusable_variables(nir_builder *b, struct lower_abi_state *s
    const struct si_shader_selector *sel = s->shader->selector;
    const union si_shader_key *key = &s->shader->key;
 
-   b->cursor = nir_before_cf_list(&b->impl->body);
+   b->cursor = nir_before_impl(b->impl);
 
    if (sel->screen->info.gfx_level <= GFX8 && sel->stage <= MESA_SHADER_GEOMETRY &&
        (key->ge.as_es || sel->stage == MESA_SHADER_GEOMETRY)) {

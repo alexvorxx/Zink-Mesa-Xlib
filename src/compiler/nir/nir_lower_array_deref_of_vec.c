@@ -122,7 +122,7 @@ nir_lower_array_deref_of_vec_impl(nir_function_impl *impl,
                if (!(options & nir_lower_indirect_array_deref_of_vec_store))
                   continue;
 
-               nir_def *index = nir_ssa_for_src(&b, deref->arr.index, 1);
+               nir_def *index = deref->arr.index.ssa;
                build_write_masked_stores(&b, vec_deref, value, index,
                                          0, num_components);
             }
@@ -143,7 +143,7 @@ nir_lower_array_deref_of_vec_impl(nir_function_impl *impl,
             intrin->def.num_components = num_components;
             intrin->num_components = num_components;
 
-            nir_def *index = nir_ssa_for_src(&b, deref->arr.index, 1);
+            nir_def *index = deref->arr.index.ssa;
             nir_def *scalar =
                nir_vector_extract(&b, &intrin->def, index);
             if (scalar->parent_instr->type == nir_instr_type_undef) {

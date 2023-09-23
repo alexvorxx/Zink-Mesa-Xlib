@@ -65,6 +65,23 @@ compare_attr(const void *a, const void *b)
 }
 
 /**
+ * Get the varying type stripped of the outermost array if we're processing
+ * a stage whose varyings are arrays indexed by a vertex number (such as
+ * geometry shader inputs).
+ */
+static const struct glsl_type *
+get_varying_type(const nir_variable *var, gl_shader_stage stage)
+{
+   const struct glsl_type *type = var->type;
+   if (nir_is_arrayed_io(var, stage) || var->data.per_view) {
+      assert(glsl_type_is_array(type));
+      type = glsl_get_array_element(type);
+   }
+
+   return type;
+}
+
+/**
  * Find a contiguous set of available bits in a bitmask.
  *
  * \param used_mask     Bits representing used (1) and unused (0) locations
@@ -116,6 +133,322 @@ find_deref(nir_shader *shader, const char *name)
 
    return false;
 }
+
+static unsigned
+compute_variable_location_slot(nir_variable *var, gl_shader_stage stage)
+{
+   unsigned location_start = VARYING_SLOT_VAR0;
+
+   switch (stage) {
+      case MESA_SHADER_VERTEX:
+         if (var->data.mode == nir_var_shader_in)
+            location_start = VERT_ATTRIB_GENERIC0;
+         break;
+      case MESA_SHADER_TESS_CTRL:
+      case MESA_SHADER_TESS_EVAL:
+         if (var->data.patch)
+            location_start = VARYING_SLOT_PATCH0;
+         break;
+      case MESA_SHADER_FRAGMENT:
+         if (var->data.mode == nir_var_shader_out)
+            location_start = FRAG_RESULT_DATA0;
+         break;
+      default:
+         break;
+   }
+
+   return var->data.location - location_start;
+}
+
+
+struct explicit_location_info {
+   nir_variable *var;
+   bool base_type_is_integer;
+   unsigned base_type_bit_size;
+   unsigned interpolation;
+   bool centroid;
+   bool sample;
+   bool patch;
+};
+
+static bool
+check_location_aliasing(struct explicit_location_info explicit_locations[][4],
+                        nir_variable *var,
+                        unsigned location,
+                        unsigned component,
+                        unsigned location_limit,
+                        const struct glsl_type *type,
+                        unsigned interpolation,
+                        bool centroid,
+                        bool sample,
+                        bool patch,
+                        struct gl_shader_program *prog,
+                        gl_shader_stage stage)
+{
+   unsigned last_comp;
+   unsigned base_type_bit_size;
+   const struct glsl_type *type_without_array = glsl_without_array(type);
+   const bool base_type_is_integer =
+      glsl_base_type_is_integer(glsl_get_base_type(type_without_array));
+   const bool is_struct = glsl_type_is_struct(type_without_array);
+   if (is_struct) {
+      /* structs don't have a defined underlying base type so just treat all
+       * component slots as used and set the bit size to 0. If there is
+       * location aliasing, we'll fail anyway later.
+       */
+      last_comp = 4;
+      base_type_bit_size = 0;
+   } else {
+      unsigned dmul = glsl_type_is_64bit(type_without_array) ? 2 : 1;
+      last_comp = component + glsl_get_vector_elements(type_without_array) * dmul;
+      base_type_bit_size =
+         glsl_base_type_get_bit_size(glsl_get_base_type(type_without_array));
+   }
+
+   while (location < location_limit) {
+      unsigned comp = 0;
+      while (comp < 4) {
+         struct explicit_location_info *info =
+            &explicit_locations[location][comp];
+
+         if (info->var) {
+            if (glsl_type_is_struct(glsl_without_array(info->var->type)) ||
+                is_struct) {
+               /* Structs cannot share location since they are incompatible
+                * with any other underlying numerical type.
+                */
+               linker_error(prog,
+                            "%s shader has multiple %sputs sharing the "
+                            "same location that don't have the same "
+                            "underlying numerical type. Struct variable '%s', "
+                            "location %u\n",
+                            _mesa_shader_stage_to_string(stage),
+                            var->data.mode == nir_var_shader_in ? "in" : "out",
+                            is_struct ? var->name : info->var->name,
+                            location);
+               return false;
+            } else if (comp >= component && comp < last_comp) {
+               /* Component aliasing is not allowed */
+               linker_error(prog,
+                            "%s shader has multiple %sputs explicitly "
+                            "assigned to location %d and component %d\n",
+                            _mesa_shader_stage_to_string(stage),
+                            var->data.mode == nir_var_shader_in ? "in" : "out",
+                            location, comp);
+               return false;
+            } else {
+               /* From the OpenGL 4.60.5 spec, section 4.4.1 Input Layout
+                * Qualifiers, Page 67, (Location aliasing):
+                *
+                *   " Further, when location aliasing, the aliases sharing the
+                *     location must have the same underlying numerical type
+                *     and bit width (floating-point or integer, 32-bit versus
+                *     64-bit, etc.) and the same auxiliary storage and
+                *     interpolation qualification."
+                */
+
+               /* If the underlying numerical type isn't integer, implicitly
+                * it will be float or else we would have failed by now.
+                */
+               if (info->base_type_is_integer != base_type_is_integer) {
+                  linker_error(prog,
+                               "%s shader has multiple %sputs sharing the "
+                               "same location that don't have the same "
+                               "underlying numerical type. Location %u "
+                               "component %u.\n",
+                               _mesa_shader_stage_to_string(stage),
+                               var->data.mode == nir_var_shader_in ?
+                               "in" : "out", location, comp);
+                  return false;
+               }
+
+               if (info->base_type_bit_size != base_type_bit_size) {
+                  linker_error(prog,
+                               "%s shader has multiple %sputs sharing the "
+                               "same location that don't have the same "
+                               "underlying numerical bit size. Location %u "
+                               "component %u.\n",
+                               _mesa_shader_stage_to_string(stage),
+                               var->data.mode == nir_var_shader_in ?
+                               "in" : "out", location, comp);
+                  return false;
+               }
+
+               if (info->interpolation != interpolation) {
+                  linker_error(prog,
+                               "%s shader has multiple %sputs sharing the "
+                               "same location that don't have the same "
+                               "interpolation qualification. Location %u "
+                               "component %u.\n",
+                               _mesa_shader_stage_to_string(stage),
+                               var->data.mode == nir_var_shader_in ?
+                               "in" : "out", location, comp);
+                  return false;
+               }
+
+               if (info->centroid != centroid ||
+                   info->sample != sample ||
+                   info->patch != patch) {
+                  linker_error(prog,
+                               "%s shader has multiple %sputs sharing the "
+                               "same location that don't have the same "
+                               "auxiliary storage qualification. Location %u "
+                               "component %u.\n",
+                               _mesa_shader_stage_to_string(stage),
+                               var->data.mode == nir_var_shader_in ?
+                               "in" : "out", location, comp);
+                  return false;
+               }
+            }
+         } else if (comp >= component && comp < last_comp) {
+            info->var = var;
+            info->base_type_is_integer = base_type_is_integer;
+            info->base_type_bit_size = base_type_bit_size;
+            info->interpolation = interpolation;
+            info->centroid = centroid;
+            info->sample = sample;
+            info->patch = patch;
+         }
+
+         comp++;
+
+         /* We need to do some special handling for doubles as dvec3 and
+          * dvec4 consume two consecutive locations. We don't need to
+          * worry about components beginning at anything other than 0 as
+          * the spec does not allow this for dvec3 and dvec4.
+          */
+         if (comp == 4 && last_comp > 4) {
+            last_comp = last_comp - 4;
+            /* Bump location index and reset the component index */
+            location++;
+            comp = 0;
+            component = 0;
+         }
+      }
+
+      location++;
+   }
+
+   return true;
+}
+
+static bool
+validate_explicit_variable_location(const struct gl_constants *consts,
+                                    struct explicit_location_info explicit_locations[][4],
+                                    nir_variable *var,
+                                    struct gl_shader_program *prog,
+                                    struct gl_linked_shader *sh)
+{
+   const struct glsl_type *type = get_varying_type(var, sh->Stage);
+   unsigned num_elements = glsl_count_attribute_slots(type, false);
+   unsigned idx = compute_variable_location_slot(var, sh->Stage);
+   unsigned slot_limit = idx + num_elements;
+
+   /* Vertex shader inputs and fragment shader outputs are validated in
+    * assign_attribute_or_color_locations() so we should not attempt to
+    * validate them again here.
+    */
+   unsigned slot_max;
+   if (var->data.mode == nir_var_shader_out) {
+      assert(sh->Stage != MESA_SHADER_FRAGMENT);
+      slot_max = consts->Program[sh->Stage].MaxOutputComponents / 4;
+   } else {
+      assert(var->data.mode == nir_var_shader_in);
+      assert(sh->Stage != MESA_SHADER_VERTEX);
+      slot_max = consts->Program[sh->Stage].MaxInputComponents / 4;
+   }
+
+   if (slot_limit > slot_max) {
+      linker_error(prog,
+                   "Invalid location %u in %s shader\n",
+                   idx, _mesa_shader_stage_to_string(sh->Stage));
+      return false;
+   }
+
+   const struct glsl_type *type_without_array = glsl_without_array(type);
+   if (glsl_type_is_interface(type_without_array)) {
+      for (unsigned i = 0; i < glsl_get_length(type_without_array); i++) {
+         const struct glsl_struct_field *field =
+            glsl_get_struct_field_data(type_without_array, i);
+         unsigned field_location = field->location -
+            (field->patch ? VARYING_SLOT_PATCH0 : VARYING_SLOT_VAR0);
+         unsigned field_slots = glsl_count_attribute_slots(field->type, false);
+         if (!check_location_aliasing(explicit_locations, var,
+                                      field_location,
+                                      0,
+                                      field_location + field_slots,
+                                      field->type,
+                                      field->interpolation,
+                                      field->centroid,
+                                      field->sample,
+                                      field->patch,
+                                      prog, sh->Stage)) {
+            return false;
+         }
+      }
+   } else if (!check_location_aliasing(explicit_locations, var,
+                                       idx, var->data.location_frac,
+                                       slot_limit, type,
+                                       var->data.interpolation,
+                                       var->data.centroid,
+                                       var->data.sample,
+                                       var->data.patch,
+                                       prog, sh->Stage)) {
+      return false;
+   }
+
+   return true;
+}
+
+/**
+ * Validate explicit locations for the inputs to the first stage and the
+ * outputs of the last stage in a program, if those are not the VS and FS
+ * shaders.
+ */
+void
+gl_nir_validate_first_and_last_interface_explicit_locations(const struct gl_constants *consts,
+                                                            struct gl_shader_program *prog,
+                                                            gl_shader_stage first_stage,
+                                                            gl_shader_stage last_stage)
+{
+   /* VS inputs and FS outputs are validated in
+    * assign_attribute_or_color_locations()
+    */
+   bool validate_first_stage = first_stage != MESA_SHADER_VERTEX;
+   bool validate_last_stage = last_stage != MESA_SHADER_FRAGMENT;
+   if (!validate_first_stage && !validate_last_stage)
+      return;
+
+   struct explicit_location_info explicit_locations[MAX_VARYING][4];
+
+   gl_shader_stage stages[2] = { first_stage, last_stage };
+   bool validate_stage[2] = { validate_first_stage, validate_last_stage };
+   nir_variable_mode var_mode[2] = { nir_var_shader_in, nir_var_shader_out };
+
+   for (unsigned i = 0; i < 2; i++) {
+      if (!validate_stage[i])
+         continue;
+
+      gl_shader_stage stage = stages[i];
+
+      struct gl_linked_shader *sh = prog->_LinkedShaders[stage];
+      assert(sh);
+
+      memset(explicit_locations, 0, sizeof(explicit_locations));
+
+      nir_foreach_variable_with_modes(var, sh->Program->nir, var_mode[i]) {
+         if (!var->data.explicit_location ||
+             var->data.location < VARYING_SLOT_VAR0)
+            continue;
+
+         if (!validate_explicit_variable_location(consts, explicit_locations,
+                                                  var, prog, sh)) {
+            return;
+         }
+      }
+   }
+}
+
 
 /**
  * Assign locations for either VS inputs or FS outputs.
@@ -561,23 +894,6 @@ assign_attribute_or_color_locations(void *mem_ctx,
    }
 
    return true;
-}
-
-/**
- * Get the varying type stripped of the outermost array if we're processing
- * a stage whose varyings are arrays indexed by a vertex number (such as
- * geometry shader inputs).
- */
-static const struct glsl_type *
-get_varying_type(const nir_variable *var, gl_shader_stage stage)
-{
-   const struct glsl_type *type = var->type;
-   if (nir_is_arrayed_io(var, stage) || var->data.per_view) {
-      assert(glsl_type_is_array(type));
-      type = glsl_get_array_element(type);
-   }
-
-   return type;
 }
 
 static bool

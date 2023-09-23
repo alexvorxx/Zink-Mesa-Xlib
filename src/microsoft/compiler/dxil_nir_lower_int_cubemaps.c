@@ -184,7 +184,7 @@ create_array_tex_from_cube_tex(nir_builder *b, nir_tex_instr *tex, nir_def *coor
       nir_src *psrc = (tex->src[i].src_type == nir_tex_src_coord) ?
                          &coord_src : &tex->src[i].src;
 
-      nir_src_copy(&array_tex->src[i].src, psrc, &array_tex->instr);
+      array_tex->src[i].src = nir_src_for_ssa(psrc->ssa);
       array_tex->src[i].src_type = tex->src[i].src_type;
    }
 

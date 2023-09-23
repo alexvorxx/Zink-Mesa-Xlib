@@ -421,6 +421,8 @@ patch_fb_read_sysmem(struct fd_batch *batch)
       fdl6_get_ubwc_blockwidth(&rsc->layout, &block_width, &block_height);
 
       struct fdl_view_args args = {
+         .chip = A6XX,
+
          .iova = fd_bo_get_iova(rsc->bo),
 
          .base_miplevel = psurf->u.tex.level,

@@ -2148,8 +2148,9 @@ print_function(nir_function *function, print_state *state)
 {
    FILE *fp = state->fp;
 
-   fprintf(fp, "decl_function %s (%d params)", function->name,
-           function->num_params);
+   fprintf(fp, "decl_function %s (%d params) %s", function->name,
+           function->num_params, function->dont_inline ? "(noinline)" :
+           function->should_inline ? "(inline)" : "");
 
    fprintf(fp, "\n");
 

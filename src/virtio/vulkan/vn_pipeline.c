@@ -363,6 +363,7 @@ struct vn_graphics_pipeline_create_info_fix {
    bool ignore_multisample_state;
    bool ignore_depth_stencil_state;
    bool ignore_color_blend_state;
+   bool ignore_vertex_input_state;
    bool ignore_base_pipeline_handle;
 };
 
@@ -429,6 +430,7 @@ vn_fix_graphics_pipeline_create_info(
          bool viewport_with_count;
          bool scissor;
          bool scissor_with_count;
+         bool vertex_input;
       } has_dynamic_state = { 0 };
 
       if (info->pDynamicState) {
@@ -449,6 +451,9 @@ vn_fix_graphics_pipeline_create_info(
                break;
             case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
                has_dynamic_state.scissor_with_count = true;
+               break;
+            case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT:
+               has_dynamic_state.vertex_input = true;
                break;
             default:
                break;
@@ -498,8 +503,10 @@ vn_fix_graphics_pipeline_create_info(
        * then vertex input state is included in a complete graphics pipeline.
        *
        * We support no extension yet that allows the vertex stage to be
-       * omitted, such as VK_EXT_vertex_input_dynamic_state or
-       * VK_EXT_graphics_pipeline_library.
+       * omitted such as VK_EXT_graphics_pipeline_library.
+       *
+       * VK_EXT_vertex_input_dynamic_state allows for the state to be set
+       * dynamically but vertex stage must be included regardless.
        */
       const bool UNUSED has_vertex_input_state = true;
 
@@ -639,6 +646,17 @@ vn_fix_graphics_pipeline_create_info(
          any_fix |= fix.ignore_color_blend_state;
       }
 
+      /* Ignore pVertexInputState?
+       * The Vulkan spec (1.3.264) says:
+       * VK_DYNAMIC_STATE_VERTEX_INPUT_EXT specifies that the
+       * pVertexInputState state will be ignored and must be set dynamically
+       * with vkCmdSetVertexInputEXT before any drawing commands
+       */
+      if (info->pVertexInputState && has_dynamic_state.vertex_input) {
+         fix.ignore_vertex_input_state = true;
+         any_fix = true;
+      }
+
       /* Ignore basePipelineHandle?
        *    VUID-VkGraphicsPipelineCreateInfo-flags-00722
        *    VUID-VkGraphicsPipelineCreateInfo-flags-00724
@@ -691,6 +709,9 @@ vn_fix_graphics_pipeline_create_info(
 
       if (fix.ignore_color_blend_state)
          fixes->create_infos[i].pColorBlendState = NULL;
+
+      if (fix.ignore_vertex_input_state)
+         fixes->create_infos[i].pVertexInputState = NULL;
 
       if (fix.ignore_base_pipeline_handle)
          fixes->create_infos[i].basePipelineHandle = VK_NULL_HANDLE;

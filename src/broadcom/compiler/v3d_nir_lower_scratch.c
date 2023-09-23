@@ -38,7 +38,7 @@ static nir_def *
 v3d_nir_scratch_offset(nir_builder *b, nir_intrinsic_instr *instr)
 {
         bool is_store = instr->intrinsic == nir_intrinsic_store_scratch;
-        nir_def *offset = nir_ssa_for_src(b, instr->src[is_store ? 1 : 0], 1);
+        nir_def *offset = instr->src[is_store ? 1 : 0].ssa;
 
         assert(nir_intrinsic_align_mul(instr) >= 4);
         assert(nir_intrinsic_align_offset(instr) == 0);
@@ -88,8 +88,7 @@ v3d_nir_lower_store_scratch(nir_builder *b, nir_intrinsic_instr *instr)
         b->cursor = nir_before_instr(&instr->instr);
 
         nir_def *offset = v3d_nir_scratch_offset(b, instr);
-        nir_def *value = nir_ssa_for_src(b, instr->src[0],
-                                             instr->num_components);
+        nir_def *value = instr->src[0].ssa;
 
         for (int i = 0; i < instr->num_components; i++) {
                 if (!(nir_intrinsic_write_mask(instr) & (1 << i)))

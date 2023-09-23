@@ -140,8 +140,7 @@ v3d_nir_lower_vpm_output(struct v3d_compile *c, nir_builder *b,
 
         int start_comp = nir_intrinsic_component(intr);
         unsigned location = nir_intrinsic_io_semantics(intr).location;
-        nir_def *src = nir_ssa_for_src(b, intr->src[0],
-                                           intr->num_components);
+        nir_def *src = intr->src[0].ssa;
         /* Save off the components of the position for the setup of VPM inputs
          * read by fixed function HW.
          */

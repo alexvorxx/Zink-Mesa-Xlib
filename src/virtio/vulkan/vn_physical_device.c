@@ -171,6 +171,8 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
       VkPhysicalDeviceTransformFeedbackFeaturesEXT transform_feedback;
       VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT
          vertex_attribute_divisor;
+      VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT
+         vertex_input_dynamic_state;
    } local_feats;
 
    /* Clear the struct so that all unqueried features will be VK_FALSE. */
@@ -261,6 +263,7 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
    VN_ADD_PNEXT_EXT(feats2, ROBUSTNESS_2_FEATURES_EXT, local_feats.robustness_2, exts->EXT_robustness2);
    VN_ADD_PNEXT_EXT(feats2, TRANSFORM_FEEDBACK_FEATURES_EXT, local_feats.transform_feedback, exts->EXT_transform_feedback);
    VN_ADD_PNEXT_EXT(feats2, VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT, local_feats.vertex_attribute_divisor, exts->EXT_vertex_attribute_divisor);
+   VN_ADD_PNEXT_EXT(feats2, VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT, local_feats.vertex_input_dynamic_state, exts->EXT_vertex_input_dynamic_state);
 
    /* clang-format on */
 
@@ -840,10 +843,10 @@ vn_physical_device_init_external_fence_handles(
 
    physical_dev->external_fence_handles = 0;
 
-#ifdef ANDROID
-   physical_dev->external_fence_handles =
-      VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
-#endif
+   if (physical_dev->instance->renderer->info.has_external_sync) {
+      physical_dev->external_fence_handles =
+         VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
+   }
 }
 
 static void
@@ -891,10 +894,10 @@ vn_physical_device_init_external_semaphore_handles(
    physical_dev->external_binary_semaphore_handles = 0;
    physical_dev->external_timeline_semaphore_handles = 0;
 
-#ifdef ANDROID
-   physical_dev->external_binary_semaphore_handles =
-      VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
-#endif
+   if (physical_dev->instance->renderer->info.has_external_sync) {
+      physical_dev->external_binary_semaphore_handles =
+         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+   }
 }
 
 static inline bool
@@ -924,11 +927,17 @@ vn_physical_device_get_native_extensions(
 {
    memset(exts, 0, sizeof(*exts));
 
+   if (physical_dev->renderer_sync_fd.fence_exportable)
+      exts->KHR_external_fence_fd = true;
+
+   if (physical_dev->renderer_sync_fd.semaphore_importable &&
+       physical_dev->renderer_sync_fd.semaphore_exportable)
+      exts->KHR_external_semaphore_fd = true;
+
    const bool can_external_mem =
       vn_physical_device_get_external_memory_support(physical_dev);
-
-#ifdef ANDROID
    if (can_external_mem) {
+#ifdef ANDROID
       exts->ANDROID_external_memory_android_hardware_buffer = true;
 
       /* For wsi, we require renderer:
@@ -944,21 +953,11 @@ vn_physical_device_get_native_extensions(
       if (physical_dev->renderer_sync_fd.semaphore_importable &&
           physical_dev->renderer_sync_fd.fence_exportable)
          exts->ANDROID_native_buffer = true;
-   }
-
-   if (physical_dev->renderer_sync_fd.fence_exportable)
-      exts->KHR_external_fence_fd = true;
-
-   if (physical_dev->renderer_sync_fd.semaphore_importable &&
-       physical_dev->renderer_sync_fd.semaphore_exportable)
-      exts->KHR_external_semaphore_fd = true;
-
 #else  /* ANDROID */
-   if (can_external_mem) {
       exts->KHR_external_memory_fd = true;
       exts->EXT_external_memory_dma_buf = true;
-   }
 #endif /* ANDROID */
+   }
 
 #ifdef VN_USE_WSI_PLATFORM
    if (can_external_mem &&
@@ -1131,6 +1130,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_shader_subgroup_ballot = true,
       .EXT_transform_feedback = true,
       .EXT_vertex_attribute_divisor = true,
+      .EXT_vertex_input_dynamic_state = true,
 
       /* vendor */
       .VALVE_mutable_descriptor_type = true,

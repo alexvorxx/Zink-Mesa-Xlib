@@ -937,7 +937,7 @@ lower_packed_inputs(struct lower_packed_varyings_state *state)
    /* Shader inputs need to be lowered at the beginning of main() so set bulder
     * cursor to insert packing code at the start of the main function.
     */
-   state->b.cursor = nir_before_block(nir_start_block(state->impl));
+   state->b.cursor = nir_before_impl(state->impl);
 
    /* insert new varyings, lower old ones to locals and add unpacking code a
     * the start of the shader.

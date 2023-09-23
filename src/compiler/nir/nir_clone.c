@@ -654,29 +654,36 @@ nir_function_impl_clone(nir_shader *shader, const nir_function_impl *fi)
    return nfi;
 }
 
-static nir_function *
-clone_function(clone_state *state, const nir_function *fxn, nir_shader *ns)
+nir_function *
+nir_function_clone(nir_shader *ns, const nir_function *fxn)
 {
-   assert(ns == state->ns);
    nir_function *nfxn = nir_function_create(ns, fxn->name);
-
-   /* Needed for call instructions */
-   add_remap(state, nfxn, fxn);
-
    nfxn->num_params = fxn->num_params;
    if (fxn->num_params) {
-      nfxn->params = ralloc_array(state->ns, nir_parameter, fxn->num_params);
+      nfxn->params = ralloc_array(ns, nir_parameter, fxn->num_params);
       memcpy(nfxn->params, fxn->params, sizeof(nir_parameter) * fxn->num_params);
    }
    nfxn->is_entrypoint = fxn->is_entrypoint;
    nfxn->is_preamble = fxn->is_preamble;
+   nfxn->should_inline = fxn->should_inline;
+   nfxn->dont_inline = fxn->dont_inline;
 
    /* At first glance, it looks like we should clone the function_impl here.
     * However, call instructions need to be able to reference at least the
     * function and those will get processed as we clone the function_impls.
     * We stop here and do function_impls as a second pass.
     */
+   return nfxn;
+}
 
+static nir_function *
+clone_function(clone_state *state, const nir_function *fxn, nir_shader *ns)
+{
+   assert(ns == state->ns);
+
+   nir_function *nfxn = nir_function_clone(ns, fxn);
+   /* Needed for call instructions */
+   add_remap(state, nfxn, fxn);
    return nfxn;
 }
 

@@ -215,7 +215,7 @@ remap_patch_urb_offsets(nir_block *block, nir_builder *b,
                /* Multiply by the number of per-vertex slots. */
                nir_def *vertex_offset =
                   nir_imul(b,
-                           nir_ssa_for_src(b, *vertex, 1),
+                           vertex->ssa,
                            nir_imm_int(b,
                                        vue_map->num_per_vertex_slots));
 
@@ -223,7 +223,7 @@ remap_patch_urb_offsets(nir_block *block, nir_builder *b,
                nir_src *offset = nir_get_io_offset_src(intrin);
                nir_def *total_offset =
                   nir_iadd(b, vertex_offset,
-                           nir_ssa_for_src(b, *offset, 1));
+                           offset->ssa);
 
                nir_src_rewrite(offset, total_offset);
             }
@@ -947,7 +947,13 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
       .lower_invalid_implicit_lod = true,
    };
 
-   OPT(nir_lower_tex, &tex_options);
+   /* In the case where TG4 coords are lowered to offsets and we have a
+    * lower_xehp_tg4_offset_filter lowering those offsets further, we need to
+    * rerun the pass because the instructions inserted by the first lowering
+    * are not visible during that first pass.
+    */
+   if (OPT(nir_lower_tex, &tex_options))
+      OPT(nir_lower_tex, &tex_options);
    OPT(nir_normalize_cubemap_coords);
 
    OPT(nir_lower_global_vars_to_local);
@@ -994,6 +1000,7 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
       .lower_relative_shuffle = true,
       .lower_quad_broadcast_dynamic = true,
       .lower_elect = true,
+      .lower_inverse_ballot = true,
    };
    OPT(nir_lower_subgroups, &subgroups_options);
 
@@ -1344,6 +1351,18 @@ bool combine_all_memory_barriers(nir_intrinsic_instr *a,
                                  nir_intrinsic_instr *b,
                                  void *data)
 {
+   /* Combine control barriers with identical memory semantics. This prevents
+    * the second barrier generating a spurious, identical fence message as the
+    * first barrier.
+    */
+   if (nir_intrinsic_memory_modes(a) == nir_intrinsic_memory_modes(b) &&
+       nir_intrinsic_memory_semantics(a) == nir_intrinsic_memory_semantics(b) &&
+       nir_intrinsic_memory_scope(a) == nir_intrinsic_memory_scope(b)) {
+      nir_intrinsic_set_execution_scope(a, MAX2(nir_intrinsic_execution_scope(a),
+                                                nir_intrinsic_execution_scope(b)));
+      return true;
+   }
+
    /* Only combine pure memory barriers */
    if ((nir_intrinsic_execution_scope(a) != SCOPE_NONE) ||
        (nir_intrinsic_execution_scope(b) != SCOPE_NONE))
@@ -1685,6 +1704,10 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
          brw_nir_optimize(nir, compiler);
    }
 
+   /* Do this only after the last opt_gcm. GCM will undo this lowering. */
+   if (nir->info.stage == MESA_SHADER_FRAGMENT)
+      OPT(brw_nir_lower_non_uniform_barycentric_at_sample);
+
    /* Clean up LCSSA phis */
    OPT(nir_opt_remove_phis);
 
@@ -1710,7 +1733,7 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
    OPT(nir_convert_from_ssa, true);
 
    if (!is_scalar) {
-      OPT(nir_move_vec_src_uses_to_dest);
+      OPT(nir_move_vec_src_uses_to_dest, true);
       OPT(nir_lower_vec_to_regs, NULL, NULL);
    }
 

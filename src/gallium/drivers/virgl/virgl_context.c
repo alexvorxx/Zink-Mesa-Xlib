@@ -710,7 +710,8 @@ static void *virgl_shader_encoder(struct pipe_context *ctx,
          .unoptimized_ra = true,
          .lower_fabs = true,
          .lower_ssbo_bindings =
-               rs->caps.caps.v2.host_feature_check_version >= 16
+               rs->caps.caps.v2.host_feature_check_version >= 16,
+         .non_compute_membar_needs_all_modes = true
       };
 
       if (!(rs->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_TEXTURE_SHADOW_LOD) &&

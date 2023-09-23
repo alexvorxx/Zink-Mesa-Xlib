@@ -1636,8 +1636,8 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
       switch(i->dType) {
       CASE(TYPE_U16, u16, 0, UINT16_MAX, 0, UINT16_MAX, 0, UINT16_MAX);
       CASE(TYPE_S16, s16, INT16_MIN, INT16_MAX, INT16_MIN, INT16_MAX, 0, INT16_MAX);
-      CASE(TYPE_U32, u32, 0, UINT32_MAX, 0, INT32_MAX, 0, UINT32_MAX);
-      CASE(TYPE_S32, s32, INT32_MIN, INT32_MAX, INT32_MIN, INT32_MAX, 0, INT32_MAX);
+      CASE(TYPE_U32, u32, 0, (float)UINT32_MAX, 0, INT32_MAX, 0, UINT32_MAX);
+      CASE(TYPE_S32, s32, (float)INT32_MIN, (float)INT32_MAX, INT32_MIN, INT32_MAX, 0, INT32_MAX);
       case TYPE_F32:
          switch (i->sType) {
          case TYPE_F64:

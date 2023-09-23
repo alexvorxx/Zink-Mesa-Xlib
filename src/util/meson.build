@@ -295,7 +295,7 @@ idep_mesautil = declare_dependency(
 
 # Only install the drirc file if we build with support for parsing drirc files
 if use_xmlconfig
-   install_data(files_drirc, install_dir : join_paths(get_option('datadir'), 'drirc.d'))
+   install_data(files_drirc, install_dir : join_paths(get_option('datadir'), 'drirc.d'), install_tag : 'runtime')
 endif
 
 xmlconfig_deps = []

@@ -257,7 +257,7 @@ can_move_coord(nir_scalar scalar, coord_info *info)
    if (nir_scalar_is_const(scalar))
       return true;
 
-   if (scalar.def->parent_instr->type != nir_instr_type_intrinsic)
+   if (!nir_scalar_is_intrinsic(scalar))
       return false;
 
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(scalar.def->parent_instr);
@@ -272,8 +272,8 @@ can_move_coord(nir_scalar scalar, coord_info *info)
 
    nir_scalar coord_x = nir_scalar_resolved(intrin->src[0].ssa, 0);
    nir_scalar coord_y = nir_scalar_resolved(intrin->src[0].ssa, 1);
-   if (coord_x.def->parent_instr->type != nir_instr_type_intrinsic || coord_x.comp != 0 ||
-       coord_y.def->parent_instr->type != nir_instr_type_intrinsic || coord_y.comp != 1)
+   if (!nir_scalar_is_intrinsic(coord_x) || coord_x.comp != 0 ||
+       !nir_scalar_is_intrinsic(coord_y) || coord_y.comp != 1)
       return false;
 
    nir_intrinsic_instr *intrin_x = nir_instr_as_intrinsic(coord_x.def->parent_instr);

@@ -105,10 +105,10 @@ radv_nir_lower_io(struct radv_device *device, nir_shader *nir)
 /* IO slot layout for stages that aren't linked. */
 enum {
    RADV_IO_SLOT_POS = 0,
-   RADV_IO_SLOT_VAR0 = 1, /* 0..31 */
-   RADV_IO_SLOT_CLIP_DIST0 = 33,
+   RADV_IO_SLOT_CLIP_DIST0,
    RADV_IO_SLOT_CLIP_DIST1,
    RADV_IO_SLOT_PSIZ,
+   RADV_IO_SLOT_VAR0, /* 0..31 */
 };
 
 static unsigned

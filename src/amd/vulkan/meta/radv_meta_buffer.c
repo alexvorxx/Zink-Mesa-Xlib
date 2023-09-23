@@ -15,9 +15,9 @@ build_buffer_fill_shader(struct radv_device *dev)
    nir_def *max_offset = nir_channel(&b, pconst, 2);
    nir_def *data = nir_swizzle(&b, nir_channel(&b, pconst, 3), (unsigned[]){0, 0, 0, 0}, 4);
 
-   nir_def *global_id = nir_iadd(
-      &b, nir_imul_imm(&b, nir_channel(&b, nir_load_workgroup_id(&b, 32), 0), b.shader->info.workgroup_size[0]),
-      nir_load_local_invocation_index(&b));
+   nir_def *global_id =
+      nir_iadd(&b, nir_imul_imm(&b, nir_channel(&b, nir_load_workgroup_id(&b), 0), b.shader->info.workgroup_size[0]),
+               nir_load_local_invocation_index(&b));
 
    nir_def *offset = nir_imin(&b, nir_imul_imm(&b, global_id, 16), max_offset);
    nir_def *dst_addr = nir_iadd(&b, buffer_addr, nir_u2u64(&b, offset));
@@ -37,9 +37,9 @@ build_buffer_copy_shader(struct radv_device *dev)
    nir_def *src_addr = nir_pack_64_2x32(&b, nir_channels(&b, pconst, 0b0011));
    nir_def *dst_addr = nir_pack_64_2x32(&b, nir_channels(&b, pconst, 0b1100));
 
-   nir_def *global_id = nir_iadd(
-      &b, nir_imul_imm(&b, nir_channel(&b, nir_load_workgroup_id(&b, 32), 0), b.shader->info.workgroup_size[0]),
-      nir_load_local_invocation_index(&b));
+   nir_def *global_id =
+      nir_iadd(&b, nir_imul_imm(&b, nir_channel(&b, nir_load_workgroup_id(&b), 0), b.shader->info.workgroup_size[0]),
+               nir_load_local_invocation_index(&b));
 
    nir_def *offset = nir_u2u64(&b, nir_imin(&b, nir_imul_imm(&b, global_id, 16), max_offset));
 

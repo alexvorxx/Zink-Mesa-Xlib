@@ -46,6 +46,7 @@ intel_hasvk_icd = custom_target(
   ],
   build_by_default : true,
   install_dir : with_vulkan_icd_dir,
+  install_tag : 'runtime',
   install : true,
 )
 
@@ -82,7 +83,7 @@ foreach g : [['70', ['gfx7_cmd_buffer.c']],
     'anv_per_hw_ver@0@'.format(_gfx_ver),
     [anv_per_hw_ver_files, g[1], anv_hasvk_entrypoints[0]],
     include_directories : [
-      inc_include, inc_src, inc_compiler, inc_intel,
+      inc_include, inc_src, inc_intel,
     ],
     c_args : [
       no_override_init_args, sse2_args,
@@ -171,7 +172,7 @@ libanv_hasvk_common = static_library(
     gen_xml_pack,
   ],
   include_directories : [
-    inc_include, inc_src, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel,
     inc_util,
   ],
   c_args : anv_flags,
@@ -184,7 +185,7 @@ libvulkan_intel_hasvk = shared_library(
   'vulkan_intel_hasvk',
   [files('anv_gem.c'), anv_hasvk_entrypoints[0]],
   include_directories : [
-    inc_include, inc_src, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel,
   ],
   link_whole : [libanv_hasvk_common, libanv_per_hw_ver_libs],
   link_with : [
@@ -220,7 +221,7 @@ if with_tests
     'vulkan_intel_hasvk_test',
     [files('anv_gem_stubs.c'), anv_hasvk_entrypoints[0]],
     include_directories : [
-      inc_include, inc_src, inc_intel, inc_compiler,
+      inc_include, inc_src, inc_intel,
     ],
     link_whole : libanv_hasvk_common,
     link_with : [
@@ -260,7 +261,7 @@ if with_tests
         idep_vulkan_runtime, idep_intel_driver_ds, idep_intel_dev,
       ],
       include_directories : [
-        inc_include, inc_src, inc_intel, inc_compiler,
+        inc_include, inc_src, inc_intel,
       ],
     ),
     suite : ['intel'],

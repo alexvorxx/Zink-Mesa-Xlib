@@ -498,7 +498,7 @@ pan_lower_fb_store(nir_builder *b, nir_intrinsic_instr *intr,
                    bool reorder_comps, unsigned nr_samples)
 {
    /* For stores, add conversion before */
-   nir_def *unpacked = nir_ssa_for_src(b, intr->src[0], intr->num_components);
+   nir_def *unpacked = intr->src[0].ssa;
    unpacked = nir_pad_vec4(b, unpacked);
 
    /* Re-order the components */

@@ -192,17 +192,13 @@ fs_live_variables::compute_live_variables()
                BITSET_WORD new_liveout = (child_bd->livein[i] &
                                           ~bd->liveout[i]);
                new_liveout &= bd->defout[i]; /* Screen off uses with no reaching def */
-               if (new_liveout) {
+               if (new_liveout)
                   bd->liveout[i] |= new_liveout;
-                  cont = true;
-               }
             }
             BITSET_WORD new_liveout = (child_bd->flag_livein[0] &
                                        ~bd->flag_liveout[0]);
-            if (new_liveout) {
+            if (new_liveout)
                bd->flag_liveout[0] |= new_liveout;
-               cont = true;
-            }
          }
 
          /* Update livein */

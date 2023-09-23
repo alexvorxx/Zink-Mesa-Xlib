@@ -57,8 +57,8 @@ lower_wide_load_store(nir_builder *b, nir_instr *instr, void *unused)
    if (is_intrinsic_store(intr->intrinsic)) {
       unsigned num_comp = nir_intrinsic_src_components(intr, 0);
       unsigned wrmask = nir_intrinsic_write_mask(intr);
-      nir_def *val = nir_ssa_for_src(b, intr->src[0], num_comp);
-      nir_def *addr = nir_ssa_for_src(b, intr->src[1], 1);
+      nir_def *val = intr->src[0].ssa;
+      nir_def *addr = intr->src[1].ssa;
 
       for (unsigned off = 0; off < num_comp; off += 4) {
          unsigned c = MIN2(num_comp - off, 4);
@@ -82,7 +82,7 @@ lower_wide_load_store(nir_builder *b, nir_instr *instr, void *unused)
    } else {
       unsigned num_comp = nir_intrinsic_dest_components(intr);
       unsigned bit_size = intr->def.bit_size;
-      nir_def *addr = nir_ssa_for_src(b, intr->src[0], 1);
+      nir_def *addr = intr->src[0].ssa;
       nir_def *components[num_comp];
 
       for (unsigned off = 0; off < num_comp;) {

@@ -18,6 +18,9 @@
 #include "agx_disk_cache.h"
 #include "agx_state.h"
 
+/* Flags that are allowed and do not disable the disk cache */
+#define ALLOWED_FLAGS (AGX_DBG_NO16)
+
 /**
  * Compute a disk cache key for the given uncompiled shader and shader key.
  */
@@ -134,7 +137,7 @@ void
 agx_disk_cache_init(struct agx_screen *screen)
 {
 #ifdef ENABLE_SHADER_CACHE
-   if (agx_get_compiler_debug() || screen->dev.debug)
+   if (agx_get_compiler_debug() || (screen->dev.debug & ~ALLOWED_FLAGS))
       return;
 
    const char *renderer = screen->pscreen.get_name(&screen->pscreen);

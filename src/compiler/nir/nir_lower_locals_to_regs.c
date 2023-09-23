@@ -172,7 +172,7 @@ get_deref_reg_location(nir_deref_instr *deref,
             base_offset = 0;
          }
 
-         nir_def *index = nir_i2iN(b, nir_ssa_for_src(b, d->arr.index, 1), 32);
+         nir_def *index = nir_i2iN(b, d->arr.index.ssa, 32);
          nir_def *offset = nir_imul_imm(b, index, inner_array_size);
 
          /* Avoid emitting iadd with 0, which is otherwise common, since this

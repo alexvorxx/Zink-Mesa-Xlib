@@ -217,14 +217,13 @@ rusticl_mesa_bindings_rs = rust.bindgen(
   input : 'rusticl_mesa_bindings.h',
   output : 'rusticl_mesa_bindings.rs',
   include_directories : [
-    inc_compiler,
     inc_gallium,
     inc_gallium_aux,
     inc_include,
-    inc_nir,
     inc_src,
   ],
   dependencies: [
+    idep_nir_headers,
     dep_valgrind,
   ],
   c_args : [

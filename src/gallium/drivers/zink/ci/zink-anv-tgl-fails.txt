@@ -113,7 +113,6 @@ glx@glx-buffer-age,Fail
 glx@glx-buffer-age vblank_mode=0,Fail
 
 glx@glx-swap-pixmap-bad,Fail
-glx@glx-tfp,Crash
 
 # ../src/gallium/drivers/zink/zink_kopper.c:859: zink_kopper_update: Assertion `pres->bind & PIPE_BIND_DISPLAY_TARGET' failed.
 glx@glx-visuals-depth -pixmap,Crash
@@ -575,7 +574,6 @@ spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA16UI_EXT,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA32F_ARB,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA32I_EXT,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA32UI_EXT,Fail
-spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA8,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA8I_EXT,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_ALPHA8UI_EXT,Fail
 spec@arb_texture_buffer_object@formats (fs- arb)@GL_LUMINANCE_ALPHA16F_ARB,Fail
@@ -605,7 +603,6 @@ spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA16UI_EXT,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA32F_ARB,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA32I_EXT,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA32UI_EXT,Fail
-spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA8,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA8I_EXT,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_ALPHA8UI_EXT,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_LUMINANCE_ALPHA16F_ARB,Fail
@@ -697,3 +694,5 @@ spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-vs-getuniformdv,Crash
 
 # ../src/util/simple_mtx.h:131: simple_mtx_unlock: Assertion `c != _SIMPLE_MTX_INVALID_VALUE' failed.
 dEQP-EGL.functional.sharing.gles2.multithread.simple_egl_sync.programs.link,Crash
+
+spec@arb_fragment_layer_viewport@layer-no-gs,Fail

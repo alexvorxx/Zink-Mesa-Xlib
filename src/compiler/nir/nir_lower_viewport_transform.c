@@ -55,7 +55,7 @@ lower_viewport_transform_instr(nir_builder *b, nir_intrinsic_instr *intr,
    b->cursor = nir_before_instr(&intr->instr);
 
    /* Grab the source and viewport */
-   nir_def *input_point = nir_ssa_for_src(b, intr->src[1], 4);
+   nir_def *input_point = intr->src[1].ssa;
    nir_def *scale = nir_load_viewport_scale(b);
    nir_def *offset = nir_load_viewport_offset(b);
 

@@ -95,6 +95,7 @@ extern uint64_t intel_debug;
 #define DEBUG_ISL                 (1ull << 47)
 #define DEBUG_SPARSE              (1ull << 48)
 #define DEBUG_DRAW_BKP            (1ull << 49)
+#define DEBUG_BATCH_STATS         (1ull << 50)
 
 #define DEBUG_ANY                 (~0ull)
 

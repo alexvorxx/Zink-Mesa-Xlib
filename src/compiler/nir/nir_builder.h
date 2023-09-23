@@ -80,6 +80,40 @@ typedef bool (*nir_intrinsic_pass_cb)(struct nir_builder *,
                                       nir_intrinsic_instr *, void *);
 
 /**
+ * Iterates over all the instructions in a NIR function and calls the given pass
+ * on them.
+ *
+ * The pass should return true if it modified the function.  In that case, only
+ * the preserved metadata flags will be preserved in the function impl.
+ *
+ * The builder will be initialized to point at the function impl, but its
+ * cursor is unset.
+ */
+static inline bool
+nir_function_instructions_pass(nir_function_impl *impl,
+                               nir_instr_pass_cb pass,
+                               nir_metadata preserved,
+                               void *cb_data)
+{
+   bool progress = false;
+   nir_builder b = nir_builder_create(impl);
+
+   nir_foreach_block_safe(block, impl) {
+      nir_foreach_instr_safe(instr, block) {
+         progress |= pass(&b, instr, cb_data);
+      }
+   }
+
+   if (progress) {
+      nir_metadata_preserve(impl, preserved);
+   } else {
+      nir_metadata_preserve(impl, nir_metadata_all);
+   }
+
+   return progress;
+}
+
+/**
  * Iterates over all the instructions in a NIR shader and calls the given pass
  * on them.
  *
@@ -98,21 +132,8 @@ nir_shader_instructions_pass(nir_shader *shader,
    bool progress = false;
 
    nir_foreach_function_impl(impl, shader) {
-      bool func_progress = false;
-      nir_builder b = nir_builder_create(impl);
-
-      nir_foreach_block_safe(block, impl) {
-         nir_foreach_instr_safe(instr, block) {
-            func_progress |= pass(&b, instr, cb_data);
-         }
-      }
-
-      if (func_progress) {
-         nir_metadata_preserve(impl, preserved);
-         progress = true;
-      } else {
-         nir_metadata_preserve(impl, nir_metadata_all);
-      }
+      progress |= nir_function_instructions_pass(impl, pass,
+                                                 preserved, cb_data);
    }
 
    return progress;
@@ -229,7 +250,7 @@ nir_undef(nir_builder *build, unsigned num_components, unsigned bit_size)
    if (!undef)
       return NULL;
 
-   nir_instr_insert(nir_before_cf_list(&build->impl->body), &undef->instr);
+   nir_instr_insert(nir_before_impl(build->impl), &undef->instr);
    if (build->update_divergence)
       nir_update_instr_divergence(build->shader, &undef->instr);
 
@@ -1328,9 +1349,6 @@ nir_resize_vector(nir_builder *b, nir_def *src, unsigned num_components)
 }
 
 nir_def *
-nir_ssa_for_src(nir_builder *build, nir_src src, int num_components);
-
-nir_def *
 nir_ssa_for_alu_src(nir_builder *build, nir_alu_instr *instr, unsigned srcn);
 
 static inline unsigned
@@ -1751,7 +1769,7 @@ nir_decl_reg(nir_builder *b, unsigned num_components, unsigned bit_size,
    nir_intrinsic_set_divergent(decl, true);
    nir_def_init(&decl->instr, &decl->def, 1, 32);
 
-   nir_instr_insert(nir_before_cf_list(&b->impl->body), &decl->instr);
+   nir_instr_insert(nir_before_impl(b->impl), &decl->instr);
 
    return &decl->def;
 }

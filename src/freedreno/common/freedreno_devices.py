@@ -22,10 +22,19 @@
 
 from mako.template import Template
 import sys
+import argparse
 from enum import Enum
 
 def max_bitfield_val(high, low, shift):
     return ((1 << (high - low)) - 1) << shift
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--import-path', required=True)
+args = parser.parse_args()
+sys.path.insert(0, args.import_path)
+
+from a6xx import *
 
 
 class CHIP(Enum):
@@ -131,7 +140,10 @@ class A6xxGPUInfo(GPUInfo):
        into distinct sub-generations.  The template parameter avoids
        duplication of parameters that are unique to the sub-generation.
     """
-    def __init__(self, chip, template, num_ccu, tile_align_w, tile_align_h, num_vsc_pipes, cs_shared_mem_size, wave_granularity, fibers_per_sp, magic_regs):
+    def __init__(self, chip, template, num_ccu,
+                 tile_align_w, tile_align_h, num_vsc_pipes,
+                 cs_shared_mem_size, wave_granularity, fibers_per_sp,
+                 magic_regs, raw_magic_regs = None):
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
                          tile_align_h = tile_align_h,
@@ -150,6 +162,9 @@ class A6xxGPUInfo(GPUInfo):
 
         for name, val in magic_regs.items():
             setattr(self.a6xx.magic, name, val)
+
+        if raw_magic_regs:
+            self.a6xx.magic_raw = [[int(r[0]), r[1]] for r in raw_magic_regs]
 
         # Things that earlier gens have and later gens remove, provide
         # defaults here and let them be overridden by sub-gen template:
@@ -172,6 +187,10 @@ class A6xxGPUInfo(GPUInfo):
             if name == "magic": # handled above
                 continue
             setattr(self.a6xx, name, val)
+
+    def __str__(self):
+     return super(A6xxGPUInfo, self).__str__().replace('[', '{').replace("]", "}")
+
 
 # a2xx is really two sub-generations, a20x and a22x, but we don't currently
 # capture that in the device-info tables
@@ -664,10 +683,8 @@ add_gpus([
         )
     ))
 
-# Minimal definition needed for ir3 assembler/disassembler
 add_gpus([
-        GPUId(730),
-        GPUId(740),
+        GPUId(chip_id=0x07030001, name="FD730"),
     ], A6xxGPUInfo(
         CHIP.A7XX,
         a6xx_gen4,
@@ -678,7 +695,109 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
-        magic_regs = dict()
+        magic_regs = dict(
+            # PC_POWER_CNTL = 7,
+            TPL1_DBG_ECO_CNTL = 0x1000000,
+            GRAS_DBG_ECO_CNTL = 0x800,
+            SP_CHICKEN_BITS = 0x1440,
+            UCHE_CLIENT_PF = 0x00000084,
+            PC_MODE_CNTL = 0x0000003f, # 0x00001f1f in some tests
+            SP_DBG_ECO_CNTL = 0x10000000,
+            RB_DBG_ECO_CNTL = 0x00000000,
+            RB_DBG_ECO_CNTL_blit = 0x00000000,  # is it even needed?
+            # HLSQ_DBG_ECO_CNTL = 0x0,
+            RB_UNKNOWN_8E01 = 0x0,
+            VPC_DBG_ECO_CNTL = 0x02000000,
+            UCHE_UNKNOWN_0E12 = 0x3200000
+        ),
+        raw_magic_regs = [
+            [A6XXRegs.REG_A6XX_UCHE_CACHE_WAYS, 0x00840004],
+            [A6XXRegs.REG_A6XX_TPL1_UNKNOWN_B602, 0x00000724],
+
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE08, 0x00002400],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE09, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE0A, 0x00000000],
+            [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E10, 0x00000000],
+            [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E11, 0x00000040],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6C, 0x00008000],
+            [A6XXRegs.REG_A6XX_PC_DBG_ECO_CNTL, 0x20080000],
+            [A6XXRegs.REG_A7XX_PC_UNKNOWN_9E24, 0x21fc7f00],
+            [A6XXRegs.REG_A7XX_VFD_UNKNOWN_A600, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE06, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6A, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6B, 0x00000080],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE73, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB02, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB01, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB22, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_B310, 0x00000000],
+
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8120, 0x09510840],
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8121, 0x00000a62],
+        ],
+    ))
+
+add_gpus([
+        GPUId(740), # Deprecated, used for dev kernels.
+        GPUId(chip_id=0x43050a01, name="FD740"), # KGSL, no speedbin data
+        GPUId(chip_id=0xffff43050a01, name="FD740"), # Default no-speedbin fallback
+    ], A6xxGPUInfo(
+        CHIP.A7XX,
+        a6xx_gen4,
+        num_ccu = 6,
+        tile_align_w = 64,
+        tile_align_h = 32,
+        num_vsc_pipes = 32,
+        cs_shared_mem_size = 32 * 1024,
+        wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
+        magic_regs = dict(
+            # PC_POWER_CNTL = 7,
+            TPL1_DBG_ECO_CNTL = 0x11100000,
+            GRAS_DBG_ECO_CNTL = 0x00004800,
+            SP_CHICKEN_BITS = 0x10001400,
+            UCHE_CLIENT_PF = 0x00000084,
+            # Blob uses 0x1f or 0x1f1f, however these values cause vertices
+            # corruption in some tests.
+            PC_MODE_CNTL = 0x0000003f,
+            SP_DBG_ECO_CNTL = 0x10000000,
+            RB_DBG_ECO_CNTL = 0x00000000,
+            RB_DBG_ECO_CNTL_blit = 0x00000000,  # is it even needed?
+            # HLSQ_DBG_ECO_CNTL = 0x0,
+            RB_UNKNOWN_8E01 = 0x0,
+            VPC_DBG_ECO_CNTL = 0x02000000,
+            UCHE_UNKNOWN_0E12 = 0x00000000
+        ),
+        raw_magic_regs = [
+            [A6XXRegs.REG_A6XX_UCHE_CACHE_WAYS, 0x00040004],
+            [A6XXRegs.REG_A6XX_TPL1_UNKNOWN_B602, 0x00000724],
+
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE08, 0x00000400],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE09, 0x00430800],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE0A, 0x00000000],
+            [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E10, 0x00000000],
+            [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E11, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6C, 0x00000000],
+            [A6XXRegs.REG_A6XX_PC_DBG_ECO_CNTL, 0x00100000],
+            [A6XXRegs.REG_A7XX_PC_UNKNOWN_9E24, 0x21585600],
+            [A6XXRegs.REG_A7XX_VFD_UNKNOWN_A600, 0x00008000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE06, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6A, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6B, 0x00000080],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE73, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB02, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB01, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB22, 0x00000000],
+            [A6XXRegs.REG_A7XX_SP_UNKNOWN_B310, 0x00000000],
+
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8120, 0x09510840],
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8121, 0x00000a62],
+
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8009, 0x00000000],
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_800A, 0x00000000],
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_800B, 0x00000000],
+            [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_800C, 0x00000000],
+        ],
     ))
 
 template = """\

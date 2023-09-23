@@ -22,8 +22,14 @@
 enum tu_draw_state_group_id
 {
    TU_DRAW_STATE_PROGRAM_CONFIG,
-   TU_DRAW_STATE_PROGRAM,
-   TU_DRAW_STATE_PROGRAM_BINNING,
+   TU_DRAW_STATE_VS,
+   TU_DRAW_STATE_VS_BINNING,
+   TU_DRAW_STATE_HS,
+   TU_DRAW_STATE_DS,
+   TU_DRAW_STATE_GS,
+   TU_DRAW_STATE_GS_BINNING,
+   TU_DRAW_STATE_VPC,
+   TU_DRAW_STATE_FS,
    TU_DRAW_STATE_VB,
    TU_DRAW_STATE_CONST,
    TU_DRAW_STATE_DESC_SETS,
@@ -35,7 +41,6 @@ enum tu_draw_state_group_id
    TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE,
    TU_DRAW_STATE_PRIM_MODE_GMEM,
    TU_DRAW_STATE_PRIM_MODE_SYSMEM,
-   TU_DRAW_STATE_MSAA,
 
    /* dynamic state related draw states */
    TU_DRAW_STATE_DYNAMIC,
@@ -402,14 +407,12 @@ struct tu_cmd_state
    uint32_t max_vbs_bound;
 
    bool per_view_viewport;
-   bool pipeline_has_fdm;
 
    /* saved states to re-emit in TU_CMD_DIRTY_DRAW_STATE case */
    struct tu_draw_state dynamic_state[TU_DYNAMIC_STATE_COUNT];
    struct tu_draw_state vertex_buffers;
    struct tu_draw_state shader_const;
    struct tu_draw_state desc_sets;
-   struct tu_draw_state msaa;
 
    struct tu_draw_state vs_params;
    struct tu_draw_state fs_params;
@@ -599,11 +602,14 @@ void tu_render_pass_state_merge(struct tu_render_pass_state *dst,
 VkResult tu_cmd_buffer_begin(struct tu_cmd_buffer *cmd_buffer,
                              const VkCommandBufferBeginInfo *pBeginInfo);
 
+template <chip CHIP>
 void
 tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer);
 
+template <chip CHIP>
 void tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer);
 
+template <chip CHIP>
 void tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
                              struct tu_cs *cs,
                              enum tu_cmd_ccu_state ccu_state);
@@ -624,12 +630,16 @@ void
 tu_restore_suspended_pass(struct tu_cmd_buffer *cmd,
                           struct tu_cmd_buffer *suspended);
 
+template <chip CHIP>
 void tu_cmd_render(struct tu_cmd_buffer *cmd);
 
+enum fd_gpu_event : uint32_t;
+
+template <chip CHIP>
 void
-tu6_emit_event_write(struct tu_cmd_buffer *cmd,
-                     struct tu_cs *cs,
-                     enum vgt_event_type event);
+tu_emit_event_write(struct tu_cmd_buffer *cmd,
+                    struct tu_cs *cs,
+                    enum fd_gpu_event event);
 
 static inline struct tu_descriptor_state *
 tu_get_descriptors_state(struct tu_cmd_buffer *cmd_buffer,

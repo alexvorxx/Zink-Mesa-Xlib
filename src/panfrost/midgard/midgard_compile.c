@@ -362,7 +362,6 @@ midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS_V(nir, nir_lower_ssbo);
    NIR_PASS_V(nir, pan_nir_lower_zs_store);
 
-   NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
    NIR_PASS_V(nir, nir_lower_frexp);
    NIR_PASS_V(nir, midgard_nir_lower_global_load);
 
@@ -478,7 +477,7 @@ optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend)
    NIR_PASS(progress, nir, nir_convert_from_ssa, true);
 
    /* We are a vector architecture; write combine where possible */
-   NIR_PASS(progress, nir, nir_move_vec_src_uses_to_dest);
+   NIR_PASS(progress, nir, nir_move_vec_src_uses_to_dest, false);
    NIR_PASS(progress, nir, nir_lower_vec_to_regs, NULL, NULL);
 
    NIR_PASS(progress, nir, nir_opt_dce);

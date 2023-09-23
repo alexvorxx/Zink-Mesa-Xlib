@@ -1,7 +1,11 @@
-
-#include "nvk_private.h"
-#include "nvk_device.h"
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_pipeline.h"
+
+#include "nvk_device.h"
+#include "nvk_entrypoints.h"
 
 #include "vk_pipeline_cache.h"
 

@@ -393,6 +393,9 @@ struct agx_context {
    struct agx_compiled_shader *vs, *fs;
    uint32_t dirty;
 
+   /* Acts as a context-level shader key */
+   bool support_lod_bias;
+
    /* Set of batches. When full, the LRU entry (the batch with the smallest
     * seqnum) is flushed to free a slot.
     */
@@ -444,6 +447,9 @@ struct agx_context {
     * BO, or 0 if no writer.
     */
    struct util_dynarray writer;
+
+   /* Bound CL global buffers */
+   struct util_dynarray global_buffers;
 
    struct agx_meta_cache meta;
 

@@ -9,3 +9,6 @@ spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_
 glx@glx-visuals-depth
 glx@glx-visuals-depth -pixmap
 glx@glx-visuals-stencil -pixmap
+
+# segfault in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/48721664
+glx@glx-visuals-stencil

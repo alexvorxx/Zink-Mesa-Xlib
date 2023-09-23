@@ -30,7 +30,6 @@ rogue_compiler = executable(
     inc_imagination,
     inc_include,
     inc_src,
-    inc_compiler,
     inc_rogue,
   ],
   build_by_default : with_imagination_tools,

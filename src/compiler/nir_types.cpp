@@ -28,10 +28,16 @@
 #include "nir_types.h"
 #include "nir_gl_types.h"
 
+extern "C" const char glsl_type_builtin_names[];
+
 const char *
 glsl_get_type_name(const glsl_type *type)
 {
-   return type->name;
+   if (type->has_builtin_name) {
+      return &glsl_type_builtin_names[type->name_id];
+   } else {
+      return (const char *) type->name_id;
+   }
 }
 
 int
@@ -98,18 +104,6 @@ unsigned
 glsl_get_explicit_stride(const struct glsl_type *type)
 {
    return type->explicit_stride;
-}
-
-const glsl_type *
-glsl_get_function_return_type(const glsl_type *type)
-{
-   return type->fields.parameters[0].type;
-}
-
-const glsl_function_param *
-glsl_get_function_param(const glsl_type *type, unsigned index)
-{
-   return &type->fields.parameters[index + 1];
 }
 
 const glsl_type *
@@ -715,13 +709,6 @@ glsl_image_type(enum glsl_sampler_dim dim, bool is_array,
 }
 
 const glsl_type *
-glsl_function_type(const glsl_type *return_type,
-                   const glsl_function_param *params, unsigned num_params)
-{
-   return glsl_type::get_function_instance(return_type, params, num_params);
-}
-
-const glsl_type *
 glsl_transposed_type(const struct glsl_type *type)
 {
    assert(glsl_type_is_matrix(type));
@@ -872,7 +859,6 @@ glsl_get_natural_size_align_bytes(const struct glsl_type *type,
    case GLSL_TYPE_SUBROUTINE:
    case GLSL_TYPE_VOID:
    case GLSL_TYPE_ERROR:
-   case GLSL_TYPE_FUNCTION:
       unreachable("type does not have a natural size");
    }
 }
@@ -926,7 +912,6 @@ glsl_get_vec4_size_align_bytes(const struct glsl_type *type,
    case GLSL_TYPE_SUBROUTINE:
    case GLSL_TYPE_VOID:
    case GLSL_TYPE_ERROR:
-   case GLSL_TYPE_FUNCTION:
       unreachable("type does not make sense for glsl_get_vec4_size_align_bytes()");
    }
 }

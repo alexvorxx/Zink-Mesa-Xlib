@@ -734,6 +734,7 @@ static const nir_shader_compiler_options v3d_nir_options = {
         .lower_rotate = true,
         .lower_to_scalar = true,
         .lower_int64_options = nir_lower_imul_2x32_64,
+        .lower_fquantize2f16 = true,
         .has_fsub = true,
         .has_isub = true,
         .divergence_analysis_options =

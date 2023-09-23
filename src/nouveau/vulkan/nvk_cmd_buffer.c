@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_cmd_buffer.h"
 
 #include "nvk_buffer.h"
@@ -6,9 +10,12 @@
 #include "nvk_descriptor_set_layout.h"
 #include "nvk_device.h"
 #include "nvk_device_memory.h"
+#include "nvk_entrypoints.h"
 #include "nvk_mme.h"
 #include "nvk_physical_device.h"
 #include "nvk_pipeline.h"
+
+#include "vk_pipeline_layout.h"
 
 #include "nouveau_context.h"
 
@@ -356,8 +363,12 @@ nvk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
 
    /* TODO: We don't need to WFI all the time, do we? */
-   struct nv_push *p = nvk_cmd_buffer_push(cmd, 2);
+   struct nv_push *p = nvk_cmd_buffer_push(cmd, 4);
    P_IMMD(p, NV9097, WAIT_FOR_IDLE, 0);
+
+   P_IMMD(p, NV9097, INVALIDATE_TEXTURE_DATA_CACHE, {
+      .lines = LINES_ALL,
+   });
 }
 
 VKAPI_ATTR void VKAPI_CALL

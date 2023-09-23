@@ -557,6 +557,12 @@ isa_decode_field(struct decode_scope *scope, const char *field_name)
 	return bitmask_to_uint64_t(val);
 }
 
+uint32_t
+isa_get_gpu_id(struct decode_scope *scope)
+{
+	return scope->state->options->gpu_id;
+}
+
 static void
 display_field(struct decode_scope *scope, const char *field_name)
 {

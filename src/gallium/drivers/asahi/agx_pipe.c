@@ -33,6 +33,7 @@
 #include "util/u_memory.h"
 #include "util/u_screen.h"
 #include "util/u_upload_mgr.h"
+#include "util/xmlconfig.h"
 #include "agx_device.h"
 #include "agx_disk_cache.h"
 #include "agx_fence.h"
@@ -180,6 +181,13 @@ agx_resource_setup(struct agx_device *dev, struct agx_resource *nresource)
       .sample_count_sa = MAX2(templ->nr_samples, 1),
       .levels = templ->last_level + 1,
       .writeable_image = templ->bind & PIPE_BIND_SHADER_IMAGE,
+
+      /* Ostensibly this should be based on the bind, but Gallium bind flags are
+       * notoriously unreliable. The only cost of setting this excessively is a
+       * bit of extra memory use for layered textures, which isn't worth trying
+       * to optimize.
+       */
+      .renderable = true,
    };
 }
 
@@ -371,17 +379,20 @@ agx_linear_allowed(const struct agx_resource *pres)
       return false;
 
    switch (pres->base.target) {
-   /* 1D is always linear, even with image atomics */
+   /* Buffers are always linear, even with image atomics */
    case PIPE_BUFFER:
-   case PIPE_TEXTURE_1D:
-   case PIPE_TEXTURE_1D_ARRAY:
 
    /* Linear textures require specifying their strides explicitly, which only
     * works for 2D textures. Rectangle textures are a special case of 2D.
     *
+    * 1D textures only exist in GLES and are lowered to 2D to bypass hardware
+    * limitations.
+    *
     * However, we don't want to support this case in the image atomic
     * implementation, so linear shader images are specially forbidden.
     */
+   case PIPE_TEXTURE_1D:
+   case PIPE_TEXTURE_1D_ARRAY:
    case PIPE_TEXTURE_2D:
    case PIPE_TEXTURE_2D_ARRAY:
    case PIPE_TEXTURE_RECT:
@@ -499,8 +510,10 @@ agx_select_best_modifier(const struct agx_resource *pres)
          return DRM_FORMAT_MOD_APPLE_TWIDDLED;
    }
 
-   assert(agx_linear_allowed(pres));
-   return DRM_FORMAT_MOD_LINEAR;
+   if (agx_linear_allowed(pres))
+      return DRM_FORMAT_MOD_LINEAR;
+   else
+      return DRM_FORMAT_MOD_INVALID;
 }
 
 static struct pipe_resource *
@@ -521,16 +534,14 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
    if (modifiers) {
       nresource->modifier =
          agx_select_modifier_from_list(nresource, modifiers, count);
-
-      /* There may not be a matching modifier, bail if so */
-      if (nresource->modifier == DRM_FORMAT_MOD_INVALID) {
-         free(nresource);
-         return NULL;
-      }
    } else {
       nresource->modifier = agx_select_best_modifier(nresource);
+   }
 
-      assert(nresource->modifier != DRM_FORMAT_MOD_INVALID);
+   /* There may not be a matching modifier, bail if so */
+   if (nresource->modifier == DRM_FORMAT_MOD_INVALID) {
+      free(nresource);
+      return NULL;
    }
 
    /* If there's only 1 layer and there's no compression, there's no harm in
@@ -833,6 +844,7 @@ agx_alloc_staging(struct pipe_screen *screen, struct agx_resource *rsc,
 {
    struct pipe_resource tmpl = rsc->base;
 
+   tmpl.usage = PIPE_USAGE_STAGING;
    tmpl.width0 = box->width;
    tmpl.height0 = box->height;
    tmpl.depth0 = 1;
@@ -1454,6 +1466,7 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    pctx->priv = priv;
 
    util_dynarray_init(&ctx->writer, ctx);
+   util_dynarray_init(&ctx->global_buffers, ctx);
 
    pctx->stream_uploader = u_upload_create_default(pctx);
    if (!pctx->stream_uploader) {
@@ -1477,6 +1490,7 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    pctx->transfer_flush_region = u_transfer_helper_transfer_flush_region;
 
    pctx->buffer_subdata = u_default_buffer_subdata;
+   pctx->clear_buffer = u_default_clear_buffer;
    pctx->texture_subdata = u_default_texture_subdata;
    pctx->set_debug_callback = u_default_set_debug_callback;
    pctx->get_sample_position = u_default_get_sample_position;
@@ -1512,6 +1526,8 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
    /* By default all samples are enabled */
    ctx->sample_mask = ~0;
+
+   ctx->support_lod_bias = !(flags & PIPE_CONTEXT_NO_LOD_BIAS);
 
    return pctx;
 }
@@ -1618,6 +1634,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
       /* TODO: MSRTT */
       return 0;
+
+   case PIPE_CAP_CUBE_MAP_ARRAY:
+      return is_deqp;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
       return 0;
@@ -1913,7 +1932,14 @@ agx_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
       RET((uint64_t[]){256});
 
    case PIPE_COMPUTE_CAP_MAX_GLOBAL_SIZE:
-      RET((uint64_t[]){1024 * 1024 * 512 /* Maybe get memory */});
+   case PIPE_COMPUTE_CAP_MAX_MEM_ALLOC_SIZE: {
+      uint64_t system_memory;
+
+      if (!os_get_total_physical_memory(&system_memory))
+         return 0;
+
+      RET((uint64_t[]){system_memory});
+   }
 
    case PIPE_COMPUTE_CAP_MAX_LOCAL_SIZE:
       RET((uint64_t[]){32768});
@@ -1921,9 +1947,6 @@ agx_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
    case PIPE_COMPUTE_CAP_MAX_PRIVATE_SIZE:
    case PIPE_COMPUTE_CAP_MAX_INPUT_SIZE:
       RET((uint64_t[]){4096});
-
-   case PIPE_COMPUTE_CAP_MAX_MEM_ALLOC_SIZE:
-      RET((uint64_t[]){1024 * 1024 * 512 /* Maybe get memory */});
 
    case PIPE_COMPUTE_CAP_MAX_CLOCK_FREQUENCY:
       RET((uint32_t[]){800 /* MHz -- TODO */});
@@ -1974,7 +1997,8 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
    if (format == PIPE_FORMAT_NONE)
       return true;
 
-   if (usage & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW)) {
+   if (usage & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW |
+                PIPE_BIND_SHADER_IMAGE)) {
       enum pipe_format tex_format = format;
 
       /* Mimic the fixup done in create_sampler_view and u_transfer_helper so we
@@ -2121,7 +2145,8 @@ agx_screen_get_fd(struct pipe_screen *pscreen)
 }
 
 struct pipe_screen *
-agx_screen_create(int fd, struct renderonly *ro)
+agx_screen_create(int fd, struct renderonly *ro,
+                  const struct pipe_screen_config *config)
 {
    struct agx_screen *agx_screen;
    struct pipe_screen *screen;
@@ -2135,6 +2160,14 @@ agx_screen_create(int fd, struct renderonly *ro)
    /* Set debug before opening */
    agx_screen->dev.debug =
       debug_get_flags_option("ASAHI_MESA_DEBUG", agx_debug_options, 0);
+
+   /* parse driconf configuration now for device specific overrides */
+   driParseConfigFiles(config->options, config->options_info, 0, "asahi", NULL,
+                       NULL, NULL, 0, NULL, 0);
+
+   /* Forward no16 flag from driconf */
+   if (driQueryOptionb(config->options, "no_fp16"))
+      agx_screen->dev.debug |= AGX_DBG_NO16;
 
    agx_screen->dev.fd = fd;
    agx_screen->dev.ro = ro;

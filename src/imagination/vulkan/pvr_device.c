@@ -33,11 +33,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
 #include <xf86drm.h>
 
+#include "git_sha1.h"
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
 #include "pvr_border.h"
@@ -46,6 +48,7 @@
 #include "pvr_csb_enum_helpers.h"
 #include "pvr_debug.h"
 #include "pvr_device_info.h"
+#include "pvr_dump_info.h"
 #include "pvr_hardcode.h"
 #include "pvr_job_render.h"
 #include "pvr_limits.h"
@@ -55,6 +58,7 @@
 #include "pvr_tex_state.h"
 #include "pvr_types.h"
 #include "pvr_uscgen.h"
+#include "pvr_util.h"
 #include "pvr_winsys.h"
 #include "rogue/rogue.h"
 #include "util/build_id.h"
@@ -152,18 +156,24 @@ static const struct vk_instance_extension_table pvr_instance_extensions = {
 static void pvr_physical_device_get_supported_extensions(
    struct vk_device_extension_table *extensions)
 {
-   /* clang-format off */
    *extensions = (struct vk_device_extension_table){
       .KHR_copy_commands2 = true,
+      /* TODO: enable this extension when the conformance tests get
+       * updated to version 1.3.6.0, the current version does not
+       * include the imagination driver ID, which will make a dEQP
+       * test fail
+       */
+      .KHR_driver_properties = false,
       .KHR_external_memory = true,
       .KHR_external_memory_fd = true,
+      .KHR_format_feature_flags2 = true,
       .KHR_get_memory_requirements2 = true,
       .KHR_swapchain = PVR_USE_WSI_PLATFORM,
       .KHR_timeline_semaphore = true,
       .EXT_external_memory_dma_buf = true,
       .EXT_private_data = true,
+      .EXT_tooling_info = true,
    };
-   /* clang-format on */
 }
 
 static void pvr_physical_device_get_supported_features(
@@ -228,10 +238,10 @@ static void pvr_physical_device_get_supported_features(
       .variableMultisampleRate = false,
       .inheritedQueries = false,
 
-      /* VK_KHR_timeline_semaphore (promoted to Vulkan 1.2) */
+      /* Vulkan 1.2 / VK_KHR_timeline_semaphore */
       .timelineSemaphore = true,
 
-      /* VK_EXT_private_data (promoted to Vulkan 1.3) */
+      /* Vulkan 1.3 / VK_EXT_private_data */
       .privateData = true,
    };
 }
@@ -543,6 +553,45 @@ pvr_drm_device_get_config(drmDevice *const drm_dev)
    return NULL;
 }
 
+static void
+pvr_physical_device_dump_info(const struct pvr_physical_device *pdevice,
+                              char *const *comp_display,
+                              char *const *comp_render)
+{
+   drmVersionPtr version_display, version_render;
+   struct pvr_device_dump_info info;
+
+   version_display = drmGetVersion(pdevice->ws->display_fd);
+   if (!version_display)
+      return;
+
+   version_render = drmGetVersion(pdevice->ws->render_fd);
+   if (!version_render) {
+      drmFreeVersion(version_display);
+      return;
+   }
+
+   info.device_info = &pdevice->dev_info;
+   info.device_runtime_info = &pdevice->dev_runtime_info;
+   info.drm_display.patchlevel = version_display->version_patchlevel;
+   info.drm_display.major = version_display->version_major;
+   info.drm_display.minor = version_display->version_minor;
+   info.drm_display.name = version_display->name;
+   info.drm_display.date = version_display->date;
+   info.drm_display.comp = comp_display;
+   info.drm_render.patchlevel = version_render->version_patchlevel;
+   info.drm_render.major = version_render->version_major;
+   info.drm_render.minor = version_render->version_minor;
+   info.drm_render.name = version_render->name;
+   info.drm_render.date = version_render->date;
+   info.drm_render.comp = comp_render;
+
+   pvr_dump_physical_device_info(&info);
+
+   drmFreeVersion(version_display);
+   drmFreeVersion(version_render);
+}
+
 static VkResult
 pvr_physical_device_enumerate(struct vk_instance *const vk_instance)
 {
@@ -646,6 +695,13 @@ pvr_physical_device_enumerate(struct vk_instance *const vk_instance)
          result = VK_SUCCESS;
 
       goto err_free_pdevice;
+   }
+
+   if (PVR_IS_DEBUG_SET(INFO)) {
+      pvr_physical_device_dump_info(
+         pdevice,
+         drm_display_device->deviceinfo.platform->compatible,
+         drm_render_device->deviceinfo.platform->compatible);
    }
 
    list_add(&pdevice->vk.link, &vk_instance->physical_devices.list);
@@ -870,6 +926,23 @@ pvr_get_physical_device_properties_1_2(struct pvr_physical_device *pdevice,
                                        VkPhysicalDeviceVulkan12Properties *p)
 {
    assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES);
+
+   /* VK_KHR_driver_properties */
+   p->driverID = VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA;
+   memset(p->driverName, 0, sizeof(p->driverName));
+   snprintf(p->driverName,
+            VK_MAX_DRIVER_NAME_SIZE,
+            "Imagination open-source Mesa driver");
+   memset(p->driverInfo, 0, sizeof(p->driverInfo));
+   snprintf(p->driverInfo,
+            VK_MAX_DRIVER_INFO_SIZE,
+            ("Mesa " PACKAGE_VERSION MESA_GIT_SHA1));
+   p->conformanceVersion = (VkConformanceVersion){
+      .major = 1,
+      .minor = 3,
+      .subminor = 4,
+      .patch = 1,
+   };
 
    /* VK_KHR_timeline_semaphore */
    p->maxTimelineSemaphoreValueDifference = UINT64_MAX;

@@ -172,7 +172,7 @@ opt_shrink_vector(nir_builder *b, nir_alu_instr *instr)
       /* Try reuse a component with the same value */
       unsigned j;
       for (j = 0; j < num_components; j++) {
-         if (scalar.def == srcs[j].def && scalar.comp == srcs[j].comp) {
+         if (nir_scalar_equal(scalar, srcs[j])) {
             reswizzle[i] = j;
             break;
          }

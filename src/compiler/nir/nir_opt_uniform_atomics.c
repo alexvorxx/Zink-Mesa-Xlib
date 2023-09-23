@@ -119,18 +119,19 @@ get_dim(nir_scalar scalar)
    if (!scalar.def->divergent)
       return 0;
 
-   if (scalar.def->parent_instr->type == nir_instr_type_intrinsic) {
-      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(scalar.def->parent_instr);
-      if (intrin->intrinsic == nir_intrinsic_load_subgroup_invocation)
+   if (nir_scalar_is_intrinsic(scalar)) {
+      switch (nir_scalar_intrinsic_op(scalar)) {
+      case nir_intrinsic_load_subgroup_invocation:
          return 0x8;
-      else if (intrin->intrinsic == nir_intrinsic_load_local_invocation_index)
+      case nir_intrinsic_load_global_invocation_index:
+      case nir_intrinsic_load_local_invocation_index:
          return 0x7;
-      else if (intrin->intrinsic == nir_intrinsic_load_local_invocation_id)
+      case nir_intrinsic_load_global_invocation_id:
+      case nir_intrinsic_load_local_invocation_id:
          return 1 << scalar.comp;
-      else if (intrin->intrinsic == nir_intrinsic_load_global_invocation_index)
-         return 0x7;
-      else if (intrin->intrinsic == nir_intrinsic_load_global_invocation_id)
-         return 1 << scalar.comp;
+      default:
+         break;
+      }
    } else if (nir_scalar_is_alu(scalar)) {
       if (nir_scalar_alu_op(scalar) == nir_op_iadd ||
           nir_scalar_alu_op(scalar) == nir_op_imul) {

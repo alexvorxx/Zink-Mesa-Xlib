@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 #include <gtest/gtest.h>
 #include <vector>
 

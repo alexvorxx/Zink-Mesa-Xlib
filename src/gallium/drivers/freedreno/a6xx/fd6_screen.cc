@@ -120,6 +120,11 @@ fd6_screen_is_format_supported(struct pipe_screen *pscreen,
       retval |= PIPE_BIND_INDEX_BUFFER;
    }
 
+   if ((usage & PIPE_BIND_BLENDABLE) && has_color &&
+       !util_format_is_pure_integer(format)) {
+      retval |= PIPE_BIND_BLENDABLE;
+   }
+
    if (retval != usage) {
       DBG("not supported: format=%s, target=%d, sample_count=%d, "
           "usage=%x, retval=%x",

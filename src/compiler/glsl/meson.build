@@ -256,7 +256,7 @@ libglsl = static_library(
   cpp_args : [cpp_msvc_compat_args],
   gnu_symbol_visibility : 'hidden',
   link_with : libglcpp,
-  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_compiler],
+  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
   dependencies : idep_nir,
   build_by_default : false,
 )
@@ -269,7 +269,7 @@ libglsl_standalone = static_library(
   gnu_symbol_visibility : 'hidden',
   include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
   link_with : [libglsl, libglsl_util, libglcpp_standalone],
-  dependencies : [idep_mesautil, idep_getopt],
+  dependencies : [idep_mesautil, idep_getopt, idep_compiler],
   build_by_default : false,
 )
 
@@ -294,7 +294,7 @@ glsl_test = executable(
   cpp_args : [cpp_msvc_compat_args],
   gnu_symbol_visibility : 'hidden',
   include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
-  dependencies : [dep_clock, dep_thread, idep_getopt, idep_mesautil],
+  dependencies : [dep_clock, dep_thread, idep_getopt, idep_mesautil, idep_compiler],
   link_with : [libglsl, libglsl_standalone, libglsl_util],
   build_by_default : with_tools.contains('glsl'),
   install : with_tools.contains('glsl'),

@@ -7,7 +7,7 @@
  **************************************************************************/
 
 #include "radeon_vcn_enc.h"
-#include "radeon_vcn_enc_av1_default_cdf.h"
+#include "ac_vcn_enc_av1_default_cdf.h"
 
 #include "pipe/p_video_codec.h"
 #include "radeon_video.h"
@@ -173,6 +173,8 @@ static void radeon_vcn_enc_h264_get_vui_param(struct radeon_encoder *enc,
       pic->seq.vui_flags.video_signal_type_present_flag;
    enc->enc_pic.vui_info.flags.colour_description_present_flag =
       pic->seq.vui_flags.colour_description_present_flag;
+   enc->enc_pic.vui_info.flags.chroma_loc_info_present_flag =
+      pic->seq.vui_flags.chroma_loc_info_present_flag;
    enc->enc_pic.vui_info.aspect_ratio_idc = pic->seq.aspect_ratio_idc;
    enc->enc_pic.vui_info.sar_width = pic->seq.sar_width;
    enc->enc_pic.vui_info.sar_height = pic->seq.sar_height;
@@ -183,6 +185,10 @@ static void radeon_vcn_enc_h264_get_vui_param(struct radeon_encoder *enc,
    enc->enc_pic.vui_info.colour_primaries = pic->seq.colour_primaries;
    enc->enc_pic.vui_info.transfer_characteristics = pic->seq.transfer_characteristics;
    enc->enc_pic.vui_info.matrix_coefficients = pic->seq.matrix_coefficients;
+   enc->enc_pic.vui_info.chroma_sample_loc_type_top_field =
+      pic->seq.chroma_sample_loc_type_top_field;
+   enc->enc_pic.vui_info.chroma_sample_loc_type_bottom_field =
+      pic->seq.chroma_sample_loc_type_bottom_field;
 }
 
 /* only checking the first slice to get num of mbs in slice to
@@ -401,6 +407,8 @@ static void radeon_vcn_enc_hevc_get_vui_param(struct radeon_encoder *enc,
       pic->seq.vui_flags.video_signal_type_present_flag;
    enc->enc_pic.vui_info.flags.colour_description_present_flag =
       pic->seq.vui_flags.colour_description_present_flag;
+   enc->enc_pic.vui_info.flags.chroma_loc_info_present_flag =
+      pic->seq.vui_flags.chroma_loc_info_present_flag;
    enc->enc_pic.vui_info.aspect_ratio_idc = pic->seq.aspect_ratio_idc;
    enc->enc_pic.vui_info.sar_width = pic->seq.sar_width;
    enc->enc_pic.vui_info.sar_height = pic->seq.sar_height;
@@ -411,6 +419,10 @@ static void radeon_vcn_enc_hevc_get_vui_param(struct radeon_encoder *enc,
    enc->enc_pic.vui_info.colour_primaries = pic->seq.colour_primaries;
    enc->enc_pic.vui_info.transfer_characteristics = pic->seq.transfer_characteristics;
    enc->enc_pic.vui_info.matrix_coefficients = pic->seq.matrix_coefficients;
+   enc->enc_pic.vui_info.chroma_sample_loc_type_top_field =
+      pic->seq.chroma_sample_loc_type_top_field;
+   enc->enc_pic.vui_info.chroma_sample_loc_type_bottom_field =
+      pic->seq.chroma_sample_loc_type_bottom_field;
 }
 
 /* only checking the first slice to get num of ctbs in slice to
@@ -447,7 +459,6 @@ static void radeon_vcn_enc_hevc_get_param(struct radeon_encoder *enc,
    enc->enc_pic.picture_type = pic->picture_type;
    enc->enc_pic.frame_num = pic->frame_num;
    radeon_vcn_enc_quality_modes(enc, &pic->quality_modes);
-   enc->enc_pic.pic_order_cnt = pic->pic_order_cnt;
    enc->enc_pic.pic_order_cnt_type = pic->pic_order_cnt_type;
    enc->enc_pic.ref_idx_l0 = pic->ref_idx_l0_list[0];
    enc->enc_pic.ref_idx_l1 = pic->ref_idx_l1_list[0];
@@ -457,12 +468,11 @@ static void radeon_vcn_enc_hevc_get_param(struct radeon_encoder *enc,
    enc->enc_pic.general_tier_flag = pic->seq.general_tier_flag;
    enc->enc_pic.general_profile_idc = pic->seq.general_profile_idc;
    enc->enc_pic.general_level_idc = pic->seq.general_level_idc;
-   enc->enc_pic.max_poc = MAX2(16, util_next_power_of_two(pic->seq.intra_period));
-   enc->enc_pic.log2_max_poc = 0;
+   /* use fixed value for max_poc until new feature added */
+   enc->enc_pic.max_poc = 16;
+   enc->enc_pic.log2_max_poc = 4;
    enc->enc_pic.num_temporal_layers = 1;
-   for (int i = enc->enc_pic.max_poc; i != 0; enc->enc_pic.log2_max_poc++)
-      i = (i >> 1);
-
+   enc->enc_pic.pic_order_cnt = pic->pic_order_cnt % enc->enc_pic.max_poc;
    enc->enc_pic.chroma_format_idc = pic->seq.chroma_format_idc;
    enc->enc_pic.pic_width_in_luma_samples = pic->seq.pic_width_in_luma_samples;
    enc->enc_pic.pic_height_in_luma_samples = pic->seq.pic_height_in_luma_samples;
@@ -981,6 +991,14 @@ static void radeon_enc_get_feedback(struct pipe_video_codec *encoder, void *feed
    FREE(fb);
 }
 
+static void radeon_enc_destroy_fence(struct pipe_video_codec *encoder,
+                                     struct pipe_fence_handle *fence)
+{
+   struct radeon_encoder *enc = (struct radeon_encoder *)encoder;
+
+   enc->ws->fence_reference(&fence, NULL);
+}
+
 struct pipe_video_codec *radeon_create_encoder(struct pipe_context *context,
                                                const struct pipe_video_codec *templ,
                                                struct radeon_winsys *ws,
@@ -1010,6 +1028,7 @@ struct pipe_video_codec *radeon_create_encoder(struct pipe_context *context,
    enc->base.end_frame = radeon_enc_end_frame;
    enc->base.flush = radeon_enc_flush;
    enc->base.get_feedback = radeon_enc_get_feedback;
+   enc->base.destroy_fence = radeon_enc_destroy_fence;
    enc->get_buffer = get_buffer;
    enc->bits_in_shifter = 0;
    enc->screen = context->screen;

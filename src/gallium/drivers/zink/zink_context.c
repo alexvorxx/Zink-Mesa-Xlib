@@ -2599,9 +2599,9 @@ zink_update_rendering_info(struct zink_context *ctx)
 {
    for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
       struct zink_surface *surf = zink_csurface(ctx->fb_state.cbufs[i]);
-      ctx->gfx_pipeline_state.rendering_formats[i] = surf ? surf->info.format[0] : VK_FORMAT_R8G8B8A8_UNORM;
+      ctx->gfx_pipeline_state.rendering_formats[i] = surf ? surf->info.format[0] : VK_FORMAT_UNDEFINED;
    }
-      ctx->gfx_pipeline_state.rendering_info.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+   ctx->gfx_pipeline_state.rendering_info.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
    ctx->gfx_pipeline_state.rendering_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
    if (ctx->fb_state.zsbuf && zink_is_zsbuf_used(ctx)) {
       struct zink_surface *surf = zink_csurface(ctx->fb_state.zsbuf);
@@ -2614,6 +2614,12 @@ zink_update_rendering_info(struct zink_context *ctx)
          ctx->gfx_pipeline_state.rendering_info.stencilAttachmentFormat = surf->info.format[0];
    }
    return find_rp_state(ctx);
+}
+
+static unsigned
+calc_max_dummy_fbo_size(struct zink_context *ctx)
+{
+   return MIN2(4096, zink_screen(ctx->base.screen)->info.props.limits.maxImageDimension2D);
 }
 
 static unsigned
@@ -2635,8 +2641,10 @@ begin_rendering(struct zink_context *ctx)
       /* init imageviews, base loadOp, formats */
       for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
          struct zink_surface *surf = zink_csurface(ctx->fb_state.cbufs[i]);
+         if (!surf)
+            continue;
 
-         if (!surf || !zink_resource(surf->base.texture)->valid)
+         if (!zink_resource(surf->base.texture)->valid)
             ctx->dynamic_fb.attachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
          else
             ctx->dynamic_fb.attachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -2646,15 +2654,6 @@ begin_rendering(struct zink_context *ctx)
             else
                ctx->dynamic_fb.attachments[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
          }
-         /* use dummy fb size of 1024 if no surf exists */
-         unsigned width = surf ? surf->base.texture->width0 : 1024;
-         unsigned height = surf ? surf->base.texture->height0 : 1024;
-         unsigned prev_width = ctx->dynamic_fb.info.renderArea.extent.width;
-         unsigned prev_height = ctx->dynamic_fb.info.renderArea.extent.height;
-         ctx->dynamic_fb.info.renderArea.extent.width = MIN2(ctx->dynamic_fb.info.renderArea.extent.width, width);
-         ctx->dynamic_fb.info.renderArea.extent.height = MIN2(ctx->dynamic_fb.info.renderArea.extent.height, height);
-         changed_size |= ctx->dynamic_fb.info.renderArea.extent.width != prev_width;
-         changed_size |= ctx->dynamic_fb.info.renderArea.extent.height != prev_height;
       }
 
       /* unset depth and stencil info: reset below */
@@ -2763,11 +2762,14 @@ begin_rendering(struct zink_context *ctx)
 
    zink_batch_no_rp(ctx);
    for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
+      VkImageView iv = VK_NULL_HANDLE;
       struct zink_surface *surf = zink_csurface(ctx->fb_state.cbufs[i]);
-      VkImageView iv = zink_prep_fb_attachment(ctx, surf, i);
-      if (!iv)
-         /* dead swapchain */
-         return 0;
+      if (surf) {
+         iv = zink_prep_fb_attachment(ctx, surf, i);
+         if (!iv)
+            /* dead swapchain */
+            return 0;
+      }
       ctx->dynamic_fb.attachments[i].imageView = iv;
    }
    if (has_swapchain) {
@@ -3152,10 +3154,12 @@ update_resource_refs_for_stage(struct zink_context *ctx, gl_shader_stage stage)
                   continue;
             }
             zink_batch_resource_usage_set(batch, res, is_write, is_buffer);
-            if (is_write || !res->obj->is_buffer)
-               res->obj->unordered_read = res->obj->unordered_write = false;
-            else
-               res->obj->unordered_read = false;
+            if (!ctx->unordered_blitting) {
+               if (is_write || !res->obj->is_buffer)
+                  res->obj->unordered_read = res->obj->unordered_write = false;
+               else
+                  res->obj->unordered_read = false;
+            }
          }
       }
    }
@@ -3178,7 +3182,8 @@ zink_update_descriptor_refs(struct zink_context *ctx, bool compute)
          struct zink_resource *res = zink_resource(ctx->vertex_buffers[i].buffer.resource);
          if (res) {
             zink_batch_resource_usage_set(batch, res, false, true);
-            res->obj->unordered_read = false;
+            if (!ctx->unordered_blitting)
+               res->obj->unordered_read = false;
          }
       }
       if (ctx->curr_program)
@@ -3190,10 +3195,12 @@ zink_update_descriptor_refs(struct zink_context *ctx, bool compute)
          util_dynarray_foreach(&ctx->di.bindless[i].resident, struct zink_bindless_descriptor*, bd) {
             struct zink_resource *res = zink_descriptor_surface_resource(&(*bd)->ds);
             zink_batch_resource_usage_set(&ctx->batch, res, (*bd)->access & PIPE_IMAGE_ACCESS_WRITE, res->obj->is_buffer);
-            if ((*bd)->access & PIPE_IMAGE_ACCESS_WRITE || !res->obj->is_buffer)
-               res->obj->unordered_read = res->obj->unordered_write = false;
-            else
-               res->obj->unordered_read = false;
+            if (!ctx->unordered_blitting) {
+               if ((*bd)->access & PIPE_IMAGE_ACCESS_WRITE || !res->obj->is_buffer)
+                  res->obj->unordered_read = res->obj->unordered_write = false;
+               else
+                  res->obj->unordered_read = false;
+            }
          }
       }
    }
@@ -5054,12 +5061,13 @@ struct pipe_surface *
 zink_get_dummy_pipe_surface(struct zink_context *ctx, int samples_index)
 {
    if (!ctx->dummy_surface[samples_index]) {
-      ctx->dummy_surface[samples_index] = zink_surface_create_null(ctx, PIPE_TEXTURE_2D, 1024, 1024, BITFIELD_BIT(samples_index));
+      unsigned size = calc_max_dummy_fbo_size(ctx);
+      ctx->dummy_surface[samples_index] = zink_surface_create_null(ctx, PIPE_TEXTURE_2D, size, size, BITFIELD_BIT(samples_index));
       /* This is possibly used with imageLoad which according to GL spec must return 0 */
       if (!samples_index) {
          union pipe_color_union color = {0};
          struct pipe_box box;
-         u_box_2d(0, 0, 1024, 1024, &box);
+         u_box_2d(0, 0, size, size, &box);
          ctx->base.clear_texture(&ctx->base, ctx->dummy_surface[samples_index]->texture, 0, &box, &color);
       }
    }

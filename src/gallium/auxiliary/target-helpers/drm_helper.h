@@ -348,10 +348,14 @@ pipe_asahi_create_screen(int fd, const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
-   screen = asahi_drm_screen_create(fd);
+   screen = asahi_drm_screen_create(fd, config);
    return screen ? debug_screen_wrap(screen) : NULL;
 }
-DRM_DRIVER_DESCRIPTOR(asahi, NULL, 0)
+
+const driOptionDescription asahi_driconf[] = {
+      #include "asahi/driinfo_asahi.h"
+};
+DRM_DRIVER_DESCRIPTOR(asahi, asahi_driconf, ARRAY_SIZE(asahi_driconf))
 
 #else
 DRM_DRIVER_DESCRIPTOR_STUB(asahi)
@@ -443,6 +447,9 @@ pipe_kmsro_create_screen(int fd, const struct pipe_screen_config *config)
 const driOptionDescription kmsro_driconf[] = {
 #if defined(GALLIUM_VC4) || defined(GALLIUM_V3D)
       #include "v3d/driinfo_v3d.h"
+#endif
+#ifdef GALLIUM_ASAHI
+      #include "asahi/driinfo_asahi.h"
 #endif
 #ifdef GALLIUM_FREEDRENO
       #include "freedreno/driinfo_freedreno.h"

@@ -77,7 +77,7 @@ typedef struct YYLTYPE {
 # define YYLTYPE_IS_TRIVIAL 1
 
 extern void _mesa_glsl_error(YYLTYPE *locp, _mesa_glsl_parse_state *state,
-                             const char *fmt, ...);
+                             const char *fmt, ...) PRINTFLIKE(3, 4);
 
 
 struct _mesa_glsl_parse_state {

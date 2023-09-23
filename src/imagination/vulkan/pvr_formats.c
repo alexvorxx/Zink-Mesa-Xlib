@@ -461,12 +461,11 @@ void pvr_get_hw_clear_color(
 #undef f32_to_snorm16
 #undef f32_to_f16
 
-/* TODO: This currently only sets up Vulkan 1.0 flags. */
 static VkFormatFeatureFlags2
 pvr_get_image_format_features2(const struct pvr_format *pvr_format,
                                VkImageTiling vk_tiling)
 {
-   VkFormatFeatureFlags flags = 0;
+   VkFormatFeatureFlags2 flags = 0;
    VkFormat vk_format;
 
    if (!pvr_format)
@@ -509,7 +508,8 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
       }
    } else if (vk_format_is_depth_or_stencil(vk_format)) {
       flags |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT |
-               VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
+               VK_FORMAT_FEATURE_2_BLIT_DST_BIT |
+               VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;
    }
 
    if (vk_tiling == VK_IMAGE_TILING_OPTIMAL) {
@@ -566,6 +566,11 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
       }
    }
 
+   if (flags & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT) {
+      flags |= VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+               VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+   }
+
    return flags;
 }
 
@@ -576,7 +581,6 @@ const uint8_t *pvr_get_format_swizzle(VkFormat vk_format)
    return vf->swizzle;
 }
 
-/* TODO: This currently only sets up Vulkan 1.0 flags. */
 static VkFormatFeatureFlags2
 pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
 {
@@ -650,6 +654,11 @@ pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
       break;
    }
 
+   if (flags & VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT) {
+      flags |= VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+               VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+   }
+
    return flags;
 }
 
@@ -673,7 +682,18 @@ void pvr_GetPhysicalDeviceFormatProperties2(
    };
 
    vk_foreach_struct (ext, pFormatProperties->pNext) {
-      pvr_debug_ignored_stype(ext->sType);
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3: {
+         VkFormatProperties3 *pFormatProperties3 = (VkFormatProperties3 *)ext;
+         pFormatProperties3->linearTilingFeatures = linear2;
+         pFormatProperties3->optimalTilingFeatures = optimal2;
+         pFormatProperties3->bufferFeatures = buffer2;
+         break;
+      }
+      default:
+         pvr_debug_ignored_stype(ext->sType);
+         break;
+      }
    }
 }
 
@@ -701,6 +721,11 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
 
    tiling_features2 = pvr_get_image_format_features2(pvr_format, info->tiling);
    if (tiling_features2 == 0) {
+      result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
+      goto err_unsupported_format;
+   }
+
+   if (info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) {
       result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
       goto err_unsupported_format;
    }

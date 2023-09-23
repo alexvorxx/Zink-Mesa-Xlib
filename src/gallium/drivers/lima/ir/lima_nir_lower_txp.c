@@ -101,9 +101,8 @@ lima_nir_lower_txp_instr(nir_builder *b, nir_instr *instr,
     * step back and use load_input SSA instead of mov as a source for
     * newly constructed vec4
     */
-   nir_def *proj_ssa = nir_ssa_for_src(b, tex->src[proj_idx].src, 1);
-   nir_def *coords_ssa = nir_ssa_for_src(b, tex->src[coords_idx].src,
-                                             nir_tex_instr_src_size(tex, coords_idx));
+   nir_def *proj_ssa = tex->src[proj_idx].src.ssa;
+   nir_def *coords_ssa = tex->src[coords_idx].src.ssa;
 
    int proj_idx_in_vec = -1;
    nir_def *load_input = get_proj_index(coords_ssa->parent_instr,

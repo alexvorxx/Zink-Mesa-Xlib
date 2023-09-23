@@ -404,7 +404,6 @@ struct radv_instance {
    bool enable_mrt_output_nan_fixup;
    bool disable_tc_compat_htile_in_general;
    bool disable_shrink_image_store;
-   bool absolute_depth_bias;
    bool disable_aniso_single_level;
    bool zero_vram;
    bool disable_sinking_load_input_fs;
@@ -731,7 +730,6 @@ struct radv_meta_state {
       VkPipeline copy_pipeline;
 
       struct radix_sort_vk *radix_sort;
-      struct radix_sort_vk_sort_devaddr_info radix_sort_info;
 
       struct {
          VkBuffer buffer;
@@ -1655,6 +1653,7 @@ struct radv_cmd_state {
    unsigned active_pipeline_queries;
    unsigned active_pipeline_gds_queries;
    unsigned active_prims_gen_queries;
+   unsigned active_prims_xfb_queries;
    unsigned active_prims_gen_gds_queries;
    unsigned active_prims_xfb_gds_queries;
    uint32_t trace_id;
@@ -1875,6 +1874,14 @@ static inline bool
 radv_cmdbuf_has_stage(const struct radv_cmd_buffer *cmd_buffer, gl_shader_stage stage)
 {
    return !!(cmd_buffer->state.active_stages & mesa_to_vk_shader_stage(stage));
+}
+
+static inline uint32_t
+radv_get_num_pipeline_stat_queries(struct radv_cmd_buffer *cmd_buffer)
+{
+   /* SAMPLE_STREAMOUTSTATS also requires PIPELINESTAT_START to be enabled. */
+   return cmd_buffer->state.active_pipeline_queries + cmd_buffer->state.active_prims_gen_queries +
+          cmd_buffer->state.active_prims_xfb_queries;
 }
 
 extern const struct vk_command_buffer_ops radv_cmd_buffer_ops;
@@ -2364,9 +2371,12 @@ struct radv_ray_tracing_group {
 };
 
 struct radv_ray_tracing_stage {
+   struct vk_pipeline_cache_object *nir;
    struct vk_pipeline_cache_object *shader;
    gl_shader_stage stage;
    uint32_t stack_size;
+
+   bool can_inline;
 
    uint8_t sha1[SHA1_DIGEST_LENGTH];
 };
@@ -3209,7 +3219,7 @@ enum rgp_barrier_reason {
 void radv_describe_begin_cmd_buffer(struct radv_cmd_buffer *cmd_buffer);
 void radv_describe_end_cmd_buffer(struct radv_cmd_buffer *cmd_buffer);
 void radv_describe_draw(struct radv_cmd_buffer *cmd_buffer);
-void radv_describe_dispatch(struct radv_cmd_buffer *cmd_buffer, int x, int y, int z);
+void radv_describe_dispatch(struct radv_cmd_buffer *cmd_buffer, const struct radv_dispatch_info *info);
 void radv_describe_begin_render_pass_clear(struct radv_cmd_buffer *cmd_buffer, VkImageAspectFlagBits aspects);
 void radv_describe_end_render_pass_clear(struct radv_cmd_buffer *cmd_buffer);
 void radv_describe_begin_render_pass_resolve(struct radv_cmd_buffer *cmd_buffer);
@@ -3648,7 +3658,9 @@ radv_queue_ring(const struct radv_queue *queue)
 
 /* radv_video */
 void radv_init_physical_device_decoder(struct radv_physical_device *pdevice);
-
+void radv_video_get_profile_alignments(struct radv_physical_device *pdevice,
+                                       const VkVideoProfileListInfoKHR *profile_list, uint32_t *width_align_out,
+                                       uint32_t *height_align_out);
 /**
  * Helper used for debugging compiler issues by enabling/disabling LLVM for a
  * specific shader stage (developers only).
@@ -3681,12 +3693,15 @@ void radv_perfcounter_emit_spm_stop(struct radv_device *device, struct radeon_cm
 /* radv_spm.c */
 bool radv_spm_init(struct radv_device *device);
 void radv_spm_finish(struct radv_device *device);
-void radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs);
+void radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs, enum radv_queue_family qf);
 
 void radv_destroy_graphics_pipeline(struct radv_device *device, struct radv_graphics_pipeline *pipeline);
 void radv_destroy_graphics_lib_pipeline(struct radv_device *device, struct radv_graphics_lib_pipeline *pipeline);
 void radv_destroy_compute_pipeline(struct radv_device *device, struct radv_compute_pipeline *pipeline);
 void radv_destroy_ray_tracing_pipeline(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline);
+
+void radv_begin_conditional_rendering(struct radv_cmd_buffer *cmd_buffer, uint64_t va, bool draw_visible);
+void radv_end_conditional_rendering(struct radv_cmd_buffer *cmd_buffer);
 
 #define RADV_FROM_HANDLE(__radv_type, __name, __handle) VK_FROM_HANDLE(__radv_type, __name, __handle)
 

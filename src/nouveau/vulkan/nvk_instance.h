@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_INSTANCE_H
 #define NVK_INSTANCE_H 1
 

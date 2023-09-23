@@ -61,6 +61,10 @@ get_api_stage_string(gl_shader_stage stage)
       return".geometry";
    case MESA_SHADER_FRAGMENT:
       return".pixel";
+   case MESA_SHADER_MESH:
+      return ".mesh";
+   case MESA_SHADER_TASK:
+      return ".task";
    default:
       /* RT shaders are implemented using compute HW stages, so use ".compute"
          for any stage other than graphics stages */

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
+
+# When changing this file, you need to bump the following
+# .gitlab-ci/image-tags.yml tags:
+# FEDORA_X86_64_BUILD_TAG
+
 set -e
 set -o xtrace
 

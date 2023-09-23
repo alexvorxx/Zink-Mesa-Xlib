@@ -252,7 +252,7 @@ create_plane_tex_instr_implicit(struct ycbcr_state *state,
          }
          FALLTHROUGH;
       default:
-         nir_src_copy(&tex->src[i].src, &old_tex->src[i].src, &tex->instr);
+         tex->src[i].src = nir_src_for_ssa(old_tex->src[i].src.ssa);
          break;
       }
    }

@@ -335,7 +335,7 @@ nir_lower_clip_vs(nir_shader *shader, unsigned ucp_enables, bool use_vars,
     * users of this pass don't support sub-routines.
     */
    assert(impl->end_block->predecessors->entries == 1);
-   b.cursor = nir_after_cf_list(&impl->body);
+   b.cursor = nir_after_impl(impl);
 
    /* find clipvertex/position outputs */
    if (!find_clipvertex_and_position_outputs(shader, &clipvertex, &position))
@@ -425,7 +425,7 @@ lower_clip_fs(nir_function_impl *impl, unsigned ucp_enables,
               nir_variable **in, bool use_clipdist_array)
 {
    nir_def *clipdist[MAX_CLIP_PLANES];
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    if (!use_clipdist_array) {
       if (ucp_enables & 0x0f)

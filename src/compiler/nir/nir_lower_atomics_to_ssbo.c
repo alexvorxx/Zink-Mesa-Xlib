@@ -112,7 +112,7 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
       /* remapped to ssbo_atomic_add: { buffer_idx, offset, +1 } */
       temp = nir_imm_int(b, +1);
       new_instr->src[0] = nir_src_for_ssa(buffer);
-      nir_src_copy(&new_instr->src[1], &instr->src[0], &new_instr->instr);
+      new_instr->src[1] = nir_src_for_ssa(instr->src[0].ssa);
       new_instr->src[2] = nir_src_for_ssa(temp);
       break;
    case nir_intrinsic_atomic_counter_pre_dec:
@@ -121,21 +121,21 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
       /* NOTE semantic difference so we adjust the return value below */
       temp = nir_imm_int(b, -1);
       new_instr->src[0] = nir_src_for_ssa(buffer);
-      nir_src_copy(&new_instr->src[1], &instr->src[0], &new_instr->instr);
+      new_instr->src[1] = nir_src_for_ssa(instr->src[0].ssa);
       new_instr->src[2] = nir_src_for_ssa(temp);
       break;
    case nir_intrinsic_atomic_counter_read:
       /* remapped to load_ssbo: { buffer_idx, offset } */
       new_instr->src[0] = nir_src_for_ssa(buffer);
-      nir_src_copy(&new_instr->src[1], &instr->src[0], &new_instr->instr);
+      new_instr->src[1] = nir_src_for_ssa(instr->src[0].ssa);
       break;
    default:
       /* remapped to ssbo_atomic_x: { buffer_idx, offset, data, (compare)? } */
       new_instr->src[0] = nir_src_for_ssa(buffer);
-      nir_src_copy(&new_instr->src[1], &instr->src[0], &new_instr->instr);
-      nir_src_copy(&new_instr->src[2], &instr->src[1], &new_instr->instr);
+      new_instr->src[1] = nir_src_for_ssa(instr->src[0].ssa);
+      new_instr->src[2] = nir_src_for_ssa(instr->src[1].ssa);
       if (op == nir_intrinsic_ssbo_atomic_swap)
-         nir_src_copy(&new_instr->src[3], &instr->src[2], &new_instr->instr);
+         new_instr->src[3] = nir_src_for_ssa(instr->src[2].ssa);
       break;
    }
 

@@ -1885,9 +1885,8 @@ enum block_kind {
    block_kind_invert = 1 << 10,
    block_kind_discard_early_exit = 1 << 11,
    block_kind_uses_discard = 1 << 12,
-   block_kind_needs_lowering = 1 << 13,
-   block_kind_resume = 1 << 14,
-   block_kind_export_end = 1 << 15,
+   block_kind_resume = 1 << 13,
+   block_kind_export_end = 1 << 14,
 };
 
 struct RegisterDemand {
@@ -2121,6 +2120,7 @@ public:
    bool has_smem_buffer_or_global_loads = false;
    bool has_pops_overlapped_waves_wait = false;
    bool has_color_exports = false;
+   bool is_prolog = false;
 
    std::vector<uint8_t> constant_data;
    Temp private_segment_buffer;
@@ -2238,6 +2238,10 @@ void select_ps_epilog(Program* program, void* pinfo, ac_shader_config* config,
 void select_tcs_epilog(Program* program, void* pinfo, ac_shader_config* config,
                        const struct aco_compiler_options* options,
                        const struct aco_shader_info* info, const struct ac_shader_args* args);
+
+void select_gl_vs_prolog(Program* program, void* pinfo, ac_shader_config* config,
+                         const struct aco_compiler_options* options,
+                         const struct aco_shader_info* info, const struct ac_shader_args* args);
 
 void lower_phis(Program* program);
 void calc_min_waves(Program* program);

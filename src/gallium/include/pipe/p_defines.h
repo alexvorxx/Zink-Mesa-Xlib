@@ -394,6 +394,15 @@ enum pipe_flush_flags
 #define PIPE_CONTEXT_PROTECTED         (1 << 7)
 
 /**
+ * Create a context that does not use sampler LOD bias. If this is set, the
+ * frontend MUST set pipe_sampler_state::lod_bias to 0.0f for all samplers used
+ * with the context. Drivers MAY ignore lod_bias for such contexts.
+ *
+ * This may allow driver fast paths for GLES, which lacks sampler LOD bias.
+ */
+#define PIPE_CONTEXT_NO_LOD_BIAS (1 << 8)
+
+/**
  * Flags for pipe_context::memory_barrier.
  */
 #define PIPE_BARRIER_MAPPED_BUFFER     (1 << 0)

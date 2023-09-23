@@ -576,29 +576,6 @@ do_int_mod(struct lp_build_nir_context *bld_base,
    return LLVMBuildOr(builder, div_mask, result, "");
 }
 
-
-static LLVMValueRef
-do_quantize_to_f16(struct lp_build_nir_context *bld_base,
-                   LLVMValueRef src)
-{
-   struct gallivm_state *gallivm = bld_base->base.gallivm;
-   LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef result, cond, cond2, temp;
-
-   result = LLVMBuildFPTrunc(builder, src, bld_base->half_bld.vec_type, "");
-   result = LLVMBuildFPExt(builder, result, bld_base->base.vec_type, "");
-
-   temp = lp_build_abs(get_flt_bld(bld_base, 32), result);
-   cond = LLVMBuildFCmp(builder, LLVMRealOGT,
-                        LLVMBuildBitCast(builder, lp_build_const_int_vec(gallivm, bld_base->uint_bld.type, 0x38800000), bld_base->base.vec_type, ""),
-                        temp, "");
-   cond2 = LLVMBuildFCmp(builder, LLVMRealONE, temp, bld_base->base.zero, "");
-   cond = LLVMBuildAnd(builder, cond, cond2, "");
-   result = LLVMBuildSelect(builder, cond, bld_base->base.zero, result, "");
-   return result;
-}
-
-
 static LLVMValueRef
 do_alu_action(struct lp_build_nir_context *bld_base,
               const nir_alu_instr *instr,
@@ -821,9 +798,6 @@ do_alu_action(struct lp_build_nir_context *bld_base,
       break;
    case nir_op_fpow:
       result = lp_build_pow(get_flt_bld(bld_base, src_bit_size[0]), src[0], src[1]);
-      break;
-   case nir_op_fquantize2f16:
-      result = do_quantize_to_f16(bld_base, src[0]);
       break;
    case nir_op_frcp:
       result = lp_build_rcp(get_flt_bld(bld_base, src_bit_size[0]), src[0]);
@@ -2126,6 +2100,20 @@ visit_payload_atomic(struct lp_build_nir_context *bld_base,
                         offset, val, val2, &result[0]);
 }
 
+static void visit_load_param(struct lp_build_nir_context *bld_base,
+                             nir_intrinsic_instr *instr,
+                             LLVMValueRef result[NIR_MAX_VEC_COMPONENTS])
+{
+   LLVMValueRef param = LLVMGetParam(bld_base->func, nir_intrinsic_param_idx(instr) + LP_RESV_FUNC_ARGS);
+   struct gallivm_state *gallivm = bld_base->base.gallivm;
+   if (instr->num_components == 1)
+      result[0] = param;
+   else {
+      for (unsigned i = 0; i < instr->num_components; i++)
+         result[i] = LLVMBuildExtractValue(gallivm->builder, param, i, "");
+   }
+}
+
 static void
 visit_intrinsic(struct lp_build_nir_context *bld_base,
                 nir_intrinsic_instr *instr)
@@ -2330,6 +2318,9 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
       bld_base->set_vertex_and_primitive_count(bld_base,
                                                get_src(bld_base, instr->src[0]),
                                                get_src(bld_base, instr->src[1]));
+      break;
+   case nir_intrinsic_load_param:
+      visit_load_param(bld_base, instr, result);
       break;
    default:
       fprintf(stderr, "Unsupported intrinsic: ");
@@ -2755,6 +2746,29 @@ visit_deref(struct lp_build_nir_context *bld_base,
    assign_ssa(bld_base, instr->def.index, result);
 }
 
+static void
+visit_call(struct lp_build_nir_context *bld_base,
+           nir_call_instr *instr)
+{
+   LLVMValueRef *args;
+   struct hash_entry *entry = _mesa_hash_table_search(bld_base->fns, instr->callee);
+   struct lp_build_fn *fn = entry->data;
+   args = calloc(instr->num_params + LP_RESV_FUNC_ARGS, sizeof(LLVMValueRef));
+
+   assert(args);
+
+   args[0] = 0;
+   for (unsigned i = 0; i < instr->num_params; i++) {
+      LLVMValueRef arg = get_src(bld_base, instr->params[i]);
+
+      if (nir_src_bit_size(instr->params[i]) == 32 && LLVMTypeOf(arg) == bld_base->base.vec_type)
+         arg = cast_type(bld_base, arg, nir_type_int, 32);
+      args[i + LP_RESV_FUNC_ARGS] = arg;
+   }
+
+   bld_base->call(bld_base, fn, instr->num_params + LP_RESV_FUNC_ARGS, args);
+   free(args);
+}
 
 static void
 visit_block(struct lp_build_nir_context *bld_base, nir_block *block)
@@ -2785,6 +2799,9 @@ visit_block(struct lp_build_nir_context *bld_base, nir_block *block)
          break;
       case nir_instr_type_deref:
          visit_deref(bld_base, nir_instr_as_deref(instr));
+         break;
+      case nir_instr_type_call:
+         visit_call(bld_base, nir_instr_as_call(instr));
          break;
       default:
          fprintf(stderr, "Unknown NIR instr type: ");
@@ -2885,23 +2902,20 @@ get_register_type(struct lp_build_nir_context *bld_base,
    return type;
 }
 
-
-bool lp_build_nir_llvm(struct lp_build_nir_context *bld_base,
-                       struct nir_shader *nir)
+void
+lp_build_nir_prepasses(struct nir_shader *nir)
 {
-   struct nir_function *func;
-
    NIR_PASS_V(nir, nir_convert_to_lcssa, true, true);
    NIR_PASS_V(nir, nir_convert_from_ssa, true);
    NIR_PASS_V(nir, nir_lower_locals_to_regs, 32);
    NIR_PASS_V(nir, nir_remove_dead_derefs);
    NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+}
 
-   if (is_aos(bld_base)) {
-      NIR_PASS_V(nir, nir_move_vec_src_uses_to_dest);
-      NIR_PASS_V(nir, nir_lower_vec_to_regs, NULL, NULL);
-   }
-
+bool lp_build_nir_llvm(struct lp_build_nir_context *bld_base,
+                       struct nir_shader *nir,
+                       nir_function_impl *impl)
+{
    nir_foreach_shader_out_variable(variable, nir)
       handle_shader_output_decl(bld_base, nir, variable);
 
@@ -2927,17 +2941,15 @@ bool lp_build_nir_llvm(struct lp_build_nir_context *bld_base,
                                             _mesa_key_pointer_equal);
    bld_base->range_ht = _mesa_pointer_hash_table_create(NULL);
 
-   func = (struct nir_function *)exec_list_get_head(&nir->functions);
-
-   nir_foreach_reg_decl(reg, func->impl) {
+   nir_foreach_reg_decl(reg, impl) {
       LLVMTypeRef type = get_register_type(bld_base, reg);
       LLVMValueRef reg_alloc = lp_build_alloca(bld_base->base.gallivm,
                                                type, "reg");
       _mesa_hash_table_insert(bld_base->regs, reg, reg_alloc);
    }
-   nir_index_ssa_defs(func->impl);
-   bld_base->ssa_defs = calloc(func->impl->ssa_alloc, sizeof(LLVMValueRef));
-   visit_cf_list(bld_base, &func->impl->body);
+   nir_index_ssa_defs(impl);
+   bld_base->ssa_defs = calloc(impl->ssa_alloc, sizeof(LLVMValueRef));
+   visit_cf_list(bld_base, &impl->body);
 
    free(bld_base->ssa_defs);
    ralloc_free(bld_base->vars);
@@ -2984,6 +2996,7 @@ lp_build_opt_nir(struct nir_shader *nir)
          .lower_to_scalar = true,
          .lower_subgroup_masks = true,
          .lower_relative_shuffle = true,
+         .lower_inverse_ballot = true,
       };
       NIR_PASS(progress, nir, nir_lower_subgroups, &subgroups_options);
    } while (progress);

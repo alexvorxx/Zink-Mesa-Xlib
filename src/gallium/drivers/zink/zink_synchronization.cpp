@@ -199,7 +199,7 @@ zink_resource_image_barrier_init(VkImageMemoryBarrier *imb, struct zink_resource
    };
 }
 
-static void
+void
 zink_resource_image_barrier2_init(VkImageMemoryBarrier2 *imb, struct zink_resource *res, VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline)
 {
    if (!pipeline)
@@ -364,6 +364,7 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
    }
    assert(new_layout);
    bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "image_barrier(%s->%s)", vk_ImageLayout_to_str(res->layout), vk_ImageLayout_to_str(new_layout));
+   bool queue_import = false;
    if (HAS_SYNC2) {
       VkImageMemoryBarrier2 imb;
       zink_resource_image_barrier2_init(&imb, res, new_layout, flags, pipeline);
@@ -376,6 +377,7 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
          imb.srcQueueFamilyIndex = res->queue;
          imb.dstQueueFamilyIndex = zink_screen(ctx->base.screen)->gfx_queue;
          res->queue = VK_QUEUE_FAMILY_IGNORED;
+         queue_import = true;
       }
       VkDependencyInfo dep = {
          VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -401,6 +403,7 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
          imb.srcQueueFamilyIndex = res->queue;
          imb.dstQueueFamilyIndex = zink_screen(ctx->base.screen)->gfx_queue;
          res->queue = VK_QUEUE_FAMILY_IGNORED;
+         queue_import = true;
       }
       VKCTX(CmdPipelineBarrier)(
          cmdbuf,
@@ -427,9 +430,23 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
       if (cdt->swapchain->num_acquires && res->obj->dt_idx != UINT32_MAX) {
          cdt->swapchain->images[res->obj->dt_idx].layout = res->layout;
       }
+   } else if (res->obj->exportable) {
+      struct pipe_resource *pres = NULL;
+      bool found = false;
+      _mesa_set_search_or_add(&ctx->batch.state->dmabuf_exports, res, &found);
+      if (!found) {
+         pipe_resource_reference(&pres, &res->base.b);
+      }
    }
    if (new_layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
       zink_resource_copies_reset(res);
+   if (res->obj->exportable && queue_import) {
+      for (; res; res = zink_resource(res->base.b.next)) {
+         VkSemaphore sem = zink_screen_export_dmabuf_semaphore(zink_screen(ctx->base.screen), res);
+         if (sem)
+            util_dynarray_append(&ctx->batch.state->fd_wait_semaphores, VkSemaphore, sem);
+      }
+   }
 }
 
 bool

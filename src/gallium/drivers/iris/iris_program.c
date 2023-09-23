@@ -236,7 +236,7 @@ get_aoa_deref_offset(nir_builder *b,
       assert(deref->deref_type == nir_deref_type_array);
 
       /* This level's element size is the previous level's array size */
-      nir_def *index = nir_ssa_for_src(b, deref->arr.index, 1);
+      nir_def *index = deref->arr.index.ssa;
       assert(deref->arr.index.ssa);
       offset = nir_iadd(b, offset,
                            nir_imul_imm(b, index, array_size));
@@ -462,7 +462,7 @@ iris_setup_uniforms(ASSERTED const struct intel_device_info *devinfo,
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    nir_def *temp_ubo_name = nir_undef(&b, 1, 32);
 
@@ -494,7 +494,7 @@ iris_setup_uniforms(ASSERTED const struct intel_device_info *devinfo,
             b.cursor = nir_instr_remove(&intrin->instr);
 
             nir_def *offset =
-               nir_iadd_imm(&b, nir_ssa_for_src(&b, intrin->src[0], 1),
+               nir_iadd_imm(&b, intrin->src[0].ssa,
                                 nir_intrinsic_base(intrin));
 
             assert(load_size < b.shader->constant_data_size);
@@ -1303,12 +1303,14 @@ iris_compile_vs(struct iris_screen *screen,
 
    if (key->vue.nr_userclip_plane_consts) {
       nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-      nir_lower_clip_vs(nir, (1 << key->vue.nr_userclip_plane_consts) - 1,
-                        true, false, NULL);
-      nir_lower_io_to_temporaries(nir, impl, true, false);
-      nir_lower_global_vars_to_local(nir);
-      nir_lower_vars_to_ssa(nir);
-      nir_shader_gather_info(nir, impl);
+      /* Check if variables were found. */
+      if (nir_lower_clip_vs(nir, (1 << key->vue.nr_userclip_plane_consts) - 1,
+                            true, false, NULL)) {
+         nir_lower_io_to_temporaries(nir, impl, true, false);
+         nir_lower_global_vars_to_local(nir);
+         nir_lower_vars_to_ssa(nir);
+         nir_shader_gather_info(nir, impl);
+      }
    }
 
    prog_data->use_alt_mode = nir->info.use_legacy_math_rules;

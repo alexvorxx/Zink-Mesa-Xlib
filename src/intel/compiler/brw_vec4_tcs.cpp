@@ -456,7 +456,8 @@ brw_compile_tcs(const struct brw_compiler *compiler,
          return NULL;
       }
 
-      prog_data->base.base.dispatch_grf_start_reg = v.payload().num_regs;
+      assert(v.payload().num_regs % reg_unit(devinfo) == 0);
+      prog_data->base.base.dispatch_grf_start_reg = v.payload().num_regs / reg_unit(devinfo);
 
       fs_generator g(compiler, &params->base,
                      &prog_data->base.base, false, MESA_SHADER_TESS_CTRL);

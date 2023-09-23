@@ -163,12 +163,43 @@ public:
          return visit_continue;
 
       foreach_in_list(ir_variable, param, &ir->parameters) {
-         if (!param->type->is_vector() || !param->type->is_scalar()) {
+         if (!glsl_type_is_vector_or_scalar(param->type)) {
             unsupported = true;
             return visit_stop;
          }
 
          if (param->data.mode == ir_var_function_inout) {
+            unsupported = true;
+            return visit_stop;
+         }
+
+         if (param->data.mode != ir_var_function_in &&
+             param->data.mode != ir_var_const_in)
+            continue;
+
+         /* SSBO and shared vars might be passed to a built-in such as an
+          * atomic memory function, where copying these to a temp before
+          * passing to the atomic function is not valid so we must replace
+          * these instead. Also, shader inputs for interpolateAt functions
+          * also need to be replaced.
+          *
+          * We have no way to handle this in NIR or the glsl to nir pass
+          * currently so let the GLSL IR lowering handle it.
+          */
+         if (ir->is_builtin()) {
+            unsupported = true;
+            return visit_stop;
+         }
+
+         /* For opaque types, we want the inlined variable references
+          * referencing the passed in variable, since that will have
+          * the location information, which an assignment of an opaque
+          * variable wouldn't.
+          *
+          * We have no way to handle this in NIR or the glsl to nir pass
+          * currently so let the GLSL IR lowering handle it.
+          */
+         if (param->type->contains_opaque()) {
             unsupported = true;
             return visit_stop;
          }
@@ -811,7 +842,7 @@ nir_visitor::visit(ir_function_signature *ir)
 
       this->is_global = false;
 
-      b = nir_builder_at(nir_after_cf_list(&impl->body));
+      b = nir_builder_at(nir_after_impl(impl));
 
       unsigned i = (ir->return_type != glsl_type::void_type) ? 1 : 0;
 
@@ -1636,13 +1667,13 @@ nir_visitor::visit(ir_call *ir)
       ir_variable *sig_param = (ir_variable *) formal_node;
 
       if (sig_param->data.mode == ir_var_function_out) {
-         nir_deref_instr *out_deref = evaluate_deref(param_rvalue);
-         call->params[i] = nir_src_for_ssa(&out_deref->def);
+         nir_variable *out_param =
+            nir_local_variable_create(this->impl, sig_param->type, "param");
+         nir_deref_instr *out_param_deref = nir_build_deref_var(&b, out_param);
+         call->params[i] = nir_src_for_ssa(&out_param_deref->def);
       } else if (sig_param->data.mode == ir_var_function_in) {
          nir_def *val = evaluate_rvalue(param_rvalue);
-         nir_src src = nir_src_for_ssa(val);
-
-         nir_src_copy(&call->params[i], &src, &call->instr);
+         call->params[i] = nir_src_for_ssa(val);
       } else if (sig_param->data.mode == ir_var_function_inout) {
          unreachable("unimplemented: inout parameters");
       }
@@ -1651,6 +1682,25 @@ nir_visitor::visit(ir_call *ir)
    }
 
    nir_builder_instr_insert(&b, &call->instr);
+
+   /* Copy out params. We must do this after the function call to ensure we
+    * do not overwrite global variables prematurely.
+    */
+   i = ir->return_deref ? 1 : 0;
+   foreach_two_lists(formal_node, &ir->callee->parameters,
+                     actual_node, &ir->actual_parameters) {
+      ir_rvalue *param_rvalue = (ir_rvalue *) actual_node;
+      ir_variable *sig_param = (ir_variable *) formal_node;
+
+      if (sig_param->data.mode == ir_var_function_out) {
+         nir_store_deref(&b, evaluate_deref(param_rvalue),
+                         nir_load_deref(&b, nir_src_as_deref(call->params[i])),
+                         ~0);
+      }
+
+      i++;
+   }
+
 
    if (ir->return_deref)
       nir_store_deref(&b, evaluate_deref(ir->return_deref), nir_load_deref(&b, ret_deref), ~0);

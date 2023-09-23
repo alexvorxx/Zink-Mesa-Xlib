@@ -72,8 +72,8 @@ static nir_def *lower_vri_intrin_vrri(struct nir_builder *b,
                                           nir_instr *instr, void *data_cb)
 {
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-   nir_def *old_index = nir_ssa_for_src(b, intrin->src[0], 3);
-   nir_def *delta = nir_ssa_for_src(b, intrin->src[1], 1);
+   nir_def *old_index = intrin->src[0].ssa;
+   nir_def *delta = intrin->src[1].ssa;
    return nir_vec3(b, nir_channel(b, old_index, 0),
                    nir_iadd(b, nir_channel(b, old_index, 1), delta),
                    nir_channel(b, old_index, 2));
@@ -83,7 +83,7 @@ static nir_def *lower_vri_intrin_lvd(struct nir_builder *b,
                                          nir_instr *instr, void *data_cb)
 {
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-   return nir_ssa_for_src(b, intrin->src[0], 3);
+   return intrin->src[0].ssa;
 }
 
 static nir_def *
@@ -193,7 +193,7 @@ static nir_def *lower_vri_instr(struct nir_builder *b,
       case nir_intrinsic_get_ssbo_size: {
          /* Ignore the offset component. */
          b->cursor = nir_before_instr(instr);
-         nir_def *resource = nir_ssa_for_src(b, intrin->src[0], 2);
+         nir_def *resource = intrin->src[0].ssa;
          nir_src_rewrite(&intrin->src[0], resource);
          return NULL;
       }

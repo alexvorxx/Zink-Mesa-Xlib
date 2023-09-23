@@ -1,10 +1,16 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_image_view.h"
 
 #include "nvk_device.h"
-#include "nvk_physical_device.h"
+#include "nvk_entrypoints.h"
 #include "nvk_format.h"
 #include "nvk_image.h"
-#include "vulkan/util/vk_format.h"
+#include "nvk_physical_device.h"
+
+#include "vk_format.h"
 
 static enum nil_view_type
 vk_image_view_type_to_nil_view_type(VkImageViewType view_type)

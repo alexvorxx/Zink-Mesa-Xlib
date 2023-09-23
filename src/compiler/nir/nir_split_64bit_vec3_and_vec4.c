@@ -111,7 +111,7 @@ get_linear_array_offset(nir_builder *b, nir_deref_instr *deref)
    for (nir_deref_instr **p = &path.path[1]; *p; p++) {
       switch ((*p)->deref_type) {
       case nir_deref_type_array: {
-         nir_def *index = nir_ssa_for_src(b, (*p)->arr.index, 1);
+         nir_def *index = (*p)->arr.index.ssa;
          int stride = glsl_array_size((*p)->type);
          if (stride >= 0)
             offset = nir_iadd(b, offset, nir_amul_imm(b, index, stride));

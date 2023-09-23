@@ -234,8 +234,8 @@ __agxdecode_fetch_gpu_mem(const struct agx_bo *mem, uint64_t gpu_va,
       fprintf(stderr,
               "Overflowing to unknown memory %" PRIx64
               " of size %zu (max size %zu) in %s:%d\n",
-              gpu_va, size, mem->size - (gpu_va - mem->ptr.gpu), filename,
-              line);
+              gpu_va, size, (size_t)(mem->size - (gpu_va - mem->ptr.gpu)),
+              filename, line);
       fflush(agxdecode_dump_stream);
       assert(0);
    }
@@ -290,11 +290,16 @@ typedef unsigned (*decode_cmd)(const uint8_t *map, uint64_t *link, bool verbose,
 
 #define STATE_DONE (0xFFFFFFFFu)
 #define STATE_LINK (0xFFFFFFFEu)
+#define STATE_CALL (0xFFFFFFFDu)
+#define STATE_RET  (0xFFFFFFFCu)
 
 static void
 agxdecode_stateful(uint64_t va, const char *label, decode_cmd decoder,
                    bool verbose, decoder_params *params, void *data)
 {
+   uint64_t stack[16];
+   unsigned sp = 0;
+
    uint8_t buf[1024];
    if (!lib_config.read_gpu_mem) {
       struct agx_bo *alloc = agxdecode_find_mapped_gpu_mem_containing(va);
@@ -329,20 +334,37 @@ agxdecode_stateful(uint64_t va, const char *label, decode_cmd decoder,
          count = 8;
       }
 
-      va += count;
-      map += count;
-      left -= count;
       fflush(agxdecode_dump_stream);
-
       if (count == STATE_DONE) {
          break;
       } else if (count == STATE_LINK) {
+         fprintf(agxdecode_dump_stream, "Linking to 0x%lx\n\n", link);
          va = link;
          left = len = agxdecode_fetch_gpu_array(va, buf);
          map = buf;
-      } else if (left < 512 && len == sizeof(buf)) {
+      } else if (count == STATE_CALL) {
+         fprintf(agxdecode_dump_stream, "Calling 0x%lx (return = 0x%lx)\n\n",
+                 link, va + 8);
+         assert(sp < ARRAY_SIZE(stack));
+         stack[sp++] = va + 8;
+         va = link;
          left = len = agxdecode_fetch_gpu_array(va, buf);
          map = buf;
+      } else if (count == STATE_RET) {
+         assert(sp > 0);
+         va = stack[--sp];
+         fprintf(agxdecode_dump_stream, "Returning to 0x%lx\n\n", va);
+         left = len = agxdecode_fetch_gpu_array(va, buf);
+         map = buf;
+      } else {
+         va += count;
+         map += count;
+         left -= count;
+
+         if (left < 512 && len == sizeof(buf)) {
+            left = len = agxdecode_fetch_gpu_array(va, buf);
+            map = buf;
+         }
       }
    }
 }
@@ -464,10 +486,13 @@ agxdecode_usc(const uint8_t *map, UNUSED uint64_t *link, UNUSED bool verbose,
 
 #define PPP_PRINT(map, header_name, struct_name, human)                        \
    if (hdr.header_name) {                                                      \
-      assert(((map + AGX_##struct_name##_LENGTH) <= (base + size)) &&          \
-             "buffer overrun in PPP update");                                  \
+      if (((map + AGX_##struct_name##_LENGTH) > (base + size))) {              \
+         fprintf(agxdecode_dump_stream, "Buffer overrun in PPP update\n");     \
+         return;                                                               \
+      }                                                                        \
       DUMP_CL(struct_name, map, human);                                        \
       map += AGX_##struct_name##_LENGTH;                                       \
+      fflush(agxdecode_dump_stream);                                           \
    }
 
 static void
@@ -618,8 +643,9 @@ agxdecode_vdm(const uint8_t *map, uint64_t *link, bool verbose,
 
    switch (block_type) {
    case AGX_VDM_BLOCK_TYPE_BARRIER: {
-      DUMP_CL(VDM_BARRIER, map, "Barrier");
-      return AGX_VDM_BARRIER_LENGTH;
+      agx_unpack(agxdecode_dump_stream, map, VDM_BARRIER, hdr);
+      DUMP_UNPACKED(VDM_BARRIER, hdr, "Barrier\n");
+      return hdr.returns ? STATE_RET : AGX_VDM_BARRIER_LENGTH;
    }
 
    case AGX_VDM_BLOCK_TYPE_PPP_STATE_UPDATE: {
@@ -712,7 +738,7 @@ agxdecode_vdm(const uint8_t *map, uint64_t *link, bool verbose,
       agx_unpack(agxdecode_dump_stream, map, VDM_STREAM_LINK, hdr);
       DUMP_UNPACKED(VDM_STREAM_LINK, hdr, "Stream Link\n");
       *link = hdr.target_lo | (((uint64_t)hdr.target_hi) << 32);
-      return STATE_LINK;
+      return hdr.with_return ? STATE_CALL : STATE_LINK;
    }
 
    case AGX_VDM_BLOCK_TYPE_STREAM_TERMINATE: {

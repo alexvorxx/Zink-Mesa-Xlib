@@ -194,7 +194,7 @@ libvulkan_radeon = shared_library(
   [libradv_files, radv_entrypoints, sha1_h, radix_sort_spv, bvh_spv],
   vs_module_defs : vulkan_api_def,
   include_directories : [
-    inc_include, inc_src, inc_amd, inc_amd_common, inc_amd_common_llvm, inc_compiler, inc_util,
+    inc_include, inc_src, inc_amd, inc_amd_common, inc_amd_common_llvm, inc_util,
   ],
   link_with : [
     libamd_common, libamd_common_llvm, libamdgpu_addrlib,
@@ -255,6 +255,7 @@ radeon_icd = custom_target(
   command : icd_command,
   build_by_default : true,
   install_dir : with_vulkan_icd_dir,
+  install_tag : 'runtime',
   install : true,
 )
 

@@ -29,6 +29,7 @@
 
 #include "brw_vec4_gs_visitor.h"
 #include "gfx6_gs_visitor.h"
+#include "brw_eu.h"
 #include "brw_cfg.h"
 #include "brw_fs.h"
 #include "brw_nir.h"
@@ -822,7 +823,10 @@ brw_compile_gs(const struct brw_compiler *compiler,
                    params->base.stats != NULL, debug_enabled);
       if (v.run_gs()) {
          prog_data->base.dispatch_mode = DISPATCH_MODE_SIMD8;
-         prog_data->base.base.dispatch_grf_start_reg = v.payload().num_regs;
+
+         assert(v.payload().num_regs % reg_unit(compiler->devinfo) == 0);
+         prog_data->base.base.dispatch_grf_start_reg =
+            v.payload().num_regs / reg_unit(compiler->devinfo);
 
          fs_generator g(compiler, &params->base,
                         &prog_data->base.base, false, MESA_SHADER_GEOMETRY);

@@ -201,6 +201,9 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
       if (func_type->return_type->base_type != vtn_base_type_void)
          num_params++;
 
+      func->should_inline = b->func->control & SpvFunctionControlInlineMask;
+      func->dont_inline = b->func->control & SpvFunctionControlDontInlineMask;
+
       func->num_params = num_params;
       func->params = ralloc_array(b->shader, nir_parameter, num_params);
 
@@ -225,7 +228,7 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
        * directly in our OpFunctionParameter handler.
        */
       nir_function_impl *impl = nir_function_impl_create(func);
-      b->nb = nir_builder_at(nir_before_cf_list(&impl->body));
+      b->nb = nir_builder_at(nir_before_impl(impl));
       b->nb.exact = b->exact;
 
       b->func_param_idx = 0;
@@ -626,7 +629,7 @@ vtn_function_emit(struct vtn_builder *b, struct vtn_function *func,
    }
 
    nir_function_impl *impl = func->nir_func->impl;
-   b->nb = nir_builder_at(nir_after_cf_list(&impl->body));
+   b->nb = nir_builder_at(nir_after_impl(impl));
    b->func = func;
    b->nb.exact = b->exact;
    b->phi_table = _mesa_pointer_hash_table_create(b);

@@ -58,15 +58,16 @@ shader_destroy(struct lvp_device *device, struct lvp_shader *shader, bool locked
       device->queue.ctx->delete_ts_state,
       device->queue.ctx->delete_ms_state,
    };
+
+   if (!locked)
+      simple_mtx_lock(&device->queue.lock);
+
    set_foreach(&shader->inlines.variants, entry) {
       struct lvp_inline_variant *variant = (void*)entry->key;
       destroy[stage](device->queue.ctx, variant->cso);
       free(variant);
    }
    ralloc_free(shader->inlines.variants.table);
-
-   if (!locked)
-      simple_mtx_lock(&device->queue.lock);
 
    if (shader->shader_cso)
       destroy[stage](device->queue.ctx, shader->shader_cso);
@@ -137,6 +138,9 @@ remove_barriers_impl(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    if (intr->intrinsic != nir_intrinsic_barrier)
       return false;
    if (data) {
+      if (nir_intrinsic_execution_scope(intr) != SCOPE_NONE)
+         return false;
+
       if (nir_intrinsic_memory_scope(intr) == SCOPE_WORKGROUP ||
           nir_intrinsic_memory_scope(intr) == SCOPE_DEVICE ||
           nir_intrinsic_memory_scope(intr) == SCOPE_QUEUE_FAMILY)
@@ -382,7 +386,7 @@ lvp_ycbcr_conversion_lookup(const void *data, uint32_t set, uint32_t binding, ui
 
 /* pipeline is NULL for shader objects. */
 static void
-lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_shader *nir, struct lvp_shader *shader, struct lvp_pipeline_layout *layout)
+lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_shader *nir, struct lvp_pipeline_layout *layout)
 {
    if (nir->info.stage != MESA_SHADER_TESS_CTRL)
       NIR_PASS_V(nir, remove_barriers, nir->info.stage == MESA_SHADER_COMPUTE || nir->info.stage == MESA_SHADER_MESH || nir->info.stage == MESA_SHADER_TASK);
@@ -397,6 +401,7 @@ lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_
    subgroup_opts.lower_quad = true;
    subgroup_opts.ballot_components = 1;
    subgroup_opts.ballot_bit_size = 32;
+   subgroup_opts.lower_inverse_ballot = true;
    NIR_PASS_V(nir, nir_lower_subgroups, &subgroup_opts);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
@@ -489,7 +494,11 @@ lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_
    }
    nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs,
                                nir->info.stage);
+}
 
+static void
+lvp_shader_init(struct lvp_shader *shader, nir_shader *nir)
+{
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    if (impl->ssa_alloc > 100) //skip for small shaders
       shader->inlines.must_inline = lvp_find_inlinable_uniforms(shader, nir);
@@ -508,8 +517,10 @@ lvp_shader_compile_to_ir(struct lvp_pipeline *pipeline,
    struct lvp_shader *shader = &pipeline->shaders[stage];
    nir_shader *nir;
    VkResult result = compile_spirv(pdevice, sinfo, &nir);
-   if (result == VK_SUCCESS)
-      lvp_shader_lower(pdevice, pipeline, nir, shader, pipeline->layout);
+   if (result == VK_SUCCESS) {
+      lvp_shader_lower(pdevice, pipeline, nir, pipeline->layout);
+      lvp_shader_init(shader, nir);
+   }
    return result;
 }
 
@@ -1245,6 +1256,7 @@ create_shader_object(struct lvp_device *device, const VkShaderCreateInfoEXT *pCr
       VkResult result = compile_spirv(device, &sinfo, &nir);
       if (result != VK_SUCCESS)
          goto fail;
+      nir->info.separate_shader = true;
    } else {
       assert(pCreateInfo->codeType == VK_SHADER_CODE_TYPE_BINARY_EXT);
       if (pCreateInfo->codeSize < SHA1_DIGEST_LENGTH + VK_UUID_SIZE + 1)
@@ -1286,7 +1298,12 @@ create_shader_object(struct lvp_device *device, const VkShaderCreateInfoEXT *pCr
       pCreateInfo->pPushConstantRanges,
    };
    shader->layout = lvp_pipeline_layout_create(device, &pci, pAllocator);
-   lvp_shader_lower(device, NULL, nir, shader, shader->layout);
+
+   if (pCreateInfo->codeType == VK_SHADER_CODE_TYPE_SPIRV_EXT)
+      lvp_shader_lower(device, NULL, nir, shader->layout);
+
+   lvp_shader_init(shader, nir);
+
    lvp_shader_xfb_init(shader);
    if (stage == MESA_SHADER_TESS_EVAL) {
       /* spec requires that all tess modes are set in both shaders */

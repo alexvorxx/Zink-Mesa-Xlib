@@ -47,7 +47,7 @@ move_system_values_to_top(nir_shader *shader)
          case nir_intrinsic_load_shader_record_ptr:
          case nir_intrinsic_load_btd_local_arg_addr_intel:
             nir_instr_remove(instr);
-            nir_instr_insert(nir_before_cf_list(&impl->body), instr);
+            nir_instr_insert(nir_before_impl(impl), instr);
             progress = true;
             break;
 
@@ -1193,7 +1193,7 @@ found_resume:
    if (!resume_node) {
       /* We want the resume to be the first "interesting" instruction */
       nir_instr_remove(resume_instr);
-      nir_instr_insert(nir_before_cf_list(&b->impl->body), resume_instr);
+      nir_instr_insert(nir_before_impl(b->impl), resume_instr);
    }
 
    /* We've copied everything interesting out of this CF list to before the
@@ -1283,7 +1283,7 @@ lower_resume(nir_shader *shader, int call_idx)
    /* Create a nop instruction to use as a cursor as we extract and re-insert
     * stuff into the CFG.
     */
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
    ASSERTED bool found =
       flatten_resume_if_ladder(&b, &impl->cf_node, &impl->body,
                                true, resume_instr, &remat);

@@ -75,7 +75,7 @@ lower_rt_io_derefs(nir_shader *shader)
     */
    assert(num_shader_call_vars <= 1);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    nir_def *call_data_addr = NULL;
    if (num_shader_call_vars > 0) {

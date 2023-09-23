@@ -142,6 +142,9 @@ void si_get_tcs_epilog_args(enum amd_gfx_level gfx_level,
                             struct ac_arg *invocation_id,
                             struct ac_arg *tf_lds_offset,
                             struct ac_arg tess_factors[6]);
+void si_get_vs_prolog_args(enum amd_gfx_level gfx_level,
+                           struct si_shader_args *args,
+                           const union si_shader_part_key *key);
 
 /* gfx10_shader_ngg.c */
 unsigned gfx10_ngg_get_vertices_per_prim(struct si_shader *shader);

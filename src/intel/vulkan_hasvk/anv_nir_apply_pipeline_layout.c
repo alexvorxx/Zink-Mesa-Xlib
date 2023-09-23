@@ -878,7 +878,7 @@ lower_image_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
       nir_def *index = NULL;
       if (deref->deref_type != nir_deref_type_var) {
          assert(deref->deref_type == nir_deref_type_array);
-         index = nir_ssa_for_src(b, deref->arr.index, 1);
+         index = deref->arr.index.ssa;
       } else {
          index = nir_imm_int(b, 0);
       }
@@ -900,7 +900,7 @@ lower_load_constant(nir_builder *b, nir_intrinsic_instr *intrin,
     * by constant folding.
     */
    assert(!nir_src_is_const(intrin->src[0]));
-   nir_def *offset = nir_iadd_imm(b, nir_ssa_for_src(b, intrin->src[0], 1),
+   nir_def *offset = nir_iadd_imm(b, intrin->src[0].ssa,
                                       nir_intrinsic_base(intrin));
 
    nir_def *data;
@@ -1036,7 +1036,7 @@ lower_tex_deref(nir_builder *b, nir_tex_instr *tex,
              */
             assert(nir_tex_instr_src_index(tex, nir_tex_src_plane) == -1);
 
-            index = nir_ssa_for_src(b, deref->arr.index, 1);
+            index = deref->arr.index.ssa;
          }
       }
    }

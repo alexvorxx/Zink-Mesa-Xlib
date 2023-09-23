@@ -738,6 +738,7 @@
     <field name="Unk 20" size="1" start="20" type="bool" default="false"/>
     <field name="Unk 24" size="1" start="24" type="bool" default="false"/>
     <field name="Unk 26" size="1" start="26" type="bool" default="false"/>
+    <field name="Returns" size="1" start="27" type="bool" default="false"/>
     <field name="Block Type" size="3" start="29" type="VDM Block Type" default="Barrier"/>
   </struct>
 
@@ -769,7 +770,8 @@
   </struct>
 
   <struct name="VDM State Vertex Shader Word 1" size="4">
-    <field name="Pipeline" size="32" start="0" type="address"/>
+    <field name="Unknown 1:0" size="2" start="0" type="hex"/>
+    <field name="Pipeline" size="26" start="6" type="address" modifier="shr(6)"/>
   </struct>
 
   <struct name="VDM State Vertex Outputs" size="4">
@@ -845,6 +847,7 @@
        probable definition -->
   <struct name="VDM Stream Link" size="8">
     <field name="Target hi" size="8" start="0" type="hex"/>
+    <field name="With return" size="1" start="28" type="bool"/>
     <field name="Block Type" size="3" start="29" type="VDM Block Type" default="Stream Link"/>
     <field name="Target lo" size="32" start="32" type="hex"/>
   </struct>

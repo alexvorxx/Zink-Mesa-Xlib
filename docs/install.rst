@@ -77,8 +77,6 @@ on the packaging tool used by your distro.
 2. Building with meson
 ----------------------
 
-**Meson >= 0.46.0 is required**
-
 Meson is the latest build system in mesa, it is currently able to build
 for \*nix systems like Linux and BSD, macOS, Haiku, and Windows.
 

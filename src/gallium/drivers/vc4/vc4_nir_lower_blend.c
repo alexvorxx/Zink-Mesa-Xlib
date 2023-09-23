@@ -612,7 +612,7 @@ vc4_nir_lower_blend(nir_shader *s, struct vc4_compile *c)
          */
         if (c->fs_key->sample_coverage && !c->fs_key->sample_alpha_to_coverage) {
                 nir_function_impl *impl = nir_shader_get_entrypoint(s);
-                nir_builder b = nir_builder_at(nir_after_block(nir_impl_last_block(impl)));
+                nir_builder b = nir_builder_at(nir_after_impl(impl));
 
                 vc4_nir_store_sample_mask(c, &b, nir_load_sample_mask_in(&b));
         }

@@ -728,8 +728,8 @@ fd3_emit_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
       OUT_PKT0(ring, REG_A3XX_RB_Z_CLAMP_MIN, 2);
       if (depth == 32) {
-         OUT_RING(ring, (uint32_t)(zmin * 0xffffffff));
-         OUT_RING(ring, (uint32_t)(zmax * 0xffffffff));
+         OUT_RING(ring, (uint32_t)(zmin * (float)0xffffffff));
+         OUT_RING(ring, (uint32_t)(zmax * (float)0xffffffff));
       } else if (depth == 16) {
          OUT_RING(ring, (uint32_t)(zmin * 0xffff));
          OUT_RING(ring, (uint32_t)(zmax * 0xffff));

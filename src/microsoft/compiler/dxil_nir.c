@@ -1662,7 +1662,7 @@ lower_fquantize2f16(struct nir_builder *b, nir_instr *instr, void *data)
     */
    nir_alu_instr *alu = nir_instr_as_alu(instr);
    nir_def *src =
-      nir_ssa_for_src(b, alu->src[0].src, nir_src_num_components(alu->src[0].src));
+      alu->src[0].src.ssa;
 
    nir_def *neg_inf_cond =
       nir_flt_imm(b, src, -65504.0f);
@@ -1894,7 +1894,7 @@ lower_subgroup_id(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    if (intr->intrinsic != nir_intrinsic_load_subgroup_id)
       return false;
 
-   b->cursor = nir_before_block(nir_start_block(b->impl));
+   b->cursor = nir_before_impl(b->impl);
    if (b->shader->info.workgroup_size[1] == 1 &&
        b->shader->info.workgroup_size[2] == 1) {
       /* When using Nx1x1 groups, use a simple stable algorithm

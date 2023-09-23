@@ -172,6 +172,8 @@ struct ray_query_vars {
    rq_variable *stack;
    uint32_t shared_base;
    uint32_t stack_entries;
+
+   nir_intrinsic_instr *initialize;
 };
 
 #define VAR_NAME(name) strcat(strcpy(ralloc_size(ctx, strlen(base_name) + strlen(name) + 1), base_name), name)
@@ -356,6 +358,10 @@ lower_rq_initialize(nir_builder *b, nir_def *index, nir_intrinsic_instr *instr, 
 
    nir_def *accel_struct = instr->src[1].ssa;
 
+   /* Make sure that instance data loads don't hang in case of a miss by setting a valid initial address. */
+   rq_store_var(b, index, vars->closest.instance_addr, accel_struct, 1);
+   rq_store_var(b, index, vars->candidate.instance_addr, accel_struct, 1);
+
    nir_def *bvh_offset = nir_build_load_global(
       b, 1, 32, nir_iadd_imm(b, accel_struct, offsetof(struct radv_accel_struct_header, bvh_offset)),
       .access = ACCESS_NON_WRITEABLE);
@@ -383,6 +389,8 @@ lower_rq_initialize(nir_builder *b, nir_def *index, nir_intrinsic_instr *instr, 
    rq_store_var(b, index, vars->trav.top_stack, nir_imm_int(b, -1), 1);
 
    rq_store_var(b, index, vars->incomplete, nir_imm_bool(b, !(instance->debug_flags & RADV_DEBUG_NO_RT)), 0x1);
+
+   vars->initialize = instr;
 }
 
 static nir_def *
@@ -551,8 +559,18 @@ load_stack_entry(nir_builder *b, nir_def *index, const struct radv_ray_traversal
 }
 
 static nir_def *
-lower_rq_proceed(nir_builder *b, nir_def *index, struct ray_query_vars *vars, struct radv_device *device)
+lower_rq_proceed(nir_builder *b, nir_def *index, nir_intrinsic_instr *instr, struct ray_query_vars *vars,
+                 struct radv_device *device)
 {
+   nir_metadata_require(nir_cf_node_get_function(&instr->instr.block->cf_node), nir_metadata_dominance);
+
+   bool ignore_cull_mask = false;
+   if (nir_block_dominates(vars->initialize->instr.block, instr->instr.block)) {
+      nir_src cull_mask = vars->initialize->src[3];
+      if (nir_src_is_const(cull_mask) && nir_src_as_uint(cull_mask) == 0xFF)
+         ignore_cull_mask = true;
+   }
+
    nir_variable *inv_dir = nir_local_variable_create(b->impl, glsl_vector_type(GLSL_TYPE_FLOAT, 3), "inv_dir");
    nir_store_var(b, inv_dir, nir_frcp(b, rq_load_var(b, index, vars->trav.direction)), 0x7);
 
@@ -587,6 +605,7 @@ lower_rq_proceed(nir_builder *b, nir_def *index, struct ray_query_vars *vars, st
       .dir = rq_load_var(b, index, vars->direction),
       .vars = trav_vars,
       .stack_entries = vars->stack_entries,
+      .ignore_cull_mask = ignore_cull_mask,
       .stack_store_cb = store_stack_entry,
       .stack_load_cb = load_stack_entry,
       .aabb_cb = handle_candidate_aabb,
@@ -691,7 +710,7 @@ radv_nir_lower_ray_queries(struct nir_shader *shader, struct radv_device *device
                new_dest = lower_rq_load(&builder, index, intrinsic, vars);
                break;
             case nir_intrinsic_rq_proceed:
-               new_dest = lower_rq_proceed(&builder, index, vars, device);
+               new_dest = lower_rq_proceed(&builder, index, intrinsic, vars, device);
                break;
             case nir_intrinsic_rq_terminate:
                lower_rq_terminate(&builder, index, intrinsic, vars);

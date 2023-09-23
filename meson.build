@@ -180,13 +180,6 @@ foreach gallium_driver : gallium_drivers
   pre_args += '-DHAVE_@0@'.format(gallium_driver.to_upper())
 endforeach
 
-freedreno_kmds = get_option('freedreno-kmds')
-# If building only vulkan with only kgsl kmd support, there is no libdrm
-# dependency:
-if freedreno_kmds.length() == 1 and freedreno_kmds.contains('kgsl') and not with_gallium_freedreno
-  system_has_kms_drm = false
-endif
-
 with_gallium = gallium_drivers.length() != 0
 with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_asahi,
@@ -197,15 +190,6 @@ with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_v3d,
   with_gallium_vc4,
 ].contains(true)
-
-with_dri = false
-if with_gallium and system_has_kms_drm
-  _glx = get_option('glx')
-  _egl = get_option('egl')
-  if _glx == 'dri' or _egl.enabled() or (_glx == 'disabled' and _egl.allowed())
-    with_dri = true
-  endif
-endif
 
 _vulkan_drivers = get_option('vulkan-drivers')
 if _vulkan_drivers.contains('auto')
@@ -245,16 +229,49 @@ with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
 with_nouveau_vk = _vulkan_drivers.contains('nouveau-experimental')
 with_any_vk = _vulkan_drivers.length() != 0
 
+freedreno_kmds = get_option('freedreno-kmds')
+if freedreno_kmds.length() != 0 and freedreno_kmds != [ 'msm' ] and with_freedreno_vk
+  if freedreno_kmds.contains('msm')
+      warning('Turnip with the DRM KMD will require libdrm to always be present at runtime which may not always be the case on platforms such as Android.')
+  elif with_gallium_kmsro
+      warning('As a side-effect, Turnip is forced to link with libdrm when built alongside Gallium DRM drivers which platforms such as Android may not have available at runtime.')
+  elif _vulkan_drivers != [ 'freedreno' ]
+      warning('Turnip is forced to link with libdrm when built alongside other Vulkan drivers which platforms such as Android may not have available at runtime.')
+  else
+    # If DRM support isn't needed, we can get rid of it since linking
+    # to libdrm can be a potential compatibility hazard.
+    system_has_kms_drm = false
+  endif
+endif
+
+with_dri = false
+if with_gallium and system_has_kms_drm
+  _glx = get_option('glx')
+  _egl = get_option('egl')
+  if _glx == 'dri' or _egl.enabled() or (_glx == 'disabled' and _egl.allowed())
+    with_dri = true
+  endif
+endif
+
 with_any_broadcom = [
   with_gallium_vc4,
   with_gallium_v3d,
   with_broadcom_vk,
 ].contains(true)
 
+if ['x86_64'].contains(host_machine.cpu_family())
+  with_intel_clc = get_option('intel-clc') == 'enabled'
+  with_intel_vk_rt = with_intel_vk and get_option('intel-clc') != 'disabled'
+else
+  with_intel_clc = false
+  with_intel_vk_rt = false
+endif
+
 with_any_intel = [
   with_gallium_crocus,
   with_gallium_i915,
   with_gallium_iris,
+  with_intel_clc,
   with_intel_hasvk,
   with_intel_tools,
   with_intel_vk,
@@ -278,13 +295,6 @@ if with_aco_tests and not with_amd_vk
 endif
 
 with_microsoft_clc = get_option('microsoft-clc').enabled()
-if ['x86_64'].contains(host_machine.cpu_family())
-  with_intel_clc = get_option('intel-clc').enabled()
-  with_intel_vk_rt = with_intel_vk and with_intel_clc
-else
-  with_intel_clc = false
-  with_intel_vk_rt = false
-endif
 with_clc = with_microsoft_clc or with_intel_clc
 with_spirv_to_dxil = get_option('spirv-to-dxil')
 
@@ -916,7 +926,6 @@ endforeach
 _attributes = [
   'const', 'flatten', 'malloc', 'pure', 'unused', 'warn_unused_result',
   'weak', 'format', 'packed', 'returns_nonnull', 'alias', 'noreturn',
-  'nonnull',
 ]
 foreach a : cc.get_supported_function_attributes(_attributes)
   pre_args += '-DHAVE_FUNC_ATTRIBUTE_@0@'.format(a.to_upper())
@@ -1166,6 +1175,16 @@ if host_machine.cpu_family().startswith('x86')
       endif
     endif
   endif
+endif
+
+# Detect __builtin_ia32_clflushopt support
+if cc.has_function('__builtin_ia32_clflushopt', args : '-mclflushopt')
+  pre_args += '-DHAVE___BUILTIN_IA32_CLFLUSHOPT'
+  clflushopt_args = ['-mclflushopt']
+  with_clflushopt = true
+else
+  clflushopt_args = []
+  with_clflushopt = false
 endif
 
 # Check for GCC style atomics
@@ -1688,6 +1707,7 @@ with_llvm = false
 if _llvm.allowed()
   dep_llvm = dependency(
     'llvm',
+    method : host_machine.system() == 'windows' ? 'auto' : 'config-tool',
     version : _llvm_version,
     modules : llvm_modules,
     optional_modules : llvm_optional_modules,
@@ -2230,10 +2250,29 @@ if with_any_vk
   if with_any_vulkan_layers
     vulkan_summary += {'Layers': get_option('vulkan-layers')}
   endif
-  vulkan_summary += {'Video codecs': _codecs.length() != 0 ? _codecs : false}
   vulkan_summary += {'Intel Ray tracing': with_intel_vk_rt}
 endif
 summary(vulkan_summary, section: 'Vulkan', bool_yn: true, list_sep: ' ')
+
+video_summary = {'Codecs': _codecs.length() != 0 ? _codecs : false}
+video_apis = []
+if with_gallium_vdpau
+  video_apis += 'vdpau'
+endif
+if with_gallium_va
+  video_apis += 'va'
+endif
+if with_any_vk
+  video_apis += 'vulkan'
+endif
+if with_gallium_xa
+  video_apis += 'xa'
+endif
+if with_gallium_omx != 'disabled'
+  video_apis += 'omx'
+endif
+video_summary += {'APIs': video_apis.length() != 0 ? video_apis : false}
+summary(video_summary, section: 'Video', bool_yn: true, list_sep: ' ')
 
 llvm_summary = {'Enabled': with_llvm}
 if with_llvm

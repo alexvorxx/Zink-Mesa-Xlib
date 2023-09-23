@@ -498,6 +498,7 @@ struct tu_reg_value {
 #define __bo_type struct tu_bo *
 
 #include "a6xx-pack.xml.h"
+#include "adreno-pm4-pack.xml.h"
 
 #define __assert_eq(a, b)                                               \
    do {                                                                 \

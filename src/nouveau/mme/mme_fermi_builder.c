@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Mary Guillemard
+ * SPDX-License-Identifier: MIT
+ */
 #include "mme_builder.h"
 
 #include <stdio.h>

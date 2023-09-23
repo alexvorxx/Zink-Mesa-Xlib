@@ -247,7 +247,7 @@ dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func)
          case nir_intrinsic_load_invocation_id: {
             if (!loop_var) {
                loop_var = nir_local_variable_create(patch_const_func_impl, glsl_int_type(), "PatchConstInvocId");
-               b.cursor = nir_before_cf_list(&patch_const_func_impl->body);
+               b.cursor = nir_before_impl(patch_const_func_impl);
                loop_var_deref = nir_build_deref_var(&b, loop_var);
             }
             if (!state.loop) {

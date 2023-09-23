@@ -1292,3 +1292,21 @@ linear_strcat(void *parent, char **dest, const char *str)
 {
    return linear_cat(parent, dest, str, strlen(str));
 }
+
+void *
+linear_alloc_child_array(void *parent, size_t size, unsigned count)
+{
+   if (count > SIZE_MAX/size)
+      return NULL;
+
+   return linear_alloc_child(parent, size * count);
+}
+
+void *
+linear_zalloc_child_array(void *parent, size_t size, unsigned count)
+{
+   if (count > SIZE_MAX/size)
+      return NULL;
+
+   return linear_zalloc_child(parent, size * count);
+}

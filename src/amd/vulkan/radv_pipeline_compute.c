@@ -166,7 +166,8 @@ radv_compile_cs(struct radv_device *device, struct vk_pipeline_cache *cache, str
 
    cs_shader = radv_shader_create(device, cache, *cs_binary, keep_executable_info || dump_shader);
 
-   radv_shader_generate_debug_info(device, dump_shader, *cs_binary, cs_shader, &cs_stage->nir, 1, &cs_stage->info);
+   radv_shader_generate_debug_info(device, dump_shader, keep_executable_info, *cs_binary, cs_shader, &cs_stage->nir, 1,
+                                   &cs_stage->info);
 
    if (keep_executable_info && cs_stage->spirv.size) {
       cs_shader->spirv = malloc(cs_stage->spirv.size);

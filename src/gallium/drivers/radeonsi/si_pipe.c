@@ -1435,7 +1435,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    /* Create the auxiliary context. This must be done last. */
    sscreen->aux_context = si_create_context(
       &sscreen->b,
-      SI_CONTEXT_FLAG_AUX |
+      SI_CONTEXT_FLAG_AUX | PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET |
       (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
       (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
 

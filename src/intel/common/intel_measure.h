@@ -120,7 +120,7 @@ struct intel_measure_snapshot {
 
 struct intel_measure_buffered_result {
    struct intel_measure_snapshot snapshot;
-   uint64_t start_ts, end_ts, idle_duration;
+   uint64_t start_ts, end_ts, idle_duration, batch_size;
    unsigned frame, batch_count, event_index, primary_renderpass;
 ;
 };
@@ -155,6 +155,7 @@ struct intel_measure_batch {
    struct list_head link;
    unsigned index;
    unsigned frame, batch_count, event_count;
+   uint64_t batch_size;
    uint32_t renderpass, primary_renderpass;
    uint64_t *timestamps;
    struct intel_measure_snapshot snapshots[0];
@@ -173,6 +174,7 @@ bool intel_measure_ready(struct intel_measure_batch *batch);
 struct intel_device_info;
 void intel_measure_print_cpu_result(unsigned int frame,
                                     unsigned int batch_count,
+                                    uint64_t batch_size,
                                     unsigned int event_index,
                                     unsigned int event_count,
                                     unsigned int count,

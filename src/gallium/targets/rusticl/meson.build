@@ -49,6 +49,7 @@ librusticl = shared_library(
     libws_null,
   ],
   dependencies : [
+    driver_asahi,
     driver_iris,
     driver_nouveau,
     driver_r600,
@@ -75,6 +76,7 @@ configure_file(
   input : 'rusticl.icd.in',
   output : 'rusticl.icd',
   install : true,
+  install_tag : 'runtime',
   install_dir : join_paths(get_option('sysconfdir'), 'OpenCL', 'vendors'),
 )
 

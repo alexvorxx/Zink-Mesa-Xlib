@@ -1887,6 +1887,10 @@ write_function(write_ctx *ctx, const nir_function *fxn)
       flags |= 0x4;
    if (fxn->impl)
       flags |= 0x8;
+   if (fxn->should_inline)
+      flags |= 0x10;
+   if (fxn->dont_inline)
+      flags |= 0x20;
    blob_write_uint32(ctx->blob, flags);
    if (fxn->name)
       blob_write_string(ctx->blob, fxn->name);
@@ -1931,6 +1935,8 @@ read_function(read_ctx *ctx)
    fxn->is_preamble = flags & 0x2;
    if (flags & 0x8)
       fxn->impl = NIR_SERIALIZE_FUNC_HAS_IMPL;
+   fxn->should_inline = flags & 0x10;
+   fxn->dont_inline = flags & 0x20;
 }
 
 static void

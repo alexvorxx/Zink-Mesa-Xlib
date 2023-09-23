@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_CMD_BUFFER_H
 #define NVK_CMD_BUFFER_H 1
 
@@ -19,6 +23,11 @@ struct nvk_cmd_pool;
 struct nvk_image_view;
 struct nvk_push_descriptor_set;
 
+struct nvk_sample_location {
+   uint8_t x_u4:4;
+   uint8_t y_u4:4;
+};
+
 /** Root descriptor table.  This gets pushed to the GPU directly */
 struct nvk_root_descriptor_table {
    uint64_t root_desc_addr;
@@ -29,7 +38,7 @@ struct nvk_root_descriptor_table {
          uint32_t base_instance;
          uint32_t draw_id;
          uint32_t view_index;
-         uint32_t _pad[2];
+         struct nvk_sample_location sample_locations[8];
       } draw;
       struct {
          uint32_t base_group[3];

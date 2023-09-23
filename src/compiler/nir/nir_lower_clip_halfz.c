@@ -37,7 +37,7 @@ lower_pos_write(nir_builder *b, nir_intrinsic_instr *intr,
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_def *pos = nir_ssa_for_src(b, intr->src[1], 4);
+   nir_def *pos = intr->src[1].ssa;
    nir_def *def = nir_vec4(b,
                            nir_channel(b, pos, 0),
                            nir_channel(b, pos, 1),

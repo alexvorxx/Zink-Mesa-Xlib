@@ -825,6 +825,10 @@ struct iris_context {
       /** Current/upcoming ds_write_state for Wa_18019816803. */
       bool ds_write_state;
 
+      /** State tracking for Wa_14018912822. */
+      bool color_blend_zero;
+      bool alpha_blend_zero;
+
       /** Do we have integer RT in current framebuffer state? */
       bool has_integer_rt;
 

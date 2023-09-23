@@ -60,7 +60,7 @@ class FastbootRun:
 
         fastboot_ready = False
         for line in self.ser.lines(timeout=2 * 60, phase="bootloader"):
-            if re.search("fastboot: processing commands", line) or \
+            if re.search("[Ff]astboot: [Pp]rocessing commands", line) or \
                     re.search("Listening for fastboot command on", line):
                 fastboot_ready = True
                 break

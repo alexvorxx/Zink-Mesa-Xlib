@@ -166,9 +166,10 @@ enum fd_dirty_3d_state {
    FD_DIRTY_IMAGE = BIT(18),
    FD_DIRTY_SSBO = BIT(19),
    FD_DIRTY_QUERY = BIT(20),
+   FD_DIRTY_SAMPLE_LOCATIONS = BIT(21),
 
    /* only used by a2xx.. possibly can be removed.. */
-   FD_DIRTY_TEXSTATE = BIT(21),
+   FD_DIRTY_TEXSTATE = BIT(22),
 
    /* fine grained state changes, for cases where state is not orthogonal
     * from hw perspective:
@@ -486,6 +487,10 @@ struct fd_context {
    struct pipe_stencil_ref stencil_ref dt;
    unsigned sample_mask dt;
    unsigned min_samples dt;
+
+   /* 1x1 grid, max 4x MSAA: */
+   uint8_t sample_locations[4] dt;
+   bool sample_locations_enabled dt;
 
    /* local context fb state, for when ctx->batch is null: */
    struct pipe_framebuffer_state framebuffer dt;

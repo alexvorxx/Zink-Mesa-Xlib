@@ -27,17 +27,6 @@
 #include "nir_worklist.h"
 
 static bool
-nir_op_is_derivative(nir_op op)
-{
-   return op == nir_op_fddx ||
-          op == nir_op_fddy ||
-          op == nir_op_fddx_fine ||
-          op == nir_op_fddy_fine ||
-          op == nir_op_fddx_coarse ||
-          op == nir_op_fddy_coarse;
-}
-
-static bool
 nir_texop_implies_derivative(nir_texop op)
 {
    return op == nir_texop_tex ||
@@ -207,7 +196,7 @@ break_all:
        * This provides stability for the algorithm and ensures that we don't
        * accidentally get dependencies out-of-order.
        */
-      nir_cursor cursor = nir_before_block(nir_start_block(impl));
+      nir_cursor cursor = nir_before_impl(impl);
       nir_foreach_block(block, impl) {
          nir_foreach_instr_safe(instr, block) {
             if (instr->pass_flags == STOP_PROCESSING_INSTR_FLAG)

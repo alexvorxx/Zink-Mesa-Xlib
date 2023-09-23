@@ -144,6 +144,8 @@ struct radv_ray_traversal_args {
    uint32_t stack_entries;
    uint32_t stack_base;
 
+   bool ignore_cull_mask;
+
    radv_rt_stack_store_cb stack_store_cb;
    radv_rt_stack_load_cb stack_load_cb;
 

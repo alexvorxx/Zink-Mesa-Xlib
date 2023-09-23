@@ -1,7 +1,7 @@
 workflow:
   rules:
     # do not duplicate pipelines on merge pipelines
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push" && $GITLAB_USER_LOGIN == "marge-bot"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
       when: never
     # merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
@@ -78,6 +78,24 @@ default:
       - data_integrity_failure
       - unknown_failure
 
+stages:
+  - sanity
+  - container
+  - git-archive
+  - build-x86_64
+  - build-misc
+  - lint
+  - amd
+  - intel
+  - nouveau
+  - arm
+  - broadcom
+  - freedreno
+  - etnaviv
+  - software-renderer
+  - layered-backends
+  - deploy
+
 include:
   - project: 'freedesktop/ci-templates'
     ref: 16bc29078de5e0a067ff84a1a199a3760d3b3811
@@ -116,24 +134,6 @@ include:
   - local: 'src/panfrost/ci/gitlab-ci.yml'
   - local: 'src/virtio/ci/gitlab-ci.yml'
 
-stages:
-  - sanity
-  - container
-  - git-archive
-  - build-x86_64
-  - build-misc
-  - lint
-  - amd
-  - intel
-  - nouveau
-  - arm
-  - broadcom
-  - freedreno
-  - etnaviv
-  - software-renderer
-  - layered-backends
-  - deploy
-
 
 # YAML anchors for rule conditions
 # --------------------------------
@@ -156,6 +156,8 @@ stages:
 # When to automatically run the CI for build jobs
 .build-rules:
   rules:
+    # Run when re-enabling a disabled farm, but not when disabling it
+    - !reference [.disable-farm-mr-rules, rules]
     # If any files affecting the pipeline are changed, build/test jobs run
     # automatically once all dependency jobs have passed
     - changes: &all_paths
@@ -173,9 +175,15 @@ stages:
       # Source code
       - include/**/*
       - src/**/*
-      - .ci-farms/*
       when: on_success
-    # Otherwise, build/test jobs won't run because no rule matched.
+    # Just skip everything for MRs which don't actually change anything in the
+    # build
+    - if: *is-pre-merge-for-marge
+      when: never
+    - if: *is-post-merge
+      when: never
+    # Always allow user branches etc to trigger jobs manually
+    - when: manual
 
 
 .ci-deqp-artifacts:
@@ -192,6 +200,8 @@ stages:
 
 .container-rules:
   rules:
+    # Run when re-enabling a disabled farm, but not when disabling it
+    - !reference [.disable-farm-mr-rules, rules]
     # Run pipeline by default in the main project if any CI pipeline
     # configuration files were changed, to ensure docker images are up to date
     - if: *is-post-merge
@@ -211,12 +221,14 @@ stages:
       changes:
         *all_paths
       when: on_success
-    # Allow triggering jobs manually in other cases if any files affecting the
-    # pipeline were changed
-    - changes:
-        *all_paths
-      when: manual
-    # Otherwise, container jobs won't run because no rule matched.
+    # Just skip everything for MRs which don't actually change anything in the
+    # build - the same rules as above, but without the file-change rules
+    - if: *is-pre-merge-for-marge
+      when: never
+    - if: *is-post-merge
+      when: never
+    # Always allow user branches etc to trigger jobs manually
+    - when: manual
 
 # Git archive
 

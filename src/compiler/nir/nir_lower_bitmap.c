@@ -102,7 +102,7 @@ static void
 lower_bitmap_impl(nir_function_impl *impl,
                   const nir_lower_bitmap_options *options)
 {
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    lower_bitmap(impl->function->shader, &b, options);
 

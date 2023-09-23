@@ -645,6 +645,9 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 		non-visible draw calls.
 	</doc>
 	<value name="CP_FIXED_STRIDE_DRAW_TABLE" value="0x7f" variants="A7XX-"/>
+
+	<doc>Reset various on-chip state used for synchronization</doc>
+	<value name="CP_RESET_CONTEXT_STATE" value="0x1f" variants="A7XX-"/>
 </enum>
 
 
@@ -2246,6 +2249,14 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 	</reg32>
 	<reg32 offset="3" name="3">
 		<bitfield name="COUNT" low="0" high="31"/>
+	</reg32>
+</domain>
+
+<domain name="CP_RESET_CONTEXT_STATE" width="32">
+	<reg32 offset="0" name="0">
+		<bitfield name="CLEAR_ON_CHIP_TS" pos="0" type="boolean"/>
+		<bitfield name="CLEAR_RESOURCE_TABLE" pos="1" type="boolean"/>
+		<bitfield name="CLEAR_GLOBAL_LOCAL_TS" pos="2" type="boolean"/>
 	</reg32>
 </domain>
 

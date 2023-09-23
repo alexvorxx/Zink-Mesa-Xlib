@@ -21,7 +21,7 @@ st_nir_lower_position_invariant(struct nir_shader *s, bool aos,
                                 struct gl_program_parameter_list *paramList)
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(s);
-   nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    nir_def *mvp[4];
    for (int i = 0; i < 4; i++) {

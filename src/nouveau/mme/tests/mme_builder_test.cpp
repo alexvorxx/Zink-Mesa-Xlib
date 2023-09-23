@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 #include "mme_runner.h"
 #include "mme_tu104_sim.h"
 

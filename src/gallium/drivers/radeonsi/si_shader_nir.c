@@ -254,6 +254,7 @@ const nir_lower_subgroups_options si_nir_subgroups_options = {
    .lower_subgroup_masks = true,
    .lower_vote_trivial = false,
    .lower_vote_eq = true,
+   .lower_inverse_ballot = true,
 };
 
 /**

@@ -481,11 +481,12 @@ radv_ray_tracing_pipeline_cache_search(struct radv_device *device, struct vk_pip
       pipeline->base.base.shaders[MESA_SHADER_INTERSECTION] = radv_shader_ref(pipeline_obj->shaders[idx++]);
 
    for (unsigned i = 0; i < pCreateInfo->stageCount; i++) {
-      if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i])) {
+      if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i]))
          pipeline->stages[i].shader = &radv_shader_ref(pipeline_obj->shaders[idx++])->base;
-      } else if (is_library) {
-         pipeline->stages[i].shader = radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
-         complete &= pipeline->stages[i].shader != NULL;
+
+      if (is_library) {
+         pipeline->stages[i].nir = radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
+         complete &= pipeline->stages[i].nir != NULL;
       }
    }
 

@@ -335,7 +335,7 @@ lower_load_push_constant(struct nir_builder *builder, nir_instr *instr,
       nir_address_format_bit_size(ubo_format),
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-   nir_def *offset = nir_ssa_for_src(builder, intrin->src[0], 1);
+   nir_def *offset = intrin->src[0].ssa;
    nir_def *load_data = nir_load_ubo(
       builder, 
       intrin->def.num_components,
@@ -406,7 +406,7 @@ lower_yz_flip(struct nir_builder *builder, nir_instr *instr,
 
    const struct dxil_spirv_runtime_conf *rt_conf = data->rt_conf;
 
-   nir_def *pos = nir_ssa_for_src(builder, intrin->src[1], 4);
+   nir_def *pos = intrin->src[1].ssa;
    nir_def *y_pos = nir_channel(builder, pos, 1);
    nir_def *z_pos = nir_channel(builder, pos, 2);
    nir_def *y_flip_mask = NULL, *z_flip_mask = NULL, *dyn_yz_flip_mask = NULL;
@@ -879,7 +879,7 @@ lower_view_index_to_rt_layer(nir_shader *nir)
                                    nir_metadata_loop_analysis, var);
    } else {
       nir_function_impl *func = nir_shader_get_entrypoint(nir);
-      nir_builder b = nir_builder_at(nir_after_block(nir_impl_last_block(func)));
+      nir_builder b = nir_builder_at(nir_after_impl(func));
       add_layer_write(&b, NULL, var);
    }
 }
@@ -971,6 +971,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
       .lower_subgroup_masks = true,
       .lower_to_scalar = true,
       .lower_relative_shuffle = true,
+      .lower_inverse_ballot = true,
    };
    if (nir->info.stage != MESA_SHADER_FRAGMENT &&
        nir->info.stage != MESA_SHADER_COMPUTE)

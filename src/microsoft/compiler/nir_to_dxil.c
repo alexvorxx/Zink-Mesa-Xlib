@@ -3078,11 +3078,11 @@ emit_barrier_impl(struct ntd_context *ctx, nir_variable_mode modes, mesa_scope e
 
    bool is_compute = ctx->mod.shader_kind == DXIL_COMPUTE_SHADER;
 
-   if (modes & (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image)) {
-      if (mem_scope > SCOPE_WORKGROUP || !is_compute)
-         flags |= DXIL_BARRIER_MODE_UAV_FENCE_GLOBAL;
-      else
-         flags |= DXIL_BARRIER_MODE_UAV_FENCE_THREAD_GROUP;
+   if ((modes & (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image)) &&
+       (mem_scope > SCOPE_WORKGROUP || !is_compute)) {
+      flags |= DXIL_BARRIER_MODE_UAV_FENCE_GLOBAL;
+   } else {
+      flags |= DXIL_BARRIER_MODE_UAV_FENCE_THREAD_GROUP;
    }
 
    if ((modes & nir_var_mem_shared) && is_compute)

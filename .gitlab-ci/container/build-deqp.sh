@@ -70,6 +70,9 @@ cts_commits_to_backport=(
         # Test alpha-less 10bit formats correctly in wide_color tests
         # Fixes dEQP-EGL.functional.wide_color.*_888_colorspace_*
         dacf752adf388ce4399733ee9b4a3c8a4f317990
+
+        # KHR-GLES3.packed_pixels.*snorm
+        46158c2a1f570aab0dcefba461ddc879323367d5
 )
 
 for commit in "${cts_commits_to_backport[@]}"

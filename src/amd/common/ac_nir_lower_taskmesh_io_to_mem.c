@@ -26,13 +26,13 @@ static nir_def *
 task_workgroup_index(nir_builder *b,
                      lower_tsms_io_state *s)
 {
-   nir_def *id = nir_load_workgroup_id(b, 32);
+   nir_def *id = nir_load_workgroup_id(b);
 
    nir_def *x = nir_channel(b, id, 0);
    nir_def *y = nir_channel(b, id, 1);
    nir_def *z = nir_channel(b, id, 2);
 
-   nir_def *grid_size = nir_load_num_workgroups(b, 32);
+   nir_def *grid_size = nir_load_num_workgroups(b);
    nir_def *grid_size_x = nir_channel(b, grid_size, 0);
    nir_def *grid_size_y = nir_channel(b, grid_size, 1);
 

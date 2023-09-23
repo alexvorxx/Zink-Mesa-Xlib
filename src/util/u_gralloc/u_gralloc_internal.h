@@ -28,6 +28,7 @@ struct u_gralloc_ops {
 
 struct u_gralloc {
    struct u_gralloc_ops ops;
+   int type;
 };
 
 extern struct u_gralloc *u_gralloc_cros_api_create(void);

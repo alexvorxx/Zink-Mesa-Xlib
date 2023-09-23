@@ -172,7 +172,7 @@ create_array_tex_from_cube_tex(nir_builder *b, nir_tex_instr *tex, nir_def *coor
                                           nir_tex_instr_src_size(array_tex, s));
          array_tex->src[s].src = nir_src_for_ssa(c);
       } else
-         nir_src_copy(&array_tex->src[s].src, psrc, &array_tex->instr);
+         array_tex->src[s].src = nir_src_for_ssa(psrc->ssa);
       s++;
    }
 
@@ -434,14 +434,14 @@ lower_tex_to_txl(nir_builder *b, nir_tex_instr *tex)
    for (int i = 0; i < tex->num_srcs; i++) {
       if (i == bias_idx)
          continue;
-      nir_src_copy(&txl->src[s].src, &tex->src[i].src, &txl->instr);
+      txl->src[s].src = nir_src_for_ssa(tex->src[i].src.ssa);
       txl->src[s].src_type = tex->src[i].src_type;
       s++;
    }
    nir_def *lod = nir_get_texture_lod(b, tex);
 
    if (bias_idx >= 0)
-      lod = nir_fadd(b, lod, nir_ssa_for_src(b, tex->src[bias_idx].src, 1));
+      lod = nir_fadd(b, lod, tex->src[bias_idx].src.ssa);
    lod = nir_fadd_imm(b, lod, -1.0);
    txl->src[s] = nir_tex_src_for_ssa(nir_tex_src_lod, lod);
 

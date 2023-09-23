@@ -1,3 +1,10 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
+#ifndef NVK_BO_SYNC_H
+#define NVK_BO_SYNC_H 1
+
 #include "nvk_private.h"
 
 #include "vulkan/runtime/vk_sync.h"
@@ -23,3 +30,5 @@ nvk_create_sync_for_memory(struct vk_device *device,
                            VkDeviceMemory memory,
                            bool signal_memory,
                            struct vk_sync **sync_out);
+
+#endif /* NVK_BO_SYNC_H */

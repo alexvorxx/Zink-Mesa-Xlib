@@ -1,4 +1,7 @@
-
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_wsi.h"
 #include "nvk_instance.h"
 #include "wsi_common.h"

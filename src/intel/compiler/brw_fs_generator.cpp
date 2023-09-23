@@ -1758,7 +1758,7 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       assert(inst->force_writemask_all || inst->exec_size >= 4);
       assert(inst->force_writemask_all || inst->group % inst->exec_size == 0);
       assert(inst->base_mrf + inst->mlen <= BRW_MAX_MRF(devinfo->ver));
-      assert(inst->mlen <= BRW_MAX_MSG_LENGTH);
+      assert(inst->mlen <= BRW_MAX_MSG_LENGTH * reg_unit(devinfo));
 
       switch (inst->opcode) {
       case BRW_OPCODE_SYNC:

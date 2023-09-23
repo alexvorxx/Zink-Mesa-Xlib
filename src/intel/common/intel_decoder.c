@@ -30,6 +30,7 @@
 #include <inttypes.h>
 #include <zlib.h>
 
+#include <util/list.h>
 #include <util/macros.h>
 #include <util/os_file.h>
 #include <util/ralloc.h>
@@ -48,6 +49,17 @@ struct location {
    int line_number;
 };
 
+struct genxml_import_exclusion {
+   struct list_head link;
+   char *name;
+};
+
+struct genxml_import {
+   struct list_head link;
+   struct list_head exclusions;
+   char *name;
+};
+
 struct parser_context {
    XML_Parser parser;
    int foo;
@@ -55,6 +67,8 @@ struct parser_context {
 
    struct intel_group *group;
    struct intel_enum *enoom;
+   const char *dirname;
+   struct genxml_import import;
 
    int n_values, n_allocated_values;
    struct intel_value **values;
@@ -398,6 +412,172 @@ create_and_append_field(struct parser_context *ctx,
    return field;
 }
 
+static bool
+start_genxml_import(struct parser_context *ctx, const char **atts)
+{
+   assert(ctx->import.name == NULL);
+   assert(list_is_empty(&ctx->import.exclusions));
+   list_inithead(&ctx->import.exclusions);
+
+   for (int i = 0; atts[i]; i += 2) {
+      if (strcmp(atts[i], "name") == 0) {
+         ctx->import.name = ralloc_strdup(ctx->spec, atts[i + 1]);
+      }
+   }
+
+   if (ctx->import.name == NULL)
+      fail(&ctx->loc, "import without name");
+
+   return ctx->import.name != NULL;
+}
+
+static struct genxml_import_exclusion *
+add_genxml_import_exclusion(struct parser_context *ctx, const char **atts)
+{
+   struct genxml_import_exclusion *exclusion;
+
+   if (ctx->import.name == NULL) {
+      fail(&ctx->loc, "exclude found without a named import");
+      return NULL;
+   }
+
+   exclusion = rzalloc(ctx->import.name, struct genxml_import_exclusion);
+
+   for (int i = 0; atts[i]; i += 2) {
+      if (strcmp(atts[i], "name") == 0) {
+         exclusion->name = ralloc_strdup(exclusion, atts[i + 1]);
+      }
+   }
+
+   if (exclusion->name != NULL) {
+      list_addtail(&exclusion->link, &ctx->import.exclusions);
+   } else {
+      ralloc_free(exclusion);
+      exclusion = NULL;
+   }
+
+   return exclusion;
+}
+
+static void
+move_group_to_spec(struct intel_spec *new_spec, struct intel_spec *old_spec,
+                   struct intel_group *group);
+
+static void
+move_field_to_spec(struct intel_spec *new_spec, struct intel_spec *old_spec,
+                   struct intel_field *field)
+{
+   while (field != NULL) {
+      if (field->array != NULL && field->array->spec == old_spec)
+         move_group_to_spec(new_spec, old_spec, field->array);
+      if (field->type.kind == INTEL_TYPE_STRUCT &&
+          field->type.intel_struct->spec == old_spec)
+         move_group_to_spec(new_spec, old_spec, field->type.intel_struct);
+      if (field->type.kind == INTEL_TYPE_ENUM)
+         ralloc_steal(new_spec, field->type.intel_enum);
+      field = field->next;
+   }
+}
+
+static void
+move_group_to_spec(struct intel_spec *new_spec, struct intel_spec *old_spec,
+                   struct intel_group *group)
+{
+   struct intel_group *g = group;
+   while (g != NULL) {
+      if (g->spec == old_spec) {
+         if (ralloc_parent(g) == old_spec)
+            ralloc_steal(new_spec, g);
+         g->spec = new_spec;
+      }
+      g = g->next;
+   }
+   move_field_to_spec(new_spec, old_spec, group->fields);
+   move_field_to_spec(new_spec, old_spec, group->dword_length_field);
+}
+
+static bool
+finish_genxml_import(struct parser_context *ctx)
+{
+   struct intel_spec *spec = ctx->spec;
+   struct genxml_import *import = &ctx->import;
+
+   if (import->name == NULL) {
+      fail(&ctx->loc, "import without name");
+      return false;
+   }
+
+   struct intel_spec *imported_spec =
+      intel_spec_load_filename(ctx->dirname, import->name);
+   if (import->name == NULL) {
+      fail(&ctx->loc, "failed to load %s for importing", import->name);
+      return false;
+   }
+
+   assert(_mesa_hash_table_num_entries(imported_spec->access_cache) == 0);
+
+   list_for_each_entry(struct genxml_import_exclusion, exclusion,
+                       &import->exclusions, link) {
+      struct hash_entry *entry;
+      entry = _mesa_hash_table_search(imported_spec->commands,
+                                      exclusion->name);
+      if (entry != NULL) {
+         _mesa_hash_table_remove(imported_spec->commands, entry);
+      }
+      entry = _mesa_hash_table_search(imported_spec->structs,
+                                      exclusion->name);
+      if (entry != NULL) {
+         _mesa_hash_table_remove(imported_spec->structs, entry);
+      }
+      entry = _mesa_hash_table_search(imported_spec->registers_by_name,
+                                      exclusion->name);
+      if (entry != NULL) {
+         struct intel_group *group = entry->data;
+         _mesa_hash_table_remove(imported_spec->registers_by_name, entry);
+         entry = _mesa_hash_table_search(imported_spec->registers_by_offset,
+                                         (void *) (uintptr_t) group->register_offset);
+         if (entry != NULL)
+            _mesa_hash_table_remove(imported_spec->registers_by_offset, entry);
+      }
+      entry = _mesa_hash_table_search(imported_spec->enums,
+                                      exclusion->name);
+      if (entry != NULL) {
+         _mesa_hash_table_remove(imported_spec->enums, entry);
+      }
+   }
+
+   hash_table_foreach(imported_spec->commands, entry) {
+      struct intel_group *group = entry->data;
+      move_group_to_spec(spec, imported_spec, group);
+      _mesa_hash_table_insert(spec->commands, group->name, group);
+   }
+   hash_table_foreach(imported_spec->structs, entry) {
+      struct intel_group *group = entry->data;
+      move_group_to_spec(spec, imported_spec, group);
+      _mesa_hash_table_insert(spec->structs, group->name, group);
+   }
+   hash_table_foreach(imported_spec->registers_by_name, entry) {
+      struct intel_group *group = entry->data;
+      move_group_to_spec(spec, imported_spec, group);
+      _mesa_hash_table_insert(spec->registers_by_name, group->name, group);
+      _mesa_hash_table_insert(spec->registers_by_offset,
+                              (void *) (uintptr_t) group->register_offset,
+                              group);
+   }
+   hash_table_foreach(imported_spec->enums, entry) {
+      struct intel_enum *enoom = entry->data;
+      ralloc_steal(spec, enoom);
+      _mesa_hash_table_insert(spec->enums, enoom->name, enoom);
+   }
+
+   intel_spec_destroy(imported_spec);
+   ralloc_free(ctx->import.name); /* also frees exclusions */
+   ctx->import.name = NULL;
+   list_inithead(&ctx->import.exclusions);
+
+   return true;
+}
+
 static void
 start_element(void *data, const char *element_name, const char **atts)
 {
@@ -452,6 +632,10 @@ start_element(void *data, const char *element_name, const char **atts)
       }
       assert(ctx->n_values < ctx->n_allocated_values);
       ctx->values[ctx->n_values++] = create_value(ctx, atts);
+   } else if (strcmp(element_name, "import") == 0) {
+      start_genxml_import(ctx, atts);
+   } else if (strcmp(element_name, "exclude") == 0) {
+      add_genxml_import_exclusion(ctx, atts);
    }
 
 }
@@ -497,17 +681,21 @@ end_element(void *data, const char *name)
       struct intel_field *field = ctx->last_field;
       ctx->last_field = NULL;
       field->inline_enum.values = ctx->values;
+      ralloc_steal(field, ctx->values);
       field->inline_enum.nvalues = ctx->n_values;
       ctx->values = ralloc_array(ctx->spec, struct intel_value*, ctx->n_allocated_values = 2);
       ctx->n_values = 0;
    } else if (strcmp(name, "enum") == 0) {
       struct intel_enum *e = ctx->enoom;
       e->values = ctx->values;
+      ralloc_steal(e, ctx->values);
       e->nvalues = ctx->n_values;
       ctx->values = ralloc_array(ctx->spec, struct intel_value*, ctx->n_allocated_values = 2);
       ctx->n_values = 0;
       ctx->enoom = NULL;
       _mesa_hash_table_insert(spec->enums, e->name, e);
+   } else if (strcmp(name, "import") == 0) {
+      finish_genxml_import(ctx);
    }
 }
 
@@ -699,6 +887,8 @@ intel_spec_load_common(int verx10, const char *dirname, const char *filename)
       return NULL;
 
    memset(&ctx, 0, sizeof ctx);
+   ctx.dirname = dirname;
+   list_inithead(&ctx.import.exclusions);
    ctx.parser = XML_ParserCreate(NULL);
    XML_SetUserData(ctx.parser, &ctx);
    if (ctx.parser == NULL) {
@@ -734,6 +924,7 @@ intel_spec_load_common(int verx10, const char *dirname, const char *filename)
    }
 
    XML_ParserFree(ctx.parser);
+   assert(ctx.import.name == NULL);
 
    return ctx.spec;
 }

@@ -1,12 +1,12 @@
 use crate::api::icd::*;
 use crate::core::device::*;
+use crate::core::format::*;
 use crate::core::memory::*;
 use crate::core::util::*;
 use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::ResourceType;
-use mesa_rust_gen::*;
 use mesa_rust_util::properties::Properties;
 use rusticl_opencl_gen::*;
 
@@ -84,11 +84,13 @@ impl Context {
     pub fn create_texture(
         &self,
         desc: &cl_image_desc,
-        format: pipe_format,
+        format: &cl_image_format,
         user_ptr: *mut c_void,
         copy: bool,
         res_type: ResourceType,
     ) -> CLResult<HashMap<&'static Device, Arc<PipeResource>>> {
+        let pipe_format = format.to_pipe_format().unwrap();
+
         let width = desc
             .image_width
             .try_into()
@@ -110,17 +112,33 @@ impl Context {
         let mut res = HashMap::new();
         for &dev in &self.devs {
             let mut resource = None;
+            let enable_bind_as_image =
+                (dev.formats[format][&desc.image_type] as u32 & CL_MEM_WRITE_ONLY) != 0;
 
             // we can't specify custom pitches/slices, so this won't work for non 1D images
             if !user_ptr.is_null() && !copy && desc.image_type == CL_MEM_OBJECT_IMAGE1D {
                 resource = dev.screen().resource_create_texture_from_user(
-                    width, height, depth, array_size, target, format, user_ptr,
+                    width,
+                    height,
+                    depth,
+                    array_size,
+                    target,
+                    pipe_format,
+                    user_ptr,
+                    enable_bind_as_image,
                 )
             }
 
             if resource.is_none() {
                 resource = dev.screen().resource_create_texture(
-                    width, height, depth, array_size, target, format, res_type,
+                    width,
+                    height,
+                    depth,
+                    array_size,
+                    target,
+                    pipe_format,
+                    res_type,
+                    enable_bind_as_image,
                 )
             }
 

@@ -52,8 +52,7 @@ nir_lod_errata_instr(nir_builder *b, nir_instr *instr, void *data)
    nir_def_init(&l->instr, &l->def, 3, 32);
 
    /* TODO: Indirect samplers, separate sampler objects XXX */
-   nir_src idx = nir_src_for_ssa(nir_imm_int(b, tex->texture_index));
-   nir_src_copy(&l->src[0], &idx, &l->instr);
+   l->src[0] = nir_src_for_ssa(nir_imm_int(b, tex->texture_index));
 
    nir_builder_instr_insert(b, &l->instr);
    nir_def *params = &l->def;
@@ -68,7 +67,7 @@ nir_lod_errata_instr(nir_builder *b, nir_instr *instr, void *data)
       if (tex->src[i].src_type != nir_tex_src_lod)
          continue;
 
-      nir_def *lod = nir_ssa_for_src(b, tex->src[i].src, 1);
+      nir_def *lod = tex->src[i].src.ssa;
 
       nir_def *biased = nir_fadd(b, lod, lod_bias);
       nir_def *clamped = nir_fmin(b, nir_fmax(b, biased, min_lod), max_lod);

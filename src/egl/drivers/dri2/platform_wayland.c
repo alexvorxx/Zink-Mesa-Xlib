@@ -2111,6 +2111,50 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
    return (count != 0);
 }
 
+static bool
+dri2_initialize_wayland_drm_extensions(struct dri2_egl_display *dri2_dpy)
+{
+   /* Get default dma-buf feedback */
+   if (dri2_dpy->wl_dmabuf &&
+       zwp_linux_dmabuf_v1_get_version(dri2_dpy->wl_dmabuf) >=
+          ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION) {
+      dmabuf_feedback_format_table_init(&dri2_dpy->format_table);
+      dri2_dpy->wl_dmabuf_feedback =
+         zwp_linux_dmabuf_v1_get_default_feedback(dri2_dpy->wl_dmabuf);
+      zwp_linux_dmabuf_feedback_v1_add_listener(
+         dri2_dpy->wl_dmabuf_feedback, &dmabuf_feedback_listener, dri2_dpy);
+   }
+
+   if (roundtrip(dri2_dpy) < 0)
+      return false;
+
+   /* Destroy the default dma-buf feedback and the format table. */
+   if (dri2_dpy->wl_dmabuf_feedback) {
+      zwp_linux_dmabuf_feedback_v1_destroy(dri2_dpy->wl_dmabuf_feedback);
+      dri2_dpy->wl_dmabuf_feedback = NULL;
+      dmabuf_feedback_format_table_fini(&dri2_dpy->format_table);
+   }
+
+   /* We couldn't retrieve a render node from the dma-buf feedback (or the
+    * feedback was not advertised at all), so we must fallback to wl_drm. */
+   if (dri2_dpy->fd_render_gpu == -1) {
+      /* wl_drm not advertised by compositor, so can't continue */
+      if (dri2_dpy->wl_drm_name == 0)
+         return false;
+      wl_drm_bind(dri2_dpy);
+
+      if (dri2_dpy->wl_drm == NULL)
+         return false;
+      if (roundtrip(dri2_dpy) < 0 || dri2_dpy->fd_render_gpu == -1)
+         return false;
+
+      if (!dri2_dpy->authenticated &&
+          (roundtrip(dri2_dpy) < 0 || !dri2_dpy->authenticated))
+         return false;
+   }
+   return true;
+}
+
 static EGLBoolean
 dri2_initialize_wayland_drm(_EGLDisplay *disp)
 {
@@ -2156,44 +2200,8 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
    if (roundtrip(dri2_dpy) < 0)
       goto cleanup;
 
-   /* Get default dma-buf feedback */
-   if (dri2_dpy->wl_dmabuf &&
-       zwp_linux_dmabuf_v1_get_version(dri2_dpy->wl_dmabuf) >=
-          ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION) {
-      dmabuf_feedback_format_table_init(&dri2_dpy->format_table);
-      dri2_dpy->wl_dmabuf_feedback =
-         zwp_linux_dmabuf_v1_get_default_feedback(dri2_dpy->wl_dmabuf);
-      zwp_linux_dmabuf_feedback_v1_add_listener(
-         dri2_dpy->wl_dmabuf_feedback, &dmabuf_feedback_listener, dri2_dpy);
-   }
-
-   if (roundtrip(dri2_dpy) < 0)
+   if (!dri2_initialize_wayland_drm_extensions(dri2_dpy))
       goto cleanup;
-
-   /* Destroy the default dma-buf feedback and the format table. */
-   if (dri2_dpy->wl_dmabuf_feedback) {
-      zwp_linux_dmabuf_feedback_v1_destroy(dri2_dpy->wl_dmabuf_feedback);
-      dri2_dpy->wl_dmabuf_feedback = NULL;
-      dmabuf_feedback_format_table_fini(&dri2_dpy->format_table);
-   }
-
-   /* We couldn't retrieve a render node from the dma-buf feedback (or the
-    * feedback was not advertised at all), so we must fallback to wl_drm. */
-   if (dri2_dpy->fd_render_gpu == -1) {
-      /* wl_drm not advertised by compositor, so can't continue */
-      if (dri2_dpy->wl_drm_name == 0)
-         goto cleanup;
-      wl_drm_bind(dri2_dpy);
-
-      if (dri2_dpy->wl_drm == NULL)
-         goto cleanup;
-      if (roundtrip(dri2_dpy) < 0 || dri2_dpy->fd_render_gpu == -1)
-         goto cleanup;
-
-      if (!dri2_dpy->authenticated &&
-          (roundtrip(dri2_dpy) < 0 || !dri2_dpy->authenticated))
-         goto cleanup;
-   }
 
    loader_get_user_preferred_fd(&dri2_dpy->fd_render_gpu,
                                 &dri2_dpy->fd_display_gpu);
@@ -2649,6 +2657,16 @@ registry_handle_global_swrast(void *data, struct wl_registry *registry,
    if (strcmp(interface, wl_shm_interface.name) == 0) {
       dri2_dpy->wl_shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
       wl_shm_add_listener(dri2_dpy->wl_shm, &shm_listener, dri2_dpy);
+   } else if (strcmp(interface, wl_drm_interface.name) == 0) {
+      dri2_dpy->wl_drm_version = MIN2(version, 2);
+      dri2_dpy->wl_drm_name = name;
+   } else if (strcmp(interface, zwp_linux_dmabuf_v1_interface.name) == 0 &&
+              version >= 3) {
+      dri2_dpy->wl_dmabuf = wl_registry_bind(
+         registry, name, &zwp_linux_dmabuf_v1_interface,
+         MIN2(version, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION));
+      zwp_linux_dmabuf_v1_add_listener(dri2_dpy->wl_dmabuf, &dmabuf_listener,
+                                       dri2_dpy);
    }
 }
 
@@ -2735,14 +2753,6 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
       dri2_dpy->wl_dpy = disp->PlatformDisplay;
    }
 
-   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, true);
-   if (!dev) {
-      _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
-      goto cleanup;
-   }
-
-   disp->Device = dev;
-
    dri2_dpy->wl_queue = wl_display_create_queue(dri2_dpy->wl_dpy);
 
    dri2_dpy->wl_dpy_wrapper = wl_proxy_create_wrapper(dri2_dpy->wl_dpy);
@@ -2767,6 +2777,17 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
                           dri2_dpy->formats.num_formats))
       goto cleanup;
 
+   if (disp->Options.Zink)
+      dri2_initialize_wayland_drm_extensions(dri2_dpy);
+
+   dev = _eglFindDevice(dri2_dpy->fd_render_gpu, true);
+   if (!dev) {
+      _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to find EGLDevice");
+      goto cleanup;
+   }
+
+   disp->Device = dev;
+
    dri2_dpy->driver_name = strdup(disp->Options.Zink ? "zink" : "swrast");
    if (!dri2_load_driver_swrast(disp))
       goto cleanup;
@@ -2787,6 +2808,12 @@ dri2_initialize_wayland_swrast(_EGLDisplay *disp)
       _eglError(EGL_NOT_INITIALIZED, "DRI2: failed to add configs");
       goto cleanup;
    }
+
+   if (disp->Options.Zink && dri2_dpy->fd_render_gpu >= 0 &&
+       (dri2_dpy->wl_dmabuf || dri2_dpy->wl_drm))
+      dri2_set_WL_bind_wayland_display(disp);
+   disp->Extensions.EXT_swap_buffers_with_damage = EGL_TRUE;
+   disp->Extensions.EXT_present_opaque = EGL_TRUE;
 
    /* Fill vtbl last to prevent accidentally calling virtual function during
     * initialization.

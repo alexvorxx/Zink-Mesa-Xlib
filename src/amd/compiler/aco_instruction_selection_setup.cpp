@@ -250,7 +250,7 @@ get_reg_class(isel_context* ctx, RegType type, unsigned components, unsigned bit
 }
 
 void
-setup_tcs_info(isel_context* ctx, nir_shader* nir, nir_shader* vs)
+setup_tcs_info(isel_context* ctx)
 {
    ctx->tcs_in_out_eq = ctx->program->info.vs.tcs_in_out_eq;
    ctx->tcs_temp_only_inputs = ctx->program->info.vs.tcs_temp_only_input_mask;
@@ -649,9 +649,8 @@ isel_context
 setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* const* shaders,
                    ac_shader_config* config, const struct aco_compiler_options* options,
                    const struct aco_shader_info* info, const struct ac_shader_args* args,
-                   bool is_ps_epilog, bool is_tcs_epilog)
+                   SWStage sw_stage)
 {
-   SWStage sw_stage = SWStage::None;
    for (unsigned i = 0; i < shader_count; i++) {
       switch (shaders[i]->info.stage) {
       case MESA_SHADER_VERTEX: sw_stage = sw_stage | SWStage::VS; break;
@@ -673,16 +672,6 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
       }
    }
 
-   if (is_ps_epilog) {
-      assert(shader_count == 0 && !shaders);
-      sw_stage = SWStage::FS;
-   }
-
-   if (is_tcs_epilog) {
-      assert(shader_count == 0 && !shaders);
-      sw_stage = SWStage::TCS;
-   }
-
    init_program(program, Stage{info->hw_stage, sw_stage}, info, options->gfx_level, options->family,
                 options->wgp_mode, config);
 
@@ -699,10 +688,7 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
    ASSERTED bool mesh_shading = ctx.stage.has(SWStage::TS) || ctx.stage.has(SWStage::MS);
    assert(!mesh_shading || ctx.program->gfx_level >= GFX10_3);
 
-   if (ctx.stage == tess_control_hs && !is_tcs_epilog)
-      setup_tcs_info(&ctx, shaders[0], NULL);
-   else if (ctx.stage == vertex_tess_control_hs)
-      setup_tcs_info(&ctx, shaders[1], shaders[0]);
+   setup_tcs_info(&ctx);
 
    calc_min_waves(program);
 

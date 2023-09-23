@@ -155,9 +155,9 @@ check_instructions(exec_list *instructions,
    EXPECT_EQ(ir_type_variable, ir->ir_type);
    EXPECT_EQ(type, tmp1->type) <<
       "    Got " <<
-      tmp1->type->name <<
+      glsl_get_type_name(tmp1->type) <<
       ", expected " <<
-      type->name;
+      glsl_get_type_name(type);
 
    ASSERT_FALSE(instructions->is_empty());
    ir = (ir_instruction *) instructions->pop_head();
@@ -421,9 +421,9 @@ TEST_F(compact_destination, uint64)
    ASSERT_EQ(ir_type_dereference_variable, deref->ir_type);
    EXPECT_EQ(type, deref->var->type) <<
       "    Got " <<
-      deref->var->type->name <<
+      glsl_get_type_name(deref->var->type) <<
       ", expected " <<
-      type->name;
+      glsl_get_type_name(type);
 
    ir_instruction *ir;
 

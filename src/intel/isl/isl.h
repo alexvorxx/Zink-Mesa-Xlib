@@ -576,8 +576,10 @@ enum isl_tiling {
    ISL_TILING_W, /**< W tiling */
    ISL_TILING_X, /**< X tiling */
    ISL_TILING_Y0, /**< Legacy Y tiling */
-   ISL_TILING_Yf, /**< Standard 4K tiling. The 'f' means "four". */
-   ISL_TILING_Ys, /**< Standard 64K tiling. The 's' means "sixty-four". */
+   ISL_TILING_SKL_Yf, /**< Standard 4K tiling. The 'f' means "four". */
+   ISL_TILING_SKL_Ys, /**< Standard 64K tiling. The 's' means "sixty-four". */
+   ISL_TILING_ICL_Yf, /**< Standard 4K tiling. The 'f' means "four". */
+   ISL_TILING_ICL_Ys, /**< Standard 64K tiling. The 's' means "sixty-four". */
    ISL_TILING_4,  /**< 4K tiling. */
    ISL_TILING_64,  /**< 64K tiling.*/
    ISL_TILING_HIZ, /**< Tiling format for HiZ surfaces */
@@ -594,8 +596,10 @@ typedef uint32_t isl_tiling_flags_t;
 #define ISL_TILING_W_BIT                  (1u << ISL_TILING_W)
 #define ISL_TILING_X_BIT                  (1u << ISL_TILING_X)
 #define ISL_TILING_Y0_BIT                 (1u << ISL_TILING_Y0)
-#define ISL_TILING_Yf_BIT                 (1u << ISL_TILING_Yf)
-#define ISL_TILING_Ys_BIT                 (1u << ISL_TILING_Ys)
+#define ISL_TILING_SKL_Yf_BIT             (1u << ISL_TILING_SKL_Yf)
+#define ISL_TILING_SKL_Ys_BIT             (1u << ISL_TILING_SKL_Ys)
+#define ISL_TILING_ICL_Yf_BIT             (1u << ISL_TILING_ICL_Yf)
+#define ISL_TILING_ICL_Ys_BIT             (1u << ISL_TILING_ICL_Ys)
 #define ISL_TILING_4_BIT                  (1u << ISL_TILING_4)
 #define ISL_TILING_64_BIT                 (1u << ISL_TILING_64)
 #define ISL_TILING_HIZ_BIT                (1u << ISL_TILING_HIZ)
@@ -606,12 +610,16 @@ typedef uint32_t isl_tiling_flags_t;
 
 /** Any Y tiling, including legacy Y tiling. */
 #define ISL_TILING_ANY_Y_MASK             (ISL_TILING_Y0_BIT | \
-                                           ISL_TILING_Yf_BIT | \
-                                           ISL_TILING_Ys_BIT)
+                                           ISL_TILING_SKL_Yf_BIT | \
+                                           ISL_TILING_SKL_Ys_BIT | \
+                                           ISL_TILING_ICL_Yf_BIT | \
+                                           ISL_TILING_ICL_Ys_BIT)
 
 /** The Skylake BSpec refers to Yf and Ys as "standard tiling formats". */
-#define ISL_TILING_STD_Y_MASK             (ISL_TILING_Yf_BIT | \
-                                           ISL_TILING_Ys_BIT)
+#define ISL_TILING_STD_Y_MASK             (ISL_TILING_SKL_Yf_BIT | \
+                                           ISL_TILING_SKL_Ys_BIT | \
+                                           ISL_TILING_ICL_Yf_BIT | \
+                                           ISL_TILING_ICL_Ys_BIT)
 /** @} */
 
 /**
@@ -639,8 +647,6 @@ enum isl_dim_layout {
     *
     *    One-dimensional surfaces are identical to 2D surfaces with height of
     *    one.
-    *
-    * @invariant isl_surf::phys_level0_sa::depth == 1
     */
    ISL_DIM_LAYOUT_GFX4_2D,
 
@@ -1121,6 +1127,7 @@ typedef uint64_t isl_surf_usage_flags_t;
 #define ISL_SURF_USAGE_PROTECTED_BIT           (1u << 16)
 #define ISL_SURF_USAGE_VIDEO_DECODE_BIT        (1u << 17)
 #define ISL_SURF_USAGE_STREAM_OUT_BIT          (1u << 18)
+#define ISL_SURF_USAGE_2D_3D_COMPATIBLE_BIT    (1u << 19)
 /** @} */
 
 /**
@@ -1429,6 +1436,14 @@ struct isl_tile_info {
    struct isl_extent4d logical_extent_el;
 
    /**
+    * The maximum number of miplevels that will fit in the miptail.
+    *
+    * This does not guarantee that the given number of miplevels will fit in
+    * the miptail as that is also dependent on the size of the miplevels.
+    */
+   uint32_t max_miptail_levels;
+
+   /**
     * The physical size of the tile in bytes and rows of bytes
     *
     * This field determines how the tiles of a surface are physically laid
@@ -1489,6 +1504,9 @@ struct isl_surf_init_info {
 
    /** Lower bound for isl_surf::alignment, in bytes. */
    uint32_t min_alignment_B;
+
+   /** Lower bound for where to start the miptail */
+   uint32_t min_miptail_start_level;
 
    /**
     * Exact value for isl_surf::row_pitch. Ignored if zero.  isl_surf_init()
@@ -1589,6 +1607,14 @@ struct isl_surf {
    uint32_t array_pitch_el_rows;
 
    enum isl_array_pitch_span array_pitch_span;
+
+   /**
+    * Level at which the miptail starts.
+    *
+    * This value is inclusive in the sense that the miptail contains this
+    * level.
+    */
+   uint32_t miptail_start_level;
 
    /** Copy of isl_surf_init_info::usage. */
    isl_surf_usage_flags_t usage;

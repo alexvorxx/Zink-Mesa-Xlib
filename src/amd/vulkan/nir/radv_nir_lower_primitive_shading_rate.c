@@ -51,7 +51,7 @@ radv_nir_lower_primitive_shading_rate(nir_shader *nir, enum amd_gfx_level gfx_le
 
          b.cursor = nir_before_instr(instr);
 
-         nir_def *val = nir_ssa_for_src(&b, intr->src[1], 1);
+         nir_def *val = intr->src[1].ssa;
 
          /* x_rate = (shadingRate & (Horizontal2Pixels | Horizontal4Pixels)) ? 0x1 : 0x0; */
          nir_def *x_rate = nir_iand_imm(&b, val, 12);

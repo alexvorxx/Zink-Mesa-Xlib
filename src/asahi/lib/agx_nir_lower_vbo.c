@@ -176,7 +176,8 @@ pass(struct nir_builder *b, nir_instr *instr, void *data)
     * i.e. the set of formats that support masking.
     */
    if (offset_el == 0 && (stride_el == 2 || stride_el == 4) &&
-       agx_internal_format_supports_mask(interchange_format)) {
+       agx_internal_format_supports_mask(
+          (enum agx_internal_formats)interchange_format)) {
 
       shift = util_logbase2(stride_el);
       stride_el = 1;

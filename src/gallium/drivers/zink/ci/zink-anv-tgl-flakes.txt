@@ -1,6 +1,4 @@
-# driver seems flaky
-KHR-GL46.sample_variables.mask.rgba8.*.samples.*.mask.*
-
+glx@glx-tfp
 # ???
 spec@arb_query_buffer_object@qbo
 spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB
@@ -102,6 +100,10 @@ wayland-dEQP-EGL.functional.render.single_context.gles2.rgba8888_pbuffer
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgb565_pbuffer
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgb888_pbuffer
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgba8888_pbuffer
+
+# Everything in wayland EGL is flaking with crashes since at least early 2023-09
+# Possibly https://gitlab.freedesktop.org/mesa/mesa/-/issues/9577
+wayland-dEQP-EGL.functional.*
 
 spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-index-wr
 

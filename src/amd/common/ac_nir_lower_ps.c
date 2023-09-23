@@ -751,7 +751,7 @@ emit_ps_null_export(nir_builder *b, lower_ps_state *s)
 static void
 export_ps_outputs(nir_builder *b, lower_ps_state *s)
 {
-   b->cursor = nir_after_cf_list(&b->impl->body);
+   b->cursor = nir_after_impl(b->impl);
 
    emit_ps_color_clamp_and_alpha_test(b, s);
 

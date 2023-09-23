@@ -731,6 +731,10 @@ iris_resource_configure_main(const struct iris_screen *screen,
       tiling_flags = ISL_TILING_ANY_MASK;
    }
 
+   /* We don't support Yf or Ys tiling yet */
+   tiling_flags &= ~ISL_TILING_STD_Y_MASK;
+   assert(tiling_flags != 0);
+
    isl_surf_usage_flags_t usage = 0;
 
    if (res->mod_info && !isl_drm_modifier_has_aux(modifier))
@@ -2635,8 +2639,8 @@ iris_transfer_map(struct pipe_context *ctx,
    if (prefer_cpu_access(res, box, usage, level, map_would_stall))
       usage |= PIPE_MAP_DIRECTLY;
 
-   /* TODO: Teach iris_map_tiled_memcpy about Tile4 and Tile64... */
-   if (res->surf.tiling == ISL_TILING_4 || res->surf.tiling == ISL_TILING_64)
+   /* TODO: Teach iris_map_tiled_memcpy about Tile64... */
+   if (res->surf.tiling == ISL_TILING_64)
       usage &= ~PIPE_MAP_DIRECTLY;
 
    if (!(usage & PIPE_MAP_DIRECTLY)) {
@@ -2761,10 +2765,9 @@ iris_texture_subdata(struct pipe_context *ctx,
     * take that path if we need the GPU to perform color compression, or
     * stall-avoidance blits.
     *
-    * TODO: Teach isl_memcpy_linear_to_tiled about Tile4 and Tile64...
+    * TODO: Teach isl_memcpy_linear_to_tiled about Tile64...
     */
    if (surf->tiling == ISL_TILING_LINEAR ||
-       surf->tiling == ISL_TILING_4 ||
        surf->tiling == ISL_TILING_64 ||
        isl_aux_usage_has_compression(res->aux.usage) ||
        resource_is_busy(ice, res) ||

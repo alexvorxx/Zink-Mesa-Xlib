@@ -22,14 +22,7 @@ KHR-GL46.direct_state_access.framebuffers_texture_layer_attachment
 .*built-in-functions@.*-op-mult-dmat4-dmat4
 .*built-in-functions@.*-op-mult-dmat4x3-dmat4
 .*built-in-functions@.*-op-mult-dmat3x4-dmat4x3
-.*built-in-functions@fs-op-div-dmat3-dmat3
-.*built-in-functions@fs-op-div-dmat3-double
-.*built-in-functions@fs-op-div-dmat3x4-dmat3x4
-.*built-in-functions@fs-op-div-dmat3x4-double
-.*built-in-functions@fs-op-div-dmat4x3-dmat4x3
-.*built-in-functions@fs-op-div-dmat4x3-double
-.*built-in-functions@fs-op-div-double-dmat3
-.*built-in-functions@fs-op-div-double-dmat3x4
+.*built-in-functions@fs-op-div-.*dmat.*
 .*built-in-functions@fs-mod-dvec4-dvec4
 .*fs-isnan-dvec
 .*gs-isnan-dvec

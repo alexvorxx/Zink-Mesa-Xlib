@@ -202,6 +202,8 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
                prog_data->uses_kill) ||
               (devinfo->ver < 11 &&
                (color1.file != BAD_FILE || key->nr_color_regions > 1))) {
+      assert(devinfo->ver < 20);
+
       /* From the Sandy Bridge PRM, volume 4, page 198:
        *
        *     "Dispatched Pixel Enables. One bit per pixel indicating
@@ -289,8 +291,8 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
    }
 
    if (sample_mask.file != BAD_FILE) {
-      sources[length] = fs_reg(VGRF, bld.shader->alloc.allocate(1),
-                               BRW_REGISTER_TYPE_UD);
+      const fs_reg tmp(VGRF, bld.shader->alloc.allocate(reg_unit(devinfo)),
+                       BRW_REGISTER_TYPE_UD);
 
       /* Hand over gl_SampleMask.  Only the lower 16 bits of each channel are
        * relevant.  Since it's unsigned single words one vgrf is always
@@ -303,10 +305,12 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
       sample_mask.stride *= 2;
 
       bld.exec_all().annotate("FB write oMask")
-         .MOV(horiz_offset(retype(sources[length], BRW_REGISTER_TYPE_UW),
-                           inst->group % 16),
+         .MOV(horiz_offset(retype(tmp, BRW_REGISTER_TYPE_UW),
+                           inst->group % (16 * reg_unit(devinfo))),
               sample_mask);
-      length++;
+
+      for (unsigned i = 0; i < reg_unit(devinfo); i++)
+         sources[length++] = byte_offset(tmp, REG_SIZE * i);
    }
 
    payload_header_size = length;
@@ -331,13 +335,13 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
 
    if (src_stencil.file != BAD_FILE) {
       assert(devinfo->ver >= 9);
-      assert(bld.dispatch_width() == 8);
+      assert(bld.dispatch_width() == 8 * reg_unit(devinfo));
 
       /* XXX: src_stencil is only available on gfx9+. dst_depth is never
        * available on gfx9+. As such it's impossible to have both enabled at the
        * same time and therefore length cannot overrun the array.
        */
-      assert(length < 15);
+      assert(length < 15 * reg_unit(devinfo));
 
       sources[length] = bld.vgrf(BRW_REGISTER_TYPE_UD);
       bld.exec_all().annotate("FB write OS")
@@ -819,7 +823,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
       brw_reg_type_from_bit_size(payload_type_bit_size, BRW_REGISTER_TYPE_D);
    unsigned reg_width = bld.dispatch_width() / 8;
    unsigned header_size = 0, length = 0;
-   fs_reg sources[MAX_SAMPLER_MESSAGE_SIZE];
+   fs_reg sources[1 + MAX_SAMPLER_MESSAGE_SIZE];
    for (unsigned i = 0; i < ARRAY_SIZE(sources); i++)
       sources[i] = bld.vgrf(payload_type);
 
@@ -842,8 +846,8 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
        * the header.
        */
       fs_reg header = retype(sources[0], BRW_REGISTER_TYPE_UD);
-      header_size = 1;
-      length++;
+      for (header_size = 0; header_size < reg_unit(devinfo); header_size++)
+         sources[length++] = byte_offset(header, REG_SIZE * header_size);
 
       /* If we're requesting fewer than four channels worth of response,
        * and we have an explicit header, we need to set up the sampler
@@ -860,7 +864,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
          inst->offset |= 1 << 23; /* g0.2 bit23 : Pixel Null Mask Enable */
 
       /* Build the actual header */
-      const fs_builder ubld = bld.exec_all().group(8, 0);
+      const fs_builder ubld = bld.exec_all().group(8 * reg_unit(devinfo), 0);
       const fs_builder ubld1 = ubld.group(1, 0);
       ubld.MOV(header, retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));
       if (inst->offset) {
@@ -949,8 +953,10 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
       length++;
       break;
    case SHADER_OPCODE_TXD:
-      /* TXD should have been lowered in SIMD16 mode. */
-      assert(bld.dispatch_width() == 8);
+      /* TXD should have been lowered in SIMD16 mode (in SIMD32 mode in
+       * Xe2+).
+       */
+      assert(bld.dispatch_width() == (8 * reg_unit(devinfo)));
 
       /* Load dPdx and the coordinate together:
        * [hdr], [ref], x, dPdx.x, dPdy.x, y, dPdx.y, dPdy.y, z, dPdx.z, dPdy.z
@@ -1127,7 +1133,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
     */
    fs_inst *load_payload_inst =
       emit_load_payload_with_padding(bld, src_payload, sources, length,
-                                     header_size, REG_SIZE);
+                                     header_size, REG_SIZE * reg_unit(devinfo));
    unsigned mlen = load_payload_inst->size_written / REG_SIZE;
    unsigned simd_mode = 0;
    if (payload_type_bit_size == 16) {
@@ -1229,7 +1235,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
    }
 
    /* Message length > MAX_SAMPLER_MESSAGE_SIZE disallowed by hardware. */
-   assert(inst->mlen <= MAX_SAMPLER_MESSAGE_SIZE);
+   assert(inst->mlen <= MAX_SAMPLER_MESSAGE_SIZE * reg_unit(devinfo));
 }
 
 static unsigned
@@ -2597,9 +2603,18 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
       unreachable("Invalid interpolator instruction");
    }
 
+   const bool dynamic_mode =
+      inst->opcode == FS_OPCODE_INTERPOLATE_AT_SAMPLE &&
+      wm_prog_data->persample_dispatch == BRW_SOMETIMES;
+
    fs_reg desc = inst->src[1];
    uint32_t desc_imm =
-      brw_pixel_interp_desc(devinfo, mode, inst->pi_noperspective,
+      brw_pixel_interp_desc(devinfo,
+                            /* Leave the mode at 0 if persample_dispatch is
+                             * dynamic, it will be ORed in below.
+                             */
+                            dynamic_mode ? 0 : mode,
+                            inst->pi_noperspective,
                             false /* coarse_pixel_rate */,
                             inst->exec_size, inst->group);
 
@@ -2613,11 +2628,53 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
       ubld.AND(desc, dynamic_msaa_flags(wm_prog_data),
                brw_imm_ud(BRW_WM_MSAA_FLAG_COARSE_PI_MSG));
 
-   /* And, if it's AT_OFFSET, we might have a non-trivial descriptor */
+      /* And, if it's AT_OFFSET, we might have a non-trivial descriptor */
       if (orig_desc.file == IMM) {
          desc_imm |= orig_desc.ud;
       } else {
          ubld.OR(desc, desc, orig_desc);
+      }
+   }
+
+   /* If persample_dispatch is dynamic, select the interpolation mode
+    * dynamically and OR into the descriptor to complete the static part
+    * generated by brw_pixel_interp_desc().
+    *
+    * Why does this work? If you look at the SKL PRMs, Volume 7:
+    * 3D-Media-GPGPU, Shared Functions Pixel Interpolater, you'll see that
+    *
+    *   - "Per Message Offset” Message Descriptor
+    *   - “Sample Position Offset” Message Descriptor
+    *
+    * have different formats. Fortunately, a fragment shader dispatched at
+    * pixel rate, will have gl_SampleID = 0 & gl_NumSamples = 1. So the value
+    * we pack in “Sample Position Offset” will be a 0 and will cover the X/Y
+    * components of "Per Message Offset”, which will give us the pixel offset 0x0.
+    */
+   if (dynamic_mode) {
+      fs_reg orig_desc = desc;
+      const fs_builder &ubld = bld.exec_all().group(8, 0);
+      desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+
+      check_dynamic_msaa_flag(ubld, wm_prog_data,
+                              BRW_WM_MSAA_FLAG_PERSAMPLE_DISPATCH);
+      if (orig_desc.file == IMM) {
+         /* Not using SEL here because we would generate an instruction with 2
+          * immediate sources which is not supported by HW.
+          */
+         set_predicate_inv(BRW_PREDICATE_NORMAL, false,
+                           ubld.MOV(desc, brw_imm_ud(orig_desc.ud |
+                                                     GFX7_PIXEL_INTERPOLATOR_LOC_SAMPLE << 12)));
+         set_predicate_inv(BRW_PREDICATE_NORMAL, true,
+                           ubld.MOV(desc, brw_imm_ud(orig_desc.ud |
+                                                     GFX7_PIXEL_INTERPOLATOR_LOC_SHARED_OFFSET << 12)));
+      } else {
+         set_predicate_inv(BRW_PREDICATE_NORMAL, false,
+                           ubld.OR(desc, orig_desc,
+                                   brw_imm_ud(GFX7_PIXEL_INTERPOLATOR_LOC_SAMPLE << 12)));
+         set_predicate_inv(BRW_PREDICATE_NORMAL, true,
+                           ubld.OR(desc, orig_desc,
+                                   brw_imm_ud(GFX7_PIXEL_INTERPOLATOR_LOC_SHARED_OFFSET << 12)));
       }
    }
 
@@ -2644,9 +2701,10 @@ lower_btd_logical_send(const fs_builder &bld, fs_inst *inst)
    fs_reg global_addr = inst->src[0];
    const fs_reg btd_record = inst->src[1];
 
-   const unsigned mlen = 2;
-   const fs_builder ubld = bld.exec_all().group(8, 0);
-   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2);
+   const unsigned unit = reg_unit(devinfo);
+   const unsigned mlen = 2 * unit;
+   const fs_builder ubld = bld.exec_all();
+   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2 * unit);
 
    ubld.MOV(header, brw_imm_ud(0));
    switch (inst->opcode) {
@@ -2669,9 +2727,9 @@ lower_btd_logical_send(const fs_builder &bld, fs_inst *inst)
    /* Stack IDs are always in R1 regardless of whether we're coming from a
     * bindless shader or a regular compute shader.
     */
-   fs_reg stack_ids =
-      retype(byte_offset(header, REG_SIZE), BRW_REGISTER_TYPE_UW);
-   bld.MOV(stack_ids, retype(brw_vec8_grf(1, 0), BRW_REGISTER_TYPE_UW));
+   fs_reg stack_ids = retype(offset(header, bld, 1), BRW_REGISTER_TYPE_UW);
+   bld.exec_all().MOV(stack_ids, retype(brw_vec8_grf(1 * unit, 0),
+                                        BRW_REGISTER_TYPE_UW));
 
    unsigned ex_mlen = 0;
    fs_reg payload;
@@ -2733,8 +2791,9 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
    assert(synchronous_src.file == BRW_IMMEDIATE_VALUE);
    const bool synchronous = synchronous_src.ud;
 
-   const unsigned mlen = 1;
-   const fs_builder ubld = bld.exec_all().group(8, 0);
+   const unsigned unit = reg_unit(devinfo);
+   const unsigned mlen = unit;
+   const fs_builder ubld = bld.exec_all();
    fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD);
    ubld.MOV(header, brw_imm_ud(0));
    ubld.group(2, 0).MOV(header, globals_addr);
@@ -2762,7 +2821,7 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
     */
    if (!synchronous) {
       bld.AND(subscript(payload, BRW_REGISTER_TYPE_UW, 1),
-              retype(brw_vec8_grf(1, 0), BRW_REGISTER_TYPE_UW),
+              retype(brw_vec8_grf(1 * unit, 0), BRW_REGISTER_TYPE_UW),
               brw_imm_uw(0x7ff));
    }
 

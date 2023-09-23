@@ -1336,6 +1336,11 @@ lp_setup_create(struct pipe_context *pipe,
 
    lp_setup_init_vbuf(setup);
 
+   setup->psize_slot = -1;
+   setup->viewport_index_slot = -1;
+   setup->layer_slot = -1;
+   setup->face_slot = -1;
+
    /* Used only in update_state():
     */
    setup->pipe = pipe;

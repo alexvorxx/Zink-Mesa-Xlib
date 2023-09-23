@@ -25,7 +25,7 @@ pass(struct nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *data)
       return false;
 
    b->cursor = nir_before_instr(&intr->instr);
-   nir_src_rewrite(offset, nir_u2u16(b, nir_ssa_for_src(b, *offset, 1)));
+   nir_src_rewrite(offset, nir_u2u16(b, offset->ssa));
    return true;
 }
 

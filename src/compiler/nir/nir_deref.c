@@ -351,7 +351,7 @@ nir_build_deref_offset(nir_builder *b, nir_deref_instr *deref,
       switch ((*p)->deref_type) {
       case nir_deref_type_array:
       case nir_deref_type_ptr_as_array: {
-         nir_def *index = nir_ssa_for_src(b, (*p)->arr.index, 1);
+         nir_def *index = (*p)->arr.index.ssa;
          int stride = type_get_array_stride((*p)->type, size_align);
          offset = nir_iadd(b, offset, nir_amul_imm(b, index, stride));
          break;
@@ -744,7 +744,6 @@ struct rematerialize_deref_state {
    bool progress;
    nir_builder builder;
    nir_block *block;
-   struct hash_table *cache;
 };
 
 static nir_deref_instr *
@@ -753,14 +752,6 @@ rematerialize_deref_in_block(nir_deref_instr *deref,
 {
    if (deref->instr.block == state->block)
       return deref;
-
-   if (!state->cache) {
-      state->cache = _mesa_pointer_hash_table_create(NULL);
-   }
-
-   struct hash_entry *cached = _mesa_hash_table_search(state->cache, deref);
-   if (cached)
-      return cached->data;
 
    nir_builder *b = &state->builder;
    nir_deref_instr *new_deref =
@@ -776,7 +767,7 @@ rematerialize_deref_in_block(nir_deref_instr *deref,
          parent = rematerialize_deref_in_block(parent, state);
          new_deref->parent = nir_src_for_ssa(&parent->def);
       } else {
-         nir_src_copy(&new_deref->parent, &deref->parent, &new_deref->instr);
+         new_deref->parent = nir_src_for_ssa(deref->parent.ssa);
       }
    }
 
@@ -795,7 +786,7 @@ rematerialize_deref_in_block(nir_deref_instr *deref,
    case nir_deref_type_array:
    case nir_deref_type_ptr_as_array:
       assert(!nir_src_as_deref(deref->arr.index));
-      nir_src_copy(&new_deref->arr.index, &deref->arr.index, &new_deref->instr);
+      new_deref->arr.index = nir_src_for_ssa(deref->arr.index.ssa);
       break;
 
    case nir_deref_type_struct:
@@ -832,6 +823,34 @@ rematerialize_deref_src(nir_src *src, void *_state)
    return true;
 }
 
+bool
+nir_rematerialize_deref_in_use_blocks(nir_deref_instr *instr)
+{
+   if (nir_deref_instr_remove_if_unused(instr))
+      return true;
+
+   struct rematerialize_deref_state state = {
+      .builder = nir_builder_create(nir_cf_node_get_function(&instr->instr.block->cf_node)),
+   };
+
+   nir_foreach_use_safe(use, &instr->def) {
+      if (use->parent_instr->block == instr->instr.block)
+         continue;
+
+      /* If a deref is used in a phi, we can't rematerialize it, as the new
+       * derefs would appear before the phi, which is not valid.
+       */
+      if (use->parent_instr->type == nir_instr_type_phi)
+         continue;
+
+      state.block = use->parent_instr->block;
+      state.builder.cursor = nir_before_instr(use->parent_instr);
+      rematerialize_deref_src(use, &state);
+   }
+
+   return state.progress;
+}
+
 /** Re-materialize derefs in every block
  *
  * This pass re-materializes deref instructions in every block in which it is
@@ -844,29 +863,13 @@ rematerialize_deref_src(nir_src *src, void *_state)
 bool
 nir_rematerialize_derefs_in_use_blocks_impl(nir_function_impl *impl)
 {
-   struct rematerialize_deref_state state = { 0 };
-   state.builder = nir_builder_create(impl);
-
+   bool progress = false;
    nir_foreach_block_unstructured(block, impl) {
-      state.block = block;
-
-      /* Start each block with a fresh cache */
-      if (state.cache)
-         _mesa_hash_table_clear(state.cache, NULL);
-
       nir_foreach_instr_safe(instr, block) {
-         if (instr->type == nir_instr_type_deref &&
-             nir_deref_instr_remove_if_unused(nir_instr_as_deref(instr)))
-            continue;
-
-         /* If a deref is used in a phi, we can't rematerialize it, as the new
-          * derefs would appear before the phi, which is not valid.
-          */
-         if (instr->type == nir_instr_type_phi)
-            continue;
-
-         state.builder.cursor = nir_before_instr(instr);
-         nir_foreach_src(instr, rematerialize_deref_src, &state);
+         if (instr->type == nir_instr_type_deref) {
+            nir_deref_instr *deref = nir_instr_as_deref(instr);
+            progress |= nir_rematerialize_deref_in_use_blocks(deref);
+         }
       }
 
 #ifndef NDEBUG
@@ -876,9 +879,7 @@ nir_rematerialize_derefs_in_use_blocks_impl(nir_function_impl *impl)
 #endif
    }
 
-   _mesa_hash_table_destroy(state.cache, NULL);
-
-   return state.progress;
+   return progress;
 }
 
 static void

@@ -741,7 +741,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
 
    ctx->abi.clamp_shadow_reference = true;
    ctx->abi.robust_buffer_access = true;
-   ctx->abi.convert_undef_to_zero = true;
    ctx->abi.load_grid_size_from_user_sgpr = true;
    ctx->abi.clamp_div_by_zero = ctx->screen->options.clamp_div_by_zero ||
                                 info->options & SI_PROFILE_CLAMP_DIV_BY_ZERO;

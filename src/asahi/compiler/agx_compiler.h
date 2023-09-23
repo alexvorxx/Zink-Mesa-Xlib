@@ -296,6 +296,9 @@ typedef struct {
    /* For local access */
    enum agx_format format;
 
+   /* Number of nested control flow layers to jump by. TODO: Optimize */
+   uint32_t nest;
+
    /* Invert icond/fcond */
    bool invert_cond : 1;
 
@@ -317,9 +320,6 @@ typedef struct {
    /* Scoreboard index, 0 or 1. Leave as 0 for instructions that do not require
     * scoreboarding (everything but memory load/store and texturing). */
    unsigned scoreboard : 1;
-
-   /* Number of nested control flow layers to jump by */
-   unsigned nest : 2;
 
    /* Output modifiers */
    bool saturate : 1;
@@ -400,6 +400,12 @@ typedef struct {
     * NIR is just loop and if-else, this is the number of nested if-else
     * statements in the loop */
    unsigned loop_nesting;
+
+   /* Total nesting across all loops, to determine if we need push_exec */
+   unsigned total_nesting;
+
+   /* Whether loop being emitted used any `continue` jumps */
+   bool loop_continues;
 
    /* During instruction selection, for inserting control flow */
    agx_block *current_block;
@@ -599,6 +605,24 @@ agx_prev_op(agx_instr *ins)
 }
 
 static inline agx_instr *
+agx_first_instr(agx_block *block)
+{
+   if (list_is_empty(&block->instructions))
+      return NULL;
+   else
+      return list_first_entry(&block->instructions, agx_instr, link);
+}
+
+static inline agx_instr *
+agx_last_instr(agx_block *block)
+{
+   if (list_is_empty(&block->instructions))
+      return NULL;
+   else
+      return list_last_entry(&block->instructions, agx_instr, link);
+}
+
+static inline agx_instr *
 agx_next_op(agx_instr *ins)
 {
    return list_first_entry(&(ins->link), agx_instr, link);
@@ -670,24 +694,6 @@ agx_after_instr(agx_instr *instr)
    };
 }
 
-/*
- * Get a cursor inserting at the logical end of the block. In particular, this
- * is before branches or control flow instructions, which occur after the
- * logical end but before the physical end.
- */
-static inline agx_cursor
-agx_after_block_logical(agx_block *block)
-{
-   /* Search for a p_logical_end */
-   agx_foreach_instr_in_block_rev(block, I) {
-      if (I->op == AGX_OPCODE_LOGICAL_END)
-         return agx_before_instr(I);
-   }
-
-   /* If there's no p_logical_end, use the physical end */
-   return agx_after_block(block);
-}
-
 static inline agx_cursor
 agx_before_nonempty_block(agx_block *block)
 {
@@ -704,6 +710,43 @@ agx_before_block(agx_block *block)
       return agx_after_block(block);
    else
       return agx_before_nonempty_block(block);
+}
+
+static inline bool
+instr_after_logical_end(const agx_instr *I)
+{
+   switch (I->op) {
+   case AGX_OPCODE_JMP_EXEC_ANY:
+   case AGX_OPCODE_JMP_EXEC_NONE:
+   case AGX_OPCODE_POP_EXEC:
+   case AGX_OPCODE_BREAK:
+   case AGX_OPCODE_IF_ICMP:
+   case AGX_OPCODE_WHILE_ICMP:
+   case AGX_OPCODE_IF_FCMP:
+   case AGX_OPCODE_WHILE_FCMP:
+   case AGX_OPCODE_STOP:
+      return true;
+   default:
+      return false;
+   }
+}
+
+/*
+ * Get a cursor inserting at the logical end of the block. In particular, this
+ * is before branches or control flow instructions, which occur after the
+ * logical end but before the physical end.
+ */
+static inline agx_cursor
+agx_after_block_logical(agx_block *block)
+{
+   /* Search for the first instruction that's not past the logical end */
+   agx_foreach_instr_in_block_rev(block, I) {
+      if (!instr_after_logical_end(I))
+         return agx_after_instr(I);
+   }
+
+   /* If we got here, the block is either empty or entirely control flow */
+   return agx_before_block(block);
 }
 
 /* IR builder in terms of cursor infrastructure */
@@ -759,10 +802,12 @@ void agx_lower_pseudo(agx_context *ctx);
 void agx_lower_uniform_sources(agx_context *ctx);
 void agx_opt_cse(agx_context *ctx);
 void agx_dce(agx_context *ctx, bool partial);
+void agx_pressure_schedule(agx_context *ctx);
 void agx_ra(agx_context *ctx);
 void agx_lower_64bit_postra(agx_context *ctx);
 void agx_insert_waits(agx_context *ctx);
 void agx_opt_empty_else(agx_context *ctx);
+void agx_opt_break_if(agx_context *ctx);
 void agx_pack_binary(agx_context *ctx, struct util_dynarray *emission);
 
 #ifndef NDEBUG
@@ -804,13 +849,6 @@ bool agx_nir_lower_address(nir_shader *shader);
 bool agx_nir_lower_ubo(nir_shader *shader);
 bool agx_nir_lower_shared_bitsize(nir_shader *shader);
 bool agx_nir_lower_frag_sidefx(nir_shader *s);
-
-struct agx_occupancy {
-   unsigned max_registers;
-   unsigned max_threads;
-};
-
-struct agx_occupancy agx_occupancy_for_register_count(unsigned halfregs);
 
 extern int agx_compiler_debug;
 

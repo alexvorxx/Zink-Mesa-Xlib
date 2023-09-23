@@ -90,7 +90,7 @@ lower_clip_plane_store(nir_builder *b, nir_intrinsic_instr *instr,
             if (!(clip_plane_enable & (1 << (start + i))))
                components[i] = nir_imm_int(b, 0);
             else
-               components[i] = nir_channel(b, nir_ssa_for_src(b, instr->src[1], nir_src_num_components(instr->src[1])), i);
+               components[i] = nir_channel(b, instr->src[1].ssa, i);
          } else
             components[i] = nir_undef(b, 1, 32);
       }
@@ -106,7 +106,7 @@ lower_clip_plane_store(nir_builder *b, nir_intrinsic_instr *instr,
       nir_store_deref(b, deref, nir_imm_int(b, 0), 1);
    } else {
       /* storing using a variable index */
-      nir_def *index = nir_ssa_for_src(b, deref->arr.index, 1);
+      nir_def *index = deref->arr.index.ssa;
       unsigned length = glsl_get_length(nir_deref_instr_parent(deref)->type);
 
       recursive_if_chain(b, deref, instr->src[1].ssa, clip_plane_enable, index, 0, length);

@@ -87,7 +87,7 @@ nir_lower_ubo_vec4_lower(nir_builder *b, nir_instr *instr, void *data)
 
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
-   nir_def *byte_offset = nir_ssa_for_src(b, intr->src[1], 1);
+   nir_def *byte_offset = intr->src[1].ssa;
    nir_def *vec4_offset = nir_ushr_imm(b, byte_offset, 4);
 
    unsigned align_mul = nir_intrinsic_align_mul(intr);

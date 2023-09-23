@@ -395,7 +395,7 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
     * ...
     */
 
-   b->cursor = nir_before_cf_list(&main->body);
+   b->cursor = nir_before_impl(main);
    
    nir_if *outer_if = nir_push_if(b, nir_preamble_start_ir3(b, 1));
    {

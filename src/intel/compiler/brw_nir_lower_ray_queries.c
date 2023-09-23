@@ -131,7 +131,7 @@ get_ray_query_shadow_addr(nir_builder *b,
    nir_deref_instr **p = &path.path[1];
    for (; *p; p++) {
       if ((*p)->deref_type == nir_deref_type_array) {
-         nir_def *index = nir_ssa_for_src(b, (*p)->arr.index, 1);
+         nir_def *index = (*p)->arr.index.ssa;
 
          /**/
          *out_state_deref = nir_build_deref_array(b, *out_state_deref, index);
@@ -503,7 +503,7 @@ static void
 lower_ray_query_impl(nir_function_impl *impl, struct lowering_state *state)
 {
    nir_builder _b, *b = &_b;
-   _b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   _b = nir_builder_at(nir_before_impl(impl));
 
    state->rq_globals = nir_load_ray_query_global_intel(b);
 

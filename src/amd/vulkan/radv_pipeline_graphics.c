@@ -2241,7 +2241,8 @@ radv_create_gs_copy_shader(struct radv_device *device, struct vk_pipeline_cache 
    struct radv_shader *copy_shader =
       radv_shader_create(device, cache, *gs_copy_binary, keep_executable_info || dump_shader);
    if (copy_shader)
-      radv_shader_generate_debug_info(device, dump_shader, *gs_copy_binary, copy_shader, &nir, 1, &gs_copy_stage.info);
+      radv_shader_generate_debug_info(device, dump_shader, keep_executable_info, *gs_copy_binary, copy_shader, &nir, 1,
+                                      &gs_copy_stage.info);
    return copy_shader;
 }
 
@@ -2283,8 +2284,8 @@ radv_graphics_shaders_nir_to_asm(struct radv_device *device, struct vk_pipeline_
       binaries[s] = radv_shader_nir_to_asm(device, &stages[s], nir_shaders, shader_count, pipeline_key,
                                            keep_executable_info, keep_statistic_info);
       shaders[s] = radv_shader_create(device, cache, binaries[s], keep_executable_info || dump_shader);
-      radv_shader_generate_debug_info(device, dump_shader, binaries[s], shaders[s], nir_shaders, shader_count,
-                                      &stages[s].info);
+      radv_shader_generate_debug_info(device, dump_shader, keep_executable_info, binaries[s], shaders[s], nir_shaders,
+                                      shader_count, &stages[s].info);
 
       if (s == MESA_SHADER_GEOMETRY && !stages[s].info.is_ngg) {
          *gs_copy_shader = radv_create_gs_copy_shader(device, cache, &stages[MESA_SHADER_GEOMETRY], pipeline_key,
@@ -2528,6 +2529,25 @@ radv_graphics_shaders_compile(struct radv_device *device, struct vk_pipeline_cac
 
    bool optimize_conservatively = pipeline_key->optimisations_disabled;
 
+   if (stages[MESA_SHADER_MESH].nir &&
+       BITSET_TEST(stages[MESA_SHADER_MESH].nir->info.system_values_read, SYSTEM_VALUE_WORKGROUP_ID)) {
+      nir_shader *mesh = stages[MESA_SHADER_MESH].nir;
+      nir_shader *task = stages[MESA_SHADER_TASK].nir;
+
+      /* Mesh shaders only have a 1D "vertex index" which we use
+       * as "workgroup index" to emulate the 3D workgroup ID.
+       */
+      nir_lower_compute_system_values_options o = {
+         .lower_workgroup_id_to_index = true,
+         .shortcut_1d_workgroup_id = true,
+         .num_workgroups[0] = task ? task->info.mesh.ts_mesh_dispatch_dimensions[0] : 0,
+         .num_workgroups[1] = task ? task->info.mesh.ts_mesh_dispatch_dimensions[1] : 0,
+         .num_workgroups[2] = task ? task->info.mesh.ts_mesh_dispatch_dimensions[2] : 0,
+      };
+
+      NIR_PASS(_, mesh, nir_lower_compute_system_values, &o);
+   }
+
    radv_foreach_stage(i, active_nir_stages)
    {
       gl_shader_stage next_stage = radv_get_next_stage(i, active_nir_stages);
@@ -2622,6 +2642,18 @@ radv_graphics_shaders_compile(struct radv_device *device, struct vk_pipeline_cac
    }
 }
 
+static bool
+radv_should_compute_pipeline_hash(const struct radv_device *device, const struct radv_graphics_pipeline *pipeline,
+                                  bool fast_linking_enabled)
+{
+   /* Skip computing the pipeline hash when GPL fast-linking is enabled because these shaders aren't
+    * supposed to be cached and computing the hash is costly. Though, make sure it's always computed
+    * when RGP is enabled, otherwise ISA isn't reported.
+    */
+   return !fast_linking_enabled ||
+          ((device->instance->vk.trace_mode & RADV_TRACE_MODE_RGP) && pipeline->base.type == RADV_PIPELINE_GRAPHICS);
+}
+
 static VkResult
 radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline, const VkGraphicsPipelineCreateInfo *pCreateInfo,
                                struct radv_pipeline_layout *pipeline_layout, struct radv_device *device,
@@ -2667,7 +2699,7 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline, const Vk
 
    radv_pipeline_load_retained_shaders(device, pipeline, pCreateInfo, stages);
 
-   if (!fast_linking_enabled) {
+   if (radv_should_compute_pipeline_hash(device, pipeline, fast_linking_enabled)) {
       radv_hash_shaders(hash, stages, MESA_VULKAN_SHADER_STAGES, pipeline_layout, pipeline_key,
                         radv_get_hash_flags(device, keep_statistic_info));
 
@@ -2682,7 +2714,8 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline, const Vk
     */
    if (fast_linking_enabled || keep_executable_info) {
       skip_shaders_cache = true;
-   } else if ((pipeline->base.create_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR) && retain_shaders) {
+   } else if (retain_shaders) {
+      assert(pipeline->base.create_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR);
       for (uint32_t i = 0; i < MESA_VULKAN_SHADER_STAGES; i++) {
          if (stages[i].entrypoint && !stages[i].spirv.size) {
             skip_shaders_cache = true;
@@ -3930,7 +3963,7 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       return result;
    }
 
-   if (!fast_linking_enabled)
+   if (radv_should_compute_pipeline_hash(device, pipeline, fast_linking_enabled))
       radv_pipeline_layout_hash(&pipeline_layout);
 
    if (!radv_skip_graphics_pipeline_compile(device, pipeline, needed_lib_flags, fast_linking_enabled)) {
@@ -4109,7 +4142,7 @@ radv_graphics_lib_pipeline_init(struct radv_graphics_lib_pipeline *pipeline, str
    if (result != VK_SUCCESS)
       return result;
 
-   if (!fast_linking_enabled)
+   if (radv_should_compute_pipeline_hash(device, &pipeline->base, fast_linking_enabled))
       radv_pipeline_layout_hash(pipeline_layout);
 
    struct radv_pipeline_key key =

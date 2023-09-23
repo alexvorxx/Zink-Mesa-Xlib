@@ -66,7 +66,6 @@ glx_message(int level, const char *f, ...)
 
    /* Note that the _LOADER_* levels are lower numbers for more severe. */
    if (level <= threshold) {
-      fprintf(stderr, "libGL%s: ", level <= _LOADER_WARNING ? " error" : "");
       va_start(args, f);
       vfprintf(stderr, f, args);
       va_end(args);

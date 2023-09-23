@@ -120,14 +120,14 @@ iris_enable_clover()
 }
 
 static void
-iris_warn_clover()
+iris_warn_cl()
 {
    static bool warned = false;
    if (warned)
       return;
 
    warned = true;
-   fprintf(stderr, "WARNING: OpenCL support via iris+clover is incomplete.\n"
+   fprintf(stderr, "WARNING: OpenCL support via iris driver is incomplete.\n"
                    "For a complete and conformant OpenCL implementation, use\n"
                    "https://github.com/intel/compute-runtime instead\n");
 }
@@ -581,10 +581,10 @@ iris_get_compute_param(struct pipe_screen *pscreen,
 
    switch (param) {
    case PIPE_COMPUTE_CAP_ADDRESS_BITS:
-      /* This gets queried on clover device init and is never queried by the
+      /* This gets queried on OpenCL device init and is never queried by the
        * OpenGL state tracker.
        */
-      iris_warn_clover();
+      iris_warn_cl();
       RET((uint32_t []){ 64 });
 
    case PIPE_COMPUTE_CAP_IR_TARGET:
@@ -863,7 +863,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       driQueryOptionb(config->options, "dual_color_blend_by_location");
    screen->driconf.disable_throttling =
       driQueryOptionb(config->options, "disable_throttling");
-   screen->driconf.always_flush_cache =
+   screen->driconf.always_flush_cache = INTEL_DEBUG(DEBUG_STALL) ||
       driQueryOptionb(config->options, "always_flush_cache");
    screen->driconf.sync_compile =
       driQueryOptionb(config->options, "sync_compile");

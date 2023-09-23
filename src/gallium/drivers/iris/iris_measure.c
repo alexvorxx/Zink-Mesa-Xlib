@@ -187,6 +187,7 @@ measure_start_snapshot(struct iris_context *ice,
    if(config->cpu_measure) {
       intel_measure_print_cpu_result(measure_batch->frame,
                                      measure_batch->batch_count,
+                                     measure_batch->batch_size,
                                      index/2,
                                      measure_batch->event_count,
                                      count,
@@ -393,6 +394,15 @@ iris_measure_batch_end(struct iris_context *ice, struct iris_batch *batch)
 
    if (measure_batch->index == 0)
       return;
+
+   /* At this point, total_chained_batch_size is not yet updated because the
+    * batch_end measurement is within the batch and the batch is not quite
+    * ended yet (it'll be just after this function call). So combined the
+    * already summed total_chained_batch_size with whatever was written in the
+    * current batch BO.
+    */
+   measure_batch->batch_size = batch->total_chained_batch_size +
+                               iris_batch_bytes_used(batch);
 
    /* enqueue snapshot for gathering */
    pthread_mutex_lock(&measure_device->mutex);

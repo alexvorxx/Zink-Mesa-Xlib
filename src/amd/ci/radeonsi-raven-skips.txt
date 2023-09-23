@@ -18,6 +18,10 @@ spec@arb_shader_storage_buffer_object@max-ssbo-size@vsexceed
 spec@arb_shader_storage_buffer_object@max-ssbo-size@vs
 spec@arb_shader_storage_buffer_object@max-ssbo-size@fsexceed
 spec@arb_shader_image_load_store@max-size
+spec@arb_texture_buffer_object@texture-buffer-size-clamp
+spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_size_via_sampler
+spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_size_via_image
+spec@ext_transform_feedback@max-varyings
 spec@ext_external_objects@semaphore-api-errors
 spec@ext_external_objects@vk-image-display-overwrite
 spec@ext_external_objects@memory-object-api-errors
@@ -30,6 +34,8 @@ spec@ext_external_objects@vk-pix-buf-update-errors
 spec@ext_external_objects_fd@semaphore-api-errors
 spec@ext_external_objects_fd@memory-object-api-errors
 spec@ext_external_objects@vk-vert-buf-reuse
+
+spec@glsl-1.30@execution@texelfetch fs sampler2d 1x281-501x281
 
 
 # creates too many 8192x8192 or 10240x10240 surfaces, times out

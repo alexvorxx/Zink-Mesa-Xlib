@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NIL_IMAGE_H
 #define NIL_IMAGE_H
 

@@ -139,16 +139,18 @@ tu_cs_image_depth_ref(struct tu_cs *cs, const struct tu_image_view *iview, uint3
    tu_cs_emit_qw(cs, iview->depth_base_addr + iview->depth_layer_size * layer);
 }
 
+template <chip CHIP>
 void
 tu_cs_image_ref_2d(struct tu_cs *cs, const struct fdl6_view *iview, uint32_t layer, bool src)
 {
    tu_cs_emit_qw(cs, iview->base_addr + iview->layer_size * layer);
    /* SP_PS_2D_SRC_PITCH has shifted pitch field */
    if (src)
-      tu_cs_emit(cs, A6XX_SP_PS_2D_SRC_PITCH(.pitch = iview->pitch).value);
+      tu_cs_emit(cs, SP_PS_2D_SRC_PITCH(CHIP, .pitch = iview->pitch).value);
    else
       tu_cs_emit(cs, A6XX_RB_2D_DST_PITCH(iview->pitch).value);
 }
+TU_GENX(tu_cs_image_ref_2d);
 
 void
 tu_cs_image_flag_ref(struct tu_cs *cs, const struct fdl6_view *iview, uint32_t layer)
@@ -211,6 +213,7 @@ tu_image_view_init(struct tu_device *device,
                                         iview->swizzle);
 
    struct fdl_view_args args = {};
+   args.chip = device->physical_device->info->chip;
    args.iova = image->iova;
    args.base_array_layer = range->baseArrayLayer;
    args.base_miplevel = range->baseMipLevel;
@@ -612,8 +615,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
    }
 
    const struct util_format_description *desc = util_format_description(image->layout[0].format);
-   if (util_format_has_depth(desc) && !TU_DEBUG(NOLRZ))
-   {
+   if (util_format_has_depth(desc) && device->use_lrz) {
       /* Depth plane is the first one */
       struct fdl_layout *layout = &image->layout[0];
       unsigned width = layout->width0;

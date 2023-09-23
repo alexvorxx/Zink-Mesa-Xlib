@@ -71,7 +71,7 @@ lower_pos_write(nir_builder *b, struct nir_instr *instr, nir_variable **flip)
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_def *pos = nir_ssa_for_src(b, intr->src[1], 4);
+   nir_def *pos = intr->src[1].ssa;
    nir_def *flip_y = d3d12_get_state_var(b, D3D12_STATE_VAR_Y_FLIP, "d3d12_FlipY",
                                              glsl_float_type(), flip);
    nir_def *def = nir_vec4(b,
@@ -224,7 +224,7 @@ lower_uint_color_write(nir_builder *b, struct nir_instr *instr, bool is_signed)
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_def *col = nir_ssa_for_src(b, intr->src[1], intr->num_components);
+   nir_def *col = intr->src[1].ssa;
    nir_def *def = is_signed ? nir_format_float_to_snorm(b, col, bits) :
                                   nir_format_float_to_unorm(b, col, bits);
    if (is_signed)
@@ -342,7 +342,7 @@ invert_depth_impl(nir_builder *b, struct invert_depth_state *state)
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_def *pos = nir_ssa_for_src(b, intr->src[1], 4);
+   nir_def *pos = intr->src[1].ssa;
 
    if (state->viewport_index) {
       nir_push_if(b, nir_test_mask(b, nir_ishl(b, nir_imm_int(b, 1), state->viewport_index), state->viewport_mask));
@@ -584,7 +584,7 @@ d3d12_add_missing_dual_src_target(struct nir_shader *s,
    assert(missing_mask != 0);
    nir_builder b;
    nir_function_impl *impl = nir_shader_get_entrypoint(s);
-   b = nir_builder_at(nir_before_cf_list(&impl->body));
+   b = nir_builder_at(nir_before_impl(impl));
 
    nir_def *zero = nir_imm_zero(&b, 4, 32);
    for (unsigned i = 0; i < 2; ++i) {
@@ -652,7 +652,7 @@ lower_triangle_strip_store(nir_builder *b, nir_intrinsic_instr *intr,
       return;
 
    nir_deref_instr *deref = nir_build_deref_array(b, nir_build_deref_var(b, varyings[var->data.location]), index);
-   nir_def *value = nir_ssa_for_src(b, intr->src[1], intr->num_components);
+   nir_def *value = intr->src[1].ssa;
    nir_store_deref(b, deref, value, 0xf);
    nir_instr_remove(&intr->instr);
 }

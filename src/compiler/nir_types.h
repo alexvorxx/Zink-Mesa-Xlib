@@ -39,8 +39,6 @@
 extern "C" {
 #endif
 
-const char *glsl_get_type_name(const struct glsl_type *type);
-
 const struct glsl_type *glsl_get_struct_field(const struct glsl_type *type,
                                               unsigned index);
 
@@ -70,12 +68,6 @@ const struct glsl_type *glsl_without_array_or_matrix(const struct glsl_type *typ
 const struct glsl_type *glsl_get_bare_type(const struct glsl_type *type);
 
 const struct glsl_type *glsl_get_column_type(const struct glsl_type *type);
-
-const struct glsl_type *
-glsl_get_function_return_type(const struct glsl_type *type);
-
-const struct glsl_function_param *
-glsl_get_function_param(const struct glsl_type *type, unsigned index);
 
 const struct glsl_type *
 glsl_texture_type_to_sampler(const struct glsl_type *type, bool is_shadow);
@@ -228,9 +220,6 @@ const struct glsl_type *glsl_texture_type(enum glsl_sampler_dim dim,
 const struct glsl_type *glsl_image_type(enum glsl_sampler_dim dim,
                                         bool is_array,
                                         enum glsl_base_type base_type);
-const struct glsl_type * glsl_function_type(const struct glsl_type *return_type,
-                                            const struct glsl_function_param *params,
-                                            unsigned num_params);
 
 const struct glsl_type *glsl_transposed_type(const struct glsl_type *type);
 

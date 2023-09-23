@@ -578,7 +578,7 @@ trim_constlens(unsigned *constlens, unsigned first_stage, unsigned last_stage,
  * order to satisfy all shared constlen limits.
  */
 uint32_t
-ir3_trim_constlen(struct ir3_shader_variant **variants,
+ir3_trim_constlen(const struct ir3_shader_variant **variants,
                   const struct ir3_compiler *compiler)
 {
    unsigned constlens[MESA_SHADER_STAGES] = {};

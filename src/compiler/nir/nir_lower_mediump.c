@@ -712,8 +712,7 @@ nir_legalize_16bit_sampler_srcs(nir_shader *nir,
 
             b.cursor = nir_before_instr(&tex->instr);
             nir_def *conv =
-               convert(&b, nir_ssa_for_src(&b, tex->src[i].src,
-                                           tex->src[i].src.ssa->num_components));
+               convert(&b, tex->src[i].src.ssa);
             nir_src_rewrite(&tex->src[i].src, conv);
             changed = true;
          }

@@ -514,6 +514,7 @@ struct pipe_h264_enc_seq_param
       uint32_t timing_info_present_flag: 1;
       uint32_t video_signal_type_present_flag: 1;
       uint32_t colour_description_present_flag: 1;
+      uint32_t chroma_loc_info_present_flag: 1;
    } vui_flags;
    uint32_t aspect_ratio_idc;
    uint32_t sar_width;
@@ -525,6 +526,8 @@ struct pipe_h264_enc_seq_param
    uint32_t colour_primaries;
    uint32_t transfer_characteristics;
    uint32_t matrix_coefficients;
+   uint32_t chroma_sample_loc_type_top_field;
+   uint32_t chroma_sample_loc_type_bottom_field;
 };
 
 struct pipe_h264_enc_picture_desc
@@ -605,6 +608,7 @@ struct pipe_h265_enc_seq_param
       uint32_t timing_info_present_flag: 1;
       uint32_t video_signal_type_present_flag: 1;
       uint32_t colour_description_present_flag: 1;
+      uint32_t chroma_loc_info_present_flag: 1;
    } vui_flags;
    uint32_t aspect_ratio_idc;
    uint32_t sar_width;
@@ -616,6 +620,8 @@ struct pipe_h265_enc_seq_param
    uint32_t colour_primaries;
    uint32_t transfer_characteristics;
    uint32_t matrix_coefficients;
+   uint32_t chroma_sample_loc_type_top_field;
+   uint32_t chroma_sample_loc_type_bottom_field;
 };
 
 struct pipe_h265_enc_pic_param

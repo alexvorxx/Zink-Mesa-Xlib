@@ -45,22 +45,27 @@ impl<'a, R> PipeQuery<'a, R> {
         if pq.is_null() {
             return None;
         }
-        let res = Some(Self {
+        // SAFETY: we are the only owner of that valid pointer
+        unsafe {
+            if !ctx.end_query(pq) {
+                ctx.destroy_query(pq);
+                return None;
+            }
+        }
+        Some(Self {
             query: pq,
             ctx: ctx,
             _result_marker: Default::default(),
-        });
-        if !ctx.end_query(pq) {
-            ctx.destroy_query(pq);
-            return None;
-        }
-        res
+        })
     }
 }
 
 impl<'a, R> Drop for PipeQuery<'a, R> {
     fn drop(&mut self) {
-        self.ctx.destroy_query(self.query);
+        // SAFETY: we are the only owner of that valid pointer
+        unsafe {
+            self.ctx.destroy_query(self.query);
+        }
     }
 }
 
@@ -78,7 +83,8 @@ impl QueryReadTrait for PipeQuery<'_, u64> {
 
     fn read(&mut self, wait: bool) -> Option<u64> {
         let mut raw_result = pipe_query_result::default();
-        if self.ctx.get_query_result(self.query, wait, &mut raw_result) {
+        // SAFETY: we guarentee unique access through our `&mut self` reference above.
+        if unsafe { self.ctx.get_query_result(self.query, wait, &mut raw_result) } {
             // SAFETY: We know this is the right type
             // because of the trait bound on PipeQueryGen binds the
             // query type with the result type.

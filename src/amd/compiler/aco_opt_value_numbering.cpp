@@ -382,7 +382,7 @@ process_block(vn_ctx& ctx, Block& block)
       }
 
       if (instr->opcode == aco_opcode::p_discard_if ||
-          instr->opcode == aco_opcode::p_demote_to_helper)
+          instr->opcode == aco_opcode::p_demote_to_helper || instr->opcode == aco_opcode::p_end_wqm)
          ctx.exec_id++;
 
       if (!can_eliminate(instr)) {

@@ -968,6 +968,7 @@ static void *si_create_rs_state(struct pipe_context *ctx, const struct pipe_rast
    rs->flatshade_first = state->flatshade_first;
    rs->sprite_coord_enable = state->sprite_coord_enable;
    rs->rasterizer_discard = state->rasterizer_discard;
+   rs->bottom_edge_rule = state->bottom_edge_rule;
    rs->polygon_mode_is_lines =
       (state->fill_front == PIPE_POLYGON_MODE_LINE && !(state->cull_face & PIPE_FACE_FRONT)) ||
       (state->fill_back == PIPE_POLYGON_MODE_LINE && !(state->cull_face & PIPE_FACE_BACK));
@@ -1210,6 +1211,9 @@ static void si_bind_rs_state(struct pipe_context *ctx, void *state)
    if (old_rs->sprite_coord_enable != rs->sprite_coord_enable ||
        old_rs->flatshade != rs->flatshade)
       si_mark_atom_dirty(sctx, &sctx->atoms.s.spi_map);
+
+   if (sctx->screen->dpbb_allowed && (old_rs->bottom_edge_rule != rs->bottom_edge_rule))
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.dpbb_state);
 
    if (old_rs->clip_plane_enable != rs->clip_plane_enable ||
        old_rs->rasterizer_discard != rs->rasterizer_discard ||

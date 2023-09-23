@@ -97,13 +97,12 @@ files_libradeonsi = files(
   'radeon_vcn_enc_2_0.c',
   'radeon_vcn_enc_3_0.c',
   'radeon_vcn_enc_4_0.c',
-  'radeon_vcn_enc_av1_default_cdf.h',
   'radeon_video.c',
   'radeon_video.h',
 )
 
 radeonsi_include_dirs = [inc_src, inc_include, inc_gallium, inc_gallium_aux, inc_amd_common,
-                         inc_amd_common_llvm, inc_gallium_drivers, inc_compiler]
+                         inc_amd_common_llvm, inc_gallium_drivers]
 radeonsi_deps = [dep_llvm, dep_clock, dep_libdrm_radeon, idep_nir_headers, idep_amdgfxregs_h, idep_mesautil, idep_aco]
 
 radeonsi_gfx_libs = []

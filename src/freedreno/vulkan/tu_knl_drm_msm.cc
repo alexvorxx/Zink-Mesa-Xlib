@@ -1113,7 +1113,7 @@ tu_knl_drm_msm_load(struct tu_instance *instance,
    device->sync_types[1] = &device->timeline_type.sync;
    device->sync_types[2] = NULL;
 
-   device->heap.size = tu_get_system_heap_size();
+   device->heap.size = tu_get_system_heap_size(device);
    device->heap.used = 0u;
    device->heap.flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
 

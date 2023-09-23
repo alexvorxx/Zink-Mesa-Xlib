@@ -120,10 +120,48 @@ static bool vlVaGetFullRange(vlVaSurface *surface, uint8_t va_range)
    return !util_format_is_yuv(surface->buffer->buffer_format);
 }
 
-static void vlVaSetCscMatrix(vlVaDriver *drv,
-                             vlVaSurface *src,
-                             vlVaSurface *dst,
-                             VAProcPipelineParameterBuffer *param)
+static unsigned vlVaGetChromaLocation(unsigned va_chroma_location,
+                                      enum pipe_format format)
+{
+   unsigned ret = VL_COMPOSITOR_LOCATION_NONE;
+
+   if (util_format_get_plane_height(format, 1, 4) != 4) {
+      /* Bits 0-1 */
+      switch (va_chroma_location & 3) {
+      case VA_CHROMA_SITING_VERTICAL_TOP:
+         ret |= VL_COMPOSITOR_LOCATION_VERTICAL_TOP;
+         break;
+      case VA_CHROMA_SITING_VERTICAL_BOTTOM:
+         ret |= VL_COMPOSITOR_LOCATION_VERTICAL_BOTTOM;
+         break;
+      case VA_CHROMA_SITING_VERTICAL_CENTER:
+      default:
+         ret |= VL_COMPOSITOR_LOCATION_VERTICAL_CENTER;
+         break;
+      }
+   }
+
+   if (util_format_is_subsampled_422(format) ||
+       util_format_get_plane_width(format, 1, 4) != 4) {
+      /* Bits 2-3 */
+      switch (va_chroma_location & 12) {
+      case VA_CHROMA_SITING_HORIZONTAL_CENTER:
+         ret |= VL_COMPOSITOR_LOCATION_HORIZONTAL_CENTER;
+         break;
+      case VA_CHROMA_SITING_HORIZONTAL_LEFT:
+      default:
+         ret |= VL_COMPOSITOR_LOCATION_HORIZONTAL_LEFT;
+         break;
+      }
+   }
+
+   return ret;
+}
+
+static void vlVaSetProcParameters(vlVaDriver *drv,
+                                  vlVaSurface *src,
+                                  vlVaSurface *dst,
+                                  VAProcPipelineParameterBuffer *param)
 {
    enum VL_CSC_COLOR_STANDARD color_standard;
    bool src_yuv = util_format_is_yuv(src->buffer->buffer_format);
@@ -149,6 +187,15 @@ static void vlVaSetCscMatrix(vlVaDriver *drv,
 
    vl_csc_get_matrix(color_standard, NULL, dst->full_range, &drv->csc);
    vl_compositor_set_csc_matrix(&drv->cstate, &drv->csc, 1.0f, 0.0f);
+
+   if (src_yuv)
+      drv->cstate.chroma_location =
+         vlVaGetChromaLocation(param->input_color_properties.chroma_sample_location,
+                               src->buffer->buffer_format);
+   else if (dst_yuv)
+      drv->cstate.chroma_location =
+         vlVaGetChromaLocation(param->output_color_properties.chroma_sample_location,
+                               dst->buffer->buffer_format);
 }
 
 static VAStatus vlVaVidEngineBlit(vlVaDriver *drv, vlVaContext *context,
@@ -354,7 +401,7 @@ static VAStatus vlVaPostProcBlit(vlVaDriver *drv, vlVaContext *context,
 
       if (drv->pipe->screen->get_param(drv->pipe->screen,
                                        PIPE_CAP_PREFER_COMPUTE_FOR_MULTIMEDIA))
-         util_compute_blit(drv->pipe, &blit, &context->blit_cs, !drv->compositor.deinterlace);
+         util_compute_blit(drv->pipe, &blit, &context->blit_cs);
       else
          drv->pipe->blit(drv->pipe, &blit);
    }
@@ -442,6 +489,7 @@ vlVaHandleVAProcPipelineParameterBufferType(vlVaDriver *drv, vlVaContext *contex
    vlVaSurface *src_surface, *dst_surface;
    unsigned i;
    struct pipe_screen *pscreen;
+   VAStatus ret;
 
    if (!drv || !context)
       return VA_STATUS_ERROR_INVALID_CONTEXT;
@@ -578,15 +626,20 @@ vlVaHandleVAProcPipelineParameterBufferType(vlVaDriver *drv, vlVaContext *contex
          return VA_STATUS_SUCCESS;
    }
 
-   vlVaSetCscMatrix(drv, src_surface, dst_surface, param);
+   vlVaSetProcParameters(drv, src_surface, dst_surface, param);
 
    /* Try other post proc implementations */
    if (context->target->buffer_format != PIPE_FORMAT_NV12 &&
        context->target->buffer_format != PIPE_FORMAT_P010 &&
        context->target->buffer_format != PIPE_FORMAT_P016)
-      return vlVaPostProcCompositor(drv, context, src_region, dst_region,
-                                    src, context->target, deinterlace);
+      ret = vlVaPostProcCompositor(drv, context, src_region, dst_region,
+                                   src, context->target, deinterlace);
    else
-      return vlVaPostProcBlit(drv, context, src_region, dst_region,
-                              src, context->target, deinterlace);
+      ret = vlVaPostProcBlit(drv, context, src_region, dst_region,
+                             src, context->target, deinterlace);
+
+   /* Reset chroma location */
+   drv->cstate.chroma_location = VL_COMPOSITOR_LOCATION_NONE;
+
+   return ret;
 }

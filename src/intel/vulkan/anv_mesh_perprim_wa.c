@@ -153,7 +153,7 @@ anv_mesh_convert_attrs_prim_to_vert(struct nir_shader *nir,
          num_mesh_vertices_per_primitive(nir->info.mesh.primitive_type);
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   nir_builder b = nir_builder_at(nir_after_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_after_impl(impl));
 
    /* wait for all subgroups to finish */
    nir_barrier(&b, SCOPE_WORKGROUP);
@@ -473,7 +473,7 @@ anv_frag_convert_attrs_prim_to_vert(struct nir_shader *nir,
    nir_deref_instr *new_derefs[VARYING_SLOT_MAX] = {NULL, };
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    nir_foreach_shader_in_variable_safe(var, nir) {
       gl_varying_slot location = var->data.location;

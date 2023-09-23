@@ -98,7 +98,7 @@ protected:
 };
 
 struct vs_thread_payload : public thread_payload {
-   vs_thread_payload();
+   vs_thread_payload(const fs_visitor &v);
 
    fs_reg urb_handles;
 };
@@ -112,7 +112,7 @@ struct tcs_thread_payload : public thread_payload {
 };
 
 struct tes_thread_payload : public thread_payload {
-   tes_thread_payload();
+   tes_thread_payload(const fs_visitor &v);
 
    fs_reg patch_urb_input;
    fs_reg primitive_id;
@@ -167,7 +167,7 @@ struct task_mesh_thread_payload : public cs_thread_payload {
 };
 
 struct bs_thread_payload : public thread_payload {
-   bs_thread_payload();
+   bs_thread_payload(const fs_visitor &v);
 
    fs_reg global_arg_ptr;
    fs_reg local_arg_ptr;
@@ -247,7 +247,7 @@ public:
    void assign_gs_urb_setup();
    bool assign_regs(bool allow_spilling, bool spill_all);
    void assign_regs_trivial();
-   void calculate_payload_ranges(int payload_node_count,
+   void calculate_payload_ranges(unsigned payload_node_count,
                                  int *payload_last_use_ip) const;
    bool split_virtual_grfs();
    bool compact_virtual_grfs();
@@ -263,10 +263,6 @@ public:
    bool opt_cse_local(const brw::fs_live_variables &live, bblock_t *block, int &ip);
 
    bool opt_copy_propagation();
-   bool try_copy_propagate(fs_inst *inst, int arg, acp_entry *entry);
-   bool try_constant_propagate(fs_inst *inst, acp_entry *entry);
-   bool opt_copy_propagation_local(void *mem_ctx, bblock_t *block,
-                                   exec_list *acp);
    bool opt_register_renaming();
    bool opt_bank_conflicts();
    bool opt_split_sends();

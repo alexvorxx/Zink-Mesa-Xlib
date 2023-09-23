@@ -70,7 +70,7 @@ xe_query_config(int fd, struct intel_device_info *devinfo)
 
    devinfo->revision = (config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] >> 16) & 0xFFFF;
    devinfo->gtt_size = 1ull << config->info[XE_QUERY_CONFIG_VA_BITS];
-   devinfo->mem_alignment = config->info[XE_QUERY_CONFIG_MIN_ALIGNEMENT];
+   devinfo->mem_alignment = config->info[XE_QUERY_CONFIG_MIN_ALIGNMENT];
 
    free(config);
    return true;

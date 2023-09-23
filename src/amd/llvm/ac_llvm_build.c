@@ -1247,8 +1247,9 @@ static LLVMValueRef ac_build_tbuffer_load(struct ac_llvm_context *ctx, LLVMValue
 
 LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                         LLVMValueRef vidx, LLVMValueRef base_voffset,
-                                        LLVMValueRef soffset, LLVMTypeRef channel_type,
-                                        const struct ac_vtx_format_info *vtx_info,
+                                        LLVMValueRef soffset,
+                                        const enum pipe_format format,
+                                        unsigned channel_bit_size,
                                         unsigned const_offset,
                                         unsigned align_offset,
                                         unsigned align_mul,
@@ -1256,6 +1257,7 @@ LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRe
                                         enum gl_access_qualifier access,
                                         bool can_speculate)
 {
+   const struct ac_vtx_format_info *vtx_info = ac_get_vtx_format_info(ctx->gfx_level, ctx->info->family, format);
    const unsigned max_channels = vtx_info->num_channels;
    LLVMValueRef voffset_plus_const =
       LLVMBuildAdd(ctx->builder, base_voffset, LLVMConstInt(ctx->i32, const_offset, 0), "");
@@ -1281,9 +1283,36 @@ LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRe
                          LLVMConstInt(ctx->i32, i * vtx_info->chan_byte_size, 0), "");
       LLVMValueRef item =
          ac_build_tbuffer_load(ctx, rsrc, vidx, fetch_voffset, soffset,
-                               fetch_num_channels, fetch_format, channel_type,
+                               fetch_num_channels, fetch_format, ctx->i32,
                                access, can_speculate);
       result = ac_build_concat(ctx, result, item);
+   }
+
+   /* 
+    * LLVM is not able to select 16-bit typed loads. Load 32-bit values instead and
+    * manually truncate them to the required size.
+    * TODO: Do this in NIR instead.
+    */
+   const struct util_format_description *desc = util_format_description(format);
+   bool is_float = !desc->channel[0].pure_integer;
+
+   if (channel_bit_size == 16) {
+      LLVMValueRef channels[4];
+      for (unsigned i = 0; i < num_channels; i++) {
+         LLVMValueRef channel = result;
+         if (num_channels > 1)
+            channel = LLVMBuildExtractElement(ctx->builder, result, LLVMConstInt(ctx->i32, i, false), "");
+
+         if (is_float) {
+            channel = LLVMBuildBitCast(ctx->builder, channel, ctx->f32, "");
+            channel = LLVMBuildFPTrunc(ctx->builder, channel, ctx->f16, "");
+            channel = LLVMBuildBitCast(ctx->builder, channel, ctx->i16, "");
+         } else {
+            channel = LLVMBuildTrunc(ctx->builder, channel, ctx->i16, "");
+         }
+         channels[i] = channel;
+      }
+      result = ac_build_gather_values(ctx, channels, num_channels);
    }
 
    return result;

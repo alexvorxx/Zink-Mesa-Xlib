@@ -650,7 +650,7 @@ create_conversion_shader(struct st_context *st, enum pipe_texture_target target,
                                       b.shader->info.workgroup_size[1],
                                       b.shader->info.workgroup_size[2],
                                       0);
-   nir_def *wid = nir_load_workgroup_id(&b, 32);
+   nir_def *wid = nir_load_workgroup_id(&b);
    nir_def *iid = nir_load_local_invocation_id(&b);
    nir_def *tile = nir_imul(&b, wid, bsize);
    nir_def *global_id = nir_iadd(&b, tile, iid);

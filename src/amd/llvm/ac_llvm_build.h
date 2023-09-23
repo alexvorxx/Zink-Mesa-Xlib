@@ -276,8 +276,9 @@ LLVMValueRef ac_build_buffer_load_byte(struct ac_llvm_context *ctx, LLVMValueRef
 
 LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                         LLVMValueRef vindex, LLVMValueRef voffset,
-                                        LLVMValueRef soffset, LLVMTypeRef channel_type,
-                                        const struct ac_vtx_format_info *vtx_info,
+                                        LLVMValueRef soffset,
+                                        const enum pipe_format format,
+                                        unsigned channel_bit_size,
                                         unsigned const_offset,
                                         unsigned align_offset,
                                         unsigned align_mul,

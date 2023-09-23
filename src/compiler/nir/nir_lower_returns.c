@@ -209,7 +209,7 @@ lower_returns_in_block(nir_block *block, struct lower_returns_state *state)
          nir_local_variable_create(b->impl, glsl_bool_type(), "return");
 
       /* Initialize the variable to 0 */
-      b->cursor = nir_before_cf_list(&b->impl->body);
+      b->cursor = nir_before_impl(b->impl);
       nir_store_var(b, state->return_flag, nir_imm_false(b), 1);
    }
 

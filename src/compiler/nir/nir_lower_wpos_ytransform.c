@@ -257,7 +257,7 @@ lower_interp_deref_or_load_baryc_at_offset(lower_wpos_ytransform_state *state,
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   offset = nir_ssa_for_src(b, intr->src[offset_src], 2);
+   offset = intr->src[offset_src].ssa;
    flip_y = nir_fmul(b, nir_channel(b, offset, 1),
                      nir_channel(b, get_transform(state), 0));
    nir_src_rewrite(&intr->src[offset_src],

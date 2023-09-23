@@ -72,7 +72,12 @@ struct rb_tree {
 };
 
 /** Initialize a red-black tree */
-void rb_tree_init(struct rb_tree *T);
+static inline void
+rb_tree_init(struct rb_tree *T)
+{
+    T->root = NULL;
+}
+
 
 /** Returns true if the red-black tree is empty */
 static inline bool
@@ -93,6 +98,14 @@ struct rb_node *rb_node_next(struct rb_node *node);
 /** Get the next previous (to the left) in the tree or NULL */
 struct rb_node *rb_node_prev(struct rb_node *node);
 
+#ifdef __cplusplus
+/* This macro will not work correctly if `t' uses virtual inheritance. */
+#define rb_tree_offsetof(t, f, p) \
+   (((char *) &((t *) p)->f) - ((char *) p))
+#else
+#define rb_tree_offsetof(t, f, p) offsetof(t, f)
+#endif
+
 /** Retrieve the data structure containing a node
  *
  * \param   type    The type of the containing data structure
@@ -102,7 +115,7 @@ struct rb_node *rb_node_prev(struct rb_node *node);
  * \param   field   The rb_node field in the containing data structure
  */
 #define rb_node_data(type, node, field) \
-    ((type *)(((char *)(node)) - offsetof(type, field)))
+    ((type *)(((char *)(node)) - rb_tree_offsetof(type, field, node)))
 
 /** Insert a node into a tree at a particular location
  *

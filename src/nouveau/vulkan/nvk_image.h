@@ -1,13 +1,17 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_IMAGE_H
 #define NVK_IMAGE_H 1
 
 #include "nvk_private.h"
-#include "nvk_device_memory.h"
+
+#include "vk_image.h"
 
 #include "nil_image.h"
-#include "nouveau_bo.h"
-#include "vulkan/runtime/vk_image.h"
 
+struct nvk_device_memory;
 struct nvk_physical_device;
 
 static VkFormatFeatureFlags2

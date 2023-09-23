@@ -76,7 +76,6 @@ foreach arch : ['6', '7']
     include_directories : [
       inc_include,
       inc_src,
-      inc_compiler,
       inc_gallium, # XXX: util/format/u_formats.h
       inc_gallium_aux, # XXX: renderonly
       inc_panfrost,
@@ -99,13 +98,18 @@ if with_platform_wayland
   libpanvk_files += [wayland_drm_client_protocol_h, wayland_drm_protocol_c]
 endif
 
+if with_platform_android
+  panvk_deps += [dep_android]
+  panvk_flags += '-DVK_USE_PLATFORM_ANDROID_KHR'
+  libpanvk_files += files('panvk_android.c')
+endif
+
 libvulkan_panfrost = shared_library(
   'vulkan_panfrost',
   [libpanvk_files, panvk_entrypoints],
   include_directories : [
     inc_include,
     inc_src,
-    inc_compiler,
     inc_gallium, # XXX: util/format/u_formats.h
     inc_gallium_aux, # XXX: renderonly
     inc_panfrost,
@@ -152,6 +156,7 @@ panfrost_icd = custom_target(
   ],
   build_by_default : true,
   install_dir : with_vulkan_icd_dir,
+  install_tag : 'runtime',
   install : true,
 )
 

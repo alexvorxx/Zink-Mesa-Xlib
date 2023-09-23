@@ -59,7 +59,7 @@ lower_const_initializer(struct nir_builder *b, struct exec_list *var_list,
 {
    bool progress = false;
 
-   b->cursor = nir_before_cf_list(&b->impl->body);
+   b->cursor = nir_before_impl(b->impl);
 
    nir_foreach_variable_in_list(var, var_list) {
       if (!(var->data.mode & modes))
@@ -145,7 +145,7 @@ nir_zero_initialize_shared_memory(nir_shader *shader,
    assert(chunk_size % 4 == 0);
 
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    assert(!shader->info.workgroup_size_variable);
    const unsigned local_count = shader->info.workgroup_size[0] *

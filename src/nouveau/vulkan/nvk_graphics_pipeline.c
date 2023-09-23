@@ -1,11 +1,18 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_pipeline.h"
 
 #include "nvk_device.h"
 #include "nvk_physical_device.h"
 #include "nvk_shader.h"
-#include "nv_push.h"
+
 #include "vk_nir.h"
 #include "vk_pipeline.h"
+#include "vk_pipeline_layout.h"
+
+#include "nv_push.h"
 
 #include "nouveau_context.h"
 
@@ -47,9 +54,15 @@ emit_pipeline_rs_state(struct nv_push *p,
 
 static void
 nvk_populate_fs_key(struct nvk_fs_key *key,
-                    const struct vk_multisample_state *ms)
+                    const struct vk_multisample_state *ms,
+                    const struct vk_render_pass_state *rp)
 {
    memset(key, 0, sizeof(*key));
+
+   if (rp->pipeline_flags &
+       VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+      key->zs_self_dep = true;
+
    if (ms == NULL || ms->rasterization_samples <= 1)
       return;
 
@@ -337,7 +350,7 @@ nvk_graphics_pipeline_create(struct nvk_device *dev,
 
       struct nvk_fs_key fs_key_tmp, *fs_key = NULL;
       if (stage == MESA_SHADER_FRAGMENT) {
-         nvk_populate_fs_key(&fs_key_tmp, state.ms);
+         nvk_populate_fs_key(&fs_key_tmp, state.ms, state.rp);
          fs_key = &fs_key_tmp;
       }
 

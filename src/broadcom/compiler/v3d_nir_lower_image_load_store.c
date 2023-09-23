@@ -104,7 +104,7 @@ v3d_nir_lower_image_store(nir_builder *b, nir_intrinsic_instr *instr)
         b->cursor = nir_before_instr(&instr->instr);
 
         nir_def *color = nir_trim_vector(b,
-                                             nir_ssa_for_src(b, instr->src[3], 4),
+                                             instr->src[3].ssa,
                                              num_components);
         nir_def *formatted = NULL;
 

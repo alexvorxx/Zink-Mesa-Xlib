@@ -1359,7 +1359,11 @@ get_image_ssbo_samp_tex_src(struct ir3_context *ctx, nir_src *src, bool image)
             info.base = info.tex_base;
          } else {
             info.base = info.tex_base;
-            info.a1_val = info.tex_idx << 3;
+            if (ctx->compiler->gen <= 6) {
+               info.a1_val = info.tex_idx << 3;
+            } else {
+               info.a1_val = info.samp_idx << 3;
+            }
             info.flags |= IR3_INSTR_A1EN;
          }
          info.samp_tex = NULL;
@@ -1583,6 +1587,7 @@ emit_intrinsic_barrier(struct ir3_context *ctx, nir_intrinsic_instr *intr)
     */
 
    mesa_scope exec_scope = nir_intrinsic_execution_scope(intr);
+   mesa_scope mem_scope = nir_intrinsic_memory_scope(intr);
    nir_variable_mode modes = nir_intrinsic_memory_modes(intr);
    /* loads/stores are always cache-coherent so we can filter out
     * available/visible.
@@ -1648,6 +1653,24 @@ emit_intrinsic_barrier(struct ir3_context *ctx, nir_intrinsic_instr *intr)
 
       /* make sure barrier doesn't get DCE'd */
       array_insert(b, b->keeps, barrier);
+
+      if (ctx->compiler->gen >= 7 && mem_scope > SCOPE_WORKGROUP &&
+          modes & (nir_var_mem_ssbo | nir_var_image) &&
+          semantics & NIR_MEMORY_ACQUIRE) {
+         /* "r + l" is not enough to synchronize reads with writes from other
+          * workgroups, we can disable them since they are useless here.
+          */
+         barrier->cat7.r = false;
+         barrier->cat7.l = false;
+
+         struct ir3_instruction *ccinv = ir3_CCINV(b);
+         /* A7XX TODO: ccinv should just stick to the barrier,
+          * the barrier class/conflict introduces unnecessary waits.
+          */
+         ccinv->barrier_class = barrier->barrier_class;
+         ccinv->barrier_conflict = barrier->barrier_conflict;
+         array_insert(b, b->keeps, ccinv);
+      }
    }
 
    if (exec_scope >= SCOPE_WORKGROUP) {
@@ -2819,7 +2842,12 @@ get_tex_samp_tex_src(struct ir3_context *ctx, nir_tex_instr *tex)
             info.base = info.tex_base;
          } else {
             info.base = info.tex_base;
-            info.a1_val = info.tex_idx << 3 | info.samp_base;
+            if (ctx->compiler->gen <= 6) {
+               info.a1_val = info.tex_idx << 3 | info.samp_base;
+            } else {
+               info.a1_val = info.samp_idx << 3 | info.samp_base;
+            }
+
             info.flags |= IR3_INSTR_A1EN;
          }
          info.samp_tex = NULL;
@@ -3963,6 +3991,9 @@ setup_input(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          unsigned idx = (n * 4) + i + frac;
          ctx->last_dst[i] = create_frag_input(ctx, coord, idx);
       }
+
+      if (slot == VARYING_SLOT_PRIMITIVE_ID)
+         so->reads_primid = true;
    } else {
       struct ir3_instruction *input = NULL;
 
@@ -4993,6 +5024,18 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
             break;
          }
       }
+   }
+
+   if (ctx->compiler->gen >= 7 && so->type == MESA_SHADER_COMPUTE) {
+      struct ir3_instruction *end = find_end(so->ir);
+      struct ir3_instruction *lock =
+         ir3_instr_create(ctx->block, OPC_LOCK, 0, 0);
+      /* TODO: This flags should be set by scheduler only when needed */
+      lock->flags = IR3_INSTR_SS | IR3_INSTR_SY | IR3_INSTR_JP;
+      ir3_instr_move_before(lock, end);
+      struct ir3_instruction *unlock =
+         ir3_instr_create(ctx->block, OPC_UNLOCK, 0, 0);
+      ir3_instr_move_before(unlock, end);
    }
 
    so->branchstack = ctx->max_stack;

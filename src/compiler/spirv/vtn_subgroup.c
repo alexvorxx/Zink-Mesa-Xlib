@@ -103,22 +103,8 @@ vtn_handle_subgroup(struct vtn_builder *b, SpvOp opcode,
    }
 
    case SpvOpGroupNonUniformInverseBallot: {
-      /* This one is just a BallotBitfieldExtract with subgroup invocation.
-       * We could add a NIR intrinsic but it's easier to just lower it on the
-       * spot.
-       */
-      nir_intrinsic_instr *intrin =
-         nir_intrinsic_instr_create(b->nb.shader,
-                                    nir_intrinsic_ballot_bitfield_extract);
-
-      intrin->src[0] = nir_src_for_ssa(vtn_get_nir_ssa(b, w[4]));
-      intrin->src[1] = nir_src_for_ssa(nir_load_subgroup_invocation(&b->nb));
-
-      nir_def_init_for_type(&intrin->instr, &intrin->def,
-                            dest_type->type);
-      nir_builder_instr_insert(&b->nb, &intrin->instr);
-
-      vtn_push_nir_ssa(b, w[2], &intrin->def);
+      nir_def *dest = nir_inverse_ballot(&b->nb, 1, vtn_get_nir_ssa(b, w[4]));
+      vtn_push_nir_ssa(b, w[2], dest);
       break;
    }
 

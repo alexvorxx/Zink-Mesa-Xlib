@@ -929,13 +929,13 @@ nir_lower_goto_ifs_impl(nir_function_impl *impl)
       nir_lower_phis_to_regs_block(block);
 
    nir_cf_list cf_list;
-   nir_cf_extract(&cf_list, nir_before_cf_list(&impl->body),
-                  nir_after_cf_list(&impl->body));
+   nir_cf_extract(&cf_list, nir_before_impl(impl),
+                  nir_after_impl(impl));
 
    /* From this point on, it's structured */
    impl->structured = true;
 
-   nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    void *mem_ctx = ralloc_context(b.shader);
 

@@ -456,7 +456,8 @@ get_bpp_encoding(enum isl_format format)
    }
 }
 
-#define INTEL_AUX_MAP_ENTRY_Y_TILED_BIT  (0x1ull << 52)
+#define INTEL_AUX_MAP_ENTRY_Ys_TILED_BIT  (0x0ull << 52)
+#define INTEL_AUX_MAP_ENTRY_Y_TILED_BIT   (0x1ull << 52)
 
 uint64_t
 intel_aux_map_format_bits(enum isl_tiling tiling, enum isl_format format,
@@ -474,11 +475,19 @@ intel_aux_map_format_bits(enum isl_tiling tiling, enum isl_format format,
               isl_format_get_name(format),
               isl_format_get_aux_map_encoding(format));
 
+   assert(tiling == ISL_TILING_ICL_Ys ||
+          tiling == ISL_TILING_ICL_Yf ||
+          tiling == ISL_TILING_Y0);
+
    uint64_t format_bits =
       ((uint64_t)isl_format_get_aux_map_encoding(format) << 58) |
       ((uint64_t)(plane > 0) << 57) |
       ((uint64_t)get_bpp_encoding(format) << 54) |
-      INTEL_AUX_MAP_ENTRY_Y_TILED_BIT;
+      /* TODO: We assume that Yf is not Tiled-Ys, but waiting on
+       *       clarification
+       */
+      (tiling == ISL_TILING_ICL_Ys ? INTEL_AUX_MAP_ENTRY_Ys_TILED_BIT :
+                                     INTEL_AUX_MAP_ENTRY_Y_TILED_BIT);
 
    assert((format_bits & INTEL_AUX_MAP_FORMAT_BITS_MASK) == format_bits);
 

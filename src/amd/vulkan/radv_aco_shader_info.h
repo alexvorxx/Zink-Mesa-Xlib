@@ -49,7 +49,7 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv
    ASSIGN_FIELD(has_ngg_early_prim_export);
    ASSIGN_FIELD(workgroup_size);
    ASSIGN_FIELD(has_epilog);
-   ASSIGN_FIELD(is_monolithic);
+   ASSIGN_FIELD(merged_shader_compiled_separately);
    ASSIGN_FIELD(vs.tcs_in_out_eq);
    ASSIGN_FIELD(vs.tcs_temp_only_input_mask);
    ASSIGN_FIELD(vs.has_prolog);

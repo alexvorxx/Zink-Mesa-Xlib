@@ -51,7 +51,7 @@ r600_clone_deref_array(nir_builder *b,
 
    dst_tail = r600_clone_deref_array(b, dst_tail, parent);
 
-   return nir_build_deref_array(b, dst_tail, nir_ssa_for_src(b, src_head->arr.index, 1));
+   return nir_build_deref_array(b, dst_tail, src_head->arr.index.ssa);
 }
 
 static bool
@@ -158,7 +158,7 @@ r600_create_new_load(nir_builder *b,
 
    if (intr->intrinsic == nir_intrinsic_interp_deref_at_offset ||
        intr->intrinsic == nir_intrinsic_interp_deref_at_sample)
-      nir_src_copy(&new_intr->src[1], &intr->src[1], &new_intr->instr);
+      new_intr->src[1] = nir_src_for_ssa(intr->src[1].ssa);
 
    nir_builder_instr_insert(b, &new_intr->instr);
 

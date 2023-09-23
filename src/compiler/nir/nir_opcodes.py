@@ -150,6 +150,7 @@ def type_base_type(type_):
 _2src_commutative = "2src_commutative "
 associative = "associative "
 selection = "selection "
+derivative = "derivative "
 
 # global dictionary of opcodes
 opcodes = {}
@@ -164,8 +165,9 @@ def opcode(name, output_size, output_type, input_sizes, input_types,
 def unop_convert(name, out_type, in_type, const_expr, description = ""):
    opcode(name, 0, out_type, [0], [in_type], False, "", const_expr, description)
 
-def unop(name, ty, const_expr, description = ""):
-   opcode(name, 0, ty, [0], [ty], False, "", const_expr, description)
+def unop(name, ty, const_expr, description = "", algebraic_properties = ""):
+   opcode(name, 0, ty, [0], [ty], False, algebraic_properties, const_expr,
+          description)
 
 def unop_horiz(name, output_size, output_type, input_size, input_type,
                const_expr, description = ""):
@@ -338,6 +340,7 @@ of a constant is 0 if the constant is not Inf or NaN.
 for mode, suffix in [("either fine or coarse", ""), ("fine", "_fine"), ("coarse", "_coarse")]:
     for axis in ["x", "y"]:
         unop(f"fdd{axis}{suffix}", tfloat, "isfinite(src0) ? 0.0 : NAN",
+             algebraic_properties = derivative,
              description = deriv_template.format(mode, axis.upper()))
 
 # Floating point pack and unpack operations.
@@ -1406,8 +1409,8 @@ opcode("b32fcsel_mdg", 0, tuint, [0, 0, 0],
        """)
 
 # Magnitude equal to fddx/y, sign undefined. Derivative of a constant is zero.
-unop("fddx_must_abs_mali", tfloat, "0.0")
-unop("fddy_must_abs_mali", tfloat, "0.0")
+unop("fddx_must_abs_mali", tfloat, "0.0", algebraic_properties = "derivative")
+unop("fddy_must_abs_mali", tfloat, "0.0", algebraic_properties = "derivative")
 
 # DXIL specific double [un]pack
 # DXIL doesn't support generic [un]pack instructions, so we want those

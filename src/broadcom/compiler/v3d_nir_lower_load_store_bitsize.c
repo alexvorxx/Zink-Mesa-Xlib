@@ -181,7 +181,7 @@ lower_store_bitsize(nir_builder *b,
         if (nir_src_bit_size(intr->src[value_idx]) == 32)
                 return false;
 
-        nir_def *value = nir_ssa_for_src(b, intr->src[value_idx], num_comp);
+        nir_def *value = intr->src[value_idx].ssa;
 
         b->cursor = nir_before_instr(&intr->instr);
 

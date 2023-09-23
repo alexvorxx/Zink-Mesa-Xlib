@@ -3242,6 +3242,7 @@ Converter::run()
    subgroup_options.ballot_bit_size = 32;
    subgroup_options.ballot_components = 1;
    subgroup_options.lower_elect = true;
+   subgroup_options.lower_inverse_ballot = true;
 
    unsigned lower_flrp = (nir->options->lower_flrp16 ? 16 : 0) |
                          (nir->options->lower_flrp32 ? 32 : 0) |

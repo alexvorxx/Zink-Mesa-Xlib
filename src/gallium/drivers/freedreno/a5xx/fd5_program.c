@@ -748,10 +748,12 @@ fd5_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
 }
 
 static struct ir3_program_state *
-fd5_program_create(void *data, struct ir3_shader_variant *bs,
-                   struct ir3_shader_variant *vs, struct ir3_shader_variant *hs,
-                   struct ir3_shader_variant *ds, struct ir3_shader_variant *gs,
-                   struct ir3_shader_variant *fs,
+fd5_program_create(void *data, const struct ir3_shader_variant *bs,
+                   const struct ir3_shader_variant *vs,
+                   const struct ir3_shader_variant *hs,
+                   const struct ir3_shader_variant *ds,
+                   const struct ir3_shader_variant *gs,
+                   const struct ir3_shader_variant *fs,
                    const struct ir3_cache_key *key) in_dt
 {
    struct fd_context *ctx = fd_context(data);

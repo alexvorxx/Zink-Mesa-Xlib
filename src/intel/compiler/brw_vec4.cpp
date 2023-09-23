@@ -23,6 +23,7 @@
 
 #include "brw_vec4.h"
 #include "brw_fs.h"
+#include "brw_eu.h"
 #include "brw_cfg.h"
 #include "brw_nir.h"
 #include "brw_vec4_builder.h"
@@ -2643,7 +2644,9 @@ brw_compile_vs(const struct brw_compiler *compiler,
          return NULL;
       }
 
-      prog_data->base.base.dispatch_grf_start_reg = v.payload().num_regs;
+      assert(v.payload().num_regs % reg_unit(compiler->devinfo) == 0);
+      prog_data->base.base.dispatch_grf_start_reg =
+         v.payload().num_regs / reg_unit(compiler->devinfo);
 
       fs_generator g(compiler, &params->base,
                      &prog_data->base.base, v.runtime_check_aads_emit,

@@ -423,6 +423,22 @@ nir_find_state_variable(nir_shader *s,
    return NULL;
 }
 
+nir_variable *nir_find_sampler_variable_with_tex_index(nir_shader *shader,
+                                                       unsigned texture_index)
+{
+   nir_foreach_variable_with_modes(var, shader, nir_var_uniform) {
+      unsigned size =
+          glsl_type_is_array(var->type) ? glsl_array_size(var->type) : 1;
+      if ((glsl_type_is_texture(glsl_without_array(var->type)) ||
+           glsl_type_is_sampler(glsl_without_array(var->type))) &&
+          (var->data.binding == texture_index ||
+           (var->data.binding < texture_index &&
+            var->data.binding + size > texture_index)))
+         return var;
+   }
+   return NULL;
+}
+
 /* Annoyingly, qsort_r is not in the C standard library and, in particular, we
  * can't count on it on MSV and Android.  So we stuff the CMP function into
  * each array element.  It's a bit messy and burns more memory but the list of
@@ -485,30 +501,16 @@ nir_function_create(nir_shader *shader, const char *name)
    func->impl = NULL;
    func->is_entrypoint = false;
    func->is_preamble = false;
+   func->dont_inline = false;
+   func->should_inline = false;
 
    return func;
 }
 
-static void
-src_copy(nir_src *dest, const nir_src *src, gc_ctx *ctx)
-{
-   dest->ssa = src->ssa;
-}
-
-/* NOTE: if the instruction you are copying a src to is already added
- * to the IR, use nir_instr_rewrite_src() instead.
- */
 void
-nir_src_copy(nir_src *dest, const nir_src *src, nir_instr *instr)
+nir_alu_src_copy(nir_alu_src *dest, const nir_alu_src *src)
 {
-   src_copy(dest, src, instr ? gc_get_context(instr) : NULL);
-}
-
-void
-nir_alu_src_copy(nir_alu_src *dest, const nir_alu_src *src,
-                 nir_alu_instr *instr)
-{
-   nir_src_copy(&dest->src, &src->src, instr ? &instr->instr : NULL);
+   dest->src = nir_src_for_ssa(src->src.ssa);
    for (unsigned i = 0; i < NIR_MAX_VEC_COMPONENTS; i++)
       dest->swizzle[i] = src->swizzle[i];
 }
@@ -1819,6 +1821,17 @@ nir_cf_node_cf_tree_next(nir_cf_node *node)
       return nir_cf_node_as_block(nir_cf_node_next(node));
 }
 
+nir_block *
+nir_cf_node_cf_tree_prev(nir_cf_node *node)
+{
+   if (node->type == nir_cf_node_block)
+      return nir_block_cf_tree_prev(nir_cf_node_as_block(node));
+   else if (node->type == nir_cf_node_function)
+      return NULL;
+   else
+      return nir_cf_node_as_block(nir_cf_node_prev(node));
+}
+
 nir_if *
 nir_block_get_following_if(nir_block *block)
 {
@@ -2024,7 +2037,7 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
                             nir_metadata_dominance;
 
    bool progress = false;
-   nir_cursor iter = nir_before_cf_list(&impl->body);
+   nir_cursor iter = nir_before_impl(impl);
    nir_instr *instr;
    while ((instr = cursor_next_instr(iter)) != NULL) {
       if (filter && !filter(instr, cb_data)) {
@@ -2751,7 +2764,6 @@ nir_get_nir_type_for_glsl_base_type(enum glsl_base_type base_type)
    case GLSL_TYPE_ARRAY:
    case GLSL_TYPE_VOID:
    case GLSL_TYPE_SUBROUTINE:
-   case GLSL_TYPE_FUNCTION:
    case GLSL_TYPE_ERROR:
       return nir_type_invalid;
    }

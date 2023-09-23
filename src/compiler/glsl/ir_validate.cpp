@@ -150,13 +150,13 @@ ir_validate::visit_enter(class ir_dereference_array *ir)
 
    if (!ir->array_index->type->is_scalar()) {
       printf("ir_dereference_array @ %p does not have scalar index: %s\n",
-             (void *) ir, ir->array_index->type->name);
+             (void *) ir, glsl_get_type_name(ir->array_index->type));
       abort();
    }
 
    if (!ir->array_index->type->is_integer_16_32()) {
       printf("ir_dereference_array @ %p does not have integer index: %s\n",
-             (void *) ir, ir->array_index->type->name);
+             (void *) ir, glsl_get_type_name(ir->array_index->type));
       abort();
    }
 
@@ -190,7 +190,7 @@ ir_validate::visit_enter(ir_discard *ir)
 {
    if (ir->condition && ir->condition->type != glsl_type::bool_type) {
       printf("ir_discard condition %s type instead of bool.\n",
-	     ir->condition->type->name);
+	     glsl_get_type_name(ir->condition->type));
       ir->print();
       printf("\n");
       abort();
@@ -204,7 +204,7 @@ ir_validate::visit_enter(ir_if *ir)
 {
    if (ir->condition->type != glsl_type::bool_type) {
       printf("ir_if condition %s type instead of bool.\n",
-	     ir->condition->type->name);
+	     glsl_get_type_name(ir->condition->type));
       ir->print();
       printf("\n");
       abort();
@@ -1129,7 +1129,7 @@ ir_validate::visit_enter(ir_call *ir)
    if (ir->return_deref) {
       if (ir->return_deref->type != callee->return_type) {
 	 printf("callee type %s does not match return storage type %s\n",
-	        callee->return_type->name, ir->return_deref->type->name);
+	        glsl_get_type_name(callee->return_type), glsl_get_type_name(ir->return_deref->type));
 	 abort();
       }
    } else if (callee->return_type != glsl_type::void_type) {

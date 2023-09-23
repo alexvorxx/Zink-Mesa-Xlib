@@ -1,13 +1,18 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_DESCRIPTOR_SET_LAYOUT
 #define NVK_DESCRIPTOR_SET_LAYOUT 1
 
 #include "nvk_private.h"
 
-#include "vulkan/runtime/vk_descriptor_set_layout.h"
-#include "vulkan/runtime/vk_object.h"
+#include "vk_descriptor_set_layout.h"
+#include "vk_object.h"
 
 struct nvk_device;
 struct nvk_sampler;
+struct vk_pipeline_layout;
 
 struct nvk_descriptor_set_binding_layout {
    /* The type of the descriptors in this binding */

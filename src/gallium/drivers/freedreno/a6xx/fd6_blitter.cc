@@ -595,7 +595,7 @@ emit_blit_dst(struct fd_ringbuffer *ring, struct pipe_resource *prsc,
 template <chip CHIP>
 static void
 emit_blit_src(struct fd_ringbuffer *ring, const struct pipe_blit_info *info,
-              unsigned layer, unsigned nr_samples, bool sample_0)
+              unsigned layer, unsigned nr_samples)
 {
    struct fd_resource *src = fd_resource(info->src.resource);
    enum a6xx_format sfmt =
@@ -624,7 +624,7 @@ emit_blit_src(struct fd_ringbuffer *ring, const struct pipe_blit_info *info,
                  .srgb  = util_format_is_srgb(info->src.format),
                  .samples = samples,
                  .filter = (info->filter == PIPE_TEX_FILTER_LINEAR),
-                 .samples_average = (samples > MSAA_ONE) && !sample_0,
+                 .samples_average = (samples > MSAA_ONE) && !info->sample0_only,
                  .unk20 = true,
                  .unk22 = true,
            ),
@@ -660,7 +660,7 @@ emit_blit_src(struct fd_ringbuffer *ring, const struct pipe_blit_info *info,
 template <chip CHIP>
 static void
 emit_blit_texture(struct fd_context *ctx, struct fd_ringbuffer *ring,
-                  const struct pipe_blit_info *info, bool sample_0)
+                  const struct pipe_blit_info *info)
 {
    const struct pipe_box *sbox = &info->src.box;
    const struct pipe_box *dbox = &info->dst.box;
@@ -722,7 +722,7 @@ emit_blit_texture(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
    for (unsigned i = 0; i < info->dst.box.depth; i++) {
 
-      emit_blit_src<CHIP>(ring, info, sbox->z + i, nr_samples, sample_0);
+      emit_blit_src<CHIP>(ring, info, sbox->z + i, nr_samples);
       emit_blit_dst(ring, info->dst.resource, info->dst.format, info->dst.level,
                     dbox->z + i);
 
@@ -1108,8 +1108,8 @@ template void fd6_resolve_tile<A7XX>(struct fd_batch *batch, struct fd_ringbuffe
 
 template <chip CHIP>
 static bool
-handle_rgba_blit(struct fd_context *ctx,
-                 const struct pipe_blit_info *info, bool sample_0) assert_dt
+handle_rgba_blit(struct fd_context *ctx, const struct pipe_blit_info *info)
+   assert_dt
 {
    struct fd_batch *batch;
 
@@ -1159,7 +1159,7 @@ handle_rgba_blit(struct fd_context *ctx,
       /* I don't *think* we need to handle blits between buffer <-> !buffer */
       assert(info->src.resource->target != PIPE_BUFFER);
       assert(info->dst.resource->target != PIPE_BUFFER);
-      emit_blit_texture<CHIP>(ctx, batch->draw, info, sample_0);
+      emit_blit_texture<CHIP>(ctx, batch->draw, info);
    }
 
    trace_end_blit(&batch->trace, batch->draw);
@@ -1189,13 +1189,11 @@ handle_rgba_blit(struct fd_context *ctx,
  */
 template <chip CHIP>
 static bool
-do_rewritten_blit(struct fd_context *ctx,
-                  const struct pipe_blit_info *info, bool sample_0) assert_dt
+do_rewritten_blit(struct fd_context *ctx, const struct pipe_blit_info *info)
+   assert_dt
 {
-   bool success = handle_rgba_blit<CHIP>(ctx, info, sample_0);
+   bool success = handle_rgba_blit<CHIP>(ctx, info);
    if (!success) {
-      if (sample_0 && !util_format_is_pure_integer(info->src.format))
-         mesa_logw("sample averaging on fallback blit when we shouldn't.");
       success = fd_blitter_blit(ctx, info);
    }
    assert(success); /* fallback should never fail! */
@@ -1230,14 +1228,16 @@ handle_zs_blit(struct fd_context *ctx,
       blit.mask = PIPE_MASK_R;
       blit.src.format = PIPE_FORMAT_R8_UINT;
       blit.dst.format = PIPE_FORMAT_R8_UINT;
-      return do_rewritten_blit<CHIP>(ctx, &blit, true);
+      blit.sample0_only = true;
+      return do_rewritten_blit<CHIP>(ctx, &blit);
 
    case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
       if (info->mask & PIPE_MASK_Z) {
          blit.mask = PIPE_MASK_R;
          blit.src.format = PIPE_FORMAT_R32_FLOAT;
          blit.dst.format = PIPE_FORMAT_R32_FLOAT;
-         do_rewritten_blit<CHIP>(ctx, &blit, true);
+         blit.sample0_only = true;
+         do_rewritten_blit<CHIP>(ctx, &blit);
       }
 
       if (info->mask & PIPE_MASK_S) {
@@ -1246,7 +1246,8 @@ handle_zs_blit(struct fd_context *ctx,
          blit.dst.format = PIPE_FORMAT_R8_UINT;
          blit.src.resource = &src->stencil->b.b;
          blit.dst.resource = &dst->stencil->b.b;
-         do_rewritten_blit<CHIP>(ctx, &blit, true);
+         blit.sample0_only = true;
+         do_rewritten_blit<CHIP>(ctx, &blit);
       }
 
       return true;
@@ -1255,7 +1256,8 @@ handle_zs_blit(struct fd_context *ctx,
       blit.mask = PIPE_MASK_R;
       blit.src.format = PIPE_FORMAT_R16_UNORM;
       blit.dst.format = PIPE_FORMAT_R16_UNORM;
-      return do_rewritten_blit<CHIP>(ctx, &blit, true);
+      blit.sample0_only = true;
+      return do_rewritten_blit<CHIP>(ctx, &blit);
 
    case PIPE_FORMAT_Z32_UNORM:
    case PIPE_FORMAT_Z32_FLOAT:
@@ -1263,7 +1265,8 @@ handle_zs_blit(struct fd_context *ctx,
       blit.mask = PIPE_MASK_R;
       blit.src.format = PIPE_FORMAT_R32_UINT;
       blit.dst.format = PIPE_FORMAT_R32_UINT;
-      return do_rewritten_blit<CHIP>(ctx, &blit, true);
+      blit.sample0_only = true;
+      return do_rewritten_blit<CHIP>(ctx, &blit);
 
    case PIPE_FORMAT_Z24X8_UNORM:
    case PIPE_FORMAT_Z24_UNORM_S8_UINT:
@@ -1289,7 +1292,7 @@ handle_zs_blit(struct fd_context *ctx,
          }
       }
       if (info->src.resource->nr_samples > 1 && blit.src.format != PIPE_FORMAT_RGBA8888_UINT)
-         mesa_logw("sample averaging on fallback z24s8 blit when we shouldn't.");
+         blit.sample0_only = true;
       return fd_blitter_blit(ctx, &blit);
 
    default:
@@ -1343,7 +1346,7 @@ handle_compressed_blit(struct fd_context *ctx,
    blit.dst.box.width = DIV_ROUND_UP(blit.dst.box.width, bw);
    blit.dst.box.height = DIV_ROUND_UP(blit.dst.box.height, bh);
 
-   return do_rewritten_blit<CHIP>(ctx, &blit, false);
+   return do_rewritten_blit<CHIP>(ctx, &blit);
 }
 
 /**
@@ -1366,7 +1369,7 @@ handle_snorm_copy_blit(struct fd_context *ctx,
 
    blit.src.format = blit.dst.format = util_format_snorm_to_unorm(info->src.format);
 
-   return do_rewritten_blit<CHIP>(ctx, &blit, false);
+   return do_rewritten_blit<CHIP>(ctx, &blit);
 }
 
 template <chip CHIP>
@@ -1384,7 +1387,7 @@ fd6_blit(struct fd_context *ctx, const struct pipe_blit_info *info) assert_dt
        util_format_is_snorm(info->src.format))
       return handle_snorm_copy_blit<CHIP>(ctx, info);
 
-   return handle_rgba_blit<CHIP>(ctx, info, false);
+   return handle_rgba_blit<CHIP>(ctx, info);
 }
 
 template <chip CHIP>

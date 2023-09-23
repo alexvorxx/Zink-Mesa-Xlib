@@ -681,6 +681,19 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetDescriptorSetLayoutSupport(VkDevice device,
                                        const VkDescriptorSetLayoutCreateInfo* pCreateInfo,
                                        VkDescriptorSetLayoutSupport* pSupport)
 {
+   const VkDescriptorSetLayoutBindingFlagsCreateInfo *variable_flags =
+      vk_find_struct_const(pCreateInfo->pNext, DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
+   VkDescriptorSetVariableDescriptorCountLayoutSupport *variable_count =
+      vk_find_struct(pSupport->pNext, DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
+   if (variable_count) {
+      variable_count->maxVariableDescriptorCount = 0;
+      if (variable_flags) {
+         for (unsigned i = 0; i < variable_flags->bindingCount; i++) {
+            if (variable_flags->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
+               variable_count->maxVariableDescriptorCount = MAX_DESCRIPTORS;
+         }
+      }
+   }
    pSupport->supported = true;
 }
 

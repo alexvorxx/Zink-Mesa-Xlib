@@ -311,7 +311,7 @@ binary clover::nir::spirv_to_nir(const binary &mod, const device &dev,
       // according to the comment on nir_inline_functions
       NIR_PASS_V(nir, nir_lower_variable_initializers, nir_var_function_temp);
       NIR_PASS_V(nir, nir_lower_returns);
-      NIR_PASS_V(nir, nir_lower_libclc, spirv_options.clc_shader);
+      NIR_PASS_V(nir, nir_link_shader_functions, spirv_options.clc_shader);
 
       NIR_PASS_V(nir, nir_inline_functions);
       NIR_PASS_V(nir, nir_copy_prop);

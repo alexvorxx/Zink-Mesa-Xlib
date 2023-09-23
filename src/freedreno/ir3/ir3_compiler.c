@@ -197,9 +197,16 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->has_dp2acc = dev_info->a6xx.has_dp2acc;
       compiler->has_dp4acc = dev_info->a6xx.has_dp4acc;
 
-      compiler->shared_consts_base_offset = 504;
-      compiler->shared_consts_size = 8;
-      compiler->geom_shared_consts_size_quirk = 16;
+      if (compiler->gen == 6) {
+         compiler->shared_consts_base_offset = 504;
+         compiler->shared_consts_size = 8;
+         compiler->geom_shared_consts_size_quirk = 16;
+      } else {
+         /* A7XX TODO: properly use new shared consts mechanism */
+         compiler->shared_consts_base_offset = -1;
+         compiler->shared_consts_size = 0;
+         compiler->geom_shared_consts_size_quirk = 0;
+      }
 
       compiler->has_fs_tex_prefetch = dev_info->a6xx.has_fs_tex_prefetch;
    } else {

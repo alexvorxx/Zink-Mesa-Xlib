@@ -268,8 +268,10 @@ build_instance(inout radv_aabb bounds, VOID_REF src_ptr, VOID_REF dst_ptr, uint3
    AccelerationStructureInstance instance = DEREF(REF(AccelerationStructureInstance)(src_ptr));
    DEREF(node).base_ptr = instance.accelerationStructureReference;
 
-   /* An inactive instance is one whose acceleration structure handle is VK_NULL_HANDLE. */
-   if (instance.accelerationStructureReference == 0)
+   /* An inactive instance is one whose acceleration structure handle is VK_NULL_HANDLE. Since the active terminology is
+    * only relevant for BVH updates, which we do not implement, we can also skip instances with mask == 0.
+    */
+   if (instance.accelerationStructureReference == 0 || instance.custom_instance_and_mask < (1u << 24u))
       return false;
 
    DEREF(node).otw_matrix = instance.transform;

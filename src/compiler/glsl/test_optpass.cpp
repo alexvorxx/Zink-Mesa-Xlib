@@ -159,6 +159,8 @@ int test_optpass(int argc, char **argv)
       }
    }
 
+   glsl_type_singleton_init_or_ref();
+
    struct gl_context local_ctx;
    struct gl_context *ctx = &local_ctx;
    initialize_context_to_defaults(ctx, API_OPENGL_COMPAT);
@@ -234,6 +236,8 @@ int test_optpass(int argc, char **argv)
 
    ralloc_free(state);
    ralloc_free(shader);
+
+   glsl_type_singleton_decref();
 
    return error;
 }

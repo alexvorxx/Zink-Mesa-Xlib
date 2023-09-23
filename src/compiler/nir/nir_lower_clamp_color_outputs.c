@@ -80,7 +80,7 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr, nir_shader *shader)
    if (is_color_output(shader, out)) {
       b->cursor = nir_before_instr(&intr->instr);
       int src = intr->intrinsic == nir_intrinsic_store_deref ? 1 : 0;
-      s = nir_ssa_for_src(b, intr->src[src], intr->num_components);
+      s = intr->src[src].ssa;
       s = nir_fsat(b, s);
       nir_src_rewrite(&intr->src[src], s);
    }

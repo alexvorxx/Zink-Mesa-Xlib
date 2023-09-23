@@ -249,7 +249,8 @@ build_lrz(struct fd6_emit *emit) assert_dt
    OUT_REG(ring,
            A6XX_GRAS_LRZ_CNTL(.enable = lrz.enable, .lrz_write = lrz.write,
                               .greater = lrz.direction == FD_LRZ_GREATER,
-                              .z_test_enable = lrz.test, ));
+                              .z_test_enable = lrz.test,
+                              .z_bounds_enable = lrz.z_bounds_enable, ));
    OUT_REG(ring, A6XX_RB_LRZ_CNTL(.enable = lrz.enable, ));
 
    OUT_REG(ring, A6XX_RB_DEPTH_PLANE_CNTL(.z_mode = lrz.z_mode, ));
@@ -348,6 +349,45 @@ build_blend_color(struct fd6_emit *emit) assert_dt
            A6XX_RB_BLEND_GREEN_F32(bcolor->color[1]),
            A6XX_RB_BLEND_BLUE_F32(bcolor->color[2]),
            A6XX_RB_BLEND_ALPHA_F32(bcolor->color[3]));
+
+   return ring;
+}
+
+static struct fd_ringbuffer *
+build_sample_locations(struct fd6_emit *emit)
+   assert_dt
+{
+   struct fd_context *ctx = emit->ctx;
+
+   if (!ctx->sample_locations_enabled) {
+      struct fd6_context *fd6_ctx = fd6_context(ctx);
+      return fd_ringbuffer_ref(fd6_ctx->sample_locations_disable_stateobj);
+   }
+
+   struct fd_ringbuffer *ring = fd_submit_new_ringbuffer(
+      ctx->batch->submit, 9 * 4, FD_RINGBUFFER_STREAMING);
+
+   uint32_t sample_locations = 0;
+   for (int i = 0; i < 4; i++) {
+      float x = (ctx->sample_locations[i] & 0xf) / 16.0f;
+      float y = (16 - (ctx->sample_locations[i] >> 4)) / 16.0f;
+
+      x = CLAMP(x, 0.0f, 0.9375f);
+      y = CLAMP(y, 0.0f, 0.9375f);
+
+      sample_locations |=
+         (A6XX_RB_SAMPLE_LOCATION_0_SAMPLE_0_X(x) |
+          A6XX_RB_SAMPLE_LOCATION_0_SAMPLE_0_Y(y)) << i*8;
+   }
+
+   OUT_REG(ring, A6XX_GRAS_SAMPLE_CONFIG(.location_enable = true),
+                 A6XX_GRAS_SAMPLE_LOCATION_0(.dword = sample_locations));
+
+   OUT_REG(ring, A6XX_RB_SAMPLE_CONFIG(.location_enable = true),
+                 A6XX_RB_SAMPLE_LOCATION_0(.dword = sample_locations));
+
+   OUT_REG(ring, A6XX_SP_TP_SAMPLE_CONFIG(.location_enable = true),
+                 A6XX_SP_TP_SAMPLE_LOCATION_0(.dword = sample_locations));
 
    return ring;
 }
@@ -603,6 +643,10 @@ fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
          state = build_blend_color(emit);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_BLEND_COLOR);
          break;
+      case FD6_GROUP_SAMPLE_LOCATIONS:
+         state = build_sample_locations(emit);
+         fd6_state_take_group(&emit->state, state, FD6_GROUP_SAMPLE_LOCATIONS);
+         break;
       case FD6_GROUP_VS_BINDLESS:
          state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_VERTEX, false);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_VS_BINDLESS);
@@ -806,9 +850,11 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
    WRITE(REG_A6XX_UCHE_UNKNOWN_0E12, screen->info->a6xx.magic.UCHE_UNKNOWN_0E12);
    WRITE(REG_A6XX_UCHE_CLIENT_PF, screen->info->a6xx.magic.UCHE_CLIENT_PF);
    WRITE(REG_A6XX_RB_UNKNOWN_8E01, screen->info->a6xx.magic.RB_UNKNOWN_8E01);
+   WRITE(REG_A6XX_SP_UNKNOWN_A9A8, 0);
    WRITE(REG_A6XX_SP_MODE_CONTROL,
          A6XX_SP_MODE_CONTROL_CONSTANT_DEMOTION_ENABLE | 4);
    WRITE(REG_A6XX_VFD_ADD_OFFSET, A6XX_VFD_ADD_OFFSET_VERTEX);
+   WRITE(REG_A6XX_VPC_UNKNOWN_9107, 0);
    WRITE(REG_A6XX_RB_UNKNOWN_8811, 0x00000010);
    WRITE(REG_A6XX_PC_MODE_CNTL, screen->info->a6xx.magic.PC_MODE_CNTL);
 
@@ -844,16 +890,12 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
    WRITE(REG_A6XX_VPC_UNKNOWN_9211, 0);
    WRITE(REG_A6XX_VPC_UNKNOWN_9602, 0);
    WRITE(REG_A6XX_PC_UNKNOWN_9E72, 0);
-   WRITE(REG_A6XX_SP_TP_SAMPLE_CONFIG, 0);
    /* NOTE blob seems to (mostly?) use 0xb2 for SP_TP_MODE_CNTL
     * but this seems to kill texture gather offsets.
     */
    WRITE(REG_A6XX_SP_TP_MODE_CNTL, 0xa0 |
          A6XX_SP_TP_MODE_CNTL_ISAMMODE(ISAMMODE_GL));
-   WRITE(REG_A6XX_RB_SAMPLE_CONFIG, 0);
-   WRITE(REG_A6XX_GRAS_SAMPLE_CONFIG, 0);
-   WRITE(REG_A6XX_RB_Z_BOUNDS_MIN, 0);
-   WRITE(REG_A6XX_RB_Z_BOUNDS_MAX, 0);
+
    OUT_REG(ring, HLSQ_CONTROL_5_REG(
          CHIP,
          .linelengthregid = INVALID_REG,

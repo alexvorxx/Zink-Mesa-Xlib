@@ -69,6 +69,7 @@ libgallium_dri = shared_library(
 foreach d : [[with_gallium_kmsro, [
                'armada-drm_dri.so',
                'exynos_dri.so',
+               'hdlcd_dri.so',
                'hx8357d_dri.so',
                'ili9225_dri.so',
                'ili9341_dri.so',
@@ -142,4 +143,5 @@ meson.add_install_script(
   libgallium_dri.full_path(),
   dri_drivers_path,
   gallium_dri_drivers,
+  install_tag : 'runtime',
 )

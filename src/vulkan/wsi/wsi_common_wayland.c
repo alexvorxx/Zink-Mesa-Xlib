@@ -1157,14 +1157,21 @@ wsi_wl_surface_get_capabilities2(VkIcdSurfaceBase *surface,
                break;
             }
          } else {
-            switch (present_mode->presentMode) {
-            case VK_PRESENT_MODE_MAILBOX_KHR:
-            case VK_PRESENT_MODE_FIFO_KHR:
-               compat->presentModeCount = 2;
-               break;
-            default:
+            if (!present_mode) {
+               wsi_common_vk_warn_once("Use of VkSurfacePresentModeCompatibilityEXT "
+                                       "without a VkSurfacePresentModeEXT set. This is an "
+                                       "application bug.\n");
                compat->presentModeCount = 1;
-               break;
+            } else {
+               switch (present_mode->presentMode) {
+               case VK_PRESENT_MODE_MAILBOX_KHR:
+               case VK_PRESENT_MODE_FIFO_KHR:
+                  compat->presentModeCount = 2;
+                  break;
+               default:
+                  compat->presentModeCount = 1;
+                  break;
+               }
             }
          }
          break;

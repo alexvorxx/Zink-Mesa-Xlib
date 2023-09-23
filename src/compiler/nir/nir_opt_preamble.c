@@ -234,17 +234,10 @@ can_move_instr(nir_instr *instr, opt_preamble_ctx *ctx)
        * TODO: Replace derivatives with 0 instead, if real apps hit this.
        */
       nir_alu_instr *alu = nir_instr_as_alu(instr);
-      switch (alu->op) {
-      case nir_op_fddx:
-      case nir_op_fddy:
-      case nir_op_fddx_fine:
-      case nir_op_fddy_fine:
-      case nir_op_fddx_coarse:
-      case nir_op_fddy_coarse:
+      if (nir_op_is_derivative(alu->op))
          return false;
-      default:
+      else
          return can_move_srcs(instr, ctx);
-      }
    }
    case nir_instr_type_intrinsic:
       return can_move_intrinsic(nir_instr_as_intrinsic(instr), ctx);
@@ -520,7 +513,7 @@ nir_opt_preamble(nir_shader *shader, const nir_opt_preamble_options *options,
       _mesa_pointer_hash_table_create(NULL);
    nir_function_impl *preamble =
       nir_shader_get_preamble(impl->function->shader);
-   nir_builder preamble_builder = nir_builder_at(nir_before_cf_list(&preamble->body));
+   nir_builder preamble_builder = nir_builder_at(nir_before_impl(preamble));
    nir_builder *b = &preamble_builder;
 
    nir_foreach_block(block, impl) {

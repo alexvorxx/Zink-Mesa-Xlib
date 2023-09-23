@@ -24,6 +24,8 @@
 #include "meta/radv_meta.h"
 #include "radv_private.h"
 
+#include "ac_rgp.h"
+
 #include "nir_builder.h"
 
 #include "vk_common_entrypoints.h"
@@ -48,6 +50,11 @@ radv_get_sequence_size_compute(const struct radv_indirect_command_layout *layout
          *cmd_size += 4 * 4;
       }
    }
+
+   if (device->sqtt.bo) {
+      /* sqtt markers */
+      *cmd_size += 8 * 3 * 4;
+   }
 }
 
 static void
@@ -55,6 +62,7 @@ radv_get_sequence_size_graphics(const struct radv_indirect_command_layout *layou
                                 const struct radv_graphics_pipeline *pipeline, uint32_t *cmd_size,
                                 uint32_t *upload_size)
 {
+   const struct radv_device *device = container_of(layout->base.device, struct radv_device, vk);
    const struct radv_shader *vs = radv_get_shader(pipeline->base.shaders, MESA_SHADER_VERTEX);
 
    if (layout->bind_vbo_mask) {
@@ -79,12 +87,19 @@ radv_get_sequence_size_graphics(const struct radv_indirect_command_layout *layou
       /* userdata writes + instance count + non-indexed draw */
       *cmd_size += (5 + 2 + 3) * 4;
    }
+
+   if (device->sqtt.bo) {
+      /* sqtt markers */
+      *cmd_size += 5 * 3 * 4;
+   }
 }
 
 static void
 radv_get_sequence_size(const struct radv_indirect_command_layout *layout, struct radv_pipeline *pipeline,
                        uint32_t *cmd_size, uint32_t *upload_size)
 {
+   const struct radv_device *device = container_of(layout->base.device, struct radv_device, vk);
+
    *cmd_size = 0;
    *upload_size = 0;
 
@@ -109,6 +124,11 @@ radv_get_sequence_size(const struct radv_indirect_command_layout *layout, struct
          *upload_size += align(pipeline->push_constant_size + 16 * pipeline->dynamic_offset_count, 16);
    }
 
+   if (device->sqtt.bo) {
+      /* THREAD_TRACE_MARKER */
+      *cmd_size += 2 * 4;
+   }
+
    if (layout->pipeline_bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
       struct radv_graphics_pipeline *graphics_pipeline = radv_pipeline_to_graphics(pipeline);
       radv_get_sequence_size_graphics(layout, graphics_pipeline, cmd_size, upload_size);
@@ -128,12 +148,29 @@ radv_align_cmdbuf_size(const struct radv_device *device, uint32_t size)
    return align(size, ib_pad_dw_mask + 1);
 }
 
+static unsigned
+radv_dgc_preamble_cmdbuf_size(const struct radv_device *device)
+{
+   return radv_align_cmdbuf_size(device, 16);
+}
+
+static bool
+radv_dgc_use_preamble(const VkGeneratedCommandsInfoNV *cmd_info)
+{
+   /* Heuristic on when the overhead for the preamble (i.e. double jump) is worth it. Obviously
+    * a bit of a guess as it depends on the actual count which we don't know. */
+   return cmd_info->sequencesCountBuffer != VK_NULL_HANDLE && cmd_info->sequencesCount >= 64;
+}
+
 uint32_t
 radv_get_indirect_cmdbuf_size(const VkGeneratedCommandsInfoNV *cmd_info)
 {
    VK_FROM_HANDLE(radv_indirect_command_layout, layout, cmd_info->indirectCommandsLayout);
    VK_FROM_HANDLE(radv_pipeline, pipeline, cmd_info->pipeline);
    const struct radv_device *device = container_of(layout->base.device, struct radv_device, vk);
+
+   if (radv_dgc_use_preamble(cmd_info))
+      return radv_dgc_preamble_cmdbuf_size(device);
 
    uint32_t cmd_size, upload_size;
    radv_get_sequence_size(layout, pipeline, &cmd_size, &upload_size);
@@ -182,6 +219,7 @@ struct radv_dgc_params {
    uint16_t push_constant_shader_cnt;
 
    uint8_t is_dispatch;
+   uint8_t use_preamble;
 };
 
 enum {
@@ -204,6 +242,9 @@ enum {
 struct dgc_cmdbuf {
    nir_def *descriptor;
    nir_variable *offset;
+
+   enum amd_gfx_level gfx_level;
+   bool sqtt_enabled;
 };
 
 static void
@@ -235,10 +276,16 @@ dgc_emit(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *value)
                                                 .base = offsetof(struct radv_dgc_params, field), .range = 8))
 
 static nir_def *
-nir_pkt3(nir_builder *b, unsigned op, nir_def *len)
+nir_pkt3_base(nir_builder *b, unsigned op, nir_def *len, bool predicate)
 {
    len = nir_iand_imm(b, len, 0x3fff);
-   return nir_ior_imm(b, nir_ishl_imm(b, len, 16), PKT_TYPE_S(3) | PKT3_IT_OPCODE_S(op));
+   return nir_ior_imm(b, nir_ishl_imm(b, len, 16), PKT_TYPE_S(3) | PKT3_IT_OPCODE_S(op) | PKT3_PREDICATE(predicate));
+}
+
+static nir_def *
+nir_pkt3(nir_builder *b, unsigned op, nir_def *len)
+{
+   return nir_pkt3_base(b, op, len, false);
 }
 
 static nir_def *
@@ -273,6 +320,90 @@ dgc_emit_userdata_vertex(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *vtx_bas
    values[4] = nir_bcsel(b, nir_iand(b, has_drawid, has_baseinstance), first_instance, values[4]);
 
    dgc_emit(b, cs, nir_vec(b, values, 5));
+}
+
+static void
+dgc_emit_sqtt_userdata(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *data)
+{
+   if (!cs->sqtt_enabled)
+      return;
+
+   nir_def *values[3] = {
+      nir_pkt3_base(b, PKT3_SET_UCONFIG_REG, nir_imm_int(b, 1), cs->gfx_level >= GFX10),
+      nir_imm_int(b, (R_030D08_SQ_THREAD_TRACE_USERDATA_2 - CIK_UCONFIG_REG_OFFSET) >> 2),
+      data,
+   };
+
+   dgc_emit(b, cs, nir_vec(b, values, 3));
+}
+
+static void
+dgc_emit_sqtt_thread_trace_marker(nir_builder *b, struct dgc_cmdbuf *cs)
+{
+   if (!cs->sqtt_enabled)
+      return;
+
+   nir_def *values[2] = {
+      nir_pkt3(b, PKT3_EVENT_WRITE, nir_imm_int(b, 0)),
+      nir_imm_int(b, EVENT_TYPE(V_028A90_THREAD_TRACE_MARKER | EVENT_INDEX(0))),
+   };
+
+   dgc_emit(b, cs, nir_vec(b, values, 2));
+}
+
+static void
+dgc_emit_sqtt_marker_event(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *sequence_id,
+                           enum rgp_sqtt_marker_event_type event)
+{
+   struct rgp_sqtt_marker_event marker = {0};
+
+   marker.identifier = RGP_SQTT_MARKER_IDENTIFIER_EVENT;
+   marker.api_type = event;
+
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.dword01));
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.dword02));
+   dgc_emit_sqtt_userdata(b, cs, sequence_id);
+}
+
+static void
+dgc_emit_sqtt_marker_event_with_dims(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *sequence_id, nir_def *x,
+                                     nir_def *y, nir_def *z, enum rgp_sqtt_marker_event_type event)
+{
+   struct rgp_sqtt_marker_event_with_dims marker = {0};
+
+   marker.event.identifier = RGP_SQTT_MARKER_IDENTIFIER_EVENT;
+   marker.event.api_type = event;
+   marker.event.has_thread_dims = 1;
+
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.event.dword01));
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.event.dword02));
+   dgc_emit_sqtt_userdata(b, cs, sequence_id);
+   dgc_emit_sqtt_userdata(b, cs, x);
+   dgc_emit_sqtt_userdata(b, cs, y);
+   dgc_emit_sqtt_userdata(b, cs, z);
+}
+
+static void
+dgc_emit_sqtt_begin_api_marker(nir_builder *b, struct dgc_cmdbuf *cs, enum rgp_sqtt_marker_general_api_type api_type)
+{
+   struct rgp_sqtt_marker_general_api marker = {0};
+
+   marker.identifier = RGP_SQTT_MARKER_IDENTIFIER_GENERAL_API;
+   marker.api_type = api_type;
+
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.dword01));
+}
+
+static void
+dgc_emit_sqtt_end_api_marker(nir_builder *b, struct dgc_cmdbuf *cs, enum rgp_sqtt_marker_general_api_type api_type)
+{
+   struct rgp_sqtt_marker_general_api marker = {0};
+
+   marker.identifier = RGP_SQTT_MARKER_IDENTIFIER_GENERAL_API;
+   marker.api_type = api_type;
+   marker.is_end = 1;
+
+   dgc_emit_sqtt_userdata(b, cs, nir_imm_int(b, marker.dword01));
 }
 
 static void
@@ -337,16 +468,42 @@ dgc_emit_grid_size_pointer(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *grid_
    dgc_emit(b, cs, nir_vec(b, values, 4));
 }
 
+static nir_def *
+dgc_cmd_buf_size(nir_builder *b, nir_def *sequence_count, const struct radv_device *device)
+{
+   nir_def *use_preamble = nir_ine_imm(b, load_param8(b, use_preamble), 0);
+   nir_def *cmd_buf_size = load_param32(b, cmd_buf_size);
+   nir_def *cmd_buf_stride = load_param32(b, cmd_buf_stride);
+   nir_def *size = nir_imul(b, cmd_buf_stride, sequence_count);
+   unsigned align_mask = radv_align_cmdbuf_size(device, 1) - 1;
+
+   size = nir_iand_imm(b, nir_iadd_imm(b, size, align_mask), ~align_mask);
+
+   /* Ensure we don't have to deal with a jump to an empty IB in the preamble. */
+   size = nir_imax(b, size, nir_imm_int(b, align_mask + 1));
+
+   return nir_bcsel(b, use_preamble, size, cmd_buf_size);
+}
+
+static nir_def *
+dgc_main_cmd_buf_offset(nir_builder *b, const struct radv_device *device)
+{
+   nir_def *use_preamble = nir_ine_imm(b, load_param8(b, use_preamble), 0);
+   nir_def *base_offset = nir_imm_int(b, radv_dgc_preamble_cmdbuf_size(device));
+   return nir_bcsel(b, use_preamble, base_offset, nir_imm_int(b, 0));
+}
+
 static void
 build_dgc_buffer_tail(nir_builder *b, nir_def *sequence_count, const struct radv_device *device)
 {
    nir_def *global_id = get_global_ids(b, 1);
 
    nir_def *cmd_buf_stride = load_param32(b, cmd_buf_stride);
-   nir_def *cmd_buf_size = load_param32(b, cmd_buf_size);
+   nir_def *cmd_buf_size = dgc_cmd_buf_size(b, sequence_count, device);
 
    nir_push_if(b, nir_ieq_imm(b, global_id, 0));
    {
+      nir_def *base_offset = dgc_main_cmd_buf_offset(b, device);
       nir_def *cmd_buf_tail_start = nir_imul(b, cmd_buf_stride, sequence_count);
 
       nir_variable *offset = nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(), "offset");
@@ -378,10 +535,60 @@ build_dgc_buffer_tail(nir_builder *b, nir_def *sequence_count, const struct radv
             packet = nir_pkt3(b, PKT3_NOP, len);
          }
 
-         nir_store_ssbo(b, packet, dst_buf, curr_offset, .access = ACCESS_NON_READABLE);
+         nir_store_ssbo(b, packet, dst_buf, nir_iadd(b, curr_offset, base_offset), .access = ACCESS_NON_READABLE);
          nir_store_var(b, offset, nir_iadd(b, curr_offset, packet_size), 0x1);
       }
       nir_pop_loop(b, NULL);
+   }
+   nir_pop_if(b, NULL);
+}
+
+static void
+build_dgc_buffer_preamble(nir_builder *b, nir_def *sequence_count, const struct radv_device *device)
+{
+   nir_def *global_id = get_global_ids(b, 1);
+   nir_def *use_preamble = nir_ine_imm(b, load_param8(b, use_preamble), 0);
+
+   nir_push_if(b, nir_iand(b, nir_ieq_imm(b, global_id, 0), use_preamble));
+   {
+      unsigned preamble_size = radv_dgc_preamble_cmdbuf_size(device);
+      nir_def *cmd_buf_size = dgc_cmd_buf_size(b, sequence_count, device);
+      nir_def *dst_buf = radv_meta_load_descriptor(b, 0, DGC_DESC_PREPARE);
+
+      nir_def *words = nir_ushr_imm(b, cmd_buf_size, 2);
+
+      nir_def *addr = nir_iadd_imm(b, load_param32(b, upload_addr), preamble_size);
+
+      nir_def *nop_packet = dgc_get_nop_packet(b, device);
+
+      nir_def *nop_packets[] = {
+         nop_packet,
+         nop_packet,
+         nop_packet,
+         nop_packet,
+      };
+
+      const unsigned jump_size = 16;
+      unsigned offset;
+
+      /* Do vectorized store if possible */
+      for (offset = 0; offset + 16 <= preamble_size - jump_size; offset += 16) {
+         nir_store_ssbo(b, nir_vec(b, nop_packets, 4), dst_buf, nir_imm_int(b, offset), .access = ACCESS_NON_READABLE);
+      }
+
+      for (; offset + 4 <= preamble_size - jump_size; offset += 4) {
+         nir_store_ssbo(b, nop_packet, dst_buf, nir_imm_int(b, offset), .access = ACCESS_NON_READABLE);
+      }
+
+      nir_def *chain_packets[] = {
+         nir_imm_int(b, PKT3(PKT3_INDIRECT_BUFFER, 2, 0)),
+         addr,
+         nir_imm_int(b, device->physical_device->rad_info.address32_hi),
+         nir_ior_imm(b, words, S_3F2_CHAIN(1) | S_3F2_VALID(1) | S_3F2_PRE_ENA(false)),
+      };
+
+      nir_store_ssbo(b, nir_vec(b, chain_packets, 4), dst_buf, nir_imm_int(b, preamble_size - jump_size),
+                     .access = ACCESS_NON_READABLE);
    }
    nir_pop_if(b, NULL);
 }
@@ -404,9 +611,15 @@ dgc_emit_draw(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *stream_buf, nir_de
 
    nir_push_if(b, nir_iand(b, nir_ine_imm(b, vertex_count, 0), nir_ine_imm(b, instance_count, 0)));
    {
+      dgc_emit_sqtt_begin_api_marker(b, cs, ApiCmdDraw);
+      dgc_emit_sqtt_marker_event(b, cs, sequence_id, EventCmdDraw);
+
       dgc_emit_userdata_vertex(b, cs, vtx_base_sgpr, vertex_offset, first_instance, sequence_id, device);
       dgc_emit_instance_count(b, cs, instance_count);
       dgc_emit_draw_index_auto(b, cs, vertex_count);
+
+      dgc_emit_sqtt_thread_trace_marker(b, cs);
+      dgc_emit_sqtt_end_api_marker(b, cs, ApiCmdDraw);
    }
    nir_pop_if(b, 0);
 }
@@ -432,9 +645,15 @@ dgc_emit_draw_indexed(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *stream_buf
 
    nir_push_if(b, nir_iand(b, nir_ine_imm(b, index_count, 0), nir_ine_imm(b, instance_count, 0)));
    {
+      dgc_emit_sqtt_begin_api_marker(b, cs, ApiCmdDrawIndexed);
+      dgc_emit_sqtt_marker_event(b, cs, sequence_id, EventCmdDrawIndexed);
+
       dgc_emit_userdata_vertex(b, cs, vtx_base_sgpr, vertex_offset, first_instance, sequence_id, device);
       dgc_emit_instance_count(b, cs, instance_count);
       dgc_emit_draw_index_offset_2(b, cs, first_index, index_count, max_index_count);
+
+      dgc_emit_sqtt_thread_trace_marker(b, cs);
+      dgc_emit_sqtt_end_api_marker(b, cs, ApiCmdDrawIndexed);
    }
    nir_pop_if(b, 0);
 }
@@ -779,7 +998,7 @@ dgc_emit_vertex_buffer(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *stream_bu
  */
 static void
 dgc_emit_dispatch(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *stream_buf, nir_def *stream_base,
-                  nir_def *dispatch_params_offset, const struct radv_device *device)
+                  nir_def *dispatch_params_offset, nir_def *sequence_id, const struct radv_device *device)
 {
    nir_def *stream_offset = nir_iadd(b, dispatch_params_offset, stream_base);
 
@@ -801,7 +1020,13 @@ dgc_emit_dispatch(nir_builder *b, struct dgc_cmdbuf *cs, nir_def *stream_buf, ni
 
    nir_push_if(b, nir_iand(b, nir_ine_imm(b, wg_x, 0), nir_iand(b, nir_ine_imm(b, wg_y, 0), nir_ine_imm(b, wg_z, 0))));
    {
+      dgc_emit_sqtt_begin_api_marker(b, cs, ApiCmdDispatch);
+      dgc_emit_sqtt_marker_event_with_dims(b, cs, sequence_id, wg_x, wg_y, wg_z, EventCmdDispatch);
+
       dgc_emit_dispatch_direct(b, cs, wg_x, wg_y, wg_z, load_param32(b, dispatch_initiator));
+
+      dgc_emit_sqtt_thread_trace_marker(b, cs);
+      dgc_emit_sqtt_end_api_marker(b, cs, ApiCmdDispatch);
    }
    nir_pop_if(b, 0);
 }
@@ -822,6 +1047,8 @@ build_dgc_prepare_shader(struct radv_device *dev)
 
    nir_def *use_count = nir_iand_imm(&b, sequence_count, 1u << 31);
    sequence_count = nir_iand_imm(&b, sequence_count, UINT32_MAX >> 1);
+
+   nir_def *cmd_buf_base_offset = dgc_main_cmd_buf_offset(&b, dev);
 
    /* The effective number of draws is
     * min(sequencesCount, sequencesCountBuffer[sequencesCountOffset]) when
@@ -848,8 +1075,10 @@ build_dgc_prepare_shader(struct radv_device *dev)
       struct dgc_cmdbuf cmd_buf = {
          .descriptor = radv_meta_load_descriptor(&b, 0, DGC_DESC_PREPARE),
          .offset = nir_variable_create(b.shader, nir_var_shader_temp, glsl_uint_type(), "cmd_buf_offset"),
+         .gfx_level = dev->physical_device->rad_info.gfx_level,
+         .sqtt_enabled = !!dev->sqtt.bo,
       };
-      nir_store_var(&b, cmd_buf.offset, nir_imul(&b, global_id, cmd_buf_stride), 1);
+      nir_store_var(&b, cmd_buf.offset, nir_iadd(&b, nir_imul(&b, global_id, cmd_buf_stride), cmd_buf_base_offset), 1);
       nir_def *cmd_buf_end = nir_iadd(&b, nir_load_var(&b, cmd_buf.offset), cmd_buf_stride);
 
       nir_def *stream_buf = radv_meta_load_descriptor(&b, 0, DGC_DESC_STREAM);
@@ -857,9 +1086,9 @@ build_dgc_prepare_shader(struct radv_device *dev)
 
       nir_variable *upload_offset =
          nir_variable_create(b.shader, nir_var_shader_temp, glsl_uint_type(), "upload_offset");
-      nir_store_var(
-         &b, upload_offset,
-         nir_iadd(&b, load_param32(&b, cmd_buf_size), nir_imul(&b, load_param32(&b, upload_stride), sequence_id)), 0x1);
+      nir_def *upload_offset_init = nir_iadd(&b, nir_iadd(&b, load_param32(&b, cmd_buf_size), cmd_buf_base_offset),
+                                             nir_imul(&b, load_param32(&b, upload_stride), sequence_id));
+      nir_store_var(&b, upload_offset, upload_offset_init, 0x1);
 
       nir_def *vbo_bind_mask = load_param32(&b, vbo_bind_mask);
       nir_push_if(&b, nir_ine_imm(&b, vbo_bind_mask, 0));
@@ -913,7 +1142,8 @@ build_dgc_prepare_shader(struct radv_device *dev)
       }
       nir_push_else(&b, NULL);
       {
-         dgc_emit_dispatch(&b, &cmd_buf, stream_buf, stream_base, load_param16(&b, dispatch_params_offset), dev);
+         dgc_emit_dispatch(&b, &cmd_buf, stream_buf, stream_base, load_param16(&b, dispatch_params_offset), sequence_id,
+                           dev);
       }
       nir_pop_if(&b, NULL);
 
@@ -950,6 +1180,7 @@ build_dgc_prepare_shader(struct radv_device *dev)
    nir_pop_if(&b, NULL);
 
    build_dgc_buffer_tail(&b, sequence_count, dev);
+   build_dgc_buffer_preamble(&b, sequence_count, dev);
    return b.shader;
 }
 
@@ -1137,7 +1368,8 @@ radv_GetGeneratedCommandsMemoryRequirementsNV(VkDevice _device,
    uint32_t cmd_stride, upload_stride;
    radv_get_sequence_size(layout, pipeline, &cmd_stride, &upload_stride);
 
-   VkDeviceSize cmd_buf_size = radv_align_cmdbuf_size(device, cmd_stride * pInfo->maxSequencesCount);
+   VkDeviceSize cmd_buf_size =
+      radv_align_cmdbuf_size(device, cmd_stride * pInfo->maxSequencesCount) + radv_dgc_preamble_cmdbuf_size(device);
    VkDeviceSize upload_buf_size = upload_stride * pInfo->maxSequencesCount;
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits = device->physical_device->memory_types_32bit;
@@ -1280,14 +1512,13 @@ radv_prepare_dgc(struct radv_cmd_buffer *cmd_buffer, const VkGeneratedCommandsIn
    uint64_t upload_addr =
       radv_buffer_get_va(prep_buffer->bo) + prep_buffer->offset + pGeneratedCommandsInfo->preprocessOffset;
 
-   struct radv_dgc_params params = {
-      .cmd_buf_stride = cmd_stride,
-      .cmd_buf_size = cmd_buf_size,
-      .upload_addr = (uint32_t)upload_addr,
-      .upload_stride = upload_stride,
-      .sequence_count = pGeneratedCommandsInfo->sequencesCount,
-      .stream_stride = layout->input_stride,
-   };
+   struct radv_dgc_params params = {.cmd_buf_stride = cmd_stride,
+                                    .cmd_buf_size = cmd_buf_size,
+                                    .upload_addr = (uint32_t)upload_addr,
+                                    .upload_stride = upload_stride,
+                                    .sequence_count = pGeneratedCommandsInfo->sequencesCount,
+                                    .stream_stride = layout->input_stride,
+                                    .use_preamble = radv_dgc_use_preamble(pGeneratedCommandsInfo)};
 
    upload_size = pipeline->push_constant_size + 16 * pipeline->dynamic_offset_count +
                  sizeof(layout->push_constant_offsets) + ARRAY_SIZE(pipeline->shaders) * 12;

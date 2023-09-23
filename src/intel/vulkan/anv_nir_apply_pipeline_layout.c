@@ -1496,7 +1496,7 @@ lower_load_constant(nir_builder *b, nir_intrinsic_instr *intrin,
     * by constant folding.
     */
    assert(!nir_src_is_const(intrin->src[0]));
-   nir_def *offset = nir_iadd_imm(b, nir_ssa_for_src(b, intrin->src[0], 1),
+   nir_def *offset = nir_iadd_imm(b, intrin->src[0].ssa,
                                       nir_intrinsic_base(intrin));
 
    unsigned load_size = intrin->def.num_components *
@@ -1561,7 +1561,7 @@ lower_tex_deref(nir_builder *b, nir_tex_instr *tex,
    if (deref->deref_type != nir_deref_type_var) {
       assert(deref->deref_type == nir_deref_type_array);
 
-      array_index = nir_ssa_for_src(b, deref->arr.index, 1);
+      array_index = deref->arr.index.ssa;
    } else {
       array_index = nir_imm_int(b, 0);
    }

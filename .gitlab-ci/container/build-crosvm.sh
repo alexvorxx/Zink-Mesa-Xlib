@@ -25,6 +25,7 @@ cargo update -p pkg-config@0.3.26 --precise 0.3.27
 
 RUSTFLAGS='-L native=/usr/local/lib' cargo install \
   bindgen-cli \
+  --locked \
   -j ${FDO_CI_CONCURRENT:-4} \
   --root /usr/local \
   --version 0.65.1 \

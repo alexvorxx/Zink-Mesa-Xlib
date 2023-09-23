@@ -85,7 +85,7 @@ append_launch_mesh_workgroups_to_nv_task(nir_builder *b,
     * This ensures that 0 mesh workgroups are launched when the
     * shader doesn't write the TASK_COUNT output.
     */
-   b->cursor = nir_before_cf_list(&b->impl->body);
+   b->cursor = nir_before_impl(b->impl);
    nir_def *zero = nir_imm_int(b, 0);
    nir_store_shared(b, zero, zero, .base = s->task_count_shared_addr);
 

@@ -65,7 +65,7 @@ nir_load_ssbo_prop(nir_builder *b, nir_intrinsic_op op,
 {
    nir_intrinsic_instr *load = nir_intrinsic_instr_create(b->shader, op);
    load->num_components = 1;
-   nir_src_copy(&load->src[0], idx, &load->instr);
+   load->src[0] = nir_src_for_ssa(idx->ssa);
    nir_def_init(&load->instr, &load->def, 1, bitsize);
    nir_builder_instr_insert(b, &load->instr);
    return &load->def;
@@ -88,7 +88,7 @@ lower_ssbo_instr(nir_builder *b, nir_intrinsic_instr *intr)
 
    nir_src index = intr->src[is_store ? 1 : 0];
    nir_src *offset_src = nir_get_io_offset_src(intr);
-   nir_def *offset = nir_ssa_for_src(b, *offset_src, 1);
+   nir_def *offset = offset_src->ssa;
 
    nir_def *address =
       nir_iadd(b,
@@ -112,16 +112,16 @@ lower_ssbo_instr(nir_builder *b, nir_intrinsic_instr *intr)
    }
 
    if (is_store) {
-      nir_src_copy(&global->src[0], &intr->src[0], &global->instr);
+      global->src[0] = nir_src_for_ssa(intr->src[0].ssa);
       nir_intrinsic_set_write_mask(global, nir_intrinsic_write_mask(intr));
    } else {
       nir_def_init(&global->instr, &global->def,
                    intr->def.num_components, intr->def.bit_size);
 
       if (is_atomic) {
-         nir_src_copy(&global->src[1], &intr->src[2], &global->instr);
+         global->src[1] = nir_src_for_ssa(intr->src[2].ssa);
          if (nir_intrinsic_infos[op].num_srcs > 2)
-            nir_src_copy(&global->src[2], &intr->src[3], &global->instr);
+            global->src[2] = nir_src_for_ssa(intr->src[3].ssa);
       }
    }
 

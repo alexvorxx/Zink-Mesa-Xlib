@@ -425,6 +425,12 @@ static void parseEncSpsParamsH265(vlVaContext *context, struct vl_rbsp *rbsp)
             context->desc.h265enc.seq.matrix_coefficients = vl_rbsp_u(rbsp, 8);
          }
       }
+
+      context->desc.h265enc.seq.vui_flags.chroma_loc_info_present_flag = vl_rbsp_u(rbsp, 1);
+      if (context->desc.h265enc.seq.vui_flags.chroma_loc_info_present_flag) {
+         context->desc.h265enc.seq.chroma_sample_loc_type_top_field = vl_rbsp_ue(rbsp);
+         context->desc.h265enc.seq.chroma_sample_loc_type_bottom_field = vl_rbsp_ue(rbsp);
+      }
    }
 }
 

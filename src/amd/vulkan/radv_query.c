@@ -1671,6 +1671,20 @@ gfx10_copy_gds_query(struct radv_cmd_buffer *cmd_buffer, uint32_t gds_offset, ui
 }
 
 static void
+radv_update_hw_pipelinestat(struct radv_cmd_buffer *cmd_buffer)
+{
+   const uint32_t num_pipeline_stat_queries = radv_get_num_pipeline_stat_queries(cmd_buffer);
+
+   if (num_pipeline_stat_queries == 0) {
+      cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_START_PIPELINE_STATS;
+      cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_STOP_PIPELINE_STATS;
+   } else if (num_pipeline_stat_queries == 1) {
+      cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_STOP_PIPELINE_STATS;
+      cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_START_PIPELINE_STATS;
+   }
+}
+
+static void
 emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool, uint64_t va, VkQueryType query_type,
                  VkQueryControlFlags flags, uint32_t index)
 {
@@ -1719,10 +1733,8 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
       radeon_check_space(cmd_buffer->device->ws, cs, 4);
 
       ++cmd_buffer->state.active_pipeline_queries;
-      if (cmd_buffer->state.active_pipeline_queries == 1) {
-         cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_STOP_PIPELINE_STATS;
-         cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_START_PIPELINE_STATS;
-      }
+
+      radv_update_hw_pipelinestat(cmd_buffer);
 
       radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
       radeon_emit(cs, EVENT_TYPE(V_028A90_SAMPLE_PIPELINESTAT) | EVENT_INDEX(2));
@@ -1768,6 +1780,10 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
 
          cmd_buffer->state.active_prims_xfb_gds_queries++;
       } else {
+         cmd_buffer->state.active_prims_xfb_queries++;
+
+         radv_update_hw_pipelinestat(cmd_buffer);
+
          emit_sample_streamout(cmd_buffer, va, index);
       }
       break;
@@ -1796,6 +1812,8 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
          } else {
             cmd_buffer->state.active_prims_gen_queries++;
          }
+
+         radv_update_hw_pipelinestat(cmd_buffer);
 
          if (pool->uses_gds) {
             /* generated prim counter */
@@ -1863,10 +1881,9 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
       radeon_check_space(cmd_buffer->device->ws, cs, 16);
 
       cmd_buffer->state.active_pipeline_queries--;
-      if (cmd_buffer->state.active_pipeline_queries == 0) {
-         cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_START_PIPELINE_STATS;
-         cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_STOP_PIPELINE_STATS;
-      }
+
+      radv_update_hw_pipelinestat(cmd_buffer);
+
       va += pipelinestat_block_size;
 
       radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
@@ -1914,6 +1931,10 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
          if (!cmd_buffer->state.active_prims_xfb_gds_queries)
             cmd_buffer->state.dirty |= RADV_CMD_DIRTY_SHADER_QUERY;
       } else {
+         cmd_buffer->state.active_prims_xfb_queries--;
+
+         radv_update_hw_pipelinestat(cmd_buffer);
+
          emit_sample_streamout(cmd_buffer, va + 16, index);
       }
       break;
@@ -1939,6 +1960,8 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
          } else {
             cmd_buffer->state.active_prims_gen_queries--;
          }
+
+         radv_update_hw_pipelinestat(cmd_buffer);
 
          if (pool->uses_gds) {
             /* generated prim counter */

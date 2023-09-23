@@ -166,7 +166,6 @@ fallback_gralloc_get_yuv_info(struct u_gralloc *gralloc,
    enum chroma_order chroma_order;
    struct android_ycbcr ycbcr;
    int drm_fourcc = 0;
-   int num_planes = 0;
    int num_fds = 0;
    int fds[3];
    int ret;
@@ -209,7 +208,7 @@ fallback_gralloc_get_yuv_info(struct u_gralloc *gralloc,
    out->drm_fourcc = drm_fourcc;
    out->modifier = DRM_FORMAT_MOD_INVALID;
 
-   num_planes = ycbcr.chroma_step == 2 ? 2 : 3;
+   out->num_planes = ycbcr.chroma_step == 2 ? 2 : 3;
    /* When lock_ycbcr's usage argument contains no SW_READ/WRITE flags
     * it will return the .y/.cb/.cr pointers based on a NULL pointer,
     * so they can be interpreted as offsets. */

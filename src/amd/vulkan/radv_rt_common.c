@@ -574,12 +574,14 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
 
                nir_store_deref(b, args->vars.sbt_offset_and_flags, nir_channel(b, instance_data, 3), 1);
 
-               nir_def *instance_and_mask = nir_channel(b, instance_data, 2);
-               nir_push_if(b, nir_ult(b, nir_iand(b, instance_and_mask, args->cull_mask), nir_imm_int(b, 1 << 24)));
-               {
-                  nir_jump(b, nir_jump_continue);
+               if (!args->ignore_cull_mask) {
+                  nir_def *instance_and_mask = nir_channel(b, instance_data, 2);
+                  nir_push_if(b, nir_ult(b, nir_iand(b, instance_and_mask, args->cull_mask), nir_imm_int(b, 1 << 24)));
+                  {
+                     nir_jump(b, nir_jump_continue);
+                  }
+                  nir_pop_if(b, NULL);
                }
-               nir_pop_if(b, NULL);
 
                nir_store_deref(b, args->vars.top_stack, nir_load_deref(b, args->vars.stack), 1);
                nir_store_deref(b, args->vars.bvh_base, nir_pack_64_2x32(b, nir_trim_vector(b, instance_data, 2)), 1);

@@ -85,7 +85,7 @@ typedef void *drmDevicePtr;
 static bool
 radv_spm_trace_enabled(struct radv_instance *instance)
 {
-   return (instance->vk.trace_mode == RADV_TRACE_MODE_RGP) &&
+   return (instance->vk.trace_mode & RADV_TRACE_MODE_RGP) &&
           debug_get_bool_option("RADV_THREAD_TRACE_CACHE_COUNTERS", true);
 }
 
@@ -773,6 +773,12 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV: {
          const VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV *features = (const void *)ext;
          if (features->deviceGeneratedCommands)
+            use_dgc = true;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV: {
+         const VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV *features = (const void *)ext;
+         if (features->deviceGeneratedCompute)
             use_dgc = true;
          break;
       }

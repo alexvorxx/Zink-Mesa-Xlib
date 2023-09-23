@@ -665,8 +665,6 @@ union si_shader_part_key {
       unsigned as_ls : 1;
       unsigned as_es : 1;
       unsigned as_ngg : 1;
-      /* Prologs for monolithic shaders shouldn't set EXEC. */
-      unsigned is_monolithic : 1;
    } vs_prolog;
    struct {
       struct si_tcs_epilog_bits states;

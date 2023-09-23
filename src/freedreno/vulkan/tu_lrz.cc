@@ -10,6 +10,8 @@
 #include "tu_cs.h"
 #include "tu_image.h"
 
+#include "common/freedreno_gpu_event.h"
+
 /* See lrz.rst for how HW works. Here are only the implementation notes.
  *
  * There are a number of limitations when LRZ cannot be used:
@@ -101,8 +103,8 @@ tu6_disable_lrz_via_depth_view(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
       .disable_on_wrong_dir = true,
    ));
 
-   tu6_emit_event_write(cmd, cs, LRZ_CLEAR);
-   tu6_emit_event_write(cmd, cs, LRZ_FLUSH);
+   tu_emit_event_write<A6XX>(cmd, cs, FD_LRZ_CLEAR);
+   tu_emit_event_write<A6XX>(cmd, cs, FD_LRZ_FLUSH);
 }
 
 static void
@@ -111,7 +113,7 @@ tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_image_view *view)
 {
    if (!view->image->lrz_height) {
-      assert(TU_DEBUG(NOLRZ) || !vk_format_has_depth(att->format));
+      assert(!cmd->device->use_lrz || !vk_format_has_depth(att->format));
       return;
    }
 
@@ -160,7 +162,7 @@ tu_lrz_init_secondary(struct tu_cmd_buffer *cmd,
    if (!has_gpu_tracking)
       return;
 
-   if (TU_DEBUG(NOLRZ))
+   if (!cmd->device->use_lrz)
       return;
 
    if (!vk_format_has_depth(att->format))
@@ -319,12 +321,11 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
        * LRZ_CLEAR.disable_on_wrong_dir + LRZ_CLEAR - sets direction to
        *  CUR_DIR_UNSET.
        */
-      tu6_emit_event_write(cmd, cs, LRZ_CLEAR);
+      tu_emit_event_write<A6XX>(cmd, cs, FD_LRZ_CLEAR);
    }
 
    if (!lrz->fast_clear && !invalidate_lrz) {
-      tu6_clear_lrz(cmd, cs, lrz->image_view->image, &lrz->depth_clear_value);
-
+      tu6_clear_lrz<A6XX>(cmd, cs, lrz->image_view->image, &lrz->depth_clear_value);
       /* Even though we disable fast-clear we still have to dirty
        * fast-clear buffer because both secondary cmdbufs and following
        * renderpasses won't know that fast-clear is disabled.
@@ -333,7 +334,7 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
        * expect secondary cmdbufs.
        */
       if (lrz->image_view->image->lrz_fc_size) {
-         tu6_dirty_lrz_fc(cmd, cs, lrz->image_view->image);
+         tu6_dirty_lrz_fc<A6XX>(cmd, cs, lrz->image_view->image);
       }
    }
 }
@@ -359,7 +360,7 @@ tu_lrz_tiling_end(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
       tu6_write_lrz_reg(cmd, cs, A6XX_GRAS_LRZ_CNTL(0));
    }
 
-   tu6_emit_event_write(cmd, cs, LRZ_FLUSH);
+   tu_emit_event_write<A6XX>(cmd, cs, FD_LRZ_FLUSH);
 
    /* If gpu_dir_tracking is enabled and lrz is not valid blob, at this point,
     * additionally clears direction buffer:
@@ -400,10 +401,10 @@ tu_lrz_sysmem_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
             .enable = true,
             .fc_enable = true,
          ));
-         tu6_emit_event_write(cmd, &cmd->cs, LRZ_CLEAR);
-         tu6_emit_event_write(cmd, &cmd->cs, LRZ_FLUSH);
+         tu_emit_event_write<A6XX>(cmd, &cmd->cs, FD_LRZ_CLEAR);
+         tu_emit_event_write<A6XX>(cmd, &cmd->cs, FD_LRZ_FLUSH);
       } else {
-         tu6_clear_lrz(cmd, cs, lrz->image_view->image, &lrz->depth_clear_value);
+         tu6_clear_lrz<A6XX>(cmd, cs, lrz->image_view->image, &lrz->depth_clear_value);
       }
    }
 }
@@ -411,7 +412,7 @@ tu_lrz_sysmem_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 void
 tu_lrz_sysmem_end(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
-   tu6_emit_event_write(cmd, &cmd->cs, LRZ_FLUSH);
+   tu_emit_event_write<A6XX>(cmd, &cmd->cs, FD_LRZ_FLUSH);
 }
 
 /* Disable LRZ outside of renderpass. */
@@ -473,11 +474,11 @@ tu_lrz_clear_depth_image(struct tu_cmd_buffer *cmd,
       .disable_on_wrong_dir = true,
    ));
 
-   tu6_emit_event_write(cmd, &cmd->cs, LRZ_CLEAR);
-   tu6_emit_event_write(cmd, &cmd->cs, LRZ_FLUSH);
+   tu_emit_event_write<A6XX>(cmd, &cmd->cs, FD_LRZ_CLEAR);
+   tu_emit_event_write<A6XX>(cmd, &cmd->cs, FD_LRZ_FLUSH);
 
    if (!fast_clear) {
-      tu6_clear_lrz(cmd, &cmd->cs, image, (const VkClearValue*) pDepthStencil);
+      tu6_clear_lrz<A6XX>(cmd, &cmd->cs, image, (const VkClearValue*) pDepthStencil);
    }
 }
 
@@ -573,7 +574,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    /* If depth test is disabled we shouldn't touch LRZ.
     * Same if there is no depth attachment.
     */
-   if (a == VK_ATTACHMENT_UNUSED || !z_test_enable || TU_DEBUG(NOLRZ))
+   if (a == VK_ATTACHMENT_UNUSED || !z_test_enable || !cmd->device->use_lrz)
       return gras_lrz_cntl;
 
    if (!cmd->state.lrz.gpu_dir_tracking && !cmd->state.attachments) {

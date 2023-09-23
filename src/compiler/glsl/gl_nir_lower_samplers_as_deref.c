@@ -226,7 +226,7 @@ lower_deref(nir_builder *b, struct lower_samplers_as_deref_state *state,
       assert((*p)->deref_type == nir_deref_type_array);
 
       new_deref = nir_build_deref_array(b, new_deref,
-                                        nir_ssa_for_src(b, (*p)->arr.index, 1));
+                                        (*p)->arr.index.ssa);
    }
 
    return new_deref;

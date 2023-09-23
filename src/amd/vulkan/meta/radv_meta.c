@@ -39,11 +39,15 @@
 static void
 radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_buffer)
 {
-   /* Pipeline statistics queries. */
-   if (cmd_buffer->state.active_pipeline_queries > 0) {
+   const uint32_t num_pipeline_stat_queries = radv_get_num_pipeline_stat_queries(cmd_buffer);
+
+   if (num_pipeline_stat_queries > 0) {
       cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_START_PIPELINE_STATS;
       cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_STOP_PIPELINE_STATS;
+   }
 
+   /* Pipeline statistics queries. */
+   if (cmd_buffer->state.active_pipeline_queries > 0) {
       state->active_pipeline_gds_queries = cmd_buffer->state.active_pipeline_gds_queries;
       cmd_buffer->state.active_pipeline_gds_queries = 0;
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_SHADER_QUERY;
@@ -80,11 +84,15 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
 static void
 radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_buffer)
 {
-   /* Pipeline statistics queries. */
-   if (cmd_buffer->state.active_pipeline_queries > 0) {
+   const uint32_t num_pipeline_stat_queries = radv_get_num_pipeline_stat_queries(cmd_buffer);
+
+   if (num_pipeline_stat_queries > 0) {
       cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_STOP_PIPELINE_STATS;
       cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_START_PIPELINE_STATS;
+   }
 
+   /* Pipeline statistics queries. */
+   if (cmd_buffer->state.active_pipeline_queries > 0) {
       cmd_buffer->state.active_pipeline_gds_queries = state->active_pipeline_gds_queries;
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_SHADER_QUERY;
    }
@@ -680,7 +688,7 @@ get_global_ids(nir_builder *b, unsigned num_components)
    unsigned mask = BITFIELD_MASK(num_components);
 
    nir_def *local_ids = nir_channels(b, nir_load_local_invocation_id(b), mask);
-   nir_def *block_ids = nir_channels(b, nir_load_workgroup_id(b, 32), mask);
+   nir_def *block_ids = nir_channels(b, nir_load_workgroup_id(b), mask);
    nir_def *block_size =
       nir_channels(b,
                    nir_imm_ivec4(b, b->shader->info.workgroup_size[0], b->shader->info.workgroup_size[1],

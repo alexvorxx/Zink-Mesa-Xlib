@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_queue.h"
 
 #include "nvk_cmd_buffer.h"
@@ -6,6 +10,8 @@
 #include "nv_push.h"
 
 #include "nouveau_context.h"
+
+#include <xf86drm.h>
 
 #include "nvk_cl9097.h"
 #include "nvk_cl90b5.h"

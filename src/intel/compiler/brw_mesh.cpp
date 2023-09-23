@@ -298,7 +298,6 @@ brw_compile_task(const struct brw_compiler *compiler,
       BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID);
 
    brw_simd_selection_state simd_state{
-      .mem_ctx = params->base.mem_ctx,
       .devinfo = compiler->devinfo,
       .prog_data = &prog_data->base,
       .required_width = brw_required_dispatch_width(&nir->info),
@@ -344,7 +343,8 @@ brw_compile_task(const struct brw_compiler *compiler,
    if (selected_simd < 0) {
       params->base.error_str =
          ralloc_asprintf(params->base.mem_ctx,
-                         "Can't compile shader: %s, %s and %s.\n",
+                         "Can't compile shader: "
+                         "SIMD8 '%s', SIMD16 '%s' and SIMD32 '%s'.\n",
                          simd_state.error[0], simd_state.error[1],
                          simd_state.error[2]);
       return NULL;
@@ -763,7 +763,7 @@ brw_compute_mue_layout(const struct brw_compiler *compiler,
 static void
 brw_compute_mue_map(const struct brw_compiler *compiler,
                     struct nir_shader *nir, struct brw_mue_map *map,
-                    enum brw_mesh_index_format index_format)
+                    enum brw_mesh_index_format index_format, bool compact_mue)
 {
    memset(map, 0, sizeof(*map));
 
@@ -823,20 +823,16 @@ brw_compute_mue_map(const struct brw_compiler *compiler,
          ~(per_primitive_header_bits | per_vertex_header_bits);
 
    /* packing into prim header is possible only if prim header is present */
-   map->user_data_in_primitive_header =
+   map->user_data_in_primitive_header = compact_mue &&
          (outputs_written & per_primitive_header_bits) != 0;
 
    /* Packing into vert header is always possible, but we allow it only
     * if full vec4 is available (so point size is not used) and there's
     * nothing between it and normal vertex data (so no clip distances).
     */
-   map->user_data_in_vertex_header =
+   map->user_data_in_vertex_header = compact_mue &&
          (outputs_written & per_vertex_header_bits) ==
                BITFIELD64_BIT(VARYING_SLOT_POS);
-
-   brw_compute_mue_layout(compiler, orders, regular_outputs, nir,
-                          &map->user_data_in_primitive_header,
-                          &map->user_data_in_vertex_header);
 
    if (outputs_written & per_primitive_header_bits) {
       if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE)) {
@@ -871,39 +867,80 @@ brw_compute_mue_map(const struct brw_compiler *compiler,
 
    map->per_primitive_data_size_dw = 0;
 
-   unsigned start_dw = map->per_primitive_start_dw;
-   if (map->user_data_in_primitive_header)
-      start_dw += 4; /* first 4 dwords are used */
-   else
-      start_dw += map->per_primitive_header_size_dw;
-   unsigned header_used_dw = 0;
+   /* For fast linked libraries, we can't pack the MUE, as the fragment shader
+    * will be compiled without access to the MUE map and won't be able to find
+    * out where everything is.
+    * Instead, keep doing things as we did before the packing, just laying out
+    * everything in varying order, which is how the FS will expect them.
+    */
+   if (compact_mue) {
+      brw_compute_mue_layout(compiler, orders, regular_outputs, nir,
+                             &map->user_data_in_primitive_header,
+                             &map->user_data_in_vertex_header);
 
-   for (auto it = orders[PRIM].cbegin(); it != orders[PRIM].cend(); ++it) {
-      int location = (*it).location;
-      if (location < 0) {
+      unsigned start_dw = map->per_primitive_start_dw;
+      if (map->user_data_in_primitive_header)
+         start_dw += 4; /* first 4 dwords are used */
+      else
+         start_dw += map->per_primitive_header_size_dw;
+      unsigned header_used_dw = 0;
+
+      for (auto it = orders[PRIM].cbegin(); it != orders[PRIM].cend(); ++it) {
+         int location = (*it).location;
+         if (location < 0) {
+            start_dw += (*it).dwords;
+            if (map->user_data_in_primitive_header && header_used_dw < 4)
+               header_used_dw += (*it).dwords;
+            else
+               map->per_primitive_data_size_dw += (*it).dwords;
+            assert(header_used_dw <= 4);
+            continue;
+         }
+
+         assert(map->start_dw[location] == -1);
+
+         assert(location == VARYING_SLOT_PRIMITIVE_ID ||
+                location >= VARYING_SLOT_VAR0);
+
+         brw_mue_assign_position(&*it, map, start_dw);
+
          start_dw += (*it).dwords;
          if (map->user_data_in_primitive_header && header_used_dw < 4)
             header_used_dw += (*it).dwords;
          else
             map->per_primitive_data_size_dw += (*it).dwords;
          assert(header_used_dw <= 4);
-         continue;
+         outputs_written &= ~BITFIELD64_RANGE(location, (*it).slots);
       }
+   } else {
+      unsigned start_dw = map->per_primitive_start_dw +
+                          map->per_primitive_header_size_dw;
 
-      assert(map->start_dw[location] == -1);
+      uint64_t per_prim_outputs = outputs_written & nir->info.per_primitive_outputs;
+      while (per_prim_outputs) {
+         uint64_t location = ffsll(per_prim_outputs) - 1;
 
-      assert(location == VARYING_SLOT_PRIMITIVE_ID ||
-             location >= VARYING_SLOT_VAR0);
+         assert(map->start_dw[location] == -1);
+         assert(location == VARYING_SLOT_PRIMITIVE_ID ||
+                location >= VARYING_SLOT_VAR0);
 
-      brw_mue_assign_position(&*it, map, start_dw);
+         nir_variable *var =
+            brw_nir_find_complete_variable_with_location(nir,
+                                                         nir_var_shader_out,
+                                                         location);
+         struct attr_desc d;
+         d.location = location;
+         d.type     = brw_nir_get_var_type(nir, var);
+         d.dwords   = glsl_count_dword_slots(d.type, false);
+         d.slots    = glsl_count_attribute_slots(d.type, false);
 
-      start_dw += (*it).dwords;
-      if (map->user_data_in_primitive_header && header_used_dw < 4)
-         header_used_dw += (*it).dwords;
-      else
-         map->per_primitive_data_size_dw += (*it).dwords;
-      assert(header_used_dw <= 4);
-      outputs_written &= ~BITFIELD64_RANGE(location, (*it).slots);
+         brw_mue_assign_position(&d, map, start_dw);
+
+         map->per_primitive_data_size_dw += ALIGN(d.dwords, 4);
+         start_dw += ALIGN(d.dwords, 4);
+
+         per_prim_outputs &= ~BITFIELD64_RANGE(location, d.slots);
+      }
    }
 
    map->per_primitive_pitch_dw = ALIGN(map->per_primitive_header_size_dw +
@@ -951,15 +988,40 @@ brw_compute_mue_map(const struct brw_compiler *compiler,
 
    map->per_vertex_data_size_dw = 0;
 
-   start_dw = map->per_vertex_start_dw;
-   if (!map->user_data_in_vertex_header)
-      start_dw += map->per_vertex_header_size_dw;
+   /* For fast linked libraries, we can't pack the MUE, as the fragment shader
+    * will be compiled without access to the MUE map and won't be able to find
+    * out where everything is.
+    * Instead, keep doing things as we did before the packing, just laying out
+    * everything in varying order, which is how the FS will expect them.
+    */
+   if (compact_mue) {
+      unsigned start_dw = map->per_vertex_start_dw;
+      if (!map->user_data_in_vertex_header)
+         start_dw += map->per_vertex_header_size_dw;
 
-   header_used_dw = 0;
-   for (unsigned type = VERT; type <= VERT_FLAT; ++type) {
-      for (auto it = orders[type].cbegin(); it != orders[type].cend(); ++it) {
-         int location = (*it).location;
-         if (location < 0) {
+      unsigned header_used_dw = 0;
+      for (unsigned type = VERT; type <= VERT_FLAT; ++type) {
+         for (auto it = orders[type].cbegin(); it != orders[type].cend(); ++it) {
+            int location = (*it).location;
+            if (location < 0) {
+               start_dw += (*it).dwords;
+               if (map->user_data_in_vertex_header && header_used_dw < 4) {
+                  header_used_dw += (*it).dwords;
+                  assert(header_used_dw <= 4);
+                  if (header_used_dw == 4)
+                     start_dw += 4; /* jump over gl_position */
+               } else {
+                  map->per_vertex_data_size_dw += (*it).dwords;
+               }
+               continue;
+            }
+
+            assert(map->start_dw[location] == -1);
+
+            assert(location >= VARYING_SLOT_VAR0);
+
+            brw_mue_assign_position(&*it, map, start_dw);
+
             start_dw += (*it).dwords;
             if (map->user_data_in_vertex_header && header_used_dw < 4) {
                header_used_dw += (*it).dwords;
@@ -969,25 +1031,36 @@ brw_compute_mue_map(const struct brw_compiler *compiler,
             } else {
                map->per_vertex_data_size_dw += (*it).dwords;
             }
-            continue;
+            outputs_written &= ~BITFIELD64_RANGE(location, (*it).slots);
          }
+      }
+   } else {
+      unsigned start_dw = map->per_vertex_start_dw +
+                          map->per_vertex_header_size_dw;
+
+      uint64_t per_vertex_outputs = outputs_written & ~nir->info.per_primitive_outputs;
+      while (per_vertex_outputs) {
+         uint64_t location = ffsll(per_vertex_outputs) - 1;
 
          assert(map->start_dw[location] == -1);
-
          assert(location >= VARYING_SLOT_VAR0);
 
-         brw_mue_assign_position(&*it, map, start_dw);
+         nir_variable *var =
+            brw_nir_find_complete_variable_with_location(nir,
+                                                         nir_var_shader_out,
+                                                         location);
+         struct attr_desc d;
+         d.location = location;
+         d.type     = brw_nir_get_var_type(nir, var);
+         d.dwords   = glsl_count_dword_slots(d.type, false);
+         d.slots    = glsl_count_attribute_slots(d.type, false);
 
-         start_dw += (*it).dwords;
-         if (map->user_data_in_vertex_header && header_used_dw < 4) {
-            header_used_dw += (*it).dwords;
-            assert(header_used_dw <= 4);
-            if (header_used_dw == 4)
-               start_dw += 4; /* jump over gl_position */
-         } else {
-            map->per_vertex_data_size_dw += (*it).dwords;
-         }
-         outputs_written &= ~BITFIELD64_RANGE(location, (*it).slots);
+         brw_mue_assign_position(&d, map, start_dw);
+
+         map->per_vertex_data_size_dw += ALIGN(d.dwords, 4);
+         start_dw += ALIGN(d.dwords, 4);
+
+         per_vertex_outputs &= ~BITFIELD64_RANGE(location, d.slots);
       }
    }
 
@@ -1094,7 +1167,7 @@ brw_nir_initialize_mue(nir_shader *nir,
 
    nir_builder b;
    nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
-   b = nir_builder_at(nir_before_block(nir_start_block(entrypoint)));
+   b = nir_builder_at(nir_before_impl(entrypoint));
 
    nir_def *dw_off = nir_imm_int(&b, 0);
    nir_def *zerovec = nir_imm_vec4(&b, 0, 0, 0, 0);
@@ -1356,7 +1429,7 @@ brw_pack_primitive_indices_instr(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_src *data_src = &intrin->src[1];
    nir_def *data_def =
-         nir_ssa_for_src(b, *data_src, vertices_per_primitive);
+         data_src->ssa;
 
    nir_def *new_data =
          nir_ior(b, nir_ishl_imm(b, nir_channel(b, data_def, 0), 0),
@@ -1435,11 +1508,11 @@ brw_compile_mesh(const struct brw_compiler *compiler,
 
    brw_nir_lower_tue_inputs(nir, params->tue_map);
 
-   brw_compute_mue_map(compiler, nir, &prog_data->map, prog_data->index_format);
+   brw_compute_mue_map(compiler, nir, &prog_data->map,
+                       prog_data->index_format, key->compact_mue);
    brw_nir_lower_mue_outputs(nir, &prog_data->map);
 
    brw_simd_selection_state simd_state{
-      .mem_ctx = params->base.mem_ctx,
       .devinfo = compiler->devinfo,
       .prog_data = &prog_data->base,
       .required_width = brw_required_dispatch_width(&nir->info),
@@ -1497,9 +1570,10 @@ brw_compile_mesh(const struct brw_compiler *compiler,
    if (selected_simd < 0) {
       params->base.error_str =
          ralloc_asprintf(params->base.mem_ctx,
-                         "Can't compile shader: %s, %s and %s.\n",
+                         "Can't compile shader: "
+                         "SIMD8 '%s', SIMD16 '%s' and SIMD32 '%s'.\n",
                          simd_state.error[0], simd_state.error[1],
-                         simd_state.error[2]);;
+                         simd_state.error[2]);
       return NULL;
    }
 

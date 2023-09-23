@@ -267,7 +267,7 @@ impl NirShader {
             nir_variable_mode::nir_var_function_temp,
         );
         nir_pass!(self, nir_lower_returns);
-        nir_pass!(self, nir_lower_libclc, libclc.nir.as_ptr());
+        nir_pass!(self, nir_link_shader_functions, libclc.nir.as_ptr());
         nir_pass!(self, nir_inline_functions);
     }
 
@@ -277,6 +277,10 @@ impl NirShader {
 
     pub fn remove_non_entrypoints(&mut self) {
         unsafe { nir_remove_non_entrypoints(self.nir.as_ptr()) };
+    }
+
+    pub fn cleanup_functions(&mut self) {
+        unsafe { nir_cleanup_functions(self.nir.as_ptr()) };
     }
 
     pub fn variables(&mut self) -> ExecListIter<nir_variable> {
@@ -443,12 +447,11 @@ impl NirShader {
         glsl_type: *const glsl_type,
         loc: usize,
         name: &str,
-    ) -> *mut nir_variable {
+    ) {
         let name = CString::new(name).unwrap();
         unsafe {
             let var = nir_variable_create(self.nir.as_ptr(), mode, glsl_type, name.as_ptr());
             (*var).data.location = loc.try_into().unwrap();
-            var
         }
     }
 }

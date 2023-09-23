@@ -76,6 +76,7 @@ intel_icd = custom_target(
   ],
   build_by_default : true,
   install_dir : with_vulkan_icd_dir,
+  install_tag : 'runtime',
   install : true,
 )
 
@@ -99,26 +100,23 @@ libanv_per_hw_ver_libs = []
 anv_per_hw_ver_files = files(
   'genX_blorp_exec.c',
   'genX_cmd_buffer.c',
+  'genX_gfx_state.c',
   'genX_gpu_memcpy.c',
+  'genX_init_state.c',
   'genX_pipeline.c',
   'genX_query.c',
-  'genX_state.c',
   'genX_video.c',
 )
 if with_intel_vk_rt
   anv_per_hw_ver_files += files('genX_acceleration_structure.c',)
 endif
 
-foreach g : [['90', ['gfx8_cmd_buffer.c']],
-             ['110', ['gfx8_cmd_buffer.c']],
-             ['120', ['gfx8_cmd_buffer.c']],
-             ['125', ['gfx8_cmd_buffer.c']]]
-  _gfx_ver = g[0]
+foreach _gfx_ver : ['90', '110', '120', '125']
   libanv_per_hw_ver_libs += static_library(
     'anv_per_hw_ver@0@'.format(_gfx_ver),
-    [anv_per_hw_ver_files, g[1], anv_entrypoints[0], anv_internal_spvs, ],
+    [anv_per_hw_ver_files, anv_entrypoints[0], anv_internal_spvs, ],
     include_directories : [
-      inc_include, inc_src, inc_compiler, inc_intel,
+      inc_include, inc_src, inc_intel,
     ],
     c_args : anv_flags + ['-DGFX_VERx10=@0@'.format(_gfx_ver)],
     gnu_symbol_visibility : 'hidden',
@@ -136,6 +134,8 @@ libanv_files = files(
   'i915/anv_batch_chain.h',
   'i915/anv_device.c',
   'i915/anv_device.h',
+  'i915/anv_gem.c',
+  'i915/anv_gem.h',
   'i915/anv_kmd_backend.c',
   'i915/anv_queue.c',
   'i915/anv_queue.h',
@@ -210,6 +210,7 @@ if with_xlib_lease
 endif
 
 if with_platform_android
+  anv_deps += idep_u_gralloc
   libanv_files += files('anv_android.c')
 else
   libanv_files += files('anv_android_stubs.c')
@@ -225,7 +226,7 @@ libanv_common = static_library(
     anv_internal_spvs,
   ],
   include_directories : [
-    inc_include, inc_src, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel,
     inc_util,
   ],
   c_args : anv_flags,
@@ -238,7 +239,7 @@ libvulkan_intel = shared_library(
   'vulkan_intel',
   [files('anv_gem.c'), anv_entrypoints[0]],
   include_directories : [
-    inc_include, inc_src, inc_intel, inc_compiler,
+    inc_include, inc_src, inc_intel,
   ],
   link_whole : [libanv_common, libanv_per_hw_ver_libs] + optional_libgrl,
   link_with : [
@@ -275,7 +276,7 @@ if with_tests
     'vulkan_intel_test',
     [files('anv_gem_stubs.c'), anv_entrypoints[0]],
     include_directories : [
-      inc_include, inc_src, inc_intel, inc_compiler,
+      inc_include, inc_src, inc_intel,
     ],
     link_whole : libanv_common,
     link_with : [
@@ -315,7 +316,7 @@ if with_tests
         idep_vulkan_runtime, idep_intel_driver_ds, idep_intel_dev,
       ],
       include_directories : [
-        inc_include, inc_src, inc_intel, inc_compiler,
+        inc_include, inc_src, inc_intel,
       ],
     ),
     suite : ['intel'],

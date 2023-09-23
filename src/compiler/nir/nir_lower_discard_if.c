@@ -48,7 +48,7 @@ lower_discard_if(nir_builder *b, nir_intrinsic_instr *instr, void *cb_data)
 
    b->cursor = nir_before_instr(&instr->instr);
 
-   nir_if *if_stmt = nir_push_if(b, nir_ssa_for_src(b, instr->src[0], 1));
+   nir_if *if_stmt = nir_push_if(b, instr->src[0].ssa);
    switch (instr->intrinsic) {
    case nir_intrinsic_discard_if:
       nir_discard(b);

@@ -1,103 +1,5 @@
-.zink-common-rules:
-  rules:
-    - !reference [.gl-rules, rules]
-    - changes:
-      - src/gallium/drivers/zink/**/*
-      when: on_success
-
-.zink-common-manual-rules:
-  retry: !reference [.scheduled_pipeline-rules, retry]
-  rules:
-    - !reference [.gl-manual-rules, rules]
-    - changes:
-      - src/gallium/drivers/zink/**/*
-      when: manual
-
-.zink-lvp-rules:
-  stage: layered-backends
-  rules:
-    - !reference [.lavapipe-rules, rules]
-    - !reference [.zink-common-rules, rules]
-
-.zink-anv-rules:
-  stage: layered-backends
-  rules:
-    - !reference [.anv-rules, rules]
-    - !reference [.zink-common-rules, rules]
-
-.zink-anv-manual-rules:
-  stage: layered-backends
-  retry: !reference [.scheduled_pipeline-rules, retry]
-  rules:
-    - !reference [.anv-manual-rules, rules]
-    - !reference [.zink-common-manual-rules, rules]
-
-.zink-anv-rules-restricted:
-  stage: layered-backends
-  rules:
-    - !reference [.restricted-rules, rules]
-    - !reference [.anv-rules, rules]
-    - !reference [.zink-common-rules, rules]
-
-.zink-turnip-rules:
-  stage: layered-backends
-  rules:
-    - !reference [.collabora-turnip-rules, rules]
-    - !reference [.zink-common-rules, rules]
-
-.zink-turnip-manual-rules:
-  stage: layered-backends
-  retry: !reference [.scheduled_pipeline-rules, retry]
-  rules:
-    - !reference [.collabora-turnip-manual-rules, rules]
-    - !reference [.zink-common-manual-rules, rules]
-
-.zink-radv-rules:
-  stage: layered-backends
-  rules:
-    - !reference [.radv-valve-rules, rules]
-    - !reference [.zink-common-rules, rules]
-
-.zink-radv-manual-rules:
-  stage: layered-backends
-  retry: !reference [.scheduled_pipeline-rules, retry]
-  rules:
-    - !reference [.radv-valve-manual-rules, rules]
-    - !reference [.zink-common-manual-rules, rules]
-    - changes:
-      - .gitlab-ci/container/build-piglit.sh
-      when: manual
-
-
-.zink-test:
-  timeout: 30m
-  variables:
-    MESA_LOADER_DRIVER_OVERRIDE: "zink"
-    FLAKES_CHANNEL: "#zink-ci"
-
-.zink-trace-test:
-  extends:
-    - .zink-test
-  variables:
-    # The libX11 in the debian we use doesn't XInitThreads() by default (need
-    # 1.8.1 for that), and eglretrace's waffle GLX path doesn't call it either,
-    # which ends up causing trouble with kopper's X usage.  Use gbm for our
-    # trace replay, instead.
-    # https://gitlab.freedesktop.org/mesa/mesa/-/issues/6753
-    HWCI_START_XORG: ""
-    WAFFLE_PLATFORM: gbm
-    PIGLIT_PLATFORM: gbm
-
-.zink-lvp-test:
-  extends:
-    - .zink-lvp-rules
-    - .zink-test
-  variables:
-    LIBGL_ALWAYS_SOFTWARE: "true"
-    LVP_POISON_MEMORY: "1"
-    GPU_VERSION: zink-lvp
-    # Fix non-conformant llvmpipe filter defaults
-    GALLIVM_PERF: "no_quad_lod"
+include:
+  - local: 'src/gallium/drivers/zink/ci/gitlab-ci-inc.yml'
 
 zink-lvp:
   extends:
@@ -114,15 +16,6 @@ zink-lvp:
     XVFB_SCRIPT: "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
   script: |
     xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && ${XVFB_SCRIPT}"
-
-.zink-anv-test:
-  extends:
-    - .anv-tgl-test
-    - .zink-anv-rules
-    - .zink-test
-  variables:
-    VK_DRIVER: intel
-    GPU_VERSION: zink-anv-tgl
 
 zink-anv-tgl:
   extends:
@@ -159,7 +52,6 @@ zink-anv-tgl-traces:
     # dependencies right.
     - .lava-traces-base
   variables:
-    MESA_LOADER_DRIVER_OVERRIDE: zink
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-zink.yml"
 
 zink-anv-tgl-traces-restricted:
@@ -214,28 +106,22 @@ zink-tu-a618-traces-performance:
     - !reference [.piglit-performance:arm64, needs]
 
 ############### Combined testing (GL, GLES, Piglit) on RADV
-.radv-zink-test-valve:
-  timeout: 30m
+zink-radv-polaris10-valve:
   extends:
-    - .zink-test
-    - .test-radv
-    - .b2c-test-gl
+    - .radv-zink-test-valve
+    - .polaris10-test-valve-kws
+    - .zink-radv-manual-rules
   variables:
-    PIGLIT_PROFILES: all
-    PIGLIT_PLATFORM: gbm
-    HWCI_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
-    B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
-    B2C_TIMEOUT_OVERALL_MINUTES: 20
-
-    # Disable reporting, since DUTs don't have internet access
-    FLAKES_CHANNEL: ""
+    GPU_VERSION: zink-radv-polaris10
 
 zink-radv-navi10-valve:
   extends:
     - .radv-zink-test-valve
-    - .navi10-test-valve
+    - .navi10-test-valve-mupuf
     - .zink-radv-manual-rules
+  timeout: 40m
   variables:
+    B2C_TIMEOUT_OVERALL_MINUTES: 30
     GPU_VERSION: zink-radv-navi10
 
 zink-radv-vangogh-valve:
@@ -246,6 +132,8 @@ zink-radv-vangogh-valve:
     - .zink-radv-rules
   variables:
     GPU_VERSION: zink-radv-vangogh
+    B2C_SESSION_REBOOT_REGEX: 'BUG: kernel NULL pointer dereference, address'
+    B2C_TIMEOUT_BOOT_RETRIES: 1
   # Override the list of tags to drop `priority:low`
   tags:
     - amdgpu:codename:VANGOGH

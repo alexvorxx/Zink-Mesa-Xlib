@@ -662,7 +662,6 @@ alu_can_accept_constant(const aco_ptr<Instruction>& instr, unsigned operand)
    case aco_opcode::v_cndmask_b32: return operand != 2;
    case aco_opcode::s_addk_i32:
    case aco_opcode::s_mulk_i32:
-   case aco_opcode::p_wqm:
    case aco_opcode::p_extract_vector:
    case aco_opcode::p_split_vector:
    case aco_opcode::v_readlane_b32:
@@ -1065,7 +1064,9 @@ can_apply_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, ssa_i
       return false;
    } else if (sel.size() == 4) {
       return true;
-   } else if (instr->opcode == aco_opcode::v_cvt_f32_u32 && sel.size() == 1 && !sel.sign_extend()) {
+   } else if ((instr->opcode == aco_opcode::v_cvt_f32_u32 ||
+               instr->opcode == aco_opcode::v_cvt_f32_i32) &&
+              sel.size() == 1 && !sel.sign_extend()) {
       return true;
    } else if (instr->opcode == aco_opcode::v_lshlrev_b32 && instr->operands[0].isConstant() &&
               sel.offset() == 0 &&
@@ -1119,7 +1120,9 @@ apply_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, ssa_info&
 
    if (sel.size() == 4) {
       /* full dword selection */
-   } else if (instr->opcode == aco_opcode::v_cvt_f32_u32 && sel.size() == 1 && !sel.sign_extend()) {
+   } else if ((instr->opcode == aco_opcode::v_cvt_f32_u32 ||
+               instr->opcode == aco_opcode::v_cvt_f32_i32) &&
+              sel.size() == 1 && !sel.sign_extend()) {
       switch (sel.offset()) {
       case 0: instr->opcode = aco_opcode::v_cvt_f32_ubyte0; break;
       case 1: instr->opcode = aco_opcode::v_cvt_f32_ubyte1; break;
@@ -2065,11 +2068,6 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          /* Flip the operands to get rid of the scc_invert instruction */
          std::swap(instr->operands[0], instr->operands[1]);
          instr->operands[2].setTemp(ctx.info[instr->operands[2].tempId()].temp);
-      }
-      break;
-   case aco_opcode::p_wqm:
-      if (instr->operands[0].isTemp() && ctx.info[instr->operands[0].tempId()].is_scc_invert()) {
-         ctx.info[instr->definitions[0].tempId()].set_temp(instr->operands[0].getTemp());
       }
       break;
    case aco_opcode::s_mul_i32:
@@ -4783,13 +4781,6 @@ select_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
                instr->opcode == aco_opcode::s_cselect_b32) &&
               instr->operands[2].isTemp()) {
       ctx.info[instr->operands[2].tempId()].set_scc_needed();
-   } else if (instr->opcode == aco_opcode::p_wqm && instr->operands[0].isTemp() &&
-              ctx.info[instr->definitions[0].tempId()].is_scc_needed()) {
-      /* Propagate label so it is correctly detected by the uniform bool transform */
-      ctx.info[instr->operands[0].tempId()].set_scc_needed();
-
-      /* Fix definition to SCC, this will prevent RA from adding superfluous moves */
-      instr->definitions[0].setFixed(scc);
    }
 
    /* check for literals */

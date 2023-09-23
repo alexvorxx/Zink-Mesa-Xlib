@@ -1,9 +1,15 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_buffer.h"
 #include "nvk_cmd_buffer.h"
 #include "nvk_device.h"
+#include "nvk_entrypoints.h"
 #include "nvk_image.h"
 #include "nvk_physical_device.h"
 
+#include "nvk_cl9097.h"
 #include "nvk_clb197.h"
 
 static VkResult
@@ -81,6 +87,25 @@ nvk_meta_begin(struct nvk_cmd_buffer *cmd,
    STATIC_ASSERT(sizeof(save->push) ==
                  sizeof(cmd->state.gfx.descriptors.root.push));
    memcpy(save->push, cmd->state.gfx.descriptors.root.push, sizeof(save->push));
+
+   struct nv_push *p = nvk_cmd_buffer_push(cmd, 2);
+   P_IMMD(p, NV9097, SET_STATISTICS_COUNTER, {
+      .da_vertices_generated_enable = false,
+      .da_primitives_generated_enable = false,
+      .vs_invocations_enable = false,
+      .gs_invocations_enable = false,
+      .gs_primitives_generated_enable = false,
+      .streaming_primitives_succeeded_enable = false,
+      .streaming_primitives_needed_enable = false,
+      .clipper_invocations_enable = false,
+      .clipper_primitives_generated_enable = false,
+      .ps_invocations_enable = false,
+      .ti_invocations_enable = false,
+      .ts_invocations_enable = false,
+      .ts_primitives_generated_enable = false,
+      .total_streaming_primitives_needed_succeeded_enable = false,
+      .vtg_primitives_out_enable = false,
+   });
 }
 
 static void
@@ -129,6 +154,25 @@ nvk_meta_end(struct nvk_cmd_buffer *cmd,
    nvk_cmd_bind_vertex_buffer(cmd, 0, save->vb0);
 
    memcpy(cmd->state.gfx.descriptors.root.push, save->push, sizeof(save->push));
+
+   struct nv_push *p = nvk_cmd_buffer_push(cmd, 2);
+   P_IMMD(p, NV9097, SET_STATISTICS_COUNTER, {
+      .da_vertices_generated_enable = true,
+      .da_primitives_generated_enable = true,
+      .vs_invocations_enable = true,
+      .gs_invocations_enable = true,
+      .gs_primitives_generated_enable = true,
+      .streaming_primitives_succeeded_enable = true,
+      .streaming_primitives_needed_enable = true,
+      .clipper_invocations_enable = true,
+      .clipper_primitives_generated_enable = true,
+      .ps_invocations_enable = true,
+      .ti_invocations_enable = true,
+      .ts_invocations_enable = true,
+      .ts_primitives_generated_enable = true,
+      .total_streaming_primitives_needed_succeeded_enable = true,
+      .vtg_primitives_out_enable = true,
+   });
 }
 
 VKAPI_ATTR void VKAPI_CALL

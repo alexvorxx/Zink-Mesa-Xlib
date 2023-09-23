@@ -22,6 +22,7 @@ struct ctx {
    bool *translucent;
    unsigned bindless_base;
    bool any_memory_stores;
+   uint8_t outputs_written;
 };
 
 static bool
@@ -220,8 +221,10 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
    unsigned comps = util_format_get_nr_components(logical_format);
 
    if (intr->intrinsic == nir_intrinsic_store_output) {
+      ctx->outputs_written |= BITFIELD_BIT(rt);
+
       /* Only write components that actually exist */
-      uint16_t write_mask = BITFIELD_MASK(comps);
+      uint16_t write_mask = (uint16_t)BITFIELD_MASK(comps);
 
       /* Delete stores to nonexistent render targets */
       if (logical_format == PIPE_FORMAT_NONE)
@@ -311,9 +314,22 @@ agx_nir_lower_tilebuffer(nir_shader *shader, struct agx_tilebuffer_layout *tib,
    /* Flush at end */
    if (ctx.any_memory_stores) {
       nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-      nir_builder b =
-         nir_builder_at(nir_after_block(nir_impl_last_block(impl)));
+      nir_builder b = nir_builder_at(nir_after_impl(impl));
       nir_fence_pbe_to_tex_pixel_agx(&b);
+   }
+
+   /* If there are any render targets bound to the framebuffer that aren't
+    * statically written by the fragment shader, that acts as an implicit mask
+    * and requires translucency.
+    *
+    * XXX: Could be optimized.
+    */
+   for (unsigned i = 0; i < ARRAY_SIZE(tib->logical_format); ++i) {
+      bool exists = tib->logical_format[i] != PIPE_FORMAT_NONE;
+      bool written = ctx.outputs_written & BITFIELD_BIT(i);
+
+      if (translucent)
+         *translucent |= (exists && !written);
    }
 
    return progress;

@@ -68,6 +68,17 @@ enum vl_compositor_rotation
    VL_COMPOSITOR_ROTATE_270
 };
 
+/* chroma sample location */
+enum vl_compositor_chroma_location
+{
+   VL_COMPOSITOR_LOCATION_NONE               = 0,
+   VL_COMPOSITOR_LOCATION_VERTICAL_TOP       = (1 << 0),
+   VL_COMPOSITOR_LOCATION_VERTICAL_CENTER    = (1 << 1),
+   VL_COMPOSITOR_LOCATION_VERTICAL_BOTTOM    = (1 << 2),
+   VL_COMPOSITOR_LOCATION_HORIZONTAL_LEFT    = (1 << 3),
+   VL_COMPOSITOR_LOCATION_HORIZONTAL_CENTER  = (1 << 4)
+};
+
 struct vl_compositor_layer
 {
    bool clearing;
@@ -102,6 +113,7 @@ struct vl_compositor_state
    unsigned used_layers:VL_COMPOSITOR_MAX_LAYERS;
    struct vl_compositor_layer layers[VL_COMPOSITOR_MAX_LAYERS];
    bool interlaced;
+   unsigned chroma_location;
 };
 
 struct vl_compositor

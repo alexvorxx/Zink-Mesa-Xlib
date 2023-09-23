@@ -219,4 +219,10 @@ bool
 gl_assign_attribute_or_color_locations(const struct gl_constants *consts,
                                        struct gl_shader_program *prog);
 
+void
+gl_nir_validate_first_and_last_interface_explicit_locations(const struct gl_constants *consts,
+                                                            struct gl_shader_program *prog,
+                                                            gl_shader_stage first_stage,
+                                                            gl_shader_stage last_stage);
+
 #endif /* GLSL_LINK_VARYINGS_H */

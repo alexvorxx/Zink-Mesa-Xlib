@@ -1,0 +1,3 @@
+dEQP-VK.dynamic_rendering.basic.*
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.linear_interpolation.offset_min_2_samples
+dEQP-VK.draw.renderpass.linear_interpolation.offset_max_2_samples

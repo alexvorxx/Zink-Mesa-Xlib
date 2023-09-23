@@ -1,17 +1,3 @@
-# Fails on both radv and anv:
-# "Valid format used but glReadPixels failed for input = [GL_RED, GL_BYTE] output = [GL_RGBA, GL_UNSIGNED_BYTE]"
-# Conclusion is it's an ext spec+test bug
-# https://gitlab.khronos.org/opengl/API/-/issues/180
-KHR-GLES3.packed_pixels.pbo_rectangle.r8_snorm,Fail
-KHR-GLES3.packed_pixels.pbo_rectangle.rg8_snorm,Fail
-KHR-GLES3.packed_pixels.pbo_rectangle.rgba8_snorm,Fail
-KHR-GLES3.packed_pixels.rectangle.r8_snorm,Fail
-KHR-GLES3.packed_pixels.rectangle.rg8_snorm,Fail
-KHR-GLES3.packed_pixels.rectangle.rgba8_snorm,Fail
-KHR-GLES3.packed_pixels.varied_rectangle.r8_snorm,Fail
-KHR-GLES3.packed_pixels.varied_rectangle.rg8_snorm,Fail
-KHR-GLES3.packed_pixels.varied_rectangle.rgba8_snorm,Fail
-
 # Failing since ANGLE exposed geometry shaders in their commit a4c7abcbc1eb
 # ("Advertise GL_OES_geometry_shader and GL_EXT_tessellation_shader"):
 #

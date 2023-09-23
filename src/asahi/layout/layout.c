@@ -160,15 +160,17 @@ ail_initialize_twiddled(struct ail_layout *layout)
    layout->page_aligned_layers = layout->levels != 1 && offset_B > AIL_PAGESIZE;
 
    /* Single-layer images are not padded unless they are Z/S */
-   if (layout->depth_px == 1 &&
-       !util_format_is_depth_or_stencil(layout->format))
+   bool zs = util_format_is_depth_or_stencil(layout->format);
+   if (layout->depth_px == 1 && !zs)
       layout->page_aligned_layers = false;
 
    /* For writable images, we require page-aligned layers. This appears to be
-    * required for PBE stores.
+    * required for PBE stores, including block stores for colour rendering.
+    * Likewise, we specify the ZLS layer stride in pages, so we need
+    * page-aligned layers for renderable depth/stencil targets.
     */
-   if (layout->writeable_image)
-      layout->page_aligned_layers = true;
+   layout->page_aligned_layers |= layout->writeable_image;
+   layout->page_aligned_layers |= layout->renderable && layout->depth_px > 1;
 
    if (layout->page_aligned_layers)
       layout->layer_stride_B = ALIGN_POT(offset_B, AIL_PAGESIZE);

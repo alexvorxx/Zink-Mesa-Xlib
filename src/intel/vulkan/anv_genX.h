@@ -96,8 +96,9 @@ void genX(apply_task_urb_workaround)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(emit_vertex_input)(struct anv_batch *batch,
                              uint32_t *vertex_element_dws,
-                             const struct anv_graphics_pipeline *pipeline,
-                             const struct vk_vertex_input_state *vi);
+                             struct anv_graphics_pipeline *pipeline,
+                             const struct vk_vertex_input_state *vi,
+                             bool emit_in_pipeline);
 
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
@@ -125,7 +126,11 @@ void genX(emit_l3_config)(struct anv_batch *batch,
 void genX(cmd_buffer_config_l3)(struct anv_cmd_buffer *cmd_buffer,
                                 const struct intel_l3_config *cfg);
 
-void genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer);
+void genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer);
+
+void genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer);
+
+void genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer,
                                      bool enable);
@@ -219,7 +224,8 @@ genX(cmd_buffer_set_preemption)(struct anv_cmd_buffer *cmd_buffer, bool value);
 void
 genX(batch_emit_pipe_control)(struct anv_batch *batch,
                               const struct intel_device_info *devinfo,
-                              enum anv_pipe_bits bits);
+                              enum anv_pipe_bits bits,
+                              const char *reason);
 
 void
 genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
@@ -227,7 +233,14 @@ genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
                                     uint32_t post_sync_op,
                                     struct anv_address address,
                                     uint32_t imm_data,
-                                    enum anv_pipe_bits bits);
+                                    enum anv_pipe_bits bits,
+                                    const char *reason);
+
+#define genx_batch_emit_pipe_control(a, b, c) \
+genX(batch_emit_pipe_control) (a, b, c, __func__)
+
+#define genx_batch_emit_pipe_control_write(a, b, c, d, e, f) \
+genX(batch_emit_pipe_control_write) (a, b, c, d, e, f, __func__)
 
 void genX(batch_emit_breakpoint)(struct anv_batch *batch,
                                  struct anv_device *device,
@@ -241,3 +254,10 @@ genX(emit_breakpoint)(struct anv_batch *batch,
    if (INTEL_DEBUG(DEBUG_DRAW_BKP))
       genX(batch_emit_breakpoint)(batch, device, emit_before_draw);
 }
+
+struct anv_state
+genX(cmd_buffer_begin_companion_rcs_syncpoint)(struct anv_cmd_buffer *cmd_buffer);
+
+void
+genX(cmd_buffer_end_companion_rcs_syncpoint)(struct anv_cmd_buffer *cmd_buffer,
+                                             struct anv_state syncpoint);

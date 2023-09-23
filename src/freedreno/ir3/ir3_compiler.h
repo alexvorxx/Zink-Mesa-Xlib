@@ -258,7 +258,7 @@ void ir3_disk_cache_init_shader_key(struct ir3_compiler *compiler,
 struct ir3_shader_variant *ir3_retrieve_variant(struct blob_reader *blob,
                                                 struct ir3_compiler *compiler,
                                                 void *mem_ctx);
-void ir3_store_variant(struct blob *blob, struct ir3_shader_variant *v);
+void ir3_store_variant(struct blob *blob, const struct ir3_shader_variant *v);
 bool ir3_disk_cache_retrieve(struct ir3_shader *shader,
                              struct ir3_shader_variant *v);
 void ir3_disk_cache_store(struct ir3_shader *shader,

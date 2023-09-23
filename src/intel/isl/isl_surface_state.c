@@ -49,12 +49,24 @@ static const uint8_t isl_encode_tiling[] = {
    [ISL_TILING_64]      = TILE64,
 #else
    [ISL_TILING_Y0]      = YMAJOR,
-   [ISL_TILING_Yf]      = YMAJOR,
-   [ISL_TILING_Ys]      = YMAJOR,
-#endif
+   [ISL_TILING_ICL_Yf]  = YMAJOR,
+   [ISL_TILING_ICL_Ys]  = YMAJOR,
+   [ISL_TILING_SKL_Yf]  = YMAJOR,
+   [ISL_TILING_SKL_Ys]  = YMAJOR,
+#endif /* GFX_VERx10 < 125 */
 #if GFX_VER <= 11
    [ISL_TILING_W]       = WMAJOR,
 #endif
+};
+#endif
+
+#if GFX_VER >= 9 && GFX_VERx10 <= 120
+static const uint8_t isl_tiling_encode_trmode[] = {
+   [ISL_TILING_Y0]         = NONE,
+   [ISL_TILING_SKL_Yf]     = TILEYF,
+   [ISL_TILING_SKL_Ys]     = TILEYS,
+   [ISL_TILING_ICL_Yf]     = TILEYF,
+   [ISL_TILING_ICL_Ys]     = TILEYS,
 };
 #endif
 
@@ -404,10 +416,7 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
    }
 
 #if GFX_VER >= 9
-   /* We don't use miptails yet.  The PRM recommends that you set "Mip Tail
-    * Start LOD" to 15 to prevent the hardware from trying to use them.
-    */
-   s.MipTailStartLOD = 15;
+   s.MipTailStartLOD = info->surf->miptail_start_level;
 #endif
 
 #if GFX_VERx10 >= 125
@@ -438,7 +447,7 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
                            ISL_ARRAY_PITCH_SPAN_COMPACT;
 #endif
 
-#if GFX_VER >= 8
+#if GFX_VER >= 9 && GFX_VERx10 <= 120
    assert(GFX_VER < 12 || info->surf->tiling != ISL_TILING_W);
 
    /* From the SKL+ PRMs, RENDER_SURFACE_STATE:TileMode,
@@ -446,8 +455,14 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
     *    If Surface Format is ASTC*, this field must be TILEMODE_YMAJOR.
     */
    if (isl_format_get_layout(info->view->format)->txc == ISL_TXC_ASTC)
-      assert(info->surf->tiling == ISL_TILING_Y0);
+      assert(isl_tiling_is_any_y(info->surf->tiling));
 
+   s.TileMode = isl_encode_tiling[info->surf->tiling];
+   if (isl_tiling_is_std_y(info->surf->tiling))
+      s.TiledResourceMode = isl_tiling_encode_trmode[info->surf->tiling];
+#elif GFX_VER >= 8
+   assert(isl_format_get_layout(info->view->format)->txc != ISL_TXC_ASTC);
+   assert(!isl_tiling_is_std_y(info->surf->tiling));
    s.TileMode = isl_encode_tiling[info->surf->tiling];
 #else
    s.TiledSurface = info->surf->tiling != ISL_TILING_LINEAR,

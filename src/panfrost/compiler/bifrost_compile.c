@@ -4584,11 +4584,9 @@ bi_lower_sample_mask_writes(nir_builder *b, nir_intrinsic_instr *intr,
 
    nir_def *orig = nir_load_sample_mask(b);
 
-   nir_src_rewrite(
-      &intr->src[0],
-      nir_b32csel(b, nir_load_multisampled_pan(b),
-                  nir_iand(b, orig, nir_ssa_for_src(b, intr->src[0], 1)),
-                  orig));
+   nir_src_rewrite(&intr->src[0],
+                   nir_b32csel(b, nir_load_multisampled_pan(b),
+                               nir_iand(b, orig, intr->src[0].ssa), orig));
    return true;
 }
 
@@ -4705,7 +4703,6 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS_V(nir, pan_lower_sample_pos);
    NIR_PASS_V(nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
    NIR_PASS_V(nir, nir_lower_64bit_phis);
-   NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
    NIR_PASS_V(nir, pan_lower_helper_invocation);
    NIR_PASS_V(nir, nir_lower_int64);
 

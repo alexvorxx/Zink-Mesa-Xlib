@@ -335,7 +335,7 @@ link_util_calculate_subroutine_compat(struct gl_shader_program *prog)
 
          int count = 0;
          if (p->sh.NumSubroutineFunctions == 0) {
-            linker_error(prog, "subroutine uniform %s defined but no valid functions found\n", uni->type->name);
+            linker_error(prog, "subroutine uniform %s defined but no valid functions found\n", glsl_get_type_name(uni->type));
             continue;
          }
          for (unsigned f = 0; f < p->sh.NumSubroutineFunctions; f++) {

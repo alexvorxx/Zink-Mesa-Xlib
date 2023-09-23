@@ -16,3 +16,5 @@ dEQP-VK.draw.renderpass.linear_interpolation.no_offset_8_samples
 
 dEQP-VK.pipeline.fast_linked_library.multisample_interpolation.sample_interpolate_at_ignores_centroid.128_128_1.samples_8
 dEQP-VK.pipeline.fast_linked_library.extended_dynamic_state.before_draw.line_stipple_enable
+
+dEQP-VK.mesh_shader.ext.query.all_stats_query.triangles.host_reset.copy.wait.indirect_draw.32bit.with_availability.single_block.task_mesh.inside_rp.single_view.only_primary

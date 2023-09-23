@@ -365,7 +365,7 @@ nir_get_texture_size(nir_builder *b, nir_tex_instr *tex)
           tex->src[i].src_type == nir_tex_src_sampler_offset ||
           tex->src[i].src_type == nir_tex_src_texture_handle ||
           tex->src[i].src_type == nir_tex_src_sampler_handle) {
-         nir_src_copy(&txs->src[idx].src, &tex->src[i].src, &txs->instr);
+         txs->src[idx].src = nir_src_for_ssa(tex->src[i].src.ssa);
          txs->src[idx].src_type = tex->src[i].src_type;
          idx++;
       }
@@ -418,7 +418,7 @@ nir_get_texture_lod(nir_builder *b, nir_tex_instr *tex)
           tex->src[i].src_type == nir_tex_src_sampler_offset ||
           tex->src[i].src_type == nir_tex_src_texture_handle ||
           tex->src[i].src_type == nir_tex_src_sampler_handle) {
-         nir_src_copy(&tql->src[idx].src, &tex->src[i].src, &tql->instr);
+         tql->src[idx].src = nir_src_for_ssa(tex->src[i].src.ssa);
          tql->src[idx].src_type = tex->src[i].src_type;
          idx++;
       }

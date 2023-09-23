@@ -222,7 +222,7 @@ static LLVMValueRef emit_uint_carry(struct ac_llvm_context *ctx, const char *int
    LLVMTypeRef types[] = {ctx->i32, ctx->i1};
    LLVMValueRef res;
    LLVMValueRef params[] = {src0, src1};
-   ret_type = LLVMStructTypeInContext(ctx->context, types, 2, true);
+   ret_type = LLVMStructTypeInContext(ctx->context, types, 2, false);
 
    res = ac_build_intrinsic(ctx, intrin, ret_type, params, 2, 0);
 
@@ -2080,6 +2080,22 @@ static LLVMValueRef visit_global_atomic(struct ac_nir_context *ctx,
 
    LLVMTypeRef data_type = LLVMTypeOf(data);
 
+   assert(instr->src[1].ssa->num_components == 1);
+   if (is_float) {
+      switch (instr->src[1].ssa->bit_size) {
+      case 32:
+         data_type = ctx->ac.f32;
+         break;
+      case 64:
+         data_type = ctx->ac.f64;
+         break;
+      default:
+         unreachable("Unsupported float bit size");
+      }
+
+      data = LLVMBuildBitCast(ctx->ac.builder, data, data_type, "");
+   }
+
    LLVMValueRef addr = get_global_address(ctx, instr, data_type);
 
    if (instr->intrinsic == nir_intrinsic_global_atomic_swap ||
@@ -2097,14 +2113,15 @@ static LLVMValueRef visit_global_atomic(struct ac_nir_context *ctx,
       params[arg_count++] = data;
 
       ac_build_type_name_for_intr(data_type, type, sizeof(type));
-      snprintf(name, sizeof(name), "llvm.amdgcn.global.atomic.%s.%s.p1%s.%s", op, type, type, type);
+      snprintf(name, sizeof(name), "llvm.amdgcn.global.atomic.%s.%s.p1.%s", op, type, type);
 
       result = ac_build_intrinsic(&ctx->ac, name, data_type, params, arg_count, 0);
-      result = ac_to_integer(&ctx->ac, result);
    } else {
       op = translate_atomic_op(nir_op);
       result = ac_build_atomic_rmw(&ctx->ac, op, addr, ac_to_integer(&ctx->ac, data), sync_scope);
    }
+
+   result = ac_to_integer(&ctx->ac, result);
 
    return result;
 }
@@ -3040,6 +3057,15 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          result = LLVMBuildZExt(ctx->ac.builder, result, dest_type, "");
       }
       break;
+   case nir_intrinsic_inverse_ballot: {
+      LLVMValueRef src = get_src(ctx, instr->src[0]);
+      if (instr->src[0].ssa->bit_size > ctx->ac.wave_size) {
+         LLVMTypeRef src_type = LLVMIntTypeInContext(ctx->ac.context, ctx->ac.wave_size);
+         src = LLVMBuildTrunc(ctx->ac.builder, src, src_type, "");
+      }
+      result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.inverse.ballot", ctx->ac.i1, &src, 1, 0);
+      break;
+   }
    case nir_intrinsic_read_invocation:
       result =
          ac_build_readlane(&ctx->ac, get_src(ctx, instr->src[0]), get_src(ctx, instr->src[1]));
@@ -3057,8 +3083,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          values[i] = ctx->args->workgroup_ids[i].used
                         ? ac_get_arg(&ctx->ac, ctx->args->workgroup_ids[i])
                         : ctx->ac.i32_0;
-         if (instr->def.bit_size == 64)
-            values[i] = LLVMBuildZExt(ctx->ac.builder, values[i], ctx->ac.i64, "");
       }
 
       result = ac_build_gather_values(&ctx->ac, values, 3);
@@ -3156,8 +3180,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          result = ac_build_load_invariant(&ctx->ac,
             ac_get_ptr_arg(&ctx->ac, ctx->args, ctx->args->num_work_groups), ctx->ac.i32_0);
       }
-      if (instr->def.bit_size == 64)
-         result = LLVMBuildZExt(ctx->ac.builder, result, LLVMVectorType(ctx->ac.i64, 3), "");
       break;
    case nir_intrinsic_load_local_invocation_index:
       result = visit_load_local_invocation_index(ctx);
@@ -3504,6 +3526,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
           */
          const unsigned fetch_num_components =
             num_components * MAX2(32, instr->def.bit_size) / 32;
+
          LLVMTypeRef channel_type =
             LLVMIntTypeInContext(ctx->ac.context, MIN2(32, instr->def.bit_size));
 
@@ -3514,12 +3537,10 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
             const unsigned align_offset = nir_intrinsic_align_offset(instr);
             const unsigned align_mul = nir_intrinsic_align_mul(instr);
             const enum pipe_format format = nir_intrinsic_format(instr);
-            const struct ac_vtx_format_info *vtx_info =
-               ac_get_vtx_format_info(ctx->ac.gfx_level, ctx->ac.info->family, format);
 
             result =
                ac_build_safe_tbuffer_load(&ctx->ac, descriptor, vidx, addr_voffset, addr_soffset,
-                                          channel_type, vtx_info, const_offset, align_offset,
+                                          format, MIN2(32, instr->def.bit_size), const_offset, align_offset,
                                           align_mul, fetch_num_components, access, reorder);
          }
 
@@ -4133,44 +4154,19 @@ static void phi_post_pass(struct ac_nir_context *ctx)
    }
 }
 
-static bool is_def_used_in_an_export(const nir_def *def)
-{
-   nir_foreach_use (use_src, def) {
-      if (use_src->parent_instr->type == nir_instr_type_intrinsic) {
-         nir_intrinsic_instr *instr = nir_instr_as_intrinsic(use_src->parent_instr);
-         if (instr->intrinsic == nir_intrinsic_store_deref)
-            return true;
-      } else if (use_src->parent_instr->type == nir_instr_type_alu) {
-         nir_alu_instr *instr = nir_instr_as_alu(use_src->parent_instr);
-         if (instr->op == nir_op_vec4 && is_def_used_in_an_export(&instr->def)) {
-            return true;
-         }
-      }
-   }
-   return false;
-}
-
 static void visit_ssa_undef(struct ac_nir_context *ctx, const nir_undef_instr *instr)
 {
    unsigned num_components = instr->def.num_components;
    LLVMTypeRef type = LLVMIntTypeInContext(ctx->ac.context, instr->def.bit_size);
 
-   if (!ctx->abi->convert_undef_to_zero || is_def_used_in_an_export(&instr->def)) {
-      LLVMValueRef undef;
+   LLVMValueRef undef;
 
-      if (num_components == 1)
-         undef = LLVMGetUndef(type);
-      else {
-         undef = LLVMGetUndef(LLVMVectorType(type, num_components));
-      }
-      ctx->ssa_defs[instr->def.index] = undef;
-   } else {
-      LLVMValueRef zero = LLVMConstInt(type, 0, false);
-      if (num_components > 1) {
-         zero = ac_build_gather_values_extended(&ctx->ac, &zero, num_components, 0, false);
-      }
-      ctx->ssa_defs[instr->def.index] = zero;
+   if (num_components == 1)
+      undef = LLVMGetUndef(type);
+   else {
+      undef = LLVMGetUndef(LLVMVectorType(type, num_components));
    }
+   ctx->ssa_defs[instr->def.index] = undef;
 }
 
 static bool visit_jump(struct ac_llvm_context *ctx, const nir_jump_instr *instr)

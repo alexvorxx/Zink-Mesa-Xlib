@@ -179,7 +179,7 @@ libr600 = static_library(
   cpp_args: r600_cpp_args,
   gnu_symbol_visibility : 'hidden',
   include_directories : [
-    inc_src, inc_mapi, inc_mesa, inc_include, inc_compiler, inc_gallium, inc_gallium_aux, inc_amd_common,
+    inc_src, inc_mapi, inc_mesa, inc_include, inc_gallium, inc_gallium_aux, inc_amd_common,
     inc_gallium_drivers,
   ],
 

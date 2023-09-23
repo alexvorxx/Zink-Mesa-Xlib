@@ -224,8 +224,6 @@ libvulkan_runtime = static_library(
    vk_physical_device_properties, vk_format_info],
   include_directories : [inc_include, inc_src, inc_gallium],
   dependencies : vulkan_runtime_deps,
-  # For glsl_type_singleton
-  link_with : libcompiler,
   c_args : c_msvc_compat_args,
   gnu_symbol_visibility : 'hidden',
   build_by_default : false,

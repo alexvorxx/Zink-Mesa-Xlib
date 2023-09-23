@@ -1,15 +1,21 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_format.h"
 
 #include "nvk_buffer_view.h"
+#include "nvk_entrypoints.h"
 #include "nvk_image.h"
 #include "nvk_physical_device.h"
+
+#include "vk_enum_defines.h"
+#include "vk_format.h"
 
 #include "nvtypes.h"
 #include "classes/cl902d.h"
 #include "classes/cl9097.h"
 #include "classes/cl90c0.h"
-#include "vulkan/util/vk_enum_defines.h"
-#include "vulkan/util/vk_format.h"
 
 #define VA_FMT(vk_fmt, widths, swap_rb, type) \
    [VK_FORMAT_##vk_fmt] = \

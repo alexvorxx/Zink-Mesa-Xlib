@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef NVK_SHADER_H
 #define NVK_SHADER_H 1
 
@@ -7,11 +11,12 @@
 #include "nir.h"
 #include "nouveau_bo.h"
 
-struct vk_shader_module;
-struct vk_pipeline_robustness_state;
 struct nvk_device;
 struct nvk_physical_device;
 struct nvk_pipeline_compilation_ctx;
+struct vk_pipeline_layout;
+struct vk_pipeline_robustness_state;
+struct vk_shader_module;
 
 #define GF100_SHADER_HEADER_SIZE (20 * 4)
 #define TU102_SHADER_HEADER_SIZE (32 * 4)
@@ -20,6 +25,7 @@ struct nvk_pipeline_compilation_ctx;
 struct nvk_fs_key {
    bool msaa;
    bool force_per_sample;
+   bool zs_self_dep;
 };
 
 struct nvk_transform_feedback_state {

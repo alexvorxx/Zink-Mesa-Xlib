@@ -796,7 +796,7 @@ radv_init_graphics_state(struct radeon_cmdbuf *cs, struct radv_device *device)
    if (device->gfx_init) {
       struct radeon_winsys *ws = device->ws;
 
-      ws->cs_execute_ib(cs, device->gfx_init, 0, device->gfx_init_size_dw & 0xffff);
+      ws->cs_execute_ib(cs, device->gfx_init, 0, device->gfx_init_size_dw & 0xffff, false);
 
       radv_cs_add_buffer(device->ws, cs, device->gfx_init);
    } else {

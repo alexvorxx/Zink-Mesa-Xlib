@@ -2536,6 +2536,7 @@ INSTR4(ATOMIC_S_XOR)
 /* cat7 instructions: */
 INSTR0(BAR)
 INSTR0(FENCE)
+INSTR0(CCINV)
 
 /* ************************************************************************* */
 #include "util/bitset.h"

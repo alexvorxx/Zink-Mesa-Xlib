@@ -180,4 +180,12 @@ __reg_iova(const struct fd_reg_pair *reg)
       ring->cur = __p;                                                         \
    } while (0)
 
+#define OUT_BUF(ring, dwords, sizedwords)                                      \
+   do {                                                                        \
+      uint32_t *__p = ring->cur;                                               \
+      memcpy(__p, dwords, 4 * sizedwords);                                     \
+      __p += sizedwords;                                                       \
+      ring->cur = __p;                                                         \
+   } while (0)
+
 #endif /* FD6_PACK_H */

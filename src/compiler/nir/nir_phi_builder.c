@@ -209,7 +209,7 @@ nir_phi_builder_value_get_block_def(struct nir_phi_builder_value *val,
          nir_undef_instr_create(val->builder->shader,
                                 val->num_components,
                                 val->bit_size);
-      nir_instr_insert(nir_before_cf_list(&val->builder->impl->body),
+      nir_instr_insert(nir_before_impl(val->builder->impl),
                        &undef->instr);
       def = &undef->def;
    } else if (he->data == NEEDS_PHI) {

@@ -311,8 +311,8 @@ struct radv_shader_info {
    uint32_t user_data_0;
    bool inputs_linked;
    bool outputs_linked;
-   bool has_epilog;    /* Only for TCS or PS */
-   bool is_monolithic; /* False only for merged shaders which are compiled separately */
+   bool has_epilog;                        /* Only for TCS or PS */
+   bool merged_shader_compiled_separately; /* GFX9+ */
 
    struct {
       uint8_t input_usage_mask[RADV_VERT_ATTRIB_MAX];
@@ -631,7 +631,8 @@ nir_shader *radv_parse_rt_stage(struct radv_device *device, const VkPipelineShad
 
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
-                           uint32_t *stack_size, bool resume_shader);
+                           uint32_t *stack_size, bool resume_shader, struct radv_device *device,
+                           struct radv_ray_tracing_pipeline *pipeline, bool monolithic);
 
 struct radv_shader_stage;
 
@@ -657,8 +658,9 @@ struct radv_shader_binary *radv_shader_nir_to_asm(struct radv_device *device, st
                                                   const struct radv_pipeline_key *key, bool keep_shader_info,
                                                   bool keep_statistic_info);
 
-void radv_shader_generate_debug_info(struct radv_device *device, bool dump_shader, struct radv_shader_binary *binary,
-                                     struct radv_shader *shader, struct nir_shader *const *shaders, int shader_count,
+void radv_shader_generate_debug_info(struct radv_device *device, bool dump_shader, bool keep_shader_info,
+                                     struct radv_shader_binary *binary, struct radv_shader *shader,
+                                     struct nir_shader *const *shaders, int shader_count,
                                      struct radv_shader_info *info);
 
 VkResult radv_shader_wait_for_upload(struct radv_device *device, uint64_t seq);
@@ -851,8 +853,7 @@ bool radv_consider_culling(const struct radv_physical_device *pdevice, struct ni
 void radv_get_nir_options(struct radv_physical_device *device);
 
 nir_shader *radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
-                                        const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                                        const struct radv_pipeline_key *key);
+                                        const VkRayTracingPipelineCreateInfoKHR *pCreateInfo);
 
 enum radv_rt_priority {
    radv_rt_priority_raygen = 0,

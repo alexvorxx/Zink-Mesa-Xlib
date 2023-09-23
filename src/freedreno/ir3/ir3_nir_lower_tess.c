@@ -301,7 +301,7 @@ ir3_nir_lower_to_explicit_output(nir_shader *shader,
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    assert(impl);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    if (v->type == MESA_SHADER_VERTEX && topology != IR3_TESS_NONE)
       state.header = nir_load_tcs_header_ir3(&b);
@@ -375,7 +375,7 @@ ir3_nir_lower_to_explicit_input(nir_shader *shader,
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    assert(impl);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    if (shader->info.stage == MESA_SHADER_GEOMETRY)
       state.header = nir_load_gs_header_ir3(&b);
@@ -678,13 +678,13 @@ ir3_nir_lower_tess_ctrl(nir_shader *shader, struct ir3_shader_variant *v,
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    assert(impl);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    state.header = nir_load_tcs_header_ir3(&b);
 
    /* If required, store gl_PrimitiveID. */
    if (v->key.tcs_store_primid) {
-      b.cursor = nir_after_cf_list(&impl->body);
+      b.cursor = nir_after_impl(impl);
 
       nir_store_output(&b, nir_load_primitive_id(&b), nir_imm_int(&b, 0),
                        .io_semantics = {
@@ -692,7 +692,7 @@ ir3_nir_lower_tess_ctrl(nir_shader *shader, struct ir3_shader_variant *v,
                            .num_slots = 1
                         });
 
-      b.cursor = nir_before_cf_list(&impl->body);
+      b.cursor = nir_before_impl(impl);
    }
 
    nir_foreach_block_safe (block, impl)
@@ -706,10 +706,10 @@ ir3_nir_lower_tess_ctrl(nir_shader *shader, struct ir3_shader_variant *v,
     */
 
    nir_cf_list body;
-   nir_cf_extract(&body, nir_before_cf_list(&impl->body),
-                  nir_after_cf_list(&impl->body));
+   nir_cf_extract(&body, nir_before_impl(impl),
+                  nir_after_impl(impl));
 
-   b.cursor = nir_after_cf_list(&impl->body);
+   b.cursor = nir_after_impl(impl);
 
    /* Re-emit the header, since the old one got moved into the if branch */
    state.header = nir_load_tcs_header_ir3(&b);
@@ -868,7 +868,7 @@ lower_mixed_streams(nir_shader *nir)
    nir_builder b = nir_builder_create(entrypoint);
 
    u_foreach_bit (stream, stream_mask) {
-      b.cursor = nir_after_cf_list(&entrypoint->body);
+      b.cursor = nir_after_impl(entrypoint);
       
       /* Inserting the cloned body invalidates any cursor not using an
        * instruction, so we need to emit this to keep track of where the new
@@ -906,7 +906,7 @@ lower_mixed_streams(nir_shader *nir)
        * different streams. Our lowering means that redundant calls to
        * EndStreamPrimitive are safe and should be optimized out.
        */
-      b.cursor = nir_after_cf_list(&entrypoint->body);
+      b.cursor = nir_after_impl(entrypoint);
       nir_end_primitive(&b, .stream_id = stream);
    }
 
@@ -1015,7 +1015,7 @@ ir3_nir_lower_gs(nir_shader *shader)
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    assert(impl);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
 
    state.header = nir_load_gs_header_ir3(&b);
 
@@ -1062,7 +1062,7 @@ ir3_nir_lower_gs(nir_shader *shader)
       nir_local_variable_create(impl, glsl_uint_type(), "emitted_vertex");
 
    /* Initialize to 0. */
-   b.cursor = nir_before_cf_list(&impl->body);
+   b.cursor = nir_before_impl(impl);
    nir_store_var(&b, state.vertex_count_var, nir_imm_int(&b, 0), 0x1);
    nir_store_var(&b, state.emitted_vertex_var, nir_imm_int(&b, 0), 0x1);
    nir_store_var(&b, state.vertex_flags_out, nir_imm_int(&b, 4), 0x1);

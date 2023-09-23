@@ -2154,7 +2154,7 @@ public:
 
    virtual int precision() const
    {
-      glsl_struct_field *field = record->type->fields.structure + field_idx;
+      const glsl_struct_field *field = record->type->fields.structure + field_idx;
 
       return field->precision;
    }

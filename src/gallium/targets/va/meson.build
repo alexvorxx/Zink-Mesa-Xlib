@@ -116,5 +116,6 @@ else
     libva_gallium.full_path(),
     va_drivers_path,
     va_drivers,
+    install_tag : 'runtime',
   )
 endif

@@ -143,7 +143,7 @@ retrieve_variant(struct blob_reader *blob, struct ir3_shader_variant *v)
 }
 
 static void
-store_variant(struct blob *blob, struct ir3_shader_variant *v)
+store_variant(struct blob *blob, const struct ir3_shader_variant *v)
 {
    blob_write_bytes(blob, VARIANT_CACHE_PTR(v), VARIANT_CACHE_SIZE);
 
@@ -199,7 +199,7 @@ ir3_retrieve_variant(struct blob_reader *blob, struct ir3_compiler *compiler,
 }
 
 void
-ir3_store_variant(struct blob *blob, struct ir3_shader_variant *v)
+ir3_store_variant(struct blob *blob, const struct ir3_shader_variant *v)
 {
    blob_write_bytes(blob, &v->key, sizeof(v->key));
    blob_write_uint32(blob, v->type);

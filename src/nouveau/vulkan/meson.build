@@ -1,3 +1,5 @@
+# Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+# SPDX-License-Identifier: MIT
 nvk_files = files(
   '../../gallium/auxiliary/tgsi/tgsi_from_mesa.c',
   'nvk_buffer.c',
@@ -111,6 +113,7 @@ libnvk = static_library(
 libvulkan_nouveau = shared_library(
   'vulkan_nouveau',
   link_whole : [libnvk],
+  link_args: [ld_args_build_id],
   gnu_symbol_visibility : 'hidden',
   install : true,
 )
@@ -134,6 +137,7 @@ nouveau_icd = custom_target(
   ],
   build_by_default : true,
   install_dir : with_vulkan_icd_dir,
+  install_tag : 'runtime',
   install : true,
 )
 

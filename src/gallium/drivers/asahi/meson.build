@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 files_asahi = files(
+  'driinfo_asahi.h',
   'agx_batch.c',
   'agx_blit.c',
   'agx_disk_cache.c',

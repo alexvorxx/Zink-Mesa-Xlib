@@ -2833,14 +2833,21 @@ blorp_surf_convert_to_uncompressed(const struct isl_device *isl_dev,
    info->addr.offset += offset_B;
 
    /* BLORP doesn't use the actual intratile offsets.  Instead, it needs the
-    * surface to be a bit bigger and we offset the vertices instead.
+    * surface to be a bit bigger and we offset the vertices instead. Standard
+    * tilings don't need intratile offsets because each subresource is aligned
+    * to a bpb-based tile boundary or miptail slot offset.
     */
-   assert(info->surf.dim == ISL_SURF_DIM_2D);
-   assert(info->surf.logical_level0_px.array_len == 1);
-   info->surf.logical_level0_px.w += info->tile_x_sa;
-   info->surf.logical_level0_px.h += info->tile_y_sa;
-   info->surf.phys_level0_sa.w += info->tile_x_sa;
-   info->surf.phys_level0_sa.h += info->tile_y_sa;
+  if (info->surf.tiling == ISL_TILING_64 ||
+      isl_tiling_is_std_y(info->surf.tiling)) {
+      assert(info->tile_x_sa == 0 && info->tile_y_sa == 0);
+   } else {
+      assert(info->surf.dim == ISL_SURF_DIM_2D);
+      assert(info->surf.logical_level0_px.array_len == 1);
+      info->surf.logical_level0_px.w += info->tile_x_sa;
+      info->surf.logical_level0_px.h += info->tile_y_sa;
+      info->surf.phys_level0_sa.w += info->tile_x_sa;
+      info->surf.phys_level0_sa.h += info->tile_y_sa;
+   }
 }
 
 bool

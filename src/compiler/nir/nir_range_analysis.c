@@ -1927,7 +1927,7 @@ process_uub_query(struct analysis_state *state, struct analysis_query *aq, uint3
    *result = bitmask(q.scalar.def->bit_size);
    if (nir_scalar_is_const(q.scalar))
       *result = nir_scalar_as_uint(q.scalar);
-   else if (q.scalar.def->parent_instr->type == nir_instr_type_intrinsic)
+   else if (nir_scalar_is_intrinsic(q.scalar))
       get_intrinsic_uub(state, q, result, src);
    else if (nir_scalar_is_alu(q.scalar))
       get_alu_uub(state, q, result, src);

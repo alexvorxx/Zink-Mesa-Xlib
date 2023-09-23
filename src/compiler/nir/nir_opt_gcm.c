@@ -311,30 +311,20 @@ gcm_pin_instructions(nir_function_impl *impl, struct gcm_state *state)
          instr->index = state->num_instrs++;
 
          switch (instr->type) {
-         case nir_instr_type_alu:
-            switch (nir_instr_as_alu(instr)->op) {
-            case nir_op_fddx:
-            case nir_op_fddy:
-            case nir_op_fddx_fine:
-            case nir_op_fddy_fine:
-            case nir_op_fddx_coarse:
-            case nir_op_fddy_coarse:
+         case nir_instr_type_alu: {
+            nir_alu_instr *alu = nir_instr_as_alu(instr);
+
+            if (nir_op_is_derivative(alu->op)) {
                /* These can only go in uniform control flow */
                instr->pass_flags = GCM_INSTR_SCHEDULE_EARLIER_ONLY;
-               break;
-
-            case nir_op_mov:
-               if (!is_src_scalarizable(&(nir_instr_as_alu(instr)->src[0].src))) {
-                  instr->pass_flags = GCM_INSTR_PINNED;
-                  break;
-               }
-               FALLTHROUGH;
-
-            default:
+            } else if (alu->op == nir_op_mov &&
+                       !is_src_scalarizable(&alu->src[0].src)) {
+               instr->pass_flags = GCM_INSTR_PINNED;
+            } else {
                instr->pass_flags = 0;
-               break;
             }
             break;
+         }
 
          case nir_instr_type_tex: {
             nir_tex_instr *tex = nir_instr_as_tex(instr);
@@ -743,7 +733,7 @@ gcm_replace_def_with_undef(nir_def *def, void *void_state)
    nir_undef_instr *undef =
       nir_undef_instr_create(state->impl->function->shader,
                              def->num_components, def->bit_size);
-   nir_instr_insert(nir_before_cf_list(&state->impl->body), &undef->instr);
+   nir_instr_insert(nir_before_impl(state->impl), &undef->instr);
    nir_def_rewrite_uses(def, &undef->def);
 
    return true;

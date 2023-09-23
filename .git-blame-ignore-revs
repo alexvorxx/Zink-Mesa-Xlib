@@ -59,3 +59,9 @@ c7bf3b69ebc8f2252dbf724a4de638e6bb2ac402
 
 # pvr: clang-format fixes
 953c04ebd39c52d457301bdd8ac803949001da2d
+
+# freedreno: Re-indent
+2d439343ea1aee146d4ce32800992cd389bd505d
+
+# ir3: Reformat source with clang-format
+177138d8cb0b4f6a42ef0a1f8593e14d79f17c54

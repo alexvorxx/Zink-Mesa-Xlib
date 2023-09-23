@@ -58,7 +58,7 @@ nir_lower_uniforms_to_ubo_instr(nir_builder *b, nir_instr *instr, void *data)
    /* Increase all UBO binding points by 1. */
    if (intr->intrinsic == nir_intrinsic_load_ubo &&
        !b->shader->info.first_ubo_is_default_ubo) {
-      nir_def *old_idx = nir_ssa_for_src(b, intr->src[0], 1);
+      nir_def *old_idx = intr->src[0].ssa;
       nir_def *new_idx = nir_iadd_imm(b, old_idx, 1);
       nir_src_rewrite(&intr->src[0], new_idx);
       return true;
@@ -66,7 +66,7 @@ nir_lower_uniforms_to_ubo_instr(nir_builder *b, nir_instr *instr, void *data)
 
    if (intr->intrinsic == nir_intrinsic_load_uniform) {
       nir_def *ubo_idx = nir_imm_int(b, 0);
-      nir_def *uniform_offset = nir_ssa_for_src(b, intr->src[0], 1);
+      nir_def *uniform_offset = intr->src[0].ssa;
 
       assert(intr->def.bit_size >= 8);
       nir_def *load_result;

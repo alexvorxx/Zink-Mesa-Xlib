@@ -47,7 +47,7 @@ get_io_offset(nir_builder *b, nir_deref_instr *deref, nir_variable *var,
     * inputs), skip the outermost array index.  Process the rest normally.
     */
    if (nir_is_arrayed_io(var, b->shader->info.stage)) {
-      *array_index = nir_ssa_for_src(b, (*p)->arr.index, 1);
+      *array_index = (*p)->arr.index.ssa;
       p++;
    }
 
@@ -177,8 +177,7 @@ lower_array(nir_builder *b, nir_intrinsic_instr *intr, nir_variable *var,
       if (intr->intrinsic == nir_intrinsic_interp_deref_at_offset ||
           intr->intrinsic == nir_intrinsic_interp_deref_at_sample ||
           intr->intrinsic == nir_intrinsic_interp_deref_at_vertex) {
-         nir_src_copy(&element_intr->src[1], &intr->src[1],
-                      &element_intr->instr);
+         element_intr->src[1] = nir_src_for_ssa(intr->src[1].ssa);
       }
 
       nir_def_rewrite_uses(&intr->def,
@@ -186,8 +185,7 @@ lower_array(nir_builder *b, nir_intrinsic_instr *intr, nir_variable *var,
    } else {
       nir_intrinsic_set_write_mask(element_intr,
                                    nir_intrinsic_write_mask(intr));
-      nir_src_copy(&element_intr->src[1], &intr->src[1],
-                   &element_intr->instr);
+      element_intr->src[1] = nir_src_for_ssa(intr->src[1].ssa);
    }
 
    nir_builder_instr_insert(b, &element_intr->instr);

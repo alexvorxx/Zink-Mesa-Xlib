@@ -325,7 +325,7 @@ decode_gmu_hfi(void)
 static bool
 valid_header(uint32_t pkt)
 {
-   if (options.gpu_id >= 500) {
+   if (options.info->chip >= 5) {
       return pkt_is_type4(pkt) || pkt_is_type7(pkt);
    } else {
       /* TODO maybe we can check validish looking pkt3 opc or pkt0
@@ -700,7 +700,7 @@ decode_shader_blocks(void)
              * (or parts of shaders?), so perhaps we should search
              * for ends of shaders and decode each?
              */
-            try_disasm_a3xx(buf, sizedwords, 1, stdout, options.gpu_id);
+            try_disasm_a3xx(buf, sizedwords, 1, stdout, options.info->chip * 100);
          }
 
          if (dump)
@@ -767,14 +767,17 @@ decode(void)
       if (startswith(line, "revision:")) {
          unsigned core, major, minor, patchid;
 
-         parseline(line, "revision: %u (%u.%u.%u.%u)", &options.gpu_id,
+         parseline(line, "revision: %u (%u.%u.%u.%u)", &options.dev_id.gpu_id,
                    &core, &major, &minor, &patchid);
 
-         if (options.gpu_id == 0) {
-            options.gpu_id = (core * 100) + (major * 10) + minor;
+         options.dev_id.chip_id = (core << 24) | (major << 16) | (minor << 8) | patchid;
+         options.info = fd_dev_info(&options.dev_id);
+         if (!options.info) {
+            printf("Unsupported device\n");
+            break;
          }
 
-         printf("Got gpu_id=%u\n", options.gpu_id);
+         printf("Got chip_id=0x%"PRIx64"\n", options.dev_id.chip_id);
 
          cffdec_init(&options);
 

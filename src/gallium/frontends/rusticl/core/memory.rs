@@ -374,15 +374,28 @@ impl Mem {
             ResourceType::Normal
         };
 
-        let pipe_format = image_format.to_pipe_format().unwrap();
         let texture = if parent.is_none() {
-            Some(context.create_texture(
+            let mut texture = context.create_texture(
                 &image_desc,
-                pipe_format,
+                image_format,
                 host_ptr,
                 bit_check(flags, CL_MEM_COPY_HOST_PTR),
                 res_type,
-            )?)
+            );
+
+            // if we error allocating a Staging resource, just try with normal as
+            // `CL_MEM_ALLOC_HOST_PTR` is just a performance hint.
+            if res_type == ResourceType::Staging && texture.is_err() {
+                texture = context.create_texture(
+                    &image_desc,
+                    image_format,
+                    host_ptr,
+                    bit_check(flags, CL_MEM_COPY_HOST_PTR),
+                    ResourceType::Normal,
+                )
+            }
+
+            Some(texture?)
         } else {
             None
         };
@@ -393,6 +406,7 @@ impl Mem {
             ptr::null_mut()
         };
 
+        let pipe_format = image_format.to_pipe_format().unwrap();
         Ok(Arc::new(Self {
             base: CLObjectBase::new(),
             context: context,
@@ -537,6 +551,7 @@ impl Mem {
                     cl_mem_type_to_texture_target(self.image_desc.image_type),
                     self.pipe_format,
                     ResourceType::Staging,
+                    false,
                 )
                 .ok_or(CL_OUT_OF_RESOURCES)?;
             let tx = ctx.texture_map_coherent(&shadow, bx, rw);

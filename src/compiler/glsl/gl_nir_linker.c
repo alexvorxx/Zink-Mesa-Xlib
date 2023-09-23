@@ -926,7 +926,7 @@ gl_nir_add_point_size(nir_shader *nir)
       }
    }
    if (!found) {
-      b.cursor = nir_before_cf_list(&impl->body);
+      b.cursor = nir_before_impl(impl);
       nir_deref_instr *deref = nir_build_deref_var(&b, psiz);
       nir_store_deref(&b, deref, nir_imm_float(&b, 1.0), BITFIELD_BIT(0));
    }
@@ -957,7 +957,7 @@ gl_nir_zero_initialize_clip_distance(nir_shader *nir)
       return false;
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+   nir_builder b = nir_builder_at(nir_before_impl(impl));
    if (clip_dist0)
       zero_array_members(&b, clip_dist0);
 
@@ -1065,6 +1065,8 @@ preprocess_shader(const struct gl_constants *consts,
       NIR_PASS_V(nir, nir_lower_alu_to_scalar,
                  options->lower_to_scalar_filter, NULL);
    }
+
+   NIR_PASS_V(nir, nir_opt_barrier_modes);
 
    /* before buffers and vars_to_ssa */
    NIR_PASS_V(nir, gl_nir_lower_images, true);
@@ -1334,6 +1336,27 @@ gl_nir_link_glsl(const struct gl_constants *consts,
       prog->last_vert_prog = prog->_LinkedShaders[i]->Program;
       break;
    }
+
+   unsigned first = MESA_SHADER_STAGES;
+   unsigned last = 0;
+
+   /* Determine first and last stage. */
+   for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
+      if (!prog->_LinkedShaders[i])
+         continue;
+      if (first == MESA_SHADER_STAGES)
+         first = i;
+      last = i;
+   }
+
+   /* The cross validation of outputs/inputs above validates interstage
+    * explicit locations. We need to do this also for the inputs in the first
+    * stage and outputs of the last stage included in the program, since there
+    * is no cross validation for these.
+    */
+   gl_nir_validate_first_and_last_interface_explicit_locations(consts, prog,
+                                                               (gl_shader_stage) first,
+                                                               (gl_shader_stage) last);
 
    if (prog->SeparateShader)
       disable_varying_optimizations_for_sso(prog);

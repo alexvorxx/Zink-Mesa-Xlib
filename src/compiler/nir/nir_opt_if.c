@@ -861,22 +861,9 @@ opt_if_simplification(nir_builder *b, nir_if *nif)
        is_block_empty(nir_if_first_else_block(nif)))
       return false;
 
-   /* Make sure the condition is a comparison operation. */
-   nir_instr *src_instr = nif->condition.ssa->parent_instr;
-   if (src_instr->type != nir_instr_type_alu)
-      return false;
-
-   nir_alu_instr *alu_instr = nir_instr_as_alu(src_instr);
-   if (!nir_alu_instr_is_comparison(alu_instr))
-      return false;
-
    /* Insert the inverted instruction and rewrite the condition. */
-   b->cursor = nir_after_instr(&alu_instr->instr);
-
-   nir_def *new_condition =
-      nir_inot(b, &alu_instr->def);
-
-   nir_src_rewrite(&nif->condition, new_condition);
+   b->cursor = nir_before_src(&nif->condition);
+   nir_src_rewrite(&nif->condition, nir_inot(b, nif->condition.ssa));
 
    /* Grab pointers to the last then/else blocks for fixing up the phis. */
    nir_block *then_block = nir_if_last_then_block(nif);
@@ -1408,10 +1395,10 @@ opt_if_rewrite_uniform_uses(nir_builder *b, nir_if *nif, nir_scalar cond, bool a
       nir_scalar src_uni = nir_scalar_chase_alu_src(cond, i);
       nir_scalar src_div = nir_scalar_chase_alu_src(cond, !i);
 
-      if (src_uni.def->parent_instr->type == nir_instr_type_load_const && src_div.def != src_uni.def)
+      if (nir_scalar_is_const(src_uni) && src_div.def != src_uni.def)
          return rewrite_comp_uses_within_if(b, nif, op == nir_op_ine, src_div, src_uni);
 
-      if (src_uni.def->parent_instr->type != nir_instr_type_intrinsic)
+      if (!nir_scalar_is_intrinsic(src_uni))
          continue;
       nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(src_uni.def->parent_instr);
       if (intrin->intrinsic != nir_intrinsic_read_first_invocation &&
@@ -1422,11 +1409,11 @@ opt_if_rewrite_uniform_uses(nir_builder *b, nir_if *nif, nir_scalar cond, bool a
       nir_scalar intrin_src = { intrin->src[0].ssa, src_uni.comp };
       nir_scalar resolved_intrin_src = nir_scalar_resolved(intrin_src.def, intrin_src.comp);
 
-      if (resolved_intrin_src.comp != src_div.comp || resolved_intrin_src.def != src_div.def)
+      if (!nir_scalar_equal(resolved_intrin_src, src_div))
          continue;
 
       progress |= rewrite_comp_uses_within_if(b, nif, op == nir_op_ine, resolved_intrin_src, src_uni);
-      if (intrin_src.comp != resolved_intrin_src.comp || intrin_src.def != resolved_intrin_src.def)
+      if (!nir_scalar_equal(intrin_src, resolved_intrin_src))
          progress |= rewrite_comp_uses_within_if(b, nif, op == nir_op_ine, intrin_src, src_uni);
 
       return progress;

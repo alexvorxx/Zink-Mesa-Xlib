@@ -47,7 +47,6 @@ static const amd_kernel_code_t *si_compute_get_code_object(const struct si_compu
    if (!ac_rtld_open(&rtld,
                      (struct ac_rtld_open_info){.info = &sel->screen->info,
                                                 .shader_type = MESA_SHADER_COMPUTE,
-                                                .wave_size = program->shader.wave_size,
                                                 .num_parts = 1,
                                                 .elf_ptrs = &program->shader.binary.code_buffer,
                                                 .elf_sizes = &program->shader.binary.code_size}))
@@ -258,11 +257,13 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
       }
       memcpy((void *)program->shader.binary.code_buffer, header->blob, header->num_bytes);
 
-      /* This is only for clover without NIR. */
-      program->shader.wave_size = sscreen->info.gfx_level >= GFX10 ? 32 : 64;
-
       const amd_kernel_code_t *code_object = si_compute_get_code_object(program, 0);
       code_object_to_config(code_object, &program->shader.config);
+
+      if (AMD_HSA_BITS_GET(code_object->code_properties, AMD_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32))
+         program->shader.wave_size = 32;
+      else
+         program->shader.wave_size = 64;
 
       bool ok = si_shader_binary_upload(sctx->screen, &program->shader, 0);
       si_shader_dump(sctx->screen, &program->shader, &sctx->debug, stderr, true);
@@ -576,7 +577,8 @@ static void setup_scratch_rsrc_user_sgprs(struct si_context *sctx,
 
    /* Disable address clamping */
    uint32_t scratch_dword2 = 0xffffffff;
-   uint32_t scratch_dword3 = S_008F0C_INDEX_STRIDE(3) | S_008F0C_ADD_TID_ENABLE(1);
+   uint32_t index_stride = sctx->cs_shader_state.program->shader.wave_size == 32 ? 2 : 3;
+   uint32_t scratch_dword3 = S_008F0C_INDEX_STRIDE(index_stride) | S_008F0C_ADD_TID_ENABLE(1);
 
    if (sctx->gfx_level >= GFX9) {
       assert(max_private_element_size == 1); /* only 4 bytes on GFX9 */

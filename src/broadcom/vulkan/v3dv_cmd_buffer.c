@@ -24,6 +24,7 @@
 #include "v3dv_private.h"
 #include "util/u_pack_color.h"
 #include "vk_util.h"
+#include "vulkan/runtime/vk_common_entrypoints.h"
 
 void
 v3dv_job_add_bo(struct v3dv_job *job, struct v3dv_bo *bo)
@@ -3415,6 +3416,304 @@ v3dv_CmdSetLineWidth(VkCommandBuffer commandBuffer,
    cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_LINE_WIDTH;
 }
 
+/**
+ * This checks a descriptor set to see if are binding any descriptors that would
+ * involve sampling from a linear image (the hardware only supports this for
+ * 1D images), and if so, attempts to create a tiled copy of the linear image
+ * and rewrite the descriptor set to use that instead.
+ *
+ * This was added to support a scenario with Android where some part of the UI
+ * wanted to show previews of linear swapchain images. For more details:
+ * https://gitlab.freedesktop.org/mesa/mesa/-/issues/9712
+ *
+ * Currently this only supports a linear sampling from a simple 2D image, but
+ * it could be extended to support more cases if necessary.
+ */
+static void
+handle_sample_from_linear_image(struct v3dv_cmd_buffer *cmd_buffer,
+                                struct v3dv_descriptor_set *set,
+                                bool is_compute)
+{
+   for (int32_t i = 0; i < set->layout->binding_count; i++) {
+      const struct v3dv_descriptor_set_binding_layout *blayout =
+         &set->layout->binding[i];
+      if (blayout->type != VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE &&
+          blayout->type != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+         continue;
+
+      struct v3dv_descriptor *desc = &set->descriptors[blayout->descriptor_index];
+      if (!desc->image_view)
+         continue;
+
+      struct v3dv_image *image = (struct v3dv_image *) desc->image_view->vk.image;
+      struct v3dv_image_view *view = (struct v3dv_image_view *) desc->image_view;
+      if (image->tiled || view->vk.view_type == VK_IMAGE_VIEW_TYPE_1D ||
+                          view->vk.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY) {
+         continue;
+      }
+
+      /* FIXME: we can probably handle most of these restrictions too with
+       * a bit of extra effort.
+       */
+      if (view->vk.view_type != VK_IMAGE_VIEW_TYPE_2D ||
+          view->vk.level_count != 1 || view->vk.layer_count != 1 ||
+          blayout->array_size != 1) {
+         fprintf(stderr, "Sampling from linear image is not supported. "
+                 "Expect corruption.\n");
+         continue;
+      }
+
+      /* We are sampling from a linear image. V3D doesn't support this
+       * so we create a tiled copy of the image and rewrite the descriptor
+       * to read from it instead.
+       */
+      perf_debug("Sampling from linear image is not supported natively and "
+                 "requires a copy.\n");
+
+      struct v3dv_device *device = cmd_buffer->device;
+      VkDevice vk_device = v3dv_device_to_handle(device);
+
+      /* Allocate shadow tiled image if needed, we only do this once for
+       * each image, on the first sampling attempt. We need to take a lock
+       * since we may be trying to do the same in another command buffer in
+       * a separate thread.
+       */
+      mtx_lock(&device->meta.mtx);
+      VkResult result;
+      VkImage tiled_image;
+      if (image->shadow) {
+         tiled_image = v3dv_image_to_handle(image->shadow);
+      } else {
+         VkImageCreateInfo image_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .flags = image->vk.create_flags,
+            .imageType = image->vk.image_type,
+            .format = image->vk.format,
+            .extent = {
+               image->vk.extent.width,
+               image->vk.extent.height,
+               image->vk.extent.depth,
+            },
+            .mipLevels = image->vk.mip_levels,
+            .arrayLayers = image->vk.array_layers,
+            .samples = image->vk.samples,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = image->vk.usage,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+         };
+         result = v3dv_CreateImage(vk_device, &image_info,
+                                   &device->vk.alloc, &tiled_image);
+         if (result != VK_SUCCESS) {
+            fprintf(stderr, "Failed to copy linear 2D image for sampling."
+                    "Expect corruption.\n");
+            mtx_unlock(&device->meta.mtx);
+            continue;
+         }
+
+         bool disjoint = image->vk.create_flags & VK_IMAGE_CREATE_DISJOINT_BIT;
+         VkImageMemoryRequirementsInfo2 reqs_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+            .image = tiled_image,
+         };
+
+         assert(image->plane_count <= V3DV_MAX_PLANE_COUNT);
+         for (int p = 0; p < (disjoint ? image->plane_count : 1); p++) {
+            VkImageAspectFlagBits plane_aspect = VK_IMAGE_ASPECT_PLANE_0_BIT << p;
+            VkImagePlaneMemoryRequirementsInfo plane_info = {
+               .sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
+               .planeAspect = plane_aspect,
+            };
+            if (disjoint)
+               reqs_info.pNext = &plane_info;
+
+            VkMemoryRequirements2 reqs = {
+               .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+            };
+            v3dv_GetImageMemoryRequirements2(vk_device, &reqs_info, &reqs);
+
+            VkDeviceMemory mem;
+            VkMemoryAllocateInfo alloc_info = {
+               .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+               .allocationSize = reqs.memoryRequirements.size,
+               .memoryTypeIndex = 0,
+            };
+            result = v3dv_AllocateMemory(vk_device, &alloc_info,
+                                         &device->vk.alloc, &mem);
+            if (result != VK_SUCCESS) {
+               fprintf(stderr, "Failed to copy linear 2D image for sampling."
+                       "Expect corruption.\n");
+               v3dv_DestroyImage(vk_device, tiled_image, &device->vk.alloc);
+               mtx_unlock(&device->meta.mtx);
+               continue;
+            }
+
+            VkBindImageMemoryInfo bind_info = {
+               .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+               .image = tiled_image,
+               .memory = mem,
+               .memoryOffset = 0,
+            };
+            VkBindImagePlaneMemoryInfo plane_bind_info = {
+               .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO,
+               .planeAspect = plane_aspect,
+            };
+            if (disjoint)
+               bind_info.pNext = &plane_bind_info;
+            result = v3dv_BindImageMemory2(vk_device, 1, &bind_info);
+            if (result != VK_SUCCESS) {
+               fprintf(stderr, "Failed to copy linear 2D image for sampling."
+                       "Expect corruption.\n");
+               v3dv_DestroyImage(vk_device, tiled_image, &device->vk.alloc);
+               v3dv_FreeMemory(vk_device, mem, &device->vk.alloc);
+               mtx_unlock(&device->meta.mtx);
+               continue;
+            }
+         }
+
+         image->shadow = v3dv_image_from_handle(tiled_image);
+      }
+
+      /* Create a shadow view that refers to the tiled image if needed */
+      VkImageView tiled_view;
+      if (view->shadow) {
+         tiled_view = v3dv_image_view_to_handle(view->shadow);
+      } else {
+         VkImageViewCreateInfo view_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .flags = view->vk.create_flags,
+            .image = tiled_image,
+            .viewType = view->vk.view_type,
+            .format = view->vk.format,
+            .components = view->vk.swizzle,
+            .subresourceRange = {
+               .aspectMask = view->vk.aspects,
+               .baseMipLevel = view->vk.base_mip_level,
+               .levelCount = view->vk.level_count,
+               .baseArrayLayer = view->vk.base_array_layer,
+               .layerCount = view->vk.layer_count,
+            },
+         };
+         result = v3dv_create_image_view(device, &view_info, &tiled_view);
+         if (result != VK_SUCCESS) {
+            fprintf(stderr, "Failed to copy linear 2D image for sampling."
+                    "Expect corruption.\n");
+            mtx_unlock(&device->meta.mtx);
+            continue;
+         }
+      }
+
+      view->shadow = v3dv_image_view_from_handle(tiled_view);
+
+      mtx_unlock(&device->meta.mtx);
+
+      /* Rewrite the descriptor to use the shadow view */
+      VkDescriptorImageInfo desc_image_info = {
+         .sampler = v3dv_sampler_to_handle(desc->sampler),
+         .imageView = tiled_view,
+         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+      };
+      VkWriteDescriptorSet write = {
+         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .dstSet = v3dv_descriptor_set_to_handle(set),
+         .dstBinding = i,
+         .dstArrayElement = 0, /* Assumes array_size is 1 */
+         .descriptorCount = 1,
+         .descriptorType = desc->type,
+         .pImageInfo = &desc_image_info,
+      };
+      v3dv_UpdateDescriptorSets(vk_device, 1, &write, 0, NULL);
+
+      /* Now we need to actually copy the pixel data from the linear image
+       * into the tiled image storage to ensure it is up-to-date.
+       *
+       * FIXME: ideally we would track if the linear image is dirty and skip
+       * this step otherwise, but that would be a bit of a pain.
+       *
+       * Note that we need to place the copy job *before* the current job in
+       * the command buffer state so we have the tiled image ready to process
+       * an upcoming draw call in the current job that samples from it.
+       *
+       * Also, we need to use the TFU path for this copy, as any other path
+       * will use the tile buffer and would require a new framebuffer setup,
+       * thus requiring extra work to stop and resume any in-flight render
+       * pass. Since we are converting a full 2D texture here the TFU should
+       * be able to handle this.
+       */
+      for (int p = 0; p < image->plane_count; p++) {
+         VkImageAspectFlagBits plane_aspect = VK_IMAGE_ASPECT_PLANE_0_BIT << p;
+         struct VkImageCopy2 copy_region = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+            .srcSubresource = {
+               .aspectMask = image->plane_count == 1 ?
+                  view->vk.aspects : (view->vk.aspects & plane_aspect),
+               .mipLevel = view->vk.base_mip_level,
+               .baseArrayLayer = view->vk.base_array_layer,
+               .layerCount = view->vk.layer_count,
+            },
+            .srcOffset = {0, 0, 0 },
+            .dstSubresource = {
+               .aspectMask = image->plane_count == 1 ?
+                  view->vk.aspects : (view->vk.aspects & plane_aspect),
+               .mipLevel = view->vk.base_mip_level,
+               .baseArrayLayer = view->vk.base_array_layer,
+               .layerCount = view->vk.layer_count,
+            },
+            .dstOffset = { 0, 0, 0},
+            .extent = {
+               image->planes[p].width,
+               image->planes[p].height,
+               1,
+            },
+         };
+         struct v3dv_image *copy_src = image;
+         struct v3dv_image *copy_dst = v3dv_image_from_handle(tiled_image);
+         bool ok = v3dv_cmd_buffer_copy_image_tfu(cmd_buffer, copy_dst, copy_src,
+                                                  &copy_region);
+         if (ok) {
+            /* This will emit the TFU job right before the current in-flight
+             * job (if any), since in-fight jobs are only added to the list
+             * when finished.
+             */
+            struct v3dv_job *tfu_job =
+               list_last_entry(&cmd_buffer->jobs, struct v3dv_job, list_link);
+            assert(tfu_job->type == V3DV_JOB_TYPE_GPU_TFU);
+            /* Serialize the copy since we don't know who is producing the linear
+             * image and we need the image to be ready by the time the copy
+             * executes.
+             */
+            tfu_job->serialize = V3DV_BARRIER_ALL;
+
+            /* Also, we need to ensure the TFU copy job completes before anyhing
+             * else coming after that may be using the tiled shadow copy.
+             */
+            if (cmd_buffer->state.job) {
+               /* If we already had an in-flight job (i.e. we are in a render
+                * pass) make sure the job waits for the TFU copy.
+                */
+               cmd_buffer->state.job->serialize |= V3DV_BARRIER_TRANSFER_BIT;
+            } else {
+               /* Otherwise, make the the follow-up job syncs with the TFU
+                * job we just added when it is created by adding the
+                * corresponding barrier state.
+                */
+               if (!is_compute) {
+                  cmd_buffer->state.barrier.dst_mask |= V3DV_BARRIER_GRAPHICS_BIT;
+                  cmd_buffer->state.barrier.src_mask_graphics |= V3DV_BARRIER_TRANSFER_BIT;
+               } else {
+                  cmd_buffer->state.barrier.dst_mask |= V3DV_BARRIER_COMPUTE_BIT;
+                  cmd_buffer->state.barrier.src_mask_compute |= V3DV_BARRIER_TRANSFER_BIT;
+               }
+            }
+         } else {
+            fprintf(stderr, "Failed to copy linear 2D image for sampling."
+                    "TFU doesn't support copy. Expect corruption.\n");
+         }
+      }
+   }
+}
+
 VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                            VkPipelineBindPoint pipelineBindPoint,
@@ -3448,6 +3747,15 @@ v3dv_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
          descriptor_state->descriptor_sets[index] = set;
          dirty_stages |= set->layout->shader_stages;
          descriptor_state_changed = true;
+
+         /* Check if we are sampling from a linear 2D image. This is not
+          * supported in hardware, but may be required for some applications
+          * so we will transparently convert to tiled at the expense of
+          * performance.
+          */
+         handle_sample_from_linear_image(cmd_buffer, set,
+                                         pipelineBindPoint ==
+                                         VK_PIPELINE_BIND_POINT_COMPUTE);
       }
 
       for (uint32_t j = 0; j < set->layout->dynamic_offset_count; j++, dyn_index++) {

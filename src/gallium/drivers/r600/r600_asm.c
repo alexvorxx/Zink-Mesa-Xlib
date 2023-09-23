@@ -1334,14 +1334,14 @@ int r600_bytecode_add_alu_type(struct r600_bytecode *bc,
 	}
 	/* number of gpr == the last gpr used in any alu */
 	for (i = 0; i < 3; i++) {
-		if (nalu->src[i].sel >= bc->ngpr && nalu->src[i].sel < 124) {
+		if (nalu->src[i].sel >= bc->ngpr && nalu->src[i].sel < 123) {
 			bc->ngpr = nalu->src[i].sel + 1;
 		}
 		if (nalu->src[i].sel == V_SQ_ALU_SRC_LITERAL)
 			r600_bytecode_special_constants(nalu->src[i].value,
 				&nalu->src[i].sel);
 	}
-	if (nalu->dst.write && nalu->dst.sel >= bc->ngpr && nalu->dst.sel < 124) {
+	if (nalu->dst.write && nalu->dst.sel >= bc->ngpr && nalu->dst.sel < 123) {
 		bc->ngpr = nalu->dst.sel + 1;
 	}
 	list_addtail(&nalu->list, &bc->cf_last->alu);
@@ -2508,11 +2508,16 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 			o += print_swizzle(tex->src_sel_z);
 			o += print_swizzle(tex->src_sel_w);
 
-			o += fprintf(stderr, ",  RID:%d", tex->resource_id);
+			o += fprintf(stderr, ",  RID:%d ", tex->resource_id);
+                        if (tex->resource_index_mode)
+				fprintf(stderr, "RQ_%s", index_mode[tex->resource_index_mode]);
+
 			o += fprintf(stderr, ", SID:%d  ", tex->sampler_id);
 
 			if (tex->sampler_index_mode)
 				fprintf(stderr, "SQ_%s ", index_mode[tex->sampler_index_mode]);
+
+
 
 			if (tex->lod_bias)
 				fprintf(stderr, "LB:%d ", tex->lod_bias);

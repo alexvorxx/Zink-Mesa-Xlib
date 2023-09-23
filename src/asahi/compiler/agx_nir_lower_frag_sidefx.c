@@ -72,7 +72,7 @@ agx_nir_lower_frag_sidefx(nir_shader *s)
    if (s->info.fs.early_fragment_tests) {
       assert(!writes_zs && "incompatible");
       nir_function_impl *impl = nir_shader_get_entrypoint(s);
-      nir_builder b = nir_builder_at(nir_before_cf_list(&impl->body));
+      nir_builder b = nir_builder_at(nir_before_impl(impl));
       nir_sample_mask_agx(&b, nir_imm_intN_t(&b, ALL_SAMPLES, 16),
                           nir_imm_intN_t(&b, ALL_SAMPLES, 16));
       return true;
@@ -89,8 +89,7 @@ agx_nir_lower_frag_sidefx(nir_shader *s)
    /* If there's no render targets written, just put the write at the end */
    if (!done) {
       nir_function_impl *impl = nir_shader_get_entrypoint(s);
-      nir_builder b =
-         nir_builder_at(nir_after_block(nir_impl_last_block(impl)));
+      nir_builder b = nir_builder_at(nir_after_impl(impl));
 
       insert_z_write(&b);
    }

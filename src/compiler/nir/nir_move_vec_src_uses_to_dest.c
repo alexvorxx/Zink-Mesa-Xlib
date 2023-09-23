@@ -58,7 +58,7 @@ ssa_def_dominates_instr(nir_def *def, nir_instr *instr)
 }
 
 static bool
-move_vec_src_uses_to_dest_block(nir_block *block)
+move_vec_src_uses_to_dest_block(nir_block *block, bool skip_const_srcs)
 {
    bool progress = false;
 
@@ -77,11 +77,26 @@ move_vec_src_uses_to_dest_block(nir_block *block)
          continue; /* The loop */
       }
 
+      /* If the vec is used only in single store output than by reusing it
+       * we lose the ability to write it to the output directly.
+       */
+      if (list_is_singular(&vec->def.uses)) {
+         nir_src *src = list_first_entry(&vec->def.uses, nir_src, use_link);
+         nir_instr *use_instr = src->parent_instr;
+         if (use_instr->type == nir_instr_type_intrinsic) {
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(use_instr);
+            if (intr->intrinsic == nir_intrinsic_store_output)
+               return false;
+         }
+      }
+
       /* First, mark all of the sources we are going to consider for rewriting
        * to the destination
        */
       int srcs_remaining = 0;
       for (unsigned i = 0; i < nir_op_infos[vec->op].num_inputs; i++) {
+         if (skip_const_srcs && nir_src_is_const(vec->src[i].src))
+            continue;
 
          srcs_remaining |= 1 << i;
       }
@@ -158,7 +173,8 @@ move_vec_src_uses_to_dest_block(nir_block *block)
 }
 
 static bool
-nir_move_vec_src_uses_to_dest_impl(nir_shader *shader, nir_function_impl *impl)
+nir_move_vec_src_uses_to_dest_impl(nir_shader *shader, nir_function_impl *impl,
+                                   bool skip_const_srcs)
 {
    bool progress = false;
 
@@ -167,7 +183,7 @@ nir_move_vec_src_uses_to_dest_impl(nir_shader *shader, nir_function_impl *impl)
    nir_index_instrs(impl);
 
    nir_foreach_block(block, impl) {
-      progress |= move_vec_src_uses_to_dest_block(block);
+      progress |= move_vec_src_uses_to_dest_block(block, skip_const_srcs);
    }
 
    nir_metadata_preserve(impl, nir_metadata_block_index |
@@ -177,12 +193,12 @@ nir_move_vec_src_uses_to_dest_impl(nir_shader *shader, nir_function_impl *impl)
 }
 
 bool
-nir_move_vec_src_uses_to_dest(nir_shader *shader)
+nir_move_vec_src_uses_to_dest(nir_shader *shader, bool skip_const_srcs)
 {
    bool progress = false;
 
    nir_foreach_function_impl(impl, shader) {
-      progress |= nir_move_vec_src_uses_to_dest_impl(shader, impl);
+      progress |= nir_move_vec_src_uses_to_dest_impl(shader, impl, skip_const_srcs);
    }
 
    return progress;

@@ -272,7 +272,7 @@ try_opt_exclusive_scan_to_inclusive(nir_intrinsic_instr *intrin)
       nir_scalar op_scalar = nir_scalar_resolved(alu->src[!src_index].src.ssa,
                                                  alu->src[!src_index].swizzle[0]);
 
-      if (scan_scalar.def != op_scalar.def || scan_scalar.comp != op_scalar.comp)
+      if (!nir_scalar_equal(scan_scalar, op_scalar))
          return false;
    }
 

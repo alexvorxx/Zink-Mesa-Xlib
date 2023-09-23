@@ -72,14 +72,6 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
                      A6XX_SP_CS_CONFIG_NTEX(v->num_samp) |
                      A6XX_SP_CS_CONFIG_NSAMP(v->num_samp)); /* SP_CS_CONFIG */
 
-   OUT_PKT4(ring, REG_A6XX_SP_CS_CTRL_REG0, 1);
-   OUT_RING(ring,
-            A6XX_SP_CS_CTRL_REG0_THREADSIZE(thrsz_cs) |
-               A6XX_SP_CS_CTRL_REG0_FULLREGFOOTPRINT(i->max_reg + 1) |
-               A6XX_SP_CS_CTRL_REG0_HALFREGFOOTPRINT(i->max_half_reg + 1) |
-               COND(v->mergedregs, A6XX_SP_CS_CTRL_REG0_MERGEDREGS) |
-               A6XX_SP_CS_CTRL_REG0_BRANCHSTACK(ir3_shader_branchstack_hw(v)));
-
    uint32_t local_invocation_id, work_group_id;
    local_invocation_id =
       ir3_find_sysval_regid(v, SYSTEM_VALUE_LOCAL_INVOCATION_ID);
@@ -109,7 +101,6 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring,
    }
 
    fd6_emit_shader(ctx, ring, v);
-   fd6_emit_immediates(ctx->screen, v, ring);
 }
 
 template <chip CHIP>

@@ -134,7 +134,8 @@ public:
    virtual AluInstr *as_alu() { return nullptr; }
    virtual uint8_t allowed_src_chan_mask() const { return 0; }
 
-   virtual void update_indirect_addr(PRegister addr) {
+   virtual void update_indirect_addr(PRegister old_reg, PRegister addr) {
+      (void)old_reg;
       (void)addr;
       unreachable("Instruction type has no indirect addess");
    };
@@ -263,22 +264,23 @@ private:
    uint32_t m_expected_ar_uses{0};
 };
 
-class InstrWithResource : public Instr {
+class Resource {
 public:
-   InstrWithResource(int base, PRegister offset):
+   Resource(Instr *user, int base, PRegister offset):
        m_base(base),
-       m_offset(offset)
+       m_offset(offset),
+       m_user(user)
    {
       if (m_offset) {
-         m_offset->add_use(this);
+         m_offset->add_use(m_user);
       }
    }
    bool replace_resource_offset(PRegister old_offset, PRegister new_offset)
    {
       if (m_offset && old_offset->equal_to(*m_offset)) {
-         m_offset->del_use(this);
+         m_offset->del_use(m_user);
          m_offset = new_offset;
-         m_offset->add_use(this);
+         m_offset->add_use(m_user);
          return true;
       }
       return false;
@@ -286,14 +288,14 @@ public:
    void set_resource_offset(PRegister offset)
    {
       if (m_offset)
-         m_offset->del_use(this);
+         m_offset->del_use(m_user);
       m_offset = offset;
       if (m_offset) {
-         m_offset->add_use(this);
+         m_offset->add_use(m_user);
       }
    }
 
-   bool resource_is_equal(const InstrWithResource& other) const
+   bool resource_is_equal(const Resource& other) const
    {
       if (m_base != other.m_base)
          return false;
@@ -302,11 +304,11 @@ public:
       return !m_offset && !other.m_offset;
    }
 
-   auto resource_base() const { return m_base; }
+   auto resource_id() const { return m_base; }
 
    auto resource_offset() const { return m_offset; }
 
-   auto buffer_index_mode() const -> EBufferIndexMode
+   auto resource_index_mode() const -> EBufferIndexMode
    {
       if (!m_offset || !m_offset->has_flag(Register::addr_or_idx))
          return bim_none;
@@ -326,11 +328,6 @@ public:
       return !m_offset || m_offset->ready(block_id, index);
    }
 
-   void update_indirect_addr(PRegister addr) override
-   {
-      set_resource_offset(addr);
-   }
-
 protected:
    void print_resource_offset(std::ostream& os) const
    {
@@ -341,9 +338,10 @@ protected:
 private:
    int m_base{0};
    PRegister m_offset{nullptr};
+   Instr *m_user;
 };
 
-class InstrWithVectorResult : public InstrWithResource {
+class InstrWithVectorResult : public Instr, public Resource {
 public:
    InstrWithVectorResult(const RegisterVec4& dest,
                          const RegisterVec4::Swizzle& dest_swizzle,
@@ -354,6 +352,8 @@ public:
    int dest_swizzle(int i) const { return m_dest_swizzle[i]; }
    const RegisterVec4::Swizzle& all_dest_swizzle() const { return m_dest_swizzle; }
    const RegisterVec4& dst() const { return m_dest; }
+
+   void update_indirect_addr(PRegister old_reg, PRegister addr) override;
 
 protected:
    InstrWithVectorResult(const InstrWithVectorResult& orig);

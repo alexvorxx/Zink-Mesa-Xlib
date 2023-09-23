@@ -59,9 +59,8 @@ stub_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
 }
 
 static VkResult
-stub_execute_simple_batch(struct anv_queue *queue,
-                          struct anv_bo *batch_bo,
-                          uint32_t batch_bo_size)
+stub_execute_simple_batch(struct anv_queue *queue, struct anv_bo *batch_bo,
+                          uint32_t batch_bo_size, bool is_companion_rcs_batch)
 {
    return VK_ERROR_UNKNOWN;
 }
@@ -78,6 +77,19 @@ stub_queue_exec_locked(struct anv_queue *queue,
                        uint32_t perf_query_pass)
 {
    return VK_ERROR_UNKNOWN;
+}
+
+static VkResult
+stub_queue_exec_trace(struct anv_queue *queue, struct anv_utrace_submit *submit)
+{
+   return VK_ERROR_UNKNOWN;
+}
+
+static uint32_t
+stub_bo_alloc_flags_to_bo_flags(struct anv_device *device,
+                                enum anv_bo_alloc_flags alloc_flags)
+{
+   return 0;
 }
 
 void *
@@ -134,13 +146,6 @@ anv_gem_get_tiling(struct anv_device *device, uint32_t gem_handle)
 }
 
 int
-anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle,
-                    uint32_t caching)
-{
-   return 0;
-}
-
-int
 anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle)
 {
    unreachable("Unused");
@@ -152,14 +157,24 @@ anv_gem_fd_to_handle(struct anv_device *device, int fd)
    unreachable("Unused");
 }
 
+VkResult
+anv_gem_import_bo_alloc_flags_to_bo_flags(struct anv_device *device,
+                                          struct anv_bo *bo,
+                                          enum anv_bo_alloc_flags alloc_flags,
+                                          uint32_t *bo_flags)
+{
+   return VK_SUCCESS;
+}
+
 static int
-stub_gem_vm_bind(struct anv_device *device, struct anv_bo *bo)
+stub_vm_bind(struct anv_device *device, int num_binds,
+             struct anv_vm_bind *binds)
 {
    return 0;
 }
 
 static int
-stub_gem_vm_unbind(struct anv_device *device, struct anv_bo *bo)
+stub_vm_bind_bo(struct anv_device *device, struct anv_bo *bo)
 {
    return 0;
 }
@@ -171,10 +186,13 @@ const struct anv_kmd_backend *anv_stub_kmd_backend_get(void)
       .gem_create_userptr = stub_gem_create_userptr,
       .gem_close = stub_gem_close,
       .gem_mmap = stub_gem_mmap,
-      .gem_vm_bind = stub_gem_vm_bind,
-      .gem_vm_unbind = stub_gem_vm_unbind,
+      .vm_bind = stub_vm_bind,
+      .vm_bind_bo = stub_vm_bind_bo,
+      .vm_unbind_bo = stub_vm_bind_bo,
       .execute_simple_batch = stub_execute_simple_batch,
       .queue_exec_locked = stub_queue_exec_locked,
+      .queue_exec_trace = stub_queue_exec_trace,
+      .bo_alloc_flags_to_bo_flags = stub_bo_alloc_flags_to_bo_flags,
    };
    return &stub_backend;
 }

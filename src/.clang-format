@@ -154,6 +154,7 @@ ForEachMacros:
 
   - nir_foreach_block
   - nir_foreach_block_in_cf_node
+  - nir_foreach_block_in_cf_node_reverse
   - nir_foreach_block_reverse
   - nir_foreach_block_reverse_safe
   - nir_foreach_block_safe

@@ -58,6 +58,10 @@ RENAMED_PROPERTIES = {
     ("SubgroupProperties", "quadOperationsInAllStages"): "subgroupQuadOperationsInAllStages",
 }
 
+SPECIALIZED_PROPERTY_STRUCTS = [
+    "HostImageCopyPropertiesEXT",
+]
+
 @dataclass
 class Property:
     decl: str
@@ -89,10 +93,10 @@ class PropertyStruct:
     properties: typing.List[Property]
 
 def copy_property(dst, src, decl, length="1"):
+    assert "*" not in decl
+
     if "[" in decl:
         return "memcpy(%s, %s, sizeof(%s));" % (dst, src, dst)
-    elif "*" in decl:
-        return "if (%s) memcpy(%s, %s, sizeof(%s[0] * %s));" % (dst, dst, src, dst, length)
     else:
         return "%s = %s;" % (dst, src)
 
@@ -140,6 +144,7 @@ vk_common_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
    vk_foreach_struct(ext, pProperties) {
       switch (ext->sType) {
 % for property_struct in property_structs:
+% if property_struct.name not in SPECIALIZED_PROPERTY_STRUCTS:
       case ${property_struct.s_type}: {
          ${property_struct.c_type} *properties = (void *)ext;
 % for prop in property_struct.properties:
@@ -147,7 +152,39 @@ vk_common_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
 % endfor
          break;
       }
+% endif
 % endfor
+
+      /* Specialized propery handling defined in vk_physical_device_properties_gen.py */
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_PROPERTIES_EXT: {
+         VkPhysicalDeviceHostImageCopyPropertiesEXT *properties = (void *)ext;
+
+         if (properties->pCopySrcLayouts) {
+            uint32_t written_layout_count = MIN2(properties->copySrcLayoutCount,
+                                                 pdevice->properties.copySrcLayoutCount);
+            memcpy(properties->pCopySrcLayouts, pdevice->properties.pCopySrcLayouts,
+                   sizeof(VkImageLayout) * written_layout_count);
+            properties->copySrcLayoutCount = written_layout_count;
+         } else {
+            properties->copySrcLayoutCount = pdevice->properties.copySrcLayoutCount;
+         }
+
+         if (properties->pCopyDstLayouts) {
+            uint32_t written_layout_count = MIN2(properties->copyDstLayoutCount,
+                                                 pdevice->properties.copyDstLayoutCount);
+            memcpy(properties->pCopyDstLayouts, pdevice->properties.pCopyDstLayouts,
+                   sizeof(VkImageLayout) * written_layout_count);
+            properties->copyDstLayoutCount = written_layout_count;
+         } else {
+            properties->copyDstLayoutCount = pdevice->properties.copyDstLayoutCount;
+         }
+
+         memcpy(properties->optimalTilingLayoutUUID, pdevice->properties.optimalTilingLayoutUUID, VK_UUID_SIZE);
+         properties->identicalMemoryTypeRequirements = pdevice->properties.identicalMemoryTypeRequirements;
+         break;
+      }
+
       default:
          break;
       }
@@ -274,7 +311,8 @@ def main():
         "pdev_properties": pdev_properties,
         "property_structs": property_structs,
         "all_properties": all_properties,
-        "copy_property": copy_property
+        "copy_property": copy_property,
+        "SPECIALIZED_PROPERTY_STRUCTS": SPECIALIZED_PROPERTY_STRUCTS,
     }
 
     try:

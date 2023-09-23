@@ -289,34 +289,28 @@ to reprogram part of the 3D pipeline state. The packing is happening
 in 2 places :
 
 - ``genX_pipeline.c`` where the non dynamic state is emitted in the
-  pipeline batch. This batch is copied into the command buffer batch
-  when calling ``vkCmdBindPipeline()``
+  pipeline batch. Chunks of the batches are copied into the command
+  buffer as a result of calling ``vkCmdBindPipeline()``, depending on
+  what changes from the previously bound graphics pipeline
 
-- ``genX_cmd_buffer.c`` in the ``cmd_buffer_flush_state`` function
-  which ends up calling into ``gfx8_cmd_buffer.c`` &
-  ``gfx7_cmd_buffer.c``
+- ``genX_gfx_state.c`` where the dynamic state is added to already
+  packed instructions from ``genX_pipeline.c``
 
 The rule to know where to emit an instruction programming the 3D
 pipeline is as follow :
 
 - If any field of the instruction can be made dynamic, it should be
-  emitted in ``genX_cmd_buffer.c``, ``gfx8_cmd_buffer.c`` or
-  ``gfx7_cmd_buffer.c``
+  emitted in ``genX_gfx_state.c``
 
 - Otherwise, the instruction can be emitted in ``genX_pipeline.c``
 
 When a piece of state programming is dynamic, it should have a
-corresponding field in ``anv_dynamic_state`` and the
-``anv_dynamic_state_copy()`` function should be updated to ensure we
-minimize the amount of time an instruction should be emitted. Each
-instruction should have a associated ``ANV_CMD_DIRTY_*`` mask so that
-the dynamic emission code can tell when to re-emit an instruction.
-
-An instruction can also be re-emitted when a pipeline changes by
-checking for ``ANV_CMD_DIRTY_PIPELINE``. It should only do so if it
-requires to know some value that is coming from the
-``anv_graphics_pipeline`` object that is not available from
-``anv_dynamic_state``.
+corresponding field in ``anv_gfx_dynamic_state`` and the
+``genX(cmd_buffer_flush_gfx_runtime_state)`` function should be
+updated to ensure we minimize the amount of time an instruction should
+be emitted. Each instruction should have a associated
+``ANV_GFX_STATE_*`` mask so that the dynamic emission code can tell
+when to re-emit an instruction.
 
 
 Generated indirect draws optimization

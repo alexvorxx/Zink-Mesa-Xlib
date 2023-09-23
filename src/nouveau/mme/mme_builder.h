@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Collabora Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 #ifndef MME_BUILDER_H
 #define MME_BUILDER_H
 

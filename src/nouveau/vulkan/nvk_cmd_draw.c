@@ -1,4 +1,9 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_buffer.h"
+#include "nvk_entrypoints.h"
 #include "nvk_cmd_buffer.h"
 #include "nvk_device.h"
 #include "nvk_format.h"
@@ -1198,11 +1203,6 @@ vk_sample_location(const struct vk_sample_locations_state *sl,
    return sl->locations[(x + y * sl->grid_size.width) * sl->per_pixel + s];
 }
 
-struct nvk_sample_location {
-   uint8_t x_u4:4;
-   uint8_t y_u4:4;
-};
-
 static struct nvk_sample_location
 vk_to_nvk_sample_location(VkSampleLocationEXT loc)
 {
@@ -1215,6 +1215,7 @@ vk_to_nvk_sample_location(VkSampleLocationEXT loc)
 static void
 nvk_flush_ms_state(struct nvk_cmd_buffer *cmd)
 {
+   struct nvk_descriptor_state *desc = &cmd->state.gfx.descriptors;
    const struct vk_dynamic_graphics_state *dyn =
       &cmd->vk.dynamic_graphics_state;
 
@@ -1225,6 +1226,11 @@ nvk_flush_ms_state(struct nvk_cmd_buffer *cmd)
          sl = dyn->ms.sample_locations;
       } else {
          sl = vk_standard_sample_locations_state(dyn->ms.rasterization_samples);
+      }
+
+      for (uint32_t i = 0; i < sl->per_pixel; i++) {
+         desc->root.draw.sample_locations[i] =
+            vk_to_nvk_sample_location(sl->locations[i]);
       }
 
       if (nvk_cmd_buffer_3d_cls(cmd) >= MAXWELL_B) {

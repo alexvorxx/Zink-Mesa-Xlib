@@ -385,13 +385,14 @@ send_restrictions(const struct brw_isa_info *isa,
          unsigned mlen = 1;
          if (!brw_inst_send_sel_reg32_desc(devinfo, inst)) {
             const uint32_t desc = brw_inst_send_desc(devinfo, inst);
-            mlen = brw_message_desc_mlen(devinfo, desc);
+            mlen = brw_message_desc_mlen(devinfo, desc) / reg_unit(devinfo);
          }
 
          unsigned ex_mlen = 1;
          if (!brw_inst_send_sel_reg32_ex_desc(devinfo, inst)) {
             const uint32_t ex_desc = brw_inst_sends_ex_desc(devinfo, inst);
-            ex_mlen = brw_message_ex_desc_ex_mlen(devinfo, ex_desc);
+            ex_mlen = brw_message_ex_desc_ex_mlen(devinfo, ex_desc) /
+                      reg_unit(devinfo);
          }
          const unsigned src0_reg_nr = brw_inst_src0_da_reg_nr(devinfo, inst);
          const unsigned src1_reg_nr = brw_inst_send_src1_reg_nr(devinfo, inst);
@@ -1464,7 +1465,7 @@ region_alignment_rules(const struct brw_isa_info *isa,
       unsigned hstride_elements = (num_hstride - 1) * hstride;
       unsigned offset = (vstride_elements + hstride_elements) * element_size +
                         subreg;
-      ERROR_IF(offset >= 64,
+      ERROR_IF(offset >= 64 * reg_unit(devinfo),
                "A source cannot span more than 2 adjacent GRF registers");
    }
 
@@ -1476,7 +1477,7 @@ region_alignment_rules(const struct brw_isa_info *isa,
    unsigned element_size = brw_reg_type_to_size(dst_type);
    unsigned subreg = brw_inst_dst_da1_subreg_nr(devinfo, inst);
    unsigned offset = ((exec_size - 1) * stride * element_size) + subreg;
-   ERROR_IF(offset >= 64,
+   ERROR_IF(offset >= 64 * reg_unit(devinfo),
             "A destination cannot span more than 2 adjacent GRF registers");
 
    if (error_msg.str)

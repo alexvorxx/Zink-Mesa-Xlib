@@ -44,7 +44,7 @@ static nir_def *get_global_ids(nir_builder *b, unsigned num_components)
    unsigned mask = BITFIELD_MASK(num_components);
 
    nir_def *local_ids = nir_channels(b, nir_load_local_invocation_id(b), mask);
-   nir_def *block_ids = nir_channels(b, nir_load_workgroup_id(b, 32), mask);
+   nir_def *block_ids = nir_channels(b, nir_load_workgroup_id(b), mask);
    nir_def *block_size = nir_channels(b, nir_load_workgroup_size(b), mask);
    return nir_iadd(b, nir_imul(b, block_ids, block_size), local_ids);
 }

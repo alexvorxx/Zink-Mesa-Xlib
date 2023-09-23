@@ -120,7 +120,7 @@ zink_create_vertex_elements_state(struct pipe_context *pctx,
          ves->hw_state.attribs[i].binding = binding;
          ves->hw_state.attribs[i].location = i;
          ves->hw_state.attribs[i].format = format;
-         ves->hw_state.b.strides[elem->vertex_buffer_index] = elem->src_stride;
+         ves->hw_state.b.strides[binding] = elem->src_stride;
          assert(ves->hw_state.attribs[i].format != VK_FORMAT_UNDEFINED);
          ves->hw_state.attribs[i].offset = elem->src_offset;
          ves->min_stride[binding] = MAX2(ves->min_stride[binding], elem->src_offset + vk_format_get_blocksize(format));

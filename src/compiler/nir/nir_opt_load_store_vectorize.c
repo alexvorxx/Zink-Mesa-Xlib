@@ -196,8 +196,7 @@ entry_key_equals(const void *a_, const void *b_)
       return false;
 
    for (unsigned i = 0; i < a->offset_def_count; i++) {
-      if (a->offset_defs[i].def != b->offset_defs[i].def ||
-          a->offset_defs[i].comp != b->offset_defs[i].comp)
+      if (!nir_scalar_equal(a->offset_defs[i], b->offset_defs[i]))
          return false;
    }
 
@@ -326,8 +325,7 @@ add_to_entry_key(nir_scalar *offset_defs, uint64_t *offset_defs_mul,
          offset_defs[i] = def;
          offset_defs_mul[i] = mul;
          return 1;
-      } else if (def.def == offset_defs[i].def &&
-                 def.comp == offset_defs[i].comp) {
+      } else if (nir_scalar_equal(def, offset_defs[i])) {
          /* merge with offset_def at i */
          offset_defs_mul[i] += mul;
          return 0;

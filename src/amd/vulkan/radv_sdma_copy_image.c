@@ -22,6 +22,7 @@
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#include "util/macros.h"
 #include "util/u_memory.h"
 #include "radv_cs.h"
 #include "radv_private.h"
@@ -41,21 +42,29 @@ radv_sdma_v4_v5_copy_image_to_buffer(struct radv_device *device, struct radeon_c
 
    /* Linear -> linear sub-window copy. */
    if (image->planes[0].surface.is_linear) {
-      ASSERTED unsigned cdw_max = radeon_check_space(device->ws, cs, 7);
+      bool is_v5_2 = device->physical_device->rad_info.gfx_level >= GFX10_3;
       uint64_t bytes = (uint64_t)src_pitch * copy_height * bpp;
+      uint32_t chunk_size = 1u << (is_v5_2 ? 30 : 22);
+      uint32_t chunk_count = DIV_ROUND_UP(bytes, chunk_size);
 
-      if (!(bytes < (1u << 22)))
-         return false;
+      ASSERTED unsigned cdw_max = radeon_check_space(device->ws, cs, 7 * chunk_count);
 
       src_address += image->planes[0].surface.u.gfx9.offset[0];
 
-      radeon_emit(cs, CIK_SDMA_PACKET(CIK_SDMA_OPCODE_COPY, CIK_SDMA_COPY_SUB_OPCODE_LINEAR, (tmz ? 4 : 0)));
-      radeon_emit(cs, bytes - 1);
-      radeon_emit(cs, 0);
-      radeon_emit(cs, src_address);
-      radeon_emit(cs, src_address >> 32);
-      radeon_emit(cs, dst_address);
-      radeon_emit(cs, dst_address >> 32);
+      for (int i = 0; i < chunk_count; i++) {
+         uint32_t size = MIN2(chunk_size, bytes);
+         radeon_emit(cs, CIK_SDMA_PACKET(CIK_SDMA_OPCODE_COPY, CIK_SDMA_COPY_SUB_OPCODE_LINEAR, (tmz ? 4 : 0)));
+         radeon_emit(cs, size - 1);
+         radeon_emit(cs, 0);
+         radeon_emit(cs, src_address);
+         radeon_emit(cs, src_address >> 32);
+         radeon_emit(cs, dst_address);
+         radeon_emit(cs, dst_address >> 32);
+
+         src_address += size;
+         dst_address += size;
+         bytes -= size;
+      }
 
       assert(cs->cdw <= cdw_max);
 

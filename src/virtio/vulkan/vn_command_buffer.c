@@ -2340,3 +2340,17 @@ vn_CmdPushDescriptorSetWithTemplateKHR(
 
    mtx_unlock(&templ->mutex);
 }
+
+void
+vn_CmdSetVertexInputEXT(
+   VkCommandBuffer commandBuffer,
+   uint32_t vertexBindingDescriptionCount,
+   const VkVertexInputBindingDescription2EXT *pVertexBindingDescriptions,
+   uint32_t vertexAttributeDescriptionCount,
+   const VkVertexInputAttributeDescription2EXT *pVertexAttributeDescriptions)
+{
+   VN_CMD_ENQUEUE(vkCmdSetVertexInputEXT, commandBuffer,
+                  vertexBindingDescriptionCount, pVertexBindingDescriptions,
+                  vertexAttributeDescriptionCount,
+                  pVertexAttributeDescriptions);
+}

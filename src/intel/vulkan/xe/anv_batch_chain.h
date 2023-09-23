@@ -36,7 +36,7 @@ struct anv_utrace_submit;
 
 VkResult
 xe_execute_simple_batch(struct anv_queue *queue, struct anv_bo *batch_bo,
-                        uint32_t batch_bo_size);
+                        uint32_t batch_bo_size, bool is_companion_rcs_batch);
 VkResult
 xe_queue_exec_locked(struct anv_queue *queue,
                      uint32_t wait_count,

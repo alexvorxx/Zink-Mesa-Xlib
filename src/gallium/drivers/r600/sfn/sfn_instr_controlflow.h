@@ -40,7 +40,6 @@ public:
       cf_loop_end,
       cf_loop_break,
       cf_loop_continue,
-      cf_stream_write,
       cf_wait_ack
    };
 

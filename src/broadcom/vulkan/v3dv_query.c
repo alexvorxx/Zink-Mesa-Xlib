@@ -1382,7 +1382,7 @@ get_set_query_availability_cs()
     * ever change any of these parameters we need to update how we compute the
     * query index here.
     */
-   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b, 32), 0);
+   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b), 0);
 
    nir_def *offset =
       nir_load_push_constant(&b, 1, 32, nir_imm_int(&b, 0), .base = 0, .range = 4);
@@ -1446,7 +1446,7 @@ get_reset_occlusion_query_cs()
     * ever change any of these parameters we need to update how we compute the
     * query index here.
     */
-   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b, 32), 0);
+   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b), 0);
 
    nir_def *avail_offset =
       nir_load_push_constant(&b, 1, 32, nir_imm_int(&b, 0), .base = 0, .range = 4);
@@ -1523,7 +1523,7 @@ get_copy_query_results_cs(VkQueryResultFlags flags)
     * ever change any of these parameters we need to update how we compute the
     * query index here.
     */
-   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b, 32), 0);
+   nir_def *wg_id = nir_channel(&b, nir_load_workgroup_id(&b), 0);
    nir_def *query_idx = nir_iadd(&b, base_query_idx, wg_id);
 
    /* Read query availability if needed */

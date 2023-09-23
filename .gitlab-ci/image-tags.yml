@@ -7,10 +7,10 @@
 
 variables:
    DEBIAN_X86_64_BUILD_BASE_IMAGE: "debian/x86_64_build-base"
-   DEBIAN_BASE_TAG: "2023-08-03-mold"
+   DEBIAN_BASE_TAG: "2023-08-30-bindgen-cli"
 
    DEBIAN_X86_64_BUILD_IMAGE_PATH: "debian/x86_64_build"
-   DEBIAN_BUILD_TAG: "2023-06-24-agility-711"
+   DEBIAN_BUILD_TAG: "2023-09-14-bindgen-cli"
 
    DEBIAN_X86_64_BUILD_MINGW_IMAGE_PATH: "debian/x86_64_build-mingw"
    DEBIAN_BUILD_MINGW_TAG: "2023-05-25-bookworm"
@@ -21,14 +21,14 @@ variables:
    DEBIAN_X86_64_TEST_IMAGE_VK_PATH: "debian/x86_64_test-vk"
    DEBIAN_X86_64_TEST_ANDROID_IMAGE_PATH: "debian/x86_64_test-android"
 
-   DEBIAN_X86_64_TEST_ANDROID_TAG: "2023-08-20-deqp-wide_color"
-   DEBIAN_X86_64_TEST_GL_TAG: "2023-08-20-deqp-wide_color"
-   DEBIAN_X86_64_TEST_VK_TAG: "2023-08-03-deqp-mold"
+   DEBIAN_X86_64_TEST_ANDROID_TAG: "2023-09-01-deqp-snorm"
+   DEBIAN_X86_64_TEST_GL_TAG: "2023-09-10-piglit-f7db20b0"
+   DEBIAN_X86_64_TEST_VK_TAG: "2023-09-10-piglit-f7db20b0"
 
    ALPINE_X86_64_BUILD_TAG: "2023-05-01-3.18-bump-1"
    ALPINE_X86_64_LAVA_SSH_TAG: "2023-06-26-first-version"
    FEDORA_X86_64_BUILD_TAG: "2023-07-26-meson-1.2"
-   KERNEL_ROOTFS_TAG: "2023-08-20-deqp-wide_color"
+   KERNEL_ROOTFS_TAG: "2023-09-10-piglit-f7db20b0"
    KERNEL_TAG: "v6.4.12-for-mesa-ci-f6b4ad45f48d"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"

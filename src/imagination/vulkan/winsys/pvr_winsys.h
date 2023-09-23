@@ -111,11 +111,6 @@ enum pvr_winsys_bo_type {
  * accessible to the Parameter Manager unit and firmware processor.
  */
 #define PVR_WINSYS_BO_FLAG_PM_FW_PROTECT BITFIELD_BIT(2U)
-/**
- * \brief Flag passed to #pvr_winsys_ops.buffer_create to indicate that the
- * buffer should be zeroed at allocation time.
- */
-#define PVR_WINSYS_BO_FLAG_ZERO_ON_ALLOC BITFIELD_BIT(3U)
 
 struct pvr_winsys_bo {
    struct pvr_winsys *ws;

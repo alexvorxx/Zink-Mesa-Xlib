@@ -1375,8 +1375,8 @@ virtgpu_init_renderer_info(struct virtgpu *gpu)
    }
 
    info->has_dma_buf_import = true;
-   /* TODO drm_syncobj */
-   info->has_external_sync = false;
+   /* TODO switch from emulation to drm_syncobj */
+   info->has_external_sync = true;
 
    info->has_implicit_fencing = false;
 

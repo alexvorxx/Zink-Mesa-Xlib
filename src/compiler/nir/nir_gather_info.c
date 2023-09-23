@@ -31,18 +31,16 @@ static bool
 src_is_invocation_id(const nir_src *src)
 {
    nir_scalar s = nir_scalar_resolved(src->ssa, 0);
-   return s.def->parent_instr->type == nir_instr_type_intrinsic &&
-          nir_instr_as_intrinsic(s.def->parent_instr)->intrinsic ==
-             nir_intrinsic_load_invocation_id;
+   return nir_scalar_is_intrinsic(s) &&
+          nir_scalar_intrinsic_op(s) == nir_intrinsic_load_invocation_id;
 }
 
 static bool
 src_is_local_invocation_index(const nir_src *src)
 {
    nir_scalar s = nir_scalar_resolved(src->ssa, 0);
-   return s.def->parent_instr->type == nir_instr_type_intrinsic &&
-          nir_instr_as_intrinsic(s.def->parent_instr)->intrinsic ==
-             nir_intrinsic_load_local_invocation_index;
+   return nir_scalar_is_intrinsic(s) &&
+          nir_scalar_intrinsic_op(s) == nir_intrinsic_load_local_invocation_index;
 }
 
 static void
@@ -293,7 +291,7 @@ try_mask_partial_io(nir_shader *shader, nir_variable *var,
       return false;
    }
 
-   unsigned len = glsl_count_attribute_slots(deref->type, false);
+   unsigned len = nir_deref_count_slots(deref, var);
    set_io_mask(shader, var, offset, len, deref, is_output_read);
    return true;
 }
@@ -486,6 +484,15 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
          break;
 
       var->data.fb_fetch_output = true;
+      shader->info.fs.uses_fbfetch_output = true;
+      break;
+   }
+
+   case nir_intrinsic_bindless_image_load: {
+      enum glsl_sampler_dim dim = nir_intrinsic_image_dim(instr);
+      if (dim != GLSL_SAMPLER_DIM_SUBPASS &&
+          dim != GLSL_SAMPLER_DIM_SUBPASS_MS)
+         break;
       shader->info.fs.uses_fbfetch_output = true;
       break;
    }
@@ -828,21 +835,14 @@ gather_tex_info(nir_tex_instr *instr, nir_shader *shader)
 static void
 gather_alu_info(nir_alu_instr *instr, nir_shader *shader)
 {
-   switch (instr->op) {
-   case nir_op_fddx:
-   case nir_op_fddy:
-      shader->info.uses_fddx_fddy = true;
-      FALLTHROUGH;
-   case nir_op_fddx_fine:
-   case nir_op_fddy_fine:
-   case nir_op_fddx_coarse:
-   case nir_op_fddy_coarse:
-      if (shader->info.stage == MESA_SHADER_FRAGMENT)
-         shader->info.fs.needs_quad_helper_invocations = true;
-      break;
-   default:
-      break;
+   if (nir_op_is_derivative(instr->op) &&
+       shader->info.stage == MESA_SHADER_FRAGMENT) {
+
+      shader->info.fs.needs_quad_helper_invocations = true;
    }
+
+   if (instr->op == nir_op_fddx || instr->op == nir_op_fddy)
+      shader->info.uses_fddx_fddy = true;
 
    const nir_op_info *info = &nir_op_infos[instr->op];
 

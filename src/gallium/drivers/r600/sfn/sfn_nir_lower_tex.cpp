@@ -159,14 +159,14 @@ lower_txl_txf_array_or_cube(nir_builder *b, nir_tex_instr *tex)
    assert(lod_idx >= 0 || bias_idx >= 0);
 
    nir_def *size = nir_i2f32(b, nir_get_texture_size(b, tex));
-   nir_def *lod = (lod_idx >= 0) ? nir_ssa_for_src(b, tex->src[lod_idx].src, 1)
+   nir_def *lod = (lod_idx >= 0) ? tex->src[lod_idx].src.ssa
                                      : nir_get_texture_lod(b, tex);
 
    if (bias_idx >= 0)
-      lod = nir_fadd(b, lod, nir_ssa_for_src(b, tex->src[bias_idx].src, 1));
+      lod = nir_fadd(b, lod, tex->src[bias_idx].src.ssa);
 
    if (min_lod_idx >= 0)
-      lod = nir_fmax(b, lod, nir_ssa_for_src(b, tex->src[min_lod_idx].src, 1));
+      lod = nir_fmax(b, lod, tex->src[min_lod_idx].src.ssa);
 
    /* max lod? */
 
@@ -282,11 +282,11 @@ r600_nir_lower_cube_to_2darray_impl(nir_builder *b, nir_instr *instr, void *_opt
    if (tex->op == nir_texop_txd) {
       int ddx_idx = nir_tex_instr_src_index(tex, nir_tex_src_ddx);
       nir_src_rewrite(&tex->src[ddx_idx].src,
-                      nir_fmul_imm(b, nir_ssa_for_src(b, tex->src[ddx_idx].src, 3), 0.5));
+                      nir_fmul_imm(b, tex->src[ddx_idx].src.ssa, 0.5));
 
       int ddy_idx = nir_tex_instr_src_index(tex, nir_tex_src_ddy);
       nir_src_rewrite(&tex->src[ddy_idx].src,
-                      nir_fmul_imm(b, nir_ssa_for_src(b, tex->src[ddy_idx].src, 3), 0.5));
+                      nir_fmul_imm(b, tex->src[ddy_idx].src.ssa, 0.5));
    }
 
    auto new_coord = nir_vec3(b, nir_channel(b, xy, 0), nir_channel(b, xy, 1), z);

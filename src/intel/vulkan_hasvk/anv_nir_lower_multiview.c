@@ -54,7 +54,7 @@ build_instance_id(struct lower_multiview_state *state)
    if (state->instance_id == NULL) {
       nir_builder *b = &state->builder;
 
-      b->cursor = nir_before_block(nir_start_block(b->impl));
+      b->cursor = nir_before_impl(b->impl);
 
       /* We use instancing for implementing multiview.  The actual instance id
        * is given by dividing instance_id by the number of views in this
@@ -76,7 +76,7 @@ build_view_index(struct lower_multiview_state *state)
    if (state->view_index == NULL) {
       nir_builder *b = &state->builder;
 
-      b->cursor = nir_before_block(nir_start_block(b->impl));
+      b->cursor = nir_before_impl(b->impl);
 
       assert(state->view_mask != 0);
       if (util_bitcount(state->view_mask) == 1) {

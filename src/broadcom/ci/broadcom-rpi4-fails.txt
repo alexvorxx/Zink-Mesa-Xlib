@@ -524,3 +524,6 @@ spec@intel_performance_query@intel_performance_query-issue_2235,Fail
 
 # CI uses 1.3.5.x, but driver expects 1.3.6.x.
 dEQP-VK.api.driver_properties.conformance_version,Fail
+
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_nv21,Fail
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_vyuy,Fail

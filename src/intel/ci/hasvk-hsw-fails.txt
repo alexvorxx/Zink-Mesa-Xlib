@@ -1738,3 +1738,24 @@ dEQP-VK.pipeline.monolithic.sampler.view_type.3d.format.d32_sfloat_s8_uint.addre
 dEQP-VK.pipeline.monolithic.sampler.view_type.3d.format.d32_sfloat_s8_uint.address_modes.uvw_mode_mirrored_repeat_mode_repeat_mode_clamp_to_border_stencil,Fail
 dEQP-VK.pipeline.monolithic.sampler.view_type.3d.format.d32_sfloat_s8_uint.address_modes.uvw_mode_repeat_mode_clamp_to_border_mode_clamp_to_edge_stencil,Fail
 dEQP-VK.pipeline.monolithic.sampler.view_type.3d.format.d32_sfloat_s8_uint.address_modes.uvw_mode_repeat_mode_mirrored_repeat_mode_clamp_to_border_stencil,Fail
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/9432
+dEQP-VK.graphicsfuzz.spv-access-chains,Fail
+dEQP-VK.graphicsfuzz.spv-copy-object,Fail
+dEQP-VK.graphicsfuzz.spv-dead-break-and-unroll,Fail
+dEQP-VK.graphicsfuzz.spv-stable-maze-O-dead-code,Fail
+dEQP-VK.graphicsfuzz.spv-stable-maze-O-memory-accesses,Fail
+dEQP-VK.graphicsfuzz.spv-stable-maze-flatten-copy-composite,Fail
+dEQP-VK.reconvergence.subgroup_uniform_control_flow_ballot.compute.nesting4.6.49,Fail
+dEQP-VK.reconvergence.subgroup_uniform_control_flow_ballot.compute.nesting4.7.31,Fail
+dEQP-VK.reconvergence.subgroup_uniform_control_flow_elect.compute.nesting2.1.17,Fail
+dEQP-VK.reconvergence.workgroup_uniform_control_flow_ballot.compute.nesting4.1.36,Fail
+dEQP-VK.reconvergence.workgroup_uniform_control_flow_elect.compute.nesting3.1.35,Fail
+dEQP-VK.reconvergence.workgroup_uniform_control_flow_elect.compute.nesting3.2.33,Fail
+dEQP-VK.reconvergence.workgroup_uniform_control_flow_elect.compute.nesting3.5.17,Fail
+dEQP-VK.reconvergence.workgroup_uniform_control_flow_elect.compute.nesting4.7.24,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.32bit.geom.xfb.rast.line_strip_with_adjacency.pgq_default_xfb_0.single_draw,Fail
+dEQP-VK.transform_feedback.simple.query_copy_stride_zero_triangle_strip_0_6_64bits,Fail
+dEQP-VK.transform_feedback.simple.query_omit_write_line_strip_with_adjacency_0_251_64bits,Fail
+dEQP-VK.transform_feedback.simple.winding_line_strip_with_adjacency_8,Fail
+dEQP-VK.transform_feedback.simple.xfb_clipdistance_beginqueryindexed_streamid_0_1_512,Fail

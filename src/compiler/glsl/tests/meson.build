@@ -55,7 +55,7 @@ test(
     gnu_symbol_visibility : 'hidden',
     include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_glsl],
     link_with : [libglsl, libglsl_util],
-    dependencies : [dep_thread, idep_gtest, idep_mesautil],
+    dependencies : [dep_thread, idep_gtest, idep_mesautil, idep_compiler],
   ),
   suite : ['compiler', 'glsl'],
   protocol : 'gtest',

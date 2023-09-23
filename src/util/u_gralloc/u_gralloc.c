@@ -23,6 +23,7 @@ static const struct u_grallocs {
    enum u_gralloc_type type;
    struct u_gralloc *(*create)();
 } u_grallocs[] = {
+   /* Prefer the CrOS API as it is significantly faster than IMapper4 */
    {.type = U_GRALLOC_TYPE_CROS, .create = u_gralloc_cros_api_create},
 #ifdef USE_IMAPPER4_METADATA_API
    {.type = U_GRALLOC_TYPE_GRALLOC4, .create = u_gralloc_imapper_api_create},
@@ -57,6 +58,7 @@ u_gralloc_create(enum u_gralloc_type type)
          assert(u_gralloc_cache[type].u_gralloc->ops.get_buffer_basic_info);
          assert(u_gralloc_cache[type].u_gralloc->ops.destroy);
 
+         u_gralloc_cache[type].u_gralloc->type = u_grallocs[i].type;
          u_gralloc_cache[type].refcount = 1;
 
          out_gralloc = u_gralloc_cache[type].u_gralloc;
@@ -71,7 +73,7 @@ out:
 }
 
 void
-u_gralloc_destroy(struct u_gralloc **gralloc NONNULL)
+u_gralloc_destroy(struct u_gralloc **gralloc)
 {
    int i;
 
@@ -99,11 +101,10 @@ u_gralloc_destroy(struct u_gralloc **gralloc NONNULL)
    *gralloc = NULL;
 }
 
-inline int
-u_gralloc_get_buffer_basic_info(struct u_gralloc *gralloc NONNULL,
-                                struct u_gralloc_buffer_handle *hnd NONNULL,
-                                struct u_gralloc_buffer_basic_info *out
-                                   NONNULL)
+int
+u_gralloc_get_buffer_basic_info(struct u_gralloc *gralloc,
+                                struct u_gralloc_buffer_handle *hnd,
+                                struct u_gralloc_buffer_basic_info *out)
 {
    struct u_gralloc_buffer_basic_info info = {0};
    int ret;
@@ -118,11 +119,10 @@ u_gralloc_get_buffer_basic_info(struct u_gralloc *gralloc NONNULL,
    return 0;
 }
 
-inline int
-u_gralloc_get_buffer_color_info(struct u_gralloc *gralloc NONNULL,
-                                struct u_gralloc_buffer_handle *hnd NONNULL,
-                                struct u_gralloc_buffer_color_info *out
-                                   NONNULL)
+int
+u_gralloc_get_buffer_color_info(struct u_gralloc *gralloc,
+                                struct u_gralloc_buffer_handle *hnd,
+                                struct u_gralloc_buffer_color_info *out)
 {
    struct u_gralloc_buffer_color_info info = {0};
    int ret;
@@ -140,12 +140,18 @@ u_gralloc_get_buffer_color_info(struct u_gralloc *gralloc NONNULL,
    return 0;
 }
 
-inline int
-u_gralloc_get_front_rendering_usage(struct u_gralloc *gralloc NONNULL,
-                                    uint64_t *out_usage NONNULL)
+int
+u_gralloc_get_front_rendering_usage(struct u_gralloc *gralloc,
+                                    uint64_t *out_usage)
 {
    if (!gralloc->ops.get_front_rendering_usage)
       return -ENOTSUP;
 
    return gralloc->ops.get_front_rendering_usage(gralloc, out_usage);
+}
+
+int
+u_gralloc_get_type(struct u_gralloc *gralloc)
+{
+   return gralloc->type;
 }

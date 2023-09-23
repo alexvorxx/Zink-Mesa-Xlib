@@ -57,7 +57,7 @@ lower_ubo_to_uniform(nir_builder *b, nir_instr *instr, void *_data)
    b->cursor = nir_before_instr(instr);
 
    /* Undo the operations done in nir_lower_uniforms_to_ubo. */
-   nir_def *ubo_offset = nir_ssa_for_src(b, intr->src[1], 1);
+   nir_def *ubo_offset = intr->src[1].ssa;
    nir_def *range_base = nir_imm_int(b, nir_intrinsic_range_base(intr));
 
    nir_def *uniform_offset =

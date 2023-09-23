@@ -128,13 +128,13 @@ static const driOptionDescription radv_dri_options[] = {
       DRI_CONF_RADV_ENABLE_MRT_OUTPUT_NAN_FIXUP(false)
       DRI_CONF_RADV_DISABLE_SHRINK_IMAGE_STORE(false)
       DRI_CONF_RADV_NO_DYNAMIC_BOUNDS(false)
-      DRI_CONF_RADV_ABSOLUTE_DEPTH_BIAS(false)
       DRI_CONF_RADV_OVERRIDE_UNIFORM_OFFSET_ALIGNMENT(0)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
       DRI_CONF_OVERRIDE_VRAM_SIZE()
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
+      DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(false)
       DRI_CONF_RADV_ZERO_VRAM(false)
       DRI_CONF_RADV_LOWER_DISCARD_TO_DEMOTE(false)
       DRI_CONF_RADV_INVARIANT_GEOM(false)
@@ -167,8 +167,6 @@ radv_init_dri_options(struct radv_instance *instance)
    instance->enable_mrt_output_nan_fixup = driQueryOptionb(&instance->dri_options, "radv_enable_mrt_output_nan_fixup");
 
    instance->disable_shrink_image_store = driQueryOptionb(&instance->dri_options, "radv_disable_shrink_image_store");
-
-   instance->absolute_depth_bias = driQueryOptionb(&instance->dri_options, "radv_absolute_depth_bias");
 
    instance->disable_tc_compat_htile_in_general =
       driQueryOptionb(&instance->dri_options, "radv_disable_tc_compat_htile_general");

@@ -1,3 +1,7 @@
+/*
+ * Copyright © 2022 Mary Guillemard
+ * SPDX-License-Identifier: MIT
+ */
 #include "mme_runner.h"
 
 #include "mme_fermi_sim.h"

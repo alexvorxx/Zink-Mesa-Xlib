@@ -334,7 +334,7 @@ hs_output_lds_offset(nir_builder *b,
    }
 
    if (per_vertex) {
-      nir_def *vertex_index = nir_ssa_for_src(b, *nir_get_io_arrayed_index_src(intrin), 1);
+      nir_def *vertex_index = nir_get_io_arrayed_index_src(intrin)->ssa;
       nir_def *vertex_index_off = nir_imul_imm(b, vertex_index, output_vertex_size);
 
       off = nir_iadd_nuw(b, off, vertex_index_off);
@@ -361,7 +361,7 @@ hs_per_vertex_output_vmem_offset(nir_builder *b,
    nir_def *rel_patch_id = nir_load_tess_rel_patch_id_amd(b);
    nir_def *patch_offset = nir_imul(b, rel_patch_id, nir_imul_imm(b, out_vertices_per_patch, 16u));
 
-   nir_def *vertex_index = nir_ssa_for_src(b, *nir_get_io_arrayed_index_src(intrin), 1);
+   nir_def *vertex_index = nir_get_io_arrayed_index_src(intrin)->ssa;
    nir_def *vertex_index_off = nir_imul_imm(b, vertex_index, 16u);
 
    return nir_iadd_nuw(b, nir_iadd_nuw(b, patch_offset, vertex_index_off), io_offset);
@@ -777,7 +777,7 @@ reconstruct_tess_factor_outputs(nir_shader *shader, lower_tess_io_state *st)
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_builder builder = nir_builder_create(impl);
    nir_builder *b = &builder;
-   b->cursor = nir_after_cf_list(&impl->body);
+   b->cursor = nir_after_impl(impl);
 
    if (st->tcs_tess_level_outer_mask) {
       nir_def *val = nir_load_var(b, st->tcs_tess_level_outer);

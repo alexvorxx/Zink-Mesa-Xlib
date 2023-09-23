@@ -377,8 +377,6 @@ static VkResult pvr_rt_vheap_rtc_data_init(struct pvr_device *device,
                                            struct pvr_rt_dataset *rt_dataset,
                                            uint32_t layers)
 {
-   const uint64_t bo_flags = PVR_BO_ALLOC_FLAG_GPU_UNCACHED |
-                             PVR_BO_ALLOC_FLAG_ZERO_ON_ALLOC;
    uint64_t vheap_size;
    uint32_t alignment;
    uint64_t rtc_size;
@@ -407,7 +405,7 @@ static VkResult pvr_rt_vheap_rtc_data_init(struct pvr_device *device,
                          device->heaps.general_heap,
                          vheap_size + rtc_size,
                          alignment,
-                         bo_flags,
+                         PVR_BO_ALLOC_FLAG_GPU_UNCACHED,
                          &rt_dataset->vheap_rtc_bo);
    if (result != VK_SUCCESS)
       return result;
@@ -482,8 +480,6 @@ static VkResult pvr_rt_tpc_data_init(struct pvr_device *device,
                                      const struct pvr_rt_mtile_info *mtile_info,
                                      uint32_t layers)
 {
-   const uint64_t bo_flags = PVR_BO_ALLOC_FLAG_GPU_UNCACHED |
-                             PVR_BO_ALLOC_FLAG_ZERO_ON_ALLOC;
    uint64_t tpc_size;
 
    pvr_rt_get_tail_ptr_stride_size(device,
@@ -497,7 +493,7 @@ static VkResult pvr_rt_tpc_data_init(struct pvr_device *device,
                        device->heaps.general_heap,
                        tpc_size,
                        PVRX(CR_TE_TPC_ADDR_BASE_ALIGNMENT),
-                       bo_flags,
+                       PVR_BO_ALLOC_FLAG_GPU_UNCACHED,
                        &rt_dataset->tpc_bo);
 }
 

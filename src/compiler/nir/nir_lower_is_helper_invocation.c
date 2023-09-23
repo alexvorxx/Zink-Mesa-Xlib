@@ -100,7 +100,7 @@ nir_lower_is_helper_invocation(nir_shader *shader)
 
    nir_function_impl *entrypoint = nir_shader_get_entrypoint(shader);
 
-   nir_builder b = nir_builder_at(nir_before_cf_list(&entrypoint->body));
+   nir_builder b = nir_builder_at(nir_before_impl(entrypoint));
 
    nir_variable *is_helper = nir_local_variable_create(entrypoint,
                                                        glsl_bool_type(),

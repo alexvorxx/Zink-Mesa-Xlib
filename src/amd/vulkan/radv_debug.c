@@ -409,9 +409,9 @@ static void
 radv_dump_vertex_descriptors(const struct radv_device *device, const struct radv_graphics_pipeline *pipeline, FILE *f)
 {
    struct radv_shader *vs = radv_get_shader(pipeline->base.shaders, MESA_SHADER_VERTEX);
-   void *ptr = (uint64_t *)device->trace_id_ptr;
+   uint64_t *ptr = (uint64_t *)device->trace_id_ptr;
    uint32_t count = util_bitcount(vs->info.vs.vb_desc_usage_mask);
-   uint32_t *vb_ptr = &((uint32_t *)ptr)[3];
+   uint32_t *vb_ptr = *(uint32_t **)(ptr + 3);
 
    if (!count)
       return;

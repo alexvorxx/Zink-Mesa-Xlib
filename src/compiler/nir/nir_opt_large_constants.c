@@ -312,7 +312,7 @@ build_small_constant_load(nir_builder *b, nir_deref_instr *deref,
    nir_def *imm = nir_imm_intN_t(b, constant->data, constant->bit_size);
 
    assert(deref->deref_type == nir_deref_type_array);
-   nir_def *index = nir_ssa_for_src(b, deref->arr.index, 1);
+   nir_def *index = deref->arr.index.ssa;
 
    nir_def *shift = nir_imul_imm(b, index, constant->bit_stride);
 

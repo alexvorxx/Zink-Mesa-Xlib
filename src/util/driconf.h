@@ -394,6 +394,10 @@
    DRI_CONF_OPT_B(vk_wsi_force_bgra8_unorm_first, def, \
                   "Force vkGetPhysicalDeviceSurfaceFormatsKHR to return VK_FORMAT_B8G8R8A8_UNORM as the first format")
 
+#define DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(def) \
+   DRI_CONF_OPT_B(vk_wsi_force_swapchain_to_current_extent, def, \
+                  "Force VkSwapchainCreateInfoKHR::imageExtent to be VkSurfaceCapabilities2KHR::currentExtent")
+
 #define DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(def) \
    DRI_CONF_OPT_I(vk_x11_override_min_image_count, def, 0, 999, \
                   "Override the VkSurfaceCapabilitiesKHR::minImageCount (0 = no override)")
@@ -464,6 +468,10 @@
 #define DRI_CONF_ALLOW_MULTISAMPLED_COPYTEXIMAGE(def) \
    DRI_CONF_OPT_B(allow_multisampled_copyteximage, def, \
                   "Allow CopyTexSubImage and other to copy sampled framebuffer")
+
+#define DRI_CONF_NO_FP16(def) \
+   DRI_CONF_OPT_B(no_fp16, def, \
+                  "Disable 16-bit float support")
 
 /**
  * \brief Initialization configuration options
@@ -588,10 +596,6 @@
 #define DRI_CONF_RADV_DISABLE_SHRINK_IMAGE_STORE(def) \
    DRI_CONF_OPT_B(radv_disable_shrink_image_store, def, \
                   "Disabling shrinking of image stores based on the format")
-
-#define DRI_CONF_RADV_ABSOLUTE_DEPTH_BIAS(def) \
-   DRI_CONF_OPT_B(radv_absolute_depth_bias, def, \
-                  "Consider depthBiasConstantFactor an absolute depth bias (like D3D9)")
 
 #define DRI_CONF_RADV_OVERRIDE_UNIFORM_OFFSET_ALIGNMENT(def) \
    DRI_CONF_OPT_I(radv_override_uniform_offset_alignment, def, 0, 128, \

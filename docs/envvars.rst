@@ -393,9 +393,12 @@ Core Mesa environment variables
    and Vulkan (in this case "select" means the GPU will be first in the reported
    physical devices list). The supported syntaxes are:
 
-   - ``DRI_PRIME=1``: selects the first non-default GPU.
+   - ``DRI_PRIME=N``: selects the Nth non-default GPU (N > 0).
    - ``DRI_PRIME=pci-0000_02_00_0``: selects the GPU connected to this PCIe bus
-   - ``DRI_PRIME=vendor_id:device_id``: selects the first GPU matching these ids
+   - ``DRI_PRIME=vendor_id:device_id``: selects the first GPU matching these ids.
+
+   For Vulkan it's possible to append ``!``, in which case only the selected GPU
+   will be exposed to the application (eg: DRI_PRIME=1!).
 
    .. note::
 
@@ -801,6 +804,8 @@ Vulkan mesa device select layer environment variables
    when set to "vid:did" number from PCI device. That PCI device is
    selected as default. The default device is returned as the first
    device in vkEnumeratePhysicalDevices API.
+   Using "vid:did!" will have the same effect as using the
+   ``MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE`` variable.
 
 .. envvar:: MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE
 
@@ -942,6 +947,33 @@ Gallium environment variables
 Clover environment variables
 ----------------------------
 
+.. envvar:: CLOVER_DEVICE_TYPE
+
+   allows to overwrite the device type of devices. Possible values are
+   ``accelerator``, ``cpu``, ``custom`` and ``gpu``
+
+.. envvar:: CLOVER_DEVICE_VERSION_OVERRIDE
+
+   overwrites the auto detected OpenCL version of a device. Possible values:
+   ``1.0``
+   ``1.1``
+   ``1.2``
+   ``2.0``
+   ``2.1``
+   ``2.2``
+   ``3.0``
+
+.. envvar:: CLOVER_DEVICE_CLC_VERSION_OVERRIDE
+
+   overwrites the auto detected CLC version. Possible values:
+   ``1.0``
+   ``1.1``
+   ``1.2``
+   ``2.0``
+   ``2.1``
+   ``2.2``
+   ``3.0``
+
 .. envvar:: CLOVER_EXTRA_BUILD_OPTIONS
 
    allows specifying additional compiler and linker options. Specified
@@ -961,6 +993,11 @@ Clover environment variables
    ``clLinkProgram``.
    
 .. _rusticl-env-var:
+
+.. envvar:: IRIS_ENABLE_CLOVER
+
+   allows to enable experimental Clover NIR support with the iris driver if
+   set to 1 or true.
 
 Rusticl environment variables
 -----------------------------

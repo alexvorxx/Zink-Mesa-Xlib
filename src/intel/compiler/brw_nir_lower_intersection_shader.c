@@ -55,7 +55,7 @@ lower_any_hit_for_intersection(nir_shader *any_hit)
       ralloc_array(any_hit, nir_parameter, ARRAY_SIZE(params));
    memcpy(impl->function->params, params, sizeof(params));
 
-   nir_builder build = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder build = nir_builder_at(nir_before_impl(impl));
    nir_builder *b = &build;
 
    nir_def *commit_ptr = nir_load_param(b, 0);
@@ -154,7 +154,7 @@ brw_nir_lower_intersection_shader(nir_shader *intersection,
 
    nir_function_impl *impl = nir_shader_get_entrypoint(intersection);
 
-   nir_builder build = nir_builder_at(nir_before_cf_list(&impl->body));
+   nir_builder build = nir_builder_at(nir_before_impl(impl));
    nir_builder *b = &build;
 
    nir_def *t_addr = brw_nir_rt_mem_hit_addr(b, false /* committed */);
@@ -193,8 +193,8 @@ brw_nir_lower_intersection_shader(nir_shader *intersection,
             switch (intrin->intrinsic) {
             case nir_intrinsic_report_ray_intersection: {
                b->cursor = nir_instr_remove(&intrin->instr);
-               nir_def *hit_t = nir_ssa_for_src(b, intrin->src[0], 1);
-               nir_def *hit_kind = nir_ssa_for_src(b, intrin->src[1], 1);
+               nir_def *hit_t = intrin->src[0].ssa;
+               nir_def *hit_kind = intrin->src[1].ssa;
                nir_def *min_t = nir_load_ray_t_min(b);
                nir_def *max_t = nir_load_global(b, t_addr, 4, 1, 32);
 

@@ -340,8 +340,7 @@ insert_overflow_check(nir_shader *nir, struct agx_xfb_key *key)
 
    /* Extract the current transform feedback shader */
    nir_cf_list list;
-   nir_cf_extract(&list, nir_before_block(nir_start_block(impl)),
-                  nir_after_block(nir_impl_last_block(impl)));
+   nir_cf_extract(&list, nir_before_impl(impl), nir_after_impl(impl));
 
    /* Get a builder for the (now empty) shader */
    nir_builder b = nir_builder_at(nir_after_block(nir_start_block(impl)));
@@ -385,7 +384,7 @@ lower_xfb_output(nir_builder *b, nir_intrinsic_instr *intr,
 
    nir_def *value = nir_channels(
       b, intr->src[0].ssa, BITFIELD_MASK(num_components) << start_component);
-   nir_store_global(b, addr, 4, value, BITFIELD_MASK(num_components));
+   nir_store_global(b, addr, 4, value, nir_component_mask(num_components));
 }
 
 static bool

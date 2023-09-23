@@ -337,21 +337,7 @@ nir_vec_scalars(nir_builder *build, nir_scalar *comp, unsigned num_components)
 }
 
 /**
- * Turns a nir_src into a nir_def * so it can be passed to
- * nir_build_alu()-based builder calls.
- *
- * See nir_ssa_for_alu_src() for alu instructions.
- */
-nir_def *
-nir_ssa_for_src(nir_builder *build, nir_src src, ASSERTED int num_components)
-{
-   assert(src.ssa->num_components == num_components && "now required");
-   return src.ssa;
-}
-
-/**
- * Similar to nir_ssa_for_src(), but for alu srcs, respecting the
- * nir_alu_src's swizzle.
+ * Get nir_def for an alu src, respecting the nir_alu_src's swizzle.
  */
 nir_def *
 nir_ssa_for_alu_src(nir_builder *build, nir_alu_instr *instr, unsigned srcn)

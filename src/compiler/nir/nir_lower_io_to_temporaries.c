@@ -98,7 +98,7 @@ emit_output_copies_impl(struct lower_io_state *state, nir_function_impl *impl)
          }
       }
    } else if (impl == state->entrypoint) {
-      b.cursor = nir_before_block(nir_start_block(impl));
+      b.cursor = nir_before_impl(impl);
       emit_copies(&b, &state->old_outputs, &state->new_outputs);
 
       /* For all other shader types, we need to do the copies right before
@@ -275,7 +275,7 @@ static void
 emit_input_copies_impl(struct lower_io_state *state, nir_function_impl *impl)
 {
    if (impl == state->entrypoint) {
-      nir_builder b = nir_builder_at(nir_before_block(nir_start_block(impl)));
+      nir_builder b = nir_builder_at(nir_before_impl(impl));
       emit_copies(&b, &state->old_inputs, &state->new_inputs);
       if (state->shader->info.stage == MESA_SHADER_FRAGMENT)
          fixup_interpolation(state, impl, &b);

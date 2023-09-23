@@ -392,9 +392,12 @@ static int parse_reg(const char *str)
 "dccln.all"                       return TOKEN(T_OP_DCCLN);
 "dcinv.all"                       return TOKEN(T_OP_DCINV);
 "dcflu.all"                       return TOKEN(T_OP_DCFLU);
+"ccinv"                           return TOKEN(T_OP_CCINV);
 "lock"                            return TOKEN(T_OP_LOCK);
 "unlock"                          return TOKEN(T_OP_UNLOCK);
 "alias"                           return TOKEN(T_OP_ALIAS);
+
+"print"                           return TOKEN(T_OP_PRINT);
 
 "f16"                             return TOKEN(T_TYPE_F16);
 "f32"                             return TOKEN(T_TYPE_F32);

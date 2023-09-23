@@ -1,12 +1,18 @@
+/*
+ * Copyright © 2022 Collabora Ltd. and Red Hat Inc.
+ * SPDX-License-Identifier: MIT
+ */
 #include "nvk_descriptor_set.h"
 
 #include "nvk_buffer.h"
 #include "nvk_buffer_view.h"
 #include "nvk_descriptor_set_layout.h"
 #include "nvk_device.h"
+#include "nvk_entrypoints.h"
 #include "nvk_image_view.h"
 #include "nvk_physical_device.h"
 #include "nvk_sampler.h"
+
 #include "nouveau_bo.h"
 
 static inline uint32_t

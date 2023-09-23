@@ -17,13 +17,12 @@
 
 /*
  * If a block contains phi nodes, they must come at the start of the block. If a
- * block contains control flow, it must come after a p_logical_end marker.
+ * block contains control flow, it must come at the beginning/end as applicable.
  * Therefore the form of a valid block is:
  *
  *       Control flow instructions (else)
  *       Phi nodes
  *       General instructions
- *       Logical end
  *       Control flow instructions (except else)
  *
  * Validate that this form is satisfied.
@@ -58,24 +57,12 @@ agx_validate_block_form(agx_block *block)
          break;
 
       default:
-         agx_validate_assert(state != AGX_BLOCK_STATE_CF);
-         state = AGX_BLOCK_STATE_BODY;
-         break;
-
-      case AGX_OPCODE_LOGICAL_END:
-         agx_validate_assert(state != AGX_BLOCK_STATE_CF);
-         state = AGX_BLOCK_STATE_CF;
-         break;
-
-      case AGX_OPCODE_JMP_EXEC_ANY:
-      case AGX_OPCODE_JMP_EXEC_NONE:
-      case AGX_OPCODE_POP_EXEC:
-      case AGX_OPCODE_IF_ICMP:
-      case AGX_OPCODE_WHILE_ICMP:
-      case AGX_OPCODE_IF_FCMP:
-      case AGX_OPCODE_WHILE_FCMP:
-      case AGX_OPCODE_STOP:
-         agx_validate_assert(state == AGX_BLOCK_STATE_CF);
+         if (instr_after_logical_end(I)) {
+            state = AGX_BLOCK_STATE_CF;
+         } else {
+            agx_validate_assert(state != AGX_BLOCK_STATE_CF);
+            state = AGX_BLOCK_STATE_BODY;
+         }
          break;
       }
    }
@@ -208,6 +195,34 @@ agx_validate_predecessors(agx_block *block)
    return true;
 }
 
+static bool
+agx_validate_sr(const agx_instr *I)
+{
+   bool none = (I->op == AGX_OPCODE_GET_SR);
+   bool coverage = (I->op == AGX_OPCODE_GET_SR_COVERAGE);
+   bool barrier = false; /* unused so far, will be GET_SR_BARRIER */
+
+   /* Filter get_sr instructions */
+   if (!(none || coverage || barrier))
+      return true;
+
+   switch (I->sr) {
+   case AGX_SR_ACTIVE_THREAD_INDEX_IN_QUAD:
+   case AGX_SR_ACTIVE_THREAD_INDEX_IN_SUBGROUP:
+   case AGX_SR_COVERAGE_MASK:
+   case AGX_SR_IS_ACTIVE_THREAD:
+      return coverage;
+
+   case AGX_SR_OPFIFO_CMD:
+   case AGX_SR_OPFIFO_DATA_L:
+   case AGX_SR_OPFIFO_DATA_H:
+      return barrier;
+
+   default:
+      return none;
+   }
+}
+
 void
 agx_validate(agx_context *ctx, const char *after)
 {
@@ -222,7 +237,7 @@ agx_validate(agx_context *ctx, const char *after)
       if ((int)block->index < last_index) {
          fprintf(stderr, "Out-of-order block index %d vs %d after %s\n",
                  block->index, last_index, after);
-         agx_print_block(block, stdout);
+         agx_print_block(block, stderr);
          fail = true;
       }
 
@@ -230,13 +245,13 @@ agx_validate(agx_context *ctx, const char *after)
 
       if (!agx_validate_block_form(block)) {
          fprintf(stderr, "Invalid block form after %s\n", after);
-         agx_print_block(block, stdout);
+         agx_print_block(block, stderr);
          fail = true;
       }
 
       if (!agx_validate_predecessors(block)) {
          fprintf(stderr, "Invalid loop header flag after %s\n", after);
-         agx_print_block(block, stdout);
+         agx_print_block(block, stderr);
          fail = true;
       }
    }
@@ -247,7 +262,7 @@ agx_validate(agx_context *ctx, const char *after)
       agx_foreach_instr_global(ctx, I) {
          if (!agx_validate_defs(I, defs)) {
             fprintf(stderr, "Invalid defs after %s\n", after);
-            agx_print_instr(I, stdout);
+            agx_print_instr(I, stderr);
             fail = true;
          }
       }
@@ -258,6 +273,12 @@ agx_validate(agx_context *ctx, const char *after)
    agx_foreach_instr_global(ctx, I) {
       if (!agx_validate_sources(I)) {
          fprintf(stderr, "Invalid sources form after %s\n", after);
+         agx_print_instr(I, stderr);
+         fail = true;
+      }
+
+      if (!agx_validate_sr(I)) {
+         fprintf(stderr, "Invalid SR after %s\n", after);
          agx_print_instr(I, stdout);
          fail = true;
       }

@@ -309,7 +309,7 @@ ir3_nir_lower_array_sampler_cb(struct nir_builder *b, nir_instr *instr, void *_d
    b->cursor = nir_before_instr(&tex->instr);
 
    unsigned ncomp = tex->coord_components;
-   nir_def *src = nir_ssa_for_src(b, tex->src[coord_idx].src, ncomp);
+   nir_def *src = tex->src[coord_idx].src.ssa;
 
    assume(ncomp >= 1);
    nir_def *ai = nir_channel(b, src, ncomp - 1);
@@ -366,6 +366,8 @@ ir3_finalize_nir(struct ir3_compiler *compiler, nir_shader *s)
 
    if (compiler->array_index_add_half)
       OPT_V(s, ir3_nir_lower_array_sampler);
+
+   OPT_V(s, nir_lower_is_helper_invocation);
 
    ir3_optimize_loop(compiler, s);
 
@@ -562,6 +564,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
             .lower_read_invocation_to_cond = true,
             .lower_shuffle = true,
             .lower_relative_shuffle = true,
+            .lower_inverse_ballot = true,
       };
 
       if (!((s->info.stage == MESA_SHADER_COMPUTE) ||

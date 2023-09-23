@@ -373,6 +373,8 @@ typedef enum {
 
    OPC_ALIAS           = _OPC(7, 9),
 
+   OPC_CCINV           = _OPC(7, 10),
+
    /* meta instructions (category 8): */
 #define OPC_META 8
    /* placeholder instr to mark shader inputs: */

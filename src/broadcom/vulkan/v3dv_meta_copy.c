@@ -819,7 +819,7 @@ create_image_mip_level_alias(struct v3dv_cmd_buffer *cmd_buffer,
       .mipLevels = 1,
       .arrayLayers = 1,
       .samples = image->vk.samples,
-      .tiling = image->vk.tiling,
+      .tiling = image->tiled ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR,
       .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
       .queueFamilyIndexCount = 0,
@@ -877,8 +877,7 @@ copy_image_to_buffer_blit(struct v3dv_cmd_buffer *cmd_buffer,
     * early to avoid all the heavy lifting in preparation for the
     * blit_shader() call that is bound to fail in that scenario.
     */
-   if (image->vk.tiling == VK_IMAGE_TILING_LINEAR &&
-       image->vk.image_type != VK_IMAGE_TYPE_1D) {
+   if (!image->tiled && image->vk.image_type != VK_IMAGE_TYPE_1D) {
       return handled;
    }
 
@@ -1037,7 +1036,7 @@ copy_image_to_buffer_texel_buffer(struct v3dv_cmd_buffer *cmd_buffer,
    /* This is a requirement for copy_image_linear_texel_buffer below. We check
     * it in advance in order to do an early return
     */
-   if (src_image->vk.tiling != VK_IMAGE_TILING_LINEAR)
+   if (src_image->tiled)
       return false;
 
    handled =
@@ -1126,7 +1125,7 @@ copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    }
 
    /* Destination can't be raster format */
-   if (dst->vk.tiling == VK_IMAGE_TILING_LINEAR)
+   if (!dst->tiled)
       return false;
 
    /* We can only do full copies, so if the format is D24S8 both aspects need
@@ -1254,6 +1253,15 @@ copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    return true;
 }
 
+inline bool
+v3dv_cmd_buffer_copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
+                               struct v3dv_image *dst,
+                               struct v3dv_image *src,
+                               const VkImageCopy2 *region)
+{
+   return copy_image_tfu(cmd_buffer, dst, src, region);
+}
+
 /**
  * Returns true if the implementation supports the requested operation (even if
  * it failed to process it, for example, due to an out-of-memory error).
@@ -1376,7 +1384,7 @@ create_image_alias(struct v3dv_cmd_buffer *cmd_buffer,
       .mipLevels = src->vk.mip_levels,
       .arrayLayers = src->vk.array_layers,
       .samples = src->vk.samples,
-      .tiling = src->vk.tiling,
+      .tiling = src->tiled ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR,
       .usage = src->vk.usage,
    };
 
@@ -1404,8 +1412,7 @@ copy_image_blit(struct v3dv_cmd_buffer *cmd_buffer,
                 struct v3dv_image *src,
                 const VkImageCopy2 *region)
 {
-   if (src->vk.tiling == VK_IMAGE_TILING_LINEAR &&
-       src->vk.image_type != VK_IMAGE_TYPE_1D)
+   if (!src->tiled && src->vk.image_type != VK_IMAGE_TYPE_1D)
       return false;
 
    uint8_t src_plane =
@@ -1570,7 +1577,7 @@ copy_image_linear_texel_buffer(struct v3dv_cmd_buffer *cmd_buffer,
                                struct v3dv_image *src,
                                const VkImageCopy2 *region)
 {
-   if (src->vk.tiling != VK_IMAGE_TILING_LINEAR)
+   if (src->tiled)
       return false;
 
    /* Implementations are allowed to restrict linear images like this */
@@ -1824,7 +1831,7 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    assert(image->vk.samples == VK_SAMPLE_COUNT_1_BIT);
 
    /* Destination can't be raster format */
-   if (image->vk.tiling == VK_IMAGE_TILING_LINEAR)
+   if (!image->tiled)
       return false;
 
    /* We can't copy D24S8 because buffer to image copies only copy one aspect
@@ -3314,7 +3321,7 @@ blit_tfu(struct v3dv_cmd_buffer *cmd_buffer,
       return false;
 
    /* Destination can't be raster format */
-   if (dst->vk.tiling == VK_IMAGE_TILING_LINEAR)
+   if (!dst->tiled)
       return false;
 
    /* Source region must start at (0,0) */
@@ -4296,12 +4303,10 @@ blit_shader(struct v3dv_cmd_buffer *cmd_buffer,
    /* We don't support rendering to linear depth/stencil, this should have
     * been rewritten to a compatible color blit by the caller.
     */
-   assert(dst->vk.tiling != VK_IMAGE_TILING_LINEAR ||
-          !vk_format_is_depth_or_stencil(dst_format));
+   assert(dst->tiled || !vk_format_is_depth_or_stencil(dst_format));
 
    /* Can't sample from linear images */
-   if (src->vk.tiling == VK_IMAGE_TILING_LINEAR &&
-       src->vk.image_type != VK_IMAGE_TYPE_1D) {
+   if (!src->tiled && src->vk.image_type != VK_IMAGE_TYPE_1D) {
       return false;
    }
 

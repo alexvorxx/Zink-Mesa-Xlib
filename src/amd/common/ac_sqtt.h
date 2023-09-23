@@ -554,4 +554,8 @@ bool ac_sqtt_se_is_disabled(const struct radeon_info *info, unsigned se);
 bool ac_sqtt_get_trace(struct ac_sqtt *sqtt, const struct radeon_info *info,
                        struct ac_sqtt_trace *sqtt_trace);
 
+uint32_t ac_sqtt_get_shader_mask(const struct radeon_info *info);
+
+uint32_t ac_sqtt_get_active_cu(const struct radeon_info *info, unsigned se);
+
 #endif

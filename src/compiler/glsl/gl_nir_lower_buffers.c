@@ -56,7 +56,7 @@ get_block_array_index(nir_builder *b, nir_deref_instr *deref,
 
          const_array_offset += arr_index * array_elements;
       } else {
-         nir_def *arr_index = nir_ssa_for_src(b, deref->arr.index, 1);
+         nir_def *arr_index = deref->arr.index.ssa;
          arr_index = nir_umin(b, arr_index, nir_imm_int(b, arr_size - 1));
          nir_def *arr_offset = nir_amul_imm(b, arr_index, array_elements);
          if (nonconst_index)

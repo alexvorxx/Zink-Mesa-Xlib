@@ -585,6 +585,10 @@ agx_translate_tex_dim(enum pipe_texture_target dim, unsigned samples)
       assert(samples == 1);
       return AGX_TEXTURE_DIMENSION_CUBE;
 
+   case PIPE_TEXTURE_CUBE_ARRAY:
+      assert(samples == 1);
+      return AGX_TEXTURE_DIMENSION_CUBE_ARRAY;
+
    default:
       unreachable("Unsupported texture dimension");
    }
@@ -708,7 +712,9 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
             layers /= 6;
 
          if (rsrc->layout.tiling == AIL_TILING_LINEAR &&
-             state->target == PIPE_TEXTURE_2D_ARRAY) {
+             (state->target == PIPE_TEXTURE_1D_ARRAY ||
+              state->target == PIPE_TEXTURE_2D_ARRAY)) {
+
             cfg.depth_linear = layers;
             cfg.layer_stride_linear = (rsrc->layout.layer_stride_B - 0x80);
             cfg.extended = true;
@@ -1202,7 +1208,9 @@ agx_batch_upload_pbe(struct agx_batch *batch, struct agx_pbe_packed *out,
          unsigned layers = view->u.tex.last_layer - layer + 1;
 
          if (tex->layout.tiling == AIL_TILING_LINEAR &&
-             tex->base.target == PIPE_TEXTURE_2D_ARRAY) {
+             (tex->base.target == PIPE_TEXTURE_1D_ARRAY ||
+              tex->base.target == PIPE_TEXTURE_2D_ARRAY)) {
+
             cfg.depth_linear = layers;
             cfg.layer_stride_linear = (tex->layout.layer_stride_B - 0x80);
             cfg.extended = true;
@@ -1710,8 +1718,11 @@ agx_get_shader_variant(struct agx_screen *screen,
 
 static void
 agx_shader_initialize(struct agx_device *dev, struct agx_uncompiled_shader *so,
-                      nir_shader *nir)
+                      nir_shader *nir, bool support_lod_bias)
 {
+   if (nir->info.stage == MESA_SHADER_KERNEL)
+      nir->info.stage = MESA_SHADER_COMPUTE;
+
    so->type = pipe_shader_type_from_mesa(nir->info.stage);
 
    nir_lower_robust_access_options robustness = {
@@ -1745,7 +1756,7 @@ agx_shader_initialize(struct agx_device *dev, struct agx_uncompiled_shader *so,
    }
 
    bool allow_mediump = !(dev->debug & AGX_DBG_NO16);
-   agx_preprocess_nir(nir, true, allow_mediump, &so->info);
+   agx_preprocess_nir(nir, support_lod_bias, allow_mediump, &so->info);
 
    blob_init(&so->serialized_nir);
    nir_serialize(&so->serialized_nir, nir, true);
@@ -1759,6 +1770,7 @@ static void *
 agx_create_shader_state(struct pipe_context *pctx,
                         const struct pipe_shader_state *cso)
 {
+   struct agx_context *ctx = agx_context(pctx);
    struct agx_uncompiled_shader *so =
       rzalloc(NULL, struct agx_uncompiled_shader);
    struct agx_device *dev = agx_device(pctx->screen);
@@ -1780,7 +1792,7 @@ agx_create_shader_state(struct pipe_context *pctx,
                                              asahi_fs_shader_key_equal);
    }
 
-   agx_shader_initialize(dev, so, nir);
+   agx_shader_initialize(dev, so, nir, ctx->support_lod_bias);
 
    /* We're done with the NIR, throw it away */
    ralloc_free(nir);
@@ -1836,6 +1848,7 @@ static void *
 agx_create_compute_state(struct pipe_context *pctx,
                          const struct pipe_compute_state *cso)
 {
+   struct agx_context *ctx = agx_context(pctx);
    struct agx_device *dev = agx_device(pctx->screen);
    struct agx_uncompiled_shader *so =
       rzalloc(NULL, struct agx_uncompiled_shader);
@@ -1851,12 +1864,32 @@ agx_create_compute_state(struct pipe_context *pctx,
    assert(cso->ir_type == PIPE_SHADER_IR_NIR && "TGSI kernels unsupported");
    nir_shader *nir = (void *)cso->prog;
 
-   agx_shader_initialize(dev, so, nir);
+   agx_shader_initialize(dev, so, nir, ctx->support_lod_bias);
    agx_get_shader_variant(agx_screen(pctx->screen), so, &pctx->debug, &key);
 
    /* We're done with the NIR, throw it away */
    ralloc_free(nir);
    return so;
+}
+
+static void
+agx_get_compute_state_info(struct pipe_context *pctx, void *cso,
+                           struct pipe_compute_state_object_info *info)
+{
+   union asahi_shader_key key = {0};
+   struct agx_compiled_shader *so =
+      agx_get_shader_variant(agx_screen(pctx->screen), cso, &pctx->debug, &key);
+
+   info->max_threads =
+      agx_occupancy_for_register_count(so->info.nr_gprs).max_threads;
+   info->private_memory = 0;
+   info->preferred_simd_size = 32;
+   info->simd_sizes = 32;
+
+   /* HACK: Clamp max_threads to what we advertise. When we fix the CAP
+    * situation around block sizes, we can drop this.
+    */
+   info->max_threads = MIN2(info->max_threads, 256);
 }
 
 /* Does not take ownership of key. Clones if necessary. */
@@ -3293,6 +3326,14 @@ agx_launch_grid(struct pipe_context *pipe, const struct pipe_grid_info *info)
          &batch->pool, info->grid, sizeof(info->grid), 4);
    }
 
+   util_dynarray_foreach(&ctx->global_buffers, struct pipe_resource *, res) {
+      if (!*res)
+         continue;
+
+      struct agx_resource *buffer = agx_resource(*res);
+      agx_batch_writes(batch, buffer);
+   }
+
    struct agx_uncompiled_shader *uncompiled =
       ctx->stage[PIPE_SHADER_COMPUTE].shader;
 
@@ -3369,6 +3410,48 @@ agx_launch_grid(struct pipe_context *pipe, const struct pipe_grid_info *info)
    batch->uniforms.tables[AGX_SYSVAL_TABLE_GRID] = 0;
 }
 
+static void
+agx_set_global_binding(struct pipe_context *pipe, unsigned first,
+                       unsigned count, struct pipe_resource **resources,
+                       uint32_t **handles)
+{
+   struct agx_context *ctx = agx_context(pipe);
+   unsigned old_size =
+      util_dynarray_num_elements(&ctx->global_buffers, *resources);
+
+   if (old_size < first + count) {
+      /* we are screwed no matter what */
+      if (!util_dynarray_grow(&ctx->global_buffers, *resources,
+                              (first + count) - old_size))
+         unreachable("out of memory");
+
+      for (unsigned i = old_size; i < first + count; i++)
+         *util_dynarray_element(&ctx->global_buffers, struct pipe_resource *,
+                                i) = NULL;
+   }
+
+   for (unsigned i = 0; i < count; ++i) {
+      struct pipe_resource **res = util_dynarray_element(
+         &ctx->global_buffers, struct pipe_resource *, first + i);
+      if (resources && resources[i]) {
+         pipe_resource_reference(res, resources[i]);
+
+         /* The handle points to uint32_t, but space is allocated for 64
+          * bits. We need to respect the offset passed in. This interface
+          * is so bad.
+          */
+         uint64_t addr = 0;
+         struct agx_resource *rsrc = agx_resource(resources[i]);
+
+         memcpy(&addr, handles[i], sizeof(addr));
+         addr += rsrc->bo->ptr.gpu;
+         memcpy(handles[i], &addr, sizeof(addr));
+      } else {
+         pipe_resource_reference(res, NULL);
+      }
+   }
+}
+
 void agx_init_state_functions(struct pipe_context *ctx);
 
 void
@@ -3417,5 +3500,7 @@ agx_init_state_functions(struct pipe_context *ctx)
    ctx->surface_destroy = agx_surface_destroy;
    ctx->draw_vbo = agx_draw_vbo;
    ctx->launch_grid = agx_launch_grid;
+   ctx->set_global_binding = agx_set_global_binding;
    ctx->texture_barrier = agx_texture_barrier;
+   ctx->get_compute_state_info = agx_get_compute_state_info;
 }

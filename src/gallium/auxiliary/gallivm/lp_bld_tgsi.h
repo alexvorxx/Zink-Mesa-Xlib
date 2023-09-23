@@ -289,6 +289,10 @@ struct lp_build_tgsi_params {
    const struct lp_build_fs_iface *fs_iface;
    unsigned gs_vertex_streams;
    LLVMValueRef aniso_filter_table;
+   LLVMValueRef current_func;
+   struct hash_table *fns;
+   LLVMValueRef scratch_ptr;
+   LLVMValueRef call_context_ptr;
 };
 
 void

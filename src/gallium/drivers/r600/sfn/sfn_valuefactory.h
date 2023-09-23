@@ -329,7 +329,7 @@ private:
    uint32_t m_nowrite_idx;
 
    RegisterVec4 m_dummy_dest_pinned{
-      126, pin_chan, {0, 1, 2, 3}
+      g_registers_end, pin_chan, {0, 1, 2, 3}
    };
    ChannelCounts m_channel_counts;
    uint32_t m_required_array_registers{0};

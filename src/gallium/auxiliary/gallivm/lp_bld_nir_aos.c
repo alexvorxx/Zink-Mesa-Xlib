@@ -394,5 +394,9 @@ lp_build_nir_aos(struct gallivm_state *gallivm,
    bld.bld_base.tex = emit_tex;
    bld.bld_base.emit_var_decl = emit_var_decl;
 
-   lp_build_nir_llvm(&bld.bld_base, shader);
+   lp_build_nir_prepasses(shader);
+   NIR_PASS_V(shader, nir_move_vec_src_uses_to_dest, false);
+   NIR_PASS_V(shader, nir_lower_vec_to_regs, NULL, NULL);
+   lp_build_nir_llvm(&bld.bld_base, shader,
+                     nir_shader_get_entrypoint(shader));
 }

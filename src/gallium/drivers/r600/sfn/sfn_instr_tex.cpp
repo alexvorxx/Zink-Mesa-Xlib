@@ -40,14 +40,14 @@ TexInstr::TexInstr(Opcode op,
                    const RegisterVec4& dest,
                    const RegisterVec4::Swizzle& dest_swizzle,
                    const RegisterVec4& src,
-                   unsigned sid,
-                   unsigned rid,
-                   PRegister sampler_offs):
-    InstrWithVectorResult(dest, dest_swizzle, sid, sampler_offs),
+                   unsigned resource_id,
+                   PRegister resource_offs,
+                   int sampler_id, PRegister sampler_offset):
+    InstrWithVectorResult(dest, dest_swizzle, resource_id, resource_offs),
     m_opcode(op),
     m_src(src),
     m_inst_mode(0),
-    m_resource_id(rid)
+    m_sampler(this, sampler_id, sampler_offset)
 {
    memset(m_coord_offset, 0, sizeof(m_coord_offset));
    m_src.add_use(this);
@@ -104,6 +104,13 @@ TexInstr::is_equal_to(const TexInstr& lhs) const
               (!resource_offset() && lhs.resource_offset()))
       return false;
 
+   if (sampler_offset() && lhs.sampler_offset()) {
+      if (!sampler_offset()->equal_to(*lhs.sampler_offset()))
+         return false;
+   } else if ((sampler_offset() && !lhs.sampler_offset()) ||
+              (!sampler_offset() && lhs.sampler_offset()))
+      return false;
+
    if (m_tex_flags != lhs.m_tex_flags)
       return false;
 
@@ -111,8 +118,12 @@ TexInstr::is_equal_to(const TexInstr& lhs) const
       if (m_coord_offset[i] != lhs.m_coord_offset[i])
          return false;
    }
-   return m_inst_mode == lhs.m_inst_mode && resource_base() == lhs.resource_base() &&
-          m_resource_id == lhs.m_resource_id;
+
+   return m_inst_mode == lhs.m_inst_mode &&
+         resource_id() == lhs.resource_id() &&
+         resource_index_mode() == lhs.resource_index_mode() &&
+         sampler_id() == lhs.sampler_id() &&
+         sampler_index_mode() == lhs.sampler_index_mode();
 }
 
 bool
@@ -159,10 +170,13 @@ TexInstr::do_print(std::ostream& os) const
    os << " : ";
    m_src.print(os);
 
-   os << " RID:" << m_resource_id << " SID:" << resource_base();
-
+   os << " RID:" << resource_id();
    if (resource_offset())
-      os << " SO:" << *resource_offset();
+      os << " RO:" << *resource_offset();
+
+   os << " SID:" << sampler_id();
+   if (sampler_offset())
+      os << " SO:" << *sampler_offset();
 
    if (m_coord_offset[0])
       os << " OX:" << m_coord_offset[0];
@@ -318,7 +332,8 @@ TexInstr::from_string(std::istream& is, ValueFactory& value_fctory)
    int res_id = int_from_string_with_prefix(res_id_str, "RID:");
    int sampler_id = int_from_string_with_prefix(sampler_id_str, "SID:");
 
-   auto tex = new TexInstr(opcode, dest, dest_swz, src, sampler_id, res_id, nullptr);
+   auto tex = new TexInstr(opcode, dest, dest_swz, src, res_id, nullptr,
+                           sampler_id, nullptr);
 
    while (!is.eof() && is.good()) {
       std::string next_token;
@@ -363,6 +378,8 @@ TexInstr::set_tex_param(const std::string& token)
    else if (token.substr(0, 5) == "MODE:")
       set_inst_mode(int_from_string_with_prefix(token, "MODE:"));
    else if (token.substr(0, 3) == "SO:")
+      set_sampler_offset(VirtualValue::from_string(token.substr(3))->as_register());
+   else if (token.substr(0, 3) == "RO:")
       set_resource_offset(VirtualValue::from_string(token.substr(3))->as_register());
    else {
       std::cerr << "Token '" << token << "': ";
@@ -428,11 +445,15 @@ TexInstr::replace_source(PRegister old_src, PVirtualValue new_src)
    return success;
 }
 
-void TexInstr::update_indirect_addr(PRegister addr)
+void TexInstr::update_indirect_addr(PRegister old_reg, PRegister addr)
 {
-   set_resource_offset(addr);
+   if (resource_offset() && old_reg->equal_to(*resource_offset()))
+      set_resource_offset(addr);
+   else if (sampler_offset() && old_reg->equal_to(*sampler_offset()))
+      set_sampler_offset(addr);
+
    for (auto& p : m_prepare_instr)
-      p->update_indirect_addr(addr);
+      p->update_indirect_addr(old_reg, addr);
 }
 
 uint8_t
@@ -460,7 +481,7 @@ get_sampler_id(int sampler_id, const nir_variable *deref)
 
 void
 TexInstr::emit_set_gradients(
-   nir_tex_instr *tex, int sampler_id, Inputs& src, TexInstr *irt, Shader& shader)
+   nir_tex_instr *tex, int texture_id, Inputs& src, TexInstr *irt, Shader& shader)
 {
    TexInstr *grad[2] = {nullptr, nullptr};
    RegisterVec4 empty_dst(0, false, {0, 0, 0, 0}, pin_group);
@@ -468,9 +489,8 @@ TexInstr::emit_set_gradients(
                           empty_dst,
                           {7, 7, 7, 7},
                           src.ddx,
-                          sampler_id,
-                          sampler_id + R600_MAX_CONST_BUFFERS,
-                          src.resource_offset);
+                          texture_id,
+                          src.texture_offset);
    grad[0]->set_rect_coordinate_flags(tex);
    grad[0]->set_always_keep();
 
@@ -478,9 +498,8 @@ TexInstr::emit_set_gradients(
                           empty_dst,
                           {7, 7, 7, 7},
                           src.ddy,
-                          sampler_id,
-                          sampler_id + R600_MAX_CONST_BUFFERS,
-                          src.resource_offset);
+                          texture_id,
+                          src.texture_offset);
    grad[1]->set_rect_coordinate_flags(tex);
    grad[1]->set_always_keep();
    irt->add_prepare_instr(grad[0]);
@@ -491,8 +510,7 @@ TexInstr::emit_set_gradients(
 }
 
 void
-TexInstr::emit_set_offsets(
-   nir_tex_instr *tex, int sampler_id, Inputs& src, TexInstr *irt, Shader& shader)
+TexInstr::emit_set_offsets(nir_tex_instr *tex, int texture_id, Inputs& src, TexInstr *irt, Shader& shader)
 {
    RegisterVec4::Swizzle swizzle = {4, 4, 4, 4};
    int src_components = tex->coord_components;
@@ -509,9 +527,8 @@ TexInstr::emit_set_offsets(
                                empty_dst,
                                {7, 7, 7, 7},
                                ofs,
-                               sampler_id,
-                               sampler_id + R600_MAX_CONST_BUFFERS,
-                               src.resource_offset);
+                               texture_id + R600_MAX_CONST_BUFFERS,
+                               src.texture_offset);
    set_ofs->set_always_keep();
    irt->add_prepare_instr(set_ofs);
 }
@@ -525,9 +542,6 @@ TexInstr::emit_lowered_tex(nir_tex_instr *tex, Inputs& src, Shader& shader)
    auto& vf = shader.value_factory();
    sfn_log << SfnLog::instr << "emit '" << *reinterpret_cast<nir_instr *>(tex) << "' ("
            << __func__ << ")\n";
-
-   auto sampler = get_sampler_id(tex->sampler_index, src.sampler_deref);
-   assert(!sampler.indirect);
 
    auto params = nir_src_as_const_value(*src.backend2);
    int32_t coord_mask = params[0].i32;
@@ -549,20 +563,23 @@ TexInstr::emit_lowered_tex(nir_tex_instr *tex, Inputs& src, Shader& shader)
          dst_swz[i] = (dst_swz_packed >> (8 * i)) & 0xff;
       }
    }
+
+   int texture_id = tex->texture_index + R600_MAX_CONST_BUFFERS;
    auto irt = new TexInstr(src.opcode,
                            dst,
                            dst_swz,
                            src_coord,
-                           sampler.id,
-                           sampler.id + R600_MAX_CONST_BUFFERS,
-                           src.resource_offset);
+                           texture_id,
+                           src.texture_offset,
+                           tex->sampler_index,
+                           src.sampler_offset);
 
    if (tex->op == nir_texop_txd)
-      emit_set_gradients(tex, sampler.id, src, irt, shader);
+      emit_set_gradients(tex, texture_id, src, irt, shader);
 
    if (!irt->set_coord_offsets(src.offset)) {
       assert(tex->op == nir_texop_tg4);
-      emit_set_offsets(tex, sampler.id, src, irt, shader);
+      emit_set_offsets(tex, texture_id, src, irt, shader);
    }
 
    for (const auto f : TexFlags) {
@@ -583,8 +600,8 @@ TexInstr::emit_buf_txf(nir_tex_instr *tex, Inputs& src, Shader& shader)
    auto dst = vf.dest_vec4(tex->def, pin_group);
 
    PRegister tex_offset = nullptr;
-   if (src.resource_offset)
-      tex_offset = shader.emit_load_to_register(src.resource_offset);
+   if (src.sampler_offset)
+      tex_offset = shader.emit_load_to_register(src.sampler_offset);
 
    auto *real_dst = &dst;
    RegisterVec4 tmp = vf.temp_vec4(pin_group);
@@ -638,11 +655,11 @@ TexInstr::emit_tex_texture_samples(nir_tex_instr *instr, Inputs& src, Shader& sh
       0, true, {4, 4, 4, 4}
    };
 
-   int res_id = R600_MAX_CONST_BUFFERS + instr->sampler_index;
+   int res_id = R600_MAX_CONST_BUFFERS + instr->texture_index;
 
    // Fishy: should the zero be instr->sampler_index?
    auto ir =
-      new TexInstr(src.opcode, dest, {3, 7, 7, 7}, help, 0, res_id, src.resource_offset);
+      new TexInstr(src.opcode, dest, {3, 7, 7, 7}, help, res_id, src.texture_offset);
    shader.emit_instruction(ir);
    return true;
 }
@@ -676,9 +693,6 @@ TexInstr::emit_tex_txs(nir_tex_instr *tex,
 
       RegisterVec4 src_coord(src_lod, src_lod, src_lod, src_lod, pin_free);
 
-      auto sampler = get_sampler_id(tex->sampler_index, src.sampler_deref);
-      assert(!sampler.indirect && "Indirect sampler selection not yet supported");
-
       if (tex->is_array && tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE)
          dest_swz[2] = 7;
 
@@ -686,16 +700,15 @@ TexInstr::emit_tex_txs(nir_tex_instr *tex,
                              dest,
                              dest_swz,
                              src_coord,
-                             sampler.id,
-                             sampler.id + R600_MAX_CONST_BUFFERS,
-                             src.resource_offset);
+                             tex->texture_index + R600_MAX_CONST_BUFFERS,
+                             src.texture_offset);
 
       ir->set_dest_swizzle(dest_swz);
       shader.emit_instruction(ir);
 
       if (tex->is_array && tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE) {
-         auto src_loc = vf.uniform(512 + R600_BUFFER_INFO_OFFSET / 16 + (sampler.id >> 2),
-                                   sampler.id & 3,
+         auto src_loc = vf.uniform(512 + R600_BUFFER_INFO_OFFSET / 16 + (tex->texture_index >> 2),
+                                   tex->texture_index & 3,
                                    R600_BUFFER_INFO_CONST_BUFFER);
 
          auto alu = new AluInstr(op1_mov, dest[2], src_loc, AluInstr::last_write);
@@ -769,7 +782,7 @@ TexInstr::Inputs::Inputs(const nir_tex_instr& instr, ValueFactory& vf):
     gather_comp(nullptr),
     ms_index(nullptr),
     texture_offset(nullptr),
-    resource_offset(nullptr),
+    sampler_offset(nullptr),
     backend1(nullptr),
     backend2(nullptr),
     opcode(ld)
@@ -822,10 +835,10 @@ TexInstr::Inputs::Inputs(const nir_tex_instr& instr, ValueFactory& vf):
          ms_index = vf.src(instr.src[i], 0);
          break;
       case nir_tex_src_texture_offset:
-         texture_offset = vf.src(instr.src[i], 0);
+         texture_offset = vf.src(instr.src[i], 0)->as_register();
          break;
       case nir_tex_src_sampler_offset:
-         resource_offset = vf.src(instr.src[i], 0)->as_register();
+         sampler_offset = vf.src(instr.src[i], 0)->as_register();
          break;
       case nir_tex_src_backend1:
          backend1 = &instr.src[i].src;
@@ -903,8 +916,8 @@ TexInstr::emit_tex_lod(nir_tex_instr *tex, Inputs& src, Shader& shader)
                            dst,
                            {1, 0, 7, 7},
                            src_coord,
-                           sampler.id,
-                           sampler.id + R600_MAX_CONST_BUFFERS);
+                           tex->texture_index + R600_MAX_CONST_BUFFERS,
+                           src.texture_offset);
 
    shader.emit_instruction(irt);
    return true;

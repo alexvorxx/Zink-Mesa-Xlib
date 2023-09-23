@@ -48,14 +48,19 @@ anv_vk_priority_to_drm_sched_priority(VkQueueGlobalPriorityKHR vk_priority)
    }
 }
 
-VkResult
-anv_xe_create_engine(struct anv_device *device,
-                     struct anv_queue *queue,
-                     const VkDeviceQueueCreateInfo *pCreateInfo)
+static VkResult
+create_engine(struct anv_device *device,
+              struct anv_queue *queue,
+              const VkDeviceQueueCreateInfo *pCreateInfo,
+              bool create_companion_rcs_engine)
 {
    struct anv_physical_device *physical = device->physical;
+   uint32_t queue_family_index =
+      create_companion_rcs_engine ?
+      anv_get_first_render_queue_index(physical) :
+      pCreateInfo->queueFamilyIndex;
    struct anv_queue_family *queue_family =
-      &physical->queue.families[pCreateInfo->queueFamilyIndex];
+      &physical->queue.families[queue_family_index];
    const struct intel_query_engine_info *engines = physical->engine_info;
    struct drm_xe_engine_class_instance *instances;
 
@@ -90,7 +95,10 @@ anv_xe_create_engine(struct anv_device *device,
    if (ret)
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Unable to create exec queue");
 
-   queue->exec_queue_id = create.exec_queue_id;
+   if (create_companion_rcs_engine)
+      queue->companion_rcs_id = create.exec_queue_id;
+   else
+      queue->exec_queue_id = create.exec_queue_id;
 
    const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
       vk_find_struct_const(pCreateInfo->pNext,
@@ -126,11 +134,40 @@ priority_error:
    return vk_error(device, VK_ERROR_NOT_PERMITTED_KHR);
 }
 
+VkResult
+anv_xe_create_engine(struct anv_device *device,
+                     struct anv_queue *queue,
+                     const VkDeviceQueueCreateInfo *pCreateInfo)
+{
+   VkResult result = create_engine(device, queue, pCreateInfo,
+                                   false /* create_companion_rcs_engine */);
+
+   if (result != VK_SUCCESS)
+      return result;
+
+   if (queue->family->engine_class == INTEL_ENGINE_CLASS_COPY ||
+       queue->family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      result = create_engine(device, queue, pCreateInfo,
+                             true /* create_companion_rcs_engine */);
+   }
+
+   return result;
+}
+
+static void
+destroy_engine(struct anv_device *device, uint32_t exec_queue_id)
+{
+   struct drm_xe_exec_queue_destroy destroy = {
+      .exec_queue_id = exec_queue_id,
+   };
+   intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_DESTROY, &destroy);
+}
+
 void
 anv_xe_destroy_engine(struct anv_device *device, struct anv_queue *queue)
 {
-   struct drm_xe_exec_queue_destroy destroy = {
-      .exec_queue_id = queue->exec_queue_id,
-   };
-   intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_DESTROY, &destroy);
+   destroy_engine(device, queue->exec_queue_id);
+
+   if (queue->companion_rcs_id != 0)
+      destroy_engine(device, queue->companion_rcs_id);
 }
