@@ -861,7 +861,7 @@ fs_reg_alloc::emit_unspill(const fs_builder &bld,
                                            LSC_DATA_SIZE_D32,
                                            use_transpose ? reg_size * 8 : 1 /* num_channels */,
                                            use_transpose,
-                                           LSC_CACHE_LOAD_L1STATE_L3MOCS,
+                                           LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
                                            true /* has_dest */);
          unspill_inst->header_size = 0;
          unspill_inst->mlen =
@@ -958,7 +958,7 @@ fs_reg_alloc::emit_spill(const fs_builder &bld,
                                          LSC_DATA_SIZE_D32,
                                          1 /* num_channels */,
                                          false /* transpose */,
-                                         LSC_CACHE_LOAD_L1STATE_L3MOCS,
+                                         LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
                                          false /* has_dest */);
          spill_inst->header_size = 0;
          spill_inst->mlen = lsc_msg_desc_src0_len(devinfo, spill_inst->desc);

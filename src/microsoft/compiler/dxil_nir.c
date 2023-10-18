@@ -2284,14 +2284,14 @@ static bool
 add_def_to_worklist(nir_def *def, void *state)
 {
    nir_foreach_use_including_if(src, def) {
-      if (src->is_if) {
-         nir_if *nif = src->parent_if;
+      if (nir_src_is_if(src)) {
+         nir_if *nif = nir_src_parent_if(src);
          nir_foreach_block_in_cf_node(block, &nif->cf_node) {
             nir_foreach_instr(instr, block)
                nir_instr_worklist_push_tail(state, instr);
          }
       } else
-         nir_instr_worklist_push_tail(state, src->parent_instr);
+         nir_instr_worklist_push_tail(state, nir_src_parent_instr(src));
    }
    return true;
 }

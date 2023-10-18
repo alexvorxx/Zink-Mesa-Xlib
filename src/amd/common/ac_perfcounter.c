@@ -1151,7 +1151,6 @@ bool ac_init_block_names(const struct radeon_info *info,
       }
    }
 
-   assert(block->b->selectors <= 1000);
    block->selector_name_stride = block->group_name_stride + 4;
    block->selector_names =
       MALLOC(block->num_groups * block->b->selectors * block->selector_name_stride);

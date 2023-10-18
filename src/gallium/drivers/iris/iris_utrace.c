@@ -168,7 +168,7 @@ void iris_utrace_flush(struct iris_batch *batch, uint64_t submission_id)
 {
    struct intel_ds_flush_data *flush_data = malloc(sizeof(*flush_data));
    intel_ds_flush_data_init(flush_data, &batch->ds, submission_id);
-   u_trace_flush(&batch->trace, flush_data, false);
+   intel_ds_queue_flush_data(&batch->ds, &batch->trace, flush_data, false);
 }
 
 void iris_utrace_init(struct iris_context *ice)
@@ -183,10 +183,7 @@ void iris_utrace_init(struct iris_context *ice)
    else
       minor = 0;
 
-   /* We could be dealing with /dev/dri/card0 or /dev/dri/renderD128 so to get
-    * a GPU ID we % 128 the minor number.
-    */
-   intel_ds_device_init(&ice->ds, screen->devinfo, screen->fd, minor % 128,
+   intel_ds_device_init(&ice->ds, screen->devinfo, screen->fd, minor,
                         INTEL_DS_API_OPENGL);
 
    u_trace_context_init(&ice->ds.trace_context, &ice->ctx,

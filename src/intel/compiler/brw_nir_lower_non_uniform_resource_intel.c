@@ -288,7 +288,7 @@ brw_nir_cleanup_resource_intel_instr(nir_builder *b,
 
    bool progress = false;
    nir_foreach_use_safe(src, &intrin->def) {
-      if (!src->is_if && skip_resource_intel_cleanup(src->parent_instr))
+      if (!nir_src_is_if(src) && skip_resource_intel_cleanup(nir_src_parent_instr(src)))
          continue;
 
       progress = true;

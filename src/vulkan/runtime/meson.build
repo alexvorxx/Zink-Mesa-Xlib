@@ -109,6 +109,8 @@ vulkan_runtime_files = files(
   'vk_sync_timeline.c',
   'vk_sync_timeline.h',
   'vk_synchronization2.c',
+  'vk_texcompress_etc2.c',
+  'vk_texcompress_etc2.h',
   'vk_video.c',
   'vk_video.h',
   'vk_ycbcr_conversion.c',
@@ -131,6 +133,16 @@ endif
 if with_platform_android
   vulkan_runtime_files += files('vk_android.c', 'vk_android.h')
   vulkan_runtime_deps += dep_android
+endif
+
+if prog_glslang.found()
+  vulkan_runtime_files += files('vk_texcompress_astc.c', 'vk_texcompress_astc.h')
+  vulkan_runtime_files += custom_target(
+    'astc_spv.h',
+    input : astc_decoder_glsl_file,
+    output : 'astc_spv.h',
+    command : [prog_glslang, '-V', '-S', 'comp', '-x', '-o', '@OUTPUT@', '@INPUT@'] + glslang_quiet,
+    )
 endif
 
 vk_common_entrypoints = custom_target(

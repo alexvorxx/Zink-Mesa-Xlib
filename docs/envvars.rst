@@ -404,6 +404,12 @@ Core Mesa environment variables
 
       ``lspci -nn | grep VGA`` can be used to know the PCIe bus or ids to use.
 
+.. envvar:: DRIRC_CONFIGDIR
+
+   If set, overrides the global search-directories used when searching for
+   drirc config files. The user-local one will still be used. Mostly useful for
+   internal debugging.
+
 NIR passes environment variables
 --------------------------------
 

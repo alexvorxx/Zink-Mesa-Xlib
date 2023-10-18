@@ -41,7 +41,7 @@ nvk_descriptor_table_grow_locked(struct nvk_device *dev,
       assert(new_bo_size >= table->bo->size);
       memcpy(new_map, table->map, table->bo->size);
 
-      munmap(table->map, table->bo->size);
+      nouveau_ws_bo_unmap(table->bo, table->map);
       nouveau_ws_bo_destroy(table->bo);
    }
    table->bo = new_bo;

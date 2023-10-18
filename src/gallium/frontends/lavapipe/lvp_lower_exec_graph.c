@@ -6,6 +6,7 @@
 
 #include "lvp_private.h"
 
+#include "nir.h"
 #include "nir_builder.h"
 
 #define lvp_load_internal_field(b, bit_size, field)                                                \
@@ -47,7 +48,7 @@ lvp_lower_node_payload_deref(nir_builder *b, nir_instr *instr, void *data)
       nir_def_rewrite_uses(&deref->def, &cast->def);
    } else {
       nir_foreach_use_safe(use, &deref->def) {
-         b->cursor = nir_before_instr(use->parent_instr);
+         b->cursor = nir_before_instr(nir_src_parent_instr(use));
          nir_def *payload = nir_load_var(b, deref->var);
          nir_deref_instr *cast =
             nir_build_deref_cast(b, payload, nir_var_mem_global, deref->type, 0);

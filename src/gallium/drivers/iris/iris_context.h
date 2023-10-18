@@ -1181,6 +1181,9 @@ void gfx9_toggle_preemption(struct iris_context *ice,
 #  define genX(x) gfx125_##x
 #  include "iris_genx_protos.h"
 #  undef genX
+#  define genX(x) gfx20_##x
+#  include "iris_genx_protos.h"
+#  undef genX
 #endif
 
 #endif

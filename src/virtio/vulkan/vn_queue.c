@@ -1669,6 +1669,11 @@ vn_GetFenceFdKHR(VkDevice device,
 
       vn_sync_payload_release(dev, &fence->temporary);
       fence->payload = &fence->permanent;
+
+#ifdef VN_USE_WSI_PLATFORM
+      if (!dev->renderer->info.has_implicit_fencing)
+         sync_wait(fd, -1);
+#endif
    } else {
       assert(payload->type == VN_SYNC_TYPE_IMPORTED_SYNC_FD);
 
@@ -2126,6 +2131,10 @@ vn_GetSemaphoreFdKHR(VkDevice device,
       if (result != VK_SUCCESS)
          return vn_error(dev->instance, result);
 
+#ifdef VN_USE_WSI_PLATFORM
+      if (!dev->renderer->info.has_implicit_fencing)
+         sync_wait(fd, -1);
+#endif
    } else {
       assert(payload->type == VN_SYNC_TYPE_IMPORTED_SYNC_FD);
 

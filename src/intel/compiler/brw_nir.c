@@ -1658,7 +1658,11 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
    } while (progress);
 
 
-   OPT(brw_nir_lower_conversions);
+   if (OPT(brw_nir_lower_conversions)) {
+      if (OPT(nir_lower_int64)) {
+         brw_nir_optimize(nir, compiler);
+      }
+   }
 
    if (is_scalar)
       OPT(nir_lower_alu_to_scalar, NULL, NULL);

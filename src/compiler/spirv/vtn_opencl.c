@@ -553,6 +553,8 @@ handle_special(struct vtn_builder *b, uint32_t opcode,
       if (nb->shader->options->lower_ffma32 && srcs[0]->bit_size == 32)
          break;
       return nir_ffma(nb, srcs[0], srcs[1], srcs[2]);
+   case OpenCLstd_Rotate:
+      return nir_urol(nb, srcs[0], nir_u2u32(nb, srcs[1]));
    default:
       break;
    }

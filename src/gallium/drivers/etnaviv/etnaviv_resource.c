@@ -190,6 +190,7 @@ etna_screen_resource_alloc_ts(struct pipe_screen *pscreen,
    /* fill software meta */
    if (modifier & VIVANTE_MOD_TS_MASK) {
       lvl->ts_meta = etna_bo_map(rsc->ts_bo);
+      memset(lvl->ts_meta, 0, sizeof(struct etna_ts_sw_meta));
       lvl->ts_meta->version = 0;
       lvl->ts_meta->v0.data_size = ts_size;
       lvl->ts_meta->v0.data_offset = ts_data_offset;

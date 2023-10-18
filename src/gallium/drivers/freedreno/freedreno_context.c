@@ -323,6 +323,13 @@ fd_context_switch_to(struct fd_context *ctx, struct fd_batch *batch)
    }
 }
 
+void
+fd_context_add_private_bo(struct fd_context *ctx, struct fd_bo *bo)
+{
+   assert(ctx->num_private_bos < ARRAY_SIZE(ctx->private_bos));
+   ctx->private_bos[ctx->num_private_bos++] = bo;
+}
+
 /**
  * Return a reference to the current batch, caller must unref.
  */

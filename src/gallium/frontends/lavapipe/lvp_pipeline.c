@@ -380,7 +380,7 @@ lvp_ycbcr_conversion_lookup(const void *data, uint32_t set, uint32_t binding, ui
    if (!binding_layout->immutable_samplers)
       return NULL;
 
-   struct vk_ycbcr_conversion *ycbcr_conversion = binding_layout->immutable_samplers[array_index]->ycbcr_conversion;
+   struct vk_ycbcr_conversion *ycbcr_conversion = binding_layout->immutable_samplers[array_index]->vk.ycbcr_conversion;
    return ycbcr_conversion ? &ycbcr_conversion->state : NULL;
 }
 

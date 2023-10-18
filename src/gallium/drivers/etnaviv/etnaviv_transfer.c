@@ -153,8 +153,6 @@ etna_transfer_unmap(struct pipe_context *pctx, struct pipe_transfer *ptrans)
          } else {
             BUG("unsupported tiling %i", rsc->layout);
          }
-
-         FREE(trans->staging);
       }
 
       if (ptrans->resource->target == PIPE_BUFFER)
@@ -179,6 +177,7 @@ etna_transfer_unmap(struct pipe_context *pctx, struct pipe_transfer *ptrans)
    if (!trans->rsc && !(ptrans->usage & PIPE_MAP_UNSYNCHRONIZED))
       etna_bo_cpu_fini(rsc->bo);
 
+   FREE(trans->staging);
    pipe_resource_reference(&trans->rsc, NULL);
    pipe_resource_reference(&ptrans->resource, NULL);
    slab_free(&ctx->transfer_pool, trans);

@@ -801,6 +801,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_fsqrt:
       result =
          emit_intrin_1f_param(&ctx->ac, "llvm.sqrt", ac_to_float_type(&ctx->ac, def_type), src[0]);
+      LLVMSetMetadata(result, ctx->ac.fpmath_md_kind, ctx->ac.three_md);
       break;
    case nir_op_fexp2:
       result =
@@ -860,14 +861,20 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_ldexp:
       src[0] = ac_to_float(&ctx->ac, src[0]);
       if (ac_get_elem_bits(&ctx->ac, def_type) == 32)
-         result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ldexp.f32", ctx->ac.f32, src, 2,
-                                     0);
+         result = ac_build_intrinsic(&ctx->ac,
+                                     LLVM_VERSION_MAJOR >= 18 ? "llvm.ldexp.f32.i32"
+                                                              : "llvm.amdgcn.ldexp.f32",
+                                     ctx->ac.f32, src, 2, 0);
       else if (ac_get_elem_bits(&ctx->ac, def_type) == 16)
-         result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ldexp.f16", ctx->ac.f16, src, 2,
-                                     0);
+         result = ac_build_intrinsic(&ctx->ac,
+                                     LLVM_VERSION_MAJOR >= 18 ? "llvm.ldexp.f16.i32"
+                                                              : "llvm.amdgcn.ldexp.f16",
+                                     ctx->ac.f16, src, 2, 0);
       else
-         result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ldexp.f64", ctx->ac.f64, src, 2,
-                                     0);
+         result = ac_build_intrinsic(&ctx->ac,
+                                     LLVM_VERSION_MAJOR >= 18 ? "llvm.ldexp.f64.i32"
+                                                              : "llvm.amdgcn.ldexp.f64",
+                                     ctx->ac.f64, src, 2, 0);
       break;
    case nir_op_bfm:
       result = emit_bfm(&ctx->ac, src[0], src[1]);
@@ -3647,9 +3654,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    }
    case nir_intrinsic_ordered_xfb_counter_add_amd: {
       /* must be called in a single lane of a workgroup. */
-      /* TODO: Add RADV support. */
-      bool use_gds_registers = ctx->ac.gfx_level >= GFX11 &&
-                               ctx->ac.float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL;
+      const bool use_gds_registers = ctx->ac.gfx_level >= GFX11;
       LLVMTypeRef gdsptr = LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS);
       LLVMValueRef gdsbase = LLVMBuildIntToPtr(ctx->ac.builder, ctx->ac.i32_0, gdsptr, "");
 
@@ -3729,9 +3734,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    }
    case nir_intrinsic_xfb_counter_sub_amd: {
       /* must be called in a single lane of a workgroup. */
-      /* TODO: Add RADV support. */
-      bool use_gds_registers = ctx->ac.gfx_level >= GFX11 &&
-                               ctx->ac.float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL;
+      const bool use_gds_registers = ctx->ac.gfx_level >= GFX11;
       LLVMTypeRef gdsptr = LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS);
       LLVMValueRef gdsbase = LLVMBuildIntToPtr(ctx->ac.builder, ctx->ac.i32_0, gdsptr, "");
       LLVMValueRef sub_vec = get_src(ctx, instr->src[0]);

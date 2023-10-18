@@ -45,6 +45,7 @@
 
 #include "gl_nir_link_varyings.h"
 #include "gl_nir_linker.h"
+#include "linker_util.h"
 #include "nir_builder.h"
 #include "nir_gl_types.h"
 #include "nir_types.h"
@@ -90,15 +91,6 @@ initialise_varying_info(struct varying_info *info, nir_variable_mode mode,
 
    memset(info->color, 0, sizeof(info->color));
    memset(info->backcolor, 0, sizeof(info->backcolor));
-}
-
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
 }
 
 static void

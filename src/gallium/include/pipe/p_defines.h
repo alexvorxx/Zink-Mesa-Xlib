@@ -186,6 +186,7 @@ enum pipe_tex_reduction_mode {
  */
 enum pipe_map_flags
 {
+   PIPE_MAP_NONE = 0,
    /**
     * Resource contents read back (or accessed directly) at transfer
     * create time.
@@ -480,7 +481,7 @@ enum pipe_flush_flags
 /* Resource is the DRI_PRIME blit destination. Only set on on the render GPU. */
 #define PIPE_BIND_PRIME_BLIT_DST (1 << 24)
 #define PIPE_BIND_USE_FRONT_RENDERING (1 << 25) /* Resource may be used for frontbuffer rendering */
-
+#define PIPE_BIND_CONST_BW    (1 << 26) /* Avoid using a data dependent layout (AFBC, UBWC, etc) */
 
 /**
  * Flags for the driver about resource behaviour:
@@ -934,6 +935,7 @@ enum pipe_cap
    PIPE_CAP_ASTC_VOID_EXTENTS_NEED_DENORM_FLUSH,
 
    PIPE_CAP_VALIDATE_ALL_DIRTY_STATES,
+   PIPE_CAP_HAS_CONST_BW,
    PIPE_CAP_LAST,
    /* XXX do not add caps after PIPE_CAP_LAST! */
 };

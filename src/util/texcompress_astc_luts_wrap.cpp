@@ -23,8 +23,6 @@
 #include "texcompress_astc_luts_wrap.h"
 #include "texcompress_astc_luts.h"
 
-#include "util/u_box.h"
-
 extern "C" void
 _mesa_init_astc_decoder_luts(astc_decoder_lut_holder *holder)
 {
@@ -54,12 +52,13 @@ _mesa_init_astc_decoder_luts(astc_decoder_lut_holder *holder)
 extern "C" void *
 _mesa_get_astc_decoder_partition_table(uint32_t block_width,
                                        uint32_t block_height,
-                                       struct pipe_box *ptable_box)
+                                       unsigned *lut_width,
+                                       unsigned *lut_height)
 {
    auto &luts = Granite::get_astc_luts();
    auto &table = luts.get_partition_table(block_width, block_height);
 
-   u_box_origin_2d(table.lut_width, table.lut_height, ptable_box);
-
+   *lut_width = table.lut_width;
+   *lut_height = table.lut_height;
    return table.lut_buffer.data();
 }

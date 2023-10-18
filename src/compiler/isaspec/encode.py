@@ -134,7 +134,7 @@ class Case(object):
         self.expr = None
         if case.expr is not None:
             self.expr = bitset.isa.expressions[case.expr]
-        self.fieldnames = re.findall(r"{([a-zA-Z0-9_:]+)}", case.display)
+        self.fieldnames = re.findall(r"{([a-zA-Z0-9_:=]+)}", case.display)
         self.append_forced(bitset)
 
         # remove special fieldname properties e.g. :align=
@@ -186,7 +186,7 @@ class State(object):
 
     def bitset_cases(self, bitset, leaf_bitset=None):
         if leaf_bitset is None:
-            leaf_bitset = bitset;
+            leaf_bitset = bitset
         for case in bitset.cases:
             if case.display is None:
                 # if this is the last case (ie. case.expr is None)
@@ -194,7 +194,7 @@ class State(object):
                 if case.expr is None and bitset.extends is not None:
                     parent_bitset = bitset.isa.bitsets[bitset.extends]
                     yield from self.bitset_cases(parent_bitset, leaf_bitset)
-                continue;
+                continue
             yield Case(leaf_bitset, case)
 
     # Find unique bitset remap/parameter names, to generate a struct

@@ -95,6 +95,7 @@ libfreedreno_ir3_files = files(
   'ir3_nir_lower_64b.c',
   'ir3_nir_lower_load_barycentric_at_sample.c',
   'ir3_nir_lower_load_barycentric_at_offset.c',
+  'ir3_nir_lower_push_consts_to_preamble.c',
   'ir3_nir_lower_io_offsets.c',
   'ir3_nir_lower_tess.c',
   'ir3_nir_lower_tex_prefetch.c',

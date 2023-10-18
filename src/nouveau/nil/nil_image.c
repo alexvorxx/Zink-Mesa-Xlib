@@ -67,13 +67,13 @@ nil_offset4d_mul(struct nil_offset4d a, struct nil_extent4d b)
 }
 
 static struct nil_extent4d
-nil_extent4d_align(struct nil_extent4d ext, struct nil_extent4d align)
+nil_extent4d_align(struct nil_extent4d ext, struct nil_extent4d alignment)
 {
    return (struct nil_extent4d) {
-      .w = ALIGN_POT(ext.w, align.w),
-      .h = ALIGN_POT(ext.h, align.h),
-      .d = ALIGN_POT(ext.d, align.d),
-      .a = ALIGN_POT(ext.a, align.a),
+      .w = align(ext.w, alignment.w),
+      .h = align(ext.h, alignment.h),
+      .d = align(ext.d, alignment.d),
+      .a = align(ext.a, alignment.a),
    };
 }
 

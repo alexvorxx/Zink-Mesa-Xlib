@@ -380,20 +380,32 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa, nir_imm_int(b, RADV_SHADER_QUERY_GS_PRIM_EMIT_OFFSET),
                              nir_imm_int(b, 0x100));
       break;
-   case nir_intrinsic_atomic_add_gen_prim_count_amd:
-      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa,
-                             nir_imm_int(b, RADV_SHADER_QUERY_PRIM_GEN_OFFSET(nir_intrinsic_stream_id(intrin))),
-                             nir_imm_int(b, 0x100));
+   case nir_intrinsic_atomic_add_gen_prim_count_amd: {
+      uint32_t offset = stage == MESA_SHADER_MESH ? RADV_SHADER_QUERY_MS_PRIM_GEN_OFFSET
+                                                  : RADV_SHADER_QUERY_PRIM_GEN_OFFSET(nir_intrinsic_stream_id(intrin));
+
+      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa, nir_imm_int(b, offset), nir_imm_int(b, 0x100));
       break;
+   }
    case nir_intrinsic_atomic_add_xfb_prim_count_amd:
       nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa,
                              nir_imm_int(b, RADV_SHADER_QUERY_PRIM_XFB_OFFSET(nir_intrinsic_stream_id(intrin))),
                              nir_imm_int(b, 0x100));
       break;
-   case nir_intrinsic_atomic_add_gs_invocation_count_amd:
-      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa, nir_imm_int(b, RADV_SHADER_QUERY_GS_INVOCATION_OFFSET),
-                             nir_imm_int(b, 0x100));
+   case nir_intrinsic_atomic_add_shader_invocation_count_amd: {
+      uint32_t offset;
+
+      if (stage == MESA_SHADER_MESH) {
+         offset = RADV_SHADER_QUERY_MS_INVOCATION_OFFSET;
+      } else if (stage == MESA_SHADER_TASK) {
+         offset = RADV_SHADER_QUERY_TS_INVOCATION_OFFSET;
+      } else {
+         offset = RADV_SHADER_QUERY_GS_INVOCATION_OFFSET;
+      }
+
+      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa, nir_imm_int(b, offset), nir_imm_int(b, 0x100));
       break;
+   }
    case nir_intrinsic_load_streamout_config_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.streamout_config);
       break;

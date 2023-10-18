@@ -526,7 +526,6 @@ nvk_image_init(struct nvk_device *dev,
    return VK_SUCCESS;
 }
 
-#if NVK_NEW_UAPI == 1
 static VkResult
 nvk_image_plane_alloc_vma(struct nvk_device *dev,
                           struct nvk_image_plane *plane,
@@ -547,33 +546,7 @@ nvk_image_plane_alloc_vma(struct nvk_device *dev,
 
    return VK_SUCCESS;
 }
-#endif
 
-#if NVK_NEW_UAPI == 0
-static VkResult
-nvk_image_plane_alloc_internal(struct nvk_device *dev,
-                               struct nvk_image_plane *plane,
-                               const VkAllocationCallbacks *pAllocator)
-{
-   if (plane->nil.pte_kind == 0)
-      return VK_SUCCESS;
-
-   assert(dev->pdev->mem_heaps[0].flags &
-          VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
-
-   const VkMemoryAllocateInfo alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .allocationSize = plane->nil.size_B,
-      .memoryTypeIndex = 0,
-   };
-   const struct nvk_memory_tiling_info tile_info = {
-      .tile_mode = plane->nil.tile_mode,
-      .pte_kind = plane->nil.pte_kind,
-   };
-   return nvk_allocate_memory(dev, &alloc_info, &tile_info,
-                              pAllocator, &plane->internal);
-}
-#endif
 
 static void
 nvk_image_plane_finish(struct nvk_device *dev,
@@ -581,7 +554,6 @@ nvk_image_plane_finish(struct nvk_device *dev,
                        VkImageCreateFlags create_flags,
                        const VkAllocationCallbacks *pAllocator)
 {
-#if NVK_NEW_UAPI == 1
    if (plane->vma_size_B) {
       const bool sparse_resident =
          create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;
@@ -590,10 +562,6 @@ nvk_image_plane_finish(struct nvk_device *dev,
       nouveau_ws_free_vma(dev->ws_dev, plane->addr, plane->vma_size_B,
                           sparse_resident);
    }
-#else
-   if (plane->internal)
-      nvk_free_memory(dev, plane->internal, pAllocator);
-#endif
 }
 
 static void
@@ -635,13 +603,8 @@ nvk_CreateImage(VkDevice device,
    }
 
    for (uint8_t plane = 0; plane < image->plane_count; plane++) {
-#if NVK_NEW_UAPI == 1
       result = nvk_image_plane_alloc_vma(dev, &image->planes[plane],
                                          image->vk.create_flags);
-#else
-      result = nvk_image_plane_alloc_internal(dev, &image->planes[plane],
-                                              pAllocator);
-#endif
       if (result != VK_SUCCESS) {
          nvk_image_finish(dev, image, pAllocator);
          vk_free2(&dev->vk.alloc, pAllocator, image);
@@ -650,13 +613,8 @@ nvk_CreateImage(VkDevice device,
    }
 
    if (image->stencil_copy_temp.nil.size_B > 0) {
-#if NVK_NEW_UAPI == 1
       result = nvk_image_plane_alloc_vma(dev, &image->stencil_copy_temp,
                                          image->vk.create_flags);
-#else
-      result = nvk_image_plane_alloc_internal(dev, &image->stencil_copy_temp,
-                                              pAllocator);
-#endif
       if (result != VK_SUCCESS) {
          nvk_image_finish(dev, image, pAllocator);
          vk_free2(&dev->vk.alloc, pAllocator, image);
@@ -692,7 +650,7 @@ nvk_image_plane_add_req(struct nvk_image_plane *plane,
    assert(util_is_power_of_two_or_zero64(plane->nil.align_B));
 
    *align_B = MAX2(*align_B, plane->nil.align_B);
-   *size_B = ALIGN_POT(*size_B, plane->nil.align_B);
+   *size_B = align64(*size_B, plane->nil.align_B);
    *size_B += plane->nil.size_B;
 }
 
@@ -858,30 +816,25 @@ nvk_image_plane_bind(struct nvk_device *dev,
                      struct nvk_device_memory *mem,
                      uint64_t *offset_B)
 {
-   *offset_B = ALIGN_POT(*offset_B, plane->nil.align_B);
+   *offset_B = align64(*offset_B, (uint64_t)plane->nil.align_B);
 
-#if NVK_NEW_UAPI == 1
    if (plane->vma_size_B) {
-      nouveau_ws_bo_bind_vma(dev->ws_dev,
-                             mem->bo,
-                             plane->addr,
-                             plane->vma_size_B,
-                             *offset_B,
-                             plane->nil.pte_kind);
+      if (mem != NULL) {
+         nouveau_ws_bo_bind_vma(dev->ws_dev,
+                                mem->bo,
+                                plane->addr,
+                                plane->vma_size_B,
+                                *offset_B,
+                                plane->nil.pte_kind);
+      } else {
+         nouveau_ws_bo_unbind_vma(dev->ws_dev,
+                                  plane->addr,
+                                  plane->vma_size_B);
+      }
    } else {
       assert(plane->nil.pte_kind == 0);
-      plane->addr = mem->bo->offset + *offset_B;
+      plane->addr = mem != NULL ? mem->bo->offset + *offset_B : 0;
    }
-#else
-   if (mem->dedicated_image_plane == plane) {
-      assert(*offset_B == 0);
-      plane->addr = mem->bo->offset;
-   } else if (plane->internal != NULL) {
-      plane->addr = plane->internal->bo->offset;
-   } else {
-      plane->addr = mem->bo->offset + *offset_B;
-   }
-#endif
 
    *offset_B += plane->nil.size_B;
 }

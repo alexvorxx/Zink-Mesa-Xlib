@@ -58,7 +58,6 @@ pvr_files = files(
   'pvr_job_transfer.c',
   'pvr_pass.c',
   'pvr_pipeline.c',
-  'pvr_pipeline_cache.c',
   'pvr_transfer_frag_store.c',
   'pvr_query.c',
   'pvr_query_compute.c',
@@ -91,6 +90,7 @@ pvr_deps = [
 ]
 
 pvr_flags = [
+  imagination_c_args,
   no_override_init_args,
 ]
 

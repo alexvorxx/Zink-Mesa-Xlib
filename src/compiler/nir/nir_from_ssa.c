@@ -542,8 +542,8 @@ nir_rewrite_uses_to_load_reg(nir_builder *b, nir_def *old,
       b->cursor = nir_before_src(use);
 
       /* If this is a parallel copy, it can just take the register directly */
-      if (!use->is_if &&
-          use->parent_instr->type == nir_instr_type_parallel_copy) {
+      if (!nir_src_is_if(use) &&
+          nir_src_parent_instr(use)->type == nir_instr_type_parallel_copy) {
 
          nir_parallel_copy_entry *copy_entry =
             list_entry(use, nir_parallel_copy_entry, src);
@@ -1208,9 +1208,9 @@ ssa_def_is_local_to_block(nir_def *def, UNUSED void *state)
 {
    nir_block *block = def->parent_instr->block;
    nir_foreach_use_including_if(use_src, def) {
-      if (use_src->is_if ||
-          use_src->parent_instr->block != block ||
-          use_src->parent_instr->type == nir_instr_type_phi) {
+      if (nir_src_is_if(use_src) ||
+          nir_src_parent_instr(use_src)->block != block ||
+          nir_src_parent_instr(use_src)->type == nir_instr_type_phi) {
          return false;
       }
    }

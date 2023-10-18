@@ -1408,12 +1408,12 @@ lsc_vect_size(unsigned vect_size)
 }
 
 static inline uint32_t
-lsc_msg_desc(UNUSED const struct intel_device_info *devinfo,
+lsc_msg_desc_wcmask(UNUSED const struct intel_device_info *devinfo,
              enum lsc_opcode opcode, unsigned simd_size,
              enum lsc_addr_surface_type addr_type,
              enum lsc_addr_size addr_sz, unsigned num_coordinates,
              enum lsc_data_size data_sz, unsigned num_channels,
-             bool transpose, unsigned cache_ctrl, bool has_dest)
+             bool transpose, unsigned cache_ctrl, bool has_dest, unsigned cmask)
 {
    assert(devinfo->has_lsc);
 
@@ -1438,11 +1438,24 @@ lsc_msg_desc(UNUSED const struct intel_device_info *devinfo,
       SET_BITS(addr_type, 30, 29);
 
    if (lsc_opcode_has_cmask(opcode))
-      msg_desc |= SET_BITS(lsc_cmask(num_channels), 15, 12);
+      msg_desc |= SET_BITS(cmask ? cmask : lsc_cmask(num_channels), 15, 12);
    else
       msg_desc |= SET_BITS(lsc_vect_size(num_channels), 14, 12);
 
    return msg_desc;
+}
+
+static inline uint32_t
+lsc_msg_desc(UNUSED const struct intel_device_info *devinfo,
+             enum lsc_opcode opcode, unsigned simd_size,
+             enum lsc_addr_surface_type addr_type,
+             enum lsc_addr_size addr_sz, unsigned num_coordinates,
+             enum lsc_data_size data_sz, unsigned num_channels,
+             bool transpose, unsigned cache_ctrl, bool has_dest)
+{
+   return lsc_msg_desc_wcmask(devinfo, opcode, simd_size, addr_type, addr_sz,
+         num_coordinates, data_sz, num_channels, transpose, cache_ctrl,
+         has_dest, 0);
 }
 
 static inline enum lsc_opcode

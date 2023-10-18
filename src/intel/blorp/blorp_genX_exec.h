@@ -1258,7 +1258,7 @@ blorp_emit_depth_stencil_state(struct blorp_batch *batch,
 
    GENX(3DSTATE_WM_DEPTH_STENCIL_pack)(NULL, dw, &ds);
 
-#if INTEL_NEEDS_WA_18019816803
+#if GFX_VERx10 >= 125
    /* Check if need PSS Stall sync. */
    if (intel_needs_workaround(batch->blorp->compiler->devinfo, 18019816803) &&
        batch->flags & BLORP_BATCH_NEED_PSS_STALL_SYNC) {
@@ -2469,7 +2469,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
          params->dst.view.base_array_layer + params->dst.z_offset;
       blt.DestinationSurfaceQPitch = isl_get_qpitch(dst_surf) >> 2;
       blt.DestinationLOD = params->dst.view.base_level;
-      blt.DestinationMipTailStartLOD = 15;
+      blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
       blt.DestinationHorizontalAlign = isl_encode_halign(dst_align.width);
       blt.DestinationVerticalAlign = isl_encode_valign(dst_align.height);
       blt.DestinationDepthStencilResource = false;
@@ -2504,7 +2504,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
          params->src.view.base_array_layer + params->src.z_offset;
       blt.SourceSurfaceQPitch = isl_get_qpitch(src_surf) >> 2;
       blt.SourceLOD = params->src.view.base_level;
-      blt.SourceMipTailStartLOD = 15;
+      blt.SourceMipTailStartLOD = src_surf->miptail_start_level;
       blt.SourceHorizontalAlign = isl_encode_halign(src_align.width);
       blt.SourceVerticalAlign = isl_encode_valign(src_align.height);
       blt.SourceDepthStencilResource = false;
@@ -2587,7 +2587,7 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
          params->dst.view.base_array_layer + params->dst.z_offset;
       blt.DestinationSurfaceQPitch = isl_get_qpitch(dst_surf) >> 2;
       blt.DestinationLOD = params->dst.view.base_level;
-      blt.DestinationMipTailStartLOD = 15;
+      blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
       blt.DestinationHorizontalAlign = isl_encode_halign(dst_align.width);
       blt.DestinationVerticalAlign = isl_encode_valign(dst_align.height);
       blt.DestinationDepthStencilResource = false;

@@ -270,13 +270,26 @@ radv_queue_submit_empty(struct radv_queue *queue, struct vk_queue_submit *submis
 }
 
 static void
-radv_fill_shader_rings(struct radv_device *device, uint32_t *map, bool add_sample_positions, uint32_t esgs_ring_size,
-                       struct radeon_winsys_bo *esgs_ring_bo, uint32_t gsvs_ring_size,
+radv_fill_shader_rings(struct radv_device *device, uint32_t *desc, struct radeon_winsys_bo *scratch_bo,
+                       uint32_t esgs_ring_size, struct radeon_winsys_bo *esgs_ring_bo, uint32_t gsvs_ring_size,
                        struct radeon_winsys_bo *gsvs_ring_bo, struct radeon_winsys_bo *tess_rings_bo,
                        struct radeon_winsys_bo *task_rings_bo, struct radeon_winsys_bo *mesh_scratch_ring_bo,
                        uint32_t attr_ring_size, struct radeon_winsys_bo *attr_ring_bo)
 {
-   uint32_t *desc = &map[4];
+   if (scratch_bo) {
+      uint64_t scratch_va = radv_buffer_get_va(scratch_bo);
+      uint32_t rsrc1 = S_008F04_BASE_ADDRESS_HI(scratch_va >> 32);
+
+      if (device->physical_device->rad_info.gfx_level >= GFX11)
+         rsrc1 |= S_008F04_SWIZZLE_ENABLE_GFX11(1);
+      else
+         rsrc1 |= S_008F04_SWIZZLE_ENABLE_GFX6(1);
+
+      desc[0] = scratch_va;
+      desc[1] = rsrc1;
+   }
+
+   desc += 4;
 
    if (esgs_ring_bo) {
       uint64_t esgs_va = radv_buffer_get_va(esgs_ring_bo);
@@ -495,16 +508,14 @@ radv_fill_shader_rings(struct radv_device *device, uint32_t *map, bool add_sampl
 
    desc += 4;
 
-   if (add_sample_positions) {
-      /* add sample positions after all rings */
-      memcpy(desc, device->sample_locations_1x, 8);
-      desc += 2;
-      memcpy(desc, device->sample_locations_2x, 16);
-      desc += 4;
-      memcpy(desc, device->sample_locations_4x, 32);
-      desc += 8;
-      memcpy(desc, device->sample_locations_8x, 64);
-   }
+   /* add sample positions after all rings */
+   memcpy(desc, device->sample_locations_1x, 8);
+   desc += 2;
+   memcpy(desc, device->sample_locations_2x, 16);
+   desc += 4;
+   memcpy(desc, device->sample_locations_4x, 32);
+   desc += 8;
+   memcpy(desc, device->sample_locations_8x, 64);
 }
 
 static void
@@ -942,7 +953,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
    if (!queue->ring_info.gds_oa && needs->gds_oa) {
       assert(device->physical_device->rad_info.gfx_level >= GFX10);
 
-      result = ws->buffer_create(ws, 4, 1, RADEON_DOMAIN_OA, ring_bo_flags, RADV_BO_PRIORITY_SCRATCH, 0, &gds_oa_bo);
+      result = ws->buffer_create(ws, 1, 1, RADEON_DOMAIN_OA, ring_bo_flags, RADV_BO_PRIORITY_SCRATCH, 0, &gds_oa_bo);
       if (result != VK_SUCCESS)
          goto fail;
 
@@ -965,15 +976,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
        tess_rings_bo != queue->tess_rings_bo || task_rings_bo != queue->task_rings_bo ||
        mesh_scratch_ring_bo != queue->mesh_scratch_ring_bo || attr_ring_bo != queue->attr_ring_bo ||
        add_sample_positions) {
-      uint32_t size = 0;
-      if (gsvs_ring_bo || esgs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo || attr_ring_bo ||
-          add_sample_positions) {
-         size = 176; /* 2 dword + 2 padding + 4 dword * 10 */
-         if (add_sample_positions)
-            size += 128; /* 64+32+16+8 = 120 bytes */
-      } else if (scratch_bo) {
-         size = 8; /* 2 dword */
-      }
+      const uint32_t size = 304;
 
       result = ws->buffer_create(ws, size, 4096, RADEON_DOMAIN_VRAM,
                                  RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING | RADEON_FLAG_READ_ONLY,
@@ -987,24 +990,9 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
       if (!map)
          goto fail;
 
-      if (scratch_bo) {
-         uint64_t scratch_va = radv_buffer_get_va(scratch_bo);
-         uint32_t rsrc1 = S_008F04_BASE_ADDRESS_HI(scratch_va >> 32);
-
-         if (device->physical_device->rad_info.gfx_level >= GFX11)
-            rsrc1 |= S_008F04_SWIZZLE_ENABLE_GFX11(1);
-         else
-            rsrc1 |= S_008F04_SWIZZLE_ENABLE_GFX6(1);
-
-         map[0] = scratch_va;
-         map[1] = rsrc1;
-      }
-
-      if (esgs_ring_bo || gsvs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo || attr_ring_bo ||
-          add_sample_positions)
-         radv_fill_shader_rings(device, map, add_sample_positions, needs->esgs_ring_size, esgs_ring_bo,
-                                needs->gsvs_ring_size, gsvs_ring_bo, tess_rings_bo, task_rings_bo, mesh_scratch_ring_bo,
-                                needs->attr_ring_size, attr_ring_bo);
+      radv_fill_shader_rings(device, map, scratch_bo, needs->esgs_ring_size, esgs_ring_bo, needs->gsvs_ring_size,
+                             gsvs_ring_bo, tess_rings_bo, task_rings_bo, mesh_scratch_ring_bo, needs->attr_ring_size,
+                             attr_ring_bo);
 
       ws->buffer_unmap(descriptor_bo);
    }
@@ -1649,8 +1637,14 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          /* Follower needs to be first because the last CS must match the queue's IP type. */
          if (radv_cmd_buffer_has_follower(cmd_buffer)) {
             queue->device->ws->cs_unchain(cmd_buffer->gang.cs);
-            if (!chainable_ace || !queue->device->ws->cs_chain(chainable_ace, cmd_buffer->gang.cs, false))
+            if (!chainable_ace || !queue->device->ws->cs_chain(chainable_ace, cmd_buffer->gang.cs, false)) {
                cs_array[num_submitted_cs++] = cmd_buffer->gang.cs;
+               /* Reset chaining for GFX when the cmdbuf has GFX+ACE because the follower CS (ACE)
+                * must always be before the leader CS (GFX). Otherwise, the GFX CS might be chained
+                * to previous one and ordering would be incorrect.
+                */
+               chainable = NULL;
+            }
 
             chainable_ace = can_chain_next ? cmd_buffer->gang.cs : NULL;
             submit_ace = true;
@@ -1828,12 +1822,12 @@ radv_queue_state_finish(struct radv_queue_state *queue, struct radv_device *devi
       device->ws->buffer_destroy(device->ws, queue->attr_ring_bo);
    }
    if (queue->gds_bo) {
-      device->ws->buffer_destroy(device->ws, queue->gds_bo);
       device->ws->buffer_make_resident(device->ws, queue->gds_bo, false);
+      device->ws->buffer_destroy(device->ws, queue->gds_bo);
    }
    if (queue->gds_oa_bo) {
-      device->ws->buffer_destroy(device->ws, queue->gds_oa_bo);
       device->ws->buffer_make_resident(device->ws, queue->gds_oa_bo, false);
+      device->ws->buffer_destroy(device->ws, queue->gds_oa_bo);
    }
    if (queue->compute_scratch_bo) {
       radv_rmv_log_command_buffer_bo_destroy(device, queue->compute_scratch_bo);

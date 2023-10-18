@@ -315,10 +315,10 @@ clear_def(nir_def *def, void *state)
    struct hash_table *possibly_trivial_stores = state;
 
    nir_foreach_use(src, def) {
-      if (src->is_if)
+      if (nir_src_is_if(src))
          continue;
 
-      nir_instr *parent = src->parent_instr;
+      nir_instr *parent = nir_src_parent_instr(src);
       if (parent->type != nir_instr_type_intrinsic)
          continue;
 

@@ -24,15 +24,14 @@
 #define TEXCOMPRESS_ASTC_LUTS_WRAP_H
 
 #include <stdint.h>
-#include "pipe/p_state.h"
+#include <stddef.h>
+#include "format/u_formats.h"
 
 /* C wrapper for Granite::ASTCLutHolder. */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-struct pipe_box;
 
 typedef struct
 {
@@ -53,7 +52,8 @@ typedef struct
 void _mesa_init_astc_decoder_luts(astc_decoder_lut_holder *holder);
 void *_mesa_get_astc_decoder_partition_table(uint32_t block_width,
                                              uint32_t block_height,
-                                             struct pipe_box *ptable_box);
+                                             unsigned *lut_width,
+                                             unsigned *lut_height);
 
 #ifdef __cplusplus
 }

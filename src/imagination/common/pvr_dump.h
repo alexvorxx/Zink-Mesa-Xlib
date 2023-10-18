@@ -300,7 +300,7 @@ bool pvr_dump_buffer_hex(struct pvr_dump_buffer_ctx *ctx, uint64_t nr_bytes);
 static inline void __pvr_dump_buffer_advance(struct pvr_dump_buffer_ctx *ctx,
                                              const uint64_t nr_bytes)
 {
-   ctx->ptr += nr_bytes;
+   ctx->ptr = (uint8_t *)ctx->ptr + nr_bytes;
    ctx->remaining_size -= nr_bytes;
 }
 
@@ -321,7 +321,7 @@ static inline bool pvr_dump_buffer_advance(struct pvr_dump_buffer_ctx *ctx,
 static inline void __pvr_dump_buffer_rewind(struct pvr_dump_buffer_ctx *ctx,
                                             const uint32_t nr_bytes)
 {
-   ctx->ptr -= nr_bytes;
+   ctx->ptr = (uint8_t *)ctx->ptr - nr_bytes;
    ctx->remaining_size += nr_bytes;
 }
 

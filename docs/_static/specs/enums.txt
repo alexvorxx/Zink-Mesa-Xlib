@@ -73,6 +73,9 @@ GL_MESA_tile_raster_order
 GL_MESA_framebuffer_flip_y
 	GL_FRAMEBUFFER_FLIP_Y_MESA           0x8BBB
 
+GL_MESA_texture_const_bandwidth
+	GL_CONST_BW_TILING_MESA                 0x8BBE
+
 EGL_MESA_drm_image
         EGL_DRM_BUFFER_FORMAT_MESA		0x31D0
         EGL_DRM_BUFFER_USE_MESA			0x31D1

@@ -36,6 +36,7 @@
 #include "brw_cfg.h"
 #include "brw_dead_control_flow.h"
 #include "brw_private.h"
+#include "shader_enums.h"
 #include "dev/intel_debug.h"
 #include "dev/intel_wa.h"
 #include "compiler/glsl_types.h"
@@ -591,7 +592,7 @@ fs_visitor::vfail(const char *format, va_list va)
 
    msg = ralloc_vasprintf(mem_ctx, format, va);
    msg = ralloc_asprintf(mem_ctx, "SIMD%d %s compile failed: %s\n",
-         dispatch_width, stage_abbrev, msg);
+         dispatch_width, _mesa_shader_stage_to_abbrev(stage), msg);
 
    this->fail_msg = msg;
 
@@ -842,10 +843,10 @@ fs_inst::components_read(unsigned i) const
       return (i == 0 ? 2 : 1);
 
    case SHADER_OPCODE_URB_WRITE_LOGICAL:
+      assert(src[URB_LOGICAL_SRC_COMPONENTS].file == IMM);
+
       if (i == URB_LOGICAL_SRC_DATA)
-         return mlen - 1 -
-            unsigned(src[URB_LOGICAL_SRC_PER_SLOT_OFFSETS].file != BAD_FILE) -
-            unsigned(src[URB_LOGICAL_SRC_CHANNEL_MASK].file != BAD_FILE);
+         return src[URB_LOGICAL_SRC_COMPONENTS].ud;
       else
          return 1;
 
@@ -910,7 +911,7 @@ fs_inst::size_read(int arg) const
       break;
 
    default:
-      if (is_tex() && arg == 0 && src[0].file == VGRF)
+      if (arg == 0 && src[0].file == VGRF && is_tex())
          return mlen * REG_SIZE;
       break;
    }
@@ -1012,9 +1013,6 @@ fs_inst::flags_written(const intel_device_info *devinfo) const
    /* On Gfx4 and Gfx5, sel.l (for min) and sel.ge (for max) are implemented
     * using a separate cmpn and sel instruction.  This lowering occurs in
     * fs_vistor::lower_minmax which is called very, very late.
-    *
-    * FIND_LIVE_CHANNEL & FIND_LAST_LIVE_CHANNEL are lowered in
-    * lower_find_live_channel() on Gfx8+ and do not use the flag registers.
     */
    if ((conditional_mod && ((opcode != BRW_OPCODE_SEL || devinfo->ver <= 5) &&
                             opcode != BRW_OPCODE_CSEL &&
@@ -1022,9 +1020,8 @@ fs_inst::flags_written(const intel_device_info *devinfo) const
                             opcode != BRW_OPCODE_WHILE)) ||
        opcode == FS_OPCODE_FB_WRITE) {
       return flag_mask(this, 1);
-   } else if ((devinfo->ver <= 7 &&
-               (opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL ||
-                opcode == SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL)) ||
+   } else if (opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL ||
+              opcode == SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL ||
               opcode == FS_OPCODE_LOAD_LIVE_CHANNELS) {
       return flag_mask(this, 32);
    } else {
@@ -1591,16 +1588,16 @@ fs_visitor::emit_gs_thread_end()
 
       fs_reg srcs[URB_LOGICAL_NUM_SRCS];
       srcs[URB_LOGICAL_SRC_HANDLE] = gs_payload().urb_handles;
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(0);
       inst = abld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
                        srcs, ARRAY_SIZE(srcs));
-      inst->mlen = 1;
    } else {
       fs_reg srcs[URB_LOGICAL_NUM_SRCS];
       srcs[URB_LOGICAL_SRC_HANDLE] = gs_payload().urb_handles;
       srcs[URB_LOGICAL_SRC_DATA] = this->final_gs_vertex_count;
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(1);
       inst = abld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
                        srcs, ARRAY_SIZE(srcs));
-      inst->mlen = 2;
    }
    inst->eot = true;
    inst->offset = 0;
@@ -1676,7 +1673,7 @@ fs_visitor::assign_curb_setup()
                                    LSC_DATA_SIZE_D32,
                                    num_regs * 8 /* num_channels */,
                                    true /* transpose */,
-                                   LSC_CACHE_LOAD_L1STATE_L3MOCS,
+                                   LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
                                    true /* has_dest */);
          send->header_size = 0;
          send->mlen = lsc_msg_desc_src0_len(devinfo, send->desc);
@@ -4917,13 +4914,23 @@ get_fpu_lowered_simd_width(const struct brw_compiler *compiler,
     * restrictions.  The code below intentionally doesn't check whether the
     * destination type is integer because empirically the hardware doesn't
     * seem to care what the actual type is as long as it's dword-aligned.
+    *
+    * HSW PRMs also add a note to the second exception:
+    *  "When lower 8 channels are disabled, the sub register of source1
+    *   operand is not incremented. If the lower 8 channels are expected
+    *   to be disabled, say by predication, the instruction must be split
+    *   into pair of simd8 operations."
+    *
+    * We can't reliably know if the channels won't be disabled due to,
+    * for example, IMASK. So, play it safe and disallow packed-word exception
+    * for src1.
     */
    if (devinfo->ver < 8) {
       for (unsigned i = 0; i < inst->sources; i++) {
          /* IVB implements DF scalars as <0;2,1> regions. */
          const bool is_scalar_exception = is_uniform(inst->src[i]) &&
             (devinfo->platform == INTEL_PLATFORM_HSW || type_sz(inst->src[i].type) != 8);
-         const bool is_packed_word_exception =
+         const bool is_packed_word_exception = i != 1 &&
             type_sz(inst->dst.type) == 4 && inst->dst.stride == 1 &&
             type_sz(inst->src[i].type) == 2 && inst->src[i].stride == 1;
 
@@ -5143,6 +5150,7 @@ get_lowered_simd_width(const struct brw_compiler *compiler,
    const struct intel_device_info *devinfo = compiler->devinfo;
 
    switch (inst->opcode) {
+   case BRW_OPCODE_DP4A:
    case BRW_OPCODE_MOV:
    case BRW_OPCODE_SEL:
    case BRW_OPCODE_NOT:
@@ -5390,7 +5398,7 @@ get_lowered_simd_width(const struct brw_compiler *compiler,
 
    case SHADER_OPCODE_URB_READ_LOGICAL:
    case SHADER_OPCODE_URB_WRITE_LOGICAL:
-      return MIN2(8, inst->exec_size);
+      return MIN2(devinfo->ver < 20 ? 8 : 16, inst->exec_size);
 
    case SHADER_OPCODE_QUAD_SWIZZLE: {
       const unsigned swiz = inst->src[1].ud;
@@ -6259,7 +6267,7 @@ fs_visitor::debug_optimizer(const nir_shader *nir,
    char *filename;
    int ret = asprintf(&filename, "%s/%s%d-%s-%02d-%02d-%s",
                       debug_get_option("INTEL_SHADER_OPTIMIZER_PATH", "./"),
-                      stage_abbrev, dispatch_width, nir->info.name,
+                      _mesa_shader_stage_to_abbrev(stage), dispatch_width, nir->info.name,
                       iteration, pass_num, pass_name);
    if (ret == -1)
       return;
@@ -6922,7 +6930,7 @@ fs_visitor::allocate_registers(bool allow_spilling)
                           "%s shader triggered register spilling.  "
                           "Try reducing the number of live scalar "
                           "values to improve performance.\n",
-                          stage_name);
+                          _mesa_shader_stage_to_string(stage));
    }
 
    /* This must come after all optimization and register allocation, since
@@ -7079,9 +7087,9 @@ fs_visitor::emit_tcs_thread_end()
    srcs[URB_LOGICAL_SRC_HANDLE] = tcs_payload().patch_urb_output;
    srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(WRITEMASK_X << 16);
    srcs[URB_LOGICAL_SRC_DATA] = brw_imm_ud(0);
+   srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(1);
    fs_inst *inst = bld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
                             reg_undef, srcs, ARRAY_SIZE(srcs));
-   inst->mlen = 3;
    inst->eot = true;
 }
 
@@ -7465,13 +7473,13 @@ static bool
 is_used_in_not_interp_frag_coord(nir_def *def)
 {
    nir_foreach_use_including_if(src, def) {
-      if (src->is_if)
+      if (nir_src_is_if(src))
          return true;
 
-      if (src->parent_instr->type != nir_instr_type_intrinsic)
+      if (nir_src_parent_instr(src)->type != nir_instr_type_intrinsic)
          return true;
 
-      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(src->parent_instr);
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(nir_src_parent_instr(src));
       if (intrin->intrinsic != nir_intrinsic_load_frag_coord)
          return true;
    }

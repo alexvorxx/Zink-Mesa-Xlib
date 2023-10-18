@@ -109,7 +109,6 @@ fd6_launch_grid(struct fd_context *ctx, const struct pipe_grid_info *info) in_dt
 {
    struct fd6_compute_state *cs = (struct fd6_compute_state *)ctx->compute;
    struct fd_ringbuffer *ring = ctx->batch->draw;
-   unsigned nglobal = 0;
 
    if (unlikely(!cs->v)) {
       struct ir3_shader_state *hwcso = (struct ir3_shader_state *)cs->hwcso;
@@ -164,23 +163,6 @@ fd6_launch_grid(struct fd_context *ctx, const struct pipe_grid_info *info) in_dt
 
    if (cs->v->need_driver_params || info->input)
       fd6_emit_cs_driver_params(ctx, ring, cs, info);
-
-   u_foreach_bit (i, ctx->global_bindings.enabled_mask)
-      nglobal++;
-
-   if (nglobal > 0) {
-      /* global resources don't otherwise get an OUT_RELOC(), since
-       * the raw ptr address is emitted in ir3_emit_cs_consts().
-       * So to make the kernel aware that these buffers are referenced
-       * by the batch, emit dummy reloc's as part of a no-op packet
-       * payload:
-       */
-      OUT_PKT7(ring, CP_NOP, 2 * nglobal);
-      u_foreach_bit (i, ctx->global_bindings.enabled_mask) {
-         struct pipe_resource *prsc = ctx->global_bindings.buf[i];
-         OUT_RELOC(ring, fd_resource(prsc)->bo, 0, 0, 0);
-      }
-   }
 
    OUT_PKT7(ring, CP_SET_MARKER, 1);
    OUT_RING(ring, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));

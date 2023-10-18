@@ -1,5 +1,5 @@
 /**********************************************************
- * Copyright 2008-2009 VMware, Inc.  All rights reserved.
+ * Copyright 2008-2023 VMware, Inc.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -89,6 +89,7 @@ enum svga_hud {
  * including the zero slot for the default constant buffer.
  */
 #define SVGA_MAX_CONST_BUFS 15
+#define SVGA_MAX_RAW_BUFS   64
 
 /**
  * Maximum constant buffer size that can be set in the
@@ -98,10 +99,10 @@ enum svga_hud {
 #define SVGA_MAX_CONST_BUF_SIZE (4096 * 4 * sizeof(int))
 
 #define CONST0_UPLOAD_ALIGNMENT 256
+#define SVGA_MAX_UAVIEWS        SVGA3D_DX11_1_MAX_UAVIEWS
 #define SVGA_MAX_IMAGES         SVGA3D_MAX_UAVIEWS
 #define SVGA_MAX_SHADER_BUFFERS	SVGA3D_MAX_UAVIEWS
 #define SVGA_MAX_ATOMIC_BUFFERS	SVGA3D_MAX_UAVIEWS
-#define SVGA_MAX_UAVIEWS        SVGA3D_DX11_1_MAX_UAVIEWS
 
 enum svga_surface_state
 {
@@ -321,7 +322,7 @@ struct svga_state
     * svga_shader_emitter_v10.num_shader_consts.
     */
    struct pipe_constant_buffer constbufs[PIPE_SHADER_TYPES][SVGA_MAX_CONST_BUFS];
-   struct svga_raw_buffer rawbufs[PIPE_SHADER_TYPES][SVGA_MAX_CONST_BUFS];
+   struct svga_raw_buffer rawbufs[PIPE_SHADER_TYPES][SVGA_MAX_RAW_BUFS];
 
    struct pipe_framebuffer_state framebuffer;
    float depthscale;
@@ -444,8 +445,8 @@ struct svga_hw_draw_state
    /** Currently bound constant buffer, per shader stage */
    struct pipe_resource *constbuf[PIPE_SHADER_TYPES][SVGA_MAX_CONST_BUFS];
    struct svga_constant_buffer constbufoffsets[PIPE_SHADER_TYPES][SVGA_MAX_CONST_BUFS];
-   struct svga_raw_buffer rawbufs[PIPE_SHADER_TYPES][SVGA_MAX_CONST_BUFS];
-   unsigned enabled_rawbufs[PIPE_SHADER_TYPES];
+   struct svga_raw_buffer rawbufs[PIPE_SHADER_TYPES][SVGA_MAX_RAW_BUFS];
+   uint64_t enabled_rawbufs[PIPE_SHADER_TYPES];
 
    /** Bitmask of enabled constant buffers */
    unsigned enabled_constbufs[PIPE_SHADER_TYPES];
@@ -497,6 +498,7 @@ struct svga_hw_draw_state
    /* Shader Buffers */
    unsigned num_shader_buffers[PIPE_SHADER_TYPES];
    struct svga_shader_buffer shader_buffers[PIPE_SHADER_TYPES][SVGA_MAX_SHADER_BUFFERS];
+   uint64_t enabled_raw_shaderbufs[PIPE_SHADER_TYPES];
 
    /* HW Atomic Buffers */
    unsigned num_atomic_buffers;
@@ -646,8 +648,11 @@ struct svga_context
       /** bitmasks of which const buffers are changed */
       unsigned dirty_constbufs[PIPE_SHADER_TYPES];
 
-      /** bitmasks of which const buffers to be bound as raw buffers */
+      /** bitmasks of which const buffers to be bound as srv raw buffers */
       unsigned raw_constbufs[PIPE_SHADER_TYPES];
+
+      /** bitmasks of which shader buffers to be bound as srv raw buffers */
+      uint64_t raw_shaderbufs[PIPE_SHADER_TYPES];
 
       unsigned texture_timestamp;
       unsigned uav_timestamp[2];

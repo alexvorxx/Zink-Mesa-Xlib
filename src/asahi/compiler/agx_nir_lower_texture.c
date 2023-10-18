@@ -8,6 +8,7 @@
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_builtin_builder.h"
+#include "agx_compile.h"
 #include "agx_compiler.h"
 #include "agx_internal_formats.h"
 #include "agx_nir.h"
@@ -364,10 +365,16 @@ lower_regular_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
       /* Clamp to max layer = (# of layers - 1) for out-of-bounds handling.
        * Layer must be 16-bits for the hardware, drop top bits after clamping.
        */
-      nir_def *txs = nir_get_texture_size(b, tex);
-      nir_def *nr_layers = nir_channel(b, txs, lidx);
-      nir_def *max_layer = nir_iadd_imm(b, nr_layers, -1);
-      layer = nir_u2u16(b, nir_umin(b, unclamped_layer, max_layer));
+      if (!(tex->backend_flags & AGX_TEXTURE_FLAG_NO_CLAMP)) {
+         nir_def *txs = nir_get_texture_size(b, tex);
+         nir_def *nr_layers = nir_channel(b, txs, lidx);
+         nir_def *max_layer = nir_iadd_imm(b, nr_layers, -1);
+         layer = nir_umin(b, unclamped_layer, max_layer);
+      } else {
+         layer = unclamped_layer;
+      }
+
+      layer = nir_u2u16(b, layer);
    }
 
    /* Combine layer and multisample index into 32-bit so we don't need a vec5 or

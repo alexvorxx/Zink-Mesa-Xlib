@@ -34,7 +34,7 @@ enum tu_debug_flags
    TU_DEBUG_PERFC = 1 << 9,
    TU_DEBUG_FLUSHALL = 1 << 10,
    TU_DEBUG_SYNCDRAW = 1 << 11,
-   /* bit 12 is available */
+   TU_DEBUG_PUSH_CONSTS_PER_STAGE = 1 << 12,
    TU_DEBUG_GMEM = 1 << 13,
    TU_DEBUG_RAST_ORDER = 1 << 14,
    TU_DEBUG_UNALIGNED_STORE = 1 << 15,
@@ -47,6 +47,7 @@ enum tu_debug_flags
    TU_DEBUG_3D_LOAD = 1 << 22,
    TU_DEBUG_FDM = 1 << 23,
    TU_DEBUG_NOCONFORM = 1 << 24,
+   TU_DEBUG_RD = 1 << 25,
 };
 
 struct tu_env {

@@ -141,17 +141,9 @@ void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part
    }
 
    /* Compute vertex load indices from instance divisors. */
-   LLVMValueRef instance_divisor_constbuf = NULL;
-
-   if (key->vs_prolog.states.instance_divisor_is_fetched) {
-      LLVMValueRef list = ac_get_arg(&ctx->ac, args->internal_bindings);
-      list = LLVMBuildIntToPtr(ctx->ac.builder, list,
-                               ac_array_in_const32_addr_space(ctx->ac.v4i32), "");
-
-      LLVMValueRef buf_index = LLVMConstInt(ctx->ac.i32, SI_VS_CONST_INSTANCE_DIVISORS, 0);
-      instance_divisor_constbuf = ac_build_load_to_sgpr(&ctx->ac,
-         (struct ac_llvm_pointer) { .v = list, .t = ctx->ac.v4i32 }, buf_index);
-   }
+   LLVMValueRef instance_divisor_constbuf =
+      key->vs_prolog.states.instance_divisor_is_fetched ?
+      si_prolog_get_internal_binding_slot(ctx, SI_VS_CONST_INSTANCE_DIVISORS) : NULL;
 
    for (int i = 0; i < key->vs_prolog.num_inputs; i++) {
       LLVMValueRef index = get_vertex_index(ctx, &key->vs_prolog.states, i,

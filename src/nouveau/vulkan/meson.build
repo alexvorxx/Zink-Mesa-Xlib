@@ -60,13 +60,6 @@ nvk_files = files(
   'nvk_wsi.h'
 )
 
-if get_option('nvk-legacy-uapi')
-  nvk_files += files(
-    'nvk_bo_sync.c',
-    'nvk_bo_sync.h',
-  )
-endif
-
 nvk_entrypoints = custom_target(
   'nvk_entrypoints',
   input : [vk_entrypoints_gen, vk_api_xml],

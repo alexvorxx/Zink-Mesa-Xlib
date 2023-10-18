@@ -121,7 +121,9 @@ struct ac_llvm_context {
    unsigned range_md_kind;
    unsigned invariant_load_md_kind;
    unsigned uniform_md_kind;
+   unsigned fpmath_md_kind;
    LLVMValueRef empty_md;
+   LLVMValueRef three_md;
 
    const struct radeon_info *info;
    enum amd_gfx_level gfx_level;

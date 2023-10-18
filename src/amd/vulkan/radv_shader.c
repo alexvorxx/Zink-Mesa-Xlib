@@ -912,7 +912,7 @@ radv_lower_ngg(struct radv_device *device, struct radv_shader_stage *ngg_stage, 
       bool scratch_ring = false;
       NIR_PASS_V(nir, ac_nir_lower_ngg_ms, options.gfx_level, options.clipdist_enable_mask,
                  options.vs_output_param_offset, options.has_param_exports, &scratch_ring, info->wave_size,
-                 pl_key->has_multiview_view_index);
+                 pl_key->has_multiview_view_index, info->ms.has_query);
       ngg_stage->info.ms.needs_ms_scratch_ring = scratch_ring;
    } else {
       unreachable("invalid SW stage passed to radv_lower_ngg");
@@ -1078,7 +1078,7 @@ insert_block(struct radv_device *device, union radv_shader_arena_block *hole, ui
          add_hole(free_list, left_hole);
    }
 
-   if (hole_end > offset_in_hole + size) {
+   if (hole->size > offset_in_hole + size) {
       right_hole = alloc_block_obj(device);
       if (!right_hole) {
          free(left_hole);
@@ -1182,6 +1182,8 @@ radv_alloc_shader_memory(struct radv_device *device, uint32_t size, bool replaya
 
    alloc =
       insert_block(device, list_entry(arena->entries.next, union radv_shader_arena_block, list), 0, size, free_list);
+   alloc->freelist.prev = NULL;
+   alloc->freelist.next = ptr;
 
    ++device->shader_arena_shift;
    list_addtail(&arena->list, &device->shader_arenas);
@@ -1553,7 +1555,7 @@ radv_postprocess_binary_config(struct radv_device *device, struct radv_shader_bi
    unsigned num_input_vgprs = args->ac.num_vgprs_used;
 
    if (stage == MESA_SHADER_FRAGMENT) {
-      num_input_vgprs = ac_get_fs_input_vgpr_cnt(config, NULL, NULL, NULL);
+      num_input_vgprs = ac_get_fs_input_vgpr_cnt(config, NULL);
    }
 
    unsigned num_vgprs = MAX2(config->num_vgprs, num_input_vgprs);
@@ -2603,7 +2605,7 @@ radv_create_ps_epilog(struct radv_device *device, const struct radv_ps_epilog_ke
 
    struct radv_shader_part_binary *binary = NULL;
    struct aco_shader_info ac_info;
-   struct aco_ps_epilog_info ac_epilog_info;
+   struct aco_ps_epilog_info ac_epilog_info = {0};
    struct aco_compiler_options ac_opts;
    radv_aco_convert_shader_info(&ac_info, &info, &args, &options.key, options.info->gfx_level);
    radv_aco_convert_opts(&ac_opts, &options, &args);

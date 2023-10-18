@@ -2398,7 +2398,8 @@ vec4_visitor::run()
       if (INTEL_DEBUG(DEBUG_OPTIMIZER) && this_progress) {             \
          char filename[64];                                            \
          snprintf(filename, 64, "%s-%s-%02d-%02d-" #pass,              \
-                  stage_abbrev, nir->info.name, iteration, pass_num); \
+                  _mesa_shader_stage_to_abbrev(stage),                 \
+                  nir->info.name, iteration, pass_num);                \
                                                                        \
          backend_shader::dump_instructions(filename);                  \
       }                                                                \
@@ -2411,7 +2412,7 @@ vec4_visitor::run()
    if (INTEL_DEBUG(DEBUG_OPTIMIZER)) {
       char filename[64];
       snprintf(filename, 64, "%s-%s-00-00-start",
-               stage_abbrev, nir->info.name);
+               _mesa_shader_stage_to_abbrev(stage), nir->info.name);
 
       backend_shader::dump_instructions(filename);
    }
@@ -2499,7 +2500,7 @@ vec4_visitor::run()
                           "%s shader triggered register spilling.  "
                           "Try reducing the number of live vec4 values "
                           "to improve performance.\n",
-                          stage_name);
+                          _mesa_shader_stage_to_string(stage));
 
       while (!reg_allocate()) {
          if (failed)

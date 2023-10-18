@@ -316,11 +316,8 @@ ubwc_possible(struct tu_device *device,
       return false;
 
    if (!info->a6xx.has_8bpp_ubwc &&
-       (format == VK_FORMAT_R8_UNORM ||
-        format == VK_FORMAT_R8_SNORM ||
-        format == VK_FORMAT_R8_UINT ||
-        format == VK_FORMAT_R8_SINT ||
-        format == VK_FORMAT_R8_SRGB))
+       vk_format_get_blocksizebits(format) == 8 &&
+       tu6_plane_count(format) == 1)
       return false;
 
    if (type == VK_IMAGE_TYPE_3D) {
@@ -840,31 +837,59 @@ tu_GetDeviceImageSparseMemoryRequirements(
    tu_stub();
 }
 
-VKAPI_ATTR void VKAPI_CALL
-tu_GetImageSubresourceLayout(VkDevice _device,
-                             VkImage _image,
-                             const VkImageSubresource *pSubresource,
-                             VkSubresourceLayout *pLayout)
+static void
+tu_get_image_subresource_layout(struct tu_image *image,
+                                const VkImageSubresource2KHR *pSubresource,
+                                VkSubresourceLayout2KHR *pLayout)
 {
-   TU_FROM_HANDLE(tu_image, image, _image);
-
    struct fdl_layout *layout =
-      &image->layout[tu6_plane_index(image->vk.format, pSubresource->aspectMask)];
-   const struct fdl_slice *slice = layout->slices + pSubresource->mipLevel;
+      &image->layout[tu6_plane_index(image->vk.format,
+                                     pSubresource->imageSubresource.aspectMask)];
+   const struct fdl_slice *slice = layout->slices +
+      pSubresource->imageSubresource.mipLevel;
 
-   pLayout->offset =
-      fdl_surface_offset(layout, pSubresource->mipLevel, pSubresource->arrayLayer);
-   pLayout->rowPitch = fdl_pitch(layout, pSubresource->mipLevel);
-   pLayout->arrayPitch = fdl_layer_stride(layout, pSubresource->mipLevel);
-   pLayout->depthPitch = slice->size0;
-   pLayout->size = pLayout->depthPitch * layout->depth0;
+   pLayout->subresourceLayout.offset =
+      fdl_surface_offset(layout, pSubresource->imageSubresource.mipLevel,
+                         pSubresource->imageSubresource.arrayLayer);
+   pLayout->subresourceLayout.rowPitch =
+      fdl_pitch(layout, pSubresource->imageSubresource.mipLevel);
+   pLayout->subresourceLayout.arrayPitch =
+      fdl_layer_stride(layout, pSubresource->imageSubresource.mipLevel);
+   pLayout->subresourceLayout.depthPitch = slice->size0;
+   pLayout->subresourceLayout.size = slice->size0 * layout->depth0;
 
-   if (fdl_ubwc_enabled(layout, pSubresource->mipLevel)) {
+   if (fdl_ubwc_enabled(layout, pSubresource->imageSubresource.mipLevel)) {
       /* UBWC starts at offset 0 */
-      pLayout->offset = 0;
+      pLayout->subresourceLayout.offset = 0;
       /* UBWC scanout won't match what the kernel wants if we have levels/layers */
       assert(image->vk.mip_levels == 1 && image->vk.array_layers == 1);
    }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_GetImageSubresourceLayout2KHR(VkDevice _device,
+                                 VkImage _image,
+                                 const VkImageSubresource2KHR *pSubresource,
+                                 VkSubresourceLayout2KHR *pLayout)
+{
+   TU_FROM_HANDLE(tu_image, image, _image);
+
+   tu_get_image_subresource_layout(image, pSubresource, pLayout);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_GetDeviceImageSubresourceLayoutKHR(VkDevice _device,
+                                      const VkDeviceImageSubresourceInfoKHR *pInfo,
+                                      VkSubresourceLayout2KHR *pLayout)
+{
+   TU_FROM_HANDLE(tu_device, device, _device);
+
+   struct tu_image image = {0};
+
+   tu_image_init(device, &image, pInfo->pCreateInfo, DRM_FORMAT_MOD_INVALID,
+                 NULL);
+
+   tu_get_image_subresource_layout(&image, pInfo->pSubresource, pLayout);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

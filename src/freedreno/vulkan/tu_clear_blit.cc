@@ -179,8 +179,12 @@ r2d_clear_value(struct tu_cs *cs, enum pipe_format format, const VkClearValue *v
       assert(desc->layout == UTIL_FORMAT_LAYOUT_PLAIN ||
              format == PIPE_FORMAT_R11G11B10_FLOAT);
 
-      for (unsigned i = 0; i < desc->nr_channels; i++) {
-         const struct util_format_channel_description *ch = &desc->channel[i];
+      for (unsigned i = 0; i < 4; i++) {
+         if (desc->swizzle[i] > PIPE_SWIZZLE_W)
+            continue;
+
+         const struct util_format_channel_description *ch =
+            &desc->channel[desc->swizzle[i]];
          if (ifmt == R2D_UNORM8) {
             float linear = val->color.float32[i];
             if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB && i < 3)
@@ -737,7 +741,7 @@ compile_shader(struct tu_device *dev, struct nir_shader *nir,
    ir3_finalize_nir(dev->compiler, nir);
 
    const struct ir3_shader_options options = {
-      .reserved_user_consts = align(consts, 4),
+      .num_reserved_user_consts = align(consts, 4),
       .api_wavesize = IR3_SINGLE_OR_DOUBLE,
       .real_wavesize = IR3_SINGLE_OR_DOUBLE,
    };
@@ -821,8 +825,8 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
          .cs_ibo = true,
          .gfx_ibo = true,
          .gfx_shared_const = true,
-         .cs_bindless = 0x1f,
-         .gfx_bindless = 0x1f,));
+         .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,
+         .gfx_bindless = CHIP == A6XX ? 0x1f : 0xff,));
 
    tu6_emit_xs_config<CHIP>(cs, MESA_SHADER_VERTEX, vs);
    tu6_emit_xs_config<CHIP>(cs, MESA_SHADER_TESS_CTRL, NULL);
@@ -1808,9 +1812,10 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
       src1_z = info->srcOffsets[0].z;
    }
 
-   if (info->dstSubresource.layerCount > 1) {
+   if (vk_image_subresource_layer_count(&dst_image->vk, &info->dstSubresource) > 1) {
       assert(layers <= 1);
-      layers = info->dstSubresource.layerCount;
+      layers = vk_image_subresource_layer_count(&dst_image->vk,
+                                                &info->dstSubresource);
    }
 
    /* BC1_RGB_* formats need to have their last components overriden with 1
@@ -1968,7 +1973,9 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
                         const VkBufferImageCopy2 *info)
 {
    struct tu_cs *cs = &cmd->cs;
-   uint32_t layers = MAX2(info->imageExtent.depth, info->imageSubresource.layerCount);
+   uint32_t layers = MAX2(info->imageExtent.depth,
+                          vk_image_subresource_layer_count(&dst_image->vk,
+                                                           &info->imageSubresource));
    enum pipe_format src_format =
       copy_format(dst_image->vk.format, info->imageSubresource.aspectMask);
    enum pipe_format dst_format =
@@ -2054,7 +2061,9 @@ tu_copy_image_to_buffer(struct tu_cmd_buffer *cmd,
                         const VkBufferImageCopy2 *info)
 {
    struct tu_cs *cs = &cmd->cs;
-   uint32_t layers = MAX2(info->imageExtent.depth, info->imageSubresource.layerCount);
+   uint32_t layers = MAX2(info->imageExtent.depth,
+                          vk_image_subresource_layer_count(&src_image->vk,
+                                                           &info->imageSubresource));
    enum pipe_format dst_format =
       copy_format(src_image->vk.format, info->imageSubresource.aspectMask);
    enum pipe_format src_format =
@@ -2171,7 +2180,9 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
    VkOffset3D src_offset = info->srcOffset;
    VkOffset3D dst_offset = info->dstOffset;
    VkExtent3D extent = info->extent;
-   uint32_t layers_to_copy = MAX2(info->extent.depth, info->srcSubresource.layerCount);
+   uint32_t layers_to_copy = MAX2(info->extent.depth,
+                                  vk_image_subresource_layer_count(&src_image->vk,
+                                                                   &info->srcSubresource));
 
    /* From the Vulkan 1.2.140 spec, section 19.3 "Copying Data Between
     * Images":
@@ -2249,6 +2260,9 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
       staging_layout.tile_mode = TILE6_LINEAR;
       staging_layout.ubwc = false;
 
+      uint32_t layer_count =
+         vk_image_subresource_layer_count(&src_image->vk,
+                                          &info->srcSubresource);
       fdl6_layout(&staging_layout,
                   src_format,
                   src_image->layout[0].nr_samples,
@@ -2256,7 +2270,7 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
                   extent.height,
                   extent.depth,
                   1,
-                  info->srcSubresource.layerCount,
+                  layer_count,
                   extent.depth > 1,
                   NULL);
 
@@ -2275,9 +2289,9 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
          .chip = CHIP,
          .iova = staging_bo->iova,
          .base_miplevel = 0,
-         .level_count = info->srcSubresource.layerCount,
+         .level_count = 1,
          .base_array_layer = 0,
-         .layer_count = 1,
+         .layer_count = layer_count,
          .swiz = { PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y, PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W },
          .format = tu_format_for_aspect(src_format, VK_IMAGE_ASPECT_COLOR_BIT),
          .type = FDL_VIEW_TYPE_2D,
@@ -2305,9 +2319,9 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
          .chip = CHIP,
          .iova = staging_bo->iova,
          .base_miplevel = 0,
-         .level_count = info->srcSubresource.layerCount,
+         .level_count = 1,
          .base_array_layer = 0,
-         .layer_count = 1,
+         .layer_count = layer_count,
          .swiz = { PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y, PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W },
          .format = tu_format_for_aspect(dst_format, VK_IMAGE_ASPECT_COLOR_BIT),
          .type = FDL_VIEW_TYPE_2D,
@@ -2512,9 +2526,10 @@ tu_CmdResolveImage2KHR(VkCommandBuffer commandBuffer,
 
    for (uint32_t i = 0; i < pResolveImageInfo->regionCount; ++i) {
       const VkImageResolve2 *info = &pResolveImageInfo->pRegions[i];
-      uint32_t layers = MAX2(info->extent.depth, info->dstSubresource.layerCount);
+      uint32_t layers = MAX2(info->extent.depth,
+                             vk_image_subresource_layer_count(&dst_image->vk,
+                                                              &info->dstSubresource));
 
-      assert(info->srcSubresource.layerCount == info->dstSubresource.layerCount);
       /* TODO: aspect masks possible ? */
 
       coords(ops, cs, info->dstOffset, info->srcOffset, info->extent);
@@ -2980,6 +2995,10 @@ pack_gmem_clear_value(const VkClearValue *val, enum pipe_format format, uint32_t
       break;
    case 32:
       memcpy(clear_value, val->color.float32, 4 * sizeof(float));
+      break;
+   case 0:
+      assert(format == PIPE_FORMAT_A8_UNORM);
+      PACK_F(a8_unorm);
       break;
    default:
       unreachable("unexpected channel size");

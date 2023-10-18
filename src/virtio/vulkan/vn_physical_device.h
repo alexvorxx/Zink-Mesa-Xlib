@@ -74,7 +74,7 @@ struct vn_physical_device {
    uint32_t queue_family_count;
    bool sparse_binding_disabled;
 
-   VkPhysicalDeviceMemoryProperties2 memory_properties;
+   VkPhysicalDeviceMemoryProperties memory_properties;
    uint32_t coherent_uncached;
    uint32_t incoherent_cached;
 

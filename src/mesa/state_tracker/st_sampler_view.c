@@ -361,10 +361,19 @@ st_get_sampler_view_format(const struct st_context *st,
    GLenum baseFormat = _mesa_base_tex_image(texObj)->_BaseFormat;
    format = texObj->surface_based ? texObj->surface_format : texObj->pt->format;
 
+   /* From OpenGL 4.3 spec, "Combined Depth/Stencil Textures":
+    *
+    *    "The DEPTH_STENCIL_TEXTURE_MODE is ignored for non
+    *     depth/stencil textures.
+    */
+   const bool has_combined_ds =
+      baseFormat == GL_DEPTH_STENCIL;
+
    if (baseFormat == GL_DEPTH_COMPONENT ||
        baseFormat == GL_DEPTH_STENCIL ||
        baseFormat == GL_STENCIL_INDEX) {
-      if (texObj->StencilSampling || baseFormat == GL_STENCIL_INDEX)
+      if ((texObj->StencilSampling && has_combined_ds) ||
+          baseFormat == GL_STENCIL_INDEX)
          format = util_format_stencil_only(format);
 
       return format;

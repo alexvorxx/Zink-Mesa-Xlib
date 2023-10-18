@@ -14,6 +14,7 @@
 struct nvk_device;
 struct nvk_physical_device;
 struct nvk_pipeline_compilation_ctx;
+struct vk_pipeline_cache;
 struct vk_pipeline_layout;
 struct vk_pipeline_robustness_state;
 struct vk_shader_module;
@@ -95,6 +96,9 @@ nvk_shader_address(const struct nvk_shader *shader)
    return shader->upload_addr + shader->upload_padding;
 }
 
+uint64_t
+nvk_physical_device_compiler_flags(const struct nvk_physical_device *pdev);
+
 const nir_shader_compiler_options *
 nvk_physical_device_nir_options(const struct nvk_physical_device *pdev,
                                 gl_shader_stage stage);
@@ -122,6 +126,13 @@ nvk_nir_lower_descriptors(nir_shader *nir,
                           const struct vk_pipeline_robustness_state *rs,
                           const struct vk_pipeline_layout *layout);
 
+VkResult
+nvk_shader_stage_to_nir(struct nvk_device *dev,
+                        const VkPipelineShaderStageCreateInfo *sinfo,
+                        const struct vk_pipeline_robustness_state *rstate,
+                        struct vk_pipeline_cache *cache,
+                        void *mem_ctx, struct nir_shader **nir_out);
+
 void
 nvk_lower_nir(struct nvk_device *dev, nir_shader *nir,
               const struct vk_pipeline_robustness_state *rs,
@@ -135,4 +146,7 @@ nvk_compile_nir(struct nvk_physical_device *dev, nir_shader *nir,
 
 VkResult
 nvk_shader_upload(struct nvk_device *dev, struct nvk_shader *shader);
+
+void
+nvk_shader_finish(struct nvk_device *dev, struct nvk_shader *shader);
 #endif

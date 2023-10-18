@@ -51,15 +51,6 @@ r600_lower_tess_io_filter(const nir_instr *instr, gl_shader_stage stage)
    return false;
 }
 
-static nir_def *
-emit_load_param_base(nir_builder *b, nir_intrinsic_op op)
-{
-   nir_intrinsic_instr *result = nir_intrinsic_instr_create(b->shader, op);
-   nir_def_init(&result->instr, &result->def, 4, 32);
-   nir_builder_instr_insert(b, &result->instr);
-   return &result->def;
-}
-
 static int
 get_tcs_varying_offset(nir_intrinsic_instr *op)
 {
@@ -100,18 +91,12 @@ get_tcs_varying_offset(nir_intrinsic_instr *op)
 }
 
 static inline nir_def *
-r600_umad_24(nir_builder *b, nir_def *op1, nir_def *op2, nir_def *op3)
-{
-   return nir_build_alu(b, nir_op_umad24, op1, op2, op3, NULL);
-}
-
-static inline nir_def *
 r600_tcs_base_address(nir_builder *b, nir_def *param_base, nir_def *rel_patch_id)
 {
-   return r600_umad_24(b,
-                       nir_channel(b, param_base, 0),
-                       rel_patch_id,
-                       nir_channel(b, param_base, 3));
+   return nir_umad24(b,
+                     nir_channel(b, param_base, 0),
+                     rel_patch_id,
+                     nir_channel(b, param_base, 3));
 }
 
 static nir_def *
@@ -125,7 +110,7 @@ emil_lsd_in_addr(nir_builder *b,
 
    auto idx1 = nir_src_as_const_value(op->src[0]);
    if (!idx1 || idx1->u32 != 0)
-      addr = r600_umad_24(b, nir_channel(b, base, 1), op->src[0].ssa, addr);
+      addr = nir_umad24(b, nir_channel(b, base, 1), op->src[0].ssa, addr);
 
    auto offset = nir_imm_int(b, get_tcs_varying_offset(op));
 
@@ -146,9 +131,9 @@ emil_lsd_out_addr(nir_builder *b,
 {
 
    nir_def *addr1 =
-      r600_umad_24(b, nir_channel(b, base, 0), patch_id, nir_channel(b, base, 2));
+      nir_umad24(b, nir_channel(b, base, 0), patch_id, nir_channel(b, base, 2));
    nir_def *addr2 =
-      r600_umad_24(b, nir_channel(b, base, 1), op->src[src_offset].ssa, addr1);
+      nir_umad24(b, nir_channel(b, base, 1), op->src[src_offset].ssa, addr1);
    int offset = get_tcs_varying_offset(op);
    return nir_iadd_imm(b,
                        nir_iadd(b,
@@ -217,7 +202,7 @@ get_dest_usee_mask(nir_intrinsic_instr *op)
 
    nir_foreach_use(use_src, &op->def)
    {
-      auto use_instr = use_src->parent_instr;
+      auto use_instr = nir_src_parent_instr(use_src);
       mq.ssa_index = use_src->ssa->index;
 
       switch (use_instr->type) {
@@ -279,16 +264,6 @@ replace_load_instr(nir_builder *b, nir_intrinsic_instr *op, nir_def *addr)
    nir_instr_remove(&op->instr);
 }
 
-static nir_def *
-r600_load_rel_patch_id(nir_builder *b)
-{
-   auto patch_id =
-      nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_tcs_rel_patch_id_r600);
-   nir_def_init(&patch_id->instr, &patch_id->def, 1, 32);
-   nir_builder_instr_insert(b, &patch_id->instr);
-   return &patch_id->def;
-}
-
 static void
 emit_store_lds(nir_builder *b, nir_intrinsic_instr *op, nir_def *addr)
 {
@@ -302,17 +277,10 @@ emit_store_lds(nir_builder *b, nir_intrinsic_instr *op, nir_def *addr)
 
       uint32_t writemask = wmask >> nir_intrinsic_component(op);
 
-      auto store_tcs_out =
-         nir_intrinsic_instr_create(b->shader, nir_intrinsic_store_local_shared_r600);
-      nir_intrinsic_set_write_mask(store_tcs_out, writemask);
-      store_tcs_out->src[0] = nir_src_for_ssa(op->src[0].ssa);
-      store_tcs_out->num_components = store_tcs_out->src[0].ssa->num_components;
       bool start_even = (orig_writemask & (1u << (2 * i)));
-
-      auto addr2 = nir_iadd_imm(b, addr, 8 * i + (start_even ? 0 : 4));
-      store_tcs_out->src[1] = nir_src_for_ssa(addr2);
-
-      nir_builder_instr_insert(b, &store_tcs_out->instr);
+      nir_def *addr2 = nir_iadd_imm(b, addr, 8 * i + (start_even ? 0 : 4));
+      nir_store_local_shared_r600(b, op->src[0].ssa, addr2,
+                                  .write_mask = writemask);
    }
 }
 
@@ -355,19 +323,15 @@ r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum mesa_prim prim_ty
    nir_intrinsic_instr *op = nir_instr_as_intrinsic(instr);
 
    if (b->shader->info.stage == MESA_SHADER_TESS_CTRL) {
-      load_in_param_base =
-         emit_load_param_base(b, nir_intrinsic_load_tcs_in_param_base_r600);
-      load_out_param_base =
-         emit_load_param_base(b, nir_intrinsic_load_tcs_out_param_base_r600);
+      load_in_param_base = nir_load_tcs_in_param_base_r600(b);
+      load_out_param_base = nir_load_tcs_out_param_base_r600(b);
    } else if (b->shader->info.stage == MESA_SHADER_TESS_EVAL) {
-      load_in_param_base =
-         emit_load_param_base(b, nir_intrinsic_load_tcs_out_param_base_r600);
+      load_in_param_base = nir_load_tcs_out_param_base_r600(b);
    } else if (b->shader->info.stage == MESA_SHADER_VERTEX) {
-      load_out_param_base =
-         emit_load_param_base(b, nir_intrinsic_load_tcs_in_param_base_r600);
+      load_out_param_base = nir_load_tcs_in_param_base_r600(b);
    }
 
-   auto rel_patch_id = r600_load_rel_patch_id(b);
+   auto rel_patch_id = nir_load_tcs_rel_patch_id_r600(b);
 
    unsigned tf_inner_address_offset = 0;
    unsigned ncomps_correct = 0;
@@ -378,7 +342,7 @@ r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum mesa_prim prim_ty
       if (b->shader->info.stage == MESA_SHADER_TESS_CTRL)
          vertices_in = nir_channel(b, load_in_param_base, 2);
       else {
-         auto base = emit_load_param_base(b, nir_intrinsic_load_tcs_in_param_base_r600);
+         auto base = nir_load_tcs_in_param_base_r600(b);
          vertices_in = nir_channel(b, base, 2);
       }
       nir_def_rewrite_uses(&op->def, vertices_in);
@@ -442,27 +406,22 @@ r600_lower_tess_io_impl(nir_builder *b, nir_instr *instr, enum mesa_prim prim_ty
       if (!ncomps)
          return false;
       ncomps -= ncomps_correct;
-      auto base = emit_load_param_base(b, nir_intrinsic_load_tcs_out_param_base_r600);
-      auto rel_patch_id = r600_load_rel_patch_id(b);
+      auto base = nir_load_tcs_out_param_base_r600(b);
+      auto rel_patch_id = nir_load_tcs_rel_patch_id_r600(b);
       nir_def *addr0 = r600_tcs_base_address(b, base, rel_patch_id);
       nir_def *addr_outer =
          nir_iadd(b, addr0, load_offset_group(b, tf_inner_address_offset + ncomps));
 
-      auto tf =
-         nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_local_shared_r600);
-      tf->num_components = ncomps;
-      tf->src[0] = nir_src_for_ssa(addr_outer);
-      nir_def_init(&tf->instr, &tf->def, tf->num_components, 32);
-      nir_builder_instr_insert(b, &tf->instr);
+      nir_def *tf = nir_load_local_shared_r600(b, 32, addr_outer);
       if (ncomps < 4 && b->shader->info.stage != MESA_SHADER_TESS_EVAL) {
          auto undef = nir_undef(b, 1, 32);
          nir_def *srcs[4] = {undef, undef, undef, undef};
          for (unsigned i = 0; i < ncomps; ++i)
-            srcs[i] = nir_channel(b, &tf->def, i);
+            srcs[i] = nir_channel(b, tf, i);
          auto help = nir_vec(b, srcs, 4);
          nir_def_rewrite_uses(&op->def, help);
       } else {
-         nir_def_rewrite_uses(&op->def, &tf->def);
+         nir_def_rewrite_uses(&op->def, tf);
       }
       nir_instr_remove(instr);
       return true;
@@ -543,39 +502,24 @@ r600_append_tcs_TF_emission(nir_shader *shader, enum mesa_prim prim_type)
 
    b->cursor = nir_after_cf_list(&f->impl->body);
 
-   auto invocation_id =
-      nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_invocation_id);
-   nir_def_init(&invocation_id->instr, &invocation_id->def, 1, 32);
-   nir_builder_instr_insert(b, &invocation_id->instr);
+   nir_def *invocation_id = nir_load_invocation_id(b);
 
-   nir_push_if(b, nir_ieq_imm(b, &invocation_id->def, 0));
-   auto base = emit_load_param_base(b, nir_intrinsic_load_tcs_out_param_base_r600);
-   auto rel_patch_id = r600_load_rel_patch_id(b);
+   nir_push_if(b, nir_ieq_imm(b, invocation_id, 0));
+   auto base = nir_load_tcs_out_param_base_r600(b);
+   auto rel_patch_id = nir_load_tcs_rel_patch_id_r600(b);
 
    nir_def *addr0 = r600_tcs_base_address(b, base, rel_patch_id);
 
    nir_def *addr_outer = nir_iadd(b, addr0, load_offset_group(b, outer_comps));
-   auto tf_outer =
-      nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_local_shared_r600);
-   tf_outer->num_components = outer_comps;
-   tf_outer->src[0] = nir_src_for_ssa(addr_outer);
-   nir_def_init(
-      &tf_outer->instr, &tf_outer->def, tf_outer->num_components, 32);
-   nir_builder_instr_insert(b, &tf_outer->instr);
+   nir_def *tf_outer = nir_load_local_shared_r600(b, 32, addr_outer);
 
    std::vector<nir_def *> tf_out;
 
-   auto tf_out_base =
-      nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_tcs_tess_factor_base_r600);
-   nir_def_init(&tf_out_base->instr, &tf_out_base->def, 1, 32);
-   nir_builder_instr_insert(b, &tf_out_base->instr);
-
-   auto out_addr0 = nir_build_alu(b,
-                                  nir_op_umad24,
-                                  rel_patch_id,
-                                  nir_imm_int(b, stride),
-                                  &tf_out_base->def,
-                                  NULL);
+   nir_def *tf_out_base = nir_load_tcs_tess_factor_base_r600(b);
+   nir_def *out_addr0 = nir_umad24(b,
+                                   rel_patch_id,
+                                   nir_imm_int(b, stride),
+                                   tf_out_base);
    int chanx = 0;
    int chany = 1;
 
@@ -586,45 +530,39 @@ r600_append_tcs_TF_emission(nir_shader *shader, enum mesa_prim prim_type)
 
    tf_out.push_back(nir_vec2(b,
                              out_addr0,
-                             nir_channel(b, &tf_outer->def, chanx)));
+                             nir_channel(b, tf_outer, chanx)));
 
    tf_out.push_back(nir_vec2(b, nir_iadd_imm(b, out_addr0, 4),
-                             nir_channel(b, &tf_outer->def, chany)));
+                             nir_channel(b, tf_outer, chany)));
 
 
    if (outer_comps > 2) {
       tf_out.push_back(nir_vec2(b,
                                 nir_iadd_imm(b, out_addr0, 8),
-                                nir_channel(b, &tf_outer->def, 2)));
+                                nir_channel(b, tf_outer, 2)));
    }
 
    if (outer_comps > 3) {
       tf_out.push_back(nir_vec2(b,
                                 nir_iadd_imm(b, out_addr0, 12),
-                                nir_channel(b, &tf_outer->def, 3)));
+                                nir_channel(b, tf_outer, 3)));
       inner_base = 16;
 
    }
 
    if (inner_comps) {
       nir_def *addr1 = nir_iadd(b, addr0, load_offset_group(b, 4 + inner_comps));
-      auto tf_inner =
-         nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_local_shared_r600);
-      tf_inner->num_components = inner_comps;
-      tf_inner->src[0] = nir_src_for_ssa(addr1);
-      nir_def_init(
-         &tf_inner->instr, &tf_inner->def, tf_inner->num_components, 32);
-      nir_builder_instr_insert(b, &tf_inner->instr);
+      nir_def *tf_inner = nir_load_local_shared_r600(b, 32, addr1);
 
       tf_out.push_back(nir_vec2(b,
                                 nir_iadd_imm(b, out_addr0, inner_base),
-                                nir_channel(b, &tf_inner->def, 0)));
+                                nir_channel(b, tf_inner, 0)));
 
 
       if (inner_comps > 1) {
          tf_out.push_back(nir_vec2(b,
                                    nir_iadd_imm(b, out_addr0, inner_base + 4),
-                                   nir_channel(b, &tf_inner->def, 1)));
+                                   nir_channel(b, tf_inner, 1)));
 
       }
    }

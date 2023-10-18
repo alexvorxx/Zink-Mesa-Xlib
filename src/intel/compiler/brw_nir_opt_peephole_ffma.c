@@ -33,10 +33,10 @@ static inline bool
 are_all_uses_fadd(nir_def *def)
 {
    nir_foreach_use_including_if(use_src, def) {
-      if (use_src->is_if)
+      if (nir_src_is_if(use_src))
          return false;
 
-      nir_instr *use_instr = use_src->parent_instr;
+      nir_instr *use_instr = nir_src_parent_instr(use_src);
       if (use_instr->type != nir_instr_type_alu)
          return false;
 

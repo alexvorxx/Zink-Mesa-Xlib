@@ -84,25 +84,25 @@ get_disasm_string(aco::Program* program, std::vector<uint32_t>& code, unsigned e
 {
    std::string disasm;
 
-   if (check_print_asm_support(program)) {
-      char* data = NULL;
-      size_t disasm_size = 0;
-      struct u_memstream mem;
-      if (u_memstream_open(&mem, &data, &disasm_size)) {
-         FILE* const memf = u_memstream_get(&mem);
+   char* data = NULL;
+   size_t disasm_size = 0;
+   struct u_memstream mem;
+   if (u_memstream_open(&mem, &data, &disasm_size)) {
+      FILE* const memf = u_memstream_get(&mem);
+      if (check_print_asm_support(program)) {
          aco::print_asm(program, code, exec_size / 4u, memf);
-         fputc(0, memf);
-         u_memstream_close(&mem);
+      } else {
+         fprintf(memf, "Shader disassembly is not supported in the current configuration"
+#ifndef LLVM_AVAILABLE
+                       " (LLVM not available)"
+#endif
+                       ", falling back to print_program.\n\n");
+         aco::aco_print_program(program, memf);
       }
-
+      fputc(0, memf);
+      u_memstream_close(&mem);
       disasm = std::string(data, data + disasm_size);
       free(data);
-   } else {
-      disasm = "Shader disassembly is not supported in the current configuration"
-#ifndef LLVM_AVAILABLE
-               " (LLVM not available)"
-#endif
-               ".\n";
    }
 
    return disasm;
@@ -414,4 +414,14 @@ aco_compile_gl_vs_prolog(const struct aco_compiler_options* options,
 {
    aco_compile_shader_part(options, info, args, aco::select_gl_vs_prolog, (void*)pinfo,
                            build_prolog, binary, true);
+}
+
+void
+aco_compile_ps_prolog(const struct aco_compiler_options* options,
+                      const struct aco_shader_info* info, const struct aco_ps_prolog_info* pinfo,
+                      const struct ac_shader_args* args, aco_shader_part_callback* build_prolog,
+                      void** binary)
+{
+   aco_compile_shader_part(options, info, args, aco::select_ps_prolog, (void*)pinfo, build_prolog,
+                           binary, true);
 }

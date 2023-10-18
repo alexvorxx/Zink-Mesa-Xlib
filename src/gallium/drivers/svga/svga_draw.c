@@ -1,5 +1,5 @@
 /**********************************************************
- * Copyright 2008-2009 VMware, Inc.  All rights reserved.
+ * Copyright 2008-2022 VMware, Inc.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -503,7 +503,7 @@ svga_validate_constant_buffers(struct svga_context *svga,
       unsigned enabled_rawbufs = svga->state.hw_draw.enabled_rawbufs[shader] & ~1u;
       while (enabled_rawbufs) {
          unsigned i = u_bit_scan(&enabled_rawbufs);
-         buffer = svga_buffer(svga->curr.constbufs[shader][i].buffer);
+         buffer = svga_buffer(svga->state.hw_draw.rawbufs[shader][i].buffer);
 
          assert(buffer != NULL);
          handle = svga_buffer_handle(svga, &buffer->b,

@@ -70,6 +70,8 @@ struct ir3_compiler_options {
 
   /* If base_vertex should be lowered in nir */
   bool lower_base_vertex;
+
+  bool shared_push_consts;
 };
 
 struct ir3_compiler {
@@ -245,6 +247,8 @@ struct ir3_compiler {
    uint64_t geom_shared_consts_size_quirk;
 
    bool has_fs_tex_prefetch;
+
+   bool stsc_duplication_quirk;
 };
 
 void ir3_compiler_destroy(struct ir3_compiler *compiler);

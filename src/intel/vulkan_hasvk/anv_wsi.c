@@ -112,7 +112,7 @@ VkResult anv_QueuePresentKHR(
                                      _queue, 0,
                                      pPresentInfo);
 
-   u_trace_context_process(&device->ds.trace_context, true);
+   intel_ds_device_process(&device->ds, true);
 
    return result;
 }

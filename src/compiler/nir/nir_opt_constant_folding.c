@@ -338,6 +338,27 @@ try_fold_tex_offset(nir_tex_instr *tex, unsigned *index,
 }
 
 static bool
+try_fold_texel_offset_src(nir_tex_instr *tex)
+{
+   int offset_src = nir_tex_instr_src_index(tex, nir_tex_src_offset);
+   if (offset_src < 0)
+      return false;
+
+   unsigned size = nir_tex_instr_src_size(tex, offset_src);
+   nir_tex_src *src = &tex->src[offset_src];
+
+   for (unsigned i = 0; i < size; i++) {
+      nir_scalar comp = nir_scalar_resolved(src->src.ssa, i);
+      if (!nir_scalar_is_const(comp) || nir_scalar_as_uint(comp) != 0)
+         return false;
+   }
+
+   nir_tex_instr_remove_src(tex, offset_src);
+
+   return true;
+}
+
+static bool
 try_fold_tex(nir_builder *b, nir_tex_instr *tex)
 {
    bool progress = false;
@@ -350,6 +371,9 @@ try_fold_tex(nir_builder *b, nir_tex_instr *tex)
    /* txb with a bias of constant zero is just tex. */
    if (tex->op == nir_texop_txb)
       progress |= try_fold_txb_to_tex(b, tex);
+
+   /* tex with a zero offset is just tex. */
+   progress |= try_fold_texel_offset_src(tex);
 
    return progress;
 }

@@ -646,6 +646,27 @@ gen_vertex_data(struct vl_compositor *c, struct vl_compositor_state *s, struct u
 }
 
 static void
+set_csc_matrix(struct vl_compositor_state *s)
+{
+   struct pipe_transfer *buf_transfer;
+
+   float *ptr = pipe_buffer_map(s->pipe, s->shader_params,
+                                PIPE_MAP_WRITE | PIPE_MAP_DISCARD_WHOLE_RESOURCE,
+                                &buf_transfer);
+
+   if (!ptr)
+     return;
+
+   memcpy(ptr, &s->csc_matrix, sizeof(vl_csc_matrix));
+
+   ptr += sizeof(vl_csc_matrix) / sizeof(float);
+   *ptr++ = s->luma_min;
+   *ptr++ = s->luma_max;
+
+   pipe_buffer_unmap(s->pipe, buf_transfer);
+}
+
+static void
 draw_layers(struct vl_compositor *c, struct vl_compositor_state *s, struct u_rect *dirty)
 {
    unsigned vb_index, i;
@@ -705,6 +726,7 @@ vl_compositor_gfx_render(struct vl_compositor_state *s,
    c->pipe->set_scissor_states(c->pipe, 0, 1, &s->scissor);
 
    gen_vertex_data(c, s, dirty_area);
+   set_csc_matrix(s);
 
    if (clear_dirty && dirty_area &&
        (dirty_area->x0 < dirty_area->x1 || dirty_area->y0 < dirty_area->y1)) {

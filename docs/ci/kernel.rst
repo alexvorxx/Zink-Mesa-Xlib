@@ -40,15 +40,15 @@ defconfig* made via ``merge_config.sh`` script located at Linux Kernel tree.
 Kconfigs location
 """""""""""""""""
 
-+------------+-----------------------------------------------------+-------------------------------------+
-| Platform   | Mesa CI Kconfig location                            | Linux tree defconfig                |
-+============+=====================================================+=====================================+
-| arm        | kernel/configs/mesa3d-ci_arm.config@gfx-ci/linux    | arch/arm/configs/multi_v7_defconfig |
-+------------+-----------------------------------------------------+-------------------------------------+
-| arm64      | kernel/configs/mesa3d-ci_arm64.config@gfx-ci/linux  | arch/arm64/configs/defconfig        |
-+------------+-----------------------------------------------------+-------------------------------------+
-| x86-64     | kernel/configs/mesa3d-ci_x86_64.config@gfx-ci/linux | arch/x86/configs/x86_64_defconfig   |
-+------------+-----------------------------------------------------+-------------------------------------+
++------------+------------------------------------------------------+-------------------------------------+
+| Platform   | Mesa CI Kconfig location                             | Linux tree defconfig                |
++============+======================================================+=====================================+
+| arm        | kernel/configs/mesa3d-ci_arm.config\@gfx-ci/linux    | arch/arm/configs/multi_v7_defconfig |
++------------+------------------------------------------------------+-------------------------------------+
+| arm64      | kernel/configs/mesa3d-ci_arm64.config\@gfx-ci/linux  | arch/arm64/configs/defconfig        |
++------------+------------------------------------------------------+-------------------------------------+
+| x86-64     | kernel/configs/mesa3d-ci_x86_64.config\@gfx-ci/linux | arch/x86/configs/x86_64_defconfig   |
++------------+------------------------------------------------------+-------------------------------------+
 
 Updating image tags
 -------------------

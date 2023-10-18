@@ -61,10 +61,10 @@ match_block(agx_context *ctx, agx_block *block)
 
    if (if_->op == AGX_OPCODE_IF_FCMP) {
       agx_break_if_fcmp(&b, if_->src[0], if_->src[1], new_nest,
-                        if_->invert_cond, if_->fcond);
+                        if_->invert_cond, if_->fcond, break_->target);
    } else {
       agx_break_if_icmp(&b, if_->src[0], if_->src[1], new_nest,
-                        if_->invert_cond, if_->icond);
+                        if_->invert_cond, if_->icond, break_->target);
    }
 
    agx_remove_instruction(if_);

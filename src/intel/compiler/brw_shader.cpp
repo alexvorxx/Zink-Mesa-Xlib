@@ -74,6 +74,7 @@ brw_type_for_base_type(const struct glsl_type *type)
       return BRW_REGISTER_TYPE_Q;
    case GLSL_TYPE_VOID:
    case GLSL_TYPE_ERROR:
+   case GLSL_TYPE_COOPERATIVE_MATRIX:
       unreachable("not reached");
    }
 
@@ -697,8 +698,6 @@ backend_shader::backend_shader(const struct brw_compiler *compiler,
      stage(shader->info.stage),
      debug_enabled(debug_enabled)
 {
-   stage_name = _mesa_shader_stage_to_string(stage);
-   stage_abbrev = _mesa_shader_stage_to_abbrev(stage);
 }
 
 backend_shader::~backend_shader()

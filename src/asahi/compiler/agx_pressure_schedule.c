@@ -145,7 +145,8 @@ calculate_pressure_delta(agx_instr *I, BITSET_WORD *live)
 
 /*
  * Choose the next instruction, bottom-up. For now we use a simple greedy
- * heuristic: choose the instruction that has the best effect on liveness.
+ * heuristic: choose the instruction that has the best effect on liveness, while
+ * hoisting sample_mask.
  */
 static struct sched_node *
 choose_instr(struct sched_ctx *s)
@@ -154,6 +155,24 @@ choose_instr(struct sched_ctx *s)
    struct sched_node *best = NULL;
 
    list_for_each_entry(struct sched_node, n, &s->dag->heads, dag.link) {
+      /* Heuristic: hoist sample_mask/zs_emit. This allows depth/stencil tests
+       * to run earlier, and potentially to discard the entire quad invocation
+       * earlier, reducing how much redundant fragment shader we run.
+       *
+       * Since we schedule backwards, we make that happen by only choosing
+       * sample_mask when all other instructions have been exhausted.
+       */
+      if (n->instr->op == AGX_OPCODE_SAMPLE_MASK ||
+          n->instr->op == AGX_OPCODE_ZS_EMIT) {
+
+         if (!best) {
+            best = n;
+            assert(min_delta == INT32_MAX);
+         }
+
+         continue;
+      }
+
       int32_t delta = calculate_pressure_delta(n->instr, s->live);
 
       if (delta < min_delta) {

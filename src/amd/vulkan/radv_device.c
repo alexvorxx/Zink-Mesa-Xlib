@@ -690,6 +690,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    bool use_perf_counters = false;
    bool use_dgc = false;
    bool smooth_lines = false;
+   bool mesh_shader_queries = false;
 
    /* Check enabled features */
    if (pCreateInfo->pEnabledFeatures) {
@@ -801,6 +802,12 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
             smooth_lines = true;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT: {
+         const VkPhysicalDeviceMeshShaderFeaturesEXT *features = (const void *)ext;
+         if (features->meshShaderQueries)
+            mesh_shader_queries = true;
+         break;
+      }
       default:
          break;
       }
@@ -857,6 +864,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    device->primitives_generated_query = primitives_generated_query;
    device->uses_device_generated_commands = use_dgc;
    device->smooth_lines = smooth_lines;
+   device->mesh_shader_queries = mesh_shader_queries;
 
    radv_init_shader_arenas(device);
 
@@ -989,9 +997,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
               radv_spm_trace_enabled(device->instance) ? "enabled" : "disabled");
 
       if (radv_spm_trace_enabled(device->instance)) {
-         /* TODO: add SPM counters for GFX11. */
-         if (device->physical_device->rad_info.gfx_level == GFX10 ||
-             device->physical_device->rad_info.gfx_level == GFX10_3) {
+         if (device->physical_device->rad_info.gfx_level >= GFX10) {
             if (!radv_spm_init(device)) {
                result = VK_ERROR_INITIALIZATION_FAILED;
                goto fail;

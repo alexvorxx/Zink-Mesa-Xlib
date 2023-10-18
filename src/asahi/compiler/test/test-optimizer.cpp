@@ -203,16 +203,16 @@ TEST_F(Optimizer, NoConversionsOn16BitALU)
 TEST_F(Optimizer, IfCondition)
 {
    CASE_NO_RETURN(agx_if_icmp(b, agx_icmp(b, wx, wy, AGX_ICOND_UEQ, true),
-                              agx_zero(), 1, AGX_ICOND_UEQ, true),
-                  agx_if_icmp(b, wx, wy, 1, AGX_ICOND_UEQ, true));
+                              agx_zero(), 1, AGX_ICOND_UEQ, true, NULL),
+                  agx_if_icmp(b, wx, wy, 1, AGX_ICOND_UEQ, true, NULL));
 
    CASE_NO_RETURN(agx_if_icmp(b, agx_fcmp(b, wx, wy, AGX_FCOND_EQ, true),
-                              agx_zero(), 1, AGX_ICOND_UEQ, true),
-                  agx_if_fcmp(b, wx, wy, 1, AGX_FCOND_EQ, true));
+                              agx_zero(), 1, AGX_ICOND_UEQ, true, NULL),
+                  agx_if_fcmp(b, wx, wy, 1, AGX_FCOND_EQ, true, NULL));
 
    CASE_NO_RETURN(agx_if_icmp(b, agx_fcmp(b, hx, hy, AGX_FCOND_LT, false),
-                              agx_zero(), 1, AGX_ICOND_UEQ, true),
-                  agx_if_fcmp(b, hx, hy, 1, AGX_FCOND_LT, false));
+                              agx_zero(), 1, AGX_ICOND_UEQ, true, NULL),
+                  agx_if_fcmp(b, hx, hy, 1, AGX_FCOND_LT, false, NULL));
 }
 
 TEST_F(Optimizer, SelectCondition)

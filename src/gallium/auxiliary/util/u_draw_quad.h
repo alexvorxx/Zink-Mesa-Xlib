@@ -40,6 +40,7 @@ extern "C" {
 
 struct pipe_resource;
 struct cso_context;
+struct cso_velems_state;
 
 extern void
 util_draw_vertex_buffer(struct pipe_context *pipe, struct cso_context *cso,
@@ -51,6 +52,11 @@ void
 util_draw_user_vertex_buffer(struct cso_context *cso, void *buffer,
                              enum mesa_prim prim_type, unsigned num_verts,
                              unsigned num_attribs);
+
+void
+util_draw_user_vertices(struct cso_context *cso, struct cso_velems_state *ve,
+                        void *buffer, enum mesa_prim prim_type,
+                        unsigned num_verts);
 
 #ifdef __cplusplus
 }

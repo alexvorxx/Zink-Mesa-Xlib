@@ -780,8 +780,7 @@ r600_shader_from_nir(struct r600_context *rctx,
    }
 
    auto sh = nir_shader_clone(sel->nir, sel->nir);
-   r600::sort_uniforms(sel->nir);
-
+   r600::sort_uniforms(sh);
 
    while (optimize_once(sh))
       ;
@@ -984,7 +983,7 @@ r600_shader_from_nir(struct r600_context *rctx,
    auto scheduled_shader = r600::schedule(shader);
    if (r600::sfn_log.has_debug_flag(r600::SfnLog::steps)) {
       std::cerr << "Shader after scheduling\n";
-      shader->print(std::cerr);
+      scheduled_shader->print(std::cerr);
    }
 
    if (!r600::sfn_log.has_debug_flag(r600::SfnLog::nomerge)) {
@@ -1027,7 +1026,7 @@ r600_shader_from_nir(struct r600_context *rctx,
 
    pipeshader->shader.bc.type = pipeshader->shader.processor_type;
    pipeshader->shader.bc.isa = rctx->isa;
-   pipeshader->shader.bc.ngpr = shader->required_registers();
+   pipeshader->shader.bc.ngpr = scheduled_shader->required_registers();
 
    r600::Assembler afs(&pipeshader->shader, *key);
    if (!afs.lower(scheduled_shader)) {

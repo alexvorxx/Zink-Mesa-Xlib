@@ -222,6 +222,9 @@ get_deref_node(nir_deref_instr *deref, struct lower_variables_state *state)
    if (!nir_deref_mode_must_be(deref, nir_var_function_temp))
       return NULL;
 
+   if (glsl_type_is_cmat(deref->type))
+      return NULL;
+
    struct deref_node *node = get_deref_node_recur(deref, state);
    if (!node)
       return NULL;

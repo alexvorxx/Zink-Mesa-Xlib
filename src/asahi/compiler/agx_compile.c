@@ -443,6 +443,17 @@ agx_emit_store_vary(agx_builder *b, nir_intrinsic_instr *instr)
    assert(nir_src_is_const(*offset) && "todo: indirects");
 
    unsigned imm_index = b->shader->out->varyings.vs.slots[sem.location];
+
+   if (sem.location == VARYING_SLOT_LAYER) {
+      /* Separate slots used for the sysval vs the varying. The default slot
+       * above is for the varying. Change for the sysval.
+       */
+      assert(sem.no_sysval_output || sem.no_varying);
+
+      if (sem.no_varying)
+         imm_index = b->shader->out->varyings.vs.layer_viewport_slot;
+   }
+
    assert(imm_index < ~0);
    imm_index += (nir_src_as_uint(*offset) * 4) + nir_intrinsic_component(instr);
 
@@ -635,14 +646,33 @@ agx_emit_block_image_store(agx_builder *b, nir_intrinsic_instr *instr)
 {
    unsigned image = nir_src_as_uint(instr->src[0]);
    agx_index offset = agx_src_index(&instr->src[1]);
+   agx_index layer = agx_src_index(&instr->src[2]);
    enum agx_format format = agx_format_for_pipe(nir_intrinsic_format(instr));
-   enum agx_dim dim = agx_tex_dim(nir_intrinsic_image_dim(instr), false);
+
+   bool ms = nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS;
+   bool array = nir_intrinsic_image_array(instr);
+   enum agx_dim dim = agx_tex_dim(nir_intrinsic_image_dim(instr), array);
+
+   /* Modified coordinate descriptor */
+   agx_index coords;
+   if (array) {
+      coords = agx_temp(b->shader, AGX_SIZE_32);
+      agx_emit_collect_to(
+         b, coords, 2,
+         (agx_index[]){
+            ms ? agx_mov_imm(b, 16, 0) : layer,
+            ms ? layer : agx_mov_imm(b, 16, 0xFFFF) /* TODO: Why can't zero? */,
+         });
+   } else {
+      coords = agx_null();
+   }
 
    // XXX: how does this possibly work
    if (format == AGX_FORMAT_F16)
       format = AGX_FORMAT_I16;
 
-   return agx_block_image_store(b, agx_immediate(image), offset, format, dim);
+   return agx_block_image_store(b, agx_immediate(image), offset, coords, format,
+                                dim);
 }
 
 static agx_instr *
@@ -1788,7 +1818,7 @@ agx_emit_jump(agx_builder *b, nir_jump_instr *instr)
       agx_block_add_successor(ctx->current_block, ctx->break_block);
    }
 
-   agx_break(b, nestings);
+   agx_break(b, nestings, ctx->break_block);
    ctx->current_block->unconditional_jumps = true;
 }
 
@@ -1941,7 +1971,8 @@ emit_if(agx_context *ctx, nir_if *nif)
    agx_builder _b = agx_init_builder(ctx, agx_after_block(first_block));
    agx_index cond = agx_src_index(&nif->condition);
 
-   agx_if_icmp(&_b, cond, agx_zero(), 1, AGX_ICOND_UEQ, true);
+   agx_instr *if_ = agx_if_icmp(&_b, cond, agx_zero(), 1, AGX_ICOND_UEQ, true,
+                                NULL /* filled in later */);
    ctx->loop_nesting++;
    ctx->total_nesting++;
 
@@ -1954,11 +1985,16 @@ emit_if(agx_context *ctx, nir_if *nif)
    agx_block *else_block = emit_cf_list(ctx, &nif->else_list);
    agx_block *end_else = ctx->current_block;
 
+   /* If the "if" fails, we fallthrough to the else */
+   if_->target = else_block;
+
    /* Insert an else instruction at the beginning of the else block. We use
     * "else_fcmp 0.0, 0.0, eq" as unconditional else, matching the blob.
+    *
+    * If it fails, we fall through to the logical end of the last else block.
     */
    _b.cursor = agx_before_block(else_block);
-   agx_else_fcmp(&_b, agx_zero(), agx_zero(), 1, AGX_FCOND_EQ, false);
+   agx_else_fcmp(&_b, agx_zero(), agx_zero(), 1, AGX_FCOND_EQ, false, end_else);
 
    ctx->after_block = agx_create_block(ctx);
 
@@ -2019,8 +2055,11 @@ emit_loop(agx_context *ctx, nir_loop *nloop)
     */
    _b.cursor = agx_after_block(ctx->current_block);
 
-   if (ctx->loop_continues)
-      agx_while_icmp(&_b, agx_zero(), agx_zero(), 2, AGX_ICOND_UEQ, false);
+   if (ctx->loop_continues) {
+      agx_while_icmp(
+         &_b, agx_zero(), agx_zero(), 2, AGX_ICOND_UEQ, false,
+         NULL /* no semantic target, used purely for side effects */);
+   }
 
    agx_jmp_exec_any(&_b, start_block);
    agx_pop_exec(&_b, ctx->loop_continues ? 2 : 1);
@@ -2332,6 +2371,9 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
    varyings->slots[VARYING_SLOT_POS] = base;
    base += 4;
 
+   /* These are always flat-shaded from the FS perspective */
+   key->vs.outputs_flat_shaded |= VARYING_SLOT_LAYER | VARYING_SLOT_VIEWPORT;
+
    assert(!(key->vs.outputs_flat_shaded & key->vs.outputs_linear_shaded));
 
    /* Smooth 32-bit user bindings go next */
@@ -2376,6 +2418,11 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
 
    if (nir->info.outputs_written & VARYING_BIT_PSIZ) {
       varyings->slots[VARYING_SLOT_PSIZ] = base;
+      base += 1;
+   }
+
+   if (nir->info.outputs_written & VARYING_BIT_LAYER) {
+      varyings->layer_viewport_slot = base;
       base += 1;
    }
 
@@ -2612,6 +2659,7 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
    agx_insert_waits(ctx);
    agx_opt_empty_else(ctx);
    agx_opt_break_if(ctx);
+   agx_opt_jmp_none(ctx);
    agx_lower_pseudo(ctx);
 
    if (agx_should_dump(nir, AGX_DBG_SHADERS))
@@ -2812,8 +2860,10 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
    /* Varying output is scalar, other I/O is vector. Lowered late because
     * transform feedback programs will use vector output.
     */
-   if (nir->info.stage == MESA_SHADER_VERTEX)
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
       NIR_PASS_V(nir, nir_lower_io_to_scalar, nir_var_shader_out, NULL, NULL);
+      NIR_PASS_V(nir, agx_nir_lower_layer);
+   }
 
    out->push_count = key->reserved_preamble;
    agx_optimize_nir(nir, &out->push_count);
@@ -2864,6 +2914,10 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
    if (nir->info.stage == MESA_SHADER_VERTEX) {
       out->writes_psiz =
          nir->info.outputs_written & BITFIELD_BIT(VARYING_SLOT_PSIZ);
+
+      out->writes_layer_viewport =
+         nir->info.outputs_written & (VARYING_BIT_LAYER | VARYING_BIT_VIEWPORT);
+
    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       out->disable_tri_merging = nir->info.fs.needs_all_helper_invocations ||
                                  nir->info.fs.needs_quad_helper_invocations ||

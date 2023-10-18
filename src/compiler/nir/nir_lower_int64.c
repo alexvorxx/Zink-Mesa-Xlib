@@ -713,8 +713,11 @@ lower_find_lsb64(nir_builder *b, nir_def *x)
 
    /* Use umin so that -1 (no bits found) becomes larger (0xFFFFFFFF)
     * than any actual bit position, so we return a found bit instead.
+    * This is similar to the ufind_msb lowering. If you need this lowering
+    * without uadd_sat, add code like in lower_ufind_msb64.
     */
-   return nir_umin(b, lo_lsb, nir_iadd_imm(b, hi_lsb, 32));
+   assert(!b->shader->options->lower_uadd_sat);
+   return nir_umin(b, lo_lsb, nir_uadd_sat(b, hi_lsb, nir_imm_int(b, 32)));
 }
 
 static nir_def *
@@ -772,11 +775,14 @@ lower_2f(nir_builder *b, nir_def *x, unsigned dest_bit_size,
                                     COND_LOWER_OP(b, iand, x, lsb_mask));
    nir_def *round_up = nir_ior(b, COND_LOWER_CMP(b, ilt, half, rem),
                                nir_iand(b, halfway, is_odd));
-   if (significand_bits >= 32)
-      significand = COND_LOWER_OP(b, iadd, significand,
-                                  COND_LOWER_CAST(b, b2i64, round_up));
-   else
-      significand = nir_iadd(b, significand, nir_b2i32(b, round_up));
+   if (!nir_is_rounding_mode_rtz(b->shader->info.float_controls_execution_mode,
+                                 dest_bit_size)) {
+      if (significand_bits >= 32)
+         significand = COND_LOWER_OP(b, iadd, significand,
+                                     COND_LOWER_CAST(b, b2i64, round_up));
+      else
+         significand = nir_iadd(b, significand, nir_b2i32(b, round_up));
+   }
 
    nir_def *res;
 

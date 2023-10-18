@@ -728,14 +728,14 @@ ChipFamily Gfx11Lib::HwlConvertChipFamily(
 
     switch (chipFamily)
     {
-        case FAMILY_GFX1100:
-            if (ASICREV_IS_GFX1100(chipRevision))
+        case FAMILY_NV3:
+            if (ASICREV_IS_NAVI31_P(chipRevision))
             {
             }
-            if (ASICREV_IS_GFX1101(chipRevision))
+            if (ASICREV_IS_NAVI32_P(chipRevision))
             {
             }
-            if (ASICREV_IS_GFX1102(chipRevision))
+            if (ASICREV_IS_NAVI33_P(chipRevision))
             {
             }
             break;

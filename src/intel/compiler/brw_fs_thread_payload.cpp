@@ -108,7 +108,9 @@ gs_thread_payload::gs_thread_payload(const fs_visitor &v)
    unsigned r = reg_unit(v.devinfo);
 
    /* R1: output URB handles. */
-   urb_handles = brw_ud8_grf(r, 0);
+   urb_handles = v.bld.vgrf(BRW_REGISTER_TYPE_UD);
+   v.bld.AND(urb_handles, brw_ud8_grf(r, 0),
+         v.devinfo->ver >= 20 ? brw_imm_ud(0xFFFFFF) : brw_imm_ud(0xFFFF));
    r += reg_unit(v.devinfo);
 
    if (gs_prog_data->include_primitive_id) {
@@ -439,12 +441,16 @@ task_mesh_thread_payload::task_mesh_thread_payload(const fs_visitor &v)
    assert(subgroup_id_.file != BAD_FILE);
    extended_parameter_0 = retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD);
 
-   urb_output = v.bld.vgrf(BRW_REGISTER_TYPE_UD);
-   /* In both mesh and task shader payload, lower 16 bits of g0.6 is
-    * an offset within Slice's Local URB, which says where shader is
-    * supposed to output its data.
-    */
-   v.bld.AND(urb_output, brw_ud1_grf(0, 6), brw_imm_ud(0xFFFF));
+   if (v.devinfo->ver >= 20) {
+      urb_output = brw_ud1_grf(1, 0);
+   } else {
+      urb_output = v.bld.vgrf(BRW_REGISTER_TYPE_UD);
+      /* In both mesh and task shader payload, lower 16 bits of g0.6 is
+       * an offset within Slice's Local URB, which says where shader is
+       * supposed to output its data.
+       */
+      v.bld.AND(urb_output, brw_ud1_grf(0, 6), brw_imm_ud(0xFFFF));
+   }
 
    if (v.stage == MESA_SHADER_MESH) {
       /* g0.7 is Task Shader URB Entry Offset, which contains both an offset

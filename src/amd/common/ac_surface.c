@@ -636,18 +636,48 @@ static int surf_config_sanity(const struct ac_surf_config *config, unsigned flag
 
 static unsigned bpe_to_format(struct radeon_surf *surf)
 {
-   /* The format must be set correctly for the allocation of compressed
-    * textures to work. In other cases, setting the bpp is sufficient.
-    */
-   if (surf->blk_w == 4 && surf->blk_h == 4) {
-      switch (surf->bpe) {
-      case 8:
-         return ADDR_FMT_BC1;
-      case 16:
-         return ADDR_FMT_BC3;
-      default:
-         unreachable("invalid compressed bpe");
-      }
+   if (surf->blk_w != 1 || surf->blk_h != 1) {
+      if (surf->blk_w == 4 && surf->blk_h == 4) {
+         switch (surf->bpe) {
+         case 8:
+            return ADDR_FMT_BC1;
+         case 16:
+            /* since BC3 and ASTC4x4 has same blk dimension and bpe reporting BC3 also for ASTC4x4.
+             * matching is fine since addrlib needs only blk_w, blk_h and bpe to compute surface
+             * properties.
+             * TODO: If compress_type can be passed to this function, then this ugly BC3 and ASTC4x4
+             *       matching can be avoided.
+             */
+            return ADDR_FMT_BC3;
+         default:
+            unreachable("invalid compressed bpe");
+         }
+      } else if (surf->blk_w == 5 && surf->blk_h == 4)
+         return ADDR_FMT_ASTC_5x4;
+      else if (surf->blk_w == 5 && surf->blk_h == 5)
+         return ADDR_FMT_ASTC_5x5;
+      else if (surf->blk_w == 6 && surf->blk_h == 5)
+         return ADDR_FMT_ASTC_6x5;
+      else if (surf->blk_w == 6 && surf->blk_h == 6)
+         return ADDR_FMT_ASTC_6x6;
+      else if (surf->blk_w == 8 && surf->blk_h == 5)
+         return ADDR_FMT_ASTC_8x5;
+      else if (surf->blk_w == 8 && surf->blk_h == 6)
+         return ADDR_FMT_ASTC_8x6;
+      else if (surf->blk_w == 8 && surf->blk_h == 8)
+         return ADDR_FMT_ASTC_8x8;
+      else if (surf->blk_w == 10 && surf->blk_h == 5)
+         return ADDR_FMT_ASTC_10x5;
+      else if (surf->blk_w == 10 && surf->blk_h == 6)
+         return ADDR_FMT_ASTC_10x6;
+      else if (surf->blk_w == 10 && surf->blk_h == 8)
+         return ADDR_FMT_ASTC_10x8;
+      else if (surf->blk_w == 10 && surf->blk_h == 10)
+         return ADDR_FMT_ASTC_10x10;
+      else if (surf->blk_w == 12 && surf->blk_h == 10)
+         return ADDR_FMT_ASTC_12x10;
+      else if (surf->blk_w == 12 && surf->blk_h == 12)
+         return ADDR_FMT_ASTC_12x12;
    } else {
       switch (surf->bpe) {
       case 1:
@@ -2997,7 +3027,7 @@ bool ac_surface_override_offset_stride(const struct radeon_info *info, struct ra
    bool require_equal_pitch = surf->surf_size != surf->total_size ||
                               num_layers != 1 ||
                               num_mipmap_levels != 1 ||
-                              !surf->is_linear ||
+                              (info->gfx_level >= GFX9 && !surf->is_linear) ||
                               info->gfx_level == GFX10;
 
    if (info->gfx_level >= GFX9) {

@@ -172,6 +172,10 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
    }
    bs->swapchain = NULL;
 
+   util_dynarray_foreach(&bs->fences, struct zink_tc_fence*, mfence)
+      zink_fence_reference(screen, mfence, NULL);
+   util_dynarray_clear(&bs->fences);
+
    bs->unordered_write_access = 0;
    bs->unordered_write_stages = 0;
 
@@ -354,6 +358,7 @@ create_batch_state(struct zink_context *ctx)
    util_dynarray_init(&bs->signal_semaphores, NULL);
    util_dynarray_init(&bs->wait_semaphores, NULL);
    util_dynarray_init(&bs->fd_wait_semaphores, NULL);
+   util_dynarray_init(&bs->fences, NULL);
    util_dynarray_init(&bs->dead_querypools, NULL);
    util_dynarray_init(&bs->dgc.pipelines, NULL);
    util_dynarray_init(&bs->dgc.layouts, NULL);
@@ -758,7 +763,7 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
       struct zink_resource *res = (void*)entry->key;
       if (screen->info.have_KHR_synchronization2) {
          VkImageMemoryBarrier2 imb;
-         zink_resource_image_barrier2_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+         zink_resource_image_barrier2_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
          imb.srcQueueFamilyIndex = screen->gfx_queue;
          imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
          VkDependencyInfo dep = {
@@ -775,13 +780,13 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
          VKCTX(CmdPipelineBarrier2)(bs->cmdbuf, &dep);
       } else {
          VkImageMemoryBarrier imb;
-         zink_resource_image_barrier_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+         zink_resource_image_barrier_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
          imb.srcQueueFamilyIndex = screen->gfx_queue;
          imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
          VKCTX(CmdPipelineBarrier)(
             bs->cmdbuf,
             res->obj->access_stage,
-            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0,
             0, NULL,
             0, NULL,

@@ -61,6 +61,13 @@ init_shaders(struct vl_compositor *c)
          debug_printf("Unable to create YCbCr i-to-YCbCr p deint fragment shader.\n");
          return false;
       }
+
+      c->fs_rgb_yuv.y = create_frag_shader_rgb_yuv(c, true);
+      c->fs_rgb_yuv.uv = create_frag_shader_rgb_yuv(c, false);
+      if (!c->fs_rgb_yuv.y || !c->fs_rgb_yuv.uv) {
+         debug_printf("Unable to create RGB-to-YUV fragment shader.\n");
+         return false;
+      }
    }
 
    if (c->pipe_gfx_supported) {
@@ -79,13 +86,6 @@ init_shaders(struct vl_compositor *c)
       c->fs_palette.rgb = create_frag_shader_palette(c, false);
       if (!c->fs_palette.rgb) {
          debug_printf("Unable to create RGB-Palette-to-RGB fragment shader.\n");
-         return false;
-      }
-
-      c->fs_rgb_yuv.y = create_frag_shader_rgb_yuv(c, true);
-      c->fs_rgb_yuv.uv = create_frag_shader_rgb_yuv(c, false);
-      if (!c->fs_rgb_yuv.y || !c->fs_rgb_yuv.uv) {
-         debug_printf("Unable to create RGB-to-YUV fragment shader.\n");
          return false;
       }
 
@@ -112,14 +112,14 @@ static void cleanup_shaders(struct vl_compositor *c)
       c->pipe->delete_fs_state(c->pipe, c->fs_yuv.weave.uv);
       c->pipe->delete_fs_state(c->pipe, c->fs_yuv.bob.y);
       c->pipe->delete_fs_state(c->pipe, c->fs_yuv.bob.uv);
+      c->pipe->delete_fs_state(c->pipe, c->fs_rgb_yuv.y);
+      c->pipe->delete_fs_state(c->pipe, c->fs_rgb_yuv.uv);
    }
 
    if (c->pipe_gfx_supported) {
       c->pipe->delete_vs_state(c->pipe, c->vs);
       c->pipe->delete_fs_state(c->pipe, c->fs_palette.yuv);
       c->pipe->delete_fs_state(c->pipe, c->fs_palette.rgb);
-      c->pipe->delete_fs_state(c->pipe, c->fs_rgb_yuv.y);
-      c->pipe->delete_fs_state(c->pipe, c->fs_rgb_yuv.uv);
       c->pipe->delete_fs_state(c->pipe, c->fs_rgba);
    }
 }
@@ -330,7 +330,6 @@ set_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
 
    assert(layer < VL_COMPOSITOR_MAX_LAYERS);
 
-   s->interlaced = buffer->interlaced;
    s->used_layers |= 1 << layer;
    sampler_views = buffer->get_sampler_view_components(buffer);
    for (i = 0; i < 3; ++i) {
@@ -352,7 +351,7 @@ set_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
       if (c->pipe_gfx_supported)
           s->layers[layer].fs = (y) ? c->fs_yuv.bob.y : c->fs_yuv.bob.uv;
       if (c->pipe_cs_composit_supported)
-          s->layers[layer].cs = (y) ? c->cs_yuv.bob.y : c->cs_yuv.bob.uv;
+          s->layers[layer].cs = (y) ? c->cs_yuv.progressive.y : c->cs_yuv.progressive.uv;
       break;
 
    case VL_COMPOSITOR_BOB_BOTTOM:
@@ -362,7 +361,7 @@ set_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
       if (c->pipe_gfx_supported)
           s->layers[layer].fs = (y) ? c->fs_yuv.bob.y : c->fs_yuv.bob.uv;
       if (c->pipe_cs_composit_supported)
-          s->layers[layer].cs = (y) ? c->cs_yuv.bob.y : c->cs_yuv.bob.uv;
+          s->layers[layer].cs = (y) ? c->cs_yuv.progressive.y : c->cs_yuv.progressive.uv;
       break;
 
    case VL_COMPOSITOR_NONE:
@@ -392,7 +391,10 @@ set_rgb_to_yuv_layer(struct vl_compositor_state *s, struct vl_compositor *c,
 
    s->used_layers |= 1 << layer;
 
-   s->layers[layer].fs = y? c->fs_rgb_yuv.y : c->fs_rgb_yuv.uv;
+   if (c->pipe_cs_composit_supported)
+      s->layers[layer].cs = y ? c->cs_rgb_yuv.y : c->cs_rgb_yuv.uv;
+   else if (c->pipe_gfx_supported)
+      s->layers[layer].fs = y ? c->fs_rgb_yuv.y : c->fs_rgb_yuv.uv;
 
    s->layers[layer].samplers[0] = c->sampler_linear;
    s->layers[layer].samplers[1] = NULL;
@@ -440,7 +442,6 @@ vl_compositor_clear_layers(struct vl_compositor_state *s)
    unsigned i, j;
 
    assert(s);
-   s->interlaced = false;
    s->used_layers = 0;
    for ( i = 0; i < VL_COMPOSITOR_MAX_LAYERS; ++i) {
       struct vertex4f v_one = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -478,24 +479,11 @@ vl_compositor_set_csc_matrix(struct vl_compositor_state *s,
                              vl_csc_matrix const *matrix,
                              float luma_min, float luma_max)
 {
-   struct pipe_transfer *buf_transfer;
-
    assert(s);
 
-   float *ptr = pipe_buffer_map(s->pipe, s->shader_params,
-                               PIPE_MAP_WRITE | PIPE_MAP_DISCARD_RANGE,
-                               &buf_transfer);
-
-   if (!ptr)
-      return false;
-
-   memcpy(ptr, matrix, sizeof(vl_csc_matrix));
-
-   ptr += sizeof(vl_csc_matrix)/sizeof(float);
-   ptr[0] = luma_min;
-   ptr[1] = luma_max;
-
-   pipe_buffer_unmap(s->pipe, buf_transfer);
+   memcpy(&s->csc_matrix, matrix, sizeof(vl_csc_matrix));
+   s->luma_min = luma_min;
+   s->luma_max = luma_max;
 
    return true;
 }
@@ -560,7 +548,6 @@ vl_compositor_set_buffer_layer(struct vl_compositor_state *s,
 
    assert(layer < VL_COMPOSITOR_MAX_LAYERS);
 
-   s->interlaced = buffer->interlaced;
    s->used_layers |= 1 << layer;
    sampler_views = buffer->get_sampler_view_components(buffer);
    for (i = 0; i < 3; ++i) {

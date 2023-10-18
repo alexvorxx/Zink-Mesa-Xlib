@@ -92,6 +92,7 @@
 #include "vk_shader_module.h"
 #include "vk_sync.h"
 #include "vk_sync_timeline.h"
+#include "vk_texcompress_astc.h"
 #include "vk_util.h"
 #include "vk_query_pool.h"
 #include "vk_queue.h"
@@ -787,7 +788,7 @@ struct anv_bo_pool {
 };
 
 void anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
-                      const char *name);
+                      const char *name, enum anv_bo_alloc_flags alloc_flags);
 void anv_bo_pool_finish(struct anv_bo_pool *pool);
 VkResult anv_bo_pool_alloc(struct anv_bo_pool *pool, uint32_t size,
                            struct anv_bo **bo_out);
@@ -915,6 +916,16 @@ struct anv_physical_device {
 
     /** Whether the i915 driver has the ability to create VM objects */
     bool                                        has_vm_control;
+
+    /** True if we have the means to do sparse binding (e.g., a Kernel driver
+     * a vm_bind ioctl).
+     */
+    bool                                        has_sparse;
+
+    /** True if HW supports ASTC LDR */
+    bool                                        has_astc_ldr;
+    /** True if ASTC LDR is supported via emulation */
+    bool                                        emu_astc_ldr;
 
     /**/
     bool                                        uses_ex_bso;
@@ -1054,6 +1065,7 @@ struct anv_instance {
 
     /* HW workarounds */
     bool                                        no_16bit;
+    bool                                        intel_enable_wa_14018912822;
 };
 
 VkResult anv_init_wsi(struct anv_physical_device *physical_device);
@@ -1456,6 +1468,7 @@ enum anv_internal_kernel_name {
    ANV_INTERNAL_KERNEL_GENERATED_DRAWS,
    ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_COMPUTE,
    ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_FRAGMENT,
+   ANV_INTERNAL_KERNEL_MEMCPY_COMPUTE,
 
    ANV_INTERNAL_KERNEL_COUNT,
 };
@@ -1504,8 +1517,12 @@ struct anv_device {
     /** List of anv_image objects with a private binding for implicit CCS */
     struct list_head                            image_private_objects;
 
+    /** Memory pool for batch buffers */
     struct anv_bo_pool                          batch_bo_pool;
+    /** Memory pool for utrace timestamp buffers */
     struct anv_bo_pool                          utrace_bo_pool;
+    /** Memory pool for BVH build buffers */
+    struct anv_bo_pool                          bvh_bo_pool;
 
     struct anv_bo_cache                         bo_cache;
 
@@ -1647,6 +1664,16 @@ struct anv_device {
      * Command pool for companion RCS command buffer.
      */
     VkCommandPool                               companion_rcs_cmd_pool;
+
+    /* This is true if the user ever bound a sparse resource to memory. This
+     * is used for a workaround that makes every memoryBarrier flush more
+     * things than it should. Many applications request for the sparse
+     * featuers to be enabled but don't use them, and some create sparse
+     * resources but never use them.
+     */
+    bool                                         using_sparse;
+
+    struct vk_texcompress_astc_state           *texcompress_astc;
 };
 
 static inline uint32_t
@@ -1882,6 +1909,8 @@ struct anv_batch {
     * of the driver.
     */
    VkResult                                     status;
+
+   enum intel_engine_class                      engine_class;
 };
 
 void *anv_batch_emit_dwords(struct anv_batch *batch, int num_dwords);
@@ -2416,6 +2445,14 @@ anv_descriptor_set_layout_descriptor_buffer_size(const struct anv_descriptor_set
                                                  uint32_t var_desc_count);
 
 void
+anv_push_descriptor_set_init(struct anv_cmd_buffer *cmd_buffer,
+                             struct anv_push_descriptor_set *push_set,
+                             struct anv_descriptor_set_layout *layout);
+
+void
+anv_push_descriptor_set_finish(struct anv_push_descriptor_set *push_set);
+
+void
 anv_descriptor_set_write_image_view(struct anv_device *device,
                                     struct anv_descriptor_set *set,
                                     const VkDescriptorImageInfo * const info,
@@ -2460,6 +2497,12 @@ anv_descriptor_set_write_inline_uniform_data(struct anv_device *device,
                                              const void *data,
                                              size_t offset,
                                              size_t size);
+
+void
+anv_descriptor_set_write(struct anv_device *device,
+                         struct anv_descriptor_set *set_override,
+                         uint32_t write_count,
+                         const VkWriteDescriptorSet *writes);
 
 void
 anv_descriptor_set_write_template(struct anv_device *device,
@@ -2545,6 +2588,7 @@ struct anv_pipeline_sets_layout {
 
    uint32_t num_sets;
    uint32_t num_dynamic_buffers;
+   int push_descriptor_set_index;
 
    bool independent_sets;
 
@@ -2575,20 +2619,94 @@ const struct anv_descriptor_set_layout *
 anv_pipeline_layout_get_push_set(const struct anv_pipeline_sets_layout *layout,
                                  uint8_t *desc_idx);
 
+struct anv_sparse_binding_data {
+   uint64_t address;
+   uint64_t size;
+
+   /* This is kept only because it's given to us by vma_alloc() and need to be
+    * passed back to vma_free(), we have no other particular use for it
+    */
+   struct util_vma_heap *vma_heap;
+};
+
+#define ANV_SPARSE_BLOCK_SIZE (64 * 1024)
+
+static inline bool
+anv_sparse_binding_is_enabled(struct anv_device *device)
+{
+   return device->vk.enabled_features.sparseBinding;
+}
+
+static inline bool
+anv_sparse_residency_is_enabled(struct anv_device *device)
+{
+   return device->vk.enabled_features.sparseResidencyBuffer ||
+          device->vk.enabled_features.sparseResidencyImage2D ||
+          device->vk.enabled_features.sparseResidencyImage3D ||
+          device->vk.enabled_features.sparseResidency2Samples ||
+          device->vk.enabled_features.sparseResidency4Samples ||
+          device->vk.enabled_features.sparseResidency8Samples ||
+          device->vk.enabled_features.sparseResidency16Samples ||
+          device->vk.enabled_features.sparseResidencyAliased;
+}
+
+VkResult anv_init_sparse_bindings(struct anv_device *device,
+                                  uint64_t size,
+                                  struct anv_sparse_binding_data *sparse,
+                                  enum anv_bo_alloc_flags alloc_flags,
+                                  uint64_t client_address,
+                                  struct anv_address *out_address);
+VkResult anv_free_sparse_bindings(struct anv_device *device,
+                                  struct anv_sparse_binding_data *sparse);
+VkResult anv_sparse_bind_resource_memory(struct anv_device *device,
+                                         struct anv_sparse_binding_data *data,
+                                         const VkSparseMemoryBind *bind_);
+VkResult anv_sparse_bind_image_memory(struct anv_queue *queue,
+                                      struct anv_image *image,
+                                      const VkSparseImageMemoryBind *bind);
+
+VkSparseImageFormatProperties
+anv_sparse_calc_image_format_properties(struct anv_physical_device *pdevice,
+                                        VkImageAspectFlags aspect,
+                                        VkImageType vk_image_type,
+                                        struct isl_surf *surf);
+void anv_sparse_calc_miptail_properties(struct anv_device *device,
+                                        struct anv_image *image,
+                                        VkImageAspectFlags vk_aspect,
+                                        uint32_t *imageMipTailFirstLod,
+                                        VkDeviceSize *imageMipTailSize,
+                                        VkDeviceSize *imageMipTailOffset,
+                                        VkDeviceSize *imageMipTailStride);
+VkResult anv_sparse_image_check_support(struct anv_physical_device *pdevice,
+                                        VkImageCreateFlags flags,
+                                        VkImageTiling tiling,
+                                        VkSampleCountFlagBits samples,
+                                        VkImageType type,
+                                        VkFormat format);
+
 struct anv_buffer {
    struct vk_buffer vk;
 
    /* Set when bound */
    struct anv_address address;
+
+   struct anv_sparse_binding_data sparse_data;
 };
+
+static inline bool
+anv_buffer_is_sparse(struct anv_buffer *buffer)
+{
+   return buffer->vk.create_flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT;
+}
 
 enum anv_cmd_dirty_bits {
    ANV_CMD_DIRTY_PIPELINE                            = 1 << 0,
    ANV_CMD_DIRTY_INDEX_BUFFER                        = 1 << 1,
-   ANV_CMD_DIRTY_RENDER_TARGETS                      = 1 << 2,
-   ANV_CMD_DIRTY_XFB_ENABLE                          = 1 << 3,
-   ANV_CMD_DIRTY_RESTART_INDEX                       = 1 << 4,
-   ANV_CMD_DIRTY_OCCLUSION_QUERY_ACTIVE              = 1 << 5,
+   ANV_CMD_DIRTY_RENDER_AREA                         = 1 << 2,
+   ANV_CMD_DIRTY_RENDER_TARGETS                      = 1 << 3,
+   ANV_CMD_DIRTY_XFB_ENABLE                          = 1 << 4,
+   ANV_CMD_DIRTY_RESTART_INDEX                       = 1 << 5,
+   ANV_CMD_DIRTY_OCCLUSION_QUERY_ACTIVE              = 1 << 6,
 };
 typedef enum anv_cmd_dirty_bits anv_cmd_dirty_mask_t;
 
@@ -3117,13 +3235,18 @@ anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
  * State tracking for simple internal shaders
  */
 struct anv_simple_shader {
-   /* The command buffer associated with this emission */
+   /* The device associated with this emission */
+   struct anv_device *device;
+   /* The command buffer associated with this emission (can be NULL) */
    struct anv_cmd_buffer *cmd_buffer;
+   /* State stream used for various internal allocations */
+   struct anv_state_stream *dynamic_state_stream;
+   struct anv_state_stream *general_state_stream;
    /* Where to emit the commands (can be different from cmd_buffer->batch) */
    struct anv_batch *batch;
    /* Shader to use */
    struct anv_shader_bin *kernel;
-   /**/
+   /* L3 config used by the shader */
    const struct intel_l3_config *l3_config;
 
    /* Managed by the simpler shader helper*/
@@ -3140,7 +3263,7 @@ struct anv_simple_shader {
  */
 struct anv_cmd_pipeline_state {
    struct anv_descriptor_set *descriptors[MAX_SETS];
-   struct anv_push_descriptor_set *push_descriptor;
+   struct anv_push_descriptor_set push_descriptor;
 
    struct anv_push_constants push_constants;
 
@@ -3272,6 +3395,9 @@ struct anv_cmd_ray_tracing_state {
       struct anv_bo *bo;
       struct brw_rt_scratch_layout layout;
    } scratch;
+
+   struct anv_address build_priv_mem_addr;
+   size_t             build_priv_mem_size;
 };
 
 /** State required while building cmd buffer */
@@ -3650,7 +3776,8 @@ anv_cmd_alloc_is_empty(struct anv_cmd_alloc alloc)
 
 struct anv_cmd_alloc
 anv_cmd_buffer_alloc_space(struct anv_cmd_buffer *cmd_buffer,
-                           size_t size, uint32_t alignment);
+                           size_t size, uint32_t alignment,
+                           bool private);
 
 VkResult
 anv_cmd_buffer_new_binding_table_block(struct anv_cmd_buffer *cmd_buffer);
@@ -3678,6 +3805,28 @@ anv_cmd_buffer_get_view_count(struct anv_cmd_buffer *cmd_buffer)
    struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
    return MAX2(1, util_bitcount(gfx->view_mask));
 }
+
+/* Save/restore cmd buffer states for meta operations */
+enum anv_cmd_saved_state_flags {
+   ANV_CMD_SAVED_STATE_COMPUTE_PIPELINE         = BITFIELD_BIT(0),
+   ANV_CMD_SAVED_STATE_DESCRIPTOR_SET_0         = BITFIELD_BIT(1),
+   ANV_CMD_SAVED_STATE_PUSH_CONSTANTS           = BITFIELD_BIT(2),
+};
+
+struct anv_cmd_saved_state {
+   uint32_t flags;
+
+   struct anv_pipeline *pipeline;
+   struct anv_descriptor_set *descriptor_set;
+   uint8_t push_constants[MAX_PUSH_CONSTANTS_SIZE];
+};
+
+void anv_cmd_buffer_save_state(struct anv_cmd_buffer *cmd_buffer,
+                               uint32_t flags,
+                               struct anv_cmd_saved_state *state);
+
+void anv_cmd_buffer_restore_state(struct anv_cmd_buffer *cmd_buffer,
+                                  struct anv_cmd_saved_state *state);
 
 enum anv_bo_sync_state {
    /** Indicates that this is a new (or newly reset fence) */
@@ -4339,6 +4488,15 @@ bool anv_formats_ccs_e_compatible(const struct intel_device_info *devinfo,
 extern VkFormat
 vk_format_from_android(unsigned android_format, unsigned android_usage);
 
+static inline bool
+anv_is_format_emulated(const struct anv_physical_device *pdevice, VkFormat format)
+{
+   if (pdevice->emu_astc_ldr &&
+       vk_texcompress_astc_emulation_format(format) != VK_FORMAT_UNDEFINED)
+      return true;
+   return false;
+}
+
 static inline struct isl_swizzle
 anv_swizzle_for_render(struct isl_swizzle swizzle)
 {
@@ -4450,6 +4608,12 @@ struct anv_image {
    bool from_gralloc;
 
    /**
+    * If not UNDEFINED, image has a hidden plane at planes[n_planes] for ASTC
+    * LDR emulation.
+    */
+   VkFormat emu_plane_format;
+
+   /**
     * The memory bindings created by vkCreateImage and vkBindImageMemory.
     *
     * For details on the image's memory layout, see check_memory_bindings().
@@ -4466,6 +4630,7 @@ struct anv_image {
    struct anv_image_binding {
       struct anv_image_memory_range memory_range;
       struct anv_address address;
+      struct anv_sparse_binding_data sparse_data;
    } bindings[ANV_IMAGE_MEMORY_BINDING_END];
 
    /**
@@ -4518,6 +4683,12 @@ struct anv_image {
    /* Link in the anv_device.image_private_objects list */
    struct list_head link;
 };
+
+static inline bool
+anv_image_is_sparse(struct anv_image *image)
+{
+   return image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT;
+}
 
 static inline bool
 anv_image_is_externally_shared(const struct anv_image *image)
@@ -4742,6 +4913,10 @@ anv_cmd_buffer_load_clear_color_from_image(struct anv_cmd_buffer *cmd_buffer,
                                            struct anv_state state,
                                            const struct anv_image *image);
 
+struct anv_image_binding *
+anv_image_aspect_to_binding(struct anv_image *image,
+                            VkImageAspectFlags aspect);
+
 void
 anv_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
                       const struct anv_image *image,
@@ -4802,6 +4977,12 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                  uint32_t base_layer, uint32_t layer_count,
                  enum isl_aux_op ccs_op, union isl_color_value *clear_value,
                  bool predicate);
+
+isl_surf_usage_flags_t
+anv_image_choose_isl_surf_usage(VkImageCreateFlags vk_create_flags,
+                                VkImageUsageFlags vk_usage,
+                                isl_surf_usage_flags_t isl_extra_usage,
+                                VkImageAspectFlagBits aspect);
 
 void
 anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
@@ -4881,9 +5062,14 @@ struct anv_image_view {
    const struct anv_image *image; /**< VkImageViewCreateInfo::image */
 
    unsigned n_planes;
-   struct {
-      uint32_t image_plane;
 
+   /**
+    * True if the surface states (if any) are owned by some anv_state_stream
+    * from internal_surface_state_pool.
+    */
+   bool use_surface_state_stream;
+
+   struct {
       struct isl_view isl;
 
       /**
@@ -4951,6 +5137,13 @@ void anv_image_get_memory_requirements(struct anv_device *device,
                                        struct anv_image *image,
                                        VkImageAspectFlags aspects,
                                        VkMemoryRequirements2 *pMemoryRequirements);
+
+void anv_image_view_init(struct anv_device *device,
+                         struct anv_image_view *iview,
+                         const VkImageViewCreateInfo *pCreateInfo,
+                         struct anv_state_stream *state_stream);
+
+void anv_image_view_finish(struct anv_image_view *iview);
 
 enum isl_format
 anv_isl_format_for_descriptor_type(const struct anv_device *device,
@@ -5168,6 +5361,15 @@ struct anv_memcpy_state {
 VkResult anv_device_init_internal_kernels(struct anv_device *device);
 void anv_device_finish_internal_kernels(struct anv_device *device);
 
+VkResult anv_device_init_astc_emu(struct anv_device *device);
+void anv_device_finish_astc_emu(struct anv_device *device);
+void anv_astc_emu_decompress(struct anv_cmd_buffer *cmd_buffer,
+                             struct anv_image *image,
+                             VkImageLayout layout,
+                             const VkImageSubresourceLayers *subresource,
+                             VkOffset3D block_offset,
+                             VkExtent3D block_extent);
+
 /* This structure is used in 2 scenarios :
  *
  *    - copy utrace timestamps from command buffer so that command buffer can
@@ -5188,6 +5390,10 @@ struct anv_utrace_submit {
    struct anv_batch batch;
    struct anv_bo *batch_bo;
 
+   /* Stream for temporary allocations */
+   struct anv_state_stream dynamic_state_stream;
+   struct anv_state_stream general_state_stream;
+
    /* Syncobj to be signaled when the batch completes */
    struct vk_sync *sync;
 
@@ -5202,8 +5408,11 @@ struct anv_utrace_submit {
     */
    uint64_t last_full_timestamp;
 
-   /* Memcpy state tracking (only used for timestamp copies) */
+   /* Memcpy state tracking (only used for timestamp copies on render engine) */
    struct anv_memcpy_state memcpy_state;
+
+   /* Memcpy state tracking (only used for timestamp copies on compute engine) */
+   struct anv_simple_shader simple_state;
 };
 
 void anv_device_utrace_init(struct anv_device *device);
@@ -5295,6 +5504,9 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
    case 125:                                    \
       genX_thing = &gfx125_##thing;             \
       break;                                    \
+   case 200:                                    \
+      genX_thing = &gfx20_##thing;              \
+      break;                                    \
    default:                                     \
       unreachable("Unknown hardware generation"); \
    }                                            \
@@ -5315,6 +5527,9 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
 #  include "anv_genX.h"
 #  undef genX
 #  define genX(x) gfx125_##x
+#  include "anv_genX.h"
+#  undef genX
+#  define genX(x) gfx20_##x
 #  include "anv_genX.h"
 #  undef genX
 #endif

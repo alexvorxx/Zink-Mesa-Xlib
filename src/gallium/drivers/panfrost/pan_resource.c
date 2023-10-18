@@ -337,6 +337,10 @@ panfrost_should_afbc(struct panfrost_device *dev,
    if (pres->base.usage == PIPE_USAGE_STREAM)
       return false;
 
+   /* If constant (non-data-dependent) format is requested, don't AFBC: */
+   if (pres->base.bind & PIPE_BIND_CONST_BW)
+      return false;
+
    /* Only a small selection of formats are AFBC'able */
    if (!panfrost_format_supports_afbc(dev, fmt))
       return false;

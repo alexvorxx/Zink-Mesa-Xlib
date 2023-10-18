@@ -14,9 +14,13 @@ from typing import Optional
 
 def get_gitlab_project(glab, name: str):
     """Finds a specified gitlab project for given user"""
-    glab.auth()
-    username = glab.user.username
-    return glab.projects.get(f"{username}/{name}")
+    if "/" in name:
+        project_path = name
+    else:
+        glab.auth()
+        username = glab.user.username
+        project_path = f"{username}/{name}"
+    return glab.projects.get(project_path)
 
 
 def read_token(token_arg: Optional[str]) -> str:

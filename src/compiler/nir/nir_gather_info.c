@@ -508,6 +508,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
             shader->info.patch_inputs_read_indirectly |= slot_mask;
       } else {
          shader->info.inputs_read |= slot_mask;
+         if (nir_intrinsic_io_semantics(instr).high_dvec2)
+            shader->info.dual_slot_inputs |= slot_mask;
          shader->info.inputs_read_16bit |= slot_mask_16bit;
          if (!nir_src_is_const(*nir_get_io_offset_src(instr))) {
             shader->info.inputs_read_indirectly |= slot_mask;
@@ -926,6 +928,7 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
    }
 
    shader->info.inputs_read = 0;
+   shader->info.dual_slot_inputs = 0;
    shader->info.outputs_written = 0;
    shader->info.outputs_read = 0;
    shader->info.inputs_read_16bit = 0;

@@ -12,6 +12,9 @@ struct agx_branch_fixup {
 
    /* Value to patch with will be block->offset */
    agx_block *block;
+
+   /* If true, skips to the last instruction of the target block */
+   bool skip_to_end;
 };
 
 static void
@@ -887,25 +890,29 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       unsigned T = agx_pack_texture(agx_zero(), I->src[0], &U, &Tt);
       assert(T < 0x100);
 
+      bool Cs = false;
+      bool Ct = I->src[2].discard;
+      unsigned C = I->src[2].value;
+
       agx_index offset = I->src[1];
       assert(offset.type == AGX_INDEX_REGISTER);
       assert(offset.size == AGX_SIZE_16);
       unsigned R = offset.value;
 
-      assert(I->dim == AGX_DIM_2D || I->dim == AGX_DIM_2D_MS);
-      bool msaa = (I->dim == AGX_DIM_2D_MS);
-
       bool unk1 = true;
-      unsigned unk2 = msaa ? 38 : 37; /* XXX */
       unsigned unk3 = 1;
 
       uint32_t word0 = agx_opcodes_info[I->op].encoding.exact |
                        (1 << 15) /* we always set length bit for now */ |
                        ((F & 1) << 8) | ((R & BITFIELD_MASK(6)) << 9) |
+                       ((C & BITFIELD_MASK(6)) << 16) | (Ct ? (1 << 22) : 0) |
                        (unk1 ? (1u << 31) : 0);
 
-      uint32_t word1 =
-         (T & BITFIELD_MASK(6)) | (Tt << 2) | (unk2 << 9) | ((R >> 6) << 24);
+      uint32_t word1 = (T & BITFIELD_MASK(6)) | (Tt << 2) |
+                       ((I->dim & BITFIELD_MASK(3)) << 8) | (9 << 11) |
+                       (Cs ? (1 << 15) : 0) |
+                       ((I->dim & BITFIELD_BIT(3)) ? (1u << 23) : 0) |
+                       ((R >> 6) << 24) | ((C >> 6) << 26);
 
       uint32_t word2 = (F >> 1) | (unk3 ? (1 << 3) : 0) | ((T >> 6) << 14);
 
@@ -939,13 +946,17 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
    }
 
    case AGX_OPCODE_JMP_EXEC_ANY:
-   case AGX_OPCODE_JMP_EXEC_NONE: {
+   case AGX_OPCODE_JMP_EXEC_NONE:
+   case AGX_OPCODE_JMP_EXEC_NONE_AFTER: {
       /* We don't implement indirect branches */
       assert(I->target != NULL);
 
       /* We'll fix the offset later. */
-      struct agx_branch_fixup fixup = {.block = I->target,
-                                       .offset = emission->size};
+      struct agx_branch_fixup fixup = {
+         .block = I->target,
+         .offset = emission->size,
+         .skip_to_end = I->op == AGX_OPCODE_JMP_EXEC_NONE_AFTER,
+      };
 
       util_dynarray_append(fixups, struct agx_branch_fixup, fixup);
 
@@ -971,8 +982,10 @@ agx_fixup_branch(struct util_dynarray *emission, struct agx_branch_fixup fix)
    /* Branch offset is 2 bytes into the jump instruction */
    uint8_t *location = ((uint8_t *)emission->data) + fix.offset + 2;
 
+   off_t target = fix.skip_to_end ? fix.block->last_offset : fix.block->offset;
+
    /* Offsets are relative to the jump instruction */
-   int32_t patch = (int32_t)fix.block->offset - (int32_t)fix.offset;
+   int32_t patch = (int32_t)target - (int32_t)fix.offset;
 
    /* Patch the binary */
    memcpy(location, &patch, sizeof(patch));
@@ -990,6 +1003,7 @@ agx_pack_binary(agx_context *ctx, struct util_dynarray *emission)
       block->offset = emission->size;
 
       agx_foreach_instr_in_block(block, ins) {
+         block->last_offset = emission->size;
          agx_pack_instr(emission, &fixups, ins, ctx->key->needs_g13x_coherency);
       }
    }

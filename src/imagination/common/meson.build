@@ -34,6 +34,6 @@ libpowervr_common = static_library(
     inc_src,
     inc_imagination,
   ],
-  c_args : [no_override_init_args],
+  c_args : [imagination_c_args, no_override_init_args],
   gnu_symbol_visibility : 'hidden',
 )

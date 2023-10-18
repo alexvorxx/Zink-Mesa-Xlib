@@ -220,7 +220,7 @@ static const __DRIextension *swrast_loader_extensions[] = {
 };
 
 static bool
-surfaceless_probe_device(_EGLDisplay *disp, bool swrast)
+surfaceless_probe_device(_EGLDisplay *disp, bool swrast, bool zink)
 {
    const unsigned node_type = swrast ? DRM_NODE_PRIMARY : DRM_NODE_RENDER;
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
@@ -260,7 +260,7 @@ surfaceless_probe_device(_EGLDisplay *disp, bool swrast)
       }
 
       if (dri2_dpy->driver_name && dri2_load_driver_dri3(disp)) {
-         if (swrast)
+         if (swrast || zink)
             dri2_dpy->loader_extensions = swrast_loader_extensions;
          else
             dri2_dpy->loader_extensions = image_loader_extensions;
@@ -323,7 +323,8 @@ dri2_initialize_surfaceless(_EGLDisplay *disp)
    /* When ForceSoftware is false, we try the HW driver.  When ForceSoftware
     * is true, we try kms_swrast and swrast in order.
     */
-   driver_loaded = surfaceless_probe_device(disp, disp->Options.ForceSoftware);
+   driver_loaded = surfaceless_probe_device(disp, disp->Options.ForceSoftware,
+                                            disp->Options.Zink);
    if (!driver_loaded && disp->Options.ForceSoftware) {
       _eglLog(_EGL_DEBUG, "Falling back to surfaceless swrast without DRM.");
       driver_loaded = surfaceless_probe_device_sw(disp);

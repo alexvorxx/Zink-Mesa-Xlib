@@ -118,6 +118,7 @@ Linux, FreeBSD, and other operating systems.
    vulkan/index
    nir/index
    isl/index
+   isaspec
    rusticl
    android
    macos

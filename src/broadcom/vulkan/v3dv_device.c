@@ -222,7 +222,7 @@ get_features(const struct v3dv_physical_device *physical_device,
    *features = (struct vk_features) {
       /* Vulkan 1.0 */
       .robustBufferAccess = true, /* This feature is mandatory */
-      .fullDrawIndexUint32 = false, /* Only available since V3D 4.4.9.1 */
+      .fullDrawIndexUint32 = physical_device->devinfo.ver >= 71,
       .imageCubeArray = true,
       .independentBlend = true,
       .geometryShader = true,
@@ -232,10 +232,10 @@ get_features(const struct v3dv_physical_device *physical_device,
       .logicOp = true,
       .multiDrawIndirect = false,
       .drawIndirectFirstInstance = true,
-      .depthClamp = false, /* Only available since V3D 4.5.1.1 */
+      .depthClamp = physical_device->devinfo.ver >= 71,
       .depthBiasClamp = true,
       .fillModeNonSolid = true,
-      .depthBounds = false, /* Only available since V3D 4.3.16.2 */
+      .depthBounds = physical_device->devinfo.ver >= 71,
       .wideLines = true,
       .largePoints = true,
       .alphaToOne = true,
@@ -308,7 +308,7 @@ get_features(const struct v3dv_physical_device *physical_device,
        * problematic, we would always have to scalarize. Overall, this would
        * not lead to best performance so let's just not support it.
        */
-      .scalarBlockLayout = false,
+      .scalarBlockLayout = physical_device->devinfo.ver >= 71,
       /* This tells applications 2 things:
        *
        * 1. If they can select just one aspect for barriers. For us barriers
@@ -1127,8 +1127,10 @@ create_physical_device(struct v3dv_instance *instance,
    device->next_program_id = 0;
 
    ASSERTED int len =
-      asprintf(&device->name, "V3D %d.%d",
-               device->devinfo.ver / 10, device->devinfo.ver % 10);
+      asprintf(&device->name, "V3D %d.%d.%d",
+               device->devinfo.ver / 10,
+               device->devinfo.ver % 10,
+               device->devinfo.rev);
    assert(len != -1);
 
    v3dv_physical_device_init_disk_cache(device);
@@ -1253,7 +1255,8 @@ enumerate_devices(struct vk_instance *vk_instance)
       if (devices[i]->available_nodes & 1 << DRM_NODE_RENDER) {
          char **compat = devices[i]->deviceinfo.platform->compatible;
          while (*compat) {
-            if (strncmp(*compat, "brcm,2711-v3d", 13) == 0) {
+            if (strncmp(*compat, "brcm,2711-v3d", 13) == 0 ||
+                strncmp(*compat, "brcm,2712-v3d", 13) == 0) {
                v3d_idx = i;
                break;
             }
@@ -1262,8 +1265,9 @@ enumerate_devices(struct vk_instance *vk_instance)
       } else if (devices[i]->available_nodes & 1 << DRM_NODE_PRIMARY) {
          char **compat = devices[i]->deviceinfo.platform->compatible;
          while (*compat) {
-            if (strncmp(*compat, "brcm,bcm2711-vc5", 16) == 0 ||
-                strncmp(*compat, "brcm,bcm2835-vc4", 16) == 0 ) {
+            if (strncmp(*compat, "brcm,bcm2712-vc6", 16) == 0 ||
+                strncmp(*compat, "brcm,bcm2711-vc5", 16) == 0 ||
+                strncmp(*compat, "brcm,bcm2835-vc4", 16) == 0) {
                vc4_idx = i;
                break;
             }
@@ -1274,9 +1278,10 @@ enumerate_devices(struct vk_instance *vk_instance)
    }
 
 #if !using_v3d_simulator
-   if (v3d_idx != -1 && vc4_idx != -1) {
-      result =
-         create_physical_device(instance, devices[v3d_idx], devices[vc4_idx]);
+   if (v3d_idx != -1) {
+      drmDevicePtr v3d_device = devices[v3d_idx];
+      drmDevicePtr vc4_device = vc4_idx != -1 ? devices[vc4_idx] : NULL;
+      result = create_physical_device(instance, v3d_device, vc4_device);
    }
 #endif
 
@@ -1300,6 +1305,8 @@ v3dv_physical_device_device_id(struct v3dv_physical_device *dev)
    switch (dev->devinfo.ver) {
    case 42:
       return 0xBE485FD3; /* Broadcom deviceID for 2711 */
+   case 71:
+      return 0x55701C33; /* Broadcom deviceID for 2712 */
    default:
       unreachable("Unsupported V3D version");
    }
@@ -1327,6 +1334,8 @@ v3dv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
 
    const VkSampleCountFlags supported_sample_counts =
       VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
+
+   const uint8_t max_rts = V3D_MAX_RENDER_TARGETS(pdevice->devinfo.ver);
 
    struct timespec clock_res;
    clock_getres(CLOCK_MONOTONIC, &clock_res);
@@ -1398,7 +1407,7 @@ v3dv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
       .maxFragmentInputComponents               = max_varying_components,
       .maxFragmentOutputAttachments             = 4,
       .maxFragmentDualSrcAttachments            = 0,
-      .maxFragmentCombinedOutputResources       = MAX_RENDER_TARGETS +
+      .maxFragmentCombinedOutputResources       = max_rts +
                                                   MAX_STORAGE_BUFFERS +
                                                   MAX_STORAGE_IMAGES,
 
@@ -1411,7 +1420,8 @@ v3dv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
       .subPixelPrecisionBits                    = V3D_COORD_SHIFT,
       .subTexelPrecisionBits                    = 8,
       .mipmapPrecisionBits                      = 8,
-      .maxDrawIndexedIndexValue                 = 0x00ffffff,
+      .maxDrawIndexedIndexValue                 = pdevice->devinfo.ver >= 71 ?
+                                                  0xffffffff : 0x00ffffff,
       .maxDrawIndirectCount                     = 0x7fffffff,
       .maxSamplerLodBias                        = 14.0f,
       .maxSamplerAnisotropy                     = 16.0f,
@@ -1438,7 +1448,7 @@ v3dv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
       .framebufferDepthSampleCounts             = supported_sample_counts,
       .framebufferStencilSampleCounts           = supported_sample_counts,
       .framebufferNoAttachmentsSampleCounts     = supported_sample_counts,
-      .maxColorAttachments                      = MAX_RENDER_TARGETS,
+      .maxColorAttachments                      = max_rts,
       .sampledImageColorSampleCounts            = supported_sample_counts,
       .sampledImageIntegerSampleCounts          = supported_sample_counts,
       .sampledImageDepthSampleCounts            = supported_sample_counts,
@@ -2028,7 +2038,7 @@ v3dv_CreateDevice(VkPhysicalDevice physicalDevice,
    v3dv_pipeline_cache_init(&device->default_pipeline_cache, device, 0,
                             device->instance->default_pipeline_cache_enabled);
    device->default_attribute_float =
-      v3dv_pipeline_create_default_attribute_values(device, NULL);
+      v3dv_X(device, create_default_attribute_values)(device, NULL);
 
    device->device_address_mem_ctx = ralloc_context(NULL);
    util_dynarray_init(&device->device_address_bo_list,
@@ -3019,7 +3029,7 @@ v3dv_CreateSampler(VkDevice _device,
       }
    }
 
-   v3dv_X(device, pack_sampler_state)(sampler, pCreateInfo, bc_info);
+   v3dv_X(device, pack_sampler_state)(device, sampler, pCreateInfo, bc_info);
 
    *pSampler = v3dv_sampler_to_handle(sampler);
 

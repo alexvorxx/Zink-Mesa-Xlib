@@ -35,7 +35,7 @@ vn_feedback_buffer_create(struct vn_device *dev,
 {
    const bool exclusive = dev->queue_family_count == 1;
    const VkPhysicalDeviceMemoryProperties *mem_props =
-      &dev->physical_device->memory_properties.memoryProperties;
+      &dev->physical_device->memory_properties;
    VkDevice dev_handle = vn_device_to_handle(dev);
    struct vn_feedback_buffer *feedback_buf;
    VkResult result;

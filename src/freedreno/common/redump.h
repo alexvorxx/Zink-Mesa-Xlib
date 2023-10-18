@@ -24,7 +24,7 @@
 #ifndef REDUMP_H_
 #define REDUMP_H_
 
-#include "util/u_math.h"
+#include <unistd.h>
 
 enum rd_sect_type {
    RD_NONE,
@@ -60,31 +60,12 @@ enum rd_param_type {
    RD_PARAM_BLIT_Y2, /* BLIT_Y + BLIT_WIDTH */
 };
 
-void rd_start(const char *name, const char *fmt, ...) __attribute__((weak));
-void rd_end(void) __attribute__((weak));
-void rd_write_section(enum rd_sect_type type, const void *buf, int sz)
-   __attribute__((weak));
-
-/* for code that should run with and without libwrap, use the following
- * macros which check if the fxns are present before calling
- */
-#define RD_START(n, f, ...)                                                    \
-   do {                                                                        \
-      if (rd_start)                                                            \
-         rd_start(n, f, ##__VA_ARGS__);                                        \
-   } while (0)
-#define RD_END()                                                               \
-   do {                                                                        \
-      if (rd_end)                                                              \
-         rd_end();                                                             \
-   } while (0)
-#define RD_WRITE_SECTION(t, b, s)                                              \
-   do {                                                                        \
-      if (rd_write_section)                                                    \
-         rd_write_section(t, b, s);                                            \
-   } while (0)
-
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-#define max(a, b) (((a) > (b)) ? (a) : (b))
+static inline void
+rd_write_section(int fd, enum rd_sect_type type, const void *buf, int sz)
+{
+   write(fd, &type, 4);
+   write(fd, &sz, 4);
+   write(fd, buf, sz);
+}
 
 #endif /* REDUMP_H_ */

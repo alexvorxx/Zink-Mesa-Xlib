@@ -40,6 +40,8 @@ bool ir3_nir_lower_imul(nir_shader *shader);
 bool ir3_nir_lower_io_offsets(nir_shader *shader);
 bool ir3_nir_lower_load_barycentric_at_sample(nir_shader *shader);
 bool ir3_nir_lower_load_barycentric_at_offset(nir_shader *shader);
+bool ir3_nir_lower_push_consts_to_preamble(nir_shader *nir,
+                                           struct ir3_shader_variant *v);
 bool ir3_nir_move_varying_inputs(nir_shader *shader);
 int ir3_nir_coord_offset(nir_def *ssa);
 bool ir3_nir_lower_tex_prefetch(nir_shader *shader);

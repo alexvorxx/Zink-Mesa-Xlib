@@ -120,9 +120,7 @@ v3d-rpi4-traces:arm64:
   variables:
     GPU_VERSION: broadcom-rpi4
     HWCI_KERNEL_MODULES: v3d,vc4
-    HWCI_START_XORG: 1
     HWCI_TEST_SCRIPT: "/install/piglit/piglit-traces.sh"
-    PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-broadcom.yml"
     PIGLIT_REPLAY_DEVICE_NAME: "broadcom-rpi4"
     PIGLIT_RESULTS: "broadcom-rpi4-replay"

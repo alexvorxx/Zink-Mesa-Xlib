@@ -1785,7 +1785,7 @@ cleanup:
 EGLBoolean
 dri2_initialize_x11(_EGLDisplay *disp)
 {
-   if (disp->Options.ForceSoftware)
+   if (disp->Options.ForceSoftware || disp->Options.Zink)
       return dri2_initialize_x11_swrast(disp);
 
 #ifdef HAVE_DRI3

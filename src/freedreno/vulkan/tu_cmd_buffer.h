@@ -52,7 +52,7 @@ struct tu_descriptor_state
    struct tu_descriptor_set *sets[MAX_SETS];
    struct tu_descriptor_set push_set;
    uint32_t dynamic_descriptors[MAX_DYNAMIC_BUFFERS_SIZE];
-   uint64_t set_iova[MAX_SETS + 1];
+   uint64_t set_iova[MAX_SETS];
    uint32_t max_sets_bound;
    bool dynamic_bound;
 };
@@ -69,9 +69,10 @@ enum tu_cmd_dirty_bits
    TU_CMD_DIRTY_SUBPASS = BIT(7),
    TU_CMD_DIRTY_FDM = BIT(8),
    TU_CMD_DIRTY_PER_VIEW_VIEWPORT = BIT(9),
-   TU_CMD_DIRTY_PIPELINE = BIT(10),
+   TU_CMD_DIRTY_TES = BIT(10),
+   TU_CMD_DIRTY_PROGRAM = BIT(11),
    /* all draw states were disabled and need to be re-enabled: */
-   TU_CMD_DIRTY_DRAW_STATE = BIT(11)
+   TU_CMD_DIRTY_DRAW_STATE = BIT(12)
 };
 
 /* There are only three cache domains we have to care about: the CCU, or
@@ -384,8 +385,9 @@ struct tu_cmd_state
 {
    uint32_t dirty;
 
-   struct tu_graphics_pipeline *pipeline;
-   struct tu_compute_pipeline *compute_pipeline;
+   struct tu_shader *shaders[MESA_SHADER_STAGES];
+
+   struct tu_program_state program;
 
    struct tu_render_pass_state rp;
 
@@ -413,6 +415,9 @@ struct tu_cmd_state
    struct tu_draw_state vertex_buffers;
    struct tu_draw_state shader_const;
    struct tu_draw_state desc_sets;
+   struct tu_draw_state load_state;
+   struct tu_draw_state compute_load_state;
+   struct tu_draw_state prim_order_sysmem, prim_order_gmem;
 
    struct tu_draw_state vs_params;
    struct tu_draw_state fs_params;
@@ -476,6 +481,10 @@ struct tu_cmd_state
    bool blend_reads_dest;
    bool stencil_front_write;
    bool stencil_back_write;
+   bool pipeline_feedback_loop_ds;
+
+   bool pipeline_blend_lrz, pipeline_bandwidth;
+   uint32_t pipeline_draw_states;
 
    /* VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT and
     * VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT are allowed to run simultaniously,

@@ -251,8 +251,11 @@ vtn_foreach_instruction(struct vtn_builder *b, const uint32_t *start,
                         const uint32_t *end, vtn_instruction_handler handler);
 
 struct vtn_ssa_value {
+   bool is_variable;
+
    union {
       nir_def *def;
+      nir_variable *var;
       struct vtn_ssa_value **elems;
    };
 
@@ -280,6 +283,7 @@ enum vtn_base_type {
    vtn_base_type_ray_query,
    vtn_base_type_function,
    vtn_base_type_event,
+   vtn_base_type_cooperative_matrix,
 };
 
 struct vtn_type {
@@ -387,6 +391,12 @@ struct vtn_type {
 
          /* Return type for functions */
          struct vtn_type *return_type;
+      };
+
+      /* Members for cooperative matrix types. */
+      struct {
+         struct glsl_cmat_description desc;
+         struct vtn_type *component_type;
       };
    };
 };
@@ -856,6 +866,10 @@ struct vtn_value *vtn_push_ssa_value(struct vtn_builder *b, uint32_t value_id,
 nir_def *vtn_get_nir_ssa(struct vtn_builder *b, uint32_t value_id);
 struct vtn_value *vtn_push_nir_ssa(struct vtn_builder *b, uint32_t value_id,
                                    nir_def *def);
+nir_deref_instr *vtn_get_deref_for_id(struct vtn_builder *b, uint32_t value_id);
+nir_deref_instr *vtn_get_deref_for_ssa_value(struct vtn_builder *b, struct vtn_ssa_value *ssa);
+struct vtn_value *vtn_push_var_ssa(struct vtn_builder *b, uint32_t value_id,
+                                   nir_variable *var);
 
 struct vtn_value *vtn_push_pointer(struct vtn_builder *b,
                                    uint32_t value_id,
@@ -875,6 +889,7 @@ vtn_copy_value(struct vtn_builder *b, uint32_t src_value_id,
 
 struct vtn_ssa_value *vtn_create_ssa_value(struct vtn_builder *b,
                                            const struct glsl_type *type);
+void vtn_set_ssa_value_var(struct vtn_builder *b, struct vtn_ssa_value *ssa, nir_variable *var);
 
 struct vtn_ssa_value *vtn_ssa_transpose(struct vtn_builder *b,
                                         struct vtn_ssa_value *src);
@@ -1032,5 +1047,28 @@ vtn_parse_switch(struct vtn_builder *b,
                  const uint32_t *branch,
                  struct list_head *case_list);
 
+bool vtn_get_mem_operands(struct vtn_builder *b, const uint32_t *w, unsigned count,
+                          unsigned *idx, SpvMemoryAccessMask *access, unsigned *alignment,
+                          SpvScope *dest_scope, SpvScope *src_scope);
+void vtn_emit_make_visible_barrier(struct vtn_builder *b, SpvMemoryAccessMask access,
+                                   SpvScope scope, enum vtn_variable_mode mode);
+void vtn_emit_make_available_barrier(struct vtn_builder *b, SpvMemoryAccessMask access,
+                                     SpvScope scope, enum vtn_variable_mode mode);
+
+
+void vtn_handle_cooperative_type(struct vtn_builder *b, struct vtn_value *val,
+                                 SpvOp opcode, const uint32_t *w, unsigned count);
+void vtn_handle_cooperative_instruction(struct vtn_builder *b, SpvOp opcode,
+                                        const uint32_t *w, unsigned count);
+void vtn_handle_cooperative_alu(struct vtn_builder *b, struct vtn_value *dest_val,
+                                const struct glsl_type *dest_type, SpvOp opcode,
+                                const uint32_t *w, unsigned count);
+struct vtn_ssa_value *vtn_cooperative_matrix_extract(struct vtn_builder *b, struct vtn_ssa_value *mat,
+                                                     const uint32_t *indices, unsigned num_indices);
+struct vtn_ssa_value *vtn_cooperative_matrix_insert(struct vtn_builder *b, struct vtn_ssa_value *mat,
+                                                    struct vtn_ssa_value *insert,
+                                                    const uint32_t *indices, unsigned num_indices);
+nir_deref_instr *vtn_create_cmat_temporary(struct vtn_builder *b,
+                                           const struct glsl_type *t, const char *name);
 
 #endif /* _VTN_PRIVATE_H_ */

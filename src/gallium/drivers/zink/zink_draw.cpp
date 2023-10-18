@@ -1261,7 +1261,7 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
                                 0, 1, &mb, 0, NULL, 0, NULL);
    }
 
-   zink_program_update_compute_pipeline_state(ctx, ctx->curr_compute, info->block);
+   zink_program_update_compute_pipeline_state(ctx, ctx->curr_compute, info);
    VkPipeline prev_pipeline = ctx->compute_pipeline_state.pipeline;
 
    if (BATCH_CHANGED) {

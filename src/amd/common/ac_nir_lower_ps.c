@@ -688,7 +688,7 @@ emit_ps_dual_src_blend_swizzle(nir_builder *b, lower_ps_state *s, unsigned first
       nir_def *arg1 = nir_channel(b, mrt1_arg, i);
 
       /* swap odd,even lanes of arg0 */
-      arg0 = nir_quad_swizzle_amd(b, arg0, .swizzle_mask = 0b10110001);
+      arg0 = nir_quad_swizzle_amd(b, arg0, .swizzle_mask = 0b10110001, .fetch_inactive = true);
 
       /* swap even lanes between arg0 and arg1 */
       nir_def *tid = nir_load_subgroup_invocation(b);
@@ -699,7 +699,7 @@ emit_ps_dual_src_blend_swizzle(nir_builder *b, lower_ps_state *s, unsigned first
       arg1 = nir_bcsel(b, is_even, tmp, arg1);
 
       /* swap odd,even lanes again for arg0 */
-      arg0 = nir_quad_swizzle_amd(b, arg0, .swizzle_mask = 0b10110001);
+      arg0 = nir_quad_swizzle_amd(b, arg0, .swizzle_mask = 0b10110001, .fetch_inactive = true);
 
       arg0_vec[i] = arg0;
       arg1_vec[i] = arg1;

@@ -69,6 +69,8 @@
 #include "vk_queue.h"
 #include "vk_sampler.h"
 #include "vk_shader_module.h"
+#include "vk_texcompress_astc.h"
+#include "vk_texcompress_etc2.h"
 #include "vk_util.h"
 #include "vk_video.h"
 #include "vk_ycbcr_conversion.h"
@@ -323,6 +325,9 @@ struct radv_physical_device {
 
    /* Whether to emulate ETC2 image support on HW without support. */
    bool emulate_etc2;
+
+   /* Whether to emulate ASTC image support on HW without support. */
+   bool emulate_astc;
 
    VkPhysicalDeviceMemoryProperties memory_properties;
    enum radeon_bo_domain memory_domains[VK_MAX_MEMORY_TYPES];
@@ -738,11 +743,9 @@ struct radv_meta_state {
       } null;
    } accel_struct_build;
 
-   struct {
-      VkDescriptorSetLayout ds_layout;
-      VkPipelineLayout p_layout;
-      VkPipeline pipeline;
-   } etc_decode;
+   struct vk_texcompress_etc2_state etc_decode;
+
+   struct vk_texcompress_astc_state *astc_decode;
 
    struct {
       VkDescriptorSetLayout ds_layout;
@@ -1115,6 +1118,9 @@ struct radv_device {
 
    /* Whether smooth lines is enabled. */
    bool smooth_lines;
+
+   /* Whether mesh shader queries are enabled. */
+   bool mesh_shader_queries;
 
    bool uses_shadow_regs;
 
@@ -2570,6 +2576,7 @@ bool radv_dcc_formats_compatible(enum amd_gfx_level gfx_level, VkFormat format1,
                                  bool *sign_reinterpret);
 bool radv_is_atomic_format_supported(VkFormat format);
 bool radv_device_supports_etc(const struct radv_physical_device *physical_device);
+bool radv_is_format_emulated(const struct radv_physical_device *physical_device, VkFormat format);
 
 static const VkImageUsageFlags RADV_IMAGE_USAGE_WRITE_BITS =
    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -3685,7 +3692,7 @@ radv_has_pops(const struct radv_physical_device *pdevice)
 }
 
 /* radv_perfcounter.c */
-void radv_perfcounter_emit_shaders(struct radeon_cmdbuf *cs, unsigned shaders);
+void radv_perfcounter_emit_shaders(struct radv_device *device, struct radeon_cmdbuf *cs, unsigned shaders);
 void radv_perfcounter_emit_spm_reset(struct radeon_cmdbuf *cs);
 void radv_perfcounter_emit_spm_start(struct radv_device *device, struct radeon_cmdbuf *cs, int family);
 void radv_perfcounter_emit_spm_stop(struct radv_device *device, struct radeon_cmdbuf *cs, int family);

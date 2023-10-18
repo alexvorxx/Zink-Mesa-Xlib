@@ -12,6 +12,18 @@
 #include "ac_llvm_build.h"
 #include "si_shader.h"
 
+#define SI_SPI_PS_INPUT_ADDR_FOR_PROLOG (       \
+   S_0286D0_PERSP_SAMPLE_ENA(1) |               \
+   S_0286D0_PERSP_CENTER_ENA(1) |               \
+   S_0286D0_PERSP_CENTROID_ENA(1) |             \
+   S_0286D0_LINEAR_SAMPLE_ENA(1) |              \
+   S_0286D0_LINEAR_CENTER_ENA(1) |              \
+   S_0286D0_LINEAR_CENTROID_ENA(1) |            \
+   S_0286D0_FRONT_FACE_ENA(1) |                 \
+   S_0286D0_ANCILLARY_ENA(1) |                  \
+   S_0286D0_SAMPLE_COVERAGE_ENA(1) |            \
+   S_0286D0_POS_FIXED_PT_ENA(1))
+
 struct util_debug_callback;
 
 struct si_shader_args {
@@ -57,7 +69,6 @@ struct si_shader_args {
    /* API TCS & TES */
    struct ac_arg tes_offchip_addr;
    /* PS */
-   struct ac_arg pos_fixed_pt;
    struct ac_arg alpha_reference;
    struct ac_arg color_start;
    /* CS */
@@ -145,6 +156,13 @@ void si_get_tcs_epilog_args(enum amd_gfx_level gfx_level,
 void si_get_vs_prolog_args(enum amd_gfx_level gfx_level,
                            struct si_shader_args *args,
                            const union si_shader_part_key *key);
+void si_get_ps_prolog_args(struct si_shader_args *args,
+                           const union si_shader_part_key *key);
+void si_get_ps_epilog_args(struct si_shader_args *args,
+                           const union si_shader_part_key *key,
+                           struct ac_arg colors[MAX_DRAW_BUFFERS],
+                           struct ac_arg *depth, struct ac_arg *stencil,
+                           struct ac_arg *sample_mask);
 
 /* gfx10_shader_ngg.c */
 unsigned gfx10_ngg_get_vertices_per_prim(struct si_shader *shader);
@@ -188,7 +206,7 @@ LLVMValueRef si_insert_input_ret_float(struct si_shader_context *ctx, LLVMValueR
                                        struct ac_arg param, unsigned return_index);
 LLVMValueRef si_insert_input_ptr(struct si_shader_context *ctx, LLVMValueRef ret,
                                  struct ac_arg param, unsigned return_index);
-LLVMValueRef si_prolog_get_internal_bindings(struct si_shader_context *ctx);
+LLVMValueRef si_prolog_get_internal_binding_slot(struct si_shader_context *ctx, unsigned slot);
 LLVMValueRef si_unpack_param(struct si_shader_context *ctx, struct ac_arg param, unsigned rshift,
                              unsigned bitwidth);
 bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,

@@ -1,5 +1,5 @@
 /**********************************************************
- * Copyright 2008-2022 VMware, Inc.  All rights reserved.
+ * Copyright 2008-2023 VMware, Inc.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -151,10 +151,12 @@ struct svga_compile_key
    } tex[PIPE_MAX_SAMPLERS];
 
    unsigned uav_splice_index:4;      /* starting uav index */
-   unsigned srv_raw_buf_index:8;     /* start index for srv raw buffers */
+   unsigned srv_raw_constbuf_index:8;   /* start index for srv raw buffers */
+   unsigned srv_raw_shaderbuf_index:8;  /* start index for srv raw shader bufs */
    unsigned image_size_used:1;
 
-   uint16_t raw_buffers;             /* bitmask of raw buffers */
+   uint16_t raw_constbufs;           /* bitmask of raw constant buffers */
+   uint64_t raw_shaderbufs;          /* bitmask of raw shader buffers */
 
    struct {
       enum tgsi_return_type return_type;
@@ -328,6 +330,8 @@ struct svga_shader_info
 
    unsigned const_buffers_declared;  /* bitmask of declared const buffers */
    unsigned constbuf0_num_uniforms;  /* number of uniforms in constbuf0 */
+
+   unsigned shader_buffers_declared;  /* bitmask of declared shader buffers */
 
    struct {
       bool color0_writes_all_cbufs;

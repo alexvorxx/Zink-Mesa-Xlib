@@ -255,9 +255,8 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
                 return V3D_MAX_ARRAY_LAYERS;
 
-                /* Render targets. */
         case PIPE_CAP_MAX_RENDER_TARGETS:
-                return 4;
+                return V3D_MAX_RENDER_TARGETS(screen->devinfo.ver);
 
         case PIPE_CAP_VENDOR_ID:
                 return 0x14E4;

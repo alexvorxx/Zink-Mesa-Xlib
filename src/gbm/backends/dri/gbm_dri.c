@@ -365,22 +365,15 @@ dri_screen_create_sw(struct gbm_dri_device *dri)
    char *driver_name;
    int ret;
 
-   driver_name = strdup("zink");
+   driver_name = strdup("kms_swrast");
    if (!driver_name)
       return -errno;
 
    ret = dri_screen_create_for_driver(dri, driver_name);
-   if (ret != 0) {
-      driver_name = strdup("kms_swrast");
-      if (!driver_name)
-         return -errno;
-
-      ret = dri_screen_create_for_driver(dri, driver_name);
-      if (ret != 0)
-         ret = dri_screen_create_for_driver(dri, NULL);
-      if (ret != 0)
-         return ret;
-   }
+   if (ret != 0)
+      ret = dri_screen_create_for_driver(dri, NULL);
+   if (ret != 0)
+      return ret;
 
    dri->software = true;
    return 0;

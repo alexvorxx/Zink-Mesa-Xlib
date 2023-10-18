@@ -121,20 +121,23 @@ nir_shader *
 nir_create_passthrough_gs(const nir_shader_compiler_options *options,
                           const nir_shader *prev_stage,
                           enum mesa_prim primitive_type,
+                          enum mesa_prim output_primitive_type,
                           bool emulate_edgeflags,
                           bool force_line_strip_out)
 {
    unsigned int vertices_out = vertices_for_prim(primitive_type);
    emulate_edgeflags = emulate_edgeflags && (prev_stage->info.outputs_written & VARYING_BIT_EDGE);
-   bool needs_closing = (force_line_strip_out || emulate_edgeflags) && vertices_out >= 3;
-   enum mesa_prim original_our_prim = gs_out_prim_for_topology(primitive_type);
+   enum mesa_prim original_our_prim = gs_out_prim_for_topology(output_primitive_type);
    nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_GEOMETRY,
                                                   options,
                                                   "gs passthrough");
 
+   bool output_lines = force_line_strip_out || original_our_prim == MESA_PRIM_LINE_STRIP;
+   bool needs_closing = (force_line_strip_out || (emulate_edgeflags && output_lines)) && vertices_out >= 3;
+
    nir_shader *nir = b.shader;
    nir->info.gs.input_primitive = gs_in_prim_for_topology(primitive_type);
-   nir->info.gs.output_primitive = (force_line_strip_out || emulate_edgeflags) ? MESA_PRIM_LINE_STRIP : original_our_prim;
+   nir->info.gs.output_primitive = force_line_strip_out ? MESA_PRIM_LINE_STRIP : original_our_prim;
    nir->info.gs.vertices_in = u_vertices_per_prim(primitive_type);
    nir->info.gs.vertices_out = needs_closing ? vertices_out + 1 : vertices_out;
    nir->info.gs.invocations = 1;
@@ -146,8 +149,7 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
       nir->xfb_info = mem_dup(prev_stage->xfb_info, nir_xfb_info_size(prev_stage->xfb_info->output_count));
    }
 
-   bool handle_flat = nir->info.gs.output_primitive == MESA_PRIM_LINE_STRIP &&
-                      nir->info.gs.output_primitive != original_our_prim;
+   bool handle_flat = output_lines && nir->info.gs.output_primitive != gs_out_prim_for_topology(primitive_type);
    nir_variable *in_vars[VARYING_SLOT_MAX * 4];
    nir_variable *out_vars[VARYING_SLOT_MAX * 4];
    unsigned num_inputs = 0, num_outputs = 0;
@@ -241,13 +243,24 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
          copy_vars(&b, nir_build_deref_var(&b, out_vars[oj]), value);
          ++oj;
       }
-      nir_emit_vertex(&b, 0);
-      if (emulate_edgeflags) {
+
+      if (emulate_edgeflags && !output_lines) {
          nir_def *edge_value = nir_channel(&b, nir_load_array_var_imm(&b, edge_var, idx), 0);
-         nir_if *edge_if = nir_push_if(&b, nir_fneu_imm(&b, edge_value, 1.0));
-         nir_end_primitive(&b, 0);
-         nir_pop_if(&b, edge_if);
+         nir_push_if(&b, nir_feq_imm(&b, edge_value, 1.0));
       }
+
+      nir_emit_vertex(&b, 0);
+
+      if (emulate_edgeflags) {
+         if (nir->info.gs.output_primitive == MESA_PRIM_LINE_STRIP) {
+            nir_def *edge_value = nir_channel(&b, nir_load_array_var_imm(&b, edge_var, idx), 0);
+            nir_push_if(&b, nir_fneu_imm(&b, edge_value, 1.0));
+            nir_end_primitive(&b, 0);
+            
+         }
+         nir_pop_if(&b, NULL);
+      }
+
       if (i >= end_vert)
          break;
    }

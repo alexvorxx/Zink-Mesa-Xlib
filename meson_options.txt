@@ -681,10 +681,3 @@ option (
   value : 'disabled',
   description: 'Enable Intel Xe KMD support.'
 )
-
-option(
-  'nvk-legacy-uapi',
-  type : 'boolean',
-  value : 'false',
-  description : 'Build support for legacy kernel uAPI.'
-)

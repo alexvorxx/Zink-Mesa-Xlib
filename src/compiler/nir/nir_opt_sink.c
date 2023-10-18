@@ -194,11 +194,11 @@ get_preferred_block(nir_def *def, bool sink_out_of_loops)
    nir_foreach_use_including_if(use, def) {
       nir_block *use_block;
 
-      if (use->is_if) {
+      if (nir_src_is_if(use)) {
          use_block =
-            nir_cf_node_as_block(nir_cf_node_prev(&use->parent_if->cf_node));
+            nir_cf_node_as_block(nir_cf_node_prev(&nir_src_parent_if(use)->cf_node));
       } else {
-         nir_instr *instr = use->parent_instr;
+         nir_instr *instr = nir_src_parent_instr(use);
          use_block = instr->block;
 
          /*

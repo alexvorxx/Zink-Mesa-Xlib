@@ -48,7 +48,7 @@ GL 3.0, GLSL 1.30 --- all DONE: freedreno, nv50, nvc0, r600, radeonsi, llvmpipe,
   GL_ARB_depth_buffer_float (Float depth buffers)       DONE (v3d)
   GL_ARB_framebuffer_object (Framebuffer objects)       DONE (v3d, vc4, etnaviv)
   GL_ARB_half_float_pixel                               DONE (all drivers)
-  GL_ARB_half_float_vertex                              DONE (v3d, vc4, lima)
+  GL_ARB_half_float_vertex                              DONE (v3d, vc4, lima, etnaviv)
   GL_EXT_texture_integer                                DONE (v3d)
   GL_EXT_texture_array                                  DONE (v3d, etnaviv/HALTI0)
   GL_EXT_draw_buffers2 (Per-buffer blend and masks)     DONE (v3d)
@@ -61,10 +61,10 @@ GL 3.0, GLSL 1.30 --- all DONE: freedreno, nv50, nvc0, r600, radeonsi, llvmpipe,
   glGetStringi command                                  DONE
   glTexParameterI, glGetTexParameterI commands          DONE
   glVertexAttribI commands                              DONE
-  Depth format cube textures                            DONE ()
+  Depth format cube textures                            DONE (v3d)
   GLX_ARB_create_context (GLX 1.4 is required)          DONE (v3d, vc4)
-  Multisample anti-aliasing                             DONE (freedreno/a5xx+, freedreno (*), llvmpipe (*), softpipe (*)))
-  8 draw buffers                                        DONE (panfrost/t760+)
+  Multisample anti-aliasing                             DONE (freedreno/a5xx+, freedreno (*), llvmpipe (*), softpipe (*)), v3d)
+  8 draw buffers                                        DONE (panfrost/t760+, v3d/vc7+)
 
 (*) freedreno (a2xx-a4xx), llvmpipe, and softpipe have fake Multisample anti-aliasing support
 
@@ -75,9 +75,9 @@ GL 3.1, GLSL 1.40 --- all DONE: freedreno, nv50, nvc0, r600, radeonsi, llvmpipe,
   GL_ARB_draw_instanced (Instanced drawing)             DONE (etnaviv/HALTI2, v3d, crocus)
   GL_ARB_copy_buffer (Buffer copying)                   DONE (v3d, vc4, lima, crocus)
   GL_NV_primitive_restart (Primitive restart)           DONE (v3d, crocus)
-  16 vertex texture image units                         DONE ()
+  16 vertex texture image units                         DONE (v3d)
   GL_ARB_texture_buffer_object (Texture buffer objs)    DONE (v3d)
-  GL_ARB_texture_rectangle (Rectangular textures)       DONE (v3d, vc4, lima, crocus)
+  GL_ARB_texture_rectangle (Rectangular textures)       DONE (v3d, vc4, lima, crocus, etnaviv)
   GL_ARB_uniform_buffer_object (Uniform buffer objs)    DONE (v3d, crocus)
   GL_EXT_texture_snorm (Signed normalized textures)     DONE (v3d, crocus)
 
@@ -441,7 +441,7 @@ Vulkan 1.1 -- all DONE: anv, lvp, radv, tu, vn
   VK_KHR_maintenance3                                   DONE (anv, dzn, hasvk, lvp, nvk, radv, tu, v3dv, vn)
   VK_KHR_multiview                                      DONE (anv, dzn, hasvk, lvp, nvk, radv, tu, v3dv, vn)
   VK_KHR_relaxed_block_layout                           DONE (anv, dzn, hasvk, lvp, nvk, radv, tu, v3dv, vn)
-  VK_KHR_sampler_ycbcr_conversion                       DONE (anv, hasvk, nvk, radv, tu, v3dv, vn)
+  VK_KHR_sampler_ycbcr_conversion                       DONE (anv, hasvk, lvp, nvk, radv, tu, v3dv, vn)
   VK_KHR_shader_draw_parameters                         DONE (anv, dzn, hasvk, lvp, nvk, radv, tu, vn)
   VK_KHR_storage_buffer_storage_class                   DONE (anv, dzn, hasvk, lvp, nvk, panvk, radv, tu, v3dv, vn)
   VK_KHR_variable_pointers                              DONE (anv, hasvk, lvp, nvk, panvk, radv, tu, v3dv, vn)
@@ -497,7 +497,7 @@ Vulkan 1.3 -- all DONE: anv, radv, tu, lvp, vn
   VK_EXT_texel_buffer_alignment                         DONE (anv, hasvk, lvp, radv, tu, v3dv, vn)
   VK_EXT_texture_compression_astc_hdr                   DONE (vn)
   VK_EXT_tooling_info                                   DONE (anv, hasvk, nvk, pvr, radv, tu, v3dv, vn)
-  VK_EXT_ycbcr_2plane_444_formats                       DONE (nvk, vn)
+  VK_EXT_ycbcr_2plane_444_formats                       DONE (lvp, nvk, vn)
 
 Khronos extensions that are not part of any Vulkan version:
 
@@ -518,7 +518,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_KHR_get_surface_capabilities2                      DONE (anv, lvp, nvk, pvr, radv, tu, v3dv, vn)
   VK_KHR_global_priority                                DONE (radv, tu)
   VK_KHR_incremental_present                            DONE (anv, hasvk, lvp, radv, tu, v3dv, vn)
-  VK_KHR_maintenance5                                   DONE (anv, lvp, radv)
+  VK_KHR_maintenance5                                   DONE (anv, lvp, radv, tu)
   VK_KHR_performance_query                              DONE (anv/gen8+, radv/gfx10.3+, tu, v3dv)
   VK_KHR_pipeline_executable_properties                 DONE (anv, hasvk, radv, tu, v3dv)
   VK_KHR_pipeline_library                               DONE (anv, lvp, radv, tu)
@@ -574,16 +574,17 @@ Khronos extensions that are not part of any Vulkan version:
   VK_EXT_graphics_pipeline_library                      DONE (anv, lvp, radv, tu)
   VK_EXT_image_2d_view_of_3d                            DONE (anv, hasvk, lvp, nvk, radv, tu, vn)
   VK_EXT_image_drm_format_modifier                      DONE (anv, hasvk, radv/gfx9+, tu, v3dv, vn)
-  VK_EXT_image_sliced_view_of_3d                        DONE (anv, radv/gfx10+)
+  VK_EXT_image_sliced_view_of_3d                        DONE (anv, nvk, radv/gfx10+)
   VK_EXT_image_view_min_lod                             DONE (anv, hasvk, nvk, radv, tu, vn)
   VK_EXT_index_type_uint8                               DONE (anv, hasvk, nvk, lvp, panvk, radv/gfx8+, tu, v3dv, vn)
   VK_EXT_line_rasterization                             DONE (anv, hasvk, nvk, lvp, radv, tu, v3dv, vn)
-  VK_EXT_load_store_op_none                             DONE (anv, radv, tu, v3dv, vn)
+  VK_EXT_load_store_op_none                             DONE (anv, nvk, radv, tu, v3dv, vn)
   VK_EXT_memory_budget                                  DONE (anv, hasvk, lvp, radv, tu, v3dv, vn)
   VK_EXT_memory_priority                                DONE (lvp, radv)
   VK_EXT_mesh_shader                                    DONE (anv/gfx12.5+, lvp, radv)
   VK_EXT_multi_draw                                     DONE (anv, hasvk, lvp, radv, tu, vn)
   VK_EXT_multisampled_render_to_single_sampled          DONE (lvp)
+  VK_EXT_nested_command_buffer                          DONE (lvp)
   VK_EXT_non_seamless_cube_map                          DONE (anv, hasvk, lvp, nvk, radv, tu, vn)
   VK_EXT_pageable_device_local_memory                   DONE (lvp)
   VK_EXT_pci_bus_info                                   DONE (anv, hasvk, nvk, radv, vn)
@@ -591,7 +592,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_EXT_pipeline_library_group_handles                 DONE (anv, radv)
   VK_EXT_pipeline_robustness                            DONE (anv, radv, v3dv)
   VK_EXT_post_depth_coverage                            DONE (anv/gfx10+, lvp, radv/gfx10+)
-  VK_EXT_primitive_topology_list_restart                DONE (anv, hasvk, lvp, radv, tu, v3dv, vn)
+  VK_EXT_primitive_topology_list_restart                DONE (anv, hasvk, lvp, nvk, radv, tu, v3dv, vn)
   VK_EXT_primitives_generated_query                     DONE (anv, hasvk, lvp, radv, tu, vn)
   VK_EXT_provoking_vertex                               DONE (anv, hasvk, lvp, nvk, radv, tu, v3dv, vn)
   VK_EXT_queue_family_foreign                           DONE (anv, hasvk, radv, tu, vn)
@@ -609,7 +610,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_EXT_transform_feedback                             DONE (anv, hasvk, lvp, nvk, radv, tu, vn)
   VK_EXT_vertex_attribute_divisor                       DONE (anv, dzn, hasvk, lvp, nvk, panvk, radv, tu, v3dv, vn)
   VK_EXT_vertex_input_dynamic_state                     DONE (anv, lvp, nvk, radv, tu, vn)
-  VK_EXT_ycbcr_image_arrays                             DONE (anv, hasvk, nvk, radv)
+  VK_EXT_ycbcr_image_arrays                             DONE (anv, hasvk, lvp, nvk, radv)
   VK_ANDROID_external_memory_android_hardware_buffer    DONE (anv, radv, vn)
   VK_ANDROID_native_buffer                              DONE (anv, radv, tu, v3dv, vn)
   VK_GOOGLE_decorate_string                             DONE (anv, hasvk, lvp, radv)
@@ -850,7 +851,7 @@ Rusticl OpenCL 1.2 -- all DONE:
   clEnqueueMarkerWithWaitList                           DONE
   clEnqueueBarrierWithWaitList                          DONE
   clUnloadPlatformCompiler                              DONE
-  cl_khr_fp64                                           in progress (iris, llvmpipe, nvc0, radeonsi, Available with environment variable RUSTICL_FEATURES=fp64, device dependent.)
+  cl_khr_fp64                                           in progress (iris, llvmpipe, nvc0, radeonsi, zink, Available with environment variable RUSTICL_FEATURES=fp64, device dependent.)
   printf                                                DONE
   CL_KERNEL_ATTRIBUTES for clGetKernelInfo              DONE
   OpenCL C 1.2                                          DONE
@@ -870,7 +871,7 @@ Rusticl OpenCL 2.0 -- all DONE:
   - from sRGB images                                    in progress
   clCreateSamplerWithProperties                         DONE
   Non-uniform work-group sizes                          not started
-  cl_khr_3d_image_writes                                DONE (iris, llvmpipe, nvc0, panfrost, radeonsi)
+  cl_khr_3d_image_writes                                DONE (iris, llvmpipe, nvc0, panfrost, radeonsi, zink)
   OpenCL C 2.0                                          in progress
   - Work-group Collective Functions                     not started
   - Generic address space                               in progress
@@ -881,7 +882,7 @@ Rusticl OpenCL 2.1 -- all DONE:
   Sub groups                                            DONE (iris, llvmpipe, radeonsi)
   - cl_khr_subgroups                                    in progress
   cl_khr_il_program                                     DONE
-  Device and host timer synchronization                 DONE (iris, llvmpipe, radeonsi)
+  Device and host timer synchronization                 DONE (iris, llvmpipe, radeonsi, zink)
   clEnqueueSVMMigrateMem                                in progress (nvc0/gp100, broken)
   clCloneKernel                                         DONE
   Default device command queue                          not started
@@ -915,13 +916,13 @@ Rusticl extensions that are not part of any OpenCL version:
   cl_khr_async_copy_fence                               not started
   cl_khr_async_work_group_copy_fence                    not started
   cl_khr_device_enqueue_local_arg_types                 not started
-  cl_khr_device_uuid                                    DONE (iris, llvmpipe, radeonsi)
+  cl_khr_device_uuid                                    DONE (iris, llvmpipe, radeonsi, zink)
   cl_khr_egl_event                                      not started
   cl_khr_egl_image                                      not started
   cl_khr_expect_assume                                  in progress (hints are ignored)
   cl_khr_extended_async_copies                          not started
   cl_khr_extended_bit_ops                               in progress
-  cl_khr_fp16                                           in progress (llvmpipe, radeonsi, Available with environment variable RUSTICL_FEATURES=fp16)
+  cl_khr_fp16                                           in progress (llvmpipe, radeonsi, zink, Available with environment variable RUSTICL_FEATURES=fp16)
   cl_khr_gl_depth_images                                not started
   cl_khr_gl_msaa_sharing                                not started
   cl_khr_gl_sharing                                     in progress
@@ -931,7 +932,7 @@ Rusticl extensions that are not part of any OpenCL version:
   cl_khr_int64_extended_atomics                         not started
   cl_khr_integer_dot_product                            DONE
   cl_khr_mipmap_image                                   not started
-  cl_khr_pci_bus_info                                   DONE (iris, nvc0, radeonsi)
+  cl_khr_pci_bus_info                                   DONE (iris, nvc0, radeonsi, zink)
   cl_khr_priority_hints                                 not started
   cl_khr_spirv_extended_debug_info                      not started
   cl_khr_spirv_linkonce_odr                             not started

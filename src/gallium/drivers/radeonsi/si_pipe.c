@@ -78,6 +78,7 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    {"reserve_vmid", DBG(RESERVE_VMID), "Force VMID reservation per context."},
    {"shadowregs", DBG(SHADOW_REGS), "Enable CP register shadowing."},
    {"nofastdlist", DBG(NO_FAST_DISPLAY_LIST), "Disable fast display lists"},
+   {"nodmashaders", DBG(NO_DMA_SHADERS), "Disable uploading shaders via CP DMA and map them directly."},
 
    /* Multimedia options: */
    { "noefc", DBG(NO_EFC), "Disable hardware based encoder colour format conversion."},
@@ -812,29 +813,38 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       p_atomic_inc(&screen->num_contexts);
 
       /* Check if the aux_context needs to be recreated */
-      struct si_context *saux = si_get_aux_context(sscreen);
+      for (unsigned i = 0; i < ARRAY_SIZE(sscreen->aux_contexts); i++) {
+         struct si_context *saux = si_get_aux_context(&sscreen->aux_contexts[i]);
+         enum pipe_reset_status status =
+            sctx->ws->ctx_query_reset_status(saux->ctx, true, NULL, NULL);
 
-      enum pipe_reset_status status = sctx->ws->ctx_query_reset_status(
-         saux->ctx, true, NULL, NULL);
-      if (status != PIPE_NO_RESET) {
-         /* We lost the aux_context, create a new one */
-         struct u_log_context *aux_log = (saux)->log;
-         saux->b.set_log_context(&saux->b, NULL);
-         saux->b.destroy(&saux->b);
+         if (status != PIPE_NO_RESET) {
+            /* We lost the aux_context, create a new one */
+            struct u_log_context *aux_log = saux->log;
+            saux->b.set_log_context(&saux->b, NULL);
+            saux->b.destroy(&saux->b);
 
-         saux = (struct si_context *)si_create_context(
-            &sscreen->b, SI_CONTEXT_FLAG_AUX |
-                         (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
-                         (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
-         saux->b.set_log_context(&saux->b, aux_log);
-         sscreen->aux_context = saux;
+            saux = (struct si_context *)si_create_context(
+               &sscreen->b, SI_CONTEXT_FLAG_AUX |
+                            (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
+                            (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
+            saux->b.set_log_context(&saux->b, aux_log);
+
+            sscreen->aux_contexts[i].ctx = &saux->b;
+         }
+         si_put_aux_context_flush(&sscreen->aux_contexts[i]);
       }
-      si_put_aux_context_flush(sscreen);
 
       simple_mtx_lock(&sscreen->async_compute_context_lock);
-      if (status != PIPE_NO_RESET && sscreen->async_compute_context) {
-         sscreen->async_compute_context->destroy(sscreen->async_compute_context);
-         sscreen->async_compute_context = NULL;
+      if (sscreen->async_compute_context) {
+         struct si_context *compute_ctx = (struct si_context*)sscreen->async_compute_context;
+         enum pipe_reset_status status =
+            sctx->ws->ctx_query_reset_status(compute_ctx->ctx, true, NULL, NULL);
+
+         if (status != PIPE_NO_RESET) {
+            sscreen->async_compute_context->destroy(sscreen->async_compute_context);
+            sscreen->async_compute_context = NULL;
+         }
       }
       simple_mtx_unlock(&sscreen->async_compute_context_lock);
    }
@@ -948,8 +958,11 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
 
    si_resource_reference(&sscreen->attribute_ring, NULL);
 
-   if (sscreen->aux_context) {
-      struct si_context *saux = si_get_aux_context(sscreen);
+   for (unsigned i = 0; i < ARRAY_SIZE(sscreen->aux_contexts); i++) {
+      if (!sscreen->aux_contexts[i].ctx)
+         continue;
+
+      struct si_context *saux = si_get_aux_context(&sscreen->aux_contexts[i]);
       struct u_log_context *aux_log = saux->log;
       if (aux_log) {
          saux->b.set_log_context(&saux->b, NULL);
@@ -958,9 +971,9 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
       }
 
       saux->b.destroy(&saux->b);
-      mtx_unlock(&sscreen->aux_context_lock);
+      mtx_unlock(&sscreen->aux_contexts[i].lock);
+      mtx_destroy(&sscreen->aux_contexts[i].lock);
    }
-   mtx_destroy(&sscreen->aux_context_lock);
 
    simple_mtx_destroy(&sscreen->async_compute_context_lock);
    if (sscreen->async_compute_context) {
@@ -1027,7 +1040,7 @@ static void si_init_gs_info(struct si_screen *sscreen)
 
 static void si_test_vmfault(struct si_screen *sscreen, uint64_t test_flags)
 {
-   struct pipe_context *ctx = sscreen->aux_context;
+   struct pipe_context *ctx = sscreen->aux_context.general.ctx;
    struct si_context *sctx = (struct si_context *)ctx;
    struct pipe_resource *buf = pipe_buffer_create_const0(&sscreen->b, 0, PIPE_USAGE_DEFAULT, 64);
 
@@ -1086,7 +1099,7 @@ static void si_test_gds_memory_management(struct si_context *sctx, unsigned allo
 static void si_disk_cache_create(struct si_screen *sscreen)
 {
    /* Don't use the cache if shader dumping is enabled. */
-   if (sscreen->debug_flags & DBG_ALL_SHADERS)
+   if (sscreen->debug_flags & (DBG_ALL_SHADERS | DBG(USE_ACO)))
       return;
 
    struct mesa_sha1 ctx;
@@ -1162,8 +1175,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       sscreen->info.use_display_dcc_with_retile_blit = false;
    }
 
-   if (sscreen->debug_flags & DBG(SHADOW_REGS) ||
-       sscreen->info.gfx_level >= GFX11) {
+   if (sscreen->debug_flags & DBG(SHADOW_REGS)) {
       sscreen->info.register_shadowing_required = true;
       /* Recompute has_set_pairs_packets. */
       sscreen->info.has_set_pairs_packets = sscreen->info.gfx_level >= GFX11 &&
@@ -1231,7 +1243,6 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
              1 << util_logbase2(sscreen->force_aniso));
    }
 
-   (void)mtx_init(&sscreen->aux_context_lock, mtx_plain | mtx_recursive);
    (void)simple_mtx_init(&sscreen->async_compute_context_lock, mtx_plain);
    (void)simple_mtx_init(&sscreen->gpu_load_mutex, mtx_plain);
    (void)simple_mtx_init(&sscreen->gds_mutex, mtx_plain);
@@ -1433,17 +1444,23 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    }
 
    /* Create the auxiliary context. This must be done last. */
-   sscreen->aux_context = si_create_context(
-      &sscreen->b,
-      SI_CONTEXT_FLAG_AUX | PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET |
-      (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
-      (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
+   for (unsigned i = 0; i < ARRAY_SIZE(sscreen->aux_contexts); i++) {
+      (void)mtx_init(&sscreen->aux_contexts[i].lock, mtx_plain | mtx_recursive);
 
-   if (sscreen->options.aux_debug) {
-      struct u_log_context *log = CALLOC_STRUCT(u_log_context);
-      u_log_context_init(log);
-      si_get_aux_context(sscreen)->b.set_log_context(sscreen->aux_context, log);
-      si_put_aux_context_flush(sscreen);
+      sscreen->aux_contexts[i].ctx =
+         si_create_context(&sscreen->b,
+                           SI_CONTEXT_FLAG_AUX | PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET |
+                           (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
+                           (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
+
+      if (sscreen->options.aux_debug) {
+         struct u_log_context *log = CALLOC_STRUCT(u_log_context);
+         u_log_context_init(log);
+
+         struct si_context *sctx = si_get_aux_context(&sscreen->aux_context.general);
+         sctx->b.set_log_context(&sctx->b, log);
+         si_put_aux_context_flush(&sscreen->aux_context.general);
+      }
    }
 
    if (test_flags & DBG(TEST_IMAGE_COPY))
@@ -1460,15 +1477,15 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       si_test_vmfault(sscreen, test_flags);
 
    if (test_flags & DBG(TEST_GDS))
-      si_test_gds((struct si_context *)sscreen->aux_context);
+      si_test_gds((struct si_context *)sscreen->aux_context.general.ctx);
 
    if (test_flags & DBG(TEST_GDS_MM)) {
-      si_test_gds_memory_management((struct si_context *)sscreen->aux_context, 32 * 1024, 4,
-                                    RADEON_DOMAIN_GDS);
+      si_test_gds_memory_management((struct si_context *)sscreen->aux_context.general.ctx,
+                                    32 * 1024, 4, RADEON_DOMAIN_GDS);
    }
    if (test_flags & DBG(TEST_GDS_OA_MM)) {
-      si_test_gds_memory_management((struct si_context *)sscreen->aux_context, 4, 1,
-                                    RADEON_DOMAIN_OA);
+      si_test_gds_memory_management((struct si_context *)sscreen->aux_context.general.ctx,
+                                    4, 1, RADEON_DOMAIN_OA);
    }
 
    ac_print_nonshadowed_regs(sscreen->info.gfx_level, sscreen->info.family);
@@ -1509,15 +1526,14 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
    return rw ? rw->screen : NULL;
 }
 
-struct si_context* si_get_aux_context(struct si_screen *sscreen)
+struct si_context *si_get_aux_context(struct si_aux_context *ctx)
 {
-   mtx_lock(&sscreen->aux_context_lock);
-   return (struct si_context*)sscreen->aux_context;
+   mtx_lock(&ctx->lock);
+   return (struct si_context*)ctx->ctx;
 }
 
-void si_put_aux_context_flush(struct si_screen *sscreen)
+void si_put_aux_context_flush(struct si_aux_context *ctx)
 {
-   struct pipe_context *c = &((struct si_context*)sscreen->aux_context)->b;
-   c->flush(c, NULL, 0);
-   mtx_unlock(&sscreen->aux_context_lock);
+   ctx->ctx->flush(ctx->ctx, NULL, 0);
+   mtx_unlock(&ctx->lock);
 }

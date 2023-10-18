@@ -10,7 +10,6 @@
 #include <sys/mman.h>
 #include <xf86drm.h>
 
-#if NVK_NEW_UAPI == 1
 static void
 bo_bind(struct nouveau_ws_device *dev,
         uint32_t handle, uint64_t addr,
@@ -124,7 +123,6 @@ nouveau_ws_bo_bind_vma(struct nouveau_ws_device *dev,
               bo->handle, addr, range, bo_offset, pte_kind);
    bo_bind(dev, bo->handle, addr, range, bo_offset, pte_kind);
 }
-#endif
 
 struct nouveau_ws_bo *
 nouveau_ws_bo_new(struct nouveau_ws_device *dev,
@@ -172,11 +170,7 @@ nouveau_ws_bo_new_tiled(struct nouveau_ws_device *dev,
    /* Align the size */
    size = ALIGN(size, align);
 
-#if NVK_NEW_UAPI == 0
-   req.info.domain = NOUVEAU_GEM_TILE_NONCONTIG;
-#else
    req.info.domain = 0;
-#endif
 
    if (flags & NOUVEAU_WS_BO_GART)
       req.info.domain |= NOUVEAU_GEM_DOMAIN_GART;
@@ -186,17 +180,9 @@ nouveau_ws_bo_new_tiled(struct nouveau_ws_device *dev,
    if (flags & NOUVEAU_WS_BO_MAP)
       req.info.domain |= NOUVEAU_GEM_DOMAIN_MAPPABLE;
 
-#if NVK_NEW_UAPI == 1
    if (flags & NOUVEAU_WS_BO_NO_SHARE)
       req.info.domain |= NOUVEAU_GEM_DOMAIN_NO_SHARE;
-#endif
 
-#if NVK_NEW_UAPI == 0
-   assert(pte_kind == 0 || !(flags & NOUVEAU_WS_BO_GART));
-   assert(tile_mode == 0 || !(flags & NOUVEAU_WS_BO_GART));
-   req.info.tile_flags = (uint32_t)pte_kind << 8;
-   req.info.tile_mode = tile_mode;
-#endif
 
    req.info.size = size;
    req.align = align;
@@ -207,24 +193,18 @@ nouveau_ws_bo_new_tiled(struct nouveau_ws_device *dev,
    if (ret == 0) {
       bo->size = size;
       bo->align = align;
-#if NVK_NEW_UAPI == 0
-      bo->offset = req.info.offset;
-#else
       bo->offset = -1ULL;
-#endif
       bo->handle = req.info.handle;
       bo->map_handle = req.info.map_handle;
       bo->dev = dev;
       bo->flags = flags;
       bo->refcnt = 1;
 
-#if NVK_NEW_UAPI == 1
       if (dev->has_vm_bind) {
          assert(pte_kind == 0);
          bo->offset = nouveau_ws_alloc_vma(dev, bo->size, align, false);
          nouveau_ws_bo_bind_vma(dev, bo, bo->offset, bo->size, 0, 0);
       }
-#endif
 
       _mesa_hash_table_insert(dev->bos, (void *)(uintptr_t)bo->handle, bo);
    } else {
@@ -273,7 +253,6 @@ nouveau_ws_bo_from_dma_buf(struct nouveau_ws_device *dev, int fd)
             bo->flags = flags;
             bo->refcnt = 1;
 
-#if NVK_NEW_UAPI == 1
             uint64_t align = (1ULL << 12);
             if (info.domain & NOUVEAU_GEM_DOMAIN_VRAM)
                align = (1ULL << 16);
@@ -282,7 +261,6 @@ nouveau_ws_bo_from_dma_buf(struct nouveau_ws_device *dev, int fd)
 
             bo->offset = nouveau_ws_alloc_vma(dev, bo->size, align, false);
             nouveau_ws_bo_bind_vma(dev, bo, bo->offset, bo->size, 0, 0);
-#endif
             _mesa_hash_table_insert(dev->bos, (void *)(uintptr_t)handle, bo);
          }
       }
@@ -305,12 +283,10 @@ nouveau_ws_bo_destroy(struct nouveau_ws_bo *bo)
 
    _mesa_hash_table_remove_key(dev->bos, (void *)(uintptr_t)bo->handle);
 
-#if NVK_NEW_UAPI == 1
    if (dev->has_vm_bind) {
       nouveau_ws_bo_unbind_vma(bo->dev, bo->offset, bo->size);
       nouveau_ws_free_vma(bo->dev, bo->offset, bo->size, false);
    }
-#endif
 
    drmCloseBufferHandle(bo->dev->fd, bo->handle);
    FREE(bo);
@@ -328,7 +304,7 @@ nouveau_ws_bo_map(struct nouveau_ws_bo *bo, enum nouveau_ws_bo_map_flags flags)
    if (flags & NOUVEAU_WS_BO_WR)
       prot |= PROT_WRITE;
 
-   void *res = mmap64(NULL, bo->size, prot, MAP_SHARED, bo->dev->fd, bo->map_handle);
+   void *res = mmap(NULL, bo->size, prot, MAP_SHARED, bo->dev->fd, bo->map_handle);
    if (res == MAP_FAILED)
       return NULL;
 

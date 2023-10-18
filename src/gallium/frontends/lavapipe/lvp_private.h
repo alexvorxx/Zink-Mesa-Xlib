@@ -73,6 +73,7 @@ typedef uint32_t xcb_window_t;
 #include "vk_graphics_state.h"
 #include "vk_pipeline_layout.h"
 #include "vk_queue.h"
+#include "vk_sampler.h"
 #include "vk_sync.h"
 #include "vk_sync_timeline.h"
 #include "vk_ycbcr_conversion.h"
@@ -250,13 +251,21 @@ vk_sync_as_lvp_pipe_sync(struct vk_sync *sync)
    return container_of(sync, struct lvp_pipe_sync, base);
 }
 
+struct lvp_image_plane {
+   struct pipe_resource *bo;
+   struct pipe_memory_allocation *pmem;
+   VkDeviceSize plane_offset;
+   VkDeviceSize memory_offset;
+   VkDeviceSize size;
+};
+
 struct lvp_image {
    struct vk_image vk;
    VkDeviceSize size;
    uint32_t alignment;
-   struct pipe_memory_allocation *pmem;
-   unsigned memory_offset;
-   struct pipe_resource *bo;
+   bool disjoint;
+   uint8_t plane_count;
+   struct lvp_image_plane planes[3];
 };
 
 struct lvp_image_view {
@@ -265,29 +274,31 @@ struct lvp_image_view {
 
    enum pipe_format pformat;
 
-   struct pipe_sampler_view *sv;
-   struct pipe_image_view iv;
-
    struct pipe_surface *surface; /* have we created a pipe surface for this? */
    struct lvp_image_view *multisample; //VK_EXT_multisampled_render_to_single_sampled
 
-   struct lp_texture_handle *texture_handle;
-   struct lp_texture_handle *image_handle;
+   uint8_t plane_count;
+   struct {
+      unsigned image_plane;
+      struct pipe_sampler_view *sv;
+      struct pipe_image_view iv;
+      struct lp_texture_handle *texture_handle;
+      struct lp_texture_handle *image_handle;
+   } planes[3];
 };
 
 struct lvp_sampler {
-   struct vk_object_base base;
+   struct vk_sampler vk;
    struct lp_descriptor desc;
 
    struct lp_texture_handle *texture_handle;
-
-   struct vk_ycbcr_conversion *ycbcr_conversion;
 };
 
 struct lvp_descriptor_set_binding_layout {
    uint32_t descriptor_index;
    /* Number of array elements in this binding */
    VkDescriptorType type;
+   uint32_t stride; /* used for planar samplers */
    uint32_t array_size;
    bool valid;
 
@@ -637,7 +648,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_pipeline_layout, vk.base, VkPipelineLayout,
                                VK_OBJECT_TYPE_PIPELINE_LAYOUT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_query_pool, base, VkQueryPool,
                                VK_OBJECT_TYPE_QUERY_POOL)
-VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_sampler, base, VkSampler,
+VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_sampler, vk.base, VkSampler,
                                VK_OBJECT_TYPE_SAMPLER)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_indirect_command_layout, base, VkIndirectCommandsLayoutNV,
                                VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV)
@@ -650,7 +661,7 @@ VkResult lvp_execute_cmds(struct lvp_device *device,
 size_t
 lvp_get_rendering_state_size(void);
 struct lvp_image *lvp_swapchain_get_image(VkSwapchainKHR swapchain,
-					  uint32_t index);
+                                          uint32_t index);
 
 static inline enum pipe_format
 lvp_vk_format_to_pipe_format(VkFormat format)
@@ -665,22 +676,29 @@ lvp_vk_format_to_pipe_format(VkFormat format)
        format == VK_FORMAT_R64G64B64_SFLOAT ||
        format == VK_FORMAT_A2R10G10B10_SINT_PACK32 ||
        format == VK_FORMAT_A2B10G10R10_SINT_PACK32 ||
-       format == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM ||
-       format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ||
-       format == VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM ||
-       format == VK_FORMAT_G8_B8R8_2PLANE_422_UNORM ||
-       format == VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM ||
-       format == VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM ||
-       format == VK_FORMAT_G16_B16R16_2PLANE_420_UNORM ||
-       format == VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM ||
-       format == VK_FORMAT_G16_B16R16_2PLANE_422_UNORM ||
-       format == VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM ||
-       format == VK_FORMAT_D16_UNORM_S8_UINT ||
-       format == VK_FORMAT_R10X6G10X6_UNORM_2PACK16 ||
-       format == VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16)
+       format == VK_FORMAT_D16_UNORM_S8_UINT)
       return PIPE_FORMAT_NONE;
 
    return vk_format_to_pipe_format(format);
+}
+
+static inline uint8_t
+lvp_image_aspects_to_plane(ASSERTED const struct lvp_image *image,
+                           VkImageAspectFlags aspectMask)
+{
+   /* Verify that the aspects are actually in the image */
+   assert(!(aspectMask & ~image->vk.aspects));
+
+   /* Must only be one aspect unless it's depth/stencil */
+   assert(aspectMask == (VK_IMAGE_ASPECT_DEPTH_BIT |
+                         VK_IMAGE_ASPECT_STENCIL_BIT) ||
+          util_bitcount(aspectMask) == 1);
+
+   switch(aspectMask) {
+   case VK_IMAGE_ASPECT_PLANE_1_BIT: return 1;
+   case VK_IMAGE_ASPECT_PLANE_2_BIT: return 2;
+   default: return 0;
+   }
 }
 
 void

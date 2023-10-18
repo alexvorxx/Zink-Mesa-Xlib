@@ -347,7 +347,7 @@ vc4_yuv_blit(struct pipe_context *pctx, struct pipe_blit_info *info)
         struct vc4_resource *dst = vc4_resource(info->dst.resource);
         bool ok;
 
-        if (info->mask & PIPE_MASK_RGBA)
+        if (!(info->mask & PIPE_MASK_RGBA))
                 return;
 
         if (src->tiled)

@@ -156,9 +156,9 @@ validate_src(nir_src *src, validate_state *state,
              unsigned bit_sizes, unsigned num_components)
 {
    if (state->instr)
-      validate_assert(state, src->parent_instr == state->instr);
+      validate_assert(state, nir_src_parent_instr(src) == state->instr);
    else
-      validate_assert(state, src->parent_if == state->if_stmt);
+      validate_assert(state, nir_src_parent_if(src) == state->if_stmt);
 
    validate_ssa_src(src, state, bit_sizes, num_components);
 }
@@ -393,10 +393,10 @@ validate_deref_instr(nir_deref_instr *instr, validate_state *state)
        * conditions expect well-formed Booleans.  If you want to compare with
        * NULL, an explicit comparison operation should be used.
        */
-      if (!validate_assert(state, !use->is_if))
+      if (!validate_assert(state, !nir_src_is_if(use)))
          continue;
 
-      if (use->parent_instr->type == nir_instr_type_phi) {
+      if (nir_src_parent_instr(use)->type == nir_instr_type_phi) {
          validate_assert(state, !(instr->modes & (nir_var_shader_in |
                                                   nir_var_shader_out |
                                                   nir_var_shader_out |
@@ -1257,7 +1257,7 @@ validate_if(nir_if *if_stmt, validate_state *state)
    nir_cf_node *next_node = nir_cf_node_next(&if_stmt->cf_node);
    validate_assert(state, next_node->type == nir_cf_node_block);
 
-   validate_assert(state, if_stmt->condition.is_if);
+   validate_assert(state, nir_src_is_if(&if_stmt->condition));
    validate_src(&if_stmt->condition, state, 0, 1);
 
    validate_assert(state, !exec_list_is_empty(&if_stmt->then_list));
@@ -1443,13 +1443,13 @@ validate_src_dominance(nir_src *src, void *_state)
 {
    validate_state *state = _state;
 
-   if (src->ssa->parent_instr->block == src->parent_instr->block) {
+   if (src->ssa->parent_instr->block == nir_src_parent_instr(src)->block) {
       validate_assert(state, src->ssa->index < state->impl->ssa_alloc);
       validate_assert(state, BITSET_TEST(state->ssa_defs_found,
                                          src->ssa->index));
    } else {
       validate_assert(state, nir_block_dominates(src->ssa->parent_instr->block,
-                                                 src->parent_instr->block));
+                                                 nir_src_parent_instr(src)->block));
    }
    return true;
 }

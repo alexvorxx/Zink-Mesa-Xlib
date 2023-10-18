@@ -43,6 +43,11 @@ struct agx_varyings_vs {
     * If the slot is not written, this must be ~0.
     */
    unsigned slots[AGX_MAX_VARYING_SLOTS];
+
+   /* Slot for the combined layer/viewport 32-bit sysval output, or ~0 if none
+    * is written. What's at slots[VARYING_SLOT_LAYER] is the varying output.
+    */
+   unsigned layer_viewport_slot;
 };
 
 /* Conservative bound, * 4 due to offsets (TODO: maybe worth eliminating
@@ -115,6 +120,9 @@ struct agx_shader_info {
 
    /* Does the shader write point size? */
    bool writes_psiz;
+
+   /* Does the shader write layer and/or viewport index? Written together */
+   bool writes_layer_viewport;
 
    /* Does the shader control the sample mask? */
    bool writes_sample_mask;
@@ -210,6 +218,9 @@ struct agx_shader_key {
       struct agx_fs_shader_key fs;
    };
 };
+
+/* Texture backend flags */
+#define AGX_TEXTURE_FLAG_NO_CLAMP (1 << 0)
 
 bool agx_nir_lower_texture_early(nir_shader *s);
 

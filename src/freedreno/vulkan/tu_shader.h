@@ -30,10 +30,16 @@ struct tu_inline_ubo
    unsigned size_vec4;
 };
 
+/* The meaning of the range depends on "type". If it's
+ * IR3_PUSH_CONSTS_PER_STAGE, then it's the range used by this shader. If
+ * it's IR3_PUSH_CONSTS_SHARED then it's the overall range as provided by
+ * the pipeline layout and must match between shaders where it's non-zero.
+ */
 struct tu_push_constant_range
 {
    uint32_t lo;
    uint32_t dwords;
+   enum ir3_push_consts_type type;
 };
 
 struct tu_const_state
@@ -62,6 +68,24 @@ struct tu_shader
    struct tu_const_state const_state;
    uint32_t view_mask;
    uint8_t active_desc_sets;
+
+   union {
+      struct {
+         unsigned patch_type;
+         enum a6xx_tess_output tess_output_upper_left, tess_output_lower_left;
+         enum a6xx_tess_spacing tess_spacing;
+      } tes;
+
+      struct {
+         bool per_samp;
+         bool has_fdm;
+
+         struct {
+            uint32_t status;
+            bool force_late_z;
+         } lrz;
+      } fs;
+   };
 };
 
 struct tu_shader_key {
@@ -122,9 +146,10 @@ tu_shader_create(struct tu_device *dev,
                  bool executable_info);
 
 VkResult
-tu_empty_shader_create(struct tu_device *device,
-                       struct tu_shader **shader_out,
-                       gl_shader_stage stage);
+tu_init_empty_shaders(struct tu_device *device);
+
+void
+tu_destroy_empty_shaders(struct tu_device *device);
 
 void
 tu_shader_destroy(struct tu_device *dev,

@@ -1330,7 +1330,7 @@ find_trip_count(loop_info_state *state, unsigned execution_mode,
 
       int iterations = calculate_iterations(lv->basis, limit.def,
                                             initial_val, step_val, limit_val,
-                                            nir_instr_as_alu(lv->update_src->src.parent_instr),
+                                            nir_instr_as_alu(nir_src_parent_instr(&lv->update_src->src)),
                                             cond,
                                             alu_op, limit_rhs,
                                             invert_cond,

@@ -143,7 +143,7 @@ class A6xxGPUInfo(GPUInfo):
     def __init__(self, chip, template, num_ccu,
                  tile_align_w, tile_align_h, num_vsc_pipes,
                  cs_shared_mem_size, wave_granularity, fibers_per_sp,
-                 magic_regs, raw_magic_regs = None):
+                 magic_regs, raw_magic_regs = None, max_sets = 5):
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
                          tile_align_h = tile_align_h,
@@ -158,6 +158,8 @@ class A6xxGPUInfo(GPUInfo):
         self.num_ccu = num_ccu
 
         self.a6xx = Struct()
+        self.a7xx = Struct()
+
         self.a6xx.magic = Struct()
 
         for name, val in magic_regs.items():
@@ -183,10 +185,12 @@ class A6xxGPUInfo(GPUInfo):
 
         self.a6xx.vs_max_inputs_count = 32
 
-        for name, val in template.items():
-            if name == "magic": # handled above
-                continue
-            setattr(self.a6xx, name, val)
+        self.a6xx.max_sets = max_sets
+
+        templates = template if type(template) is list else [template]
+        for template in templates:
+            template.apply_props(self)
+
 
     def __str__(self):
      return super(A6xxGPUInfo, self).__str__().replace('[', '{').replace("]", "}")
@@ -296,12 +300,27 @@ add_gpus([
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
     ))
 
+
+class A6XXProps(dict):
+    def apply_props(self, gpu_info):
+        for name, val in self.items():
+            if name == "magic":
+                continue
+            setattr(gpu_info.a6xx, name, val)
+
+
+class A7XXProps(dict):
+    def apply_props(self, gpu_info):
+        for name, val in self.items():
+            setattr(gpu_info.a7xx, name, val)
+
+
 # a6xx can be divided into distinct sub-generations, where certain device-
 # info parameters are keyed to the sub-generation.  These templates reduce
 # the copypaste
 
 # a615, a616, a618, a619, a620 and a630:
-a6xx_gen1 = dict(
+a6xx_gen1 = A6XXProps(
         reg_size_vec4 = 96,
         instr_cache_size = 64,
         concurrent_resolve = False,
@@ -311,7 +330,7 @@ a6xx_gen1 = dict(
     )
 
 # a605, a608, a610, 612
-a6xx_gen1_low = {**a6xx_gen1, **dict(
+a6xx_gen1_low = A6XXProps({**a6xx_gen1, **A6XXProps(
         has_gmem_fast_clear = False,
         reg_size_vec4 = 48,
         has_hw_multiview = False,
@@ -321,10 +340,10 @@ a6xx_gen1_low = {**a6xx_gen1, **dict(
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.HALF.value,
         vs_max_inputs_count = 16,
         supports_double_threadsize = False,
-)}
+)})
 
 # a640, a680:
-a6xx_gen2 = dict(
+a6xx_gen2 = A6XXProps(
         reg_size_vec4 = 96,
         instr_cache_size = 64, # TODO
         supports_multiview_mask = True,
@@ -337,7 +356,7 @@ a6xx_gen2 = dict(
     )
 
 # a650:
-a6xx_gen3 = dict(
+a6xx_gen3 = A6XXProps(
         reg_size_vec4 = 64,
         # Blob limits it to 128 but we hang with 128
         instr_cache_size = 127,
@@ -358,7 +377,7 @@ a6xx_gen3 = dict(
     )
 
 # a635, a660:
-a6xx_gen4 = dict(
+a6xx_gen4 = A6XXProps(
         reg_size_vec4 = 64,
         # Blob limits it to 128 but we hang with 128
         instr_cache_size = 127,
@@ -596,6 +615,7 @@ add_gpus([
         GPUId(chip_id=0x00be06030500, name="Adreno 8c Gen 3"),
         GPUId(chip_id=0x007506030500, name="Adreno 7c+ Gen 3"),
         GPUId(chip_id=0x006006030500, name="Adreno 7c+ Gen 3 Lite"),
+        GPUId(chip_id=0x00ac06030500, name="FD643"), # e.g. QCM6490, Fairphone 5
         # fallback wildcard entry should be last:
         GPUId(chip_id=0xffff06030500, name="Adreno 7c+ Gen 3"),
     ], A6xxGPUInfo(
@@ -656,6 +676,7 @@ add_gpus([
 
 add_gpus([
         GPUId(690),
+        GPUId(chip_id=0xffff06090000, name="FD690"), # Default no-speedbin fallback
     ], A6xxGPUInfo(
         CHIP.A6XX,
         a6xx_gen4,
@@ -683,11 +704,18 @@ add_gpus([
         )
     ))
 
+a7xx_730 = A7XXProps()
+
+a7xx_740 = A7XXProps(
+        stsc_duplication_quirk = True,
+    )
+
 add_gpus([
-        GPUId(chip_id=0x07030001, name="FD730"),
+        GPUId(chip_id=0x07030001, name="FD730"), # KGSL, no speedbin data
+        GPUId(chip_id=0xffff07030001, name="FD730"), # Default no-speedbin fallback
     ], A6xxGPUInfo(
         CHIP.A7XX,
-        a6xx_gen4,
+        [a6xx_gen4, a7xx_730],
         num_ccu = 4,
         tile_align_w = 64,
         tile_align_h = 32,
@@ -735,6 +763,7 @@ add_gpus([
             [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8120, 0x09510840],
             [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_8121, 0x00000a62],
         ],
+        max_sets = 8,
     ))
 
 add_gpus([
@@ -743,7 +772,7 @@ add_gpus([
         GPUId(chip_id=0xffff43050a01, name="FD740"), # Default no-speedbin fallback
     ], A6xxGPUInfo(
         CHIP.A7XX,
-        a6xx_gen4,
+        [a6xx_gen4, a7xx_740],
         num_ccu = 6,
         tile_align_w = 64,
         tile_align_h = 32,
@@ -798,6 +827,7 @@ add_gpus([
             [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_800B, 0x00000000],
             [A6XXRegs.REG_A7XX_GRAS_UNKNOWN_800C, 0x00000000],
         ],
+        max_sets = 8,
     ))
 
 template = """\

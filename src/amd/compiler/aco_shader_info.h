@@ -65,8 +65,7 @@ struct aco_vs_prolog_info {
 };
 
 struct aco_ps_epilog_info {
-   struct ac_arg inputs[8];
-   struct ac_arg pc;
+   struct ac_arg colors[MAX_DRAW_BUFFERS];
 
    uint32_t spi_shader_col_format;
 
@@ -75,6 +74,19 @@ struct aco_ps_epilog_info {
    uint8_t color_is_int10;
 
    bool mrt0_is_dual_src;
+
+   /* OpenGL only */
+   uint16_t color_types;
+   bool clamp_color;
+   bool alpha_to_one;
+   bool alpha_to_coverage_via_mrtz;
+   bool skip_null_export;
+   unsigned broadcast_last_cbuf;
+   enum compare_func alpha_func;
+   struct ac_arg alpha_reference;
+   struct ac_arg depth;
+   struct ac_arg stencil;
+   struct ac_arg samplemask;
 };
 
 struct aco_tcs_epilog_info {
@@ -100,6 +112,28 @@ struct aco_gl_vs_prolog_info {
    unsigned instance_diviser_buf_offset;
    unsigned num_inputs;
    bool as_ls;
+
+   struct ac_arg internal_bindings;
+};
+
+struct aco_ps_prolog_info {
+   bool poly_stipple;
+   unsigned poly_stipple_buf_offset;
+
+   bool bc_optimize_for_persp;
+   bool bc_optimize_for_linear;
+   bool force_persp_sample_interp;
+   bool force_linear_sample_interp;
+   bool force_persp_center_interp;
+   bool force_linear_center_interp;
+
+   unsigned samplemask_log_ps_iter;
+   unsigned num_interp_inputs;
+   unsigned colors_read;
+   int color_interp_vgpr_index[2];
+   int color_attr_index[2];
+   bool color_two_side;
+   bool needs_wqm;
 
    struct ac_arg internal_bindings;
 };
@@ -136,9 +170,15 @@ struct aco_shader_info {
       struct ac_arg vs_state_bits;
    } tcs;
    struct {
-      struct ac_arg epilog_pc;
       uint32_t num_interp;
-      unsigned spi_ps_input;
+      unsigned spi_ps_input_ena;
+      unsigned spi_ps_input_addr;
+
+      /* Vulkan only */
+      struct ac_arg epilog_pc;
+
+      /* OpenGL only */
+      struct ac_arg alpha_reference;
    } ps;
    struct {
       uint8_t subgroup_size;

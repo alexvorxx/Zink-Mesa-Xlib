@@ -2381,7 +2381,7 @@ dri2_init_screen(struct dri_screen *screen)
 
    (void) mtx_init(&screen->opencl_func_mutex, mtx_plain);
 
-   if (pipe_loader_drm_probe_fd(&screen->dev, screen->fd))
+   if (pipe_loader_drm_probe_fd(&screen->dev, screen->fd, false))
       pscreen = pipe_loader_create_screen(screen->dev);
 
    if (!pscreen)
@@ -2477,12 +2477,19 @@ fail:
    return NULL;
 }
 
+static int
+dri_query_compatible_render_only_device_fd(int kms_only_fd)
+{
+   return pipe_loader_get_compatible_render_capable_device_fd(kms_only_fd);
+}
+
 static const struct __DRImesaCoreExtensionRec mesaCoreExtension = {
    .base = { __DRI_MESA, 1 },
    .version_string = MESA_INTERFACE_VERSION_STRING,
    .createNewScreen = driCreateNewScreen2,
    .createContext = driCreateContextAttribs,
    .initScreen = dri2_init_screen,
+   .queryCompatibleRenderOnlyDeviceFd = dri_query_compatible_render_only_device_fd,
 };
 
 /* This is the table of extensions that the loader will dlsym() for. */

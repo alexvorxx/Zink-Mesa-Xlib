@@ -349,6 +349,7 @@ job_compute_frame_tiling(struct v3dv_job *job,
                          uint32_t layers,
                          uint32_t render_target_count,
                          uint8_t max_internal_bpp,
+                         uint8_t total_color_bpp,
                          bool msaa,
                          bool double_buffer)
 {
@@ -361,13 +362,16 @@ job_compute_frame_tiling(struct v3dv_job *job,
    tiling->render_target_count = render_target_count;
    tiling->msaa = msaa;
    tiling->internal_bpp = max_internal_bpp;
+   tiling->total_color_bpp = total_color_bpp;
    tiling->double_buffer = double_buffer;
 
    /* Double-buffer is incompatible with MSAA */
    assert(!tiling->msaa || !tiling->double_buffer);
 
-   v3d_choose_tile_size(render_target_count, max_internal_bpp,
-                        tiling->msaa, tiling->double_buffer,
+   v3d_choose_tile_size(&job->device->devinfo,
+                        render_target_count,
+                        max_internal_bpp, total_color_bpp, msaa,
+                        tiling->double_buffer,
                         &tiling->tile_width, &tiling->tile_height);
 
    tiling->draw_tiles_x = DIV_ROUND_UP(width, tiling->tile_width);
@@ -458,6 +462,7 @@ v3dv_job_start_frame(struct v3dv_job *job,
                      bool allocate_tile_state_now,
                      uint32_t render_target_count,
                      uint8_t max_internal_bpp,
+                     uint8_t total_color_bpp,
                      bool msaa)
 {
    assert(job);
@@ -468,7 +473,7 @@ v3dv_job_start_frame(struct v3dv_job *job,
    const struct v3dv_frame_tiling *tiling =
       job_compute_frame_tiling(job, width, height, layers,
                                render_target_count, max_internal_bpp,
-                               msaa, false);
+                               total_color_bpp, msaa, false);
 
    v3dv_cl_ensure_space_with_branch(&job->bcl, 256);
    v3dv_return_if_oom(NULL, job);
@@ -529,6 +534,7 @@ cmd_buffer_end_render_pass_frame(struct v3dv_cmd_buffer *cmd_buffer)
                                job->frame_tiling.layers,
                                job->frame_tiling.render_target_count,
                                job->frame_tiling.internal_bpp,
+                               job->frame_tiling.total_color_bpp,
                                job->frame_tiling.msaa,
                                true);
 
@@ -1375,7 +1381,7 @@ cmd_buffer_emit_subpass_clears(struct v3dv_cmd_buffer *cmd_buffer)
    }
 
    uint32_t att_count = 0;
-   VkClearAttachment atts[V3D_MAX_DRAW_BUFFERS + 1]; /* 4 color + D/S */
+   VkClearAttachment atts[V3D_MAX_DRAW_BUFFERS + 1]; /* +1 for D/S */
 
    /* We only need to emit subpass clears as draw calls for color attachments
     * if the render area is not aligned to tile boundaries.
@@ -1673,10 +1679,11 @@ cmd_buffer_subpass_create_job(struct v3dv_cmd_buffer *cmd_buffer,
 
       const struct v3dv_framebuffer *framebuffer = state->framebuffer;
 
-      uint8_t internal_bpp;
+      uint8_t max_internal_bpp, total_color_bpp;
       bool msaa;
       v3dv_X(job->device, framebuffer_compute_internal_bpp_msaa)
-         (framebuffer, state->attachments, subpass, &internal_bpp, &msaa);
+         (framebuffer, state->attachments, subpass,
+          &max_internal_bpp, &total_color_bpp, &msaa);
 
       /* From the Vulkan spec:
        *
@@ -1700,7 +1707,8 @@ cmd_buffer_subpass_create_job(struct v3dv_cmd_buffer *cmd_buffer,
                            layers,
                            true, false,
                            subpass->color_count,
-                           internal_bpp,
+                           max_internal_bpp,
+                           total_color_bpp,
                            msaa);
    }
 
@@ -2063,6 +2071,14 @@ cmd_buffer_bind_pipeline_static_state(struct v3dv_cmd_buffer *cmd_buffer,
       }
    }
 
+   if (!(dynamic_mask & V3DV_DYNAMIC_DEPTH_BOUNDS)) {
+      if (memcmp(&dest->depth_bounds, &src->depth_bounds,
+                 sizeof(src->depth_bounds))) {
+         memcpy(&dest->depth_bounds, &src->depth_bounds, sizeof(src->depth_bounds));
+         dirty |= V3DV_CMD_DIRTY_DEPTH_BOUNDS;
+      }
+   }
+
    if (!(dynamic_mask & V3DV_DYNAMIC_LINE_WIDTH)) {
       if (dest->line_width != src->line_width) {
          dest->line_width = src->line_width;
@@ -2132,39 +2148,6 @@ v3dv_CmdBindPipeline(VkCommandBuffer commandBuffer,
    }
 }
 
-/* FIXME: C&P from radv. tu has similar code. Perhaps common place? */
-void
-v3dv_viewport_compute_xform(const VkViewport *viewport,
-                            float scale[3],
-                            float translate[3])
-{
-   float x = viewport->x;
-   float y = viewport->y;
-   float half_width = 0.5f * viewport->width;
-   float half_height = 0.5f * viewport->height;
-   double n = viewport->minDepth;
-   double f = viewport->maxDepth;
-
-   scale[0] = half_width;
-   translate[0] = half_width + x;
-   scale[1] = half_height;
-   translate[1] = half_height + y;
-
-   scale[2] = (f - n);
-   translate[2] = n;
-
-   /* It seems that if the scale is small enough the hardware won't clip
-    * correctly so we work around this my choosing the smallest scale that
-    * seems to work.
-    *
-    * This case is exercised by CTS:
-    * dEQP-VK.draw.inverted_depth_ranges.nodepthclamp_deltazero
-    */
-   const float min_abs_scale = 0.000009f;
-   if (fabs(scale[2]) < min_abs_scale)
-      scale[2] = scale[2] < 0 ? -min_abs_scale : min_abs_scale;
-}
-
 /* Considers the pipeline's negative_one_to_one state and applies it to the
  * current viewport transform if needed to produce the resulting Z translate
  * and scale parameters.
@@ -2217,9 +2200,10 @@ v3dv_CmdSetViewport(VkCommandBuffer commandBuffer,
           viewportCount * sizeof(*pViewports));
 
    for (uint32_t i = firstViewport; i < total_count; i++) {
-      v3dv_viewport_compute_xform(&state->dynamic.viewport.viewports[i],
-                                  state->dynamic.viewport.scale[i],
-                                  state->dynamic.viewport.translate[i]);
+      v3dv_X(cmd_buffer->device, viewport_compute_xform)
+         (&state->dynamic.viewport.viewports[i],
+          state->dynamic.viewport.scale[i],
+          state->dynamic.viewport.translate[i]);
    }
 
    cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_VIEWPORT;
@@ -2700,6 +2684,7 @@ cmd_buffer_restart_job_for_msaa_if_needed(struct v3dv_cmd_buffer *cmd_buffer)
                         true, false,
                         old_job->frame_tiling.render_target_count,
                         old_job->frame_tiling.internal_bpp,
+                        old_job->frame_tiling.total_color_bpp,
                         true /* msaa */);
 
    v3dv_job_destroy(old_job);
@@ -2963,6 +2948,9 @@ v3dv_cmd_buffer_emit_pre_draw(struct v3dv_cmd_buffer *cmd_buffer,
 
    if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | V3DV_CMD_DIRTY_DEPTH_BIAS))
       v3dv_X(device, cmd_buffer_emit_depth_bias)(cmd_buffer);
+
+   if (*dirty & V3DV_CMD_DIRTY_DEPTH_BOUNDS)
+      v3dv_X(device, cmd_buffer_emit_depth_bounds)(cmd_buffer);
 
    if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | V3DV_CMD_DIRTY_BLEND_CONSTANTS))
       v3dv_X(device, cmd_buffer_emit_blend)(cmd_buffer);
@@ -3393,9 +3381,11 @@ v3dv_CmdSetDepthBounds(VkCommandBuffer commandBuffer,
                        float minDepthBounds,
                        float maxDepthBounds)
 {
-   /* We do not support depth bounds testing so we just ignore this. We are
-    * already asserting that pipelines don't enable the feature anyway.
-    */
+   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
+
+   cmd_buffer->state.dynamic.depth_bounds.min = minDepthBounds;
+   cmd_buffer->state.dynamic.depth_bounds.max = maxDepthBounds;
+   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_DEPTH_BOUNDS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4134,6 +4124,7 @@ cmd_buffer_emit_pre_dispatch(struct v3dv_cmd_buffer *cmd_buffer)
 
 void
 v3dv_cmd_buffer_rewrite_indirect_csd_job(
+   struct v3dv_device *device,
    struct v3dv_csd_indirect_cpu_job_info *info,
    const uint32_t *wg_counts)
 {
@@ -4153,8 +4144,15 @@ v3dv_cmd_buffer_rewrite_indirect_csd_job(
    submit->cfg[1] = wg_counts[1] << V3D_CSD_CFG012_WG_COUNT_SHIFT;
    submit->cfg[2] = wg_counts[2] << V3D_CSD_CFG012_WG_COUNT_SHIFT;
 
-   submit->cfg[4] = DIV_ROUND_UP(info->wg_size, 16) *
-                    (wg_counts[0] * wg_counts[1] * wg_counts[2]) - 1;
+   uint32_t num_batches = DIV_ROUND_UP(info->wg_size, 16) *
+                          (wg_counts[0] * wg_counts[1] * wg_counts[2]);
+   /* V3D 7.1.6 and later don't subtract 1 from the number of batches */
+   if (device->devinfo.ver < 71 ||
+       (device->devinfo.ver == 71 && device->devinfo.rev < 6)) {
+      submit->cfg[4] = num_batches - 1;
+   } else {
+      submit->cfg[4] = num_batches;
+   }
    assert(submit->cfg[4] != ~0);
 
    if (info->needs_wg_uniform_rewrite) {
@@ -4187,6 +4185,7 @@ cmd_buffer_create_csd_job(struct v3dv_cmd_buffer *cmd_buffer,
                           uint32_t **wg_uniform_offsets_out,
                           uint32_t *wg_size_out)
 {
+   struct v3dv_device *device = cmd_buffer->device;
    struct v3dv_pipeline *pipeline = cmd_buffer->state.compute.pipeline;
    assert(pipeline && pipeline->shared_data->variants[BROADCOM_SHADER_COMPUTE]);
    struct v3dv_shader_variant *cs_variant =
@@ -4245,18 +4244,26 @@ cmd_buffer_create_csd_job(struct v3dv_cmd_buffer *cmd_buffer,
    if (wg_size_out)
       *wg_size_out = wg_size;
 
-   submit->cfg[4] = num_batches - 1;
+   /* V3D 7.1.6 and later don't subtract 1 from the number of batches */
+   if (device->devinfo.ver < 71 ||
+       (device->devinfo.ver == 71 && device->devinfo.rev < 6)) {
+      submit->cfg[4] = num_batches - 1;
+   } else {
+      submit->cfg[4] = num_batches;
+   }
    assert(submit->cfg[4] != ~0);
 
    assert(pipeline->shared_data->assembly_bo);
    struct v3dv_bo *cs_assembly_bo = pipeline->shared_data->assembly_bo;
 
    submit->cfg[5] = cs_assembly_bo->offset + cs_variant->assembly_offset;
-   submit->cfg[5] |= V3D_CSD_CFG5_PROPAGATE_NANS;
    if (cs_variant->prog_data.base->single_seg)
       submit->cfg[5] |= V3D_CSD_CFG5_SINGLE_SEG;
    if (cs_variant->prog_data.base->threads == 4)
       submit->cfg[5] |= V3D_CSD_CFG5_THREADING;
+   /* V3D 7.x has made the PROPAGATE_NANS bit in CFG5 reserved  */
+   if (device->devinfo.ver < 71)
+      submit->cfg[5] |= V3D_CSD_CFG5_PROPAGATE_NANS;
 
    if (cs_variant->prog_data.cs->shared_size > 0) {
       job->csd.shared_memory =

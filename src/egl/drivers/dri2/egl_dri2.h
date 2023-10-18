@@ -307,6 +307,7 @@ struct dri2_egl_display {
    bool authenticated;
    uint32_t capabilities;
    char *device_name;
+   bool is_render_node;
 #endif
 
 #ifdef HAVE_ANDROID_PLATFORM
@@ -314,8 +315,6 @@ struct dri2_egl_display {
    /* gralloc vendor usage bit for front rendering */
    uint32_t front_rendering_usage;
 #endif
-
-   bool is_render_node;
 };
 
 struct dri2_egl_context {

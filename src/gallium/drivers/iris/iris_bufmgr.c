@@ -1248,7 +1248,9 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
    return bo;
 
 err_vm_alloc:
+   simple_mtx_lock(&bufmgr->lock);
    vma_free(bufmgr, bo->address, bo->size);
+   simple_mtx_unlock(&bufmgr->lock);
 err_free:
    simple_mtx_lock(&bufmgr->lock);
    bo_free(bo);
@@ -1324,7 +1326,9 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    return bo;
 
 err_vma_free:
+   simple_mtx_lock(&bufmgr->lock);
    vma_free(bufmgr, bo->address, bo->size);
+   simple_mtx_unlock(&bufmgr->lock);
 err_close:
    bufmgr->kmd_backend->gem_close(bufmgr, bo);
 err_free:

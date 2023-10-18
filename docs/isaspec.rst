@@ -208,6 +208,9 @@ some other bitfield (or combination of bitfields).  In this example it is
 used to cover the cases where ``SRCn_R`` has a different meaning and a
 different disassembly syntax depending on whether ``REPEAT`` equals zero.
 
+The ``<template>`` element can be used to represent a placeholder for a more
+complex ``<display>`` substring.
+
 Overrides
 ---------
 

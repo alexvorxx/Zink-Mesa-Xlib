@@ -22,6 +22,7 @@ struct ctx {
    bool *translucent;
    unsigned bindless_base;
    bool any_memory_stores;
+   bool layer_id_sr;
    uint8_t outputs_written;
 };
 
@@ -131,14 +132,21 @@ dim_for_rt(nir_builder *b, unsigned nr_samples, nir_def **sample)
 }
 
 static nir_def *
-image_coords(nir_builder *b)
+image_coords(nir_builder *b, nir_def *layer_id)
 {
-   return nir_pad_vector(b, nir_u2u32(b, nir_load_pixel_coord(b)), 4);
+   nir_def *xy = nir_u2u32(b, nir_load_pixel_coord(b));
+   nir_def *vec = nir_pad_vector(b, xy, 4);
+
+   if (layer_id)
+      vec = nir_vector_insert_imm(b, vec, layer_id, 2);
+
+   return vec;
 }
 
 static void
 store_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
-             enum pipe_format format, unsigned rt, nir_def *value)
+             nir_def *layer_id, enum pipe_format format, unsigned rt,
+             nir_def *value)
 {
    /* Force bindless for multisampled image writes since they will be lowered
     * with a descriptor crawl later.
@@ -150,7 +158,7 @@ store_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
 
    nir_def *sample;
    enum glsl_sampler_dim dim = dim_for_rt(b, nr_samples, &sample);
-   nir_def *coords = image_coords(b);
+   nir_def *coords = image_coords(b, layer_id);
 
    nir_begin_invocation_interlock(b);
 
@@ -163,12 +171,12 @@ store_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
    }
 
    if (bindless) {
-      nir_bindless_image_store(
-         b, image, coords, sample, value, lod, .image_dim = dim,
-         .image_array = false /* TODO */, .format = format);
+      nir_bindless_image_store(b, image, coords, sample, value, lod,
+                               .image_dim = dim, .image_array = !!layer_id,
+                               .format = format);
    } else {
       nir_image_store(b, image, coords, sample, value, lod, .image_dim = dim,
-                      .image_array = false /* TODO */, .format = format);
+                      .image_array = !!layer_id, .format = format);
    }
 
    if (nr_samples > 1)
@@ -179,7 +187,7 @@ store_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
 
 static nir_def *
 load_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
-            uint8_t comps, uint8_t bit_size, unsigned rt,
+            nir_def *layer_id, uint8_t comps, uint8_t bit_size, unsigned rt,
             enum pipe_format format)
 {
    bool bindless = false;
@@ -189,7 +197,7 @@ load_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
 
    nir_def *sample;
    enum glsl_sampler_dim dim = dim_for_rt(b, nr_samples, &sample);
-   nir_def *coords = image_coords(b);
+   nir_def *coords = image_coords(b, layer_id);
 
    /* Ensure pixels below this one have written out their results */
    nir_begin_invocation_interlock(b);
@@ -197,11 +205,37 @@ load_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
    if (bindless) {
       return nir_bindless_image_load(
          b, comps, bit_size, image, coords, sample, lod, .image_dim = dim,
-         .image_array = false /* TODO */, .format = format);
+         .image_array = !!layer_id, .format = format);
    } else {
       return nir_image_load(b, comps, bit_size, image, coords, sample, lod,
-                            .image_dim = dim, .image_array = false /* TODO */,
+                            .image_dim = dim, .image_array = !!layer_id,
                             .format = format);
+   }
+}
+
+nir_def *
+agx_internal_layer_id(nir_builder *b)
+{
+   /* In the background and end-of-tile programs, the layer ID is available as
+    * sr2, the Z component of the workgroup index.
+    */
+   return nir_channel(b, nir_load_workgroup_id(b), 2);
+}
+
+static nir_def *
+tib_layer_id(nir_builder *b, struct ctx *ctx)
+{
+   if (!ctx->tib->layered) {
+      /* If we're not layered, there's no explicit layer ID */
+      return NULL;
+   } else if (ctx->layer_id_sr) {
+      return agx_internal_layer_id(b);
+   } else {
+      /* Otherwise, the layer ID is loaded as a flat varying. */
+      b->shader->info.inputs_read |= VARYING_BIT_LAYER;
+
+      return nir_load_input(b, 1, 32, nir_imm_int(b, 0),
+                            .io_semantics.location = VARYING_SLOT_LAYER);
    }
 }
 
@@ -259,8 +293,8 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
       value = nir_trim_vector(b, intr->src[0].ssa, comps);
 
       if (tib->spilled[rt]) {
-         store_memory(b, ctx->bindless_base, tib->nr_samples, logical_format,
-                      rt, value);
+         store_memory(b, ctx->bindless_base, tib->nr_samples,
+                      tib_layer_id(b, ctx), logical_format, rt, value);
          ctx->any_memory_stores = true;
       } else {
          store_tilebuffer(b, tib, format, logical_format, rt, value,
@@ -280,7 +314,8 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
          *(ctx->translucent) = true;
 
          return load_memory(b, ctx->bindless_base, tib->nr_samples,
-                            intr->num_components, bit_size, rt, logical_format);
+                            tib_layer_id(b, ctx), intr->num_components,
+                            bit_size, rt, logical_format);
       } else {
          return load_tilebuffer(b, tib, intr->num_components, bit_size, rt,
                                 format, logical_format);
@@ -291,7 +326,7 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
 bool
 agx_nir_lower_tilebuffer(nir_shader *shader, struct agx_tilebuffer_layout *tib,
                          uint8_t *colormasks, unsigned *bindless_base,
-                         bool *translucent)
+                         bool *translucent, bool layer_id_sr)
 {
    assert(shader->info.stage == MESA_SHADER_FRAGMENT);
 
@@ -299,6 +334,7 @@ agx_nir_lower_tilebuffer(nir_shader *shader, struct agx_tilebuffer_layout *tib,
       .tib = tib,
       .colormasks = colormasks,
       .translucent = translucent,
+      .layer_id_sr = layer_id_sr,
    };
 
    /* Allocate 1 texture + 1 PBE descriptor for each spilled descriptor */

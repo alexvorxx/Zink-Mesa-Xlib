@@ -450,7 +450,7 @@ ir3_nir_analyze_ubo_ranges(nir_shader *nir, struct ir3_shader_variant *v)
       uint32_t range_size = state->range[i].end - state->range[i].start;
 
       assert(offset <= max_upload);
-      state->range[i].offset = offset + v->num_reserved_user_consts * 16;
+      state->range[i].offset = offset + v->shader_options.num_reserved_user_consts * 16;
       assert(offset <= max_upload);
       offset += range_size;
    }

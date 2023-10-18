@@ -707,11 +707,16 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
          fprintf(output, " bank_mask:0x%.1x", dpp.bank_mask);
       if (dpp.bound_ctrl)
          fprintf(output, " bound_ctrl:1");
+      if (dpp.fetch_inactive)
+         fprintf(output, " fi");
    } else if (instr->isDPP8()) {
       const DPP8_instruction& dpp = instr->dpp8();
-      fprintf(output, " dpp8:[%d,%d,%d,%d,%d,%d,%d,%d]", dpp.lane_sel[0], dpp.lane_sel[1],
-              dpp.lane_sel[2], dpp.lane_sel[3], dpp.lane_sel[4], dpp.lane_sel[5], dpp.lane_sel[6],
-              dpp.lane_sel[7]);
+      fprintf(output, " dpp8:[");
+      for (unsigned i = 0; i < 8; i++)
+         fprintf(output, "%s%u", i ? "," : "", (dpp.lane_sel >> (i * 3)) & 0x8);
+      fprintf(output, "]");
+      if (dpp.fetch_inactive)
+         fprintf(output, " fi");
    } else if (instr->isSDWA()) {
       const SDWA_instruction& sdwa = instr->sdwa();
       if (!instr->isVOPC()) {

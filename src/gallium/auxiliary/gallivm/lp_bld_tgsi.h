@@ -301,18 +301,6 @@ lp_build_tgsi_soa(struct gallivm_state *gallivm,
                   const struct lp_build_tgsi_params *params,
                   LLVMValueRef (*outputs)[4]);
 
-void
-lp_build_tgsi_aos(struct gallivm_state *gallivm,
-                  const struct tgsi_token *tokens,
-                  struct lp_type type,
-                  const unsigned char swizzles[4],
-                  LLVMValueRef consts_ptr,
-                  const LLVMValueRef *inputs,
-                  LLVMValueRef *outputs,
-                  const struct lp_build_sampler_aos *sampler,
-                  const struct tgsi_shader_info *info);
-
-
 struct lp_build_tgsi_inst_list
 {
    struct tgsi_full_instruction *instructions;
@@ -640,86 +628,15 @@ lp_get_output_ptr(
    unsigned index,
    unsigned chan);
 
-struct lp_build_tgsi_aos_context
-{
-   struct lp_build_tgsi_context bld_base;
-
-   /* Builder for integer masks and indices */
-   struct lp_build_context int_bld;
-
-   /*
-    * AoS swizzle used:
-    * - swizzles[0] = red index
-    * - swizzles[1] = green index
-    * - swizzles[2] = blue index
-    * - swizzles[3] = alpha index
-    */
-   unsigned char swizzles[4];
-   unsigned char inv_swizzles[4];
-
-   LLVMValueRef consts_ptr;
-   const LLVMValueRef *inputs;
-   LLVMValueRef *outputs;
-
-   const struct lp_build_sampler_aos *sampler;
-
-   struct tgsi_declaration_sampler_view sv[PIPE_MAX_SHADER_SAMPLER_VIEWS];
-
-   LLVMValueRef immediates[LP_MAX_INLINED_IMMEDIATES];
-   LLVMValueRef temps[LP_MAX_INLINED_TEMPS];
-   LLVMValueRef addr[LP_MAX_TGSI_ADDRS];
-
-   /* We allocate/use this array of temps if (1 << TGSI_FILE_TEMPORARY) is
-    * set in the indirect_files field.
-    * The temps[] array above is unused then.
-    */
-   LLVMValueRef temps_array;
-
-   /** bitmask indicating which register files are accessed indirectly */
-   unsigned indirect_files;
-
-};
-
 static inline struct lp_build_tgsi_soa_context *
 lp_soa_context(struct lp_build_tgsi_context *bld_base)
 {
    return (struct lp_build_tgsi_soa_context *)bld_base;
 }
 
-static inline struct lp_build_tgsi_aos_context *
-lp_aos_context(struct lp_build_tgsi_context *bld_base)
-{
-   return (struct lp_build_tgsi_aos_context *)bld_base;
-}
-
-void
-lp_emit_declaration_aos(
-   struct lp_build_tgsi_aos_context *bld,
-   const struct tgsi_full_declaration *decl);
-
-
-bool
-lp_emit_instruction_aos(
-   struct lp_build_tgsi_aos_context *bld,
-   const struct tgsi_full_instruction *inst,
-   const struct tgsi_opcode_info *info,
-   int *pc);
-
-void
-lp_emit_store_aos(
-   struct lp_build_tgsi_aos_context *bld,
-   const struct tgsi_full_instruction *inst,
-   unsigned index,
-   LLVMValueRef value);
-
 void lp_build_fetch_args(
    struct lp_build_tgsi_context * bld_base,
    struct lp_build_emit_data * emit_data);
-
-LLVMValueRef
-lp_build_tgsi_inst_llvm_aos(
-   struct lp_build_tgsi_context * bld_base,
-   const struct tgsi_full_instruction *inst);
 
 void
 lp_build_tgsi_intrinsic(

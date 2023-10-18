@@ -74,6 +74,7 @@ __reg_iova(const struct fd_reg_pair *reg)
             uint64_t *__p64 = (uint64_t *)__p;                                 \
             *__p64 = __reg_iova(&__regs[i]) | __regs[i].value;                 \
             __p += 2;                                                          \
+            fd_ringbuffer_assert_attached(ring, __regs[i].bo);                 \
          } else {                                                              \
             *__p++ = __regs[i].value;                                          \
             if (__regs[i].is_address)                                          \

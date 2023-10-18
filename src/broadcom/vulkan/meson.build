@@ -27,6 +27,7 @@ v3dv_entrypoints = custom_target(
     '--out-h', '@OUTPUT0@', '--out-c', '@OUTPUT1@', '--prefix', 'v3dv',
     '--beta', with_vulkan_beta.to_string(),
     '--device-prefix', 'ver42',
+    '--device-prefix', 'ver71',
   ],
   depend_files : vk_entrypoints_gen_depend_files,
 )
@@ -64,13 +65,11 @@ files_per_version = files(
   'v3dvx_pipeline.c',
   'v3dvx_meta_common.c',
   'v3dvx_pipeline.c',
+  'v3dvx_query.c',
   'v3dvx_queue.c',
 )
 
-# The vulkan driver only supports version >= 42, which is the version present in
-# Rpi4. We need to explicitly set it as we are reusing pieces from the GL v3d
-# driver.
-v3d_versions = ['42']
+v3d_versions = ['42', '71']
 
 v3dv_flags = []
 

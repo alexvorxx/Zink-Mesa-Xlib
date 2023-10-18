@@ -619,7 +619,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
       .multiViewport = true,
       .samplerAnisotropy = true,
       .textureCompressionETC2 = radv_device_supports_etc(pdevice) || pdevice->emulate_etc2,
-      .textureCompressionASTC_LDR = false,
+      .textureCompressionASTC_LDR = pdevice->emulate_astc,
       .textureCompressionBC = true,
       .occlusionQueryPrecise = true,
       .pipelineStatisticsQuery = true,
@@ -1824,9 +1824,11 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
 
 #ifdef ANDROID
    device->emulate_etc2 = !radv_device_supports_etc(device);
+   device->emulate_astc = true;
 #else
    device->emulate_etc2 =
-      !radv_device_supports_etc(device) && driQueryOptionb(&device->instance->dri_options, "radv_require_etc2");
+      !radv_device_supports_etc(device) && driQueryOptionb(&device->instance->dri_options, "vk_require_etc2");
+   device->emulate_astc = driQueryOptionb(&device->instance->dri_options, "vk_require_astc");
 #endif
 
    snprintf(device->name, sizeof(device->name), "AMD RADV %s%s", device->rad_info.name,

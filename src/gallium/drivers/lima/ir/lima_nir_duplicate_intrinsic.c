@@ -35,9 +35,9 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
    nir_foreach_use_safe(use_src, &itr->def) {
       nir_intrinsic_instr *dupl;
 
-      if (last_parent_instr != use_src->parent_instr) {
+      if (last_parent_instr != nir_src_parent_instr(use_src)) {
          /* if ssa use, clone for the target block */
-         b->cursor = nir_before_instr(use_src->parent_instr);
+         b->cursor = nir_before_instr(nir_src_parent_instr(use_src));
          dupl = nir_intrinsic_instr_create(b->shader, op);
          dupl->num_components = itr->num_components;
          memcpy(dupl->const_index, itr->const_index, sizeof(itr->const_index));
@@ -54,17 +54,18 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
       }
 
       nir_src_rewrite(use_src, &dupl->def);
-      last_parent_instr = use_src->parent_instr;
+      last_parent_instr = nir_src_parent_instr(use_src);
       last_dupl = dupl;
    }
 
    last_dupl = NULL;
-   last_parent_instr = NULL;
+   nir_if *last_parent_if = NULL;
 
    nir_foreach_if_use_safe(use_src, &itr->def) {
       nir_intrinsic_instr *dupl;
+      nir_if *nif = nir_src_parent_if(use_src);
 
-      if (last_parent_instr != use_src->parent_instr) {
+      if (last_parent_if != nif) {
          /* if 'if use', clone where it is */
          b->cursor = nir_before_instr(&itr->instr);
          dupl = nir_intrinsic_instr_create(b->shader, op);
@@ -82,8 +83,8 @@ lima_nir_duplicate_intrinsic(nir_builder *b, nir_intrinsic_instr *itr,
          dupl = last_dupl;
       }
 
-      nir_src_rewrite(&use_src->parent_if->condition, &dupl->def);
-      last_parent_instr = use_src->parent_instr;
+      nir_src_rewrite(&nir_src_parent_if(use_src)->condition, &dupl->def);
+      last_parent_if = nif;
       last_dupl = dupl;
    }
 

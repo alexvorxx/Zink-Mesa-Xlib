@@ -2402,7 +2402,8 @@ iris_create_sampler_state(struct pipe_context *ctx,
    /* Fill an extra sampler state structure with anisotropic filtering
     * disabled used to implement Wa_14014414195.
     */
-   fill_sampler_state(cso->sampler_state_3d, state, 0);
+   if (intel_needs_workaround(screen->devinfo, 14014414195))
+      fill_sampler_state(cso->sampler_state_3d, state, 0);
 #endif
 
    return cso;
@@ -3322,9 +3323,11 @@ iris_set_sampler_views(struct pipe_context *ctx,
       struct iris_sampler_view *view = (void *) pview;
 
 #if GFX_VERx10 == 125
-      if (is_sampler_view_3d(shs->textures[start + i]) !=
-          is_sampler_view_3d(view))
-         ice->state.stage_dirty |= IRIS_STAGE_DIRTY_SAMPLER_STATES_VS << stage;
+      if (intel_needs_workaround(screen->devinfo, 14014414195)) {
+         if (is_sampler_view_3d(shs->textures[start + i]) !=
+             is_sampler_view_3d(view))
+            ice->state.stage_dirty |= IRIS_STAGE_DIRTY_SAMPLER_STATES_VS << stage;
+      }
 #endif
 
       if (take_ownership) {
@@ -6336,7 +6339,7 @@ iris_preemption_streamout_wa(struct iris_context *ice,
                              struct iris_batch *batch,
                              bool enable)
 {
-#if INTEL_NEEDS_WA_16013994831
+#if GFX_VERx10 >= 120
    if (!intel_needs_workaround(batch->screen->devinfo, 16013994831))
       return;
 
@@ -6423,8 +6426,9 @@ iris_upload_dirty_render_state(struct iris_context *ice,
     * CONST_COLOR, CONST_ALPHA and supply zero by using blend constants.
     */
    bool needs_wa_14018912822 =
+      screen->driconf.intel_enable_wa_14018912822 &&
       intel_needs_workaround(batch->screen->devinfo, 14018912822) &&
-       util_framebuffer_get_num_samples(&ice->state.framebuffer) > 1;
+      util_framebuffer_get_num_samples(&ice->state.framebuffer) > 1;
 
    if (dirty & IRIS_DIRTY_CC_VIEWPORT) {
       const struct iris_rasterizer_state *cso_rast = ice->state.cso_rast;
@@ -6579,7 +6583,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
                   color_blend_zero = true;
                }
                if (dst_alpha_blend_factor == BLENDFACTOR_ZERO) {
-                  dst_alpha_blend_factor = BLENDFACTOR_CONST_COLOR;
+                  dst_alpha_blend_factor = BLENDFACTOR_CONST_ALPHA;
                   alpha_blend_zero = true;
                }
             }
@@ -7000,8 +7004,15 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             ice->state.streamout + GENX(3DSTATE_STREAMOUT_length);
          iris_batch_emit(batch, decl_list, 4 * ((decl_list[0] & 0xff) + 2));
 
-#if GFX_VERx10 == 125
-         /* Wa_14015946265: Send PC with CS stall after SO_DECL. */
+#if GFX_VER >= 11
+         /* ICL PRMs, Volume 2a - Command Reference: Instructions,
+          * 3DSTATE_SO_DECL_LIST:
+          *
+          *    "Workaround: This command must be followed by a PIPE_CONTROL
+          *     with CS Stall bit set."
+          *
+          * On DG2+ also known as Wa_1509820217.
+          */
          iris_emit_pipe_control_flush(batch,
                                       "workaround: cs stall after so_decl",
                                       PIPE_CONTROL_CS_STALL);
@@ -7195,7 +7206,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
          if (ice->state.color_blend_zero)
             dst_blend_factor = BLENDFACTOR_CONST_COLOR;
          if (ice->state.alpha_blend_zero)
-            dst_alpha_blend_factor = BLENDFACTOR_CONST_COLOR;
+            dst_alpha_blend_factor = BLENDFACTOR_CONST_ALPHA;
       }
 
       uint32_t dynamic_pb[GENX(3DSTATE_PS_BLEND_length)];
@@ -7358,6 +7369,17 @@ iris_upload_dirty_render_state(struct iris_context *ice,
    if (dirty & IRIS_DIRTY_LINE_STIPPLE) {
       struct iris_rasterizer_state *cso = ice->state.cso_rast;
       iris_batch_emit(batch, cso->line_stipple, sizeof(cso->line_stipple));
+#if GFX_VER >= 11
+      /* ICL PRMs, Volume 2a - Command Reference: Instructions,
+       * 3DSTATE_LINE_STIPPLE:
+       *
+       *    "Workaround: This command must be followed by a PIPE_CONTROL with
+       *     CS Stall bit set."
+       */
+      iris_emit_pipe_control_flush(batch,
+                                   "workaround: post 3DSTATE_LINE_STIPPLE",
+                                   PIPE_CONTROL_CS_STALL);
+#endif
    }
 
    if (dirty & IRIS_DIRTY_VF_TOPOLOGY) {
@@ -8836,6 +8858,14 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
       assert(flags & PIPE_CONTROL_WRITE_IMMEDIATE);
    }
 
+   /* Emulate a HDC flush with a full Data Cache Flush on older hardware which
+    * doesn't support the new lightweight flush.
+    */
+#if GFX_VER < 12
+      if (flags & PIPE_CONTROL_FLUSH_HDC)
+         flags |= PIPE_CONTROL_DATA_CACHE_FLUSH;
+#endif
+
    /* "Post-Sync Operation" workarounds -------------------------------- */
 
    /* Project: All / Argument: Global Snapshot Count Reset [19]
@@ -9063,7 +9093,7 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
 #if GFX_VER >= 12
       pc.TileCacheFlushEnable = flags & PIPE_CONTROL_TILE_CACHE_FLUSH;
 #endif
-#if GFX_VER >= 11
+#if GFX_VER > 11
       pc.HDCPipelineFlushEnable = flags & PIPE_CONTROL_FLUSH_HDC;
 #endif
 #if GFX_VERx10 >= 125

@@ -36,18 +36,10 @@ enum tu_dynamic_state
 
 struct cache_entry;
 
-struct tu_lrz_pipeline
+struct tu_lrz_blend
 {
-   uint32_t lrz_status;
-
-   struct {
-      bool has_kill;
-      bool force_early_z;
-      bool early_fragment_tests;
-   } fs;
-
-   bool force_late_z;
-   bool blend_valid;
+   bool valid;
+   bool reads_dest;
 };
 
 struct tu_bandwidth
@@ -78,6 +70,10 @@ tu6_shared_constants_enable(const struct tu_pipeline_layout *layout,
           layout->push_constant_size <= (compiler->shared_consts_size * 16);
 }
 
+enum ir3_push_consts_type
+tu_push_consts_type(const struct tu_pipeline_layout *layout,
+                    const struct ir3_compiler *compiler);
+
 struct tu_program_descriptor_linkage
 {
    struct ir3_const_state const_state;
@@ -85,6 +81,25 @@ struct tu_program_descriptor_linkage
    uint32_t constlen;
 
    struct tu_const_state tu_const_state;
+};
+
+struct tu_program_state
+{
+      struct tu_draw_state config_state;
+      struct tu_draw_state vs_state, vs_binning_state;
+      struct tu_draw_state hs_state;
+      struct tu_draw_state ds_state;
+      struct tu_draw_state gs_state, gs_binning_state;
+      struct tu_draw_state vpc_state;
+      struct tu_draw_state fs_state;
+
+      uint32_t hs_param_dwords;
+
+      struct tu_push_constant_range shared_consts;
+
+      struct tu_program_descriptor_linkage link[MESA_SHADER_STAGES];
+
+      bool per_view_viewport;
 };
 
 struct tu_pipeline_executable {
@@ -122,10 +137,6 @@ struct tu_pipeline
    struct tu_draw_state dynamic_state[TU_DYNAMIC_STATE_COUNT];
 
    struct {
-      unsigned patch_type;
-   } tess;
-
-   struct {
       bool raster_order_attachment_access;
    } ds;
 
@@ -146,38 +157,11 @@ struct tu_pipeline
    /* draw states for the pipeline */
    struct tu_draw_state load_state;
 
-   struct tu_push_constant_range shared_consts;
-
    struct tu_shader *shaders[MESA_SHADER_STAGES];
 
-   struct {
-      bool per_samp;
-   } fs;
+   struct tu_program_state program;
 
-   struct
-   {
-      struct tu_draw_state config_state;
-      struct tu_draw_state vs_state, vs_binning_state;
-      struct tu_draw_state hs_state;
-      struct tu_draw_state ds_state;
-      struct tu_draw_state gs_state, gs_binning_state;
-      struct tu_draw_state vpc_state;
-      struct tu_draw_state fs_state;
-
-      uint32_t vs_param_stride;
-      uint32_t hs_param_stride;
-      uint32_t hs_param_dwords;
-      uint32_t hs_vertices_out;
-
-      struct tu_program_descriptor_linkage link[MESA_SHADER_STAGES];
-
-      bool per_view_viewport;
-
-      enum a6xx_tess_output tess_output_upper_left, tess_output_lower_left;
-      enum a6xx_tess_spacing tess_spacing;
-   } program;
-
-   struct tu_lrz_pipeline lrz;
+   struct tu_lrz_blend lrz_blend;
    struct tu_bandwidth bandwidth;
 
    void *executables_mem_ctx;
@@ -222,14 +206,12 @@ struct tu_graphics_pipeline {
 
    bool feedback_loop_color, feedback_loop_ds;
    bool feedback_loop_may_involve_textures;
-   bool has_fdm;
 };
 
 struct tu_compute_pipeline {
    struct tu_pipeline base;
 
    uint32_t local_size[3];
-   uint32_t subgroup_size;
    uint32_t instrlen;
 };
 

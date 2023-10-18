@@ -1166,14 +1166,21 @@ is_direct_uniform_load(nir_def *def, nir_scalar *s)
    return !nir_deref_instr_has_indirect(deref);
 }
 
-static nir_variable *
-get_uniform_var_in_consumer(nir_shader *consumer,
-                            nir_variable *var_in_producer)
+/**
+ * Add a uniform variable from one shader to a different shader.
+ *
+ * \param nir     The shader where to add the uniform
+ * \param uniform The uniform that's declared in another shader.
+ */
+nir_variable *
+nir_clone_uniform_variable(nir_shader *nir, nir_variable *uniform, bool spirv)
 {
    /* Find if uniform already exists in consumer. */
    nir_variable *new_var = NULL;
-   nir_foreach_uniform_variable(v, consumer) {
-      if (!strcmp(var_in_producer->name, v->name)) {
+   nir_foreach_variable_with_modes(v, nir, uniform->data.mode) {
+      if ((spirv && uniform->data.mode & nir_var_mem_ubo &&
+           v->data.binding == uniform->data.binding) ||
+          (!spirv && !strcmp(uniform->name, v->name))) {
          new_var = v;
          break;
       }
@@ -1181,21 +1188,22 @@ get_uniform_var_in_consumer(nir_shader *consumer,
 
    /* Create a variable if not exist. */
    if (!new_var) {
-      new_var = nir_variable_clone(var_in_producer, consumer);
-      nir_shader_add_variable(consumer, new_var);
+      new_var = nir_variable_clone(uniform, nir);
+      nir_shader_add_variable(nir, new_var);
    }
 
    return new_var;
 }
 
-static nir_deref_instr *
-clone_deref_instr(nir_builder *b, nir_variable *var, nir_deref_instr *deref)
+nir_deref_instr *
+nir_clone_deref_instr(nir_builder *b, nir_variable *var,
+                      nir_deref_instr *deref)
 {
    if (deref->deref_type == nir_deref_type_var)
       return nir_build_deref_var(b, var);
 
    nir_deref_instr *parent_deref = nir_deref_instr_parent(deref);
-   nir_deref_instr *parent = clone_deref_instr(b, var, parent_deref);
+   nir_deref_instr *parent = nir_clone_deref_instr(b, var, parent_deref);
 
    /* Build array and struct deref instruction.
     * "deref" instr is sure to be direct (see is_direct_uniform_load()).
@@ -1235,7 +1243,7 @@ replace_varying_input_by_uniform_load(nir_shader *shader,
    nir_intrinsic_instr *load = nir_instr_as_intrinsic(scalar->def->parent_instr);
    nir_deref_instr *deref = nir_src_as_deref(load->src[0]);
    nir_variable *uni_var = nir_deref_instr_get_variable(deref);
-   uni_var = get_uniform_var_in_consumer(shader, uni_var);
+   uni_var = nir_clone_uniform_variable(shader, uni_var, false);
 
    bool progress = false;
    nir_foreach_block(block, impl) {
@@ -1259,7 +1267,7 @@ replace_varying_input_by_uniform_load(nir_shader *shader,
          b.cursor = nir_before_instr(instr);
 
          /* Clone instructions start from deref load to variable deref. */
-         nir_deref_instr *uni_deref = clone_deref_instr(&b, uni_var, deref);
+         nir_deref_instr *uni_deref = nir_clone_deref_instr(&b, uni_var, deref);
          nir_def *uni_def = nir_load_deref(&b, uni_deref);
 
          /* Add a vector to scalar move if uniform is a vector. */
@@ -1471,6 +1479,15 @@ sort_varyings(nir_shader *shader, nir_variable_mode mode,
       exec_node_remove(&var->node);
       insert_sorted(sorted_list, var);
    }
+}
+
+void
+nir_sort_variables_by_location(nir_shader *shader, nir_variable_mode mode)
+{
+   struct exec_list vars;
+
+   sort_varyings(shader, mode, &vars);
+   exec_list_append(&shader->variables, &vars);
 }
 
 void

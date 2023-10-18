@@ -198,8 +198,8 @@ group_loads(nir_instr *first, nir_instr *last)
          bool all_uses_after_last = true;
 
          nir_foreach_use(use, def) {
-            if (use->parent_instr->block == instr->block &&
-                use->parent_instr->index <= last->index) {
+            if (nir_src_parent_instr(use)->block == instr->block &&
+                nir_src_parent_instr(use)->index <= last->index) {
                all_uses_after_last = false;
                break;
             }

@@ -1083,14 +1083,11 @@ anv_state_reserved_pool_free(struct anv_state_reserved_pool *pool,
 
 void
 anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
-                 const char *name)
+                 const char *name, enum anv_bo_alloc_flags alloc_flags)
 {
    pool->name = name;
    pool->device = device;
-   pool->bo_alloc_flags =
-      ANV_BO_ALLOC_MAPPED |
-      ANV_BO_ALLOC_SNOOPED |
-      ANV_BO_ALLOC_CAPTURE;
+   pool->bo_alloc_flags = alloc_flags;
 
    for (unsigned i = 0; i < ARRAY_SIZE(pool->free_list); i++) {
       util_sparse_array_free_list_init(&pool->free_list[i],

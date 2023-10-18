@@ -17,9 +17,6 @@ dEQP-VK.memory.pipeline_barrier.host_read_host_write.65536
 dEQP-VK.memory.pipeline_barrier.host_write_transfer_src.1048576
 dEQP-VK.memory.pipeline_barrier.transfer_src_transfer_dst.1048576
 
-# Exclude this test which fails on all GPUS except RDNA2+.
-dEQP-VK.api.driver_properties.conformance_version
-
 # Those cases take very long.
 dEQP-VK.ray_tracing_pipeline.build.*1048576.*
 dEQP-VK.ray_tracing_pipeline.build.*65536.*
@@ -57,3 +54,6 @@ dEQP-VK.api.device_init.create_instance_device_intentional_alloc_fail.basic
 
 # Those cases seem to usually timeout.
 dEQP-VK.binding_model.descriptor_buffer.multiple.*buffers32_sets1
+
+# These cases are slow.
+dEQP-VK.texture.explicit_lod.2d.sizes.128x128_.*

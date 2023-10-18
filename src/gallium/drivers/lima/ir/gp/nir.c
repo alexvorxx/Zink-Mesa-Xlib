@@ -53,7 +53,7 @@ static void register_node_ssa(gpir_block *block, gpir_node *node, nir_def *ssa)
     */
    bool needs_register = false;
    nir_foreach_use(use, ssa) {
-      if (use->parent_instr->block != ssa->parent_instr->block) {
+      if (nir_src_parent_instr(use)->block != ssa->parent_instr->block) {
          needs_register = true;
          break;
       }
@@ -61,7 +61,7 @@ static void register_node_ssa(gpir_block *block, gpir_node *node, nir_def *ssa)
 
    if (!needs_register) {
       nir_foreach_if_use(use, ssa) {
-         if (nir_cf_node_prev(&use->parent_if->cf_node) !=
+         if (nir_cf_node_prev(&nir_src_parent_if(use)->cf_node) !=
              &ssa->parent_instr->block->cf_node) {
             needs_register = true;
             break;

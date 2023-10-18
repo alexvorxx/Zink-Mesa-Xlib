@@ -1110,6 +1110,7 @@ agx_ra(agx_context *ctx)
    agx_instr **src_to_collect_phi = calloc(ctx->alloc, sizeof(agx_instr *));
    enum agx_size *sizes = calloc(ctx->alloc, sizeof(enum agx_size));
    BITSET_WORD *visited = calloc(BITSET_WORDS(ctx->alloc), sizeof(BITSET_WORD));
+   unsigned max_ncomps = 1;
 
    agx_foreach_instr_global(ctx, I) {
       /* Record collects/phis so we can coalesce when assigning */
@@ -1125,23 +1126,37 @@ agx_ra(agx_context *ctx)
          /* Round up vectors for easier live range splitting */
          ncomps[v] = util_next_power_of_two(agx_write_registers(I, d));
          sizes[v] = I->dest[d].size;
+
+         max_ncomps = MAX2(max_ncomps, ncomps[v]);
       }
    }
 
+   /* For live range splitting to work properly, ensure the register file is
+    * aligned to the larger vector size. Most of the time, this is a no-op since
+    * the largest vector size is usually 128-bit and the register file is
+    * naturally 128-bit aligned. However, this is required for correctness with
+    * 3D textureGrad, which can have a source vector of length 6x32-bit,
+    * rounding up to 256-bit and requiring special accounting here.
+    */
+   unsigned reg_file_alignment = MAX2(max_ncomps, 8);
+   assert(util_is_power_of_two_nonzero(reg_file_alignment));
+
    /* Calculate the demand and use it to bound register assignment */
-   unsigned demand = agx_calc_register_demand(ctx, ncomps);
+   unsigned demand =
+      ALIGN_POT(agx_calc_register_demand(ctx, ncomps), reg_file_alignment);
 
    /* Round up the demand to the maximum number of registers we can use without
     * affecting occupancy. This reduces live range splitting.
     */
    unsigned max_regs = agx_occupancy_for_register_count(demand).max_registers;
+   max_regs = ROUND_DOWN_TO(max_regs, reg_file_alignment);
 
    /* Or, we can bound tightly for debugging */
    if (agx_compiler_debug & AGX_DBG_DEMAND)
-      max_regs = ALIGN_POT(MAX2(demand, 12), 8);
+      max_regs = ALIGN_POT(MAX2(demand, 12), reg_file_alignment);
 
    /* ...but not too tightly */
-   assert((max_regs % 8) == 0 && "occupancy limits are 8 register aligned");
+   assert((max_regs % reg_file_alignment) == 0 && "occupancy limits aligned");
    assert(max_regs >= (6 * 2) && "space for vertex shader preloading");
 
    /* Assign registers in dominance-order. This coincides with source-order due

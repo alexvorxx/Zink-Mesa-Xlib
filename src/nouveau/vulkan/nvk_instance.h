@@ -12,7 +12,7 @@
 struct nvk_instance {
    struct vk_instance vk;
 
-   uint8_t driver_uuid[VK_UUID_SIZE];
+   uint8_t driver_build_sha[20];
 };
 
 VK_DEFINE_HANDLE_CASTS(nvk_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)

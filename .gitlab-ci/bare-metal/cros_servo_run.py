@@ -1,33 +1,13 @@
-
 #!/usr/bin/env python3
 #
 # Copyright © 2020 Google LLC
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice (including the next
-# paragraph) shall be included in all copies or substantial portions of the
-# Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-# IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 
 import argparse
-import queue
 import re
-from serial_buffer import SerialBuffer
 import sys
-import threading
+
+from serial_buffer import SerialBuffer
 
 
 class CrosServoRun:
@@ -63,6 +43,7 @@ class CrosServoRun:
         self.ec_write("reboot\n")
 
         bootloader_done = False
+        tftp_failures = 0
         # This is emitted right when the bootloader pauses to check for input.
         # Emit a ^N character to request network boot, because we don't have a
         # direct-to-netboot firmware on cheza.
@@ -71,6 +52,17 @@ class CrosServoRun:
                 self.cpu_write("\016")
                 bootloader_done = True
                 break
+
+            # The Cheza firmware seems to occasionally get stuck looping in
+            # this error state during TFTP booting, possibly based on amount of
+            # network traffic around it, but it'll usually recover after a
+            # reboot. Currently mostly visible on google-freedreno-cheza-14.
+            if re.search("R8152: Bulk read error 0xffffffbf", line):
+                tftp_failures += 1
+                if tftp_failures >= 10:
+                    self.print_error(
+                        "Detected intermittent tftp failure, restarting run...")
+                    return 2
 
             # If the board has a netboot firmware and we made it to booting the
             # kernel, proceed to processing of the test run.
@@ -90,21 +82,9 @@ class CrosServoRun:
             print("Failed to make it through bootloader, restarting run...")
             return 2
 
-        tftp_failures = 0
         for line in self.cpu_ser.lines(timeout=self.test_timeout, phase="test"):
             if re.search("---. end Kernel panic", line):
                 return 1
-
-            # The Cheza firmware seems to occasionally get stuck looping in
-            # this error state during TFTP booting, possibly based on amount of
-            # network traffic around it, but it'll usually recover after a
-            # reboot.
-            if re.search("R8152: Bulk read error 0xffffffbf", line):
-                tftp_failures += 1
-                if tftp_failures >= 100:
-                    self.print_error(
-                        "Detected intermittent tftp failure, restarting run...")
-                    return 2
 
             # There are very infrequent bus errors during power management transitions
             # on cheza, which we don't expect to be the case on future boards.

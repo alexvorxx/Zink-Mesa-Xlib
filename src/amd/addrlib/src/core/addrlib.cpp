@@ -215,7 +215,7 @@ ADDR_E_RETURNCODE Lib::Create(
                     case FAMILY_MDN:
                         pLib = Gfx10HwlInit(&client);
                         break;
-                    case FAMILY_GFX1100:
+                    case FAMILY_NV3:
                     case FAMILY_GFX1103:
                         pLib = Gfx11HwlInit(&client);
                         break;

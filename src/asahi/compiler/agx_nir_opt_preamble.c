@@ -54,7 +54,7 @@ rewrite_cost(nir_def *def, const void *data)
 {
    bool mov_needed = false;
    nir_foreach_use(use, def) {
-      nir_instr *parent_instr = use->parent_instr;
+      nir_instr *parent_instr = nir_src_parent_instr(use);
       if (parent_instr->type != nir_instr_type_alu) {
          mov_needed = true;
          break;
@@ -83,18 +83,19 @@ avoid_instr(const nir_instr *instr, const void *data)
     */
    if (def) {
       nir_foreach_use(use, def) {
-         if (use->parent_instr->type == nir_instr_type_tex) {
+         if (nir_src_parent_instr(use)->type == nir_instr_type_tex) {
             /* Check if used as a bindless texture handle */
-            nir_tex_instr *tex = nir_instr_as_tex(use->parent_instr);
+            nir_tex_instr *tex = nir_instr_as_tex(nir_src_parent_instr(use));
             int handle_idx =
                nir_tex_instr_src_index(tex, nir_tex_src_texture_handle);
 
             if (handle_idx >= 0 && tex->src[handle_idx].src.ssa == def)
                return true;
-         } else if (use->parent_instr->type == nir_instr_type_intrinsic) {
+         } else if (nir_src_parent_instr(use)->type ==
+                    nir_instr_type_intrinsic) {
             /* Check if used as a bindless image handle */
             nir_intrinsic_instr *intr =
-               nir_instr_as_intrinsic(use->parent_instr);
+               nir_instr_as_intrinsic(nir_src_parent_instr(use));
 
             switch (intr->intrinsic) {
             case nir_intrinsic_bindless_image_load:

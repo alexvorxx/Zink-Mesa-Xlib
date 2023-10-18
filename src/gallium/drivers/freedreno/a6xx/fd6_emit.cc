@@ -952,15 +952,12 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
 
    struct fd6_context *fd6_ctx = fd6_context(batch->ctx);
    struct fd_bo *bcolor_mem = fd6_ctx->bcolor_mem;
+
    OUT_PKT4(ring, REG_A6XX_SP_TP_BORDER_COLOR_BASE_ADDR, 2);
    OUT_RELOC(ring, bcolor_mem, 0, 0, 0);
 
    OUT_PKT4(ring, REG_A6XX_SP_PS_TP_BORDER_COLOR_BASE_ADDR, 2);
    OUT_RELOC(ring, bcolor_mem, 0, 0, 0);
-
-   fd_ringbuffer_attach_bo(ring, bcolor_mem);
-
-   fd_ringbuffer_attach_bo(ring, fd6_ctx->control_mem);
 
    if (!batch->nondraw) {
       trace_end_state_restore(&batch->trace, ring);
@@ -979,6 +976,9 @@ fd6_mem_to_mem(struct fd_ringbuffer *ring, struct pipe_resource *dst,
    struct fd_bo *dst_bo = fd_resource(dst)->bo;
    unsigned i;
 
+   fd_ringbuffer_attach_bo(ring, dst_bo);
+   fd_ringbuffer_attach_bo(ring, src_bo);
+
    for (i = 0; i < sizedwords; i++) {
       OUT_PKT7(ring, CP_MEM_TO_MEM, 5);
       OUT_RING(ring, 0x00000000);
@@ -988,8 +988,6 @@ fd6_mem_to_mem(struct fd_ringbuffer *ring, struct pipe_resource *dst,
       dst_off += 4;
       src_off += 4;
    }
-   fd_ringbuffer_attach_bo(ring, dst_bo);
-   fd_ringbuffer_attach_bo(ring, src_bo);
 }
 
 void

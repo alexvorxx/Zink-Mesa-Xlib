@@ -142,6 +142,7 @@ struct ac_shader_args {
    struct ac_arg linear_sample;
    struct ac_arg linear_center;
    struct ac_arg linear_centroid;
+   struct ac_arg pos_fixed_pt;
 
    /* CS */
    struct ac_arg local_invocation_ids;

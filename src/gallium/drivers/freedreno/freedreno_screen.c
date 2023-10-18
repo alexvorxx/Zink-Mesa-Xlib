@@ -249,6 +249,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_GL_SPIRV:
    case PIPE_CAP_FBFETCH_COHERENT:
+   case PIPE_CAP_HAS_CONST_BW:
       return 1;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
@@ -951,29 +952,42 @@ fd_screen_bo_get_handle(struct pipe_screen *pscreen, struct fd_bo *bo,
    }
 }
 
+static bool
+is_format_supported(struct pipe_screen *pscreen,
+                    enum pipe_format format,
+                    uint64_t modifier)
+{
+   struct fd_screen *screen = fd_screen(pscreen);
+   if (screen->is_format_supported)
+      return screen->is_format_supported(pscreen, format, modifier);
+   return modifier == DRM_FORMAT_MOD_LINEAR;
+}
+
 static void
 fd_screen_query_dmabuf_modifiers(struct pipe_screen *pscreen,
                                  enum pipe_format format, int max,
                                  uint64_t *modifiers,
                                  unsigned int *external_only, int *count)
 {
-   struct fd_screen *screen = fd_screen(pscreen);
-   int i, num = 0;
+   const uint64_t all_modifiers[] = {
+      DRM_FORMAT_MOD_LINEAR,
+      DRM_FORMAT_MOD_QCOM_COMPRESSED,
+      DRM_FORMAT_MOD_QCOM_TILED3,
+   };
 
-   max = MIN2(max, screen->num_supported_modifiers);
+   int num = 0;
 
-   if (!max) {
-      max = screen->num_supported_modifiers;
-      external_only = NULL;
-      modifiers = NULL;
-   }
+   for (int i = 0; i < ARRAY_SIZE(all_modifiers); i++) {
+      if (!is_format_supported(pscreen, format, all_modifiers[i]))
+         continue;
 
-   for (i = 0; i < max; i++) {
-      if (modifiers)
-         modifiers[num] = screen->supported_modifiers[i];
+      if (num < max) {
+         if (modifiers)
+            modifiers[num] = all_modifiers[i];
 
-      if (external_only)
-         external_only[num] = 0;
+         if (external_only)
+            external_only[num] = false;
+      }
 
       num++;
    }
@@ -987,19 +1001,7 @@ fd_screen_is_dmabuf_modifier_supported(struct pipe_screen *pscreen,
                                        enum pipe_format format,
                                        bool *external_only)
 {
-   struct fd_screen *screen = fd_screen(pscreen);
-   int i;
-
-   for (i = 0; i < screen->num_supported_modifiers; i++) {
-      if (modifier == screen->supported_modifiers[i]) {
-         if (external_only)
-            *external_only = false;
-
-         return true;
-      }
-   }
-
-   return false;
+   return is_format_supported(pscreen, format, modifier);
 }
 
 struct fd_bo *

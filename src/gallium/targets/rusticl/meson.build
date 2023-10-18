@@ -56,6 +56,7 @@ librusticl = shared_library(
     driver_panfrost,
     driver_radeonsi,
     driver_swrast,
+    driver_zink,
     idep_nir,
     idep_vtn,
   ],

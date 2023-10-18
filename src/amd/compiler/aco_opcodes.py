@@ -160,7 +160,11 @@ class Format(Enum):
          return [('uint16_t', 'dpp_ctrl', None),
                  ('uint8_t', 'row_mask', '0xF'),
                  ('uint8_t', 'bank_mask', '0xF'),
-                 ('bool', 'bound_ctrl', 'true')]
+                 ('bool', 'bound_ctrl', 'true'),
+                 ('bool', 'fetch_inactive', 'true')]
+      elif self == Format.DPP8:
+         return [('uint32_t', 'lane_sel', 0),
+                 ('bool', 'fetch_inactive', 'true')]
       elif self == Format.VOP3P:
          return [('uint8_t', 'opsel_lo', None),
                  ('uint8_t', 'opsel_hi', None)]
@@ -192,6 +196,8 @@ class Format(Enum):
          for i in range(min(num_operands, 2)):
             res += 'instr->sel[{0}] = SubdwordSel(op{0}.op.bytes(), 0, false);'.format(i)
          res += 'instr->dst_sel = SubdwordSel(def0.bytes(), 0, false);\n'
+      elif self in [Format.DPP16, Format.DPP8]:
+         res += 'instr->fetch_inactive &= program->gfx_level >= GFX10;\n'
       return res
 
 
@@ -1068,7 +1074,7 @@ VINTERP = {
    (0x05, "v_interp_p2_rtz_f16_f32_inreg"),
 }
 for (code, name) in VINTERP:
-   opcode(name, -1, -1, -1, code, Format.VINTERP_INREG, InstrClass.Valu32)
+   opcode(name, -1, -1, -1, code, Format.VINTERP_INREG, InstrClass.Valu32, False, True)
 
 
 # VOP3 instructions: 3 inputs, 1 output

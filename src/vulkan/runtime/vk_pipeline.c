@@ -147,7 +147,9 @@ vk_pipeline_shader_stage_to_nir(struct vk_device *device,
    nir_shader *nir = vk_spirv_to_nir(device, spirv_data, spirv_size, stage,
                                      info->pName, subgroup_size,
                                      info->pSpecializationInfo,
-                                     spirv_options, nir_options, mem_ctx);
+                                     spirv_options, nir_options,
+                                     false /* internal */,
+                                     mem_ctx);
    if (nir == NULL)
       return vk_errorf(device, VK_ERROR_UNKNOWN, "spirv_to_nir failed");
 

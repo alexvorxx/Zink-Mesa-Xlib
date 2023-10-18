@@ -622,6 +622,7 @@ type_size_xvec4(const struct glsl_type *type, bool as_vec4, bool bindless)
       return bindless ? 1 : DIV_ROUND_UP(BRW_IMAGE_PARAM_SIZE, 4);
    case GLSL_TYPE_VOID:
    case GLSL_TYPE_ERROR:
+   case GLSL_TYPE_COOPERATIVE_MATRIX:
       unreachable("not reached");
    }
 
@@ -1415,7 +1416,8 @@ vec4_visitor::fail(const char *format, ...)
    va_start(va, format);
    msg = ralloc_vasprintf(mem_ctx, format, va);
    va_end(va);
-   msg = ralloc_asprintf(mem_ctx, "%s compile failed: %s\n", stage_abbrev, msg);
+   msg = ralloc_asprintf(mem_ctx, "%s compile failed: %s\n",
+                         _mesa_shader_stage_to_abbrev(stage), msg);
 
    this->fail_msg = msg;
 

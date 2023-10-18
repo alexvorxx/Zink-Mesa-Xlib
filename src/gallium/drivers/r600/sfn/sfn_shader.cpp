@@ -900,6 +900,7 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
    case nir_intrinsic_store_local_shared_r600:
       return emit_local_store(intr);
    case nir_intrinsic_load_global:
+   case nir_intrinsic_load_global_constant:
       return emit_load_global(intr);
    case nir_intrinsic_load_local_shared_r600:
       return emit_local_load(intr);

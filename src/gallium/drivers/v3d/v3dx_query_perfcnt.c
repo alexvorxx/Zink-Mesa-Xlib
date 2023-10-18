@@ -52,8 +52,8 @@ kperfmon_destroy(struct v3d_context *v3d, struct v3d_perfmon_state *perfmon)
 }
 
 int
-v3d_get_driver_query_group_info_perfcnt(struct v3d_screen *screen, unsigned index,
-                                        struct pipe_driver_query_group_info *info)
+v3dX(get_driver_query_group_info_perfcnt)(struct v3d_screen *screen, unsigned index,
+                                          struct pipe_driver_query_group_info *info)
 {
         if (!screen->has_perfmon)
                 return 0;
@@ -72,8 +72,8 @@ v3d_get_driver_query_group_info_perfcnt(struct v3d_screen *screen, unsigned inde
 }
 
 int
-v3d_get_driver_query_info_perfcnt(struct v3d_screen *screen, unsigned index,
-                                  struct pipe_driver_query_info *info)
+v3dX(get_driver_query_info_perfcnt)(struct v3d_screen *screen, unsigned index,
+                                    struct pipe_driver_query_info *info)
 {
         if (!screen->has_perfmon)
                 return 0;
@@ -222,8 +222,8 @@ static const struct v3d_query_funcs perfcnt_query_funcs = {
 };
 
 struct pipe_query *
-v3d_create_batch_query_perfcnt(struct v3d_context *v3d, unsigned num_queries,
-                               unsigned *query_types)
+v3dX(create_batch_query_perfcnt)(struct v3d_context *v3d, unsigned num_queries,
+                                 unsigned *query_types)
 {
         struct v3d_query_perfcnt *pquery = NULL;
         struct v3d_query *query;

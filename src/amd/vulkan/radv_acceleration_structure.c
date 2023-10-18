@@ -1008,16 +1008,6 @@ ploc_build_internal(VkCommandBuffer commandBuffer, uint32_t infoCount,
       if (bvh_states[i].config.extended_sah != extended_sah)
          continue;
 
-      struct radv_global_sync_data initial_sync_data = {
-         .current_phase_end_counter = TASK_INDEX_INVALID,
-         /* Will be updated by the first PLOC shader invocation */
-         .task_counts = {TASK_INDEX_INVALID, TASK_INDEX_INVALID},
-      };
-      radv_update_buffer_cp(cmd_buffer,
-                            pInfos[i].scratchData.deviceAddress + bvh_states[i].scratch.header_offset +
-                               offsetof(struct radv_ir_header, sync_data),
-                            &initial_sync_data, sizeof(struct radv_global_sync_data));
-
       uint32_t src_scratch_offset = bvh_states[i].scratch_offset;
       uint32_t dst_scratch_offset = (src_scratch_offset == bvh_states[i].scratch.sort_buffer_offset[0])
                                        ? bvh_states[i].scratch.sort_buffer_offset[1]
@@ -1235,13 +1225,17 @@ radv_CmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t i
          .max_bounds = {0x80000000, 0x80000000, 0x80000000},
          .dispatch_size_y = 1,
          .dispatch_size_z = 1,
+         .sync_data =
+            {
+               .current_phase_end_counter = TASK_INDEX_INVALID,
+               /* Will be updated by the first PLOC shader invocation */
+               .task_counts = {TASK_INDEX_INVALID, TASK_INDEX_INVALID},
+            },
       };
 
       radv_update_buffer_cp(cmd_buffer, pInfos[i].scratchData.deviceAddress + bvh_states[i].scratch.header_offset,
                             &header, sizeof(header));
    }
-
-   cmd_buffer->state.flush_bits |= flush_bits;
 
    build_leaves(commandBuffer, infoCount, pInfos, ppBuildRangeInfos, bvh_states, flush_bits);
 

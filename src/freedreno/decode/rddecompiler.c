@@ -189,7 +189,7 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
       size_t stream_size = 0;
       FILE *stream = open_memstream(&stream_data, &stream_size);
 
-      try_disasm_a3xx(buf, sizedwords, 0, stream, dev_id.gpu_id);
+      try_disasm_a3xx(buf, sizedwords, 0, stream, fd_dev_gen(&dev_id) * 100);
       fclose(stream);
 
       printlvl(level, "{\n");
@@ -395,10 +395,8 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level)
             printlvl(level, "{\n");
             printlvl(level + 1, "begin_ib();\n");
 
-            if (!has_dumped(ibaddr, 0x7)) {
-               uint32_t *ptr = hostptr(ibaddr);
-               decompile_commands(ptr, ibsize, level + 1);
-            }
+            uint32_t *ptr = hostptr(ibaddr);
+            decompile_commands(ptr, ibsize, level + 1);
 
             printlvl(level + 1, "end_ib();\n");
             printlvl(level, "}\n");
@@ -512,7 +510,7 @@ emit_header()
           "int main(int argc, char **argv)\n"
           "{\n"
           "\tstruct replay_context ctx;\n"
-          "\tstruct fd_dev_id dev_id = {%u, %" PRIu64 "};\n"
+          "\tstruct fd_dev_id dev_id = {%u, 0x%" PRIx64 "};\n"
           "\treplay_context_init(&ctx, &dev_id, argc, argv);\n"
           "\tstruct cmdstream *cs = ctx.submit_cs;\n\n",
           dev_id.gpu_id, dev_id.chip_id);

@@ -1730,7 +1730,7 @@ trace_context_transfer_map(struct pipe_context *_context,
    trace_dump_arg(ptr, pipe);
    trace_dump_arg(ptr, resource);
    trace_dump_arg(uint, level);
-   trace_dump_arg(uint, usage);
+   trace_dump_arg_enum(pipe_map_flags, usage);
    trace_dump_arg(box, box);
 
    trace_dump_arg(ptr, xfer);
@@ -1804,7 +1804,7 @@ trace_context_transfer_unmap(struct pipe_context *_context,
 
          trace_dump_arg(ptr, context);
          trace_dump_arg(ptr, resource);
-         trace_dump_arg(uint, usage);
+         trace_dump_arg_enum(pipe_map_flags, usage);
          trace_dump_arg(uint, offset);
          trace_dump_arg(uint, size);
 
@@ -1828,7 +1828,7 @@ trace_context_transfer_unmap(struct pipe_context *_context,
          trace_dump_arg(ptr, context);
          trace_dump_arg(ptr, resource);
          trace_dump_arg(uint, level);
-         trace_dump_arg(uint, usage);
+         trace_dump_arg_enum(pipe_map_flags, usage);
          trace_dump_arg(box, box);
 
          trace_dump_arg_begin("data");
@@ -1870,7 +1870,7 @@ trace_context_buffer_subdata(struct pipe_context *_context,
 
    trace_dump_arg(ptr, context);
    trace_dump_arg(ptr, resource);
-   trace_dump_arg(uint, usage);
+   trace_dump_arg_enum(pipe_map_flags, usage);
    trace_dump_arg(uint, offset);
    trace_dump_arg(uint, size);
 
@@ -1903,7 +1903,7 @@ trace_context_texture_subdata(struct pipe_context *_context,
    trace_dump_arg(ptr, context);
    trace_dump_arg(ptr, resource);
    trace_dump_arg(uint, level);
-   trace_dump_arg(uint, usage);
+   trace_dump_arg_enum(pipe_map_flags, usage);
    trace_dump_arg(box, box);
 
    trace_dump_arg_begin("data");

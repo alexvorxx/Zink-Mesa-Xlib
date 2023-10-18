@@ -13,6 +13,7 @@
 
 #include "vk_nir_convert_ycbcr.h"
 #include "vk_pipeline.h"
+#include "vk_pipeline_cache.h"
 #include "vk_pipeline_layout.h"
 #include "vk_shader_module.h"
 #include "vk_ycbcr_conversion.h"
@@ -23,6 +24,8 @@
 #include "compiler/spirv/nir_spirv.h"
 
 #include "nv50_ir_driver.h"
+
+#include "util/mesa-sha1.h"
 
 #include "cla097.h"
 #include "clc397.h"
@@ -61,6 +64,29 @@ pipe_shader_type_from_mesa(gl_shader_stage stage)
    }
 }
 
+static uint64_t
+get_prog_debug(void)
+{
+   return debug_get_num_option("NV50_PROG_DEBUG", 0);
+}
+
+static uint64_t
+get_prog_optimize(void)
+{
+   return debug_get_num_option("NV50_PROG_OPTIMIZE", 3);
+}
+
+uint64_t
+nvk_physical_device_compiler_flags(const struct nvk_physical_device *pdev)
+{
+   uint64_t prog_debug = get_prog_debug();
+   uint64_t prog_optimize = get_prog_optimize();
+
+   assert(prog_debug <= UINT8_MAX);
+   assert(prog_optimize <= UINT8_MAX);
+   return prog_debug | (prog_optimize << 8);
+}
+
 const nir_shader_compiler_options *
 nvk_physical_device_nir_options(const struct nvk_physical_device *pdev,
                                 gl_shader_stage stage)
@@ -93,6 +119,7 @@ nvk_physical_device_spirv_options(const struct nvk_physical_device *pdev,
          .tessellation = true,
          .transform_feedback = true,
          .variable_pointers = true,
+         .workgroup_memory_explicit_layout = true,
       },
       .ssbo_addr_format = nvk_buffer_addr_format(rs->storage_buffers),
       .phys_ssbo_addr_format = nir_address_format_64bit_global,
@@ -392,6 +419,50 @@ nvk_optimize_nir(nir_shader *nir)
    NIR_PASS(progress, nir, nir_opt_shrink_vectors);
    NIR_PASS(progress, nir, nir_remove_dead_variables,
             nir_var_function_temp | nir_var_shader_in | nir_var_shader_out, NULL);
+}
+
+VkResult
+nvk_shader_stage_to_nir(struct nvk_device *dev,
+                        const VkPipelineShaderStageCreateInfo *sinfo,
+                        const struct vk_pipeline_robustness_state *rstate,
+                        struct vk_pipeline_cache *cache,
+                        void *mem_ctx, struct nir_shader **nir_out)
+{
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   const gl_shader_stage stage = vk_to_mesa_shader_stage(sinfo->stage);
+   const nir_shader_compiler_options *nir_options =
+      nvk_physical_device_nir_options(pdev, stage);
+
+   unsigned char stage_sha1[SHA1_DIGEST_LENGTH];
+   vk_pipeline_hash_shader_stage(sinfo, rstate, stage_sha1);
+
+   if (cache == NULL)
+      cache = dev->mem_cache;
+
+   nir_shader *nir = vk_pipeline_cache_lookup_nir(cache, stage_sha1,
+                                                  sizeof(stage_sha1),
+                                                  nir_options, NULL,
+                                                  mem_ctx);
+   if (nir != NULL) {
+      *nir_out = nir;
+      return VK_SUCCESS;
+   }
+
+   const struct spirv_to_nir_options spirv_options =
+      nvk_physical_device_spirv_options(pdev, rstate);
+
+   VkResult result = vk_pipeline_shader_stage_to_nir(&dev->vk, sinfo,
+                                                     &spirv_options,
+                                                     nir_options,
+                                                     mem_ctx, &nir);
+   if (result != VK_SUCCESS)
+      return result;
+
+   vk_pipeline_cache_add_nir(cache, stage_sha1, sizeof(stage_sha1), nir);
+
+   *nir_out = nir;
+
+   return VK_SUCCESS;
 }
 
 void
@@ -1108,8 +1179,8 @@ nvk_compile_nir(struct nvk_physical_device *pdev, nir_shader *nir,
       shader->cp.block_size[i] = nir->info.workgroup_size[i];
 
    info->bin.smemSize = shader->cp.smem_size;
-   info->dbgFlags = debug_get_num_option("NV50_PROG_DEBUG", 0);
-   info->optLevel = debug_get_num_option("NV50_PROG_OPTIMIZE", 3);
+   info->dbgFlags = get_prog_debug();
+   info->optLevel = get_prog_optimize();
    info->io.auxCBSlot = 1;
    info->io.uboInfoBase = 0;
    info->io.drawInfoBase = nvk_root_descriptor_offset(draw.base_vertex);
@@ -1235,4 +1306,15 @@ nvk_shader_upload(struct nvk_device *dev, struct nvk_shader *shader)
    free(data);
 
    return result;
+}
+
+void
+nvk_shader_finish(struct nvk_device *dev, struct nvk_shader *shader)
+{
+   if (shader->upload_size > 0) {
+      nvk_heap_free(dev, &dev->shader_heap,
+                    shader->upload_addr,
+                    shader->upload_size);
+   }
+   free(shader->xfb);
 }

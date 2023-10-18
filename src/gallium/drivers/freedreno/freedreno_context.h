@@ -447,6 +447,14 @@ struct fd_context {
    /* Per vsc pipe bo's (a2xx-a5xx): */
    struct fd_bo *vsc_pipe_bo[32] dt;
 
+   /* Table of bo's attached to all batches up-front (because they
+    * are commonly used, and that is easier than attaching on-use).
+    * In particular, these are driver internal buffers which do not
+    * participate in batch resource tracking.
+    */
+   struct fd_bo *private_bos[3];
+   unsigned num_private_bos;
+
    /* Maps generic gallium oriented fd_dirty_3d_state bits to generation
     * specific bitmask of state "groups".
     */
@@ -670,6 +678,8 @@ fd_stream_output_target(struct pipe_stream_output_target *target)
 {
    return (struct fd_stream_output_target *)target;
 }
+
+void fd_context_add_private_bo(struct fd_context *ctx, struct fd_bo *bo);
 
 /* Mark specified non-shader-stage related state as dirty: */
 static inline void

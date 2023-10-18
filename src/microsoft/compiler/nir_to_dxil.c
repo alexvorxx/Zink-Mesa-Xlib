@@ -2126,7 +2126,7 @@ static bool
 is_phi_src(nir_def *ssa)
 {
    nir_foreach_use(src, ssa)
-      if (src->parent_instr->type == nir_instr_type_phi)
+      if (nir_src_parent_instr(src)->type == nir_instr_type_phi)
          return true;
    return false;
 }

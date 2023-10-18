@@ -275,6 +275,12 @@ typedef struct {
    uint8_t nr_dests;
    uint8_t nr_srcs;
 
+   /* TODO: More efficient */
+   union {
+      enum agx_icond icond;
+      enum agx_fcond fcond;
+   };
+
    union {
       uint64_t imm;
       uint32_t writeout;
@@ -285,8 +291,6 @@ typedef struct {
       uint16_t pixel_offset;
       uint16_t zs;
       enum agx_sr sr;
-      enum agx_icond icond;
-      enum agx_fcond fcond;
       enum agx_round round;
       enum agx_atomic_opc atomic_opc;
       enum agx_lod_mode lod_mode;
@@ -369,7 +373,7 @@ typedef struct agx_block {
    bool loop_header;
 
    /* Offset of the block in the emitted binary */
-   off_t offset;
+   off_t offset, last_offset;
 
    /** Available for passes to use for metadata */
    uint8_t pass_flags;
@@ -598,6 +602,12 @@ agx_predecessor_index(agx_block *succ, agx_block *pred)
    unreachable("Invalid predecessor");
 }
 
+static inline agx_block *
+agx_prev_block(agx_block *ins)
+{
+   return list_last_entry(&(ins->link), agx_block, link);
+}
+
 static inline agx_instr *
 agx_prev_op(agx_instr *ins)
 {
@@ -808,6 +818,7 @@ void agx_lower_64bit_postra(agx_context *ctx);
 void agx_insert_waits(agx_context *ctx);
 void agx_opt_empty_else(agx_context *ctx);
 void agx_opt_break_if(agx_context *ctx);
+void agx_opt_jmp_none(agx_context *ctx);
 void agx_pack_binary(agx_context *ctx, struct util_dynarray *emission);
 
 #ifndef NDEBUG

@@ -29,7 +29,7 @@ import sys
 
 class FieldDecode(object):
     def __init__(self, name, map_expr):
-        self.name = name;
+        self.name = name
         self.map_expr = map_expr
 
     def get_c_name(self):

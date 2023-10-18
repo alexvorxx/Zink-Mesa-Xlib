@@ -188,6 +188,7 @@ struct iris_screen {
       bool sync_compile;
       bool limit_trig_input_range;
       float lower_depth_range_rate;
+      bool intel_enable_wa_14018912822;
    } driconf;
 
    /** Does the kernel support various features (KERNEL_HAS_* bitfield)? */

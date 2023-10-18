@@ -159,3 +159,5 @@ spec@arb_texture_query_levels@execution@fs-miptree
 spec@amd_shader_trinary_minmax@execution@built-in-functions@fs-max3-vec2-vec2-vec2
 spec@arb_uniform_buffer_object@execution@shared-row_major-array-mat2x2-and-column_major-array-mat2x2
 spec@mesa_shader_integer_functions@execution@built-in-functions@fs-umulextended-only-msb-nonuniform
+# ci-collate: Issue found in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49445812
+KHR-GLES31.core.compute_shader.simple-compute-shared_context

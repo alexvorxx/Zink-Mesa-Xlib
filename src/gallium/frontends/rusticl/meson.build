@@ -153,6 +153,9 @@ rusticl_opencl_bindings_rs = rust.bindgen(
     '--ignore-functions',
     # needed because bindgen adds *mut void fields...
     '--raw-line', 'unsafe impl std::marker::Sync for _cl_icd_dispatch {}',
+    # _cl_image_desc contains a pointer to _cl_mem
+    '--raw-line', 'unsafe impl std::marker::Send for _cl_image_desc {}',
+    '--raw-line', 'unsafe impl std::marker::Sync for _cl_image_desc {}',
     '--allowlist-type', 'cl_.*',
     '--allowlist-var', 'CL_.*',
     # some info types need to be strongly typed so we can implement various get_infos
@@ -194,6 +197,7 @@ rusticl_mesa_bindings_inline_wrapper = static_library(
     'rusticl_mesa_inline_bindings_wrapper.h',
     'rusticl_nir.c',
     'rusticl_nir.h',
+    sha1_h,
   ],
   gnu_symbol_visibility : 'hidden',
   include_directories : [

@@ -55,7 +55,7 @@ virgl-traces:
     - .virgl-iris-test
     - .virgl-iris-manual-rules
   variables:
-    PIGLIT_REPLAY_EXTRA_ARGS: "--keep-image --download-caching-proxy-url=${FDO_HTTP_CACHE_URI}"
+    PIGLIT_REPLAY_EXTRA_ARGS: "--download-caching-proxy-url=${FDO_HTTP_CACHE_URI}"
 
 virgl-iris-traces-performance:
   extends:

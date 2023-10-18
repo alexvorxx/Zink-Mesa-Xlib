@@ -76,8 +76,6 @@ public:
 
    gl_shader_stage stage;
    bool debug_enabled;
-   const char *stage_name;
-   const char *stage_abbrev;
 
    brw::simple_allocator alloc;
 

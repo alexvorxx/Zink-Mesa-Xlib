@@ -1338,14 +1338,18 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
    if (ret)
       return vk_device_set_lost(&queue->device->vk, "submit failed: %m");
 
+   uint64_t gpu_offset = 0;
 #if HAVE_PERFETTO
-   tu_perfetto_submit(queue->device, queue->device->submit_count);
+   struct tu_perfetto_clocks clocks =
+      tu_perfetto_submit(queue->device, queue->device->submit_count, NULL);
+   gpu_offset = clocks.gpu_ts_offset;
 #endif
 
    if (submit->u_trace_submission_data) {
       struct tu_u_trace_submission_data *submission_data =
          submit->u_trace_submission_data;
       submission_data->submission_id = queue->device->submit_count;
+      submission_data->gpu_ts_offset = gpu_offset;
       /* We have to allocate it here since it is different between drm/kgsl */
       submission_data->syncobj = (struct tu_u_trace_syncobj *)
          vk_alloc(&queue->device->vk.alloc, sizeof(struct tu_u_trace_syncobj),

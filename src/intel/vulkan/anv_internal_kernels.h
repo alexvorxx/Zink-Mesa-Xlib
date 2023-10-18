@@ -129,4 +129,21 @@ struct anv_query_copy_params {
    uint64_t destination_addr;
 };
 
+/* This needs to match memcpy_compute.glsl :
+ *
+ *    layout(set = 0, binding = 2) uniform block
+ */
+struct anv_memcpy_shader_params {
+   uint32_t num_dwords;
+   uint32_t pad;
+};
+
+struct anv_memcpy_params {
+   struct anv_memcpy_shader_params copy;
+
+   uint64_t src_addr;
+
+   uint64_t dst_addr;
+};
+
 #endif /* ANV_GENERATED_INDIRECT_DRAWS_H */

@@ -58,9 +58,10 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv
    ASSIGN_FIELD(tcs.num_linked_patch_outputs);
    ASSIGN_FIELD(tcs.tcs_vertices_out);
    ASSIGN_FIELD(ps.num_interp);
-   ASSIGN_FIELD(ps.spi_ps_input);
    ASSIGN_FIELD(cs.subgroup_size);
    ASSIGN_FIELD(cs.uses_full_subgroups);
+   aco_info->ps.spi_ps_input_ena = radv->ps.spi_ps_input;
+   aco_info->ps.spi_ps_input_addr = radv->ps.spi_ps_input;
    aco_info->gfx9_gs_ring_lds_size = radv->gs_ring_info.lds_size;
    aco_info->is_trap_handler_shader = radv->type == RADV_SHADER_TYPE_TRAP_HANDLER;
    aco_info->image_2d_view_of_3d = radv_key->image_2d_view_of_3d;
@@ -117,8 +118,9 @@ radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info, const struct
    ASSIGN_FIELD(color_is_int10);
    ASSIGN_FIELD(mrt0_is_dual_src);
 
-   memcpy(aco_info->inputs, radv_args->ps_epilog_inputs, sizeof(aco_info->inputs));
-   aco_info->pc = radv_args->ps_epilog_pc;
+   memcpy(aco_info->colors, radv_args->ps_epilog_inputs, sizeof(aco_info->colors));
+
+   aco_info->alpha_func = COMPARE_FUNC_ALWAYS;
 }
 
 static inline void

@@ -277,7 +277,7 @@ nir_schedule_ssa_deps(nir_def *def, void *in_state)
 
    nir_foreach_use(src, def) {
       nir_schedule_node *use_n = nir_schedule_get_node(instr_map,
-                                                       src->parent_instr);
+                                                       nir_src_parent_instr(src));
 
       add_read_dep(state, def_n, use_n);
    }
@@ -530,7 +530,7 @@ nir_schedule_regs_freed_src_cb(nir_src *src, void *in_state)
    struct set *remaining_uses = nir_schedule_scoreboard_get_src(scoreboard, src);
 
    if (remaining_uses->entries == 1 &&
-       _mesa_set_search(remaining_uses, src->parent_instr)) {
+       _mesa_set_search(remaining_uses, nir_src_parent_instr(src))) {
       state->regs_freed += nir_schedule_src_pressure(src);
    }
 
@@ -889,7 +889,7 @@ nir_schedule_mark_src_scheduled(nir_src *src, void *state)
    struct set *remaining_uses = nir_schedule_scoreboard_get_src(scoreboard, src);
 
    struct set_entry *entry = _mesa_set_search(remaining_uses,
-                                              src->parent_instr);
+                                              nir_src_parent_instr(src));
    if (entry) {
       /* Once we've used an SSA value in one instruction, bump the priority of
        * the other uses so the SSA value can get fully consumed.
@@ -901,12 +901,12 @@ nir_schedule_mark_src_scheduled(nir_src *src, void *state)
        */
       if (src->ssa->parent_instr->type != nir_instr_type_load_const) {
          nir_foreach_use(other_src, src->ssa) {
-            if (other_src->parent_instr == src->parent_instr)
+            if (nir_src_parent_instr(other_src) == nir_src_parent_instr(src))
                continue;
 
             nir_schedule_node *n =
                nir_schedule_get_node(scoreboard->instr_map,
-                                     other_src->parent_instr);
+                                     nir_src_parent_instr(other_src));
 
             if (n && !n->partially_evaluated_path) {
                if (debug) {
@@ -923,7 +923,7 @@ nir_schedule_mark_src_scheduled(nir_src *src, void *state)
 
    nir_schedule_mark_use(scoreboard,
                          (void *)src->ssa,
-                         src->parent_instr,
+                         nir_src_parent_instr(src),
                          nir_schedule_src_pressure(src));
 
    return true;
@@ -1181,7 +1181,7 @@ nir_schedule_ssa_def_init_scoreboard(nir_def *def, void *state)
       _mesa_set_add(def_uses, def->parent_instr);
 
    nir_foreach_use(src, def) {
-      _mesa_set_add(def_uses, src->parent_instr);
+      _mesa_set_add(def_uses, nir_src_parent_instr(src));
    }
 
    /* XXX: Handle if uses */

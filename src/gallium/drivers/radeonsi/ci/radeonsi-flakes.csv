@@ -11,6 +11,7 @@ spec@egl_mesa_configless_context@basic
 glx@glx-visuals-depth -pixmap
 glx@glx-visuals-stencil -pixmap
 spec@arb_timer_query@timestamp-get
+spec@egl 1.4@egl-ext_egl_image_storage
 spec@egl_mesa_configless_context@basic
 spec@egl_chromium_sync_control@conformance
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test

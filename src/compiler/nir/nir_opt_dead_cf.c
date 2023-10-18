@@ -136,10 +136,10 @@ def_only_used_in_cf_node(nir_def *def, void *_node)
    nir_foreach_use_including_if(use, def) {
       nir_block *block;
 
-      if (use->is_if)
-         block = nir_cf_node_as_block(nir_cf_node_prev(&use->parent_if->cf_node));
+      if (nir_src_is_if(use))
+         block = nir_cf_node_as_block(nir_cf_node_prev(&nir_src_parent_if(use)->cf_node));
       else
-         block = use->parent_instr->block;
+         block = nir_src_parent_instr(use)->block;
 
       /* Because NIR is structured, we can easily determine whether or not a
        * value escapes a CF node by looking at the block indices of its uses

@@ -826,7 +826,6 @@ create_image_view(struct v3dv_device *device,
     * makes sense to implement swizzle composition using VkSwizzle directly.
     */
    VkFormat format;
-   uint8_t image_view_swizzle[4];
    if (image->vk.format == VK_FORMAT_D24_UNORM_S8_UINT &&
        range->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT) {
       format = VK_FORMAT_R8G8B8A8_UINT;
@@ -837,11 +836,11 @@ create_image_view(struct v3dv_device *device,
       vk_component_mapping_to_pipe_swizzle(iview->vk.swizzle, view_swizzle);
 
       util_format_compose_swizzles(stencil_aspect_swizzle, view_swizzle,
-                                   image_view_swizzle);
+                                   iview->view_swizzle);
    } else {
       format = iview->vk.format;
       vk_component_mapping_to_pipe_swizzle(iview->vk.swizzle,
-                                           image_view_swizzle);
+                                           iview->view_swizzle);
    }
 
    iview->vk.view_format = format;
@@ -866,7 +865,7 @@ create_image_view(struct v3dv_device *device,
 
       const uint8_t *format_swizzle =
          v3dv_get_format_swizzle(device, format, plane);
-      util_format_compose_swizzles(format_swizzle, image_view_swizzle,
+      util_format_compose_swizzles(format_swizzle, iview->view_swizzle,
                                    iview->planes[plane].swizzle);
 
       iview->planes[plane].swap_rb = v3dv_format_swizzle_needs_rb_swap(format_swizzle);

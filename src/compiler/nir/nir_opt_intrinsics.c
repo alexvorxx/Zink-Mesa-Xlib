@@ -247,10 +247,10 @@ try_opt_exclusive_scan_to_inclusive(nir_intrinsic_instr *intrin)
       return false;
 
    nir_foreach_use_including_if(src, &intrin->def) {
-      if (src->is_if || src->parent_instr->type != nir_instr_type_alu)
+      if (nir_src_is_if(src) || nir_src_parent_instr(src)->type != nir_instr_type_alu)
          return false;
 
-      nir_alu_instr *alu = nir_instr_as_alu(src->parent_instr);
+      nir_alu_instr *alu = nir_instr_as_alu(nir_src_parent_instr(src));
 
       if (alu->op != (nir_op)nir_intrinsic_reduction_op(intrin))
          return false;
@@ -281,7 +281,7 @@ try_opt_exclusive_scan_to_inclusive(nir_intrinsic_instr *intrin)
 
    nir_foreach_use_including_if_safe(src, &intrin->def) {
       /* Remove alu. */
-      nir_alu_instr *alu = nir_instr_as_alu(src->parent_instr);
+      nir_alu_instr *alu = nir_instr_as_alu(nir_src_parent_instr(src));
       nir_def_rewrite_uses(&alu->def, &intrin->def);
       nir_instr_remove(&alu->instr);
    }
@@ -304,8 +304,8 @@ opt_intrinsics_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
 
       bool progress = false;
       nir_foreach_use_safe(use_src, &intrin->def) {
-         if (use_src->parent_instr->type == nir_instr_type_alu) {
-            nir_alu_instr *alu = nir_instr_as_alu(use_src->parent_instr);
+         if (nir_src_parent_instr(use_src)->type == nir_instr_type_alu) {
+            nir_alu_instr *alu = nir_instr_as_alu(nir_src_parent_instr(use_src));
 
             if (alu->op == nir_op_ieq ||
                 alu->op == nir_op_ine) {

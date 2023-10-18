@@ -46,7 +46,6 @@ radeonsi-stoney-traces:x86_64:
   variables:
     EGL_PLATFORM: surfaceless
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
-    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 radv-raven-vkcts:x86_64:
   extends:
@@ -201,12 +200,15 @@ vkcts-navi10-valve:
     GPU_VERSION: radv-navi10-aco
 
 vkcts-navi21-valve:
-  parallel: 3
+  timeout: 35m
+  parallel: 4
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve
   variables:
     GPU_VERSION: radv-navi21-aco
+    B2C_TIMEOUT_BOOT_MINUTES: 30
+    B2C_TIMEOUT_OVERALL_MINUTES: 30
 
 # Disabled due to its extremelly-broken nature
 .vkcts-navi21-llvm-valve:
@@ -239,6 +241,14 @@ glcts-vangogh-valve:
     GPU_VERSION: radeonsi-vangogh
     DEQP_SUITE: radeonsi-vangogh
 
+vkcts-navi31-valve:
+  extends:
+    - .vkcts-test-valve
+    - .navi31-test-valve
+    - .radv-valve-manual-rules
+  variables:
+    GPU_VERSION: radv-navi31-aco
+
 ############### Fossilize
 radv-fossils:
   extends:
@@ -267,7 +277,7 @@ radv-fossils:
     - AMDGPU_GPU_ID="NAVI21"
       ./install/fossilize-runner.sh
     # RDNA3 (GFX11)
-    - AMDGPU_GPU_ID="GFX1100"
+    - AMDGPU_GPU_ID="NAVI31"
       ./install/fossilize-runner.sh
 
 ############### vkd3d-proton
@@ -320,3 +330,12 @@ vkd3d-vangogh-valve:
     - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-vangogh-vkd3d
+
+vkd3d-navi31-valve:
+  extends:
+    - .vkd3d-test-valve
+    - .navi31-test-valve
+    - .radv-valve-manual-rules
+  variables:
+    VKD3D_PROTON_RESULTS: radv-navi31-vkd3d
+    VKD3D_CONFIG: dxr11

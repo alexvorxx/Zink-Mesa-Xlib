@@ -248,7 +248,7 @@ radv_amdgpu_cs_bo_create(struct radv_amdgpu_cs *cs, uint32_t ib_size)
    const enum radeon_bo_flag flags =
       RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING | RADEON_FLAG_READ_ONLY | gtt_wc_flag;
 
-   return ws->buffer_create(ws, ib_size, cs->ws->info.ib_alignment, domain, flags, RADV_BO_PRIORITY_CS, 0,
+   return ws->buffer_create(ws, ib_size, cs->ws->info.ip[cs->hw_ip].ib_alignment, domain, flags, RADV_BO_PRIORITY_CS, 0,
                             &cs->ib_buffer);
 }
 
@@ -287,9 +287,9 @@ radv_amdgpu_cs_get_new_ib(struct radeon_cmdbuf *_cs, uint32_t ib_size)
 static unsigned
 radv_amdgpu_cs_get_initial_size(struct radv_amdgpu_winsys *ws, enum amd_ip_type ip_type)
 {
-   uint32_t ib_pad_dw_mask = MAX2(3, ws->info.ib_pad_dw_mask[ip_type]);
-   assert(util_is_power_of_two_nonzero(ib_pad_dw_mask + 1));
-   return align(20 * 1024 * 4, ib_pad_dw_mask + 1);
+   const uint32_t ib_alignment = ws->info.ip[ip_type].ib_alignment;
+   assert(util_is_power_of_two_nonzero(ib_alignment));
+   return align(20 * 1024 * 4, ib_alignment);
 }
 
 static struct radeon_cmdbuf *
@@ -377,15 +377,14 @@ radv_amdgpu_cs_grow(struct radeon_cmdbuf *_cs, size_t min_size)
       return;
    }
 
-   enum amd_ip_type ip_type = cs->hw_ip;
-   uint32_t ib_pad_dw_mask = MAX2(3, cs->ws->info.ib_pad_dw_mask[ip_type]);
+   const uint32_t ib_alignment = cs->ws->info.ip[cs->hw_ip].ib_alignment;
 
    cs->ws->base.cs_finalize(_cs);
 
    uint64_t ib_size = MAX2(min_size * 4 + 16, cs->base.max_dw * 4 * 2);
 
    /* max that fits in the chain size field. */
-   ib_size = align(MIN2(ib_size, 0xfffff), ib_pad_dw_mask + 1);
+   ib_size = align(MIN2(ib_size, 0xfffff), ib_alignment);
 
    VkResult result = radv_amdgpu_cs_bo_create(cs, ib_size);
 
@@ -430,7 +429,7 @@ radv_amdgpu_cs_finalize(struct radeon_cmdbuf *_cs)
 
    assert(cs->base.cdw <= cs->base.reserved_dw);
 
-   uint32_t ib_pad_dw_mask = MAX2(3, cs->ws->info.ib_pad_dw_mask[ip_type]);
+   uint32_t ib_pad_dw_mask = MAX2(3, cs->ws->info.ip[ip_type].ib_pad_dw_mask);
    uint32_t nop_packet = get_nop_packet(cs);
 
    if (cs->use_ib) {
@@ -1670,7 +1669,7 @@ radv_amdgpu_cs_submit(struct radv_amdgpu_ctx *ctx, struct radv_amdgpu_cs_request
       chunks[i].chunk_data = (uint64_t)(uintptr_t)&chunk_data[i];
 
       ib = &request->ibs[i];
-      assert(ib->ib_mc_address && ib->ib_mc_address % ctx->ws->info.ib_alignment == 0);
+      assert(ib->ib_mc_address && ib->ib_mc_address % ctx->ws->info.ip[ib->ip_type].ib_alignment == 0);
       assert(ib->size);
 
       chunk_data[i].ib_data._pad = 0;

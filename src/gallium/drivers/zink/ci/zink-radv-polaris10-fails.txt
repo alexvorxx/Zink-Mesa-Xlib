@@ -1,5 +1,4 @@
 # kopper
-glx@glx-multi-window-single-context,Crash
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_ust_test,Fail
 
 # #6115
@@ -10,31 +9,10 @@ spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-ve
 
 
 glx@extension string sanity,Fail
-glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
-glx@glx_arb_create_context_no_error@no error,Fail
-glx@glx_arb_create_context_robustness@invalid reset notification strategy,Fail
-glx@glx_ext_import_context@free context,Fail
-glx@glx_ext_import_context@get context id,Fail
-glx@glx_ext_import_context@get current display,Fail
-glx@glx_ext_import_context@import context- multi process,Fail
-glx@glx_ext_import_context@import context- single process,Fail
-glx@glx_ext_import_context@imported context has same context id,Fail
-glx@glx_ext_import_context@make current- multi process,Fail
-glx@glx_ext_import_context@make current- single process,Fail
-glx@glx_ext_import_context@query context info,Fail
-glx@glx-swap-pixmap-bad,Fail
 
 # #6322
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
 
-
-shaders@point-vertex-id divisor,Fail
-shaders@point-vertex-id gl_instanceid divisor,Fail
-shaders@point-vertex-id gl_instanceid,Fail
-shaders@point-vertex-id gl_vertexid divisor,Fail
-shaders@point-vertex-id gl_vertexid,Fail
-shaders@point-vertex-id gl_vertexid gl_instanceid divisor,Fail
-shaders@point-vertex-id gl_vertexid gl_instanceid,Fail
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index2,Fail
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index,Fail
 spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-non-const-uniform-index,Fail
@@ -96,8 +74,6 @@ spec@arb_sample_shading@interpolate-at-sample-position 4,Fail
 spec@arb_sample_shading@interpolate-at-sample-position 6,Fail
 spec@arb_sample_shading@interpolate-at-sample-position 8,Fail
 
-spec@arb_shader_clock@execution@clock2x32,Fail
-spec@arb_shader_clock@execution@clock,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
 
 spec@arb_shading_language_packing@execution@built-in-functions@fs-packhalf2x16,Fail
@@ -200,10 +176,6 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full 
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
-spec@!opengl 1.1@linestipple@Factor 2x,Fail
-spec@!opengl 1.1@linestipple@Factor 3x,Fail
-spec@!opengl 1.1@linestipple,Fail
-spec@!opengl 1.1@linestipple@Line loop,Fail
 spec@!opengl 1.1@polygon-mode-facing,Fail
 spec@!opengl 1.1@polygon-mode,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 0: Expected white pixel on bottom edge,Fail
@@ -230,8 +202,6 @@ spec@!opengl 3.0@clearbuffer-depth-cs-probe,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_gs_linked,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked,Fail
 
-glx@glx-buffer-age,Fail
-glx@glx-buffer-age vblank_mode=0,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_ABGR_EXT and GL_BYTE,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_ABGR_EXT and GL_FLOAT,Fail
@@ -483,16 +453,6 @@ dEQP-GLES31.functional.texture.specification.texstorage3d.format.depth24_stencil
 dEQP-GLES31.functional.texture.specification.texstorage3d.format.depth32f_stencil8_cube_array,Fail
 dEQP-GLES31.functional.texture.specification.texsubimage3d_depth.depth24_stencil8_cube_array,Fail
 
-object namespace pollution@buffer with glgetteximage,Crash
-object namespace pollution@buffer with gltexsubimage2d,Crash
-object namespace pollution@framebuffer with glgetteximage,Crash
-object namespace pollution@framebuffer with gltexsubimage2d,Crash
-object namespace pollution@program with glgetteximage,Crash
-object namespace pollution@program with gltexsubimage2d,Crash
-object namespace pollution@renderbuffer with glgetteximage,Crash
-object namespace pollution@renderbuffer with gltexsubimage2d,Crash
-object namespace pollution@texture with glgetteximage,Crash
-object namespace pollution@texture with gltexsubimage2d,Crash
 object namespace pollution@vertex-array with glgetteximage,Crash
 object namespace pollution@vertex-array with gltexsubimage2d,Crash
 spec@!opengl 1.1@getteximage-depth,Fail
@@ -504,9 +464,6 @@ spec@!opengl 1.1@getteximage-depth@GL_TEXTURE_1D_ARRAY-GL_DEPTH_COMPONENT,Fail
 spec@!opengl 1.1@getteximage-depth@GL_TEXTURE_1D_ARRAY-GL_DEPTH_COMPONENT16,Fail
 spec@!opengl 1.1@getteximage-depth@GL_TEXTURE_1D_ARRAY-GL_DEPTH_COMPONENT24,Fail
 spec@!opengl 1.1@getteximage-depth@GL_TEXTURE_1D_ARRAY-GL_DEPTH_COMPONENT32,Fail
-spec@!opengl 1.1@getteximage-luminance,Crash
-spec@!opengl 1.1@getteximage-targets 1d,Crash
-spec@!opengl 1.1@getteximage-targets 2d,Crash
 spec@!opengl 1.1@texwrap formats bordercolor,Fail
 spec@!opengl 1.1@texwrap formats bordercolor-swizzled,Fail
 spec@!opengl 1.1@texwrap formats bordercolor-swizzled@GL_ALPHA12- swizzled- border color only,Fail
@@ -530,7 +487,6 @@ spec@!opengl 1.1@texwrap formats bordercolor@GL_ALPHA12- border color only,Fail
 spec@!opengl 1.1@texwrap formats bordercolor@GL_ALPHA16- border color only,Fail
 spec@!opengl 1.1@texwrap formats bordercolor@GL_ALPHA4- border color only,Fail
 spec@!opengl 1.1@texwrap formats bordercolor@GL_ALPHA8- border color only,Fail
-spec@!opengl 1.2@getteximage-targets 3d,Crash
 spec@!opengl 3.2@gl-3.2-adj-prims cull-back pv-last,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims cull-front pv-last,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-last,Fail
@@ -538,8 +494,6 @@ spec@!opengl 3.2@gl-3.2-adj-prims line cull-front pv-last,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims pv-last,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats@GL_DEPTH32F_STENCIL8,Fail
-spec@arb_direct_state_access@gettextureimage-targets,Crash
-spec@arb_direct_state_access@texture-buffer,Crash
 spec@arb_es2_compatibility@texwrap formats bordercolor-swizzled,Fail
 spec@arb_es2_compatibility@texwrap formats bordercolor-swizzled@GL_RGB565- swizzled- border color only,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@Basic,Fail
@@ -547,12 +501,6 @@ spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@discard
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@fb resize,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@glScissor,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@glViewport,Fail
-spec@arb_pixel_buffer_object@cubemap npot pbo,Crash
-spec@arb_pixel_buffer_object@cubemap pbo,Crash
-spec@arb_pixel_buffer_object@pbo-getteximage,Crash
-spec@arb_pixel_buffer_object@pbo-teximage,Crash
-spec@arb_pixel_buffer_object@pbo-teximage-tiling,Crash
-spec@arb_pixel_buffer_object@pbo-teximage-tiling-2,Crash
 spec@arb_sample_locations@test,Fail
 spec@arb_sample_locations@test@MSAA: 1- X: 0- Y: 0- Grid: false,Fail
 spec@arb_sample_locations@test@MSAA: 1- X: 0- Y: 0- Grid: true,Fail
@@ -778,22 +726,6 @@ spec@arb_sample_locations@test@MSAA: 8- X: 3- Y: 5- Grid: false,Fail
 spec@arb_sample_locations@test@MSAA: 8- X: 3- Y: 5- Grid: true,Fail
 spec@arb_sample_locations@test@MSAA: 8- X: 3- Y: 6- Grid: false,Fail
 spec@arb_sample_locations@test@MSAA: 8- X: 3- Y: 6- Grid: true,Fail
-spec@arb_shader_image_load_store@host-mem-barrier,Crash
-spec@arb_shader_image_load_store@state,Crash
-spec@arb_texture_buffer_object@bufferstorage,Crash
-spec@arb_texture_buffer_object@data-sync,Crash
-spec@arb_texture_buffer_object@fetch-outside-bounds,Crash
-spec@arb_texture_buffer_object@formats (fs- 3.1 core),Crash
-spec@arb_texture_buffer_object@formats (fs- ext_gpu_shader4),Crash
-spec@arb_texture_buffer_object@formats (vs- 3.1 core),Crash
-spec@arb_texture_buffer_object@formats (vs- ext_gpu_shader4),Crash
-spec@arb_texture_buffer_object@indexed,Crash
-spec@arb_texture_buffer_object@max-size,Crash
-spec@arb_texture_buffer_object@re-init,Crash
-spec@arb_texture_buffer_object@subdata-sync,Crash
-spec@arb_texture_buffer_range@ranges,Crash
-spec@arb_texture_buffer_range@ranges-2 compat,Crash
-spec@arb_texture_buffer_range@ranges-2,Crash
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGB- swizzled- border color only,Fail
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGBA- swizzled- border color only,Fail
@@ -802,9 +734,6 @@ spec@arb_texture_compression_bptc@texwrap formats bordercolor-swizzled@GL_COMPRE
 spec@arb_texture_compression_bptc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT- swizzled- border color only,Fail
 spec@arb_texture_compression_bptc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT- swizzled- border color only,Fail
 spec@arb_texture_compression_bptc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM- swizzled- border color only,Fail
-spec@arb_texture_cube_map@cubemap-getteximage-pbo,Crash
-spec@arb_texture_cube_map@getteximage-targets cube,Crash
-spec@arb_texture_cube_map_array@getteximage-targets cube_array,Crash
 spec@arb_texture_float@texwrap formats bordercolor,Fail
 spec@arb_texture_float@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_float@texwrap formats bordercolor-swizzled@GL_ALPHA16F_ARB- swizzled- border color only,Fail
@@ -815,7 +744,6 @@ spec@arb_texture_float@texwrap formats bordercolor-swizzled@GL_RGBA16F- swizzled
 spec@arb_texture_float@texwrap formats bordercolor-swizzled@GL_RGBA32F- swizzled- border color only,Fail
 spec@arb_texture_float@texwrap formats bordercolor@GL_ALPHA16F_ARB- border color only,Fail
 spec@arb_texture_float@texwrap formats bordercolor@GL_ALPHA32F_ARB- border color only,Fail
-spec@arb_texture_rectangle@getteximage-targets rect,Crash
 spec@arb_texture_rg@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_rg@texwrap formats bordercolor-swizzled@GL_R16- swizzled- border color only,Fail
 spec@arb_texture_rg@texwrap formats bordercolor-swizzled@GL_R8- swizzled- border color only,Fail
@@ -841,8 +769,6 @@ spec@arb_texture_rg@texwrap formats-int bordercolor-swizzled@GL_RG8I- swizzled- 
 spec@arb_texture_rg@texwrap formats-int bordercolor-swizzled@GL_RG8UI- swizzled- border color only,Fail
 spec@arb_texture_rgb10_a2ui@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_rgb10_a2ui@texwrap formats bordercolor-swizzled@GL_RGB10_A2UI- swizzled- border color only,Fail
-spec@arb_texture_view@texsubimage-layers pbo,Crash
-spec@arb_texture_view@texsubimage-levels pbo,Crash
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-export,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-export-tex,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_p010,Fail
@@ -853,10 +779,6 @@ spec@ext_packed_depth_stencil@fbo-clear-formats@GL_DEPTH24_STENCIL8,Fail
 spec@ext_packed_depth_stencil@fbo-clear-formats@GL_DEPTH_STENCIL,Fail
 spec@ext_packed_float@texwrap formats bordercolor-swizzled,Fail
 spec@ext_packed_float@texwrap formats bordercolor-swizzled@GL_R11F_G11F_B10F- swizzled- border color only,Fail
-spec@ext_texture_array@compressed teximage pbo,Crash
-spec@ext_texture_array@compressed texsubimage pbo,Crash
-spec@ext_texture_array@getteximage-targets 1d_array,Crash
-spec@ext_texture_array@getteximage-targets 2d_array,Crash
 spec@ext_texture_compression_rgtc@texwrap formats bordercolor-swizzled,Fail
 spec@ext_texture_compression_rgtc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RED_RGTC1- swizzled- border color only,Fail
 spec@ext_texture_compression_rgtc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RG_RGTC2- swizzled- border color only,Fail
@@ -880,7 +802,6 @@ spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA32I- swizzl
 spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA32UI- swizzled- border color only,Fail
 spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA8I- swizzled- border color only,Fail
 spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA8UI- swizzled- border color only,Fail
-spec@ext_texture_norm16@render,Crash
 spec@ext_texture_shared_exponent@texwrap formats bordercolor-swizzled,Fail
 spec@ext_texture_shared_exponent@texwrap formats bordercolor-swizzled@GL_RGB9_E5- swizzled- border color only,Fail
 spec@ext_texture_snorm@texwrap formats bordercolor-swizzled,Fail
@@ -902,18 +823,6 @@ spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SR
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT- swizzled- border color only,Fail
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT- swizzled- border color only,Fail
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_S3TC_DXT1_EXT- swizzled- border color only,Fail
-spec@glsl-1.40@execution@texturesize@fs-texturesize-isamplerbuffer,Crash
-spec@glsl-1.40@execution@texturesize@fs-texturesize-samplerbuffer,Crash
-spec@glsl-1.40@execution@texturesize@fs-texturesize-usamplerbuffer,Crash
-spec@glsl-1.40@execution@texturesize@vs-texturesize-isamplerbuffer,Crash
-spec@glsl-1.40@execution@texturesize@vs-texturesize-samplerbuffer,Crash
-spec@glsl-1.40@execution@texturesize@vs-texturesize-usamplerbuffer,Crash
 spec@glsl-1.50@execution@geometry@primitive-types gl_triangle_strip_adjacency,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency ffs,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency other,Fail
-spec@glsl-1.50@execution@texturesize@gs-texturesize-isamplerbuffer,Crash
-spec@glsl-1.50@execution@texturesize@gs-texturesize-samplerbuffer,Crash
-spec@glsl-1.50@execution@texturesize@gs-texturesize-usamplerbuffer,Crash
-spec@glsl-1.50@execution@texturesize@tes-texturesize-isamplerbuffer,Crash
-spec@glsl-1.50@execution@texturesize@tes-texturesize-samplerbuffer,Crash
-spec@glsl-1.50@execution@texturesize@tes-texturesize-usamplerbuffer,Crash

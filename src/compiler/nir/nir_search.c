@@ -622,8 +622,8 @@ add_uses_to_worklist(nir_instr *instr,
    nir_def *def = nir_instr_def(instr);
 
    nir_foreach_use_safe(use_src, def) {
-      if (nir_algebraic_automaton(use_src->parent_instr, states, pass_op_table))
-         nir_instr_worklist_push_tail(worklist, use_src->parent_instr);
+      if (nir_algebraic_automaton(nir_src_parent_instr(use_src), states, pass_op_table))
+         nir_instr_worklist_push_tail(worklist, nir_src_parent_instr(use_src));
    }
 }
 

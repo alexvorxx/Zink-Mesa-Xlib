@@ -709,14 +709,13 @@ vn_physical_device_init_memory_properties(
    struct vn_physical_device *physical_dev)
 {
    struct vn_instance *instance = physical_dev->instance;
-   VkPhysicalDeviceMemoryProperties2 *props2 =
-      &physical_dev->memory_properties;
-   VkPhysicalDeviceMemoryProperties *props1 = &props2->memoryProperties;
-
-   props2->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
-
+   VkPhysicalDeviceMemoryProperties2 props2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+   };
    vn_call_vkGetPhysicalDeviceMemoryProperties2(
-      instance, vn_physical_device_to_handle(physical_dev), props2);
+      instance, vn_physical_device_to_handle(physical_dev), &props2);
+
+   physical_dev->memory_properties = props2.memoryProperties;
 
    /* Kernel makes every mapping coherent. If a memory type is truly
     * incoherent, it's better to remove the host-visible flag than silently
@@ -726,10 +725,9 @@ vn_physical_device_init_memory_properties(
     */
    uint32_t coherent_uncached = VK_MAX_MEMORY_TYPES;
    uint32_t incoherent_cached = VK_MAX_MEMORY_TYPES;
-
-   for (uint32_t i = 0; i < props1->memoryTypeCount; i++) {
-      const VkMemoryPropertyFlags flags =
-         props1->memoryTypes[i].propertyFlags;
+   VkPhysicalDeviceMemoryProperties *props = &physical_dev->memory_properties;
+   for (uint32_t i = 0; i < props->memoryTypeCount; i++) {
+      const VkMemoryPropertyFlags flags = props->memoryTypes[i].propertyFlags;
       const bool coherent = flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
       const bool cached = flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       if (coherent && cached) {
@@ -743,15 +741,15 @@ vn_physical_device_init_memory_properties(
       }
    }
 
-   for (uint32_t i = 0; i < props1->memoryTypeCount; i++) {
-      VkMemoryType *type = &props1->memoryTypes[i];
+   for (uint32_t i = 0; i < props->memoryTypeCount; i++) {
+      VkMemoryType *type = &props->memoryTypes[i];
       if (i == incoherent_cached) {
          /* Only get here if no coherent+cached type is available, and the
           * spec guarantees that there is at least one coherent type, so it
           * must be coherent+uncached, hence the index is always valid.
           */
-         assert(coherent_uncached < props1->memoryTypeCount);
-         type->heapIndex = props1->memoryTypes[coherent_uncached].heapIndex;
+         assert(coherent_uncached < props->memoryTypeCount);
+         type->heapIndex = props->memoryTypes[coherent_uncached].heapIndex;
       } else if (!(type->propertyFlags &
                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
          type->propertyFlags &= ~(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -927,10 +925,12 @@ vn_physical_device_get_native_extensions(
 {
    memset(exts, 0, sizeof(*exts));
 
-   if (physical_dev->renderer_sync_fd.fence_exportable)
+   if (physical_dev->instance->renderer->info.has_external_sync &&
+       physical_dev->renderer_sync_fd.fence_exportable)
       exts->KHR_external_fence_fd = true;
 
-   if (physical_dev->renderer_sync_fd.semaphore_importable &&
+   if (physical_dev->instance->renderer->info.has_external_sync &&
+       physical_dev->renderer_sync_fd.semaphore_importable &&
        physical_dev->renderer_sync_fd.semaphore_exportable)
       exts->KHR_external_semaphore_fd = true;
 
@@ -1836,8 +1836,7 @@ vn_GetPhysicalDeviceMemoryProperties2(
     * our cached version.  Our cached version may differ from the server's
     * version due to workarounds.
     */
-   pMemoryProperties->memoryProperties =
-      physical_dev->memory_properties.memoryProperties;
+   pMemoryProperties->memoryProperties = physical_dev->memory_properties;
 }
 
 void

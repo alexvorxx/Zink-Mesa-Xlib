@@ -1736,6 +1736,12 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
 
       radv_update_hw_pipelinestat(cmd_buffer);
 
+      if (cmd_buffer->qf == RADV_QUEUE_COMPUTE) {
+         uint32_t cs_invoc_offset =
+            radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT);
+         va += cs_invoc_offset;
+      }
+
       radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
       radeon_emit(cs, EVENT_TYPE(V_028A90_SAMPLE_PIPELINESTAT) | EVENT_INDEX(2));
       radeon_emit(cs, va);
@@ -1747,8 +1753,9 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
                radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT);
 
             gfx10_copy_gds_query(cmd_buffer, RADV_SHADER_QUERY_GS_PRIM_EMIT_OFFSET, va + gs_prim_offset);
-         } else {
-            assert(pool->vk.pipeline_statistics & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT);
+         }
+
+         if (pool->vk.pipeline_statistics & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT) {
             uint32_t gs_invoc_offset =
                radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT);
 
@@ -1774,6 +1781,9 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
          /* written prim counter */
          gfx10_copy_gds_query(cmd_buffer, RADV_SHADER_QUERY_PRIM_XFB_OFFSET(index), va + 8);
          radv_emit_write_data_imm(cs, V_370_ME, va + 12, 0x80000000);
+
+         /* Record that the command buffer needs GDS. */
+         cmd_buffer->gds_needed = true;
 
          if (!cmd_buffer->state.active_prims_xfb_gds_queries)
             cmd_buffer->state.dirty |= RADV_CMD_DIRTY_SHADER_QUERY;
@@ -1886,14 +1896,16 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
 
       va += pipelinestat_block_size;
 
+      if (cmd_buffer->qf == RADV_QUEUE_COMPUTE) {
+         uint32_t cs_invoc_offset =
+            radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT);
+         va += cs_invoc_offset;
+      }
+
       radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
       radeon_emit(cs, EVENT_TYPE(V_028A90_SAMPLE_PIPELINESTAT) | EVENT_INDEX(2));
       radeon_emit(cs, va);
       radeon_emit(cs, va >> 32);
-
-      si_cs_emit_write_event_eop(cs, cmd_buffer->device->physical_device->rad_info.gfx_level,
-                                 radv_cmd_buffer_uses_mec(cmd_buffer), V_028A90_BOTTOM_OF_PIPE_TS, 0, EOP_DST_SEL_MEM,
-                                 EOP_DATA_SEL_VALUE_32BIT, avail_va, 1, cmd_buffer->gfx9_eop_bug_va);
 
       if (pool->uses_gds) {
          if (pool->vk.pipeline_statistics & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT) {
@@ -1901,8 +1913,9 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
                radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT);
 
             gfx10_copy_gds_query(cmd_buffer, RADV_SHADER_QUERY_GS_PRIM_EMIT_OFFSET, va + gs_prim_offset);
-         } else {
-            assert(pool->vk.pipeline_statistics & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT);
+         }
+
+         if (pool->vk.pipeline_statistics & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT) {
             uint32_t gs_invoc_offset =
                radv_get_pipelinestat_query_offset(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT);
 
@@ -1914,6 +1927,10 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
          if (!cmd_buffer->state.active_pipeline_gds_queries)
             cmd_buffer->state.dirty |= RADV_CMD_DIRTY_SHADER_QUERY;
       }
+
+      si_cs_emit_write_event_eop(cs, cmd_buffer->device->physical_device->rad_info.gfx_level,
+                                 radv_cmd_buffer_uses_mec(cmd_buffer), V_028A90_BOTTOM_OF_PIPE_TS, 0, EOP_DST_SEL_MEM,
+                                 EOP_DATA_SEL_VALUE_32BIT, avail_va, 1, cmd_buffer->gfx9_eop_bug_va);
       break;
    }
    case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:

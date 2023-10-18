@@ -1000,8 +1000,8 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
    if (sctx->bo_list_add_all_compute_resources)
       si_compute_resources_add_all_to_bo_list(sctx);
 
-   /* Don't optimize any registers on certain CDNA chips, otherwise it would break. */
-   if (sctx->family >= CHIP_GFX940 && !sctx->screen->info.has_graphics)
+   /* Skipping setting redundant registers on compute queues breaks compute. */
+   if (!sctx->has_graphics)
       sctx->tracked_regs.other_reg_saved_mask = 0;
 
    /* First emit registers. */

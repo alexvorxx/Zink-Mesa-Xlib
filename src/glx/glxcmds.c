@@ -1116,7 +1116,7 @@ glXChooseVisual(Display * dpy, int screen, int *attribList)
                                   &visualTemplate, &i);
 
          if (newList) {
-            free(visualList);
+            XFree(visualList);
             visualList = newList;
             best_config = config;
          }

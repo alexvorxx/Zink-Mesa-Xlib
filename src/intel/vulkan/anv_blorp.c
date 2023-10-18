@@ -99,22 +99,7 @@ anv_device_init_blorp(struct anv_device *device)
    device->blorp.compiler = device->physical->compiler;
    device->blorp.lookup_shader = lookup_blorp_shader;
    device->blorp.upload_shader = upload_blorp_shader;
-   switch (device->info->verx10) {
-   case 90:
-      device->blorp.exec = gfx9_blorp_exec;
-      break;
-   case 110:
-      device->blorp.exec = gfx11_blorp_exec;
-      break;
-   case 120:
-      device->blorp.exec = gfx12_blorp_exec;
-      break;
-   case 125:
-      device->blorp.exec = gfx125_blorp_exec;
-      break;
-   default:
-      unreachable("Unknown hardware generation");
-   }
+   device->blorp.exec = anv_genX(device->info, blorp_exec);
 }
 
 void
@@ -127,9 +112,16 @@ static void
 anv_blorp_batch_init(struct anv_cmd_buffer *cmd_buffer,
                      struct blorp_batch *batch, enum blorp_batch_flags flags)
 {
-   if (!(cmd_buffer->queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-      assert(cmd_buffer->queue_family->queueFlags & VK_QUEUE_COMPUTE_BIT);
+   VkQueueFlags queue_flags = cmd_buffer->queue_family->queueFlags;
+
+   if (queue_flags & VK_QUEUE_GRAPHICS_BIT) {
+      /* blorp runs on render engine by default */
+   } else if (queue_flags & VK_QUEUE_COMPUTE_BIT) {
       flags |= BLORP_BATCH_USE_COMPUTE;
+   } else if (queue_flags & VK_QUEUE_TRANSFER_BIT) {
+      flags |= BLORP_BATCH_USE_BLITTER;
+   } else {
+      unreachable("unknown queue family");
    }
 
    blorp_batch_init(&cmd_buffer->device->blorp, batch, cmd_buffer, flags);
@@ -406,6 +398,28 @@ end_main_rcs_cmd_buffer_done(struct anv_cmd_buffer *cmd_buffer,
                                                           syncpoint);
 }
 
+static bool
+anv_blorp_execute_on_companion(struct anv_cmd_buffer *cmd_buffer,
+                               struct anv_image *dst_image)
+{
+   /* MSAA images have to be dealt with on the companion RCS command buffer
+    * for both CCS && BCS engines.
+    */
+   if ((anv_cmd_buffer_is_blitter_queue(cmd_buffer) ||
+        anv_cmd_buffer_is_compute_queue(cmd_buffer)) &&
+       dst_image->vk.samples > 1)
+      return true;
+
+   /* Emulation of formats is done through a compute shader, so we need
+    * the companion command buffer for the BCS engine.
+    */
+   if (anv_cmd_buffer_is_blitter_queue(cmd_buffer) &&
+       dst_image->emu_plane_format != VK_FORMAT_UNDEFINED)
+      return true;
+
+   return false;
+}
+
 void anv_CmdCopyImage2(
     VkCommandBuffer                             commandBuffer,
     const VkCopyImageInfo2*                     pCopyImageInfo)
@@ -415,12 +429,9 @@ void anv_CmdCopyImage2(
    ANV_FROM_HANDLE(anv_image, dst_image, pCopyImageInfo->dstImage);
 
    struct anv_cmd_buffer *main_cmd_buffer = cmd_buffer;
-   UNUSED struct anv_state rcs_done = ANV_STATE_NULL;;
+   UNUSED struct anv_state rcs_done = ANV_STATE_NULL;
 
-   if (cmd_buffer->device->info->verx10 >= 125 &&
-       dst_image->vk.samples > 1 &&
-       (anv_cmd_buffer_is_blitter_queue(main_cmd_buffer) ||
-        anv_cmd_buffer_is_compute_queue(main_cmd_buffer))) {
+   if (anv_blorp_execute_on_companion(cmd_buffer, dst_image)) {
       rcs_done = record_main_rcs_cmd_buffer_done(cmd_buffer);
       cmd_buffer = cmd_buffer->companion_rcs_cmd_buffer;
    }
@@ -436,6 +447,28 @@ void anv_CmdCopyImage2(
    }
 
    anv_blorp_batch_finish(&batch);
+
+   if (dst_image->emu_plane_format != VK_FORMAT_UNDEFINED) {
+      assert(!anv_cmd_buffer_is_blitter_queue(cmd_buffer));
+      const enum anv_pipe_bits pipe_bits =
+         anv_cmd_buffer_is_compute_queue(cmd_buffer) ?
+         ANV_PIPE_HDC_PIPELINE_FLUSH_BIT :
+         ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
+      anv_add_pending_pipe_bits(cmd_buffer, pipe_bits,
+                                "Copy flush before decompression");
+
+      for (unsigned r = 0; r < pCopyImageInfo->regionCount; r++) {
+         const VkImageCopy2 *region = &pCopyImageInfo->pRegions[r];
+         const VkOffset3D block_offset = vk_image_offset_to_elements(
+               &dst_image->vk, region->dstOffset);
+         const VkExtent3D block_extent = vk_image_extent_to_elements(
+               &src_image->vk, region->extent);
+         anv_astc_emu_decompress(cmd_buffer, dst_image,
+                                 pCopyImageInfo->dstImageLayout,
+                                 &region->dstSubresource,
+                                 block_offset, block_extent);
+      }
+   }
 
    if (rcs_done.alloc_size)
       end_main_rcs_cmd_buffer_done(main_cmd_buffer, rcs_done);
@@ -571,6 +604,14 @@ void anv_CmdCopyBufferToImage2(
    ANV_FROM_HANDLE(anv_buffer, src_buffer, pCopyBufferToImageInfo->srcBuffer);
    ANV_FROM_HANDLE(anv_image, dst_image, pCopyBufferToImageInfo->dstImage);
 
+   struct anv_cmd_buffer *main_cmd_buffer = cmd_buffer;
+   UNUSED struct anv_state rcs_done = ANV_STATE_NULL;
+
+   if (anv_blorp_execute_on_companion(cmd_buffer, dst_image)) {
+      rcs_done = record_main_rcs_cmd_buffer_done(cmd_buffer);
+      cmd_buffer = cmd_buffer->companion_rcs_cmd_buffer;
+   }
+
    struct blorp_batch batch;
    anv_blorp_batch_init(cmd_buffer, &batch, 0);
 
@@ -581,6 +622,32 @@ void anv_CmdCopyBufferToImage2(
    }
 
    anv_blorp_batch_finish(&batch);
+
+   if (dst_image->emu_plane_format != VK_FORMAT_UNDEFINED) {
+      assert(!anv_cmd_buffer_is_blitter_queue(cmd_buffer));
+      const enum anv_pipe_bits pipe_bits =
+         anv_cmd_buffer_is_compute_queue(cmd_buffer) ?
+         ANV_PIPE_HDC_PIPELINE_FLUSH_BIT :
+         ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
+      anv_add_pending_pipe_bits(cmd_buffer, pipe_bits,
+                                "Copy flush before decompression");
+
+      for (unsigned r = 0; r < pCopyBufferToImageInfo->regionCount; r++) {
+         const VkBufferImageCopy2 *region =
+            &pCopyBufferToImageInfo->pRegions[r];
+         const VkOffset3D block_offset = vk_image_offset_to_elements(
+               &dst_image->vk, region->imageOffset);
+         const VkExtent3D block_extent = vk_image_extent_to_elements(
+               &dst_image->vk, region->imageExtent);
+         anv_astc_emu_decompress(cmd_buffer, dst_image,
+                                 pCopyBufferToImageInfo->dstImageLayout,
+                                 &region->imageSubresource,
+                                 block_offset, block_extent);
+      }
+   }
+
+   if (rcs_done.alloc_size)
+      end_main_rcs_cmd_buffer_done(main_cmd_buffer, rcs_done);
 }
 
 static void
@@ -678,8 +745,23 @@ blit_image(struct anv_cmd_buffer *cmd_buffer,
                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                    dst_image_layout, ISL_AUX_USAGE_NONE, &dst);
 
+      VkFormat src_vk_format = src_image->vk.format;
+
+      if (src_image->emu_plane_format != VK_FORMAT_UNDEFINED) {
+         /* redirect src to the hidden plane */
+         const uint32_t plane = src_image->n_planes;
+         const struct anv_surface *surface =
+            &src_image->planes[plane].primary_surface;
+         const struct anv_address address =
+            anv_image_address(src_image, &surface->memory_range);
+         src.surf = &surface->isl,
+         src.addr.offset = address.offset;
+
+         src_vk_format = src_image->emu_plane_format;
+      }
+
       struct anv_format_plane src_format =
-         anv_get_format_aspect(cmd_buffer->device->info, src_image->vk.format,
+         anv_get_format_aspect(cmd_buffer->device->info, src_vk_format,
                                1U << aspect_bit, src_image->vk.tiling);
       struct anv_format_plane dst_format =
          anv_get_format_aspect(cmd_buffer->device->info, dst_image->vk.format,
@@ -1026,10 +1108,7 @@ void anv_CmdClearColorImage(
    struct anv_cmd_buffer *main_cmd_buffer = cmd_buffer;
    UNUSED struct anv_state rcs_done = ANV_STATE_NULL;
 
-   if (cmd_buffer->device->info->verx10 >= 125 &&
-       image->vk.samples > 1 &&
-       (anv_cmd_buffer_is_blitter_queue(main_cmd_buffer) ||
-        anv_cmd_buffer_is_compute_queue(main_cmd_buffer))) {
+   if (anv_blorp_execute_on_companion(cmd_buffer, image)) {
       rcs_done = record_main_rcs_cmd_buffer_done(cmd_buffer);
       cmd_buffer = cmd_buffer->companion_rcs_cmd_buffer;
    }

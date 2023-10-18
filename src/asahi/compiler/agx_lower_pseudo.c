@@ -14,10 +14,10 @@ while_for_break_if(agx_builder *b, agx_instr *I)
 {
    if (I->op == AGX_OPCODE_BREAK_IF_FCMP) {
       return agx_while_fcmp(b, I->src[0], I->src[1], I->nest, I->fcond,
-                            !I->invert_cond);
+                            !I->invert_cond, NULL);
    } else {
       return agx_while_icmp(b, I->src[0], I->src[1], I->nest, I->icond,
-                            !I->invert_cond);
+                            !I->invert_cond, NULL);
    }
 }
 

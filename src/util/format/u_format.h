@@ -751,6 +751,11 @@ util_format_is_alpha(enum pipe_format format) ATTRIBUTE_CONST;
 bool
 util_format_is_luminance_alpha(enum pipe_format format) ATTRIBUTE_CONST;
 
+bool
+util_format_is_red_alpha(enum pipe_format format) ATTRIBUTE_CONST;
+
+bool
+util_format_is_red_green(enum pipe_format format) ATTRIBUTE_CONST;
 
 bool
 util_format_is_intensity(enum pipe_format format) ATTRIBUTE_CONST;

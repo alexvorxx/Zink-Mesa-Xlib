@@ -326,36 +326,12 @@ nvk_queue_init(struct nvk_device *dev, struct nvk_queue *queue,
    nvk_queue_state_init(&queue->state);
 
    queue->vk.driver_submit = nvk_queue_submit;
-#if NVK_NEW_UAPI == 1
    int err = drmSyncobjCreate(dev->ws_dev->fd, 0, &queue->syncobj_handle);
    if (err < 0) {
       result = vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_init;
    }
-#endif
 
-#if NVK_NEW_UAPI == 0
-   void *empty_push_map;
-   queue->empty_push = nouveau_ws_bo_new_mapped(dev->ws_dev, 4096, 0,
-                                                NOUVEAU_WS_BO_GART |
-                                                NOUVEAU_WS_BO_MAP  |
-                                                NOUVEAU_WS_BO_NO_SHARE,
-                                                NOUVEAU_WS_BO_WR,
-                                                &empty_push_map);
-   if (queue->empty_push == NULL) {
-      result = vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
-      goto fail_init;
-   }
-
-   {
-      struct nv_push push;
-      nv_push_init(&push, empty_push_map, 2);
-      P_MTHD(&push, NV90B5, NOP);
-      P_NV90B5_NOP(&push, 0);
-      queue->empty_push_dw_count = nv_push_dw_count(&push);
-   }
-   nouveau_ws_bo_unmap(queue->empty_push, empty_push_map);
-#endif
 
    result = nvk_queue_init_context_draw_state(queue);
    if (result != VK_SUCCESS)
@@ -364,9 +340,6 @@ nvk_queue_init(struct nvk_device *dev, struct nvk_queue *queue,
    return VK_SUCCESS;
 
 fail_empty_push:
-#if NVK_NEW_UAPI == 0
-   nouveau_ws_bo_destroy(queue->empty_push);
-#endif
 fail_init:
    vk_queue_finish(&queue->vk);
 
@@ -377,13 +350,8 @@ void
 nvk_queue_finish(struct nvk_device *dev, struct nvk_queue *queue)
 {
    nvk_queue_state_finish(dev, &queue->state);
-#if NVK_NEW_UAPI == 1
    ASSERTED int err = drmSyncobjDestroy(dev->ws_dev->fd, queue->syncobj_handle);
    assert(err == 0);
-#endif
-#if NVK_NEW_UAPI == 0
-   nouveau_ws_bo_destroy(queue->empty_push);
-#endif
    vk_queue_finish(&queue->vk);
 }
 

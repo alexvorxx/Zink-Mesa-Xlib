@@ -1,5 +1,3 @@
-dEQP-VK.api.driver_properties.conformance_version,Fail
-
 # 1.3.1.0 uprev:
 dEQP-VK.pipeline.extended_dynamic_state.before_good_static.stencil_state_face_front_ge_inc_clamp_clear_255_ref_255_depthfail,Fail
 dEQP-VK.pipeline.extended_dynamic_state.between_pipelines.stencil_state_face_front_ge_inc_clamp_clear_255_ref_255_depthfail,Fail

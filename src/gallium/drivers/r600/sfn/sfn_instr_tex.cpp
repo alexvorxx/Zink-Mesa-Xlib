@@ -1166,7 +1166,6 @@ LowerTexToBackend::finalize(nir_tex_instr *tex,
 {
    nir_tex_instr_add_src(tex, nir_tex_src_backend1, backend1);
    nir_tex_instr_add_src(tex, nir_tex_src_backend2, backend2);
-   nir_tex_instr_remove_src(tex, nir_tex_src_coord);
 
    static const nir_tex_src_type cleanup[] = {nir_tex_src_coord,
                                               nir_tex_src_lod,

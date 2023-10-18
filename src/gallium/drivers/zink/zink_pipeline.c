@@ -457,19 +457,42 @@ zink_create_compute_pipeline(struct zink_screen *screen, struct zink_compute_pro
    stage.pName = "main";
 
    VkSpecializationInfo sinfo = {0};
-   VkSpecializationMapEntry me[3];
-   if (comp->use_local_size) {
-      stage.pSpecializationInfo = &sinfo;
-      sinfo.mapEntryCount = 3;
-      sinfo.pMapEntries = &me[0];
-      sinfo.dataSize = sizeof(state->local_size);
-      sinfo.pData = &state->local_size[0];
-      uint32_t ids[] = {ZINK_WORKGROUP_SIZE_X, ZINK_WORKGROUP_SIZE_Y, ZINK_WORKGROUP_SIZE_Z};
-      for (int i = 0; i < 3; i++) {
-         me[i].size = sizeof(uint32_t);
-         me[i].constantID = ids[i];
-         me[i].offset = i * sizeof(uint32_t);
+   VkSpecializationMapEntry me[4];
+   uint32_t data[4];
+   if (state)  {
+      int i = 0;
+
+      if (comp->use_local_size) {
+         sinfo.mapEntryCount += 3;
+         sinfo.dataSize += sizeof(state->local_size);
+
+         uint32_t ids[] = {ZINK_WORKGROUP_SIZE_X, ZINK_WORKGROUP_SIZE_Y, ZINK_WORKGROUP_SIZE_Z};
+         for (int l = 0; l < 3; l++, i++) {
+            data[i] = state->local_size[l];
+            me[i].size = sizeof(uint32_t);
+            me[i].constantID = ids[l];
+            me[i].offset = i * sizeof(uint32_t);
+         }
       }
+
+      if (comp->has_variable_shared_mem) {
+         sinfo.mapEntryCount += 1;
+         sinfo.dataSize += sizeof(uint32_t);
+         data[i] = state->variable_shared_mem;
+         me[i].size = sizeof(uint32_t);
+         me[i].constantID = ZINK_VARIABLE_SHARED_MEM;
+         me[i].offset = i * sizeof(uint32_t);
+         i++;
+      }
+
+      if (sinfo.dataSize) {
+         stage.pSpecializationInfo = &sinfo;
+         sinfo.pData = data;
+         sinfo.pMapEntries = me;
+      }
+
+      assert(i <= ARRAY_SIZE(data));
+      STATIC_ASSERT(ARRAY_SIZE(data) == ARRAY_SIZE(me));
    }
 
    pci.stage = stage;

@@ -38,17 +38,6 @@ static void
 emit_pipeline_rs_state(struct nv_push *p,
                        const struct vk_rasterization_state *rs)
 {
-   bool depth_clip_enable = vk_rasterization_state_depth_clip_enable(rs);
-   P_IMMD(p, NV9097, SET_VIEWPORT_CLIP_CONTROL, {
-      .min_z_zero_max_z_one      = MIN_Z_ZERO_MAX_Z_ONE_TRUE,
-      .pixel_min_z               = !depth_clip_enable ? PIXEL_MIN_Z_CLAMP : PIXEL_MIN_Z_CLIP,
-      .pixel_max_z               = !depth_clip_enable ? PIXEL_MAX_Z_CLAMP : PIXEL_MAX_Z_CLIP,
-      .geometry_guardband        = GEOMETRY_GUARDBAND_SCALE_256,
-      .line_point_cull_guardband = LINE_POINT_CULL_GUARDBAND_SCALE_256,
-      .geometry_clip             = !rs->depth_clip_enable ? GEOMETRY_CLIP_WZERO_CLIP_NO_Z_CULL : GEOMETRY_CLIP_WZERO_CLIP,
-      .geometry_guardband_z      = GEOMETRY_GUARDBAND_Z_SAME_AS_XY_GUARDBAND,
-   });
-
    P_IMMD(p, NV9097, SET_RASTER_INPUT, rs->rasterization_stream);
 }
 
@@ -320,14 +309,8 @@ nvk_graphics_pipeline_create(struct nvk_device *dev,
       vk_pipeline_robustness_state_fill(&dev->vk, &robustness[stage],
                                         pCreateInfo->pNext, sinfo->pNext);
 
-      const nir_shader_compiler_options *nir_options =
-         nvk_physical_device_nir_options(pdev, stage);
-      const struct spirv_to_nir_options spirv_options =
-         nvk_physical_device_spirv_options(pdev, &robustness[stage]);
-
-      result = vk_pipeline_shader_stage_to_nir(&dev->vk, sinfo,
-                                               &spirv_options, nir_options,
-                                               NULL, &nir[stage]);
+      result = nvk_shader_stage_to_nir(dev, sinfo, &robustness[stage],
+                                       cache, NULL, &nir[stage]);
       if (result != VK_SUCCESS)
          goto fail;
    }

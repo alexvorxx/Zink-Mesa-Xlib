@@ -1660,11 +1660,11 @@ emit_urb_direct_vec4_write(const fs_builder &bld,
       srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(mask << 16);
       srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
                                           BRW_REGISTER_TYPE_F);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(length);
       bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
 
       fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
                                 reg_undef, srcs, ARRAY_SIZE(srcs));
-      inst->mlen = 2 + length;
       inst->offset = urb_global_offset;
       assert(inst->offset < 2048);
    }
@@ -1697,6 +1697,68 @@ emit_urb_direct_writes(const fs_builder &bld, nir_intrinsic_instr *instr,
 
    emit_urb_direct_vec4_write(bld, urb_global_offset, src, urb_handle,
                               comp_shift, comps, mask);
+}
+
+static void
+emit_urb_direct_vec4_write_xe2(const fs_builder &bld,
+                               unsigned offset_in_bytes,
+                               const fs_reg &src,
+                               fs_reg urb_handle,
+                               unsigned comps,
+                               unsigned mask)
+{
+   const struct intel_device_info *devinfo = bld.shader->devinfo;
+   const unsigned runit = reg_unit(devinfo);
+   const unsigned write_size = 8 * runit;
+
+   if (offset_in_bytes > 0) {
+      fs_builder bldall = bld.group(write_size, 0).exec_all();
+      fs_reg new_handle = bldall.vgrf(BRW_REGISTER_TYPE_UD);
+      bldall.ADD(new_handle, urb_handle, brw_imm_ud(offset_in_bytes));
+      urb_handle = new_handle;
+   }
+
+   for (unsigned q = 0; q < bld.dispatch_width() / write_size; q++) {
+      fs_builder hbld = bld.group(write_size, q);
+
+      fs_reg payload_srcs[comps];
+
+      for (unsigned c = 0; c < comps; c++)
+         payload_srcs[c] = horiz_offset(offset(src, bld, c), write_size * q);
+
+      fs_reg srcs[URB_LOGICAL_NUM_SRCS];
+      srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
+      srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(mask << 16);
+      int nr = bld.shader->alloc.allocate(comps * runit);
+      srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, nr, BRW_REGISTER_TYPE_F);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(comps);
+      hbld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, comps, 0);
+
+      hbld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
+                reg_undef, srcs, ARRAY_SIZE(srcs));
+   }
+}
+
+static void
+emit_urb_direct_writes_xe2(const fs_builder &bld, nir_intrinsic_instr *instr,
+                           const fs_reg &src, fs_reg urb_handle)
+{
+   assert(nir_src_bit_size(instr->src[0]) == 32);
+
+   nir_src *offset_nir_src = nir_get_io_offset_src(instr);
+   assert(nir_src_is_const(*offset_nir_src));
+
+   const unsigned comps = nir_src_num_components(instr->src[0]);
+   assert(comps <= 4);
+
+   const unsigned offset_in_dwords = nir_intrinsic_base(instr) +
+                                     nir_src_as_uint(*offset_nir_src) +
+                                     component_from_intrinsic(instr);
+
+   const unsigned mask = nir_intrinsic_write_mask(instr);
+
+   emit_urb_direct_vec4_write_xe2(bld, offset_in_dwords * 4, src,
+                                    urb_handle, comps, mask);
 }
 
 static void
@@ -1735,11 +1797,11 @@ emit_urb_indirect_vec4_write(const fs_builder &bld,
       srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(mask << 16);
       srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
                                           BRW_REGISTER_TYPE_F);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(length);
       bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
 
       fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
                                 reg_undef, srcs, ARRAY_SIZE(srcs));
-      inst->mlen = 3 + length;
       inst->offset = 0;
    }
 }
@@ -1762,6 +1824,57 @@ emit_urb_indirect_writes_mod(const fs_builder &bld, nir_intrinsic_instr *instr,
 
    emit_urb_indirect_vec4_write(bld, offset_src, base_in_dwords, src,
                                 urb_handle, comp_shift, comps, mask);
+}
+
+static void
+emit_urb_indirect_writes_xe2(const fs_builder &bld, nir_intrinsic_instr *instr,
+                             const fs_reg &src, const fs_reg &offset_src,
+                             fs_reg urb_handle)
+{
+   assert(nir_src_bit_size(instr->src[0]) == 32);
+
+   const struct intel_device_info *devinfo = bld.shader->devinfo;
+   const unsigned runit = reg_unit(devinfo);
+   const unsigned write_size = 8 * runit;
+
+   const unsigned comps = nir_src_num_components(instr->src[0]);
+   assert(comps <= 4);
+
+   const unsigned base_in_dwords = nir_intrinsic_base(instr) +
+                                   component_from_intrinsic(instr);
+
+   if (base_in_dwords > 0) {
+      fs_builder bldall = bld.group(write_size, 0).exec_all();
+      fs_reg new_handle = bldall.vgrf(BRW_REGISTER_TYPE_UD);
+      bldall.ADD(new_handle, urb_handle, brw_imm_ud(base_in_dwords * 4));
+      urb_handle = new_handle;
+   }
+
+   const unsigned mask = nir_intrinsic_write_mask(instr);
+
+   for (unsigned q = 0; q < bld.dispatch_width() / write_size; q++) {
+      fs_builder wbld = bld.group(write_size, q);
+
+      fs_reg payload_srcs[comps];
+
+      for (unsigned c = 0; c < comps; c++)
+         payload_srcs[c] = horiz_offset(offset(src, bld, c), write_size * q);
+
+      fs_reg addr = wbld.vgrf(BRW_REGISTER_TYPE_UD);
+      wbld.SHL(addr, horiz_offset(offset_src, write_size * q), brw_imm_ud(2));
+      wbld.ADD(addr, addr, urb_handle);
+
+      fs_reg srcs[URB_LOGICAL_NUM_SRCS];
+      srcs[URB_LOGICAL_SRC_HANDLE] = addr;
+      srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(mask << 16);
+      int nr = bld.shader->alloc.allocate(comps * runit);
+      srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, nr, BRW_REGISTER_TYPE_F);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(comps);
+      wbld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, comps, 0);
+
+      wbld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
+                reg_undef, srcs, ARRAY_SIZE(srcs));
+   }
 }
 
 static void
@@ -1821,11 +1934,11 @@ emit_urb_indirect_writes(const fs_builder &bld, nir_intrinsic_instr *instr,
          srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = mask;
          srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
                                              BRW_REGISTER_TYPE_F);
+         srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(length);
          bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
 
          fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
                                    reg_undef, srcs, ARRAY_SIZE(srcs));
-         inst->mlen = 3 + length;
          inst->offset = 0;
       }
    }
@@ -1861,7 +1974,6 @@ emit_urb_direct_reads(const fs_builder &bld, nir_intrinsic_instr *instr,
 
    fs_inst *inst = ubld8.emit(SHADER_OPCODE_URB_READ_LOGICAL, data,
                               srcs, ARRAY_SIZE(srcs));
-   inst->mlen = 1;
    inst->offset = urb_global_offset;
    assert(inst->offset < 2048);
    inst->size_written = num_regs * REG_SIZE;
@@ -1869,6 +1981,46 @@ emit_urb_direct_reads(const fs_builder &bld, nir_intrinsic_instr *instr,
    for (unsigned c = 0; c < comps; c++) {
       fs_reg dest_comp = offset(dest, bld, c);
       fs_reg data_comp = horiz_stride(offset(data, ubld8, comp_offset + c), 0);
+      bld.MOV(retype(dest_comp, BRW_REGISTER_TYPE_UD), data_comp);
+   }
+}
+
+static void
+emit_urb_direct_reads_xe2(const fs_builder &bld, nir_intrinsic_instr *instr,
+                          const fs_reg &dest, fs_reg urb_handle)
+{
+   assert(instr->def.bit_size == 32);
+
+   unsigned comps = instr->def.num_components;
+   if (comps == 0)
+      return;
+
+   nir_src *offset_nir_src = nir_get_io_offset_src(instr);
+   assert(nir_src_is_const(*offset_nir_src));
+
+   fs_builder ubld16 = bld.group(16, 0).exec_all();
+
+   const unsigned offset_in_dwords = nir_intrinsic_base(instr) +
+                                     nir_src_as_uint(*offset_nir_src) +
+                                     component_from_intrinsic(instr);
+
+   if (offset_in_dwords > 0) {
+      fs_reg new_handle = ubld16.vgrf(BRW_REGISTER_TYPE_UD);
+      ubld16.ADD(new_handle, urb_handle, brw_imm_ud(offset_in_dwords * 4));
+      urb_handle = new_handle;
+   }
+
+   fs_reg data = ubld16.vgrf(BRW_REGISTER_TYPE_UD, comps);
+   fs_reg srcs[URB_LOGICAL_NUM_SRCS];
+   srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
+
+   fs_inst *inst = ubld16.emit(SHADER_OPCODE_URB_READ_LOGICAL,
+                               data, srcs, ARRAY_SIZE(srcs));
+   inst->size_written = 2 * comps * REG_SIZE;
+
+   for (unsigned c = 0; c < comps; c++) {
+      fs_reg dest_comp = offset(dest, bld, c);
+      fs_reg data_comp = horiz_stride(offset(data, ubld16, c), 0);
       bld.MOV(retype(dest_comp, BRW_REGISTER_TYPE_UD), data_comp);
    }
 }
@@ -1924,7 +2076,6 @@ emit_urb_indirect_reads(const fs_builder &bld, nir_intrinsic_instr *instr,
 
          fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_READ_LOGICAL,
                                    data, srcs, ARRAY_SIZE(srcs));
-         inst->mlen = 2;
          inst->offset = 0;
          inst->size_written = 4 * REG_SIZE;
 
@@ -1938,6 +2089,53 @@ emit_urb_indirect_reads(const fs_builder &bld, nir_intrinsic_instr *instr,
    }
 }
 
+static void
+emit_urb_indirect_reads_xe2(const fs_builder &bld, nir_intrinsic_instr *instr,
+                            const fs_reg &dest, const fs_reg &offset_src,
+                            fs_reg urb_handle)
+{
+   assert(instr->def.bit_size == 32);
+
+   unsigned comps = instr->def.num_components;
+   if (comps == 0)
+      return;
+
+   fs_builder ubld16 = bld.group(16, 0).exec_all();
+
+   const unsigned offset_in_dwords = nir_intrinsic_base(instr) +
+                                     component_from_intrinsic(instr);
+
+   if (offset_in_dwords > 0) {
+      fs_reg new_handle = ubld16.vgrf(BRW_REGISTER_TYPE_UD);
+      ubld16.ADD(new_handle, urb_handle, brw_imm_ud(offset_in_dwords * 4));
+      urb_handle = new_handle;
+   }
+
+   fs_reg data = ubld16.vgrf(BRW_REGISTER_TYPE_UD, comps);
+
+
+   for (unsigned q = 0; q < bld.dispatch_width() / 16; q++) {
+      fs_builder wbld = bld.group(16, q);
+
+      fs_reg addr = wbld.vgrf(BRW_REGISTER_TYPE_UD);
+      wbld.SHL(addr, horiz_offset(offset_src, 16 * q), brw_imm_ud(2));
+      wbld.ADD(addr, addr, urb_handle);
+
+      fs_reg srcs[URB_LOGICAL_NUM_SRCS];
+      srcs[URB_LOGICAL_SRC_HANDLE] = addr;
+
+      fs_inst *inst = wbld.emit(SHADER_OPCODE_URB_READ_LOGICAL,
+                                 data, srcs, ARRAY_SIZE(srcs));
+      inst->size_written = 2 * comps * REG_SIZE;
+
+      for (unsigned c = 0; c < comps; c++) {
+         fs_reg dest_comp = horiz_offset(offset(dest, bld, c), 16 * q);
+         fs_reg data_comp = offset(data, wbld, c);
+         wbld.MOV(retype(dest_comp, BRW_REGISTER_TYPE_UD), data_comp);
+      }
+   }
+}
+
 void
 fs_visitor::emit_task_mesh_store(const fs_builder &bld, nir_intrinsic_instr *instr,
                                  const fs_reg &urb_handle)
@@ -1946,8 +2144,15 @@ fs_visitor::emit_task_mesh_store(const fs_builder &bld, nir_intrinsic_instr *ins
    nir_src *offset_nir_src = nir_get_io_offset_src(instr);
 
    if (nir_src_is_const(*offset_nir_src)) {
-      emit_urb_direct_writes(bld, instr, src, urb_handle);
+      if (bld.shader->devinfo->ver >= 20)
+         emit_urb_direct_writes_xe2(bld, instr, src, urb_handle);
+      else
+         emit_urb_direct_writes(bld, instr, src, urb_handle);
    } else {
+      if (bld.shader->devinfo->ver >= 20) {
+         emit_urb_indirect_writes_xe2(bld, instr, src, get_nir_src(*offset_nir_src), urb_handle);
+         return;
+      }
       bool use_mod = false;
       unsigned mod;
 
@@ -1980,10 +2185,17 @@ fs_visitor::emit_task_mesh_load(const fs_builder &bld, nir_intrinsic_instr *inst
     * a single large aligned read instead one per component.
     */
 
-   if (nir_src_is_const(*offset_nir_src))
-      emit_urb_direct_reads(bld, instr, dest, urb_handle);
-   else
-      emit_urb_indirect_reads(bld, instr, dest, get_nir_src(*offset_nir_src), urb_handle);
+   if (nir_src_is_const(*offset_nir_src)) {
+      if (bld.shader->devinfo->ver >= 20)
+         emit_urb_direct_reads_xe2(bld, instr, dest, urb_handle);
+      else
+         emit_urb_direct_reads(bld, instr, dest, urb_handle);
+   } else {
+      if (bld.shader->devinfo->ver >= 20)
+         emit_urb_indirect_reads_xe2(bld, instr, dest, get_nir_src(*offset_nir_src), urb_handle);
+      else
+         emit_urb_indirect_reads(bld, instr, dest, get_nir_src(*offset_nir_src), urb_handle);
+   }
 }
 
 void

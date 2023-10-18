@@ -3280,7 +3280,7 @@ gfx12_set_memory_fence_message(struct brw_codegen *p,
 
    brw_inst_set_sfid(p->devinfo, insn, sfid);
 
-   if (sfid == BRW_SFID_URB) {
+   if (sfid == BRW_SFID_URB && p->devinfo->ver < 20) {
       brw_set_desc(p, insn, brw_urb_fence_desc(p->devinfo) |
                             brw_message_desc(p->devinfo, mlen, rlen, true));
    } else {

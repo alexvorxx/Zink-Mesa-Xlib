@@ -152,6 +152,9 @@ lower_indirect_derefs_block(nir_block *block, nir_builder *b,
       if (!has_indirect || !base || indirect_array_len > max_lower_array_len)
          continue;
 
+      if (glsl_type_is_cmat(base->type))
+         continue;
+
       /* Only lower variables whose mode is in the mask, or compact
        * array variables.  (We can't handle indirects on tightly packed
        * scalar arrays, so we need to lower them regardless.)

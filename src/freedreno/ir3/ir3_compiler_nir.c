@@ -2087,7 +2087,7 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
           */
          ctx->so->constlen =
             MAX2(ctx->so->constlen,
-                 ctx->so->num_reserved_user_consts +
+                 ctx->so->shader_options.num_reserved_user_consts +
                  const_state->ubo_state.size / 16);
       }
       break;
@@ -2676,6 +2676,21 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          stc->flags |= IR3_INSTR_A1EN;
       }
       array_insert(b, b->keeps, stc);
+      break;
+   }
+   case nir_intrinsic_copy_push_const_to_uniform_ir3: {
+      struct ir3_instruction *load =
+         ir3_instr_create(ctx->block, OPC_PUSH_CONSTS_LOAD_MACRO, 0, 0);
+      array_insert(b, b->keeps, load);
+
+      load->push_consts.dst_base = nir_src_as_uint(intr->src[0]);
+      load->push_consts.src_base = nir_intrinsic_base(intr);
+      load->push_consts.src_size = nir_intrinsic_range(intr);
+
+      ctx->so->constlen =
+         MAX2(ctx->so->constlen,
+              DIV_ROUND_UP(
+                 load->push_consts.dst_base + load->push_consts.src_size, 4));
       break;
    }
    default:

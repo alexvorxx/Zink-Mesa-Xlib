@@ -597,6 +597,11 @@ vtn_handle_alu(struct vtn_builder *b, SpvOp opcode,
    struct vtn_value *dest_val = vtn_untyped_value(b, w[2]);
    const struct glsl_type *dest_type = vtn_get_type(b, w[1])->type;
 
+   if (glsl_type_is_cmat(dest_type)) {
+      vtn_handle_cooperative_alu(b, dest_val, dest_type, opcode, w, count);
+      return;
+   }
+
    vtn_handle_no_contraction(b, dest_val);
    bool mediump_16bit = vtn_alu_op_mediump_16bit(b, opcode, dest_val);
 
@@ -1297,6 +1302,11 @@ vtn_handle_bitcast(struct vtn_builder *b, const uint32_t *w, unsigned count)
     */
 
    struct vtn_type *type = vtn_get_type(b, w[1]);
+   if (type->base_type == vtn_base_type_cooperative_matrix) {
+      vtn_handle_cooperative_instruction(b, SpvOpBitcast, w, count);
+      return;
+   }
+
    struct nir_def *src = vtn_get_nir_ssa(b, w[3]);
 
    vtn_fail_if(src->num_components * src->bit_size !=

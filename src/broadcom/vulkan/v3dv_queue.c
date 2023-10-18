@@ -354,7 +354,7 @@ handle_csd_indirect_cpu_job(struct v3dv_queue *queue,
 
    if (memcmp(group_counts, info->csd_job->csd.wg_count,
               sizeof(info->csd_job->csd.wg_count)) != 0) {
-      v3dv_cmd_buffer_rewrite_indirect_csd_job(info, group_counts);
+      v3dv_cmd_buffer_rewrite_indirect_csd_job(queue->device, info, group_counts);
    }
 
    return VK_SUCCESS;

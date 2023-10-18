@@ -5,12 +5,6 @@ dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.tanh_
 
 dEQP-VK.draw.renderpass.shader_invocation.helper_invocation,Fail
 
-dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_fan.perspective,Fail
-dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list.perspective,Fail
-dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list_with_adjacency.perspective,Fail
-dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_strip.perspective,Fail
-dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_strip_with_adjacency.perspective,Fail
-
 dEQP-VK.pipeline.monolithic.multisample.storage_image.64x64_1.r32g32b32a32_sfloat.samples_8,Fail
 dEQP-VK.pipeline.monolithic.multisample.storage_image.64x64_1.r8g8b8a8_unorm.samples_8,Fail
 dEQP-VK.pipeline.monolithic.multisample.storage_image.64x64_4.r32g32b32a32_sfloat.samples_8,Fail

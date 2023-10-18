@@ -112,11 +112,20 @@ st_convert_sampler(const struct st_context *st,
        /* This is true if wrap modes are using the border color: */
        (sampler->wrap_s | sampler->wrap_t | sampler->wrap_r) & 0x1) {
       GLenum texBaseFormat = _mesa_base_tex_image(texobj)->_BaseFormat;
+
+      /* From OpenGL 4.3 spec, "Combined Depth/Stencil Textures":
+       *
+       *    "The DEPTH_STENCIL_TEXTURE_MODE is ignored for non
+       *     depth/stencil textures.
+       */
+      const bool has_combined_ds = texBaseFormat == GL_DEPTH_STENCIL;
+
       const GLboolean is_integer =
-         texobj->_IsIntegerFormat || texobj->StencilSampling ||
+         texobj->_IsIntegerFormat ||
+         (texobj->StencilSampling && has_combined_ds) ||
          texBaseFormat == GL_STENCIL_INDEX;
 
-      if (texobj->StencilSampling)
+      if (texobj->StencilSampling && has_combined_ds)
          texBaseFormat = GL_STENCIL_INDEX;
 
       if (st->apply_texture_swizzle_to_border_color ||

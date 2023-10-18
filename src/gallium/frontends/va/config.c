@@ -207,6 +207,20 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                                                        ProfileToPipe(profile),
                                                        PIPE_VIDEO_ENTRYPOINT_BITSTREAM);
             break;
+         case VAConfigAttribMaxPictureWidth:
+         {
+            value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_BITSTREAM,
+                                             PIPE_VIDEO_CAP_MAX_WIDTH);
+            value = value ? value : VA_ATTRIB_NOT_SUPPORTED;
+         } break;
+         case VAConfigAttribMaxPictureHeight:
+         {
+            value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_BITSTREAM,
+                                             PIPE_VIDEO_CAP_MAX_HEIGHT);
+            value = value ? value : VA_ATTRIB_NOT_SUPPORTED;
+         } break;
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;
@@ -306,6 +320,20 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
             value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
                                              PIPE_VIDEO_ENTRYPOINT_ENCODE,
                                              PIPE_VIDEO_CAP_ENC_SUPPORTS_MAX_FRAME_SIZE);
+            value = value ? value : VA_ATTRIB_NOT_SUPPORTED;
+         } break;
+         case VAConfigAttribMaxPictureWidth:
+         {
+            value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_MAX_WIDTH);
+            value = value ? value : VA_ATTRIB_NOT_SUPPORTED;
+         } break;
+         case VAConfigAttribMaxPictureHeight:
+         {
+            value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_MAX_HEIGHT);
             value = value ? value : VA_ATTRIB_NOT_SUPPORTED;
          } break;
 #if VA_CHECK_VERSION(1, 12, 0)

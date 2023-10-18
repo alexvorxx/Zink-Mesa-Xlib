@@ -871,6 +871,7 @@ void st_init_extensions(struct pipe_screen *screen,
       { o(OES_texture_view),                 PIPE_CAP_SAMPLER_VIEW_TARGET              },
       { o(INTEL_blackhole_render),           PIPE_CAP_FRONTEND_NOOP                    },
       { o(ARM_shader_framebuffer_fetch_depth_stencil), PIPE_CAP_FBFETCH_ZS             },
+      { o(MESA_texture_const_bandwidth),     PIPE_CAP_HAS_CONST_BW                     },
    };
 
    /* Required: render target and sampler support */

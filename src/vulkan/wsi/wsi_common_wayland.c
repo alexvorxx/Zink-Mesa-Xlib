@@ -798,7 +798,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
    if (strcmp(interface, wp_presentation_interface.name) == 0) {
       display->wp_presentation_notwrapped =
          wl_registry_bind(registry, name, &wp_presentation_interface, 1);
-   } else if (strcmp(interface, wp_tearing_control_v1_interface.name) == 0) {
+   } else if (strcmp(interface, wp_tearing_control_manager_v1_interface.name) == 0) {
       display->tearing_control_manager =
          wl_registry_bind(registry, name, &wp_tearing_control_manager_v1_interface, 1);
    }

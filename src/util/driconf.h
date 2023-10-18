@@ -324,6 +324,18 @@
    DRI_CONF_OPT_B(fake_sparse, def, \
                   "Advertise support for sparse binding of textures regardless of real support")
 
+#define DRI_CONF_INTEL_ENABLE_WA_14018912822(def) \
+   DRI_CONF_OPT_B(intel_enable_wa_14018912822, def, \
+                  "Intel workaround for using zero blend constants")
+
+#define DRI_CONF_VK_REQUIRE_ETC2(def) \
+  DRI_CONF_OPT_B(vk_require_etc2, def, \
+                 "Implement emulated ETC2 on HW that does not support it")
+
+#define DRI_CONF_VK_REQUIRE_ASTC(def) \
+   DRI_CONF_OPT_B(vk_require_astc, def, \
+                  "Implement emulated ASTC on HW that does not support it")
+
 /**
  * \brief Image quality-related options
  */
@@ -571,6 +583,14 @@
                   "Disable conservative LRZ")
 
 /**
+ * \brief Turnip specific configuration options
+ */
+
+#define DRI_CONF_TU_DONT_RESERVE_DESCRIPTOR_SET(def) \
+   DRI_CONF_OPT_B(tu_dont_reserve_descriptor_set, def, \
+                  "Don't internally reserve one of the HW descriptor sets for descriptor set dynamic offset support, this frees up an extra descriptor set at the cost of that feature")
+
+/**
  * \brief venus specific configuration options
  */
 #define DRI_CONF_VENUS_IMPLICIT_FENCING(def) \
@@ -624,10 +644,6 @@
 #define DRI_CONF_RADV_DISABLE_DCC(def) \
    DRI_CONF_OPT_B(radv_disable_dcc, def, \
                   "Disable DCC for color images")
-
-#define DRI_CONF_RADV_REQUIRE_ETC2(def)                                        \
-  DRI_CONF_OPT_B(radv_require_etc2, def,                                       \
-                 "Implement emulated ETC2 on HW that does not support it")
 
 #define DRI_CONF_RADV_DISABLE_ANISO_SINGLE_LEVEL(def) \
   DRI_CONF_OPT_B(radv_disable_aniso_single_level, def, \

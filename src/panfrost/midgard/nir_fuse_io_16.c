@@ -35,7 +35,7 @@ bool nir_fuse_io_16(nir_shader *shader);
 static bool
 nir_src_is_f2fmp(nir_src *use)
 {
-   nir_instr *parent = use->parent_instr;
+   nir_instr *parent = nir_src_parent_instr(use);
 
    if (parent->type != nir_instr_type_alu)
       return false;
@@ -71,7 +71,7 @@ nir_fuse_io_16(nir_shader *shader)
             bool valid = true;
 
             nir_foreach_use_including_if(src, &intr->def)
-               valid &= !src->is_if && nir_src_is_f2fmp(src);
+               valid &= !nir_src_is_if(src) && nir_src_is_f2fmp(src);
 
             if (!valid)
                continue;

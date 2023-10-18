@@ -179,6 +179,7 @@ static const struct test {
    INSTR_6XX(a0c81108_e2000001, "sam.base0 (f32)(x)r2.x, r0.x, s#16, a1.x"),
    INSTR_6XX(a048d107_cc080a07, "isaml.base3 (s32)(x)r1.w, r0.w, r1.y, s#0, t#6"),
    INSTR_6XX(a048d107_e0080a07, "isaml.base3 (s32)(x)r1.w, r0.w, r1.y, s#0, a1.x"),
+   INSTR_6XX(a1481606_e4803035, "saml.base0 (f32)(yz)r1.z, r6.z, r6.x, s#36, a1.x"),
 
    INSTR_7XX(a0081f02_e2000001, "isam.base0 (f32)(xyzw)r0.z, r0.x, t#16, a1.x"),
    INSTR_7XX(a148310d_e028302c, "saml.base2 (u32)(x)r3.y, hr5.z, hr6.x, t#1, a1.x"),

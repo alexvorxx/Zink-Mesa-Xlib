@@ -425,7 +425,7 @@ vec_dest_has_swizzle(nir_alu_instr *vec, nir_def *ssa)
 
    /* don't deal with possible bypassed vec/mov chain */
    nir_foreach_use(use_src, ssa) {
-      nir_instr *instr = use_src->parent_instr;
+      nir_instr *instr = nir_src_parent_instr(use_src);
       if (instr->type != nir_instr_type_alu)
          continue;
 
@@ -900,7 +900,7 @@ lower_alu(struct etna_compile *c, nir_alu_instr *alu)
       /* check that vecN instruction is only user of this */
       bool need_mov = false;
       nir_foreach_use_including_if(use_src, ssa) {
-         if (use_src->is_if || use_src->parent_instr != &alu->instr)
+         if (nir_src_is_if(use_src) || nir_src_parent_instr(use_src) != &alu->instr)
             need_mov = true;
       }
 

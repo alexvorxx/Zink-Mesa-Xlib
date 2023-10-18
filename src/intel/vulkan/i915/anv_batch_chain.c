@@ -730,24 +730,16 @@ i915_queue_exec_locked(struct anv_queue *queue,
                        uint32_t signal_count,
                        const struct vk_sync_signal *signals,
                        struct anv_query_pool *perf_query_pool,
-                       uint32_t perf_query_pass)
+                       uint32_t perf_query_pass,
+                       struct anv_utrace_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
-   struct anv_utrace_submit *utrace_submit = NULL;
    struct anv_execbuf execbuf = {
       .alloc = &queue->device->vk.alloc,
       .alloc_scope = VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
       .perf_query_pass = perf_query_pass,
    };
-
-   /* Flush the trace points first, they need to be moved */
-   VkResult result =
-      anv_device_utrace_flush_cmd_buffers(queue,
-                                          cmd_buffer_count,
-                                          cmd_buffers,
-                                          &utrace_submit);
-   if (result != VK_SUCCESS)
-      goto error;
+   VkResult result;
 
    if (utrace_submit && !utrace_submit->batch_bo) {
       result = anv_execbuf_add_sync(device, &execbuf,

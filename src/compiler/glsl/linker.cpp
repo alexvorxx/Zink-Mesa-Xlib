@@ -78,7 +78,6 @@
 #include "string_to_uint_map.h"
 #include "linker.h"
 #include "linker_util.h"
-#include "link_varyings.h"
 #include "ir_optimization.h"
 #include "ir_rvalue_visitor.h"
 #include "ir_uniform.h"
@@ -3105,12 +3104,6 @@ link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
          continue;
 
       validate_interstage_inout_blocks(prog, prog->_LinkedShaders[prev],
-                                       prog->_LinkedShaders[i]);
-      if (!prog->data->LinkStatus)
-         goto done;
-
-      cross_validate_outputs_to_inputs(consts, prog,
-                                       prog->_LinkedShaders[prev],
                                        prog->_LinkedShaders[i]);
       if (!prog->data->LinkStatus)
          goto done;

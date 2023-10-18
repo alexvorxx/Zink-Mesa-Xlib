@@ -30,13 +30,8 @@ struct nvk_image_plane {
    struct nil_image nil;
    uint64_t addr;
 
-#if NVK_NEW_UAPI == 1
    /** Size of the reserved VMA range for sparse images, zero otherwise. */
    uint64_t vma_size_B;
-#else
-   /* Used for internal dedicated allocations */
-   struct nvk_device_memory *internal;
-#endif
 };
 
 struct nvk_image {

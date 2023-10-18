@@ -183,8 +183,8 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
       tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CACHE_INVALIDATE);
    if (flushes & TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE) {
       tu_cs_emit_regs(cs, HLSQ_INVALIDATE_CMD(CHIP,
-            .cs_bindless = 0x1f,
-            .gfx_bindless = 0x1f,
+            .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,
+            .gfx_bindless = CHIP == A6XX ? 0x1f : 0xff,
       ));
    }
    if (flushes & TU_CMD_FLAG_WAIT_MEM_WRITES)
@@ -758,8 +758,9 @@ tu6_update_msaa_disable(struct tu_cmd_buffer *cmd)
       topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP ||
       topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY ||
       (topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST &&
-       cmd->state.pipeline &&
-       cmd->state.pipeline->base.tess.patch_type == IR3_TESS_ISOLINES);
+       cmd->state.shaders[MESA_SHADER_TESS_EVAL] &&
+       cmd->state.shaders[MESA_SHADER_TESS_EVAL]->variant &&
+       cmd->state.shaders[MESA_SHADER_TESS_EVAL]->variant->key.tessellation == IR3_TESS_ISOLINES);
    bool msaa_disable = is_line &&
       cmd->vk.dynamic_graphics_state.rs.line.mode == VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT;
 
@@ -1145,8 +1146,8 @@ tu6_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
          .gfx_ibo = true,
          .cs_shared_const = true,
          .gfx_shared_const = true,
-         .cs_bindless = 0x1f,
-         .gfx_bindless = 0x1f,));
+         .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,
+         .gfx_bindless = CHIP == A6XX ? 0x1f : 0xff,));
 
    tu_cs_emit_wfi(cs);
 
@@ -2295,7 +2296,8 @@ tu_CmdBindVertexBuffers2EXT(VkCommandBuffer commandBuffer,
       } else {
          struct tu_buffer *buf = tu_buffer_from_handle(pBuffers[i]);
          cmd->state.vb[firstBinding + i].base = buf->iova + pOffsets[i];
-         cmd->state.vb[firstBinding + i].size = pSizes ? pSizes[i] : (buf->vk.size - pOffsets[i]);
+         cmd->state.vb[firstBinding + i].size =
+            vk_buffer_range(&buf->vk, pOffsets[i], pSizes ? pSizes[i] : VK_WHOLE_SIZE);
       }
    }
 
@@ -2309,15 +2311,16 @@ tu_CmdBindVertexBuffers2EXT(VkCommandBuffer commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdBindIndexBuffer(VkCommandBuffer commandBuffer,
-                      VkBuffer buffer,
-                      VkDeviceSize offset,
-                      VkIndexType indexType)
+tu_CmdBindIndexBuffer2KHR(VkCommandBuffer commandBuffer,
+                          VkBuffer buffer,
+                          VkDeviceSize offset,
+                          VkDeviceSize size,
+                          VkIndexType indexType)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_buffer, buf, buffer);
 
-
+   size = vk_buffer_range(&buf->vk, offset, size);
 
    uint32_t index_size, index_shift, restart_index;
 
@@ -2345,10 +2348,8 @@ tu_CmdBindIndexBuffer(VkCommandBuffer commandBuffer,
    if (cmd->state.index_size != index_size)
       tu_cs_emit_regs(&cmd->draw_cs, A6XX_PC_RESTART_INDEX(restart_index));
 
-   assert(buf->vk.size >= offset);
-
    cmd->state.index_va = buf->iova + offset;
-   cmd->state.max_index_count = (buf->vk.size - offset) >> index_shift;
+   cmd->state.max_index_count = size >> index_shift;
    cmd->state.index_size = index_size;
 }
 
@@ -2394,19 +2395,22 @@ tu6_emit_descriptor_sets(struct tu_cmd_buffer *cmd,
       tu_cs_emit_array(cs, (const uint32_t*)descriptors_state->set_iova, 2 * descriptors_state->max_sets_bound);
    }
 
-   /* Dynamic descriptors get the last descriptor set. */
+   /* Dynamic descriptors get the reserved descriptor set. */
    if (descriptors_state->dynamic_bound) {
-      tu_cs_emit_pkt4(cs, sp_bindless_base_reg + 4 * 2, 2);
-      tu_cs_emit_qw(cs, descriptors_state->set_iova[MAX_SETS]);
+      int reserved_set_idx = cmd->device->physical_device->reserved_set_idx;
+      assert(reserved_set_idx >= 0); /* reserved set must be bound */
+
+      tu_cs_emit_pkt4(cs, sp_bindless_base_reg + reserved_set_idx * 2, 2);
+      tu_cs_emit_qw(cs, descriptors_state->set_iova[reserved_set_idx]);
       if (CHIP == A6XX) {
-         tu_cs_emit_pkt4(cs, hlsq_bindless_base_reg + 4 * 2, 2);
-         tu_cs_emit_qw(cs, descriptors_state->set_iova[MAX_SETS]);
+         tu_cs_emit_pkt4(cs, hlsq_bindless_base_reg + reserved_set_idx * 2, 2);
+         tu_cs_emit_qw(cs, descriptors_state->set_iova[reserved_set_idx]);
       }
    }
 
    tu_cs_emit_regs(cs, HLSQ_INVALIDATE_CMD(CHIP,
-      .cs_bindless = bind_point == VK_PIPELINE_BIND_POINT_COMPUTE ? 0x1f : 0,
-      .gfx_bindless = bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS ? 0x1f : 0,
+      .cs_bindless = bind_point == VK_PIPELINE_BIND_POINT_COMPUTE ? CHIP == A6XX ? 0x1f : 0xff : 0,
+      .gfx_bindless = bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS ? CHIP == A6XX ? 0x1f : 0xff : 0,
    ));
 
    if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
@@ -2538,6 +2542,7 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
    if (layout->dynamic_offset_size) {
       /* allocate and fill out dynamic descriptor set */
       struct tu_cs_memory dynamic_desc_set;
+      int reserved_set_idx = cmd->device->physical_device->reserved_set_idx;
       VkResult result = tu_cs_alloc(&cmd->sub_cs,
                                     layout->dynamic_offset_size / (4 * A6XX_TEX_CONST_DWORDS),
                                     A6XX_TEX_CONST_DWORDS, &dynamic_desc_set);
@@ -2548,7 +2553,8 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
 
       memcpy(dynamic_desc_set.map, descriptors_state->dynamic_descriptors,
              layout->dynamic_offset_size);
-      descriptors_state->set_iova[MAX_SETS] = dynamic_desc_set.iova | BINDLESS_DESCRIPTOR_64B;
+      assert(reserved_set_idx >= 0); /* reserved set must be bound */
+      descriptors_state->set_iova[reserved_set_idx] = dynamic_desc_set.iova | BINDLESS_DESCRIPTOR_64B;
       descriptors_state->dynamic_bound = true;
    }
 
@@ -2947,6 +2953,57 @@ tu_EndCommandBuffer(VkCommandBuffer commandBuffer)
 }
 TU_GENX(tu_EndCommandBuffer);
 
+static void
+tu_bind_vs(struct tu_cmd_buffer *cmd, struct tu_shader *vs)
+{
+   cmd->state.shaders[MESA_SHADER_VERTEX] = vs;
+}
+
+static void
+tu_bind_tcs(struct tu_cmd_buffer *cmd, struct tu_shader *tcs)
+{
+   cmd->state.shaders[MESA_SHADER_TESS_CTRL] = tcs;
+}
+
+static void
+tu_bind_tes(struct tu_cmd_buffer *cmd, struct tu_shader *tes)
+{
+   if (cmd->state.shaders[MESA_SHADER_TESS_EVAL] != tes) {
+      cmd->state.shaders[MESA_SHADER_TESS_EVAL] = tes;
+      cmd->state.dirty |= TU_CMD_DIRTY_TES;
+
+      if (!cmd->state.tess_params.valid ||
+          cmd->state.tess_params.output_upper_left !=
+          tes->tes.tess_output_upper_left ||
+          cmd->state.tess_params.output_lower_left !=
+          tes->tes.tess_output_lower_left ||
+          cmd->state.tess_params.spacing != tes->tes.tess_spacing) {
+         cmd->state.tess_params.output_upper_left =
+            tes->tes.tess_output_upper_left;
+         cmd->state.tess_params.output_lower_left =
+            tes->tes.tess_output_lower_left;
+         cmd->state.tess_params.spacing = tes->tes.tess_spacing;
+         cmd->state.tess_params.valid = true;
+         cmd->state.dirty |= TU_CMD_DIRTY_TESS_PARAMS;
+      }
+   }
+}
+
+static void
+tu_bind_gs(struct tu_cmd_buffer *cmd, struct tu_shader *gs)
+{
+   cmd->state.shaders[MESA_SHADER_GEOMETRY] = gs;
+}
+
+static void
+tu_bind_fs(struct tu_cmd_buffer *cmd, struct tu_shader *fs)
+{
+   if (cmd->state.shaders[MESA_SHADER_FRAGMENT] != fs) {
+      cmd->state.shaders[MESA_SHADER_FRAGMENT] = fs;
+      cmd->state.dirty |= TU_CMD_DIRTY_LRZ;
+   }
+}
+
 VKAPI_ATTR void VKAPI_CALL
 tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
                    VkPipelineBindPoint pipelineBindPoint,
@@ -2956,23 +3013,35 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
    TU_FROM_HANDLE(tu_pipeline, pipeline, _pipeline);
 
    if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) {
-      cmd->state.compute_pipeline = tu_pipeline_to_compute(pipeline);
+      cmd->state.shaders[MESA_SHADER_COMPUTE] =
+         pipeline->shaders[MESA_SHADER_COMPUTE];
       tu_cs_emit_state_ib(&cmd->cs,
                           pipeline->shaders[MESA_SHADER_COMPUTE]->state);
+      cmd->state.compute_load_state = pipeline->load_state;
       return;
    }
 
    assert(pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS);
 
-   cmd->state.pipeline = tu_pipeline_to_graphics(pipeline);
+   struct tu_graphics_pipeline *gfx_pipeline = tu_pipeline_to_graphics(pipeline);
    cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS | TU_CMD_DIRTY_SHADER_CONSTS |
-                       TU_CMD_DIRTY_VS_PARAMS | TU_CMD_DIRTY_LRZ |
-                       TU_CMD_DIRTY_PIPELINE;
+                       TU_CMD_DIRTY_VS_PARAMS | TU_CMD_DIRTY_PROGRAM;
+
+   tu_bind_vs(cmd, pipeline->shaders[MESA_SHADER_VERTEX]);
+   tu_bind_tcs(cmd, pipeline->shaders[MESA_SHADER_TESS_CTRL]);
+   tu_bind_tes(cmd, pipeline->shaders[MESA_SHADER_TESS_EVAL]);
+   tu_bind_gs(cmd, pipeline->shaders[MESA_SHADER_GEOMETRY]);
+   tu_bind_fs(cmd, pipeline->shaders[MESA_SHADER_FRAGMENT]);
 
    vk_cmd_set_dynamic_graphics_state(&cmd->vk,
-                                     &cmd->state.pipeline->dynamic_state);
+                                     &gfx_pipeline->dynamic_state);
+   cmd->state.program = pipeline->program;
 
-   if (cmd->state.pipeline->feedback_loop_may_involve_textures &&
+   cmd->state.load_state = pipeline->load_state;
+   cmd->state.prim_order_sysmem = pipeline->prim_order.state_sysmem;
+   cmd->state.prim_order_gmem = pipeline->prim_order.state_gmem;
+
+   if (gfx_pipeline->feedback_loop_may_involve_textures &&
        !cmd->state.rp.disable_gmem) {
       /* VK_EXT_attachment_feedback_loop_layout allows feedback loop to involve
        * not only input attachments but also sampled images or image resources.
@@ -2997,8 +3066,8 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
 
    if (pipeline->prim_order.sysmem_single_prim_mode &&
        !cmd->state.rp.sysmem_single_prim_mode) {
-      if (cmd->state.pipeline->feedback_loop_color ||
-          cmd->state.pipeline->feedback_loop_ds) {
+      if (gfx_pipeline->feedback_loop_color ||
+          gfx_pipeline->feedback_loop_ds) {
          perf_debug(cmd->device, "single_prim_mode due to feedback loop");
       } else {
          perf_debug(cmd->device, "single_prim_mode due to rast order access");
@@ -3006,11 +3075,17 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
       cmd->state.rp.sysmem_single_prim_mode = true;
    }
 
-   if (pipeline->lrz.blend_valid)
-      cmd->state.blend_reads_dest = pipeline->lrz.lrz_status & TU_LRZ_READS_DEST;
+   if (pipeline->lrz_blend.valid) {
+      if (cmd->state.blend_reads_dest != pipeline->lrz_blend.reads_dest) {
+         cmd->state.blend_reads_dest = pipeline->lrz_blend.reads_dest;
+         cmd->state.dirty |= TU_CMD_DIRTY_LRZ;
+      }
+   }
+   cmd->state.pipeline_blend_lrz = pipeline->lrz_blend.valid;
 
    if (pipeline->bandwidth.valid)
       cmd->state.bandwidth = pipeline->bandwidth;
+   cmd->state.pipeline_bandwidth = pipeline->bandwidth.valid;
 
    struct tu_cs *cs = &cmd->draw_cs;
 
@@ -3037,6 +3112,10 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + i, pipeline->dynamic_state[i]);
    }
 
+   cmd->state.pipeline_draw_states = pipeline->set_state_mask;
+   u_foreach_bit(i, pipeline->set_state_mask)
+      cmd->state.dynamic_state[i] = pipeline->dynamic_state[i];
+
    if (pipeline->active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) {
       cmd->state.rp.has_tess = true;
    }
@@ -3046,21 +3125,9 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
       cmd->state.dirty |= TU_CMD_DIRTY_PER_VIEW_VIEWPORT;
    }
 
-   if (pipeline->active_stages & MESA_SHADER_TESS_CTRL) {
-      if (!cmd->state.tess_params.valid ||
-          cmd->state.tess_params.output_upper_left !=
-          pipeline->program.tess_output_upper_left ||
-          cmd->state.tess_params.output_lower_left !=
-          pipeline->program.tess_output_lower_left ||
-          cmd->state.tess_params.spacing != pipeline->program.tess_spacing) {
-         cmd->state.tess_params.output_upper_left =
-            pipeline->program.tess_output_upper_left;
-         cmd->state.tess_params.output_lower_left =
-            pipeline->program.tess_output_lower_left;
-         cmd->state.tess_params.spacing = pipeline->program.tess_spacing;
-         cmd->state.tess_params.valid = true;
-         cmd->state.dirty |= TU_CMD_DIRTY_TESS_PARAMS;
-      }
+   if (gfx_pipeline->feedback_loop_ds != cmd->state.pipeline_feedback_loop_ds) {
+      cmd->state.pipeline_feedback_loop_ds = gfx_pipeline->feedback_loop_ds;
+      cmd->state.dirty |= TU_CMD_DIRTY_LRZ;
    }
 }
 
@@ -4189,36 +4256,32 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
 TU_GENX(tu_CmdNextSubpass2);
 
 static uint32_t
-tu6_user_consts_size(const struct tu_pipeline *pipeline,
+tu6_user_consts_size(const struct tu_const_state *const_state,
                      gl_shader_stage type)
 {
-   const struct tu_program_descriptor_linkage *link =
-      &pipeline->program.link[type];
    uint32_t dwords = 0;
 
-   if (link->tu_const_state.push_consts.dwords > 0) {
-      unsigned num_units = link->tu_const_state.push_consts.dwords;
+   if (const_state->push_consts.type == IR3_PUSH_CONSTS_PER_STAGE) {
+      unsigned num_units = const_state->push_consts.dwords;
       dwords += 4 + num_units;
+      assert(num_units > 0);
    }
 
-   dwords += 8 * link->tu_const_state.num_inline_ubos;
+   dwords += 8 * const_state->num_inline_ubos;
 
    return dwords;
 }
 
 static void
-tu6_emit_user_consts(struct tu_cs *cs,
-                     const struct tu_pipeline *pipeline,
-                     gl_shader_stage type,
-                     struct tu_descriptor_state *descriptors,
-                     uint32_t *push_constants)
+tu6_emit_per_stage_push_consts(struct tu_cs *cs,
+                               const struct tu_const_state *const_state,
+                               gl_shader_stage type,
+                               uint32_t *push_constants)
 {
-   const struct tu_program_descriptor_linkage *link =
-      &pipeline->program.link[type];
-
-   if (link->tu_const_state.push_consts.dwords > 0) {
-      unsigned num_units = link->tu_const_state.push_consts.dwords;
-      unsigned offset = link->tu_const_state.push_consts.lo;
+   if (const_state->push_consts.type == IR3_PUSH_CONSTS_PER_STAGE) {
+      unsigned num_units = const_state->push_consts.dwords;
+      unsigned offset = const_state->push_consts.lo;
+      assert(num_units > 0);
 
       /* DST_OFF and NUM_UNIT requires vec4 units */
       tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), 3 + num_units);
@@ -4232,14 +4295,22 @@ tu6_emit_user_consts(struct tu_cs *cs,
       for (unsigned i = 0; i < num_units; i++)
          tu_cs_emit(cs, push_constants[i + offset]);
    }
+}
 
+static void
+tu6_emit_inline_ubo(struct tu_cs *cs,
+                    const struct tu_const_state *const_state,
+                    unsigned constlen,
+                    gl_shader_stage type,
+                    struct tu_descriptor_state *descriptors)
+{
    /* Emit loads of inline uniforms. These load directly from the uniform's
     * storage space inside the descriptor set.
     */
-   for (unsigned i = 0; i < link->tu_const_state.num_inline_ubos; i++) {
-      const struct tu_inline_ubo *ubo = &link->tu_const_state.ubos[i];
+   for (unsigned i = 0; i < const_state->num_inline_ubos; i++) {
+      const struct tu_inline_ubo *ubo = &const_state->ubos[i];
 
-      if (link->constlen <= ubo->const_offset_vec4)
+      if (constlen <= ubo->const_offset_vec4)
          continue;
 
       uint64_t va = descriptors->set_iova[ubo->base] & ~0x3f;
@@ -4249,7 +4320,7 @@ tu6_emit_user_consts(struct tu_cs *cs,
             CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
             CP_LOAD_STATE6_0_STATE_SRC(ubo->push_address ? SS6_DIRECT : SS6_INDIRECT) |
             CP_LOAD_STATE6_0_STATE_BLOCK(tu6_stage2shadersb(type)) |
-            CP_LOAD_STATE6_0_NUM_UNIT(MIN2(ubo->size_vec4, link->constlen - ubo->const_offset_vec4)));
+            CP_LOAD_STATE6_0_NUM_UNIT(MIN2(ubo->size_vec4, constlen - ubo->const_offset_vec4)));
       if (ubo->push_address) {
          tu_cs_emit(cs, 0);
          tu_cs_emit(cs, 0);
@@ -4264,14 +4335,14 @@ tu6_emit_user_consts(struct tu_cs *cs,
 
 static void
 tu6_emit_shared_consts(struct tu_cs *cs,
-                       const struct tu_pipeline *pipeline,
+                       const struct tu_push_constant_range *shared_consts,
                        uint32_t *push_constants,
                        bool compute)
 {
-   if (pipeline->shared_consts.dwords > 0) {
+   if (shared_consts->dwords > 0) {
       /* Offset and num_units for shared consts are in units of dwords. */
-      unsigned num_units = pipeline->shared_consts.dwords;
-      unsigned offset = pipeline->shared_consts.lo;
+      unsigned num_units = shared_consts->dwords;
+      unsigned offset = shared_consts->lo;
 
       enum a6xx_state_type st = compute ? ST6_UBO : ST6_CONSTANTS;
       uint32_t cp_load_state = compute ? CP_LOAD_STATE6_FRAG : CP_LOAD_STATE6;
@@ -4290,35 +4361,51 @@ tu6_emit_shared_consts(struct tu_cs *cs,
    }
 }
 
+static void
+tu7_emit_shared_preamble_consts(
+   struct tu_cs *cs,
+   const struct tu_push_constant_range *shared_consts,
+   uint32_t *push_constants)
+{
+   tu_cs_emit_pkt4(cs, REG_A7XX_HLSQ_SHARED_CONSTS_IMM(shared_consts->lo),
+                   shared_consts->dwords);
+   tu_cs_emit_array(cs, push_constants + shared_consts->lo,
+                    shared_consts->dwords);
+}
+
 static uint32_t
 tu6_const_size(struct tu_cmd_buffer *cmd,
-               const struct tu_pipeline *pipeline,
+               const struct tu_push_constant_range *shared_consts,
                bool compute)
 {
    uint32_t dwords = 0;
 
-   if (pipeline->shared_consts.dwords > 0) {
-      dwords += pipeline->shared_consts.dwords + 4;
+   if (shared_consts->type == IR3_PUSH_CONSTS_SHARED) {
+      dwords += shared_consts->dwords + 4;
+   } else if (shared_consts->type == IR3_PUSH_CONSTS_SHARED_PREAMBLE) {
+      dwords += shared_consts->dwords + 1;
    }
 
    if (compute) {
-      dwords += tu6_user_consts_size(pipeline, MESA_SHADER_COMPUTE);
+      dwords +=
+         tu6_user_consts_size(&cmd->state.shaders[MESA_SHADER_COMPUTE]->const_state, MESA_SHADER_COMPUTE);
    } else {
       for (uint32_t type = MESA_SHADER_VERTEX; type <= MESA_SHADER_FRAGMENT; type++)
-         dwords += tu6_user_consts_size(pipeline, (gl_shader_stage) type);
+         dwords += tu6_user_consts_size(&cmd->state.shaders[type]->const_state, (gl_shader_stage) type);
    }
 
    return dwords;
 }
 
 static struct tu_draw_state
-tu6_emit_consts(struct tu_cmd_buffer *cmd,
-                const struct tu_pipeline *pipeline,
-                bool compute)
+tu_emit_consts(struct tu_cmd_buffer *cmd, bool compute)
 {
    uint32_t dwords = 0;
+   const struct tu_push_constant_range *shared_consts =
+      compute ? &cmd->state.shaders[MESA_SHADER_COMPUTE]->const_state.push_consts :
+      &cmd->state.program.shared_consts;
 
-   dwords = tu6_const_size(cmd, pipeline, compute);
+   dwords = tu6_const_size(cmd, shared_consts, compute);
 
    if (dwords == 0)
       return (struct tu_draw_state) {};
@@ -4326,26 +4413,33 @@ tu6_emit_consts(struct tu_cmd_buffer *cmd,
    struct tu_cs cs;
    tu_cs_begin_sub_stream(&cmd->sub_cs, dwords, &cs);
 
-   if (pipeline->shared_consts.dwords > 0) {
-      tu6_emit_shared_consts(&cs, pipeline, cmd->push_constants, compute);
-
-      for (uint32_t i = 0; i < ARRAY_SIZE(pipeline->program.link); i++) {
-         const struct tu_program_descriptor_linkage *link =
-            &pipeline->program.link[i];
-         assert(!link->tu_const_state.push_consts.dwords);
-      }
+   if (shared_consts->type == IR3_PUSH_CONSTS_SHARED) {
+      tu6_emit_shared_consts(&cs, shared_consts, cmd->push_constants, compute);
+   } else if (shared_consts->type == IR3_PUSH_CONSTS_SHARED_PREAMBLE) {
+      tu7_emit_shared_preamble_consts(&cs, shared_consts, cmd->push_constants);
    }
 
    if (compute) {
-      tu6_emit_user_consts(&cs, pipeline, MESA_SHADER_COMPUTE,
-                           tu_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_COMPUTE),
-                           cmd->push_constants);
+      tu6_emit_per_stage_push_consts(
+         &cs, &cmd->state.shaders[MESA_SHADER_COMPUTE]->const_state,
+         MESA_SHADER_COMPUTE, cmd->push_constants);
+      tu6_emit_inline_ubo(
+         &cs, &cmd->state.shaders[MESA_SHADER_COMPUTE]->const_state,
+         cmd->state.shaders[MESA_SHADER_COMPUTE]->variant->constlen,
+         MESA_SHADER_COMPUTE,
+         tu_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_COMPUTE));
    } else {
-      struct tu_descriptor_state *descriptors  =
+      struct tu_descriptor_state *descriptors =
          tu_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-      for (uint32_t type = MESA_SHADER_VERTEX; type <= MESA_SHADER_FRAGMENT; type++)
-         tu6_emit_user_consts(&cs, pipeline, (gl_shader_stage) type,
-                              descriptors, cmd->push_constants);
+      for (uint32_t type = MESA_SHADER_VERTEX; type <= MESA_SHADER_FRAGMENT; type++) {
+         const struct tu_program_descriptor_linkage *link =
+            &cmd->state.program.link[type];
+         tu6_emit_per_stage_push_consts(&cs, &link->tu_const_state,
+                                        (gl_shader_stage) type,
+                                        cmd->push_constants);
+         tu6_emit_inline_ubo(&cs, &link->tu_const_state, link->constlen,
+                             (gl_shader_stage) type, descriptors);
+      }
    }
 
    return tu_cs_end_draw_state(&cmd->sub_cs, &cs);
@@ -4421,24 +4515,31 @@ tu6_build_depth_plane_z_mode(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    bool depth_test_enable = cmd->vk.dynamic_graphics_state.ds.depth.test_enable;
    bool depth_write = tu6_writes_depth(cmd, depth_test_enable);
    bool stencil_write = tu6_writes_stencil(cmd);
+   const struct tu_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
+   const struct tu_render_pass *pass = cmd->state.pass;
+   const struct tu_subpass *subpass = cmd->state.subpass;
 
-   if ((cmd->state.pipeline->base.lrz.fs.has_kill ||
-        cmd->state.pipeline->feedback_loop_ds) &&
+   if ((fs->variant->has_kill ||
+        cmd->state.pipeline_feedback_loop_ds) &&
        (depth_write || stencil_write)) {
       zmode = (cmd->state.lrz.valid && cmd->state.lrz.enabled)
                  ? A6XX_EARLY_LRZ_LATE_Z
                  : A6XX_LATE_Z;
    }
 
-   bool force_late_z = cmd->state.pipeline->base.lrz.force_late_z ||
+   bool force_late_z = 
+      (subpass->depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED &&
+       pass->attachments[subpass->depth_stencil_attachment.attachment].format
+       == VK_FORMAT_S8_UINT) ||
+      fs->fs.lrz.force_late_z ||
       /* alpha-to-coverage can behave like a discard. */
       cmd->vk.dynamic_graphics_state.ms.alpha_to_coverage_enable;
-   if ((force_late_z && !cmd->state.pipeline->base.lrz.fs.force_early_z) ||
+   if ((force_late_z && !fs->variant->fs.early_fragment_tests) ||
        !depth_test_enable)
       zmode = A6XX_LATE_Z;
 
    /* User defined early tests take precedence above all else */
-   if (cmd->state.pipeline->base.lrz.fs.early_fragment_tests)
+   if (fs->variant->fs.early_fragment_tests)
       zmode = A6XX_EARLY_Z;
 
    tu_cs_emit_pkt4(cs, REG_A6XX_GRAS_SU_DEPTH_PLANE_CNTL, 1);
@@ -4452,7 +4553,7 @@ static uint32_t
 fs_params_offset(struct tu_cmd_buffer *cmd)
 {
    const struct tu_program_descriptor_linkage *link =
-      &cmd->state.pipeline->base.program.link[MESA_SHADER_FRAGMENT];
+      &cmd->state.program.link[MESA_SHADER_FRAGMENT];
    const struct ir3_const_state *const_state = &link->const_state;
 
    if (const_state->num_driver_params <= IR3_DP_FS_DYNAMIC)
@@ -4468,7 +4569,7 @@ static uint32_t
 fs_params_size(struct tu_cmd_buffer *cmd)
 {
    const struct tu_program_descriptor_linkage *link =
-      &cmd->state.pipeline->base.program.link[MESA_SHADER_FRAGMENT];
+      &cmd->state.program.link[MESA_SHADER_FRAGMENT];
    const struct ir3_const_state *const_state = &link->const_state;
 
    return DIV_ROUND_UP(const_state->num_driver_params - IR3_DP_FS_DYNAMIC, 4);
@@ -4508,11 +4609,11 @@ tu6_emit_fs_params(struct tu_cmd_buffer *cmd)
       return;
    }
 
-   struct tu_graphics_pipeline *pipeline = cmd->state.pipeline;
+   struct tu_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
 
    unsigned num_units = fs_params_size(cmd);
 
-   if (pipeline->has_fdm)
+   if (fs->fs.has_fdm)
       tu_cs_set_writeable(&cmd->sub_cs, true);
 
    struct tu_cs cs;
@@ -4533,7 +4634,7 @@ tu6_emit_fs_params(struct tu_cmd_buffer *cmd)
    tu_cs_emit(&cs, 0);
 
    STATIC_ASSERT(IR3_DP_FS_FRAG_INVOCATION_COUNT == IR3_DP_FS_DYNAMIC);
-   tu_cs_emit(&cs, pipeline->base.fs.per_samp ?
+   tu_cs_emit(&cs, fs->fs.per_samp ?
               cmd->vk.dynamic_graphics_state.ms.rasterization_samples : 1);
    tu_cs_emit(&cs, 0);
    tu_cs_emit(&cs, 0);
@@ -4542,7 +4643,7 @@ tu6_emit_fs_params(struct tu_cmd_buffer *cmd)
    STATIC_ASSERT(IR3_DP_FS_FRAG_SIZE == IR3_DP_FS_DYNAMIC + 4);
    STATIC_ASSERT(IR3_DP_FS_FRAG_OFFSET == IR3_DP_FS_DYNAMIC + 6);
    if (num_units > 1) {
-      if (pipeline->has_fdm) {
+      if (fs->fs.has_fdm) {
          struct apply_fs_params_state state = {
             .num_consts = num_units - 1,
          };
@@ -4560,7 +4661,7 @@ tu6_emit_fs_params(struct tu_cmd_buffer *cmd)
 
    cmd->state.fs_params = tu_cs_end_draw_state(&cmd->sub_cs, &cs);
 
-   if (pipeline->has_fdm)
+   if (fs->fs.has_fdm)
       tu_cs_set_writeable(&cmd->sub_cs, false);
 }
 
@@ -4572,7 +4673,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
                 /* note: draw_count is 0 for indirect */
                 uint32_t draw_count)
 {
-   const struct tu_pipeline *pipeline = &cmd->state.pipeline->base;
+   const struct tu_program_state *program = &cmd->state.program;
    struct tu_render_pass_state *rp = &cmd->state.rp;
 
    /* Emit state first, because it's needed for bandwidth calculations */
@@ -4681,7 +4782,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    }
 
    if (dirty & TU_CMD_DIRTY_SHADER_CONSTS)
-      cmd->state.shader_const = tu6_emit_consts(cmd, pipeline, false);
+      cmd->state.shader_const = tu_emit_consts(cmd, false);
 
    if (dirty & TU_CMD_DIRTY_DESC_SETS)
       tu6_emit_descriptor_sets<CHIP>(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
@@ -4692,7 +4793,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
                    MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY) ||
        BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
                    MESA_VK_DYNAMIC_RS_LINE_MODE) ||
-       (cmd->state.dirty & TU_CMD_DIRTY_PIPELINE)) {
+       (cmd->state.dirty & TU_CMD_DIRTY_TES)) {
       tu6_update_msaa_disable(cmd);
    }
 
@@ -4704,7 +4805,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    bool dirty_fs_params = false;
    if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
                    MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
-       (cmd->state.dirty & (TU_CMD_DIRTY_PIPELINE | TU_CMD_DIRTY_FDM))) {
+       (cmd->state.dirty & (TU_CMD_DIRTY_PROGRAM | TU_CMD_DIRTY_FDM))) {
       tu6_emit_fs_params(cmd);
       dirty_fs_params = true;
    }
@@ -4722,20 +4823,20 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    if (dirty & TU_CMD_DIRTY_DRAW_STATE) {
       tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * (TU_DRAW_STATE_COUNT - 2));
 
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_CONFIG, pipeline->program.config_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS, pipeline->program.vs_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_BINNING, pipeline->program.vs_binning_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_HS, pipeline->program.hs_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DS, pipeline->program.ds_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_GS, pipeline->program.gs_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_GS_BINNING, pipeline->program.gs_binning_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS, pipeline->program.fs_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VPC, pipeline->program.vpc_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_SYSMEM, pipeline->prim_order.state_sysmem);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_GMEM, pipeline->prim_order.state_gmem);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_CONFIG, program->config_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS, program->vs_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_BINNING, program->vs_binning_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_HS, program->hs_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DS, program->ds_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_GS, program->gs_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_GS_BINNING, program->gs_binning_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS, program->fs_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VPC, program->vpc_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_SYSMEM, cmd->state.prim_order_sysmem);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_GMEM, cmd->state.prim_order_gmem);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS, cmd->state.desc_sets);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, pipeline->load_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, cmd->state.load_state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
@@ -4743,9 +4844,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
       for (uint32_t i = 0; i < ARRAY_SIZE(cmd->state.dynamic_state); i++) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + i,
-                               ((pipeline->set_state_mask & BIT(i)) ?
-                                pipeline->dynamic_state[i] :
-                                cmd->state.dynamic_state[i]));
+                               cmd->state.dynamic_state[i]);
       }
    } else {
       /* emit draw states that were just updated */
@@ -4765,7 +4864,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);
       if (dirty & TU_CMD_DIRTY_DESC_SETS) {
          /* tu6_emit_descriptor_sets emitted the cmd->state.desc_sets draw state. */
-         tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, pipeline->load_state);
+         tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, cmd->state.load_state);
       }
       if (dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
@@ -4796,7 +4895,6 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 static uint32_t
 tu_draw_initiator(struct tu_cmd_buffer *cmd, enum pc_di_src_sel src_sel)
 {
-   const struct tu_pipeline *pipeline = &cmd->state.pipeline->base;
    enum pc_di_primtype primtype =
       tu6_primtype((VkPrimitiveTopology)cmd->vk.dynamic_graphics_state.ia.primitive_topology);
 
@@ -4810,25 +4908,25 @@ tu_draw_initiator(struct tu_cmd_buffer *cmd, enum pc_di_src_sel src_sel)
       CP_DRAW_INDX_OFFSET_0_INDEX_SIZE((enum a4xx_index_size) cmd->state.index_size) |
       CP_DRAW_INDX_OFFSET_0_VIS_CULL(USE_VISIBILITY);
 
-   if (pipeline->active_stages & VK_SHADER_STAGE_GEOMETRY_BIT)
+   if (cmd->state.shaders[MESA_SHADER_GEOMETRY]->variant)
       initiator |= CP_DRAW_INDX_OFFSET_0_GS_ENABLE;
 
-   switch (pipeline->tess.patch_type) {
-   case IR3_TESS_TRIANGLES:
-      initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_TRIANGLES) |
-                   CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
-      break;
-   case IR3_TESS_ISOLINES:
-      initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_ISOLINES) |
-                   CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
-      break;
-   case IR3_TESS_NONE:
-      initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_QUADS);
-      break;
-   case IR3_TESS_QUADS:
-      initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_QUADS) |
-                   CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
-      break;
+   const struct tu_shader *tes = cmd->state.shaders[MESA_SHADER_TESS_EVAL];
+   if (tes->variant) {
+      switch (tes->variant->key.tessellation) {
+      case IR3_TESS_TRIANGLES:
+         initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_TRIANGLES) |
+                      CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
+         break;
+      case IR3_TESS_ISOLINES:
+         initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_ISOLINES) |
+                      CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
+         break;
+      case IR3_TESS_QUADS:
+         initiator |= CP_DRAW_INDX_OFFSET_0_PATCH_TYPE(TESS_QUADS) |
+                      CP_DRAW_INDX_OFFSET_0_TESS_ENABLE;
+         break;
+      }
    }
    return initiator;
 }
@@ -4838,7 +4936,7 @@ static uint32_t
 vs_params_offset(struct tu_cmd_buffer *cmd)
 {
    const struct tu_program_descriptor_linkage *link =
-      &cmd->state.pipeline->base.program.link[MESA_SHADER_VERTEX];
+      &cmd->state.program.link[MESA_SHADER_VERTEX];
    const struct ir3_const_state *const_state = &link->const_state;
 
    if (const_state->offsets.driver_param >= link->constlen)
@@ -4875,7 +4973,8 @@ tu6_emit_vs_params(struct tu_cmd_buffer *cmd,
    /* Beside re-emitting params when they are changed, we should re-emit
     * them after constants are invalidated via HLSQ_INVALIDATE_CMD.
     */
-   if (!(cmd->state.dirty & (TU_CMD_DIRTY_DRAW_STATE | TU_CMD_DIRTY_VS_PARAMS)) &&
+   if (!(cmd->state.dirty & (TU_CMD_DIRTY_DRAW_STATE | TU_CMD_DIRTY_VS_PARAMS |
+                             TU_CMD_DIRTY_PROGRAM)) &&
        (offset == 0 || draw_id == cmd->state.last_vs_params.draw_id) &&
        vertex_offset == cmd->state.last_vs_params.vertex_offset &&
        first_instance == cmd->state.last_vs_params.first_instance) {
@@ -4956,8 +5055,7 @@ tu_CmdDrawMultiEXT(VkCommandBuffer commandBuffer,
    if (!drawCount)
       return;
 
-   bool has_tess =
-         cmd->state.pipeline->base.active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+   bool has_tess = cmd->state.shaders[MESA_SHADER_TESS_CTRL]->variant;
 
    uint32_t max_vertex_count = 0;
    if (has_tess) {
@@ -5030,8 +5128,7 @@ tu_CmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer,
    if (!drawCount)
       return;
 
-   bool has_tess =
-         cmd->state.pipeline->base.active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+   bool has_tess = cmd->state.shaders[MESA_SHADER_TESS_CTRL]->variant;
 
    uint32_t max_index_count = 0;
    if (has_tess) {
@@ -5280,22 +5377,22 @@ struct tu_dispatch_info
 template <chip CHIP>
 static void
 tu_emit_compute_driver_params(struct tu_cmd_buffer *cmd,
-                              struct tu_cs *cs, struct tu_compute_pipeline *pipeline,
+                              struct tu_cs *cs,
                               const struct tu_dispatch_info *info)
 {
    gl_shader_stage type = MESA_SHADER_COMPUTE;
-   const struct tu_program_descriptor_linkage *link =
-      &pipeline->base.program.link[type];
-   const struct ir3_const_state *const_state = &link->const_state;
+   const struct tu_shader *shader = cmd->state.shaders[MESA_SHADER_COMPUTE];
+   const struct ir3_shader_variant *variant = shader->variant;
+   const struct ir3_const_state *const_state = variant->const_state;
    uint32_t offset = const_state->offsets.driver_param;
-   unsigned subgroup_size = pipeline->subgroup_size;
+   unsigned subgroup_size = variant->info.subgroup_size;
    unsigned subgroup_shift = util_logbase2(subgroup_size);
 
-   if (link->constlen <= offset)
+   if (variant->constlen <= offset)
       return;
 
    uint32_t num_consts = MIN2(const_state->num_driver_params,
-                              (link->constlen - offset) * 4);
+                              (variant->constlen - offset) * 4);
 
    if (!info->indirect) {
       uint32_t driver_params[12] = {
@@ -5397,18 +5494,17 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
       return;
 
    struct tu_cs *cs = &cmd->cs;
-   struct tu_compute_pipeline *pipeline = cmd->state.compute_pipeline;
+   struct tu_shader *shader = cmd->state.shaders[MESA_SHADER_COMPUTE];
 
    bool emit_instrlen_workaround =
-      pipeline->instrlen >
+      shader->variant->instrlen >
       cmd->device->physical_device->info->a6xx.instr_cache_size;
 
    /* We don't use draw states for dispatches, so the bound pipeline
     * could be overwritten by reg stomping in a renderpass or blit.
     */
    if (cmd->device->dbg_renderpass_stomp_cs) {
-      tu_cs_emit_state_ib(&cmd->cs,
-                          cmd->state.compute_pipeline->base.shaders[MESA_SHADER_COMPUTE]->state);
+      tu_cs_emit_state_ib(&cmd->cs, shader->state);
    }
 
    /* There appears to be a HW bug where in some rare circumstances it appears
@@ -5427,7 +5523,7 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
     * See https://gitlab.freedesktop.org/mesa/mesa/-/issues/5892
     */
    if (emit_instrlen_workaround) {
-      tu_cs_emit_regs(cs, A6XX_SP_FS_INSTRLEN(pipeline->instrlen));
+      tu_cs_emit_regs(cs, A6XX_SP_FS_INSTRLEN(shader->variant->instrlen));
       tu_emit_event_write<CHIP>(cmd, cs, FD_LABEL);
    }
 
@@ -5437,13 +5533,13 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
    tu_emit_cache_flush<CHIP>(cmd);
 
    /* note: no reason to have this in a separate IB */
-   tu_cs_emit_state_ib(cs, tu6_emit_consts(cmd, &pipeline->base, true));
+   tu_cs_emit_state_ib(cs, tu_emit_consts(cmd, true));
 
-   tu_emit_compute_driver_params<CHIP>(cmd, cs, pipeline, info);
+   tu_emit_compute_driver_params<CHIP>(cmd, cs, info);
 
    if (cmd->state.dirty & TU_CMD_DIRTY_COMPUTE_DESC_SETS) {
       tu6_emit_descriptor_sets<CHIP>(cmd, VK_PIPELINE_BIND_POINT_COMPUTE);
-      tu_cs_emit_state_ib(cs, pipeline->base.load_state);
+      tu_cs_emit_state_ib(cs, cmd->state.compute_load_state);
    }
 
    cmd->state.dirty &= ~TU_CMD_DIRTY_COMPUTE_DESC_SETS;
@@ -5451,7 +5547,7 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
    tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
    tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));
 
-   const uint32_t *local_size = pipeline->local_size;
+   const uint16_t *local_size = shader->variant->local_size;
    const uint32_t *num_groups = info->blocks;
    tu_cs_emit_regs(cs,
                    HLSQ_CS_NDRANGE_0(CHIP, .kerneldim = 3,

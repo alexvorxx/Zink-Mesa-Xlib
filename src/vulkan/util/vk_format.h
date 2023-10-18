@@ -38,6 +38,9 @@ extern const enum pipe_format vk_format_map[];
 enum pipe_format
 vk_format_to_pipe_format(enum VkFormat vkformat);
 
+VkFormat
+vk_format_from_pipe_format(enum pipe_format format);
+
 VkImageAspectFlags
 vk_format_aspects(VkFormat format);
 

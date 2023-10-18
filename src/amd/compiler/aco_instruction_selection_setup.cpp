@@ -69,9 +69,9 @@ bool
 only_used_by_cross_lane_instrs(nir_def* ssa, bool follow_phis = true)
 {
    nir_foreach_use (src, ssa) {
-      switch (src->parent_instr->type) {
+      switch (nir_src_parent_instr(src)->type) {
       case nir_instr_type_alu: {
-         nir_alu_instr* alu = nir_instr_as_alu(src->parent_instr);
+         nir_alu_instr* alu = nir_instr_as_alu(nir_src_parent_instr(src));
          if (alu->op != nir_op_unpack_64_2x32_split_x && alu->op != nir_op_unpack_64_2x32_split_y)
             return false;
          if (!only_used_by_cross_lane_instrs(&alu->def, follow_phis))
@@ -80,7 +80,7 @@ only_used_by_cross_lane_instrs(nir_def* ssa, bool follow_phis = true)
          continue;
       }
       case nir_instr_type_intrinsic: {
-         nir_intrinsic_instr* intrin = nir_instr_as_intrinsic(src->parent_instr);
+         nir_intrinsic_instr* intrin = nir_instr_as_intrinsic(nir_src_parent_instr(src));
          if (intrin->intrinsic != nir_intrinsic_read_invocation &&
              intrin->intrinsic != nir_intrinsic_read_first_invocation &&
              intrin->intrinsic != nir_intrinsic_lane_permute_16_amd)
@@ -93,7 +93,7 @@ only_used_by_cross_lane_instrs(nir_def* ssa, bool follow_phis = true)
          if (!follow_phis)
             return false;
 
-         nir_phi_instr* phi = nir_instr_as_phi(src->parent_instr);
+         nir_phi_instr* phi = nir_instr_as_phi(nir_src_parent_instr(src));
          if (!only_used_by_cross_lane_instrs(&phi->def, false))
             return false;
 
@@ -625,8 +625,8 @@ init_context(isel_context* ctx, nir_shader* shader)
       }
    }
 
-   ctx->program->config->spi_ps_input_ena = ctx->program->info.ps.spi_ps_input;
-   ctx->program->config->spi_ps_input_addr = ctx->program->info.ps.spi_ps_input;
+   ctx->program->config->spi_ps_input_ena = ctx->program->info.ps.spi_ps_input_ena;
+   ctx->program->config->spi_ps_input_addr = ctx->program->info.ps.spi_ps_input_addr;
 
    ctx->cf_info.nir_to_aco = std::move(nir_to_aco);
 

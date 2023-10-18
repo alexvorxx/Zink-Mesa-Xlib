@@ -34,6 +34,8 @@ traces:
 
   glxgears/glxgears-2-v2.trace:
     broadcom-rpi4:
+      label: [skip, flakes]
+      text: "Often fails when running on xwayland, with what looks like an incorrect resolution"
       checksum: 2a9c5e35fa5693fd7d3a76f7b9746edb
 
   godot/godot-thrive.trace:

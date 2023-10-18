@@ -127,6 +127,7 @@ clear_image_tlb(struct v3dv_cmd_buffer *cmd_buffer,
 
       v3dv_job_start_frame(job, width, height, max_layer,
                            false, true, 1, internal_bpp,
+                           4 * v3d_internal_bpp_words(internal_bpp),
                            image->vk.samples > VK_SAMPLE_COUNT_1_BIT);
 
       struct v3dv_meta_framebuffer framebuffer;
@@ -747,7 +748,7 @@ get_color_clear_pipeline_cache_key(uint32_t rt_idx,
    uint32_t bit_offset = 0;
 
    key |= rt_idx;
-   bit_offset += 2;
+   bit_offset += 3;
 
    key |= ((uint64_t) format) << bit_offset;
    bit_offset += 32;
@@ -1189,9 +1190,11 @@ v3dv_CmdClearAttachments(VkCommandBuffer commandBuffer,
 {
    V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   /* We can only clear attachments in the current subpass */
-   assert(attachmentCount <= 5); /* 4 color + D/S */
+   /* We can have at most max_color_RTs + 1 D/S attachments */
+   assert(attachmentCount <=
+          V3D_MAX_RENDER_TARGETS(cmd_buffer->device->devinfo.ver) + 1);
 
+   /* We can only clear attachments in the current subpass */
    struct v3dv_render_pass *pass = cmd_buffer->state.pass;
 
    assert(cmd_buffer->state.subpass_idx < pass->subpass_count);

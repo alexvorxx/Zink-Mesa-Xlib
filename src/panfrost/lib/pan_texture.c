@@ -166,7 +166,7 @@ panfrost_texture_num_elements(unsigned first_level, unsigned last_level,
 }
 
 static bool
-panfrost_needs_multiplanar_descriptor(enum util_format_layout layout)
+panfrost_is_yuv(enum util_format_layout layout)
 {
    /* Mesa's subsampled RGB formats are considered YUV formats on Mali */
    return layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED ||
@@ -183,19 +183,26 @@ panfrost_needs_multiplanar_descriptor(enum util_format_layout layout)
 unsigned
 GENX(panfrost_estimate_texture_payload_size)(const struct pan_image_view *iview)
 {
-#if PAN_ARCH >= 9
-   size_t element_size = pan_size(PLANE);
-#elif PAN_ARCH == 7
    size_t element_size;
+
+#if PAN_ARCH >= 9
    enum util_format_layout layout =
       util_format_description(iview->format)->layout;
-   if (panfrost_needs_multiplanar_descriptor(layout))
+   element_size = pan_size(PLANE);
+
+   /* 2-plane and 3-plane YUV use two plane descriptors. */
+   if (panfrost_is_yuv(layout) && iview->planes[1] != NULL)
+      element_size *= 2;
+#elif PAN_ARCH == 7
+   enum util_format_layout layout =
+      util_format_description(iview->format)->layout;
+   if (panfrost_is_yuv(layout))
       element_size = pan_size(MULTIPLANAR_SURFACE);
    else
       element_size = pan_size(SURFACE_WITH_STRIDE);
 #else
    /* Assume worst case. Overestimates on Midgard, but that's ok. */
-   size_t element_size = pan_size(SURFACE_WITH_STRIDE);
+   element_size = pan_size(SURFACE_WITH_STRIDE);
 #endif
 
    unsigned elements = panfrost_texture_num_elements(
@@ -389,6 +396,24 @@ panfrost_clump_format(enum pipe_format format)
    /* Else, it's a raw format. Raw formats must not be compressed. */
    assert(!util_format_is_compressed(format));
 
+   /* YUV-sampling has special cases */
+   if (panfrost_is_yuv(util_format_description(format)->layout)) {
+      switch (format) {
+      case PIPE_FORMAT_R8G8_R8B8_UNORM:
+      case PIPE_FORMAT_G8R8_B8R8_UNORM:
+      case PIPE_FORMAT_R8B8_R8G8_UNORM:
+      case PIPE_FORMAT_B8R8_G8R8_UNORM:
+         return MALI_CLUMP_FORMAT_Y8_UV8_422;
+      case PIPE_FORMAT_R8_G8B8_420_UNORM:
+      case PIPE_FORMAT_R8_B8G8_420_UNORM:
+      case PIPE_FORMAT_R8_G8_B8_420_UNORM:
+      case PIPE_FORMAT_R8_B8_G8_420_UNORM:
+         return MALI_CLUMP_FORMAT_Y8_UV8_420;
+      default:
+         unreachable("unhandled clump format");
+      }
+   }
+
    /* Select the appropriate raw format. */
    switch (util_format_get_blocksize(format)) {
    case 1:
@@ -432,26 +457,30 @@ translate_superblock_size(uint64_t modifier)
 static void
 panfrost_emit_plane(const struct pan_image_layout *layout,
                     enum pipe_format format, mali_ptr pointer, unsigned level,
-                    void **payload)
+                    int32_t row_stride, int32_t surface_stride,
+                    mali_ptr plane2_ptr, void **payload)
 {
    const struct util_format_description *desc =
       util_format_description(layout->format);
 
-   int32_t row_stride, surface_stride;
-
-   panfrost_get_surface_strides(layout, level, &row_stride, &surface_stride);
    assert(row_stride >= 0 && surface_stride >= 0 && "negative stride");
 
    bool afbc = drm_is_afbc(layout->modifier);
+   // TODO: this isn't technically guaranteed to be YUV, but it is in practice.
+   bool is_3_planar_yuv = desc->layout == UTIL_FORMAT_LAYOUT_PLANAR3;
 
    pan_pack(*payload, PLANE, cfg) {
       cfg.pointer = pointer;
       cfg.row_stride = row_stride;
       cfg.size = layout->data_size - layout->slices[level].offset;
 
-      cfg.slice_stride = layout->nr_samples
-                            ? layout->slices[level].surface_stride
-                            : panfrost_get_layer_stride(layout, level);
+      if (is_3_planar_yuv) {
+         cfg.two_plane_yuv_chroma.secondary_pointer = plane2_ptr;
+      } else if (!panfrost_is_yuv(desc->layout)) {
+         cfg.slice_stride = layout->nr_samples
+                               ? surface_stride
+                               : panfrost_get_layer_stride(layout, level);
+      }
 
       if (desc->layout == UTIL_FORMAT_LAYOUT_ASTC) {
          assert(!afbc);
@@ -491,7 +520,8 @@ panfrost_emit_plane(const struct pan_image_layout *layout,
          cfg.afbc.compression_mode = pan_afbc_compression_mode(format);
          cfg.afbc.header_stride = layout->slices[level].afbc.header_size;
       } else {
-         cfg.plane_type = MALI_PLANE_TYPE_GENERIC;
+         cfg.plane_type = is_3_planar_yuv ? MALI_PLANE_TYPE_CHROMA_2P
+                                          : MALI_PLANE_TYPE_GENERIC;
          cfg.clump_format = panfrost_clump_format(format);
       }
 
@@ -551,10 +581,33 @@ panfrost_emit_surface(const struct pan_image_view *iview, unsigned level,
    }
 
 #if PAN_ARCH >= 9
-   panfrost_emit_plane(layouts[0], format, plane_ptrs[0], level, payload);
-#else
+   if (panfrost_is_yuv(desc->layout)) {
+      for (int i = 0; i < MAX_IMAGE_PLANES; i++) {
+         /* 3-plane YUV is submitted using two PLANE descriptors, where the
+          * second one is of type CHROMA_2P */
+         if (i > 1)
+            break;
+
+         if (plane_ptrs[i] == 0)
+            break;
+
+         /* 3-plane YUV requires equal stride for both chroma planes */
+         assert(row_strides[2] == 0 || row_strides[1] == row_strides[2]);
+
+         panfrost_emit_plane(layouts[i], format, plane_ptrs[i], level,
+                             row_strides[i], surface_strides[i], plane_ptrs[2],
+                             payload);
+      }
+   } else {
+      panfrost_emit_plane(layouts[0], format, plane_ptrs[0], level,
+                          row_strides[0], surface_strides[0], 0, payload);
+   }
+   return;
+#endif
+
+#if PAN_ARCH <= 7
 #if PAN_ARCH == 7
-   if (panfrost_needs_multiplanar_descriptor(desc->layout)) {
+   if (panfrost_is_yuv(desc->layout)) {
       panfrost_emit_multiplanar_surface(plane_ptrs, row_strides, payload);
       return;
    }
@@ -648,8 +701,7 @@ GENX(panfrost_new_texture)(const struct panfrost_device *dev,
       };
 
       util_format_compose_swizzles(replicate_x, iview->swizzle, swizzle);
-   } else if (PAN_ARCH == 7 &&
-              !panfrost_needs_multiplanar_descriptor(desc->layout)) {
+   } else if (PAN_ARCH == 7 && !panfrost_is_yuv(desc->layout)) {
 #if PAN_ARCH == 7
       /* v7 (only) restricts component orders when AFBC is in use.
        * Rather than restrict AFBC, we use an allowed component order
@@ -671,7 +723,7 @@ GENX(panfrost_new_texture)(const struct panfrost_device *dev,
    }
 
    if ((dev->debug & PAN_DBG_YUV) && PAN_ARCH == 7 &&
-       panfrost_needs_multiplanar_descriptor(desc->layout)) {
+       panfrost_is_yuv(desc->layout)) {
       if (desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
          swizzle[2] = PIPE_SWIZZLE_1;
       } else if (desc->layout == UTIL_FORMAT_LAYOUT_PLANAR2) {

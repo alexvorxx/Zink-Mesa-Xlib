@@ -71,11 +71,10 @@ static bool si_copy_multi_plane_texture(struct pipe_context *ctx, struct pipe_re
                                         struct pipe_resource *src, unsigned src_level,
                                         const struct pipe_box *src_box)
 {
-   unsigned i;
+   unsigned i, dx, dy;
    struct si_texture *src_tex = (struct si_texture *)src;
    struct si_texture *dst_tex = (struct si_texture *)dst;
    struct pipe_box sbox;
-   const struct util_format_description *desc;
 
    if (src_tex->multi_plane_format == PIPE_FORMAT_NONE || src_tex->plane_index != 0)
       return false;
@@ -84,20 +83,19 @@ static bool si_copy_multi_plane_texture(struct pipe_context *ctx, struct pipe_re
    assert(dst_tex->plane_index == 0 && src_tex->num_planes == dst_tex->num_planes);
 
    sbox = *src_box;
-   desc = util_format_description(src_tex->multi_plane_format);
 
-   for (i = 0; i < src_tex->num_planes; ++i) {
-      if (!src || !dst)
-         break;
-      si_resource_copy_region(ctx, dst, dst_level, dstx, dsty, dstz, src, src_level, &sbox);
+   for (i = 0; i < src_tex->num_planes && src && dst; ++i) {
+      dx = util_format_get_plane_width(src_tex->multi_plane_format, i, dstx);
+      dy = util_format_get_plane_height(src_tex->multi_plane_format, i, dsty);
+      sbox.x = util_format_get_plane_width(src_tex->multi_plane_format, i, src_box->x);
+      sbox.y = util_format_get_plane_height(src_tex->multi_plane_format, i, src_box->y);
+      sbox.width = util_format_get_plane_width(src_tex->multi_plane_format, i, src_box->width);
+      sbox.height = util_format_get_plane_height(src_tex->multi_plane_format, i, src_box->height);
+
+      si_resource_copy_region(ctx, dst, dst_level, dx, dy, dstz, src, src_level, &sbox);
+
       src = src->next;
       dst = dst->next;
-      if (i == 0) {
-         dstx /= desc->block.width;
-         dsty /= desc->block.height;
-         sbox.width /= desc->block.width;
-         sbox.height /= desc->block.height;
-      }
    }
 
    return true;
@@ -259,6 +257,10 @@ static int si_init_surface(struct si_screen *sscreen, struct radeon_surf *surfac
       /* R9G9B9E5 isn't supported for rendering by older generations. */
       if (sscreen->info.gfx_level < GFX10_3 &&
           ptex->format == PIPE_FORMAT_R9G9B9E5_FLOAT)
+         flags |= RADEON_SURF_DISABLE_DCC;
+
+      /* If constant (non-data-dependent) format is requested, disable DCC: */
+      if (ptex->bind & PIPE_BIND_CONST_BW)
          flags |= RADEON_SURF_DISABLE_DCC;
 
       switch (sscreen->info.gfx_level) {
@@ -700,7 +702,7 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
    bool flush = false;
 
    ctx = threaded_context_unwrap_sync(ctx);
-   sctx = ctx ? (struct si_context *)ctx : si_get_aux_context(sscreen);
+   sctx = ctx ? (struct si_context *)ctx : si_get_aux_context(&sscreen->aux_context.general);
 
    if (resource->target != PIPE_BUFFER) {
       unsigned plane = whandle->plane;
@@ -719,7 +721,7 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
        */
       if (resource->nr_samples > 1 || tex->is_depth) {
          if (!ctx)
-            si_put_aux_context_flush(sscreen);
+            si_put_aux_context_flush(&sscreen->aux_context.general);
          return false;
       }
 
@@ -727,7 +729,7 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
 
       if (plane) {
          if (!ctx)
-            si_put_aux_context_flush(sscreen);
+            si_put_aux_context_flush(&sscreen->aux_context.general);
          whandle->offset = ac_surface_get_plane_offset(sscreen->info.gfx_level,
                                                        &tex->surface, plane, 0);
          whandle->stride = ac_surface_get_plane_stride(sscreen->info.gfx_level,
@@ -809,7 +811,7 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
          struct pipe_resource *newb = screen->resource_create(screen, &templ);
          if (!newb) {
             if (!ctx)
-               si_put_aux_context_flush(sscreen);
+               si_put_aux_context_flush(&sscreen->aux_context.general);
             return false;
          }
 
@@ -847,7 +849,7 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
    if (flush && ctx)
       sctx->b.flush(&sctx->b, NULL, 0);
    if (!ctx)
-      si_put_aux_context_flush(sscreen);
+      si_put_aux_context_flush(&sscreen->aux_context.general);
 
    whandle->stride = stride;
    whandle->offset = offset + slice_size * whandle->layer;
@@ -1191,8 +1193,8 @@ static struct si_texture *si_texture_create_object(struct pipe_screen *screen,
 
    /* Execute the clears. */
    if (num_clears) {
-      si_execute_clears(si_get_aux_context(sscreen), clears, num_clears, 0);
-      si_put_aux_context_flush(sscreen);
+      si_execute_clears(si_get_aux_context(&sscreen->aux_context.general), clears, num_clears, 0);
+      si_put_aux_context_flush(&sscreen->aux_context.general);
    }
 
    /* Initialize the CMASK base register value. */

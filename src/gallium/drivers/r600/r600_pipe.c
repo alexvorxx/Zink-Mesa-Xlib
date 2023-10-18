@@ -29,6 +29,7 @@
 #include <errno.h>
 #include "pipe/p_shader_tokens.h"
 #include "util/u_debug.h"
+#include "util/u_endian.h"
 #include "util/u_memory.h"
 #include "util/u_screen.h"
 #include "util/u_simple_shaders.h"
@@ -324,7 +325,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 		return 1;
 
 	case PIPE_CAP_RESOURCE_FROM_USER_MEMORY:
-		return !R600_BIG_ENDIAN && rscreen->b.info.has_userptr;
+		return !UTIL_ARCH_BIG_ENDIAN && rscreen->b.info.has_userptr;
 
 	case PIPE_CAP_COMPUTE:
 		return rscreen->b.gfx_level > R700;

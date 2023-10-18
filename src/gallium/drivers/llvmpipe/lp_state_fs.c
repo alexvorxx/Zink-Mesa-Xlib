@@ -3140,14 +3140,13 @@ generate_fragment(struct llvmpipe_context *lp,
 
    /* Adjust color input interpolation according to flatshade state:
     */
-   memcpy(inputs, shader->inputs,
-          shader->info.base.num_inputs * sizeof inputs[0]);
-   for (unsigned i = 0; i < shader->info.base.num_inputs; i++) {
-      if (inputs[i].interp == LP_INTERP_COLOR) {
-         if (key->flatshade)
-            inputs[i].interp = LP_INTERP_CONSTANT;
-         else
-            inputs[i].interp = LP_INTERP_PERSPECTIVE;
+   nir_foreach_shader_in_variable(var, nir) {
+      unsigned idx = var->data.driver_location;
+      unsigned slots = nir_variable_count_slots(var, var->type);
+      memcpy(&inputs[idx], &shader->inputs[idx], (sizeof inputs[0] * slots));
+      for (unsigned s = 0; s < slots; s++) {
+         if (inputs[idx + s].interp == LP_INTERP_COLOR)
+            inputs[idx + s].interp = key->flatshade ? LP_INTERP_CONSTANT : LP_INTERP_PERSPECTIVE;
       }
    }
 
@@ -3339,7 +3338,7 @@ generate_fragment(struct llvmpipe_context *lp,
        */
       lp_build_interp_soa_init(&interp,
                                gallivm,
-                               shader->info.base.num_inputs,
+                               nir->num_inputs,
                                inputs,
                                pixel_center_integer,
                                key->coverage_samples,
@@ -3783,7 +3782,7 @@ generate_variant(struct llvmpipe_context *lp,
          !key->blend.alpha_to_coverage &&
          !key->depth.enabled &&
          !nir->info.fs.uses_discard &&
-         (nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)) &&
+         !(nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)) &&
          !nir->info.fs.uses_fbfetch_output;
 
    variant->opaque =
@@ -3981,6 +3980,7 @@ llvmpipe_create_fs_state(struct pipe_context *pipe,
    nir_shader *nir = shader->base.ir.nir;
    NIR_PASS_V(nir, nir_lower_fragcolor, nir->info.fs.color_is_dual_source ? 1 : 8);
 
+   nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    nir_tgsi_scan_shader(nir, &shader->info.base, true);
    shader->info.num_texs = shader->info.base.opcode_count[TGSI_OPCODE_TEX];
 
@@ -4000,42 +4000,55 @@ llvmpipe_create_fs_state(struct pipe_context *pipe,
                                                           nr_sampler_views),
                                                      nr_images);
 
-   for (int i = 0; i < shader->info.base.num_inputs; i++) {
-      shader->inputs[i].usage_mask = shader->info.base.input_usage_mask[i];
-      shader->inputs[i].location = shader->info.base.input_interpolate_loc[i];
+   nir_foreach_shader_in_variable(var, nir) {
+      unsigned idx = var->data.driver_location;
+      unsigned slots = nir_variable_count_slots(var, var->type);
 
-      switch (shader->info.base.input_interpolate[i]) {
-      case TGSI_INTERPOLATE_CONSTANT:
-         shader->inputs[i].interp = LP_INTERP_CONSTANT;
-         break;
-      case TGSI_INTERPOLATE_LINEAR:
-         shader->inputs[i].interp = LP_INTERP_LINEAR;
-         break;
-      case TGSI_INTERPOLATE_PERSPECTIVE:
-         shader->inputs[i].interp = LP_INTERP_PERSPECTIVE;
-         break;
-      case TGSI_INTERPOLATE_COLOR:
-         shader->inputs[i].interp = LP_INTERP_COLOR;
-         break;
-      default:
-         assert(0);
-         break;
-      }
+      if (var->data.centroid)
+         shader->inputs[idx].location = TGSI_INTERPOLATE_LOC_CENTROID;
+      if (var->data.sample)
+         shader->inputs[idx].location = TGSI_INTERPOLATE_LOC_SAMPLE;
 
-      switch (shader->info.base.input_semantic_name[i]) {
-      case TGSI_SEMANTIC_FACE:
-         shader->inputs[i].interp = LP_INTERP_FACING;
+      enum glsl_base_type base_type =
+         glsl_get_base_type(glsl_without_array(var->type));
+      switch (var->data.interpolation) {
+      case INTERP_MODE_NONE:
+         if (glsl_base_type_is_integer(base_type) || var->data.per_primitive) {
+            shader->inputs[idx].interp = LP_INTERP_CONSTANT;
+            break;
+         }
+         if (var->data.location == VARYING_SLOT_COL0 ||
+             var->data.location == VARYING_SLOT_COL1) {
+            shader->inputs[idx].interp = LP_INTERP_COLOR;
+            break;
+         }
+         FALLTHROUGH;
+      case INTERP_MODE_SMOOTH:
+         shader->inputs[idx].interp = LP_INTERP_PERSPECTIVE;
          break;
-      case TGSI_SEMANTIC_POSITION:
-         /* Position was already emitted above
-          */
-         shader->inputs[i].interp = LP_INTERP_POSITION;
-         shader->inputs[i].src_index = 0;
-         continue;
+      case INTERP_MODE_NOPERSPECTIVE:
+         shader->inputs[idx].interp = LP_INTERP_LINEAR;
+         break;
+      case INTERP_MODE_FLAT:
+         shader->inputs[idx].interp = LP_INTERP_CONSTANT;
+         break;
       }
 
       /* XXX this is a completely pointless index map... */
-      shader->inputs[i].src_index = i+1;
+      shader->inputs[idx].src_index = idx + 1;
+      if (var->data.location == VARYING_SLOT_FACE)
+         shader->inputs[idx].interp = LP_INTERP_FACING;
+      else if (var->data.location == VARYING_SLOT_POS) {
+         shader->inputs[idx].src_index = 0;
+         shader->inputs[idx].interp = LP_INTERP_POSITION;
+      }
+
+      shader->inputs[idx].usage_mask = shader->info.base.input_usage_mask[idx];
+      for (unsigned s = 1; s < slots; s++) {
+         shader->inputs[idx + s] = shader->inputs[idx];
+         shader->inputs[idx + s].src_index = idx + s + 1;
+         shader->inputs[idx + s].usage_mask = shader->info.base.input_usage_mask[idx + s];
+      }
    }
 
    llvmpipe_fs_analyse_nir(shader);

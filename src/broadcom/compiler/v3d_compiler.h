@@ -393,7 +393,6 @@ static inline uint8_t v3d_slot_get_component(struct v3d_varying_slot slot)
 }
 
 struct v3d_key {
-        void *shader_state;
         struct {
                 uint8_t swizzle[4];
         } tex[V3D_MAX_TEXTURE_SAMPLERS];
@@ -606,6 +605,11 @@ struct v3d_ra_node_info {
         struct {
                 uint32_t priority;
                 uint8_t class_bits;
+                bool is_program_end;
+                bool unused;
+
+                /* V3D 7.x */
+                bool is_ldunif_dst;
         } *info;
         uint32_t alloc_count;
 };
@@ -1142,8 +1146,8 @@ bool vir_is_raw_mov(struct qinst *inst);
 bool vir_is_tex(const struct v3d_device_info *devinfo, struct qinst *inst);
 bool vir_is_add(struct qinst *inst);
 bool vir_is_mul(struct qinst *inst);
-bool vir_writes_r3(const struct v3d_device_info *devinfo, struct qinst *inst);
-bool vir_writes_r4(const struct v3d_device_info *devinfo, struct qinst *inst);
+bool vir_writes_r3_implicitly(const struct v3d_device_info *devinfo, struct qinst *inst);
+bool vir_writes_r4_implicitly(const struct v3d_device_info *devinfo, struct qinst *inst);
 struct qreg vir_follow_movs(struct v3d_compile *c, struct qreg reg);
 uint8_t vir_channels_written(struct qinst *inst);
 struct qreg ntq_get_src(struct v3d_compile *c, nir_src src, int i);

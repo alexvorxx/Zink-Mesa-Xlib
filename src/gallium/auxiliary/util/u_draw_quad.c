@@ -89,3 +89,21 @@ util_draw_user_vertex_buffer(struct cso_context *cso, void *buffer,
    cso_set_vertex_buffers(cso, 1, 0, false, &vbuffer);
    cso_draw_arrays(cso, prim_type, 0, num_verts);
 }
+
+/**
+ * Draw a user vertex buffer. This is the correct way.
+ * util_draw_user_vertex_buffer doesn't work with u_vbuf anymore.
+ */
+void
+util_draw_user_vertices(struct cso_context *cso, struct cso_velems_state *ve,
+                        void *buffer, enum mesa_prim prim_type,
+                        unsigned num_verts)
+{
+   struct pipe_vertex_buffer vbuffer = {0};
+
+   vbuffer.is_user_buffer = true;
+   vbuffer.buffer.user = buffer;
+
+   cso_set_vertex_buffers_and_elements(cso, ve, 1, 0, false, true, &vbuffer);
+   cso_draw_arrays(cso, prim_type, 0, num_verts);
+}

@@ -30,10 +30,10 @@ desc_ubo_data(struct nvk_descriptor_set *set, uint32_t binding,
       &set->layout->binding[binding];
 
    uint32_t offset = binding_layout->offset + elem * binding_layout->stride;
-   assert(offset < set->bo_size);
+   assert(offset < set->size);
 
    if (size_out != NULL)
-      *size_out = set->bo_size - offset;
+      *size_out = set->size - offset;
 
    return (char *)set->mapped_ptr + offset;
 }
@@ -293,7 +293,7 @@ nvk_push_descriptor_set_update(struct nvk_push_descriptor_set *push_set,
    assert(layout->non_variable_descriptor_buffer_size < sizeof(push_set->data));
    struct nvk_descriptor_set set = {
       .layout = layout,
-      .bo_size = sizeof(push_set->data),
+      .size = sizeof(push_set->data),
       .mapped_ptr = push_set->data,
    };
 
@@ -351,6 +351,9 @@ nvk_descriptor_set_destroy(struct nvk_device *dev,
             break;
          }
       }
+
+      if (pool->entry_count == 0)
+         pool->current_offset = 0;
    }
 
    vk_descriptor_set_layout_unref(&dev->vk, &set->layout->vk);
@@ -476,28 +479,27 @@ nvk_descriptor_set_create(struct nvk_device *dev,
    if (pool->entry_count == pool->max_entry_count)
       return VK_ERROR_OUT_OF_POOL_MEMORY;
 
-   set->bo_size = layout->non_variable_descriptor_buffer_size;
+   set->size = layout->non_variable_descriptor_buffer_size;
 
    if (layout->binding_count > 0 &&
        (layout->binding[layout->binding_count - 1].flags &
         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)) {
       uint32_t stride = layout->binding[layout->binding_count-1].stride;
-      set->bo_size += stride * variable_count;
+      set->size += stride * variable_count;
    }
 
-   if (set->bo_size > 0) {
-      if (pool->current_offset + set->bo_size > pool->size)
+   if (set->size > 0) {
+      if (pool->current_offset + set->size > pool->size)
          return VK_ERROR_OUT_OF_POOL_MEMORY;
 
-      set->bo = pool->bo;
       set->mapped_ptr = (uint32_t *)(pool->mapped_ptr + pool->current_offset);
-      set->bo_offset = pool->current_offset;
+      set->addr = pool->bo->offset + pool->current_offset;
    }
 
-   pool->entries[pool->entry_count].offset = set->bo_offset;
-   pool->entries[pool->entry_count].size = set->bo_size;
+   pool->entries[pool->entry_count].offset = pool->current_offset;
+   pool->entries[pool->entry_count].size = set->size;
    pool->entries[pool->entry_count].set = set;
-   pool->current_offset += ALIGN(set->bo_size, NVK_MIN_UBO_ALIGNMENT);
+   pool->current_offset += ALIGN(set->size, NVK_MIN_UBO_ALIGNMENT);
    pool->entry_count++;
 
    vk_descriptor_set_layout_ref(&layout->vk);
@@ -717,7 +719,7 @@ nvk_push_descriptor_set_update_template(
 {
    struct nvk_descriptor_set tmp_set = {
       .layout = layout,
-      .bo_size = sizeof(push_set->data),
+      .size = sizeof(push_set->data),
       .mapped_ptr = push_set->data,
    };
    nvk_descriptor_set_write_template(&tmp_set, template, data);

@@ -55,6 +55,7 @@ libradv_files = files(
   'layers/radv_sqtt_layer.c',
   'meta/radv_meta.c',
   'meta/radv_meta.h',
+  'meta/radv_meta_astc_decode.c',
   'meta/radv_meta_blit.c',
   'meta/radv_meta_blit2d.c',
   'meta/radv_meta_buffer.c',

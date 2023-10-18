@@ -1412,6 +1412,17 @@ template void fd6_blitter_init<A6XX>(struct pipe_context *pctx);
 template void fd6_blitter_init<A7XX>(struct pipe_context *pctx);
 
 unsigned
+fd6_tile_mode_for_format(enum pipe_format pfmt)
+{
+   /* basically just has to be a format we can blit, so uploads/downloads
+    * via linear staging buffer works:
+    */
+   if (ok_format(pfmt))
+      return TILE6_3;
+
+   return TILE6_LINEAR;
+}
+unsigned
 fd6_tile_mode(const struct pipe_resource *tmpl)
 {
    /* if the mipmap level 0 is still too small to be tiled, then don't
@@ -1421,11 +1432,5 @@ fd6_tile_mode(const struct pipe_resource *tmpl)
          !util_format_is_depth_or_stencil(tmpl->format))
       return TILE6_LINEAR;
 
-   /* basically just has to be a format we can blit, so uploads/downloads
-    * via linear staging buffer works:
-    */
-   if (ok_format(tmpl->format))
-      return TILE6_3;
-
-   return TILE6_LINEAR;
+   return fd6_tile_mode_for_format(tmpl->format);
 }

@@ -120,6 +120,7 @@ vk_spirv_to_nir(struct vk_device *device,
                 const VkSpecializationInfo *spec_info,
                 const struct spirv_to_nir_options *spirv_options,
                 const struct nir_shader_compiler_options *nir_options,
+                bool internal,
                 void *mem_ctx)
 {
    assert(spirv_size_B >= 4 && spirv_size_B % 4 == 0);
@@ -148,6 +149,8 @@ vk_spirv_to_nir(struct vk_device *device,
    nir_validate_ssa_dominance(nir, "after spirv_to_nir");
    if (mem_ctx != NULL)
       ralloc_steal(mem_ctx, nir);
+
+   nir->info.internal = internal;
 
    /* We have to lower away local constant initializers right before we
     * inline functions.  That way they get properly initialized at the top

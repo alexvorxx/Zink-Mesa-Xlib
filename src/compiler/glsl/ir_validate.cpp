@@ -35,6 +35,7 @@
 
 #include "ir.h"
 #include "ir_hierarchical_visitor.h"
+#include "linker_util.h"
 #include "util/u_debug.h"
 #include "util/hash_table.h"
 #include "util/macros.h"

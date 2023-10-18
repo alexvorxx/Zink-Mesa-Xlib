@@ -388,7 +388,7 @@ struct _mesa_glsl_parse_state {
    exec_list translation_unit;
    glsl_symbol_table *symbols;
 
-   void *linalloc;
+   linear_ctx *linalloc;
 
    unsigned num_supported_versions;
    struct {

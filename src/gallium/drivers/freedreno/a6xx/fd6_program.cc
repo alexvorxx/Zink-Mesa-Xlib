@@ -195,13 +195,15 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
    uint32_t per_sp_size = ctx->pvtmem[so->pvtmem_per_wave].per_sp_size;
 
+   fd_ringbuffer_attach_bo(ring, so->bo);
+
    OUT_PKT4(ring, cfg->reg_sp_xs_first_exec_offset, 7);
    OUT_RING(ring, 0);                /* SP_xS_OBJ_FIRST_EXEC_OFFSET */
    OUT_RELOC(ring, so->bo, 0, 0, 0); /* SP_xS_OBJ_START_LO */
    OUT_RING(ring, A6XX_SP_VS_PVT_MEM_PARAM_MEMSIZEPERITEM(ctx->pvtmem[so->pvtmem_per_wave].per_fiber_size));
    if (so->pvtmem_size > 0) { /* SP_xS_PVT_MEM_ADDR */
-      OUT_RELOC(ring, ctx->pvtmem[so->pvtmem_per_wave].bo, 0, 0, 0);
       fd_ringbuffer_attach_bo(ring, ctx->pvtmem[so->pvtmem_per_wave].bo);
+      OUT_RELOC(ring, ctx->pvtmem[so->pvtmem_per_wave].bo, 0, 0, 0);
    } else {
       OUT_RING(ring, 0);
       OUT_RING(ring, 0);
@@ -224,8 +226,6 @@ fd6_emit_shader(struct fd_context *ctx, struct fd_ringbuffer *ring,
                      CP_LOAD_STATE6_0_STATE_BLOCK(sb) |
                      CP_LOAD_STATE6_0_NUM_UNIT(shader_preload_size));
    OUT_RELOC(ring, so->bo, 0, 0, 0);
-
-   fd_ringbuffer_attach_bo(ring, so->bo);
 
    fd6_emit_immediates(so, ring);
 }
@@ -466,6 +466,8 @@ fd6_emit_tess_bos(struct fd_screen *screen, struct fd_ringbuffer *ring,
 
    if (regid >= s->constlen)
       return;
+
+   fd_ringbuffer_attach_bo(ring, screen->tess_bo);
 
    OUT_PKT7(ring, fd6_stage2opcode(s->type), 7);
    OUT_RING(ring, CP_LOAD_STATE6_0_DST_OFF(regid) |

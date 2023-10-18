@@ -2364,7 +2364,7 @@ static bool dump_first_buffer(struct pvr_dump_buffer_ctx *const ctx,
    if (!ret)
       pvr_dump_println(&ctx->base,
                        "<error while decoding at 0x%tx>",
-                       ctx->ptr - ctx->initial_ptr);
+                       (uint8_t *)ctx->ptr - (uint8_t *)ctx->initial_ptr);
 
    pvr_dump_buffer_restart(ctx);
    pvr_dump_mark_section(&ctx->base, "First buffer hexdump");

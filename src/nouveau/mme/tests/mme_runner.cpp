@@ -31,9 +31,7 @@ mme_runner::~mme_runner()
 mme_hw_runner::mme_hw_runner() :
   mme_runner(), p(NULL), dev(NULL), ctx(NULL),
   data_bo(NULL), push_bo(NULL),
-#if NVK_NEW_UAPI == 1
   syncobj(0),
-#endif
   push_map(NULL)
 {
    memset(&push, 0, sizeof(push));
@@ -48,10 +46,8 @@ mme_runner::mme_store_data(mme_builder *b, uint32_t dw_idx,
 
 mme_hw_runner::~mme_hw_runner()
 {
-#if NVK_NEW_UAPI == 1
    if (syncobj)
       drmSyncobjDestroy(dev->fd, syncobj);
-#endif
    if (push_bo) {
       nouveau_ws_bo_unmap(push_bo, push_map);
       nouveau_ws_bo_destroy(push_bo);
@@ -116,11 +112,9 @@ mme_hw_runner::set_up_hw(uint16_t min_cls, uint16_t max_cls)
    if (push_bo == NULL)
       return false;
 
-#if NVK_NEW_UAPI == 1
    ret = drmSyncobjCreate(dev->fd, 0, &syncobj);
    if (ret < 0)
       return false;
-#endif
 
    reset_push();
 
@@ -143,7 +137,6 @@ mme_hw_runner::reset_push()
 void
 mme_hw_runner::submit_push()
 {
-#if NVK_NEW_UAPI == 1
    struct drm_nouveau_exec_push push = {
       .va = push_bo->offset,
       .va_len = (uint32_t)nv_push_dw_count(&this->push) * 4,
@@ -170,42 +163,6 @@ mme_hw_runner::submit_push()
    ret = drmSyncobjWait(dev->fd, &syncobj, 1, INT64_MAX,
                         DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT, NULL);
    ASSERT_EQ(ret, 0);
-#else
-   struct drm_nouveau_gem_pushbuf_bo bos[2];
-   memset(bos, 0, sizeof(bos));
-
-   bos[0].handle = push_bo->handle,
-   bos[0].valid_domains = NOUVEAU_GEM_DOMAIN_GART;
-   bos[0].read_domains = NOUVEAU_GEM_DOMAIN_GART;
-
-   bos[1].handle = data_bo->handle,
-   bos[1].valid_domains = NOUVEAU_GEM_DOMAIN_GART;
-   bos[1].read_domains = NOUVEAU_GEM_DOMAIN_GART;
-   bos[1].write_domains = NOUVEAU_GEM_DOMAIN_GART;
-
-   struct drm_nouveau_gem_pushbuf_push push;
-   memset(&push, 0, sizeof(push));
-
-   push.bo_index = 0;
-   push.offset = 0;
-   push.length = nv_push_dw_count(&this->push) * 4;
-
-   struct drm_nouveau_gem_pushbuf req;
-   memset(&req, 0, sizeof(req));
-
-   req.channel = ctx->channel;
-   req.nr_buffers = 2;
-   req.buffers = (uintptr_t)bos;
-   req.nr_push = 1;
-   req.push = (uintptr_t)&push;
-
-   int ret = drmCommandWriteRead(dev->fd, DRM_NOUVEAU_GEM_PUSHBUF,
-                                 &req, sizeof(req));
-   ASSERT_EQ(ret, 0);
-
-   bool ok = nouveau_ws_bo_wait(data_bo, NOUVEAU_WS_BO_RDWR);
-   ASSERT_TRUE(ok);
-#endif
 }
 
 void

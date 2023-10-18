@@ -23,6 +23,7 @@
 
 #include <inttypes.h> /* for PRIx64 macro */
 #include "ir_print_visitor.h"
+#include "linker_util.h"
 #include "compiler/glsl_types.h"
 #include "glsl_parser_extras.h"
 #include "main/macros.h"

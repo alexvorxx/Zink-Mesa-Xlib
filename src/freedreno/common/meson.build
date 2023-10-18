@@ -43,6 +43,7 @@ libfreedreno_common = static_library(
     'freedreno_guardband.h',
     freedreno_devices_h,
     sha1_h,
+    'redump.h'
   ],
   include_directories : [inc_freedreno, inc_include, inc_src],
   c_args : [no_override_init_args],

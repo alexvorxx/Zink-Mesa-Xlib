@@ -332,7 +332,7 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
          nir_def *iand_mask = nir_imm_int(b, (1 << chunk_bits) - 1);
 
          if (chunk_align < requested.align) {
-            nir_def *shift = nir_imul_imm(b, pad, 8);
+            nir_def *shift = nir_u2u32(b, nir_imul_imm(b, pad, 8));
             data = nir_ishl(b, data, shift);
             iand_mask = nir_inot(b, nir_ishl(b, iand_mask, shift));
          }

@@ -37,9 +37,9 @@ zink-anv-tgl-full:
     - .zink-anv-manual-rules
   variables:
     DEQP_SUITE: zink-anv-tgl-full
-    JOB_TIMEOUT: 90
+    JOB_TIMEOUT: 105
     HWCI_START_WESTON: 1
-  timeout: 1h 30m
+  timeout: 1h 45m
   parallel: 3
 
 zink-anv-tgl-traces:
@@ -60,7 +60,7 @@ zink-anv-tgl-traces-restricted:
     - .zink-anv-rules-restricted
   variables:
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-zink-restricted.yml"
-    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-private --jwt-file=${CI_JOB_JWT_FILE}
+    PIGLIT_REPLAY_EXTRA_ARGS: --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-private --jwt-file=${CI_JOB_JWT_FILE}
   allow_failure: true
 
 zink-tu-a618:
@@ -113,6 +113,7 @@ zink-radv-polaris10-valve:
     - .zink-radv-manual-rules
   variables:
     GPU_VERSION: zink-radv-polaris10
+    ZINK_DEBUG: quiet
 
 zink-radv-navi10-valve:
   extends:
@@ -125,6 +126,7 @@ zink-radv-navi10-valve:
     GPU_VERSION: zink-radv-navi10
 
 zink-radv-vangogh-valve:
+  timeout: 35m
   parallel: 3
   extends:
     - .radv-zink-test-valve
@@ -134,6 +136,8 @@ zink-radv-vangogh-valve:
     GPU_VERSION: zink-radv-vangogh
     B2C_SESSION_REBOOT_REGEX: 'BUG: kernel NULL pointer dereference, address'
     B2C_TIMEOUT_BOOT_RETRIES: 1
+    B2C_TIMEOUT_BOOT_MINUTES: 30
+    B2C_TIMEOUT_OVERALL_MINUTES: 30
   # Override the list of tags to drop `priority:low`
   tags:
     - amdgpu:codename:VANGOGH

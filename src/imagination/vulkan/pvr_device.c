@@ -69,8 +69,12 @@
 #include "util/u_dynarray.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
+#include "vk_extensions.h"
 #include "vk_log.h"
 #include "vk_object.h"
+#include "vk_physical_device_features.h"
+#include "vk_physical_device_properties.h"
+#include "vk_sampler.h"
 #include "vk_util.h"
 
 #define PVR_GLOBAL_FREE_LIST_INITIAL_SIZE (2U * 1024U * 1024U)
@@ -246,6 +250,339 @@ static void pvr_physical_device_get_supported_features(
    };
 }
 
+static bool pvr_physical_device_init_pipeline_cache_uuid(
+   const struct pvr_device_info *const dev_info,
+   uint8_t pipeline_cache_uuid_out[const static VK_UUID_SIZE])
+{
+   struct mesa_sha1 sha1_ctx;
+   unsigned build_id_len;
+   uint8_t sha1[20];
+   uint64_t bvnc;
+
+   const struct build_id_note *note =
+      build_id_find_nhdr_for_addr(pvr_physical_device_init_pipeline_cache_uuid);
+   if (!note) {
+      mesa_loge("Failed to find build-id");
+      return false;
+   }
+
+   build_id_len = build_id_length(note);
+   if (build_id_len < 20) {
+      mesa_loge("Build-id too short. It needs to be a SHA");
+      return false;
+   }
+
+   bvnc = pvr_get_packed_bvnc(dev_info);
+
+   _mesa_sha1_init(&sha1_ctx);
+   _mesa_sha1_update(&sha1_ctx, build_id_data(note), build_id_len);
+   _mesa_sha1_update(&sha1_ctx, &bvnc, sizeof(bvnc));
+   _mesa_sha1_final(&sha1_ctx, sha1);
+   memcpy(pipeline_cache_uuid_out, sha1, VK_UUID_SIZE);
+
+   return true;
+}
+
+struct pvr_descriptor_limits {
+   uint32_t max_per_stage_resources;
+   uint32_t max_per_stage_samplers;
+   uint32_t max_per_stage_uniform_buffers;
+   uint32_t max_per_stage_storage_buffers;
+   uint32_t max_per_stage_sampled_images;
+   uint32_t max_per_stage_storage_images;
+   uint32_t max_per_stage_input_attachments;
+};
+
+static const struct pvr_descriptor_limits *
+pvr_get_physical_device_descriptor_limits(
+   const struct pvr_device_info *dev_info,
+   const struct pvr_device_runtime_info *dev_runtime_info)
+{
+   enum pvr_descriptor_cs_level {
+      /* clang-format off */
+      CS4096, /* 6XT and some XE cores with large CS. */
+      CS2560, /* Mid range Rogue XE cores. */
+      CS2048, /* Low end Rogue XE cores. */
+      CS1536, /* Ultra-low-end 9XEP. */
+      CS680,  /* lower limits for older devices. */
+      CS408,  /* 7XE. */
+      /* clang-format on */
+   };
+
+   static const struct pvr_descriptor_limits descriptor_limits[] = {
+      [CS4096] = { 1160U, 256U, 192U, 144U, 256U, 256U, 8U, },
+      [CS2560] = {  648U, 128U, 128U, 128U, 128U, 128U, 8U, },
+      [CS2048] = {  584U, 128U,  96U,  64U, 128U, 128U, 8U, },
+      [CS1536] = {  456U,  64U,  96U,  64U, 128U,  64U, 8U, },
+      [CS680]  = {  224U,  32U,  64U,  36U,  48U,   8U, 8U, },
+      [CS408]  = {  128U,  16U,  40U,  28U,  16U,   8U, 8U, },
+   };
+
+   const uint32_t common_size =
+      pvr_calc_fscommon_size_and_tiles_in_flight(dev_info,
+                                                 dev_runtime_info,
+                                                 UINT32_MAX,
+                                                 1);
+   enum pvr_descriptor_cs_level cs_level;
+
+   if (common_size >= 2048) {
+      cs_level = CS2048;
+   } else if (common_size >= 1526) {
+      cs_level = CS1536;
+   } else if (common_size >= 680) {
+      cs_level = CS680;
+   } else if (common_size >= 408) {
+      cs_level = CS408;
+   } else {
+      mesa_loge("This core appears to have a very limited amount of shared "
+                "register space and may not meet the Vulkan spec limits.");
+      abort();
+   }
+
+   return &descriptor_limits[cs_level];
+}
+
+static bool pvr_physical_device_get_properties(
+   const struct pvr_device_info *const dev_info,
+   const struct pvr_device_runtime_info *const dev_runtime_info,
+   struct vk_properties *const properties)
+{
+   const struct pvr_descriptor_limits *descriptor_limits =
+      pvr_get_physical_device_descriptor_limits(dev_info, dev_runtime_info);
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t max_multisample =
+      PVR_GET_FEATURE_VALUE(dev_info, max_multisample, 4);
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t uvs_banks = PVR_GET_FEATURE_VALUE(dev_info, uvs_banks, 2);
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t uvs_pba_entries =
+      PVR_GET_FEATURE_VALUE(dev_info, uvs_pba_entries, 160);
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t num_user_clip_planes =
+      PVR_GET_FEATURE_VALUE(dev_info, num_user_clip_planes, 8);
+
+   const uint32_t sub_pixel_precision =
+      PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) ? 4U : 8U;
+
+   const uint32_t max_render_size = rogue_get_render_size_max(dev_info);
+
+   const uint32_t max_sample_bits = ((max_multisample << 1) - 1);
+
+   const uint32_t max_user_vertex_components =
+      ((uvs_banks <= 8U) && (uvs_pba_entries == 160U)) ? 64U : 128U;
+
+   /* The workgroup invocations are limited by the case where we have a compute
+    * barrier - each slot has a fixed number of invocations, the whole workgroup
+    * may need to span multiple slots. As each slot will WAIT at the barrier
+    * until the last invocation completes, all have to be schedulable at the
+    * same time.
+    *
+    * Typically all Rogue cores have 16 slots. Some of the smallest cores are
+    * reduced to 14.
+    *
+    * The compute barrier slot exhaustion scenario can be tested with:
+    * dEQP-VK.memory_model.message_passing*u32.coherent.fence_fence
+    *    .atomicwrite*guard*comp
+    */
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t usc_slots = PVR_GET_FEATURE_VALUE(dev_info, usc_slots, 14);
+
+   /* Default value based on the minimum value found in all existing cores. */
+   const uint32_t max_instances_per_pds_task =
+      PVR_GET_FEATURE_VALUE(dev_info, max_instances_per_pds_task, 32U);
+
+   const uint32_t max_compute_work_group_invocations =
+      (usc_slots * max_instances_per_pds_task >= 512U) ? 512U : 384U;
+
+   bool ret;
+
+   *properties = (struct vk_properties){
+      /* Vulkan 1.0 */
+      .apiVersion = PVR_API_VERSION,
+      .driverVersion = vk_get_driver_version(),
+      .vendorID = VK_VENDOR_ID_IMAGINATION,
+      .deviceID = dev_info->ident.device_id,
+      .deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+      /* deviceName and pipelineCacheUUID are filled below .*/
+
+      .maxImageDimension1D = max_render_size,
+      .maxImageDimension2D = max_render_size,
+      .maxImageDimension3D = PVR_MAX_TEXTURE_EXTENT_Z,
+      .maxImageDimensionCube = max_render_size,
+      .maxImageArrayLayers = PVR_MAX_ARRAY_LAYERS,
+      .maxTexelBufferElements = 64U * 1024U,
+      .maxUniformBufferRange = 128U * 1024U * 1024U,
+      .maxStorageBufferRange = 128U * 1024U * 1024U,
+      .maxPushConstantsSize = PVR_MAX_PUSH_CONSTANTS_SIZE,
+      .maxMemoryAllocationCount = UINT32_MAX,
+      .maxSamplerAllocationCount = UINT32_MAX,
+      .bufferImageGranularity = 1U,
+      .sparseAddressSpaceSize = 256ULL * 1024ULL * 1024ULL * 1024ULL,
+      /* Maximum number of descriptor sets that can be bound simultaneously. */
+      .maxBoundDescriptorSets = PVR_MAX_DESCRIPTOR_SETS,
+      .maxPerStageResources = descriptor_limits->max_per_stage_resources,
+      .maxPerStageDescriptorSamplers =
+         descriptor_limits->max_per_stage_samplers,
+      .maxPerStageDescriptorUniformBuffers =
+         descriptor_limits->max_per_stage_uniform_buffers,
+      .maxPerStageDescriptorStorageBuffers =
+         descriptor_limits->max_per_stage_storage_buffers,
+      .maxPerStageDescriptorSampledImages =
+         descriptor_limits->max_per_stage_sampled_images,
+      .maxPerStageDescriptorStorageImages =
+         descriptor_limits->max_per_stage_storage_images,
+      .maxPerStageDescriptorInputAttachments =
+         descriptor_limits->max_per_stage_input_attachments,
+      .maxDescriptorSetSamplers = 256U,
+      .maxDescriptorSetUniformBuffers = 256U,
+      .maxDescriptorSetUniformBuffersDynamic =
+         PVR_MAX_DESCRIPTOR_SET_UNIFORM_DYNAMIC_BUFFERS,
+      .maxDescriptorSetStorageBuffers = 256U,
+      .maxDescriptorSetStorageBuffersDynamic =
+         PVR_MAX_DESCRIPTOR_SET_STORAGE_DYNAMIC_BUFFERS,
+      .maxDescriptorSetSampledImages = 256U,
+      .maxDescriptorSetStorageImages = 256U,
+      .maxDescriptorSetInputAttachments = 256U,
+
+      /* Vertex Shader Limits */
+      .maxVertexInputAttributes = PVR_MAX_VERTEX_INPUT_BINDINGS,
+      .maxVertexInputBindings = PVR_MAX_VERTEX_INPUT_BINDINGS,
+      .maxVertexInputAttributeOffset = 0xFFFF,
+      .maxVertexInputBindingStride = 1024U * 1024U * 1024U * 2U,
+      .maxVertexOutputComponents = max_user_vertex_components,
+
+      /* Tessellation Limits */
+      .maxTessellationGenerationLevel = 0,
+      .maxTessellationPatchSize = 0,
+      .maxTessellationControlPerVertexInputComponents = 0,
+      .maxTessellationControlPerVertexOutputComponents = 0,
+      .maxTessellationControlPerPatchOutputComponents = 0,
+      .maxTessellationControlTotalOutputComponents = 0,
+      .maxTessellationEvaluationInputComponents = 0,
+      .maxTessellationEvaluationOutputComponents = 0,
+
+      /* Geometry Shader Limits */
+      .maxGeometryShaderInvocations = 0,
+      .maxGeometryInputComponents = 0,
+      .maxGeometryOutputComponents = 0,
+      .maxGeometryOutputVertices = 0,
+      .maxGeometryTotalOutputComponents = 0,
+
+      /* Fragment Shader Limits */
+      .maxFragmentInputComponents = max_user_vertex_components,
+      .maxFragmentOutputAttachments = PVR_MAX_COLOR_ATTACHMENTS,
+      .maxFragmentDualSrcAttachments = 0,
+      .maxFragmentCombinedOutputResources =
+         descriptor_limits->max_per_stage_storage_buffers +
+         descriptor_limits->max_per_stage_storage_images +
+         PVR_MAX_COLOR_ATTACHMENTS,
+
+      /* Compute Shader Limits */
+      .maxComputeSharedMemorySize = 16U * 1024U,
+      .maxComputeWorkGroupCount = { 64U * 1024U, 64U * 1024U, 64U * 1024U },
+      .maxComputeWorkGroupInvocations = max_compute_work_group_invocations,
+      .maxComputeWorkGroupSize = { max_compute_work_group_invocations,
+                                   max_compute_work_group_invocations,
+                                   64U },
+
+      /* Rasterization Limits */
+      .subPixelPrecisionBits = sub_pixel_precision,
+      .subTexelPrecisionBits = 8U,
+      .mipmapPrecisionBits = 8U,
+
+      .maxDrawIndexedIndexValue = UINT32_MAX,
+      .maxDrawIndirectCount = 2U * 1024U * 1024U * 1024U,
+      .maxSamplerLodBias = 16.0f,
+      .maxSamplerAnisotropy = 1.0f,
+      .maxViewports = PVR_MAX_VIEWPORTS,
+
+      .maxViewportDimensions[0] = max_render_size,
+      .maxViewportDimensions[1] = max_render_size,
+      .viewportBoundsRange[0] = -(int32_t)(2U * max_render_size),
+      .viewportBoundsRange[1] = 2U * max_render_size,
+
+      .viewportSubPixelBits = 0,
+      .minMemoryMapAlignment = 64U,
+      .minTexelBufferOffsetAlignment = 16U,
+      .minUniformBufferOffsetAlignment = 4U,
+      .minStorageBufferOffsetAlignment = 4U,
+
+      .minTexelOffset = -8,
+      .maxTexelOffset = 7U,
+      .minTexelGatherOffset = -8,
+      .maxTexelGatherOffset = 7,
+      .minInterpolationOffset = -0.5,
+      .maxInterpolationOffset = 0.5,
+      .subPixelInterpolationOffsetBits = 4U,
+
+      .maxFramebufferWidth = max_render_size,
+      .maxFramebufferHeight = max_render_size,
+      .maxFramebufferLayers = PVR_MAX_FRAMEBUFFER_LAYERS,
+
+      .framebufferColorSampleCounts = max_sample_bits,
+      .framebufferDepthSampleCounts = max_sample_bits,
+      .framebufferStencilSampleCounts = max_sample_bits,
+      .framebufferNoAttachmentsSampleCounts = max_sample_bits,
+      .maxColorAttachments = PVR_MAX_COLOR_ATTACHMENTS,
+      .sampledImageColorSampleCounts = max_sample_bits,
+      .sampledImageIntegerSampleCounts = max_sample_bits,
+      .sampledImageDepthSampleCounts = max_sample_bits,
+      .sampledImageStencilSampleCounts = max_sample_bits,
+      .storageImageSampleCounts = max_sample_bits,
+      .maxSampleMaskWords = 1U,
+      .timestampComputeAndGraphics = false,
+      .timestampPeriod = 0.0f,
+      .maxClipDistances = num_user_clip_planes,
+      .maxCullDistances = num_user_clip_planes,
+      .maxCombinedClipAndCullDistances = num_user_clip_planes,
+      .discreteQueuePriorities = 2U,
+      .pointSizeRange[0] = 1.0f,
+      .pointSizeRange[1] = 511.0f,
+      .pointSizeGranularity = 0.0625f,
+      .lineWidthRange[0] = 1.0f / 16.0f,
+      .lineWidthRange[1] = 16.0f,
+      .lineWidthGranularity = 1.0f / 16.0f,
+      .strictLines = false,
+      .standardSampleLocations = true,
+      .optimalBufferCopyOffsetAlignment = 4U,
+      .optimalBufferCopyRowPitchAlignment = 4U,
+      .nonCoherentAtomSize = 1U,
+
+      /* Vulkan 1.2 / VK_KHR_driver_properties */
+      .driverID = VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA,
+      .driverName = "Imagination open-source Mesa driver",
+      .driverInfo = "Mesa " PACKAGE_VERSION MESA_GIT_SHA1,
+      .conformanceVersion = {
+         .major = 1,
+         .minor = 3,
+         .subminor = 4,
+         .patch = 1,
+      },
+
+      /* Vulkan 1.2 / VK_KHR_timeline_semaphore */
+      .maxTimelineSemaphoreValueDifference = UINT64_MAX,
+   };
+
+   snprintf(properties->deviceName,
+            sizeof(properties->deviceName),
+            "Imagination PowerVR %s %s",
+            dev_info->ident.series_name,
+            dev_info->ident.public_name);
+
+   ret = pvr_physical_device_init_pipeline_cache_uuid(
+      dev_info,
+      properties->pipelineCacheUUID);
+   if (!ret)
+      return false;
+
+   return true;
+}
+
 VkResult pvr_EnumerateInstanceVersion(uint32_t *pApiVersion)
 {
    *pApiVersion = PVR_API_VERSION;
@@ -281,8 +618,6 @@ static void pvr_physical_device_destroy(struct vk_physical_device *vk_pdevice)
 
    pvr_wsi_finish(pdevice);
 
-   free(pdevice->name);
-
    if (pdevice->ws)
       pvr_winsys_destroy(pdevice->ws);
 
@@ -306,40 +641,6 @@ void pvr_DestroyInstance(VkInstance _instance,
 
    vk_instance_finish(&instance->vk);
    vk_free(&instance->vk.alloc, instance);
-}
-
-static VkResult
-pvr_physical_device_init_uuids(struct pvr_physical_device *pdevice)
-{
-   struct mesa_sha1 sha1_ctx;
-   unsigned build_id_len;
-   uint8_t sha1[20];
-   uint64_t bvnc;
-
-   const struct build_id_note *note =
-      build_id_find_nhdr_for_addr(pvr_physical_device_init_uuids);
-   if (!note) {
-      return vk_errorf(pdevice,
-                       VK_ERROR_INITIALIZATION_FAILED,
-                       "Failed to find build-id");
-   }
-
-   build_id_len = build_id_length(note);
-   if (build_id_len < 20) {
-      return vk_errorf(pdevice,
-                       VK_ERROR_INITIALIZATION_FAILED,
-                       "Build-id too short. It needs to be a SHA");
-   }
-
-   bvnc = pvr_get_packed_bvnc(&pdevice->dev_info);
-
-   _mesa_sha1_init(&sha1_ctx);
-   _mesa_sha1_update(&sha1_ctx, build_id_data(note), build_id_len);
-   _mesa_sha1_update(&sha1_ctx, &bvnc, sizeof(bvnc));
-   _mesa_sha1_final(&sha1_ctx, sha1);
-   memcpy(pdevice->pipeline_cache_uuid, sha1, VK_UUID_SIZE);
-
-   return VK_SUCCESS;
 }
 
 static uint64_t pvr_compute_heap_size(void)
@@ -368,6 +669,7 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
 {
    struct vk_physical_device_dispatch_table dispatch_table;
    struct vk_device_extension_table supported_extensions;
+   struct vk_properties supported_properties;
    struct vk_features supported_features;
    struct pvr_winsys *ws;
    char *display_path;
@@ -422,6 +724,14 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
    pvr_physical_device_get_supported_extensions(&supported_extensions);
    pvr_physical_device_get_supported_features(&pdevice->dev_info,
                                               &supported_features);
+   if (!pvr_physical_device_get_properties(&pdevice->dev_info,
+                                           &pdevice->dev_runtime_info,
+                                           &supported_properties)) {
+      result = vk_errorf(instance,
+                         VK_ERROR_INITIALIZATION_FAILED,
+                         "Failed to collect physical device properties");
+      goto err_pvr_winsys_destroy;
+   }
 
    vk_physical_device_dispatch_table_from_entrypoints(
       &dispatch_table,
@@ -437,26 +747,12 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
                                     &instance->vk,
                                     &supported_extensions,
                                     &supported_features,
-                                    NULL,
+                                    &supported_properties,
                                     &dispatch_table);
    if (result != VK_SUCCESS)
       goto err_pvr_winsys_destroy;
 
    pdevice->vk.supported_sync_types = ws->sync_types;
-
-   result = pvr_physical_device_init_uuids(pdevice);
-   if (result != VK_SUCCESS)
-      goto err_vk_physical_device_finish;
-
-   if (asprintf(&pdevice->name,
-                "Imagination PowerVR %s %s",
-                pdevice->dev_info.ident.series_name,
-                pdevice->dev_info.ident.public_name) < 0) {
-      result = vk_errorf(instance,
-                         VK_ERROR_OUT_OF_HOST_MEMORY,
-                         "Unable to allocate memory to store device name");
-      goto err_vk_physical_device_finish;
-   }
 
    /* Setup available memory heaps and types */
    pdevice->memory.memoryHeapCount = 1;
@@ -473,7 +769,7 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
    result = pvr_wsi_init(pdevice);
    if (result != VK_SUCCESS) {
       vk_error(instance, result);
-      goto err_free_name;
+      goto err_vk_physical_device_finish;
    }
 
    pdevice->compiler = rogue_compiler_create(&pdevice->dev_info);
@@ -488,9 +784,6 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
 
 err_wsi_finish:
    pvr_wsi_finish(pdevice);
-
-err_free_name:
-   free(pdevice->name);
 
 err_vk_physical_device_finish:
    vk_physical_device_finish(&pdevice->vk);
@@ -774,12 +1067,10 @@ VkResult pvr_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    return VK_SUCCESS;
 }
 
-static uint32_t
-pvr_get_simultanous_num_allocs(const struct pvr_physical_device *pdevice)
+static uint32_t pvr_get_simultaneous_num_allocs(
+   const struct pvr_device_info *dev_info,
+   ASSERTED const struct pvr_device_runtime_info *dev_runtime_info)
 {
-   const struct pvr_device_runtime_info *dev_runtime_info =
-      &pdevice->dev_runtime_info;
-   const struct pvr_device_info *dev_info = &pdevice->dev_info;
    uint32_t min_cluster_per_phantom;
 
    if (PVR_HAS_FEATURE(dev_info, s8xe))
@@ -797,15 +1088,13 @@ pvr_get_simultanous_num_allocs(const struct pvr_physical_device *pdevice)
 }
 
 uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
-   const struct pvr_physical_device *pdevice,
+   const struct pvr_device_info *dev_info,
+   const struct pvr_device_runtime_info *dev_runtime_info,
    uint32_t fs_common_size,
    uint32_t min_tiles_in_flight)
 {
-   const struct pvr_device_runtime_info *dev_runtime_info =
-      &pdevice->dev_runtime_info;
    const uint32_t available_shareds =
       dev_runtime_info->reserved_shared_size - dev_runtime_info->max_coeffs;
-   const struct pvr_device_info *dev_info = &pdevice->dev_info;
    const uint32_t max_tiles_in_flight =
       PVR_GET_FEATURE_VALUE(dev_info, isp_max_tiles_in_flight, 1U);
    uint32_t num_tile_in_flight;
@@ -814,7 +1103,7 @@ uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
    if (fs_common_size == 0)
       return max_tiles_in_flight;
 
-   num_allocs = pvr_get_simultanous_num_allocs(pdevice);
+   num_allocs = pvr_get_simultaneous_num_allocs(dev_info, dev_runtime_info);
 
    if (fs_common_size == UINT32_MAX) {
       uint32_t max_common_size = available_shareds;
@@ -860,375 +1149,6 @@ uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
    return MIN2(num_tile_in_flight, max_tiles_in_flight);
 }
 
-struct pvr_descriptor_limits {
-   uint32_t max_per_stage_resources;
-   uint32_t max_per_stage_samplers;
-   uint32_t max_per_stage_uniform_buffers;
-   uint32_t max_per_stage_storage_buffers;
-   uint32_t max_per_stage_sampled_images;
-   uint32_t max_per_stage_storage_images;
-   uint32_t max_per_stage_input_attachments;
-};
-
-static const struct pvr_descriptor_limits *
-pvr_get_physical_device_descriptor_limits(struct pvr_physical_device *pdevice)
-{
-   enum pvr_descriptor_cs_level {
-      /* clang-format off */
-      CS4096, /* 6XT and some XE cores with large CS. */
-      CS2560, /* Mid range Rogue XE cores. */
-      CS2048, /* Low end Rogue XE cores. */
-      CS1536, /* Ultra-low-end 9XEP. */
-      CS680,  /* lower limits for older devices. */
-      CS408,  /* 7XE. */
-      /* clang-format on */
-   };
-
-   static const struct pvr_descriptor_limits descriptor_limits[] = {
-      [CS4096] = { 1160U, 256U, 192U, 144U, 256U, 256U, 8U, },
-      [CS2560] = {  648U, 128U, 128U, 128U, 128U, 128U, 8U, },
-      [CS2048] = {  584U, 128U,  96U,  64U, 128U, 128U, 8U, },
-      [CS1536] = {  456U,  64U,  96U,  64U, 128U,  64U, 8U, },
-      [CS680]  = {  224U,  32U,  64U,  36U,  48U,   8U, 8U, },
-      [CS408]  = {  128U,  16U,  40U,  28U,  16U,   8U, 8U, },
-   };
-
-   const uint32_t common_size =
-      pvr_calc_fscommon_size_and_tiles_in_flight(pdevice, UINT32_MAX, 1);
-   enum pvr_descriptor_cs_level cs_level;
-
-   if (common_size >= 2048) {
-      cs_level = CS2048;
-   } else if (common_size >= 1526) {
-      cs_level = CS1536;
-   } else if (common_size >= 680) {
-      cs_level = CS680;
-   } else if (common_size >= 408) {
-      cs_level = CS408;
-   } else {
-      mesa_loge("This core appears to have a very limited amount of shared "
-                "register space and may not meet the Vulkan spec limits.");
-      abort();
-   }
-
-   return &descriptor_limits[cs_level];
-}
-
-static void
-pvr_get_physical_device_properties_1_1(struct pvr_physical_device *pdevice,
-                                       VkPhysicalDeviceVulkan11Properties *p)
-{
-   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
-}
-
-static void
-pvr_get_physical_device_properties_1_2(struct pvr_physical_device *pdevice,
-                                       VkPhysicalDeviceVulkan12Properties *p)
-{
-   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES);
-
-   /* VK_KHR_driver_properties */
-   p->driverID = VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA;
-   memset(p->driverName, 0, sizeof(p->driverName));
-   snprintf(p->driverName,
-            VK_MAX_DRIVER_NAME_SIZE,
-            "Imagination open-source Mesa driver");
-   memset(p->driverInfo, 0, sizeof(p->driverInfo));
-   snprintf(p->driverInfo,
-            VK_MAX_DRIVER_INFO_SIZE,
-            ("Mesa " PACKAGE_VERSION MESA_GIT_SHA1));
-   p->conformanceVersion = (VkConformanceVersion){
-      .major = 1,
-      .minor = 3,
-      .subminor = 4,
-      .patch = 1,
-   };
-
-   /* VK_KHR_timeline_semaphore */
-   p->maxTimelineSemaphoreValueDifference = UINT64_MAX;
-}
-
-static void
-pvr_get_physical_device_properties_1_3(struct pvr_physical_device *pdevice,
-                                       VkPhysicalDeviceVulkan13Properties *p)
-{
-   assert(p->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES);
-}
-
-void pvr_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
-                                     VkPhysicalDeviceProperties *pProperties)
-{
-   PVR_FROM_HANDLE(pvr_physical_device, pdevice, physicalDevice);
-
-   const struct pvr_descriptor_limits *descriptor_limits =
-      pvr_get_physical_device_descriptor_limits(pdevice);
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t max_multisample =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info, max_multisample, 4);
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t uvs_banks =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info, uvs_banks, 2);
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t uvs_pba_entries =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info, uvs_pba_entries, 160);
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t num_user_clip_planes =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info, num_user_clip_planes, 8);
-
-   const uint32_t sub_pixel_precision =
-      PVR_HAS_FEATURE(&pdevice->dev_info, simple_internal_parameter_format)
-         ? 4U
-         : 8U;
-
-   const uint32_t max_render_size =
-      rogue_get_render_size_max(&pdevice->dev_info);
-
-   const uint32_t max_sample_bits = ((max_multisample << 1) - 1);
-
-   const uint32_t max_user_vertex_components =
-      ((uvs_banks <= 8U) && (uvs_pba_entries == 160U)) ? 64U : 128U;
-
-   /* The workgroup invocations are limited by the case where we have a compute
-    * barrier - each slot has a fixed number of invocations, the whole workgroup
-    * may need to span multiple slots. As each slot will WAIT at the barrier
-    * until the last invocation completes, all have to be schedulable at the
-    * same time.
-    *
-    * Typically all Rogue cores have 16 slots. Some of the smallest cores are
-    * reduced to 14.
-    *
-    * The compute barrier slot exhaustion scenario can be tested with:
-    * dEQP-VK.memory_model.message_passing*u32.coherent.fence_fence
-    *    .atomicwrite*guard*comp
-    */
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t usc_slots =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info, usc_slots, 14);
-
-   /* Default value based on the minimum value found in all existing cores. */
-   const uint32_t max_instances_per_pds_task =
-      PVR_GET_FEATURE_VALUE(&pdevice->dev_info,
-                            max_instances_per_pds_task,
-                            32U);
-
-   const uint32_t max_compute_work_group_invocations =
-      (usc_slots * max_instances_per_pds_task >= 512U) ? 512U : 384U;
-
-   VkPhysicalDeviceLimits limits = {
-      .maxImageDimension1D = max_render_size,
-      .maxImageDimension2D = max_render_size,
-      .maxImageDimension3D = PVR_MAX_TEXTURE_EXTENT_Z,
-      .maxImageDimensionCube = max_render_size,
-      .maxImageArrayLayers = PVR_MAX_ARRAY_LAYERS,
-      .maxTexelBufferElements = 64U * 1024U,
-      .maxUniformBufferRange = 128U * 1024U * 1024U,
-      .maxStorageBufferRange = 128U * 1024U * 1024U,
-      .maxPushConstantsSize = PVR_MAX_PUSH_CONSTANTS_SIZE,
-      .maxMemoryAllocationCount = UINT32_MAX,
-      .maxSamplerAllocationCount = UINT32_MAX,
-      .bufferImageGranularity = 1U,
-      .sparseAddressSpaceSize = 256ULL * 1024ULL * 1024ULL * 1024ULL,
-
-      /* Maximum number of descriptor sets that can be bound at the same time.
-       */
-      .maxBoundDescriptorSets = PVR_MAX_DESCRIPTOR_SETS,
-
-      .maxPerStageResources = descriptor_limits->max_per_stage_resources,
-      .maxPerStageDescriptorSamplers =
-         descriptor_limits->max_per_stage_samplers,
-      .maxPerStageDescriptorUniformBuffers =
-         descriptor_limits->max_per_stage_uniform_buffers,
-      .maxPerStageDescriptorStorageBuffers =
-         descriptor_limits->max_per_stage_storage_buffers,
-      .maxPerStageDescriptorSampledImages =
-         descriptor_limits->max_per_stage_sampled_images,
-      .maxPerStageDescriptorStorageImages =
-         descriptor_limits->max_per_stage_storage_images,
-      .maxPerStageDescriptorInputAttachments =
-         descriptor_limits->max_per_stage_input_attachments,
-
-      .maxDescriptorSetSamplers = 256U,
-      .maxDescriptorSetUniformBuffers = 256U,
-      .maxDescriptorSetUniformBuffersDynamic =
-         PVR_MAX_DESCRIPTOR_SET_UNIFORM_DYNAMIC_BUFFERS,
-      .maxDescriptorSetStorageBuffers = 256U,
-      .maxDescriptorSetStorageBuffersDynamic =
-         PVR_MAX_DESCRIPTOR_SET_STORAGE_DYNAMIC_BUFFERS,
-      .maxDescriptorSetSampledImages = 256U,
-      .maxDescriptorSetStorageImages = 256U,
-      .maxDescriptorSetInputAttachments = 256U,
-
-      /* Vertex Shader Limits */
-      .maxVertexInputAttributes = PVR_MAX_VERTEX_INPUT_BINDINGS,
-      .maxVertexInputBindings = PVR_MAX_VERTEX_INPUT_BINDINGS,
-      .maxVertexInputAttributeOffset = 0xFFFF,
-      .maxVertexInputBindingStride = 1024U * 1024U * 1024U * 2U,
-      .maxVertexOutputComponents = max_user_vertex_components,
-
-      /* Tessellation Limits */
-      .maxTessellationGenerationLevel = 0,
-      .maxTessellationPatchSize = 0,
-      .maxTessellationControlPerVertexInputComponents = 0,
-      .maxTessellationControlPerVertexOutputComponents = 0,
-      .maxTessellationControlPerPatchOutputComponents = 0,
-      .maxTessellationControlTotalOutputComponents = 0,
-      .maxTessellationEvaluationInputComponents = 0,
-      .maxTessellationEvaluationOutputComponents = 0,
-
-      /* Geometry Shader Limits */
-      .maxGeometryShaderInvocations = 0,
-      .maxGeometryInputComponents = 0,
-      .maxGeometryOutputComponents = 0,
-      .maxGeometryOutputVertices = 0,
-      .maxGeometryTotalOutputComponents = 0,
-
-      /* Fragment Shader Limits */
-      .maxFragmentInputComponents = max_user_vertex_components,
-      .maxFragmentOutputAttachments = PVR_MAX_COLOR_ATTACHMENTS,
-      .maxFragmentDualSrcAttachments = 0,
-      .maxFragmentCombinedOutputResources =
-         descriptor_limits->max_per_stage_storage_buffers +
-         descriptor_limits->max_per_stage_storage_images +
-         PVR_MAX_COLOR_ATTACHMENTS,
-
-      /* Compute Shader Limits */
-      .maxComputeSharedMemorySize = 16U * 1024U,
-      .maxComputeWorkGroupCount = { 64U * 1024U, 64U * 1024U, 64U * 1024U },
-      .maxComputeWorkGroupInvocations = max_compute_work_group_invocations,
-      .maxComputeWorkGroupSize = { max_compute_work_group_invocations,
-                                   max_compute_work_group_invocations,
-                                   64U },
-
-      /* Rasterization Limits */
-      .subPixelPrecisionBits = sub_pixel_precision,
-      .subTexelPrecisionBits = 8U,
-      .mipmapPrecisionBits = 8U,
-
-      .maxDrawIndexedIndexValue = UINT32_MAX,
-      .maxDrawIndirectCount = 2U * 1024U * 1024U * 1024U,
-      .maxSamplerLodBias = 16.0f,
-      .maxSamplerAnisotropy = 1.0f,
-      .maxViewports = PVR_MAX_VIEWPORTS,
-
-      .maxViewportDimensions[0] = max_render_size,
-      .maxViewportDimensions[1] = max_render_size,
-      .viewportBoundsRange[0] = -(int32_t)(2U * max_render_size),
-      .viewportBoundsRange[1] = 2U * max_render_size,
-
-      .viewportSubPixelBits = 0,
-      .minMemoryMapAlignment = 64U,
-      .minTexelBufferOffsetAlignment = 16U,
-      .minUniformBufferOffsetAlignment = 4U,
-      .minStorageBufferOffsetAlignment = 4U,
-
-      .minTexelOffset = -8,
-      .maxTexelOffset = 7U,
-      .minTexelGatherOffset = -8,
-      .maxTexelGatherOffset = 7,
-      .minInterpolationOffset = -0.5,
-      .maxInterpolationOffset = 0.5,
-      .subPixelInterpolationOffsetBits = 4U,
-
-      .maxFramebufferWidth = max_render_size,
-      .maxFramebufferHeight = max_render_size,
-      .maxFramebufferLayers = PVR_MAX_FRAMEBUFFER_LAYERS,
-
-      .framebufferColorSampleCounts = max_sample_bits,
-      .framebufferDepthSampleCounts = max_sample_bits,
-      .framebufferStencilSampleCounts = max_sample_bits,
-      .framebufferNoAttachmentsSampleCounts = max_sample_bits,
-      .maxColorAttachments = PVR_MAX_COLOR_ATTACHMENTS,
-      .sampledImageColorSampleCounts = max_sample_bits,
-      .sampledImageIntegerSampleCounts = max_sample_bits,
-      .sampledImageDepthSampleCounts = max_sample_bits,
-      .sampledImageStencilSampleCounts = max_sample_bits,
-      .storageImageSampleCounts = max_sample_bits,
-      .maxSampleMaskWords = 1U,
-      .timestampComputeAndGraphics = false,
-      .timestampPeriod = 0.0f,
-      .maxClipDistances = num_user_clip_planes,
-      .maxCullDistances = num_user_clip_planes,
-      .maxCombinedClipAndCullDistances = num_user_clip_planes,
-      .discreteQueuePriorities = 2U,
-      .pointSizeRange[0] = 1.0f,
-      .pointSizeRange[1] = 511.0f,
-      .pointSizeGranularity = 0.0625f,
-      .lineWidthRange[0] = 1.0f / 16.0f,
-      .lineWidthRange[1] = 16.0f,
-      .lineWidthGranularity = 1.0f / 16.0f,
-      .strictLines = false,
-      .standardSampleLocations = true,
-      .optimalBufferCopyOffsetAlignment = 4U,
-      .optimalBufferCopyRowPitchAlignment = 4U,
-      .nonCoherentAtomSize = 1U,
-   };
-
-   *pProperties = (VkPhysicalDeviceProperties){
-      .apiVersion = PVR_API_VERSION,
-      .driverVersion = vk_get_driver_version(),
-      .vendorID = VK_VENDOR_ID_IMAGINATION,
-      .deviceID = pdevice->dev_info.ident.device_id,
-      .deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
-      .limits = limits,
-      .sparseProperties = { 0 },
-   };
-
-   snprintf(pProperties->deviceName,
-            sizeof(pProperties->deviceName),
-            "%s",
-            pdevice->name);
-
-   memcpy(pProperties->pipelineCacheUUID,
-          pdevice->pipeline_cache_uuid,
-          VK_UUID_SIZE);
-}
-
-void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
-                                      VkPhysicalDeviceProperties2 *pProperties)
-{
-   PVR_FROM_HANDLE(pvr_physical_device, pdevice, physicalDevice);
-
-   VkPhysicalDeviceVulkan11Properties core_1_1 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES,
-   };
-
-   VkPhysicalDeviceVulkan12Properties core_1_2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
-   };
-
-   VkPhysicalDeviceVulkan13Properties core_1_3 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
-   };
-
-   pvr_GetPhysicalDeviceProperties(physicalDevice, &pProperties->properties);
-   pvr_get_physical_device_properties_1_1(pdevice, &core_1_1);
-   pvr_get_physical_device_properties_1_2(pdevice, &core_1_2);
-   pvr_get_physical_device_properties_1_3(pdevice, &core_1_3);
-
-   vk_foreach_struct (ext, pProperties->pNext) {
-      if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1))
-         continue;
-
-      if (vk_get_physical_device_core_1_2_property_ext(ext, &core_1_2))
-         continue;
-
-      if (vk_get_physical_device_core_1_3_property_ext(ext, &core_1_3))
-         continue;
-
-      switch (ext->sType) {
-      default: {
-         pvr_debug_ignored_stype(ext->sType);
-         break;
-      }
-      }
-   }
-}
-
 const static VkQueueFamilyProperties pvr_queue_family_properties = {
    .queueFlags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT |
                  VK_QUEUE_TRANSFER_BIT,
@@ -1236,21 +1156,6 @@ const static VkQueueFamilyProperties pvr_queue_family_properties = {
    .timestampValidBits = 0,
    .minImageTransferGranularity = { 1, 1, 1 },
 };
-
-void pvr_GetPhysicalDeviceQueueFamilyProperties(
-   VkPhysicalDevice physicalDevice,
-   uint32_t *pCount,
-   VkQueueFamilyProperties *pQueueFamilyProperties)
-{
-   VK_OUTARRAY_MAKE_TYPED(VkQueueFamilyProperties,
-                          out,
-                          pQueueFamilyProperties,
-                          pCount);
-
-   vk_outarray_append_typed (VkQueueFamilyProperties, &out, p) {
-      *p = pvr_queue_family_properties;
-   }
-}
 
 void pvr_GetPhysicalDeviceQueueFamilyProperties2(
    VkPhysicalDevice physicalDevice,
@@ -2336,7 +2241,7 @@ VkResult pvr_MapMemory(VkDevice _device,
 
    /* Check if already mapped */
    if (mem->bo->map) {
-      *ppData = mem->bo->map + offset;
+      *ppData = (uint8_t *)mem->bo->map + offset;
       return VK_SUCCESS;
    }
 
@@ -2345,7 +2250,7 @@ VkResult pvr_MapMemory(VkDevice _device,
    if (result != VK_SUCCESS)
       return result;
 
-   *ppData = mem->bo->map + offset;
+   *ppData = (uint8_t *)mem->bo->map + offset;
 
    return VK_SUCCESS;
 }
@@ -3138,10 +3043,8 @@ VkResult pvr_CreateSampler(VkDevice _device,
    STATIC_ASSERT(sizeof(((union pvr_sampler_descriptor *)NULL)->data) ==
                  sizeof(((union pvr_sampler_descriptor *)NULL)->words));
 
-   sampler = vk_object_alloc(&device->vk,
-                             pAllocator,
-                             sizeof(*sampler),
-                             VK_OBJECT_TYPE_SAMPLER);
+   sampler =
+      vk_sampler_create(&device->vk, pCreateInfo, pAllocator, sizeof(*sampler));
    if (!sampler) {
       result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto err_out;
@@ -3152,7 +3055,7 @@ VkResult pvr_CreateSampler(VkDevice _device,
 
    result =
       pvr_border_color_table_get_or_create_entry(&device->border_color_table,
-                                                 pCreateInfo,
+                                                 sampler,
                                                  &border_color_table_index);
    if (result != VK_SUCCESS)
       goto err_free_sampler;
@@ -3285,7 +3188,7 @@ void pvr_DestroySampler(VkDevice _device,
    if (!sampler)
       return;
 
-   vk_object_free(&device->vk, pAllocator, sampler);
+   vk_sampler_destroy(&device->vk, pAllocator, &sampler->vk);
 }
 
 void pvr_GetBufferMemoryRequirements2(

@@ -187,8 +187,8 @@ nvk_image_view_init(struct nvk_device *dev,
             assert(view->vk.layer_count == 1);
             nil_view.type = NIL_VIEW_TYPE_2D_ARRAY;
             nil_view.num_levels = 1;
-            nil_view.base_array_layer = 0;
-            nil_view.array_len = view->vk.extent.depth;
+            nil_view.base_array_layer = view->vk.storage.z_slice_offset;
+            nil_view.array_len = view->vk.storage.z_slice_count;
             image_3d_view_as_2d_array(&nil_image, &nil_view, &base_addr);
          }
 

@@ -93,7 +93,7 @@ impl NirKernelBuild {
         let printf_info = nir.take_printf_info();
 
         let nir_or_cso = if !dev.shareable_shaders() {
-            KernelDevStateVariant::Nir(Arc::new(nir))
+            KernelDevStateVariant::Nir(nir)
         } else {
             KernelDevStateVariant::Cso(cso)
         };

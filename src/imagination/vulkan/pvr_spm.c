@@ -358,15 +358,21 @@ VkResult pvr_device_init_spm_load_state(struct pvr_device *device)
       const pvr_dev_addr_t usc_program_dev_addr =
          PVR_DEV_ADDR_OFFSET(usc_bo->dev_addr, usc_aligned_offsets[i]);
       struct pvr_pds_kickusc_program pds_kick_program = { 0 };
+      enum PVRX(PDSINST_DOUTU_SAMPLE_RATE) sample_rate;
 
       pvr_pds_generate_pixel_shader_sa_code_segment(
          &pds_texture_program,
          (uint32_t *)(mem_ptr + pds_texture_aligned_offsets[i]));
 
+      if (spm_load_collection[i].info->msaa_sample_count > 1)
+         sample_rate = PVRX(PDSINST_DOUTU_SAMPLE_RATE_FULL);
+      else
+         sample_rate = PVRX(PDSINST_DOUTU_SAMPLE_RATE_INSTANCE);
+
       pvr_pds_setup_doutu(&pds_kick_program.usc_task_control,
                           usc_program_dev_addr.addr,
                           spm_load_collection[i].info->temps_required,
-                          PVRX(PDSINST_DOUTU_SAMPLE_RATE_INSTANCE),
+                          sample_rate,
                           false);
 
       /* Generated both code and data. */
@@ -922,7 +928,7 @@ pvr_spm_init_bgobj_state(struct pvr_device *device,
    assert(spm_load_program_idx < ARRAY_SIZE(spm_load_collection));
    info = spm_load_collection[spm_load_program_idx].info;
 
-   consts_buffer_size = info->const_shared_regs * sizeof(uint32_t);
+   consts_buffer_size = PVR_DW_TO_BYTES(info->const_shared_regs);
 
    /* TODO: Remove this check, along with the pvr_finishme(), once the zeroed
     * shaders are replaced by the real shaders.

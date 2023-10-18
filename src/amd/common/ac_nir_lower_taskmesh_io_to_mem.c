@@ -20,6 +20,9 @@ typedef struct {
    unsigned payload_entry_bytes;
    unsigned draw_entry_bytes;
    unsigned num_entries;
+
+   /* True if the lowering needs to insert shader query. */
+   bool has_query;
 } lower_tsms_io_state;
 
 static nir_def *
@@ -139,6 +142,23 @@ filter_task_intrinsics(const nir_instr *instr,
           intrin->intrinsic == nir_intrinsic_load_task_payload;
 }
 
+static void
+task_invocation_query(nir_builder *b, lower_tsms_io_state *s)
+{
+   if (!s->has_query)
+      return;
+
+   const unsigned invocations = b->shader->info.workgroup_size[0] *
+                                b->shader->info.workgroup_size[1] *
+                                b->shader->info.workgroup_size[2];
+
+   nir_if *if_pipeline_query = nir_push_if(b, nir_load_pipeline_stat_query_enabled_amd(b));
+   {
+      nir_atomic_add_shader_invocation_count_amd(b, nir_imm_int(b, invocations));
+   }
+   nir_pop_if(b, if_pipeline_query);
+}
+
 static nir_def *
 lower_task_launch_mesh_workgroups(nir_builder *b,
                                   nir_intrinsic_instr *intrin,
@@ -179,6 +199,8 @@ lower_task_launch_mesh_workgroups(nir_builder *b,
       nir_scoped_memory_barrier(b, SCOPE_INVOCATION, NIR_MEMORY_RELEASE, nir_var_shader_out);
       /* Ready bit, only write the low 8 bits. */
       task_write_draw_ring(b, task_draw_ready_bit(b, s), 12, s);
+
+      task_invocation_query(b, s);
    }
    nir_pop_if(b, if_invocation_index_zero);
 
@@ -256,7 +278,8 @@ lower_task_intrinsics(nir_builder *b,
 void
 ac_nir_lower_task_outputs_to_mem(nir_shader *shader,
                                  unsigned task_payload_entry_bytes,
-                                 unsigned task_num_entries)
+                                 unsigned task_num_entries,
+                                 bool has_query)
 {
    assert(util_is_power_of_two_nonzero(task_num_entries));
 
@@ -269,6 +292,7 @@ ac_nir_lower_task_outputs_to_mem(nir_shader *shader,
       .draw_entry_bytes = 16,
       .payload_entry_bytes = task_payload_entry_bytes,
       .num_entries = task_num_entries,
+      .has_query = has_query,
    };
 
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);

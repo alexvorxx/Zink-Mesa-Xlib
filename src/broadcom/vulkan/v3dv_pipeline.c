@@ -2633,13 +2633,8 @@ v3dv_dynamic_state_mask(VkDynamicState state)
       return V3DV_DYNAMIC_LINE_WIDTH;
    case VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
       return V3DV_DYNAMIC_COLOR_WRITE_ENABLE;
-
-   /* Depth bounds testing is not available in in V3D 4.2 so here we are just
-    * ignoring this dynamic state. We are already asserting at pipeline creation
-    * time that depth bounds testing is not enabled.
-    */
    case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
-      return 0;
+      return V3DV_DYNAMIC_DEPTH_BOUNDS;
 
    default:
       unreachable("Unhandled dynamic state");
@@ -2657,6 +2652,7 @@ pipeline_init_dynamic_state(
    const VkPipelineColorWriteCreateInfoEXT *pColorWriteState)
 {
    /* Initialize to default values */
+   const struct v3d_device_info *devinfo = &pipeline->device->devinfo;
    struct v3dv_dynamic_state *dynamic = &pipeline->dynamic_state;
    memset(dynamic, 0, sizeof(*dynamic));
    dynamic->stencil_compare_mask.front = ~0;
@@ -2664,7 +2660,9 @@ pipeline_init_dynamic_state(
    dynamic->stencil_write_mask.front = ~0;
    dynamic->stencil_write_mask.back = ~0;
    dynamic->line_width = 1.0f;
-   dynamic->color_write_enable = (1ull << (4 * V3D_MAX_DRAW_BUFFERS)) - 1;
+   dynamic->color_write_enable =
+      (1ull << (4 * V3D_MAX_RENDER_TARGETS(devinfo->ver))) - 1;
+   dynamic->depth_bounds.max = 1.0f;
 
    /* Create a mask of enabled dynamic states */
    uint32_t dynamic_states = 0;
@@ -2686,9 +2684,10 @@ pipeline_init_dynamic_state(
                       pViewportState->viewportCount);
 
          for (uint32_t i = 0; i < dynamic->viewport.count; i++) {
-            v3dv_viewport_compute_xform(&dynamic->viewport.viewports[i],
-                                        dynamic->viewport.scale[i],
-                                        dynamic->viewport.translate[i]);
+            v3dv_X(pipeline->device, viewport_compute_xform)
+               (&dynamic->viewport.viewports[i],
+                dynamic->viewport.scale[i],
+                dynamic->viewport.translate[i]);
          }
       }
 
@@ -2715,6 +2714,11 @@ pipeline_init_dynamic_state(
       if (!(dynamic_states & V3DV_DYNAMIC_STENCIL_REFERENCE)) {
          dynamic->stencil_reference.front = pDepthStencilState->front.reference;
          dynamic->stencil_reference.back = pDepthStencilState->back.reference;
+      }
+
+      if (!(dynamic_states & V3DV_DYNAMIC_DEPTH_BOUNDS)) {
+         dynamic->depth_bounds.min = pDepthStencilState->minDepthBounds;
+         dynamic->depth_bounds.max = pDepthStencilState->maxDepthBounds;
       }
    }
 
@@ -2827,62 +2831,6 @@ pipeline_set_ez_state(struct v3dv_pipeline *pipeline,
    }
 }
 
-static bool
-pipeline_has_integer_vertex_attrib(struct v3dv_pipeline *pipeline)
-{
-   for (uint8_t i = 0; i < pipeline->va_count; i++) {
-      if (vk_format_is_int(pipeline->va[i].vk_format))
-         return true;
-   }
-   return false;
-}
-
-/* @pipeline can be NULL. We assume in that case that all the attributes have
- * a float format (we only create an all-float BO once and we reuse it with
- * all float pipelines), otherwise we look at the actual type of each
- * attribute used with the specific pipeline passed in.
- */
-struct v3dv_bo *
-v3dv_pipeline_create_default_attribute_values(struct v3dv_device *device,
-                                              struct v3dv_pipeline *pipeline)
-{
-   uint32_t size = MAX_VERTEX_ATTRIBS * sizeof(float) * 4;
-   struct v3dv_bo *bo;
-
-   bo = v3dv_bo_alloc(device, size, "default_vi_attributes", true);
-
-   if (!bo) {
-      fprintf(stderr, "failed to allocate memory for the default "
-              "attribute values\n");
-      return NULL;
-   }
-
-   bool ok = v3dv_bo_map(device, bo, size);
-   if (!ok) {
-      fprintf(stderr, "failed to map default attribute values buffer\n");
-      return false;
-   }
-
-   uint32_t *attrs = bo->map;
-   uint8_t va_count = pipeline != NULL ? pipeline->va_count : 0;
-   for (int i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
-      attrs[i * 4 + 0] = 0;
-      attrs[i * 4 + 1] = 0;
-      attrs[i * 4 + 2] = 0;
-      VkFormat attr_format =
-         pipeline != NULL ? pipeline->va[i].vk_format : VK_FORMAT_UNDEFINED;
-      if (i < va_count && vk_format_is_int(attr_format)) {
-         attrs[i * 4 + 3] = 1;
-      } else {
-         attrs[i * 4 + 3] = fui(1.0);
-      }
-   }
-
-   v3dv_bo_unmap(device, bo);
-
-   return bo;
-}
-
 static void
 pipeline_set_sample_mask(struct v3dv_pipeline *pipeline,
                          const VkPipelineMultisampleStateCreateInfo *ms_info)
@@ -2985,7 +2933,9 @@ pipeline_init(struct v3dv_pipeline *pipeline,
    /* V3D 4.2 doesn't support depth bounds testing so we don't advertise that
     * feature and it shouldn't be used by any pipeline.
     */
-   assert(!ds_info || !ds_info->depthBoundsTestEnable);
+   assert(device->devinfo.ver >= 71 ||
+          !ds_info || !ds_info->depthBoundsTestEnable);
+   pipeline->depth_bounds_test_enabled = ds_info && ds_info->depthBoundsTestEnable;
 
    enable_depth_bias(pipeline, rs_info);
 
@@ -3017,9 +2967,10 @@ pipeline_init(struct v3dv_pipeline *pipeline,
 
    v3dv_X(device, pipeline_pack_compile_state)(pipeline, vi_info, vd_info);
 
-   if (pipeline_has_integer_vertex_attrib(pipeline)) {
+   if (v3dv_X(device, pipeline_needs_default_attribute_values)(pipeline)) {
       pipeline->default_attribute_values =
-         v3dv_pipeline_create_default_attribute_values(pipeline->device, pipeline);
+         v3dv_X(pipeline->device, create_default_attribute_values)(pipeline->device, pipeline);
+
       if (!pipeline->default_attribute_values)
          return VK_ERROR_OUT_OF_DEVICE_MEMORY;
    } else {

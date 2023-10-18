@@ -830,6 +830,7 @@ Lower64BitToVec2::filter(const nir_instr *instr) const
       case nir_intrinsic_load_uniform:
       case nir_intrinsic_load_ubo:
       case nir_intrinsic_load_global:
+      case nir_intrinsic_load_global_constant:
       case nir_intrinsic_load_ubo_vec4:
       case nir_intrinsic_load_ssbo:
          return intr->def.bit_size == 64;
@@ -883,6 +884,7 @@ Lower64BitToVec2::lower(nir_instr *instr)
          return load_ssbo_64_to_vec2(intr);
       case nir_intrinsic_load_input:
       case nir_intrinsic_load_global:
+      case nir_intrinsic_load_global_constant:
       case nir_intrinsic_load_ubo:
       case nir_intrinsic_load_ubo_vec4:
          return load_64_to_vec2(intr);

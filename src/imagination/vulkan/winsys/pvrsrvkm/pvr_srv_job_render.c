@@ -299,8 +299,8 @@ static uint32_t pvr_rogue_get_ppp_screen_val(uint32_t width, uint32_t height)
    uint32_t val;
 
    pvr_csb_pack (&val, CR_PPP_SCREEN, state) {
-      state.pixxmax = width;
-      state.pixymax = height;
+      state.pixxmax = width - 1;
+      state.pixymax = height - 1;
    }
 
    return val;

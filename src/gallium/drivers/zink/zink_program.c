@@ -1295,14 +1295,18 @@ hash_compute_pipeline_state(const void *key)
 }
 
 void
-zink_program_update_compute_pipeline_state(struct zink_context *ctx, struct zink_compute_program *comp, const uint block[3])
+zink_program_update_compute_pipeline_state(struct zink_context *ctx, struct zink_compute_program *comp, const struct pipe_grid_info *info)
 {
    if (comp->use_local_size) {
       for (int i = 0; i < ARRAY_SIZE(ctx->compute_pipeline_state.local_size); i++) {
-         if (ctx->compute_pipeline_state.local_size[i] != block[i])
+         if (ctx->compute_pipeline_state.local_size[i] != info->block[i])
             ctx->compute_pipeline_state.dirty = true;
-         ctx->compute_pipeline_state.local_size[i] = block[i];
+         ctx->compute_pipeline_state.local_size[i] = info->block[i];
       }
+   }
+   if (ctx->compute_pipeline_state.variable_shared_mem != info->variable_shared_mem) {
+      ctx->compute_pipeline_state.dirty = true;
+      ctx->compute_pipeline_state.variable_shared_mem = info->variable_shared_mem;
    }
 }
 
@@ -1370,6 +1374,7 @@ create_compute_program(struct zink_context *ctx, nir_shader *nir)
    comp->use_local_size = !(nir->info.workgroup_size[0] ||
                             nir->info.workgroup_size[1] ||
                             nir->info.workgroup_size[2]);
+   comp->has_variable_shared_mem = nir->info.cs.has_variable_shared_mem;
    comp->base.can_precompile = !comp->use_local_size &&
                                (screen->info.have_EXT_non_seamless_cube_map || !zink_shader_has_cubes(nir)) &&
                                (screen->info.rb2_feats.robustImageAccess2 || !(ctx->flags & PIPE_CONTEXT_ROBUST_BUFFER_ACCESS));
@@ -1955,6 +1960,25 @@ zink_bind_cs_state(struct pipe_context *pctx,
 }
 
 static void
+zink_get_compute_state_info(struct pipe_context *pctx, void *cso, struct pipe_compute_state_object_info *info)
+{
+   struct zink_compute_program *comp = cso;
+   struct zink_screen *screen = zink_screen(pctx->screen);
+
+   info->max_threads = screen->info.props.limits.maxComputeWorkGroupInvocations;
+   info->private_memory = comp->scratch_size;
+   if (screen->info.props11.subgroupSize) {
+      info->preferred_simd_size = screen->info.props11.subgroupSize;
+      info->simd_sizes = info->preferred_simd_size;
+   } else {
+      // just guess it
+      info->preferred_simd_size = 64;
+      // only used for actual subgroup support
+      info->simd_sizes = 0;
+   }
+}
+
+static void
 zink_delete_cs_shader_state(struct pipe_context *pctx, void *cso)
 {
    struct zink_compute_program *comp = cso;
@@ -2242,6 +2266,7 @@ zink_program_init(struct zink_context *ctx)
 
    ctx->base.create_compute_state = zink_create_cs_state;
    ctx->base.bind_compute_state = zink_bind_cs_state;
+   ctx->base.get_compute_state_info = zink_get_compute_state_info;
    ctx->base.delete_compute_state = zink_delete_cs_shader_state;
 
    if (zink_screen(ctx->base.screen)->info.have_EXT_vertex_input_dynamic_state)
@@ -2317,7 +2342,8 @@ has_edge_flags(struct zink_context *ctx)
    default:
       break;
    }
-   return ctx->gfx_pipeline_state.rast_prim == MESA_PRIM_LINES &&
+   return (ctx->gfx_pipeline_state.rast_prim == MESA_PRIM_LINES ||
+           ctx->gfx_pipeline_state.rast_prim == MESA_PRIM_POINTS) &&
           ctx->gfx_stages[MESA_SHADER_VERTEX]->has_edgeflags;
 }
 
@@ -2458,6 +2484,7 @@ zink_set_primitive_emulation_keys(struct zink_context *ctx)
                   &screen->nir_options,
                   prev_stage,
                   prim,
+                  ctx->gfx_pipeline_state.rast_prim,
                   lower_edge_flags,
                   lower_line_stipple || lower_quad_prim);
             }

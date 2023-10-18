@@ -103,7 +103,8 @@ loader_open_device(const char *device_name)
    return fd;
 }
 
-static char *loader_get_kernel_driver_name(int fd)
+char *
+loader_get_kernel_driver_name(int fd)
 {
    char *driver;
    drmVersionPtr version = drmGetVersion(fd);
@@ -132,11 +133,19 @@ iris_predicate(int fd)
    return ret;
 }
 
+/**
+ * Goes through all the platform devices whose driver is on the given list and
+ * try to open their render node. It returns the fd of the first device that
+ * it can open.
+ */
 int
-loader_open_render_node(const char *name)
+loader_open_render_node_platform_device(const char * const drivers[],
+                                        unsigned int n_drivers)
 {
    drmDevicePtr devices[MAX_DRM_DEVICES], device;
-   int i, num_devices, fd = -1;
+   int num_devices, fd = -1;
+   int i, j;
+   bool found = false;
 
    num_devices = drmGetDevices2(0, devices, MAX_DRM_DEVICES);
    if (num_devices <= 0)
@@ -159,7 +168,13 @@ loader_open_render_node(const char *name)
             continue;
          }
 
-         if (strcmp(version->name, name) != 0) {
+         for (j = 0; j < n_drivers; j++) {
+            if (strcmp(version->name, drivers[j]) == 0) {
+               found = true;
+               break;
+            }
+         }
+         if (!found) {
             drmFreeVersion(version);
             close(fd);
             continue;
@@ -175,6 +190,22 @@ loader_open_render_node(const char *name)
       return -ENOENT;
 
    return fd;
+}
+
+bool
+loader_is_device_render_capable(int fd)
+{
+   drmDevicePtr dev_ptr;
+   bool ret;
+
+   if (drmGetDevice2(fd, 0, &dev_ptr) != 0)
+      return false;
+
+   ret = (dev_ptr->available_nodes & (1 << DRM_NODE_RENDER));
+
+   drmFreeDevice(&dev_ptr);
+
+   return ret;
 }
 
 char *
@@ -836,8 +867,6 @@ loader_open_driver(const char *driver_name,
       free(get_extensions_name);
    }
 
-   if (!extensions)
-      extensions = dlsym(driver, __DRI_DRIVER_EXTENSIONS);
    if (extensions == NULL) {
       log_(_LOADER_WARNING,
            "MESA-LOADER: driver exports no extensions (%s)\n", dlerror());

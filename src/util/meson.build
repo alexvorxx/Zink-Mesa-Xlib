@@ -127,6 +127,10 @@ files_mesa_util = files(
   'strndup.h',
   'strtod.c',
   'strtod.h',
+  'texcompress_astc_luts.cpp',
+  'texcompress_astc_luts.h',
+  'texcompress_astc_luts_wrap.cpp',
+  'texcompress_astc_luts_wrap.h',
   'timespec.h',
   'u_atomic.c',
   'u_atomic.h',
@@ -332,6 +336,8 @@ idep_xmlconfig = declare_dependency(
 files_xxd = files('xxd.py')
 glsl2spirv = files('glsl2spirv.py')
 
+devenv.set('DRIRC_CONFIGDIR', meson.current_source_dir())
+
 if with_tests
   # DRI_CONF macros use designated initializers (required for union
   # initializaiton), so we need c++2a since gtest forces us to use c++
@@ -361,6 +367,7 @@ if with_tests
     'tests/gc_alloc_tests.cpp',
     'tests/half_float_test.cpp',
     'tests/int_min_max.cpp',
+    'tests/linear_test.cpp',
     'tests/mesa-sha1_test.cpp',
     'tests/os_mman_test.cpp',
     'tests/perf/u_trace_test.cpp',

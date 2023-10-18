@@ -153,61 +153,28 @@ include:
       when: on_success
 
 
-# When to automatically run the CI for build jobs
-.build-rules:
-  rules:
-    # Run when re-enabling a disabled farm, but not when disabling it
-    - !reference [.disable-farm-mr-rules, rules]
-    # If any files affecting the pipeline are changed, build/test jobs run
-    # automatically once all dependency jobs have passed
-    - changes: &all_paths
-      - VERSION
-      - bin/git_sha1_gen.py
-      - bin/install_megadrivers.py
-      - bin/symbols-check.py
-      # GitLab CI
-      - .gitlab-ci.yml
-      - .gitlab-ci/**/*
-      # Meson
-      - meson*
-      - build-support/**/*
-      - subprojects/**/*
-      # Source code
-      - include/**/*
-      - src/**/*
-      when: on_success
-    # Just skip everything for MRs which don't actually change anything in the
-    # build
-    - if: *is-pre-merge-for-marge
-      when: never
-    - if: *is-post-merge
-      when: never
-    # Always allow user branches etc to trigger jobs manually
-    - when: manual
-
-
-.ci-deqp-artifacts:
-  artifacts:
-    name: "mesa_${CI_JOB_NAME}"
-    when: always
-    untracked: false
-    paths:
-      # Watch out!  Artifacts are relative to the build dir.
-      # https://gitlab.com/gitlab-org/gitlab-ce/commit/8788fb925706cad594adf6917a6c5f6587dd1521
-      - artifacts
-      - _build/meson-logs/*.txt
-      - _build/meson-logs/strace
-
-.container-rules:
+.container+build-rules:
   rules:
     # Run when re-enabling a disabled farm, but not when disabling it
     - !reference [.disable-farm-mr-rules, rules]
     # Run pipeline by default in the main project if any CI pipeline
     # configuration files were changed, to ensure docker images are up to date
     - if: *is-post-merge
-      changes:
-      - .gitlab-ci.yml
-      - .gitlab-ci/**/*
+      changes: &all_paths
+        - VERSION
+        - bin/git_sha1_gen.py
+        - bin/install_megadrivers.py
+        - bin/symbols-check.py
+        # GitLab CI
+        - .gitlab-ci.yml
+        - .gitlab-ci/**/*
+        # Meson
+        - meson*
+        - build-support/**/*
+        - subprojects/**/*
+        # Source code
+        - include/**/*
+        - src/**/*
       when: on_success
     # Run pipeline by default if it was triggered by Marge Bot, is for a
     # merge request, and any files affecting the pipeline were changed
@@ -229,6 +196,19 @@ include:
       when: never
     # Always allow user branches etc to trigger jobs manually
     - when: manual
+
+
+.ci-deqp-artifacts:
+  artifacts:
+    name: "mesa_${CI_JOB_NAME}"
+    when: always
+    untracked: false
+    paths:
+      # Watch out!  Artifacts are relative to the build dir.
+      # https://gitlab.com/gitlab-org/gitlab-ce/commit/8788fb925706cad594adf6917a6c5f6587dd1521
+      - artifacts
+      - _build/meson-logs/*.txt
+      - _build/meson-logs/strace
 
 # Git archive
 

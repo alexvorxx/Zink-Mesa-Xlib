@@ -30,6 +30,7 @@
 
 #include "util/format/u_format_s3tc.h"
 #include "util/u_draw.h"
+#include "util/u_endian.h"
 #include "util/u_index_modify.h"
 #include "util/u_memory.h"
 #include "util/u_upload_mgr.h"
@@ -1298,7 +1299,7 @@ static void r600_set_constant_buffer(struct pipe_context *ctx,
 
 	if (ptr) {
 		/* Upload the user buffer. */
-		if (R600_BIG_ENDIAN) {
+		if (UTIL_ARCH_BIG_ENDIAN) {
 			uint32_t *tmpPtr;
 			unsigned i, size = input->buffer_size;
 
@@ -2287,7 +2288,7 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 		 * and the indices are emitted via PKT3_DRAW_INDEX_IMMD.
 		 * Indirect draws never use immediate indices.
 		 * Note: Instanced rendering in combination with immediate indices hangs. */
-		if (has_user_indices && (R600_BIG_ENDIAN || indirect ||
+		if (has_user_indices && (UTIL_ARCH_BIG_ENDIAN || indirect ||
 						 info->instance_count > 1 ||
 						 draws[0].count*index_size > 20)) {
 			unsigned start_offset = draws[0].start * index_size;
@@ -2439,8 +2440,8 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 	if (index_size) {
 		radeon_emit(cs, PKT3(PKT3_INDEX_TYPE, 0, 0));
 		radeon_emit(cs, index_size == 4 ?
-				(VGT_INDEX_32 | (R600_BIG_ENDIAN ? VGT_DMA_SWAP_32_BIT : 0)) :
-				(VGT_INDEX_16 | (R600_BIG_ENDIAN ? VGT_DMA_SWAP_16_BIT : 0)));
+				(VGT_INDEX_32 | (UTIL_ARCH_BIG_ENDIAN ? VGT_DMA_SWAP_32_BIT : 0)) :
+				(VGT_INDEX_16 | (UTIL_ARCH_BIG_ENDIAN ? VGT_DMA_SWAP_16_BIT : 0)));
 
 		if (has_user_indices) {
 			unsigned size_bytes = draws[0].count*index_size;
@@ -3262,7 +3263,7 @@ uint32_t r600_translate_colorformat(enum amd_gfx_level chip, enum pipe_format fo
 
 uint32_t r600_colorformat_endian_swap(uint32_t colorformat, bool do_endian_swap)
 {
-	if (R600_BIG_ENDIAN) {
+	if (UTIL_ARCH_BIG_ENDIAN) {
 		switch(colorformat) {
 		/* 8-bit buffers. */
 		case V_0280A0_COLOR_4_4:

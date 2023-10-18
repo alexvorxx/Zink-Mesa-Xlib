@@ -113,10 +113,10 @@ vir_is_raw_mov(struct qinst *inst)
                 return false;
         }
 
-        if (inst->qpu.alu.add.a_unpack != V3D_QPU_UNPACK_NONE ||
-            inst->qpu.alu.add.b_unpack != V3D_QPU_UNPACK_NONE ||
-            inst->qpu.alu.mul.a_unpack != V3D_QPU_UNPACK_NONE ||
-            inst->qpu.alu.mul.b_unpack != V3D_QPU_UNPACK_NONE) {
+        if (inst->qpu.alu.add.a.unpack != V3D_QPU_UNPACK_NONE ||
+            inst->qpu.alu.add.b.unpack != V3D_QPU_UNPACK_NONE ||
+            inst->qpu.alu.mul.a.unpack != V3D_QPU_UNPACK_NONE ||
+            inst->qpu.alu.mul.b.unpack != V3D_QPU_UNPACK_NONE) {
                 return false;
         }
 
@@ -156,8 +156,12 @@ vir_is_tex(const struct v3d_device_info *devinfo, struct qinst *inst)
 }
 
 bool
-vir_writes_r3(const struct v3d_device_info *devinfo, struct qinst *inst)
+vir_writes_r3_implicitly(const struct v3d_device_info *devinfo,
+                         struct qinst *inst)
 {
+        if (!devinfo->has_accumulators)
+                return false;
+
         for (int i = 0; i < vir_get_nsrc(inst); i++) {
                 switch (inst->src[i].file) {
                 case QFILE_VPM:
@@ -178,8 +182,12 @@ vir_writes_r3(const struct v3d_device_info *devinfo, struct qinst *inst)
 }
 
 bool
-vir_writes_r4(const struct v3d_device_info *devinfo, struct qinst *inst)
+vir_writes_r4_implicitly(const struct v3d_device_info *devinfo,
+                         struct qinst *inst)
 {
+        if (!devinfo->has_accumulators)
+                return false;
+
         switch (inst->dst.file) {
         case QFILE_MAGIC:
                 switch (inst->dst.index) {
@@ -209,15 +217,15 @@ vir_set_unpack(struct qinst *inst, int src,
 
         if (vir_is_add(inst)) {
                 if (src == 0)
-                        inst->qpu.alu.add.a_unpack = unpack;
+                        inst->qpu.alu.add.a.unpack = unpack;
                 else
-                        inst->qpu.alu.add.b_unpack = unpack;
+                        inst->qpu.alu.add.b.unpack = unpack;
         } else {
                 assert(vir_is_mul(inst));
                 if (src == 0)
-                        inst->qpu.alu.mul.a_unpack = unpack;
+                        inst->qpu.alu.mul.a.unpack = unpack;
                 else
-                        inst->qpu.alu.mul.b_unpack = unpack;
+                        inst->qpu.alu.mul.b.unpack = unpack;
         }
 }
 
@@ -745,6 +753,10 @@ v3d_vs_set_prog_data(struct v3d_compile *c,
 
         /* Set us up for shared input/output segments.  This is apparently
          * necessary for our VCM setup to avoid varying corruption.
+         *
+         * FIXME: initial testing on V3D 7.1 seems to work fine when using
+         * separate segments. So we could try to reevaluate in the future, if
+         * there is any advantage of using separate segments.
          */
         prog_data->separate_segments = false;
         prog_data->vpm_output_size = MAX2(prog_data->vpm_output_size,

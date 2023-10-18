@@ -506,6 +506,10 @@ radv_device_init_meta(struct radv_device *device)
    if (result != VK_SUCCESS)
       goto fail_etc_decode;
 
+   result = radv_device_init_meta_astc_decode_state(device, on_demand);
+   if (result != VK_SUCCESS)
+      goto fail_astc_decode;
+
    if (device->uses_device_generated_commands) {
       result = radv_device_init_dgc_prepare_state(device);
       if (result != VK_SUCCESS)
@@ -539,6 +543,8 @@ fail_accel_struct:
    radv_device_finish_accel_struct_build_state(device);
 fail_dgc:
    radv_device_finish_dgc_prepare_state(device);
+fail_astc_decode:
+   radv_device_finish_meta_astc_decode_state(device);
 fail_etc_decode:
    radv_device_finish_meta_etc_decode_state(device);
 fail_fmask_copy:
@@ -578,6 +584,7 @@ radv_device_finish_meta(struct radv_device *device)
 {
    radv_device_finish_dgc_prepare_state(device);
    radv_device_finish_meta_etc_decode_state(device);
+   radv_device_finish_meta_astc_decode_state(device);
    radv_device_finish_accel_struct_build_state(device);
    radv_device_finish_meta_clear_state(device);
    radv_device_finish_meta_resolve_state(device);

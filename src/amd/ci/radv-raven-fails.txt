@@ -1,2 +1,0 @@
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed49_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed59_geometry,Fail

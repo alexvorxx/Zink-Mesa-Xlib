@@ -89,8 +89,7 @@ needs_exact(aco_ptr<Instruction>& instr)
        * epilog without considering the exec mask.
        */
       return instr->isEXP() || instr->opcode == aco_opcode::p_jump_to_epilog ||
-             instr->opcode == aco_opcode::p_dual_src_export_gfx11 ||
-             instr->opcode == aco_opcode::p_end_with_regs;
+             instr->opcode == aco_opcode::p_dual_src_export_gfx11;
    }
 }
 

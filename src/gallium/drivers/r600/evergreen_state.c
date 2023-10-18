@@ -26,6 +26,7 @@
 #include "evergreend.h"
 
 #include "pipe/p_shader_tokens.h"
+#include "util/u_endian.h"
 #include "util/u_pack_color.h"
 #include "util/u_memory.h"
 #include "util/u_framebuffer.h"
@@ -784,7 +785,7 @@ static int evergreen_fill_tex_resource_words(struct r600_context *rctx,
 		}
 	}
 
-	if (R600_BIG_ENDIAN)
+	if (UTIL_ARCH_BIG_ENDIAN)
 		do_endian_swap = !tmp->db_compatible;
 
 	format = r600_translate_texformat(rctx->b.b.screen, params->pipe_format,
@@ -1229,7 +1230,7 @@ static void evergreen_set_color_surface_common(struct r600_context *rctx,
 		ntype = V_028C70_NUMBER_FLOAT;
 	}
 
-	if (R600_BIG_ENDIAN)
+	if (UTIL_ARCH_BIG_ENDIAN)
 		do_endian_swap = !rtex->db_compatible;
 
 	format = r600_translate_colorformat(rctx->b.gfx_level, pformat, do_endian_swap);

@@ -86,7 +86,8 @@ struct anv_kmd_backend {
                                  uint32_t signal_count,
                                  const struct vk_sync_signal *signals,
                                  struct anv_query_pool *perf_query_pool,
-                                 uint32_t perf_query_pass);
+                                 uint32_t perf_query_pass,
+                                 struct anv_utrace_submit *utrace_submit);
    VkResult (*queue_exec_trace)(struct anv_queue *queue,
                                 struct anv_utrace_submit *submit);
    uint32_t (*bo_alloc_flags_to_bo_flags)(struct anv_device *device,

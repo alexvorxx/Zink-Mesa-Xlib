@@ -37,6 +37,7 @@
 #include "shaders/gfx11_generated_draws_spv.h"
 #include "shaders/query_copy_compute_spv.h"
 #include "shaders/query_copy_fragment_spv.h"
+#include "shaders/memcpy_compute_spv.h"
 
 static bool
 lower_vulkan_descriptors_instr(nir_builder *b, nir_intrinsic_instr *intrin,
@@ -164,11 +165,10 @@ compile_upload_spirv(struct anv_device *device,
    nir_shader* nir =
       vk_spirv_to_nir(&device->vk, spirv_source, spirv_source_size * 4,
                       stage, "main", 0, NULL, &spirv_options,
-                      nir_options, NULL);
+                      nir_options, true /* internal */,
+                      NULL);
 
    assert(nir != NULL);
-
-   nir->info.internal = true;
 
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
    NIR_PASS_V(nir, nir_opt_cse);
@@ -326,7 +326,7 @@ anv_device_init_internal_kernels(struct anv_device *device)
                                    false /* needs_slm */);
    device->internal_kernels_l3_config = intel_get_l3_config(device->info, w);
 
-   struct {
+   const struct {
       struct {
          char name[40];
       } key;
@@ -428,6 +428,34 @@ anv_device_init_internal_kernels(struct anv_device *device)
                },
             },
             .push_data_size = sizeof(struct anv_query_copy_params),
+         },
+      },
+      [ANV_INTERNAL_KERNEL_MEMCPY_COMPUTE] = {
+         .key        = {
+            .name    = "anv-memcpy-compute",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .spirv_data = memcpy_compute_spv_source,
+         .spirv_size = ARRAY_SIZE(memcpy_compute_spv_source),
+         .send_count = device->info->verx10 >= 125 ?
+                       10 /* 5 loads (1 pull constants) + 4 stores + 1 EOT */ :
+                       9 /* 4 loads + 4 stores + 1 EOT */,
+         .bind_map   = {
+            .num_bindings = 3,
+            .bindings     = {
+               {
+                  .address_offset = offsetof(struct anv_memcpy_params,
+                                             src_addr),
+               },
+               {
+                  .address_offset = offsetof(struct anv_memcpy_params,
+                                             dst_addr),
+               },
+               {
+                  .push_constant = true,
+               },
+            },
+            .push_data_size = sizeof(struct anv_memcpy_params),
          },
       },
    };

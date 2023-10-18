@@ -179,7 +179,6 @@
   variables:
     PIGLIT_PLATFORM: mixed_glx_egl  # TODO, take wine/VK in account
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
-    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 ############### Valve Infra
 .test-radv:
@@ -193,7 +192,6 @@
     # the code generator.
     ACO_DEBUG: validateir,validatera
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
-    B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache,install/*,*/install/*,*/vkd3d-proton.cache*,vkd3d-proton.cache*,*.qpa"
     # Enable ETC2 emulation on non-native platforms (RENOIR,RDNA+, GFX6-8 dGPUs)
     radv_require_etc2: 'true'
 
@@ -295,6 +293,15 @@
   tags:
     - amdgpu:codename:VANGOGH
     - $VALVE_INFRA_VANGOGH_JOB_PRIORITY
+
+.navi31-test-valve:
+  variables:
+    RUNNER_FARM_LOCATION: keywords
+    FDO_CI_CONCURRENT: 32
+    B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
+    B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/boot2container/-/releases/v0.9.10/downloads/linux-x86_64'  # Linux 6.3
+  tags:
+    - amdgpu:codename:NAVI31
 
 ############### VKCTS tests ###############
 

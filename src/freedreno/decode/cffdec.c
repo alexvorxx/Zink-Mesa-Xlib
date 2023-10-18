@@ -448,7 +448,7 @@ disasm_gpuaddr(const char *name, uint64_t gpuaddr, int level)
       uint32_t sizedwords = hostlen(gpuaddr) / 4;
       const char *ext;
 
-      dump_hex(buf, min(64, sizedwords), level + 1);
+      dump_hex(buf, MIN2(64, sizedwords), level + 1);
       try_disasm_a3xx(buf, sizedwords, level + 2, stdout, options->info->chip * 100);
 
       /* this is a bit ugly way, but oh well.. */
@@ -1835,11 +1835,11 @@ dump_a2xx_shader_const(uint32_t *dwords, uint32_t sizedwords, uint32_t val,
                 size, fmt);
          // TODO maybe dump these as bytes instead of dwords?
          size = (size + 3) / 4; // for now convert to dwords
-         dump_hex(addr, min(size, 64), level + 1);
-         if (size > min(size, 64))
+         dump_hex(addr, MIN2(size, 64), level + 1);
+         if (size > MIN2(size, 64))
             printf("%s\t\t...\n", levels[level + 1]);
-         dump_float(addr, min(size, 64), level + 1);
-         if (size > min(size, 64))
+         dump_float(addr, MIN2(size, 64), level + 1);
+         if (size > MIN2(size, 64))
             printf("%s\t\t...\n", levels[level + 1]);
       }
    }
@@ -2179,13 +2179,13 @@ cp_draw_indirect_multi(uint32_t *dwords, uint32_t sizedwords, int level)
          printf("%sindirect count: %u\n", levels[level], *buf);
          if (*buf == 0 || *buf > max_indirect_draw_count) {
             /* garbage value */
-            count = min(count, max_draw_count);
+            count = MIN2(count, max_draw_count);
          } else {
             /* not garbage */
-            count = min(count, *buf);
+            count = MIN2(count, *buf);
          }
       } else {
-         count = min(count, max_draw_count);
+         count = MIN2(count, max_draw_count);
       }
    }
 

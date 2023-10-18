@@ -393,7 +393,9 @@ declare_shader_args(const struct radv_device *device, const struct radv_pipeline
 {
    const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
    bool has_shader_query = info->has_prim_query || info->has_xfb_query ||
-                           (stage == MESA_SHADER_GEOMETRY && info->gs.has_pipeline_stat_query);
+                           (stage == MESA_SHADER_GEOMETRY && info->gs.has_pipeline_stat_query) ||
+                           (stage == MESA_SHADER_MESH && info->ms.has_query) ||
+                           (stage == MESA_SHADER_TASK && info->cs.has_query);
    bool has_ngg_provoking_vtx =
       (stage == MESA_SHADER_VERTEX || stage == MESA_SHADER_GEOMETRY) && key->dynamic_provoking_vtx_mode;
 
@@ -451,6 +453,10 @@ declare_shader_args(const struct radv_device *device, const struct radv_pipeline
 
       if (stage == MESA_SHADER_TASK) {
          add_ud_arg(args, 1, AC_ARG_INT, &args->ac.task_ring_entry, AC_UD_TASK_RING_ENTRY);
+
+         if (has_shader_query) {
+            add_ud_arg(args, 1, AC_ARG_INT, &args->shader_query_state, AC_UD_SHADER_QUERY_STATE);
+         }
       }
 
       for (int i = 0; i < 3; i++) {

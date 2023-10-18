@@ -46,7 +46,8 @@ xe_queue_exec_locked(struct anv_queue *queue,
                      uint32_t signal_count,
                      const struct vk_sync_signal *signals,
                      struct anv_query_pool *perf_query_pool,
-                     uint32_t perf_query_pass);
+                     uint32_t perf_query_pass,
+                     struct anv_utrace_submit *utrace_submit);
 
 VkResult
 xe_queue_exec_utrace_locked(struct anv_queue *queue,

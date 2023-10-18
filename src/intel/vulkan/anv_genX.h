@@ -261,3 +261,21 @@ genX(cmd_buffer_begin_companion_rcs_syncpoint)(struct anv_cmd_buffer *cmd_buffer
 void
 genX(cmd_buffer_end_companion_rcs_syncpoint)(struct anv_cmd_buffer *cmd_buffer,
                                              struct anv_state syncpoint);
+
+void
+genX(emit_simple_shader_init)(struct anv_simple_shader *state);
+
+void
+genX(emit_simple_shader_dispatch)(struct anv_simple_shader *state,
+                                  uint32_t num_threads,
+                                  struct anv_state push_state);
+
+struct anv_state
+genX(simple_shader_alloc_push)(struct anv_simple_shader *state, uint32_t size);
+
+struct anv_address
+genX(simple_shader_push_state_address)(struct anv_simple_shader *state,
+                                       struct anv_state push_state);
+
+void
+genX(emit_simple_shader_end)(struct anv_simple_shader *state);

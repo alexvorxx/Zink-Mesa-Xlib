@@ -21,6 +21,7 @@ use std::cmp;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::mem;
 use std::mem::size_of;
 use std::ops::AddAssign;
 use std::os::raw::c_void;
@@ -116,7 +117,7 @@ pub struct Mem {
     pub image_desc: cl_image_desc,
     pub image_elem_size: u8,
     pub props: Vec<cl_mem_properties>,
-    pub cbs: Mutex<Vec<Box<dyn Fn(cl_mem)>>>,
+    pub cbs: Mutex<Vec<MemCB>>,
     res: Option<HashMap<&'static Device, Arc<PipeResource>>>,
     maps: Mutex<Mappings>,
 }
@@ -1234,15 +1235,12 @@ impl Mem {
 
 impl Drop for Mem {
     fn drop(&mut self) {
-        let cl = cl_mem::from_ptr(self);
-        self.cbs
-            .get_mut()
-            .unwrap()
-            .iter()
-            .rev()
-            .for_each(|cb| cb(cl));
+        let cbs = mem::take(self.cbs.get_mut().unwrap());
+        for cb in cbs.into_iter().rev() {
+            cb.call(self);
+        }
 
-        for (d, tx) in self.maps.lock().unwrap().tx.drain() {
+        for (d, tx) in self.maps.get_mut().unwrap().tx.drain() {
             d.helper_ctx().unmap(tx.tx);
         }
     }

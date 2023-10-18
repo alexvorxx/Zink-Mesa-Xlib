@@ -85,12 +85,12 @@ const char *ac_get_family_name(enum radeon_family family)
       return "REMBRANDT";
    case CHIP_RAPHAEL_MENDOCINO:
       return "RAPHAEL_MENDOCINO";
-   case CHIP_GFX1100:
-      return "GFX1100";
-   case CHIP_GFX1101:
-      return "GFX1101";
-   case CHIP_GFX1102:
-      return "GFX1102";
+   case CHIP_NAVI31:
+      return "NAVI31";
+   case CHIP_NAVI32:
+      return "NAVI32";
+   case CHIP_NAVI33:
+      return "NAVI33";
    case CHIP_GFX1103_R1:
       return "GFX1103_R1";
    case CHIP_GFX1103_R2:
@@ -102,7 +102,7 @@ const char *ac_get_family_name(enum radeon_family family)
 
 enum amd_gfx_level ac_get_gfx_level(enum radeon_family family)
 {
-   if (family >= CHIP_GFX1100)
+   if (family >= CHIP_NAVI31)
       return GFX11;
    if (family >= CHIP_NAVI21)
       return GFX10_3;
@@ -120,8 +120,8 @@ enum amd_gfx_level ac_get_gfx_level(enum radeon_family family)
 
 unsigned ac_get_family_id(enum radeon_family family)
 {
-   if (family >= CHIP_GFX1100)
-      return FAMILY_GFX1100;
+   if (family >= CHIP_NAVI31)
+      return FAMILY_NV3;
    if (family >= CHIP_NAVI21)
       return FAMILY_NV;
    if (family >= CHIP_NAVI10)
@@ -210,11 +210,11 @@ const char *ac_get_llvm_processor_name(enum radeon_family family)
       return "gfx1035";
    case CHIP_RAPHAEL_MENDOCINO:
       return "gfx1036";
-   case CHIP_GFX1100:
+   case CHIP_NAVI31:
       return "gfx1100";
-   case CHIP_GFX1101:
+   case CHIP_NAVI32:
       return "gfx1101";
-   case CHIP_GFX1102:
+   case CHIP_NAVI33:
       return "gfx1102";
    case CHIP_GFX1103_R1:
    case CHIP_GFX1103_R2:

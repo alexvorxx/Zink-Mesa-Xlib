@@ -12,3 +12,5 @@ glx@glx-visuals-stencil -pixmap
 
 # segfault in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/48721664
 glx@glx-visuals-stencil
+# ci-collate: Issue found in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49445712
+glx@glx-multithread-texture

@@ -215,6 +215,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_poly_line_smooth_enabled:
    case nir_intrinsic_load_rasterization_primitive_amd:
    case nir_intrinsic_load_global_constant_uniform_block_intel:
+   case nir_intrinsic_cmat_length:
       is_divergent = false;
       break;
 
@@ -608,6 +609,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_rq_proceed:
    case nir_intrinsic_rq_load:
    case nir_intrinsic_load_ray_triangle_vertex_positions:
+   case nir_intrinsic_cmat_extract:
       is_divergent = true;
       break;
 

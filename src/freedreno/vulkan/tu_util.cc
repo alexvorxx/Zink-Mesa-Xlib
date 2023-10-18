@@ -31,6 +31,7 @@ static const struct debug_control tu_debug_options[] = {
    { "perfc", TU_DEBUG_PERFC },
    { "flushall", TU_DEBUG_FLUSHALL },
    { "syncdraw", TU_DEBUG_SYNCDRAW },
+   { "push_consts_per_stage", TU_DEBUG_PUSH_CONSTS_PER_STAGE },
    { "rast_order", TU_DEBUG_RAST_ORDER },
    { "unaligned_store", TU_DEBUG_UNALIGNED_STORE },
    { "log_skip_gmem_ops", TU_DEBUG_LOG_SKIP_GMEM_OPS },
@@ -39,6 +40,7 @@ static const struct debug_control tu_debug_options[] = {
    { "3d_load", TU_DEBUG_3D_LOAD },
    { "fdm", TU_DEBUG_FDM },
    { "noconform", TU_DEBUG_NOCONFORM },
+   { "rd", TU_DEBUG_RD },
    { NULL, 0 }
 };
 

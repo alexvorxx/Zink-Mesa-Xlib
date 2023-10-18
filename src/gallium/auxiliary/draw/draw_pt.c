@@ -643,6 +643,12 @@ draw_mesh(struct draw_context *draw,
 {
    struct draw_pt_middle_end *middle = draw->pt.middle.mesh;
 
+   draw->pt.user.eltSize = 0;
+   draw->pt.user.viewid = 0;
+   draw->pt.user.drawid = 0;
+   draw->pt.user.increment_draw_id = false;
+   draw->pt.vertices_per_patch = 0;
+
    middle->prepare(middle, 0, 0, NULL);
 
    draw_mesh_middle_end_run(middle, vert_info, prim_info);

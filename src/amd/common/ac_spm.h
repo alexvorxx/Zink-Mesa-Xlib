@@ -76,6 +76,8 @@ enum ac_spm_segment_type {
    AC_SPM_SEGMENT_TYPE_SE1,
    AC_SPM_SEGMENT_TYPE_SE2,
    AC_SPM_SEGMENT_TYPE_SE3,
+   AC_SPM_SEGMENT_TYPE_SE4,
+   AC_SPM_SEGMENT_TYPE_SE5,
    AC_SPM_SEGMENT_TYPE_GLOBAL,
    AC_SPM_SEGMENT_TYPE_COUNT,
 };
@@ -90,15 +92,25 @@ struct ac_spm_counter_create_info {
    uint32_t instance;
 };
 
-struct ac_spm_muxsel {
-   uint16_t counter      : 6;
-   uint16_t block        : 4;
-   uint16_t shader_array : 1; /* 0: SA0, 1: SA1 */
-   uint16_t instance     : 5;
+union ac_spm_muxsel {
+   struct {
+      uint16_t counter      : 6;
+      uint16_t block        : 4;
+      uint16_t shader_array : 1; /* 0: SA0, 1: SA1 */
+      uint16_t instance     : 5;
+   } gfx10;
+
+   struct {
+      uint16_t counter      : 5;
+      uint16_t instance     : 5;
+      uint16_t shader_array : 1;
+      uint16_t block        : 5;
+   } gfx11;
+   uint16_t value;
 };
 
 struct ac_spm_muxsel_line {
-   struct ac_spm_muxsel muxsel[AC_SPM_NUM_COUNTER_PER_MUXSEL];
+   union ac_spm_muxsel muxsel[AC_SPM_NUM_COUNTER_PER_MUXSEL];
 };
 
 struct ac_spm_counter_info {
@@ -110,7 +122,7 @@ struct ac_spm_counter_info {
    /* Muxsel info. */
    enum ac_spm_segment_type segment_type;
    bool is_even;
-   struct ac_spm_muxsel muxsel;
+   union ac_spm_muxsel muxsel;
 
    /* Output info. */
    uint64_t offset;
@@ -140,6 +152,7 @@ struct ac_spm {
    /* struct radeon_winsys_bo or struct pb_buffer */
    void *bo;
    void *ptr;
+   uint8_t ptr_granularity;
    uint32_t buffer_size;
    uint16_t sample_interval;
 
@@ -156,9 +169,16 @@ struct ac_spm {
       struct ac_spm_counter_select counters[16];
    } sqg[AC_SPM_SEGMENT_TYPE_GLOBAL];
 
+   struct {
+      uint32_t grbm_gfx_index;
+      uint32_t num_counters;
+      struct ac_spm_counter_select counters[16];
+   } sq_wgp[AMD_MAX_WGP];
+
    /* Muxsel lines. */
    unsigned num_muxsel_lines[AC_SPM_SEGMENT_TYPE_COUNT];
    struct ac_spm_muxsel_line *muxsel_lines[AC_SPM_SEGMENT_TYPE_COUNT];
+   unsigned max_se_muxsel_lines;
 };
 
 struct ac_spm_trace {

@@ -949,7 +949,6 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       unreachable("invalid stage");
    }
 
-   int header_size = 1;
    fs_reg per_slot_offsets;
 
    if (stage == MESA_SHADER_GEOMETRY) {
@@ -963,12 +962,6 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       starting_urb_offset = 2 * gs_prog_data->control_data_header_size_hwords;
       if (gs_prog_data->static_vertex_count == -1)
          starting_urb_offset += 2;
-
-      /* We also need to use per-slot offsets.  The per-slot offset is the
-       * Vertex Count.  SIMD8 mode processes 8 different primitives at a
-       * time; each may output a different number of vertices.
-       */
-      header_size++;
 
       /* The URB offset is in 128-bit units, so we need to multiply by 2 */
       const int output_vertex_size_owords =
@@ -1014,7 +1007,8 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
             break;
          }
 
-         fs_reg zero(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
+         fs_reg zero(VGRF, alloc.allocate(dispatch_width / 8),
+                     BRW_REGISTER_TYPE_UD);
          bld.MOV(zero, brw_imm_ud(0u));
 
          if (vue_map->slots_valid & VARYING_BIT_PRIMITIVE_SHADING_RATE &&
@@ -1022,7 +1016,8 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
             sources[length++] = this->outputs[VARYING_SLOT_PRIMITIVE_SHADING_RATE];
          } else if (devinfo->has_coarse_pixel_primitive_and_cb) {
             uint32_t one_fp16 = 0x3C00;
-            fs_reg one_by_one_fp16(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
+            fs_reg one_by_one_fp16(VGRF, alloc.allocate(dispatch_width / 8),
+                                   BRW_REGISTER_TYPE_UD);
             bld.MOV(one_by_one_fp16, brw_imm_ud((one_fp16 << 16) | one_fp16));
             sources[length++] = one_by_one_fp16;
          } else {
@@ -1077,7 +1072,8 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
              * temp register and use that for the payload.
              */
             for (int i = 0; i < 4; i++) {
-               fs_reg reg = fs_reg(VGRF, alloc.allocate(1), outputs[varying].type);
+               fs_reg reg = fs_reg(VGRF, alloc.allocate(dispatch_width / 8),
+                                   outputs[varying].type);
                fs_reg src = offset(this->outputs[varying], bld, i);
                set_saturate(true, bld.MOV(reg, src));
                sources[length++] = reg;
@@ -1112,8 +1108,10 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
 
          srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
          srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] = per_slot_offsets;
-         srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, alloc.allocate(length),
+         srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF,
+                                             alloc.allocate((dispatch_width / 8) * length),
                                              BRW_REGISTER_TYPE_F);
+         srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(length);
          abld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], sources, length, 0);
 
          fs_inst *inst = abld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
@@ -1125,7 +1123,6 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
          else
             inst->eot = slot == last_slot && stage != MESA_SHADER_GEOMETRY;
 
-         inst->mlen = length + header_size;
          inst->offset = urb_offset;
          urb_offset = starting_urb_offset + slot + 1;
          length = 0;
@@ -1152,19 +1149,21 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       if (stage == MESA_SHADER_GEOMETRY)
          return;
 
-      fs_reg uniform_urb_handle = fs_reg(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
-      fs_reg payload = fs_reg(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
+      fs_reg uniform_urb_handle = fs_reg(VGRF, alloc.allocate(dispatch_width / 8),
+                                         BRW_REGISTER_TYPE_UD);
+      fs_reg payload = fs_reg(VGRF, alloc.allocate(dispatch_width / 8),
+                              BRW_REGISTER_TYPE_UD);
 
       bld.exec_all().MOV(uniform_urb_handle, urb_handle);
 
       fs_reg srcs[URB_LOGICAL_NUM_SRCS];
       srcs[URB_LOGICAL_SRC_HANDLE] = uniform_urb_handle;
       srcs[URB_LOGICAL_SRC_DATA] = payload;
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(1);
 
       fs_inst *inst = bld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
                                srcs, ARRAY_SIZE(srcs));
       inst->eot = true;
-      inst->mlen = 2;
       inst->offset = 1;
       return;
    }
@@ -1176,6 +1175,7 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
     * all 8 lanes must valid.
     */
    if (devinfo->ver == 11 && stage == MESA_SHADER_TESS_EVAL) {
+      assert(dispatch_width == 8);
       fs_reg uniform_urb_handle = fs_reg(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
       fs_reg uniform_mask = fs_reg(VGRF, alloc.allocate(1), BRW_REGISTER_TYPE_UD);
       fs_reg payload = fs_reg(VGRF, alloc.allocate(4), BRW_REGISTER_TYPE_UD);
@@ -1211,11 +1211,11 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       srcs[URB_LOGICAL_SRC_HANDLE] = uniform_urb_handle;
       srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = uniform_mask;
       srcs[URB_LOGICAL_SRC_DATA] = payload;
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(4);
 
       fs_inst *inst = bld.exec_all().emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
                                           reg_undef, srcs, ARRAY_SIZE(srcs));
       inst->eot = true;
-      inst->mlen = 6;
       inst->offset = 0;
    }
 }

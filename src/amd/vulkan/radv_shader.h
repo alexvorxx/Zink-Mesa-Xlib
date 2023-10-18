@@ -96,6 +96,7 @@ struct radv_pipeline_key {
    uint32_t tex_non_uniform : 1;
    uint32_t enable_remove_point_size : 1;
    uint32_t unknown_rast_prim : 1;
+   uint32_t mesh_shader_queries : 1;
 
    uint32_t vertex_robustness1 : 1;
 
@@ -428,6 +429,7 @@ struct radv_shader_info {
       bool uses_rt;
       bool uses_full_subgroups;
       bool linear_taskmesh_dispatch;
+      bool has_query; /* Task shader only */
 
       bool regalloc_hang_bug;
    } cs;
@@ -445,6 +447,7 @@ struct radv_shader_info {
       enum mesa_prim output_prim;
       bool needs_ms_scratch_ring;
       bool has_task; /* If mesh shader is used together with a task shader. */
+      bool has_query;
    } ms;
 
    struct radv_streamout_info so;

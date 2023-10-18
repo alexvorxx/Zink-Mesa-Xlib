@@ -679,10 +679,8 @@ struct __DRIuseInvalidateExtensionRec {
 };
 
 /**
- * The remaining extensions describe driver extensions, immediately
- * available interfaces provided by the driver.  To start using the
- * driver, dlsym() for the __DRI_DRIVER_EXTENSIONS symbol and look for
- * the extension you need in the array.
+ * Dead, do not use; kept only to allow old Xserver to compile since
+ * this file is a public API.
  */
 #define __DRI_DRIVER_EXTENSIONS "__driDriverExtensions"
 

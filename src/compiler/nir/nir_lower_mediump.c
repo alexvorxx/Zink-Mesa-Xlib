@@ -67,8 +67,10 @@ nir_recompute_io_bases(nir_shader *nir, nir_variable_mode modes)
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
    BITSET_DECLARE(inputs, NUM_TOTAL_VARYING_SLOTS);
+   BITSET_DECLARE(dual_slot_inputs, NUM_TOTAL_VARYING_SLOTS);
    BITSET_DECLARE(outputs, NUM_TOTAL_VARYING_SLOTS);
    BITSET_ZERO(inputs);
+   BITSET_ZERO(dual_slot_inputs);
    BITSET_ZERO(outputs);
 
    /* Gather the bitmasks of used locations. */
@@ -85,8 +87,11 @@ nir_recompute_io_bases(nir_shader *nir, nir_variable_mode modes)
             num_slots = (num_slots + sem.high_16bits + 1) / 2;
 
          if (mode == nir_var_shader_in) {
-            for (unsigned i = 0; i < num_slots; i++)
+            for (unsigned i = 0; i < num_slots; i++) {
                BITSET_SET(inputs, sem.location + i);
+               if (sem.high_dvec2)
+                  BITSET_SET(dual_slot_inputs, sem.location + i);
+            }
          } else if (!sem.dual_source_blend_index) {
             for (unsigned i = 0; i < num_slots; i++)
                BITSET_SET(outputs, sem.location + i);
@@ -111,7 +116,9 @@ nir_recompute_io_bases(nir_shader *nir, nir_variable_mode modes)
 
          if (mode == nir_var_shader_in) {
             nir_intrinsic_set_base(intr,
-                                   BITSET_PREFIX_SUM(inputs, sem.location));
+                                   BITSET_PREFIX_SUM(inputs, sem.location) +
+                                   BITSET_PREFIX_SUM(dual_slot_inputs, sem.location) +
+                                   (sem.high_dvec2 ? 1 : 0));
          } else if (sem.dual_source_blend_index) {
             nir_intrinsic_set_base(intr,
                                    BITSET_PREFIX_SUM(outputs, NUM_TOTAL_VARYING_SLOTS));
@@ -646,87 +653,80 @@ is_i32_to_i16_conversion(nir_instr *instr)
  * coordinates and the type of the texture bias must be 32-bit, there
  * will be 2 constraints describing that.
  */
+static bool
+legalize_16bit_sampler_srcs(nir_builder *b, nir_instr *instr, void *data)
+{
+   bool progress = false;
+   nir_tex_src_type_constraint *constraints = data;
+
+   if (instr->type != nir_instr_type_tex)
+      return false;
+
+   nir_tex_instr *tex = nir_instr_as_tex(instr);
+   int8_t map[nir_num_tex_src_types];
+   memset(map, -1, sizeof(map));
+
+   /* Create a mapping from src_type to src[i]. */
+   for (unsigned i = 0; i < tex->num_srcs; i++)
+      map[tex->src[i].src_type] = i;
+
+   /* Legalize src types. */
+   for (unsigned i = 0; i < tex->num_srcs; i++) {
+      nir_tex_src_type_constraint c = constraints[tex->src[i].src_type];
+
+      if (!c.legalize_type)
+         continue;
+
+      /* Determine the required bit size for the src. */
+      unsigned bit_size;
+      if (c.bit_size) {
+         bit_size = c.bit_size;
+      } else {
+         if (map[c.match_src] == -1)
+            continue; /* e.g. txs */
+
+         bit_size = tex->src[map[c.match_src]].src.ssa->bit_size;
+      }
+
+      /* Check if the type is legal. */
+      if (bit_size == tex->src[i].src.ssa->bit_size)
+         continue;
+
+      /* Fix the bit size. */
+      bool is_sint = nir_tex_instr_src_type(tex, i) == nir_type_int;
+      bool is_uint = nir_tex_instr_src_type(tex, i) == nir_type_uint;
+      nir_def *(*convert)(nir_builder *, nir_def *);
+
+      switch (bit_size) {
+      case 16:
+         convert = is_sint ? nir_i2i16 : is_uint ? nir_u2u16
+                                                 : nir_f2f16;
+         break;
+      case 32:
+         convert = is_sint ? nir_i2i32 : is_uint ? nir_u2u32
+                                                 : nir_f2f32;
+         break;
+      default:
+         assert(!"unexpected bit size");
+         continue;
+      }
+
+      b->cursor = nir_before_instr(&tex->instr);
+      nir_src_rewrite(&tex->src[i].src, convert(b, tex->src[i].src.ssa));
+      progress = true;
+   }
+
+   return progress;
+}
+
 bool
 nir_legalize_16bit_sampler_srcs(nir_shader *nir,
                                 nir_tex_src_type_constraints constraints)
 {
-   bool changed = false;
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   assert(impl);
-
-   nir_builder b = nir_builder_create(impl);
-
-   nir_foreach_block_safe(block, impl) {
-      nir_foreach_instr_safe(instr, block) {
-         if (instr->type != nir_instr_type_tex)
-            continue;
-
-         nir_tex_instr *tex = nir_instr_as_tex(instr);
-         int8_t map[nir_num_tex_src_types];
-         memset(map, -1, sizeof(map));
-
-         /* Create a mapping from src_type to src[i]. */
-         for (unsigned i = 0; i < tex->num_srcs; i++)
-            map[tex->src[i].src_type] = i;
-
-         /* Legalize src types. */
-         for (unsigned i = 0; i < tex->num_srcs; i++) {
-            nir_tex_src_type_constraint c = constraints[tex->src[i].src_type];
-
-            if (!c.legalize_type)
-               continue;
-
-            /* Determine the required bit size for the src. */
-            unsigned bit_size;
-            if (c.bit_size) {
-               bit_size = c.bit_size;
-            } else {
-               if (map[c.match_src] == -1)
-                  continue; /* e.g. txs */
-
-               bit_size = tex->src[map[c.match_src]].src.ssa->bit_size;
-            }
-
-            /* Check if the type is legal. */
-            if (bit_size == tex->src[i].src.ssa->bit_size)
-               continue;
-
-            /* Fix the bit size. */
-            bool is_sint = nir_tex_instr_src_type(tex, i) == nir_type_int;
-            bool is_uint = nir_tex_instr_src_type(tex, i) == nir_type_uint;
-            nir_def *(*convert)(nir_builder *, nir_def *);
-
-            switch (bit_size) {
-            case 16:
-               convert = is_sint ? nir_i2i16 : is_uint ? nir_u2u16
-                                                       : nir_f2f16;
-               break;
-            case 32:
-               convert = is_sint ? nir_i2i32 : is_uint ? nir_u2u32
-                                                       : nir_f2f32;
-               break;
-            default:
-               assert(!"unexpected bit size");
-               continue;
-            }
-
-            b.cursor = nir_before_instr(&tex->instr);
-            nir_def *conv =
-               convert(&b, tex->src[i].src.ssa);
-            nir_src_rewrite(&tex->src[i].src, conv);
-            changed = true;
-         }
-      }
-   }
-
-   if (changed) {
-      nir_metadata_preserve(impl, nir_metadata_dominance |
-                                     nir_metadata_block_index);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
-
-   return changed;
+   return nir_shader_instructions_pass(nir, legalize_16bit_sampler_srcs,
+                                       nir_metadata_dominance |
+                                          nir_metadata_block_index,
+                                       constraints);
 }
 
 static bool
@@ -851,7 +851,7 @@ fold_16bit_destination(nir_def *ssa, nir_alu_type dest_type,
    bool allow_rtne = rdm == nir_rounding_mode_rtne;
 
    nir_foreach_use(use, ssa) {
-      nir_instr *instr = use->parent_instr;
+      nir_instr *instr = nir_src_parent_instr(use);
       is_f32_to_f16 &= (allow_standard && is_f32_to_f16_conversion(instr)) ||
                        (allow_rtz && is_n_to_m_conversion(instr, 32, nir_op_f2f16_rtz)) ||
                        (allow_rtne && is_n_to_m_conversion(instr, 32, nir_op_f2f16_rtne));
@@ -863,7 +863,7 @@ fold_16bit_destination(nir_def *ssa, nir_alu_type dest_type,
 
    /* All uses are the same conversions. Replace them with mov. */
    nir_foreach_use(use, ssa) {
-      nir_alu_instr *conv = nir_instr_as_alu(use->parent_instr);
+      nir_alu_instr *conv = nir_instr_as_alu(nir_src_parent_instr(use));
       conv->op = nir_op_mov;
    }
 

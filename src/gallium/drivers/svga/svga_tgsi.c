@@ -420,6 +420,7 @@ svga_tgsi_scan_shader(struct svga_shader *shader)
    info->uses_image_size = tgsi_info->opcode_count[TGSI_OPCODE_RESQ] ? 1 : 0;
    info->uses_shader_buffers = tgsi_info->shader_buffers_declared != 0;
    info->const_buffers_declared = tgsi_info->const_buffers_declared;
+   info->shader_buffers_declared = tgsi_info->shader_buffers_declared;
 
    info->generic_inputs_mask = svga_get_generic_inputs_mask(tgsi_info);
    info->generic_outputs_mask = svga_get_generic_outputs_mask(tgsi_info);

@@ -64,7 +64,7 @@ struct spirv_to_nir_options {
    /* Initial value for shader_info::float_controls_execution_mode,
     * indicates hardware requirements rather than shader author intent
     */
-   uint16_t float_controls_execution_mode;
+   uint32_t float_controls_execution_mode;
 
    /* Initial subgroup size.  This may be overwritten for CL kernels */
    enum gl_subgroup_size subgroup_size;

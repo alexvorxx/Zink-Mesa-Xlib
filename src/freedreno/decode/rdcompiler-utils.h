@@ -12,7 +12,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "freedreno/decode/redump.h"
+#include "redump.h"
 
 #include "util/u_math.h"
 

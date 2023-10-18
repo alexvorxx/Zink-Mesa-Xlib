@@ -41,6 +41,7 @@
 #include "nir/nir_to_tgsi_info.h"
 #include "compiler/nir/nir.h"
 #include "util/u_bitcast.h"
+#include "util/u_endian.h"
 #include "util/u_memory.h"
 #include "util/u_math.h"
 #include <stdio.h>
@@ -127,7 +128,7 @@ static int store_shader(struct pipe_context *ctx,
 		ptr = r600_buffer_map_sync_with_rings(
 			&rctx->b, shader->bo,
 			PIPE_MAP_WRITE | RADEON_MAP_TEMPORARY);
-		if (R600_BIG_ENDIAN) {
+		if (UTIL_ARCH_BIG_ENDIAN) {
 			for (i = 0; i < shader->shader.bc.ndw; ++i) {
 				ptr[i] = util_cpu_to_le32(shader->shader.bc.bytecode[i]);
 			}

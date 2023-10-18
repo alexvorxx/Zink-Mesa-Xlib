@@ -2266,13 +2266,8 @@ fs_visitor::emit_gs_control_data_bits(const fs_reg &vertex_count)
       fwa_bld.SHL(channel_mask, channel_mask, brw_imm_ud(16u));
    }
 
-   /* Store the control data bits in the message payload and send it. */
-   const unsigned header_size = 1 + unsigned(channel_mask.file != BAD_FILE) +
-      unsigned(per_slot_offset.file != BAD_FILE);
-
    /* If there are channel masks, add 3 extra copies of the data. */
    const unsigned length = 1 + 3 * unsigned(channel_mask.file != BAD_FILE);
-
    fs_reg sources[4];
 
    for (unsigned i = 0; i < ARRAY_SIZE(sources); i++)
@@ -2283,11 +2278,12 @@ fs_visitor::emit_gs_control_data_bits(const fs_reg &vertex_count)
    srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] = per_slot_offset;
    srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = channel_mask;
    srcs[URB_LOGICAL_SRC_DATA] = bld.vgrf(BRW_REGISTER_TYPE_F, length);
+   srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(length);
    abld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], sources, length, 0);
 
    fs_inst *inst = abld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
                              srcs, ARRAY_SIZE(srcs));
-   inst->mlen = header_size + length;
+
    /* We need to increment Global Offset by 256-bits to make room for
     * Broadwell's extra "Vertex Count" payload at the beginning of the
     * URB entry.  Since this is an OWord message, Global Offset is counted
@@ -2560,7 +2556,6 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
                               dst.component_size(inst->exec_size);
       }
       inst->offset = base_offset + nir_src_as_uint(offset_src);
-      inst->mlen = 1;
    } else {
       /* Indirect indexing - use per-slot offsets as well. */
       unsigned read_components = num_components + first_component;
@@ -2586,7 +2581,6 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
                               dst.component_size(inst->exec_size);
       }
       inst->offset = base_offset;
-      inst->mlen = 2;
    }
 }
 
@@ -2698,21 +2692,22 @@ fs_visitor::get_tcs_multi_patch_icp_handle(const fs_builder &bld,
 {
    struct brw_tcs_prog_key *tcs_key = (struct brw_tcs_prog_key *) key;
    const nir_src &vertex_src = instr->src[0];
+   const unsigned grf_size_bytes = REG_SIZE * reg_unit(devinfo);
 
    const fs_reg start = tcs_payload().icp_handle_start;
 
    if (nir_src_is_const(vertex_src))
-      return byte_offset(start, nir_src_as_uint(vertex_src) * REG_SIZE);
+      return byte_offset(start, nir_src_as_uint(vertex_src) * grf_size_bytes);
 
    /* The vertex index is non-constant.  We need to use indirect
     * addressing to fetch the proper URB handle.
     *
-    * First, we start with the sequence <7, 6, 5, 4, 3, 2, 1, 0>
-    * indicating that channel <n> should read the handle from
-    * DWord <n>.  We convert that to bytes by multiplying by 4.
+    * First, we start with the sequence indicating that channel <n>
+    * should read the handle from DWord <n>.  We convert that to bytes
+    * by multiplying by 4.
     *
     * Next, we convert the vertex index to bytes by multiplying
-    * by 32 (shifting by 5), and add the two together.  This is
+    * by the GRF size (by shifting), and add the two together.  This is
     * the final indirect byte offset.
     */
    fs_reg icp_handle = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
@@ -2721,12 +2716,13 @@ fs_visitor::get_tcs_multi_patch_icp_handle(const fs_builder &bld,
    fs_reg vertex_offset_bytes = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
    fs_reg icp_offset_bytes = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
 
-   /* channel_offsets = 4 * sequence = <28, 24, 20, 16, 12, 8, 4, 0> */
+   /* Offsets will be 0, 4, 8, ... */
    bld.SHL(channel_offsets, sequence, brw_imm_ud(2u));
    /* Convert vertex_index to bytes (multiply by 32) */
+   assert(util_is_power_of_two_nonzero(grf_size_bytes)); /* for ffs() */
    bld.SHL(vertex_offset_bytes,
            retype(get_nir_src(vertex_src), BRW_REGISTER_TYPE_UD),
-           brw_imm_ud(5u));
+           brw_imm_ud(ffs(grf_size_bytes) - 1));
    bld.ADD(icp_offset_bytes, vertex_offset_bytes, channel_offsets);
 
    /* Use start of ICP handles as the base offset.  There is one register
@@ -2735,8 +2731,8 @@ fs_visitor::get_tcs_multi_patch_icp_handle(const fs_builder &bld,
     */
    bld.emit(SHADER_OPCODE_MOV_INDIRECT, icp_handle, start,
             icp_offset_bytes,
-            brw_imm_ud(brw_tcs_prog_key_input_vertices(tcs_key) * REG_SIZE *
-                       reg_unit(devinfo)));
+            brw_imm_ud(brw_tcs_prog_key_input_vertices(tcs_key) *
+                       grf_size_bytes));
 
    return icp_handle;
 }
@@ -2813,7 +2809,6 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
                             ARRAY_SIZE(srcs));
          }
          inst->offset = imm_offset;
-         inst->mlen = 1;
       } else {
          /* Indirect indexing - use per-slot offsets as well. */
          srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] = indirect_offset;
@@ -2832,7 +2827,6 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
                             srcs, ARRAY_SIZE(srcs));
          }
          inst->offset = imm_offset;
-         inst->mlen = 2;
       }
       inst->size_written = (num_components + first_component) *
                            inst->dst.component_size(inst->exec_size);
@@ -2886,7 +2880,6 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
                inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
             }
             inst->offset = imm_offset;
-            inst->mlen = 1;
          }
       } else {
          /* Indirect indexing - use per-slot offsets as well. */
@@ -2911,7 +2904,6 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
             inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
          }
          inst->offset = imm_offset;
-         inst->mlen = 2;
       }
       break;
    }
@@ -2928,12 +2920,12 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
          break;
 
       unsigned num_components = util_last_bit(mask);
-
-      /* We can only pack two 64-bit components in a single message, so send
-       * 2 messages if we have more components
-       */
       unsigned first_component = nir_intrinsic_component(instr);
+      assert((first_component + num_components) <= 4);
+
       mask = mask << first_component;
+
+      const bool has_urb_lsc = devinfo->ver >= 20;
 
       fs_reg mask_reg;
       if (mask != WRITEMASK_XYZW)
@@ -2941,28 +2933,29 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
 
       fs_reg sources[4];
 
+      unsigned m = has_urb_lsc ? 0 : first_component;
       for (unsigned i = 0; i < num_components; i++) {
-         if (!(mask & (1 << (i + first_component))))
-            continue;
-
-         sources[i + first_component] = offset(value, bld, i);
+         int c = i + first_component;
+         if (mask & (1 << c)) {
+            sources[m++] = offset(value, bld, i);
+         } else if (devinfo->ver < 20) {
+            m++;
+         }
       }
 
-      unsigned header_size = 1 + unsigned(indirect_offset.file != BAD_FILE) +
-         unsigned(mask != WRITEMASK_XYZW);
-      const unsigned length = num_components + first_component;
+      assert(has_urb_lsc || m == (first_component + num_components));
 
       fs_reg srcs[URB_LOGICAL_NUM_SRCS];
       srcs[URB_LOGICAL_SRC_HANDLE] = tcs_payload().patch_urb_output;
       srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] = indirect_offset;
       srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = mask_reg;
-      srcs[URB_LOGICAL_SRC_DATA] = bld.vgrf(BRW_REGISTER_TYPE_F, length);
-      bld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], sources, length, 0);
+      srcs[URB_LOGICAL_SRC_DATA] = bld.vgrf(BRW_REGISTER_TYPE_F, m);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(m);
+      bld.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], sources, m, 0);
 
       fs_inst *inst = bld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, reg_undef,
                                srcs, ARRAY_SIZE(srcs));
       inst->offset = imm_offset;
-      inst->mlen = header_size + length;
       break;
    }
 
@@ -3037,7 +3030,6 @@ fs_visitor::nir_emit_tes_intrinsic(const fs_builder &bld,
                                srcs, ARRAY_SIZE(srcs));
                inst->size_written = instr->num_components * REG_SIZE * reg_unit(devinfo);
             }
-            inst->mlen = 1;
             inst->offset = imm_offset;
          }
       } else {
@@ -3067,7 +3059,6 @@ fs_visitor::nir_emit_tes_intrinsic(const fs_builder &bld,
             inst = bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dest,
                             srcs, ARRAY_SIZE(srcs));
          }
-         inst->mlen = 2;
          inst->offset = imm_offset;
          inst->size_written = (num_components + first_component) *
                               inst->dst.component_size(inst->exec_size);
@@ -4012,7 +4003,7 @@ fs_reg
 fs_visitor::try_rebuild_resource(const brw::fs_builder &bld, nir_def *resource_def)
 {
    /* Create a build at the location of the resource_intel intrinsic */
-   fs_builder ubld1 = bld.exec_all().group(1, 0);
+   fs_builder ubld8 = bld.exec_all().group(8, 0);
 
    struct rebuild_resource resources = {};
    resources.idx = 0;
@@ -4050,45 +4041,72 @@ fs_visitor::try_rebuild_resource(const brw::fs_builder &bld, nir_def *resource_d
       case nir_instr_type_load_const: {
          nir_load_const_instr *load_const =
             nir_instr_as_load_const(instr);
-         fs_reg dst = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
-         ubld1.UNDEF(dst);
+         fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
          nir_resource_insts[def->index] =
-            ubld1.group(8, 0).MOV(dst, brw_imm_ud(load_const->value[0].i32));
+            ubld8.MOV(dst, brw_imm_ud(load_const->value[0].i32));
          break;
       }
 
       case nir_instr_type_alu: {
          nir_alu_instr *alu = nir_instr_as_alu(instr);
 
-         if (nir_op_infos[alu->op].num_inputs != 2)
+         if (nir_op_infos[alu->op].num_inputs == 2) {
+            if (alu->src[0].swizzle[0] != 0 ||
+                alu->src[1].swizzle[0] != 0)
+               break;
+         } else if (nir_op_infos[alu->op].num_inputs == 3) {
+            if (alu->src[0].swizzle[0] != 0 ||
+                alu->src[1].swizzle[0] != 0 ||
+                alu->src[2].swizzle[0] != 0)
+               break;
+         } else {
+            /* Not supported ALU input count */
             break;
-
-         if (alu->src[0].swizzle[0] != 0 || alu->src[1].swizzle[0] != 0)
-            break;
+         }
 
          switch (alu->op) {
          case nir_op_iadd: {
-            fs_reg dst = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
-            ubld1.UNDEF(dst);
+            fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
             fs_reg src0 = nir_resource_insts[alu->src[0].src.ssa->index]->dst;
             fs_reg src1 = nir_resource_insts[alu->src[1].src.ssa->index]->dst;
             assert(src0.file != BAD_FILE && src1.file != BAD_FILE);
             assert(src0.type == BRW_REGISTER_TYPE_UD);
             nir_resource_insts[def->index] =
-               ubld1.ADD(dst,
+               ubld8.ADD(dst,
                          src0.file != IMM ? src0 : src1,
                          src0.file != IMM ? src1 : src0);
             break;
          }
+         case nir_op_iadd3: {
+            fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
+            fs_reg src0 = nir_resource_insts[alu->src[0].src.ssa->index]->dst;
+            fs_reg src1 = nir_resource_insts[alu->src[1].src.ssa->index]->dst;
+            fs_reg src2 = nir_resource_insts[alu->src[2].src.ssa->index]->dst;
+            assert(src0.file != BAD_FILE && src1.file != BAD_FILE && src2.file != BAD_FILE);
+            assert(src0.type == BRW_REGISTER_TYPE_UD);
+            nir_resource_insts[def->index] =
+               ubld8.ADD3(dst,
+                          src1.file == IMM ? src1 : src0,
+                          src1.file == IMM ? src0 : src1,
+                          src2);
+            break;
+         }
          case nir_op_ushr: {
-            assert(ubld1.dispatch_width() == 1);
-            fs_reg dst = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
-            ubld1.UNDEF(dst);
+            fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
             fs_reg src0 = nir_resource_insts[alu->src[0].src.ssa->index]->dst;
             fs_reg src1 = nir_resource_insts[alu->src[1].src.ssa->index]->dst;
             assert(src0.file != BAD_FILE && src1.file != BAD_FILE);
             assert(src0.type == BRW_REGISTER_TYPE_UD);
-            nir_resource_insts[def->index] = ubld1.SHR(dst, src0, src1);
+            nir_resource_insts[def->index] = ubld8.SHR(dst, src0, src1);
+            break;
+         }
+         case nir_op_ishl: {
+            fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
+            fs_reg src0 = nir_resource_insts[alu->src[0].src.ssa->index]->dst;
+            fs_reg src1 = nir_resource_insts[alu->src[1].src.ssa->index]->dst;
+            assert(src0.file != BAD_FILE && src1.file != BAD_FILE);
+            assert(src0.type == BRW_REGISTER_TYPE_UD);
+            nir_resource_insts[def->index] = ubld8.SHL(dst, src0, src1);
             break;
          }
          case nir_op_mov: {
@@ -4114,11 +4132,10 @@ fs_visitor::try_rebuild_resource(const brw::fs_builder &bld, nir_def *resource_d
 
             unsigned base_offset = nir_intrinsic_base(intrin);
             unsigned load_offset = nir_src_as_uint(intrin->src[0]);
-            fs_reg dst = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
-            ubld1.UNDEF(dst);
+            fs_reg dst = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
             fs_reg src(UNIFORM, base_offset / 4, BRW_REGISTER_TYPE_UD);
             src.offset = load_offset + base_offset % 4;
-            nir_resource_insts[def->index] = ubld1.MOV(dst, src);
+            nir_resource_insts[def->index] = ubld8.MOV(dst, src);
             break;
          }
 

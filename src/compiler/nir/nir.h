@@ -269,6 +269,17 @@ typedef enum {
    nir_resource_intel_non_uniform = 1u << 3,
 } nir_resource_data_intel;
 
+/**
+ * Which components to interpret as signed in cmat_muladd.
+ * See 'Cooperative Matrix Operands' in SPV_KHR_cooperative_matrix.
+ */
+typedef enum {
+   NIR_CMAT_A_SIGNED = 1u << 0,
+   NIR_CMAT_B_SIGNED = 1u << 1,
+   NIR_CMAT_C_SIGNED = 1u << 2,
+   NIR_CMAT_RESULT_SIGNED = 1u << 3,
+} nir_cmat_signed;
+
 typedef union {
    bool b;
    float f32;
@@ -486,6 +497,13 @@ typedef struct nir_variable {
       unsigned invariant : 1;
 
       /**
+       * Was an 'invariant' qualifier explicitly set in the shader?
+       *
+       * This is used to cross validate glsl qualifiers.
+       */
+      unsigned explicit_invariant:1;
+
+      /**
        * Is the variable a ray query?
        */
       unsigned ray_query : 1;
@@ -629,6 +647,15 @@ typedef struct nir_variable {
        * constraints on function parameters.
        */
       unsigned must_be_shader_input : 1;
+
+      /**
+       * Has this variable been used for reading or writing?
+       *
+       * Several GLSL semantic checks require knowledge of whether or not a
+       * variable has been used.  For example, it is an error to redeclare a
+       * variable as invariant after it has been used.
+       */
+      unsigned used:1;
 
       /**
        * How the variable was declared.  See nir_var_declaration_type.
@@ -970,36 +997,75 @@ struct nir_src;
 struct nir_if;
 
 typedef struct nir_src {
-   union {
-      /** Instruction that consumes this value as a source. */
-      nir_instr *parent_instr;
-      struct nir_if *parent_if;
-   };
+   /* Instruction or if-statement that consumes this value as a source. This
+    * should only be accessed through nir_src_* helpers.
+    *
+    * Internally, it is a tagged pointer to a nir_instr or nir_if.
+    */
+   uintptr_t _parent;
 
    struct list_head use_link;
    nir_def *ssa;
-
-   bool is_if;
 } nir_src;
+
+/* Layout of the _parent pointer. Bottom bit is set for nir_if parents (clear
+ * for nir_instr parents). Remaining bits are the pointer.
+ */
+#define NIR_SRC_PARENT_IS_IF (0x1)
+#define NIR_SRC_PARENT_MASK (~((uintptr_t) NIR_SRC_PARENT_IS_IF))
+
+static inline bool
+nir_src_is_if(const nir_src *src)
+{
+   return src->_parent & NIR_SRC_PARENT_IS_IF;
+}
+
+static inline nir_instr *
+nir_src_parent_instr(const nir_src *src)
+{
+   assert(!nir_src_is_if(src));
+
+   /* Because it is not an if, the tag is 0, therefore we do not need to mask */
+   return (nir_instr *)(src->_parent);
+}
+
+static inline struct nir_if *
+nir_src_parent_if(const nir_src *src)
+{
+   assert(nir_src_is_if(src));
+
+   /* Because it is an if, the tag is 1, so we need to mask */
+   return (struct nir_if *)(src->_parent & NIR_SRC_PARENT_MASK);
+}
+
+static inline void
+_nir_src_set_parent(nir_src *src, void *parent, bool is_if)
+{
+    uintptr_t ptr = (uintptr_t) parent;
+    assert((ptr & ~NIR_SRC_PARENT_MASK) == 0 && "pointer must be aligned");
+
+    if (is_if)
+       ptr |= NIR_SRC_PARENT_IS_IF;
+
+    src->_parent = ptr;
+}
 
 static inline void
 nir_src_set_parent_instr(nir_src *src, nir_instr *parent_instr)
 {
-   src->is_if = false;
-   src->parent_instr = parent_instr;
+   _nir_src_set_parent(src, parent_instr, false);
 }
 
 static inline void
 nir_src_set_parent_if(nir_src *src, struct nir_if *parent_if)
 {
-   src->is_if = true;
-   src->parent_if = parent_if;
+   _nir_src_set_parent(src, parent_if, true);
 }
 
 static inline nir_src
 nir_src_init(void)
 {
-   nir_src src = { { NULL } };
+   nir_src src = { 0 };
    return src;
 }
 
@@ -1013,19 +1079,19 @@ nir_src_init(void)
 
 #define nir_foreach_use(src, reg_or_ssa_def)         \
    nir_foreach_use_including_if(src, reg_or_ssa_def) \
-      if (!src->is_if)
+      if (!nir_src_is_if(src))
 
 #define nir_foreach_use_safe(src, reg_or_ssa_def)         \
    nir_foreach_use_including_if_safe(src, reg_or_ssa_def) \
-      if (!src->is_if)
+      if (!nir_src_is_if(src))
 
 #define nir_foreach_if_use(src, reg_or_ssa_def)      \
    nir_foreach_use_including_if(src, reg_or_ssa_def) \
-      if (src->is_if)
+      if (nir_src_is_if(src))
 
 #define nir_foreach_if_use_safe(src, reg_or_ssa_def)      \
    nir_foreach_use_including_if_safe(src, reg_or_ssa_def) \
-      if (src->is_if)
+      if (nir_src_is_if(src))
 
 static inline bool
 nir_def_used_by_if(const nir_def *def)
@@ -1254,6 +1320,30 @@ static inline bool
 nir_op_is_vec_or_mov(nir_op op)
 {
    return op == nir_op_mov || nir_op_is_vec(op);
+}
+
+static inline bool
+nir_is_float_control_signed_zero_preserve(unsigned execution_mode, unsigned bit_size)
+{
+   return (16 == bit_size && execution_mode & FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP16) ||
+          (32 == bit_size && execution_mode & FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP32) ||
+          (64 == bit_size && execution_mode & FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP64);
+}
+
+static inline bool
+nir_is_float_control_inf_preserve(unsigned execution_mode, unsigned bit_size)
+{
+   return (16 == bit_size && execution_mode & FLOAT_CONTROLS_INF_PRESERVE_FP16) ||
+          (32 == bit_size && execution_mode & FLOAT_CONTROLS_INF_PRESERVE_FP32) ||
+          (64 == bit_size && execution_mode & FLOAT_CONTROLS_INF_PRESERVE_FP64);
+}
+
+static inline bool
+nir_is_float_control_nan_preserve(unsigned execution_mode, unsigned bit_size)
+{
+   return (16 == bit_size && execution_mode & FLOAT_CONTROLS_NAN_PRESERVE_FP16) ||
+          (32 == bit_size && execution_mode & FLOAT_CONTROLS_NAN_PRESERVE_FP32) ||
+          (64 == bit_size && execution_mode & FLOAT_CONTROLS_NAN_PRESERVE_FP64);
 }
 
 static inline bool
@@ -1820,6 +1910,7 @@ typedef struct nir_io_semantics {
    unsigned per_view : 1;
    unsigned high_16bits : 1; /* whether accessing low or high half of the slot */
    unsigned invariant : 1;   /* The variable has the invariant flag set */
+   unsigned high_dvec2 : 1; /* whether accessing the high half of dvec3/dvec4 */
    /* CLIP_DISTn, LAYER, VIEWPORT, and TESS_LEVEL_* have up to 3 uses:
     * - an output consumed by the next stage
     * - a system value output affecting fixed-func hardware, e.g. the clipper
@@ -1830,7 +1921,7 @@ typedef struct nir_io_semantics {
    unsigned no_varying : 1;       /* whether this output isn't consumed by the next stage */
    unsigned no_sysval_output : 1; /* whether this system value output has no
                                      effect due to current pipeline states */
-   unsigned _pad : 3;
+   unsigned _pad : 2;
 } nir_io_semantics;
 
 /* Transform feedback info for 2 outputs. nir_intrinsic_store_output contains
@@ -4238,13 +4329,13 @@ nir_after_block_before_jump(nir_block *block)
 static inline nir_cursor
 nir_before_src(nir_src *src)
 {
-   if (src->is_if) {
+   if (nir_src_is_if(src)) {
       nir_block *prev_block =
-         nir_cf_node_as_block(nir_cf_node_prev(&src->parent_if->cf_node));
+         nir_cf_node_as_block(nir_cf_node_prev(&nir_src_parent_if(src)->cf_node));
       return nir_after_block(prev_block);
-   } else if (src->parent_instr->type == nir_instr_type_phi) {
+   } else if (nir_src_parent_instr(src)->type == nir_instr_type_phi) {
 #ifndef NDEBUG
-      nir_phi_instr *cond_phi = nir_instr_as_phi(src->parent_instr);
+      nir_phi_instr *cond_phi = nir_instr_as_phi(nir_src_parent_instr(src));
       bool found = false;
       nir_foreach_phi_src(phi_src, cond_phi) {
          if (phi_src->src.ssa == src->ssa) {
@@ -4260,7 +4351,7 @@ nir_before_src(nir_src *src)
       nir_phi_src *phi_src = list_entry(src, nir_phi_src, src);
       return nir_after_block_before_jump(phi_src->pred);
    } else {
-      return nir_before_instr(src->parent_instr);
+      return nir_before_instr(nir_src_parent_instr(src));
    }
 }
 
@@ -4452,7 +4543,7 @@ static inline void
 nir_src_rewrite(nir_src *src, nir_def *new_ssa)
 {
    assert(src->ssa);
-   assert(src->is_if ? (src->parent_if != NULL) : (src->parent_instr != NULL));
+   assert(nir_src_is_if(src) ? (nir_src_parent_if(src) != NULL) : (nir_src_parent_instr(src) != NULL));
    list_del(&src->use_link);
    src->ssa = new_ssa;
    list_addtail(&src->use_link, &new_ssa->uses);
@@ -4937,6 +5028,11 @@ void nir_compact_varyings(nir_shader *producer, nir_shader *consumer,
 void nir_link_xfb_varyings(nir_shader *producer, nir_shader *consumer);
 bool nir_link_opt_varyings(nir_shader *producer, nir_shader *consumer);
 void nir_link_varying_precision(nir_shader *producer, nir_shader *consumer);
+nir_variable *nir_clone_uniform_variable(nir_shader *nir,
+                                         nir_variable *uniform, bool spirv);
+nir_deref_instr *nir_clone_deref_instr(struct nir_builder *b,
+                                       nir_variable *var,
+                                       nir_deref_instr *deref);
 
 bool nir_slot_is_sysval_output(gl_varying_slot slot,
                                gl_shader_stage next_shader);
@@ -4951,6 +5047,7 @@ bool nir_lower_amul(nir_shader *shader,
 
 bool nir_lower_ubo_vec4(nir_shader *shader);
 
+void nir_sort_variables_by_location(nir_shader *shader, nir_variable_mode mode);
 void nir_assign_io_var_locations(nir_shader *shader,
                                  nir_variable_mode mode,
                                  unsigned *size,
@@ -4969,13 +5066,31 @@ typedef enum {
    /* If set, this causes all 64-bit IO operations to be lowered on-the-fly
     * to 32-bit operations.  This is only valid for nir_var_shader_in/out
     * modes.
+    *
+    * Note that this destroys dual-slot information i.e. whether an input
+    * occupies the low or high half of dvec4. Instead, it adds an offset of 1
+    * to the load (which is ambiguous) and expects driver locations of inputs
+    * to be final, which prevents any further optimizations.
+    *
+    * TODO: remove this in favor of nir_lower_io_lower_64bit_to_32_new.
     */
    nir_lower_io_lower_64bit_to_32 = (1 << 0),
+
    /* If set, this causes the subset of 64-bit IO operations involving floats to be lowered on-the-fly
     * to 32-bit operations.  This is only valid for nir_var_shader_in/out
     * modes.
     */
    nir_lower_io_lower_64bit_float_to_32 = (1 << 1),
+
+   /* This causes all 64-bit IO operations to be lowered to 32-bit operations.
+    * This is only valid for nir_var_shader_in/out modes.
+    *
+    * Only VS inputs: Dual slot information is preserved as nir_io_semantics::
+    * high_dvec2 and gathered into shader_info::dual_slot_inputs, so that
+    * the shader can be arbitrarily optimized and the low or high half of
+    * dvec4 can be DCE'd independently without affecting the other half.
+    */
+   nir_lower_io_lower_64bit_to_32_new = (1 << 2),
 } nir_lower_io_options;
 bool nir_lower_io(nir_shader *shader,
                   nir_variable_mode modes,
@@ -5317,6 +5432,7 @@ bool nir_scale_fdiv(nir_shader *shader);
 
 bool nir_lower_alu_to_scalar(nir_shader *shader, nir_instr_filter_cb cb, const void *data);
 bool nir_lower_alu_width(nir_shader *shader, nir_vectorize_cb cb, const void *data);
+bool nir_lower_alu_vec8_16_srcs(nir_shader *shader);
 bool nir_lower_bool_to_bitsize(nir_shader *shader);
 bool nir_lower_bool_to_float(nir_shader *shader, bool has_fcsel_ne);
 bool nir_lower_bool_to_int32(nir_shader *shader);
@@ -5346,6 +5462,7 @@ nir_shader *nir_create_passthrough_tcs(const nir_shader_compiler_options *option
 nir_shader *nir_create_passthrough_gs(const nir_shader_compiler_options *options,
                                       const nir_shader *prev_stage,
                                       enum mesa_prim primitive_type,
+                                      enum mesa_prim output_primitive_type,
                                       bool emulate_edgeflags,
                                       bool force_line_strip_out);
 
@@ -6300,13 +6417,13 @@ nir_is_store_reg(nir_intrinsic_instr *intr)
    assert(reg->intrinsic == nir_intrinsic_decl_reg); \
                                                      \
    nir_foreach_use(load, &reg->def)             \
-      if (nir_is_load_reg(nir_instr_as_intrinsic(load->parent_instr)))
+      if (nir_is_load_reg(nir_instr_as_intrinsic(nir_src_parent_instr(load))))
 
 #define nir_foreach_reg_store(store, reg)            \
    assert(reg->intrinsic == nir_intrinsic_decl_reg); \
                                                      \
    nir_foreach_use(store, &reg->def)            \
-      if (nir_is_store_reg(nir_instr_as_intrinsic(store->parent_instr)))
+      if (nir_is_store_reg(nir_instr_as_intrinsic(nir_src_parent_instr(store))))
 
 static inline nir_intrinsic_instr *
 nir_load_reg_for_def(const nir_def *def)
@@ -6331,10 +6448,10 @@ nir_store_reg_for_def(const nir_def *def)
       return NULL;
 
    nir_src *src = list_first_entry(&def->uses, nir_src, use_link);
-   if (src->is_if)
+   if (nir_src_is_if(src))
       return NULL;
 
-   nir_instr *parent = src->parent_instr;
+   nir_instr *parent = nir_src_parent_instr(src);
    if (parent->type != nir_instr_type_intrinsic)
       return NULL;
 

@@ -48,10 +48,10 @@ static bool
 all_uses_float(nir_def *def, bool allow_src2)
 {
    nir_foreach_use_including_if (use, def) {
-      if (use->is_if)
+      if (nir_src_is_if(use))
          return false;
 
-      nir_instr *use_instr = use->parent_instr;
+      nir_instr *use_instr = nir_src_parent_instr(use);
       if (use_instr->type != nir_instr_type_alu)
          return false;
       nir_alu_instr *use_alu = nir_instr_as_alu(use_instr);
@@ -78,10 +78,10 @@ static bool
 all_uses_bit(nir_def *def)
 {
    nir_foreach_use_including_if (use, def) {
-      if (use->is_if)
+      if (nir_src_is_if(use))
          return false;
 
-      nir_instr *use_instr = use->parent_instr;
+      nir_instr *use_instr = nir_src_parent_instr(use);
       if (use_instr->type != nir_instr_type_alu)
          return false;
       nir_alu_instr *use_alu = nir_instr_as_alu(use_instr);
@@ -209,6 +209,18 @@ instr_cost(nir_instr *instr, const void *data)
       }
    }
 
+   case nir_instr_type_phi:
+      /* Although we can often coalesce phis, the cost of a phi is a proxy for
+       * the cost of the if-else statement... If all phis are moved, then the
+       * branches move too. So this needs to have a nonzero cost, even if we're
+       * optimistic about coalescing.
+       *
+       * Value chosen empirically. On Rob's shader-db, cost of 2 performs better
+       * across the board than a cost of 1. Values greater than 2 do not seem to
+       * have any change, so sticking with 2.
+       */
+      return 2;
+
    default:
       return 0;
    }
@@ -223,7 +235,7 @@ rewrite_cost(nir_def *def, const void *data)
 
    bool mov_needed = false;
    nir_foreach_use (use, def) {
-      nir_instr *parent_instr = use->parent_instr;
+      nir_instr *parent_instr = nir_src_parent_instr(use);
       if (parent_instr->type != nir_instr_type_alu) {
          mov_needed = true;
          break;
@@ -255,6 +267,34 @@ avoid_instr(const nir_instr *instr, const void *data)
    return intrin->intrinsic == nir_intrinsic_bindless_resource_ir3;
 }
 
+static bool
+set_speculate(nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *_)
+{
+   switch (intr->intrinsic) {
+   /* These instructions go through bounds-checked hardware descriptors so
+    * should be safe to speculate.
+    *
+    * TODO: This isn't necessarily true in Vulkan, where descriptors don't need
+    * to be filled out and bindless descriptor offsets aren't bounds checked.
+    * We may need to plumb this information through from turnip for correctness
+    * to avoid regressing freedreno codegen.
+    */
+   case nir_intrinsic_load_ubo:
+   case nir_intrinsic_load_ubo_vec4:
+   case nir_intrinsic_image_load:
+   case nir_intrinsic_image_samples_identical:
+   case nir_intrinsic_bindless_image_load:
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_load_ssbo_ir3:
+      nir_intrinsic_set_access(intr, nir_intrinsic_access(intr) |
+                                     ACCESS_CAN_SPECULATE);
+      return true;
+
+   default:
+      return false;
+   }
+}
+
 bool
 ir3_nir_opt_preamble(nir_shader *nir, struct ir3_shader_variant *v)
 {
@@ -272,6 +312,10 @@ ir3_nir_opt_preamble(nir_shader *nir, struct ir3_shader_variant *v)
    if (max_size == 0)
       return false;
 
+   bool progress = nir_shader_intrinsics_pass(nir, set_speculate,
+                                              nir_metadata_block_index |
+                                              nir_metadata_dominance, NULL);
+
    nir_opt_preamble_options options = {
       .drawid_uniform = true,
       .subgroup_size_uniform = true,
@@ -283,7 +327,7 @@ ir3_nir_opt_preamble(nir_shader *nir, struct ir3_shader_variant *v)
    };
 
    unsigned size = 0;
-   bool progress = nir_opt_preamble(nir, &options, &size);
+   progress |= nir_opt_preamble(nir, &options, &size);
 
    if (!v->binning_pass)
       const_state->preamble_size = DIV_ROUND_UP(size, 4);
@@ -303,7 +347,7 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
 
    /* First, lower load/store_preamble. */  
    const struct ir3_const_state *const_state = ir3_const_state(v);
-   unsigned preamble_base = v->num_reserved_user_consts * 4 +
+   unsigned preamble_base = v->shader_options.num_reserved_user_consts * 4 +
       const_state->ubo_state.size / 4;
    unsigned preamble_size = const_state->preamble_size * 4;
 

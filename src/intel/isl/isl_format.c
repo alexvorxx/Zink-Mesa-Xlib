@@ -39,19 +39,20 @@
 
 struct surface_format_info {
    bool exists;
-   uint8_t sampling;
-   uint8_t filtering;
-   uint8_t shadow_compare;
-   uint8_t chroma_key;
-   uint8_t render_target;
-   uint8_t alpha_blend;
-   uint8_t input_vb;
-   uint8_t streamed_output_vb;
-   uint8_t color_processing;
-   uint8_t typed_write;
-   uint8_t typed_read;
-   uint8_t typed_atomics;
-   uint8_t ccs_e;
+   /* These fields must fit the largest verx10 value. */
+   uint16_t sampling;
+   uint16_t filtering;
+   uint16_t shadow_compare;
+   uint16_t chroma_key;
+   uint16_t render_target;
+   uint16_t alpha_blend;
+   uint16_t input_vb;
+   uint16_t streamed_output_vb;
+   uint16_t color_processing;
+   uint16_t typed_write;
+   uint16_t typed_read;
+   uint16_t typed_atomics;
+   uint16_t ccs_e;
 };
 
 /* This macro allows us to write the table almost as it appears in the PRM,
@@ -61,7 +62,7 @@ struct surface_format_info {
    [ISL_FORMAT_##sf] = { true, sampl, filt, shad, ck, rt, ab, vb, so, color, tw, tr, ta, ccs_e},
 
 #define Y 0
-#define x 255
+#define x 0xFFFF
 /**
  * This is the table of support for surface (texture, renderbuffer, and vertex
  * buffer, but not depthbuffer) formats across the various hardware generations.
@@ -705,6 +706,9 @@ isl_format_supports_rendering(const struct intel_device_info *devinfo,
    if (!format_info_exists(format))
       return false;
 
+   /* If this fails, then we need to update struct surface_format_info */
+   assert(devinfo->verx10 <
+          (1ul << (8 * sizeof(format_info[format].render_target))));
    return devinfo->verx10 >= format_info[format].render_target;
 }
 

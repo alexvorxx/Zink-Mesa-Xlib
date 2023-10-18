@@ -113,9 +113,10 @@ enum radeon_family
    CHIP_NAVI24,         /* Radeon 6400, 6500 (formerly "Beige Goby") */
    CHIP_REMBRANDT,      /* Ryzen 6000 (formerly "Yellow Carp") */
    CHIP_RAPHAEL_MENDOCINO, /* Ryzen 7000(X), Ryzen 7045, Ryzen 7020 */
-   CHIP_GFX1100,
-   CHIP_GFX1101,
-   CHIP_GFX1102,
+   /* GFX11 (RDNA 3) */
+   CHIP_NAVI31,         /* Radeon 7900 */
+   CHIP_NAVI32,         /* Radeon 7800, 7700 */
+   CHIP_NAVI33,         /* Radeon 7600, 7700S (mobile) */
    CHIP_GFX1103_R1,
    CHIP_GFX1103_R2,
    CHIP_LAST,

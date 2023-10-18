@@ -51,3 +51,5 @@ dEQP-GLES3.functional.fbo.color.tex2d.rgb565
 
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/9707
 dEQP-GLES3.functional.texture.specification.teximage2d_align.cube_rgba4_51_2
+# ci-collate: Issue found in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49638414
+dEQP-GLES31.functional.fbo.color.texcubearray.rgb565

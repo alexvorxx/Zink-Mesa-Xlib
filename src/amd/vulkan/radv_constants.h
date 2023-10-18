@@ -147,11 +147,21 @@
  *   offset 20           - number of geometry shader invocations
  *   offset 24|28|32|36  - generated primitive counter for stream 0|1|2|3
  *   offset 40|44|48|52  - written primitive counter for stream 0|1|2|3
+ *
+ * Mesh shader GDS counters:
+ *   offset 56 - number of mesh shader invocations
+ *   offset 60 - number of mesh shader generated primitives
+ *
+ * Task shader GDS counter:
+ *   offset 64 - number of task shader invocations
  */
 #define RADV_SHADER_QUERY_GS_PRIM_EMIT_OFFSET     16
 #define RADV_SHADER_QUERY_GS_INVOCATION_OFFSET    20
 #define RADV_SHADER_QUERY_PRIM_GEN_OFFSET(stream) (24 + stream * 4)
 #define RADV_SHADER_QUERY_PRIM_XFB_OFFSET(stream) (40 + stream * 4)
+#define RADV_SHADER_QUERY_MS_INVOCATION_OFFSET    56
+#define RADV_SHADER_QUERY_MS_PRIM_GEN_OFFSET      60
+#define RADV_SHADER_QUERY_TS_INVOCATION_OFFSET    64
 
 /* Number of samples for line smooth lowering (hw requirement). */
 #define RADV_NUM_SMOOTH_AA_SAMPLES 4

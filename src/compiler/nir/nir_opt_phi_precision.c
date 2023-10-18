@@ -214,10 +214,10 @@ try_move_narrowing_dst(nir_builder *b, nir_phi_instr *phi)
       /* an if use means the phi is used directly in a conditional, ie.
        * without a conversion
        */
-      if (use->is_if)
+      if (nir_src_is_if(use))
          return false;
 
-      op = narrowing_conversion_op(use->parent_instr, op);
+      op = narrowing_conversion_op(nir_src_parent_instr(use), op);
 
       /* Not a (compatible) narrowing conversion: */
       if (op == INVALID_OP)
@@ -253,7 +253,7 @@ try_move_narrowing_dst(nir_builder *b, nir_phi_instr *phi)
       /* We've previously established that all the uses were alu
        * conversion ops.  Turn them into movs instead.
        */
-      nir_alu_instr *alu = nir_instr_as_alu(use->parent_instr);
+      nir_alu_instr *alu = nir_instr_as_alu(nir_src_parent_instr(use));
       alu->op = nir_op_mov;
    }
    nir_def_rewrite_uses(&phi->def, &new_phi->def);
@@ -444,13 +444,10 @@ nir_opt_phi_precision(nir_shader *shader)
    unsigned bit_sizes_used = shader->info.bit_sizes_float |
                              shader->info.bit_sizes_int;
 
-   if (!bit_sizes_used) {
-      nir_shader_gather_info(shader, nir_shader_get_entrypoint(shader));
-      bit_sizes_used = shader->info.bit_sizes_float |
-                       shader->info.bit_sizes_int;
-   }
-
-   if (!(bit_sizes_used & (8 | 16)))
+   /* Note: if the info is zeroed, we conservatively run to avoid gathering
+    * info, which doesn't work for libraries.
+    */
+   if (bit_sizes_used && !(bit_sizes_used & (8 | 16)))
       return false;
 
    nir_foreach_function_impl(impl, shader) {

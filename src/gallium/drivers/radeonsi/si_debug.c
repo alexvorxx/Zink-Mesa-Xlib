@@ -456,7 +456,7 @@ void si_log_hw_flush(struct si_context *sctx)
 
    si_log_cs(sctx, sctx->log, true);
 
-   if (&sctx->b == sctx->screen->aux_context) {
+   if (sctx->context_flags & SI_CONTEXT_FLAG_AUX) {
       /* The aux context isn't captured by the ddebug wrapper,
        * so we dump it on a flush-by-flush basis here.
        */

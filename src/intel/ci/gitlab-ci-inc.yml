@@ -270,7 +270,6 @@
     PIGLIT_REPLAY_DEVICE_NAME: "gl-${GPU_VERSION}"
     PIGLIT_RESULTS: "${GPU_VERSION}-${PIGLIT_PROFILES}"
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-iris.yml"
-    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 .iris-whl-traces:
   variables:

@@ -4,6 +4,7 @@ spec@arb_texture_rectangle@copyteximage rect
 spec@arb_timer_query@timestamp-get
 spec@arb_shader_image_load_store@coherency
 spec@!opengl 1.0@rasterpos
+spec@glsl-1.50@execution@geometry@point-size-out
 
 # need to handle non-fbfetch feedback loops
 spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader.*

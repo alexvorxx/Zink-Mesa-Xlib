@@ -605,6 +605,7 @@ struct zink_batch_state {
    struct util_dynarray wait_semaphore_stages; //external wait semaphores
    struct util_dynarray fd_wait_semaphores; //dmabuf wait semaphores
    struct util_dynarray fd_wait_semaphore_stages; //dmabuf wait semaphores
+   struct util_dynarray fences; //zink_tc_fence refs
 
    VkSemaphore present;
    struct zink_resource *swapchain;
@@ -936,6 +937,7 @@ struct zink_compute_pipeline_state {
    uint32_t final_hash;
    bool dirty;
    uint32_t local_size[3];
+   uint32_t variable_shared_mem;
 
    uint32_t module_hash;
    VkShaderModule module;
@@ -1130,6 +1132,7 @@ struct zink_compute_program {
    struct zink_program base;
 
    bool use_local_size;
+   bool has_variable_shared_mem;
 
    unsigned scratch_size;
 
@@ -1940,6 +1943,7 @@ struct zink_context {
       uint8_t num_ubos[MESA_SHADER_STAGES];
 
       uint8_t num_ssbos[MESA_SHADER_STAGES];
+      struct util_dynarray global_bindings;
 
       VkDescriptorImageInfo textures[MESA_SHADER_STAGES][PIPE_MAX_SAMPLERS];
       uint32_t emulate_nonseamless[MESA_SHADER_STAGES];

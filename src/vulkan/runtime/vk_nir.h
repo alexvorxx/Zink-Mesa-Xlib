@@ -47,6 +47,7 @@ vk_spirv_to_nir(struct vk_device *device,
                 const VkSpecializationInfo *spec_info,
                 const struct spirv_to_nir_options *spirv_options,
                 const struct nir_shader_compiler_options *nir_options,
+                bool internal,
                 void *mem_ctx);
 
 #ifdef __cplusplus

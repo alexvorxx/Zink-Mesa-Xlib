@@ -618,7 +618,7 @@ add_aux_map_bos_to_batch(struct iris_batch *batch)
 static void
 finish_seqno(struct iris_batch *batch)
 {
-   struct iris_fine_fence *sq = iris_fine_fence_new(batch, IRIS_FENCE_END);
+   struct iris_fine_fence *sq = iris_fine_fence_new(batch);
    if (!sq)
       return;
 

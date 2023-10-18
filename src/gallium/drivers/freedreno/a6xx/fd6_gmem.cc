@@ -126,6 +126,9 @@ emit_mrt(struct fd_ringbuffer *ring, struct pipe_framebuffer_state *pfb,
 
       assert((offset + slice->size0) <= fd_bo_size(rsc->bo));
 
+      /* Batch with no draws? */
+      fd_ringbuffer_attach_bo(ring, rsc->bo);
+
       OUT_REG(
          ring,
          RB_MRT_BUF_INFO(CHIP, i, .color_format = format,
@@ -170,6 +173,12 @@ emit_zs(struct fd_ringbuffer *ring, struct pipe_surface *zsbuf,
       uint32_t offset =
          fd_resource_offset(rsc, zsbuf->u.tex.level, zsbuf->u.tex.first_layer);
 
+      /* We could have a depth buffer, but no draws with depth write/test
+       * enabled, in which case it wouldn't have been part of the batch
+       * resource tracking
+       */
+      fd_ringbuffer_attach_bo(ring, rsc->bo);
+
       OUT_REG(
          ring, RB_DEPTH_BUFFER_INFO(CHIP, .depth_format = fmt),
          A6XX_RB_DEPTH_BUFFER_PITCH(stride),
@@ -195,6 +204,8 @@ emit_zs(struct fd_ringbuffer *ring, struct pipe_surface *zsbuf,
          uint32_t base = gmem ? gmem->zsbuf_base[1] : 0;
          uint32_t offset =
             fd_resource_offset(rsc->stencil, zsbuf->u.tex.level, zsbuf->u.tex.first_layer);
+
+         fd_ringbuffer_attach_bo(ring, rsc->stencil->bo);
 
          OUT_REG(ring, RB_STENCIL_INFO(CHIP, .separate_stencil = true),
                  A6XX_RB_STENCIL_BUFFER_PITCH(stride),
@@ -274,6 +285,13 @@ emit_lrz_clears(struct fd_batch *batch)
    struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
 
    foreach_subpass (subpass, batch) {
+      /* The lrz buffer isn't explicitly tracked by the batch resource
+       * tracking (tracking the zsbuf is sufficient), but it still needs
+       * to be attached to the ring
+       */
+      if (subpass->lrz)
+         fd_ringbuffer_attach_bo(batch->gmem, subpass->lrz);
+
       if (!(subpass->fast_cleared & FD_BUFFER_LRZ))
          continue;
 
@@ -545,6 +563,9 @@ update_vsc_pipe(struct fd_batch *batch)
          fd_bo_new(ctx->screen->dev, sz, FD_BO_NOMAP, "vsc_prim_strm");
    }
 
+   fd_ringbuffer_attach_bo(ring, fd6_ctx->vsc_draw_strm);
+   fd_ringbuffer_attach_bo(ring, fd6_ctx->vsc_prim_strm);
+
    OUT_REG(ring, A6XX_VSC_BIN_SIZE(.width = gmem->bin_w, .height = gmem->bin_h),
            A6XX_VSC_DRAW_STRM_SIZE_ADDRESS(.bo = fd6_ctx->vsc_draw_strm,
                                            .bo_offset = max_vsc_pipes *
@@ -570,9 +591,6 @@ update_vsc_pipe(struct fd_batch *batch)
       ring, A6XX_VSC_DRAW_STRM_ADDRESS(.bo = fd6_ctx->vsc_draw_strm),
       A6XX_VSC_DRAW_STRM_PITCH(.dword = fd6_ctx->vsc_draw_strm_pitch),
       A6XX_VSC_DRAW_STRM_LIMIT(.dword = fd6_ctx->vsc_draw_strm_pitch - 64));
-
-   fd_ringbuffer_attach_bo(ring, fd6_ctx->vsc_draw_strm);
-   fd_ringbuffer_attach_bo(ring, fd6_ctx->vsc_prim_strm);
 }
 
 /*
@@ -696,6 +714,8 @@ emit_common_init(struct fd_batch *batch)
 
    if (!result)
       return;
+
+   fd_ringbuffer_attach_bo(ring, at->results_mem);
 
    OUT_PKT4(ring, REG_A6XX_RB_SAMPLE_COUNT_CONTROL, 1);
    OUT_RING(ring, A6XX_RB_SAMPLE_COUNT_CONTROL_COPY);

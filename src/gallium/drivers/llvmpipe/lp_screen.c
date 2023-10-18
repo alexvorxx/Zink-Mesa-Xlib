@@ -832,7 +832,10 @@ llvmpipe_is_format_supported(struct pipe_screen *_screen,
        format != PIPE_FORMAT_ETC1_RGB8)
       return false;
 
-   if (format_desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED && target == PIPE_BUFFER)
+   if ((format_desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED ||
+        format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR2 ||
+        format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR3) &&
+       target == PIPE_BUFFER)
       return false;
 
    /*

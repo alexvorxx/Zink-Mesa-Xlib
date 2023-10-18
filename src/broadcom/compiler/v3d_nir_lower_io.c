@@ -515,9 +515,13 @@ v3d_nir_emit_ff_vpm_outputs(struct v3d_compile *c, nir_builder *b,
                          * The correct fix for this as recommended by Broadcom
                          * is to convert to .8 fixed-point with ffloor().
                          */
-                        pos = nir_f2i32(b, nir_ffloor(b, pos));
-                        v3d_nir_store_output(b, state->vp_vpm_offset + i,
-                                             offset_reg, pos);
+                        if (c->devinfo->ver <= 42)
+                                 pos = nir_f2i32(b, nir_ffloor(b, pos));
+                        else
+                                 pos = nir_f2i32(b, nir_fround_even(b, pos));
+
+                       v3d_nir_store_output(b, state->vp_vpm_offset + i,
+                                            offset_reg, pos);
                 }
         }
 

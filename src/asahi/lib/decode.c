@@ -338,13 +338,14 @@ agxdecode_stateful(uint64_t va, const char *label, decode_cmd decoder,
       if (count == STATE_DONE) {
          break;
       } else if (count == STATE_LINK) {
-         fprintf(agxdecode_dump_stream, "Linking to 0x%lx\n\n", link);
+         fprintf(agxdecode_dump_stream, "Linking to 0x%" PRIx64 "\n\n", link);
          va = link;
          left = len = agxdecode_fetch_gpu_array(va, buf);
          map = buf;
       } else if (count == STATE_CALL) {
-         fprintf(agxdecode_dump_stream, "Calling 0x%lx (return = 0x%lx)\n\n",
-                 link, va + 8);
+         fprintf(agxdecode_dump_stream,
+                 "Calling 0x%" PRIx64 " (return = 0x%" PRIx64 ")\n\n", link,
+                 va + 8);
          assert(sp < ARRAY_SIZE(stack));
          stack[sp++] = va + 8;
          va = link;
@@ -353,7 +354,7 @@ agxdecode_stateful(uint64_t va, const char *label, decode_cmd decoder,
       } else if (count == STATE_RET) {
          assert(sp > 0);
          va = stack[--sp];
-         fprintf(agxdecode_dump_stream, "Returning to 0x%lx\n\n", va);
+         fprintf(agxdecode_dump_stream, "Returning to 0x%" PRIx64 "\n\n", va);
          left = len = agxdecode_fetch_gpu_array(va, buf);
          map = buf;
       } else {

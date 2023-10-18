@@ -97,18 +97,14 @@ struct pvr_physical_device {
    /* Back-pointer to instance */
    struct pvr_instance *instance;
 
-   char *name;
    char *render_path;
    char *display_path;
 
    struct pvr_winsys *ws;
    struct pvr_device_info dev_info;
-
    struct pvr_device_runtime_info dev_runtime_info;
 
    VkPhysicalDeviceMemoryProperties memory;
-
-   uint8_t pipeline_cache_uuid[VK_UUID_SIZE];
 
    struct wsi_device wsi_device;
 
@@ -832,12 +828,6 @@ struct pvr_cmd_buffer {
    struct list_head sub_cmds;
 };
 
-struct pvr_pipeline_cache {
-   struct vk_object_base base;
-
-   struct pvr_device *device;
-};
-
 struct pvr_stage_allocation_descriptor_state {
    struct pvr_pds_upload pds_code;
    /* Since we upload the code segment separately from the data segment
@@ -1216,7 +1206,8 @@ CHECK_MASK_SIZE(pvr_load_op,
 #undef CHECK_MASK_SIZE
 
 uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
-   const struct pvr_physical_device *pdevice,
+   const struct pvr_device_info *dev_info,
+   const struct pvr_device_runtime_info *dev_runtime_info,
    uint32_t fs_common_size,
    uint32_t min_tiles_in_flight);
 
@@ -1483,10 +1474,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_device_memory,
                                VkDeviceMemory,
                                VK_OBJECT_TYPE_DEVICE_MEMORY)
 VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
-VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_pipeline_cache,
-                               base,
-                               VkPipelineCache,
-                               VK_OBJECT_TYPE_PIPELINE_CACHE)
 VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_buffer,
                                vk.base,
                                VkBuffer,
@@ -1513,7 +1500,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_descriptor_pool,
                                VkDescriptorPool,
                                VK_OBJECT_TYPE_DESCRIPTOR_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_sampler,
-                               base,
+                               vk.base,
                                VkSampler,
                                VK_OBJECT_TYPE_SAMPLER)
 VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_pipeline_layout,

@@ -65,6 +65,27 @@ radv_emit_spm_counters(struct radv_device *device, struct radeon_cmdbuf *cs, enu
    const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
    struct ac_spm *spm = &device->spm;
 
+   if (gfx_level >= GFX11) {
+      for (uint32_t instance = 0; instance < ARRAY_SIZE(spm->sq_wgp); instance++) {
+         uint32_t num_counters = spm->sq_wgp[instance].num_counters;
+
+         if (!num_counters)
+            continue;
+
+         radeon_check_space(device->ws, cs, 3 + num_counters * 3);
+
+         radeon_set_uconfig_reg(cs, R_030800_GRBM_GFX_INDEX, spm->sq_wgp[instance].grbm_gfx_index);
+
+         for (uint32_t b = 0; b < num_counters; b++) {
+            const struct ac_spm_counter_select *cntr_sel = &spm->sq_wgp[instance].counters[b];
+            uint32_t reg_base = R_036700_SQ_PERFCOUNTER0_SELECT;
+
+            radeon_set_uconfig_reg_seq_perfctr(gfx_level, qf, cs, reg_base + b * 4, 1);
+            radeon_emit(cs, cntr_sel->sel0);
+         }
+      }
+   }
+
    for (uint32_t instance = 0; instance < ARRAY_SIZE(spm->sqg); instance++) {
       uint32_t num_counters = spm->sqg[instance].num_counters;
 
@@ -148,15 +169,25 @@ radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs, enum r
    }
 
    radeon_set_uconfig_reg(cs, R_03726C_RLC_SPM_ACCUM_MODE, 0);
-   radeon_set_uconfig_reg(cs, R_037210_RLC_SPM_PERFMON_SEGMENT_SIZE, 0);
-   radeon_set_uconfig_reg(cs, R_03727C_RLC_SPM_PERFMON_SE3TO0_SEGMENT_SIZE,
-                          S_03727C_SE0_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE0]) |
-                             S_03727C_SE1_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE1]) |
-                             S_03727C_SE2_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE2]) |
-                             S_03727C_SE3_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE3]));
-   radeon_set_uconfig_reg(cs, R_037280_RLC_SPM_PERFMON_GLB_SEGMENT_SIZE,
-                          S_037280_PERFMON_SEGMENT_SIZE(total_muxsel_lines) |
-                             S_037280_GLOBAL_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_GLOBAL]));
+
+   if (device->physical_device->rad_info.gfx_level >= GFX11) {
+      radeon_set_uconfig_reg(cs, R_03721C_RLC_SPM_PERFMON_SEGMENT_SIZE,
+                             S_03721C_TOTAL_NUM_SEGMENT(total_muxsel_lines) |
+                                S_03721C_GLOBAL_NUM_SEGMENT(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_GLOBAL]) |
+                                S_03721C_SE_NUM_SEGMENT(spm->max_se_muxsel_lines));
+
+      radeon_set_uconfig_reg(cs, R_037210_RLC_SPM_RING_WRPTR, 0);
+   } else {
+      radeon_set_uconfig_reg(cs, R_037210_RLC_SPM_PERFMON_SEGMENT_SIZE, 0);
+      radeon_set_uconfig_reg(cs, R_03727C_RLC_SPM_PERFMON_SE3TO0_SEGMENT_SIZE,
+                             S_03727C_SE0_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE0]) |
+                                S_03727C_SE1_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE1]) |
+                                S_03727C_SE2_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE2]) |
+                                S_03727C_SE3_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_SE3]));
+      radeon_set_uconfig_reg(cs, R_037280_RLC_SPM_PERFMON_GLB_SEGMENT_SIZE,
+                             S_037280_PERFMON_SEGMENT_SIZE(total_muxsel_lines) |
+                                S_037280_GLOBAL_NUM_LINE(spm->num_muxsel_lines[AC_SPM_SEGMENT_TYPE_GLOBAL]));
+   }
 
    /* Upload each muxsel ram to the RLC. */
    for (unsigned s = 0; s < AC_SPM_SEGMENT_TYPE_COUNT; s++) {
@@ -169,13 +200,15 @@ radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs, enum r
       if (s == AC_SPM_SEGMENT_TYPE_GLOBAL) {
          grbm_gfx_index |= S_030800_SE_BROADCAST_WRITES(1);
 
-         rlc_muxsel_addr = R_037224_RLC_SPM_GLOBAL_MUXSEL_ADDR;
-         rlc_muxsel_data = R_037228_RLC_SPM_GLOBAL_MUXSEL_DATA;
+         rlc_muxsel_addr =
+            gfx_level >= GFX11 ? R_037220_RLC_SPM_GLOBAL_MUXSEL_ADDR : R_037224_RLC_SPM_GLOBAL_MUXSEL_ADDR;
+         rlc_muxsel_data =
+            gfx_level >= GFX11 ? R_037224_RLC_SPM_GLOBAL_MUXSEL_DATA : R_037228_RLC_SPM_GLOBAL_MUXSEL_DATA;
       } else {
          grbm_gfx_index |= S_030800_SE_INDEX(s);
 
-         rlc_muxsel_addr = R_03721C_RLC_SPM_SE_MUXSEL_ADDR;
-         rlc_muxsel_data = R_037220_RLC_SPM_SE_MUXSEL_DATA;
+         rlc_muxsel_addr = gfx_level >= GFX11 ? R_037228_RLC_SPM_SE_MUXSEL_ADDR : R_03721C_RLC_SPM_SE_MUXSEL_ADDR;
+         rlc_muxsel_data = gfx_level >= GFX11 ? R_03722C_RLC_SPM_SE_MUXSEL_DATA : R_037220_RLC_SPM_SE_MUXSEL_DATA;
       }
 
       radeon_check_space(device->ws, cs, 3 + spm->num_muxsel_lines[s] * (7 + AC_SPM_MUXSEL_LINE_SIZE));

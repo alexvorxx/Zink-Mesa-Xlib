@@ -58,12 +58,24 @@ struct ir3_legalize_state {
    regmask_t needs_ss;
    regmask_t needs_ss_war; /* write after read */
    regmask_t needs_sy;
+   bool needs_ss_for_const;
 };
 
 struct ir3_legalize_block_data {
    bool valid;
    struct ir3_legalize_state state;
 };
+
+static inline void
+apply_ss(struct ir3_instruction *instr,
+         struct ir3_legalize_state *state,
+         bool mergedregs)
+{
+   instr->flags |= IR3_INSTR_SS;
+   regmask_init(&state->needs_ss_war, mergedregs);
+   regmask_init(&state->needs_ss, mergedregs);
+   state->needs_ss_for_const = false;
+}
 
 /* We want to evaluate each block from the position of any other
  * predecessor block, in order that the flags set are the union of
@@ -109,6 +121,7 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
       regmask_or(&state->needs_ss_war, &state->needs_ss_war,
                  &pstate->needs_ss_war);
       regmask_or(&state->needs_sy, &state->needs_sy, &pstate->needs_sy);
+      state->needs_ss_for_const |= pstate->needs_ss_for_const;
    }
 
    /* We need to take phsyical-only edges into account when tracking shared
@@ -162,17 +175,15 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
       }
 
       if ((last_n && is_barrier(last_n)) || n->opc == OPC_SHPE) {
-         n->flags |= IR3_INSTR_SS | IR3_INSTR_SY;
-         last_input_needs_ss = false;
-         regmask_init(&state->needs_ss_war, mergedregs);
-         regmask_init(&state->needs_ss, mergedregs);
+         apply_ss(n, state, mergedregs);
+
+         n->flags |= IR3_INSTR_SY;
          regmask_init(&state->needs_sy, mergedregs);
+         last_input_needs_ss = false;
       }
 
       if (last_n && (last_n->opc == OPC_PREDT)) {
-         n->flags |= IR3_INSTR_SS;
-         regmask_init(&state->needs_ss_war, mergedregs);
-         regmask_init(&state->needs_ss, mergedregs);
+         apply_ss(n, state, mergedregs);
       }
 
       /* NOTE: consider dst register too.. it could happen that
@@ -195,25 +206,24 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
              * some tests for both this and (sy)..
              */
             if (regmask_get(&state->needs_ss, reg)) {
-               n->flags |= IR3_INSTR_SS;
+               apply_ss(n, state, mergedregs);
                last_input_needs_ss = false;
-               regmask_init(&state->needs_ss_war, mergedregs);
-               regmask_init(&state->needs_ss, mergedregs);
             }
 
             if (regmask_get(&state->needs_sy, reg)) {
                n->flags |= IR3_INSTR_SY;
                regmask_init(&state->needs_sy, mergedregs);
             }
+         } else if ((reg->flags & IR3_REG_CONST) && state->needs_ss_for_const) {
+            apply_ss(n, state, mergedregs);
+            last_input_needs_ss = false;
          }
       }
 
       foreach_dst (reg, n) {
          if (regmask_get(&state->needs_ss_war, reg)) {
-            n->flags |= IR3_INSTR_SS;
+            apply_ss(n, state, mergedregs);
             last_input_needs_ss = false;
-            regmask_init(&state->needs_ss_war, mergedregs);
-            regmask_init(&state->needs_ss, mergedregs);
          }
       }
 
@@ -230,7 +240,7 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
       }
 
       /* need to be able to set (ss) on first instruction: */
-      if (list_is_empty(&block->instr_list) && (opc_cat(n->opc) >= 5))
+      if (list_is_empty(&block->instr_list) && (opc_cat(n->opc) >= 5) && !is_meta(n))
          ir3_NOP(block);
 
       if (ctx->compiler->samgq_workaround &&
@@ -281,6 +291,8 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
          } else {
             regmask_set(&state->needs_ss, n->dsts[0]);
          }
+      } else if (n->opc == OPC_PUSH_CONSTS_LOAD_MACRO) {
+         state->needs_ss_for_const = true;
       }
 
       if (is_ssbo(n->opc) || is_global_a3xx_atomic(n->opc) ||
@@ -324,9 +336,7 @@ legalize_block(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
 
             last_input->dsts[0]->flags |= IR3_REG_EI;
             if (last_input_needs_ss) {
-               last_input->flags |= IR3_INSTR_SS;
-               regmask_init(&state->needs_ss_war, mergedregs);
-               regmask_init(&state->needs_ss, mergedregs);
+               apply_ss(last_input, state, mergedregs);
             }
          }
       }
@@ -405,6 +415,36 @@ apply_fine_deriv_macro(struct ir3_legalize_ctx *ctx, struct ir3_block *block)
    }
 
    return true;
+}
+
+static void
+apply_push_consts_load_macro(struct ir3_legalize_ctx *ctx,
+                             struct ir3_block *block)
+{
+   foreach_instr (n, &block->instr_list) {
+      if (n->opc == OPC_PUSH_CONSTS_LOAD_MACRO) {
+         struct ir3_instruction *stsc = ir3_instr_create(block, OPC_STSC, 0, 2);
+         ir3_instr_move_after(stsc, n);
+         ir3_src_create(stsc, 0, IR3_REG_IMMED)->iim_val =
+            n->push_consts.dst_base;
+         ir3_src_create(stsc, 0, IR3_REG_IMMED)->iim_val =
+            n->push_consts.src_base;
+         stsc->cat6.iim_val = n->push_consts.src_size;
+         stsc->cat6.type = TYPE_U32;
+
+         if (ctx->compiler->stsc_duplication_quirk) {
+            struct ir3_instruction *nop = ir3_NOP(block);
+            ir3_instr_move_after(nop, stsc);
+            nop->flags |= IR3_INSTR_SS;
+            ir3_instr_move_after(ir3_instr_clone(stsc), nop);
+         }
+
+         list_delinit(&n->node);
+         break;
+      } else if (!is_meta(n)) {
+         break;
+      }
+   }
 }
 
 /* NOTE: branch instructions are always the last instruction(s)
@@ -1178,6 +1218,13 @@ ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
 
    foreach_block (block, &ir->block_list) {
       progress |= apply_fine_deriv_macro(ctx, block);
+   }
+
+   foreach_block (block, &ir->block_list) {
+      if (block->brtype == IR3_BRANCH_GETONE) {
+         apply_push_consts_load_macro(ctx, block->successors[0]);
+         break;
+      }
    }
 
    nop_sched(ir, so);

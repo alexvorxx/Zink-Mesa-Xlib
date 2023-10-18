@@ -181,13 +181,13 @@ struct InstrPred {
          DPP16_instruction& bDPP = b->dpp16();
          return aDPP.pass_flags == bDPP.pass_flags && aDPP.dpp_ctrl == bDPP.dpp_ctrl &&
                 aDPP.bank_mask == bDPP.bank_mask && aDPP.row_mask == bDPP.row_mask &&
-                aDPP.bound_ctrl == bDPP.bound_ctrl;
+                aDPP.bound_ctrl == bDPP.bound_ctrl && aDPP.fetch_inactive == bDPP.fetch_inactive;
       }
       if (a->isDPP8()) {
          DPP8_instruction& aDPP = a->dpp8();
          DPP8_instruction& bDPP = b->dpp8();
-         return aDPP.pass_flags == bDPP.pass_flags &&
-                !memcmp(aDPP.lane_sel, bDPP.lane_sel, sizeof(aDPP.lane_sel));
+         return aDPP.pass_flags == bDPP.pass_flags && aDPP.lane_sel == bDPP.lane_sel &&
+                aDPP.fetch_inactive == bDPP.fetch_inactive;
       }
       if (a->isSDWA()) {
          SDWA_instruction& aSDWA = a->sdwa();

@@ -157,10 +157,10 @@ nir_deref_instr_has_complex_use(nir_deref_instr *deref,
                                 nir_deref_instr_has_complex_use_options opts)
 {
    nir_foreach_use_including_if(use_src, &deref->def) {
-      if (use_src->is_if)
+      if (nir_src_is_if(use_src))
          return true;
 
-      nir_instr *use_instr = use_src->parent_instr;
+      nir_instr *use_instr = nir_src_parent_instr(use_src);
 
       switch (use_instr->type) {
       case nir_instr_type_deref: {
@@ -834,17 +834,18 @@ nir_rematerialize_deref_in_use_blocks(nir_deref_instr *instr)
    };
 
    nir_foreach_use_safe(use, &instr->def) {
-      if (use->parent_instr->block == instr->instr.block)
+      nir_instr *parent = nir_src_parent_instr(use);
+      if (parent->block == instr->instr.block)
          continue;
 
       /* If a deref is used in a phi, we can't rematerialize it, as the new
        * derefs would appear before the phi, which is not valid.
        */
-      if (use->parent_instr->type == nir_instr_type_phi)
+      if (parent->type == nir_instr_type_phi)
          continue;
 
-      state.block = use->parent_instr->block;
-      state.builder.cursor = nir_before_instr(use->parent_instr);
+      state.block = parent->block;
+      state.builder.cursor = nir_before_instr(parent);
       rematerialize_deref_src(use, &state);
    }
 
@@ -886,10 +887,10 @@ static void
 nir_deref_instr_fixup_child_types(nir_deref_instr *parent)
 {
    nir_foreach_use(use, &parent->def) {
-      if (use->parent_instr->type != nir_instr_type_deref)
+      if (nir_src_parent_instr(use)->type != nir_instr_type_deref)
          continue;
 
-      nir_deref_instr *child = nir_instr_as_deref(use->parent_instr);
+      nir_deref_instr *child = nir_instr_as_deref(nir_src_parent_instr(use));
       switch (child->deref_type) {
       case nir_deref_type_var:
          unreachable("nir_deref_type_var cannot be a child");
@@ -1198,12 +1199,12 @@ opt_deref_cast(nir_builder *b, nir_deref_instr *cast)
    bool trivial_array_cast = is_trivial_array_deref_cast(cast);
 
    nir_foreach_use_including_if_safe(use_src, &cast->def) {
-      assert(!use_src->is_if && "there cannot be if-uses");
+      assert(!nir_src_is_if(use_src) && "there cannot be if-uses");
 
       /* If this isn't a trivial array cast, we can't propagate into
        * ptr_as_array derefs.
        */
-      if (is_deref_ptr_as_array(use_src->parent_instr) &&
+      if (is_deref_ptr_as_array(nir_src_parent_instr(use_src)) &&
           !trivial_array_cast)
          continue;
 

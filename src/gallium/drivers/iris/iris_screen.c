@@ -62,6 +62,9 @@
 
 #define genX_call(devinfo, func, ...)             \
    switch ((devinfo)->verx10) {                   \
+   case 200:                                      \
+      gfx20_##func(__VA_ARGS__);                  \
+      break;                                      \
    case 125:                                      \
       gfx125_##func(__VA_ARGS__);                 \
       break;                                      \
@@ -298,6 +301,7 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_LEGACY_MATH_RULES:
    case PIPE_CAP_ALPHA_TO_COVERAGE_DITHER_CONTROL:
    case PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE:
+   case PIPE_CAP_HAS_CONST_BW:
       return true;
    case PIPE_CAP_UMA:
       return iris_bufmgr_vram_size(screen->bufmgr) == 0;
@@ -871,6 +875,8 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       driQueryOptionb(config->options, "limit_trig_input_range");
    screen->driconf.lower_depth_range_rate =
       driQueryOptionf(config->options, "lower_depth_range_rate");
+   screen->driconf.intel_enable_wa_14018912822 =
+      driQueryOptionb(config->options, "intel_enable_wa_14018912822");
 
    screen->precompile = debug_get_bool_option("shader_precompile", true);
 

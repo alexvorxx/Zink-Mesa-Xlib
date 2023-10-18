@@ -266,16 +266,11 @@ xe_queue_exec_locked(struct anv_queue *queue,
                      uint32_t signal_count,
                      const struct vk_sync_signal *signals,
                      struct anv_query_pool *perf_query_pool,
-                     uint32_t perf_query_pass)
+                     uint32_t perf_query_pass,
+                     struct anv_utrace_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
-   struct anv_utrace_submit *utrace_submit = NULL;
    VkResult result;
-
-   result = anv_device_utrace_flush_cmd_buffers(queue, cmd_buffer_count,
-                                                cmd_buffers, &utrace_submit);
-   if (result != VK_SUCCESS)
-      return result;
 
    struct drm_xe_sync *xe_syncs = NULL;
    uint32_t xe_syncs_count = 0;

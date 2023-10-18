@@ -882,6 +882,8 @@ fd6_texture_init(struct pipe_context *pctx) disable_thread_safety_analysis
                                    FD6_MAX_BORDER_COLORS * FD6_BORDER_COLOR_SIZE,
                                    0, "bcolor");
 
+   fd_context_add_private_bo(ctx, fd6_ctx->bcolor_mem);
+
    fd6_ctx->tex_cache = _mesa_hash_table_create(NULL, tex_key_hash, tex_key_equals);
    util_idalloc_init(&fd6_ctx->tex_ids, 256);
 }

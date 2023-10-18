@@ -103,8 +103,7 @@ impl PipeScreen {
                 (*self.screen).context_create.unwrap()(
                     self.screen,
                     ptr::null_mut(),
-                    // TODO: PIPE_CONTEXT_COMPUTE_ONLY
-                    PIPE_CONTEXT_NO_LOD_BIAS,
+                    PIPE_CONTEXT_COMPUTE_ONLY | PIPE_CONTEXT_NO_LOD_BIAS,
                 )
             },
             self,
@@ -239,6 +238,10 @@ impl PipeScreen {
         unsafe {
             s.get_compute_param.unwrap()(self.screen, pipe_shader_ir::PIPE_SHADER_IR_NIR, cap, ptr)
         }
+    }
+
+    pub fn driver_name(&self) -> String {
+        self.ldev.driver_name()
     }
 
     pub fn name(&self) -> String {

@@ -37,6 +37,12 @@ d = 'd'
 e = 'e'
 NAN = math.nan
 
+signed_zero_preserve_16 = 'nir_is_float_control_signed_zero_preserve(info->float_controls_execution_mode, 16)'
+signed_zero_preserve_32 = 'nir_is_float_control_signed_zero_preserve(info->float_controls_execution_mode, 32)'
+signed_zero_nan_preserve_16 = ('(nir_is_float_control_signed_zero_preserve(info->float_controls_execution_mode, 16) ||'
+                               ' nir_is_float_control_nan_preserve(info->float_controls_execution_mode, 16))')
+signed_zero_nan_preserve_32 = ('(nir_is_float_control_signed_zero_preserve(info->float_controls_execution_mode, 32) ||'
+                               ' nir_is_float_control_nan_preserve(info->float_controls_execution_mode, 32))')
 signed_zero_inf_nan_preserve_16 = 'nir_is_float_control_signed_zero_inf_nan_preserve(info->float_controls_execution_mode, 16)'
 signed_zero_inf_nan_preserve_32 = 'nir_is_float_control_signed_zero_inf_nan_preserve(info->float_controls_execution_mode, 32)'
 
@@ -139,8 +145,8 @@ optimizations = [
    # a+0.0 is 'a' unless 'a' is denormal or -0.0. If it's only used by a
    # floating point instruction, they should flush any input denormals and we
    # can replace -0.0 with 0.0 if the float execution mode allows it.
-   (('fadd(is_only_used_as_float)', 'a@16', 0.0), a, '!'+signed_zero_inf_nan_preserve_16),
-   (('fadd(is_only_used_as_float)', 'a@32', 0.0), a, '!'+signed_zero_inf_nan_preserve_32),
+   (('fadd(is_only_used_as_float)', 'a@16', 0.0), a, '!'+signed_zero_preserve_16),
+   (('fadd(is_only_used_as_float)', 'a@32', 0.0), a, '!'+signed_zero_preserve_32),
    (('iadd', a, 0), a),
    (('iadd_sat', a, 0), a),
    (('isub_sat', a, 0), a),
@@ -175,13 +181,13 @@ optimizations = [
    (('fadd', ('fsat', a), ('fsat', ('fneg', a))), ('fsat', ('fabs', a))),
    (('~fmul', a, 0.0), 0.0),
    # The only effect a*0.0 should have is when 'a' is infinity, -0.0 or NaN
-   (('fmul', 'a@16', 0.0), 0.0, '!'+signed_zero_inf_nan_preserve_16),
-   (('fmul', 'a@32', 0.0), 0.0, '!'+signed_zero_inf_nan_preserve_32),
+   (('fmul', 'a@16', 0.0), 0.0, '!'+signed_zero_nan_preserve_16),
+   (('fmul', 'a@32', 0.0), 0.0, '!'+signed_zero_nan_preserve_32),
    (('fmulz', a, 0.0), 0.0),
-   (('fmulz', a, 'b(is_finite_not_zero)'), ('fmul', a, b), '!'+signed_zero_inf_nan_preserve_32),
+   (('fmulz', a, 'b(is_finite_not_zero)'), ('fmul', a, b), '!'+signed_zero_preserve_32),
    (('fmulz', 'a(is_finite)', 'b(is_finite)'), ('fmul', a, b)),
    (('fmulz', a, a), ('fmul', a, a)),
-   (('ffmaz', a, 'b(is_finite_not_zero)', c), ('ffma', a, b, c), '!'+signed_zero_inf_nan_preserve_32),
+   (('ffmaz', a, 'b(is_finite_not_zero)', c), ('ffma', a, b, c), '!'+signed_zero_preserve_32),
    (('ffmaz', 'a(is_finite)', 'b(is_finite)', c), ('ffma', a, b, c)),
    (('ffmaz', a, a, b), ('ffma', a, a, b)),
    (('imul', a, 0), 0),
@@ -207,13 +213,13 @@ optimizations = [
    (('ffma@32(is_only_used_as_float)', 0.0, a, b), b, '!'+signed_zero_inf_nan_preserve_32),
    (('ffmaz', 0.0, a, b), ('fadd', 0.0, b)),
    (('~ffma', a, b, 0.0), ('fmul', a, b)),
-   (('ffma@16', a, b, 0.0), ('fmul', a, b), '!'+signed_zero_inf_nan_preserve_16),
-   (('ffma@32', a, b, 0.0), ('fmul', a, b), '!'+signed_zero_inf_nan_preserve_32),
-   (('ffmaz', a, b, 0.0), ('fmulz', a, b), '!'+signed_zero_inf_nan_preserve_32),
+   (('ffma@16', a, b, 0.0), ('fmul', a, b), '!'+signed_zero_preserve_16),
+   (('ffma@32', a, b, 0.0), ('fmul', a, b), '!'+signed_zero_preserve_32),
+   (('ffmaz', a, b, 0.0), ('fmulz', a, b), '!'+signed_zero_preserve_32),
    (('ffma', 1.0, a, b), ('fadd', a, b)),
-   (('ffmaz', 1.0, a, b), ('fadd', a, b), '!'+signed_zero_inf_nan_preserve_32),
+   (('ffmaz', 1.0, a, b), ('fadd', a, b), '!'+signed_zero_preserve_32),
    (('ffma', -1.0, a, b), ('fadd', ('fneg', a), b)),
-   (('ffmaz', -1.0, a, b), ('fadd', ('fneg', a), b), '!'+signed_zero_inf_nan_preserve_32),
+   (('ffmaz', -1.0, a, b), ('fadd', ('fneg', a), b), '!'+signed_zero_preserve_32),
    (('~ffma', '#a', '#b', c), ('fadd', ('fmul', a, b), c)),
    (('~ffmaz', '#a', '#b', c), ('fadd', ('fmulz', a, b), c)),
    (('~flrp', a, b, 0.0), a),
@@ -268,15 +274,15 @@ optimizations = [
    # Optimize open-coded fmulz.
    # (b==0.0 ? 0.0 : a) * (a==0.0 ? 0.0 : b) -> fmulz(a, b)
    (('fmul@32', ('bcsel', ignore_exact('feq', b, 0.0), 0.0, a), ('bcsel', ignore_exact('feq', a, 0.0), 0.0, b)),
-    ('fmulz', a, b), 'options->has_fmulz && !'+signed_zero_inf_nan_preserve_32),
+    ('fmulz', a, b), 'options->has_fmulz && !'+signed_zero_preserve_32),
    (('fmul@32', a, ('bcsel', ignore_exact('feq', a, 0.0), 0.0, '#b(is_not_const_zero)')),
-    ('fmulz', a, b), 'options->has_fmulz && !'+signed_zero_inf_nan_preserve_32),
+    ('fmulz', a, b), 'options->has_fmulz && !'+signed_zero_preserve_32),
 
    # ffma(b==0.0 ? 0.0 : a, a==0.0 ? 0.0 : b, c) -> ffmaz(a, b, c)
    (('ffma@32', ('bcsel', ignore_exact('feq', b, 0.0), 0.0, a), ('bcsel', ignore_exact('feq', a, 0.0), 0.0, b), c),
-    ('ffmaz', a, b, c), 'options->has_fmulz && !'+signed_zero_inf_nan_preserve_32),
+    ('ffmaz', a, b, c), 'options->has_fmulz && !'+signed_zero_preserve_32),
    (('ffma@32', a, ('bcsel', ignore_exact('feq', a, 0.0), 0.0, '#b(is_not_const_zero)'), c),
-    ('ffmaz', a, b, c), 'options->has_fmulz && !'+signed_zero_inf_nan_preserve_32),
+    ('ffmaz', a, b, c), 'options->has_fmulz && !'+signed_zero_preserve_32),
 
    # b == 0.0 ? 1.0 : fexp2(fmul(a, b)) -> fexp2(fmulz(a, b))
    (('bcsel', ignore_exact('feq', b, 0.0), 1.0, ('fexp2', ('fmul@32', a, b))),
@@ -827,7 +833,7 @@ optimizations.extend([
    (('fsat', ('fsat', a)), ('fsat', a)),
    (('fsat', ('fneg(is_used_once)', ('fadd(is_used_once)', a, b))), ('fsat', ('fadd', ('fneg', a), ('fneg', b))), '!options->lower_fsat'),
    (('fsat', ('fneg(is_used_once)', ('fmul(is_used_once)', a, b))), ('fsat', ('fmul', ('fneg', a), b)), '!options->lower_fsat'),
-   (('fsat', ('fneg(is_used_once)', ('fmulz(is_used_once)', a, b))), ('fsat', ('fmulz', ('fneg', a), b)), '!options->lower_fsat && !'+signed_zero_inf_nan_preserve_32),
+   (('fsat', ('fneg(is_used_once)', ('fmulz(is_used_once)', a, b))), ('fsat', ('fmulz', ('fneg', a), b)), '!options->lower_fsat && !'+signed_zero_preserve_32),
    (('fsat', ('fabs(is_used_once)', ('fmul(is_used_once)', a, b))), ('fsat', ('fmul', ('fabs', a), ('fabs', b))), '!options->lower_fsat'),
    (('fmin', ('fmax', ('fmin', ('fmax', a, b), c), b), c), ('fmin', ('fmax', a, b), c)),
    (('imin', ('imax', ('imin', ('imax', a, b), c), b), c), ('imin', ('imax', a, b), c)),
@@ -1508,6 +1514,9 @@ optimizations.extend([
    (('umax', ('b2i', 'a@1'), ('b2i', 'b@1')), ('b2i', ('ior',  a, b))),
    (('umin', ('b2i', 'a@1'), ('b2i', 'b@1')), ('b2i', ('iand', a, b))),
 
+   # Clean up LLVM booleans. b2i output is 0/1 so iand is a no-op.
+   (('iand', ('b2i', a), 1), ('b2i', a)),
+
    (('ine', ('umin', ('ineg', ('b2i', 'a@1')), b), 0), ('iand', a, ('ine', b, 0))),
    (('ine', ('umax', ('ineg', ('b2i', 'a@1')), b), 0), ('ior' , a, ('ine', b, 0))),
 
@@ -1702,6 +1711,9 @@ optimizations.extend([
    (('unpack_32_2x16_split_x', a), ('u2u16', a), 'options->lower_unpack_32_2x16_split || options->lower_pack_split'),
    (('unpack_32_2x16_split_y', a), ('u2u16', ('ushr', a, 16)), 'options->lower_unpack_32_2x16_split || options->lower_pack_split'),
 
+   (('unpack_64_2x32_split_x', ('ushr', a, 32)), ('unpack_64_2x32_split_y', a), '!options->lower_unpack_64_2x32_split'),
+   (('u2u32', ('ushr', 'a@64', 32)), ('unpack_64_2x32_split_y', a), '!options->lower_unpack_64_2x32_split'),
+
    # Useless masking before unpacking
    (('unpack_half_2x16_split_x', ('iand', a, 0xffff)), ('unpack_half_2x16_split_x', a)),
    (('unpack_32_2x16_split_x', ('iand', a, 0xffff)), ('unpack_32_2x16_split_x', a)),
@@ -1747,6 +1759,10 @@ optimizations.extend([
    (('extract_u8', ('pack_32_4x8_split', a, b, c, d), 1), ('u2u', b)),
    (('extract_u8', ('pack_32_4x8_split', a, b, c, d), 2), ('u2u', c)),
    (('extract_u8', ('pack_32_4x8_split', a, b, c, d), 3), ('u2u', d)),
+
+   # Reduce intermediate precision with int64.
+   (('u2u32', ('iadd(is_used_once)', 'a@64', b)),
+    ('iadd', ('u2u32', a), ('u2u32', b))),
 ])
 
 # After the ('extract_u8', a, 0) pattern, above, triggers, there will be
@@ -1779,7 +1795,7 @@ optimizations.extend([
 
    # Propagate negation up multiplication chains
    (('fmul(is_used_by_non_fsat)', ('fneg', a), b), ('fneg', ('fmul', a, b))),
-   (('fmulz(is_used_by_non_fsat)', ('fneg', a), b), ('fneg', ('fmulz', a, b)), '!'+signed_zero_inf_nan_preserve_32),
+   (('fmulz(is_used_by_non_fsat)', ('fneg', a), b), ('fneg', ('fmulz', a, b)), '!'+signed_zero_preserve_32),
    (('ffma', ('fneg', a), ('fneg', b), c), ('ffma', a, b, c)),
    (('ffmaz', ('fneg', a), ('fneg', b), c), ('ffmaz', a, b, c)),
    (('imul', ('ineg', a), b), ('ineg', ('imul', a, b))),

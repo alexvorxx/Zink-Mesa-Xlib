@@ -1,4 +1,5 @@
 use crate::api::icd::*;
+use crate::api::types::DeleteContextCB;
 use crate::core::device::*;
 use crate::core::format::*;
 use crate::core::memory::*;
@@ -14,6 +15,7 @@ use std::alloc::Layout;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::mem;
 use std::os::raw::c_void;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -22,7 +24,7 @@ pub struct Context {
     pub base: CLObjectBase<CL_INVALID_CONTEXT>,
     pub devs: Vec<&'static Device>,
     pub properties: Properties<cl_context_properties>,
-    pub dtors: Mutex<Vec<Box<dyn Fn(cl_context)>>>,
+    pub dtors: Mutex<Vec<DeleteContextCB>>,
     pub svm_ptrs: Mutex<BTreeMap<*const c_void, Layout>>,
 }
 
@@ -202,12 +204,9 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        let cl = cl_context::from_ptr(self);
-        self.dtors
-            .lock()
-            .unwrap()
-            .iter()
-            .rev()
-            .for_each(|cb| cb(cl));
+        let cbs = mem::take(self.dtors.get_mut().unwrap());
+        for cb in cbs.into_iter().rev() {
+            cb.call(self);
+        }
     }
 }

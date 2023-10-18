@@ -683,7 +683,8 @@ gather_shader_info_gs(struct radv_device *device, const nir_shader *nir, struct 
 }
 
 static void
-gather_shader_info_mesh(const nir_shader *nir, struct radv_shader_info *info)
+gather_shader_info_mesh(const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
+                        struct radv_shader_info *info)
 {
    struct gfx10_ngg_info *ngg_info = &info->ngg_info;
 
@@ -729,6 +730,8 @@ gather_shader_info_mesh(const nir_shader *nir, struct radv_shader_info *info)
    unsigned api_workgroup_size = ac_compute_cs_workgroup_size(nir->info.workgroup_size, false, UINT32_MAX);
 
    info->workgroup_size = MAX2(min_ngg_workgroup_size, api_workgroup_size);
+
+   info->ms.has_query = pipeline_key->mesh_shader_queries;
 }
 
 static void
@@ -933,7 +936,8 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const s
 }
 
 static void
-gather_shader_info_task(const nir_shader *nir, struct radv_shader_info *info)
+gather_shader_info_task(const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
+                        struct radv_shader_info *info)
 {
    /* Task shaders always need these for the I/O lowering even if the API shader doesn't actually
     * use them.
@@ -953,6 +957,8 @@ gather_shader_info_task(const nir_shader *nir, struct radv_shader_info *info)
     */
    info->cs.linear_taskmesh_dispatch =
       nir->info.mesh.ts_mesh_dispatch_dimensions[1] == 1 && nir->info.mesh.ts_mesh_dispatch_dimensions[2] == 1;
+
+   info->cs.has_query = pipeline_key->mesh_shader_queries;
 }
 
 static uint32_t
@@ -1169,7 +1175,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       gather_shader_info_cs(device, nir, pipeline_key, info);
       break;
    case MESA_SHADER_TASK:
-      gather_shader_info_task(nir, info);
+      gather_shader_info_task(nir, pipeline_key, info);
       break;
    case MESA_SHADER_FRAGMENT:
       gather_shader_info_fs(device, nir, pipeline_key, info);
@@ -1187,7 +1193,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       gather_shader_info_vs(device, nir, pipeline_key, info);
       break;
    case MESA_SHADER_MESH:
-      gather_shader_info_mesh(nir, info);
+      gather_shader_info_mesh(nir, pipeline_key, info);
       break;
    default:
       if (gl_shader_stage_is_rt(nir->info.stage))

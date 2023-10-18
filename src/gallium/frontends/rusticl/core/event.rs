@@ -11,7 +11,6 @@ use mesa_rust_util::static_assert;
 use rusticl_opencl_gen::*;
 
 use std::collections::HashSet;
-use std::os::raw::c_void;
 use std::slice;
 use std::sync::Arc;
 use std::sync::Condvar;
@@ -25,7 +24,7 @@ static_assert!(CL_RUNNING == 1);
 static_assert!(CL_SUBMITTED == 2);
 static_assert!(CL_QUEUED == 3);
 
-pub type EventSig = Box<dyn Fn(&Arc<Queue>, &PipeContext) -> CLResult<()>>;
+pub type EventSig = Box<dyn FnOnce(&Arc<Queue>, &PipeContext) -> CLResult<()>>;
 
 pub enum EventTimes {
     Queued = CL_PROFILING_COMMAND_QUEUED as isize,
@@ -37,7 +36,7 @@ pub enum EventTimes {
 #[derive(Default)]
 struct EventMutState {
     status: cl_int,
-    cbs: [Vec<(EventCB, *mut c_void)>; 3],
+    cbs: [Vec<EventCB>; 3],
     work: Option<EventSig>,
     time_queued: cl_ulong,
     time_submit: cl_ulong,
@@ -120,9 +119,8 @@ impl Event {
         }
 
         if [CL_COMPLETE, CL_RUNNING, CL_SUBMITTED].contains(&(new as u32)) {
-            if let Some(cbs) = lock.cbs.get(new as usize) {
-                cbs.iter()
-                    .for_each(|(cb, data)| unsafe { cb(cl_event::from_ptr(self), new, *data) });
+            if let Some(cbs) = lock.cbs.get_mut(new as usize) {
+                cbs.drain(..).for_each(|cb| cb.call(self, new));
             }
         }
     }
@@ -161,16 +159,16 @@ impl Event {
         }
     }
 
-    pub fn add_cb(&self, state: cl_int, cb: EventCB, data: *mut c_void) {
+    pub fn add_cb(&self, state: cl_int, cb: EventCB) {
         let mut lock = self.state();
         let status = lock.status;
 
         // call cb if the status was already reached
         if state >= status {
             drop(lock);
-            unsafe { cb(cl_event::from_ptr(self), status, data) };
+            cb.call(self, state);
         } else {
-            lock.cbs.get_mut(state as usize).unwrap().push((cb, data));
+            lock.cbs.get_mut(state as usize).unwrap().push(cb);
         }
     }
 
@@ -206,10 +204,9 @@ impl Event {
                 // We already have the lock so can't call set_time on the event
                 lock.time_submit = queue.device.screen().get_timestamp();
             }
-            let work = lock.work.take();
             let mut query_start = None;
             let mut query_end = None;
-            let new = work.as_ref().map_or(
+            let new = lock.work.take().map_or(
                 // if there is no work
                 CL_SUBMITTED as cl_int,
                 |w| {
@@ -230,10 +227,7 @@ impl Event {
                     res
                 },
             );
-            // we have to make sure that the work object is dropped before we notify about the
-            // status change. It's probably fine to move the value above, but we have to be
-            // absolutely sure it happens before the status update.
-            drop(work);
+
             if profiling_enabled {
                 lock.time_start = query_start.unwrap().read_blocked();
                 lock.time_end = query_end.unwrap().read_blocked();

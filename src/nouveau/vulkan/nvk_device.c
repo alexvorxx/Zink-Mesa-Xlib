@@ -9,6 +9,7 @@
 #include "nvk_instance.h"
 #include "nvk_physical_device.h"
 
+#include "vk_pipeline_cache.h"
 #include "vulkan/wsi/wsi_common.h"
 
 #include "nouveau_context.h"
@@ -174,8 +175,6 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
       goto fail_ws_dev;
    }
 
-   list_inithead(&dev->memory_objects);
-
    result = nvk_descriptor_table_init(dev, &dev->images,
                                       8 * 4 /* tic entry size */,
                                       1024, 1024 * 1024);
@@ -217,35 +216,13 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
 
    nvk_slm_area_init(&dev->slm);
 
-   if (pthread_mutex_init(&dev->mutex, NULL) != 0) {
-      result = vk_error(dev, VK_ERROR_INITIALIZATION_FAILED);
-      goto fail_slm;
-   }
-
-   pthread_condattr_t condattr;
-   if (pthread_condattr_init(&condattr) != 0) {
-      result = vk_error(dev, VK_ERROR_INITIALIZATION_FAILED);
-      goto fail_mutex;
-   }
-   if (pthread_condattr_setclock(&condattr, CLOCK_MONOTONIC) != 0) {
-      pthread_condattr_destroy(&condattr);
-      result = vk_error(dev, VK_ERROR_INITIALIZATION_FAILED);
-      goto fail_mutex;
-   }
-   if (pthread_cond_init(&dev->queue_submit, &condattr) != 0) {
-      pthread_condattr_destroy(&condattr);
-      result = vk_error(dev, VK_ERROR_INITIALIZATION_FAILED);
-      goto fail_mutex;
-   }
-   pthread_condattr_destroy(&condattr);
-
    void *zero_map;
    dev->zero_page = nouveau_ws_bo_new_mapped(dev->ws_dev, 0x1000, 0,
                                              NOUVEAU_WS_BO_LOCAL |
                                              NOUVEAU_WS_BO_NO_SHARE,
                                              NOUVEAU_WS_BO_WR, &zero_map);
    if (dev->zero_page == NULL)
-      goto fail_queue_submit;
+      goto fail_slm;
 
    memset(zero_map, 0, 0x1000);
    nouveau_ws_bo_unmap(dev->zero_page, zero_map);
@@ -265,14 +242,25 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto fail_vab_memory;
 
+   struct vk_pipeline_cache_create_info cache_info = {
+      .weak_ref = true,
+   };
+   dev->mem_cache = vk_pipeline_cache_create(&dev->vk, &cache_info, NULL);
+   if (dev->mem_cache == NULL) {
+      result = VK_ERROR_OUT_OF_HOST_MEMORY;
+      goto fail_queue;
+   }
+
    result = nvk_device_init_meta(dev);
    if (result != VK_SUCCESS)
-      goto fail_queue;
+      goto fail_mem_cache;
 
    *pDevice = nvk_device_to_handle(dev);
 
    return VK_SUCCESS;
 
+fail_mem_cache:
+   vk_pipeline_cache_destroy(dev->mem_cache, NULL);
 fail_queue:
    nvk_queue_finish(dev, &dev->queue);
 fail_vab_memory:
@@ -280,10 +268,6 @@ fail_vab_memory:
       nouveau_ws_bo_destroy(dev->vab_memory);
 fail_zero_page:
    nouveau_ws_bo_destroy(dev->zero_page);
-fail_queue_submit:
-   pthread_cond_destroy(&dev->queue_submit);
-fail_mutex:
-   pthread_mutex_destroy(&dev->mutex);
 fail_slm:
    nvk_slm_area_finish(&dev->slm);
    nvk_heap_finish(dev, &dev->event_heap);
@@ -314,8 +298,7 @@ nvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    nvk_device_finish_meta(dev);
 
-   pthread_cond_destroy(&dev->queue_submit);
-   pthread_mutex_destroy(&dev->mutex);
+   vk_pipeline_cache_destroy(dev->mem_cache, NULL);
    nvk_queue_finish(dev, &dev->queue);
    if (dev->vab_memory)
       nouveau_ws_bo_destroy(dev->vab_memory);
@@ -326,7 +309,6 @@ nvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    nvk_heap_finish(dev, &dev->shader_heap);
    nvk_descriptor_table_finish(dev, &dev->samplers);
    nvk_descriptor_table_finish(dev, &dev->images);
-   assert(list_is_empty(&dev->memory_objects));
    nouveau_ws_context_destroy(dev->ws_ctx);
    nouveau_ws_device_destroy(dev->ws_dev);
    vk_free(&dev->vk.alloc, dev);

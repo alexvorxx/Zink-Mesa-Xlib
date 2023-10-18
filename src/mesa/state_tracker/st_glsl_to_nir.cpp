@@ -510,8 +510,6 @@ st_link_glsl_to_nir(struct gl_context *ctx,
          struct gl_linked_shader *shader = shader_program->_LinkedShaders[i];
          exec_list *ir = shader->ir;
          gl_shader_stage stage = shader->Stage;
-         const struct gl_shader_compiler_options *options =
-               &ctx->Const.ShaderCompilerOptions[stage];
 
          enum pipe_shader_type ptarget = pipe_shader_type_from_mesa(stage);
          bool have_dround = pscreen->get_shader_param(pscreen, ptarget,
@@ -529,9 +527,6 @@ st_link_glsl_to_nir(struct gl_context *ctx,
                             ctx->Extensions.ARB_gpu_shader5);
 
          do_vec_index_to_cond_assign(ir);
-         if (options->MaxIfDepth == 0) {
-            lower_discard(ir);
-         }
 
          validate_ir_tree(ir);
       }

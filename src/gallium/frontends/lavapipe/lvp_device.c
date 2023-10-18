@@ -129,6 +129,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_pipeline_library                  = true,
    .KHR_relaxed_block_layout              = true,
    .KHR_sampler_mirror_clamp_to_edge      = true,
+   .KHR_sampler_ycbcr_conversion          = true,
    .KHR_separate_depth_stencil_layouts    = true,
    .KHR_shader_atomic_int64               = true,
    .KHR_shader_clock                      = true,
@@ -185,6 +186,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_multisampled_render_to_single_sampled = true,
    .EXT_multi_draw                        = true,
    .EXT_mutable_descriptor_type           = true,
+   .EXT_nested_command_buffer             = true,
    .EXT_non_seamless_cube_map             = true,
 #if DETECT_OS_LINUX
    .EXT_pageable_device_local_memory      = true,
@@ -212,6 +214,8 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_transform_feedback                = true,
    .EXT_vertex_attribute_divisor          = true,
    .EXT_vertex_input_dynamic_state        = true,
+   .EXT_ycbcr_image_arrays                = true,
+   .EXT_ycbcr_2plane_444_formats          = true,
    .EXT_custom_border_color               = true,
    .EXT_provoking_vertex                  = true,
    .EXT_line_rasterization                = true,
@@ -575,6 +579,11 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       /* VK_EXT_pageable_device_local_memory */
       .pageableDeviceLocalMemory = true,
 
+      /* VK_EXT_nested_command_buffer */
+      .nestedCommandBuffer = true,
+      .nestedCommandBufferRendering = true,
+      .nestedCommandBufferSimultaneousUse = true,
+
       /* VK_EXT_mesh_shader */
       .taskShader = true,
       .meshShader = true,
@@ -587,6 +596,12 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
 
       /* maintenance5 */
       .maintenance5 = true,
+
+      /* VK_EXT_ycbcr_2plane_444_formats */
+      .ycbcr2plane444Formats = true,
+
+      /* VK_EXT_ycbcr_image_arrays */
+      .ycbcrImageArrays = true,
 
       /* VK_AMDX_shader_enqueue */
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -1032,6 +1047,9 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
             " (LLVM " MESA_LLVM_VERSION_STRING ")"
 #endif
            );
+
+   /* VK_EXT_nested_command_buffer */
+   p->maxCommandBufferNestingLevel = UINT32_MAX;
 
    /* VK_EXT_host_image_copy */
    lvp_device_get_cache_uuid(p->optimalTilingLayoutUUID);
@@ -2012,6 +2030,31 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_BindBufferMemory2(VkDevice _device,
    return VK_SUCCESS;
 }
 
+static VkResult
+lvp_image_plane_bind(struct lvp_device *device,
+                     struct lvp_image_plane *plane,
+                     struct lvp_device_memory *mem,
+                     VkDeviceSize memory_offset,
+                     VkDeviceSize *plane_offset)
+{
+   if (!device->pscreen->resource_bind_backing(device->pscreen,
+                                               plane->bo,
+                                               mem->pmem,
+                                               memory_offset + *plane_offset)) {
+      /* This is probably caused by the texture being too large, so let's
+       * report this as the *closest* allowed error-code. It's not ideal,
+       * but it's unlikely that anyone will care too much.
+       */
+      return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   }
+   plane->pmem = mem->pmem;
+   plane->memory_offset = memory_offset;
+   plane->plane_offset = *plane_offset;
+   *plane_offset += plane->size;
+   return VK_SUCCESS;
+}
+
+
 VKAPI_ATTR VkResult VKAPI_CALL lvp_BindImageMemory2(VkDevice _device,
                               uint32_t bindInfoCount,
                               const VkBindImageMemoryInfo *pBindInfos)
@@ -2032,12 +2075,12 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_BindImageMemory2(VkDevice _device,
                lvp_swapchain_get_image(swapchain_info->swapchain,
                                        swapchain_info->imageIndex);
 
-            image->pmem = swapchain_image->pmem;
-            image->memory_offset = swapchain_image->memory_offset;
+            image->planes[0].pmem = swapchain_image->planes[0].pmem;
+            image->planes[0].memory_offset = swapchain_image->planes[0].memory_offset;
             device->pscreen->resource_bind_backing(device->pscreen,
-                                                   image->bo,
-                                                   image->pmem,
-                                                   image->memory_offset);
+                                                   image->planes[0].bo,
+                                                   image->planes[0].pmem,
+                                                   image->planes[0].memory_offset);
             did_bind = true;
             break;
          }
@@ -2047,18 +2090,24 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_BindImageMemory2(VkDevice _device,
       }
 
       if (!did_bind) {
-         if (!device->pscreen->resource_bind_backing(device->pscreen,
-                                                     image->bo,
-                                                     mem->pmem,
-                                                     bind_info->memoryOffset)) {
-            /* This is probably caused by the texture being too large, so let's
-             * report this as the *closest* allowed error-code. It's not ideal,
-             * but it's unlikely that anyone will care too much.
-             */
-            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         uint64_t offset_B = 0;
+         VkResult result;
+         if (image->disjoint) {
+            const VkBindImagePlaneMemoryInfo *plane_info =
+               vk_find_struct_const(pBindInfos[i].pNext, BIND_IMAGE_PLANE_MEMORY_INFO);
+            uint8_t plane = lvp_image_aspects_to_plane(image, plane_info->planeAspect);
+            result = lvp_image_plane_bind(device, &image->planes[plane],
+                                          mem, bind_info->memoryOffset, &offset_B);
+            if (result != VK_SUCCESS)
+               return result;
+         } else {
+            for (unsigned plane = 0; plane < image->plane_count; plane++) {
+               result = lvp_image_plane_bind(device, &image->planes[plane],
+                                             mem, bind_info->memoryOffset, &offset_B);
+               if (result != VK_SUCCESS)
+                  return result;
+            }
          }
-         image->pmem = mem->pmem;
-         image->memory_offset = bind_info->memoryOffset;
       }
    }
    return VK_SUCCESS;
@@ -2183,21 +2232,11 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateSampler(
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
    struct lvp_sampler *sampler;
-   const VkSamplerReductionModeCreateInfo *reduction_mode_create_info =
-      vk_find_struct_const(pCreateInfo->pNext,
-                           SAMPLER_REDUCTION_MODE_CREATE_INFO);
-   const struct VkSamplerYcbcrConversionInfo *ycbcr_conversion =
-      vk_find_struct_const(pCreateInfo->pNext, SAMPLER_YCBCR_CONVERSION_INFO);
 
-   assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
-
-   sampler = vk_zalloc2(&device->vk.alloc, pAllocator, sizeof(*sampler), 8,
-                        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   sampler = vk_sampler_create(&device->vk, pCreateInfo,
+                               pAllocator, sizeof(*sampler));
    if (!sampler)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   vk_object_base_init(&device->vk, &sampler->base,
-                       VK_OBJECT_TYPE_SAMPLER);
 
    struct pipe_sampler_state state = {0};
    VkClearColorValue border_color =
@@ -2224,10 +2263,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateSampler(
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE == (unsigned)PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE);
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_MIN == (unsigned)PIPE_TEX_REDUCTION_MIN);
    STATIC_ASSERT((unsigned)VK_SAMPLER_REDUCTION_MODE_MAX == (unsigned)PIPE_TEX_REDUCTION_MAX);
-   if (reduction_mode_create_info)
-      state.reduction_mode = (enum pipe_tex_reduction_mode)reduction_mode_create_info->reductionMode;
-   else
-      state.reduction_mode = PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE;
+   state.reduction_mode = (enum pipe_tex_reduction_mode)sampler->vk.reduction_mode;
    memcpy(&state.border_color, &border_color, sizeof(border_color));
 
    simple_mtx_lock(&device->queue.lock);
@@ -2236,8 +2272,6 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateSampler(
 
    lp_jit_sampler_from_pipe(&sampler->desc.sampler, &state);
    sampler->desc.sampler_index = sampler->texture_handle->sampler_index;
-
-   sampler->ycbcr_conversion = ycbcr_conversion ? vk_ycbcr_conversion_from_handle(ycbcr_conversion->conversion) : NULL;
 
    *pSampler = lvp_sampler_to_handle(sampler);
 
@@ -2259,8 +2293,7 @@ VKAPI_ATTR void VKAPI_CALL lvp_DestroySampler(
    device->queue.ctx->delete_texture_handle(device->queue.ctx, (uint64_t)(uintptr_t)sampler->texture_handle);
    simple_mtx_unlock(&device->queue.lock);
 
-   vk_object_base_finish(&sampler->base);
-   vk_free2(&device->vk.alloc, pAllocator, sampler);
+   vk_sampler_destroy(&device->vk, pAllocator, &sampler->vk);
 }
 
 /* vk_icd.h does not declare this function, so we declare it here to

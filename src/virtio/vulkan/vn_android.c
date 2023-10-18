@@ -1116,7 +1116,7 @@ vn_android_device_allocate_ahb(struct vn_device *dev,
       usage = vn_android_get_ahb_usage(image_info->usage, image_info->flags);
    } else {
       const VkPhysicalDeviceMemoryProperties *mem_props =
-         &dev->physical_device->memory_properties.memoryProperties;
+         &dev->physical_device->memory_properties;
 
       assert(alloc_info->memoryTypeIndex < mem_props->memoryTypeCount);
 

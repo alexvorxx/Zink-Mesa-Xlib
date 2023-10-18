@@ -87,7 +87,8 @@ static nir_def *lower_vri_intrin_lvd(struct nir_builder *b,
 }
 
 static nir_def *
-vulkan_resource_from_deref(nir_builder *b, nir_deref_instr *deref, const struct lvp_pipeline_layout *layout)
+vulkan_resource_from_deref(nir_builder *b, nir_deref_instr *deref, const struct lvp_pipeline_layout *layout,
+                           unsigned plane)
 {
    nir_def *index = nir_imm_int(b, 0);
 
@@ -102,7 +103,9 @@ vulkan_resource_from_deref(nir_builder *b, nir_deref_instr *deref, const struct 
 
    nir_variable *var = deref->var;
 
-   uint32_t binding_base = get_binding_layout(layout, var->data.descriptor_set, var->data.binding)->descriptor_index;
+   const struct lvp_descriptor_set_binding_layout *binding = get_binding_layout(layout, var->data.descriptor_set, var->data.binding);
+   uint32_t binding_base = binding->descriptor_index + plane;
+   index = nir_imul_imm(b, index, binding->stride);
 
    return nir_vec3(b, nir_imm_int(b, var->data.descriptor_set + 1),
                    nir_iadd_imm(b, index, binding_base),
@@ -113,6 +116,9 @@ static void lower_vri_instr_tex(struct nir_builder *b,
                                 nir_tex_instr *tex, void *data_cb)
 {
    struct lvp_pipeline_layout *layout = data_cb;
+   nir_def *plane_ssa = nir_steal_tex_src(tex, nir_tex_src_plane);
+   const uint32_t plane =
+      plane_ssa ? nir_src_as_uint(nir_src_for_ssa(plane_ssa)) : 0;
 
    for (unsigned i = 0; i < tex->num_srcs; i++) {
       nir_deref_instr *deref;
@@ -129,7 +135,7 @@ static void lower_vri_instr_tex(struct nir_builder *b,
          continue;
       }
 
-      nir_def *resource = vulkan_resource_from_deref(b, deref, layout);
+      nir_def *resource = vulkan_resource_from_deref(b, deref, layout, plane);
       nir_src_rewrite(&tex->src[i].src, resource);
    }
 }
@@ -143,7 +149,7 @@ lower_image_intrinsic(nir_builder *b,
 
    nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
 
-   nir_def *resource = vulkan_resource_from_deref(b, deref, layout);
+   nir_def *resource = vulkan_resource_from_deref(b, deref, layout, 0);
    nir_rewrite_image_intrinsic(intrin, resource, true);
 }
 

@@ -438,3 +438,17 @@ link_util_mark_array_elements_referenced(const struct array_deref_range *dr,
 
    _mark_array_elements_referenced(dr, count, 1, 0, bits);
 }
+
+const char *
+interpolation_string(unsigned interpolation)
+{
+   switch (interpolation) {
+   case INTERP_MODE_NONE:          return "no";
+   case INTERP_MODE_SMOOTH:        return "smooth";
+   case INTERP_MODE_FLAT:          return "flat";
+   case INTERP_MODE_NOPERSPECTIVE: return "noperspective";
+   }
+
+   assert(!"Should not get here.");
+   return "";
+}

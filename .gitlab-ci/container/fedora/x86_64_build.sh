@@ -105,13 +105,6 @@ pip install meson==1.2.0
 
 . .gitlab-ci/container/build-wayland.sh
 
-pushd /usr/local
-git clone https://gitlab.freedesktop.org/mesa/shader-db.git --depth 1
-rm -rf shader-db/.git
-cd shader-db
-make
-popd
-
 
 ############### Uninstall the build software
 

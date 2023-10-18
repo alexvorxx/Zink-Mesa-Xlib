@@ -57,12 +57,12 @@ prep_build_phi(struct repair_ssa_state *state)
 static nir_block *
 get_src_block(nir_src *src)
 {
-   if (src->is_if) {
-      return nir_cf_node_as_block(nir_cf_node_prev(&src->parent_if->cf_node));
-   } else if (src->parent_instr->type == nir_instr_type_phi) {
+   if (nir_src_is_if(src)) {
+      return nir_cf_node_as_block(nir_cf_node_prev(&nir_src_parent_if(src)->cf_node));
+   } else if (nir_src_parent_instr(src)->type == nir_instr_type_phi) {
       return exec_node_data(nir_phi_src, src, src)->pred;
    } else {
-      return src->parent_instr->block;
+      return nir_src_parent_instr(src)->block;
    }
 }
 
@@ -112,10 +112,10 @@ repair_ssa_def(nir_def *def, void *void_state)
        * isn't a cast, we need to wrap it in a cast so we don't loose any
        * deref information.
        */
-      if (!src->is_if &&
+      if (!nir_src_is_if(src) &&
           def->parent_instr->type == nir_instr_type_deref &&
-          src->parent_instr->type == nir_instr_type_deref &&
-          nir_instr_as_deref(src->parent_instr)->deref_type != nir_deref_type_cast) {
+          nir_src_parent_instr(src)->type == nir_instr_type_deref &&
+          nir_instr_as_deref(nir_src_parent_instr(src))->deref_type != nir_deref_type_cast) {
          nir_deref_instr *cast =
             nir_deref_instr_create(state->impl->function->shader,
                                    nir_deref_type_cast);
@@ -128,13 +128,13 @@ repair_ssa_def(nir_def *def, void *void_state)
 
          nir_def_init(&cast->instr, &cast->def, def->num_components,
                       def->bit_size);
-         nir_instr_insert(nir_before_instr(src->parent_instr),
+         nir_instr_insert(nir_before_instr(nir_src_parent_instr(src)),
                           &cast->instr);
          block_def = &cast->def;
       }
 
-      if (src->is_if)
-         nir_src_rewrite(&src->parent_if->condition, block_def);
+      if (nir_src_is_if(src))
+         nir_src_rewrite(&nir_src_parent_if(src)->condition, block_def);
       else
          nir_src_rewrite(src, block_def);
    }

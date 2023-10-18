@@ -20,6 +20,7 @@
 #include "clc5c0.h"
 #include "nvk_cl9097.h"
 #include "nvk_cla0c0.h"
+#include "nvk_clb1c0.h"
 #include "nvk_clc3c0.h"
 #include "nvk_clc597.h"
 #include "nvk_clc6c0.h"
@@ -39,10 +40,29 @@
 #define NVC6C0_QMDV03_00_VAL_SET(p,a...) NVVAL_MW_SET((p), NVC6C0, QMDV03_00, ##a)
 #define NVC6C0_QMDV03_00_DEF_SET(p,a...) NVDEF_MW_SET((p), NVC6C0, QMDV03_00, ##a)
 
+static inline uint16_t
+nvk_cmd_buffer_compute_cls(struct nvk_cmd_buffer *cmd)
+{
+   return nvk_cmd_buffer_device(cmd)->pdev->info.cls_compute;
+}
+
 void
 nvk_cmd_buffer_begin_compute(struct nvk_cmd_buffer *cmd,
                              const VkCommandBufferBeginInfo *pBeginInfo)
-{ }
+{
+   if (cmd->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+      struct nv_push *p = nvk_cmd_buffer_push(cmd, 6);
+      if (nvk_cmd_buffer_compute_cls(cmd) >= MAXWELL_COMPUTE_B) {
+         P_IMMD(p, NVB1C0, INVALIDATE_SKED_CACHES, 0);
+      }
+      P_IMMD(p, NVA0C0, INVALIDATE_SAMPLER_CACHE_NO_WFI, {
+         .lines = LINES_ALL,
+      });
+      P_IMMD(p, NVA0C0, INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI, {
+         .lines = LINES_ALL,
+      });
+   }
+}
 
 static void
 nva0c0_qmd_set_dispatch_size(UNUSED struct nvk_device *dev, uint32_t *qmd,
@@ -141,7 +161,6 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
                         uint64_t *root_desc_addr_out)
 {
    const struct nvk_compute_pipeline *pipeline = cmd->state.cs.pipeline;
-   const struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
    struct nvk_descriptor_state *desc = &cmd->state.cs.descriptors;
    VkResult result;
 
@@ -169,7 +188,7 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
    memset(qmd, 0, sizeof(qmd));
    memcpy(qmd, pipeline->qmd_template, sizeof(pipeline->qmd_template));
 
-   if (dev->pdev->info.cls_compute >= AMPERE_COMPUTE_A) {
+   if (nvk_cmd_buffer_compute_cls(cmd) >= AMPERE_COMPUTE_A) {
       nvc6c0_qmd_set_dispatch_size(nvk_cmd_buffer_device(cmd), qmd,
                                    desc->root.cs.group_count[0],
                                    desc->root.cs.group_count[1],
@@ -177,7 +196,7 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
 
       nvc6c0_cp_launch_desc_set_cb(qmd, 0, sizeof(desc->root), root_desc_addr);
       nvc6c0_cp_launch_desc_set_cb(qmd, 1, sizeof(desc->root), root_desc_addr);
-   } else if (dev->pdev->info.cls_compute >= PASCAL_COMPUTE_A) {
+   } else if (nvk_cmd_buffer_compute_cls(cmd) >= PASCAL_COMPUTE_A) {
       nvc0c0_qmd_set_dispatch_size(nvk_cmd_buffer_device(cmd), qmd,
                                    desc->root.cs.group_count[0],
                                    desc->root.cs.group_count[1],
@@ -186,7 +205,7 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
       nvc0c0_cp_launch_desc_set_cb(qmd, 0, sizeof(desc->root), root_desc_addr);
       nvc0c0_cp_launch_desc_set_cb(qmd, 1, sizeof(desc->root), root_desc_addr);
    } else {
-      assert(dev->pdev->info.cls_compute >= KEPLER_COMPUTE_A);
+      assert(nvk_cmd_buffer_compute_cls(cmd) >= KEPLER_COMPUTE_A);
       nva0c0_qmd_set_dispatch_size(nvk_cmd_buffer_device(cmd), qmd,
                                    desc->root.cs.group_count[0],
                                    desc->root.cs.group_count[1],
@@ -245,7 +264,6 @@ nvk_CmdDispatchBase(VkCommandBuffer commandBuffer,
                     uint32_t groupCountZ)
 {
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
-   const struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
    struct nvk_descriptor_state *desc = &cmd->state.cs.descriptors;
 
    desc->root.cs.base_group[0] = baseGroupX;
@@ -278,7 +296,7 @@ nvk_CmdDispatchBase(VkCommandBuffer commandBuffer,
    P_MTHD(p, NVA0C0, SEND_PCAS_A);
    P_NVA0C0_SEND_PCAS_A(p, qmd_addr >> 8);
 
-   if (dev->pdev->info.cls_compute <= TURING_COMPUTE_A) {
+   if (nvk_cmd_buffer_compute_cls(cmd) <= TURING_COMPUTE_A) {
       P_IMMD(p, NVA0C0, SEND_SIGNALING_PCAS_B, {
             .invalidate = INVALIDATE_TRUE,
             .schedule = SCHEDULE_TRUE
@@ -360,7 +378,6 @@ nvk_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
 {
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
    VK_FROM_HANDLE(nvk_buffer, buffer, _buffer);
-   const struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
    struct nvk_descriptor_state *desc = &cmd->state.cs.descriptors;
 
    /* TODO: Indirect dispatch pre-Turing */
@@ -377,8 +394,9 @@ nvk_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
    if (unlikely(qmd_addr == 0))
       return;
 
-   struct nv_push *p = nvk_cmd_buffer_push(cmd, 16);
+   struct nv_push *p = nvk_cmd_buffer_push(cmd, 18);
 
+   P_IMMD(p, NVC597, MME_DMA_SYSMEMBAR, 0);
    P_IMMD(p, NVC597, SET_MME_DATA_FIFO_CONFIG, FIFO_SIZE_SIZE_4KB);
    P_1INC(p, NV9097, CALL_MME_MACRO(NVK_MME_DISPATCH_INDIRECT));
    P_INLINE_DATA(p, nvk_compute_local_size(cmd));
@@ -396,7 +414,7 @@ nvk_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
 
    P_MTHD(p, NVA0C0, SEND_PCAS_A);
    P_NVA0C0_SEND_PCAS_A(p, qmd_addr >> 8);
-   if (dev->pdev->info.cls_compute <= TURING_COMPUTE_A) {
+   if (nvk_cmd_buffer_compute_cls(cmd) <= TURING_COMPUTE_A) {
       P_IMMD(p, NVA0C0, SEND_SIGNALING_PCAS_B, {
             .invalidate = INVALIDATE_TRUE,
             .schedule = SCHEDULE_TRUE

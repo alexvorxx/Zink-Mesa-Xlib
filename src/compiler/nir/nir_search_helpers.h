@@ -453,7 +453,7 @@ static inline bool
 is_used_by_non_fsat(const nir_alu_instr *instr)
 {
    nir_foreach_use(src, &instr->def) {
-      const nir_instr *const user_instr = src->parent_instr;
+      const nir_instr *const user_instr = nir_src_parent_instr(src);
 
       if (user_instr->type != nir_instr_type_alu)
          return true;
@@ -472,7 +472,7 @@ static inline bool
 is_only_used_as_float(const nir_alu_instr *instr)
 {
    nir_foreach_use(src, &instr->def) {
-      const nir_instr *const user_instr = src->parent_instr;
+      const nir_instr *const user_instr = nir_src_parent_instr(src);
       if (user_instr->type != nir_instr_type_alu)
          return false;
 
@@ -492,7 +492,7 @@ static inline bool
 is_only_used_by_fadd(const nir_alu_instr *instr)
 {
    nir_foreach_use(src, &instr->def) {
-      const nir_instr *const user_instr = src->parent_instr;
+      const nir_instr *const user_instr = nir_src_parent_instr(src);
       if (user_instr->type != nir_instr_type_alu)
          return false;
 

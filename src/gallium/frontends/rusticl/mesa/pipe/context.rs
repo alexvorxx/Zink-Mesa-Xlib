@@ -479,6 +479,7 @@ impl PipeContext {
     }
 
     pub fn clear_sampler_views(&self, count: u32) {
+        let mut samplers = vec![ptr::null_mut(); count as usize];
         unsafe {
             self.pipe.as_ref().set_sampler_views.unwrap()(
                 self.pipe.as_ptr(),
@@ -487,7 +488,7 @@ impl PipeContext {
                 count,
                 0,
                 false,
-                ptr::null_mut(),
+                samplers.as_mut_ptr(),
             )
         }
     }

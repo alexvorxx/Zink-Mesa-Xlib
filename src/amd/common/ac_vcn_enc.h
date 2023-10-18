@@ -36,6 +36,7 @@
 #define RENCODE_IB_OP_SET_SPEED_ENCODING_MODE                                       0x01000006
 #define RENCODE_IB_OP_SET_BALANCE_ENCODING_MODE                                     0x01000007
 #define RENCODE_IB_OP_SET_QUALITY_ENCODING_MODE                                     0x01000008
+#define RENCODE_IB_OP_SET_HIGH_QUALITY_ENCODING_MODE                                0x01000009
 
 #define RENCODE_IF_MAJOR_VERSION_MASK                                               0xFFFF0000
 #define RENCODE_IF_MAJOR_VERSION_SHIFT                                              16
@@ -59,6 +60,7 @@
 #define RENCODE_PRESET_MODE_SPEED                                                   0x00000000
 #define RENCODE_PRESET_MODE_BALANCE                                                 0x00000001
 #define RENCODE_PRESET_MODE_QUALITY                                                 0x00000002
+#define RENCODE_PRESET_MODE_HIGH_QUALITY                                            0x00000003
 
 #define RENCODE_H264_SLICE_CONTROL_MODE_FIXED_MBS                                   0x00000000
 #define RENCODE_H264_SLICE_CONTROL_MODE_FIXED_BITS                                  0x00000001

@@ -47,15 +47,6 @@ struct uniform_array_info {
    BITSET_WORD *indices;
 };
 
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static inline bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
-
 static unsigned
 uniform_storage_size(const struct glsl_type *type)
 {

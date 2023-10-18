@@ -207,17 +207,25 @@ radv_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer, const VkCopyBufferToIm
                            &pCopyBufferToImageInfo->pRegions[r]);
    }
 
-   if (cmd_buffer->device->physical_device->emulate_etc2 &&
-       vk_format_description(dst_image->vk.format)->layout == UTIL_FORMAT_LAYOUT_ETC) {
+   if (radv_is_format_emulated(cmd_buffer->device->physical_device, dst_image->vk.format)) {
       cmd_buffer->state.flush_bits |=
          RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
          radv_src_access_flush(cmd_buffer, VK_ACCESS_TRANSFER_WRITE_BIT, dst_image) |
          radv_dst_access_flush(cmd_buffer, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, dst_image);
+
+      const enum util_format_layout format_layout = vk_format_description(dst_image->vk.format)->layout;
       for (unsigned r = 0; r < pCopyBufferToImageInfo->regionCount; r++) {
-         radv_meta_decode_etc(cmd_buffer, dst_image, pCopyBufferToImageInfo->dstImageLayout,
-                              &pCopyBufferToImageInfo->pRegions[r].imageSubresource,
-                              pCopyBufferToImageInfo->pRegions[r].imageOffset,
-                              pCopyBufferToImageInfo->pRegions[r].imageExtent);
+         if (format_layout == UTIL_FORMAT_LAYOUT_ASTC) {
+            radv_meta_decode_astc(cmd_buffer, dst_image, pCopyBufferToImageInfo->dstImageLayout,
+                                  &pCopyBufferToImageInfo->pRegions[r].imageSubresource,
+                                  pCopyBufferToImageInfo->pRegions[r].imageOffset,
+                                  pCopyBufferToImageInfo->pRegions[r].imageExtent);
+         } else {
+            radv_meta_decode_etc(cmd_buffer, dst_image, pCopyBufferToImageInfo->dstImageLayout,
+                                 &pCopyBufferToImageInfo->pRegions[r].imageSubresource,
+                                 pCopyBufferToImageInfo->pRegions[r].imageOffset,
+                                 pCopyBufferToImageInfo->pRegions[r].imageExtent);
+         }
       }
    }
 }
@@ -552,16 +560,23 @@ radv_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *pCopyI
                  &pCopyImageInfo->pRegions[r]);
    }
 
-   if (cmd_buffer->device->physical_device->emulate_etc2 &&
-       vk_format_description(dst_image->vk.format)->layout == UTIL_FORMAT_LAYOUT_ETC) {
+   if (radv_is_format_emulated(cmd_buffer->device->physical_device, dst_image->vk.format)) {
       cmd_buffer->state.flush_bits |=
          RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
          radv_src_access_flush(cmd_buffer, VK_ACCESS_TRANSFER_WRITE_BIT, dst_image) |
          radv_dst_access_flush(cmd_buffer, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, dst_image);
+
+      const enum util_format_layout format_layout = vk_format_description(dst_image->vk.format)->layout;
       for (unsigned r = 0; r < pCopyImageInfo->regionCount; r++) {
-         radv_meta_decode_etc(cmd_buffer, dst_image, pCopyImageInfo->dstImageLayout,
-                              &pCopyImageInfo->pRegions[r].dstSubresource, pCopyImageInfo->pRegions[r].dstOffset,
-                              pCopyImageInfo->pRegions[r].extent);
+         if (format_layout == UTIL_FORMAT_LAYOUT_ASTC) {
+            radv_meta_decode_astc(cmd_buffer, dst_image, pCopyImageInfo->dstImageLayout,
+                                  &pCopyImageInfo->pRegions[r].dstSubresource, pCopyImageInfo->pRegions[r].dstOffset,
+                                  pCopyImageInfo->pRegions[r].extent);
+         } else {
+            radv_meta_decode_etc(cmd_buffer, dst_image, pCopyImageInfo->dstImageLayout,
+                                 &pCopyImageInfo->pRegions[r].dstSubresource, pCopyImageInfo->pRegions[r].dstOffset,
+                                 pCopyImageInfo->pRegions[r].extent);
+         }
       }
    }
 }

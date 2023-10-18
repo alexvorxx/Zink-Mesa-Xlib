@@ -14,7 +14,7 @@ git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
 git clone \
     https://github.com/KhronosGroup/VK-GL-CTS.git \
-    -b vulkan-cts-1.3.5.2 \
+    -b vulkan-cts-1.3.6.3 \
     --depth 1 \
     /VK-GL-CTS
 pushd /VK-GL-CTS
@@ -26,46 +26,11 @@ pushd /VK-GL-CTS
 # patches.
 
 cts_commits_to_backport=(
-        # sync fix for SSBO writes
-        44f1be32fe6bd2a7de7b9169fc71cc44e0b26124
-
-        # sync fix for KHR-GL46.multi_bind.dispatch_bind_image_textures
-        db6c9e295ab38054ace425cb75ff966719ccc609
-
-        # VK robustness barriers fix
-        6052f21c4d6077438d644f525c10cc58dcdf25bf
-
-        # correctness fixes for zink validation fails
-        1923cbc89ed3969a3afe7c6926124b51157902e1
-        af3a979c49dc65f8809c27660405ae3a76c7da4a
-
         # GL/GLES vertex_attrib_binding.advanced-largeStrideAndOffsetsNewAndLegacyAPI fix
         bdb456dcf85e34fced872ebdaf06f6b73451f99c
 
-        # KHR-GLES31.core.compute_shader.max fix
-        7aa3ebb49d07982f5c44edd4799edb5a894567e9
-
         # GL arrays_of_arrays perf fix
         b481dada59734e8e34050fe884ba6d627d9e5c54
-
-        # GL shadow samplers require depth compares fix
-        a8bc242ec234bf8d7df8b4eec1eeccab4e401288
-
-        # GL PolygonOffsetClamp fix
-        1f2feb2388da88b4e46eba55547d50856467cc20
-
-        # KHR-GL46.texture_view.view_sampling fix
-        aca29fb9553ebe28094513ce18bb46bad138cf46
-
-        # video validation fails
-        4cc3980a86ba5b7fe6e76b559cc1a9cb5fd1b253
-        a7a2ce442db51ca058ce051de7e09d62db44ae81
-
-        # Check for robustness before testing it
-        ee7138d8adf5ed3c4845e5ac2553c4f9697be9d8
-
-        # dEQP-VK.wsi.acquire_drm_display.*invalid_fd
-        98ad9402e7d94030d1689fd59135da7a2f52384c
 
         # Test alpha-less 10bit formats correctly in wide_color tests
         # Fixes dEQP-EGL.functional.wide_color.*_888_colorspace_*
@@ -73,6 +38,15 @@ cts_commits_to_backport=(
 
         # KHR-GLES3.packed_pixels.*snorm
         46158c2a1f570aab0dcefba461ddc879323367d5
+
+        # Fix problems when buffer_storage not supported
+        148a65182d88ee6c1c959a3b3cf75df22a3eae82
+
+        # surfaceless: Fix shared contexts and implement makeCurrent
+        3b9859deb22712b8b927dce1fac0b40008202877
+
+        # Don't attempt to test linear-filtered depth border clamping on ES.
+        3b3c101a06f1e4fc6acd3d6b40c813cd1bdc25ef
 )
 
 for commit in "${cts_commits_to_backport[@]}"
@@ -135,6 +109,8 @@ mold --run ninja
 if [ "${DEQP_TARGET}" = 'android' ]; then
     mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-android
 fi
+
+git -C /VK-GL-CTS describe --long > /deqp/version
 
 # Copy out the mustpass lists we want.
 mkdir /deqp/mustpass

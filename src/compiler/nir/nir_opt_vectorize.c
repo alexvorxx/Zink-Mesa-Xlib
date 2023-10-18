@@ -244,7 +244,7 @@ instr_try_combine(struct set *instr_set, nir_instr *instr1, nir_instr *instr2)
 
    /* update all ALU uses */
    nir_foreach_use_safe(src, &alu1->def) {
-      nir_instr *user_instr = src->parent_instr;
+      nir_instr *user_instr = nir_src_parent_instr(src);
       if (user_instr->type == nir_instr_type_alu) {
          /* Check if user is found in the hashset */
          struct set_entry *entry = _mesa_set_search(instr_set, user_instr);
@@ -263,14 +263,14 @@ instr_try_combine(struct set *instr_set, nir_instr *instr1, nir_instr *instr2)
    }
 
    nir_foreach_use_safe(src, &alu2->def) {
-      if (src->parent_instr->type == nir_instr_type_alu) {
+      if (nir_src_parent_instr(src)->type == nir_instr_type_alu) {
          /* For ALU instructions, rewrite the source directly to avoid a
           * round-trip through copy propagation.
           */
          nir_src_rewrite(src, &new_alu->def);
 
          nir_alu_src *alu_src = container_of(src, nir_alu_src, src);
-         nir_alu_instr *use = nir_instr_as_alu(src->parent_instr);
+         nir_alu_instr *use = nir_instr_as_alu(nir_src_parent_instr(src));
          unsigned components = nir_ssa_alu_instr_src_components(use, alu_src - use->src);
          for (unsigned i = 0; i < components; i++)
             alu_src->swizzle[i] += alu1_components;

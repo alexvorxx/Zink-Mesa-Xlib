@@ -37,6 +37,7 @@ anv_internal_shaders = [
   [ 'gfx11_generated_draws.glsl', 'frag' ],
   [ 'query_copy_compute.glsl',    'comp' ],
   [ 'query_copy_fragment.glsl',   'frag' ],
+  [ 'memcpy_compute.glsl',        'comp' ],
 ]
 
 anv_internal_spvs = []

@@ -25,6 +25,7 @@
 #include "r600d.h"
 
 #include "pipe/p_shader_tokens.h"
+#include "util/u_endian.h"
 #include "util/u_pack_color.h"
 #include "util/u_memory.h"
 #include "util/u_framebuffer.h"
@@ -698,7 +699,7 @@ r600_create_sampler_view_custom(struct pipe_context *ctx,
 	swizzle[2] = state->swizzle_b;
 	swizzle[3] = state->swizzle_a;
 
-	if (R600_BIG_ENDIAN)
+	if (UTIL_ARCH_BIG_ENDIAN)
 		do_endian_swap = !tmp->db_compatible;
 
 	format = r600_translate_texformat(ctx->screen, state->format,
@@ -876,7 +877,7 @@ static void r600_init_color_surface(struct r600_context *rctx,
 		ntype = V_0280A0_NUMBER_FLOAT;
 	}
 
-	if (R600_BIG_ENDIAN)
+	if (UTIL_ARCH_BIG_ENDIAN)
 		do_endian_swap = !rtex->db_compatible;
 
 	format = r600_translate_colorformat(rctx->b.gfx_level, surf->base.format,

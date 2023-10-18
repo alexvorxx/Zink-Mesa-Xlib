@@ -89,8 +89,6 @@ do_optimization(struct exec_list *ir, const char *optimization,
       return do_tree_grafting(ir);
    } else if (strcmp(optimization, "do_vec_index_to_cond_assign") == 0) {
       return do_vec_index_to_cond_assign(ir);
-   } else if (strcmp(optimization, "lower_discard") == 0) {
-      return lower_discard(ir);
    } else if (sscanf(optimization, "lower_instructions ( %d ) ",
                      &int_0) == 1) {
       return lower_instructions(ir, false, false);

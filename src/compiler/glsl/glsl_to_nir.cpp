@@ -549,6 +549,7 @@ nir_visitor::visit(ir_variable *ir)
    var->data.patch = ir->data.patch;
    var->data.how_declared = get_nir_how_declared(ir->data.how_declared);
    var->data.invariant = ir->data.invariant;
+   var->data.explicit_invariant = ir->data.explicit_invariant;
    var->data.location = ir->data.location;
    var->data.must_be_shader_input = ir->data.must_be_shader_input;
    var->data.stream = ir->data.stream;
@@ -560,6 +561,7 @@ nir_visitor::visit(ir_variable *ir)
    var->data.matrix_layout = ir->data.matrix_layout;
    var->data.from_named_ifc_block = ir->data.from_named_ifc_block;
    var->data.compact = false;
+   var->data.used = ir->data.used;
 
    switch(ir->data.mode) {
    case ir_var_auto:

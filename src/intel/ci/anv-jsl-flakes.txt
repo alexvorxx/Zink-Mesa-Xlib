@@ -1,0 +1,8 @@
+# ci-collate: Issue found in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49442241
+dEQP-VK.synchronization2.timeline_semaphore.one_to_n.write_copy_buffer_read_ssbo_vertex.buffer_16384
+# ci-collate: Issue found in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49442242
+dEQP-VK.synchronization.timeline_semaphore.wait_before_signal.write_image_compute_read_copy_image_to_buffer.image_128_r32_uint
+
+# Found crashing https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49649616 and
+# passing in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/49668558
+dEQP-VK.synchronization.timeline_semaphore.wait_before_signal.write_blit_image_read_image_geometry.image_128_r32_uint,Crash

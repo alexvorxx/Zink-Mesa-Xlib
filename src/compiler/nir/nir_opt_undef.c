@@ -167,15 +167,15 @@ struct visit_info {
 static void
 visit_undef_use(nir_src *src, struct visit_info *info)
 {
-   nir_instr *instr = src->parent_instr;
-
-   if (src->is_if) {
+   if (nir_src_is_if(src)) {
       /* If the use is "if", keep undef because the branch will be eliminated
        * by nir_opt_dead_cf.
        */
       info->must_keep_undef = true;
       return;
    }
+
+   nir_instr *instr = nir_src_parent_instr(src);
 
    if (instr->type == nir_instr_type_alu) {
       /* Replacing undef with a constant is only beneficial with ALU

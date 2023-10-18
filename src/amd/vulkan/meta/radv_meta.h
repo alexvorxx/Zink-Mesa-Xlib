@@ -109,6 +109,9 @@ void radv_device_finish_accel_struct_build_state(struct radv_device *device);
 VkResult radv_device_init_meta_etc_decode_state(struct radv_device *device, bool on_demand);
 void radv_device_finish_meta_etc_decode_state(struct radv_device *device);
 
+VkResult radv_device_init_meta_astc_decode_state(struct radv_device *device, bool on_demand);
+void radv_device_finish_meta_astc_decode_state(struct radv_device *device);
+
 VkResult radv_device_init_dgc_prepare_state(struct radv_device *device);
 void radv_device_finish_dgc_prepare_state(struct radv_device *device);
 
@@ -220,6 +223,8 @@ void radv_update_buffer_cp(struct radv_cmd_buffer *cmd_buffer, uint64_t va, cons
 
 void radv_meta_decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image, VkImageLayout layout,
                           const VkImageSubresourceLayers *subresource, VkOffset3D offset, VkExtent3D extent);
+void radv_meta_decode_astc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image, VkImageLayout layout,
+                           const VkImageSubresourceLayers *subresource, VkOffset3D offset, VkExtent3D extent);
 
 /**
  * Return whether the bound pipeline is the FMASK decompress pass.

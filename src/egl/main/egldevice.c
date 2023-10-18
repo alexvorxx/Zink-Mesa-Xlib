@@ -108,13 +108,20 @@ _EGLDevice _eglSoftwareDevice = {
  * Negative value on error, zero if newly added, one if already in list.
  */
 static int
-_eglAddDRMDevice(drmDevicePtr device, _EGLDevice **out_dev)
+_eglAddDRMDevice(drmDevicePtr device)
 {
    _EGLDevice *dev;
 
-   if ((device->available_nodes &
-        (1 << DRM_NODE_PRIMARY | 1 << DRM_NODE_RENDER)) == 0)
-      return -1;
+   assert(device->available_nodes & ((1 << DRM_NODE_RENDER)));
+
+   /* TODO: uncomment this assert, which is a sanity check.
+    *
+    * assert(device->available_nodes & ((1 << DRM_NODE_PRIMARY)));
+    *
+    * DRM shim does not expose a primary node, so the CI would fail if we had
+    * this assert. DRM shim is being used to run shader-db. We need to
+    * investigate what should be done (probably fixing DRM shim).
+    */
 
    dev = _eglGlobal.DeviceList;
 
@@ -126,39 +133,28 @@ _eglAddDRMDevice(drmDevicePtr device, _EGLDevice **out_dev)
       dev = dev->Next;
 
       assert(_eglDeviceSupports(dev, _EGL_DEVICE_DRM));
-      if (drmDevicesEqual(device, dev->device) != 0) {
-         if (out_dev)
-            *out_dev = dev;
+      if (drmDevicesEqual(device, dev->device) != 0)
          return 1;
-      }
    }
 
    dev->Next = calloc(1, sizeof(_EGLDevice));
-   if (!dev->Next) {
-      if (out_dev)
-         *out_dev = NULL;
+   if (!dev->Next)
       return -1;
-   }
 
    dev = dev->Next;
-   dev->extensions = "EGL_EXT_device_drm";
+   dev->extensions = "EGL_EXT_device_drm EGL_EXT_device_drm_render_node";
    dev->EXT_device_drm = EGL_TRUE;
+   dev->EXT_device_drm_render_node = EGL_TRUE;
    dev->device = device;
-
-   /* TODO: EGL_EXT_device_drm_render_node support for kmsro + renderonly */
-   if (device->available_nodes & (1 << DRM_NODE_RENDER)) {
-      dev->extensions = "EGL_EXT_device_drm EGL_EXT_device_drm_render_node";
-      dev->EXT_device_drm_render_node = EGL_TRUE;
-   }
-
-   if (out_dev)
-      *out_dev = dev;
 
    return 0;
 }
 #endif
 
-/* Adds a device in DeviceList, if needed for the given fd.
+/* Finds a device in DeviceList, for the given fd.
+ *
+ * The fd must be of a render-capable device, as there are only render-capable
+ * devices in DeviceList.
  *
  * If a software device, the fd is ignored.
  */
@@ -192,6 +188,9 @@ _eglFindDevice(int fd, bool software)
          goto out;
       }
    }
+
+   /* Couldn't find an EGLDevice for the device. */
+   dev = NULL;
 
 #else
    _eglLog(_EGL_FATAL,
@@ -272,7 +271,13 @@ _eglQueryDeviceStringEXT(_EGLDevice *dev, EGLint name)
       if (!_eglDeviceSupports(dev, _EGL_DEVICE_DRM_RENDER_NODE))
          break;
 #ifdef HAVE_LIBDRM
-      return dev->device ? dev->device->nodes[DRM_NODE_RENDER] : NULL;
+      /* EGLDevice represents a software device, so no render node
+       * should be advertised. */
+      if (_eglDeviceSupports(dev, _EGL_DEVICE_SOFTWARE))
+         return NULL;
+      /* We create EGLDevice's only for render capable devices. */
+      assert(dev->device->available_nodes & (1 << DRM_NODE_RENDER));
+      return dev->device->nodes[DRM_NODE_RENDER];
 #else
       /* Physical devices are only exposed when libdrm is available. */
       assert(_eglDeviceSupports(dev, _EGL_DEVICE_SOFTWARE));
@@ -314,7 +319,7 @@ _eglDeviceRefreshList(void)
          continue;
       }
 
-      ret = _eglAddDRMDevice(devices[i], NULL);
+      ret = _eglAddDRMDevice(devices[i]);
 
       /* Device is not added - error or already present */
       if (ret != 0)

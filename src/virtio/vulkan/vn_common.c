@@ -48,6 +48,7 @@ static const struct debug_control vn_perf_options[] = {
    { "no_cmd_batching", VN_PERF_NO_CMD_BATCHING },
    { "no_timeline_sem_feedback", VN_PERF_NO_TIMELINE_SEM_FEEDBACK },
    { "no_query_feedback", VN_PERF_NO_QUERY_FEEDBACK },
+   { "no_async_mem_alloc", VN_PERF_NO_ASYNC_MEM_ALLOC },
    { NULL, 0 },
    /* clang-format on */
 };

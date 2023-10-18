@@ -49,10 +49,6 @@ struct nvk_queue {
 
    struct nvk_queue_state state;
 
-#if NVK_NEW_UAPI == 0
-   struct nouveau_ws_bo *empty_push;
-   uint32_t empty_push_dw_count;
-#endif
 
    uint32_t syncobj_handle;
 };

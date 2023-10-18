@@ -18,6 +18,7 @@
 #include "tu_device.h"
 #include "tu_descriptor_set.h"
 #include "tu_pipeline.h"
+#include "tu_lrz.h"
 
 nir_shader *
 tu_spirv_to_nir(struct tu_device *dev,
@@ -166,7 +167,8 @@ lower_load_push_constant(struct tu_device *dev,
 }
 
 static void
-lower_vulkan_resource_index(nir_builder *b, nir_intrinsic_instr *instr,
+lower_vulkan_resource_index(struct tu_device *dev, nir_builder *b,
+                            nir_intrinsic_instr *instr,
                             struct tu_shader *shader,
                             const struct tu_pipeline_layout *layout)
 {
@@ -202,7 +204,8 @@ lower_vulkan_resource_index(nir_builder *b, nir_intrinsic_instr *instr,
          base = nir_imm_int(b, (layout->set[set].dynamic_offset_start +
             binding_layout->dynamic_offset_offset) / (4 * A6XX_TEX_CONST_DWORDS));
       }
-      set = MAX_SETS;
+      assert(dev->physical_device->reserved_set_idx >= 0);
+      set = dev->physical_device->reserved_set_idx;
       break;
    default:
       base = nir_imm_int(b, binding_layout->offset / (4 * A6XX_TEX_CONST_DWORDS));
@@ -287,7 +290,7 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
       descriptor_idx = nir_iadd_imm(b, descriptor_idx, 1);
    }
 
-   nir_def *results[MAX_SETS + 1] = { NULL };
+   nir_def *results[MAX_SETS] = { NULL };
 
    if (nir_scalar_is_const(scalar_idx)) {
       nir_def *bindless =
@@ -297,7 +300,7 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
    }
 
    nir_def *base_idx = nir_channel(b, scalar_idx.def, scalar_idx.comp);
-   for (unsigned i = 0; i < MAX_SETS + 1; i++) {
+   for (unsigned i = 0; i < dev->physical_device->info->a6xx.max_sets; i++) {
       /* if (base_idx == i) { ... */
       nir_if *nif = nir_push_if(b, nir_ieq_imm(b, base_idx, i));
 
@@ -335,7 +338,7 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
 
    nir_def *result =
       nir_undef(b, intrin->def.num_components, intrin->def.bit_size);
-   for (int i = MAX_SETS; i >= 0; i--) {
+   for (int i = dev->physical_device->info->a6xx.max_sets - 1; i >= 0; i--) {
       nir_pop_if(b, NULL);
       if (info->has_dest)
          result = nir_if_phi(b, results[i], result);
@@ -432,7 +435,7 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *instr,
       return true;
 
    case nir_intrinsic_vulkan_resource_index:
-      lower_vulkan_resource_index(b, instr, shader, layout);
+      lower_vulkan_resource_index(dev, b, instr, shader, layout);
       return true;
    case nir_intrinsic_vulkan_resource_reindex:
       lower_vulkan_resource_reindex(b, instr);
@@ -681,8 +684,7 @@ gather_push_constants(nir_shader *shader, struct tu_shader *tu_shader)
    }
 
    if (min >= max) {
-      tu_shader->const_state.push_consts.lo = 0;
-      tu_shader->const_state.push_consts.dwords = 0;
+      tu_shader->const_state.push_consts = (struct tu_push_constant_range) {};
       return;
    }
 
@@ -700,13 +702,47 @@ gather_push_constants(nir_shader *shader, struct tu_shader *tu_shader)
 }
 
 static bool
+shader_uses_push_consts(nir_shader *shader)
+{
+   nir_foreach_function_impl (impl, shader) {
+      nir_foreach_block (block, impl) {
+         nir_foreach_instr_safe (instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            if (intrin->intrinsic == nir_intrinsic_load_push_constant)
+               return true;
+         }
+      }
+   }
+   return false;
+}
+
+static bool
 tu_lower_io(nir_shader *shader, struct tu_device *dev,
             struct tu_shader *tu_shader,
             const struct tu_pipeline_layout *layout,
             unsigned *reserved_consts_vec4_out)
 {
-   if (!tu6_shared_constants_enable(layout, dev->compiler))
+   tu_shader->const_state.push_consts = (struct tu_push_constant_range) {
+      .lo = 0,
+      .dwords = layout->push_constant_size / 4,
+      .type = tu_push_consts_type(layout, dev->compiler),
+   };
+
+   if (tu_shader->const_state.push_consts.type == IR3_PUSH_CONSTS_PER_STAGE) {
       gather_push_constants(shader, tu_shader);
+   } else if (tu_shader->const_state.push_consts.type ==
+            IR3_PUSH_CONSTS_SHARED_PREAMBLE) {
+      /* Disable pushing constants for this stage if none were loaded in the
+       * shader.  If all stages don't load their declared push constants, as
+       * is often the case under zink, then we could additionally skip
+       * emitting REG_A7XX_HLSQ_SHARED_CONSTS_IMM entirely.
+       */
+      if (!shader_uses_push_consts(shader))
+         tu_shader->const_state.push_consts = (struct tu_push_constant_range) {};
+   }
 
    struct tu_const_state *const_state = &tu_shader->const_state;
    unsigned reserved_consts_vec4 =
@@ -715,7 +751,8 @@ tu_lower_io(nir_shader *shader, struct tu_device *dev,
 
    if (layout->independent_sets) {
       const_state->dynamic_offset_loc = reserved_consts_vec4 * 4;
-      reserved_consts_vec4 += DIV_ROUND_UP(MAX_SETS, 4);
+      assert(dev->physical_device->reserved_set_idx >= 0);
+      reserved_consts_vec4 += DIV_ROUND_UP(dev->physical_device->reserved_set_idx, 4);
    } else {
       const_state->dynamic_offset_loc = UINT32_MAX;
    }
@@ -1226,7 +1263,8 @@ tu6_emit_cs_config(struct tu_cs *cs,
                    const struct tu_pvtmem_config *pvtmem,
                    uint64_t binary_iova)
 {
-   bool shared_consts_enable = ir3_const_state(v)->shared_consts_enable;
+   bool shared_consts_enable =
+      ir3_const_state(v)->push_consts_type == IR3_PUSH_CONSTS_SHARED;
    tu6_emit_shared_consts_enable<CHIP>(cs, shared_consts_enable);
 
    tu_cs_emit_regs(cs, HLSQ_INVALIDATE_CMD(CHIP,
@@ -2095,6 +2133,17 @@ tu_shader_serialize(struct vk_pipeline_cache_object *object,
       blob_write_uint8(blob, 0);
    }
 
+   switch (shader->variant->type) {
+   case MESA_SHADER_TESS_EVAL:
+      blob_write_bytes(blob, &shader->tes, sizeof(shader->tes));
+      break;
+   case MESA_SHADER_FRAGMENT:
+      blob_write_bytes(blob, &shader->fs, sizeof(shader->fs));
+      break;
+   default:
+      break;
+   }
+
    return true;
 }
 
@@ -2121,6 +2170,17 @@ tu_shader_deserialize(struct vk_pipeline_cache *cache,
    bool has_safe_const = blob_read_uint8(blob);
    if (has_safe_const)
       shader->safe_const_variant = ir3_retrieve_variant(blob, dev->compiler, NULL);
+
+   switch (shader->variant->type) {
+   case MESA_SHADER_TESS_EVAL:
+      blob_copy_bytes(blob, &shader->tes, sizeof(shader->tes));
+      break;
+   case MESA_SHADER_FRAGMENT:
+      blob_copy_bytes(blob, &shader->fs, sizeof(shader->fs));
+      break;
+   default:
+      break;
+   }
 
    VkResult result = tu_upload_shader(dev, shader);
    if (result != VK_SUCCESS) {
@@ -2252,15 +2312,13 @@ tu_shader_create(struct tu_device *dev,
 
    ir3_finalize_nir(dev->compiler, nir);
 
-   bool shared_consts_enable = tu6_shared_constants_enable(layout, dev->compiler);
-   if (shared_consts_enable)
-      assert(!shader->const_state.push_consts.dwords);
-
    const struct ir3_shader_options options = {
-      .reserved_user_consts = reserved_consts_vec4,
+      .num_reserved_user_consts = reserved_consts_vec4,
       .api_wavesize = key->api_wavesize,
       .real_wavesize = key->real_wavesize,
-      .shared_consts_enable = shared_consts_enable,
+      .push_consts_type = shader->const_state.push_consts.type,
+      .push_consts_base = shader->const_state.push_consts.lo,
+      .push_consts_dwords = shader->const_state.push_consts.dwords,
    };
 
    struct ir3_shader *ir3_shader =
@@ -2279,6 +2337,68 @@ tu_shader_create(struct tu_device *dev,
 
    shader->view_mask = key->multiview_mask;
 
+   switch (shader->variant->type) {
+   case MESA_SHADER_TESS_EVAL: {
+      const struct ir3_shader_variant *tes = shader->variant;
+      if (tes->tess.point_mode) {
+         shader->tes.tess_output_lower_left =
+            shader->tes.tess_output_upper_left = TESS_POINTS;
+      } else if (tes->tess.primitive_mode == TESS_PRIMITIVE_ISOLINES) {
+         shader->tes.tess_output_lower_left =
+            shader->tes.tess_output_upper_left = TESS_LINES;
+      } else if (tes->tess.ccw) {
+         /* Tessellation orientation in HW is specified with a lower-left
+          * origin, we need to swap them if the origin is upper-left.
+          */
+         shader->tes.tess_output_lower_left = TESS_CCW_TRIS;
+         shader->tes.tess_output_upper_left = TESS_CW_TRIS;
+      } else {
+         shader->tes.tess_output_lower_left = TESS_CW_TRIS;
+         shader->tes.tess_output_upper_left = TESS_CCW_TRIS;
+      }
+
+      switch (tes->tess.spacing) {
+      case TESS_SPACING_EQUAL:
+         shader->tes.tess_spacing = TESS_EQUAL;
+         break;
+      case TESS_SPACING_FRACTIONAL_ODD:
+         shader->tes.tess_spacing = TESS_FRACTIONAL_ODD;
+         break;
+      case TESS_SPACING_FRACTIONAL_EVEN:
+         shader->tes.tess_spacing = TESS_FRACTIONAL_EVEN;
+         break;
+      case TESS_SPACING_UNSPECIFIED:
+      default:
+         unreachable("invalid tess spacing");
+      }
+
+      break;
+   }
+   case MESA_SHADER_FRAGMENT: {
+      const struct ir3_shader_variant *fs = shader->variant;
+      shader->fs.per_samp = fs->per_samp || ir3_key->sample_shading;
+      shader->fs.has_fdm = key->fragment_density_map;
+      if (fs->has_kill)
+         shader->fs.lrz.status |= TU_LRZ_FORCE_DISABLE_WRITE;
+      if (fs->no_earlyz || fs->writes_pos)
+         shader->fs.lrz.status = TU_LRZ_FORCE_DISABLE_LRZ;
+      /* FDM isn't compatible with LRZ, because the LRZ image uses the original
+       * resolution and we would need to use the low resolution.
+       *
+       * TODO: Use a patchpoint to only disable LRZ for scaled bins.
+       */
+      if (key->fragment_density_map)
+         shader->fs.lrz.status = TU_LRZ_FORCE_DISABLE_LRZ;
+      if (!fs->fs.early_fragment_tests &&
+          (fs->no_earlyz || fs->writes_pos || fs->writes_stencilref || fs->writes_smask)) {
+         shader->fs.lrz.force_late_z = true;
+      }
+      break;
+   }
+   default:
+      break;
+   }
+
    VkResult result = tu_upload_shader(dev, shader);
    if (result != VK_SUCCESS) {
       vk_free(&dev->vk.alloc, shader);
@@ -2289,7 +2409,7 @@ tu_shader_create(struct tu_device *dev,
    return VK_SUCCESS;
 }
 
-VkResult
+static VkResult
 tu_empty_shader_create(struct tu_device *dev,
                        struct tu_shader **shader_out,
                        gl_shader_stage stage)
@@ -2320,6 +2440,86 @@ tu_empty_shader_create(struct tu_device *dev,
 
    *shader_out = shader;
    return VK_SUCCESS;
+}
+
+static VkResult
+tu_empty_fs_create(struct tu_device *dev, struct tu_shader **shader,
+                   bool fragment_density_map)
+{
+   struct ir3_shader_key key = {};
+   const struct ir3_shader_options options = {};
+   struct ir3_stream_output_info so_info = {};
+   const nir_shader_compiler_options *nir_options =
+      ir3_get_compiler_options(dev->compiler);
+   nir_builder fs_b;
+
+   fs_b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, nir_options,
+                                         "noop_fs");
+
+   *shader = tu_shader_init(dev, NULL, 0);
+   if (!*shader)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   (*shader)->fs.has_fdm = fragment_density_map;
+   if (fragment_density_map)
+      (*shader)->fs.lrz.status = TU_LRZ_FORCE_DISABLE_LRZ;
+
+   struct ir3_shader *ir3_shader =
+      ir3_shader_from_nir(dev->compiler, fs_b.shader, &options, &so_info);
+   (*shader)->variant = ir3_shader_create_variant(ir3_shader, &key, false);
+
+   return tu_upload_shader(dev, *shader);
+}
+
+VkResult
+tu_init_empty_shaders(struct tu_device *dev)
+{
+   VkResult result;
+
+   result = tu_empty_shader_create(dev, &dev->empty_tcs, MESA_SHADER_TESS_CTRL);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   result = tu_empty_shader_create(dev, &dev->empty_tes, MESA_SHADER_TESS_EVAL);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   result = tu_empty_shader_create(dev, &dev->empty_gs, MESA_SHADER_GEOMETRY);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   result = tu_empty_fs_create(dev, &dev->empty_fs, false);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   result = tu_empty_fs_create(dev, &dev->empty_fs_fdm, true);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   return VK_SUCCESS;
+
+out:
+   if (dev->empty_tcs)
+      vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_tcs->base);
+   if (dev->empty_tes)
+      vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_tes->base);
+   if (dev->empty_gs)
+      vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_gs->base);
+   if (dev->empty_fs)
+      vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_fs->base);
+   if (dev->empty_fs_fdm)
+      vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_fs_fdm->base);
+   return result;
+}
+
+void
+tu_destroy_empty_shaders(struct tu_device *dev)
+{
+   vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_tcs->base);
+   vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_tes->base);
+   vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_gs->base);
+   vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_fs->base);
+   vk_pipeline_cache_object_unref(&dev->vk, &dev->empty_fs_fdm->base);
 }
 
 void

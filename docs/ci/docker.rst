@@ -3,7 +3,7 @@ Docker CI
 
 For LLVMpipe and Softpipe CI, we run tests in a container containing
 VK-GL-CTS, on the shared GitLab runners provided by `freedesktop
-<https://freedesktop.org>`__
+<https://www.freedesktop.org>`__
 
 Software architecture
 ---------------------

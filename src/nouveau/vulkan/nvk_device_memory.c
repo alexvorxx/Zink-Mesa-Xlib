@@ -153,13 +153,13 @@ nvk_GetMemoryFdPropertiesKHR(VkDevice device,
    return VK_SUCCESS;
 }
 
-VkResult
-nvk_allocate_memory(struct nvk_device *dev,
-                    const VkMemoryAllocateInfo *pAllocateInfo,
-                    const struct nvk_memory_tiling_info *tile_info,
-                    const VkAllocationCallbacks *pAllocator,
-                    struct nvk_device_memory **mem_out)
+VKAPI_ATTR VkResult VKAPI_CALL
+nvk_AllocateMemory(VkDevice device,
+                   const VkMemoryAllocateInfo *pAllocateInfo,
+                   const VkAllocationCallbacks *pAllocator,
+                   VkDeviceMemory *pMem)
 {
+   VK_FROM_HANDLE(nvk_device, dev, device);
    struct nvk_physical_device *pdev = nvk_device_physical(dev);
    struct nvk_device_memory *mem;
    VkResult result = VK_SUCCESS;
@@ -185,7 +185,7 @@ nvk_allocate_memory(struct nvk_device *dev,
       alignment = (1ULL << 16);
 
    const uint64_t aligned_size =
-      ALIGN_POT(pAllocateInfo->allocationSize, alignment);
+      align64(pAllocateInfo->allocationSize, alignment);
 
    mem = vk_device_memory_create(&dev->vk, pAllocateInfo,
                                  pAllocator, sizeof(*mem));
@@ -206,16 +206,6 @@ nvk_allocate_memory(struct nvk_device *dev,
          goto fail_alloc;
       }
       assert(!(flags & ~mem->bo->flags));
-   } else if (tile_info) {
-      mem->bo = nouveau_ws_bo_new_tiled(dev->ws_dev,
-                                        pAllocateInfo->allocationSize, 0,
-                                        tile_info->pte_kind,
-                                        tile_info->tile_mode,
-                                        flags);
-      if (!mem->bo) {
-         result = vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
-         goto fail_alloc;
-      }
    } else {
       mem->bo = nouveau_ws_bo_new(dev->ws_dev, aligned_size, alignment, flags);
       if (!mem->bo) {
@@ -254,11 +244,7 @@ nvk_allocate_memory(struct nvk_device *dev,
       close(fd_info->fd);
    }
 
-   pthread_mutex_lock(&dev->mutex);
-   list_addtail(&mem->link, &dev->memory_objects);
-   pthread_mutex_unlock(&dev->mutex);
-
-   *mem_out = mem;
+   *pMem = nvk_device_memory_to_handle(mem);
 
    return VK_SUCCESS;
 
@@ -267,71 +253,6 @@ fail_bo:
 fail_alloc:
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
    return result;
-}
-
-void
-nvk_free_memory(struct nvk_device *dev,
-                struct nvk_device_memory *mem,
-                const VkAllocationCallbacks *pAllocator)
-{
-   if (mem->map)
-      nouveau_ws_bo_unmap(mem->bo, mem->map);
-
-   pthread_mutex_lock(&dev->mutex);
-   list_del(&mem->link);
-   pthread_mutex_unlock(&dev->mutex);
-
-   nouveau_ws_bo_destroy(mem->bo);
-
-   vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-nvk_AllocateMemory(VkDevice device,
-                   const VkMemoryAllocateInfo *pAllocateInfo,
-                   const VkAllocationCallbacks *pAllocator,
-                   VkDeviceMemory *pMem)
-{
-   VK_FROM_HANDLE(nvk_device, dev, device);
-   struct nvk_device_memory *mem;
-   VkResult result;
-
-#if NVK_NEW_UAPI == 0
-   const VkMemoryDedicatedAllocateInfo *dedicated_info =
-      vk_find_struct_const(pAllocateInfo->pNext,
-                           MEMORY_DEDICATED_ALLOCATE_INFO);
-#endif
-
-   struct nvk_memory_tiling_info *p_tile_info = NULL;
-
-#if NVK_NEW_UAPI == 0
-   struct nvk_image_plane *dedicated_image_plane = NULL;
-   struct nvk_memory_tiling_info tile_info;
-   if (dedicated_info && dedicated_info->image != VK_NULL_HANDLE) {
-      VK_FROM_HANDLE(nvk_image, image, dedicated_info->image);
-      if (image->plane_count == 1 && image->planes[0].nil.pte_kind) {
-         dedicated_image_plane = &image->planes[0];
-         tile_info = (struct nvk_memory_tiling_info) {
-            .tile_mode = image->planes[0].nil.tile_mode,
-            .pte_kind = image->planes[0].nil.pte_kind,
-         };
-         p_tile_info = &tile_info;
-      }
-   }
-#endif
-
-   result = nvk_allocate_memory(dev, pAllocateInfo, p_tile_info,
-                                pAllocator, &mem);
-   if (result != VK_SUCCESS)
-      return result;
-
-#if NVK_NEW_UAPI == 0
-   mem->dedicated_image_plane = dedicated_image_plane;
-#endif
-
-   *pMem = nvk_device_memory_to_handle(mem);
-
-   return VK_SUCCESS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -345,7 +266,12 @@ nvk_FreeMemory(VkDevice device,
    if (!mem)
       return;
 
-   nvk_free_memory(dev, mem, pAllocator);
+   if (mem->map)
+      nouveau_ws_bo_unmap(mem->bo, mem->map);
+
+   nouveau_ws_bo_destroy(mem->bo);
+
+   vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

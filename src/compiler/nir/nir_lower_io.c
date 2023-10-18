@@ -158,6 +158,16 @@ nir_is_arrayed_io(const nir_variable *var, gl_shader_stage stage)
    return false;
 }
 
+static bool
+uses_high_dvec2_semantic(struct lower_io_state *state,
+                         const nir_variable *var)
+{
+   return state->builder.shader->info.stage == MESA_SHADER_VERTEX &&
+          state->options & nir_lower_io_lower_64bit_to_32_new &&
+          var->data.mode == nir_var_shader_in &&
+          glsl_type_is_dual_slot(glsl_without_array(var->type));
+}
+
 static unsigned
 get_number_of_slots(struct lower_io_state *state,
                     const nir_variable *var)
@@ -181,7 +191,8 @@ get_number_of_slots(struct lower_io_state *state,
        !nir_is_arrayed_io(var, state->builder.shader->info.stage))
       return 1;
 
-   return state->type_size(type, var->data.bindless);
+   return state->type_size(type, var->data.bindless) /
+          (uses_high_dvec2_semantic(state, var) ? 2 : 1);
 }
 
 static nir_def *
@@ -251,7 +262,7 @@ static nir_def *
 emit_load(struct lower_io_state *state,
           nir_def *array_index, nir_variable *var, nir_def *offset,
           unsigned component, unsigned num_components, unsigned bit_size,
-          nir_alu_type dest_type)
+          nir_alu_type dest_type, bool high_dvec2)
 {
    nir_builder *b = &state->builder;
    const nir_shader *nir = b->shader;
@@ -324,6 +335,7 @@ emit_load(struct lower_io_state *state,
       semantics.medium_precision =
          var->data.precision == GLSL_PRECISION_MEDIUM ||
          var->data.precision == GLSL_PRECISION_LOW;
+      semantics.high_dvec2 = high_dvec2;
       nir_intrinsic_set_io_semantics(load, semantics);
    }
 
@@ -350,14 +362,23 @@ lower_load(nir_intrinsic_instr *intrin, struct lower_io_state *state,
 {
    const bool lower_double = !glsl_type_is_integer(type) && state->options & nir_lower_io_lower_64bit_float_to_32;
    if (intrin->def.bit_size == 64 &&
-       (lower_double || (state->options & nir_lower_io_lower_64bit_to_32))) {
+       (lower_double || (state->options & (nir_lower_io_lower_64bit_to_32_new |
+                                           nir_lower_io_lower_64bit_to_32)))) {
       nir_builder *b = &state->builder;
+      bool use_high_dvec2_semantic = uses_high_dvec2_semantic(state, var);
+
+      /* Each slot is a dual slot, so divide the offset within the variable
+       * by 2.
+       */
+      if (use_high_dvec2_semantic)
+         offset = nir_ushr_imm(b, offset, 1);
 
       const unsigned slot_size = state->type_size(glsl_dvec_type(2), false);
 
       nir_def *comp64[4];
       assert(component == 0 || component == 2);
       unsigned dest_comp = 0;
+      bool high_dvec2 = false;
       while (dest_comp < intrin->def.num_components) {
          const unsigned num_comps =
             MIN2(intrin->def.num_components - dest_comp,
@@ -365,7 +386,7 @@ lower_load(nir_intrinsic_instr *intrin, struct lower_io_state *state,
 
          nir_def *data32 =
             emit_load(state, array_index, var, offset, component,
-                      num_comps * 2, 32, nir_type_uint32);
+                      num_comps * 2, 32, nir_type_uint32, high_dvec2);
          for (unsigned i = 0; i < num_comps; i++) {
             comp64[dest_comp + i] =
                nir_pack_64_2x32(b, nir_channels(b, data32, 3 << (i * 2)));
@@ -374,7 +395,15 @@ lower_load(nir_intrinsic_instr *intrin, struct lower_io_state *state,
          /* Only the first store has a component offset */
          component = 0;
          dest_comp += num_comps;
-         offset = nir_iadd_imm(b, offset, slot_size);
+
+         if (use_high_dvec2_semantic) {
+            /* Increment the offset when we wrap around the dual slot. */
+            if (high_dvec2)
+               offset = nir_iadd_imm(b, offset, slot_size);
+            high_dvec2 = !high_dvec2;
+         } else {
+            offset = nir_iadd_imm(b, offset, slot_size);
+         }
       }
 
       return nir_vec(b, comp64, intrin->def.num_components);
@@ -384,12 +413,12 @@ lower_load(nir_intrinsic_instr *intrin, struct lower_io_state *state,
       return nir_b2b1(&state->builder,
                       emit_load(state, array_index, var, offset, component,
                                 intrin->def.num_components, 32,
-                                nir_type_bool32));
+                                nir_type_bool32, false));
    } else {
       return emit_load(state, array_index, var, offset, component,
                        intrin->def.num_components,
                        intrin->def.bit_size,
-                       nir_get_nir_type_for_glsl_type(type));
+                       nir_get_nir_type_for_glsl_type(type), false);
    }
 }
 
@@ -461,7 +490,8 @@ lower_store(nir_intrinsic_instr *intrin, struct lower_io_state *state,
 {
    const bool lower_double = !glsl_type_is_integer(type) && state->options & nir_lower_io_lower_64bit_float_to_32;
    if (intrin->src[1].ssa->bit_size == 64 &&
-       (lower_double || (state->options & nir_lower_io_lower_64bit_to_32))) {
+       (lower_double || (state->options & (nir_lower_io_lower_64bit_to_32 |
+                                           nir_lower_io_lower_64bit_to_32_new)))) {
       nir_builder *b = &state->builder;
 
       const unsigned slot_size = state->type_size(glsl_dvec_type(2), false);
@@ -1305,6 +1335,15 @@ get_load_global_op_from_addr_format(nir_address_format addr_format)
       return nir_intrinsic_load_global_2x32;
 }
 
+static nir_intrinsic_op
+get_load_global_constant_op_from_addr_format(nir_address_format addr_format)
+{
+   if (addr_format != nir_address_format_2x32bit_global)
+      return nir_intrinsic_load_global_constant;
+   else
+      return nir_intrinsic_load_global_2x32; /* no dedicated op, fallback */
+}
+
 static nir_def *
 build_explicit_io_load(nir_builder *b, nir_intrinsic_instr *intrin,
                        nir_def *addr, nir_address_format addr_format,
@@ -1416,7 +1455,7 @@ build_explicit_io_load(nir_builder *b, nir_intrinsic_instr *intrin,
             op = nir_intrinsic_load_constant;
          } else {
             assert(addr_format_is_global(addr_format, mode));
-            op = get_load_global_op_from_addr_format(addr_format);
+            op = get_load_global_constant_op_from_addr_format(addr_format);
          }
          break;
       default:
@@ -2454,7 +2493,8 @@ lower_vars_to_explicit(nir_shader *shader,
          glsl_type_is_struct_or_ifc(explicit_type) &&
          glsl_get_length(explicit_type) == 0;
 
-      assert(util_is_power_of_two_nonzero(align) || is_empty_struct);
+      assert(util_is_power_of_two_nonzero(align) || is_empty_struct ||
+             glsl_type_is_cmat(glsl_without_array(explicit_type)));
       var->data.driver_location = ALIGN_POT(offset, align);
       offset = var->data.driver_location + size;
       progress = true;
@@ -3126,6 +3166,19 @@ nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
       (nir->options->support_indirect_outputs >> nir->info.stage) & 0x1 &&
       nir->xfb_info == NULL;
 
+   /* TODO: Sorting variables by location is required due to some bug
+    * in nir_lower_io_to_temporaries. If variables are not sorted,
+    * dEQP-GLES31.functional.separate_shader.random.0 fails.
+    *
+    * This isn't needed if nir_assign_io_var_locations is called because it
+    * also sorts variables. However, if IO is lowered sooner than that, we
+    * must sort explicitly here to get what nir_assign_io_var_locations does.
+    */
+   unsigned varying_var_mask =
+      (nir->info.stage != MESA_SHADER_VERTEX ? nir_var_shader_in : 0) |
+      (nir->info.stage != MESA_SHADER_FRAGMENT ? nir_var_shader_out : 0);
+   nir_sort_variables_by_location(nir, varying_var_mask);
+
    if (!has_indirect_inputs || !has_indirect_outputs) {
       NIR_PASS_V(nir, nir_lower_io_to_temporaries,
                  nir_shader_get_entrypoint(nir), !has_indirect_outputs,
@@ -3142,6 +3195,15 @@ nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
    NIR_PASS_V(nir, nir_lower_io, nir_var_shader_out | nir_var_shader_in,
               type_size_vec4, nir_lower_io_lower_64bit_to_32);
 
+   /* nir_io_add_const_offset_to_base needs actual constants. */
+   NIR_PASS_V(nir, nir_opt_constant_folding);
+   NIR_PASS_V(nir, nir_io_add_const_offset_to_base, nir_var_shader_in | nir_var_shader_out);
+
+   /* Lower and remove dead derefs and variables to clean up the IR. */
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+   NIR_PASS_V(nir, nir_opt_dce);
+   NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+
    /* If IO is lowered before var->data.driver_location is assigned, driver
     * locations are all 0, which means IO bases are all 0. It's not necessary
     * to set driver_location before lowering IO because the only thing that
@@ -3152,22 +3214,12 @@ nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
     * intrinsics refer to the same IO. If the bases already exist, they
     * will be reassigned, sorted by the semantic, and all holes removed.
     * This kind of canonicalizes all bases.
+    *
+    * This must be done after DCE to remove dead load_input intrinsics.
     */
    NIR_PASS_V(nir, nir_recompute_io_bases,
-              (nir->info.stage != MESA_SHADER_VERTEX ||
-                     renumber_vs_inputs
-                  ? nir_var_shader_in
-                  : 0) |
-                 nir_var_shader_out);
-
-   /* nir_io_add_const_offset_to_base needs actual constants. */
-   NIR_PASS_V(nir, nir_opt_constant_folding);
-   NIR_PASS_V(nir, nir_io_add_const_offset_to_base, nir_var_shader_in | nir_var_shader_out);
-
-   /* Lower and remove dead derefs and variables to clean up the IR. */
-   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
-   NIR_PASS_V(nir, nir_opt_dce);
-   NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+              (nir->info.stage != MESA_SHADER_VERTEX || renumber_vs_inputs ?
+               nir_var_shader_in : 0) | nir_var_shader_out);
 
    if (nir->xfb_info)
       NIR_PASS_V(nir, nir_io_add_intrinsic_xfb_info);

@@ -299,15 +299,6 @@ disable_varying_optimizations_for_sso(struct gl_shader_program *prog)
    }
 }
 
-/**
- * Built-in / reserved GL variables names start with "gl_"
- */
-static inline bool
-is_gl_identifier(const char *s)
-{
-   return s && s[0] == 'g' && s[1] == 'l' && s[2] == '_';
-}
-
 static bool
 inout_has_same_location(const nir_variable *var, unsigned stage)
 {
@@ -1347,6 +1338,23 @@ gl_nir_link_glsl(const struct gl_constants *consts,
       if (first == MESA_SHADER_STAGES)
          first = i;
       last = i;
+   }
+
+   /* Validate the inputs of each stage with the output of the preceding
+    * stage.
+    */
+   unsigned prev = first;
+   for (unsigned i = prev + 1; i <= MESA_SHADER_FRAGMENT; i++) {
+      if (prog->_LinkedShaders[i] == NULL)
+         continue;
+
+      gl_nir_cross_validate_outputs_to_inputs(consts, prog,
+                                              prog->_LinkedShaders[prev],
+                                              prog->_LinkedShaders[i]);
+      if (!prog->data->LinkStatus)
+         return false;
+
+      prev = i;
    }
 
    /* The cross validation of outputs/inputs above validates interstage

@@ -221,7 +221,7 @@ nvk_CreateDescriptorSetLayout(VkDevice _device,
          assert(stride <= UINT8_MAX);
          assert(util_is_power_of_two_nonzero(align));
 
-         buffer_size = ALIGN_POT(buffer_size, align);
+         buffer_size = align64(buffer_size, align);
          layout->binding[b].offset = buffer_size;
          layout->binding[b].stride = stride;
 
@@ -356,7 +356,7 @@ nvk_GetDescriptorSetLayoutSupport(VkDevice _device,
              * keep non_variable_size aligned to max_align.
              */
             non_variable_size += stride * binding->descriptorCount;
-            non_variable_size = ALIGN_POT(non_variable_size, max_align);
+            non_variable_size = align64(non_variable_size, max_align);
          }
       }
    }
@@ -364,7 +364,7 @@ nvk_GetDescriptorSetLayoutSupport(VkDevice _device,
    uint64_t buffer_size = non_variable_size;
    if (variable_stride > 0) {
       buffer_size += variable_stride * variable_count;
-      buffer_size = ALIGN_POT(buffer_size, max_align);
+      buffer_size = align64(buffer_size, max_align);
    }
 
    uint32_t max_buffer_size;

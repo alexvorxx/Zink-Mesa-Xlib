@@ -25,6 +25,7 @@
 #include "ast.h"
 #include "compiler/glsl_types.h"
 #include "ir.h"
+#include "linker_util.h"
 #include "main/shader_types.h"
 #include "main/consts_exts.h"
 #include "main/shaderobj.h"

@@ -72,7 +72,8 @@ is_shared_consts(struct ir3_compiler *compiler,
                  struct ir3_const_state *const_state,
                  struct ir3_register *reg)
 {
-   if (const_state->shared_consts_enable && reg->flags & IR3_REG_CONST) {
+   if (const_state->push_consts_type == IR3_PUSH_CONSTS_SHARED &&
+       reg->flags & IR3_REG_CONST) {
       uint32_t min_const_reg = regid(compiler->shared_consts_base_offset, 0);
       uint32_t max_const_reg =
          regid(compiler->shared_consts_base_offset +
@@ -136,9 +137,9 @@ ir3_should_double_threadsize(struct ir3_shader_variant *v, unsigned regs_count)
    const struct ir3_compiler *compiler = v->compiler;
 
    /* If the user forced a particular wavesize respect that. */
-   if (v->real_wavesize == IR3_SINGLE_ONLY)
+   if (v->shader_options.real_wavesize == IR3_SINGLE_ONLY)
       return false;
-   if (v->real_wavesize == IR3_DOUBLE_ONLY)
+   if (v->shader_options.real_wavesize == IR3_DOUBLE_ONLY)
       return true;
 
    /* We can't support more than compiler->branchstack_size diverging threads

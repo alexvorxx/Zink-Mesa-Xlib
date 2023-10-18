@@ -610,6 +610,20 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
    radeon_set_context_reg(cs, R_02882C_PA_SU_PRIM_FILTER_CNTL,
                           S_02882C_XMAX_RIGHT_EXCLUSION(exclusion) | S_02882C_YMAX_BOTTOM_EXCLUSION(exclusion));
 
+   radeon_set_context_reg(cs, R_028828_PA_SU_LINE_STIPPLE_SCALE, 0x3f800000);
+   if (physical_device->rad_info.gfx_level >= GFX7) {
+      radeon_set_uconfig_reg(cs, R_030A00_PA_SU_LINE_STIPPLE_VALUE, 0);
+      radeon_set_uconfig_reg(cs, R_030A04_PA_SC_LINE_STIPPLE_STATE, 0);
+   } else {
+      radeon_set_config_reg(cs, R_008A60_PA_SU_LINE_STIPPLE_VALUE, 0);
+      radeon_set_config_reg(cs, R_008B10_PA_SC_LINE_STIPPLE_STATE, 0);
+   }
+
+   if (physical_device->rad_info.gfx_level >= GFX11) {
+      /* Disable primitive restart for all non-indexed draws. */
+      radeon_set_uconfig_reg(cs, R_03092C_GE_MULTI_PRIM_IB_RESET_EN, S_03092C_DISABLE_FOR_AUTO_INDEX(1));
+   }
+
    si_emit_compute(device, cs);
 }
 
