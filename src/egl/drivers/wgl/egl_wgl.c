@@ -1164,7 +1164,7 @@ wgl_interop_export_object(_EGLDisplay *disp, _EGLContext *ctx,
 static int
 wgl_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx, unsigned count,
                           struct mesa_glinterop_export_in *objects,
-                          GLsync *sync)
+                          GLsync *sync, int *fence_fd)
 {
    struct wgl_egl_context *wgl_ctx = wgl_egl_context(ctx);
    return stw_interop_flush_objects(wgl_ctx->ctx, count, objects, sync);

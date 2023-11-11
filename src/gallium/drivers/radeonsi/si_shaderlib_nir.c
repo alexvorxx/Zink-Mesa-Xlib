@@ -326,15 +326,15 @@ static nir_def *average_samples(nir_builder *b, nir_def **samples, unsigned num_
    return nir_fmul_imm(b, samples[0], 1.0 / num_samples); /* average the sum */
 }
 
-static nir_def *image_resolve_msaa(nir_builder *b, nir_variable *img, unsigned num_samples,
-                                       nir_def *coord, enum amd_gfx_level gfx_level)
+static nir_def *image_resolve_msaa(struct si_screen *sscreen, nir_builder *b, nir_variable *img,
+                                   unsigned num_samples, nir_def *coord)
 {
    nir_def *zero = nir_imm_int(b, 0);
    nir_def *result = NULL;
    nir_variable *var = NULL;
 
    /* Gfx11 doesn't support samples_identical, so we can't use it. */
-   if (gfx_level < GFX11) {
+   if (sscreen->info.gfx_level < GFX11) {
       /* We need a local variable to get the result out of conditional branches in SSA. */
       var = nir_local_variable_create(b->impl, glsl_vec4_type(), NULL);
 
@@ -346,14 +346,19 @@ static nir_def *image_resolve_msaa(nir_builder *b, nir_variable *img, unsigned n
       nir_push_else(b, NULL);
    }
 
+   nir_def *sample_index[16];
+   for (unsigned i = 0; i < num_samples; i++)
+      sample_index[i] = nir_imm_int(b, i);
+
    /* We need to hide the constant sample indices behind the optimization barrier, otherwise
     * LLVM doesn't put loads into the same clause.
     *
     * TODO: nir_group_loads could do this.
     */
-   nir_def *sample_index[16];
-   for (unsigned i = 0; i < num_samples; i++)
-      sample_index[i] = nir_optimization_barrier_vgpr_amd(b, 32, nir_imm_int(b, i));
+   if (!sscreen->use_aco) {
+      for (unsigned i = 0; i < num_samples; i++)
+         sample_index[i] = nir_optimization_barrier_vgpr_amd(b, 32, sample_index[i]);
+   }
 
    /* Load all samples. */
    nir_def *samples[16];
@@ -364,7 +369,7 @@ static nir_def *image_resolve_msaa(nir_builder *b, nir_variable *img, unsigned n
 
    result = average_samples(b, samples, num_samples);
 
-   if (gfx_level < GFX11) {
+   if (sscreen->info.gfx_level < GFX11) {
       /* Exit the conditional branch and get the result out of the branch. */
       nir_store_var(b, var, result, 0xf);
       nir_pop_if(b, NULL);
@@ -521,7 +526,7 @@ void *si_create_blit_cs(struct si_context *sctx, const union si_compute_blit_sha
    if (options->src_is_msaa && !options->dst_is_msaa && !options->sample0_only) {
       /* MSAA resolving (downsampling). */
       assert(num_samples > 1);
-      color = image_resolve_msaa(&b, img_src, num_samples, coord_src, sctx->gfx_level);
+      color = image_resolve_msaa(sctx->screen, &b, img_src, num_samples, coord_src);
       color = apply_blit_output_modifiers(&b, color, options);
       nir_image_deref_store(&b, deref_ssa(&b, img_dst), coord_dst, zero, color, zero);
 
@@ -600,6 +605,14 @@ void *si_clear_render_target_shader(struct si_context *sctx, enum pipe_texture_t
 
    nir_def *zero = nir_imm_int(&b, 0);
    nir_def *ubo = nir_load_ubo(&b, 4, 32, zero, zero, .range_base = 0, .range = 16);
+
+   /* TODO: No GL CTS tests for 1D arrays, relying on OpenCL CTS for now.
+    * As a sanity check, "OpenCL-CTS/test_conformance/images/clFillImage" tests should pass
+    */
+   if (type == PIPE_TEXTURE_1D_ARRAY) {
+      unsigned swizzle[4] = {0, 2, 0, 0};
+      ubo = nir_swizzle(&b, ubo, swizzle, 4);
+   }
 
    address = nir_iadd(&b, address, ubo);
    nir_def *coord = nir_pad_vector(&b, address, 4);

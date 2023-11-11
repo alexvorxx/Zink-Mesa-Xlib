@@ -318,6 +318,8 @@ EXTENSIONS = [
               alias="demote",
               features=True,
               conditions=["$feats.shaderDemoteToHelperInvocation"]),
+    Extension("VK_KHR_shader_float_controls",
+              alias="float_controls")
 ]
 
 # constructor: Versions(device_version(major, minor, patch), struct_version(major, minor))

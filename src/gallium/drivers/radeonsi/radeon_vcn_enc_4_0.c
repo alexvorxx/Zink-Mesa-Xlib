@@ -16,7 +16,7 @@
 #include "radeon_vcn_enc.h"
 
 #define RENCODE_FW_INTERFACE_MAJOR_VERSION   1
-#define RENCODE_FW_INTERFACE_MINOR_VERSION   0
+#define RENCODE_FW_INTERFACE_MINOR_VERSION   11
 
 #define RENCODE_IB_PARAM_CDF_DEFAULT_TABLE_BUFFER  0x00000019
 #define RENCODE_IB_PARAM_ENCODE_STATISTICS         0x0000001a
@@ -146,6 +146,7 @@ static void radeon_enc_session_init(struct radeon_encoder *enc)
    RADEON_ENC_CS(enc->enc_pic.session_init.pre_encode_chroma_enabled);
    RADEON_ENC_CS(enc->enc_pic.session_init.slice_output_enabled);
    RADEON_ENC_CS(enc->enc_pic.session_init.display_remote);
+   RADEON_ENC_CS(0);
    RADEON_ENC_END();
 }
 
@@ -389,6 +390,8 @@ static void radeon_enc_spec_misc_av1(struct radeon_encoder *enc)
    RADEON_ENC_CS(enc->enc_pic.av1_spec_misc.disable_cdf_update);
    RADEON_ENC_CS(enc->enc_pic.av1_spec_misc.disable_frame_end_update_cdf);
    RADEON_ENC_CS(enc->enc_pic.av1_spec_misc.num_tiles_per_picture);
+   RADEON_ENC_CS(0);
+   RADEON_ENC_CS(0);
    RADEON_ENC_END();
 }
 
@@ -957,10 +960,6 @@ static void radeon_enc_ctx(struct radeon_encoder *enc)
                                            == PIPE_VIDEO_FORMAT_AV1;
    enc->enc_pic.ctx_buf.swizzle_mode = radeon_enc_ref_swizzle_mode(enc);
    enc->enc_pic.ctx_buf.two_pass_search_center_map_offset = 0;
-   if (is_av1)
-      enc->enc_pic.ctx_buf.colloc_buffer_offset = 0;
-   else
-      enc->enc_pic.ctx_buf.colloc_buffer_offset = enc->dpb_size;
 
    RADEON_ENC_BEGIN(enc->cmd.ctx);
    RADEON_ENC_READWRITE(enc->dpb->res->buf, enc->dpb->res->domains, 0);

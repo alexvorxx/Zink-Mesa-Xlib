@@ -1484,10 +1484,10 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
 }
 
 static bool
-rp_has_ds_self_dep(const struct vk_render_pass_state *rp)
+state_has_ds_self_dep(const struct vk_graphics_pipeline_state *state)
 {
-   return rp->pipeline_flags &
-      VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+   return state->pipeline_flags &
+      VK_PIPELINE_CREATE_2_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
 }
 
 static void
@@ -1608,7 +1608,7 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
 static void
 emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
                       const struct vk_rasterization_state *rs,
-                      const struct vk_render_pass_state *rp)
+                      const struct vk_graphics_pipeline_state *state)
 {
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
 
@@ -1633,7 +1633,7 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
        * around to fetching from the input attachment and we may get the depth
        * or stencil value from the current draw rather than the previous one.
        */
-      ps.PixelShaderKillsPixel         = rp_has_ds_self_dep(rp) ||
+      ps.PixelShaderKillsPixel         = state_has_ds_self_dep(state) ||
                                          wm_prog_data->uses_kill;
 
       ps.PixelShaderComputesStencil = wm_prog_data->computed_stencil;
@@ -1678,7 +1678,7 @@ emit_3dstate_vf_statistics(struct anv_graphics_pipeline *pipeline)
 static void
 compute_kill_pixel(struct anv_graphics_pipeline *pipeline,
                    const struct vk_multisample_state *ms,
-                   const struct vk_render_pass_state *rp)
+                   const struct vk_graphics_pipeline_state *state)
 {
    if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT)) {
       pipeline->kill_pixel = false;
@@ -1702,7 +1702,7 @@ compute_kill_pixel(struct anv_graphics_pipeline *pipeline,
     * of an alpha test.
     */
    pipeline->kill_pixel =
-      rp_has_ds_self_dep(rp) ||
+      state_has_ds_self_dep(state) ||
       wm_prog_data->uses_kill ||
       wm_prog_data->uses_omask ||
       (ms && ms->alpha_to_coverage_enable);
@@ -1905,7 +1905,7 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
    emit_rs_state(pipeline, state->ia, state->rs, state->ms, state->rp,
                  urb_deref_block_size);
    emit_ms_state(pipeline, state->ms);
-   compute_kill_pixel(pipeline, state->ms, state->rp);
+   compute_kill_pixel(pipeline, state->ms, state);
 
    emit_3dstate_clip(pipeline, state->ia, state->vp, state->rs);
 
@@ -2003,7 +2003,7 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
    emit_3dstate_wm(pipeline, state->ia, state->rs,
                    state->ms, state->cb, state->rp);
    emit_3dstate_ps(pipeline, state->ms, state->cb);
-   emit_3dstate_ps_extra(pipeline, state->rs, state->rp);
+   emit_3dstate_ps_extra(pipeline, state->rs, state);
 }
 
 #if GFX_VERx10 >= 125

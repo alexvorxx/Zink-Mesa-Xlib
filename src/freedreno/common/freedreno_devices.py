@@ -708,6 +708,7 @@ a7xx_730 = A7XXProps()
 
 a7xx_740 = A7XXProps(
         stsc_duplication_quirk = True,
+        has_event_write_sample_count = True,
     )
 
 add_gpus([

@@ -216,7 +216,7 @@
     RUNNER_TAG: mesa-ci-x86-64-lava-asus-C433TA-AJ0005-rammus
     FDO_CI_CONCURRENT: 5
 
-# 7 boards
+# 6 boards
 .iris-kbl-test:
   extends:
     - .iris-test

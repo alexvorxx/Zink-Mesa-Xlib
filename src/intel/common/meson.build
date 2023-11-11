@@ -43,6 +43,7 @@ files_libintel_common = files(
   'intel_guardband.h',
   'intel_l3_config.c',
   'intel_l3_config.h',
+  'intel_tiled_render.h',
   'intel_urb_config.c',
   'intel_sample_positions.c',
   'intel_sample_positions.h',

@@ -62,52 +62,6 @@ fs_visitor::emit_mcs_fetch(const fs_reg &coordinate, unsigned components,
    return dest;
 }
 
-/** Emits a dummy fragment shader consisting of magenta for bringup purposes. */
-void
-fs_visitor::emit_dummy_fs()
-{
-   int reg_width = dispatch_width / 8;
-
-   /* Everyone's favorite color. */
-   const float color[4] = { 1.0, 0.0, 1.0, 0.0 };
-   for (int i = 0; i < 4; i++) {
-      bld.MOV(fs_reg(MRF, 2 + i * reg_width, BRW_REGISTER_TYPE_F),
-              brw_imm_f(color[i]));
-   }
-
-   fs_inst *write;
-   write = bld.emit(FS_OPCODE_FB_WRITE);
-   write->eot = true;
-   write->last_rt = true;
-   if (devinfo->ver >= 6) {
-      write->base_mrf = 2;
-      write->mlen = 4 * reg_width;
-   } else {
-      write->header_size = 2;
-      write->base_mrf = 0;
-      write->mlen = 2 + 4 * reg_width;
-   }
-
-   /* Tell the SF we don't have any inputs.  Gfx4-5 require at least one
-    * varying to avoid GPU hangs, so set that.
-    */
-   struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(this->prog_data);
-   wm_prog_data->num_varying_inputs = devinfo->ver < 6 ? 1 : 0;
-   memset(wm_prog_data->urb_setup, -1,
-          sizeof(wm_prog_data->urb_setup[0]) * VARYING_SLOT_MAX);
-   brw_compute_urb_setup_index(wm_prog_data);
-
-   /* We don't have any uniforms. */
-   stage_prog_data->nr_params = 0;
-   stage_prog_data->curb_read_length = 0;
-   stage_prog_data->dispatch_grf_start_reg = 2;
-   wm_prog_data->dispatch_grf_start_reg_16 = 2;
-   wm_prog_data->dispatch_grf_start_reg_32 = 2;
-   grf_used = 1; /* Gfx4-5 don't allow zero GRF blocks */
-
-   calculate_cfg();
-}
-
 /* Input data is organized with first the per-primitive values, followed
  * by per-vertex values.  The per-vertex will have interpolation information
  * associated, so use 4 components for each value.

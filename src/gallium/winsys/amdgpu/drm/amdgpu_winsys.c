@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "ac_llvm_util.h"
 #include "sid.h"
 
 static struct hash_table *dev_tab = NULL;

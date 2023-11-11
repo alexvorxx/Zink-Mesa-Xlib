@@ -588,7 +588,7 @@ typedef struct shader_info {
 
          uint16_t max_vertices_out;
          uint16_t max_primitives_out;
-         uint16_t primitive_type;  /* GL_POINTS, GL_LINES or GL_TRIANGLES. */
+         enum mesa_prim primitive_type;  /* GL_POINTS, GL_LINES or GL_TRIANGLES. */
 
          /* TODO: remove this when we stop supporting NV_mesh_shader. */
          bool nv;

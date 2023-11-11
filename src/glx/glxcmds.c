@@ -596,7 +596,7 @@ glXCopyContext(Display * dpy, GLXContext source_user,
                              mask, &errorcode, &x11error)) {
       __glXSendError(dpy, errorcode, 0, X_GLXCopyContext, x11error);
    }
-   
+
 #else
    xGLXCopyContextReq *req;
    struct glx_context *gc = __glXGetCurrentContext();
@@ -773,7 +773,6 @@ init_fbconfig_for_chooser(struct glx_config * config,
    config->xRenderable = GLX_DONT_CARE;
    config->fbconfigID = (GLXFBConfigID) (GLX_DONT_CARE);
 
-   config->swapMethod = GLX_DONT_CARE;
    config->sRGBCapable = GLX_DONT_CARE;
 }
 
@@ -824,7 +823,6 @@ fbconfigs_compatible(const struct glx_config * const a,
    MATCH_DONT_CARE(visualRating);
    MATCH_DONT_CARE(xRenderable);
    MATCH_DONT_CARE(fbconfigID);
-   MATCH_DONT_CARE(swapMethod);
 
    MATCH_MINIMUM(rgbBits);
    MATCH_MINIMUM(numAuxBuffers);
@@ -1758,7 +1756,7 @@ glXWaitVideoSyncSGI(int divisor, int remainder, unsigned int *count)
 
 /*
 ** GLX_SGIX_fbconfig
-** Many of these functions are aliased to GLX 1.3 entry points in the 
+** Many of these functions are aliased to GLX 1.3 entry points in the
 ** GLX_functions table.
 */
 
@@ -2460,7 +2458,7 @@ PUBLIC int
 MesaGLInteropGLXFlushObjects(Display *dpy, GLXContext context,
                              unsigned count,
                              struct mesa_glinterop_export_in *resources,
-                             GLsync *sync)
+                             GLsync *sync, int *fence_fd)
 {
    struct glx_context *gc = (struct glx_context*)context;
    int ret;
@@ -2477,7 +2475,7 @@ MesaGLInteropGLXFlushObjects(Display *dpy, GLXContext context,
       return MESA_GLINTEROP_UNSUPPORTED;
    }
 
-   ret = gc->vtable->interop_flush_objects(gc, count, resources, sync);
+   ret = gc->vtable->interop_flush_objects(gc, count, resources, sync, fence_fd);
    __glXUnlock();
    return ret;
 }

@@ -254,6 +254,7 @@ const nir_lower_subgroups_options si_nir_subgroups_options = {
    .lower_subgroup_masks = true,
    .lower_vote_trivial = false,
    .lower_vote_eq = true,
+   .lower_vote_bool_eq = true,
    .lower_inverse_ballot = true,
 };
 
@@ -300,7 +301,6 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
    NIR_PASS_V(nir, nir_lower_var_copies);
    NIR_PASS_V(nir, nir_opt_intrinsics);
    NIR_PASS_V(nir, nir_lower_system_values);
-   NIR_PASS_V(nir, nir_lower_compute_system_values, NULL);
 
    /* si_nir_kill_outputs and ac_nir_optimize_outputs require outputs to be scalar. */
    if (nir->info.stage == MESA_SHADER_VERTEX ||
@@ -320,21 +320,22 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
    }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
+      nir_lower_compute_system_values_options options = {0};
+
+      /* gl_LocalInvocationIndex must be derived from gl_LocalInvocationID.xyz to make it correct
+       * with quad derivatives. Using gl_SubgroupID for that (which is what we do by default) is
+       * incorrect with a non-linear thread order.
+       */
+      options.lower_local_invocation_index =
+         nir->info.cs.derivative_group == DERIVATIVE_GROUP_QUADS;
+      NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
+
       if (nir->info.cs.derivative_group == DERIVATIVE_GROUP_QUADS) {
-         /* If we are shuffling local_invocation_id for quad derivatives, we
-          * need to derive local_invocation_index from local_invocation_id
-          * first, so that the value corresponds to the shuffled
-          * local_invocation_id.
-          */
-         nir_lower_compute_system_values_options options = {0};
-         options.lower_local_invocation_index = true;
+         nir_opt_cse(nir); /* CSE load_local_invocation_id */
+         memset(&options, 0, sizeof(options));
+         options.shuffle_local_ids_for_quad_derivatives = true;
          NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
       }
-
-      nir_opt_cse(nir); /* CSE load_local_invocation_id */
-      nir_lower_compute_system_values_options options = {0};
-      options.shuffle_local_ids_for_quad_derivatives = true;
-      NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
    }
 
    if (sscreen->b.get_shader_param(&sscreen->b, PIPE_SHADER_FRAGMENT, PIPE_SHADER_CAP_FP16)) {

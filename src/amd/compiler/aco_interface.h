@@ -37,6 +37,7 @@ struct ac_shader_config;
 struct aco_shader_info;
 struct aco_vs_prolog_info;
 struct aco_ps_epilog_info;
+struct radeon_info;
 
 struct aco_compiler_statistic_info {
    char name[32];
@@ -96,6 +97,8 @@ void aco_compile_ps_prolog(const struct aco_compiler_options* options,
                            aco_shader_part_callback* build_prolog, void** binary);
 
 uint64_t aco_get_codegen_flags();
+
+bool aco_is_gpu_supported(const struct radeon_info* info);
 
 #ifdef __cplusplus
 }

@@ -1396,6 +1396,10 @@ virtgpu_init_renderer_info(struct virtgpu *gpu)
 
    if (gpu->bo_blob_mem == VIRTGPU_BLOB_MEM_GUEST_VRAM)
       info->has_guest_vram = true;
+
+   /* Use guest blob allocations from dedicated heap (Host visible memory) */
+   if (gpu->bo_blob_mem == VIRTGPU_BLOB_MEM_HOST3D && capset->use_guest_vram)
+      info->has_guest_vram = true;
 }
 
 static void

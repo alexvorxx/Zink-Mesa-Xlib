@@ -81,12 +81,14 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(false)
       DRI_CONF_ANV_FP64_WORKAROUND_ENABLED(false)
       DRI_CONF_ANV_GENERATED_INDIRECT_THRESHOLD(4)
+      DRI_CONF_ANV_GENERATED_INDIRECT_RING_THRESHOLD(100)
       DRI_CONF_NO_16BIT(false)
       DRI_CONF_INTEL_ENABLE_WA_14018912822(false)
       DRI_CONF_ANV_QUERY_CLEAR_WITH_BLORP_THRESHOLD(6)
       DRI_CONF_ANV_QUERY_COPY_WITH_SHADER_THRESHOLD(6)
       DRI_CONF_ANV_FORCE_INDIRECT_DESCRIPTORS(false)
       DRI_CONF_SHADER_SPILLING_RATE(0)
+      DRI_CONF_OPT_B(intel_tbimr, true, "Enable TBIMR tiled rendering")
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
@@ -1148,17 +1150,26 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
          intel_engines_count(pdevice->engine_info, INTEL_ENGINE_CLASS_VIDEO);
       int g_count = 0;
       int c_count = 0;
-      if (debug_get_bool_option("INTEL_COMPUTE_CLASS", false))
-         c_count = intel_engines_count(pdevice->engine_info,
-                                       INTEL_ENGINE_CLASS_COMPUTE);
+      const bool can_use_non_render_engines =
+         pdevice->info.kmd_type == INTEL_KMD_TYPE_XE || pdevice->has_vm_control;
+      if (debug_get_bool_option("INTEL_COMPUTE_CLASS", false)) {
+         if (!can_use_non_render_engines)
+            mesa_logw("cannot initialize compute engine, no vm control.");
+         else
+            c_count = intel_engines_count(pdevice->engine_info,
+                                          INTEL_ENGINE_CLASS_COMPUTE);
+      }
       enum intel_engine_class compute_class =
          c_count < 1 ? INTEL_ENGINE_CLASS_RENDER : INTEL_ENGINE_CLASS_COMPUTE;
 
       int blit_count = 0;
       if (debug_get_bool_option("INTEL_COPY_CLASS", false) &&
           pdevice->info.verx10 >= 125) {
-         blit_count = intel_engines_count(pdevice->engine_info,
-                                          INTEL_ENGINE_CLASS_COPY);
+         if (!can_use_non_render_engines)
+            mesa_logw("cannot initialize blitter engine, no vm control.");
+         else
+            blit_count = intel_engines_count(pdevice->engine_info,
+                                             INTEL_ENGINE_CLASS_COPY);
       }
 
       anv_override_engine_counts(&gc_count, &g_count, &c_count, &v_count);
@@ -1361,6 +1372,10 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    if (!device->has_astc_ldr &&
        driQueryOptionb(&device->instance->dri_options, "vk_require_astc"))
       device->emu_astc_ldr = true;
+   if (devinfo.ver == 9 && !intel_device_info_is_9lp(&devinfo)) {
+      device->flush_astc_ldr_void_extent_denorms =
+         device->has_astc_ldr && !device->emu_astc_ldr;
+   }
 
    result = anv_physical_device_init_heaps(device, fd);
    if (result != VK_SUCCESS)
@@ -1406,9 +1421,6 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
 
    device->use_call_secondary =
       !debug_get_bool_option("ANV_DISABLE_SECONDARY_CMD_BUFFER_CALLS", false);
-
-   device->has_implicit_ccs = device->info.has_aux_map ||
-                              device->info.verx10 >= 125;
 
    device->video_decode_enabled = debug_get_bool_option("ANV_VIDEO_DECODE", false);
 
@@ -1597,6 +1609,8 @@ anv_init_dri_options(struct anv_instance *instance)
             driQueryOptionb(&instance->dri_options, "fp64_workaround_enabled");
     instance->generated_indirect_threshold =
             driQueryOptioni(&instance->dri_options, "generated_indirect_threshold");
+    instance->generated_indirect_ring_threshold =
+            driQueryOptioni(&instance->dri_options, "generated_indirect_ring_threshold");
     instance->query_clear_with_blorp_threshold =
        driQueryOptioni(&instance->dri_options, "query_clear_with_blorp_threshold");
     instance->query_copy_with_shader_threshold =
@@ -1605,6 +1619,7 @@ anv_init_dri_options(struct anv_instance *instance)
        driQueryOptioni(&instance->dri_options, "force_vk_vendor");
     instance->has_fake_sparse =
        driQueryOptionb(&instance->dri_options, "fake_sparse");
+    instance->enable_tbimr = driQueryOptionb(&instance->dri_options, "intel_tbimr");
 }
 
 VkResult anv_CreateInstance(
@@ -2829,30 +2844,9 @@ PFN_vkVoidFunction anv_GetInstanceProcAddr(
 PUBLIC
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(
     VkInstance                                  instance,
-    const char*                                 pName);
-
-PUBLIC
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(
-    VkInstance                                  instance,
     const char*                                 pName)
 {
    return anv_GetInstanceProcAddr(instance, pName);
-}
-
-/* With version 4+ of the loader interface the ICD should expose
- * vk_icdGetPhysicalDeviceProcAddr()
- */
-PUBLIC
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(
-    VkInstance  _instance,
-    const char* pName);
-
-PFN_vkVoidFunction vk_icdGetPhysicalDeviceProcAddr(
-    VkInstance  _instance,
-    const char* pName)
-{
-   ANV_FROM_HANDLE(anv_instance, instance, _instance);
-   return vk_instance_get_physical_device_proc_addr(&instance->vk, pName);
 }
 
 static struct anv_state
@@ -2951,7 +2945,8 @@ decode_get_bo(void *v_batch, bool ppgtt, uint64_t address)
       return ret_bo;
    if (get_bo_from_pool(&ret_bo, &device->internal_surface_state_pool.block_pool, address))
       return ret_bo;
-   if (get_bo_from_pool(&ret_bo, &device->push_descriptor_pool.block_pool, address))
+   if (device->physical->indirect_descriptors &&
+       get_bo_from_pool(&ret_bo, &device->indirect_push_descriptor_pool.block_pool, address))
       return ret_bo;
 
    if (!device->cmd_buffer_being_decoded)
@@ -3212,17 +3207,23 @@ VkResult anv_CreateDevice(
                       device->physical->va.low_heap.addr,
                       device->physical->va.low_heap.size);
 
-   util_vma_heap_init(&device->vma_cva,
-                      device->physical->va.client_visible_heap.addr,
-                      device->physical->va.client_visible_heap.size);
-
    util_vma_heap_init(&device->vma_hi,
                       device->physical->va.high_heap.addr,
                       device->physical->va.high_heap.size);
 
-   util_vma_heap_init(&device->vma_desc,
-                      device->physical->va.descriptor_pool.addr,
-                      device->physical->va.descriptor_pool.size);
+   if (device->physical->indirect_descriptors) {
+      util_vma_heap_init(&device->vma_desc,
+                         device->physical->va.indirect_descriptor_pool.addr,
+                         device->physical->va.indirect_descriptor_pool.size);
+   } else {
+      util_vma_heap_init(&device->vma_desc,
+                         device->physical->va.direct_descriptor_pool.addr,
+                         device->physical->va.direct_descriptor_pool.size);
+   }
+
+   util_vma_heap_init(&device->vma_trtt,
+                      device->physical->va.trtt.addr,
+                      device->physical->va.trtt.size);
 
    list_inithead(&device->memory_objects);
    list_inithead(&device->image_private_objects);
@@ -3267,14 +3268,23 @@ VkResult anv_CreateDevice(
     * get the correct offsets in the anv_states that get allocated from it.
     */
    result = anv_state_pool_init(&device->general_state_pool, device,
-                                "general pool",
-                                0, device->physical->va.general_state_pool.addr, 16384);
+                                &(struct anv_state_pool_params) {
+                                   .name         = "general pool",
+                                   .base_address = 0,
+                                   .start_offset = device->physical->va.general_state_pool.addr,
+                                   .block_size   = 16384,
+                                   .max_size     = device->physical->va.general_state_pool.size
+                                });
    if (result != VK_SUCCESS)
       goto fail_batch_bo_pool;
 
    result = anv_state_pool_init(&device->dynamic_state_pool, device,
-                                "dynamic pool",
-                                device->physical->va.dynamic_state_pool.addr, 0, 16384);
+                                &(struct anv_state_pool_params) {
+                                   .name         = "dynamic pool",
+                                   .base_address = device->physical->va.dynamic_state_pool.addr,
+                                   .block_size   = 16384,
+                                   .max_size     = device->physical->va.dynamic_state_pool.size,
+                                });
    if (result != VK_SUCCESS)
       goto fail_general_state_pool;
 
@@ -3290,9 +3300,12 @@ VkResult anv_CreateDevice(
                                 sizeof(struct gfx8_border_color), 64);
 
    result = anv_state_pool_init(&device->instruction_state_pool, device,
-                                "instruction pool",
-                                device->physical->va.instruction_state_pool.addr,
-                                0, 16384);
+                                &(struct anv_state_pool_params) {
+                                   .name         = "instruction pool",
+                                   .base_address = device->physical->va.instruction_state_pool.addr,
+                                   .block_size   = 16384,
+                                   .max_size     = device->physical->va.instruction_state_pool.size,
+                                });
    if (result != VK_SUCCESS)
       goto fail_dynamic_state_pool;
 
@@ -3301,31 +3314,43 @@ VkResult anv_CreateDevice(
        * surface state pool.
        */
       result = anv_state_pool_init(&device->scratch_surface_state_pool, device,
-                                   "scratch surface state pool",
-                                   device->physical->va.scratch_surface_state_pool.addr,
-                                   0, 4096);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "scratch surface state pool",
+                                      .base_address = device->physical->va.scratch_surface_state_pool.addr,
+                                      .block_size   = 4096,
+                                      .max_size     = device->physical->va.scratch_surface_state_pool.size,
+                                   });
       if (result != VK_SUCCESS)
          goto fail_instruction_state_pool;
 
       result = anv_state_pool_init(&device->internal_surface_state_pool, device,
-                                   "internal surface state pool",
-                                   device->physical->va.internal_surface_state_pool.addr,
-                                   device->physical->va.scratch_surface_state_pool.size,
-                                   4096);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "internal surface state pool",
+                                      .base_address = device->physical->va.internal_surface_state_pool.addr,
+                                      .start_offset = device->physical->va.scratch_surface_state_pool.size,
+                                      .block_size   = 4096,
+                                      .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                   });
    } else {
       result = anv_state_pool_init(&device->internal_surface_state_pool, device,
-                                   "internal surface state pool",
-                                   device->physical->va.internal_surface_state_pool.addr,
-                                   0, 4096);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "internal surface state pool",
+                                      .base_address = device->physical->va.internal_surface_state_pool.addr,
+                                      .block_size   = 4096,
+                                      .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                   });
    }
    if (result != VK_SUCCESS)
       goto fail_scratch_surface_state_pool;
 
    if (device->physical->indirect_descriptors) {
       result = anv_state_pool_init(&device->bindless_surface_state_pool, device,
-                                   "bindless surface state pool",
-                                   device->physical->va.bindless_surface_state_pool.addr,
-                                   0, 4096);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "bindless surface state pool",
+                                      .base_address = device->physical->va.bindless_surface_state_pool.addr,
+                                      .block_size   = 4096,
+                                      .max_size     = device->physical->va.bindless_surface_state_pool.size,
+                                   });
       if (result != VK_SUCCESS)
          goto fail_internal_surface_state_pool;
    }
@@ -3335,9 +3360,12 @@ VkResult anv_CreateDevice(
        * table its own base address separately from surface state base.
        */
       result = anv_state_pool_init(&device->binding_table_pool, device,
-                                   "binding table pool",
-                                   device->physical->va.binding_table_pool.addr, 0,
-                                   BINDING_TABLE_POOL_BLOCK_SIZE);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "binding table pool",
+                                      .base_address = device->physical->va.binding_table_pool.addr,
+                                      .block_size   = BINDING_TABLE_POOL_BLOCK_SIZE,
+                                      .max_size     = device->physical->va.binding_table_pool.size,
+                                   });
    } else {
       /* The binding table should be in front of the surface states in virtual
        * address space so that all surface states can be express as relative
@@ -3349,26 +3377,34 @@ VkResult anv_CreateDevice(
                                (int64_t)device->physical->va.internal_surface_state_pool.addr;
       assert(INT32_MIN < bt_pool_offset && bt_pool_offset < 0);
       result = anv_state_pool_init(&device->binding_table_pool, device,
-                                   "binding table pool",
-                                   device->physical->va.internal_surface_state_pool.addr,
-                                   bt_pool_offset,
-                                   BINDING_TABLE_POOL_BLOCK_SIZE);
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "binding table pool",
+                                      .base_address = device->physical->va.internal_surface_state_pool.addr,
+                                      .start_offset = bt_pool_offset,
+                                      .block_size   = BINDING_TABLE_POOL_BLOCK_SIZE,
+                                      .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                   });
    }
    if (result != VK_SUCCESS)
       goto fail_bindless_surface_state_pool;
 
-   result = anv_state_pool_init(&device->push_descriptor_pool, device,
-                                "push descriptor pool",
-                                device->physical->va.push_descriptor_pool.addr,
-                                0, 4096);
-   if (result != VK_SUCCESS)
-      goto fail_binding_table_pool;
+   if (device->physical->indirect_descriptors) {
+      result = anv_state_pool_init(&device->indirect_push_descriptor_pool, device,
+                                   &(struct anv_state_pool_params) {
+                                      .name         = "indirect push descriptor pool",
+                                      .base_address = device->physical->va.indirect_push_descriptor_pool.addr,
+                                      .block_size   = 4096,
+                                      .max_size     = device->physical->va.indirect_push_descriptor_pool.size,
+                                   });
+      if (result != VK_SUCCESS)
+         goto fail_binding_table_pool;
+   }
 
    if (device->info->has_aux_map) {
       device->aux_map_ctx = intel_aux_map_init(device, &aux_map_allocator,
                                                &physical_device->info);
       if (!device->aux_map_ctx)
-         goto fail_push_descriptor_pool;
+         goto fail_indirect_push_descriptor_pool;
    }
 
    result = anv_device_alloc_bo(device, "workaround", 8192,
@@ -3613,8 +3649,9 @@ VkResult anv_CreateDevice(
       intel_aux_map_finish(device->aux_map_ctx);
       device->aux_map_ctx = NULL;
    }
- fail_push_descriptor_pool:
-   anv_state_pool_finish(&device->push_descriptor_pool);
+ fail_indirect_push_descriptor_pool:
+   if (device->physical->indirect_descriptors)
+      anv_state_pool_finish(&device->indirect_push_descriptor_pool);
  fail_binding_table_pool:
    anv_state_pool_finish(&device->binding_table_pool);
  fail_bindless_surface_state_pool:
@@ -3633,7 +3670,8 @@ VkResult anv_CreateDevice(
  fail_general_state_pool:
    anv_state_pool_finish(&device->general_state_pool);
  fail_batch_bo_pool:
-   anv_bo_pool_finish(&device->bvh_bo_pool);
+   if (device->vk.enabled_extensions.KHR_acceleration_structure)
+      anv_bo_pool_finish(&device->bvh_bo_pool);
    anv_bo_pool_finish(&device->batch_bo_pool);
    anv_bo_cache_finish(&device->bo_cache);
  fail_queue_cond:
@@ -3641,10 +3679,11 @@ VkResult anv_CreateDevice(
  fail_mutex:
    pthread_mutex_destroy(&device->mutex);
  fail_vmas:
+   util_vma_heap_finish(&device->vma_trtt);
    util_vma_heap_finish(&device->vma_desc);
    util_vma_heap_finish(&device->vma_hi);
-   util_vma_heap_finish(&device->vma_cva);
    util_vma_heap_finish(&device->vma_lo);
+   pthread_mutex_destroy(&device->vma_mutex);
  fail_queues:
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);
@@ -3675,6 +3714,10 @@ void anv_DestroyDevice(
 #endif
 
    struct anv_physical_device *pdevice = device->physical;
+
+   for (uint32_t i = 0; i < device->queue_count; i++)
+      anv_queue_finish(&device->queues[i]);
+   vk_free(&device->vk.alloc, device->queues);
 
    anv_device_utrace_finish(device);
 
@@ -3730,7 +3773,8 @@ void anv_DestroyDevice(
       device->aux_map_ctx = NULL;
    }
 
-   anv_state_pool_finish(&device->push_descriptor_pool);
+   if (device->physical->indirect_descriptors)
+      anv_state_pool_finish(&device->indirect_push_descriptor_pool);
    anv_state_pool_finish(&device->binding_table_pool);
    if (device->info->verx10 >= 125)
       anv_state_pool_finish(&device->scratch_surface_state_pool);
@@ -3741,22 +3785,20 @@ void anv_DestroyDevice(
    anv_state_pool_finish(&device->dynamic_state_pool);
    anv_state_pool_finish(&device->general_state_pool);
 
-   anv_bo_pool_finish(&device->bvh_bo_pool);
+   if (device->vk.enabled_extensions.KHR_acceleration_structure)
+      anv_bo_pool_finish(&device->bvh_bo_pool);
    anv_bo_pool_finish(&device->batch_bo_pool);
 
    anv_bo_cache_finish(&device->bo_cache);
 
+   util_vma_heap_finish(&device->vma_trtt);
    util_vma_heap_finish(&device->vma_desc);
    util_vma_heap_finish(&device->vma_hi);
-   util_vma_heap_finish(&device->vma_cva);
    util_vma_heap_finish(&device->vma_lo);
+   pthread_mutex_destroy(&device->vma_mutex);
 
    pthread_cond_destroy(&device->queue_submit);
    pthread_mutex_destroy(&device->mutex);
-
-   for (uint32_t i = 0; i < device->queue_count; i++)
-      anv_queue_finish(&device->queues[i]);
-   vk_free(&device->vk.alloc, device->queues);
 
    ralloc_free(device->fp64_nir);
 
@@ -3808,8 +3850,8 @@ static struct util_vma_heap *
 anv_vma_heap_for_flags(struct anv_device *device,
                        enum anv_bo_alloc_flags alloc_flags)
 {
-   if (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS)
-      return &device->vma_cva;
+   if (alloc_flags & ANV_BO_ALLOC_TRTT)
+      return &device->vma_trtt;
 
    if (alloc_flags & ANV_BO_ALLOC_32BIT_ADDRESS)
       return &device->vma_lo;
@@ -3833,13 +3875,18 @@ anv_vma_alloc(struct anv_device *device,
    *out_vma_heap = anv_vma_heap_for_flags(device, alloc_flags);
 
    if (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) {
+      assert(*out_vma_heap == &device->vma_hi ||
+             *out_vma_heap == &device->vma_trtt);
+
       if (client_address) {
          if (util_vma_heap_alloc_addr(*out_vma_heap,
                                       client_address, size)) {
             addr = client_address;
          }
       } else {
+         (*out_vma_heap)->alloc_high = false;
          addr = util_vma_heap_alloc(*out_vma_heap, size, align);
+         (*out_vma_heap)->alloc_high = true;
       }
       /* We don't want to fall back to other heaps */
       goto done;
@@ -3862,9 +3909,9 @@ anv_vma_free(struct anv_device *device,
              uint64_t address, uint64_t size)
 {
    assert(vma_heap == &device->vma_lo ||
-          vma_heap == &device->vma_cva ||
           vma_heap == &device->vma_hi ||
-          vma_heap == &device->vma_desc);
+          vma_heap == &device->vma_desc ||
+          vma_heap == &device->vma_trtt);
 
    const uint64_t addr_48b = intel_48b_address(address);
 
@@ -3937,6 +3984,7 @@ VkResult anv_AllocateMemory(
 
       case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO:
          dedicated_info = (void *)ext;
+         alloc_flags |= ANV_BO_ALLOC_DEDICATED;
          break;
 
       case VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO: {
@@ -3965,10 +4013,6 @@ VkResult anv_AllocateMemory(
       }
    }
 
-   /* By default, we want all VkDeviceMemory objects to support CCS */
-   if (device->physical->has_implicit_ccs && device->info->has_aux_map)
-      alloc_flags |= ANV_BO_ALLOC_IMPLICIT_CCS;
-
    /* If i915 reported a mappable/non_mappable vram regions and the
     * application want lmem mappable, then we need to use the
     * I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS flag to create our BO.
@@ -3991,6 +4035,11 @@ VkResult anv_AllocateMemory(
     */
    if (mem->vk.export_handle_types || mem->vk.import_handle_type)
       alloc_flags |= (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_IMPLICIT_SYNC);
+
+   if ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) &&
+       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
+       (alloc_flags & (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_SCANOUT)) == 0)
+      alloc_flags |= ANV_BO_ALLOC_SNOOPED;
 
    if (mem->vk.ahardware_buffer) {
       result = anv_import_ahw_memory(_device, mem);
@@ -4277,8 +4326,7 @@ VkResult anv_MapMemory2KHR(
    map_size = align64(map_size, 4096);
 
    void *map;
-   VkResult result = anv_device_map_bo(device, mem->bo, map_offset, map_size,
-                                       mem->type->propertyFlags, &map);
+   VkResult result = anv_device_map_bo(device, mem->bo, map_offset, map_size, &map);
    if (result != VK_SUCCESS)
       return result;
 
@@ -4683,7 +4731,7 @@ uint64_t anv_GetDeviceMemoryOpaqueCaptureAddress(
 {
    ANV_FROM_HANDLE(anv_device_memory, memory, pInfo->memory);
 
-   assert(memory->bo->has_client_visible_address);
+   assert(memory->bo->alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS);
 
    return intel_48b_address(memory->bo->offset);
 }
@@ -4700,7 +4748,7 @@ anv_fill_buffer_surface_state(struct anv_device *device,
    isl_buffer_fill_state(&device->isl_dev, surface_state_ptr,
                          .address = anv_address_physical(address),
                          .mocs = isl_mocs(&device->isl_dev, usage,
-                                          address.bo && address.bo->is_external),
+                                          address.bo && anv_bo_is_external(address.bo)),
                          .size_B = range,
                          .format = format,
                          .swizzle = swizzle,
@@ -4756,6 +4804,45 @@ VkResult anv_GetPhysicalDeviceCalibrateableTimeDomainsEXT(
    return vk_outarray_status(&out);
 }
 
+static inline clockid_t
+anv_get_default_cpu_clock_id(void)
+{
+#ifdef CLOCK_MONOTONIC_RAW
+   return CLOCK_MONOTONIC_RAW;
+#else
+   return CLOCK_MONOTONIC;
+#endif
+}
+
+static inline clockid_t
+vk_time_domain_to_clockid(VkTimeDomainEXT domain)
+{
+   switch (domain) {
+#ifdef CLOCK_MONOTONIC_RAW
+   case VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT:
+      return CLOCK_MONOTONIC_RAW;
+#endif
+   case VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT:
+      return CLOCK_MONOTONIC;
+   default:
+      unreachable("Missing");
+      return CLOCK_MONOTONIC;
+   }
+}
+
+static inline bool
+is_cpu_time_domain(VkTimeDomainEXT domain)
+{
+   return domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT ||
+          domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT;
+}
+
+static inline bool
+is_gpu_time_domain(VkTimeDomainEXT domain)
+{
+   return domain == VK_TIME_DOMAIN_DEVICE_EXT;
+}
+
 VkResult anv_GetCalibratedTimestampsEXT(
    VkDevice                                     _device,
    uint32_t                                     timestampCount,
@@ -4764,19 +4851,83 @@ VkResult anv_GetCalibratedTimestampsEXT(
    uint64_t                                     *pMaxDeviation)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
-   uint64_t timestamp_frequency = device->info->timestamp_frequency;
-   int d;
+   const uint64_t timestamp_frequency = device->info->timestamp_frequency;
+   const uint64_t device_period = DIV_ROUND_UP(1000000000, timestamp_frequency);
+   uint32_t d, increment;
    uint64_t begin, end;
    uint64_t max_clock_period = 0;
+   const enum intel_kmd_type kmd_type = device->physical->info.kmd_type;
+   const bool has_correlate_timestamp = kmd_type == INTEL_KMD_TYPE_XE;
+   clockid_t cpu_clock_id = -1;
 
-#ifdef CLOCK_MONOTONIC_RAW
-   begin = vk_clock_gettime(CLOCK_MONOTONIC_RAW);
-#else
-   begin = vk_clock_gettime(CLOCK_MONOTONIC);
-#endif
+   begin = end = vk_clock_gettime(anv_get_default_cpu_clock_id());
 
-   for (d = 0; d < timestampCount; d++) {
-      switch (pTimestampInfos[d].timeDomain) {
+   for (d = 0, increment = 1; d < timestampCount; d += increment) {
+      const VkTimeDomainEXT current = pTimestampInfos[d].timeDomain;
+      /* If we have a request pattern like this :
+       * - domain0 = VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT or VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT
+       * - domain1 = VK_TIME_DOMAIN_DEVICE_EXT
+       * - domain2 = domain0 (optional)
+       *
+       * We can combine all of those into a single ioctl for maximum accuracy.
+       */
+      if (has_correlate_timestamp && (d + 1) < timestampCount) {
+         const VkTimeDomainEXT next = pTimestampInfos[d + 1].timeDomain;
+
+         if ((is_cpu_time_domain(current) && is_gpu_time_domain(next)) ||
+             (is_gpu_time_domain(current) && is_cpu_time_domain(next))) {
+            /* We'll consume at least 2 elements. */
+            increment = 2;
+
+            if (is_cpu_time_domain(current))
+               cpu_clock_id = vk_time_domain_to_clockid(current);
+            else
+               cpu_clock_id = vk_time_domain_to_clockid(next);
+
+            uint64_t cpu_timestamp, gpu_timestamp, cpu_delta_timestamp, cpu_end_timestamp;
+            if (!intel_gem_read_correlate_cpu_gpu_timestamp(device->fd,
+                                                            kmd_type,
+                                                            INTEL_ENGINE_CLASS_RENDER,
+                                                            0 /* engine_instance */,
+                                                            cpu_clock_id,
+                                                            &cpu_timestamp,
+                                                            &gpu_timestamp,
+                                                            &cpu_delta_timestamp))
+               return vk_device_set_lost(&device->vk, "Failed to read correlate timestamp %m");
+
+            cpu_end_timestamp = cpu_timestamp + cpu_delta_timestamp;
+            if (is_cpu_time_domain(current)) {
+               pTimestamps[d] = cpu_timestamp;
+               pTimestamps[d + 1] = gpu_timestamp;
+            } else {
+               pTimestamps[d] = gpu_timestamp;
+               pTimestamps[d + 1] = cpu_end_timestamp;
+            }
+            max_clock_period = MAX2(max_clock_period, device_period);
+
+            /* If we can consume a third element */
+            if ((d + 2) < timestampCount &&
+                is_cpu_time_domain(current) &&
+                current == pTimestampInfos[d + 2].timeDomain) {
+               pTimestamps[d + 2] = cpu_end_timestamp;
+               increment++;
+            }
+
+            /* If we're the first element, we can replace begin */
+            if (d == 0 && cpu_clock_id == anv_get_default_cpu_clock_id())
+               begin = cpu_timestamp;
+
+            /* If we're in the same clock domain as begin/end. We can set the end. */
+            if (cpu_clock_id == anv_get_default_cpu_clock_id())
+               end = cpu_end_timestamp;
+
+            continue;
+         }
+      }
+
+      /* fallback to regular method */
+      increment = 1;
+      switch (current) {
       case VK_TIME_DOMAIN_DEVICE_EXT:
          if (!intel_gem_read_render_timestamp(device->fd,
                                               device->info->kmd_type,
@@ -4784,7 +4935,6 @@ VkResult anv_GetCalibratedTimestampsEXT(
             return vk_device_set_lost(&device->vk, "Failed to read the "
                                       "TIMESTAMP register: %m");
          }
-         uint64_t device_period = DIV_ROUND_UP(1000000000, timestamp_frequency);
          max_clock_period = MAX2(max_clock_period, device_period);
          break;
       case VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT:
@@ -4803,11 +4953,11 @@ VkResult anv_GetCalibratedTimestampsEXT(
       }
    }
 
-#ifdef CLOCK_MONOTONIC_RAW
-   end = vk_clock_gettime(CLOCK_MONOTONIC_RAW);
-#else
-   end = vk_clock_gettime(CLOCK_MONOTONIC);
-#endif
+   /* If last timestamp was not get with has_correlate_timestamp method or
+    * if it was but last cpu clock is not the default one, get time again
+    */
+   if (increment == 1 || cpu_clock_id != anv_get_default_cpu_clock_id())
+      end = vk_clock_gettime(anv_get_default_cpu_clock_id());
 
    *pMaxDeviation = vk_time_max_deviation(begin, end, max_clock_period);
 
@@ -4836,59 +4986,6 @@ void anv_GetPhysicalDeviceMultisamplePropertiesEXT(
 
    vk_foreach_struct(ext, pMultisampleProperties->pNext)
       anv_debug_ignored_stype(ext->sType);
-}
-
-/* vk_icd.h does not declare this function, so we declare it here to
- * suppress Wmissing-prototypes.
- */
-PUBLIC VKAPI_ATTR VkResult VKAPI_CALL
-vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion);
-
-PUBLIC VKAPI_ATTR VkResult VKAPI_CALL
-vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion)
-{
-   /* For the full details on loader interface versioning, see
-    * <https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/blob/master/loader/LoaderAndLayerInterface.md>.
-    * What follows is a condensed summary, to help you navigate the large and
-    * confusing official doc.
-    *
-    *   - Loader interface v0 is incompatible with later versions. We don't
-    *     support it.
-    *
-    *   - In loader interface v1:
-    *       - The first ICD entrypoint called by the loader is
-    *         vk_icdGetInstanceProcAddr(). The ICD must statically expose this
-    *         entrypoint.
-    *       - The ICD must statically expose no other Vulkan symbol unless it is
-    *         linked with -Bsymbolic.
-    *       - Each dispatchable Vulkan handle created by the ICD must be
-    *         a pointer to a struct whose first member is VK_LOADER_DATA. The
-    *         ICD must initialize VK_LOADER_DATA.loadMagic to ICD_LOADER_MAGIC.
-    *       - The loader implements vkCreate{PLATFORM}SurfaceKHR() and
-    *         vkDestroySurfaceKHR(). The ICD must be capable of working with
-    *         such loader-managed surfaces.
-    *
-    *    - Loader interface v2 differs from v1 in:
-    *       - The first ICD entrypoint called by the loader is
-    *         vk_icdNegotiateLoaderICDInterfaceVersion(). The ICD must
-    *         statically expose this entrypoint.
-    *
-    *    - Loader interface v3 differs from v2 in:
-    *        - The ICD must implement vkCreate{PLATFORM}SurfaceKHR(),
-    *          vkDestroySurfaceKHR(), and other API which uses VKSurfaceKHR,
-    *          because the loader no longer does so.
-    *
-    *    - Loader interface v4 differs from v3 in:
-    *        - The ICD must implement vk_icdGetPhysicalDeviceProcAddr().
-    *
-    *    - Loader interface v5 differs from v4 in:
-    *        - The ICD must support Vulkan API version 1.1 and must not return
-    *          VK_ERROR_INCOMPATIBLE_DRIVER from vkCreateInstance() unless a
-    *          Vulkan Loader with interface v4 or smaller is being used and the
-    *          application provides an API version that is greater than 1.0.
-    */
-   *pSupportedVersion = MIN2(*pSupportedVersion, 5u);
-   return VK_SUCCESS;
 }
 
 VkResult anv_GetPhysicalDeviceFragmentShadingRatesKHR(
@@ -4958,4 +5055,16 @@ VkResult anv_GetPhysicalDeviceFragmentShadingRatesKHR(
 #undef append_rate
 
    return vk_outarray_status(&out);
+}
+
+const struct intel_device_info_pat_entry *
+anv_device_get_pat_entry(struct anv_device *device,
+                         enum anv_bo_alloc_flags alloc_flags)
+{
+   if (alloc_flags & (ANV_BO_ALLOC_SNOOPED))
+      return &device->info->pat.coherent;
+   else if (alloc_flags & (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_SCANOUT))
+      return &device->info->pat.scanout;
+   else
+      return &device->info->pat.writecombining;
 }

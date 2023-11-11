@@ -37,6 +37,8 @@
 #include "vk_alloc.h"
 #include "vk_debug_report.h"
 #include "vk_device.h"
+#include "vk_device_memory.h"
+#include "vk_image.h"
 #include "vk_instance.h"
 #include "vk_object.h"
 #include "vk_physical_device.h"
@@ -55,8 +57,6 @@
 #define vn_result(instance, result)                                          \
    ((result) >= VK_SUCCESS ? (result) : vn_error((instance), (result)))
 
-#define VN_TRACE_BEGIN(name) MESA_TRACE_BEGIN(name)
-#define VN_TRACE_END() MESA_TRACE_END()
 #define VN_TRACE_SCOPE(name) MESA_TRACE_SCOPE(name)
 #define VN_TRACE_FUNC() MESA_TRACE_SCOPE(__func__)
 
@@ -106,6 +106,7 @@ enum vn_debug {
    VN_DEBUG_LOG_CTX_INFO = 1ull << 5,
    VN_DEBUG_CACHE = 1ull << 6,
    VN_DEBUG_NO_SPARSE = 1ull << 7,
+   VN_DEBUG_GPL = 1ull << 8,
 };
 
 enum vn_perf {
@@ -144,6 +145,18 @@ struct vn_device_base {
 /* base class of vn_queue */
 struct vn_queue_base {
    struct vk_queue base;
+   vn_object_id id;
+};
+
+/* base class of vn_device_memory */
+struct vn_device_memory_base {
+   struct vk_device_memory base;
+   vn_object_id id;
+};
+
+/* base class of vn_image */
+struct vn_image_base {
+   struct vk_image base;
    vn_object_id id;
 };
 
@@ -365,6 +378,12 @@ vn_object_set_id(void *obj, vn_object_id id, VkObjectType type)
    case VK_OBJECT_TYPE_QUEUE:
       ((struct vn_queue_base *)obj)->id = id;
       break;
+   case VK_OBJECT_TYPE_DEVICE_MEMORY:
+      ((struct vn_device_memory_base *)obj)->id = id;
+      break;
+   case VK_OBJECT_TYPE_IMAGE:
+      ((struct vn_image_base *)obj)->id = id;
+      break;
    default:
       ((struct vn_object_base *)obj)->id = id;
       break;
@@ -384,6 +403,10 @@ vn_object_get_id(const void *obj, VkObjectType type)
       return ((struct vn_device_base *)obj)->id;
    case VK_OBJECT_TYPE_QUEUE:
       return ((struct vn_queue_base *)obj)->id;
+   case VK_OBJECT_TYPE_DEVICE_MEMORY:
+      return ((struct vn_device_memory_base *)obj)->id;
+   case VK_OBJECT_TYPE_IMAGE:
+      return ((struct vn_image_base *)obj)->id;
    default:
       return ((struct vn_object_base *)obj)->id;
    }

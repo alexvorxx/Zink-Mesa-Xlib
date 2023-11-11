@@ -7,7 +7,6 @@
 #include "si_pipe.h"
 #include "si_shader_internal.h"
 #include "util/mesa-sha1.h"
-#include "util/u_prim.h"
 #include "sid.h"
 #include "nir.h"
 
@@ -797,7 +796,7 @@ void si_nir_scan_shader(struct si_screen *sscreen, const struct nir_shader *nir,
       info->gsvs_vertex_size = info->num_outputs * 16;
       info->max_gsvs_emit_size = info->gsvs_vertex_size * info->base.gs.vertices_out;
       info->gs_input_verts_per_prim =
-         u_vertices_per_prim((enum mesa_prim)info->base.gs.input_primitive);
+         mesa_vertices_per_prim((enum mesa_prim)info->base.gs.input_primitive);
    }
 
    info->clipdist_mask = info->writes_clipvertex ? SI_USER_CLIP_PLANE_MASK :

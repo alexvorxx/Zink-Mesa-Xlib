@@ -1009,6 +1009,7 @@ static const struct intel_device_info intel_device_info_adl_n = {
    GFX12_GT_FEATURES(1),
    .platform = INTEL_PLATFORM_ADL,
    .display_ver = 13,
+   .is_adl_n = true,
 };
 
 static const struct intel_device_info intel_device_info_adl_gt2 = {
@@ -1135,20 +1136,19 @@ static const struct intel_device_info intel_device_info_atsm_g11 = {
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
    .has_ray_tracing = true,                                     \
-   .pat = {                                                     \
-      .coherent = 3, /* 1-way coherent */                       \
-      .scanout = 3, /* 1-way coherent */                        \
-      .writeback = 0,                                           \
-   }
+   .pat.coherent = PAT_ENTRY(3, WB, 1WAY),                      \
+   .pat.scanout = PAT_ENTRY(1, WC, NONE),                       \
+   .pat.writeback = PAT_ENTRY(0, WB, NONE),                     \
+   .pat.writecombining = PAT_ENTRY(1, WC, NONE)
 
-static const struct intel_device_info intel_device_info_mtl_m = {
+static const struct intel_device_info intel_device_info_mtl_u = {
    MTL_FEATURES,
-   .platform = INTEL_PLATFORM_MTL_M,
+   .platform = INTEL_PLATFORM_MTL_U,
 };
 
-static const struct intel_device_info intel_device_info_mtl_p = {
+static const struct intel_device_info intel_device_info_mtl_h = {
    MTL_FEATURES,
-   .platform = INTEL_PLATFORM_MTL_P,
+   .platform = INTEL_PLATFORM_MTL_H,
 };
 
 void
@@ -1383,10 +1383,10 @@ intel_device_info_apply_workarounds(struct intel_device_info *devinfo)
 
    /* Fixes issues with:
     * dEQP-GLES31.functional.geometry_shading.layered.render_with_default_layer_cubemap
-    * when running on ADL-N platform.
+    * when running on GFX12 platforms with small EU count.
     */
    const uint32_t eu_total = intel_device_info_eu_total(devinfo);
-   if (devinfo->platform == INTEL_PLATFORM_ADL && eu_total < 32)
+   if (devinfo->verx10 == 120 && eu_total <= 32)
       devinfo->urb.max_entries[MESA_SHADER_GEOMETRY] = 1024;
 }
 

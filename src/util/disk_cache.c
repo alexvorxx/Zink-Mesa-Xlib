@@ -473,17 +473,17 @@ blob_put_compressed(struct disk_cache *cache, const cache_key key,
 
    entry->uncompressed_size = size;
 
-   MESA_TRACE_BEGIN("deflate");
    size_t compressed_size =
          util_compress_deflate(data, size, entry->compressed_data, max_buf);
-   MESA_TRACE_END();
    if (!compressed_size)
       goto out;
 
    unsigned entry_size = compressed_size + sizeof(*entry);
-   MESA_TRACE_BEGIN("blob_put");
-   cache->blob_put_cb(key, CACHE_KEY_SIZE, entry, entry_size);
-   MESA_TRACE_END();
+   // The curly brackets are here to only trace the blob_put_cb call
+   {
+      MESA_TRACE_SCOPE("blob_put");
+      cache->blob_put_cb(key, CACHE_KEY_SIZE, entry, entry_size);
+   }
 
 out:
    free(entry);
@@ -503,10 +503,12 @@ blob_get_compressed(struct disk_cache *cache, const cache_key key,
    if (!entry)
       return NULL;
 
-   MESA_TRACE_BEGIN("blob_get");
-   signed long entry_size =
-      cache->blob_get_cb(key, CACHE_KEY_SIZE, entry, max_blob_size);
-   MESA_TRACE_END();
+   signed long entry_size;
+   // The curly brackets are here to only trace the blob_get_cb call
+   {
+      MESA_TRACE_SCOPE("blob_get");
+      entry_size = cache->blob_get_cb(key, CACHE_KEY_SIZE, entry, max_blob_size);
+   }
 
    if (!entry_size) {
       free(entry);
@@ -520,10 +522,8 @@ blob_get_compressed(struct disk_cache *cache, const cache_key key,
    }
 
    unsigned compressed_size = entry_size - sizeof(*entry);
-   MESA_TRACE_BEGIN("inflate");
    bool ret = util_compress_inflate(entry->compressed_data, compressed_size,
                                     data, entry->uncompressed_size);
-   MESA_TRACE_END();
    if (!ret) {
       free(data);
       free(entry);

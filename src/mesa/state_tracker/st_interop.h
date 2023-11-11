@@ -41,6 +41,6 @@ st_interop_export_object(struct st_context *st,
 int
 st_interop_flush_objects(struct st_context *st,
                          unsigned count, struct mesa_glinterop_export_in *objects,
-                         GLsync *sync);
+                         GLsync *sync, int *fence_fd);
 
 #endif /* ST_INTEROP_H */

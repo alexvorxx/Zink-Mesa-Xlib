@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <vulkan/vulkan.h>
 
 #include "pvr_bo.h"
@@ -276,6 +277,18 @@ void pvr_CmdResetQueryPool(VkCommandBuffer commandBuffer,
    query_info.reset_query_pool.query_count = queryCount;
 
    pvr_add_query_program(cmd_buffer, &query_info);
+}
+
+void pvr_ResetQueryPool(VkDevice _device,
+                        VkQueryPool queryPool,
+                        uint32_t firstQuery,
+                        uint32_t queryCount)
+{
+   PVR_FROM_HANDLE(pvr_query_pool, pool, queryPool);
+   uint32_t *availability =
+      pvr_bo_suballoc_get_map_addr(pool->availability_buffer);
+
+   memset(availability + firstQuery, 0, sizeof(uint32_t) * queryCount);
 }
 
 void pvr_CmdCopyQueryPoolResults(VkCommandBuffer commandBuffer,

@@ -327,6 +327,7 @@ struct svga_shader_info
    bool uses_images;
    bool uses_image_size;
    bool uses_shader_buffers;
+   bool uses_samplers;
 
    unsigned const_buffers_declared;  /* bitmask of declared const buffers */
    unsigned constbuf0_num_uniforms;  /* number of uniforms in constbuf0 */
@@ -634,5 +635,11 @@ struct svga_shader_variant *
 svga_get_compiled_dummy_geometry_shader(struct svga_context *svga,
                                         struct svga_shader *shader,
                                         const struct svga_compile_key *key);
+
+static inline bool
+svga_shader_use_samplers(struct svga_shader *shader)
+{
+   return shader ? (shader->info.uses_samplers != 0) : false;
+}
 
 #endif /* SVGA_SHADER_H */

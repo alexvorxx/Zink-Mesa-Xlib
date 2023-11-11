@@ -1483,9 +1483,12 @@ nir_build_deref_struct(nir_builder *build, nir_deref_instr *parent,
 }
 
 static inline nir_deref_instr *
-nir_build_deref_cast(nir_builder *build, nir_def *parent,
-                     nir_variable_mode modes, const struct glsl_type *type,
-                     unsigned ptr_stride)
+nir_build_deref_cast_with_alignment(nir_builder *build, nir_def *parent,
+                                    nir_variable_mode modes,
+                                    const struct glsl_type *type,
+                                    unsigned ptr_stride,
+                                    unsigned align_mul,
+                                    unsigned align_offset)
 {
    nir_deref_instr *deref =
       nir_deref_instr_create(build->shader, nir_deref_type_cast);
@@ -1493,6 +1496,8 @@ nir_build_deref_cast(nir_builder *build, nir_def *parent,
    deref->modes = modes;
    deref->type = type;
    deref->parent = nir_src_for_ssa(parent);
+   deref->cast.align_mul = align_mul;
+   deref->cast.align_offset = align_offset;
    deref->cast.ptr_stride = ptr_stride;
 
    nir_def_init(&deref->instr, &deref->def, parent->num_components,
@@ -1501,6 +1506,15 @@ nir_build_deref_cast(nir_builder *build, nir_def *parent,
    nir_builder_instr_insert(build, &deref->instr);
 
    return deref;
+}
+
+static inline nir_deref_instr *
+nir_build_deref_cast(nir_builder *build, nir_def *parent,
+                     nir_variable_mode modes, const struct glsl_type *type,
+                     unsigned ptr_stride)
+{
+   return nir_build_deref_cast_with_alignment(build, parent, modes, type,
+                                              ptr_stride, 0, 0);
 }
 
 static inline nir_deref_instr *
@@ -1570,6 +1584,13 @@ nir_build_deref_follower(nir_builder *b, nir_deref_instr *parent,
 
       return nir_build_deref_struct(b, parent, leader->strct.index);
 
+   case nir_deref_type_cast:
+      return nir_build_deref_cast_with_alignment(b, &parent->def,
+                                                 leader->modes,
+                                                 leader->type,
+                                                 leader->cast.ptr_stride,
+                                                 leader->cast.align_mul,
+                                                 leader->cast.align_offset);
    default:
       unreachable("Invalid deref instruction type");
    }
@@ -1978,6 +1999,32 @@ nir_goto_if(nir_builder *build, struct nir_block *target, nir_src cond,
    jump->else_target = else_target;
    nir_builder_instr_insert(build, &jump->instr);
 }
+
+static inline void
+nir_build_call(nir_builder *build, nir_function *func, size_t count,
+               nir_def **args)
+{
+   assert(count == func->num_params && "parameter count must match");
+   nir_call_instr *call = nir_call_instr_create(build->shader, func);
+
+   for (unsigned i = 0; i < count; ++i) {
+      call->params[i] = nir_src_for_ssa(args[i]);
+   }
+
+   nir_builder_instr_insert(build, &call->instr);
+}
+
+/*
+ * Call a given nir_function * with a variadic number of nir_def * arguments.
+ *
+ * Defined with __VA_ARGS__ instead of va_list so we can assert the correct
+ * number of parameters are passed in.
+ */
+#define nir_call(build, func, ...)                         \
+   do {                                                    \
+      nir_def *args[] = { __VA_ARGS__ };                   \
+      nir_build_call(build, func, ARRAY_SIZE(args), args); \
+   } while (0)
 
 nir_def *
 nir_compare_func(nir_builder *b, enum compare_func func,

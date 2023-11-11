@@ -38,6 +38,13 @@ struct vk_video_session {
    uint32_t max_dpb_slots;
    uint32_t max_active_ref_pics;
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+   struct {
+      VkVideoEncodeUsageFlagsKHR video_usage_hints;
+      VkVideoEncodeContentFlagsKHR video_content_hints;
+      VkVideoEncodeTuningModeKHR tuning_mode;
+   } enc_usage;
+#endif
    union {
       struct {
          StdVideoH264ProfileIdc profile_idc;
@@ -74,6 +81,31 @@ struct vk_video_session_parameters {
          uint32_t std_pps_count;
          StdVideoH265PictureParameterSet *std_pps;
       } h265_dec;
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+      struct {
+         uint32_t max_std_sps_count;
+         uint32_t max_std_pps_count;
+
+         uint32_t std_sps_count;
+         StdVideoH264SequenceParameterSet *std_sps;
+         uint32_t std_pps_count;
+         StdVideoH264PictureParameterSet *std_pps;
+      } h264_enc;
+
+      struct {
+         uint32_t max_std_vps_count;
+         uint32_t max_std_sps_count;
+         uint32_t max_std_pps_count;
+
+         uint32_t std_vps_count;
+         StdVideoH265VideoParameterSet *std_vps;
+         uint32_t std_sps_count;
+         StdVideoH265SequenceParameterSet *std_sps;
+         uint32_t std_pps_count;
+         StdVideoH265PictureParameterSet *std_pps;
+      } h265_enc;
+#endif
    };
 };
 
@@ -198,6 +230,63 @@ void vk_fill_video_h265_reference_info(const VkVideoDecodeInfoKHR *frame_info,
 void
 vk_video_get_profile_alignments(const VkVideoProfileListInfoKHR *profile_list,
                                 uint32_t *width_align_out, uint32_t *height_align_out);
+
+uint8_t
+vk_video_get_h264_level(StdVideoH264LevelIdc level);
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+const StdVideoH264SequenceParameterSet *
+vk_video_find_h264_enc_std_sps(const struct vk_video_session_parameters *params,
+                               uint32_t id);
+const StdVideoH264PictureParameterSet *
+vk_video_find_h264_enc_std_pps(const struct vk_video_session_parameters *params,
+                               uint32_t id);
+
+const StdVideoH265VideoParameterSet *
+vk_video_find_h265_enc_std_vps(const struct vk_video_session_parameters *params,
+                               uint32_t id);
+const StdVideoH265SequenceParameterSet *
+vk_video_find_h265_enc_std_sps(const struct vk_video_session_parameters *params,
+                               uint32_t id);
+const StdVideoH265PictureParameterSet *
+vk_video_find_h265_enc_std_pps(const struct vk_video_session_parameters *params,
+                               uint32_t id);
+
+void
+vk_video_encode_h264_sps(StdVideoH264SequenceParameterSet *sps,
+                         size_t size_limit,
+                         size_t *data_size_ptr,
+                         void *data_ptr);
+
+void
+vk_video_encode_h264_pps(StdVideoH264PictureParameterSet *pps,
+                         bool high_profile,
+                         size_t size_limit,
+                         size_t *data_size_ptr,
+                         void *data_ptr);
+
+unsigned
+vk_video_get_h265_nal_unit(StdVideoH265PictureType pic_type, bool irap_pic_flag);
+
+void
+vk_video_encode_h265_vps(StdVideoH265VideoParameterSet *vps,
+                         size_t size_limit,
+                         size_t *data_size,
+                         void *data_ptr);
+void
+vk_video_encode_h265_sps(StdVideoH265SequenceParameterSet *sps,
+                         size_t size_limit,
+                         size_t* pDataSize,
+                         void* pData);
+
+void
+vk_video_encode_h265_pps(StdVideoH265PictureParameterSet *pps,
+                         size_t size_limit,
+                         size_t *data_size,
+                         void *data_ptr);
+
+#endif
+
 #ifdef __cplusplus
 }
 #endif

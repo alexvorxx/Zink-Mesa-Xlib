@@ -630,6 +630,7 @@ ttn_src_for_file_and_index(struct ttn_compile *c, unsigned file, unsigned index,
          break;
       case TGSI_SEMANTIC_SAMPLEID:
          load = nir_load_sample_id(b);
+         b->shader->info.fs.uses_sample_shading = true;
          break;
       default:
          unreachable("bad system value");

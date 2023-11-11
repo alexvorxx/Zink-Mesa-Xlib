@@ -8,16 +8,22 @@
 # DEBIAN_X86_64_TEST_VK_TAG
 # KERNEL_ROOTFS_TAG
 
-set -ex
+set -ex -o pipefail
+
+DEQP_VERSION=vulkan-cts-1.3.7.0
 
 git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
 git clone \
     https://github.com/KhronosGroup/VK-GL-CTS.git \
-    -b vulkan-cts-1.3.6.3 \
+    -b $DEQP_VERSION \
     --depth 1 \
     /VK-GL-CTS
 pushd /VK-GL-CTS
+
+mkdir -p /deqp
+
+echo "dEQP base version $DEQP_VERSION" > /deqp/version-log
 
 # Patches to VulkanCTS may come from commits in their repo (listed in
 # cts_commits_to_backport) or patch files stored in our repo (in the patch
@@ -26,27 +32,11 @@ pushd /VK-GL-CTS
 # patches.
 
 cts_commits_to_backport=(
-        # GL/GLES vertex_attrib_binding.advanced-largeStrideAndOffsetsNewAndLegacyAPI fix
-        bdb456dcf85e34fced872ebdaf06f6b73451f99c
+    # Take multiview into account for task shader inv. stats
+    22aa3f4c59f6e1d4daebd5a8c9c05bce6cd3b63b
 
-        # GL arrays_of_arrays perf fix
-        b481dada59734e8e34050fe884ba6d627d9e5c54
-
-        # Test alpha-less 10bit formats correctly in wide_color tests
-        # Fixes dEQP-EGL.functional.wide_color.*_888_colorspace_*
-        dacf752adf388ce4399733ee9b4a3c8a4f317990
-
-        # KHR-GLES3.packed_pixels.*snorm
-        46158c2a1f570aab0dcefba461ddc879323367d5
-
-        # Fix problems when buffer_storage not supported
-        148a65182d88ee6c1c959a3b3cf75df22a3eae82
-
-        # surfaceless: Fix shared contexts and implement makeCurrent
-        3b9859deb22712b8b927dce1fac0b40008202877
-
-        # Don't attempt to test linear-filtered depth border clamping on ES.
-        3b3c101a06f1e4fc6acd3d6b40c813cd1bdc25ef
+    # Remove illegal mesh shader query tests
+    2a87f7b25dc27188be0f0a003b2d7aef69d9002e
 )
 
 for commit in "${cts_commits_to_backport[@]}"
@@ -69,12 +59,13 @@ do
   git am < $OLDPWD/.gitlab-ci/container/patches/$patch
 done
 
+echo "The following local patches are applied on top:" >> /deqp/version-log
+git log --reverse --oneline $DEQP_VERSION.. --format=%s | sed 's/^/- /' >> /deqp/version-log
+
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and
 # libpng (sigh).  The archives get their checksums checked anyway, and git
 # always goes through ssh or https.
 python3 external/fetch_sources.py --insecure
-
-mkdir -p /deqp
 
 # Save the testlog stylesheets:
 cp doc/testlog-stylesheet/testlog.{css,xsl} /deqp
@@ -109,8 +100,6 @@ mold --run ninja
 if [ "${DEQP_TARGET}" = 'android' ]; then
     mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-android
 fi
-
-git -C /VK-GL-CTS describe --long > /deqp/version
 
 # Copy out the mustpass lists we want.
 mkdir /deqp/mustpass

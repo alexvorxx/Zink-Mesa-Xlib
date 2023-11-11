@@ -226,6 +226,12 @@ enum {
    RADV_BO_PRIORITY_CS = 31,
 };
 
+struct radv_winsys_gpuvm_fault_info {
+   uint64_t addr;
+   uint32_t status;
+   uint32_t vmhub;
+};
+
 struct radeon_winsys {
    void (*destroy)(struct radeon_winsys *ws);
 
@@ -236,6 +242,8 @@ struct radeon_winsys {
    bool (*read_registers)(struct radeon_winsys *ws, unsigned reg_offset, unsigned num_registers, uint32_t *out);
 
    const char *(*get_chip_name)(struct radeon_winsys *ws);
+
+   bool (*query_gpuvm_fault)(struct radeon_winsys *ws, struct radv_winsys_gpuvm_fault_info *fault_info);
 
    VkResult (*buffer_create)(struct radeon_winsys *ws, uint64_t size, unsigned alignment, enum radeon_bo_domain domain,
                              enum radeon_bo_flag flags, unsigned priority, uint64_t address,

@@ -45,8 +45,11 @@ files_r600 = files(
   'r600_pipe.c',
   'r600_pipe.h',
   'r600_public.h',
+  'r600_sfn.cpp',
+  'r600_sfn.h',
   'r600_shader.c',
   'r600_shader.h',
+  'r600_shader_common.h',
   'r600_sq.h',
   'r600_state.c',
   'r600_state_common.c',
@@ -182,7 +185,7 @@ libr600 = static_library(
     inc_src, inc_mapi, inc_mesa, inc_include, inc_gallium, inc_gallium_aux, inc_amd_common,
     inc_gallium_drivers,
   ],
-
+  link_with : [ libgalliumvl ],
   dependencies: [dep_libdrm_radeon, dep_elf, dep_llvm, idep_nir, idep_nir_headers],
 )
 

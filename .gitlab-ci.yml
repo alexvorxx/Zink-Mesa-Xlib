@@ -6,19 +6,28 @@ workflow:
     # merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
       variables:
+        KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/${KERNEL_REPO}/${KERNEL_TAG}
         MESA_CI_PERFORMANCE_ENABLED: 1
         VALVE_INFRA_VANGOGH_JOB_PRIORITY: ""  # Empty tags are ignored by gitlab
     # post-merge pipeline
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH
       variables:
+        KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/${KERNEL_REPO}/${KERNEL_TAG}
         JOB_PRIORITY: 40
         VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
     # any other pipeline
-    - if: $GITLAB_USER_LOGIN != "marge-bot"
+    - if: $GITLAB_USER_LOGIN != "marge-bot" && $FORCE_KERNEL_TAG != null
       variables:
+        KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/${KERNEL_REPO}/${FORCE_KERNEL_TAG}
+        JOB_PRIORITY: 50
+        VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
+    - if: $GITLAB_USER_LOGIN != "marge-bot" && $FORCE_KERNEL_TAG == null
+      variables:
+        KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/${KERNEL_REPO}/${KERNEL_TAG}
         JOB_PRIORITY: 50
         VALVE_INFRA_VANGOGH_JOB_PRIORITY: priority:low
     - when: always
+
 
 variables:
   FDO_UPSTREAM_REPO: mesa/mesa
@@ -35,7 +44,6 @@ variables:
   PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
   # per-job artifact storage on MinIO
   JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
-  KERNEL_IMAGE_BASE: https://${S3_HOST}/mesa-lava/gfx-ci/linux/${KERNEL_TAG}
   # reference images stored for traces
   PIGLIT_REPLAY_REFERENCE_IMAGES_BASE: "${S3_HOST}/mesa-tracie-results/$FDO_UPSTREAM_REPO"
   # For individual CI farm status see .ci-farms folder
@@ -138,19 +146,22 @@ include:
 # YAML anchors for rule conditions
 # --------------------------------
 .rules-anchors:
+  # Post-merge pipeline
+  - &is-post-merge '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_BRANCH'
+  # Post-merge pipeline after Marge has merged an MR
+  - &is-post-merge-for-marge '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_BRANCH && $GITLAB_USER_LOGIN != "marge-bot"'
+  # Post-merge pipeline, not for Marge Bot
+  - &is-post-merge-not-for-marge '$CI_PROJECT_NAMESPACE == "mesa" && $GITLAB_USER_LOGIN != "marge-bot" && $CI_COMMIT_BRANCH'
+  # Pre-merge pipeline
+  - &is-pre-merge '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  # Pre-merge pipeline for Marge Bot
+  - &is-pre-merge-for-marge '$GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event"'
+
+
+.never-post-merge-rules:
   rules:
-    # Post-merge pipeline
-    - if: &is-post-merge '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_BRANCH'
-      when: on_success
-    # Post-merge pipeline, not for Marge Bot
-    - if: &is-post-merge-not-for-marge '$CI_PROJECT_NAMESPACE == "mesa" && $GITLAB_USER_LOGIN != "marge-bot" && $CI_COMMIT_BRANCH'
-      when: on_success
-    # Pre-merge pipeline
-    - if: &is-pre-merge '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: on_success
-    # Pre-merge pipeline for Marge Bot
-    - if: &is-pre-merge-for-marge '$GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: on_success
+    - if: *is-post-merge-for-marge
+      when: never
 
 
 .container+build-rules:
@@ -172,6 +183,10 @@ include:
         - meson*
         - build-support/**/*
         - subprojects/**/*
+        # clang format
+        - .clang-format
+        - .clang-format-include
+        - .clang-format-ignore
         # Source code
         - include/**/*
         - src/**/*
@@ -250,6 +265,8 @@ sanity:
     when: on_failure
     reports:
       junit: check-*.xml
+  tags:
+    - placeholder-job
 
 
 # Jobs that need to pass before spending hardware resources on further testing

@@ -7,6 +7,7 @@ use crate::api::util::*;
 use crate::core::context::Context;
 use crate::core::device::*;
 use crate::core::format::*;
+use crate::core::gl::*;
 use crate::core::memory::*;
 
 use mesa_rust_util::properties::Properties;
@@ -1658,7 +1659,7 @@ fn enqueue_map_buffer(
         return Err(CL_INVALID_CONTEXT);
     }
 
-    let ptr = b.map_buffer(&q, offset, size)?;
+    let ptr = b.map_buffer(q.device, offset, size)?;
     create_and_queue(
         q,
         CL_COMMAND_MAP_BUFFER,
@@ -2138,7 +2139,7 @@ fn enqueue_map_image(
     };
 
     let ptr = i.map_image(
-        &q,
+        q.device,
         &origin,
         &region,
         unsafe { image_row_pitch.as_mut().unwrap() },
@@ -2886,4 +2887,220 @@ fn create_pipe(
     _properties: *const cl_pipe_properties,
 ) -> CLResult<cl_mem> {
     Err(CL_INVALID_OPERATION)
+}
+
+#[cl_info_entrypoint(cl_get_gl_texture_info)]
+impl CLInfo<cl_gl_texture_info> for cl_mem {
+    fn query(&self, q: cl_gl_texture_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let mem = self.get_ref()?;
+        Ok(match *q {
+            CL_GL_MIPMAP_LEVEL => cl_prop::<cl_GLint>(0),
+            CL_GL_TEXTURE_TARGET => cl_prop::<cl_GLenum>(
+                mem.gl_obj
+                    .as_ref()
+                    .ok_or(CL_INVALID_GL_OBJECT)?
+                    .gl_object_target,
+            ),
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
+fn create_from_gl(
+    context: cl_context,
+    flags: cl_mem_flags,
+    target: cl_GLenum,
+    miplevel: cl_GLint,
+    texture: cl_GLuint,
+) -> CLResult<cl_mem> {
+    let c = context.get_arc()?;
+    let gl_ctx_manager = &c.gl_ctx_manager;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue was not created from an OpenGL context
+    if gl_ctx_manager.is_none() {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if values specified in flags are not valid or if value specified in
+    // texture_target is not one of the values specified in the description of texture_target.
+    validate_mem_flags(flags, target == GL_ARRAY_BUFFER)?;
+
+    // CL_INVALID_MIP_LEVEL if miplevel is greather than zero and the OpenGL
+    // implementation does not support creating from non-zero mipmap levels.
+    if miplevel > 0 {
+        return Err(CL_INVALID_MIP_LEVEL);
+    }
+
+    // CL_INVALID_CONTEXT if context [..] was not created from a GL context.
+    if let Some(gl_ctx_manager) = gl_ctx_manager {
+        let gl_export_manager =
+            gl_ctx_manager.export_object(&c, target, flags as u32, miplevel, texture)?;
+
+        Ok(cl_mem::from_arc(Mem::from_gl(
+            c,
+            flags,
+            &gl_export_manager,
+        )?))
+    } else {
+        Err(CL_INVALID_CONTEXT)
+    }
+}
+
+#[cl_entrypoint]
+fn create_from_gl_texture(
+    context: cl_context,
+    flags: cl_mem_flags,
+    target: cl_GLenum,
+    miplevel: cl_GLint,
+    texture: cl_GLuint,
+) -> CLResult<cl_mem> {
+    // CL_INVALID_VALUE if values specified in flags are not valid or if value specified in
+    // texture_target is not one of the values specified in the description of texture_target.
+    if !is_valid_gl_texture(target) {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    create_from_gl(context, flags, target, miplevel, texture)
+}
+
+#[cl_entrypoint]
+fn create_from_gl_texture_2d(
+    context: cl_context,
+    flags: cl_mem_flags,
+    target: cl_GLenum,
+    miplevel: cl_GLint,
+    texture: cl_GLuint,
+) -> CLResult<cl_mem> {
+    // CL_INVALID_VALUE if values specified in flags are not valid or if value specified in
+    // texture_target is not one of the values specified in the description of texture_target.
+    if !is_valid_gl_texture_2d(target) {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    create_from_gl(context, flags, target, miplevel, texture)
+}
+
+#[cl_entrypoint]
+fn create_from_gl_texture_3d(
+    context: cl_context,
+    flags: cl_mem_flags,
+    target: cl_GLenum,
+    miplevel: cl_GLint,
+    texture: cl_GLuint,
+) -> CLResult<cl_mem> {
+    // CL_INVALID_VALUE if values specified in flags are not valid or if value specified in
+    // texture_target is not one of the values specified in the description of texture_target.
+    if target != GL_TEXTURE_3D {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    create_from_gl(context, flags, target, miplevel, texture)
+}
+
+#[cl_entrypoint]
+fn create_from_gl_buffer(
+    context: cl_context,
+    flags: cl_mem_flags,
+    bufobj: cl_GLuint,
+) -> CLResult<cl_mem> {
+    create_from_gl(context, flags, GL_ARRAY_BUFFER, 0, bufobj)
+}
+
+#[cl_entrypoint]
+fn create_from_gl_renderbuffer(
+    context: cl_context,
+    flags: cl_mem_flags,
+    renderbuffer: cl_GLuint,
+) -> CLResult<cl_mem> {
+    create_from_gl(context, flags, GL_RENDERBUFFER, 0, renderbuffer)
+}
+
+#[cl_entrypoint]
+fn get_gl_object_info(
+    memobj: cl_mem,
+    gl_object_type: *mut cl_gl_object_type,
+    gl_object_name: *mut cl_GLuint,
+) -> CLResult<()> {
+    let m = memobj.get_ref()?;
+
+    match &m.gl_obj {
+        Some(gl_obj) => {
+            gl_object_type.write_checked(gl_obj.gl_object_type);
+            gl_object_name.write_checked(gl_obj.gl_object_name);
+        }
+        None => {
+            // CL_INVALID_GL_OBJECT if there is no GL object associated with memobj.
+            return Err(CL_INVALID_GL_OBJECT);
+        }
+    }
+
+    Ok(())
+}
+
+#[cl_entrypoint]
+fn enqueue_acquire_gl_objects(
+    command_queue: cl_command_queue,
+    num_objects: cl_uint,
+    mem_objects: *const cl_mem,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let q = command_queue.get_arc()?;
+    let evs = event_list_from_cl(&q, num_events_in_wait_list, event_wait_list)?;
+    let objs = cl_mem::get_arc_vec_from_arr(mem_objects, num_objects)?;
+    let gl_ctx_manager = &q.context.gl_ctx_manager;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue was not created from an OpenGL context
+    if gl_ctx_manager.is_none() {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_GL_OBJECT if memory objects in mem_objects have not been created from a GL object(s).
+    if objs.iter().any(|o| o.gl_obj.is_none()) {
+        return Err(CL_INVALID_GL_OBJECT);
+    }
+
+    create_and_queue(
+        q,
+        CL_COMMAND_ACQUIRE_GL_OBJECTS,
+        evs,
+        event,
+        false,
+        Box::new(move |q, ctx| copy_cube_to_slice(q, ctx, &objs)),
+    )
+}
+
+#[cl_entrypoint]
+fn enqueue_release_gl_objects(
+    command_queue: cl_command_queue,
+    num_objects: cl_uint,
+    mem_objects: *const cl_mem,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let q = command_queue.get_arc()?;
+    let evs = event_list_from_cl(&q, num_events_in_wait_list, event_wait_list)?;
+    let objs = cl_mem::get_arc_vec_from_arr(mem_objects, num_objects)?;
+    let gl_ctx_manager = &q.context.gl_ctx_manager;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue was not created from an OpenGL context
+    if gl_ctx_manager.is_none() {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_GL_OBJECT if memory objects in mem_objects have not been created from a GL object(s).
+    if objs.iter().any(|o| o.gl_obj.is_none()) {
+        return Err(CL_INVALID_GL_OBJECT);
+    }
+
+    create_and_queue(
+        q,
+        CL_COMMAND_RELEASE_GL_OBJECTS,
+        evs,
+        event,
+        false,
+        Box::new(move |q, ctx| copy_slice_to_cube(q, ctx, &objs)),
+    )
 }

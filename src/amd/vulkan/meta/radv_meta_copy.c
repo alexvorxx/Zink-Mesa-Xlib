@@ -85,10 +85,57 @@ radv_image_is_renderable(const struct radv_device *device, const struct radv_ima
    return true;
 }
 
+static bool
+alloc_transfer_temp_bo(struct radv_cmd_buffer *cmd_buffer)
+{
+   if (cmd_buffer->transfer.copy_temp)
+      return true;
+
+   const struct radv_device *const device = cmd_buffer->device;
+   const VkResult r = device->ws->buffer_create(device->ws, RADV_SDMA_TRANSFER_TEMP_BYTES, 4096, RADEON_DOMAIN_VRAM,
+                                                RADEON_FLAG_NO_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING,
+                                                RADV_BO_PRIORITY_SCRATCH, 0, &cmd_buffer->transfer.copy_temp);
+
+   if (r != VK_SUCCESS) {
+      vk_command_buffer_set_error(&cmd_buffer->vk, r);
+      return false;
+   }
+
+   radv_cs_add_buffer(device->ws, cmd_buffer->cs, cmd_buffer->transfer.copy_temp);
+   return true;
+}
+
+static void
+transfer_copy_buffer_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buffer, struct radv_image *image,
+                           const VkBufferImageCopy2 *region, bool to_image)
+{
+   const struct radv_device *device = cmd_buffer->device;
+   struct radeon_cmdbuf *cs = cmd_buffer->cs;
+
+   radv_cs_add_buffer(device->ws, cs, image->bindings[0].bo);
+   radv_cs_add_buffer(device->ws, cs, buffer->bo);
+
+   if (radv_sdma_use_unaligned_buffer_image_copy(device, image, buffer, region)) {
+      if (!alloc_transfer_temp_bo(cmd_buffer))
+         return;
+
+      radv_sdma_copy_buffer_image_unaligned(device, cs, image, buffer, region, cmd_buffer->transfer.copy_temp,
+                                            to_image);
+      return;
+   }
+
+   radv_sdma_copy_buffer_image(device, cs, image, buffer, region, to_image);
+}
+
 static void
 copy_buffer_to_image(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buffer, struct radv_image *image,
                      VkImageLayout layout, const VkBufferImageCopy2 *region)
 {
+   if (cmd_buffer->qf == RADV_QUEUE_TRANSFER) {
+      transfer_copy_buffer_image(cmd_buffer, buffer, image, region, true);
+      return;
+   }
+
    struct radv_meta_saved_state saved_state;
    bool cs;
 
@@ -236,16 +283,7 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
 {
    struct radv_device *device = cmd_buffer->device;
    if (cmd_buffer->qf == RADV_QUEUE_TRANSFER) {
-      struct radeon_cmdbuf *cs = cmd_buffer->cs;
-      /* RADV_QUEUE_TRANSFER should only be used for the prime blit */
-      assert(!region->imageOffset.x && !region->imageOffset.y && !region->imageOffset.z);
-      assert(image->vk.image_type == VK_IMAGE_TYPE_2D);
-      assert(image->vk.extent.width == region->imageExtent.width);
-      assert(image->vk.extent.height == region->imageExtent.height);
-      ASSERTED bool res = radv_sdma_copy_image(device, cs, image, buffer, region);
-      assert(res);
-      radv_cs_add_buffer(device->ws, cs, image->bindings[0].bo);
-      radv_cs_add_buffer(device->ws, cs, buffer->bo);
+      transfer_copy_buffer_image(cmd_buffer, buffer, image, region, false);
       return;
    }
 
@@ -568,14 +606,21 @@ radv_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *pCopyI
 
       const enum util_format_layout format_layout = vk_format_description(dst_image->vk.format)->layout;
       for (unsigned r = 0; r < pCopyImageInfo->regionCount; r++) {
+         VkExtent3D dst_extent = pCopyImageInfo->pRegions[r].extent;
+         if (src_image->vk.format != dst_image->vk.format) {
+            dst_extent.width = dst_extent.width / vk_format_get_blockwidth(src_image->vk.format) *
+                               vk_format_get_blockwidth(dst_image->vk.format);
+            dst_extent.height = dst_extent.height / vk_format_get_blockheight(src_image->vk.format) *
+                                vk_format_get_blockheight(dst_image->vk.format);
+         }
          if (format_layout == UTIL_FORMAT_LAYOUT_ASTC) {
             radv_meta_decode_astc(cmd_buffer, dst_image, pCopyImageInfo->dstImageLayout,
                                   &pCopyImageInfo->pRegions[r].dstSubresource, pCopyImageInfo->pRegions[r].dstOffset,
-                                  pCopyImageInfo->pRegions[r].extent);
+                                  dst_extent);
          } else {
             radv_meta_decode_etc(cmd_buffer, dst_image, pCopyImageInfo->dstImageLayout,
                                  &pCopyImageInfo->pRegions[r].dstSubresource, pCopyImageInfo->pRegions[r].dstOffset,
-                                 pCopyImageInfo->pRegions[r].extent);
+                                 dst_extent);
          }
       }
    }

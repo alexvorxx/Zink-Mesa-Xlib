@@ -77,7 +77,7 @@ extern const aco::Info instr_info = {
    },
    {
       % for name in opcode_names:
-      (instr_class)${opcodes[name].cls.value},
+      instr_class::${opcodes[name].cls.value},
       % endfor
    },
 };

@@ -66,8 +66,7 @@ struct anv_kmd_backend {
    void (*gem_close)(struct anv_device *device, struct anv_bo *bo);
    /* Returns MAP_FAILED on error */
    void *(*gem_mmap)(struct anv_device *device, struct anv_bo *bo,
-                     uint64_t offset, uint64_t size,
-                     VkMemoryPropertyFlags property_flags);
+                     uint64_t offset, uint64_t size);
    /* Bind things however you want. */
    int (*vm_bind)(struct anv_device *device, int num_binds,
                   struct anv_vm_bind *binds);

@@ -126,6 +126,11 @@ if [ "$PIGLIT_PLATFORM" = "gbm" ]; then
     DEQP_SKIPS="$DEQP_SKIPS $INSTALL/gbm-skips.txt"
 fi
 
+if [ -n "$VK_DRIVER" ] && [ -z "$DEQP_SUITE" ]; then
+    # Bump the number of tests per group to reduce the startup time of VKCTS.
+    DEQP_RUNNER_OPTIONS="$DEQP_RUNNER_OPTIONS --tests-per-group ${DEQP_RUNNER_TESTS_PER_GROUP:-5000}"
+fi
+
 # Set the path to VK validation layer settings (in case it ends up getting loaded)
 export VK_LAYER_SETTINGS_PATH=$INSTALL/$GPU_VERSION-validation-settings.txt
 
@@ -161,7 +166,7 @@ fi
 
 uncollapsed_section_switch deqp "deqp: deqp-runner"
 
-echo "deqp $(cat /deqp/version)"
+cat /deqp/version-log
 
 set +e
 if [ -z "$DEQP_SUITE" ]; then

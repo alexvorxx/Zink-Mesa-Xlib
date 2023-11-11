@@ -709,6 +709,10 @@
    DRI_CONF_OPT_I(generated_indirect_threshold, def, 0, INT32_MAX, \
                   "Indirect threshold count above which we start generating commands")
 
+#define DRI_CONF_ANV_GENERATED_INDIRECT_RING_THRESHOLD(def) \
+   DRI_CONF_OPT_I(generated_indirect_ring_threshold, def, 0, INT32_MAX, \
+                  "Indirect threshold count above which we start generating commands in a ring buffer")
+
 #define DRI_CONF_ANV_QUERY_CLEAR_WITH_BLORP_THRESHOLD(def) \
    DRI_CONF_OPT_I(query_clear_with_blorp_threshold, def, 0, INT32_MAX, \
                   "Query threshold count above which query buffers are cleared with blorp")

@@ -119,6 +119,7 @@ enum radeon_family
    CHIP_NAVI33,         /* Radeon 7600, 7700S (mobile) */
    CHIP_GFX1103_R1,
    CHIP_GFX1103_R2,
+   CHIP_GFX1150,
    CHIP_LAST,
 };
 
@@ -139,6 +140,7 @@ enum amd_gfx_level
    GFX10,
    GFX10_3,
    GFX11,
+   GFX11_5,
 
    NUM_GFX_VERSIONS,
 };
@@ -197,6 +199,7 @@ enum vcn_version{
    VCN_4_0_2,
    VCN_4_0_3,
    VCN_4_0_4,
+   VCN_4_0_5,
 };
 
 const char *ac_get_family_name(enum radeon_family family);

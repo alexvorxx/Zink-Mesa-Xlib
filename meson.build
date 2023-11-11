@@ -155,7 +155,16 @@ if gallium_drivers.contains('auto')
     error('Unknown OS @0@. Please pass -Dgallium-drivers to set driver options. Patches gladly accepted to fix this.'.format(
           host_machine.system()))
   endif
+elif gallium_drivers.contains('all')
+   # Build-test everything except for i915, which depends on libdrm-intel which
+   # is not available on non-Intel distros.
+   gallium_drivers = [
+     'r300', 'r600', 'radeonsi', 'crocus', 'v3d', 'vc4', 'freedreno', 'etnaviv',
+     'nouveau', 'svga', 'tegra', 'virgl', 'lima', 'panfrost', 'swrast', 'iris',
+     'zink', 'd3d12', 'asahi'
+   ]
 endif
+
 with_gallium_radeonsi = gallium_drivers.contains('radeonsi')
 with_gallium_r300 = gallium_drivers.contains('r300')
 with_gallium_r600 = gallium_drivers.contains('r600')
@@ -213,6 +222,12 @@ if _vulkan_drivers.contains('auto')
     error('Unknown OS @0@. Please pass -Dvulkan-drivers to set driver options. Patches gladly accepted to fix this.'.format(
           host_machine.system()))
   endif
+elif _vulkan_drivers.contains('all')
+   # Build every vulkan driver regardless of architecture.
+   _vulkan_drivers = ['amd', 'intel', 'intel_hasvk', 'swrast',
+                      'freedreno', 'panfrost', 'virtio', 'broadcom',
+                      'imagination-experimental', 'microsoft-experimental',
+                      'nouveau-experimental']
 endif
 
 with_intel_vk = _vulkan_drivers.contains('intel')
@@ -289,7 +304,7 @@ if with_aco_tests and not with_amd_vk
 endif
 
 with_microsoft_clc = get_option('microsoft-clc').enabled()
-with_clc = with_microsoft_clc or with_intel_clc
+with_clc = with_microsoft_clc or with_intel_clc or with_gallium_asahi
 with_spirv_to_dxil = get_option('spirv-to-dxil')
 
 if host_machine.system() == 'darwin'
@@ -1459,7 +1474,6 @@ elif with_intel_vk or with_intel_hasvk
   error('Intel "Anvil" Vulkan driver requires the dl_iterate_phdr function')
 endif
 
-# only used in Iris and ANV
 if with_any_intel and ['x86', 'x86_64'].contains(host_machine.cpu_family())
   pre_args += '-DSUPPORT_INTEL_INTEGRATED_GPUS'
 endif
@@ -1468,13 +1482,6 @@ if get_option('intel-xe-kmd').enabled()
   pre_args += '-DINTEL_XE_KMD_SUPPORTED'
 endif
 
-if with_intel_hasvk and host_machine.cpu_family().startswith('x86') == false
-  error('Intel "hasvk" Vulkan driver requires x86 or x86_64 CPU family')
-endif
-
-if with_gallium_crocus and host_machine.cpu_family().startswith('x86') == false
-  error('Intel "crocus" Gallium driver requires x86 or x86_64 CPU family')
-endif
 
 if with_gallium_i915 and host_machine.cpu_family().startswith('x86') == false
   error('Intel "i915" Gallium driver requires x86 or x86_64 CPU family')
@@ -1755,8 +1762,8 @@ if with_llvm
   endif
 elif with_amd_vk and with_aco_tests
   error('ACO tests require LLVM, but LLVM is disabled.')
-elif with_gallium_radeonsi or with_swrast_vk
-  error('The following drivers require LLVM: RadeonSI, Lavapipe. One of these is enabled, but LLVM is disabled.')
+elif with_swrast_vk
+  error('The following drivers require LLVM: Lavapipe. One of these is enabled, but LLVM is disabled.')
 elif with_gallium_opencl
   error('The OpenCL "Clover" state tracker requires LLVM, but LLVM is disabled.')
 elif with_clc
@@ -1765,7 +1772,7 @@ else
   draw_with_llvm = false
 endif
 
-with_opencl_spirv = (_opencl != 'disabled' and get_option('opencl-spirv')) or with_intel_clc or with_microsoft_clc or with_gallium_rusticl
+with_opencl_spirv = (_opencl != 'disabled' and get_option('opencl-spirv')) or with_clc
 if with_opencl_spirv
   chosen_llvm_version_array = dep_llvm.version().split('.')
   chosen_llvm_version_major = chosen_llvm_version_array[0].to_int()

@@ -40,13 +40,6 @@
 #include "clc5c0.h"
 #include "clc997.h"
 
-PUBLIC VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-vk_icdGetPhysicalDeviceProcAddr(VkInstance _instance, const char *pName)
-{
-   VK_FROM_HANDLE(nvk_instance, instance, _instance);
-   return vk_instance_get_physical_device_proc_addr(&instance->vk, pName);
-}
-
 static void
 nvk_get_device_extensions(const struct nv_device_info *info,
                           struct vk_device_extension_table *ext)
@@ -98,6 +91,7 @@ nvk_get_device_extensions(const struct nv_device_info *info,
       .KHR_variable_pointers = true,
       .KHR_workgroup_memory_explicit_layout = true,
       .EXT_4444_formats = true,
+      .EXT_attachment_feedback_loop_layout = true,
       .EXT_border_color_swizzle = true,
       .EXT_buffer_device_address = true,
       .EXT_conditional_rendering = true,
@@ -106,6 +100,7 @@ nvk_get_device_extensions(const struct nv_device_info *info,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
       .EXT_descriptor_indexing = true,
+      .EXT_dynamic_rendering_unused_attachments = true,
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
       .EXT_extended_dynamic_state3 = true,
@@ -209,6 +204,8 @@ nvk_get_device_features(const struct nv_device_info *info,
 
       /* Vulkan 1.2 */
       .samplerMirrorClampToEdge = true,
+      .descriptorIndexing = true,
+      .drawIndirectCount = info->cls_eng3d >= TURING_A,
       .shaderInputAttachmentArrayDynamicIndexing = true,
       .shaderUniformTexelBufferArrayDynamicIndexing = true,
       .shaderStorageTexelBufferArrayDynamicIndexing = true,
@@ -229,6 +226,7 @@ nvk_get_device_features(const struct nv_device_info *info,
       .descriptorBindingPartiallyBound = true,
       .descriptorBindingVariableDescriptorCount = true,
       .runtimeDescriptorArray = true,
+      .samplerFilterMinmax = info->cls_eng3d >= MAXWELL_B,
       .imagelessFramebuffer = true,
       .uniformBufferStandardLayout = true,
       .separateDepthStencilLayouts = true,
@@ -237,10 +235,8 @@ nvk_get_device_features(const struct nv_device_info *info,
       .bufferDeviceAddress = true,
       .bufferDeviceAddressCaptureReplay = false,
       .bufferDeviceAddressMultiDevice = false,
-      .drawIndirectCount = info->cls_eng3d >= TURING_A,
-      .samplerFilterMinmax = info->cls_eng3d >= MAXWELL_B,
-      .conditionalRendering = true,
-      .inheritedConditionalRendering = true,
+      .shaderOutputViewportIndex = info->cls_eng3d >= MAXWELL_B,
+      .shaderOutputLayer = info->cls_eng3d >= MAXWELL_B,
 
       /* Vulkan 1.3 */
       .robustImageAccess = true,
@@ -265,12 +261,19 @@ nvk_get_device_features(const struct nv_device_info *info,
       .formatA4R4G4B4 = true,
       .formatA4B4G4R4 = true,
 
+      /* VK_EXT_attachment_feedback_loop_layout */
+      .attachmentFeedbackLoopLayout = true,
+
       /* VK_EXT_border_color_swizzle */
       .borderColorSwizzle = true,
       .borderColorSwizzleFromImage = false,
 
       /* VK_EXT_buffer_device_address */
       .bufferDeviceAddressCaptureReplayEXT = false,
+
+      /* VK_EXT_conditional_rendering */
+      .conditionalRendering = true,
+      .inheritedConditionalRendering = true,
 
       /* VK_EXT_custom_border_color */
       .customBorderColors = true,
@@ -287,6 +290,9 @@ nvk_get_device_features(const struct nv_device_info *info,
 
       /* VK_EXT_depth_clip_enable */
       .depthClipEnable = true,
+
+      /* VK_EXT_dynamic_rendering_unused_attachments */
+      .dynamicRenderingUnusedAttachments = true,
 
       /* VK_EXT_extended_dynamic_state */
       .extendedDynamicState = true,

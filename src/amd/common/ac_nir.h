@@ -75,7 +75,7 @@ ac_nir_store_var_components(nir_builder *b, nir_variable *var, nir_def *value,
                             unsigned component, unsigned writemask);
 
 void
-ac_nir_export_primitive(nir_builder *b, nir_def *prim);
+ac_nir_export_primitive(nir_builder *b, nir_def *prim, nir_def *row);
 
 void
 ac_nir_export_position(nir_builder *b,
@@ -85,7 +85,8 @@ ac_nir_export_position(nir_builder *b,
                        bool force_vrs,
                        bool done,
                        uint64_t outputs_written,
-                       nir_def *(*outputs)[4]);
+                       nir_def *(*outputs)[4],
+                       nir_def *row);
 
 void
 ac_nir_export_parameters(nir_builder *b,
@@ -195,8 +196,10 @@ ac_nir_lower_ngg_ms(nir_shader *shader,
                     bool has_param_exports,
                     bool *out_needs_scratch_ring,
                     unsigned wave_size,
+                    unsigned workgroup_size,
                     bool multiview,
-                    bool has_query);
+                    bool has_query,
+                    bool fast_launch_2);
 
 void
 ac_nir_lower_task_outputs_to_mem(nir_shader *shader,

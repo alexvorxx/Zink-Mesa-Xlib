@@ -653,7 +653,7 @@ build_blit_fs_shader(bool zscale)
  * variant for them.
  */
 static nir_shader *
-build_ms_copy_fs_shader(void)
+build_ms_copy_fs_shader(bool half_float)
 {
    nir_builder _b =
       nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, NULL,
@@ -662,7 +662,8 @@ build_ms_copy_fs_shader(void)
    b->shader->info.internal = true;
 
    nir_variable *out_color =
-      nir_variable_create(b->shader, nir_var_shader_out, glsl_vec4_type(),
+      nir_variable_create(b->shader, nir_var_shader_out,
+                          half_float ? glsl_f16vec_type(4) : glsl_vec4_type(),
                           "color0");
    out_color->data.location = FRAG_RESULT_DATA0;
 
@@ -679,7 +680,7 @@ build_ms_copy_fs_shader(void)
    /* Note: since we're just copying data, we rely on the HW ignoring the
     * dest_type.
     */
-   tex->dest_type = nir_type_int32;
+   tex->dest_type = half_float ? nir_type_float16 : nir_type_int32;
    tex->is_array = false;
    tex->is_shadow = false;
    tex->sampler_dim = GLSL_SAMPLER_DIM_MS;
@@ -699,7 +700,7 @@ build_ms_copy_fs_shader(void)
    tex->src[1] = nir_tex_src_for_ssa(nir_tex_src_ms_index,
                                      nir_load_sample_id(b));
 
-   nir_def_init(&tex->instr, &tex->def, 4, 32);
+   nir_def_init(&tex->instr, &tex->def, 4, half_float ? 16 : 32);
    nir_builder_instr_insert(b, &tex->instr);
 
    nir_store_var(b, out_color, &tex->def, 0xf);
@@ -773,7 +774,8 @@ tu_init_clear_blit_shaders(struct tu_device *dev)
    compile_shader(dev, build_clear_vs_shader(), 2, &offset, GLOBAL_SH_VS_CLEAR);
    compile_shader(dev, build_blit_fs_shader(false), 0, &offset, GLOBAL_SH_FS_BLIT);
    compile_shader(dev, build_blit_fs_shader(true), 0, &offset, GLOBAL_SH_FS_BLIT_ZSCALE);
-   compile_shader(dev, build_ms_copy_fs_shader(), 0, &offset, GLOBAL_SH_FS_COPY_MS);
+   compile_shader(dev, build_ms_copy_fs_shader(false), 0, &offset, GLOBAL_SH_FS_COPY_MS);
+   compile_shader(dev, build_ms_copy_fs_shader(true), 0, &offset, GLOBAL_SH_FS_COPY_MS_HALF);
 
    for (uint32_t num_rts = 0; num_rts <= MAX_RTS; num_rts++) {
       compile_shader(dev, build_clear_fs_shader(num_rts), num_rts, &offset,
@@ -790,26 +792,40 @@ tu_destroy_clear_blit_shaders(struct tu_device *dev)
    }
 }
 
+enum r3d_type {
+   R3D_CLEAR,
+   R3D_BLIT,
+   R3D_COPY_HALF,
+};
+
 template <chip CHIP>
 static void
-r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
+r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, enum r3d_type type,
            uint32_t rts_mask, bool z_scale, VkSampleCountFlagBits samples)
 {
    enum global_shader vs_id =
-      blit ? GLOBAL_SH_VS_BLIT : GLOBAL_SH_VS_CLEAR;
+      type == R3D_CLEAR ? GLOBAL_SH_VS_CLEAR : GLOBAL_SH_VS_BLIT;
 
    struct ir3_shader_variant *vs = cmd->device->global_shader_variants[vs_id];
    uint64_t vs_iova = cmd->device->global_shader_va[vs_id];
 
    enum global_shader fs_id = GLOBAL_SH_FS_BLIT;
 
-   if (z_scale)
+   if (z_scale) {
       fs_id = GLOBAL_SH_FS_BLIT_ZSCALE;
-   else if (samples != VK_SAMPLE_COUNT_1_BIT)
+   } else if (type == R3D_COPY_HALF) {
+      /* Avoid canonicalizing NaNs due to implicit conversions in the shader.
+       *
+       * TODO: Add a half-float blit shader that uses texture() but with half
+       * registers to avoid NaN canonicaliztion for the single-sampled case.
+       */
+      fs_id = GLOBAL_SH_FS_COPY_MS_HALF;
+   } else if (samples != VK_SAMPLE_COUNT_1_BIT) {
       fs_id = GLOBAL_SH_FS_COPY_MS;
+   }
 
    unsigned num_rts = util_bitcount(rts_mask);
-   if (!blit)
+   if (type == R3D_CLEAR)
       fs_id = (enum global_shader) (GLOBAL_SH_FS_CLEAR0 + num_rts);
 
    struct ir3_shader_variant *fs = cmd->device->global_shader_variants[fs_id];
@@ -839,6 +855,9 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
    tu6_emit_xs(cs, MESA_SHADER_FRAGMENT, fs, &pvtmem, fs_iova);
 
    tu_cs_emit_regs(cs, A6XX_PC_PRIMITIVE_CNTL_0());
+   if (CHIP == A7XX) {
+      tu_cs_emit_regs(cs, A7XX_VPC_PRIMITIVE_CNTL_0());
+   }
 
    tu6_emit_vpc<CHIP>(cs, vs, NULL, NULL, NULL, fs);
 
@@ -891,7 +910,9 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
          unsigned regid = 0;
          if (rts_mask & (1u << i))
             regid = ir3_find_output_regid(fs, FRAG_RESULT_DATA0 + rt++);
-         tu_cs_emit(cs, A6XX_SP_FS_OUTPUT_REG_REGID(regid));
+         tu_cs_emit(cs, A6XX_SP_FS_OUTPUT_REG_REGID(regid) |
+                        COND(regid & HALF_REG_ID,
+                             A6XX_SP_FS_OUTPUT_REG_HALF_PRECISION));
       }
    }
 
@@ -1391,6 +1412,7 @@ aspect_write_mask(enum pipe_format format, VkImageAspectFlags aspect_mask)
 enum r3d_blit_param {
    R3D_Z_SCALE = 1 << 0,
    R3D_DST_GMEM = 1 << 1,
+   R3D_COPY = 1 << 2,
 };
 
 template <chip CHIP>
@@ -1433,7 +1455,19 @@ r3d_setup(struct tu_cmd_buffer *cmd,
       }
    }
 
-   r3d_common<CHIP>(cmd, cs, !clear, 1, blit_param & R3D_Z_SCALE, samples);
+   enum r3d_type type;
+   if (clear) {
+      type = R3D_CLEAR;
+   } else if ((blit_param & R3D_COPY) && tu_pipe_format_is_float16(src_format)) {
+      /* Avoid canonicalizing NaNs in copies by using the special half-float
+       * path that uses half regs.
+       */
+      type = R3D_COPY_HALF;
+   } else {
+      type = R3D_BLIT;
+   }
+
+   r3d_common<CHIP>(cmd, cs, type, 1, blit_param & R3D_Z_SCALE, samples);
 
    tu_cs_emit_regs(cs, A6XX_SP_FS_OUTPUT_CNTL1(.mrt = 1));
    tu_cs_emit_regs(cs, A6XX_RB_FS_OUTPUT_CNTL1(.mrt = 1));
@@ -1989,8 +2023,12 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
    }
 
    /* note: could use "R8_UNORM" when no UBWC */
-   if (src_format == PIPE_FORMAT_Y8_UNORM)
+   unsigned blit_param = 0;
+   if (src_format == PIPE_FORMAT_Y8_UNORM ||
+       tu_pipe_format_is_float16(src_format)) {
       ops = &r3d_ops<CHIP>;
+      blit_param = R3D_COPY;
+   }
 
    VkOffset3D offset = info->imageOffset;
    VkExtent3D extent = info->imageExtent;
@@ -2003,7 +2041,7 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
    uint32_t layer_size = src_height * pitch;
 
    ops->setup(cmd, cs, src_format, dst_format,
-              info->imageSubresource.aspectMask, 0, false, dst_image->layout[0].ubwc,
+              info->imageSubresource.aspectMask, blit_param, false, dst_image->layout[0].ubwc,
               (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
 
    struct fdl6_view dst;
@@ -2076,8 +2114,12 @@ tu_copy_image_to_buffer(struct tu_cmd_buffer *cmd,
    }
 
    /* note: could use "R8_UNORM" when no UBWC */
-   if (dst_format == PIPE_FORMAT_Y8_UNORM)
+   unsigned blit_param = 0;
+   if (dst_format == PIPE_FORMAT_Y8_UNORM ||
+       tu_pipe_format_is_float16(src_format)) {
       ops = &r3d_ops<CHIP>;
+      blit_param = R3D_COPY;
+   }
 
    VkOffset3D offset = info->imageOffset;
    VkExtent3D extent = info->imageExtent;
@@ -2089,7 +2131,7 @@ tu_copy_image_to_buffer(struct tu_cmd_buffer *cmd,
    uint32_t pitch = dst_width * util_format_get_blocksize(dst_format);
    uint32_t layer_size = pitch * dst_height;
 
-   ops->setup(cmd, cs, src_format, dst_format, VK_IMAGE_ASPECT_COLOR_BIT, 0, false, false,
+   ops->setup(cmd, cs, src_format, dst_format, VK_IMAGE_ASPECT_COLOR_BIT, blit_param, false, false,
               VK_SAMPLE_COUNT_1_BIT);
 
    struct fdl6_view src;
@@ -2207,9 +2249,14 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
    enum pipe_format src_format = copy_format(src_image->vk.format, info->srcSubresource.aspectMask);
 
    /* note: could use "R8_UNORM" when no UBWC */
+   unsigned blit_param = 0;
    if (dst_format == PIPE_FORMAT_Y8_UNORM ||
-       src_format == PIPE_FORMAT_Y8_UNORM)
+       src_format == PIPE_FORMAT_Y8_UNORM ||
+       tu_pipe_format_is_float16(src_format) ||
+       tu_pipe_format_is_float16(dst_format)) {
       ops = &r3d_ops<CHIP>;
+      blit_param = R3D_COPY;
+   }
 
    bool use_staging_blit = false;
 
@@ -2298,7 +2345,7 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
       };
       fdl6_view_init(&staging, &staging_layout_ptr, &copy_to_args, false);
 
-      ops->setup(cmd, cs, src_format, src_format, VK_IMAGE_ASPECT_COLOR_BIT, 0, false, false,
+      ops->setup(cmd, cs, src_format, src_format, VK_IMAGE_ASPECT_COLOR_BIT, blit_param, false, false,
                  (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
       coords(ops, cs, staging_offset, src_offset, extent);
 
@@ -2329,7 +2376,7 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
       fdl6_view_init(&staging, &staging_layout_ptr, &copy_from_args, false);
 
       ops->setup(cmd, cs, dst_format, dst_format, info->dstSubresource.aspectMask,
-                 0, false, dst_image->layout[0].ubwc,
+                 blit_param, false, dst_image->layout[0].ubwc,
                  (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
       coords(ops, cs, dst_offset, staging_offset, extent);
 
@@ -2343,7 +2390,7 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
       tu_image_view_copy<CHIP>(&src, src_image, format, &info->srcSubresource, src_offset.z);
 
       ops->setup(cmd, cs, format, format, info->dstSubresource.aspectMask,
-                 0, false, dst_image->layout[0].ubwc,
+                 blit_param, false, dst_image->layout[0].ubwc,
                  (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
       coords(ops, cs, dst_offset, src_offset, extent);
 
@@ -2827,7 +2874,7 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
                   0xfc000000);
    tu_cs_emit(cs, A6XX_SP_FS_OUTPUT_CNTL1_MRT(mrt_count));
 
-   r3d_common<CHIP>(cmd, cs, false, clear_rts, false, cmd->state.subpass->samples);
+   r3d_common<CHIP>(cmd, cs, R3D_CLEAR, clear_rts, false, cmd->state.subpass->samples);
 
    /* Disable sample counting in order to not affect occlusion query. */
    tu_cs_emit_regs(cs, A6XX_RB_SAMPLE_COUNT_CONTROL(.disable = true));

@@ -536,14 +536,19 @@ intrinsic("end_primitive", indices=[STREAM_ID])
 # Alternatively, drivers may implement these intrinsics, and use
 # nir_lower_gs_intrinsics() to convert from the basic intrinsics.
 #
-# These contain two additional unsigned integer sources:
+# These contain four additional unsigned integer sources:
 # 1. The total number of vertices emitted so far.
 # 2. The number of vertices emitted for the current primitive
 #    so far if we're counting, otherwise undef.
-intrinsic("emit_vertex_with_counter", src_comp=[1, 1], indices=[STREAM_ID])
-intrinsic("end_primitive_with_counter", src_comp=[1, 1], indices=[STREAM_ID])
-# Contains the final total vertex and primitive counts in the current GS thread.
-intrinsic("set_vertex_and_primitive_count", src_comp=[1, 1], indices=[STREAM_ID])
+# 3. The total number of primitives emitted so far.
+# 4. The total number of decomposed primitives emitted so far. This counts like
+#    the PRIMITIVES_GENERATED query: a triangle strip with 5 vertices is counted
+#    as 3 primitives (not 1).
+intrinsic("emit_vertex_with_counter", src_comp=[1, 1, 1, 1], indices=[STREAM_ID])
+intrinsic("end_primitive_with_counter", src_comp=[1, 1, 1, 1], indices=[STREAM_ID])
+# Contains the final total vertex, primitive, and decomposed primitives counts
+# in the current GS thread.
+intrinsic("set_vertex_and_primitive_count", src_comp=[1, 1, 1], indices=[STREAM_ID])
 
 # Launches mesh shader workgroups from a task shader, with explicit task_payload.
 # Rules:
@@ -1014,6 +1019,7 @@ barycentric("at_sample", 2, [1])
 barycentric("coord_at_sample", 3, [1])
 # src[] = { offset.xy }.
 barycentric("at_offset", 2, [2])
+barycentric("at_offset_nv", 2, [1])
 barycentric("coord_at_offset", 3, [2])
 
 # Load sample position:
@@ -1081,11 +1087,11 @@ load("ubo", [-1, 1], [ACCESS, ALIGN_MUL, ALIGN_OFFSET, RANGE_BASE, RANGE], flags
 # src[] = { buffer_index, offset in vec4 units }.  base is also in vec4 units.
 load("ubo_vec4", [-1, 1], [ACCESS, BASE, COMPONENT], flags=[CAN_ELIMINATE, CAN_REORDER])
 # src[] = { offset }.
-load("input", [1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
+load("input", [1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 # src[] = { vertex_id, offset }.
 load("input_vertex", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 # src[] = { vertex, offset }.
-load("per_vertex_input", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
+load("per_vertex_input", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 # src[] = { barycoord, offset }.
 load("interpolated_input", [2, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 
@@ -1094,9 +1100,9 @@ load("ssbo", [-1, 1], [ACCESS, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # src[] = { buffer_index }
 load("ssbo_address", [1], [], [CAN_ELIMINATE, CAN_REORDER])
 # src[] = { offset }.
-load("output", [1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
+load("output", [1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
 # src[] = { vertex, offset }.
-load("per_vertex_output", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE])
+load("per_vertex_output", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE])
 # src[] = { primitive, offset }.
 load("per_primitive_output", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE])
 # src[] = { offset }.
@@ -1135,11 +1141,11 @@ def store(name, srcs, indices=[], flags=[]):
     intrinsic("store_" + name, [0] + srcs, indices=indices, flags=flags)
 
 # src[] = { value, offset }.
-store("output", [1], [BASE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS, IO_XFB, IO_XFB2])
+store("output", [1], [BASE, RANGE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS, IO_XFB, IO_XFB2])
 # src[] = { value, vertex, offset }.
-store("per_vertex_output", [1, 1], [BASE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS])
+store("per_vertex_output", [1, 1], [BASE, RANGE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS])
 # src[] = { value, primitive, offset }.
-store("per_primitive_output", [1, 1], [BASE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS])
+store("per_primitive_output", [1, 1], [BASE, RANGE, WRITE_MASK, COMPONENT, SRC_TYPE, IO_SEMANTICS])
 # src[] = { value, block_index, offset }
 store("ssbo", [-1, 1], [WRITE_MASK, ACCESS, ALIGN_MUL, ALIGN_OFFSET])
 # src[] = { value, offset }.
@@ -1651,10 +1657,11 @@ system_value("lds_ngg_scratch_base_amd", 1)
 system_value("lds_ngg_gs_out_vertex_base_amd", 1)
 
 # AMD GPU shader output export instruction
-# src[] = { export_value }
+# src[] = { export_value, row }
 # BASE = export target
 # FLAGS = AC_EXP_FLAG_*
 intrinsic("export_amd", [0], indices=[BASE, WRITE_MASK, FLAGS])
+intrinsic("export_row_amd", [0, 1], indices=[BASE, WRITE_MASK, FLAGS])
 
 # Export dual source blend outputs with swizzle operation
 # src[] = { mrt0, mrt1 }
@@ -1670,6 +1677,9 @@ system_value("barycentric_optimize_amd", dest_comp=1, bit_sizes=[1])
 # This should only be used directly for texture sources.
 intrinsic("strict_wqm_coord_amd", src_comp=[0], dest_comp=0, bit_sizes=[32], indices=[BASE],
           flags=[CAN_ELIMINATE])
+
+intrinsic("cmat_muladd_amd", src_comp=[16, 16, 0], dest_comp=0, bit_sizes=src2,
+          indices=[SATURATE, CMAT_SIGNED_MASK], flags=[CAN_ELIMINATE])
 
 # V3D-specific instrinc for tile buffer color reads.
 #
@@ -1692,6 +1702,24 @@ store("tlb_sample_color_v3d", [1], [BASE, COMPONENT, SRC_TYPE], [])
 # V3D-specific intrinsic to load the number of layers attached to
 # the target framebuffer
 intrinsic("load_fb_layers_v3d", dest_comp=1, flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Load a bindless sampler handle mapping a binding table sampler.
+intrinsic("load_sampler_handle_agx", [1], 1, [],
+          flags=[CAN_ELIMINATE, CAN_REORDER],
+          bit_sizes=[16])
+
+# Load a bindless texture handle mapping a binding table texture.
+intrinsic("load_texture_handle_agx", [1], 2, [],
+          flags=[CAN_ELIMINATE, CAN_REORDER],
+          bit_sizes=[32])
+
+# Given a vec2 bindless texture handle, load the address of the texture
+# descriptor described by that vec2. This allows inspecting the descriptor from
+# the shader. This does not actually load the content of the descriptor, only
+# the content of the handle (which is the address of the descriptor).
+intrinsic("load_from_texture_handle_agx", [2], 1, [],
+          flags=[CAN_ELIMINATE, CAN_REORDER],
+          bit_sizes=[64])
 
 # Load the coefficient register corresponding to a given fragment shader input.
 # Coefficient registers are vec3s that are dotted with <x, y, 1> to interpolate
@@ -1784,7 +1812,11 @@ intrinsic("load_vbo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
 # Load a driver-internal system value from a given system value set at a given
 # binding within the set. This is used for correctness when lowering things like
 # UBOs with merged shaders.
-load("sysval_agx", [], [DESC_SET, BINDING], [CAN_REORDER, CAN_ELIMINATE])
+#
+# The FLAGS are used internally for loading the index of the uniform itself,
+# rather than the contents, used for lowering bindless handles (which encode
+# uniform indices as immediates in the NIR for technical reasons).
+load("sysval_agx", [], [DESC_SET, BINDING, FLAGS], [CAN_REORDER, CAN_ELIMINATE])
 
 # Write out a sample mask for a targeted subset of samples, specified in the two
 # masks. Maps to the corresponding AGX instruction, the actual workings are
@@ -1815,6 +1847,26 @@ barrier("fence_mem_to_tex_agx")
 # Variant of fence_pbe_to_tex_agx specialized to stores in pixel shaders that
 # act like render target writes, in conjunction with fragment interlock.
 barrier("fence_pbe_to_tex_pixel_agx")
+
+# Address of the parameter buffer for AGX geometry shaders
+system_value("geometry_param_buffer_agx", 1, bit_sizes=[64])
+
+# Loads the vertex index within the current decomposed primitive. For a
+# triangle, this will be in [0, 2], where 2 is the last vertex. This is defined
+# only when the vertex shader is reinvoked for the same vertex in each
+# primitive, as occurs in the geometry shader lowering.
+system_value("vertex_id_in_primitive_agx", 1, bit_sizes=[32])
+
+# Helper shader intrinsics
+# src[] = { value }.
+intrinsic("doorbell_agx", src_comp=[1])
+
+# src[] = { index, stack_address }.
+intrinsic("stack_map_agx", src_comp=[1, 1])
+
+# src[] = { index }.
+# dst[] = { stack_address }.
+intrinsic("stack_unmap_agx", src_comp=[1], dest_comp=1, bit_sizes=[32])
 
 # Intel-specific query for loading from the brw_image_param struct passed
 # into the shader as a uniform.  The variable is a deref to the image
@@ -1949,6 +2001,30 @@ system_value("leaf_procedural_intel", 1, bit_sizes=[1])
 #  3: Intersection
 system_value("btd_shader_type_intel", 1)
 system_value("ray_query_global_intel", 1, bit_sizes=[64])
+
+# NVIDIA-specific intrinsics
+intrinsic("load_sysval_nv", dest_comp=1, src_comp=[], bit_sizes=[32, 64],
+          indices=[ACCESS, BASE], flags=[CAN_ELIMINATE])
+intrinsic("isberd_nv", dest_comp=1, src_comp=[1], bit_sizes=[32],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
+intrinsic("al2p_nv", dest_comp=1, src_comp=[1], bit_sizes=[32],
+          indices=[BASE, FLAGS], flags=[CAN_ELIMINATE, CAN_REORDER])
+# src[] = { vtx, offset }.
+# FLAGS is struct nak_nir_attr_io_flags
+intrinsic("ald_nv", dest_comp=0, src_comp=[1, 1], bit_sizes=[32],
+          indices=[BASE, RANGE_BASE, RANGE, FLAGS, ACCESS],
+          flags=[CAN_ELIMINATE])
+# src[] = { data, vtx, offset }.
+# FLAGS is struct nak_nir_attr_io_flags
+intrinsic("ast_nv", src_comp=[0, 1, 1],
+          indices=[BASE, RANGE_BASE, RANGE, FLAGS], flags=[])
+
+# NVIDIA-specific Geometry Shader intrinsics.
+# These contain an additional integer source and destination with the primitive handle input/output.
+intrinsic("emit_vertex_nv", dest_comp=1, src_comp=[1], indices=[STREAM_ID])
+intrinsic("end_primitive_nv", dest_comp=1, src_comp=[1], indices=[STREAM_ID])
+# Contains the final primitive handle and indicate the end of emission.
+intrinsic("final_primitive_nv", src_comp=[1])
 
 # In order to deal with flipped render targets, gl_PointCoord may be flipped
 # in the shader requiring a shader key or extra instructions or it may be

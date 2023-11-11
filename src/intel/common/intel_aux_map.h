@@ -109,7 +109,9 @@ intel_aux_map_get_entry(struct intel_aux_map_context *ctx,
                         uint64_t main_address,
                         uint64_t *aux_entry_address);
 
-void
+/* Fails if a mapping is attempted that would conflict with an existing one.
+ */
+bool
 intel_aux_map_add_mapping(struct intel_aux_map_context *ctx, uint64_t main_address,
                           uint64_t aux_address, uint64_t main_size_B,
                           uint64_t format_bits);

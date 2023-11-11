@@ -6,6 +6,246 @@ KHR-GL46.pipeline_statistics_query_tests_ARB.functional_primitives_vertices_subm
 
 KHR-Single-GL46.arrays_of_arrays_gl.SizedDeclarationsPrimitive
 
+spec@!opengl 1.0@gl-1.0-polygon-line-aa
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_BYTE
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_INT
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGR and GL_INT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGR and GL_UNSIGNED_INT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_GREEN and GL_INT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_INT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_UNSIGNED_INT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_FLOAT
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_UNSIGNED_BYTE
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_UNSIGNED_BYTE_2_3_3_REV
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_INT
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_UNSIGNED_SHORT
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_BYTE
 spec@!opengl es 3.0@gles-3.0-transform-feedback-uniform-buffer-object
+spec@amd_shader_trinary_minmax@execution@built-in-functions@tcs-min3-ivec2-ivec2-ivec2
+spec@amd_shader_trinary_minmax@execution@built-in-functions@vs-min3-float-float-float
+spec@arb_framebuffer_object@fbo-incomplete@0x0 renderbuffer
+spec@arb_framebuffer_object@fbo-incomplete@0x0 texture
+spec@arb_gpu_shader5@execution@built-in-functions@fs-intbitstofloat-neg_abs
+spec@arb_gpu_shader5@texturegatheroffsets@vs-rgb-0-uint-2d
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-dot-dvec3-dvec3
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-max-double-double
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-add-double-dmat3
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-div-double-dvec4
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-double-dmat2
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-dvec2-dmat2
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-trunc-dvec2
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-abs-dvec3
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-mix-dvec3-dvec3-bvec3
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-outerproduct-dvec2-dvec2
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-float@6-and-dmat2x4
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-dvec3-location-0
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@3-dmat2x3-location-0
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@6-dmat2x4-location-0
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-s2@2@2-float-double-location-0
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-add-i64vec2-int64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-add-i64vec3-i64vec3
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-bitor-int64_t-int64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-div-i64vec2-int64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-lshift-i64vec4-uint
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-lshift-u64vec4-uvec4
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-mult-uint64_t-uint64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-rshift-u64vec2-u64vec2
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-sub-u64vec4-u64vec4
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-sub-uint64_t-u64vec3
+spec@arb_gpu_shader_int64@execution@built-in-functions@gs-op-bitand-uint64_t-uint64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@gs-op-sub-i64vec2-i64vec2
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-rshift-u64vec2-int
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-rshift-u64vec3-uint
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-op-div-u64vec3-uint64_t
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-op-lshift-i64vec4-uint
+spec@arb_gpu_shader_int64@execution@conversion@frag-conversion-explicit-int64_t-int
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-float-i64vec2
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-vec2-int64_t@3@2
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s2-i64vec2
+spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_OUTPUT_PRIMITIVES-ASYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_OUTPUT_PRIMITIVES-ASYNC-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_OUTPUT_PRIMITIVES-ASYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_OUTPUT_PRIMITIVES-ASYNC_CPU_READ_BEFORE-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_COMPUTE_SHADER_INVOCATIONS-ASYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_GEOMETRY_SHADER_INVOCATIONS-SYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC_CPU_READ_AFTER-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-SYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-SYNC-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-SYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-ASYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-ASYNC-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-ASYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-ASYNC_CPU_READ_BEFORE-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN-SYNC-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB
+spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_INT
+spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT
+spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB
+spec@arb_shader_image_load_store@execution@write-to-rendered-image
+spec@arb_shader_precision@fs-op-add-float-vec3
+spec@arb_shader_precision@fs-op-sub-vec3-float
+spec@arb_shader_precision@fs-op-sub-vec4-float
+spec@arb_shader_precision@gs-op-assign-add-vec4-float
+spec@arb_shader_precision@vs-op-assign-add-float-float
+spec@arb_shader_precision@vs-op-div-vec3-float
+spec@arb_shader_storage_buffer_object@execution@memory-layouts-struct-deref
+spec@arb_shading_language_packing@execution@built-in-functions@fs-packunorm4x8
+spec@arb_shading_language_packing@execution@built-in-functions@vs-unpackunorm2x16
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-clamp-vec3-vec3-vec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-inversesqrt-float
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-min-uint-uint
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-add-mat2x3-mat2x3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-add-ivec2-ivec2
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-bitand-uvec4-uint
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-div-ivec4-ivec4
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-div-vec4-float
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-rshift-ivec4-int
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-rshift-uvec3-ivec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitand-neg-int-ivec4
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitand-not-ivec4-int
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitand-uvec3-uvec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitor-abs-not-ivec4-int
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitor-int-ivec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitxor-abs-not-ivec2-ivec2
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitxor-neg-abs-ivec3-ivec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitxor-neg-ivec4-int
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitxor-not-abs-ivec4-int
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-div-large-uint-uint
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-div-mat4x3-mat4x3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-lshift-ivec4-ivec4
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-rshift-uvec3-uvec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-radians-vec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-sinh-vec3
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-smoothstep-float-float-vec3
+spec@arb_tessellation_shader@execution@tcs-input@tcs-input-float
+spec@arb_tessellation_shader@execution@tes-input@tes-input-mat2_2
+spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-tris
+spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 32 1 8 128 1
+spec@arb_texture_gather@texturegather@fs-rg-green-uint-2darray
+spec@arb_texture_gather@texturegather@vs-r-zero-float-2darray
+spec@arb_texture_gather@texturegather@vs-rgb-zero-int-cubearray
+spec@arb_texture_gather@texturegather@vs-rgba-zero-float-cubearray
+spec@arb_texture_gather@texturegatheroffset@fs-rgba-one-float-2darray
+spec@arb_texture_gather@texturegatheroffset@vs-rgba-zero-float-2d
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch@Texture type: GL_RGB9_E5
+spec@arb_texture_rg@execution@fs-shadow2d-red-03
+spec@arb_uniform_buffer_object@execution@shared-row_major-array-mat2x2-and-column_major-array-mat2x2
+spec@arb_uniform_buffer_object@execution@shared-row_major-struct-mat2x3
+spec@arb_uniform_buffer_object@execution@std140-row_major-mat3x4-and-column_major-mat3x4
+spec@arb_vertex_program@instructions@swz
+spec@ext_texture_array@glsl-fs-shadow1darray-03
+spec@ext_transform_feedback@structs basic-struct run
+spec@glsl-1.10@execution@built-in-functions@fs-degrees-float
+spec@glsl-1.10@execution@built-in-functions@fs-distance-vec3-vec3
+spec@glsl-1.10@execution@built-in-functions@fs-exp2-vec2
+spec@glsl-1.10@execution@built-in-functions@fs-mix-vec4-vec4-vec4
+spec@glsl-1.10@execution@built-in-functions@fs-mod-vec2-float
+spec@glsl-1.10@execution@built-in-functions@fs-op-add-int-int
+spec@glsl-1.10@execution@built-in-functions@fs-op-div-mat4-float
+spec@glsl-1.10@execution@built-in-functions@fs-op-sub-int-ivec2
+spec@glsl-1.10@execution@built-in-functions@fs-refract-vec2-vec2-float
+spec@glsl-1.10@execution@built-in-functions@fs-refract-vec3-vec3-float
+spec@glsl-1.10@execution@built-in-functions@vs-clamp-vec2-float-float
+spec@glsl-1.10@execution@built-in-functions@vs-op-add-mat2-mat2
+spec@glsl-1.10@execution@built-in-functions@vs-op-assign-add-vec4-vec4
+spec@glsl-1.10@execution@built-in-functions@vs-op-mult-mat2-vec2
+spec@glsl-1.10@execution@built-in-functions@vs-op-sub-ivec3-int
+spec@glsl-1.10@execution@fs-bool-less-compare-false
+spec@glsl-1.10@execution@glsl-1.10-linear-fog
+spec@glsl-1.10@execution@glsl-fs-vec4-mat2
+spec@glsl-1.10@execution@glsl-vs-deadcode-2
+spec@glsl-1.10@execution@variable-indexing@fs-uniform-mat4-rd
+spec@glsl-1.10@execution@variable-indexing@fs-varying-array-mat2-row-rd
+spec@glsl-1.10@execution@variable-indexing@vs-uniform-mat4-row-rd
+spec@glsl-1.10@execution@variable-indexing@vs-varying-mat2-row-rd
+spec@glsl-1.10@execution@vs-sign-neg-abs
+spec@glsl-1.20@execution@built-in-functions@fs-op-div-float-mat3x4
+spec@glsl-1.20@execution@built-in-functions@fs-op-sub-float-mat3x2
+spec@glsl-1.20@execution@built-in-functions@fs-op-sub-mat4x3-float
+spec@glsl-1.20@execution@built-in-functions@vs-op-div-mat4x3-float
+spec@glsl-1.20@execution@const-builtin@glsl-const-builtin-length
+spec@glsl-1.20@execution@fs-outerproduct-const-mat2x3-ivec
+spec@glsl-1.20@execution@variable-indexing@fs-temp-mat4-col-row-rd
+spec@glsl-1.20@execution@variable-indexing@fs-uniform-array-mat2-col-row-rd
+spec@glsl-1.30@execution@built-in-functions@fs-abs-ivec3
+spec@glsl-1.30@execution@built-in-functions@fs-op-assign-bitor-ivec4-ivec4
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitand-abs-not-int-int
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitand-abs-not-int-ivec4
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitand-ivec2-ivec2
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitand-ivec4-int
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitand-not-ivec3-ivec3
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitxor-abs-not-int-ivec3
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitxor-abs-not-ivec3-int
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitxor-uvec2-uint
+spec@glsl-1.30@execution@built-in-functions@fs-op-mod-ivec2-ivec2
+spec@glsl-1.30@execution@built-in-functions@fs-op-rshift-ivec4-uvec4
+spec@glsl-1.30@execution@built-in-functions@vs-clamp-uvec2-uvec2-uvec2
+spec@glsl-1.30@execution@built-in-functions@vs-cosh-vec3
+spec@glsl-1.30@execution@built-in-functions@vs-max-ivec2-int
+spec@glsl-1.30@execution@built-in-functions@vs-op-assign-div-uvec3-uint
+spec@glsl-1.30@execution@built-in-functions@vs-op-assign-lshift-uvec4-uvec4
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitand-abs-not-ivec4-ivec4
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitand-uvec3-uint
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitor-neg-ivec2-ivec2
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitor-neg-ivec3-ivec3
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitxor-neg-uint-uvec3
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitxor-not-uint-uvec4
+spec@glsl-1.30@execution@built-in-functions@vs-op-mult-uint-uvec4
+spec@glsl-1.40@execution@gl_depthrangeparameters
+spec@glsl-1.50@execution@built-in-functions@gs-degrees-vec4
+spec@glsl-1.50@execution@built-in-functions@gs-op-add-mat3-mat3
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-bitor-ivec4-int
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-div-mat4x2-float
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-sub-ivec4-int
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitand-ivec4-ivec4
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitor-abs-neg-ivec3-ivec3
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitor-not-int-ivec4
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitor-not-uint-uint
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitxor-int-int
+spec@glsl-1.50@execution@built-in-functions@gs-op-div-mat4x3-float
+spec@glsl-1.50@execution@built-in-functions@gs-op-lshift-uint-int
+spec@glsl-1.50@execution@built-in-functions@gs-op-mult-float-mat3x2
+spec@glsl-1.50@execution@built-in-functions@gs-op-rshift-ivec4-uvec4
+spec@glsl-1.50@execution@built-in-functions@gs-op-rshift-uint-int
+spec@glsl-1.50@execution@built-in-functions@gs-op-rshift-uvec3-uvec3
+spec@glsl-1.50@execution@built-in-functions@gs-op-rshift-uvec4-uint
+spec@glsl-1.50@execution@built-in-functions@gs-op-uplus-ivec3
+spec@glsl-1.50@execution@built-in-functions@gs-outerproduct-vec3-vec2
+spec@glsl-1.50@execution@built-in-functions@gs-sign-float
+spec@glsl-1.50@execution@compatibility@clipping@gs-clip-vertex-primitives-triangle-strip
+spec@glsl-1.50@execution@compatibility@clipping@vs-gs-clip-vertex-const-reject
+spec@glsl-1.50@execution@interface-blocks-api-access-members
+spec@glsl-1.50@execution@primitive-id-no-gs-point
+spec@glsl-1.50@execution@varying-struct-basic-gs-fs
+spec@glsl-4.00@execution@built-in-functions@fs-distance-double-double
+spec@glsl-4.00@execution@built-in-functions@fs-notequal-dvec4-dvec4
+spec@glsl-4.00@execution@built-in-functions@fs-op-mult-dmat3x4-dvec3
+spec@glsl-4.00@execution@built-in-functions@fs-op-mult-dmat4-double
+spec@glsl-4.00@execution@built-in-functions@gs-matrixcompmult-dmat2x4-dmat2x4
+spec@glsl-4.00@execution@built-in-functions@gs-op-sub-dmat3x4-double
+spec@glsl-4.00@execution@built-in-functions@vs-fract-dvec2
+spec@glsl-4.00@execution@built-in-functions@vs-fract-dvec3
+spec@glsl-4.00@execution@built-in-functions@vs-op-add-double-dmat3
+spec@glsl-4.00@execution@built-in-functions@vs-op-add-double-dvec2
+spec@glsl-4.00@execution@built-in-functions@vs-op-div-dmat2x4-double
+spec@glsl-4.00@execution@inout@vs-out-fs-in-float@1-and-dmat2x2
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-double@4
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-s2@3-double-float-location-0
+spec@glsl-4.10@execution@conversion@frag-conversion-explicit-dvec4-vec4-zero-sign
+spec@glsl-4.10@execution@conversion@geom-conversion-explicit-dvec4-vec4-zero-sign

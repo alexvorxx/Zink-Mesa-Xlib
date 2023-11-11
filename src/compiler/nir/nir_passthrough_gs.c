@@ -22,7 +22,6 @@
  */
 
 #include "util/u_memory.h"
-#include "util/u_prim.h"
 #include "nir.h"
 #include "nir_builder.h"
 #include "nir_xfb_info.h"
@@ -138,7 +137,7 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
    nir_shader *nir = b.shader;
    nir->info.gs.input_primitive = gs_in_prim_for_topology(primitive_type);
    nir->info.gs.output_primitive = force_line_strip_out ? MESA_PRIM_LINE_STRIP : original_our_prim;
-   nir->info.gs.vertices_in = u_vertices_per_prim(primitive_type);
+   nir->info.gs.vertices_in = mesa_vertices_per_prim(primitive_type);
    nir->info.gs.vertices_out = needs_closing ? vertices_out + 1 : vertices_out;
    nir->info.gs.invocations = 1;
    nir->info.gs.active_stream_mask = 1;

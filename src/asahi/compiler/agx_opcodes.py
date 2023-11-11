@@ -80,6 +80,7 @@ MASK = immediate("mask")
 BFI_MASK = immediate("bfi_mask")
 LOD_MODE = immediate("lod_mode", "enum agx_lod_mode")
 PIXEL_OFFSET = immediate("pixel_offset")
+STACK_SIZE = immediate("stack_size", 'int16_t')
 
 DIM = enum("dim", {
     0: '1d',
@@ -242,6 +243,20 @@ op("extr",
 op("asr",
       encoding_32 = (0x2E | L | (0x1 << 26), 0x7F | L | (0x3 << 26), 8, _),
       srcs = 2)
+
+def subgroup_op(name, op1, op2):
+    exact      = 0b01101111 | L | (op1 << 47) | (op2 << 26)
+    exact_mask = 0b11111111 | L | (1   << 47) | (0xFFFF << 26)
+
+    op(name, encoding_32 = (exact, exact_mask, 6, _), srcs = 1)
+
+subgroup_op("simd_prefix_iadd", 1, 0b0000000000011000)
+subgroup_op("simd_iadd", 1, 0b0000000000001000)
+
+op("simd_shuffle",
+    encoding_32 = (0b01101111 | (1 << 26),
+                   0xFF | L | (1 << 47) | (3 << 38) | (3 << 26), 6, _),
+    srcs = 2)
 
 op("icmpsel",
       encoding_32 = (0x12, 0x7F, 8, 10),
@@ -406,6 +421,29 @@ memory_barrier("image_barrier_3", 2, 1, 10)
 memory_barrier("image_barrier_4", 3, 1, 10)
 
 memory_barrier("flush_memory_to_texture", 0, 0, 4)
+
+op("doorbell", (0x60020 | 0x28 << 32, (1 << 48) - 1, 6, _), dests = 0,
+      can_eliminate = False, can_reorder = False, imms = [IMM])
+
+op("stack_unmap", (0x00075, (1 << 24) - 1, 8, _), dests = 1, srcs = 0, can_eliminate = False, can_reorder = False, imms = [IMM])
+op("stack_map",   (0x10075, (1 << 24) - 1, 8, _), dests = 0, srcs = 1, can_eliminate = False, can_reorder = False, imms = [IMM])
+
+op("stack_adjust",
+      encoding_32 = (0x10100b5, (1 << 26) - 1, 8, _),
+      dests = 0, srcs = 0, can_eliminate = False, can_reorder = False,
+      imms = [STACK_SIZE], schedule_class = "store")
+
+# source is offset
+op("stack_load",
+      encoding_32 = (0x35, (1 << 20) - 1, 6, 8),
+      srcs = 1, imms = [FORMAT, MASK], can_reorder = False,
+      schedule_class = "load")
+
+# sources are value and offset
+op("stack_store",
+      encoding_32 = (0xb5, (1 << 20) - 1, 6, 8),
+      dests = 0, srcs = 2, imms = [FORMAT, MASK],
+      can_eliminate=False, schedule_class = "store")
 
 # Convenient aliases.
 op("mov", _, srcs = 1)

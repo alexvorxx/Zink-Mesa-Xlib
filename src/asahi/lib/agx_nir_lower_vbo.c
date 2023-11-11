@@ -158,9 +158,13 @@ pass(struct nir_builder *b, nir_instr *instr, void *data)
    /* Calculate the element to fetch the vertex for. Divide the instance ID by
     * the divisor for per-instance data. Divisor=0 specifies per-vertex data.
     */
-   nir_def *el = (attrib.divisor == 0)
-                    ? nir_load_vertex_id(b)
-                    : nir_udiv_imm(b, nir_load_instance_id(b), attrib.divisor);
+   nir_def *el;
+   if (attrib.divisor) {
+      el = nir_udiv_imm(b, nir_load_instance_id(b), attrib.divisor);
+      el = nir_iadd(b, el, nir_load_base_instance(b));
+   } else {
+      el = nir_load_vertex_id(b);
+   }
 
    nir_def *base = nir_load_vbo_base_agx(b, nir_imm_int(b, attrib.buf));
 

@@ -1709,6 +1709,12 @@ print_tex_instr(nir_tex_instr *instr, print_state *state)
    case nir_texop_lod_bias_agx:
       fprintf(fp, "lod_bias_agx ");
       break;
+   case nir_texop_hdr_dim_nv:
+      fprintf(fp, "hdr_dim_nv ");
+      break;
+   case nir_texop_tex_type_nv:
+      fprintf(fp, "tex_type_nv ");
+      break;
    default:
       unreachable("Invalid texture operation");
       break;
@@ -2218,9 +2224,13 @@ print_function(nir_function *function, print_state *state)
 {
    FILE *fp = state->fp;
 
-   fprintf(fp, "decl_function %s (%d params) %s", function->name,
-           function->num_params, function->dont_inline ? "(noinline)" :
-           function->should_inline ? "(inline)" : "");
+   /* clang-format off */
+   fprintf(fp, "decl_function %s (%d params)%s%s", function->name,
+           function->num_params,
+           function->dont_inline ? " (noinline)" :
+           function->should_inline ? " (inline)" : "",
+           function->is_exported ? " (exported)" : "");
+   /* clang-format on */
 
    fprintf(fp, "\n");
 
@@ -2269,6 +2279,8 @@ primitive_name(unsigned primitive)
       PRIM(QUADS);
       PRIM(QUAD_STRIP);
       PRIM(POLYGON);
+      PRIM(LINES_ADJACENCY);
+      PRIM(TRIANGLES_ADJACENCY);
    default:
       return "UNKNOWN";
    }

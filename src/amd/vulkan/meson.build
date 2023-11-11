@@ -76,8 +76,10 @@ libradv_files = files(
   'nir/radv_nir_apply_pipeline_layout.c',
   'nir/radv_nir_export_multiview.c',
   'nir/radv_nir_lower_abi.c',
+  'nir/radv_nir_lower_cooperative_matrix.c',
   'nir/radv_nir_lower_fs_barycentric.c',
   'nir/radv_nir_lower_fs_intrinsics.c',
+  'nir/radv_nir_lower_hit_attrib_derefs.c',
   'nir/radv_nir_lower_intrinsics_early.c',
   'nir/radv_nir_lower_io.c',
   'nir/radv_nir_lower_poly_line_smooth.c',
@@ -124,7 +126,7 @@ libradv_files = files(
   'radv_rt_common.c',
   'radv_rt_shader.c',
   'radv_sampler.c',
-  'radv_sdma_copy_image.c',
+  'radv_sdma.c',
   'radv_shader.c',
   'radv_shader.h',
   'radv_shader_args.c',
@@ -275,3 +277,34 @@ _dev_icd = custom_target(
 )
 
 devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())
+
+if with_tests
+  test(
+    'radv_tests',
+    executable(
+      'radv_tests',
+      files(
+        'nir/radv_nir_lower_hit_attrib_derefs.c',
+        'tests/radv_nir_lower_hit_attrib_derefs_tests.cpp',
+      ),
+      cpp_args : [cpp_msvc_compat_args],
+      gnu_symbol_visibility : 'hidden',
+      include_directories : [
+        inc_include, 
+        inc_src,
+        inc_mapi,
+        inc_mesa,
+        inc_gallium,
+        inc_gallium_aux,
+        inc_amd,
+        inc_amd_common,
+        inc_compiler,
+        inc_util,
+        include_directories('.'),
+      ],
+      dependencies : [dep_thread, idep_gtest, idep_nir, idep_mesautil],
+    ),
+    suite : ['compiler', 'nir'],
+    protocol : 'gtest',
+  )
+endif

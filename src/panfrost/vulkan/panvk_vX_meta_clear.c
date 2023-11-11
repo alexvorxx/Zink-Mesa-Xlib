@@ -341,8 +341,9 @@ panvk_meta_clear_color_img(struct panvk_cmd_buffer *cmdbuf,
    };
 
    uint32_t clearval[4];
-   pan_pack_color(clearval, (union pipe_color_union *)color,
-                  img->pimage.layout.format, false);
+   pan_pack_color(panfrost_blendable_formats_v7, clearval,
+                  (union pipe_color_union *)color, img->pimage.layout.format,
+                  false);
    memcpy(fbinfo->rts[0].clear_value, clearval,
           sizeof(fbinfo->rts[0].clear_value));
 

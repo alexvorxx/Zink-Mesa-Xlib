@@ -59,13 +59,28 @@ gfx10_get_sqtt_ctrl(const struct radv_device *device, bool enable)
    return sqtt_ctrl;
 }
 
+static enum radv_queue_family
+radv_ip_to_queue_family(enum amd_ip_type t)
+{
+   switch (t) {
+   case AMD_IP_GFX:
+      return RADV_QUEUE_GENERAL;
+   case AMD_IP_COMPUTE:
+      return RADV_QUEUE_COMPUTE;
+   case AMD_IP_SDMA:
+      return RADV_QUEUE_TRANSFER;
+   default:
+      unreachable("Unknown IP type");
+   }
+}
+
 static void
 radv_emit_wait_for_idle(const struct radv_device *device, struct radeon_cmdbuf *cs, int family)
 {
+   const enum radv_queue_family qf = radv_ip_to_queue_family(family);
    enum rgp_flush_bits sqtt_flush_bits = 0;
    si_cs_emit_cache_flush(
-      device->ws, cs, device->physical_device->rad_info.gfx_level, NULL, 0,
-      family == AMD_IP_COMPUTE && device->physical_device->rad_info.gfx_level >= GFX7,
+      device->ws, cs, device->physical_device->rad_info.gfx_level, NULL, 0, qf,
       (family == RADV_QUEUE_COMPUTE ? RADV_CMD_FLAG_CS_PARTIAL_FLUSH
                                     : (RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_PS_PARTIAL_FLUSH)) |
          RADV_CMD_FLAG_INV_ICACHE | RADV_CMD_FLAG_INV_SCACHE | RADV_CMD_FLAG_INV_VCACHE | RADV_CMD_FLAG_INV_L2,

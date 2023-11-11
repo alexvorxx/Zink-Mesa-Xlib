@@ -179,10 +179,11 @@ void genX(cmd_emit_timestamp)(struct anv_batch *batch,
                               enum anv_timestamp_capture_type type,
                               void *data);
 
-void genX(batch_emit_dummy_post_sync_op)(struct anv_batch *batch,
-                                         struct anv_device *device,
-                                         uint32_t primitive_topology,
-                                         uint32_t vertex_count);
+void
+genX(batch_emit_post_3dprimitive_was)(struct anv_batch *batch,
+                                      const struct anv_device *device,
+                                      uint32_t primitive_topology,
+                                      uint32_t vertex_count);
 
 VkPolygonMode
 genX(raster_polygon_mode)(struct anv_graphics_pipeline *pipeline,
@@ -216,6 +217,7 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline);
 void
 genX(batch_set_preemption)(struct anv_batch *batch,
                            const struct intel_device_info *devinfo,
+                           uint32_t current_pipeline,
                            bool value);
 
 void
@@ -224,23 +226,25 @@ genX(cmd_buffer_set_preemption)(struct anv_cmd_buffer *cmd_buffer, bool value);
 void
 genX(batch_emit_pipe_control)(struct anv_batch *batch,
                               const struct intel_device_info *devinfo,
+                              uint32_t current_pipeline,
                               enum anv_pipe_bits bits,
                               const char *reason);
 
 void
 genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
                                     const struct intel_device_info *devinfo,
+                                    uint32_t current_pipeline,
                                     uint32_t post_sync_op,
                                     struct anv_address address,
                                     uint32_t imm_data,
                                     enum anv_pipe_bits bits,
                                     const char *reason);
 
-#define genx_batch_emit_pipe_control(a, b, c) \
-genX(batch_emit_pipe_control) (a, b, c, __func__)
+#define genx_batch_emit_pipe_control(a, b, c, d) \
+genX(batch_emit_pipe_control) (a, b, c, d, __func__)
 
-#define genx_batch_emit_pipe_control_write(a, b, c, d, e, f) \
-genX(batch_emit_pipe_control_write) (a, b, c, d, e, f, __func__)
+#define genx_batch_emit_pipe_control_write(a, b, c, d, e, f, g) \
+genX(batch_emit_pipe_control_write) (a, b, c, d, e, f, g, __func__)
 
 void genX(batch_emit_breakpoint)(struct anv_batch *batch,
                                  struct anv_device *device,

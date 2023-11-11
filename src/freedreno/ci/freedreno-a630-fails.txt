@@ -350,11 +350,6 @@ spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_R
 spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
 spec@arb_query_buffer_object@qbo@query-GL_TESS_CONTROL_SHADER_PATCHES-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
 
-# skqp failure:
-# SRGBReadWritePixels FAILED (7 errors)
-# ../../tests/SRGBReadWritePixelsTest.cpp:214	Could not create sRGB surface context. [OpenGL]
-SRGBReadWritePixels,Fail
-
 spec@!opengl 1.1@line-smooth-stipple,Fail
 
 
@@ -602,3 +597,61 @@ gmem-dEQP-VK.glsl.derivate.fwidthcoarse.dynamic_switch.vec3_mediump,Crash
 gmem-dEQP-VK.glsl.derivate.fwidthcoarse.dynamic_switch.vec4_highp,Crash
 gmem-dEQP-VK.glsl.derivate.fwidthfine.dynamic_if.vec2_mediump,Crash
 gmem-dEQP-VK.glsl.derivate.fwidthfine.dynamic_loop.vec2_highp,Crash
+
+# New CTS failures in 1.3.7.0
+dEQP-VK.api.version_check.unavailable_entry_points,Fail
+dEQP-VK.dynamic_rendering.primary_cmd_buff.basic.partial_binding_depth_stencil,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.32bit.point_list.draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.32bit.triangle_list_with_adjacency.indirect,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.32bit.triangle_strip_with_adjacency.draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_32bit_xfb_64bit.line_list.draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_32bit_xfb_64bit.point_list.indirect,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_32bit_xfb_64bit.triangle_list.draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_32bit_xfb_64bit.triangle_strip.indirect,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_64bit_xfb_32bit.point_list.draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.pgq_64bit_xfb_32bit.triangle_list_with_adjacency.indirect,Fail
+dEQP-VK.transform_feedback.simple.backward_dependency_indirect_endqueryindexed_streamid_0,Fail
+dynamic-dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d24_unorm_s8_uint.compatibility_depth_zero_stencil_zero_testing_stencil,Fail
+gmem-dEQP-VK.glsl.derivate.dfdy.dynamic_loop.vec4_mediump,Crash
+gmem-dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_1.32bit.triangle_fan.draw,Fail
+gmem-dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_1.64bit.line_list_with_adjacency.indirect,Fail
+gmem-dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_1.pgq_64bit_xfb_32bit.triangle_strip_with_adjacency.draw,Fail
+stale-regs-dEQP-VK.glsl.derivate.dfdy.dynamic_if.vec4_highp,Crash
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.64bit.tese.no_xfb.rast.patch_list.pgq_default.two_draws.pqg_first.before_2_queries,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.pgq_64bit_xfb_32bit.geom.xfb.rast.line_list.pgq_default_xfb_0.two_draws.xfbq_first.none,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.pgq_32bit_xfb_64bit.geom.xfb.rast.line_list_with_adjacency.pgq_default_xfb_0.two_draws.xfbq_first.before_2_queries,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.pgq_32bit_xfb_64bit.geom.xfb.rast.point_list.pgq_default_xfb_default.two_draws.pqg_first.none_2_queries,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.pgq_32bit_xfb_64bit.tese.xfb.rast.patch_list.pgq_default_xfb_default.single_draw.xfbq_first.after_2_queries_with_availability,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_context.gles1.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2_gles3.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_context.gles2.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_context.gles3.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2_gles3.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_thread.gles2.other,Fail
+wayland-dEQP-EGL.functional.color_clears.multi_thread.gles3.other,Fail
+wayland-dEQP-EGL.functional.color_clears.single_context.gles1.other,Fail
+wayland-dEQP-EGL.functional.color_clears.single_context.gles2.other,Fail
+wayland-dEQP-EGL.functional.color_clears.single_context.gles3.other,Fail
+wayland-dEQP-EGL.functional.render.multi_context.gles2.other,Fail
+wayland-dEQP-EGL.functional.render.multi_context.gles2_gles3.other,Fail
+wayland-dEQP-EGL.functional.render.multi_context.gles3.other,Fail
+wayland-dEQP-EGL.functional.render.multi_thread.gles2.other,Fail
+wayland-dEQP-EGL.functional.render.multi_thread.gles2_gles3.other,Fail
+wayland-dEQP-EGL.functional.render.multi_thread.gles3.other,Fail
+wayland-dEQP-EGL.functional.render.single_context.gles2.other,Fail
+wayland-dEQP-EGL.functional.render.single_context.gles3.other,Fail
+
+dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_3.32bit.triangle_strip.draw,Fail
+gmem-dEQP-VK.glsl.derivate.dfdy.dynamic_if.vec4_highp,Crash
+gmem-dEQP-VK.transform_feedback.primitives_generated_query.concurrent.pipeline_statistics_1.pgq_32bit_xfb_64bit.triangle_strip_with_adjacency.draw,Fail
+stale-regs-dEQP-VK.glsl.derivate.dfdxcoarse.dynamic_switch.vec3_highp,Crash
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.pgq_32bit_xfb_64bit.geom.xfb.rast.line_list_with_adjacency.pgq_0_xfb_0.single_draw.xfbq_first.none,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.pgq_64bit_xfb_32bit.geom.xfb.rast.line_list.pgq_default_xfb_default.two_draws.pqg_first.before,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.pgq_64bit_xfb_32bit.tese.xfb.rast.patch_list.pgq_default_xfb_default.single_draw.pqg_first.after_2_queries,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.32bit.geom.no_xfb.rast.line_list_with_adjacency.pgq_default.single_draw.pqg_first.none,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.32bit.geom.xfb.rast.line_strip_with_adjacency.pgq_default_xfb_1.single_draw.xfbq_first.after,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.32bit.geom.xfb.rast.triangle_strip_with_adjacency.pgq_default_xfb_1.single_draw.xfbq_first.before_2_queries,Fail
+stale-regs-dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.32bit.tese.xfb.rast.patch_list.pgq_default_xfb_default.two_draws.xfbq_first.none_2_queries,Fail

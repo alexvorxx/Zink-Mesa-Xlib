@@ -1017,7 +1017,7 @@ radv_amdgpu_winsys_cs_submit_internal(struct radv_amdgpu_ctx *ctx, int queue_idx
       goto fail;
 
    /* Configure the CS request. */
-   const uint8_t *max_ib_per_ip = ws->info.max_submitted_ibs;
+   const uint32_t *max_ib_per_ip = ws->info.max_submitted_ibs;
    struct radv_amdgpu_cs_request request = {
       .ip_type = last_cs->hw_ip,
       .ip_instance = 0,
@@ -1362,7 +1362,7 @@ radv_amdgpu_winsys_cs_dump(struct radeon_cmdbuf *_cs, FILE *file, const int *tra
       void *ib = radv_amdgpu_winsys_get_cpu_addr(cs, ib_info.ib_mc_address);
       assert(ib);
       ac_parse_ib(file, ib, cs->ib_buffers[0].cdw, trace_ids, trace_id_count, "main IB", ws->info.gfx_level,
-                  ws->info.family, radv_amdgpu_winsys_get_cpu_addr, cs);
+                  ws->info.family, cs->hw_ip, radv_amdgpu_winsys_get_cpu_addr, cs);
    } else {
       for (unsigned i = 0; i < cs->num_ib_buffers; i++) {
          struct radv_amdgpu_ib *ib = &cs->ib_buffers[i];
@@ -1379,8 +1379,8 @@ radv_amdgpu_winsys_cs_dump(struct radeon_cmdbuf *_cs, FILE *file, const int *tra
             snprintf(name, sizeof(name), "main IB");
          }
 
-         ac_parse_ib(file, mapped, ib->cdw, trace_ids, trace_id_count, name, ws->info.gfx_level, ws->info.family, NULL,
-                     NULL);
+         ac_parse_ib(file, mapped, ib->cdw, trace_ids, trace_id_count, name, ws->info.gfx_level, ws->info.family,
+                     cs->hw_ip, NULL, NULL);
       }
    }
 }

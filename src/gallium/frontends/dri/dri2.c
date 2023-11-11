@@ -2098,9 +2098,9 @@ dri2_interop_export_object(__DRIcontext *_ctx,
 static int
 dri2_interop_flush_objects(__DRIcontext *_ctx,
                            unsigned count, struct mesa_glinterop_export_in *objects,
-                           GLsync *sync)
+                           GLsync *sync, int *fence_fd)
 {
-   return st_interop_flush_objects(dri_context(_ctx)->st, count, objects, sync);
+   return st_interop_flush_objects(dri_context(_ctx)->st, count, objects, sync, fence_fd);
 }
 
 static const __DRI2interopExtension dri2InteropExtension = {

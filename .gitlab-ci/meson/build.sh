@@ -51,9 +51,8 @@ fi
 
 # Only use GNU time if available, not any shell built-in command
 case $CI_JOB_NAME in
-    # strace and wine don't seem to mix well
     # ASAN leak detection is incompatible with strace
-    debian-mingw32-x86_64|*-asan*)
+    *-asan*)
         if test -f /usr/bin/time; then
             MESON_TEST_ARGS+=--wrapper=$PWD/.gitlab-ci/meson/time.sh
         fi
@@ -85,6 +84,7 @@ meson setup _build \
       -D libunwind=${UNWIND} \
       ${DRI_LOADERS} \
       ${GALLIUM_ST} \
+      -D gallium-opencl=disabled \
       -D gallium-drivers=${GALLIUM_DRIVERS:-[]} \
       -D vulkan-drivers=${VULKAN_DRIVERS:-[]} \
       -D video-codecs=h264dec,h264enc,h265dec,h265enc,vc1dec \
@@ -104,10 +104,11 @@ fi
 
 uncollapsed_section_switch meson-test "meson: test"
 LC_ALL=C.UTF-8 meson test --num-processes "${FDO_CI_CONCURRENT:-4}" --print-errorlogs ${MESON_TEST_ARGS}
+section_switch meson-install "meson: install"
 if command -V mold &> /dev/null ; then
     mold --run ninja install
 else
     ninja install
 fi
 cd ..
-section_end meson-test
+section_end meson-install

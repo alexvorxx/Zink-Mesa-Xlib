@@ -1368,6 +1368,25 @@
   <register name="GFX_CCS_AUX_INV" length="1" num="0x4208">
     <field name="Aux Inv" start="0" end="0" type="bool" />
   </register>
+  <register name="GFX_TRTT_CR" length="1" num="0x4400">
+    <field name="TR-TT Enable" start="0" end="0" type="bool" />
+  </register>
+  <register name="GFX_TRTT_INVAL" length="1" num="0x4414">
+    <field name="Invalid Tile Detection Value" start="0" end="31" type="uint" />
+  </register>
+  <register name="GFX_TRTT_L3_BASE_HIGH" length="1" num="0x440C">
+    <field name="TR-VA L3 Pointer Upper Address" start="0" end="15" type="uint" />
+  </register>
+  <register name="GFX_TRTT_L3_BASE_LOW" length="1" num="0x4408">
+    <field name="TR-VA L3 Pointer Lower Address" start="12" end="31" type="uint" />
+  </register>
+  <register name="GFX_TRTT_NULL" length="1" num="0x4410">
+    <field name="Null Tile Detection Value" start="0" end="31" type="uint" />
+  </register>
+  <register name="GFX_TRTT_VA_RANGE" length="1" num="0x4404">
+    <field name="TR-VA Data Value" start="0" end="3" type="uint" />
+    <field name="TR-VA Mask Value" start="4" end="7" type="uint" />
+  </register>
   <register name="HIZ_CHICKEN" length="1" num="0x7018">
     <field name="HZ Depth Test LE/GE Optimization Disable" start="13" end="13" type="bool" />
     <field name="HZ Depth Test LE/GE Optimization Disable Mask" start="29" end="29" type="bool" />

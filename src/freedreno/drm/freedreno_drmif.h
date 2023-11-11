@@ -145,7 +145,6 @@ int fd_fence_wait(struct fd_fence *f);
 #define FD_BO_SCANOUT             BITSET_BIT(5)
 
 /* internal bo flags: */
-#define _FD_BO_VIRTIO_SHM         BITSET_BIT(6)
 #define _FD_BO_NOSYNC             BITSET_BIT(7) /* Avoid userspace fencing on control buffers */
 
 /*
@@ -302,6 +301,7 @@ void fd_bo_del_array(struct fd_bo **bos, int count);
 void fd_bo_del_list_nocache(struct list_head *list);
 int fd_bo_get_name(struct fd_bo *bo, uint32_t *name);
 uint32_t fd_bo_handle(struct fd_bo *bo);
+int fd_bo_dmabuf_drm(struct fd_bo *bo);
 int fd_bo_dmabuf(struct fd_bo *bo);
 uint32_t fd_bo_size(struct fd_bo *bo);
 void *fd_bo_map(struct fd_bo *bo);

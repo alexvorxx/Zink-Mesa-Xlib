@@ -10,7 +10,6 @@
 #include "driver_ddebug/dd_util.h"
 #include "radeon_uvd.h"
 #include "si_public.h"
-#include "si_shader_internal.h"
 #include "sid.h"
 #include "ac_shadowed_regs.h"
 #include "compiler/nir/nir.h"
@@ -24,6 +23,13 @@
 #include "util/u_upload_mgr.h"
 #include "util/xmlconfig.h"
 #include "vl/vl_decoder.h"
+#include "si_utrace.h"
+
+#include "aco_interface.h"
+
+#ifdef LLVM_AVAILABLE
+#include "ac_llvm_util.h"
+#endif
 
 #include <xf86drm.h>
 
@@ -84,14 +90,13 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    { "noefc", DBG(NO_EFC), "Disable hardware based encoder colour format conversion."},
 
    /* 3D engine options: */
-   {"nogfx", DBG(NO_GFX), "Disable graphics. Only multimedia compute paths can be used."},
    {"nongg", DBG(NO_NGG), "Disable NGG and use the legacy pipeline."},
    {"nggc", DBG(ALWAYS_NGG_CULLING_ALL), "Always use NGG culling even when it can hurt."},
    {"nonggc", DBG(NO_NGG_CULLING), "Disable NGG culling."},
    {"switch_on_eop", DBG(SWITCH_ON_EOP), "Program WD/IA to switch on end-of-packet."},
    {"nooutoforder", DBG(NO_OUT_OF_ORDER), "Disable out-of-order rasterization"},
-   {"nodpbb", DBG(NO_DPBB), "Disable DPBB."},
-   {"dpbb", DBG(DPBB), "Enable DPBB."},
+   {"nodpbb", DBG(NO_DPBB), "Disable DPBB. Overrules the dpbb enable option."},
+   {"dpbb", DBG(DPBB), "Enable DPBB for gfx9 dGPU. Default enabled for gfx9 APU and >= gfx10."},
    {"nohyperz", DBG(NO_HYPERZ), "Disable Hyper-Z"},
    {"no2d", DBG(NO_2D_TILING), "Disable 2D tiling"},
    {"notiling", DBG(NO_TILING), "Disable tiling"},
@@ -129,8 +134,13 @@ static const struct debug_named_value test_options[] = {
    DEBUG_NAMED_VALUE_END /* must be last */
 };
 
-bool si_init_compiler(struct si_screen *sscreen, struct ac_llvm_compiler *compiler)
+struct ac_llvm_compiler *si_create_llvm_compiler(struct si_screen *sscreen)
 {
+#ifdef LLVM_AVAILABLE
+   struct ac_llvm_compiler *compiler = CALLOC_STRUCT(ac_llvm_compiler);
+   if (!compiler)
+      return NULL;
+
    /* Only create the less-optimizing version of the compiler on APUs
     * predating Ryzen (Raven). */
    bool create_low_opt_compiler =
@@ -141,13 +151,16 @@ bool si_init_compiler(struct si_screen *sscreen, struct ac_llvm_compiler *compil
       (create_low_opt_compiler ? AC_TM_CREATE_LOW_OPT : 0);
 
    if (!ac_init_llvm_compiler(compiler, sscreen->info.family, tm_options))
-      return false;
+      return NULL;
 
    compiler->passes = ac_create_llvm_passes(compiler->tm);
    if (compiler->low_opt_tm)
       compiler->low_opt_passes = ac_create_llvm_passes(compiler->low_opt_tm);
 
-   return true;
+   return compiler;
+#else
+   return NULL;
+#endif
 }
 
 void si_init_aux_async_compute_ctx(struct si_screen *sscreen)
@@ -165,9 +178,12 @@ void si_init_aux_async_compute_ctx(struct si_screen *sscreen)
       ((struct si_context*)sscreen->async_compute_context)->cs_max_waves_per_sh = 2;
 }
 
-static void si_destroy_compiler(struct ac_llvm_compiler *compiler)
+static void si_destroy_llvm_compiler(struct ac_llvm_compiler *compiler)
 {
+#ifdef LLVM_AVAILABLE
    ac_destroy_llvm_compiler(compiler);
+   FREE(compiler);
+#endif
 }
 
 
@@ -203,6 +219,8 @@ static void si_destroy_context(struct pipe_context *context)
 
       si_destroy_sqtt(sctx);
    }
+
+   si_utrace_fini(sctx);
 
    pipe_resource_reference(&sctx->esgs_ring, NULL);
    pipe_resource_reference(&sctx->gsvs_ring, NULL);
@@ -338,10 +356,8 @@ static void si_destroy_context(struct pipe_context *context)
    si_resource_reference(&sctx->shadowing.registers, NULL);
    si_resource_reference(&sctx->shadowing.csa, NULL);
 
-   if (sctx->compiler) {
-      si_destroy_compiler(sctx->compiler);
-      FREE(sctx->compiler);
-   }
+   if (sctx->compiler)
+      si_destroy_llvm_compiler(sctx->compiler);
 
    si_saved_cs_reference(&sctx->current_saved_cs, NULL);
 
@@ -690,6 +706,9 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       case GFX11:
          si_init_draw_functions_GFX11(sctx);
          break;
+      case GFX11_5:
+         si_init_draw_functions_GFX11_5(sctx);
+         break;
       default:
          unreachable("unhandled gfx level");
       }
@@ -779,6 +798,8 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       sctx->shader.gs.key.ge.opt.prefer_mono = 1;
    }
 
+   si_utrace_init(sctx);
+
    si_begin_new_gfx_cs(sctx, true);
    assert(sctx->gfx_cs.current.cdw == sctx->initial_gfx_cs_size);
 
@@ -820,14 +841,12 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
 
          if (status != PIPE_NO_RESET) {
             /* We lost the aux_context, create a new one */
+            unsigned context_flags = saux->context_flags;
             struct u_log_context *aux_log = saux->log;
             saux->b.set_log_context(&saux->b, NULL);
             saux->b.destroy(&saux->b);
 
-            saux = (struct si_context *)si_create_context(
-               &sscreen->b, SI_CONTEXT_FLAG_AUX |
-                            (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
-                            (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
+            saux = (struct si_context *)si_create_context(&sscreen->b, context_flags);
             saux->b.set_log_context(&saux->b, aux_log);
 
             sscreen->aux_contexts[i].ctx = &saux->b;
@@ -850,6 +869,7 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    }
 
    sctx->initial_gfx_cs_size = sctx->gfx_cs.current.cdw;
+   sctx->last_timestamp_cmd = NULL;
 
    sctx->cs_blit_shaders = _mesa_hash_table_create_u32_keys(NULL);
    if (!sctx->cs_blit_shaders)
@@ -987,17 +1007,13 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
    glsl_type_singleton_decref();
 
    for (i = 0; i < ARRAY_SIZE(sscreen->compiler); i++) {
-      if (sscreen->compiler[i]) {
-         si_destroy_compiler(sscreen->compiler[i]);
-         FREE(sscreen->compiler[i]);
-      }
+      if (sscreen->compiler[i])
+         si_destroy_llvm_compiler(sscreen->compiler[i]);
    }
 
    for (i = 0; i < ARRAY_SIZE(sscreen->compiler_lowp); i++) {
-      if (sscreen->compiler_lowp[i]) {
-         si_destroy_compiler(sscreen->compiler_lowp[i]);
-         FREE(sscreen->compiler_lowp[i]);
-      }
+      if (sscreen->compiler_lowp[i])
+         si_destroy_llvm_compiler(sscreen->compiler_lowp[i]);
    }
 
    /* Free shader parts. */
@@ -1099,7 +1115,7 @@ static void si_test_gds_memory_management(struct si_context *sctx, unsigned allo
 static void si_disk_cache_create(struct si_screen *sscreen)
 {
    /* Don't use the cache if shader dumping is enabled. */
-   if (sscreen->debug_flags & (DBG_ALL_SHADERS | DBG(USE_ACO)))
+   if (sscreen->debug_flags & DBG_ALL_SHADERS)
       return;
 
    struct mesa_sha1 ctx;
@@ -1108,9 +1124,18 @@ static void si_disk_cache_create(struct si_screen *sscreen)
 
    _mesa_sha1_init(&ctx);
 
-   if (!disk_cache_get_function_identifier(si_disk_cache_create, &ctx) ||
+   if (!disk_cache_get_function_identifier(si_disk_cache_create, &ctx))
+      return;
+
+   /* ACO and LLVM shader binary have different cache id distinguished by if adding
+    * the LLVM function identifier. ACO is a built-in component in mesa, so no need
+    * to add aco function here.
+    */
+#ifdef LLVM_AVAILABLE
+   if (!sscreen->use_aco &&
        !disk_cache_get_function_identifier(LLVMInitializeAMDGPUTargetInfo, &ctx))
       return;
+#endif
 
    _mesa_sha1_final(&ctx, sha1);
    mesa_bytes_to_hex(cache_id, sha1, 20);
@@ -1175,16 +1200,22 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       sscreen->info.use_display_dcc_with_retile_blit = false;
    }
 
-   if (sscreen->debug_flags & DBG(SHADOW_REGS)) {
+   /* Using the environment variable doesn't enable PAIRS packets for simplicity. */
+   if (sscreen->debug_flags & DBG(SHADOW_REGS))
       sscreen->info.register_shadowing_required = true;
-      /* Recompute has_set_pairs_packets. */
-      sscreen->info.has_set_pairs_packets = sscreen->info.gfx_level >= GFX11 &&
-                                            sscreen->info.register_shadowing_required &&
-                                            sscreen->info.has_dedicated_vram;
-   }
 
-   if (sscreen->debug_flags & DBG(NO_GFX))
-      sscreen->info.has_graphics = false;
+#ifdef LLVM_AVAILABLE
+   sscreen->use_aco = (sscreen->debug_flags & DBG(USE_ACO));
+#else
+   sscreen->use_aco = true;
+#endif
+
+   if (sscreen->use_aco && !aco_is_gpu_supported(&sscreen->info)) {
+      fprintf(stderr, "radeonsi: ACO does not support this chip yet\n");
+      FREE(sscreen->nir_options);
+      FREE(sscreen);
+      return NULL;
+   }
 
    if ((sscreen->debug_flags & DBG(TMZ)) &&
        !sscreen->info.has_tmz_support) {
@@ -1194,15 +1225,17 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       return NULL;
    }
 
-   /* Initialize just one compiler instance to check for errors. The other compiler instances are
-    * initialized on demand.
-    */
-   sscreen->compiler[0] = CALLOC_STRUCT(ac_llvm_compiler);
-   if (!si_init_compiler(sscreen, sscreen->compiler[0])) {
-      /* The callee prints the error message. */
-      FREE(sscreen->nir_options);
-      FREE(sscreen);
-      return NULL;
+   if (!sscreen->use_aco) {
+      /* Initialize just one compiler instance to check for errors. The other compiler instances
+       * are initialized on demand.
+       */
+      sscreen->compiler[0] = si_create_llvm_compiler(sscreen);
+      if (!sscreen->compiler[0]) {
+         /* The callee prints the error message. */
+         FREE(sscreen->nir_options);
+         FREE(sscreen);
+         return NULL;
+      }
    }
 
    util_idalloc_mt_init_tc(&sscreen->buffer_ids);
@@ -1381,13 +1414,29 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
                             sscreen->debug_flags & DBG(DPBB));
 
    if (sscreen->dpbb_allowed) {
-      /* Only bin draws that have no CONTEXT and SH register changes between them because higher
-       * settings cause hangs. We've only been able to reproduce hangs on smaller chips
-       * (e.g. Navi24, GFX1103), though all chips might have them. What we see may be due to
-       * a driver bug.
-       */
-      sscreen->pbb_context_states_per_bin = 1;
-      sscreen->pbb_persistent_states_per_bin = 1;
+      if ((sscreen->info.has_dedicated_vram && sscreen->info.max_render_backends > 4) ||
+	  sscreen->info.gfx_level >= GFX10) {
+	 /* Only bin draws that have no CONTEXT and SH register changes between
+	  * them because higher settings cause hangs. We've only been able to
+	  * reproduce hangs on smaller chips (e.g. Navi24, GFX1103), though all
+	  * chips might have them. What we see may be due to a driver bug.
+	  */
+         sscreen->pbb_context_states_per_bin = 1;
+         sscreen->pbb_persistent_states_per_bin = 1;
+      } else {
+         /* This is a workaround for:
+          *    https://bugs.freedesktop.org/show_bug.cgi?id=110214
+          * (an alternative is to insert manual BATCH_BREAK event when
+          *  a context_roll is detected). */
+         sscreen->pbb_context_states_per_bin = sscreen->info.has_gfx9_scissor_bug ? 1 : 3;
+         sscreen->pbb_persistent_states_per_bin = 8;
+      }
+
+      if (!sscreen->info.has_gfx9_scissor_bug)
+         sscreen->pbb_context_states_per_bin =
+            debug_get_num_option("AMD_DEBUG_DPBB_CS", sscreen->pbb_context_states_per_bin);
+      sscreen->pbb_persistent_states_per_bin =
+         debug_get_num_option("AMD_DEBUG_DPBB_PS", sscreen->pbb_persistent_states_per_bin);
 
       assert(sscreen->pbb_context_states_per_bin >= 1 &&
              sscreen->pbb_context_states_per_bin <= 6);
@@ -1447,11 +1496,13 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    for (unsigned i = 0; i < ARRAY_SIZE(sscreen->aux_contexts); i++) {
       (void)mtx_init(&sscreen->aux_contexts[i].lock, mtx_plain | mtx_recursive);
 
+      bool compute = !sscreen->info.has_graphics ||
+                     &sscreen->aux_contexts[i] == &sscreen->aux_context.shader_upload;
       sscreen->aux_contexts[i].ctx =
          si_create_context(&sscreen->b,
                            SI_CONTEXT_FLAG_AUX | PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET |
                            (sscreen->options.aux_debug ? PIPE_CONTEXT_DEBUG : 0) |
-                           (sscreen->info.has_graphics ? 0 : PIPE_CONTEXT_COMPUTE_ONLY));
+                           (compute ? PIPE_CONTEXT_COMPUTE_ONLY : 0));
 
       if (sscreen->options.aux_debug) {
          struct u_log_context *log = CALLOC_STRUCT(u_log_context);
@@ -1502,6 +1553,7 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
    if (!version)
      return NULL;
 
+#ifdef LLVM_AVAILABLE
    /* LLVM must be initialized before util_queue because both u_queue and LLVM call atexit,
     * and LLVM must call it first because its atexit handler executes C++ destructors,
     * which must be done after our compiler threads using LLVM in u_queue are finished
@@ -1509,6 +1561,7 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
     * LLVM must be initialized first, followed by u_queue.
     */
    ac_init_llvm_once();
+#endif
 
    driParseConfigFiles(config->options, config->options_info, 0, "radeonsi",
                        NULL, NULL, NULL, 0, NULL, 0);
@@ -1521,6 +1574,8 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
       rw = amdgpu_winsys_create(fd, config, radeonsi_screen_create_impl);
       break;
    }
+
+   si_driver_ds_init();
 
    drmFreeVersion(version);
    return rw ? rw->screen : NULL;

@@ -80,7 +80,7 @@
 .collabora-turnip-rules:
   stage: freedreno
   rules:
-    - !reference [.freedreno-farm-manual-rules, rules]
+    - !reference [.collabora-farm-rules, rules]
     - !reference [.freedreno-common-rules, rules]
     - !reference [.vulkan-rules, rules]
     - changes: *freedreno_vulkan_file_list
@@ -202,6 +202,7 @@
     BM_KERNEL: Image.gz
     BM_DTB: apq8016-sbc
     GPU_VERSION: freedreno-a307
+  timeout: 20m
   tags:
     - google-freedreno-db410c
 
@@ -232,6 +233,7 @@
     BM_KERNEL: Image.gz
     BM_DTB: apq8096-db820c
     GPU_VERSION: freedreno-a530
+  timeout: 20m
   tags:
     - google-freedreno-db820c
 
@@ -309,6 +311,7 @@
     BM_KERNEL: cheza-kernel
     BM_CMDLINE: "ip=dhcp console=ttyMSM0,115200n8 root=/dev/nfs rw nfsrootdebug nfsroot=,tcp,nfsvers=4.2 init=/init"
     GPU_VERSION: freedreno-a630
+  timeout: 20m
   tags:
     - google-freedreno-cheza
   script:

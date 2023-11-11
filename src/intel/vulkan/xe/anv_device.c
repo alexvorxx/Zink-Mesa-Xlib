@@ -37,8 +37,7 @@ bool anv_xe_device_destroy_vm(struct anv_device *device)
 VkResult anv_xe_device_setup_vm(struct anv_device *device)
 {
    struct drm_xe_vm_create create = {
-      .flags = DRM_XE_VM_CREATE_SCRATCH_PAGE |
-               DRM_XE_VM_CREATE_ASYNC_BIND_OPS,
+      .flags = DRM_XE_VM_CREATE_SCRATCH_PAGE,
    };
    if (intel_ioctl(device->fd, DRM_IOCTL_XE_VM_CREATE, &create) != 0)
       return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
@@ -98,7 +97,7 @@ anv_xe_physical_device_get_parameters(struct anv_physical_device *device)
 
    device->has_exec_timeline = true;
    device->max_context_priority =
-         drm_sched_priority_to_vk_priority(config->info[XE_QUERY_CONFIG_MAX_ENGINE_PRIORITY]);
+         drm_sched_priority_to_vk_priority(config->info[XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY]);
 
    free(config);
    return VK_SUCCESS;

@@ -508,10 +508,6 @@ handle_special(struct vtn_builder *b, uint32_t opcode,
       return nir_cross3(nb, srcs[0], srcs[1]);
    case OpenCLstd_Fdim:
       return nir_fdim(nb, srcs[0], srcs[1]);
-   case OpenCLstd_Fmod:
-      if (nb->shader->options->lower_fmod)
-         break;
-      return nir_fmod(nb, srcs[0], srcs[1]);
    case OpenCLstd_Mad:
       return nir_fmad(nb, srcs[0], srcs[1], srcs[2]);
    case OpenCLstd_Maxmag:

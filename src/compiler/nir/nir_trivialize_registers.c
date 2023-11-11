@@ -108,7 +108,7 @@ trivialize_load(nir_intrinsic_instr *load)
 
 struct trivialize_src_state {
    nir_block *block;
-   BITSET_WORD *trivial_regs;
+   BITSET_WORD *trivial_loads;
 };
 
 static bool
@@ -124,9 +124,8 @@ trivialize_src(nir_src *src, void *state_)
    if (!nir_is_load_reg(intr))
       return true;
 
-   unsigned reg_index = intr->src[0].ssa->index;
    if (intr->instr.block != state->block ||
-       !BITSET_TEST(state->trivial_regs, reg_index))
+       !BITSET_TEST(state->trivial_loads, intr->def.index))
       trivialize_load(intr);
 
    return true;
@@ -137,8 +136,8 @@ trivialize_loads(nir_function_impl *impl, nir_block *block)
 {
    struct trivialize_src_state state = {
       .block = block,
-      .trivial_regs = calloc(BITSET_WORDS(impl->ssa_alloc),
-                             sizeof(BITSET_WORD)),
+      .trivial_loads = calloc(BITSET_WORDS(impl->ssa_alloc),
+                              sizeof(BITSET_WORD)),
    };
 
    nir_foreach_instr_safe(instr, block) {
@@ -147,21 +146,40 @@ trivialize_loads(nir_function_impl *impl, nir_block *block)
 
       nir_foreach_src(instr, trivialize_src, &state);
 
-      /* We maintain a set of registers which can be accessed trivially. When we
-       * hit a load, the register becomes trivial. When the register is stored,
-       * the register becomes nontrivial again. That means the window between
-       * the load and the store is where the register can be accessed legally.
+      /* We maintain a set of register loads which can be accessed trivially.
+       * When we hit a load, it is added to the trivial set. When the register
+       * is stored, all loads from the register become nontrivial. That means
+       * the window between the load and the store is where the register can be
+       * accessed legally.
+       *
+       * Note that we must track loads and not registers to correctly handle
+       * cases like:
+       *
+       *    %1 = @load_reg %0
+       *    %2 = @load_reg %0
+       *    @store_reg data, %0
+       *    use %1
+       *
+       * This is pretty obscure but it isn't a big deal to handle.
        */
       if (instr->type == nir_instr_type_intrinsic) {
          nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
          /* We don't consider indirect loads to ever be trivial */
-         if (intr->intrinsic == nir_intrinsic_load_reg_indirect)
+         if (intr->intrinsic == nir_intrinsic_load_reg_indirect) {
             trivialize_load(intr);
-         else if (intr->intrinsic == nir_intrinsic_load_reg)
-            BITSET_SET(state.trivial_regs, intr->src[0].ssa->index);
-         else if (nir_is_store_reg(intr))
-            BITSET_CLEAR(state.trivial_regs, intr->src[1].ssa->index);
+         } else if (intr->intrinsic == nir_intrinsic_load_reg) {
+            BITSET_SET(state.trivial_loads, intr->def.index);
+         } else if (nir_is_store_reg(intr)) {
+            nir_intrinsic_instr *reg = nir_reg_get_decl(intr->src[1].ssa);
+
+            nir_foreach_reg_load(load, reg) {
+               nir_instr *parent = nir_src_parent_instr(load);
+               nir_intrinsic_instr *intr = nir_instr_as_intrinsic(parent);
+
+               BITSET_CLEAR(state.trivial_loads, intr->def.index);
+            }
+         }
       }
    }
 
@@ -170,7 +188,7 @@ trivialize_loads(nir_function_impl *impl, nir_block *block)
    if (nif)
       trivialize_src(&nif->condition, &state);
 
-   free(state.trivial_regs);
+   free(state.trivial_loads);
 }
 
 /*

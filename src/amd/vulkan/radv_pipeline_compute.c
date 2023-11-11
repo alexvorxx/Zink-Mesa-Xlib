@@ -266,7 +266,7 @@ radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkC
    }
 
    radv_pipeline_init(device, &pipeline->base, RADV_PIPELINE_COMPUTE);
-   pipeline->base.create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+   pipeline->base.create_flags = vk_compute_pipeline_create_flags(pCreateInfo);
    pipeline->base.is_internal = _cache == device->meta_state.cache;
 
    const VkPipelineCreationFeedbackCreateInfo *creation_feedback =
@@ -303,7 +303,7 @@ radv_create_compute_pipelines(VkDevice _device, VkPipelineCache pipelineCache, u
          result = r;
          pPipelines[i] = VK_NULL_HANDLE;
 
-         VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(&pCreateInfos[i]);
+         VkPipelineCreateFlagBits2KHR create_flags = vk_compute_pipeline_create_flags(&pCreateInfos[i]);
          if (create_flags & VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR)
             break;
       }

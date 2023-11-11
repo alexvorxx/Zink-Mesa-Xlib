@@ -97,14 +97,6 @@ enum qfile {
         QFILE_TEMP,
 
         /**
-         * VPM reads use this with an index value to say what part of the VPM
-         * is being read.
-         *
-         * Used only for ver < 40. For ver >= 40 we use ldvpm.
-         */
-        QFILE_VPM,
-
-        /**
          * Stores an immediate value in the index field that will be used
          * directly by qpu_load_imm().
          */
@@ -1077,6 +1069,10 @@ v3d_compute_vpm_config(struct v3d_device_info *devinfo,
                        struct v3d_gs_prog_data *gs,
                        struct vpm_config *vpm_cfg_bin,
                        struct vpm_config *vpm_cfg);
+void
+v3d_pack_unnormalized_coordinates(struct v3d_device_info *devinfo,
+                                  uint32_t *p1_packed,
+                                  bool unnormalized_coordinates);
 
 static inline bool
 vir_has_uniform(struct qinst *inst)
@@ -1146,7 +1142,6 @@ bool vir_is_raw_mov(struct qinst *inst);
 bool vir_is_tex(const struct v3d_device_info *devinfo, struct qinst *inst);
 bool vir_is_add(struct qinst *inst);
 bool vir_is_mul(struct qinst *inst);
-bool vir_writes_r3_implicitly(const struct v3d_device_info *devinfo, struct qinst *inst);
 bool vir_writes_r4_implicitly(const struct v3d_device_info *devinfo, struct qinst *inst);
 struct qreg vir_follow_movs(struct v3d_compile *c, struct qreg reg);
 uint8_t vir_channels_written(struct qinst *inst);
@@ -1183,12 +1178,9 @@ bool v3d_nir_lower_txf_ms(nir_shader *s);
 bool v3d_nir_lower_image_load_store(nir_shader *s);
 bool v3d_nir_lower_load_store_bitsize(nir_shader *s);
 
-void v3d33_vir_vpm_read_setup(struct v3d_compile *c, int num_components);
-void v3d33_vir_vpm_write_setup(struct v3d_compile *c);
-void v3d33_vir_emit_tex(struct v3d_compile *c, nir_tex_instr *instr);
-void v3d40_vir_emit_tex(struct v3d_compile *c, nir_tex_instr *instr);
-void v3d40_vir_emit_image_load_store(struct v3d_compile *c,
-                                     nir_intrinsic_instr *instr);
+void v3d_vir_emit_tex(struct v3d_compile *c, nir_tex_instr *instr);
+void v3d_vir_emit_image_load_store(struct v3d_compile *c,
+                                   nir_intrinsic_instr *instr);
 
 void v3d_vir_to_qpu(struct v3d_compile *c, struct qpu_reg *temp_registers);
 uint32_t v3d_qpu_schedule_instructions(struct v3d_compile *c);
@@ -1298,28 +1290,18 @@ vir_##name(struct v3d_compile *c, struct qreg a, struct qreg b)         \
 #define VIR_SFU(name)                                                      \
 static inline struct qreg                                                \
 vir_##name(struct v3d_compile *c, struct qreg a)                         \
-{                                                                        \
-        if (c->devinfo->ver >= 41) {                                     \
-                return vir_emit_def(c, vir_add_inst(V3D_QPU_A_##name,    \
-                                                    c->undef,            \
-                                                    a, c->undef));       \
-        } else {                                                         \
-                vir_FMOV_dest(c, vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_##name), a); \
-                return vir_FMOV(c, vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_R4)); \
-        }                                                                \
+{                                                                       \
+        return vir_emit_def(c, vir_add_inst(V3D_QPU_A_##name,           \
+                                            c->undef,                   \
+                                            a, c->undef));              \
 }                                                                        \
 static inline struct qinst *                                             \
 vir_##name##_dest(struct v3d_compile *c, struct qreg dest,               \
                   struct qreg a)                                         \
 {                                                                        \
-        if (c->devinfo->ver >= 41) {                                     \
-                return vir_emit_nondef(c, vir_add_inst(V3D_QPU_A_##name, \
-                                                       dest,             \
-                                                       a, c->undef));    \
-        } else {                                                         \
-                vir_FMOV_dest(c, vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_##name), a); \
-                return vir_FMOV_dest(c, dest, vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_R4)); \
-        }                                                                \
+        return vir_emit_nondef(c, vir_add_inst(V3D_QPU_A_##name,        \
+                                               dest,                    \
+                                               a, c->undef));           \
 }
 
 #define VIR_A_ALU2(name) VIR_ALU2(name, vir_add_inst, V3D_QPU_A_##name)
@@ -1450,16 +1432,11 @@ vir_NOP(struct v3d_compile *c)
 static inline struct qreg
 vir_LDTMU(struct v3d_compile *c)
 {
-        if (c->devinfo->ver >= 41) {
-                struct qinst *ldtmu = vir_add_inst(V3D_QPU_A_NOP, c->undef,
-                                                   c->undef, c->undef);
-                ldtmu->qpu.sig.ldtmu = true;
+        struct qinst *ldtmu = vir_add_inst(V3D_QPU_A_NOP, c->undef,
+                                           c->undef, c->undef);
+        ldtmu->qpu.sig.ldtmu = true;
 
-                return vir_emit_def(c, ldtmu);
-        } else {
-                vir_NOP(c)->qpu.sig.ldtmu = true;
-                return vir_MOV(c, vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_R4));
-        }
+        return vir_emit_def(c, ldtmu);
 }
 
 static inline struct qreg
@@ -1472,7 +1449,6 @@ vir_UMUL(struct v3d_compile *c, struct qreg src0, struct qreg src1)
 static inline struct qreg
 vir_TLBU_COLOR_READ(struct v3d_compile *c, uint32_t config)
 {
-        assert(c->devinfo->ver >= 41); /* XXX */
         assert((config & 0xffffff00) == 0xffffff00);
 
         struct qinst *ldtlb = vir_add_inst(V3D_QPU_A_NOP, c->undef,
@@ -1485,8 +1461,6 @@ vir_TLBU_COLOR_READ(struct v3d_compile *c, uint32_t config)
 static inline struct qreg
 vir_TLB_COLOR_READ(struct v3d_compile *c)
 {
-        assert(c->devinfo->ver >= 41); /* XXX */
-
         struct qinst *ldtlb = vir_add_inst(V3D_QPU_A_NOP, c->undef,
                                            c->undef, c->undef);
         ldtlb->qpu.sig.ldtlb = true;

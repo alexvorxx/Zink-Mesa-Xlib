@@ -410,6 +410,10 @@ memory_type_from_vram_type(uint32_t vram_type)
    case AMD_VRAM_TYPE_GDDR6:
       return VK_RMV_MEMORY_TYPE_GDDR6;
    case AMD_VRAM_TYPE_DDR5:
+      return VK_RMV_MEMORY_TYPE_DDR5;
+   case AMD_VRAM_TYPE_LPDDR4:
+      return VK_RMV_MEMORY_TYPE_LPDDR4;
+   case AMD_VRAM_TYPE_LPDDR5:
       return VK_RMV_MEMORY_TYPE_LPDDR5;
    default:
       unreachable("Invalid vram type");

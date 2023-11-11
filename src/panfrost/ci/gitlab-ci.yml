@@ -133,9 +133,6 @@ panfrost-t760-traces:arm32:
     - .panfrost-traces
 
 .lava-rk3399-gru-kevin:
-  extends:
-    - .panfrost-midgard-rules
-    - .panfrost-test
   variables:
     DEVICE_TYPE: rk3399-gru-kevin
     DTB: $DEVICE_TYPE
@@ -149,6 +146,8 @@ panfrost-t860-gl:arm64:
   parallel: 3
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-midgard-rules
+    - .panfrost-test
     - .lava-rk3399-gru-kevin
   variables:
     FDO_CI_CONCURRENT: 6
@@ -157,6 +156,8 @@ panfrost-t860-gl:arm64:
 panfrost-t860-egl:arm64:
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-midgard-rules
+    - .panfrost-test
     - .lava-rk3399-gru-kevin
   variables:
     HWCI_START_WESTON: 1
@@ -166,13 +167,11 @@ panfrost-t860-traces:arm64:
   extends:
     - .lava-piglit-traces:arm64
     - .panfrost-midgard-manual-rules
+    - .panfrost-test
     - .lava-rk3399-gru-kevin
     - .panfrost-traces
 
 .lava-meson-g12b-a311d-khadas-vim3:
-  extends:
-    - .panfrost-bifrost-rules
-    - .panfrost-test
   variables:
     DEVICE_TYPE: meson-g12b-a311d-khadas-vim3
     DTB: $DEVICE_TYPE
@@ -183,6 +182,8 @@ panfrost-g52-gl:arm64:
   parallel: 3
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-bifrost-rules
+    - .panfrost-test
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
     FDO_CI_CONCURRENT: 6
@@ -192,6 +193,8 @@ panfrost-g52-gl:arm64:
 panfrost-g52-vk:arm64:
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-bifrost-rules
+    - .panfrost-test
     - .lava-meson-g12b-a311d-khadas-vim3
     - .panfrost-bifrost-manual-rules
   variables:
@@ -203,6 +206,8 @@ panfrost-g52-vk:arm64:
 panfrost-g52-piglit-gles2:arm64:
   extends:
     - .lava-piglit:arm64
+    - .panfrost-bifrost-rules
+    - .panfrost-test
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
     HWCI_START_WESTON: 1
@@ -210,9 +215,6 @@ panfrost-g52-piglit-gles2:arm64:
     PIGLIT_PROFILES: quick_gl
 
 .lava-mt8183-kukui-jacuzzi-juniper-sku16:
-  extends:
-    - .panfrost-bifrost-rules
-    - .panfrost-test
   variables:
     DEVICE_TYPE: mt8183-kukui-jacuzzi-juniper-sku16
     DTB: mt8183-kukui-jacuzzi-juniper-sku16
@@ -225,14 +227,13 @@ panfrost-g72-gl:arm64:
   parallel: 3
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-bifrost-rules
+    - .panfrost-test
     - .lava-mt8183-kukui-jacuzzi-juniper-sku16
   variables:
     DEQP_SUITE: panfrost-g72
 
 .lava-mt8192-asurada-spherion-r0:
-  extends:
-    - .panfrost-bifrost-rules
-    - .panfrost-test
   variables:
     DEVICE_TYPE: mt8192-asurada-spherion-r0
     DTB: mt8192-asurada-spherion-r0
@@ -244,6 +245,8 @@ panfrost-g72-gl:arm64:
 panfrost-g57-gl:arm64:
   extends:
     - .lava-test-deqp:arm64
+    - .panfrost-bifrost-rules
+    - .panfrost-test
     - .lava-mt8192-asurada-spherion-r0
   parallel: 6
   variables:

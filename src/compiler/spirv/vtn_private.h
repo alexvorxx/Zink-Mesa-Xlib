@@ -1071,4 +1071,6 @@ struct vtn_ssa_value *vtn_cooperative_matrix_insert(struct vtn_builder *b, struc
 nir_deref_instr *vtn_create_cmat_temporary(struct vtn_builder *b,
                                            const struct glsl_type *t, const char *name);
 
+gl_shader_stage vtn_stage_for_execution_model(SpvExecutionModel model);
+
 #endif /* _VTN_PRIVATE_H_ */

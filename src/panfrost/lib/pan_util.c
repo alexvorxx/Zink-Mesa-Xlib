@@ -75,10 +75,7 @@ unsigned
 panfrost_format_to_bifrost_blend(const struct panfrost_device *dev,
                                  enum pipe_format format, bool dithered)
 {
-   mali_pixel_format pixfmt =
-      (dev->arch >= 7)
-         ? panfrost_blendable_formats_v7[format].bifrost[dithered]
-         : panfrost_blendable_formats_v6[format].bifrost[dithered];
+   mali_pixel_format pixfmt = dev->blendable_formats[format].bifrost[dithered];
 
    return pixfmt ?: dev->formats[format].hw;
 }

@@ -57,8 +57,9 @@ extern "C" {
 
 struct intel_device_info;
 
-/** Number of general purpose registers (VS, WM, etc) */
+/** Size of general purpose register space in REG_SIZE units */
 #define BRW_MAX_GRF 128
+#define XE2_MAX_GRF 256
 
 /**
  * First GRF used for the MRF hack.
@@ -417,7 +418,7 @@ brw_reg(enum brw_reg_file file,
 {
    struct brw_reg reg;
    if (file == BRW_GENERAL_REGISTER_FILE)
-      assert(nr < BRW_MAX_GRF);
+      assert(nr < XE2_MAX_GRF);
    else if (file == BRW_ARCHITECTURE_REGISTER_FILE)
       assert(nr <= BRW_ARF_TIMESTAMP);
    /* Asserting on the MRF register number requires to know the hardware gen

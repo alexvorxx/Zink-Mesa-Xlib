@@ -172,7 +172,7 @@ panfrost_get_blend(struct panfrost_batch *batch, unsigned rti,
 
    /* Use fixed-function if the equation permits, the format is blendable,
     * and no more than one unique constant is accessed */
-   if (info.fixed_function && panfrost_blendable_formats_v7[fmt].internal &&
+   if (info.fixed_function && dev->blendable_formats[fmt].internal &&
        pan_blend_is_homogenous_constant(info.constant_mask,
                                         ctx->blend_color.color)) {
       return 0;
@@ -560,6 +560,7 @@ panfrost_destroy(struct pipe_context *pipe)
 
    panfrost_pool_cleanup(&panfrost->descs);
    panfrost_pool_cleanup(&panfrost->shaders);
+   panfrost_afbc_context_destroy(panfrost);
 
    drmSyncobjDestroy(dev->fd, panfrost->in_sync_obj);
    if (panfrost->in_sync_fd != -1)
@@ -943,6 +944,7 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
    panfrost_resource_context_init(gallium);
    panfrost_shader_context_init(gallium);
+   panfrost_afbc_context_init(ctx);
 
    gallium->stream_uploader = u_upload_create_default(gallium);
    gallium->const_uploader = gallium->stream_uploader;

@@ -23,7 +23,7 @@ else
     STRIP="strip"
 fi
 if [ -z "$ARTIFACTS_DEBUG_SYMBOLS" ]; then
-    find install -name \*.so -exec $STRIP {} \;
+    find install -name \*.so -exec $STRIP --strip-debug {} \;
 fi
 
 # Test runs don't pull down the git tree, so put the dEQP helper

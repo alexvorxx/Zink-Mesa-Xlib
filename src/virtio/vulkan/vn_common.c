@@ -33,6 +33,7 @@ static const struct debug_control vn_debug_options[] = {
    { "log_ctx_info", VN_DEBUG_LOG_CTX_INFO },
    { "cache", VN_DEBUG_CACHE },
    { "no_sparse", VN_DEBUG_NO_SPARSE },
+   { "gpl", VN_DEBUG_GPL },
    { NULL, 0 },
    /* clang-format on */
 };

@@ -198,6 +198,9 @@ struct fd_dev_info {
        * _something_, observed in blob's disassembly.
        */
       bool stsc_duplication_quirk;
+
+      /* Whether there is CP_EVENT_WRITE7::WRITE_SAMPLE_COUNT */
+      bool has_event_write_sample_count;
    } a7xx;
 };
 

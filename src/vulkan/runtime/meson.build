@@ -234,7 +234,7 @@ libvulkan_runtime = static_library(
    vk_cmd_queue, vk_cmd_enqueue_entrypoints,
    vk_dispatch_trampolines, vk_physical_device_features,
    vk_physical_device_properties, vk_format_info],
-  include_directories : [inc_include, inc_src, inc_gallium],
+  include_directories : [inc_include, inc_src],
   dependencies : vulkan_runtime_deps,
   c_args : c_msvc_compat_args,
   gnu_symbol_visibility : 'hidden',

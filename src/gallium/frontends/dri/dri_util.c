@@ -321,7 +321,13 @@ driGetConfigAttribIndex(const __DRIconfig *config,
     case __DRI_ATTRIB_VISUAL_SELECT_GROUP:
         *value = 0;
         break;
-    SIMPLE_CASE(__DRI_ATTRIB_SWAP_METHOD, swapMethod);
+    case __DRI_ATTRIB_SWAP_METHOD:
+        /* Not supported any more, but we have the __DRI_ATTRIB still defined
+         * for the X server's sake, and EGL will expect us to handle it because
+         * it iterates all __DRI_ATTRIBs.
+         */
+        *value = __DRI_ATTRIB_SWAP_EXCHANGE;
+        break;
     case __DRI_ATTRIB_MAX_SWAP_INTERVAL:
         *value = INT_MAX;
         break;

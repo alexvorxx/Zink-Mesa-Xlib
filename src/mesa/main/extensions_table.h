@@ -32,6 +32,7 @@ EXT(ANGLE_texture_compression_dxt3          , ANGLE_texture_compression_dxt     
 EXT(ANGLE_texture_compression_dxt5          , ANGLE_texture_compression_dxt          , GLL, GLC, ES1, ES2, 2011)
 
 EXT(APPLE_packed_pixels                     , dummy_true                             , GLL,  x ,  x ,  x , 2002)
+EXT(APPLE_sync                              , ARB_sync                               ,  x ,  x , ES1, ES2, 2012)
 EXT(APPLE_texture_max_level                 , dummy_true                             ,  x ,  x , ES1, ES2, 2009)
 
 EXT(ARB_ES2_compatibility                   , ARB_ES2_compatibility                  , GLL, GLC,  x ,  x , 2009)

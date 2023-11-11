@@ -3,13 +3,13 @@
 
 set -ex
 
-EPHEMERAL="\
-         autoconf \
-         rdfind \
-         unzip \
-         "
+EPHEMERAL=(
+    autoconf
+    rdfind
+    unzip
+)
 
-apt-get install -y --no-remove $EPHEMERAL
+apt-get install -y --no-remove "${EPHEMERAL[@]}"
 
 # Fetch the NDK and extract just the toolchain we want.
 ndk=$ANDROID_NDK
@@ -106,4 +106,4 @@ done
 cd ..
 rm -rf $LIBELF_VERSION
 
-apt-get purge -y $EPHEMERAL
+apt-get purge -y "${EPHEMERAL[@]}"

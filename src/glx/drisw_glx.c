@@ -995,15 +995,21 @@ driswCreateScreenDriver(int screen, struct glx_display *priv,
        goto handle_error;
    }
 
+   if (pdpyp->zink) {
+      bool err;
+      psc->has_multibuffer = dri3_check_multibuffer(priv->dpy, &err);
+      if (!psc->has_multibuffer &&
+          !debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) &&
+          !debug_get_bool_option("LIBGL_KOPPER_DRI2", false)) {
+         CriticalErrorMessageF("DRI3 not available\n");
+         goto handle_error;
+      }
+   }
+
    glx_config_destroy_list(psc->base.configs);
    psc->base.configs = configs;
    glx_config_destroy_list(psc->base.visuals);
    psc->base.visuals = visuals;
-
-   if (pdpyp->zink) {
-      bool err;
-      psc->has_multibuffer = dri3_check_multibuffer(priv->dpy, &err);
-   }
 
    psc->driver_configs = driver_configs;
 

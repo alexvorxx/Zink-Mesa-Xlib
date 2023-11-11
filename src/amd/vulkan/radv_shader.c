@@ -173,50 +173,55 @@ radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively)
 {
    bool progress;
 
+   struct set *skip = _mesa_pointer_set_create(NULL);
    do {
       progress = false;
 
-      NIR_PASS(progress, shader, nir_split_array_vars, nir_var_function_temp);
-      NIR_PASS(progress, shader, nir_shrink_vec_array_vars, nir_var_function_temp);
+      NIR_LOOP_PASS(progress, skip, shader, nir_split_array_vars, nir_var_function_temp);
+      NIR_LOOP_PASS(progress, skip, shader, nir_shrink_vec_array_vars, nir_var_function_temp);
 
       if (!shader->info.var_copies_lowered) {
          /* Only run this pass if nir_lower_var_copies was not called
           * yet. That would lower away any copy_deref instructions and we
           * don't want to introduce any more.
           */
-         NIR_PASS(progress, shader, nir_opt_find_array_copies);
+         NIR_LOOP_PASS(progress, skip, shader, nir_opt_find_array_copies);
       }
 
-      NIR_PASS(progress, shader, nir_opt_copy_prop_vars);
-      NIR_PASS(progress, shader, nir_opt_dead_write_vars);
-      NIR_PASS(_, shader, nir_lower_vars_to_ssa);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_copy_prop_vars);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_dead_write_vars);
+      NIR_LOOP_PASS(_, skip, shader, nir_lower_vars_to_ssa);
 
-      NIR_PASS(_, shader, nir_lower_alu_width, vectorize_vec2_16bit, NULL);
-      NIR_PASS(_, shader, nir_lower_phis_to_scalar, true);
+      NIR_LOOP_PASS(_, skip, shader, nir_lower_alu_width, vectorize_vec2_16bit, NULL);
+      NIR_LOOP_PASS(_, skip, shader, nir_lower_phis_to_scalar, true);
 
-      NIR_PASS(progress, shader, nir_copy_prop);
-      NIR_PASS(progress, shader, nir_opt_remove_phis);
-      NIR_PASS(progress, shader, nir_opt_dce);
-      if (nir_opt_trivial_continues(shader)) {
+      NIR_LOOP_PASS(progress, skip, shader, nir_copy_prop);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_remove_phis);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_dce);
+      bool trivial_continues_progress = false;
+      NIR_LOOP_PASS(trivial_continues_progress, skip, shader, nir_opt_trivial_continues);
+      if (trivial_continues_progress) {
          progress = true;
-         NIR_PASS(progress, shader, nir_copy_prop);
-         NIR_PASS(progress, shader, nir_opt_remove_phis);
-         NIR_PASS(progress, shader, nir_opt_dce);
+         NIR_LOOP_PASS(progress, skip, shader, nir_copy_prop);
+         NIR_LOOP_PASS(progress, skip, shader, nir_opt_remove_phis);
+         NIR_LOOP_PASS(progress, skip, shader, nir_opt_dce);
       }
-      NIR_PASS(progress, shader, nir_opt_if, nir_opt_if_aggressive_last_continue | nir_opt_if_optimize_phi_true_false);
-      NIR_PASS(progress, shader, nir_opt_dead_cf);
-      NIR_PASS(progress, shader, nir_opt_cse);
-      NIR_PASS(progress, shader, nir_opt_peephole_select, 8, true, true);
-      NIR_PASS(progress, shader, nir_opt_constant_folding);
-      NIR_PASS(progress, shader, nir_opt_intrinsics);
-      NIR_PASS(progress, shader, nir_opt_algebraic);
+      NIR_LOOP_PASS_NOT_IDEMPOTENT(progress, skip, shader, nir_opt_if,
+                                   nir_opt_if_aggressive_last_continue | nir_opt_if_optimize_phi_true_false);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_dead_cf);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_cse);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_peephole_select, 8, true, true);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_constant_folding);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_intrinsics);
+      NIR_LOOP_PASS_NOT_IDEMPOTENT(progress, skip, shader, nir_opt_algebraic);
 
-      NIR_PASS(progress, shader, nir_opt_undef);
+      NIR_LOOP_PASS(progress, skip, shader, nir_opt_undef);
 
       if (shader->options->max_unroll_iterations) {
-         NIR_PASS(progress, shader, nir_opt_loop_unroll);
+         NIR_LOOP_PASS_NOT_IDEMPOTENT(progress, skip, shader, nir_opt_loop_unroll);
       }
    } while (progress && !optimize_conservatively);
+   _mesa_set_destroy(skip, NULL);
 
    NIR_PASS(progress, shader, nir_opt_shrink_vectors);
    NIR_PASS(progress, shader, nir_remove_dead_variables, nir_var_function_temp | nir_var_shader_in | nir_var_shader_out,
@@ -259,14 +264,16 @@ radv_optimize_nir_algebraic(nir_shader *nir, bool opt_offsets)
     * fneg(fneg(a)).
     */
    bool more_late_algebraic = true;
+   struct set *skip = _mesa_pointer_set_create(NULL);
    while (more_late_algebraic) {
       more_late_algebraic = false;
-      NIR_PASS(more_late_algebraic, nir, nir_opt_algebraic_late);
-      NIR_PASS(_, nir, nir_opt_constant_folding);
-      NIR_PASS(_, nir, nir_copy_prop);
-      NIR_PASS(_, nir, nir_opt_dce);
-      NIR_PASS(_, nir, nir_opt_cse);
+      NIR_LOOP_PASS_NOT_IDEMPOTENT(more_late_algebraic, skip, nir, nir_opt_algebraic_late);
+      NIR_LOOP_PASS(_, skip, nir, nir_opt_constant_folding);
+      NIR_LOOP_PASS(_, skip, nir, nir_copy_prop);
+      NIR_LOOP_PASS(_, skip, nir, nir_opt_dce);
+      NIR_LOOP_PASS(_, skip, nir, nir_opt_cse);
    }
+   _mesa_set_destroy(skip, NULL);
 }
 
 static void
@@ -447,6 +454,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
                .vk_memory_model_device_scope = true,
                .fragment_shading_rate = device->physical_device->rad_info.gfx_level >= GFX10_3,
                .workgroup_memory_explicit_layout = true,
+               .cooperative_matrix = true,
             },
          .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
          .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
@@ -504,6 +512,8 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
        */
       NIR_PASS(_, nir, nir_lower_variable_initializers, ~0);
 
+      NIR_PASS(_, nir, radv_nir_lower_cooperative_matrix, subgroup_size);
+
       /* Split member structs.  We do this before lower_io_to_temporaries so that
        * it doesn't lower system values to temporaries by accident.
        */
@@ -533,6 +543,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
        * than it needs to be.
        */
       NIR_PASS(_, nir, nir_lower_global_vars_to_local);
+
       NIR_PASS(_, nir, nir_lower_vars_to_ssa);
 
       NIR_PASS(_, nir, nir_propagate_invariant, key->invariant_geom);
@@ -563,9 +574,9 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
    NIR_PASS(_, nir, nir_lower_system_values);
    nir_lower_compute_system_values_options csv_options = {
       /* Mesh shaders run as NGG which can implement local_invocation_index from
-       * the wave ID in merged_wave_info, but they don't have local_invocation_ids.
+       * the wave ID in merged_wave_info, but they don't have local_invocation_ids on GFX10.3.
        */
-      .lower_cs_local_id_to_index = nir->info.stage == MESA_SHADER_MESH,
+      .lower_cs_local_id_to_index = nir->info.stage == MESA_SHADER_MESH && !device->mesh_fast_launch_2,
       .lower_local_invocation_index = nir->info.stage == MESA_SHADER_COMPUTE &&
                                       ((nir->info.workgroup_size[0] == 1) + (nir->info.workgroup_size[1] == 1) +
                                        (nir->info.workgroup_size[2] == 1)) == 2,
@@ -640,6 +651,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
                .lower_relative_shuffle = 1,
                .lower_shuffle_to_32bit = 1,
                .lower_vote_eq = 1,
+               .lower_vote_bool_eq = 1,
                .lower_quad_broadcast_dynamic = 1,
                .lower_quad_broadcast_dynamic_to_const = gfx7minus,
                .lower_shuffle_to_swizzle_amd = 1,
@@ -909,10 +921,13 @@ radv_lower_ngg(struct radv_device *device, struct radv_shader_stage *ngg_stage, 
 
       NIR_PASS_V(nir, ac_nir_lower_ngg_gs, &options);
    } else if (nir->info.stage == MESA_SHADER_MESH) {
+      /* ACO aligns the workgroup size to the wave size. */
+      unsigned hw_workgroup_size = ALIGN(info->workgroup_size, info->wave_size);
+
       bool scratch_ring = false;
       NIR_PASS_V(nir, ac_nir_lower_ngg_ms, options.gfx_level, options.clipdist_enable_mask,
                  options.vs_output_param_offset, options.has_param_exports, &scratch_ring, info->wave_size,
-                 pl_key->has_multiview_view_index, info->ms.has_query);
+                 hw_workgroup_size, pl_key->has_multiview_view_index, info->ms.has_query, device->mesh_fast_launch_2);
       ngg_stage->info.ms.needs_ms_scratch_ring = scratch_ring;
    } else {
       unreachable("invalid SW stage passed to radv_lower_ngg");
@@ -1397,7 +1412,7 @@ radv_init_shader_upload_queue(struct radv_device *device)
       struct radv_shader_dma_submission *submission = calloc(1, sizeof(struct radv_shader_dma_submission));
       submission->cs = ws->cs_create(ws, AMD_IP_SDMA, false);
       if (!submission->cs)
-         return VK_ERROR_OUT_OF_HOST_MEMORY;
+         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
       list_addtail(&submission->list, &device->shader_dma_submissions);
    }
 
@@ -2249,8 +2264,10 @@ radv_aco_build_shader_binary(void **bin, const struct ac_shader_config *config, 
    legacy_binary->disasm_size = 0;
    legacy_binary->ir_size = llvm_ir_size;
 
-   memcpy((char *)legacy_binary->data + legacy_binary->stats_size + legacy_binary->code_size, llvm_ir_str,
-          llvm_ir_size);
+   if (llvm_ir_size) {
+      memcpy((char *)legacy_binary->data + legacy_binary->stats_size + legacy_binary->code_size, llvm_ir_str,
+             llvm_ir_size);
+   }
 
    legacy_binary->disasm_size = disasm_size;
    if (disasm_size) {
@@ -2722,16 +2739,7 @@ radv_find_shader(struct radv_device *device, uint64_t pc)
          uint64_t start = radv_buffer_get_va(block->arena->bo) + block->offset;
          if (!block->freelist.prev && pc >= start && pc < start + block->size) {
             mtx_unlock(&device->shader_arena_mutex);
-
-            struct radv_pipeline *pipeline = (struct radv_pipeline *)block->freelist.next;
-            for (uint32_t i = 0; i < MESA_VULKAN_SHADER_STAGES; i++) {
-               struct radv_shader *shader = pipeline->shaders[i];
-               if (!shader)
-                  continue;
-
-               if (pc >= shader->va && pc < shader->va + align(shader->code_size, RADV_SHADER_ALLOC_ALIGNMENT))
-                  return shader;
-            }
+            return (struct radv_shader *)block->freelist.next;
          }
       }
    }

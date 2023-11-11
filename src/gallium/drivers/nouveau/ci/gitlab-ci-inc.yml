@@ -30,6 +30,7 @@
     # We package nouveau as a module so that we can load it after the firmware is
     # available on NFS.
     HWCI_KERNEL_MODULES: tegra-drm,nouveau
+  timeout: 20m
   script:
     - ./install/bare-metal/poe-powered.sh
 
@@ -40,6 +41,8 @@
   variables:
     BM_BOOTFS: /baremetal-files/jetson-tk1/
     BM_CMDLINE: "console=ttyS0,115200n8 rw nfsrootdebug init=/init ip=dhcp root=/dev/nfs nfsroot=,tcp,nfsvers=4.2"
+    BM_DTB: tegra124-jetson-tk1
+    BM_KERNEL: zImage
     GPU_VERSION: nouveau-gk20a
     # 4 CPUs, but spawn a couple extra threads to make sure they stay busy while
     # some are waiting for the GPU.
@@ -54,6 +57,8 @@
   variables:
     BM_BOOTFS: /baremetal-files/jetson-nano/
     BM_CMDLINE: "console=ttyS0,115200n8 rw nfsrootdebug init=/init nfsroot=,tcp,nfsvers=4.2"
+    BM_DTB: tegra210-p3450-0000
+    BM_KERNEL: Image
     GPU_VERSION: nouveau-gm20b
     # 4 CPUs, but spawn a couple extra threads to make sure they stay busy while
     # some are waiting for the GPU.

@@ -60,14 +60,14 @@ dri2_interop_export_object(struct glx_context *ctx,
 _X_HIDDEN int
 dri2_interop_flush_objects(struct glx_context *ctx,
                            unsigned count, struct mesa_glinterop_export_in *objects,
-                           GLsync *sync)
+                           GLsync *sync, int *fence_fd)
 {
    struct dri2_screen *psc = (struct dri2_screen*)ctx->psc;
 
    if (!psc->interop || psc->interop->base.version < 2)
       return MESA_GLINTEROP_UNSUPPORTED;
 
-   return psc->interop->flush_objects(ctx->driContext, count, objects, sync);
+   return psc->interop->flush_objects(ctx->driContext, count, objects, sync, fence_fd);
 }
 
 #if defined(HAVE_DRI3)
@@ -100,14 +100,14 @@ dri3_interop_export_object(struct glx_context *ctx,
 _X_HIDDEN int
 dri3_interop_flush_objects(struct glx_context *ctx,
                            unsigned count, struct mesa_glinterop_export_in *objects,
-                           GLsync *sync)
+                           GLsync *sync, int *fence_fd)
 {
    struct dri3_screen *psc = (struct dri3_screen*)ctx->psc;
 
    if (!psc->interop || psc->interop->base.version < 2)
       return MESA_GLINTEROP_UNSUPPORTED;
 
-   return psc->interop->flush_objects(ctx->driContext, count, objects, sync);
+   return psc->interop->flush_objects(ctx->driContext, count, objects, sync, fence_fd);
 }
 
 #endif /* HAVE_DRI3 */

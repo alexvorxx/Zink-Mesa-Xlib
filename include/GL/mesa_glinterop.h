@@ -101,7 +101,9 @@ enum {
    MESA_GLINTEROP_ACCESS_WRITE_ONLY
 };
 
-#define MESA_GLINTEROP_DEVICE_INFO_VERSION 2
+#define MESA_GLINTEROP_DEVICE_INFO_VERSION 3
+
+#define UUID_SIZE 16
 
 /**
  * Device information returned by Mesa.
@@ -139,6 +141,10 @@ struct mesa_glinterop_device_info {
    void *driver_data;
 
    /* Structure version 2 ends here. */
+
+   char device_uuid[UUID_SIZE];
+
+   /* Structure version 3 ends here. */
 };
 
 #define MESA_GLINTEROP_EXPORT_IN_VERSION 1
@@ -206,7 +212,7 @@ struct mesa_glinterop_export_in {
    /* Structure version 1 ends here. */
 };
 
-#define MESA_GLINTEROP_EXPORT_OUT_VERSION 1
+#define MESA_GLINTEROP_EXPORT_OUT_VERSION 2
 
 /**
  * Outputs of Mesa interop export functions.
@@ -266,6 +272,18 @@ struct mesa_glinterop_export_out {
    /* The number of bytes written to out_driver_data. */
    uint32_t out_driver_data_written;
    /* Structure version 1 ends here. */
+
+   /* Structure version 2 starts here. */
+   /* Texture sizes. If the object is not a texture, default parameters will
+    * be returned.
+    */
+   uint32_t width;
+   uint32_t height;
+   uint32_t depth;
+   uint32_t stride;
+   /* the modifier to use when reimporting the fd */
+   uint64_t modifier;
+   /* Structure version 2 ends here. */
 };
 
 
@@ -339,19 +357,20 @@ wglMesaGLInteropExportObject(HDC dpy, HGLRC context,
 
 /**
  * Prepare OpenGL resources for being accessed by OpenCL.
- * 
+ *
  * \param dpy        GLX display
  * \param context    GLX context
  * \param count      number of resources
  * \param resources  resources to flush
  * \param sync       optional GLsync to map to CL event
- * 
+ * \param fence_fd   optional fence_fd to use in CL
+ *
  * \return MESA_GLINTEROP_SUCCESS or MESA_GLINTEROP_* != 0 on error
  */
 int
 MesaGLInteropGLXFlushObjects(struct _XDisplay *dpy, struct __GLXcontextRec *context,
                              unsigned count, struct mesa_glinterop_export_in *resources,
-                             GLsync *sync);
+                             GLsync *sync, int *fence_fd);
 
 /**
 * Same as MesaGLInteropGLXFlushObjects except that it accepts
@@ -360,11 +379,11 @@ MesaGLInteropGLXFlushObjects(struct _XDisplay *dpy, struct __GLXcontextRec *cont
 int
 MesaGLInteropEGLFlushObjects(EGLDisplay dpy, EGLContext context,
                              unsigned count, struct mesa_glinterop_export_in *resources,
-                             GLsync *sync);
+                             GLsync *sync, int *fence_fd);
 
 /**
 * Same as MesaGLInteropGLXFlushObjects except that it accepts
-* HDC and HGLRC.
+* HDC and HGLRC, and not a fence_fd.
 */
 int
 wglMesaGLInteropFlushObjects(HDC dpy, HGLRC context,
@@ -389,10 +408,10 @@ typedef int (*PFNWGLMESAGLINTEROPEXPORTOBJECTPROC)(HDC dpy, HGLRC context,
                                                    struct mesa_glinterop_export_out *out);
 typedef int (*PFNMESAGLINTEROPGLXFLUSHOBJECTSPROC)(struct _XDisplay *dpy, struct __GLXcontextRec *context,
                                                    unsigned count, struct mesa_glinterop_export_in *resources,
-                                                   GLsync *sync);
+                                                   GLsync *sync, int *fence_fd);
 typedef int (*PFNMESAGLINTEROPEGLFLUSHOBJECTSPROC)(EGLDisplay dpy, EGLContext context,
                                                    unsigned count, struct mesa_glinterop_export_in *resources,
-                                                   GLsync *sync);
+                                                   GLsync *sync, int *fence_fd);
 typedef int (*PFNWGLMESAGLINTEROPFLUSHOBJECTSPROC)(HDC dpy, HGLRC context,
                                                    unsigned count, struct mesa_glinterop_export_in *resources,
                                                    GLsync *sync);

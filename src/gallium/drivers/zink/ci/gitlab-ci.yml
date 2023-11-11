@@ -8,12 +8,12 @@ zink-lvp:
     - .zink-lvp-test
   variables:
     DEQP_SUITE: zink-lvp
-    DEQP_FRACTION: 4
+    DEQP_FRACTION: 8
     PIGLIT_NO_WINDOW: 1
     # Enable validation (except for on piglit, see deqp-zink-lvp.toml), logging
     # to stdout and aborting on unknown failures.
     ZINK_DEBUG: validation
-    XVFB_SCRIPT: "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
+    XVFB_SCRIPT: "VK_DRIVER=lvp install/deqp-runner.sh"
   script: |
     xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && ${XVFB_SCRIPT}"
 
@@ -24,7 +24,7 @@ zink-anv-tgl:
   variables:
     DEQP_SUITE: zink-anv-tgl
     PIGLIT_NO_WINDOW: 1
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     # We use gbm because X can die:
     # MESA: error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)
     # Xorg: ../src/gallium/drivers/zink/zink_batch.c:599: zink_end_batch: Assertion `!ctx->batch_states' failed.
@@ -69,12 +69,11 @@ zink-tu-a618:
     - .a618-test
     - .zink-turnip-rules
     - .zink-test
-  parallel: 3
+  parallel: 2
   variables:
     DEQP_SUITE: zink-freedreno-a618
-    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
     GPU_VERSION: zink-freedreno-a618
-    JOB_TIMEOUT: 120
     VK_DRIVER: freedreno
     DEVICE_TYPE: sc7180-trogdor-lazor-limozeen
     DTB: sc7180-trogdor-lazor-limozeen-nots-r5
@@ -138,6 +137,7 @@ zink-radv-vangogh-valve:
     B2C_TIMEOUT_BOOT_RETRIES: 1
     B2C_TIMEOUT_BOOT_MINUTES: 30
     B2C_TIMEOUT_OVERALL_MINUTES: 30
+    FDO_CI_CONCURRENT: 6
   # Override the list of tags to drop `priority:low`
   tags:
     - amdgpu:codename:VANGOGH

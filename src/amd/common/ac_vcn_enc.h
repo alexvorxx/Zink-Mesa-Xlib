@@ -373,6 +373,7 @@ typedef struct rvcn_enc_h264_encode_params_s {
    rvcn_enc_h264_reference_picture_info_t picture_info_l0_reference_picture1;
    uint32_t l1_reference_picture0_index;
    rvcn_enc_h264_reference_picture_info_t picture_info_l1_reference_picture0;
+   uint32_t is_reference;
 } rvcn_enc_h264_encode_params_t;
 
 typedef struct rvcn_enc_h264_deblocking_filter_s {
@@ -562,6 +563,7 @@ typedef struct rvcn_enc_vui_info_s
    uint32_t matrix_coefficients;
    uint32_t chroma_sample_loc_type_top_field;
    uint32_t chroma_sample_loc_type_bottom_field;
+   uint32_t max_num_reorder_frames;
 }rvcn_enc_vui_info;
 
 typedef struct rvcn_enc_input_format_s

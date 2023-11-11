@@ -895,8 +895,8 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       unsigned C = I->src[2].value;
 
       agx_index offset = I->src[1];
-      assert(offset.type == AGX_INDEX_REGISTER);
-      assert(offset.size == AGX_SIZE_16);
+      assert(offset.size == AGX_SIZE_32);
+      assert_register_is_aligned(offset);
       unsigned R = offset.value;
 
       bool unk1 = true;
@@ -964,6 +964,98 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       struct agx_opcode_info info = agx_opcodes_info[I->op];
       uint64_t raw = info.encoding.exact;
       memcpy(util_dynarray_grow_bytes(emission, 1, 6), &raw, 6);
+      break;
+   }
+
+   case AGX_OPCODE_DOORBELL: {
+      assert(I->imm < BITFIELD_MASK(8));
+      struct agx_opcode_info info = agx_opcodes_info[I->op];
+      uint64_t raw = info.encoding.exact | (I->imm << 40);
+      memcpy(util_dynarray_grow_bytes(emission, 1, 6), &raw, 6);
+      break;
+   }
+
+   case AGX_OPCODE_STACK_UNMAP:
+   case AGX_OPCODE_STACK_MAP: {
+      agx_index value = I->op == AGX_OPCODE_STACK_MAP ? I->src[0] : I->dest[0];
+
+      assert(value.type == AGX_INDEX_REGISTER);
+      assert(value.size == AGX_SIZE_32);
+      assert(I->imm < BITFIELD_MASK(16));
+
+      unsigned q1 = 0;  // XXX
+      unsigned q2 = 0;  // XXX
+      unsigned q3 = 0;  // XXX
+      unsigned q4 = 16; // XXX
+      unsigned q5 = 16; // XXX
+
+      struct agx_opcode_info info = agx_opcodes_info[I->op];
+      uint64_t raw =
+         info.encoding.exact | (q1 << 8) | ((value.value & 0x1F) << 11) |
+         ((I->imm & 0xF) << 20) | (1UL << 24) | // XXX
+         (1UL << 26) |                          // XXX
+         (q2 << 30) | ((uint64_t)((I->imm >> 4) & 0xF) << 32) |
+         ((uint64_t)q3 << 37) | ((uint64_t)(value.value >> 5) << 40) |
+         ((uint64_t)q4 << 42) | (1UL << 47) | // XXX
+         ((uint64_t)q5 << 48) | ((uint64_t)(I->imm >> 8) << 56);
+
+      memcpy(util_dynarray_grow_bytes(emission, 1, 8), &raw, 8);
+      break;
+   }
+
+   case AGX_OPCODE_STACK_LOAD:
+   case AGX_OPCODE_STACK_STORE: {
+      enum agx_format format = I->format;
+      unsigned mask = I->mask;
+
+      bool is_load = I->op == AGX_OPCODE_STACK_LOAD;
+      bool L = true; /* TODO: when would you want short? */
+
+      assert(mask != 0);
+      assert(format <= 0x10);
+
+      bool Rt, Ot;
+      unsigned R = agx_pack_memory_reg(is_load ? I->dest[0] : I->src[0], &Rt);
+      unsigned O = agx_pack_memory_index(is_load ? I->src[0] : I->src[1], &Ot);
+
+      unsigned i1 = 1; // XXX
+      unsigned i2 = 0; // XXX
+      unsigned i5 = 4; // XXX
+      unsigned i6 = 0; // XXX: scoreboard index?
+
+      uint64_t raw =
+         agx_opcodes_info[I->op].encoding.exact |
+         ((format & BITFIELD_MASK(2)) << 8) | ((R & BITFIELD_MASK(6)) << 10) |
+         ((O & BITFIELD_MASK(4)) << 20) | (Ot ? (1 << 24) : 0) |
+         ((uint64_t)i1 << 26) | ((uint64_t)i6 << 30) |
+         (((uint64_t)((O >> 4) & BITFIELD_MASK(4))) << 32) |
+         ((uint64_t)i2 << 36) |
+         (((uint64_t)((R >> 6) & BITFIELD_MASK(2))) << 40) |
+         ((uint64_t)i5 << 44) | (L ? (1UL << 47) : 0) |
+         (((uint64_t)(format >> 2)) << 50) | (((uint64_t)Rt) << 49) |
+         (((uint64_t)mask) << 52) | (((uint64_t)(O >> 8)) << 56);
+
+      unsigned size = L ? 8 : 6;
+      memcpy(util_dynarray_grow_bytes(emission, 1, size), &raw, size);
+      break;
+   }
+   case AGX_OPCODE_STACK_ADJUST: {
+      struct agx_opcode_info info = agx_opcodes_info[I->op];
+
+      unsigned i0 = 0; // XXX
+      unsigned i1 = 1; // XXX
+      unsigned i2 = 2; // XXX
+      unsigned i3 = 0; // XXX
+      unsigned i4 = 0; // XXX
+
+      uint64_t raw =
+         info.encoding.exact | ((uint64_t)i0 << 8) | ((uint64_t)i1 << 26) |
+         ((uint64_t)i2 << 36) | ((uint64_t)i3 << 44) | ((uint64_t)i4 << 50) |
+         ((I->stack_size & 0xF) << 20) |
+         ((uint64_t)((I->stack_size >> 4) & 0xF) << 32) | (1UL << 47) | // XXX
+         ((uint64_t)(I->stack_size >> 8) << 56);
+
+      memcpy(util_dynarray_grow_bytes(emission, 1, 8), &raw, 8);
       break;
    }
 

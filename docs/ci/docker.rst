@@ -34,7 +34,7 @@ at the job's log for which specific tests failed).
 DUT requirements
 ----------------
 
-In addition to the general :ref:`CI-farm-expectations`, using
+In addition to the general :ref:`CI-job-user-expectations`, using
 Docker requires:
 
 * DUTs must have a stable kernel and GPU reset (if applicable).

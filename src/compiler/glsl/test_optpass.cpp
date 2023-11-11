@@ -91,7 +91,7 @@ do_optimization(struct exec_list *ir, const char *optimization,
       return do_vec_index_to_cond_assign(ir);
    } else if (sscanf(optimization, "lower_instructions ( %d ) ",
                      &int_0) == 1) {
-      return lower_instructions(ir, false, false);
+      return lower_instructions(ir, false);
    } else {
       printf("Unrecognized optimization %s\n", optimization);
       exit(EXIT_FAILURE);

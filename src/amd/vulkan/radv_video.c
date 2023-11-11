@@ -186,6 +186,7 @@ radv_init_physical_device_decoder(struct radv_physical_device *pdevice)
    case CHIP_NAVI33:
    case CHIP_GFX1103_R1:
    case CHIP_GFX1103_R2:
+   case CHIP_GFX1150:
       pdevice->vid_addr_gfx_mode = RDECODE_ARRAY_MODE_ADDRLIB_SEL_GFX11;
       break;
    default:

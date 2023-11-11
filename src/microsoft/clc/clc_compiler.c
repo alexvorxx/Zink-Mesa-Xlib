@@ -542,7 +542,7 @@ copy_const_initializer(const nir_constant *constant, const struct glsl_type *typ
    }
 }
 
-static enum pipe_tex_wrap
+static enum dxil_tex_wrap
 wrap_from_cl_addressing(unsigned addressing_mode)
 {
    switch (addressing_mode)
@@ -551,10 +551,10 @@ wrap_from_cl_addressing(unsigned addressing_mode)
    case SAMPLER_ADDRESSING_MODE_NONE:
    case SAMPLER_ADDRESSING_MODE_CLAMP:
       // Since OpenCL's only border color is 0's and D3D specs out-of-bounds loads to return 0, don't apply any wrap mode
-      return (enum pipe_tex_wrap)-1;
-   case SAMPLER_ADDRESSING_MODE_CLAMP_TO_EDGE: return PIPE_TEX_WRAP_CLAMP_TO_EDGE;
-   case SAMPLER_ADDRESSING_MODE_REPEAT: return PIPE_TEX_WRAP_REPEAT;
-   case SAMPLER_ADDRESSING_MODE_REPEAT_MIRRORED: return PIPE_TEX_WRAP_MIRROR_REPEAT;
+      return (enum dxil_tex_wrap)-1;
+   case SAMPLER_ADDRESSING_MODE_CLAMP_TO_EDGE: return DXIL_TEX_WRAP_CLAMP_TO_EDGE;
+   case SAMPLER_ADDRESSING_MODE_REPEAT: return DXIL_TEX_WRAP_REPEAT;
+   case SAMPLER_ADDRESSING_MODE_REPEAT_MIRRORED: return DXIL_TEX_WRAP_MIRROR_REPEAT;
    }
 }
 
@@ -733,7 +733,8 @@ clc_spirv_to_dxil(struct clc_libclc *lib,
 
    NIR_PASS_V(nir, nir_scale_fdiv);
 
-   dxil_wrap_sampler_state int_sampler_states[PIPE_MAX_SHADER_SAMPLER_VIEWS] = { {{0}} };
+   /* 128 is the minimum value for CL_DEVICE_MAX_READ_IMAGE_ARGS and used by CLOn12 */
+   dxil_wrap_sampler_state int_sampler_states[128] = { {{0}} };
    unsigned sampler_id = 0;
 
    NIR_PASS_V(nir, nir_lower_variable_initializers, ~(nir_var_function_temp | nir_var_shader_temp));
@@ -853,7 +854,7 @@ clc_spirv_to_dxil(struct clc_libclc *lib,
    NIR_PASS_V(nir, clc_lower_nonnormalized_samplers, int_sampler_states);
    NIR_PASS_V(nir, nir_lower_samplers);
    NIR_PASS_V(nir, dxil_lower_sample_to_txf_for_integer_tex,
-              PIPE_MAX_SHADER_SAMPLER_VIEWS, int_sampler_states, NULL, 14.0f);
+              sampler_id, int_sampler_states, NULL, 14.0f);
 
    NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_mem_shared | nir_var_function_temp, NULL);
 

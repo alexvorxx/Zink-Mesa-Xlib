@@ -106,6 +106,10 @@ static struct VADriverVTable vtable =
    NULL, /* vaSyncSurface2 */
    &vlVaSyncBuffer,
 #endif
+#if VA_CHECK_VERSION(1, 21, 0)
+   NULL, /* vaCopy */
+   &vlVaMapBuffer2,
+#endif
 };
 
 static struct VADriverVTableVPP vtable_vpp =

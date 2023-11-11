@@ -13,6 +13,7 @@
 #include "tu_common.h"
 
 struct tu_u_trace_syncobj;
+struct vdrm_bo;
 
 enum tu_bo_alloc_flags
 {
@@ -41,11 +42,6 @@ enum tu_timeline_sync_state {
 struct tu_bo {
    uint32_t gem_handle;
 #ifdef TU_HAS_VIRTIO
-   /* Between the guest UMD and host native-ctx shim/proxy, guest kernel
-    * assigned res_id is used instead of host gem handle.  This allows
-    * the guest to run ahead of the host without having to wait for
-    * response from the host when buffers are allocated.
-    */
    uint32_t res_id;
 #endif
    uint64_t size;

@@ -1867,7 +1867,8 @@ anv_graphics_pipeline_create(struct anv_device *device,
    struct vk_graphics_pipeline_all_state all;
    struct vk_graphics_pipeline_state state = { };
    result = vk_graphics_pipeline_state_fill(&device->vk, &state, pCreateInfo,
-                                            NULL /* sp_info */,
+                                            NULL /* driver_rp */,
+                                            0 /* driver_rp_flags */,
                                             &all, NULL, 0, NULL);
    if (result != VK_SUCCESS) {
       vk_free2(&device->vk.alloc, pAllocator, pipeline);

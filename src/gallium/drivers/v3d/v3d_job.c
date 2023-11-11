@@ -29,13 +29,12 @@
 #include <xf86drm.h>
 #include "v3d_context.h"
 /* The OQ/semaphore packets are the same across V3D versions. */
-#define V3D_VERSION 33
+#define V3D_VERSION 42
 #include "broadcom/cle/v3dx_pack.h"
 #include "broadcom/common/v3d_macros.h"
 #include "util/hash_table.h"
 #include "util/ralloc.h"
 #include "util/set.h"
-#include "util/u_prim.h"
 #include "broadcom/clif/clif_dump.h"
 
 void
@@ -479,7 +478,7 @@ v3d_read_and_accumulate_primitive_counters(struct v3d_context *v3d)
                                 v3d->prog.gs ? v3d->prog.gs->prog_data.gs->out_prim_type
                                              : v3d->prim_mode;
                         uint32_t vertices_written =
-                                map[V3D_PRIM_COUNTS_TF_WRITTEN] * u_vertices_per_prim(prim_mode);
+                                map[V3D_PRIM_COUNTS_TF_WRITTEN] * mesa_vertices_per_prim(prim_mode);
                         for (int i = 0; i < v3d->streamout.num_targets; i++) {
                                 v3d_stream_output_target(v3d->streamout.targets[i])->offset +=
                                         vertices_written;
@@ -548,7 +547,7 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
         /* On V3D 4.1, the tile alloc/state setup moved to register writes
          * instead of binner packets.
          */
-        if (devinfo->ver >= 41) {
+        if (devinfo->ver >= 42) {
                 v3d_job_add_bo(job, job->tile_alloc);
                 job->submit.qma = job->tile_alloc->offset;
                 job->submit.qms = job->tile_alloc->size;

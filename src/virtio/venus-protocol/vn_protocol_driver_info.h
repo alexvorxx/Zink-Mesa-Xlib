@@ -19,8 +19,8 @@ struct vn_info_extension {
 };
 
 /* sorted by extension names for bsearch */
-static const uint32_t _vn_info_extension_count = 111;
-static const struct vn_info_extension _vn_info_extensions[111] = {
+static const uint32_t _vn_info_extension_count = 113;
+static const struct vn_info_extension _vn_info_extensions[113] = {
    { "VK_EXT_4444_formats", 341, 1 },
    { "VK_EXT_border_color_swizzle", 412, 1 },
    { "VK_EXT_calibrated_timestamps", 185, 2 },
@@ -37,6 +37,7 @@ static const struct vn_info_extension _vn_info_extensions[111] = {
    { "VK_EXT_extended_dynamic_state2", 378, 1 },
    { "VK_EXT_external_memory_dma_buf", 126, 1 },
    { "VK_EXT_fragment_shader_interlock", 252, 1 },
+   { "VK_EXT_graphics_pipeline_library", 321, 1 },
    { "VK_EXT_host_query_reset", 262, 1 },
    { "VK_EXT_image_2d_view_of_3d", 394, 1 },
    { "VK_EXT_image_drm_format_modifier", 159, 2 },
@@ -108,6 +109,7 @@ static const struct vn_info_extension _vn_info_extensions[111] = {
    { "VK_KHR_maintenance3", 169, 1 },
    { "VK_KHR_maintenance4", 414, 2 },
    { "VK_KHR_multiview", 54, 1 },
+   { "VK_KHR_pipeline_library", 291, 1 },
    { "VK_KHR_push_descriptor", 81, 2 },
    { "VK_KHR_relaxed_block_layout", 145, 1 },
    { "VK_KHR_sampler_mirror_clamp_to_edge", 15, 3 },

@@ -2,6 +2,7 @@ use crate::compiler::nir::*;
 use crate::pipe::screen::*;
 use crate::util::disk_cache::*;
 
+use libc_rust_gen::malloc;
 use mesa_rust_gen::*;
 use mesa_rust_util::serialize::*;
 use mesa_rust_util::string::*;

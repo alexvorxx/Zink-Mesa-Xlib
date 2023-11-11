@@ -75,7 +75,7 @@ gather_intrinsic_store_output_info(const nir_shader *nir, const nir_intrinsic_in
       break;
    case MESA_SHADER_FRAGMENT:
       if (idx >= FRAG_RESULT_DATA0) {
-         info->ps.colors_written |= 0xf << (4 * (idx - FRAG_RESULT_DATA0));
+         info->ps.colors_written |= 0xfu << (4 * (idx - FRAG_RESULT_DATA0));
 
          if (idx == FRAG_RESULT_DATA0)
             info->ps.color0_written = write_mask;
@@ -724,14 +724,24 @@ gather_shader_info_mesh(const nir_shader *nir, const struct radv_pipeline_key *p
    ngg_info->prim_amp_factor = nir->info.mesh.max_primitives_out;
    ngg_info->vgt_esgs_ring_itemsize = 1;
 
-   unsigned min_ngg_workgroup_size = ac_compute_ngg_workgroup_size(ngg_info->hw_max_esverts, ngg_info->max_gsprims,
-                                                                   ngg_info->max_out_verts, ngg_info->prim_amp_factor);
+   info->ms.has_query = pipeline_key->mesh_shader_queries;
+}
 
+static void
+calc_mesh_workgroup_size(const struct radv_device *device, const nir_shader *nir, struct radv_shader_info *info)
+{
    unsigned api_workgroup_size = ac_compute_cs_workgroup_size(nir->info.workgroup_size, false, UINT32_MAX);
 
-   info->workgroup_size = MAX2(min_ngg_workgroup_size, api_workgroup_size);
+   if (device->mesh_fast_launch_2) {
+      /* Use multi-row export. It is also necessary to use the API workgroup size for non-emulated queries. */
+      info->workgroup_size = api_workgroup_size;
+   } else {
+      struct gfx10_ngg_info *ngg_info = &info->ngg_info;
+      unsigned min_ngg_workgroup_size = ac_compute_ngg_workgroup_size(
+         ngg_info->hw_max_esverts, ngg_info->max_gsprims, ngg_info->max_out_verts, ngg_info->prim_amp_factor);
 
-   info->ms.has_query = pipeline_key->mesh_shader_queries;
+      info->workgroup_size = MAX2(min_ngg_workgroup_size, api_workgroup_size);
+   }
 }
 
 static void
@@ -911,10 +921,11 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const s
    unsigned local_size = nir->info.workgroup_size[0] * nir->info.workgroup_size[1] * nir->info.workgroup_size[2];
 
    /* Games don't always request full subgroups when they should, which can cause bugs if cswave32
-    * is enabled.
+    * is enabled. Furthermore, if cooperative matrices or subgroup info are used, we can't transparently change
+    * the subgroup size.
     */
    const bool require_full_subgroups =
-      pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_require_full ||
+      pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_require_full || nir->info.cs.has_cooperative_matrix ||
       (default_wave_size == 32 && nir->info.uses_wide_subgroup_intrinsics && local_size % RADV_SUBGROUP_SIZE == 0);
 
    const unsigned required_subgroup_size = pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_required_size * 32;
@@ -1162,7 +1173,8 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
                                         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SUBGROUP_ID) |
                                         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_NUM_SUBGROUPS);
 
-   if (nir->info.stage == MESA_SHADER_COMPUTE || nir->info.stage == MESA_SHADER_TASK) {
+   if (nir->info.stage == MESA_SHADER_COMPUTE || nir->info.stage == MESA_SHADER_TASK ||
+       nir->info.stage == MESA_SHADER_MESH) {
       for (int i = 0; i < 3; ++i)
          info->cs.block_size[i] = nir->info.workgroup_size[i];
    }
@@ -1219,7 +1231,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
                                      (info->workgroup_size % info->wave_size) == 0;
       break;
    case MESA_SHADER_MESH:
-      /* Already computed in gather_shader_info_mesh(). */
+      calc_mesh_workgroup_size(device, nir, info);
       break;
    default:
       /* FS always operates without workgroups. Other stages are computed during linking but assume

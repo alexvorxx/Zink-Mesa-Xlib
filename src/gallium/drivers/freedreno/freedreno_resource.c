@@ -1082,14 +1082,15 @@ fd_resource_destroy(struct pipe_screen *pscreen, struct pipe_resource *prsc)
 static uint64_t
 fd_resource_modifier(struct fd_resource *rsc)
 {
-   if (!rsc->layout.tile_mode)
-      return DRM_FORMAT_MOD_LINEAR;
-
    if (rsc->layout.ubwc_layer_size)
       return DRM_FORMAT_MOD_QCOM_COMPRESSED;
 
-   /* TODO invent a modifier for tiled but not UBWC buffers: */
-   return DRM_FORMAT_MOD_INVALID;
+   switch (rsc->layout.tile_mode) {
+   case 3: return DRM_FORMAT_MOD_QCOM_TILED3;
+   case 2: return DRM_FORMAT_MOD_QCOM_TILED2;
+   case 0: return DRM_FORMAT_MOD_LINEAR;
+   default: return DRM_FORMAT_MOD_INVALID;
+   }
 }
 
 static bool

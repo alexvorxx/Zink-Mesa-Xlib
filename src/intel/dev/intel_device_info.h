@@ -79,8 +79,8 @@ enum intel_platform {
    INTEL_PLATFORM_GROUP_END(DG2, INTEL_PLATFORM_DG2_G12),
    INTEL_PLATFORM_GROUP_START(ATSM, INTEL_PLATFORM_ATSM_G10),
    INTEL_PLATFORM_GROUP_END(ATSM, INTEL_PLATFORM_ATSM_G11),
-   INTEL_PLATFORM_GROUP_START(MTL, INTEL_PLATFORM_MTL_M),
-   INTEL_PLATFORM_GROUP_END(MTL, INTEL_PLATFORM_MTL_P),
+   INTEL_PLATFORM_GROUP_START(MTL, INTEL_PLATFORM_MTL_U),
+   INTEL_PLATFORM_GROUP_END(MTL, INTEL_PLATFORM_MTL_H),
    INTEL_PLATFORM_LNL,
 };
 
@@ -101,11 +101,39 @@ enum intel_platform {
 #define intel_device_info_is_mtl(devinfo) \
    intel_platform_in_range((devinfo)->platform, MTL)
 
+#define intel_device_info_is_adln(devinfo) \
+   (devinfo->is_adl_n == true)
+
 struct intel_memory_class_instance {
    /* Kernel backend specific class value, no translation needed yet */
    uint16_t klass;
    uint16_t instance;
 };
+
+enum intel_device_info_mmap_mode {
+      INTEL_DEVICE_INFO_MMAP_MODE_UC = 0,
+      INTEL_DEVICE_INFO_MMAP_MODE_WC,
+      INTEL_DEVICE_INFO_MMAP_MODE_WB,
+};
+
+enum intel_device_info_coherency_mode {
+   INTEL_DEVICE_INFO_COHERENCY_MODE_NONE = 0,
+   INTEL_DEVICE_INFO_COHERENCY_MODE_1WAY, /* CPU caches are snooped by GPU */
+   INTEL_DEVICE_INFO_COHERENCY_MODE_2WAY /* Fully coherent between GPU and CPU */
+};
+
+struct intel_device_info_pat_entry {
+   uint8_t index;
+   enum intel_device_info_mmap_mode mmap;
+   enum intel_device_info_coherency_mode coherency;
+};
+
+#define PAT_ENTRY(index_, mmap_, coh_)                      \
+{                                                           \
+   .index = index_,                                         \
+   .mmap = INTEL_DEVICE_INFO_MMAP_MODE_##mmap_,             \
+   .coherency = INTEL_DEVICE_INFO_COHERENCY_MODE_##coh_     \
+}
 
 /**
  * Intel hardware information and quirks
@@ -201,6 +229,11 @@ struct intel_device_info
     * fragment shader instructions.
     */
    bool needs_unlit_centroid_workaround;
+
+   /**
+    * We need this for ADL-N specific Wa_14014966230.
+    */
+   bool is_adl_n;
    /** @} */
 
    /**
@@ -454,9 +487,10 @@ struct intel_device_info
    } mem;
 
    struct {
-      uint8_t coherent;
-      uint8_t scanout;
-      uint8_t writeback;
+      struct intel_device_info_pat_entry coherent;
+      struct intel_device_info_pat_entry scanout;
+      struct intel_device_info_pat_entry writeback;
+      struct intel_device_info_pat_entry writecombining;
    } pat;
 
    BITSET_DECLARE(workarounds, INTEL_WA_NUM);

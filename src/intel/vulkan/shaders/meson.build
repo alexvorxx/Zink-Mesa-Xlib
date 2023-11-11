@@ -33,8 +33,7 @@ float64_spv_h = custom_target(
 )
 
 anv_internal_shaders = [
-  [ 'gfx9_generated_draws.glsl',  'frag' ],
-  [ 'gfx11_generated_draws.glsl', 'frag' ],
+  [ 'generated_draws.glsl',       'frag' ],
   [ 'query_copy_compute.glsl',    'comp' ],
   [ 'query_copy_fragment.glsl',   'frag' ],
   [ 'memcpy_compute.glsl',        'comp' ],
@@ -49,7 +48,8 @@ foreach item : anv_internal_shaders
   anv_internal_spvs += custom_target(
     spv_filename,
     input : [glsl2spirv, f, files('common_generated_draws.glsl',
-                                  'common_query_copy.glsl')],
+                                  'common_query_copy.glsl',
+                                  'interface.h')],
     output : spv_filename,
     command : [
       prog_python, '@INPUT0@', '@INPUT1@', '@OUTPUT@',
@@ -58,5 +58,6 @@ foreach item : anv_internal_shaders
       '--glsl-version', '450',
       '--stage', stage,
       '-I' + meson.current_source_dir(),
+      '-D_IN_SHADER_=1',
     ])
 endforeach

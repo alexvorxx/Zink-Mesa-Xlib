@@ -9,23 +9,26 @@ set -e
 set -o xtrace
 
 ############### Install packages for baremetal testing
+DEPS=(
+    cpio
+    curl
+    fastboot
+    netcat-openbsd
+    openssh-server
+    procps
+    python3-distutils
+    python3-minimal
+    python3-serial
+    rsync
+    snmp
+    zstd
+)
+
 apt-get install -y ca-certificates
 sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list.d/*
 apt-get update
 
-apt-get install -y --no-remove \
-        cpio \
-        curl \
-        fastboot \
-        netcat-openbsd \
-        openssh-server \
-        procps \
-        python3-distutils \
-        python3-minimal \
-        python3-serial \
-        rsync \
-        snmp \
-        zstd
+apt-get install -y --no-remove "${DEPS[@]}"
 
 # setup SNMPv2 SMI MIB
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \

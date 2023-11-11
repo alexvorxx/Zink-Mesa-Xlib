@@ -30,13 +30,12 @@
 #include <limits.h>
 #include <math.h>
 #include "util/half_float.h"
+#include "util/macros.h"
 #include "util/u_math.h"
 #include "util/u_qsort.h"
 #include "nir_builder.h"
 #include "nir_control_flow_private.h"
 #include "nir_worklist.h"
-
-#include "main/menums.h" /* BITFIELD64_MASK */
 
 #ifndef NDEBUG
 uint32_t nir_debug = 0;
@@ -319,7 +318,7 @@ nir_create_variable_with_location(nir_shader *shader, nir_variable_mode mode, in
    /* Only supporting non-array, or arrayed-io types, because otherwise we don't
     * know how much to increment num_inputs/outputs
     */
-   assert(glsl_get_length(type) <= 1);
+   assert(glsl_type_is_vector_or_scalar(type) || glsl_type_is_unsized_array(type));
 
    const char *name;
    switch (mode) {
@@ -503,6 +502,9 @@ nir_function_create(nir_shader *shader, const char *name)
    func->is_preamble = false;
    func->dont_inline = false;
    func->should_inline = false;
+
+   /* Only meaningful for shader libraries, so don't export by default. */
+   func->is_exported = false;
 
    return func;
 }
@@ -1634,6 +1636,25 @@ nir_def_components_read(const nir_def *def)
    }
 
    return read_mask;
+}
+
+bool
+nir_def_all_uses_are_fsat(const nir_def *def)
+{
+   nir_foreach_use(src, def) {
+      if (nir_src_is_if(src))
+         return false;
+
+      nir_instr *use = nir_src_parent_instr(src);
+      if (use->type != nir_instr_type_alu)
+         return false;
+
+      nir_alu_instr *alu = nir_instr_as_alu(use);
+      if (alu->op != nir_op_fsat)
+         return false;
+   }
+
+   return true;
 }
 
 nir_block *
@@ -3068,6 +3089,10 @@ nir_tex_instr_result_size(const nir_tex_instr *instr)
    case nir_texop_sampler_descriptor_amd:
       return 4;
 
+   case nir_texop_hdr_dim_nv:
+   case nir_texop_tex_type_nv:
+      return 4;
+
    default:
       if (instr->is_shadow && instr->is_new_style_shadow)
          return 1;
@@ -3375,4 +3400,13 @@ nir_remove_non_entrypoints(nir_shader *nir)
          exec_node_remove(&func->node);
    }
    assert(exec_list_length(&nir->functions) == 1);
+}
+
+void
+nir_remove_non_exported(nir_shader *nir)
+{
+   nir_foreach_function_safe(func, nir) {
+      if (!func->is_exported)
+         exec_node_remove(&func->node);
+   }
 }

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from dateutil import parser
 
 import gitlab
-from gitlab_common import read_token
+from gitlab_common import read_token, pretty_duration
 
 REFRESH_WAIT = 30
 MARGE_BOT_USER_ID = 9716
@@ -52,8 +52,10 @@ if __name__ == "__main__":
         for mr in mrs:
             updated = parser.parse(mr.updated_at)
             now = datetime.now(timezone.utc)
-            diff = str(now - updated).split('.', maxsplit=1)[0]
-            print(f"{diff} | \u001b]8;;{mr.web_url}\u001b\\{mr.title}\u001b]8;;\u001b\\")
+            diff = (now - updated).total_seconds()
+            print(
+                f"⛭ \u001b]8;;{mr.web_url}\u001b\\{mr.title}\u001b]8;;\u001b\\ ({pretty_duration(diff)})"
+            )
 
         print("Job waiting: " + str(jobs_num))
 

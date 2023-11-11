@@ -334,11 +334,60 @@ only ``3DPRIMITIVE`` instructions and doesn't do any data loading from
 memory or touch HW registers, feeding the 3D pipeline as fast as it
 can.
 
-In ANV this implemented by using a side batch buffer. When ANV
-encounters the first indirect draws, it generates a jump into the side
-batch, the side batch contains a draw call using a generation shader
-for each indirect draw. We keep adding on more generation draws into
-the batch until we have to stop due to command buffer end, secondary
-command buffer calls or a barrier containing the access flag
-``VK_ACCESS_INDIRECT_COMMAND_READ_BIT``. The side batch buffer jump
-back right after the instruction where it was called.
+In ANV this implemented in 2 different ways :
+
+By generating instructions directly into the command stream using a
+side batch buffer. When ANV encounters the first indirect draws, it
+generates a jump into the side batch, the side batch contains a draw
+call using a generation shader for each indirect draw. We keep adding
+on more generation draws into the batch until we have to stop due to
+command buffer end, secondary command buffer calls or a barrier
+containing the access flag ``VK_ACCESS_INDIRECT_COMMAND_READ_BIT``.
+The side batch buffer jump back right after the instruction where it
+was called. Here is a high level diagram showing how the generation
+batch buffer writes in the main command buffer :
+
+.. graphviz::
+
+  digraph commands_mode {
+    rankdir = "LR"
+    "main-command-buffer" [
+      label = "main command buffer|...|draw indirect0 start|<f0>jump to\ngeneration batch|<f1>|<f2>empty instruction0|<f3>empty instruction1|...|draw indirect0 end|...|draw indirect1 start|<f4>empty instruction0|<f5>empty instruction1|...|<f6>draw indirect1 end|..."
+      shape = "record"
+    ];
+    "generation-command-buffer" [
+      label = "generation command buffer|<f0>|<f1>write draw indirect0|<f2>write draw indirect1|...|<f3>exit jump"
+      shape = "record"
+    ];
+    "main-command-buffer":f0 -> "generation-command-buffer":f0;
+    "generation-command-buffer":f1 -> "main-command-buffer":f2 [color="#0000ff"];
+    "generation-command-buffer":f1 -> "main-command-buffer":f3 [color="#0000ff"];
+    "generation-command-buffer":f2 -> "main-command-buffer":f4 [color="#0000ff"];
+    "generation-command-buffer":f2 -> "main-command-buffer":f5 [color="#0000ff"];
+    "generation-command-buffer":f3 -> "main-command-buffer":f1;
+  }
+
+By generating instructions into a ring buffer of commands, when the
+draw count number is high. This solution allows smaller batches to be
+emitted. Here is a high level diagram showing how things are
+executed :
+
+.. graphviz::
+
+  digraph ring_mode {
+    rankdir=LR;
+    "main-command-buffer" [
+      label = "main command buffer|...| draw indirect |<f1>generation shader|<f2> jump to ring|<f3> increment\ndraw_base|<f4>..."
+      shape = "record"
+    ];
+    "ring-buffer" [
+      label = "ring buffer|<f0>generated draw0|<f1>generated draw1|<f2>generated draw2|...|<f3>exit jump"
+      shape = "record"
+    ];
+    "main-command-buffer":f2 -> "ring-buffer":f0;
+    "ring-buffer":f3 -> "main-command-buffer":f3;
+    "ring-buffer":f3 -> "main-command-buffer":f4;
+    "main-command-buffer":f3 -> "main-command-buffer":f1;
+    "main-command-buffer":f1 -> "ring-buffer":f1 [color="#0000ff"];
+    "main-command-buffer":f1 -> "ring-buffer":f2 [color="#0000ff"];
+  }

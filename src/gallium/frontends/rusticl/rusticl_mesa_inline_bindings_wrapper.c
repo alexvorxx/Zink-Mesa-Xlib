@@ -96,3 +96,9 @@ glsl_int16_t_type(void)
 {
     return __glsl_int16_t_type();
 }
+
+const struct glsl_type *
+glsl_vector_type(enum glsl_base_type base_type, unsigned components)
+{
+    return __glsl_vector_type(base_type, components);
+}

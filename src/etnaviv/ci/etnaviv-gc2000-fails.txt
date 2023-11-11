@@ -442,6 +442,7 @@ spec@glsl-1.10@execution@built-in-functions@vs-op-div-ivec4-ivec4,Fail
 spec@glsl-1.10@execution@clipping@clip-plane-transformation clipvert_pos,Fail
 spec@glsl-1.10@execution@clipping@clip-plane-transformation fixed,Fail
 spec@glsl-1.10@execution@clipping@clip-plane-transformation pos_clipvert,Fail
+spec@glsl-1.10@execution@glsl-1.10-built-in-uniform-state,Fail
 spec@glsl-1.10@execution@glsl-fs-convolution-2,Fail
 spec@glsl-1.10@execution@glsl-fs-uniform-array-7,Fail
 spec@glsl-1.10@execution@glsl-vs-large-uniform-array,Fail

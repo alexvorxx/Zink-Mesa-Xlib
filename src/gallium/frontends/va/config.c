@@ -494,6 +494,28 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                value = encode_tile_support;
          } break;
 #endif
+#if VA_CHECK_VERSION(1, 21, 0)
+         case VAConfigAttribEncMaxTileRows:
+         {
+            int max_tile_rows = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_ENC_MAX_TILE_ROWS);
+            if (max_tile_rows <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else
+               value = max_tile_rows;
+         } break;
+         case VAConfigAttribEncMaxTileCols:
+         {
+            int max_tile_cols = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_ENC_MAX_TILE_COLS);
+            if (max_tile_cols <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else
+               value = max_tile_cols;
+         } break;
+#endif
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;

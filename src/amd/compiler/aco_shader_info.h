@@ -226,6 +226,10 @@ enum aco_statistic {
    aco_statistic_smem_clauses,
    aco_statistic_sgpr_presched,
    aco_statistic_vgpr_presched,
+   aco_statistic_valu,
+   aco_statistic_salu,
+   aco_statistic_vmem,
+   aco_statistic_smem,
    aco_num_statistics
 };
 

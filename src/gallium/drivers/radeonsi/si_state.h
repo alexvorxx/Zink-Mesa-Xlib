@@ -250,8 +250,7 @@ enum si_tracked_context_reg
    SI_TRACKED_PA_CL_GB_HORZ_CLIP_ADJ,
    SI_TRACKED_PA_CL_GB_HORZ_DISC_ADJ,
 
-   /* 2 consecutive registers */
-   SI_TRACKED_SPI_SHADER_IDX_FORMAT,
+   /* Non-consecutive register */
    SI_TRACKED_SPI_SHADER_POS_FORMAT,
 
    /* 2 consecutive registers */
@@ -636,7 +635,7 @@ void si_cp_dma_prefetch(struct si_context *sctx, struct pipe_resource *buf,
 void si_set_vertex_buffer_descriptor(struct si_screen *sscreen, struct si_vertex_elements *velems,
                                      struct pipe_vertex_buffer *vb, unsigned element_index,
                                      uint32_t *out);
-void gfx11_emit_buffered_compute_sh_regs(struct si_context *sctx);
+void si_emit_buffered_compute_sh_regs(struct si_context *sctx);
 void si_init_draw_functions_GFX6(struct si_context *sctx);
 void si_init_draw_functions_GFX7(struct si_context *sctx);
 void si_init_draw_functions_GFX8(struct si_context *sctx);
@@ -644,8 +643,10 @@ void si_init_draw_functions_GFX9(struct si_context *sctx);
 void si_init_draw_functions_GFX10(struct si_context *sctx);
 void si_init_draw_functions_GFX10_3(struct si_context *sctx);
 void si_init_draw_functions_GFX11(struct si_context *sctx);
+void si_init_draw_functions_GFX11_5(struct si_context *sctx);
 
 /* si_state_msaa.c */
+extern unsigned si_msaa_max_distance[5];
 void si_init_msaa_functions(struct si_context *sctx);
 
 /* si_state_streamout.c */

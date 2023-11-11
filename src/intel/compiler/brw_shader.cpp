@@ -850,27 +850,6 @@ backend_instruction::is_3src(const struct brw_compiler *compiler) const
 }
 
 bool
-backend_instruction::is_tex() const
-{
-   return (opcode == SHADER_OPCODE_TEX ||
-           opcode == FS_OPCODE_TXB ||
-           opcode == SHADER_OPCODE_TXD ||
-           opcode == SHADER_OPCODE_TXF ||
-           opcode == SHADER_OPCODE_TXF_LZ ||
-           opcode == SHADER_OPCODE_TXF_CMS ||
-           opcode == SHADER_OPCODE_TXF_CMS_W ||
-           opcode == SHADER_OPCODE_TXF_UMS ||
-           opcode == SHADER_OPCODE_TXF_MCS ||
-           opcode == SHADER_OPCODE_TXL ||
-           opcode == SHADER_OPCODE_TXL_LZ ||
-           opcode == SHADER_OPCODE_TXS ||
-           opcode == SHADER_OPCODE_LOD ||
-           opcode == SHADER_OPCODE_TG4 ||
-           opcode == SHADER_OPCODE_TG4_OFFSET ||
-           opcode == SHADER_OPCODE_SAMPLEINFO);
-}
-
-bool
 backend_instruction::is_math() const
 {
    return (opcode == SHADER_OPCODE_RCP ||

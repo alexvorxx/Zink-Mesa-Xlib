@@ -1168,6 +1168,7 @@ enum tgl_pipe {
    TGL_PIPE_FLOAT,
    TGL_PIPE_INT,
    TGL_PIPE_LONG,
+   TGL_PIPE_MATH,
    TGL_PIPE_ALL
 };
 
@@ -1178,7 +1179,7 @@ enum tgl_pipe {
 struct tgl_swsb {
    unsigned regdist : 3;
    enum tgl_pipe pipe : 3;
-   unsigned sbid : 4;
+   unsigned sbid : 5;
    enum tgl_sbid_mode mode : 3;
 };
 
@@ -1245,21 +1246,46 @@ tgl_swsb_src_dep(struct tgl_swsb swsb)
  * Convert the provided tgl_swsb to the hardware's binary representation of an
  * SWSB annotation.
  */
-static inline uint8_t
+static inline uint32_t
 tgl_swsb_encode(const struct intel_device_info *devinfo, struct tgl_swsb swsb)
 {
    if (!swsb.mode) {
       const unsigned pipe = devinfo->verx10 < 125 ? 0 :
          swsb.pipe == TGL_PIPE_FLOAT ? 0x10 :
          swsb.pipe == TGL_PIPE_INT ? 0x18 :
-         swsb.pipe == TGL_PIPE_LONG ? 0x50 :
+         swsb.pipe == TGL_PIPE_LONG ? 0x20 :
+         swsb.pipe == TGL_PIPE_MATH ? 0x28 :
          swsb.pipe == TGL_PIPE_ALL ? 0x8 : 0;
       return pipe | swsb.regdist;
+
    } else if (swsb.regdist) {
-      return 0x80 | swsb.regdist << 4 | swsb.sbid;
+      if (devinfo->ver >= 20) {
+         if ((swsb.mode & TGL_SBID_SET)) {
+            assert(swsb.pipe == TGL_PIPE_ALL ||
+                   swsb.pipe == TGL_PIPE_INT || swsb.pipe == TGL_PIPE_FLOAT);
+            return (swsb.pipe == TGL_PIPE_INT ? 0x300 :
+                    swsb.pipe == TGL_PIPE_FLOAT ? 0x200 : 0x100) |
+                   swsb.regdist << 5 | swsb.sbid;
+         } else {
+            assert(!(swsb.mode & ~(TGL_SBID_DST | TGL_SBID_SRC)));
+            return (swsb.pipe == TGL_PIPE_ALL ? 0x300 :
+                    swsb.mode == TGL_SBID_SRC ? 0x200 : 0x100) |
+                   swsb.regdist << 5 | swsb.sbid;
+         }
+      } else {
+         assert(!(swsb.sbid & ~0xfu));
+         return 0x80 | swsb.regdist << 4 | swsb.sbid;
+      }
+
    } else {
-      return swsb.sbid | (swsb.mode & TGL_SBID_SET ? 0x40 :
-                          swsb.mode & TGL_SBID_DST ? 0x20 : 0x30);
+      if (devinfo->ver >= 20) {
+         return swsb.sbid | (swsb.mode & TGL_SBID_SET ? 0xc0 :
+                             swsb.mode & TGL_SBID_DST ? 0x80 : 0xa0);
+      } else {
+         assert(!(swsb.sbid & ~0xfu));
+         return swsb.sbid | (swsb.mode & TGL_SBID_SET ? 0x40 :
+                             swsb.mode & TGL_SBID_DST ? 0x20 : 0x30);
+      }
    }
 }
 
@@ -1269,29 +1295,70 @@ tgl_swsb_encode(const struct intel_device_info *devinfo, struct tgl_swsb swsb)
  */
 static inline struct tgl_swsb
 tgl_swsb_decode(const struct intel_device_info *devinfo,
-                const bool is_unordered, const uint8_t x)
+                const bool is_unordered, const uint32_t x)
 {
-   if (x & 0x80) {
-      const struct tgl_swsb swsb = { (x & 0x70u) >> 4, TGL_PIPE_NONE,
-                                     x & 0xfu,
-                                     is_unordered ?
-                                     TGL_SBID_SET : TGL_SBID_DST };
-      return swsb;
-   } else if ((x & 0x70) == 0x20) {
-      return tgl_swsb_sbid(TGL_SBID_DST, x & 0xfu);
-   } else if ((x & 0x70) == 0x30) {
-      return tgl_swsb_sbid(TGL_SBID_SRC, x & 0xfu);
-   } else if ((x & 0x70) == 0x40) {
-      return tgl_swsb_sbid(TGL_SBID_SET, x & 0xfu);
+   if (devinfo->ver >= 20) {
+      if (x & 0x300) {
+         if (is_unordered) {
+            const struct tgl_swsb swsb = {
+               (x & 0xe0u) >> 5,
+               ((x & 0x300) == 0x300 ? TGL_PIPE_INT :
+                (x & 0x300) == 0x200 ? TGL_PIPE_FLOAT :
+                TGL_PIPE_ALL),
+               x & 0x1fu,
+               TGL_SBID_SET
+            };
+            return swsb;
+         } else {
+            const struct tgl_swsb swsb = {
+               (x & 0xe0u) >> 5,
+               ((x & 0x300) == 0x300 ? TGL_PIPE_ALL : TGL_PIPE_NONE),
+               x & 0x1fu,
+               ((x & 0x300) == 0x200 ? TGL_SBID_SRC : TGL_SBID_DST)
+            };
+            return swsb;
+         }
+
+      } else if ((x & 0xe0) == 0x80) {
+         return tgl_swsb_sbid(TGL_SBID_DST, x & 0x1f);
+      } else if ((x & 0xe0) == 0xa0) {
+         return tgl_swsb_sbid(TGL_SBID_SRC, x & 0x1fu);
+      } else if ((x & 0xe0) == 0xc0) {
+         return tgl_swsb_sbid(TGL_SBID_SET, x & 0x1fu);
+      } else {
+            const struct tgl_swsb swsb = { x & 0x7u,
+                                           ((x & 0x38) == 0x10 ? TGL_PIPE_FLOAT :
+                                            (x & 0x38) == 0x18 ? TGL_PIPE_INT :
+                                            (x & 0x38) == 0x20 ? TGL_PIPE_LONG :
+                                            (x & 0x38) == 0x28 ? TGL_PIPE_MATH :
+                                            (x & 0x38) == 0x8 ? TGL_PIPE_ALL :
+                                            TGL_PIPE_NONE) };
+            return swsb;
+      }
+
    } else {
-      const struct tgl_swsb swsb = { x & 0x7u,
-                                     ((x & 0x78) == 0x10 ? TGL_PIPE_FLOAT :
-                                      (x & 0x78) == 0x18 ? TGL_PIPE_INT :
-                                      (x & 0x78) == 0x50 ? TGL_PIPE_LONG :
-                                      (x & 0x78) == 0x8 ? TGL_PIPE_ALL :
-                                      TGL_PIPE_NONE) };
-      assert(devinfo->verx10 >= 125 || swsb.pipe == TGL_PIPE_NONE);
-      return swsb;
+      if (x & 0x80) {
+         const struct tgl_swsb swsb = { (x & 0x70u) >> 4, TGL_PIPE_NONE,
+                                        x & 0xfu,
+                                        is_unordered ?
+                                        TGL_SBID_SET : TGL_SBID_DST };
+         return swsb;
+      } else if ((x & 0x70) == 0x20) {
+         return tgl_swsb_sbid(TGL_SBID_DST, x & 0xfu);
+      } else if ((x & 0x70) == 0x30) {
+         return tgl_swsb_sbid(TGL_SBID_SRC, x & 0xfu);
+      } else if ((x & 0x70) == 0x40) {
+         return tgl_swsb_sbid(TGL_SBID_SET, x & 0xfu);
+      } else {
+         const struct tgl_swsb swsb = { x & 0x7u,
+                                        ((x & 0x78) == 0x10 ? TGL_PIPE_FLOAT :
+                                         (x & 0x78) == 0x18 ? TGL_PIPE_INT :
+                                         (x & 0x78) == 0x50 ? TGL_PIPE_LONG :
+                                         (x & 0x78) == 0x8 ? TGL_PIPE_ALL :
+                                         TGL_PIPE_NONE) };
+         assert(devinfo->verx10 >= 125 || swsb.pipe == TGL_PIPE_NONE);
+         return swsb;
+      }
    }
 }
 

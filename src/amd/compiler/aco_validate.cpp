@@ -116,7 +116,7 @@ validate_ir(Program* program)
             base_format = Format::VOP2;
          else if ((uint32_t)base_format & (uint32_t)Format::VOPC)
             base_format = Format::VOPC;
-         else if ((uint32_t)base_format & (uint32_t)Format::VINTRP) {
+         else if (base_format == Format::VINTRP) {
             if (instr->opcode == aco_opcode::v_interp_p1ll_f16 ||
                 instr->opcode == aco_opcode::v_interp_p1lv_f16 ||
                 instr->opcode == aco_opcode::v_interp_p2_legacy_f16 ||
@@ -259,8 +259,9 @@ validate_ir(Program* program)
                   check(!vop3p.opsel_lo[i] && !vop3p.opsel_hi[i],
                         "Unexpected opsel for subdword operand", instr.get());
             }
-            check(instr->definitions[0].regClass() == v1, "VOP3P must have v1 definition",
-                  instr.get());
+            check(instr->definitions[0].regClass() == v1 ||
+                     instr_info.classes[(int)instr->opcode] == instr_class::wmma,
+                  "VOP3P must have v1 definition", instr.get());
          }
 
          /* check for undefs */

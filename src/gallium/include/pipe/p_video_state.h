@@ -528,6 +528,7 @@ struct pipe_h264_enc_seq_param
    uint32_t matrix_coefficients;
    uint32_t chroma_sample_loc_type_top_field;
    uint32_t chroma_sample_loc_type_bottom_field;
+   uint32_t max_num_reorder_frames;
 };
 
 struct pipe_h264_enc_picture_desc

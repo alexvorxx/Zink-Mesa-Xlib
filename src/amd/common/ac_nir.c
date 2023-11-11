@@ -129,6 +129,22 @@ lower_intrinsic_to_arg(nir_builder *b, nir_instr *instr, void *state)
 
       break;
    }
+   case nir_intrinsic_load_workgroup_id:
+      if (b->shader->info.stage == MESA_SHADER_MESH) {
+         /* This lowering is only valid with fast_launch = 2, otherwise we assume that
+          * lower_workgroup_id_to_index removed any uses of the workgroup id by this point.
+          */
+         assert(s->gfx_level >= GFX11);
+         nir_def *xy = ac_nir_load_arg(b, s->args, s->args->tess_offchip_offset);
+         nir_def *z = ac_nir_load_arg(b, s->args, s->args->gs_attr_offset);
+         replacement = nir_vec3(b, nir_extract_u16(b, xy, nir_imm_int(b, 0)),
+                                nir_extract_u16(b, xy, nir_imm_int(b, 1)),
+                                nir_extract_u16(b, z, nir_imm_int(b, 1)));
+      } else {
+         return false;
+      }
+
+      break;
    default:
       return false;
    }
@@ -179,15 +195,26 @@ ac_nir_store_var_components(nir_builder *b, nir_variable *var, nir_def *value,
    nir_store_var(b, var, value, writemask);
 }
 
+static nir_intrinsic_instr *
+export(nir_builder *b, nir_def *val, nir_def *row, unsigned base, unsigned flags,
+       unsigned write_mask)
+{
+   if (row) {
+      return nir_export_row_amd(b, val, row, .base = base, .flags = flags,
+                                .write_mask = write_mask);
+   } else {
+      return nir_export_amd(b, val, .base = base, .flags = flags,
+                            .write_mask = write_mask);
+   }
+}
+
 void
-ac_nir_export_primitive(nir_builder *b, nir_def *prim)
+ac_nir_export_primitive(nir_builder *b, nir_def *prim, nir_def *row)
 {
    unsigned write_mask = BITFIELD_MASK(prim->num_components);
 
-   nir_export_amd(b, nir_pad_vec4(b, prim),
-                  .base = V_008DFC_SQ_EXP_PRIM,
-                  .flags = AC_EXP_FLAG_DONE,
-                  .write_mask = write_mask);
+   export(b, nir_pad_vec4(b, prim), row, V_008DFC_SQ_EXP_PRIM, AC_EXP_FLAG_DONE,
+          write_mask);
 }
 
 static nir_def *
@@ -231,7 +258,8 @@ ac_nir_export_position(nir_builder *b,
                        bool force_vrs,
                        bool done,
                        uint64_t outputs_written,
-                       nir_def *(*outputs)[4])
+                       nir_def *(*outputs)[4],
+                       nir_def *row)
 {
    nir_intrinsic_instr *exp[4];
    unsigned exp_num = 0;
@@ -244,9 +272,7 @@ ac_nir_export_position(nir_builder *b,
       const unsigned pos_flags = gfx_level == GFX10 ? AC_EXP_FLAG_VALID_MASK : 0;
       nir_def *pos = get_pos0_output(b, outputs[VARYING_SLOT_POS]);
 
-      exp[exp_num] = nir_export_amd(
-         b, pos, .base = V_008DFC_SQ_EXP_POS + exp_num,
-         .flags = pos_flags, .write_mask = 0xf);
+      exp[exp_num] = export(b, pos, row, V_008DFC_SQ_EXP_POS + exp_num, pos_flags, 0xf);
       exp_num++;
    } else {
       exp_pos_offset++;
@@ -274,7 +300,6 @@ ac_nir_export_position(nir_builder *b,
    if ((outputs_written & mask) || force_vrs) {
       nir_def *zero = nir_imm_float(b, 0);
       nir_def *vec[4] = { zero, zero, zero, zero };
-      unsigned flags = 0;
       unsigned write_mask = 0;
 
       if (outputs_written & VARYING_BIT_PSIZ) {
@@ -320,21 +345,19 @@ ac_nir_export_position(nir_builder *b,
          }
       }
 
-      exp[exp_num] = nir_export_amd(
-         b, nir_vec(b, vec, 4),
-         .base = V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset,
-         .flags = flags,
-         .write_mask = write_mask);
+      exp[exp_num] = export(b, nir_vec(b, vec, 4), row,
+                            V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset,
+                            0, write_mask);
       exp_num++;
    }
 
    for (int i = 0; i < 2; i++) {
       if ((outputs_written & (VARYING_BIT_CLIP_DIST0 << i)) &&
           (clip_cull_mask & BITFIELD_RANGE(i * 4, 4))) {
-         exp[exp_num] = nir_export_amd(
-            b, get_export_output(b, outputs[VARYING_SLOT_CLIP_DIST0 + i]),
-            .base = V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset,
-            .write_mask = (clip_cull_mask >> (i * 4)) & 0xf);
+         exp[exp_num] = export(
+            b, get_export_output(b, outputs[VARYING_SLOT_CLIP_DIST0 + i]), row,
+            V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset, 0,
+            (clip_cull_mask >> (i * 4)) & 0xf);
          exp_num++;
       }
    }
@@ -351,10 +374,10 @@ ac_nir_export_position(nir_builder *b,
 
       for (int i = 0; i < 2; i++) {
          if (clip_cull_mask & BITFIELD_RANGE(i * 4, 4)) {
-            exp[exp_num] = nir_export_amd(
-               b, get_export_output(b, clip_dist + i * 4),
-               .base = V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset,
-               .write_mask = (clip_cull_mask >> (i * 4)) & 0xf);
+            exp[exp_num] = export(
+               b, get_export_output(b, clip_dist + i * 4), row,
+               V_008DFC_SQ_EXP_POS + exp_num + exp_pos_offset, 0,
+               (clip_cull_mask >> (i * 4)) & 0xf);
             exp_num++;
          }
       }
@@ -739,7 +762,7 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
             export_outputs &= ~VARYING_BIT_PSIZ;
 
          ac_nir_export_position(&b, gfx_level, clip_cull_mask, !has_param_exports,
-                                force_vrs, true, export_outputs, outputs.data);
+                                force_vrs, true, export_outputs, outputs.data, NULL);
 
          if (has_param_exports) {
             ac_nir_export_parameters(&b, param_offsets,
@@ -846,7 +869,7 @@ ac_nir_lower_legacy_vs(nir_shader *nir,
       export_outputs &= ~VARYING_BIT_PSIZ;
 
    ac_nir_export_position(&b, gfx_level, clip_cull_mask, !has_param_exports,
-                          force_vrs, true, export_outputs, outputs.data);
+                          force_vrs, true, export_outputs, outputs.data, NULL);
 
    if (has_param_exports) {
       ac_nir_export_parameters(&b, param_offsets,

@@ -55,7 +55,7 @@ int main(int argc, char **argv)
       }
       fclose(f);
 
-      ac_parse_ib(stdout, ib, size / 4, NULL, 0, filename, gfx_level, family, NULL, NULL);
+      ac_parse_ib(stdout, ib, size / 4, NULL, 0, filename, gfx_level, family, AMD_IP_GFX, NULL, NULL);
       free(ib);
    }
 

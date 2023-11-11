@@ -487,6 +487,7 @@ bool ac_init_spm(const struct radeon_info *info,
       create_info = gfx103_spm_counters;
       break;
    case GFX11:
+   case GFX11_5:
       create_info_count = ARRAY_SIZE(gfx11_spm_counters);
       create_info = gfx11_spm_counters;
       break;

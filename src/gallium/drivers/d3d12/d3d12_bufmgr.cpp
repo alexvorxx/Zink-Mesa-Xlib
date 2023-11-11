@@ -100,6 +100,7 @@ d3d12_bo_wrap_res(struct d3d12_screen *screen, ID3D12Resource *res, enum d3d12_r
 
    bo->residency_status = residency;
    bo->last_used_timestamp = 0;
+   desc.Flags &= ~D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
    screen->dev->GetCopyableFootprints(&desc, 0, total_subresources, 0, nullptr, nullptr, nullptr, &bo->estimated_size);
    if (residency == d3d12_resident) {
       mtx_lock(&screen->submit_mutex);

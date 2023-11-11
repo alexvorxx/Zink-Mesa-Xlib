@@ -52,9 +52,11 @@
 #define PAN_DBG_OVERFLOW 0x8000
 #endif
 
-#define PAN_DBG_YUV 0x20000
+#define PAN_DBG_YUV        0x20000
+#define PAN_DBG_FORCE_PACK 0x40000
 
 struct panfrost_device;
+struct pan_blendable_format;
 
 unsigned panfrost_translate_swizzle_4(const unsigned char swizzle[4]);
 
@@ -64,7 +66,8 @@ unsigned panfrost_format_to_bifrost_blend(const struct panfrost_device *dev,
                                           enum pipe_format format,
                                           bool dithered);
 
-void pan_pack_color(uint32_t *packed, const union pipe_color_union *color,
+void pan_pack_color(const struct pan_blendable_format *blendable_formats,
+                    uint32_t *packed, const union pipe_color_union *color,
                     enum pipe_format format, bool dithered);
 
 /* Get the last blend shader, for an erratum workaround on v5 */

@@ -384,6 +384,33 @@
     <field name="UAV Coherency Required" start="9" end="9" type="bool" />
     <field name="Indirect Parameter Enable" start="10" end="10" type="bool" />
     <field name="Extended Parameters Present" start="11" end="11" type="uint" />
+    <field name="TBIMR Enable" start="13" end="13" type="uint" />
+    <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="0" />
+    <field name="3D Command Opcode" start="24" end="26" type="uint" default="3" />
+    <field name="Command SubType" start="27" end="28" type="uint" default="3" />
+    <field name="Command Type" start="29" end="31" type="uint" default="3" />
+    <field name="Primitive Topology Type" start="32" end="37" type="3D_Prim_Topo_Type" />
+    <field name="Vertex Access Type" start="40" end="40" type="uint">
+      <value name="SEQUENTIAL" value="0" />
+      <value name="RANDOM" value="1" />
+    </field>
+    <field name="End Offset Enable" start="41" end="41" type="bool" />
+    <field name="Vertex Count Per Instance" start="64" end="95" type="uint" />
+    <field name="Start Vertex Location" start="96" end="127" type="uint" />
+    <field name="Instance Count" start="128" end="159" type="uint" />
+    <field name="Start Instance Location" start="160" end="191" type="uint" />
+    <field name="Base Vertex Location" start="192" end="223" type="int" />
+    <field name="Extended Parameter 0" start="224" end="255" type="uint" />
+    <field name="Extended Parameter 1" start="256" end="287" type="uint" />
+    <field name="Extended Parameter 2" start="288" end="319" type="uint" />
+  </instruction>
+  <instruction name="3DPRIMITIVE_EXTENDED" bias="2" length="10" engine="render">
+    <field name="DWord Length" start="0" end="7" type="uint" default="8" />
+    <field name="Predicate Enable" start="8" end="8" type="bool" />
+    <field name="UAV Coherency Required" start="9" end="9" type="bool" />
+    <field name="Indirect Parameter Enable" start="10" end="10" type="bool" />
+    <field name="Extended Parameters Present" start="11" end="11" type="bool" default="1" />
+    <field name="TBIMR Enable" start="13" end="13" type="uint" />
     <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="0" />
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="3" />
     <field name="Command SubType" start="27" end="28" type="uint" default="3" />
@@ -1154,6 +1181,20 @@
     <group count="8" start="64" size="32">
       <field name="Inline Data" start="0" end="31" type="uint" />
     </group>
+  </instruction>
+  <instruction name="3DSTATE_TBIMR_TILE_PASS_INFO" bias="2" length="4">
+    <field name="DWord Length" start="0" end="7" type="uint" default="2" />
+    <field name="3D Command Sub Opcode" start="16" end="23" type="uint" default="110" />
+    <field name="3D Command Opcode" start="24" end="26" type="uint" default="0" />
+    <field name="Command SubType" start="27" end="28" type="uint" default="3" />
+    <field name="Command Type" start="29" end="31" type="uint" default="3" />
+    <field name="Tile Rectangle Height" start="32" end="46" type="uint" />
+    <field name="Tile Rectangle Width" start="48" end="62" type="uint" />
+    <field name="Vertical Tile Count" start="64" end="79" type="uint" />
+    <field name="Horizontal Tile Count" start="80" end="95" type="uint" />
+    <field name="Walk Pattern" start="96" end="96" type="uint" />
+    <field name="Tile Box Check" start="98" end="98" type="uint" />
+    <field name="TBIMR Batch Size" start="99" end="101" type="uint" />
   </instruction>
   <instruction name="3DSTATE_TE" bias="2" length="4" engine="render">
     <field name="DWord Length" start="0" end="7" type="uint" default="2" />
@@ -1986,6 +2027,14 @@
   <register name="CHICKEN_RASTER_1" length="1" num="0x6204">
     <field name="AA Line Quality Fix" start="5" end="5" type="bool" />
     <field name="AA Line Quality Fix Mask" start="21" end="21" type="bool" />
+  </register>
+  <register name="CHICKEN_RASTER_2" length="1" num="0x6208">
+    <field name="TBIMR Batch Size Override" start="1" end="1" type="bool" />
+    <field name="TBIMR Open Batch Enable" start="4" end="4" type="bool" />
+    <field name="TBIMR Fast Clip" start="5" end="5" type="bool" />
+    <field name="TBIMR Batch Size Override Mask" start="17" end="17" type="bool" />
+    <field name="TBIMR Open Batch Enable Mask" start="20" end="20" type="bool" />
+    <field name="TBIMR Fast Clip Mask" start="21" end="21" type="bool" />
   </register>
   <register name="COMMON_SLICE_CHICKEN1" length="1" num="0x7010">
     <field name="HIZ Plane Optimization disable bit" start="9" end="9" type="bool" />

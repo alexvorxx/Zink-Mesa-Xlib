@@ -426,6 +426,7 @@ public:
 
    bool last_rt:1;
    bool pi_noperspective:1;   /**< Pixel interpolator noperspective flag */
+   bool keep_payload_trailing_zeros;
 
    tgl_swsb sched; /**< Scheduling info. */
 };
@@ -574,7 +575,7 @@ is_send(const fs_inst *inst)
 static inline bool
 is_unordered(const intel_device_info *devinfo, const fs_inst *inst)
 {
-   return is_send(inst) || inst->is_math() ||
+   return is_send(inst) || (devinfo->ver < 20 && inst->is_math()) ||
           (devinfo->has_64bit_float_via_math_pipe &&
            (get_exec_type(inst) == BRW_REGISTER_TYPE_DF ||
             inst->dst.type == BRW_REGISTER_TYPE_DF));

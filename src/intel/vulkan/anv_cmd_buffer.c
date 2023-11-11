@@ -135,7 +135,7 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
       &cmd_buffer->state.gfx.vertex_input;
 
    cmd_buffer->batch.status = VK_SUCCESS;
-   cmd_buffer->generation_batch.status = VK_SUCCESS;
+   cmd_buffer->generation.batch.status = VK_SUCCESS;
 
    cmd_buffer->device = device;
 
@@ -153,8 +153,8 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
                          &device->dynamic_state_pool, 16384);
    anv_state_stream_init(&cmd_buffer->general_state_stream,
                          &device->general_state_pool, 16384);
-   anv_state_stream_init(&cmd_buffer->push_descriptor_stream,
-                         &device->push_descriptor_pool, 4096);
+   anv_state_stream_init(&cmd_buffer->indirect_push_descriptor_stream,
+                         &device->indirect_push_descriptor_pool, 4096);
 
    int success = u_vector_init_pow2(&cmd_buffer->dynamic_bos, 8,
                                     sizeof(struct anv_bo *));
@@ -165,13 +165,13 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
    cmd_buffer->companion_rcs_cmd_buffer = NULL;
    cmd_buffer->is_companion_rcs_cmd_buffer = false;
 
-   cmd_buffer->generation_jump_addr = ANV_NULL_ADDRESS;
-   cmd_buffer->generation_return_addr = ANV_NULL_ADDRESS;
+   cmd_buffer->generation.jump_addr = ANV_NULL_ADDRESS;
+   cmd_buffer->generation.return_addr = ANV_NULL_ADDRESS;
 
    cmd_buffer->last_compute_walker = NULL;
 
-   memset(&cmd_buffer->generation_shader_state, 0,
-          sizeof(cmd_buffer->generation_shader_state));
+   memset(&cmd_buffer->generation.shader_state, 0,
+          sizeof(cmd_buffer->generation.shader_state));
 
    anv_cmd_state_init(cmd_buffer);
 
@@ -205,7 +205,7 @@ destroy_cmd_buffer(struct anv_cmd_buffer *cmd_buffer)
    anv_state_stream_finish(&cmd_buffer->surface_state_stream);
    anv_state_stream_finish(&cmd_buffer->dynamic_state_stream);
    anv_state_stream_finish(&cmd_buffer->general_state_stream);
-   anv_state_stream_finish(&cmd_buffer->push_descriptor_stream);
+   anv_state_stream_finish(&cmd_buffer->indirect_push_descriptor_stream);
 
    while (u_vector_length(&cmd_buffer->dynamic_bos) > 0) {
       struct anv_bo **bo = u_vector_remove(&cmd_buffer->dynamic_bos);
@@ -252,11 +252,11 @@ reset_cmd_buffer(struct anv_cmd_buffer *cmd_buffer,
    anv_cmd_buffer_reset_batch_bo_chain(cmd_buffer);
    anv_cmd_state_reset(cmd_buffer);
 
-   memset(&cmd_buffer->generation_shader_state, 0,
-          sizeof(cmd_buffer->generation_shader_state));
+   memset(&cmd_buffer->generation.shader_state, 0,
+          sizeof(cmd_buffer->generation.shader_state));
 
-   cmd_buffer->generation_jump_addr = ANV_NULL_ADDRESS;
-   cmd_buffer->generation_return_addr = ANV_NULL_ADDRESS;
+   cmd_buffer->generation.jump_addr = ANV_NULL_ADDRESS;
+   cmd_buffer->generation.return_addr = ANV_NULL_ADDRESS;
 
    anv_state_stream_finish(&cmd_buffer->surface_state_stream);
    anv_state_stream_init(&cmd_buffer->surface_state_stream,
@@ -270,9 +270,10 @@ reset_cmd_buffer(struct anv_cmd_buffer *cmd_buffer,
    anv_state_stream_init(&cmd_buffer->general_state_stream,
                          &cmd_buffer->device->general_state_pool, 16384);
 
-   anv_state_stream_finish(&cmd_buffer->push_descriptor_stream);
-   anv_state_stream_init(&cmd_buffer->push_descriptor_stream,
-                         &cmd_buffer->device->push_descriptor_pool, 4096);
+   anv_state_stream_finish(&cmd_buffer->indirect_push_descriptor_stream);
+   anv_state_stream_init(&cmd_buffer->indirect_push_descriptor_stream,
+                         &cmd_buffer->device->indirect_push_descriptor_pool,
+                         4096);
 
    while (u_vector_length(&cmd_buffer->dynamic_bos) > 0) {
       struct anv_bo **bo = u_vector_remove(&cmd_buffer->dynamic_bos);
@@ -633,6 +634,11 @@ void anv_CmdBindPipeline(
          cmd_buffer->state.gfx.pipeline;
       struct anv_graphics_pipeline *new_pipeline =
          anv_pipeline_to_graphics(pipeline);
+
+      /* Apply the non dynamic state from the pipeline */
+      vk_cmd_set_dynamic_graphics_state(&cmd_buffer->vk,
+                                        &new_pipeline->dynamic_state);
+
       if (old_pipeline == new_pipeline)
          return;
 
@@ -644,10 +650,6 @@ void anv_CmdBindPipeline(
          set_dirty_for_bind_map(cmd_buffer, stage,
                                 &new_pipeline->base.shaders[stage]->bind_map);
       }
-
-      /* Apply the non dynamic state from the pipeline */
-      vk_cmd_set_dynamic_graphics_state(&cmd_buffer->vk,
-                                        &new_pipeline->dynamic_state);
 
       state = &cmd_buffer->state.gfx.base;
       stages = new_pipeline->base.base.active_stages;
@@ -1061,6 +1063,8 @@ anv_cmd_buffer_cs_push_constants(struct anv_cmd_buffer *cmd_buffer)
                                                  aligned_total_push_constants_size,
                                                  push_constant_alignment);
    }
+   if (state.map == NULL)
+      return state;
 
    void *dst = state.map;
    const void *src = (char *)data + (range->start * 32);
@@ -1162,7 +1166,8 @@ void anv_CmdPushDescriptorSetKHR(
    struct anv_push_descriptor_set *push_set =
       &anv_cmd_buffer_get_pipe_state(cmd_buffer,
                                      pipelineBindPoint)->push_descriptor;
-   anv_push_descriptor_set_init(cmd_buffer, push_set, set_layout);
+   if (!anv_push_descriptor_set_init(cmd_buffer, push_set, set_layout))
+      return;
 
    anv_descriptor_set_write(cmd_buffer->device, &push_set->set,
                             descriptorWriteCount, pDescriptorWrites);
@@ -1192,7 +1197,8 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
    struct anv_push_descriptor_set *push_set =
       &anv_cmd_buffer_get_pipe_state(cmd_buffer,
                                      template->bind_point)->push_descriptor;
-   anv_push_descriptor_set_init(cmd_buffer, push_set, set_layout);
+   if (!anv_push_descriptor_set_init(cmd_buffer, push_set, set_layout))
+      return;
 
    anv_descriptor_set_write_template(cmd_buffer->device, &push_set->set,
                                      template,

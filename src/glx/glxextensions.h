@@ -65,7 +65,6 @@ enum
    MESA_swap_control_bit,
    MESA_swap_frame_usage_bit,
    NV_float_buffer_bit,
-   OML_swap_method_bit,
    OML_sync_control_bit,
    SGIS_multisample_bit,
    SGIX_fbconfig_bit,

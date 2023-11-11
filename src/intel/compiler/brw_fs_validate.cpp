@@ -86,10 +86,10 @@
       }                                                                 \
    }
 
+#ifndef NDEBUG
 void
 fs_visitor::validate()
 {
-#ifndef NDEBUG
    foreach_block_and_inst (block, fs_inst, inst, cfg) {
       switch (inst->opcode) {
       case SHADER_OPCODE_SEND:
@@ -193,5 +193,5 @@ fs_visitor::validate()
          fsv_assert_eq(inst->dst.stride, 1);
       }
    }
-#endif
 }
+#endif

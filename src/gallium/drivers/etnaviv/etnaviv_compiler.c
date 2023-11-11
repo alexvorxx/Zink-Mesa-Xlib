@@ -94,6 +94,7 @@ etna_compiler_create(const char *renderer, const struct etna_specs *specs)
 void
 etna_compiler_destroy(const struct etna_compiler *compiler)
 {
+   disk_cache_destroy(compiler->disk_cache);
    ralloc_free((void *)compiler);
 }
 

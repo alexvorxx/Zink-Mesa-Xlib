@@ -255,7 +255,6 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_STREAM_OUTPUT_INTERLEAVE_BUFFERS:
    case PIPE_CAP_DOUBLES:
    case PIPE_CAP_INT64:
-   case PIPE_CAP_INT64_DIVMOD:
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
    case PIPE_CAP_ROBUST_BUFFER_ACCESS_BEHAVIOR:
    case PIPE_CAP_DEVICE_RESET_STATUS_QUERY:
@@ -555,8 +554,6 @@ iris_get_shader_param(struct pipe_screen *pscreen,
          irs |= 1 << PIPE_SHADER_IR_NIR_SERIALIZED;
       return irs;
    }
-   case PIPE_SHADER_CAP_DROUND_SUPPORTED:
-      return 1;
    case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
       return 0;
@@ -877,6 +874,8 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       driQueryOptionf(config->options, "lower_depth_range_rate");
    screen->driconf.intel_enable_wa_14018912822 =
       driQueryOptionb(config->options, "intel_enable_wa_14018912822");
+   screen->driconf.enable_tbimr =
+      driQueryOptionb(config->options, "intel_tbimr");
 
    screen->precompile = debug_get_bool_option("shader_precompile", true);
 

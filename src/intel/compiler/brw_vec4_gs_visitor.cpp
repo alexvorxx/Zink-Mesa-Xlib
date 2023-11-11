@@ -632,7 +632,7 @@ brw_compile_gs(const struct brw_compiler *compiler,
 
    if (compiler->devinfo->ver >= 8)
       nir_gs_count_vertices_and_primitives(
-         nir, &prog_data->static_vertex_count, nullptr, 1u);
+         nir, &prog_data->static_vertex_count, nullptr, nullptr, 1u);
 
    if (compiler->devinfo->ver >= 7) {
       if (nir->info.gs.output_primitive == MESA_PRIM_POINTS) {

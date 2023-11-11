@@ -309,7 +309,7 @@ v3d_tlb_blit(struct pipe_context *pctx, struct pipe_blit_info *info)
         struct v3d_screen *screen = v3d->screen;
         struct v3d_device_info *devinfo = &screen->devinfo;
 
-        if (devinfo->ver < 40 || !info->mask)
+        if (!info->mask)
                 return;
 
         bool is_color_blit = info->mask & PIPE_MASK_RGBA;

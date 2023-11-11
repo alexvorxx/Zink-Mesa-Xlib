@@ -203,6 +203,7 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
 
       func->should_inline = b->func->control & SpvFunctionControlInlineMask;
       func->dont_inline = b->func->control & SpvFunctionControlDontInlineMask;
+      func->is_exported = b->func->linkage == SpvLinkageTypeExport;
 
       func->num_params = num_params;
       func->params = ralloc_array(b->shader, nir_parameter, num_params);

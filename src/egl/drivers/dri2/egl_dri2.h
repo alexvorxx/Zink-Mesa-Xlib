@@ -644,6 +644,9 @@ dri2_set_WL_bind_wayland_display(_EGLDisplay *disp)
 void
 dri2_display_destroy(_EGLDisplay *disp);
 
+struct dri2_egl_display *
+dri2_display_create(void);
+
 __DRIbuffer *
 dri2_egl_surface_alloc_local_buffer(struct dri2_egl_surface *dri2_surf,
                                     unsigned int att, unsigned int format);

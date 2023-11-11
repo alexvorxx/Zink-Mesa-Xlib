@@ -172,7 +172,16 @@ nouveau_ws_bo_new_tiled(struct nouveau_ws_device *dev,
 
    req.info.domain = 0;
 
+   /* TODO:
+    *
+    * VRAM maps on Kepler appear to be broken and we don't really know why.
+    * My NVIDIA contact doesn't remember them not working so they probably
+    * should but they don't today.  Force everything that may be mapped to
+    * use GART for now.
+    */
    if (flags & NOUVEAU_WS_BO_GART)
+      req.info.domain |= NOUVEAU_GEM_DOMAIN_GART;
+   else if (dev->info.chipset < 0x110 && (flags & NOUVEAU_WS_BO_MAP))
       req.info.domain |= NOUVEAU_GEM_DOMAIN_GART;
    else
       req.info.domain |= dev->local_mem_domain;

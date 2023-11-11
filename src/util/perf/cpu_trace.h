@@ -13,19 +13,19 @@
 
 #if defined(HAVE_PERFETTO)
 
-/* note that util_perfetto_is_category_enabled always returns false util
+/* note that util_perfetto_is_tracing_enabled always returns false util
  * util_perfetto_init is called
  */
-#define _MESA_TRACE_BEGIN(category, name)                                    \
+#define _MESA_TRACE_BEGIN(name)                                              \
    do {                                                                      \
-      if (unlikely(util_perfetto_is_category_enabled(category)))             \
-         util_perfetto_trace_begin(category, name);                          \
+      if (unlikely(util_perfetto_is_tracing_enabled()))                      \
+         util_perfetto_trace_begin(name);                                    \
    } while (0)
 
-#define _MESA_TRACE_END(category)                                            \
+#define _MESA_TRACE_END()                                                    \
    do {                                                                      \
-      if (unlikely(util_perfetto_is_category_enabled(category)))             \
-         util_perfetto_trace_end(category);                                  \
+      if (unlikely(util_perfetto_is_tracing_enabled()))                      \
+         util_perfetto_trace_end();                                          \
    } while (0)
 
 /* NOTE: for now disable atrace for C++ to workaround a ndk bug with ordering
@@ -37,14 +37,14 @@
 
 #include <cutils/trace.h>
 
-#define _MESA_TRACE_BEGIN(category, name)                                    \
+#define _MESA_TRACE_BEGIN(name)                                              \
    atrace_begin(ATRACE_TAG_GRAPHICS, name)
-#define _MESA_TRACE_END(category) atrace_end(ATRACE_TAG_GRAPHICS)
+#define _MESA_TRACE_END() atrace_end(ATRACE_TAG_GRAPHICS)
 
 #else
 
-#define _MESA_TRACE_BEGIN(category, name)
-#define _MESA_TRACE_END(category)
+#define _MESA_TRACE_BEGIN(name)
+#define _MESA_TRACE_END()
 
 #endif /* HAVE_PERFETTO */
 
@@ -60,19 +60,6 @@
 
 #endif /* HAVE_GPUVIS */
 
-
-#define _MESA_COMBINED_TRACE_BEGIN(category, name)                           \
-   do {                                                                      \
-      _MESA_TRACE_BEGIN(category, name);                                     \
-      _MESA_GPUVIS_TRACE_BEGIN(name);                                        \
-   } while (0)
-
-#define _MESA_COMBINED_TRACE_END(category)                                   \
-   do {                                                                      \
-      _MESA_GPUVIS_TRACE_END();                                              \
-      _MESA_TRACE_END(category);                                             \
-   } while (0)
-
 #if __has_attribute(cleanup) && __has_attribute(unused)
 
 #define _MESA_TRACE_SCOPE_VAR_CONCAT(name, suffix) name##suffix
@@ -86,53 +73,34 @@
  *
  * to work.
  */
-#define _MESA_TRACE_SCOPE(category, name)                                    \
+#define _MESA_TRACE_SCOPE(name)                                              \
    int _MESA_TRACE_SCOPE_VAR(__LINE__)                                       \
       __attribute__((cleanup(_mesa_trace_scope_end), unused)) =              \
-         _mesa_trace_scope_begin(category, name)
+         _mesa_trace_scope_begin(name)
 
 static inline int
-_mesa_trace_scope_begin(enum util_perfetto_category category,
-                        const char *name)
+_mesa_trace_scope_begin(const char *name)
 {
-   _MESA_COMBINED_TRACE_BEGIN(category, name);
-   return category;
+   _MESA_TRACE_BEGIN(name);
+   _MESA_GPUVIS_TRACE_BEGIN(name);
+   return 0;
 }
 
 static inline void
-_mesa_trace_scope_end(int *scope)
+_mesa_trace_scope_end(UNUSED int *scope)
 {
-   /* we save the category in the scope variable */
-   _MESA_COMBINED_TRACE_END((enum util_perfetto_category) * scope);
+   _MESA_GPUVIS_TRACE_END();
+   _MESA_TRACE_END();
 }
 
 #else
 
-#define _MESA_TRACE_SCOPE(category, name)
+#define _MESA_TRACE_SCOPE(name)
 
 #endif /* __has_attribute(cleanup) && __has_attribute(unused) */
 
-/* These use the default category.  Drivers or subsystems can use these, or
- * define their own categories/macros.
- */
-#define MESA_TRACE_BEGIN(name)                                               \
-   _MESA_COMBINED_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_DEFAULT, name)
-#define MESA_TRACE_END()                                                     \
-  _MESA_COMBINED_TRACE_END(UTIL_PERFETTO_CATEGORY_DEFAULT)
-#define MESA_TRACE_SCOPE(name)                                               \
-   _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_DEFAULT, name)
-#define MESA_TRACE_FUNC()                                                    \
-   _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_DEFAULT, __func__)
-
-/* these use the slow category */
-#define MESA_TRACE_BEGIN_SLOW(name)                                          \
-   _MESA_COMBINED_TRACE_BEGIN(UTIL_PERFETTO_CATEGORY_SLOW, name)
-#define MESA_TRACE_END_SLOW()                                                \
-  _MESA_COMBINED_TRACE_END(UTIL_PERFETTO_CATEGORY_SLOW)
-#define MESA_TRACE_SCOPE_SLOW(name)                                          \
-   _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_SLOW, name)
-#define MESA_TRACE_FUNC_SLOW()                                               \
-   _MESA_TRACE_SCOPE(UTIL_PERFETTO_CATEGORY_SLOW, __func__)
+#define MESA_TRACE_SCOPE(name) _MESA_TRACE_SCOPE(name)
+#define MESA_TRACE_FUNC() _MESA_TRACE_SCOPE(__func__)
 
 static inline void
 util_cpu_trace_init()

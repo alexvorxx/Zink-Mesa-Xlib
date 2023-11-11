@@ -778,8 +778,10 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       return NULL;
    simple_mtx_init(&obj->view_lock, mtx_plain);
    util_dynarray_init(&obj->views, NULL);
+   u_rwlock_init(&obj->copy_lock);
    obj->unordered_read = true;
    obj->unordered_write = true;
+   obj->unsync_access = true;
    obj->last_dt_idx = obj->dt_idx = UINT32_MAX; //TODO: unionize
 
    VkMemoryRequirements reqs = {0};
@@ -848,6 +850,14 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       return obj;
    } else if (templ->target == PIPE_BUFFER) {
       VkBufferCreateInfo bci = create_bci(screen, templ, templ->bind);
+      VkExternalMemoryBufferCreateInfo embci;
+
+      if (user_mem) {
+         embci.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+         embci.pNext = bci.pNext;
+         embci.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+         bci.pNext = &embci;
+      }
 
       if (VKSCR(CreateBuffer)(screen->dev, &bci, NULL, &obj->buffer) != VK_SUCCESS) {
          mesa_loge("ZINK: vkCreateBuffer failed");
@@ -887,17 +897,6 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
    } else {
       max_level = templ->last_level + 1;
       bool winsys_modifier = (export_types & VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT) && whandle && whandle->modifier != DRM_FORMAT_MOD_INVALID;
-      uint64_t mods[10];
-      bool try_modifiers = false;
-      if ((export_types & VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT) &&
-          whandle && whandle->modifier == DRM_FORMAT_MOD_INVALID && whandle->stride) {
-         modifiers = mods;
-         modifiers_count = screen->modifier_props[templ->format].drmFormatModifierCount;
-         for (unsigned j = 0; j < modifiers_count; j++)
-            mods[j] = screen->modifier_props[templ->format].pDrmFormatModifierProperties[j].drmFormatModifier;
-         if (modifiers_count > 1)
-            try_modifiers = true;
-      }
       uint64_t *ici_modifiers = winsys_modifier ? &whandle->modifier : modifiers;
       unsigned ici_modifier_count = winsys_modifier ? 1 : modifiers_count;
       bool success = false;
@@ -995,6 +994,11 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
          } else if (ici.tiling == VK_IMAGE_TILING_OPTIMAL) {
             shared = false;
          }
+      } else if (user_mem) {
+         emici.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+         emici.pNext = ici.pNext;
+         emici.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+         ici.pNext = &emici;
       }
 
       if (linear)
@@ -1080,18 +1084,6 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
       }
 
       VkResult result = VKSCR(CreateImage)(screen->dev, &ici, NULL, &obj->image);
-      if (result != VK_SUCCESS) {
-         if (try_modifiers) {
-            for (unsigned i = 0; i < modifiers_count; i++) {
-               if (modifiers[i] == mod)
-                  continue;
-               idfmeci.drmFormatModifier = modifiers[i];
-               result = VKSCR(CreateImage)(screen->dev, &ici, NULL, &obj->image);
-               if (result == VK_SUCCESS)
-                  break;
-            }
-         }
-      }
       if (result != VK_SUCCESS) {
          mesa_loge("ZINK: vkCreateImage failed (%s)", vk_Result_to_str(result));
          goto fail1;
@@ -1774,7 +1766,6 @@ zink_resource_get_handle(struct pipe_screen *pscreen,
          whandle->handle = -1;
       } else {
          if (!res->obj->exportable) {
-            assert(!res->all_binds); //TODO handle if problematic
             assert(!zink_resource_usage_is_unflushed(res));
             if (!screen->info.have_EXT_image_drm_format_modifier) {
                static bool warned = false;
@@ -1789,7 +1780,8 @@ zink_resource_get_handle(struct pipe_screen *pscreen,
                zink_screen_unlock_context(screen);
                return false;
             }
-            p_atomic_inc(&screen->image_rebind_counter);
+            if (res->all_binds)
+               p_atomic_inc(&screen->image_rebind_counter);
             screen->copy_context->base.flush(&screen->copy_context->base, NULL, 0);
             zink_screen_unlock_context(screen);
             obj = res->obj;
@@ -1864,8 +1856,13 @@ zink_resource_from_handle(struct pipe_screen *pscreen,
    int modifier_count = 1;
    if (whandle->modifier != DRM_FORMAT_MOD_INVALID)
       modifier = whandle->modifier;
-   else
+   else {
+      if (!zink_screen(pscreen)->driver_workarounds.can_do_invalid_linear_modifier) {
+         mesa_loge("zink: display server doesn't support DRI3 modifiers and driver can't handle INVALID<->LINEAR!");
+         return NULL;
+      }
       whandle->modifier = modifier;
+   }
    templ2.bind |= ZINK_BIND_DMABUF;
    struct pipe_resource *pres = resource_create(pscreen, &templ2, whandle, usage, &modifier, modifier_count, NULL, NULL);
    if (pres) {
@@ -1887,6 +1884,14 @@ zink_resource_from_user_memory(struct pipe_screen *pscreen,
                  const struct pipe_resource *templ,
                  void *user_memory)
 {
+   struct zink_screen *screen = zink_screen(pscreen);
+   VkDeviceSize alignMask = screen->info.ext_host_mem_props.minImportedHostPointerAlignment - 1;
+
+   /* Validate the user_memory pointer and fail early.
+    * minImportedHostPointerAlignment is required to be POT */
+   if (((uintptr_t)user_memory) & alignMask)
+      return NULL;
+
    return resource_create(pscreen, templ, NULL, 0, NULL, 0, NULL, user_memory);
 }
 
@@ -2025,13 +2030,9 @@ zink_transfer_copy_bufimage(struct zink_context *ctx,
    if (buf2img)
       box.x = trans->offset;
 
-   if (dst->obj->transfer_dst)
-      zink_copy_image_buffer(ctx, dst, src, trans->base.b.level, buf2img ? x : 0,
-                              box.y, box.z, trans->base.b.level, &box, trans->base.b.usage);
-   else
-      util_blitter_copy_texture(ctx->blitter, &dst->base.b, trans->base.b.level,
-                                x, box.y, box.z, &src->base.b,
-                                0, &box);
+   assert(dst->obj->transfer_dst);
+   zink_copy_image_buffer(ctx, dst, src, trans->base.b.level, buf2img ? x : 0,
+                           box.y, box.z, trans->base.b.level, &box, trans->base.b.usage);
 }
 
 ALWAYS_INLINE static void
@@ -2332,12 +2333,14 @@ zink_image_map(struct pipe_context *pctx,
       zink_kopper_acquire(ctx, res, 0);
 
    void *ptr;
-   if (usage & PIPE_MAP_WRITE && !(usage & PIPE_MAP_READ))
-      /* this is like a blit, so we can potentially dump some clears or maybe we have to  */
-      zink_fb_clears_apply_or_discard(ctx, pres, zink_rect_from_box(box), false);
-   else if (usage & PIPE_MAP_READ)
-      /* if the map region intersects with any clears then we have to apply them */
-      zink_fb_clears_apply_region(ctx, pres, zink_rect_from_box(box));
+   if (!(usage & PIPE_MAP_UNSYNCHRONIZED)) {
+      if (usage & PIPE_MAP_WRITE && !(usage & PIPE_MAP_READ))
+         /* this is like a blit, so we can potentially dump some clears or maybe we have to  */
+         zink_fb_clears_apply_or_discard(ctx, pres, zink_rect_from_box(box), false);
+      else if (usage & PIPE_MAP_READ)
+         /* if the map region intersects with any clears then we have to apply them */
+         zink_fb_clears_apply_region(ctx, pres, zink_rect_from_box(box));
+   }
    if (!res->linear || !res->obj->host_visible) {
       enum pipe_format format = pres->format;
       if (usage & PIPE_MAP_DEPTH_ONLY)
@@ -2368,6 +2371,7 @@ zink_image_map(struct pipe_context *pctx,
       struct zink_resource *staging_res = zink_resource(trans->staging_res);
 
       if (usage & PIPE_MAP_READ) {
+         assert(!(usage & TC_TRANSFER_MAP_THREADED_UNSYNC));
          /* force multi-context sync */
          if (zink_resource_usage_is_unflushed_write(res))
             zink_resource_usage_wait(ctx, res, ZINK_RESOURCE_ACCESS_WRITE);
@@ -2383,6 +2387,7 @@ zink_image_map(struct pipe_context *pctx,
       if (!ptr)
          goto fail;
       if (zink_resource_has_usage(res)) {
+         assert(!(usage & PIPE_MAP_UNSYNCHRONIZED));
          if (usage & PIPE_MAP_WRITE)
             zink_fence_wait(pctx);
          else
@@ -2419,8 +2424,10 @@ zink_image_map(struct pipe_context *pctx,
    if (!ptr)
       goto fail;
    if (usage & PIPE_MAP_WRITE) {
-      if (!res->valid && res->fb_bind_count)
+      if (!res->valid && res->fb_bind_count) {
+         assert(!(usage & PIPE_MAP_UNSYNCHRONIZED));
          ctx->rp_loadop_changed = true;
+      }
       res->valid = true;
    }
 
@@ -2450,7 +2457,8 @@ zink_image_subdata(struct pipe_context *pctx,
    struct zink_resource *res = zink_resource(pres);
 
    /* flush clears to avoid subdata conflict */
-   if (res->obj->vkusage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)
+   if (!(usage & TC_TRANSFER_MAP_THREADED_UNSYNC) &&
+       (res->obj->vkusage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT))
       zink_fb_clears_apply_or_discard(ctx, pres, zink_rect_from_box(box), false);
    /* only use HIC if supported on image and no pending usage */
    while (res->obj->vkusage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT &&
@@ -2591,6 +2599,7 @@ zink_resource_copy_box_intersects(struct zink_resource *res, unsigned level, con
    /* untracked huge miplevel */
    if (level >= ARRAY_SIZE(res->obj->copies))
       return true;
+   u_rwlock_rdlock(&res->obj->copy_lock);
    struct pipe_box *b = res->obj->copies[level].data;
    unsigned num_boxes = util_dynarray_num_elements(&res->obj->copies[level], struct pipe_box);
    bool (*intersect)(const struct pipe_box *, const struct pipe_box *);
@@ -2611,18 +2620,23 @@ zink_resource_copy_box_intersects(struct zink_resource *res, unsigned level, con
       break;
    }
    /* if any of the tracked boxes intersect with this one, a barrier is needed */
+   bool ret = false;
    for (unsigned i = 0; i < num_boxes; i++) {
-      if (intersect(box, b + i))
-         return true;
+      if (intersect(box, b + i)) {
+         ret = true;
+         break;
+      }
    }
+   u_rwlock_rdunlock(&res->obj->copy_lock);
    /* no intersection = no barrier */
-   return false;
+   return ret;
 }
 
 /* track a new region for TRANSFER_DST barrier emission */
 void
 zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, unsigned level, const struct pipe_box *box)
 {
+   u_rwlock_wrlock(&res->obj->copy_lock);
    if (res->obj->copies_valid) {
       struct pipe_box *b = res->obj->copies[level].data;
       unsigned num_boxes = util_dynarray_num_elements(&res->obj->copies[level], struct pipe_box);
@@ -2632,23 +2646,23 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
          case PIPE_TEXTURE_1D:
             /* no-op included region */
             if (b[i].x <= box->x && b[i].x + b[i].width >= box->x + box->width)
-               return;
+               goto out;
 
             /* try to merge adjacent regions */
             if (b[i].x == box->x + box->width) {
                b[i].x -= box->width;
                b[i].width += box->width;
-               return;
+               goto out;
             }
             if (b[i].x + b[i].width == box->x) {
                b[i].width += box->width;
-               return;
+               goto out;
             }
 
             /* try to merge into region */
             if (box->x <= b[i].x && box->x + box->width >= b[i].x + b[i].width) {
                *b = *box;
-               return;
+               goto out;
             }
             break;
 
@@ -2657,28 +2671,28 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
             /* no-op included region */
             if (b[i].x <= box->x && b[i].x + b[i].width >= box->x + box->width &&
                 b[i].y <= box->y && b[i].y + b[i].height >= box->y + box->height)
-               return;
+               goto out;
 
             /* try to merge adjacent regions */
             if (b[i].y == box->y && b[i].height == box->height) {
                if (b[i].x == box->x + box->width) {
                   b[i].x -= box->width;
                   b[i].width += box->width;
-                  return;
+                  goto out;
                }
                if (b[i].x + b[i].width == box->x) {
                   b[i].width += box->width;
-                  return;
+                  goto out;
                }
             } else if (b[i].x == box->x && b[i].width == box->width) {
                if (b[i].y == box->y + box->height) {
                   b[i].y -= box->height;
                   b[i].height += box->height;
-                  return;
+                  goto out;
                }
                if (b[i].y + b[i].height == box->y) {
                   b[i].height += box->height;
-                  return;
+                  goto out;
                }
             }
 
@@ -2686,7 +2700,7 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
             if (box->x <= b[i].x && box->x + box->width >= b[i].x + b[i].width &&
                 box->y <= b[i].y && box->y + box->height >= b[i].y + b[i].height) {
                *b = *box;
-               return;
+               goto out;
             }
             break;
 
@@ -2695,7 +2709,7 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
             if (b[i].x <= box->x && b[i].x + b[i].width >= box->x + box->width &&
                 b[i].y <= box->y && b[i].y + b[i].height >= box->y + box->height &&
                 b[i].z <= box->z && b[i].z + b[i].depth >= box->z + box->depth)
-               return;
+               goto out;
 
                /* try to merge adjacent regions */
             if (b[i].z == box->z && b[i].depth == box->depth) {
@@ -2703,21 +2717,21 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
                   if (b[i].x == box->x + box->width) {
                      b[i].x -= box->width;
                      b[i].width += box->width;
-                     return;
+                     goto out;
                   }
                   if (b[i].x + b[i].width == box->x) {
                      b[i].width += box->width;
-                     return;
+                     goto out;
                   }
                } else if (b[i].x == box->x && b[i].width == box->width) {
                   if (b[i].y == box->y + box->height) {
                      b[i].y -= box->height;
                      b[i].height += box->height;
-                     return;
+                     goto out;
                   }
                   if (b[i].y + b[i].height == box->y) {
                      b[i].height += box->height;
-                     return;
+                     goto out;
                   }
                }
             } else if (b[i].x == box->x && b[i].width == box->width) {
@@ -2725,21 +2739,21 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
                   if (b[i].z == box->z + box->depth) {
                      b[i].z -= box->depth;
                      b[i].depth += box->depth;
-                     return;
+                     goto out;
                   }
                   if (b[i].z + b[i].depth == box->z) {
                      b[i].depth += box->depth;
-                     return;
+                     goto out;
                   }
                } else if (b[i].z == box->z && b[i].depth == box->depth) {
                   if (b[i].y == box->y + box->height) {
                      b[i].y -= box->height;
                      b[i].height += box->height;
-                     return;
+                     goto out;
                   }
                   if (b[i].y + b[i].height == box->y) {
                      b[i].height += box->height;
-                     return;
+                     goto out;
                   }
                }
             } else if (b[i].y == box->y && b[i].height == box->height) {
@@ -2747,21 +2761,21 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
                   if (b[i].x == box->x + box->width) {
                      b[i].x -= box->width;
                      b[i].width += box->width;
-                     return;
+                     goto out;
                   }
                   if (b[i].x + b[i].width == box->x) {
                      b[i].width += box->width;
-                     return;
+                     goto out;
                   }
                } else if (b[i].x == box->x && b[i].width == box->width) {
                   if (b[i].z == box->z + box->depth) {
                      b[i].z -= box->depth;
                      b[i].depth += box->depth;
-                     return;
+                     goto out;
                   }
                   if (b[i].z + b[i].depth == box->z) {
                      b[i].depth += box->depth;
-                     return;
+                     goto out;
                   }
                }
             }
@@ -2770,7 +2784,7 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
             if (box->x <= b[i].x && box->x + box->width >= b[i].x + b[i].width &&
                 box->y <= b[i].y && box->y + box->height >= b[i].y + b[i].height &&
                 box->z <= b[i].z && box->z + box->depth >= b[i].z + b[i].depth)
-               return;
+               goto out;
 
             break;
          }
@@ -2783,6 +2797,8 @@ zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, 
       res->copies_warned = true;
    }
    res->obj->copies_valid = true;
+out:
+   u_rwlock_wrunlock(&res->obj->copy_lock);
 }
 
 void
@@ -2790,6 +2806,7 @@ zink_resource_copies_reset(struct zink_resource *res)
 {
    if (!res->obj->copies_valid)
       return;
+   u_rwlock_wrlock(&res->obj->copy_lock);
    unsigned max_level = res->base.b.target == PIPE_BUFFER ? 1 : (res->base.b.last_level + 1);
    if (res->base.b.target == PIPE_BUFFER) {
       /* flush transfer regions back to valid range on reset */
@@ -2802,6 +2819,7 @@ zink_resource_copies_reset(struct zink_resource *res)
       util_dynarray_clear(&res->obj->copies[i]);
    res->obj->copies_valid = false;
    res->obj->copies_need_reset = false;
+   u_rwlock_wrunlock(&res->obj->copy_lock);
 }
 
 static void

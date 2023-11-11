@@ -37,7 +37,7 @@ struct vn_image_create_deferred_info {
 };
 
 struct vn_image {
-   struct vn_object_base base;
+   struct vn_image_base base;
 
    VkSharingMode sharing_mode;
 
@@ -67,7 +67,7 @@ struct vn_image {
    } wsi;
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(vn_image,
-                               base.base,
+                               base.base.base,
                                VkImage,
                                VK_OBJECT_TYPE_IMAGE)
 

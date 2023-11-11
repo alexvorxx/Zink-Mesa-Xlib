@@ -597,7 +597,7 @@ anv_h265_decode_video(struct anv_cmd_buffer *cmd_buffer,
    /* Slice parsing */
    uint32_t last_slice = h265_pic_info->sliceSegmentCount - 1;
    void *slice_map = anv_gem_mmap(cmd_buffer->device, src_buffer->address.bo,
-                                  src_buffer->address.offset, frame_info->srcBufferRange, 0);
+                                  src_buffer->address.offset, frame_info->srcBufferRange);
 
    struct vk_video_h265_slice_params slice_params[h265_pic_info->sliceSegmentCount];
 

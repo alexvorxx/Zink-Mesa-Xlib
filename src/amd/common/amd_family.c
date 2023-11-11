@@ -95,6 +95,8 @@ const char *ac_get_family_name(enum radeon_family family)
       return "GFX1103_R1";
    case CHIP_GFX1103_R2:
       return "GFX1103_R2";
+   case CHIP_GFX1150:
+      return "GFX1150";
    default:
       unreachable("Unknown GPU family");
    }
@@ -102,6 +104,8 @@ const char *ac_get_family_name(enum radeon_family family)
 
 enum amd_gfx_level ac_get_gfx_level(enum radeon_family family)
 {
+   if (family >= CHIP_GFX1150)
+      return GFX11_5;
    if (family >= CHIP_NAVI31)
       return GFX11;
    if (family >= CHIP_NAVI21)
@@ -120,6 +124,8 @@ enum amd_gfx_level ac_get_gfx_level(enum radeon_family family)
 
 unsigned ac_get_family_id(enum radeon_family family)
 {
+   if (family >= CHIP_GFX1150)
+      return FAMILY_GFX1150;
    if (family >= CHIP_NAVI31)
       return FAMILY_NV3;
    if (family >= CHIP_NAVI21)
@@ -219,6 +225,8 @@ const char *ac_get_llvm_processor_name(enum radeon_family family)
    case CHIP_GFX1103_R1:
    case CHIP_GFX1103_R2:
       return "gfx1103";
+   case CHIP_GFX1150:
+      return "gfx1150";
    default:
       return "";
    }

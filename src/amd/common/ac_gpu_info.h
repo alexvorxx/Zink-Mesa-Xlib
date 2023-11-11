@@ -112,7 +112,10 @@ struct radeon_info {
    bool has_export_conflict_bug;
    bool has_vrs_ds_export_bug;
    bool has_taskmesh_indirect0_bug;
-   bool has_set_pairs_packets;
+   bool sdma_supports_sparse;      /* Whether SDMA can safely access sparse resources. */
+   bool sdma_supports_compression; /* Whether SDMA supports DCC and HTILE. */
+   bool has_set_context_pairs_packed;
+   bool has_set_sh_pairs_packed;
 
    /* conformant_trunc_coord is equal to TA_CNTL2.TRUNCATE_COORD_MODE, which exists since gfx11.
     *
@@ -189,7 +192,7 @@ struct radeon_info {
    uint32_t drm_major; /* version */
    uint32_t drm_minor;
    uint32_t drm_patchlevel;
-   uint8_t max_submitted_ibs[AMD_NUM_IP_TYPES];
+   uint32_t max_submitted_ibs[AMD_NUM_IP_TYPES];
    bool is_amdgpu;
    bool has_userptr;
    bool has_syncobj;
@@ -201,6 +204,7 @@ struct radeon_info {
    bool has_sparse_vm_mappings;
    bool has_scheduled_fence_dependency;
    bool has_gang_submit;
+   bool has_gpuvm_fault_query;
    bool has_pcie_bandwidth_info;
    bool has_stable_pstate;
    /* Whether SR-IOV is enabled or amdgpu.mcbp=1 was set on the kernel command line. */

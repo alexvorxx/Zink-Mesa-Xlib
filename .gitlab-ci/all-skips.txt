@@ -36,6 +36,3 @@ spec@!opengl 1.1@windowoverlap
 # Note that "glx-" tests don't appear in x11-skips.txt because they can be
 # run even if PIGLIT_PLATFORM=gbm (for example)
 glx@glx-copy-sub-buffer.*
-# Reads the front buffer but it doesn't have to.
-# https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/755
-glx-swap-copy

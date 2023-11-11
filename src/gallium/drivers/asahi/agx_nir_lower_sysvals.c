@@ -12,6 +12,8 @@
 #include "nir_intrinsics.h"
 #include "nir_intrinsics_indices.h"
 
+#define AGX_TEXTURE_DESC_STRIDE 24
+
 /*
  * Lower all system values to uniform loads. This pass tries to compact ranges
  * of contiguous uploaded uniforms to reduce the draw-time overhead of uploading
@@ -104,6 +106,17 @@ load_ubo(nir_builder *b, nir_intrinsic_instr *intr, void *bases)
 }
 
 static nir_def *
+load_texture_handle(nir_builder *b, nir_intrinsic_instr *intr, void *base)
+{
+   nir_def *uniform =
+      nir_load_sysval_agx(b, 1, 64, .desc_set = stage_table(b),
+                          .binding = (uintptr_t)base, .flags = ~0);
+
+   return nir_vec2(b, nir_u2u32(b, uniform),
+                   nir_imul_imm(b, intr->src[0].ssa, AGX_TEXTURE_DESC_STRIDE));
+}
+
+static nir_def *
 lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
 {
    struct agx_draw_uniforms *u = NULL;
@@ -112,6 +125,11 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
    switch (intr->intrinsic) {
    case nir_intrinsic_load_ubo:
       return load_ubo(b, intr, s->ubo_base);
+   case nir_intrinsic_load_texture_handle_agx:
+      return load_texture_handle(b, intr, &s->texture_base);
+   case nir_intrinsic_load_sampler_handle_agx:
+      return load_sysval_indirect(b, 1, 16, stage_table(b), &s->sampler_handle,
+                                  intr->src[0].ssa);
    case nir_intrinsic_load_vbo_base_agx:
       return load_sysval_indirect(b, 1, 64, AGX_SYSVAL_TABLE_ROOT, &u->vbo_base,
                                   intr->src[0].ssa);
@@ -135,18 +153,14 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
                                   intr->src[0].ssa);
    case nir_intrinsic_load_num_workgroups:
       return load_sysval(b, 3, 32, AGX_SYSVAL_TABLE_GRID, 0);
+   case nir_intrinsic_load_first_vertex:
+      return load_sysval(b, 1, 32, AGX_SYSVAL_TABLE_PARAMS, 0);
+   case nir_intrinsic_load_base_instance:
+      return load_sysval(b, 1, 32, AGX_SYSVAL_TABLE_PARAMS, 4);
    case nir_intrinsic_load_layer_id_written_agx:
       return load_sysval_root(b, 1, 16, &u->layer_id_written);
-   case nir_intrinsic_load_xfb_address:
-      return load_sysval_root(b, 1, 64, &u->xfb.base[nir_intrinsic_base(intr)]);
-   case nir_intrinsic_load_xfb_size:
-      return load_sysval_root(b, 1, 32, &u->xfb.size[nir_intrinsic_base(intr)]);
-   case nir_intrinsic_load_xfb_index_buffer:
-      return load_sysval_root(b, 1, 64, &u->xfb.index_buffer);
-   case nir_intrinsic_load_base_vertex:
-      return load_sysval_root(b, 1, 32, &u->xfb.base_vertex);
-   case nir_intrinsic_load_num_vertices:
-      return load_sysval_root(b, 1, 32, &u->xfb.num_vertices);
+   case nir_intrinsic_load_geometry_param_buffer_agx:
+      return load_sysval_root(b, 1, 64, &u->geometry_params);
    default:
       return NULL;
    }
@@ -289,29 +303,6 @@ lay_out_table(struct agx_compiled_shader *shader, struct table_state *state,
    return uniform;
 }
 
-/* Reserve u0_u1 for the texture base if needed for internal bindless operation.
- * When we have too many textures/images for the available texture state
- * registers, an early lowering pass in the driver spills some textures/images
- * out of texture state registers and instead accesses them as bindless
- * internally. That pass assumes u0_u1 points to the texture descriptors
- * otherwise bound to texture state registers.
- */
-static void
-reserve_internal_bindless(struct state *state, enum pipe_shader_type stage)
-{
-   struct table_state *table = &state->tables[AGX_SYSVAL_STAGE(stage)];
-   struct agx_stage_uniforms *s = NULL;
-   const unsigned len_words = sizeof(s->texture_base) / sizeof(uint16_t);
-
-   static_assert(offsetof(struct agx_stage_uniforms, texture_base) == 0, "ABI");
-   static_assert(sizeof(s->texture_base) == 8, "64-bit pointer");
-
-   BITSET_SET_RANGE(table->pushed, 0, len_words - 1);
-
-   for (unsigned i = 0; i < len_words; ++i)
-      table->element_size[i] = len_words;
-}
-
 static unsigned
 lay_out_uniforms(struct agx_compiled_shader *shader, struct state *state)
 {
@@ -328,15 +319,21 @@ lay_out_uniforms(struct agx_compiled_shader *shader, struct state *state)
       nir_intrinsic_instr *intr = *intr_;
       uint8_t table = nir_intrinsic_desc_set(intr);
       uint16_t offset = nir_intrinsic_binding(intr);
+      bool load_uniform_location = nir_intrinsic_flags(intr);
 
       struct agx_push_range *range =
          find_push_range_containing(shader, table, offset);
+      unsigned base = range->uniform + ((offset - range->offset) / 2);
 
       nir_builder b = nir_builder_at(nir_instr_remove(&(intr->instr)));
+      nir_def *repl;
 
-      nir_def *repl = nir_load_preamble(
-         &b, intr->def.num_components, intr->def.bit_size,
-         .base = range->uniform + ((offset - range->offset) / 2));
+      if (load_uniform_location) {
+         repl = nir_imm_int(&b, base);
+      } else {
+         repl = nir_load_preamble(&b, intr->def.num_components,
+                                  intr->def.bit_size, .base = base);
+      }
 
       nir_def_rewrite_uses(&intr->def, repl);
    }
@@ -353,7 +350,7 @@ agx_nir_lower_sysvals(nir_shader *shader)
 }
 
 bool
-agx_nir_layout_uniforms(nir_shader *shader, bool internal_bindless,
+agx_nir_layout_uniforms(nir_shader *shader,
                         struct agx_compiled_shader *compiled,
                         unsigned *push_size)
 {
@@ -362,12 +359,12 @@ agx_nir_layout_uniforms(nir_shader *shader, bool internal_bindless,
                               nir_metadata_block_index | nir_metadata_dominance,
                               &state);
 
-   if (internal_bindless)
-      reserve_internal_bindless(&state, shader->info.stage);
-
    *push_size = lay_out_uniforms(compiled, &state);
 
    util_dynarray_fini(&state.loads);
+
+   /* Make sure texture handles have constants associated */
+   nir_opt_constant_folding(shader);
 
    return true;
 }

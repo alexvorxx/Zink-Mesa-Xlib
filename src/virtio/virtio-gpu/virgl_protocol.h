@@ -129,6 +129,8 @@ enum virgl_context_cmd {
    VIRGL_CCMD_ENCODE_BITSTREAM,
    VIRGL_CCMD_END_FRAME,
 
+   VIRGL_CCMD_CLEAR_SURFACE,
+
    VIRGL_MAX_COMMANDS
 };
 
@@ -762,5 +764,20 @@ enum vrend_tweak_type {
 #define VIRGL_END_FRAME_MIN_SIZE            2
 #define VIRGL_END_FRAME_CDC_HANDLE          1
 #define VIRGL_END_FRAME_TGT_HANDLE          2
+
+/* VIRGL_CCMD_CLEAR_SURFACE */
+#define VIRGL_CLEAR_SURFACE_SIZE                   10
+#define VIRGL_CLEAR_SURFACE_S0                     1
+#define VIRGL_CLEAR_SURFACE_S0_RENDER_CONDITION(x) (((x)&0x1) << 0)
+#define VIRGL_CLEAR_SURFACE_S0_BUFFERS(x)          (((x)&0x7) << 1)
+#define VIRGL_CLEAR_SURFACE_HANDLE                 2
+#define VIRGL_CLEAR_SURFACE_COLOR_0                3 /* color is 4 * u32/f32/i32 or (depth/f64+stencil/u32) */
+#define VIRGL_CLEAR_SURFACE_COLOR_1                4
+#define VIRGL_CLEAR_SURFACE_COLOR_2                5
+#define VIRGL_CLEAR_SURFACE_COLOR_3                6
+#define VIRGL_CLEAR_SURFACE_DST_X                  7
+#define VIRGL_CLEAR_SURFACE_DST_Y                  8
+#define VIRGL_CLEAR_SURFACE_WIDTH                  9
+#define VIRGL_CLEAR_SURFACE_HEIGHT                 10
 
 #endif

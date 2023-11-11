@@ -99,6 +99,7 @@ anv_device_init_blorp(struct anv_device *device)
    device->blorp.compiler = device->physical->compiler;
    device->blorp.lookup_shader = lookup_blorp_shader;
    device->blorp.upload_shader = upload_blorp_shader;
+   device->blorp.enable_tbimr = device->physical->instance->enable_tbimr;
    device->blorp.exec = anv_genX(device->info, blorp_exec);
 }
 
@@ -455,7 +456,7 @@ void anv_CmdCopyImage2(
          ANV_PIPE_HDC_PIPELINE_FLUSH_BIT :
          ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
       anv_add_pending_pipe_bits(cmd_buffer, pipe_bits,
-                                "Copy flush before decompression");
+                                "Copy flush before astc emu");
 
       for (unsigned r = 0; r < pCopyImageInfo->regionCount; r++) {
          const VkImageCopy2 *region = &pCopyImageInfo->pRegions[r];
@@ -463,10 +464,10 @@ void anv_CmdCopyImage2(
                &dst_image->vk, region->dstOffset);
          const VkExtent3D block_extent = vk_image_extent_to_elements(
                &src_image->vk, region->extent);
-         anv_astc_emu_decompress(cmd_buffer, dst_image,
-                                 pCopyImageInfo->dstImageLayout,
-                                 &region->dstSubresource,
-                                 block_offset, block_extent);
+         anv_astc_emu_process(cmd_buffer, dst_image,
+                              pCopyImageInfo->dstImageLayout,
+                              &region->dstSubresource,
+                              block_offset, block_extent);
       }
    }
 
@@ -630,7 +631,7 @@ void anv_CmdCopyBufferToImage2(
          ANV_PIPE_HDC_PIPELINE_FLUSH_BIT :
          ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
       anv_add_pending_pipe_bits(cmd_buffer, pipe_bits,
-                                "Copy flush before decompression");
+                                "Copy flush before astc emu");
 
       for (unsigned r = 0; r < pCopyBufferToImageInfo->regionCount; r++) {
          const VkBufferImageCopy2 *region =
@@ -639,10 +640,10 @@ void anv_CmdCopyBufferToImage2(
                &dst_image->vk, region->imageOffset);
          const VkExtent3D block_extent = vk_image_extent_to_elements(
                &dst_image->vk, region->imageExtent);
-         anv_astc_emu_decompress(cmd_buffer, dst_image,
-                                 pCopyBufferToImageInfo->dstImageLayout,
-                                 &region->imageSubresource,
-                                 block_offset, block_extent);
+         anv_astc_emu_process(cmd_buffer, dst_image,
+                              pCopyBufferToImageInfo->dstImageLayout,
+                              &region->imageSubresource,
+                              block_offset, block_extent);
       }
    }
 

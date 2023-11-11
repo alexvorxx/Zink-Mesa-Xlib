@@ -12,11 +12,406 @@ KHR-GL46.sparse_texture_clamp_tests.SparseTextureClampLookupResidency,Fail
 
 KHR-Single-GL46.enhanced_layouts.xfb_capture_inactive_output_component,Fail
 
+shaders@glsl-fs-discard-02,Fail
+shaders@glsl-fs-loop-nested,Fail
+shaders@glsl-fs-shader-stencil-export,Fail
+shaders@point-vertex-id divisor,Fail
+shaders@useprogram-flushverts-1,Fail
+shaders@useprogram-refcount-1,Fail
+shaders@zero-tex-coord bias,Fail
+spec@!opengl 1.0@depth-clear-with-copy,Fail
+spec@!opengl 1.0@gl-1.0-dlist-shademodel,Fail
+spec@!opengl 1.0@gl-1.0-spot-light,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.0@rasterpos,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_gs_linked,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked,Fail
+spec@!opengl 1.1@copyteximage-border,Fail
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-32f_24_8_rev samples=6,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-32f_24_8_rev,Fail
+spec@!opengl 1.1@fog-modes,Fail
+spec@!opengl 1.1@gl-1.1-read-pixels-after-display-list,Fail
 spec@!opengl 1.1@line-smooth-stipple,Fail
+spec@!opengl 1.1@point-line-no-cull,Fail
+spec@!opengl 1.1@readpix-z,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_ABGR_EXT and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_ABGR_EXT and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_ABGR_EXT and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_BGRA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RED and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RG and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGB and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_luminance4@GL_LUMINANCE4 texture with GL_RGBA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ABGR_EXT and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ABGR_EXT and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ABGR_EXT and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_ALPHA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_BGRA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RED and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RG and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGB and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r11f_g11f_b10f@GL_R11F_G11F_B10F texture with GL_RGBA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_r8,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_ABGR_EXT and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_ABGR_EXT and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_ABGR_EXT and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_BGRA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RED and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RG and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_r8@GL_R8 texture with GL_RGBA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_ABGR_EXT and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_ABGR_EXT and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_ABGR_EXT and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_BGRA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_LUMINANCE_ALPHA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RED and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_UNSIGNED_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RG and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGB and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGB and GL_UNSIGNED_SHORT_5_6_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_BYTE,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_FLOAT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_INT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_INT_10_10_10_2,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_INT_2_10_10_10_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_INT_8_8_8_8_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_SHORT_1_5_5_5_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
+spec@!opengl 1.1@teximage-colors gl_rg16_snorm@GL_RG16_SNORM texture with GL_RGBA and GL_UNSIGNED_SHORT_5_5_5_1,Fail
+spec@!opengl 1.2@draw-elements-vs-inputs,Fail
+spec@!opengl 1.4@draw-batch,Fail
+spec@!opengl 1.4@tex-miplevel-selection-lod,Fail
+spec@!opengl 1.5@draw-elements,Fail
+spec@!opengl 2.0@vertex-program-two-side enabled front2,Fail
+spec@!opengl 2.0@vertex-program-two-side enabled front2@vs and fs,Fail
+spec@!opengl 2.0@vertex-program-two-side front back2,Fail
+spec@!opengl 2.0@vertex-program-two-side front back2@vs and fs,Fail
+spec@!opengl 2.1@pbo,Fail
+spec@!opengl 2.1@pbo@test_bitmap,Fail
+spec@!opengl 2.1@pbo@test_draw_pixels,Fail
+spec@!opengl 2.1@pbo@test_polygon_stip,Fail
+spec@!opengl 2.1@pbo@test_tex_image,Fail
+spec@!opengl 2.1@pbo@test_tex_sub_image,Fail
+spec@!opengl 3.0@bound-resource-limits,Fail
+spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-first,Fail
+spec@!opengl 3.2@gl-3.2-adj-prims line cull-front pv-first,Fail
+spec@!opengl 3.2@layered-rendering@clear-color-all-types 2d_array mipmapped,Fail
+spec@!opengl es 3.0@ext_texture_array-compressed_gles3 texsubimage,Fail
+spec@amd_depth_clamp_separate@amd_depth_clamp_separate_range,Fail
+spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-non-const-uniform-index,Fail
+spec@arb_arrays_of_arrays@execution@sampler@vs-const-index,Fail
+spec@arb_copy_image@arb_copy_image-targets gl_texture_1d_array 32 1 12 gl_texture_2d 32 16 1 11 0 3 5 7 0 14 1 1,Fail
+spec@arb_copy_image@arb_copy_image-targets gl_texture_2d_array 32 32 15 gl_texture_cube_map 32 32 6 11 5 1 5 9 2 14 7 3,Fail
+spec@arb_depth_buffer_float@depthstencil-render-miplevels 1024 ds=z32f_s8,Fail
+spec@arb_depth_buffer_float@fbo-stencil-gl_depth32f_stencil8-clear,Fail
+spec@arb_depth_buffer_float@texwrap formats,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH32F_STENCIL8,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH32F_STENCIL8- NPOT,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH32F_STENCIL8- swizzled,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH_COMPONENT32F,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH_COMPONENT32F- NPOT,Fail
+spec@arb_depth_buffer_float@texwrap formats@GL_DEPTH_COMPONENT32F- swizzled,Fail
+spec@arb_depth_texture@texdepth,Fail
+spec@arb_depth_texture@texwrap formats offset,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT16,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT16- NPOT,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT16- swizzled,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT24,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT24- NPOT,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT24- swizzled,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT32,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT32- NPOT,Fail
+spec@arb_depth_texture@texwrap formats offset@GL_DEPTH_COMPONENT32- swizzled,Fail
+spec@arb_draw_elements_base_vertex@arb_draw_elements_base_vertex-drawelements,Fail
+spec@arb_draw_elements_base_vertex@arb_draw_elements_base_vertex-negative-index-user_varrays,Fail
+spec@arb_es2_compatibility@fbo-fast-clear,Fail
+spec@arb_es3_compatibility@oes_compressed_etc2_texture-miptree srgb8-punchthrough-alpha1 core,Fail
+spec@arb_fragment_program@fp-set-01,Fail
+spec@arb_fragment_program@texturing@tex-2d,Fail
+spec@arb_fragment_program@texturing@txp-2d,Fail
+spec@arb_framebuffer_object@fbo-drawbuffers-none glcolormaskindexed,Fail
+spec@arb_framebuffer_object@fbo-generatemipmap-cubemap,Fail
+spec@arb_framebuffer_object@fbo-incomplete,Fail
+spec@arb_framebuffer_object@fbo-viewport,Fail
+spec@arb_framebuffer_srgb@blit renderbuffer linear scaled enabled clear,Fail
+spec@arb_framebuffer_srgb@blit renderbuffer linear scaled enabled render,Fail
+spec@arb_framebuffer_srgb@blit renderbuffer linear upsample disabled clear,Fail
+spec@arb_framebuffer_srgb@blit renderbuffer linear_to_srgb msaa enabled render,Fail
+spec@arb_framebuffer_srgb@blit renderbuffer srgb msaa enabled clear,Fail
+spec@arb_framebuffer_srgb@blit texture linear scaled disabled clear,Fail
+spec@arb_framebuffer_srgb@blit texture linear_to_srgb downsample enabled clear,Fail
+spec@arb_framebuffer_srgb@blit texture srgb upsample enabled render,Fail
+spec@arb_framebuffer_srgb@blit texture srgb_to_linear scaled enabled render,Fail
+spec@arb_get_texture_sub_image@arb_get_texture_sub_image-get,Fail
+spec@arb_gl_spirv@execution@ssbo@array-indirect,Fail
+spec@arb_gpu_shader5@arb_gpu_shader5-emitstreamvertex_nodraw,Fail
+spec@arb_gpu_shader5@arb_gpu_shader5-interpolateatsample-different uniform,Fail
+spec@arb_gpu_shader5@execution@built-in-functions@const-ldexp,Fail
+spec@arb_gpu_shader5@execution@built-in-functions@vs-uaddcarry-only-carry,Fail
+spec@arb_gpu_shader5@execution@instanced-inputs-built-in-variable,Fail
+spec@arb_gpu_shader5@execution@sampler_array_indexing@sampler-nonconst-2d-array,Fail
+spec@arb_gpu_shader5@texturegather@fs-r-0-float-2darray,Fail
+spec@arb_gpu_shader5@texturegather@fs-r-none-shadow-2d,Fail
+spec@arb_gpu_shader5@texturegather@fs-rg-0-float-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@fs-rg-1-uint-2darray,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgb-0-unorm-2d,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgb-1-unorm-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgb-2-unorm-2drect,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgba-2-uint-cube,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgba-3-float-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@fs-rgba-3-uint-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@vs-r-0-unorm-cube,Fail
+spec@arb_gpu_shader5@texturegather@vs-r-0-unorm-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@vs-r-none-shadow-cube,Fail
+spec@arb_gpu_shader5@texturegather@vs-rg-0-unorm-2d,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgb-0-unorm-2drect,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgb-2-uint-2darray,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgba-0-float-cube,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgba-2-uint-2d,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgba-2-uint-cubearray,Fail
+spec@arb_gpu_shader5@texturegather@vs-rgba-3-unorm-cube,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rg-1-unorm-2d-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rgb-0-int-2d-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rgb-1-float-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rgb-2-unorm-2darray-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rgba-1-int-2darray-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@fs-rgba-1-int-2drect-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-r-0-unorm-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgb-1-float-2drect-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgb-1-int-2d,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgb-1-uint-2drect-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-0-float-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-0-uint-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-0-unorm-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-1-int-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-1-unorm-2d,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-1-unorm-2d-const,Fail
+spec@arb_gpu_shader5@texturegatheroffset@vs-rgba-3-uint-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-r-0-uint-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rg-0-int-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rg-1-int-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rgb-1-unorm-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rgb-2-int-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rgb-2-uint-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rgb-2-unorm-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@fs-rgba-1-unorm-2darray,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@vs-r-0-int-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@vs-rgb-0-float-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@vs-rgb-2-int-2drect,Fail
+spec@arb_gpu_shader5@texturegatheroffsets@vs-rgba-1-float-2d,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-dot-dvec4-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-max-dvec3-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-add-double-dmat2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-div-dmat3x4-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-dmat2-dmat4x2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-dmat3-dvec3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-dmat3x2-dmat4x3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-mult-dvec3-dmat3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-reflect-double-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-abs-dvec2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-determinant-dmat2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-inversesqrt-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-max-dvec2-dvec2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-add-dmat2-dmat2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-add-double-dmat4x3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-div-dmat2-dmat2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-div-double-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-mult-double-dmat2x4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-sub-double-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-transpose-dmat2x4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-dot-dvec4-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-equal-dvec3-dvec3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-matrixcompmult-dmat3-dmat3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-min-double-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-add-double-dmat2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-div-dmat4x2-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-div-dmat4x3-double,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-mult-dmat2x4-dmat4x2,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-mult-dmat4-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-mult-double-dvec4,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-sub-dmat4x3-dmat4x3,Fail
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-unpackdouble2x32,Fail
+spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-bvec3-dvec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x4-mat2x4,Fail
@@ -30,6 +425,7 @@ spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-double-fl
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec2-vec2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec3-vec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec4-vec4,Fail
+spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-implicit-mat2x3-dmat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2x4-mat2x4,Fail
@@ -43,6 +439,7 @@ spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-double-fl
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dvec2-vec2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dvec3-vec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dvec4-vec4,Fail
+spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-implicit-mat3-dmat3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2x4-mat2x4,Fail
@@ -56,17 +453,612 @@ spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-double-fl
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec2-vec2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec3-vec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec4-vec4,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-dmat3x3-location-0,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@1-dmat3x3-location-0,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@2-dmat2x2-location-0,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@3-dmat2x3,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@5-dmat2x2,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@5-dmat2x3,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-float@5-dmat3x2-location-0,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-s1-vec3-dmat2x3,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-vec2-and-dmat2x4,Fail
+spec@arb_gpu_shader_fp64@execution@inout@vs-out-fs-in-vec3-and-double,Fail
+spec@arb_gpu_shader_fp64@uniform_buffers@vs-dmat4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-add-i64vec4-int64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-ge-uint64_t-uint64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@fs-op-lshift-u64vec2-uint,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@gs-op-div-i64vec4-int64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@gs-op-div-u64vec4-u64vec4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@gs-op-lt-uint64_t-uint64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-max-i64vec4-i64vec4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-add-int64_t-int64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-div-int64_t-i64vec4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-lshift-int64_t-uint,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-lshift-u64vec4-u64vec4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@tcs-op-lt-int64_t-int64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-abs-int64_t,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-op-mult-i64vec3-i64vec3,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-op-mult-int64_t-i64vec4,Fail
+spec@arb_gpu_shader_int64@execution@built-in-functions@vs-op-rshift-u64vec4-ivec4,Fail
+spec@arb_gpu_shader_int64@execution@conversion@frag-conversion-explicit-u64vec3-vec3,Fail
+spec@arb_gpu_shader_int64@execution@conversion@frag-conversion-implicit-i64vec2-u64vec2,Fail
+spec@arb_gpu_shader_int64@execution@conversion@geom-conversion-explicit-u64vec4-i64vec4,Fail
+spec@arb_gpu_shader_int64@execution@conversion@geom-conversion-explicit-uint64_t-float,Fail
+spec@arb_gpu_shader_int64@execution@conversion@geom-conversion-implicit-int64_t-double,Fail
+spec@arb_gpu_shader_int64@execution@conversion@geom-conversion-implicit-int64_t-uint64_t,Fail
+spec@arb_gpu_shader_int64@execution@conversion@vert-conversion-explicit-bvec3-i64vec3,Fail
+spec@arb_gpu_shader_int64@execution@conversion@vert-conversion-explicit-i64vec4-uvec4,Fail
+spec@arb_gpu_shader_int64@execution@conversion@vert-conversion-implicit-int64_t-double,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-i64vec3@4,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-s2-u64vec2,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-s2-u64vec3,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-uint64_t@3@2,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-uint64_t@4,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-uint64_t@4-location-0,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-vec3-int64_t@3@2,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-s1-vec3-uint64_t@3@2-location-0,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-uint64_t@3,Fail
+spec@arb_gpu_shader_int64@execution@inout@vs-out-fs-in-vec2-and-u64vec3,Fail
+spec@arb_half_float_vertex@draw-vertices-half-float-user,Fail
 spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail
+spec@arb_pixel_buffer_object@cubemap npot pbo,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH24_STENCIL8-GL_DEPTH_COMPONENT,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH24_STENCIL8-GL_DEPTH_STENCIL,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH24_STENCIL8-GL_STENCIL_INDEX,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH32F_STENCIL8-GL_DEPTH_COMPONENT,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH32F_STENCIL8-GL_DEPTH_STENCIL,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH32F_STENCIL8-GL_STENCIL_INDEX,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH_COMPONENT16-GL_DEPTH_COMPONENT,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH_COMPONENT24-GL_DEPTH_COMPONENT,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_DEPTH_COMPONENT32F-GL_DEPTH_COMPONENT,Fail
+spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small@GL_RGBA,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
+spec@arb_query_buffer_object@qbo,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_ANY_SAMPLES_PASSED_CONSERVATIVE-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_FRAGMENT_SHADER_INVOCATIONS-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-SYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_sample_shading@ignore-centroid-qualifier 2,Fail
+spec@arb_separate_shader_objects@400 combinations by location,Fail
+spec@arb_shader_atomic_counters@respecify-buffer,Fail
+spec@arb_shader_ballot@execution@fs-readfirstinvocation-uint-loop,Fail
+spec@arb_shader_image_load_store@execution@imagestore-array,Fail
+spec@arb_shader_precision@gs-fma-float-float-float,Fail
+spec@arb_shader_precision@gs-op-add-float-vec2,Fail
+spec@arb_shader_precision@gs-pow-vec3-vec3,Fail
+spec@arb_shader_precision@vs-op-add-float-vec4,Fail
+spec@arb_shader_precision@vs-op-assign-div-vec3-float,Fail
+spec@arb_shader_precision@vs-op-sub-float-float,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
+spec@arb_shader_texture_lod@execution@tex-miplevel-selection *lod 2dshadow,Fail
+spec@arb_shader_texture_lod@execution@tex-miplevel-selection *projgradarb 2d_projvec4,Fail
+spec@arb_shading_language_include@execution@relative_path_test_angle_brackets2,Fail
+spec@arb_shading_language_include@execution@relative_path_test_double_quotes,Fail
+spec@arb_shading_language_packing@execution@built-in-functions@const-unpacksnorm2x16,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@fs-packhalf2x16,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,Fail
 spec@arb_tessellation_shader@arb_tessellation_shader-tes-gs-max-output -small -scan 1 50,Fail
+spec@arb_tessellation_shader@execution@barrier,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-acos-vec3,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-acosh-float,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-distance-vec2-vec2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-equal-uvec2-uvec2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-greaterthanequal-ivec3-ivec3,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-greaterthanequal-ivec4-ivec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-inversesqrt-vec3,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-lessthan-vec4-vec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-lessthanequal-vec4-vec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-min-ivec2-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-mod-vec3-float,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-notequal-bvec4-bvec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-add-uint-uint,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-add-uvec4-uvec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-lshift-ivec3-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-assign-rshift-ivec2-uvec2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitand-not-abs-ivec4-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitor-neg-ivec2-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitor-neg-uvec3-uint,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-bitxor-ivec2-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-eq-bvec4-bvec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-eq-int-int,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-eq-ivec3-ivec3-using-if,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-eq-mat2-mat2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-eq-mat3x4-mat3x4-using-if,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-mult-mat2x4-float,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-ne-mat2x3-mat2x3-using-if,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-ne-mat3-mat3-using-if,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-ne-uvec2-uvec2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-ne-vec4-vec4,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-neg-mat4x2,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-or-bool-bool,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-rshift-uint-uint,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-op-uplus-mat4x3,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-outerproduct-vec3-vec3,Fail
+spec@arb_tessellation_shader@execution@built-in-functions@tcs-smoothstep-float-float-vec4,Fail
+spec@arb_tessellation_shader@execution@dvec2-vs-tcs-tes,Fail
+spec@arb_tessellation_shader@execution@tcs-input@tcs-input-mat3_2,Fail
+spec@arb_tessellation_shader@execution@tcs-input@tcs-input-mat3x2_2,Fail
+spec@arb_tessellation_shader@execution@tes-fs-max-in-out-components,Fail
+spec@arb_tessellation_shader@execution@tes-input@tes-input-patch-mat2x3_2,Fail
+spec@arb_tessellation_shader@execution@vs-tcs-tes-vertex,Fail
+spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 512 1 1 64 3,Fail
+spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 512 42 1 64 4,Fail
+spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 512 42 8 64 1,Fail
+spec@arb_texture_buffer_range@ranges-2 compat,Fail
+spec@arb_texture_compression@texwrap formats bordercolor,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_ALPHA- border color only,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_INTENSITY- border color only,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_LUMINANCE- border color only,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_LUMINANCE_ALPHA- border color only,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_RGB- border color only,Fail
+spec@arb_texture_compression@texwrap formats bordercolor@GL_COMPRESSED_RGBA- border color only,Fail
+spec@arb_texture_cube_map_array@fbo-generatemipmap-cubemap array,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_ALPHA16F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_ALPHA16F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_ALPHA32F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_ALPHA32F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_INTENSITY16F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_INTENSITY16F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_INTENSITY32F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_INTENSITY32F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE16F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE16F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE32F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE32F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE_ALPHA16F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE_ALPHA16F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE_ALPHA32F_ARB NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_LUMINANCE_ALPHA32F_ARB,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGB16F NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGB16F,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGB32F NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGB32F,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGBA16F NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGBA16F,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGBA32F NPOT,Fail
+spec@arb_texture_float@fbo-generatemipmap-formats@GL_RGBA32F,Fail
+spec@arb_texture_gather@texturegather@fs-r-one-uint-2darray,Fail
+spec@arb_texture_gather@texturegather@fs-r-red-unorm-cube,Fail
+spec@arb_texture_gather@texturegather@fs-r-zero-float-2darray,Fail
+spec@arb_texture_gather@texturegather@fs-rg-one-int-2d,Fail
+spec@arb_texture_gather@texturegather@fs-rg-red-int-cube,Fail
+spec@arb_texture_gather@texturegather@fs-rg-red-uint-cubearray,Fail
+spec@arb_texture_gather@texturegather@fs-rg-zero-unorm-cube,Fail
+spec@arb_texture_gather@texturegather@fs-rgb-one-int-cubearray,Fail
+spec@arb_texture_gather@texturegather@fs-rgb-red-int-2d,Fail
+spec@arb_texture_gather@texturegather@fs-rgb-red-int-2darray,Fail
+spec@arb_texture_gather@texturegather@fs-rgb-red-uint-cube,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-alpha-int-2d,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-alpha-unorm-cube,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-green-float-cubearray,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-green-int-2darray,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-none-int-2darray,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-one-int-2d,Fail
+spec@arb_texture_gather@texturegather@fs-rgba-red-uint-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-r-none-float-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rg-green-int-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rg-green-uint-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rg-none-uint-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-rg-red-uint-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rg-red-unorm-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-green-float-cube,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-green-uint-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-green-uint-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-green-unorm-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-none-int-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-rgb-none-unorm-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-alpha-float-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-alpha-uint-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-blue-float-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-blue-int-2d,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-blue-int-cube,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-green-int-2darray,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-none-unorm-cube,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-red-int-cubearray,Fail
+spec@arb_texture_gather@texturegather@vs-rgba-red-unorm-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-r-zero-float-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-rg-green-float-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-rg-one-float-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-rgb-zero-int-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-rgba-blue-float-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@fs-rgba-green-float-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-r-none-float-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-r-red-uint-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rg-zero-unorm-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgb-blue-float-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgb-blue-int-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgb-none-float-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgb-one-float-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgb-one-int-2darray,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgba-blue-unorm-2d,Fail
+spec@arb_texture_gather@texturegatheroffset@vs-rgba-green-int-2d,Fail
+spec@arb_texture_multisample@texturesize@fs-texturesize-sampler2dmsarray,Fail
+spec@arb_texture_multisample@texturesize@fs-texturesize-usampler2dmsarray,Fail
+spec@arb_texture_query_levels@execution@fs-baselevel,Fail
+spec@arb_texture_rectangle@glsl-fs-shadow2drect-01,Fail
+spec@arb_texture_rg@depth-tex-modes-rg,Fail
+spec@arb_texture_rg@fbo-rg-gl_rg8,Fail
+spec@arb_texture_rg@multisample-formats 8 gl_arb_texture_rg-int,Fail
+spec@arb_uniform_buffer_object@execution@shared-#column_major-array-struct-mat3x4,Fail
+spec@arb_uniform_buffer_object@execution@shared-#column_major-struct-mat2x3,Fail
+spec@arb_uniform_buffer_object@execution@shared-column_major-struct-mat2x3,Fail
+spec@arb_uniform_buffer_object@execution@shared-row_major-mat2x4-and-column_major-mat2x4,Fail
+spec@arb_uniform_buffer_object@execution@std140-#column_major-array-struct-array-mat2x2,Fail
+spec@arb_uniform_buffer_object@execution@std140-#column_major-array-struct-array-mat3x2,Fail
+spec@arb_uniform_buffer_object@execution@std140-#column_major-array-struct-array-mat3x3,Fail
+spec@arb_uniform_buffer_object@execution@std140-array-array-struct-array,Fail
+spec@arb_uniform_buffer_object@execution@std140-column_major-struct-mat2x3,Fail
+spec@arb_uniform_buffer_object@execution@std140-row_major-array-struct-array-mat4x3,Fail
+spec@arb_uniform_buffer_object@execution@std140-row_major-struct-mat3x2,Fail
+spec@arb_uniform_buffer_object@std140-row_major-array-struct-struct-mat2x3-mat2x4-and-int,Fail
+spec@arb_vertex_program@instructions@log,Fail
+spec@arb_vertex_program@vp-arl-constant-array-huge-relative-offset,Fail
+spec@arb_vertex_program@vp-arl-neg-array-2,Fail
 spec@arb_viewport_array@display-list,Fail
+spec@arb_viewport_array@scissor-check,Fail
 spec@egl 1.4@eglterminate then unbind context,Fail
 spec@egl_khr_surfaceless_context@viewport,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
+spec@ext_framebuffer_multisample@accuracy 2 srgb depthstencil,Fail
+spec@ext_framebuffer_multisample@accuracy 8 depth_resolve depthstencil,Fail
+spec@ext_framebuffer_multisample@accuracy 8 srgb depthstencil linear,Fail
+spec@ext_framebuffer_multisample@alpha-blending-after-rendering 4,Fail
+spec@ext_framebuffer_multisample@alpha-to-one-dual-src-blend 2,Fail
+spec@ext_framebuffer_multisample@alpha-to-one-single-sample-buffer 8,Fail
+spec@ext_framebuffer_multisample@blit-multiple-render-targets 2,Fail
+spec@ext_framebuffer_multisample@blit-multiple-render-targets 4,Fail
+spec@ext_framebuffer_multisample@clear 6 depth,Fail
+spec@ext_framebuffer_multisample@clip-and-scissor-blit 2 normal,Fail
+spec@ext_framebuffer_multisample@clip-and-scissor-blit 4 downsample,Fail
+spec@ext_framebuffer_multisample@interpolation 4 centroid-disabled,Fail
+spec@ext_framebuffer_multisample@unaligned-blit 2 depth msaa,Fail
+spec@ext_framebuffer_multisample@unaligned-blit 2 stencil msaa,Fail
+spec@ext_framebuffer_multisample@upsample 2 depth,Fail
+spec@ext_framebuffer_multisample@upsample 8 color linear,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@3,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_INTENSITY,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_INTENSITY12,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_INTENSITY16,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_INTENSITY4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_INTENSITY8,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE12,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE12_ALPHA12,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE16,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE16_ALPHA16,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE4_ALPHA4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE8,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE8_ALPHA8,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_LUMINANCE_ALPHA,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_R3_G3_B2,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB10,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB10_A2,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB12,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB16,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB5,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB5_A1,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGB8,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA12,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA16,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA2,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA4,Fail
+spec@ext_framebuffer_object@fbo-alphatest-formats@GL_RGBA8,Fail
+spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index1-copypixels,Fail
+spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index4-copypixels,Fail
+spec@ext_gpu_shader4@execution@open-coded-bitfieldreverse,Fail
+spec@ext_gpu_shader4@execution@texelfetch@fs-texelfetch-usampler2darray,Fail
+spec@ext_gpu_shader4@execution@texelfetchoffset@fs-texelfetch-isampler3d,Fail
+spec@ext_gpu_shader4@execution@texelfetchoffset@fs-texelfetch-sampler2darray,Fail
+spec@ext_gpu_shader4@execution@texelfetchoffset@fs-texelfetch-sampler3d,Fail
+spec@ext_gpu_shader4@execution@texelfetchoffset@vs-texelfetch-sampler2d,Fail
+spec@ext_gpu_shader4@execution@texelfetchoffset@vs-texelfetch-sampler3d,Fail
+spec@ext_gpu_shader4@execution@texturesize@fs-texturesize-sampler2d,Fail
+spec@ext_gpu_shader4@execution@texturesize@vs-texturesize-samplercube,Fail
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-export-tex,Fail
+spec@ext_packed_depth_stencil@depthstencil-render-miplevels 146 s=z24_s8,Fail
+spec@ext_packed_depth_stencil@fbo-depth-gl_depth24_stencil8-tex1d,Fail
+spec@ext_packed_float@texwrap formats offset,Fail
+spec@ext_packed_float@texwrap formats offset@GL_R11F_G11F_B10F,Fail
+spec@ext_packed_float@texwrap formats offset@GL_R11F_G11F_B10F- NPOT,Fail
+spec@ext_packed_float@texwrap formats offset@GL_R11F_G11F_B10F- swizzled,Fail
+spec@ext_polygon_offset_clamp@ext_polygon_offset_clamp-dlist,Fail
+spec@ext_polygon_offset_clamp@ext_polygon_offset_clamp-dlist@call,Fail
+spec@ext_polygon_offset_clamp@ext_polygon_offset_clamp-dlist@compile and execute,Fail
+spec@ext_texture_array@compressed texsubimage pbo,Fail
+spec@ext_texture_array@fbo-depth-array stencil-layered-clear,Fail
+spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_s3tc_dxt1_ext,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_ALPHA32I_EXT- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_ALPHA32UI_EXT- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGB32I- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGB32UI- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGB8I- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA32I- swizzled- border color only,Fail
+spec@ext_texture_integer@texwrap formats bordercolor-swizzled@GL_RGBA32UI- swizzled- border color only,Fail
+spec@ext_texture_swizzle@ext_texture_swizzle-swizzle,Fail
+spec@ext_transform_feedback@generatemipmap buffer,Fail
+spec@ext_transform_feedback@structs array-struct-whole-array run,Fail
+spec@ext_transform_feedback@structs_gles3 basic-struct run,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-atan-float,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-add-int-ivec3,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-add-vec4-float,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-assign-sub-int-int,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-div-vec3-float,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-eq-vec4-vec4-using-if,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-mult-float-mat3,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-ne-ivec3-ivec3,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-selection-bool-int-int,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-selection-bool-ivec4-ivec4,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-op-uplus-vec2,Fail
+spec@glsl-1.10@execution@built-in-functions@fs-tan-vec4,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-equal-vec3-vec3,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-greaterthan-vec4-vec4,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-log2-vec3,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-assign-div-mat3-float,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-assign-sub-ivec3-int,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-eq-bool-bool-using-if,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-ge-int-int,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-lt-float-float-using-if,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-ne-ivec2-ivec2-using-if,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-ne-ivec3-ivec3,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-ne-vec2-vec2-using-if,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-op-sub-float-mat2,Fail
+spec@glsl-1.10@execution@built-in-functions@vs-radians-vec2,Fail
+spec@glsl-1.10@execution@builtins@glsl-fs-clamp-4,Fail
+spec@glsl-1.10@execution@builtins@glsl-vs-abs-neg-with-intermediate,Fail
+spec@glsl-1.10@execution@builtins@glsl-vs-all-01,Fail
+spec@glsl-1.10@execution@fs-frontfacing-ternary-1.0-neg-1.0,Fail
+spec@glsl-1.10@execution@fs-min-min-min,Fail
+spec@glsl-1.10@execution@glsl-fs-if-greater,Fail
+spec@glsl-1.10@execution@glsl-opt-0-cmp-xy,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-flat-fixed,Fail
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_backcolor-smooth-vertex,Fail
+spec@glsl-1.10@execution@loops@glsl-fs-loop-gt,Fail
+spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-bias,Fail
+spec@glsl-1.10@execution@variable-indexing@fs-temp-array-mat3-index-rd,Fail
+spec@glsl-1.10@execution@variable-indexing@fs-temp-mat4-rd,Fail
+spec@glsl-1.10@execution@variable-indexing@fs-uniform-array-mat3-index-col-rd,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-temp-array-mat2-col-wr,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-temp-array-mat2-index-wr,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-temp-mat2-row-wr,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-temp-mat3-wr,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat3-rd,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-varying-array-mat4-index-wr,Fail
+spec@glsl-1.10@execution@varying-packing@simple mat2 array,Fail
+spec@glsl-1.10@execution@varying-packing@simple mat2x4 separate,Fail
+spec@glsl-1.10@execution@vec4-vector-indexing@glsl-vs-vec4-indexing-3,Fail
+spec@glsl-1.10@linker@glsl-uniform-linking-1,Fail
+spec@glsl-1.20@execution@built-in-functions@fs-matrixcompmult-mat2x4-mat2x4,Fail
+spec@glsl-1.20@execution@built-in-functions@fs-op-add-float-mat2x3,Fail
+spec@glsl-1.20@execution@built-in-functions@fs-op-assign-add-mat2x3-mat2x3,Fail
+spec@glsl-1.20@execution@built-in-functions@fs-op-eq-mat3x2-mat3x2-using-if,Fail
+spec@glsl-1.20@execution@built-in-functions@fs-op-mult-mat4x2-mat3x4,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-assign-add-mat4x2-float,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-div-mat2x3-float,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-eq-mat4x2-mat4x2,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-ne-mat4x2-mat4x2-using-if,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-neg-mat4x2,Fail
+spec@glsl-1.20@execution@built-in-functions@vs-op-neg-mat4x3,Fail
+spec@glsl-1.20@execution@clipping@vs-clip-vertex-homogeneity,Fail
+spec@glsl-1.20@execution@const-builtin@glsl-const-builtin-fract,Fail
+spec@glsl-1.20@execution@const-builtin@glsl-const-builtin-greaterthanequal,Fail
+spec@glsl-1.20@execution@const-builtin@glsl-const-builtin-radians,Fail
+spec@glsl-1.20@execution@fs-outerproduct-mat4x2,Fail
+spec@glsl-1.20@execution@out-parameter-indexing@vs-inout-index-inout-vec4,Fail
+spec@glsl-1.20@execution@out-parameter-indexing@vs-inout-index-inout-vec4-array-element,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-temp-array-mat4-col-wr,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-uniform-array-mat2-index-col-rd,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-uniform-array-mat3-index-rd,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-uniform-mat3-col-row-rd,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-uniform-mat4-rd,Fail
+spec@glsl-1.20@execution@variable-indexing@fs-varying-array-mat3-rd,Fail
+spec@glsl-1.20@execution@variable-indexing@vs-temp-array-mat3-row-wr,Fail
+spec@glsl-1.20@execution@variable-indexing@vs-varying-mat2-rd,Fail
+spec@glsl-1.20@execution@vs-deref-literal-array-of-structs,Fail
+spec@glsl-1.20@execution@vs-function-inout-array-self-assignment,Fail
+spec@glsl-1.20@execution@vs-nan-builtin-min,Fail
+spec@glsl-1.20@execution@vs-outerproduct-const-mat2,Fail
+spec@glsl-1.20@execution@vs-outerproduct-const-mat4,Fail
+spec@glsl-1.20@execution@vs-outerproduct-mat2x3,Fail
+spec@glsl-1.20@linker@link-order-b-a,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-atanh-float,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-atanh-vec3,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-min-ivec4-int,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-assign-bitor-ivec3-ivec3,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-assign-bitxor-ivec4-int,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitor-neg-abs-ivec3-ivec3,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-bitxor-not-uvec4-uvec4,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-ge-uint-uint-using-if,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-lshift-int-int,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-op-sub-uint-uvec3,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-round-float,Fail
+spec@glsl-1.30@execution@built-in-functions@fs-roundeven-vec3,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-assign-sub-uvec4-uint,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitxor-abs-not-ivec4-ivec4,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitxor-uvec3-uvec3,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-div-large-uint-uint,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-div-uvec4-uvec4,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-gt-uint-uint,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-le-uint-uint,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-op-lshift-uvec3-uint,Fail
+spec@glsl-1.30@execution@built-in-functions@vs-round-vec2,Fail
+spec@glsl-1.30@execution@clipping@vs-clip-distance-all-planes-enabled,Fail
+spec@glsl-1.30@execution@fs-float-uint-conversion,Fail
+spec@glsl-1.30@execution@glsl-const-builtin-cosh,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-flat-gl_backcolor-flat-distance,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-noperspective-gl_frontcolor-smooth-fixed,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-noperspective-gl_frontsecondarycolor-smooth-none,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-noperspective-other-smooth-fixed,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-noperspective-other-smooth-vertex,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-smooth-gl_backsecondarycolor-smooth-none,Fail
+spec@glsl-1.30@execution@interpolation@interpolation-smooth-other-flat-none,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection texturegrad 2d,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection texturelod cube,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection textureoffset(bias) 2d,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection textureproj 3d,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection textureprojgrad 2drect,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection textureprojgrad 2drect_projvec4,Fail
+spec@glsl-1.30@execution@tex-miplevel-selection textureprojlodoffset 1dshadow,Fail
+spec@glsl-1.30@execution@texelfetch fs sampler2d 281x1-281x281,Fail
+spec@glsl-1.30@execution@texelfetchoffset@vs-texelfetch-sampler1d,Fail
+spec@glsl-1.30@execution@texturesize@fs-texturesize-isampler1d,Fail
+spec@glsl-1.30@execution@texturesize@fs-texturesize-sampler2darray,Fail
+spec@glsl-1.30@execution@texturesize@fs-texturesize-sampler2dshadow,Fail
+spec@glsl-1.30@execution@texturesize@vs-texturesize-samplercube,Fail
+spec@glsl-1.30@execution@uniform-initializer@vs-uint-array,Fail
+spec@glsl-1.30@execution@vs-modf-vec3,Fail
+spec@glsl-1.30@execution@vs-multiply-const-uvec4,Fail
+spec@glsl-1.40@uniform_buffer@fs-basic,Fail
+spec@glsl-1.40@uniform_buffer@fs-floats,Fail
+spec@glsl-1.40@uniform_buffer@fs-mat4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-any-bvec2-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-any-bvec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-asin-vec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-dot-vec4-vec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-greaterthan-vec4-vec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-greaterthanequal-ivec3-ivec3,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-length-float,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-lessthanequal-ivec2-ivec2,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-min-ivec2-ivec2,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-min-uint-uint,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-add-vec3-float,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-rshift-uvec2-uvec2,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-rshift-uvec4-ivec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-assign-sub-mat2-mat2,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitand-neg-ivec3-int,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitor-not-uint-uvec3,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitor-not-uvec3-uint,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-bitxor-ivec4-ivec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-eq-bvec3-bvec3-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-eq-bvec4-bvec4-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-eq-float-float-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-eq-mat2x4-mat2x4-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-eq-mat4x3-mat4x3-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ge-int-int,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-mod-ivec2-int,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ne-bvec3-bvec3-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ne-bvec4-bvec4,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ne-float-float-using-if,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ne-int-int,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-op-ne-ivec3-ivec3,Fail
+spec@glsl-1.50@execution@built-in-functions@gs-radians-float,Fail
+spec@glsl-1.50@execution@compatibility@vs-gs-ff-frag,Fail
+spec@glsl-1.50@execution@interface-block-interpolation-unnamed,Fail
+spec@glsl-1.50@execution@primitive-id-no-gs-line,Fail
+spec@glsl-1.50@execution@texelfetchoffset@gs-texelfetch-sampler1d,Fail
+spec@glsl-1.50@execution@texturesize@gs-texturesize-isamplerbuffer,Fail
+spec@glsl-1.50@execution@texturesize@gs-texturesize-sampler2d,Fail
+spec@glsl-1.50@execution@texturesize@tes-texturesize-isamplercube,Fail
+spec@glsl-1.50@uniform_buffer@gs-mat3x4-row-major,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-equal-dvec3-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-floor-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-greaterthanequal-dvec4-dvec4,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-lessthan-dvec3-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-max-dvec3-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-op-add-dmat3x4-dmat3x4,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-op-mult-dmat2-dmat3x2,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-op-mult-dmat3-dmat2x3,Fail
+spec@glsl-4.00@execution@built-in-functions@fs-op-sub-dmat3x2-double,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-ceil-dvec4,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-faceforward-dvec2-dvec2-dvec2,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-add-dmat2-double,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-add-double-dvec2,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-add-dvec2-dvec2,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-add-dvec3-double,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-mult-dmat2x3-dmat3x2,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-mult-dmat4x3-dmat2x4,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-mult-double-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-sub-dmat2x3-dmat2x3,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-sub-dmat3x2-double,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-sub-double-dmat3x2,Fail
+spec@glsl-4.00@execution@built-in-functions@gs-op-sub-dvec3-dvec3,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-min-dvec4-dvec4,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-mix-dvec2-dvec2-bvec2,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-op-add-dmat2x3-dmat2x3,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-op-add-dmat2x3-double,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-op-div-dmat3x2-double,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-op-div-dmat4-double,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-op-mult-double-dmat3x2,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-outerproduct-dvec2-dvec2,Fail
+spec@glsl-4.00@execution@built-in-functions@vs-sqrt-double,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x4-mat2x4,Fail
@@ -80,6 +1072,9 @@ spec@glsl-4.00@execution@conversion@frag-conversion-explicit-double-float,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec3-vec3,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec4-vec4,Fail
+spec@glsl-4.00@execution@conversion@frag-conversion-implicit-mat2-dmat2,Fail
+spec@glsl-4.00@execution@conversion@frag-conversion-implicit-mat2x3-dmat2x3,Fail
+spec@glsl-4.00@execution@conversion@frag-conversion-implicit-uvec2-dvec2,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2x4-mat2x4,Fail
@@ -92,6 +1087,7 @@ spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-double-float,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec3-vec3,Fail
+spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec4-uvec4,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec4-vec4,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -103,11 +1099,31 @@ spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4-mat4,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4x2-mat4x2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-double-float,Fail
+spec@glsl-4.00@execution@conversion@vert-conversion-explicit-double-uint,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec3-vec3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec4-vec4,Fail
+spec@glsl-4.00@execution@conversion@vert-conversion-implicit-uvec2-dvec2,Fail
+spec@glsl-4.00@execution@conversion@vert-conversion-implicit-uvec3-dvec3,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-dmat3x2,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-float@2-and-dmat3x2,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-double-float-double@2-float@3-dmat2x2-location-0,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-dvec3@3,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-float-dvec2-location-0,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-float-dvec3-location-0,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-float@4-dmat3x3,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-float@6-dmat2x2-location-0,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-float@6-dmat3x2-location-0,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-s2@3-dvec3-float,Fail
+spec@glsl-4.00@execution@inout@vs-out-fs-in-s1-vec3-double,Fail
+spec@glsl-4.10@execution@conversion@geom-conversion-implicit-mat2x4-dmat2x4-zero-sign,Fail
+spec@glsl-4.20@execution@conversion@geom-conversion-explicit-dmat4x3-mat4x3-zero-sign,Fail
+spec@glsl-es-3.00@execution@built-in-functions@const-unpackhalf2x16,Fail
 spec@glsl-es-3.00@execution@built-in-functions@fs-packhalf2x16,Fail
 spec@glsl-es-3.00@execution@built-in-functions@vs-packhalf2x16,Fail
+spec@glsl-es-3.00@execution@sanity,Fail
+spec@glsl-es-3.00@execution@varying-struct-interpolation,Fail
+spec@intel_blackhole_render@intel_blackhole-draw,Fail
 spec@khr_texture_compression_astc@miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@miptree-gl srgb-fp@sRGB decode full precision,Fail
 spec@khr_texture_compression_astc@miptree-gles srgb-fp,Fail
@@ -116,3 +1132,10 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full precision,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@const-bitcount,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@vs-findlsb,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@vs-findmsb,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@vs-imulextended-only-lsb,Fail
+spec@nv_alpha_to_coverage_dither_control@nv_alpha_to_coverage_dither_control 0,Fail
+spec@nv_read_depth@read_depth_gles3,Fail
+spec@oes_texture_view@clear-into-view-layered,Fail

@@ -3692,9 +3692,9 @@ tu_pipeline_builder_parse_depth_stencil(
        (builder->graphics_state.rp->attachment_aspects &
         VK_IMAGE_ASPECT_DEPTH_BIT)) {
       pipeline->ds.raster_order_attachment_access =
-         ds_info->flags &
+         ds_info && (ds_info->flags &
          (VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_ARM |
-          VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_STENCIL_ACCESS_BIT_ARM);
+          VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_STENCIL_ACCESS_BIT_ARM));
    }
 }
 
@@ -3731,8 +3731,8 @@ tu_pipeline_builder_parse_multisample_and_color_blend(
 
    if (builder->graphics_state.rp->attachment_aspects & VK_IMAGE_ASPECT_COLOR_BIT) {
       pipeline->output.raster_order_attachment_access =
-         blend_info->flags &
-         VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_ARM;
+         blend_info && (blend_info->flags &
+            VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_ARM);
    }
 }
 
@@ -3774,9 +3774,9 @@ tu_pipeline_builder_parse_rasterization_order(
        * setting the SINGLE_PRIM_MODE field to the same value that the blob does
        * for advanced_blend in sysmem mode if a feedback loop is detected.
        */
-      if (builder->graphics_state.rp->pipeline_flags &
-          (VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
-           VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)) {
+      if (builder->graphics_state.pipeline_flags &
+          (VK_PIPELINE_CREATE_2_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
+           VK_PIPELINE_CREATE_2_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)) {
          sysmem_prim_mode = FLUSH_PER_OVERLAP_AND_OVERWRITE;
          pipeline->prim_order.sysmem_single_prim_mode = true;
       }
@@ -3966,15 +3966,13 @@ tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
       vk_dynamic_graphics_state_fill(&gfx_pipeline->dynamic_state,
                                      &builder->graphics_state);
       gfx_pipeline->feedback_loop_color =
-         (builder->graphics_state.rp->pipeline_flags &
-          VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT);
+         (builder->graphics_state.pipeline_flags &
+          VK_PIPELINE_CREATE_2_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT);
       gfx_pipeline->feedback_loop_ds =
-         (builder->graphics_state.rp->pipeline_flags &
-          VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT);
+         (builder->graphics_state.pipeline_flags &
+          VK_PIPELINE_CREATE_2_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT);
       gfx_pipeline->feedback_loop_may_involve_textures =
-         (gfx_pipeline->feedback_loop_color ||
-          gfx_pipeline->feedback_loop_ds) &&
-         !builder->graphics_state.rp->feedback_loop_input_only;
+         builder->graphics_state.feedback_loop_not_input_only;
    }
 
    return VK_SUCCESS;
@@ -3993,7 +3991,6 @@ tu_fill_render_pass_state(struct vk_render_pass_state *rp,
 {
    rp->view_mask = subpass->multiview_mask;
    rp->color_attachment_count = subpass->color_count;
-   rp->pipeline_flags = 0;
 
    const uint32_t a = subpass->depth_stencil_attachment.attachment;
    rp->depth_attachment_format = VK_FORMAT_UNDEFINED;
@@ -4089,14 +4086,12 @@ tu_pipeline_builder_init_graphics(
 
    builder->rasterizer_discard =
       (builder->state & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) &&
-      builder->create_info->pRasterizationState->rasterizerDiscardEnable &&
-      !rasterizer_discard_dynamic;
+      !rasterizer_discard_dynamic &&
+      builder->create_info->pRasterizationState->rasterizerDiscardEnable;
 
-   struct vk_render_pass_state rp_state = {
-      .render_pass = builder->create_info->renderPass,
-      .subpass = builder->create_info->subpass,
-   };
+   struct vk_render_pass_state rp_state = {};
    const struct vk_render_pass_state *driver_rp = NULL;
+   VkPipelineCreateFlags2KHR rp_flags = 0;
 
    builder->unscaled_input_fragcoord = 0;
 
@@ -4115,14 +4110,7 @@ tu_pipeline_builder_init_graphics(
       const struct tu_subpass *subpass =
          &pass->subpasses[create_info->subpass];
 
-      rp_state = (struct vk_render_pass_state) {
-         .render_pass = builder->create_info->renderPass,
-         .subpass = builder->create_info->subpass,
-      };
-
       tu_fill_render_pass_state(&rp_state, pass, subpass);
-
-      rp_state.feedback_loop_input_only = true;
 
       for (unsigned i = 0; i < subpass->input_count; i++) {
          /* Input attachments stored in GMEM must be loaded with unscaled
@@ -4132,30 +4120,19 @@ tu_pipeline_builder_init_graphics(
             builder->unscaled_input_fragcoord |= 1u << i;
       }
 
-      /* Feedback loop flags can come from either the user (in which case they
-       * may involve textures) or from the driver (in which case they don't).
-       */
-      VkPipelineCreateFlags feedback_flags = builder->create_flags &
-         (VK_PIPELINE_CREATE_2_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
-          VK_PIPELINE_CREATE_2_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT);
-      if (feedback_flags) {
-         rp_state.feedback_loop_input_only = false;
-         rp_state.pipeline_flags |= feedback_flags;
-      }
-
       if (subpass->feedback_loop_color) {
-         rp_state.pipeline_flags |=
-            VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         rp_flags |=
+            VK_PIPELINE_CREATE_2_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
       }
 
       if (subpass->feedback_loop_ds) {
-         rp_state.pipeline_flags |=
-            VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+         rp_flags |=
+            VK_PIPELINE_CREATE_2_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
       }
 
       if (pass->fragment_density_map.attachment != VK_ATTACHMENT_UNUSED) {
-         rp_state.pipeline_flags |=
-            VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT;
+         rp_flags |=
+            VK_PIPELINE_CREATE_2_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT;
       }
 
       builder->unscaled_input_fragcoord = 0;
@@ -4174,13 +4151,14 @@ tu_pipeline_builder_init_graphics(
                                    &builder->graphics_state,
                                    builder->create_info,
                                    driver_rp,
+                                   rp_flags,
                                    &builder->all_state,
                                    NULL, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT,
                                    NULL);
 
    if (builder->graphics_state.rp) {
-      builder->fragment_density_map = (builder->graphics_state.rp->pipeline_flags &
-         VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT) ||
+      builder->fragment_density_map = (builder->graphics_state.pipeline_flags &
+         VK_PIPELINE_CREATE_2_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT) ||
          TU_DEBUG(FDM);
    }
 }
@@ -4229,12 +4207,8 @@ tu_CreateGraphicsPipelines(VkDevice device,
    uint32_t i = 0;
 
    for (; i < count; i++) {
-      VkPipelineCreateFlags2KHR flags = pCreateInfos[i].flags;
-      const VkPipelineCreateFlags2CreateInfoKHR *flags2 =
-         vk_find_struct_const(pCreateInfos[i].pNext,
-                              PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR);
-      if (flags2)
-         flags = flags2->flags;
+      VkPipelineCreateFlags2KHR flags =
+         vk_graphics_pipeline_create_flags(&pCreateInfos[i]);
 
       VkResult result =
          tu_graphics_pipeline_create<CHIP>(device, pipelineCache,
@@ -4414,12 +4388,8 @@ tu_CreateComputePipelines(VkDevice device,
    uint32_t i = 0;
 
    for (; i < count; i++) {
-      VkPipelineCreateFlags2KHR flags = pCreateInfos[i].flags;
-      const VkPipelineCreateFlags2CreateInfoKHR *flags2 =
-         vk_find_struct_const(pCreateInfos[i].pNext,
-                              PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR);
-      if (flags2)
-         flags = flags2->flags;
+      VkPipelineCreateFlags2KHR flags =
+         vk_compute_pipeline_create_flags(&pCreateInfos[i]);
 
       VkResult result =
          tu_compute_pipeline_create<CHIP>(device, pipelineCache,

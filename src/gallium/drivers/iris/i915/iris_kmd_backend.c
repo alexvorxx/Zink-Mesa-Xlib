@@ -111,7 +111,7 @@ i915_gem_create(struct iris_bufmgr *bufmgr,
    struct drm_i915_gem_create_ext_set_pat set_pat_param = { 0 };
    if (devinfo->has_set_pat_uapi) {
       set_pat_param.pat_index =
-         iris_pat_index_for_bo_flags(devinfo, alloc_flags);
+         iris_bufmgr_get_pat_index_for_bo_flags(bufmgr, alloc_flags);
       intel_i915_gem_add_ext(&create.extensions,
                              I915_GEM_CREATE_EXT_SET_PAT,
                              &set_pat_param.base);

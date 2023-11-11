@@ -300,16 +300,11 @@ v3d_get_sample_position(struct pipe_context *pctx,
                         unsigned sample_count, unsigned sample_index,
                         float *xy)
 {
-        struct v3d_context *v3d = v3d_context(pctx);
-
         if (sample_count <= 1) {
                 xy[0] = 0.5;
                 xy[1] = 0.5;
         } else {
-                static const int xoffsets_v33[] = { 1, -3, 3, -1 };
-                static const int xoffsets_v42[] = { -1, 3, -3, 1 };
-                const int *xoffsets = (v3d->screen->devinfo.ver >= 42 ?
-                                       xoffsets_v42 : xoffsets_v33);
+                static const int xoffsets[] = { -1, 3, -3, 1 };
 
                 xy[0] = 0.5 + xoffsets[sample_index] * .125;
                 xy[1] = .125 + sample_index * .25;

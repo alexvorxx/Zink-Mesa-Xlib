@@ -25,60 +25,78 @@
 # NOTE: this must be kept in sync with aco_op_info
 
 import sys
-from enum import Enum
+from enum import Enum, IntEnum, auto
 
 class InstrClass(Enum):
-   Valu32 = 0
-   ValuConvert32 = 1
-   Valu64 = 2
-   ValuQuarterRate32 = 3
-   ValuFma = 4
-   ValuTranscendental32 = 5
-   ValuDouble = 6
-   ValuDoubleAdd = 7
-   ValuDoubleConvert = 8
-   ValuDoubleTranscendental = 9
-   Salu = 10
-   SMem = 11
-   Barrier = 12
-   Branch = 13
-   Sendmsg = 14
-   DS = 15
-   Export = 16
-   VMem = 17
-   Waitcnt = 18
-   Other = 19
+   Valu32 = "valu32"
+   ValuConvert32 = "valu_convert32"
+   Valu64 = "valu64"
+   ValuQuarterRate32 = "valu_quarter_rate32"
+   ValuFma = "valu_fma"
+   ValuTranscendental32 = "valu_transcendental32"
+   ValuDouble = "valu_double"
+   ValuDoubleAdd = "valu_double_add"
+   ValuDoubleConvert = "valu_double_convert"
+   ValuDoubleTranscendental = "valu_double_transcendental"
+   WMMA = "wmma"
+   Salu = "salu"
+   SMem = "smem"
+   Barrier = "barrier"
+   Branch = "branch"
+   Sendmsg = "sendmsg"
+   DS = "ds"
+   Export = "exp"
+   VMem = "vmem"
+   Waitcnt = "waitcnt"
+   Other = "other"
 
-class Format(Enum):
+# Representation of the instruction's microcode encoding format
+# Note: Some Vector ALU Formats can be combined, such that:
+# - VOP2* | VOP3 represents a VOP2 instruction in VOP3 encoding
+# - VOP2* | DPP represents a VOP2 instruction with data parallel primitive.
+# - VOP2* | SDWA represents a VOP2 instruction with sub-dword addressing.
+#
+# (*) The same is applicable for VOP1 and VOPC instructions.
+class Format(IntEnum):
+   # Pseudo Instruction Formats
    PSEUDO = 0
-   SOP1 = 1
-   SOP2 = 2
-   SOPK = 3
-   SOPP = 4
-   SOPC = 5
-   SMEM = 6
-   DS = 8
-   LDSDIR = 9
-   MTBUF = 10
-   MUBUF = 11
-   MIMG = 12
-   EXP = 13
-   FLAT = 14
-   GLOBAL = 15
-   SCRATCH = 16
-   PSEUDO_BRANCH = 17
-   PSEUDO_BARRIER = 18
-   PSEUDO_REDUCTION = 19
-   VINTERP_INREG = 21
-   VOP3P = 1 << 7
-   VOP1 = 1 << 8
-   VOP2 = 1 << 9
-   VOPC = 1 << 10
-   VOP3 = 1 << 11
-   VINTRP = 1 << 12
+   PSEUDO_BRANCH = auto()
+   PSEUDO_BARRIER = auto()
+   PSEUDO_REDUCTION = auto()
+   # Scalar ALU & Control Formats
+   SOP1 = auto()
+   SOP2 = auto()
+   SOPK = auto()
+   SOPP = auto()
+   SOPC = auto()
+   # Scalar Memory Format
+   SMEM = auto()
+   # LDS/GDS Format
+   DS = auto()
+   LDSDIR = auto()
+   # Vector Memory Buffer Formats
+   MTBUF = auto()
+   MUBUF = auto()
+   # Vector Memory Image Format
+   MIMG = auto()
+   # Export Format
+   EXP = auto()
+   # Flat Formats
+   FLAT = auto()
+   GLOBAL = auto()
+   SCRATCH = auto()
+   # Vector Parameter Interpolation Formats
+   VINTRP = auto()
+   # Vector ALU Formats
+   VINTERP_INREG = auto()
+   VOP1 = 1 << 7
+   VOP2 = 1 << 8
+   VOPC = 1 << 9
+   VOP3 = 1 << 10
+   VOP3P = 1 << 11
+   SDWA = 1 << 12
    DPP16 = 1 << 13
-   SDWA = 1 << 14
-   DPP8 = 1 << 15
+   DPP8 = 1 << 14
 
    def get_builder_fields(self):
       if self == Format.SOPK:
@@ -1051,6 +1069,12 @@ opcode("v_dot8_i32_iu4", -1, -1, -1, 0x18, Format.VOP3P, InstrClass.Valu32)
 opcode("v_dot8_u32_u4", -1, 0x2b, 0x19, 0x19, Format.VOP3P, InstrClass.Valu32)
 opcode("v_dot2_f32_f16", -1, 0x23, 0x13, 0x13, Format.VOP3P, InstrClass.Valu32)
 opcode("v_dot2_f32_bf16", -1, -1, -1, 0x1a, Format.VOP3P, InstrClass.Valu32)
+opcode("v_wmma_f32_16x16x16_f16", -1, -1, -1, 0x40, Format.VOP3P, InstrClass.WMMA, False, False)
+opcode("v_wmma_f32_16x16x16_bf16", -1, -1, -1, 0x41, Format.VOP3P, InstrClass.WMMA, False, False)
+opcode("v_wmma_f16_16x16x16_f16", -1, -1, -1, 0x42, Format.VOP3P, InstrClass.WMMA, False, False)
+opcode("v_wmma_bf16_16x16x16_bf16", -1, -1, -1, 0x43, Format.VOP3P, InstrClass.WMMA, False, False)
+opcode("v_wmma_i32_16x16x16_iu8", -1, -1, -1, 0x44, Format.VOP3P, InstrClass.WMMA, False, False)
+opcode("v_wmma_i32_16x16x16_iu4", -1, -1, -1, 0x45, Format.VOP3P, InstrClass.WMMA, False, False)
 
 
 # VINTRP (GFX6 - GFX10.3) instructions:

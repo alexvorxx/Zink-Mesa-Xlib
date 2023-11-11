@@ -126,7 +126,9 @@ xe_exec_process_syncs(struct anv_queue *queue,
    /* Signal the utrace sync only if it doesn't have a batch. Otherwise the
     * it's the utrace batch that should signal its own sync.
     */
-   if (utrace_submit && !utrace_submit->batch_bo) {
+   if (utrace_submit &&
+       util_dynarray_num_elements(&utrace_submit->batch_bos,
+                                  struct anv_bo *) == 0) {
       struct drm_xe_sync *xe_sync = &xe_syncs[count++];
 
       xe_exec_fill_sync(xe_sync, utrace_submit->sync, 0, TYPE_SIGNAL);
@@ -186,17 +188,20 @@ xe_queue_exec_utrace_locked(struct anv_queue *queue,
    xe_exec_fill_sync(&xe_sync, utrace_submit->sync, 0, TYPE_SIGNAL);
 
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
-   if (device->physical->memory.need_flush)
-      intel_flush_range(utrace_submit->batch_bo->map,
-                        utrace_submit->batch_bo->size);
+   if (device->physical->memory.need_flush) {
+      util_dynarray_foreach(&utrace_submit->batch_bos, struct anv_bo *, bo)
+         intel_flush_range((*bo)->map, (*bo)->size);
+   }
 #endif
 
+   struct anv_bo *batch_bo =
+      *util_dynarray_element(&utrace_submit->batch_bos, struct anv_bo *, 0);
    struct drm_xe_exec exec = {
       .exec_queue_id = queue->exec_queue_id,
       .num_batch_buffer = 1,
       .syncs = (uintptr_t)&xe_sync,
       .num_syncs = 1,
-      .address = utrace_submit->batch_bo->offset,
+      .address = batch_bo->offset,
    };
    if (likely(!device->info->no_hw)) {
       if (intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC, &exec))
@@ -283,7 +288,9 @@ xe_queue_exec_locked(struct anv_queue *queue,
       return result;
 
    /* If we have no batch for utrace, just forget about it now. */
-   if (utrace_submit && !utrace_submit->batch_bo)
+   if (utrace_submit &&
+       util_dynarray_num_elements(&utrace_submit->batch_bos,
+                                  struct anv_bo *) == 0)
       utrace_submit = NULL;
 
    struct drm_xe_exec exec = {

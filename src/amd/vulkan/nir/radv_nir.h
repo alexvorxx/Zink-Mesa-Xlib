@@ -50,6 +50,8 @@ void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level, const 
                         const struct radv_shader_args *args, const struct radv_pipeline_key *pl_key,
                         uint32_t address32_hi);
 
+bool radv_nir_lower_hit_attrib_derefs(nir_shader *shader);
+
 bool radv_nir_lower_ray_queries(struct nir_shader *shader, struct radv_device *device);
 
 bool radv_nir_lower_vs_inputs(nir_shader *shader, const struct radv_shader_stage *vs_stage,
@@ -77,6 +79,8 @@ void radv_nir_lower_io(struct radv_device *device, nir_shader *nir);
 bool radv_nir_lower_io_to_mem(struct radv_device *device, struct radv_shader_stage *stage);
 
 void radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_key *key);
+
+bool radv_nir_lower_cooperative_matrix(nir_shader *shader, unsigned wave_size);
 
 #ifdef __cplusplus
 }

@@ -339,6 +339,7 @@ struct svga_state
    struct pipe_clip_state clip;
    struct pipe_viewport_state viewport[SVGA3D_DX_MAX_VIEWPORTS];
 
+   bool use_samplers[PIPE_SHADER_TYPES];
    unsigned num_samplers[PIPE_SHADER_TYPES];
    unsigned num_sampler_views[PIPE_SHADER_TYPES];
    unsigned num_vertex_buffers;
@@ -1022,6 +1023,24 @@ svga_use_sampler_state_mapping(const struct svga_context *svga,
           (svga_screen(svga->pipe.screen)->debug.sampler_state_mapping ||
            num_sampler_states > SVGA3D_DX_MAX_SAMPLERS);
 }
+
+
+static inline void
+svga_set_curr_shader_use_samplers_flag(struct svga_context *svga,
+                                       enum pipe_shader_type shader_type,
+                                       bool use_samplers)
+{
+   svga->curr.use_samplers[shader_type] = use_samplers;
+}
+
+
+static inline bool
+svga_curr_shader_use_samplers(const struct svga_context *svga,
+	                      enum pipe_shader_type shader_type)
+{
+   return svga->curr.use_samplers[shader_type];
+}
+
 
 /**
  * If the Gallium HUD is enabled, this will return the current time.

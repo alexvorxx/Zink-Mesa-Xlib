@@ -417,7 +417,7 @@ anv_cmd_buffer_current_batch_bo(struct anv_cmd_buffer *cmd_buffer)
 static struct anv_batch_bo *
 anv_cmd_buffer_current_generation_batch_bo(struct anv_cmd_buffer *cmd_buffer)
 {
-   return list_entry(cmd_buffer->generation_batch_bos.prev, struct anv_batch_bo, link);
+   return list_entry(cmd_buffer->generation.batch_bos.prev, struct anv_batch_bo, link);
 }
 
 struct anv_address
@@ -473,7 +473,7 @@ cmd_buffer_chain_to_batch_bo(struct anv_cmd_buffer *cmd_buffer,
 {
    struct anv_batch *batch =
       batch_type == ANV_CMD_BUFFER_BATCH_GENERATION ?
-      &cmd_buffer->generation_batch : &cmd_buffer->batch;
+      &cmd_buffer->generation.batch : &cmd_buffer->batch;
    struct anv_batch_bo *current_bbo =
       batch_type == ANV_CMD_BUFFER_BATCH_GENERATION ?
       anv_cmd_buffer_current_generation_batch_bo(cmd_buffer) :
@@ -606,12 +606,12 @@ anv_cmd_buffer_chain_generation_batch(struct anv_batch *batch, uint32_t size, vo
    }
    *seen_bbo = new_bbo;
 
-   if (!list_is_empty(&cmd_buffer->generation_batch_bos)) {
+   if (!list_is_empty(&cmd_buffer->generation.batch_bos)) {
       cmd_buffer_chain_to_batch_bo(cmd_buffer, new_bbo,
                                    ANV_CMD_BUFFER_BATCH_GENERATION);
    }
 
-   list_addtail(&new_bbo->link, &cmd_buffer->generation_batch_bos);
+   list_addtail(&new_bbo->link, &cmd_buffer->generation.batch_bos);
 
    anv_batch_bo_start(new_bbo, batch, GFX9_MI_BATCH_BUFFER_START_length * 4);
 
@@ -721,19 +721,47 @@ anv_cmd_buffer_alloc_binding_table(struct anv_cmd_buffer *cmd_buffer,
 }
 
 struct anv_state
-anv_cmd_buffer_alloc_surface_state(struct anv_cmd_buffer *cmd_buffer)
+anv_cmd_buffer_alloc_surface_states(struct anv_cmd_buffer *cmd_buffer,
+                                    uint32_t count)
 {
+   if (count == 0)
+      return ANV_STATE_NULL;
    struct isl_device *isl_dev = &cmd_buffer->device->isl_dev;
-   return anv_state_stream_alloc(&cmd_buffer->surface_state_stream,
-                                 isl_dev->ss.size, isl_dev->ss.align);
+   struct anv_state state =
+      anv_state_stream_alloc(&cmd_buffer->surface_state_stream,
+                             count * isl_dev->ss.size,
+                             isl_dev->ss.align);
+   if (state.map == NULL)
+      anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   return state;
 }
 
 struct anv_state
 anv_cmd_buffer_alloc_dynamic_state(struct anv_cmd_buffer *cmd_buffer,
                                    uint32_t size, uint32_t alignment)
 {
-   return anv_state_stream_alloc(&cmd_buffer->dynamic_state_stream,
-                                 size, alignment);
+   if (size == 0)
+      return ANV_STATE_NULL;
+   struct anv_state state =
+      anv_state_stream_alloc(&cmd_buffer->dynamic_state_stream,
+                             size, alignment);
+   if (state.map == NULL)
+      anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   return state;
+}
+
+struct anv_state
+anv_cmd_buffer_alloc_general_state(struct anv_cmd_buffer *cmd_buffer,
+                                   uint32_t size, uint32_t alignment)
+{
+   if (size == 0)
+      return ANV_STATE_NULL;
+   struct anv_state state =
+      anv_state_stream_alloc(&cmd_buffer->general_state_stream,
+                             size, alignment);
+   if (state.map == NULL)
+      anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   return state;
 }
 
 /** Allocate space associated with a command buffer
@@ -753,6 +781,12 @@ anv_cmd_buffer_alloc_space(struct anv_cmd_buffer *cmd_buffer,
       struct anv_state state =
          anv_state_stream_alloc(&cmd_buffer->dynamic_state_stream,
                                 size, alignment);
+      if (state.map == NULL) {
+         anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         return (struct anv_cmd_alloc) {
+            .address = ANV_NULL_ADDRESS,
+         };
+      }
 
       return (struct anv_cmd_alloc) {
          .address = anv_state_pool_state_address(
@@ -845,13 +879,13 @@ anv_cmd_buffer_init_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
    /* Generation batch is initialized empty since it's possible it won't be
     * used.
     */
-   list_inithead(&cmd_buffer->generation_batch_bos);
+   list_inithead(&cmd_buffer->generation.batch_bos);
 
-   cmd_buffer->generation_batch.alloc = &cmd_buffer->vk.pool->alloc;
-   cmd_buffer->generation_batch.user_data = cmd_buffer;
-   cmd_buffer->generation_batch.allocated_batch_size = 0;
-   cmd_buffer->generation_batch.extend_cb = anv_cmd_buffer_chain_generation_batch;
-   cmd_buffer->generation_batch.engine_class =
+   cmd_buffer->generation.batch.alloc = &cmd_buffer->vk.pool->alloc;
+   cmd_buffer->generation.batch.user_data = cmd_buffer;
+   cmd_buffer->generation.batch.allocated_batch_size = 0;
+   cmd_buffer->generation.batch.extend_cb = anv_cmd_buffer_chain_generation_batch;
+   cmd_buffer->generation.batch.engine_class =
       cmd_buffer->queue_family->engine_class;
 
    int success = u_vector_init_pow2(&cmd_buffer->seen_bbos, 8,
@@ -904,9 +938,14 @@ anv_cmd_buffer_fini_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
    }
    /* Also destroy all generation batch buffers */
    list_for_each_entry_safe(struct anv_batch_bo, bbo,
-                            &cmd_buffer->generation_batch_bos, link) {
+                            &cmd_buffer->generation.batch_bos, link) {
       list_del(&bbo->link);
       anv_batch_bo_destroy(bbo, cmd_buffer);
+   }
+
+   if (cmd_buffer->generation.ring_bo) {
+      anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool,
+                       cmd_buffer->generation.ring_bo);
    }
 }
 
@@ -947,16 +986,22 @@ anv_cmd_buffer_reset_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
 
    /* Delete all generation batch bos */
    list_for_each_entry_safe(struct anv_batch_bo, bbo,
-                            &cmd_buffer->generation_batch_bos, link) {
+                            &cmd_buffer->generation.batch_bos, link) {
       list_del(&bbo->link);
       anv_batch_bo_destroy(bbo, cmd_buffer);
    }
 
    /* And reset generation batch */
-   cmd_buffer->generation_batch.allocated_batch_size = 0;
-   cmd_buffer->generation_batch.start = NULL;
-   cmd_buffer->generation_batch.end   = NULL;
-   cmd_buffer->generation_batch.next  = NULL;
+   cmd_buffer->generation.batch.allocated_batch_size = 0;
+   cmd_buffer->generation.batch.start = NULL;
+   cmd_buffer->generation.batch.end   = NULL;
+   cmd_buffer->generation.batch.next  = NULL;
+
+   if (cmd_buffer->generation.ring_bo) {
+      anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool,
+                       cmd_buffer->generation.ring_bo);
+      cmd_buffer->generation.ring_bo = NULL;
+   }
 
    cmd_buffer->total_batch_size = 0;
 }

@@ -29,3 +29,17 @@ spec@arb_shader_clock@execution@clock.*
 
 # These run OOM and migth hang?
 spec@arb_texture_buffer_object@texture-buffer-size-clamp.*
+spec@!opengl 1.1@streaming-texture-leak
+spec@arb_uniform_buffer_object@maxuniformblocksize.*
+
+# implicit modifier selection not currently supported
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-ownership_transfer
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-refcount
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_argb8888
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_ayuv
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_xrgb8888
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_xyuv
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y410
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y412
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y416
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-transcode-nv12-as-r8-gr88

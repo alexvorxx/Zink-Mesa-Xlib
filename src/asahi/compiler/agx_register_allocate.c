@@ -57,6 +57,7 @@ agx_write_registers(const agx_instr *I, unsigned d)
 
    case AGX_OPCODE_DEVICE_LOAD:
    case AGX_OPCODE_LOCAL_LOAD:
+   case AGX_OPCODE_STACK_LOAD:
    case AGX_OPCODE_LD_TILE:
       /* Can write 16-bit or 32-bit. Anything logically 64-bit is already
        * expanded to 32-bit in the mask.
@@ -225,6 +226,7 @@ agx_read_registers(const agx_instr *I, unsigned s)
 
    case AGX_OPCODE_DEVICE_STORE:
    case AGX_OPCODE_LOCAL_STORE:
+   case AGX_OPCODE_STACK_STORE:
    case AGX_OPCODE_ST_TILE:
       /* See agx_write_registers */
       if (s == 0)
@@ -1144,6 +1146,19 @@ agx_ra(agx_context *ctx)
    /* Calculate the demand and use it to bound register assignment */
    unsigned demand =
       ALIGN_POT(agx_calc_register_demand(ctx, ncomps), reg_file_alignment);
+
+   /* TODO: Spilling. Abort so we don't smash the stack in release builds. */
+   if (demand > AGX_NUM_REGS) {
+      fprintf(stderr, "\n");
+      fprintf(stderr, "------------------------------------------------\n");
+      fprintf(stderr, "Asahi Linux shader compiler limitation!\n");
+      fprintf(stderr, "We ran out of registers! Nyaaaa 😿\n");
+      fprintf(stderr, "Do not report this as a bug.\n");
+      fprintf(stderr, "We know -- we're working on it!\n");
+      fprintf(stderr, "------------------------------------------------\n");
+      fprintf(stderr, "\n");
+      abort();
+   }
 
    /* Round up the demand to the maximum number of registers we can use without
     * affecting occupancy. This reduces live range splitting.

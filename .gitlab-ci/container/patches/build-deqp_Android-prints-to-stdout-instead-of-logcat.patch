@@ -1,4 +1,4 @@
-From 30ea0729517d1d4708617b4b295ba1ffd09e6efc Mon Sep 17 00:00:00 2001
+From a602822c53e22e985f942f843ccadbfb64613212 Mon Sep 17 00:00:00 2001
 From: Helen Koike <helen.koike@collabora.com>
 Date: Tue, 27 Sep 2022 12:35:22 -0300
 Subject: [PATCH 2/2] Android prints to stdout instead of logcat
@@ -22,5 +22,5 @@ index 6579e9f48..c200c6f6b 100644
  #include <android/log.h>
  
 -- 
-2.41.0
+2.42.0
 

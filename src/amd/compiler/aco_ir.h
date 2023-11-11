@@ -59,83 +59,6 @@ enum {
    DEBUG_NO_VALIDATE_IR = 0x400,
 };
 
-/**
- * Representation of the instruction's microcode encoding format
- * Note: Some Vector ALU Formats can be combined, such that:
- * - VOP2* | VOP3 represents a VOP2 instruction in VOP3 encoding
- * - VOP2* | DPP represents a VOP2 instruction with data parallel primitive.
- * - VOP2* | SDWA represents a VOP2 instruction with sub-dword addressing.
- *
- * (*) The same is applicable for VOP1 and VOPC instructions.
- */
-enum class Format : std::uint16_t {
-   /* Pseudo Instruction Format */
-   PSEUDO = 0,
-   /* Scalar ALU & Control Formats */
-   SOP1 = 1,
-   SOP2 = 2,
-   SOPK = 3,
-   SOPP = 4,
-   SOPC = 5,
-   /* Scalar Memory Format */
-   SMEM = 6,
-   /* LDS/GDS Format */
-   DS = 8,
-   LDSDIR = 9,
-   /* Vector Memory Buffer Formats */
-   MTBUF = 10,
-   MUBUF = 11,
-   /* Vector Memory Image Format */
-   MIMG = 12,
-   /* Export Format */
-   EXP = 13,
-   /* Flat Formats */
-   FLAT = 14,
-   GLOBAL = 15,
-   SCRATCH = 16,
-
-   PSEUDO_BRANCH = 17,
-   PSEUDO_BARRIER = 18,
-   PSEUDO_REDUCTION = 19,
-
-   /* Vector ALU Formats */
-   VINTERP_INREG = 21,
-   VOP3P = 1 << 7,
-   VOP1 = 1 << 8,
-   VOP2 = 1 << 9,
-   VOPC = 1 << 10,
-   VOP3 = 1 << 11,
-   /* Vector Parameter Interpolation Format */
-   VINTRP = 1 << 12,
-   DPP16 = 1 << 13,
-   SDWA = 1 << 14,
-   DPP8 = 1 << 15,
-};
-
-enum class instr_class : uint8_t {
-   valu32 = 0,
-   valu_convert32 = 1,
-   valu64 = 2,
-   valu_quarter_rate32 = 3,
-   valu_fma = 4,
-   valu_transcendental32 = 5,
-   valu_double = 6,
-   valu_double_add = 7,
-   valu_double_convert = 8,
-   valu_double_transcendental = 9,
-   salu = 10,
-   smem = 11,
-   barrier = 12,
-   branch = 13,
-   sendmsg = 14,
-   ds = 15,
-   exp = 16,
-   vmem = 17,
-   waitcnt = 18,
-   other = 19,
-   count,
-};
-
 enum storage_class : uint8_t {
    storage_none = 0x0,   /* no synchronization and can be reordered around aliasing stores */
    storage_buffer = 0x1, /* SSBOs and global memory */
@@ -1302,7 +1225,7 @@ struct Instruction {
       assert(isVINTRP());
       return *(VINTRP_instruction*)this;
    }
-   constexpr bool isVINTRP() const noexcept { return (uint16_t)format & (uint16_t)Format::VINTRP; }
+   constexpr bool isVINTRP() const noexcept { return format == Format::VINTRP; }
    DPP16_instruction& dpp16() noexcept
    {
       assert(isDPP16());

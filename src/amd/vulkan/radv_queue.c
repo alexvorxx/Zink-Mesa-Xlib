@@ -53,12 +53,6 @@ radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoKHR *p
    }
 }
 
-static bool
-radv_cmd_buffer_has_follower(const struct radv_cmd_buffer *cmd_buffer)
-{
-   return cmd_buffer->gang.cs && cmd_buffer->task_rings_needed;
-}
-
 static VkResult
 radv_sparse_buffer_bind_memory(struct radv_device *device, const VkSparseBufferMemoryBindInfo *bind)
 {
@@ -1002,7 +996,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
       struct radeon_cmdbuf *cs = NULL;
       cs = ws->cs_create(ws, radv_queue_family_to_ring(device->physical_device, queue->qf), false);
       if (!cs) {
-         result = VK_ERROR_OUT_OF_HOST_MEMORY;
+         result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
          goto fail;
       }
 
@@ -1056,7 +1050,6 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
       if (i < 2) {
          /* The two initial preambles have a cache flush at the beginning. */
          const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
-         const bool is_mec = queue->qf == RADV_QUEUE_COMPUTE && gfx_level >= GFX7;
          enum radv_cmd_flush_bits flush_bits = RADV_CMD_FLAG_INV_ICACHE | RADV_CMD_FLAG_INV_SCACHE |
                                                RADV_CMD_FLAG_INV_VCACHE | RADV_CMD_FLAG_INV_L2 |
                                                RADV_CMD_FLAG_START_PIPELINE_STATS;
@@ -1068,7 +1061,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
                flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH;
          }
 
-         si_cs_emit_cache_flush(ws, cs, gfx_level, NULL, 0, is_mec, flush_bits, &sqtt_flush_bits, 0);
+         si_cs_emit_cache_flush(ws, cs, gfx_level, NULL, 0, queue->qf, flush_bits, &sqtt_flush_bits, 0);
       }
 
       result = ws->cs_finalize(cs);
@@ -1172,8 +1165,15 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
                       struct vk_command_buffer *const *cmd_buffers, uint32_t cmd_buffer_count, bool *use_perf_counters,
                       bool *has_follower)
 {
-   if (queue->qf != RADV_QUEUE_GENERAL && queue->qf != RADV_QUEUE_COMPUTE)
+   if (queue->qf != RADV_QUEUE_GENERAL && queue->qf != RADV_QUEUE_COMPUTE) {
+      for (uint32_t j = 0; j < cmd_buffer_count; j++) {
+         struct radv_cmd_buffer *cmd_buffer = container_of(cmd_buffers[j], struct radv_cmd_buffer, vk);
+
+         *has_follower |= !!cmd_buffer->gang.cs;
+      }
+
       return VK_SUCCESS;
+   }
 
    /* Figure out the needs of the current submission.
     * Start by copying the queue's current info.
@@ -1263,8 +1263,10 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
    struct radeon_cmdbuf *ace_pre_cs = ws->cs_create(ws, AMD_IP_COMPUTE, false);
    struct radeon_cmdbuf *ace_post_cs = ws->cs_create(ws, AMD_IP_COMPUTE, false);
 
-   if (!leader_pre_cs || !leader_post_cs || !ace_pre_cs || !ace_post_cs)
+   if (!leader_pre_cs || !leader_post_cs || !ace_pre_cs || !ace_post_cs) {
+      r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
       goto fail;
+   }
 
    radeon_check_space(ws, leader_pre_cs, 256);
    radeon_check_space(ws, leader_post_cs, 256);
@@ -1278,6 +1280,8 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
 
    const uint64_t ace_wait_va = radv_buffer_get_va(gang_sem_bo);
    const uint64_t leader_wait_va = ace_wait_va + 4;
+   const uint32_t zero = 0;
+   const uint32_t one = 1;
 
    /* Preambles for gang submission.
     * Make gang members wait until the gang leader starts.
@@ -1285,17 +1289,9 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
     * in a multi-process environment, because task shader dispatches are not
     * meant to be executed on multiple compute engines at the same time.
     */
-   radv_cp_wait_mem(ace_pre_cs, WAIT_REG_MEM_GREATER_OR_EQUAL, ace_wait_va, 1, 0xffffffff);
-   radeon_emit(ace_pre_cs, PKT3(PKT3_WRITE_DATA, 3, 0));
-   radeon_emit(ace_pre_cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
-   radeon_emit(ace_pre_cs, ace_wait_va);
-   radeon_emit(ace_pre_cs, ace_wait_va >> 32);
-   radeon_emit(ace_pre_cs, 0);
-   radeon_emit(leader_pre_cs, PKT3(PKT3_WRITE_DATA, 3, 0));
-   radeon_emit(leader_pre_cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
-   radeon_emit(leader_pre_cs, ace_wait_va);
-   radeon_emit(leader_pre_cs, ace_wait_va >> 32);
-   radeon_emit(leader_pre_cs, 1);
+   radv_cp_wait_mem(ace_pre_cs, RADV_QUEUE_COMPUTE, WAIT_REG_MEM_GREATER_OR_EQUAL, ace_wait_va, 1, 0xffffffff);
+   radv_cs_write_data(device, ace_pre_cs, RADV_QUEUE_COMPUTE, V_370_ME, ace_wait_va, 1, &zero, false);
+   radv_cs_write_data(device, leader_pre_cs, queue->state.qf, V_370_ME, ace_wait_va, 1, &one, false);
 
    /* Create postambles for gang submission.
     * This ensures that the gang leader waits for the whole gang,
@@ -1303,17 +1299,11 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
     * as soon as the gang leader is done, which may lead to bugs because the
     * same command buffers could be submitted again while still being executed.
     */
-   radv_cp_wait_mem(leader_post_cs, WAIT_REG_MEM_GREATER_OR_EQUAL, leader_wait_va, 1, 0xffffffff);
-   radeon_emit(leader_post_cs, PKT3(PKT3_WRITE_DATA, 3, 0));
-   radeon_emit(leader_post_cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
-   radeon_emit(leader_post_cs, leader_wait_va);
-   radeon_emit(leader_post_cs, leader_wait_va >> 32);
-   radeon_emit(leader_post_cs, 0);
-   radeon_emit(ace_post_cs, PKT3(PKT3_WRITE_DATA, 3, 0));
-   radeon_emit(ace_post_cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
-   radeon_emit(ace_post_cs, leader_wait_va);
-   radeon_emit(ace_post_cs, leader_wait_va >> 32);
-   radeon_emit(ace_post_cs, 1);
+   radv_cp_wait_mem(leader_post_cs, queue->state.qf, WAIT_REG_MEM_GREATER_OR_EQUAL, leader_wait_va, 1, 0xffffffff);
+   radv_cs_write_data(device, leader_post_cs, queue->state.qf, V_370_ME, leader_wait_va, 1, &zero, false);
+   si_cs_emit_write_event_eop(ace_post_cs, device->physical_device->rad_info.gfx_level, RADV_QUEUE_COMPUTE,
+                              V_028A90_BOTTOM_OF_PIPE_TS, 0, EOP_DST_SEL_MEM, EOP_DATA_SEL_VALUE_32BIT, leader_wait_va,
+                              1, 0);
 
    r = ws->cs_finalize(leader_pre_cs);
    if (r != VK_SUCCESS)
@@ -1634,14 +1624,14 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          assert(cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY);
          const bool can_chain_next = !(cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
-         /* Follower needs to be first because the last CS must match the queue's IP type. */
-         if (radv_cmd_buffer_has_follower(cmd_buffer)) {
+         /* Follower needs to be before the gang leader because the last CS must match the queue's IP type. */
+         if (cmd_buffer->gang.cs) {
             queue->device->ws->cs_unchain(cmd_buffer->gang.cs);
             if (!chainable_ace || !queue->device->ws->cs_chain(chainable_ace, cmd_buffer->gang.cs, false)) {
                cs_array[num_submitted_cs++] = cmd_buffer->gang.cs;
-               /* Reset chaining for GFX when the cmdbuf has GFX+ACE because the follower CS (ACE)
-                * must always be before the leader CS (GFX). Otherwise, the GFX CS might be chained
-                * to previous one and ordering would be incorrect.
+
+               /* Prevent chaining the gang leader when the follower couldn't be chained.
+                * Otherwise, they would be in the wrong order.
                 */
                chainable = NULL;
             }

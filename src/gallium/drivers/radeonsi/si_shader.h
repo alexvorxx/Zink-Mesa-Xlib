@@ -886,9 +886,6 @@ struct si_shader {
    bool is_gs_copy_shader;
    uint8_t wave_size;
 
-   /* Use ACO for compilation. */
-   bool use_aco;
-
    /* The following data is all that's needed for binary shaders. */
    struct si_shader_binary binary;
    struct ac_shader_config config;
@@ -934,7 +931,6 @@ struct si_shader {
          uint16_t hw_max_esverts;
          uint16_t max_gsprims;
          uint16_t max_out_verts;
-         uint16_t prim_amp_factor;
          bool max_vert_out_per_gs_instance;
          /* Register values. */
          unsigned ge_max_output_per_subgroup;
@@ -944,7 +940,6 @@ struct si_shader {
          unsigned vgt_gs_instance_cnt;
          unsigned esgs_vertex_stride;
          unsigned spi_vs_out_config;
-         unsigned spi_shader_idx_format;
          unsigned spi_shader_pos_format;
          unsigned pa_cl_vte_cntl;
          unsigned vgt_gs_max_vert_out; /* for API GS */

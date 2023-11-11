@@ -567,8 +567,7 @@ XXX do this once swapinterval is hooked up
    /* pixmaps always have front buffers.
     * Exchange swaps also mandate fake front buffers.
     */
-   if (draw->type != LOADER_DRI3_DRAWABLE_WINDOW ||
-       draw->swap_method == __DRI_ATTRIB_SWAP_EXCHANGE)
+   if (draw->type != LOADER_DRI3_DRAWABLE_WINDOW)
       buffer_mask |= __DRI_IMAGE_BUFFER_FRONT;
 #endif
 

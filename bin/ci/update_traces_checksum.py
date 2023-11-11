@@ -134,7 +134,7 @@ if __name__ == "__main__":
         cur_project = get_gitlab_project(gl, "mesa")
 
         print(f"Revision: {args.rev}")
-        pipe = wait_for_pipeline(cur_project, args.rev)
+        (pipe, cur_project) = wait_for_pipeline([cur_project], args.rev)
         print(f"Pipeline: {pipe.web_url}")
         gather_results(cur_project, pipe)
 

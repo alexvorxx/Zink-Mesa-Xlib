@@ -326,9 +326,10 @@ pan_emit_zs_crc_ext(const struct pan_fb_info *fb, int rt_crc, void *zs_crc_ext)
 /* Measure format as it appears in the tile buffer */
 
 static unsigned
-pan_bytes_per_pixel_tib(enum pipe_format format)
+pan_bytes_per_pixel_tib(const struct panfrost_device *dev,
+                        enum pipe_format format)
 {
-   if (panfrost_blendable_formats_v7[format].internal) {
+   if (dev->blendable_formats[format].internal) {
       /* Blendable formats are always 32-bits in the tile buffer,
        * extra bits are used as padding or to dither */
       return 4;
@@ -341,7 +342,8 @@ pan_bytes_per_pixel_tib(enum pipe_format format)
 }
 
 static unsigned
-pan_cbuf_bytes_per_pixel(const struct pan_fb_info *fb)
+pan_cbuf_bytes_per_pixel(const struct panfrost_device *dev,
+                         const struct pan_fb_info *fb)
 {
    unsigned sum = 0;
 
@@ -351,7 +353,7 @@ pan_cbuf_bytes_per_pixel(const struct pan_fb_info *fb)
       if (!rt)
          continue;
 
-      sum += pan_bytes_per_pixel_tib(rt->format) * rt->nr_samples;
+      sum += pan_bytes_per_pixel_tib(dev, rt->format) * rt->nr_samples;
    }
 
    return sum;
@@ -401,7 +403,8 @@ pan_mfbd_raw_format(unsigned bits)
 }
 
 static void
-pan_rt_init_format(const struct pan_image_view *rt,
+pan_rt_init_format(const struct panfrost_device *dev,
+                   const struct pan_image_view *rt,
                    struct MALI_RENDER_TARGET *cfg)
 {
    /* Explode details on the format */
@@ -423,7 +426,7 @@ pan_rt_init_format(const struct pan_image_view *rt,
    if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB)
       cfg->srgb = true;
 
-   struct pan_blendable_format fmt = panfrost_blendable_formats_v7[rt->format];
+   struct pan_blendable_format fmt = dev->blendable_formats[rt->format];
 
    if (fmt.internal) {
       cfg->internal_format = fmt.internal;
@@ -481,7 +484,8 @@ pan_afbc_compression_mode(enum pipe_format format)
 #endif
 
 static void
-pan_prepare_rt(const struct pan_fb_info *fb, unsigned idx, unsigned cbuf_offset,
+pan_prepare_rt(const struct panfrost_device *dev, const struct pan_fb_info *fb,
+               unsigned idx, unsigned cbuf_offset,
                struct MALI_RENDER_TARGET *cfg)
 {
    cfg->clean_pixel_write_enable = fb->rts[idx].clear;
@@ -523,7 +527,7 @@ pan_prepare_rt(const struct pan_fb_info *fb, unsigned idx, unsigned cbuf_offset,
 
    cfg->writeback_msaa = mali_sampling_mode(rt);
 
-   pan_rt_init_format(rt, cfg);
+   pan_rt_init_format(dev, rt, cfg);
 
    cfg->writeback_block_format = mod_to_block_fmt(image->layout.modifier);
 
@@ -649,11 +653,11 @@ pan_emit_midgard_tiler(const struct panfrost_device *dev,
 
 #if PAN_ARCH >= 5
 static void
-pan_emit_rt(const struct pan_fb_info *fb, unsigned idx, unsigned cbuf_offset,
-            void *out)
+pan_emit_rt(const struct panfrost_device *dev, const struct pan_fb_info *fb,
+            unsigned idx, unsigned cbuf_offset, void *out)
 {
    pan_pack(out, RENDER_TARGET, cfg) {
-      pan_prepare_rt(fb, idx, cbuf_offset, &cfg);
+      pan_prepare_rt(dev, fb, idx, cbuf_offset, &cfg);
    }
 }
 
@@ -733,7 +737,7 @@ GENX(pan_emit_fbd)(const struct panfrost_device *dev,
    GENX(pan_emit_tls)(tls, pan_section_ptr(fbd, FRAMEBUFFER, LOCAL_STORAGE));
 #endif
 
-   unsigned bytes_per_pixel = pan_cbuf_bytes_per_pixel(fb);
+   unsigned bytes_per_pixel = pan_cbuf_bytes_per_pixel(dev, fb);
    unsigned tile_size =
       pan_select_max_tile_size(dev->optimal_tib_size, bytes_per_pixel);
 
@@ -828,12 +832,12 @@ GENX(pan_emit_fbd)(const struct panfrost_device *dev,
    unsigned rt_count = MAX2(fb->rt_count, 1);
    unsigned cbuf_offset = 0;
    for (unsigned i = 0; i < rt_count; i++) {
-      pan_emit_rt(fb, i, cbuf_offset, rtd);
+      pan_emit_rt(dev, fb, i, cbuf_offset, rtd);
       rtd += pan_size(RENDER_TARGET);
       if (!fb->rts[i].view)
          continue;
 
-      cbuf_offset += pan_bytes_per_pixel_tib(fb->rts[i].view->format) *
+      cbuf_offset += pan_bytes_per_pixel_tib(dev, fb->rts[i].view->format) *
                      tile_size * pan_image_view_get_nr_samples(fb->rts[i].view);
 
       if (i != crc_rt)
@@ -887,8 +891,7 @@ GENX(pan_emit_fbd)(const struct panfrost_device *dev,
          panfrost_invert_swizzle(desc->swizzle, swizzle);
          cfg.swizzle = panfrost_translate_swizzle_4(swizzle);
 
-         struct pan_blendable_format fmt =
-            panfrost_blendable_formats_v7[rt->format];
+         struct pan_blendable_format fmt = dev->blendable_formats[rt->format];
          if (fmt.internal) {
             cfg.internal_format = fmt.internal;
             cfg.color_writeback_format = fmt.writeback;

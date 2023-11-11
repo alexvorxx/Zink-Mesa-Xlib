@@ -875,7 +875,8 @@ gen_alu(Instruction* instr, wait_ctx& ctx)
       for (const Definition& def : instr->definitions)
          insert_wait_entry(ctx, def, event, 0, cycle_info.latency);
    }
-   update_alu(ctx, is_valu, is_trans, clear, cycle_info.issue_cycles);
+   update_alu(ctx, is_valu && instr_info.classes[(int)instr->opcode] != instr_class::wmma, is_trans,
+              clear, cycle_info.issue_cycles);
 }
 
 void

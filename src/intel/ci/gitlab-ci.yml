@@ -8,6 +8,7 @@ anv-jsl:
   variables:
     DEQP_SUITE: anv-jsl
     VK_DRIVER: intel
+    DEQP_FRACTION: 2
   parallel: 4
 
 # We don't enable a full run of anv-jsl nightly because it's about 8 hours of
@@ -26,7 +27,7 @@ anv-tgl:
     - .anv-tgl-test
   variables:
     DEQP_SUITE: anv-tgl
-    DEQP_FRACTION: 2 # temporarily drop network load
+    DEQP_FRACTION: 5 # temporarily drop network load
     VK_DRIVER: intel
   parallel: 6 # 15 - 3 zink - 3 post-merge perf + headroom
 
@@ -168,7 +169,7 @@ iris-kbl-piglit:
   extends:
     - .iris-kbl-test
     - .lava-piglit
-  parallel: 3
+  parallel: 2
   variables:
     HWCI_START_XORG: 1
     PIGLIT_NO_WINDOW: 0

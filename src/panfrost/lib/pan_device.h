@@ -156,6 +156,7 @@ struct panfrost_device {
 
    /* Table of formats, indexed by a PIPE format */
    const struct panfrost_format *formats;
+   const struct pan_blendable_format *blendable_formats;
 
    /* Bitmask of supported compressed texture formats */
    uint32_t compressed_formats;

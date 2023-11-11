@@ -617,13 +617,13 @@ tiling_max_mip_tail(enum isl_tiling tiling,
  * Returns an isl_tile_info representation of the given isl_tiling when
  * combined when used in the given configuration.
  *
- * @param[in]  tiling      The tiling format to introspect
- * @param[in]  dim         The dimensionality of the surface being tiled
- * @param[in]  msaa_layout The layout of samples in the surface being tiled
- * @param[in]  format_bpb  The number of bits per surface element (block) for
- *                         the surface being tiled
- * @param[in]  samples     The samples in the surface being tiled
- * @param[out] tile_info   Return parameter for the tiling information
+ * :param tiling:       |in|  The tiling format to introspect
+ * :param dim:          |in|  The dimensionality of the surface being tiled
+ * :param msaa_layout:  |in|  The layout of samples in the surface being tiled
+ * :param format_bpb:   |in|  The number of bits per surface element (block) for
+ *                            the surface being tiled
+ * :param samples:      |in|  The samples in the surface being tiled
+ * :param tile_info:    |out| Return parameter for the tiling information
  */
 void
 isl_tiling_get_info(enum isl_tiling tiling,
@@ -2770,8 +2770,11 @@ isl_surf_get_mcs_surf(const struct isl_device *dev,
    if (surf->msaa_layout != ISL_MSAA_LAYOUT_ARRAY)
       return false;
 
-   /* We are seeing failures with mcs on dg2, so disable it for now. */
-   if (intel_device_info_is_dg2(dev->info))
+   /* On Gfx12+ this format is not listed in TGL PRMs, Volume 2b: Command
+    * Reference: Enumerations, RenderCompressionFormat
+    */
+   if (ISL_GFX_VER(dev) >= 12 &&
+       surf->format == ISL_FORMAT_R9G9B9E5_SHAREDEXP)
       return false;
 
    /* The following are true of all multisampled surfaces */

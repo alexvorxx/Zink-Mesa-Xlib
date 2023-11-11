@@ -300,10 +300,6 @@ lower_image_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
       nir_intrinsic_set_image_array(intrin, true);
    }
 
-   /* We don't support ReadWithoutFormat yet */
-   if (intrin->intrinsic == nir_intrinsic_image_deref_load)
-      assert(nir_intrinsic_format(intrin) != PIPE_FORMAT_NONE);
-
    return true;
 }
 

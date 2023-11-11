@@ -401,10 +401,10 @@ fs_generator::fire_fb_write(fs_inst *inst,
 void
 fs_generator::generate_fb_write(fs_inst *inst, struct brw_reg payload)
 {
-   if (devinfo->verx10 <= 70) {
-      brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
-      brw_set_default_flag_reg(p, 0, 0);
-   }
+   assert(devinfo->ver < 7);
+
+   brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+   brw_set_default_flag_reg(p, 0, 0);
 
    const struct brw_reg implied_header =
       devinfo->ver < 6 ? payload : brw_null_reg();
@@ -1678,11 +1678,11 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                          inst->dst.is_accumulator();
       }
 
-      /* Wa_14013745556:
+      /* Wa_14013672992:
        *
        * Always use @1 SWSB for EOT.
        */
-      if (inst->eot && devinfo->ver >= 12) {
+      if (inst->eot && intel_needs_workaround(devinfo, 14013672992)) {
          if (tgl_swsb_src_dep(swsb).mode) {
             brw_set_default_exec_size(p, BRW_EXECUTE_1);
             brw_set_default_mask_control(p, BRW_MASK_DISABLE);

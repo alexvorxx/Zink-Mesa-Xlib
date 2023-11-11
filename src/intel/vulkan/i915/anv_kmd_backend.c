@@ -91,12 +91,7 @@ i915_gem_create(struct anv_device *device,
    struct drm_i915_gem_create_ext_set_pat set_pat_param = { 0 };
    if (device->info->has_set_pat_uapi) {
       /* Set PAT param */
-      if (alloc_flags & (ANV_BO_ALLOC_SNOOPED))
-         set_pat_param.pat_index = device->info->pat.coherent;
-      else if (alloc_flags & (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_SCANOUT))
-         set_pat_param.pat_index = device->info->pat.scanout;
-      else
-         set_pat_param.pat_index = device->info->pat.writeback;
+      set_pat_param.pat_index = anv_device_get_pat_entry(device, alloc_flags)->index;
       intel_i915_gem_add_ext(&gem_create.extensions,
                              I915_GEM_CREATE_EXT_SET_PAT,
                              &set_pat_param.base);
@@ -108,7 +103,6 @@ i915_gem_create(struct anv_device *device,
    *actual_size = gem_create.size;
 
    if (alloc_flags & ANV_BO_ALLOC_SNOOPED) {
-      assert(alloc_flags & ANV_BO_ALLOC_MAPPED);
       /* We don't want to change these defaults if it's going to be shared
        * with another process.
        */
@@ -170,18 +164,22 @@ i915_gem_mmap_legacy(struct anv_device *device, struct anv_bo *bo, uint64_t offs
 }
 
 static uint32_t
-mmap_calc_flags(struct anv_device *device, struct anv_bo *bo,
-                VkMemoryPropertyFlags property_flags)
+mmap_calc_flags(struct anv_device *device, struct anv_bo *bo)
 {
    if (device->info->has_local_mem)
       return I915_MMAP_OFFSET_FIXED;
 
-   uint32_t flags = 0;
-   if (!device->info->has_llc &&
-       (property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
-      flags |= I915_MMAP_WC;
-   if (!(property_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
-      flags |= I915_MMAP_WC;
+   uint32_t flags;
+   switch (anv_bo_get_mmap_mode(device, bo)) {
+   case INTEL_DEVICE_INFO_MMAP_MODE_WC:
+      flags = I915_MMAP_WC;
+      break;
+   case INTEL_DEVICE_INFO_MMAP_MODE_UC:
+      unreachable("Missing");
+   default:
+      /* no flags == WB */
+      flags = 0;
+   }
 
    if (likely(device->physical->info.has_mmap_offset))
       flags = (flags & I915_MMAP_WC) ? I915_MMAP_OFFSET_WC : I915_MMAP_OFFSET_WB;
@@ -190,9 +188,9 @@ mmap_calc_flags(struct anv_device *device, struct anv_bo *bo,
 
 static void *
 i915_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
-              uint64_t size, VkMemoryPropertyFlags property_flags)
+              uint64_t size)
 {
-   const uint32_t flags = mmap_calc_flags(device, bo, property_flags);
+   const uint32_t flags = mmap_calc_flags(device, bo);
 
    if (likely(device->physical->info.has_mmap_offset))
       return i915_gem_mmap_offset(device, bo, size, flags);

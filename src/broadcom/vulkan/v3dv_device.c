@@ -995,8 +995,8 @@ v3dv_physical_device_init_disk_cache(struct v3dv_physical_device *device)
 
 static VkResult
 create_physical_device(struct v3dv_instance *instance,
-                       drmDevicePtr drm_render_device,
-                       drmDevicePtr drm_primary_device)
+                       drmDevicePtr gpu_device,
+                       drmDevicePtr display_device)
 {
    VkResult result = VK_SUCCESS;
    int32_t master_fd = -1;
@@ -1021,8 +1021,8 @@ create_physical_device(struct v3dv_instance *instance,
    if (result != VK_SUCCESS)
       goto fail;
 
-   assert(drm_render_device);
-   const char *path = drm_render_device->nodes[DRM_NODE_RENDER];
+   assert(gpu_device);
+   const char *path = gpu_device->nodes[DRM_NODE_RENDER];
    render_fd = open(path, O_RDWR | O_CLOEXEC);
    if (render_fd < 0) {
       fprintf(stderr, "Opening %s failed: %s\n", path, strerror(errno));
@@ -1037,12 +1037,12 @@ create_physical_device(struct v3dv_instance *instance,
 
    const char *primary_path;
 #if !using_v3d_simulator
-   if (drm_primary_device)
-      primary_path = drm_primary_device->nodes[DRM_NODE_PRIMARY];
+   if (display_device)
+      primary_path = display_device->nodes[DRM_NODE_PRIMARY];
    else
       primary_path = NULL;
 #else
-   primary_path = drm_render_device->nodes[DRM_NODE_PRIMARY];
+   primary_path = gpu_device->nodes[DRM_NODE_PRIMARY];
 #endif
 
    struct stat primary_stat = {0}, render_stat = {0};
@@ -1069,14 +1069,14 @@ create_physical_device(struct v3dv_instance *instance,
    device->render_devid = render_stat.st_rdev;
 
 #if using_v3d_simulator
-   device->device_id = drm_render_device->deviceinfo.pci->device_id;
+   device->device_id = gpu_device->deviceinfo.pci->device_id;
 #endif
 
    if (instance->vk.enabled_extensions.KHR_display ||
        instance->vk.enabled_extensions.EXT_acquire_drm_display) {
 #if !using_v3d_simulator
       /* Open the primary node on the vc4 display device */
-      assert(drm_primary_device);
+      assert(display_device);
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
 #else
       /* There is only one device with primary and render nodes.
@@ -1240,14 +1240,13 @@ enumerate_devices(struct vk_instance *vk_instance)
             break;
       }
 #else
-      /* On actual hardware, we should have a render node (v3d)
-       * and a primary node (vc4). We will need to use the primary
-       * to allocate WSI buffers and share them with the render node
-       * via prime, but that is a privileged operation so we need the
-       * primary node to be authenticated, and for that we need the
-       * display server to provide the device fd (with DRI3), so we
-       * here we only check that the device is present but we don't
-       * try to open it.
+      /* On actual hardware, we should have a gpu device (v3d) and a display
+       * device (vc4). We will need to use the display device to allocate WSI
+       * buffers and share them with the render node via prime, but that is a
+       * privileged operation so we need t have an authenticated display fd
+       * and for that we need the display server to provide the it (with DRI3),
+       * so here we only check that the device is present but we don't try to
+       * open it.
        */
       if (devices[i]->bustype != DRM_BUS_PLATFORM)
          continue;
@@ -1827,33 +1826,11 @@ v3dv_GetInstanceProcAddr(VkInstance _instance,
  * vk_icdGetInstanceProcAddr to work around certain LD_PRELOAD issues seen in apps.
  */
 PUBLIC
-VKAPI_ATTR PFN_vkVoidFunction
-VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance,
-                                     const char *pName);
-
-PUBLIC
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vk_icdGetInstanceProcAddr(VkInstance instance,
                           const char*                                 pName)
 {
    return v3dv_GetInstanceProcAddr(instance, pName);
-}
-
-/* With version 4+ of the loader interface the ICD should expose
- * vk_icdGetPhysicalDeviceProcAddr()
- */
-PUBLIC
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
-vk_icdGetPhysicalDeviceProcAddr(VkInstance  _instance,
-                                const char* pName);
-
-PFN_vkVoidFunction
-vk_icdGetPhysicalDeviceProcAddr(VkInstance  _instance,
-                                const char* pName)
-{
-   V3DV_FROM_HANDLE(v3dv_instance, instance, _instance);
-
-   return vk_instance_get_physical_device_proc_addr(&instance->vk, pName);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -2767,6 +2744,18 @@ get_buffer_memory_requirements(struct v3dv_buffer *buffer,
       .size = align64(buffer->size, buffer->alignment),
    };
 
+   /* UBO and SSBO may be read using ldunifa, which prefetches the next
+    * 4 bytes after a read. If the buffer's size is exactly a multiple
+    * of a page size and the shader reads the last 4 bytes with ldunifa
+    * the prefetching would read out of bounds and cause an MMU error,
+    * so we allocate extra space to avoid kernel error spamming.
+    */
+   bool can_ldunifa = buffer->usage &
+                      (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+   if (can_ldunifa && (buffer->size % 4096 == 0))
+      pMemoryRequirements->memoryRequirements.size += buffer->alignment;
+
    vk_foreach_struct(ext, pMemoryRequirements->pNext) {
       switch (ext->sType) {
       case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {
@@ -3086,59 +3075,6 @@ v3dv_GetDeviceImageSparseMemoryRequirementsKHR(
     VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
 {
    *pSparseMemoryRequirementCount = 0;
-}
-
-/* vk_icd.h does not declare this function, so we declare it here to
- * suppress Wmissing-prototypes.
- */
-PUBLIC VKAPI_ATTR VkResult VKAPI_CALL
-vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion);
-
-PUBLIC VKAPI_ATTR VkResult VKAPI_CALL
-vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion)
-{
-   /* For the full details on loader interface versioning, see
-    * <https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/blob/master/loader/LoaderAndLayerInterface.md>.
-    * What follows is a condensed summary, to help you navigate the large and
-    * confusing official doc.
-    *
-    *   - Loader interface v0 is incompatible with later versions. We don't
-    *     support it.
-    *
-    *   - In loader interface v1:
-    *       - The first ICD entrypoint called by the loader is
-    *         vk_icdGetInstanceProcAddr(). The ICD must statically expose this
-    *         entrypoint.
-    *       - The ICD must statically expose no other Vulkan symbol unless it is
-    *         linked with -Bsymbolic.
-    *       - Each dispatchable Vulkan handle created by the ICD must be
-    *         a pointer to a struct whose first member is VK_LOADER_DATA. The
-    *         ICD must initialize VK_LOADER_DATA.loadMagic to ICD_LOADER_MAGIC.
-    *       - The loader implements vkCreate{PLATFORM}SurfaceKHR() and
-    *         vkDestroySurfaceKHR(). The ICD must be capable of working with
-    *         such loader-managed surfaces.
-    *
-    *    - Loader interface v2 differs from v1 in:
-    *       - The first ICD entrypoint called by the loader is
-    *         vk_icdNegotiateLoaderICDInterfaceVersion(). The ICD must
-    *         statically expose this entrypoint.
-    *
-    *    - Loader interface v3 differs from v2 in:
-    *        - The ICD must implement vkCreate{PLATFORM}SurfaceKHR(),
-    *          vkDestroySurfaceKHR(), and other API which uses VKSurfaceKHR,
-    *          because the loader no longer does so.
-    *
-    *    - Loader interface v4 differs from v3 in:
-    *        - The ICD must implement vk_icdGetPhysicalDeviceProcAddr().
-    *
-    *    - Loader interface v5 differs from v4 in:
-    *        - The ICD must support Vulkan API version 1.1 and must not return
-    *          VK_ERROR_INCOMPATIBLE_DRIVER from vkCreateInstance() unless a
-    *          Vulkan Loader with interface v4 or smaller is being used and the
-    *          application provides an API version that is greater than 1.0.
-    */
-   *pSupportedVersion = MIN2(*pSupportedVersion, 5u);
-   return VK_SUCCESS;
 }
 
 VkDeviceAddress

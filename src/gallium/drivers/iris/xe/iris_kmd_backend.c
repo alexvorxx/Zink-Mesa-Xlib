@@ -89,25 +89,9 @@ xe_gem_mmap(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
 static inline int
 xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
 {
-   struct drm_syncobj_create create = {};
-   int ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr),
-                         DRM_IOCTL_SYNCOBJ_CREATE, &create);
-   if (ret) {
-      DBG("vm_bind_op: Unable to create SYNCOBJ(%i)", ret);
-      return ret;
-   }
-
-   struct drm_xe_sync sync = {
-      .flags = DRM_XE_SYNC_SYNCOBJ | DRM_XE_SYNC_SIGNAL,
-      .handle = create.handle,
-   };
-   /* Old compilers do not allow declarations after 'goto label' */
-   struct drm_syncobj_destroy destroy = {
-      .handle = create.handle,
-   };
-
    uint32_t handle = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
    uint64_t range, obj_offset = 0;
+   int ret;
 
    if (iris_bo_is_imported(bo))
       range = bo->size;
@@ -130,30 +114,12 @@ xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
       .bind.range = range,
       .bind.addr = intel_48b_address(bo->address),
       .bind.op = op,
-      .num_syncs = 1,
-      .syncs = (uintptr_t)&sync,
    };
    ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_XE_VM_BIND, &args);
    if (ret) {
       DBG("vm_bind_op: DRM_IOCTL_XE_VM_BIND failed(%i)", ret);
-      goto bind_error;
    }
 
-   struct drm_syncobj_wait wait = {
-      .handles = (uintptr_t)&create.handle,
-      .timeout_nsec = INT64_MAX,
-      .count_handles = 1,
-      .flags = 0,
-      .first_signaled = 0,
-      .pad = 0,
-   };
-   ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_SYNCOBJ_WAIT, &wait);
-   if (ret)
-      DBG("vm_bind_op: DRM_IOCTL_SYNCOBJ_WAIT failed(%i)", ret);
-
-bind_error:
-   if (intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_SYNCOBJ_DESTROY, &destroy))
-      DBG("vm_bind_op: Unable to destroy SYNCOBJ(%i)", ret);
    return ret;
 }
 

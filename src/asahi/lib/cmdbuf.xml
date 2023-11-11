@@ -314,6 +314,9 @@
     <!-- If layout is linear, stride has the minus 1 encoded -->
     <field name="Depth (linear)" size="11" start="128" type="uint" modifier="minus(1)" default="1"/>
     <field name="Layer stride (linear)" size="27" start="139" type="uint" modifier="shr(7)"/>
+
+    <!-- Buffer texture size -->
+    <field name="Software-defined" size="64" start="128" type="hex"/>
   </struct>
 
   <enum name="Wrap">

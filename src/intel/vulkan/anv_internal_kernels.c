@@ -33,8 +33,7 @@
 
 #include "anv_internal_kernels.h"
 
-#include "shaders/gfx9_generated_draws_spv.h"
-#include "shaders/gfx11_generated_draws_spv.h"
+#include "shaders/generated_draws_spv.h"
 #include "shaders/query_copy_compute_spv.h"
 #include "shaders/query_copy_fragment_spv.h"
 #include "shaders/memcpy_compute_spv.h"
@@ -143,6 +142,7 @@ lower_load_ubo_to_uniforms(nir_builder *b, nir_intrinsic_instr *intrin,
 static struct anv_shader_bin *
 compile_upload_spirv(struct anv_device *device,
                      gl_shader_stage stage,
+                     const char *name,
                      const void *hash_key,
                      uint32_t hash_key_size,
                      const struct anv_internal_kernel_bind_map *bind_map,
@@ -169,6 +169,8 @@ compile_upload_spirv(struct anv_device *device,
                       NULL);
 
    assert(nir != NULL);
+
+   nir->info.name = ralloc_strdup(nir, name);
 
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
    NIR_PASS_V(nir, nir_opt_cse);
@@ -241,7 +243,9 @@ compile_upload_spirv(struct anv_device *device,
    memset(&prog_data, 0, sizeof(prog_data));
    prog_data.base.nr_params = nir->num_uniforms / 4;
 
-   brw_nir_analyze_ubo_ranges(compiler, nir, NULL, prog_data.base.ubo_ranges);
+   brw_nir_analyze_ubo_ranges(compiler, nir, prog_data.base.ubo_ranges);
+
+   void *temp_ctx = ralloc_context(NULL);
 
    const unsigned *program;
    if (stage == MESA_SHADER_FRAGMENT) {
@@ -252,6 +256,7 @@ compile_upload_spirv(struct anv_device *device,
             .log_data = device,
             .debug_flag = DEBUG_WM,
             .stats = stats,
+            .mem_ctx = temp_ctx,
          },
          .key = &key.wm,
          .prog_data = &prog_data.wm,
@@ -285,6 +290,7 @@ compile_upload_spirv(struct anv_device *device,
             .stats = &stats,
             .log_data = device,
             .debug_flag = DEBUG_CS,
+            .mem_ctx = temp_ctx,
          },
          .key = &key.cs,
          .prog_data = &prog_data.cs,
@@ -312,6 +318,7 @@ compile_upload_spirv(struct anv_device *device,
                                &push_desc_info,
                                0 /* dynamic_push_values */);
 
+   ralloc_free(temp_ctx);
    ralloc_free(nir);
 
    return kernel;
@@ -345,17 +352,14 @@ anv_device_init_internal_kernels(struct anv_device *device)
             .name    = "anv-generated-indirect-draws",
          },
          .stage      = MESA_SHADER_FRAGMENT,
-         .spirv_data = device->info->ver >= 11 ?
-                       gfx11_generated_draws_spv_source :
-                       gfx9_generated_draws_spv_source,
-         .spirv_size = device->info->ver >= 11 ?
-                       ARRAY_SIZE(gfx11_generated_draws_spv_source) :
-                       ARRAY_SIZE(gfx9_generated_draws_spv_source),
-         .send_count = device->info->ver >= 11 ?
-                       11 /* 2 * (2 loads + 3 stores) + 1 store */ :
-                       17 /* 2 * (2 loads + 6 stores) + 1 store */,
+         .spirv_data = generated_draws_spv_source,
+         .spirv_size = ARRAY_SIZE(generated_draws_spv_source),
+         .send_count = /* 2 * (2 loads + 3 stores) +  ** gfx11 **
+                        * 2 * (2 loads + 6 stores) +  ** gfx9  **
+                        * 1 load + 3 store
+                        */ 29,
          .bind_map   = {
-            .num_bindings = 4,
+            .num_bindings = 5,
             .bindings     = {
                {
                   .address_offset = offsetof(struct anv_generated_indirect_params,
@@ -368,6 +372,10 @@ anv_device_init_internal_kernels(struct anv_device *device)
                {
                   .address_offset = offsetof(struct anv_generated_indirect_params,
                                              draw_ids_addr),
+               },
+               {
+                  .address_offset = offsetof(struct anv_generated_indirect_params,
+                                             draw_count_addr),
                },
                {
                   .push_constant = true,
@@ -471,6 +479,7 @@ anv_device_init_internal_kernels(struct anv_device *device)
          device->internal_kernels[i] =
             compile_upload_spirv(device,
                                  internal_kernels[i].stage,
+                                 internal_kernels[i].key.name,
                                  &internal_kernels[i].key,
                                  sizeof(internal_kernels[i].key),
                                  &internal_kernels[i].bind_map,

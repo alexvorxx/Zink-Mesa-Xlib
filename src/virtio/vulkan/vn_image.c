@@ -226,20 +226,16 @@ vn_image_create(struct vn_device *dev,
                 const VkAllocationCallbacks *alloc,
                 struct vn_image **out_img)
 {
-   struct vn_image *img = NULL;
-   VkResult result = VK_SUCCESS;
-
-   img = vk_zalloc(alloc, sizeof(*img), VN_DEFAULT_ALIGN,
-                   VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct vn_image *img =
+      vk_image_create(&dev->base.base, create_info, alloc, sizeof(*img));
    if (!img)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-   vn_object_base_init(&img->base, VK_OBJECT_TYPE_IMAGE, &dev->base);
+   vn_object_set_id(img, (uintptr_t)img, VK_OBJECT_TYPE_IMAGE);
 
-   result = vn_image_init(dev, create_info, img);
+   VkResult result = vn_image_init(dev, create_info, img);
    if (result != VK_SUCCESS) {
-      vn_object_base_fini(&img->base);
-      vk_free(alloc, img);
+      vk_image_destroy(&dev->base.base, alloc, &img->base.base);
       return result;
    }
 
@@ -264,20 +260,16 @@ vn_image_create_deferred(struct vn_device *dev,
                          const VkAllocationCallbacks *alloc,
                          struct vn_image **out_img)
 {
-   struct vn_image *img = NULL;
-   VkResult result = VK_SUCCESS;
-
-   img = vk_zalloc(alloc, sizeof(*img), VN_DEFAULT_ALIGN,
-                   VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct vn_image *img =
+      vk_image_create(&dev->base.base, create_info, alloc, sizeof(*img));
    if (!img)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-   vn_object_base_init(&img->base, VK_OBJECT_TYPE_IMAGE, &dev->base);
+   vn_object_set_id(img, (uintptr_t)img, VK_OBJECT_TYPE_IMAGE);
 
-   result = vn_image_deferred_info_init(img, create_info, alloc);
+   VkResult result = vn_image_deferred_info_init(img, create_info, alloc);
    if (result != VK_SUCCESS) {
-      vn_object_base_fini(&img->base);
-      vk_free(alloc, img);
+      vk_image_destroy(&dev->base.base, alloc, &img->base.base);
       return result;
    }
 
@@ -459,8 +451,7 @@ vn_DestroyImage(VkDevice device,
 
    vn_image_deferred_info_fini(img, alloc);
 
-   vn_object_base_fini(&img->base);
-   vk_free(alloc, img);
+   vk_image_destroy(&dev->base.base, alloc, &img->base.base);
 }
 
 void

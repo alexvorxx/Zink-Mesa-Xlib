@@ -27,6 +27,8 @@
 #include "pipe/p_state.h"
 #include "util/format/u_format.h"
 #include "util/half_float.h"
+#include "util/macros.h"
+#include "util/timespec.h"
 #include "util/u_drm.h"
 #include "util/u_gen_mipmap.h"
 #include "util/u_inlines.h"
@@ -52,7 +54,6 @@
 /* clang-format off */
 static const struct debug_named_value agx_debug_options[] = {
    {"trace",     AGX_DBG_TRACE,    "Trace the command stream"},
-   {"deqp",      AGX_DBG_DEQP,     "Hacks for dEQP"},
    {"no16",      AGX_DBG_NO16,     "Disable 16-bit support"},
    {"perf",      AGX_DBG_PERF,     "Print performance warnings"},
 #ifndef NDEBUG
@@ -70,6 +71,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"smalltile", AGX_DBG_SMALLTILE,"Force 16x16 tiles"},
    {"nomsaa",    AGX_DBG_NOMSAA,   "Force disable MSAA"},
    {"noshadow",  AGX_DBG_NOSHADOW, "Force disable resource shadowing"},
+   {"noclipctrl",AGX_DBG_NOCLIPCTRL,"Disable ARB_clip_control"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -1293,7 +1295,7 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
 
    /* Finalize the encoder */
    uint8_t stop[5 + 64] = {0x00, 0x00, 0x00, 0xc0, 0x00};
-   memcpy(batch->encoder_current, stop, sizeof(stop));
+   memcpy(batch->vdm.current, stop, sizeof(stop));
 
    uint64_t pipeline_background = agx_build_meta(batch, false, false);
    uint64_t pipeline_background_partial = agx_build_meta(batch, false, true);
@@ -1340,7 +1342,7 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
     *  - BO for internal shaders
     *  - BOs added to the batch explicitly
     */
-   agx_batch_add_bo(batch, batch->encoder);
+   agx_batch_add_bo(batch, batch->vdm.bo);
 
    /* Occlusion queries are allocated as a contiguous pool */
    unsigned oq_count =
@@ -1555,7 +1557,7 @@ agx_get_name(struct pipe_screen *pscreen)
 static int
 agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 {
-   bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
+   struct agx_device *dev = agx_device(pscreen);
 
    switch (param) {
    case PIPE_CAP_NPOT_TEXTURES:
@@ -1571,21 +1573,8 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FS_FINE_DERIVATIVE:
       return 1;
 
-   /* We could support ARB_clip_control by toggling the clip control bit for
-    * the render pass. Because this bit is for the whole render pass,
-    * switching clip modes necessarily incurs a flush. This should be ok, from
-    * the ARB_clip_control spec:
-    *
-    *         Some implementations may introduce a flush when changing the
-    *         clip control state.  Hence frequent clip control changes are
-    *         not recommended.
-    *
-    * However, this would require tuning to ensure we don't flush unnecessary
-    * when using u_blitter clears, for example. As we don't yet have a use case,
-    * don't expose the feature.
-    */
    case PIPE_CAP_CLIP_HALFZ:
-      return 0;
+      return !(agx_device(pscreen)->debug & AGX_DBG_NOCLIPCTRL);
 
    case PIPE_CAP_MAX_RENDER_TARGETS:
    case PIPE_CAP_FBFETCH:
@@ -1595,12 +1584,18 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_OCCLUSION_QUERY:
+   case PIPE_CAP_QUERY_TIMESTAMP:
+   case PIPE_CAP_QUERY_TIME_ELAPSED:
    case PIPE_CAP_GENERATE_MIPMAP:
    case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
    case PIPE_CAP_ANISOTROPIC_FILTER:
    case PIPE_CAP_NATIVE_FENCE_FD:
       return true;
+
+   case PIPE_CAP_TIMER_RESOLUTION:
+      /* Timer resolution is the length of a single tick in nanos */
+      return agx_gpu_time_to_ns(dev, 1);
 
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
    case PIPE_CAP_TEXTURE_SWIZZLE:
@@ -1630,13 +1625,14 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_COMPUTE:
    case PIPE_CAP_INT64:
    case PIPE_CAP_SAMPLE_SHADING:
+   case PIPE_CAP_START_INSTANCE:
       return 1;
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
       /* TODO: MSRTT */
       return 0;
 
    case PIPE_CAP_CUBE_MAP_ARRAY:
-      return is_deqp;
+      return 1;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
       return 0;
@@ -1657,10 +1653,19 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
-      return is_deqp ? 330 : 140;
+      return 330;
    case PIPE_CAP_ESSL_FEATURE_LEVEL:
       return 320;
 
+   /* Settings from iris, may need tuning */
+   case PIPE_CAP_MAX_VERTEX_STREAMS:
+      return 4;
+   case PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES:
+      return 256;
+   case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
+      return 1024;
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
+      return 32;
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:
       return 16;
 
@@ -1749,13 +1754,17 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
              BITFIELD_BIT(MESA_PRIM_TRIANGLES) |
              BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP) |
              BITFIELD_BIT(MESA_PRIM_TRIANGLE_FAN) |
+             BITFIELD_BIT(MESA_PRIM_LINES_ADJACENCY) |
+             BITFIELD_BIT(MESA_PRIM_LINE_STRIP_ADJACENCY) |
+             BITFIELD_BIT(MESA_PRIM_TRIANGLES_ADJACENCY) |
+             BITFIELD_BIT(MESA_PRIM_TRIANGLE_STRIP_ADJACENCY) |
              BITFIELD_BIT(MESA_PRIM_QUADS) | BITFIELD_BIT(MESA_PRIM_QUAD_STRIP);
 
    case PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE:
       return 1;
 
    case PIPE_CAP_VS_LAYER_VIEWPORT:
-      return is_deqp;
+      return true;
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -1811,6 +1820,7 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
    case PIPE_SHADER_VERTEX:
    case PIPE_SHADER_FRAGMENT:
    case PIPE_SHADER_COMPUTE:
+   case PIPE_SHADER_GEOMETRY:
       break;
    default:
       return false;
@@ -1819,7 +1829,8 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
    /* Don't allow side effects with vertex processing. The APIs don't require it
     * and it may be problematic on our hardware.
     */
-   bool allow_side_effects = (shader != PIPE_SHADER_VERTEX);
+   bool allow_side_effects =
+      (shader == PIPE_SHADER_FRAGMENT) || (shader == PIPE_SHADER_COMPUTE);
 
    /* this is probably not totally correct.. but it's a start: */
    switch (param) {
@@ -1871,7 +1882,6 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
       return false;
 
    case PIPE_SHADER_CAP_INT64_ATOMICS:
-   case PIPE_SHADER_CAP_DROUND_SUPPORTED:
    case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       return 0;
 
@@ -2147,6 +2157,13 @@ agx_screen_get_fd(struct pipe_screen *pscreen)
    return agx_device(pscreen)->fd;
 }
 
+static uint64_t
+agx_get_timestamp(struct pipe_screen *pscreen)
+{
+   struct agx_device *dev = agx_device(pscreen);
+   return agx_gpu_time_to_ns(dev, agx_get_gpu_timestamp(dev));
+}
+
 struct pipe_screen *
 agx_screen_create(int fd, struct renderonly *ro,
                   const struct pipe_screen_config *config)
@@ -2176,22 +2193,9 @@ agx_screen_create(int fd, struct renderonly *ro,
    agx_screen->dev.ro = ro;
 
    /* Try to open an AGX device */
-   if (!agx_open_device(screen, &agx_screen->dev)) {
+   if (!agx_open_device(agx_screen, &agx_screen->dev)) {
       ralloc_free(agx_screen);
       return NULL;
-   }
-
-   if (agx_screen->dev.debug & AGX_DBG_DEQP) {
-      /* You're on your own. */
-      static bool warned_about_hacks = false;
-
-      if (!warned_about_hacks) {
-         agx_msg("\n------------------\n"
-                 "Unsupported debug parameter set. Expect breakage.\n"
-                 "Do not report bugs.\n"
-                 "------------------\n\n");
-         warned_about_hacks = true;
-      }
    }
 
    screen->destroy = agx_destroy_screen;
@@ -2211,7 +2215,7 @@ agx_screen_create(int fd, struct renderonly *ro,
    screen->resource_get_handle = agx_resource_get_handle;
    screen->resource_get_param = agx_resource_get_param;
    screen->resource_create_with_modifiers = agx_resource_create_with_modifiers;
-   screen->get_timestamp = u_default_get_timestamp;
+   screen->get_timestamp = agx_get_timestamp;
    screen->fence_reference = agx_fence_reference;
    screen->fence_finish = agx_fence_finish;
    screen->fence_get_fd = agx_fence_get_fd;

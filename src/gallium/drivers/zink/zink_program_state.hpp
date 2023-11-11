@@ -184,6 +184,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
        * TODO: maybe optimize this since all these values aren't actually needed
        */
       memcpy(&pc_entry->state, state, sizeof(*state));
+      pc_entry->state.rendering_info.pColorAttachmentFormats = pc_entry->state.rendering_formats;
       pc_entry->prog = prog;
       /* init the optimized background compile fence */
       util_queue_fence_init(&pc_entry->fence);

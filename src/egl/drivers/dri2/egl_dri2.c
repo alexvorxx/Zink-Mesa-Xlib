@@ -1062,6 +1062,13 @@ dri2_setup_extensions(_EGLDisplay *disp)
         dri2_dpy->present_minor_version >= 2)) &&
       (dri2_dpy->image && dri2_dpy->image->base.version >= 15);
 #endif
+   if (disp->Options.Zink && !disp->Options.ForceSoftware &&
+#ifdef HAVE_DRI3_MODIFIERS
+       dri2_dpy->dri3_major_version != -1 &&
+       !dri2_dpy->multibuffers_available &&
+#endif
+       !debug_get_bool_option("LIBGL_KOPPER_DRI2", false))
+      return EGL_FALSE;
 
    loader_bind_extensions(dri2_dpy, optional_core_extensions,
                           ARRAY_SIZE(optional_core_extensions), extensions);
@@ -1218,6 +1225,28 @@ dri2_display_destroy(_EGLDisplay *disp)
    }
    free(dri2_dpy);
    disp->DriverData = NULL;
+}
+
+struct dri2_egl_display *
+dri2_display_create(void)
+{
+   struct dri2_egl_display *dri2_dpy = calloc(1, sizeof *dri2_dpy);
+   if (!dri2_dpy) {
+      _eglError(EGL_BAD_ALLOC, "eglInitialize");
+      return NULL;
+   }
+
+   dri2_dpy->fd_render_gpu = -1;
+   dri2_dpy->fd_display_gpu = -1;
+
+#ifdef HAVE_DRI3_MODIFIERS
+   dri2_dpy->dri3_major_version = -1;
+   dri2_dpy->dri3_minor_version = -1;
+   dri2_dpy->present_major_version = -1;
+   dri2_dpy->present_minor_version = -1;
+#endif
+
+   return dri2_dpy;
 }
 
 __DRIbuffer *
@@ -3635,7 +3664,7 @@ dri2_interop_export_object(_EGLDisplay *disp, _EGLContext *ctx,
 static int
 dri2_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx, unsigned count,
                            struct mesa_glinterop_export_in *objects,
-                           GLsync *sync)
+                           GLsync *sync, int *fence_fd)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
@@ -3644,7 +3673,7 @@ dri2_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx, unsigned count,
       return MESA_GLINTEROP_UNSUPPORTED;
 
    return dri2_dpy->interop->flush_objects(dri2_ctx->dri_context, count,
-                                           objects, sync);
+                                           objects, sync, fence_fd);
 }
 
 const _EGLDriver _eglDriver = {

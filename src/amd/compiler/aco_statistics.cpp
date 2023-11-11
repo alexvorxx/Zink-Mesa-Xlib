@@ -223,6 +223,11 @@ get_perf_info(const Program& program, const Instruction& instr)
                                                : perf_info{0, WAIT_USE(lds, 1)};
       case instr_class::exp: return {0, WAIT_USE(export_gds, 1)};
       case instr_class::vmem: return {0, WAIT_USE(vmem, 1)};
+      case instr_class::wmma: {
+         /* int8 and (b)f16 have the same performance. */
+         uint8_t cost = instr.opcode == aco_opcode::v_wmma_i32_16x16x16_iu4 ? 16 : 32;
+         return {cost, WAIT_USE(valu, cost)};
+      }
       case instr_class::barrier:
       case instr_class::waitcnt:
       case instr_class::other:
@@ -526,11 +531,15 @@ collect_preasm_stats(Program* program)
       program->statistics[aco_statistic_instructions] += block.instructions.size();
 
       for (aco_ptr<Instruction>& instr : block.instructions) {
-         if (instr->isSOPP() && instr->sopp().block != -1)
+         bool is_branch = instr->isSOPP() && instr->sopp().block != -1;
+         if (is_branch)
             program->statistics[aco_statistic_branches]++;
 
-         if (instr->opcode == aco_opcode::p_constaddr)
-            program->statistics[aco_statistic_instructions] += 2;
+         if (instr->isVALU() || instr->isVINTRP())
+            program->statistics[aco_statistic_valu]++;
+         if (instr->isSALU() && !instr->isSOPP() &&
+             instr_info.classes[(int)instr->opcode] != instr_class::waitcnt)
+            program->statistics[aco_statistic_salu]++;
 
          if ((instr->isVMEM() || instr->isScratch() || instr->isGlobal()) &&
              !instr->operands.empty()) {
@@ -539,6 +548,8 @@ collect_preasm_stats(Program* program)
                              { return should_form_clause(instr.get(), other); }))
                program->statistics[aco_statistic_vmem_clauses]++;
             vmem_clause.insert(instr.get());
+
+            program->statistics[aco_statistic_vmem]++;
          } else {
             vmem_clause.clear();
          }
@@ -549,6 +560,8 @@ collect_preasm_stats(Program* program)
                              { return should_form_clause(instr.get(), other); }))
                program->statistics[aco_statistic_smem_clauses]++;
             smem_clause.insert(instr.get());
+
+            program->statistics[aco_statistic_smem]++;
          } else {
             smem_clause.clear();
          }

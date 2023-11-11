@@ -150,7 +150,7 @@ blorp_alloc_general_state(struct blorp_batch *blorp_batch,
    return blorp_alloc_dynamic_state(blorp_batch, size, alignment, offset);
 }
 
-static void
+static bool
 blorp_alloc_binding_table(struct blorp_batch *blorp_batch,
                           unsigned num_entries,
                           unsigned state_size,
@@ -181,6 +181,8 @@ blorp_alloc_binding_table(struct blorp_batch *blorp_batch,
    iris_use_pinned_bo(batch, binder->bo, false, IRIS_DOMAIN_NONE);
 
    batch->screen->vtbl.update_binder_address(batch, binder);
+
+   return true;
 }
 
 static uint32_t
@@ -498,18 +500,24 @@ genX(init_blorp)(struct iris_context *ice)
    ice->blorp.lookup_shader = iris_blorp_lookup_shader;
    ice->blorp.upload_shader = iris_blorp_upload_shader;
    ice->blorp.exec = iris_blorp_exec;
+   ice->blorp.enable_tbimr = screen->driconf.enable_tbimr;
 }
 
 static void
-blorp_emit_breakpoint_pre_draw(struct blorp_batch *blorp_batch)
+blorp_emit_pre_draw(struct blorp_batch *blorp_batch, const struct blorp_params *params)
 {
    struct iris_batch *batch = blorp_batch->driver_batch;
+   blorp_measure_start(blorp_batch, params);
    genX(maybe_emit_breakpoint)(batch, true);
 }
 
 static void
-blorp_emit_breakpoint_post_draw(struct blorp_batch *blorp_batch)
+blorp_emit_post_draw(struct blorp_batch *blorp_batch, const struct blorp_params *params)
 {
    struct iris_batch *batch = blorp_batch->driver_batch;
+
+   // A _3DPRIM_RECTLIST is a MESA_PRIM_QUAD_STRIP with a implied vertex
+   genX(emit_3dprimitive_was)(batch, NULL, MESA_PRIM_QUAD_STRIP, 3);
    genX(maybe_emit_breakpoint)(batch, false);
+   blorp_measure_end(blorp_batch, params);
 }

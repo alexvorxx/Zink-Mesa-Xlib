@@ -346,6 +346,9 @@ wsi_common_bind_swapchain_image(const struct wsi_device *wsi,
 bool
 wsi_common_vk_instance_supports_present_wait(const struct vk_instance *instance);
 
+VkImageUsageFlags
+wsi_caps_get_image_usage(void);
+
 #define wsi_common_vk_warn_once(warning) \
    do { \
       static int warned = false; \

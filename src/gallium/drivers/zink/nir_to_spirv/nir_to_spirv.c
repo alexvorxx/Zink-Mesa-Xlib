@@ -88,6 +88,7 @@ struct ntv_context {
    SpvId loop_break, loop_cont;
 
    SpvId shared_block_var[5]; //8, 16, 32, unused, 64
+   SpvId shared_block_arr_type[5]; //8, 16, 32, unused, 64
    SpvId scratch_block_var[5]; //8, 16, 32, unused, 64
 
    SpvId front_face_var, instance_id_var, vertex_id_var,
@@ -684,14 +685,25 @@ create_shared_block(struct ntv_context *ctx, unsigned bit_size)
       array = spirv_builder_type_array(&ctx->builder, type, emit_uint_const(ctx, 32, block_size));
    }
 
+   ctx->shared_block_arr_type[idx] = array;
    spirv_builder_emit_array_stride(&ctx->builder, array, bit_size / 8);
+
+   /* Create wrapper struct for Block, Offset and Aliased decorations. */
+   SpvId block = spirv_builder_type_struct(&ctx->builder, &array, 1);
+
    SpvId ptr_type = spirv_builder_type_pointer(&ctx->builder,
                                                SpvStorageClassWorkgroup,
-                                               array);
+                                               block);
    ctx->shared_block_var[idx] = spirv_builder_emit_var(&ctx->builder, ptr_type, SpvStorageClassWorkgroup);
    if (ctx->spirv_1_4_interfaces) {
       assert(ctx->num_entry_ifaces < ARRAY_SIZE(ctx->entry_ifaces));
       ctx->entry_ifaces[ctx->num_entry_ifaces++] = ctx->shared_block_var[idx];
+   }
+   /* Alias our shared memory blocks */
+   if (ctx->sinfo->have_workgroup_memory_explicit_layout) {
+      spirv_builder_emit_member_offset(&ctx->builder, block, 0, 0);
+      spirv_builder_emit_decoration(&ctx->builder, block, SpvDecorationBlock);
+      spirv_builder_emit_decoration(&ctx->builder, ctx->shared_block_var[idx], SpvDecorationAliased);
    }
 }
 
@@ -709,7 +721,14 @@ get_shared_block(struct ntv_context *ctx, unsigned bit_size)
       if (ctx->shared_block_var[1])
          spirv_builder_emit_cap(&ctx->builder, SpvCapabilityWorkgroupMemoryExplicitLayout16BitAccessKHR);
    }
-   return ctx->shared_block_var[idx];
+
+   SpvId ptr_type = spirv_builder_type_pointer(&ctx->builder,
+                                               SpvStorageClassWorkgroup,
+                                               ctx->shared_block_arr_type[idx]);
+   SpvId zero = emit_uint_const(ctx, 32, 0);
+
+   return spirv_builder_emit_access_chain(&ctx->builder, ptr_type,
+                                          ctx->shared_block_var[idx], &zero, 1);
 }
 
 #define HANDLE_EMIT_BUILTIN(SLOT, BUILTIN) \
@@ -1834,7 +1853,6 @@ emit_alu(struct ntv_context *ctx, nir_alu_instr *alu)
    UNOP(nir_op_f2f64, SpvOpFConvert)
    UNOP(nir_op_bitfield_reverse, SpvOpBitReverse)
    UNOP(nir_op_bit_count, SpvOpBitCount)
-   UNOP(nir_op_fisnormal, SpvOpIsNormal)
 #undef UNOP
 
    case nir_op_f2f16_rtz:
@@ -2521,6 +2539,7 @@ emit_load_push_const(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 static void
 emit_load_global(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 {
+   bool coherent = ctx->sinfo->have_vulkan_memory_model && nir_intrinsic_access(intr) & ACCESS_COHERENT;
    spirv_builder_emit_cap(&ctx->builder, SpvCapabilityPhysicalStorageBufferAddresses);
    SpvId dest_type = get_def_type(ctx, &intr->def, nir_type_uint);
    SpvId pointer_type = spirv_builder_type_pointer(&ctx->builder,
@@ -2528,13 +2547,14 @@ emit_load_global(struct ntv_context *ctx, nir_intrinsic_instr *intr)
                                                    dest_type);
    nir_alu_type atype;
    SpvId ptr = emit_bitcast(ctx, pointer_type, get_src(ctx, &intr->src[0], &atype));
-   SpvId result = spirv_builder_emit_load_aligned(&ctx->builder, dest_type, ptr, intr->def.bit_size / 8);
+   SpvId result = spirv_builder_emit_load_aligned(&ctx->builder, dest_type, ptr, intr->def.bit_size / 8, coherent);
    store_def(ctx, &intr->def, result, nir_type_uint);
 }
 
 static void
 emit_store_global(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 {
+   bool coherent = ctx->sinfo->have_vulkan_memory_model && nir_intrinsic_access(intr) & ACCESS_COHERENT;
    spirv_builder_emit_cap(&ctx->builder, SpvCapabilityPhysicalStorageBufferAddresses);
    unsigned bit_size = nir_src_bit_size(intr->src[0]);
    SpvId dest_type = get_uvec_type(ctx, bit_size, 1);
@@ -2546,7 +2566,7 @@ emit_store_global(struct ntv_context *ctx, nir_intrinsic_instr *intr)
    if (atype != nir_type_uint)
       param = emit_bitcast(ctx, dest_type, param);
    SpvId ptr = emit_bitcast(ctx, pointer_type, get_src(ctx, &intr->src[1], &atype));
-   spirv_builder_emit_store_aligned(&ctx->builder, ptr, param, bit_size / 8);
+   spirv_builder_emit_store_aligned(&ctx->builder, ptr, param, bit_size / 8, coherent);
 }
 
 static void
@@ -3276,6 +3296,7 @@ emit_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
       break;
 
    case nir_intrinsic_load_sample_id:
+      spirv_builder_emit_cap(&ctx->builder, SpvCapabilitySampleRateShading);
       emit_load_uint_input(ctx, intr, &ctx->sample_id_var, "gl_SampleId", SpvBuiltInSampleId);
       break;
 
@@ -4530,6 +4551,73 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
          emit_image(&ctx, var, get_bare_image_type(&ctx, var, false));
    }
 
+   if (sinfo->float_controls.flush_denorms) {
+      unsigned execution_mode = s->info.float_controls_execution_mode;
+      bool flush_16_bit = nir_is_denorm_flush_to_zero(execution_mode, 16);
+      bool flush_32_bit = nir_is_denorm_flush_to_zero(execution_mode, 32);
+      bool flush_64_bit = nir_is_denorm_flush_to_zero(execution_mode, 64);
+      bool preserve_16_bit = nir_is_denorm_preserve(execution_mode, 16);
+      bool preserve_32_bit = nir_is_denorm_preserve(execution_mode, 32);
+      bool preserve_64_bit = nir_is_denorm_preserve(execution_mode, 64);
+      bool emit_cap_flush = false;
+      bool emit_cap_preserve = false;
+
+      if (!sinfo->float_controls.denorms_all_independence) {
+         bool flush = flush_16_bit && flush_64_bit;
+         bool preserve = preserve_16_bit && preserve_64_bit;
+
+         if (!sinfo->float_controls.denorms_32_bit_independence) {
+            flush = flush && flush_32_bit;
+            preserve = preserve && preserve_32_bit;
+
+            flush_32_bit = flush;
+            preserve_32_bit = preserve;
+         }
+
+         flush_16_bit = flush;
+         flush_64_bit = flush;
+         preserve_16_bit = preserve;
+         preserve_64_bit = preserve;
+      }
+
+      if (flush_16_bit && sinfo->float_controls.flush_denorms & BITFIELD_BIT(0)) {
+         emit_cap_flush = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormFlushToZero, 16);
+      }
+      if (flush_32_bit && sinfo->float_controls.flush_denorms & BITFIELD_BIT(1)) {
+         emit_cap_flush = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormFlushToZero, 32);
+      }
+      if (flush_64_bit && sinfo->float_controls.flush_denorms & BITFIELD_BIT(2)) {
+         emit_cap_flush = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormFlushToZero, 64);
+      }
+
+      if (preserve_16_bit && sinfo->float_controls.preserve_denorms & BITFIELD_BIT(0)) {
+         emit_cap_preserve = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormPreserve, 16);
+      }
+      if (preserve_32_bit && sinfo->float_controls.preserve_denorms & BITFIELD_BIT(1)) {
+         emit_cap_preserve = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormPreserve, 32);
+      }
+      if (preserve_64_bit && sinfo->float_controls.preserve_denorms & BITFIELD_BIT(2)) {
+         emit_cap_preserve = true;
+         spirv_builder_emit_exec_mode_literal(&ctx.builder, entry_point,
+                                              SpvExecutionModeDenormPreserve, 64);
+      }
+
+      if (emit_cap_flush)
+         spirv_builder_emit_cap(&ctx.builder, SpvCapabilityDenormFlushToZero);
+      if (emit_cap_preserve)
+         spirv_builder_emit_cap(&ctx.builder, SpvCapabilityDenormPreserve);
+   }
+
    switch (s->info.stage) {
    case MESA_SHADER_FRAGMENT:
       spirv_builder_emit_exec_mode(&ctx.builder, entry_point,
@@ -4644,7 +4732,7 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
       spirv_builder_emit_cap(&ctx.builder, SpvCapabilitySubgroupBallotKHR);
       spirv_builder_emit_extension(&ctx.builder, "SPV_KHR_shader_ballot");
    }
-   if (s->info.has_transform_feedback_varyings) {
+   if (s->info.has_transform_feedback_varyings && s->info.stage != MESA_SHADER_FRAGMENT) {
       spirv_builder_emit_cap(&ctx.builder, SpvCapabilityTransformFeedback);
       spirv_builder_emit_exec_mode(&ctx.builder, entry_point,
                                    SpvExecutionModeXfb);

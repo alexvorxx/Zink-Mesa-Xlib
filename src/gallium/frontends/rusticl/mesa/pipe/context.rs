@@ -4,6 +4,7 @@ use crate::pipe::resource::*;
 use crate::pipe::screen::*;
 use crate::pipe::transfer::*;
 
+use mesa_rust_gen::pipe_fd_type::*;
 use mesa_rust_gen::*;
 use mesa_rust_util::has_required_feature;
 
@@ -248,10 +249,10 @@ impl PipeContext {
         size: i32,
         rw: RWFlags,
         map_type: ResourceMapType,
-    ) -> PipeTransfer {
+    ) -> Option<PipeTransfer> {
         let mut flags: pipe_map_flags = map_type.into();
         flags |= rw.into();
-        self._buffer_map(res, offset, size, flags).unwrap()
+        self._buffer_map(res, offset, size, flags)
     }
 
     pub fn buffer_map_directly(
@@ -285,10 +286,10 @@ impl PipeContext {
         bx: &pipe_box,
         rw: RWFlags,
         map_type: ResourceMapType,
-    ) -> PipeTransfer {
+    ) -> Option<PipeTransfer> {
         let mut flags: pipe_map_flags = map_type.into();
         flags |= rw.into();
-        self._texture_map(res, bx, flags).unwrap()
+        self._texture_map(res, bx, flags)
     }
 
     pub fn texture_map_directly(
@@ -340,6 +341,10 @@ impl PipeContext {
                 0
             }
         }
+    }
+
+    pub fn is_create_fence_fd_supported(&self) -> bool {
+        unsafe { self.pipe.as_ref().create_fence_fd.is_some() }
     }
 
     pub fn create_sampler_state(&self, state: &pipe_sampler_state) -> *mut c_void {
@@ -561,6 +566,19 @@ impl PipeContext {
         unsafe {
             let mut fence = ptr::null_mut();
             self.pipe.as_ref().flush.unwrap()(self.pipe.as_ptr(), &mut fence, 0);
+            PipeFence::new(fence, &self.screen)
+        }
+    }
+
+    pub fn import_fence(&self, fence_fd: &FenceFd) -> PipeFence {
+        unsafe {
+            let mut fence = ptr::null_mut();
+            self.pipe.as_ref().create_fence_fd.unwrap()(
+                self.pipe.as_ptr(),
+                &mut fence,
+                fence_fd.fd,
+                PIPE_FD_TYPE_NATIVE_SYNC,
+            );
             PipeFence::new(fence, &self.screen)
         }
     }

@@ -1823,7 +1823,7 @@ swsb(FILE *file, const struct brw_isa_info *isa, const brw_inst *inst)
 {
    const struct intel_device_info *devinfo = isa->devinfo;
    const enum opcode opcode = brw_inst_opcode(isa, inst);
-   const uint8_t x = brw_inst_swsb(devinfo, inst);
+   const uint32_t x = brw_inst_swsb(devinfo, inst);
    const bool is_unordered =
       opcode == BRW_OPCODE_SEND || opcode == BRW_OPCODE_SENDC ||
       opcode == BRW_OPCODE_MATH ||

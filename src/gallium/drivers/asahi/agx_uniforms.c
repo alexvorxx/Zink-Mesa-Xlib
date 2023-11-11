@@ -69,17 +69,6 @@ agx_upload_uniforms(struct agx_batch *batch)
    batch->uniforms.tables[AGX_SYSVAL_TABLE_ROOT] = root_ptr.gpu;
    batch->uniforms.sample_mask = ctx->sample_mask;
 
-   if (ctx->streamout.key.active) {
-      batch->uniforms.xfb = ctx->streamout.params;
-
-      for (unsigned i = 0; i < batch->ctx->streamout.num_targets; ++i) {
-         uint32_t size = 0;
-         batch->uniforms.xfb.base[i] =
-            agx_batch_get_so_address(batch, i, &size);
-         batch->uniforms.xfb.size[i] = size;
-      }
-   }
-
    memcpy(root_ptr.cpu, &batch->uniforms, sizeof(batch->uniforms));
 }
 
@@ -89,6 +78,7 @@ agx_upload_stage_uniforms(struct agx_batch *batch, uint64_t textures,
 {
    struct agx_context *ctx = batch->ctx;
    struct agx_stage *st = &ctx->stage[stage];
+   struct agx_device *dev = agx_device(ctx->base.screen);
 
    struct agx_ptr root_ptr = agx_pool_alloc_aligned(
       &batch->pool, sizeof(struct agx_stage_uniforms), 16);
@@ -99,6 +89,16 @@ agx_upload_stage_uniforms(struct agx_batch *batch, uint64_t textures,
 
    u_foreach_bit(s, st->valid_samplers) {
       uniforms.lod_bias[s] = st->samplers[s]->lod_bias_as_fp16;
+   }
+
+   /* If we use bindless samplers, insert sampler into the heap */
+   if (st->shader && st->shader->uses_bindless_samplers) {
+      u_foreach_bit(s, st->valid_samplers) {
+         uniforms.sampler_handle[s] =
+            28 +
+            agx_sampler_heap_add(dev, &batch->sampler_heap,
+                                 &st->samplers[s]->desc_without_custom_border);
+      }
    }
 
    u_foreach_bit(cb, st->cb_mask) {

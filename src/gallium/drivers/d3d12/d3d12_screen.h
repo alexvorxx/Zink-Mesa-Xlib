@@ -67,6 +67,7 @@ struct d3d12_screen {
 
    util_dl_library *d3d12_mod;
    ID3D12Device3 *dev;
+   ID3D12Device10 *dev10;
    ID3D12CommandQueue *cmdqueue;
    bool (*init)(struct d3d12_screen *screen);
    void (*deinit)(struct d3d12_screen *screen);
@@ -116,6 +117,7 @@ struct d3d12_screen {
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 opts2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 opts3;
    D3D12_FEATURE_DATA_D3D12_OPTIONS4 opts4;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS12 opts12;
    D3D12_FEATURE_DATA_D3D12_OPTIONS14 opts14;
 #ifndef _GAMING_XBOX
    D3D12_FEATURE_DATA_D3D12_OPTIONS19 opts19;

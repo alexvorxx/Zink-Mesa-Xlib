@@ -32,6 +32,7 @@
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
 #include "common/intel_guardband.h"
+#include "common/intel_tiled_render.h"
 #include "compiler/brw_prim.h"
 
 const uint32_t genX(vk_to_intel_blend)[] = {
@@ -287,6 +288,143 @@ genX(rasterization_mode)(VkPolygonMode raster_mode,
       *msaa_rasterization_enable = true;
    }
 }
+
+#if GFX_VERx10 == 125
+/**
+ * Return the dimensions of the current rendering area, defined as the
+ * bounding box of all present color, depth and stencil attachments.
+ */
+UNUSED static bool
+calculate_render_area(struct anv_cmd_buffer *cmd_buffer,
+                      unsigned *width, unsigned *height)
+{
+   struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+
+   *width = gfx->render_area.offset.x + gfx->render_area.extent.width;
+   *height = gfx->render_area.offset.y + gfx->render_area.extent.height;
+
+   for (unsigned i = 0; i < gfx->color_att_count; i++) {
+      struct anv_attachment *att = &gfx->color_att[i];
+      if (att->iview) {
+         *width = MAX2(*width, att->iview->vk.extent.width);
+         *height = MAX2(*height, att->iview->vk.extent.height);
+      }
+   }
+
+   const struct anv_image_view *const z_view = gfx->depth_att.iview;
+   if (z_view) {
+      *width = MAX2(*width, z_view->vk.extent.width);
+      *height = MAX2(*height, z_view->vk.extent.height);
+   }
+
+   const struct anv_image_view *const s_view = gfx->stencil_att.iview;
+   if (s_view) {
+      *width = MAX2(*width, s_view->vk.extent.width);
+      *height = MAX2(*height, s_view->vk.extent.height);
+   }
+
+   return *width && *height;
+}
+
+/* Calculate TBIMR tiling parameters adequate for the current pipeline
+ * setup.  Return true if TBIMR should be enabled.
+ */
+UNUSED static bool
+calculate_tile_dimensions(struct anv_cmd_buffer *cmd_buffer,
+                          unsigned fb_width, unsigned fb_height,
+                          unsigned *tile_width, unsigned *tile_height)
+{
+   const struct anv_device *device = cmd_buffer->device;
+   struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+   const unsigned aux_scale = 256;
+   unsigned pixel_size = 0;
+
+   /* Perform a rough calculation of the tile cache footprint of the
+    * pixel pipeline, approximating it as the sum of the amount of
+    * memory used per pixel by every render target, depth, stencil and
+    * auxiliary surfaces bound to the pipeline.
+    */
+   for (uint32_t i = 0; i < gfx->color_att_count; i++) {
+      struct anv_attachment *att = &gfx->color_att[i];
+
+      if (att->iview) {
+         const struct anv_image *image = att->iview->image;
+         const unsigned p = anv_image_aspect_to_plane(image,
+                                                      VK_IMAGE_ASPECT_COLOR_BIT);
+         const struct anv_image_plane *plane = &image->planes[p];
+
+         pixel_size += intel_calculate_surface_pixel_size(
+            &plane->primary_surface.isl);
+
+         if (isl_aux_usage_has_mcs(att->aux_usage))
+            pixel_size += intel_calculate_surface_pixel_size(
+               &plane->aux_surface.isl);
+
+         /* XXX - Use proper implicit CCS surface metadata tracking
+          *       instead of inferring pixel size from primary
+          *       surface.
+          */
+         if (isl_aux_usage_has_ccs(att->aux_usage))
+            pixel_size += DIV_ROUND_UP(intel_calculate_surface_pixel_size(
+                                          &plane->primary_surface.isl),
+                                       aux_scale);
+      }
+   }
+
+   const struct anv_image_view *const z_view = gfx->depth_att.iview;
+   if (z_view) {
+      const struct anv_image *image = z_view->image;
+      assert(image->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT);
+      const unsigned p = anv_image_aspect_to_plane(image,
+                                                   VK_IMAGE_ASPECT_DEPTH_BIT);
+      const struct anv_image_plane *plane = &image->planes[p];
+
+      pixel_size += intel_calculate_surface_pixel_size(
+         &plane->primary_surface.isl);
+
+      if (isl_aux_usage_has_hiz(image->planes[p].aux_usage))
+         pixel_size += intel_calculate_surface_pixel_size(
+            &plane->aux_surface.isl);
+
+      /* XXX - Use proper implicit CCS surface metadata tracking
+       *       instead of inferring pixel size from primary
+       *       surface.
+       */
+      if (isl_aux_usage_has_ccs(image->planes[p].aux_usage))
+         pixel_size += DIV_ROUND_UP(intel_calculate_surface_pixel_size(
+                                       &plane->primary_surface.isl),
+                                    aux_scale);
+   }
+
+   const struct anv_image_view *const s_view = gfx->depth_att.iview;
+   if (s_view && s_view != z_view) {
+      const struct anv_image *image = s_view->image;
+      assert(image->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT);
+      const unsigned p = anv_image_aspect_to_plane(image,
+                                                   VK_IMAGE_ASPECT_STENCIL_BIT);
+      const struct anv_image_plane *plane = &image->planes[p];
+
+      pixel_size += intel_calculate_surface_pixel_size(
+         &plane->primary_surface.isl);
+   }
+
+   if (!pixel_size)
+      return false;
+
+   /* Compute a tile layout that allows reasonable utilization of the
+    * tile cache based on the per-pixel cache footprint estimated
+    * above.
+    */
+   intel_calculate_tile_dimensions(device->info, cmd_buffer->state.current_l3_config,
+                                   32, 32, fb_width, fb_height,
+                                   pixel_size, tile_width, tile_height);
+
+   /* Perform TBIMR tile passes only if the framebuffer covers more
+    * than a single tile.
+    */
+   return *tile_width < fb_width || *tile_height < fb_height;
+}
+#endif
 
 /**
  * This function takes the vulkan runtime values & dirty states and updates
@@ -1120,6 +1258,36 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       }
    }
 
+#if GFX_VERx10 == 125
+   if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_RENDER_TARGETS)) {
+      unsigned fb_width, fb_height, tile_width, tile_height;
+
+      if (cmd_buffer->device->physical->instance->enable_tbimr &&
+          calculate_render_area(cmd_buffer, &fb_width, &fb_height) &&
+          calculate_tile_dimensions(cmd_buffer, fb_width, fb_height,
+                                    &tile_width, &tile_height)) {
+         /* Use a batch size of 128 polygons per slice as recommended
+          * by BSpec 68436 "TBIMR Programming".
+          */
+         const unsigned num_slices = cmd_buffer->device->info->num_slices;
+         const unsigned batch_size = DIV_ROUND_UP(num_slices, 2) * 256;
+
+         SET(TBIMR_TILE_PASS_INFO, tbimr.TileRectangleHeight, tile_height);
+         SET(TBIMR_TILE_PASS_INFO, tbimr.TileRectangleWidth, tile_width);
+         SET(TBIMR_TILE_PASS_INFO, tbimr.VerticalTileCount,
+             DIV_ROUND_UP(fb_height, tile_height));
+         SET(TBIMR_TILE_PASS_INFO, tbimr.HorizontalTileCount,
+             DIV_ROUND_UP(fb_width, tile_width));
+         SET(TBIMR_TILE_PASS_INFO, tbimr.TBIMRBatchSize,
+             util_logbase2(batch_size) - 5);
+         SET(TBIMR_TILE_PASS_INFO, tbimr.TileBoxCheck, true);
+         SET(TBIMR_TILE_PASS_INFO, use_tbimr, true);
+      } else {
+         hw_state->use_tbimr = false;
+      }
+   }
+#endif
+
 #undef GET
 #undef SET
 #undef SET_STAGE
@@ -1232,6 +1400,7 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
        * On DG2+ also known as Wa_1509820217.
        */
       genx_batch_emit_pipe_control(&cmd_buffer->batch, device->info,
+                                   cmd_buffer->state.current_pipeline,
                                    ANV_PIPE_CS_STALL_BIT);
 #endif
    }
@@ -1577,6 +1746,7 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
        */
       genx_batch_emit_pipe_control(&cmd_buffer->batch,
                                    cmd_buffer->device->info,
+                                   cmd_buffer->state.current_pipeline,
                                    ANV_PIPE_CS_STALL_BIT);
 #endif
    }
@@ -1702,6 +1872,7 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VERx10 >= 125
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_WA_18019816803)) {
       genx_batch_emit_pipe_control(&cmd_buffer->batch, cmd_buffer->device->info,
+                                   cmd_buffer->state.current_pipeline,
                                    ANV_PIPE_PSS_STALL_SYNC_BIT);
    }
 #endif
@@ -1709,6 +1880,21 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VER == 9
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PMA_FIX))
       genX(cmd_buffer_enable_pma_fix)(cmd_buffer, hw_state->pma_fix);
+#endif
+
+#if GFX_VERx10 >= 125
+   if (hw_state->use_tbimr &&
+       BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_TBIMR_TILE_PASS_INFO)) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_TBIMR_TILE_PASS_INFO),
+                     tbimr) {
+         SET(tbimr, tbimr, TileRectangleHeight);
+         SET(tbimr, tbimr, TileRectangleWidth);
+         SET(tbimr, tbimr, VerticalTileCount);
+         SET(tbimr, tbimr, HorizontalTileCount);
+         SET(tbimr, tbimr, TBIMRBatchSize);
+         SET(tbimr, tbimr, TileBoxCheck);
+      }
+   }
 #endif
 
 #undef INIT
@@ -1736,6 +1922,7 @@ genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer, bool enable)
     */
    genx_batch_emit_pipe_control
       (&cmd_buffer->batch, cmd_buffer->device->info,
+       cmd_buffer->state.current_pipeline,
        ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
        ANV_PIPE_CS_STALL_BIT |
 #if GFX_VER >= 12
@@ -1764,6 +1951,7 @@ genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer, bool enable)
     */
    genx_batch_emit_pipe_control
       (&cmd_buffer->batch, cmd_buffer->device->info,
+       cmd_buffer->state.current_pipeline,
        ANV_PIPE_DEPTH_STALL_BIT |
        ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
 #if GFX_VER >= 12

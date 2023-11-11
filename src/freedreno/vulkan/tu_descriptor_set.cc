@@ -333,7 +333,7 @@ tu_GetDescriptorSetLayoutSupport(
          DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
    VkDescriptorSetVariableDescriptorCountLayoutSupport *variable_count =
       vk_find_struct(
-         (void *) pCreateInfo->pNext,
+         pSupport->pNext,
          DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
    const VkMutableDescriptorTypeCreateInfoEXT *mutable_info =
       vk_find_struct_const(

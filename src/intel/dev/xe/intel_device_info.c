@@ -132,17 +132,17 @@ intel_device_info_xe_query_regions(int fd, struct intel_device_info *devinfo,
 static bool
 xe_query_gts(int fd, struct intel_device_info *devinfo)
 {
-   struct drm_xe_query_gts *gts;
-   gts = xe_query_alloc_fetch(fd, DRM_XE_DEVICE_QUERY_GTS, NULL);
-   if (!gts)
+   struct drm_xe_query_gt_list *gt_list;
+   gt_list = xe_query_alloc_fetch(fd, DRM_XE_DEVICE_QUERY_GT_LIST, NULL);
+   if (!gt_list)
       return false;
 
-   for (uint32_t i = 0; i < gts->num_gt; i++) {
-      if (gts->gts[i].type == XE_QUERY_GT_TYPE_MAIN)
-         devinfo->timestamp_frequency = gts->gts[i].clock_freq;
+   for (uint32_t i = 0; i < gt_list->num_gt; i++) {
+      if (gt_list->gt_list[i].type == XE_QUERY_GT_TYPE_MAIN)
+         devinfo->timestamp_frequency = gt_list->gt_list[i].clock_freq;
    }
 
-   free(gts);
+   free(gt_list);
    return true;
 }
 

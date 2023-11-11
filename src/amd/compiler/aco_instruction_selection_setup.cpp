@@ -535,7 +535,8 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_bvh64_intersect_ray_amd:
                case nir_intrinsic_load_vector_arg_amd:
                case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
-               case nir_intrinsic_ordered_xfb_counter_add_amd: type = RegType::vgpr; break;
+               case nir_intrinsic_ordered_xfb_counter_add_amd:
+               case nir_intrinsic_cmat_muladd_amd: type = RegType::vgpr; break;
                case nir_intrinsic_load_shared:
                case nir_intrinsic_load_shared2_amd:
                   /* When the result of these loads is only used by cross-lane instructions,

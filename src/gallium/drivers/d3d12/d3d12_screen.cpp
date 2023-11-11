@@ -193,9 +193,9 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
-      return 420;
+      return 430;
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
-      return 420;
+      return 430;
    case PIPE_CAP_ESSL_FEATURE_LEVEL:
       return 310;
 
@@ -324,7 +324,6 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_STREAM_OUTPUT_PAUSE_RESUME:
    case PIPE_CAP_STREAM_OUTPUT_INTERLEAVE_BUFFERS:
    case PIPE_CAP_INT64:
-   case PIPE_CAP_INT64_DIVMOD:
    case PIPE_CAP_DOUBLES:
    case PIPE_CAP_DEVICE_RESET_STATUS_QUERY:
    case PIPE_CAP_ROBUST_BUFFER_ACCESS_BEHAVIOR:
@@ -333,6 +332,7 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TIMELINE_SEMAPHORE_IMPORT:
    case PIPE_CAP_CLIP_HALFZ:
    case PIPE_CAP_VS_LAYER_VIEWPORT:
+   case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
       return 1;
 
    case PIPE_CAP_MAX_VERTEX_STREAMS:
@@ -346,6 +346,9 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       /* Picking a value in line with other drivers. Without this, we can end up easily hitting OOM
        * if an app just creates, initializes, and destroys resources without explicitly flushing. */
       return 64 * 1024 * 1024;
+
+   case PIPE_CAP_SAMPLER_VIEW_TARGET:
+      return screen->opts12.RelaxedFormatCastingSupported;
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -445,7 +448,9 @@ d3d12_get_shader_param(struct pipe_screen *pscreen,
       return 65536;
 
    case PIPE_SHADER_CAP_MAX_CONST_BUFFERS:
-      return 13; /* 15 - 2 for lowered uniforms and state vars*/
+      if (screen->opts.ResourceBindingTier < D3D12_RESOURCE_BINDING_TIER_3)
+         return 13; /* 15 - 2 for lowered uniforms and state vars*/
+      return 15;
 
    case PIPE_SHADER_CAP_MAX_TEMPS:
       return INT_MAX;
@@ -472,9 +477,6 @@ d3d12_get_shader_param(struct pipe_screen *pscreen,
        * TC can support to avoid overflowing an array.
        */
       return PIPE_MAX_SAMPLERS;
-
-   case PIPE_SHADER_CAP_DROUND_SUPPORTED:
-      return 0; /* not implemented */
 
    case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       return 0; /* no idea */
@@ -614,6 +616,11 @@ d3d12_is_format_supported(struct pipe_screen *pscreen,
       unreachable("Unknown target");
    }
 
+   if (bind & PIPE_BIND_DISPLAY_TARGET) {
+      if (!screen->winsys->is_displaytarget_format_supported(screen->winsys, bind, format))
+         return false;
+   }
+
    D3D12_FEATURE_DATA_FORMAT_SUPPORT fmt_info;
    fmt_info.Format = d3d12_get_resource_rt_format(format);
    if (FAILED(screen->dev->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT,
@@ -734,6 +741,10 @@ d3d12_deinit_screen(struct d3d12_screen *screen)
    if (screen->cmdqueue) {
       screen->cmdqueue->Release();
       screen->cmdqueue = nullptr;
+   }
+   if (screen->dev10) {
+      screen->dev10->Release();
+      screen->dev10 = nullptr;
    }
    if (screen->dev) {
       screen->dev->Release();
@@ -1475,6 +1486,7 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
       debug_printf("D3D12: failed to get device options\n");
       return false;
    }
+   screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &screen->opts12, sizeof(screen->opts12));
    screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS14, &screen->opts14, sizeof(screen->opts14));
 #ifndef _GAMING_XBOX
    screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS19, &screen->opts19, sizeof(screen->opts19));
@@ -1618,6 +1630,7 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
       dev8->Release();
       screen->support_create_not_resident = true;
    }
+   screen->dev->QueryInterface(&screen->dev10);
 #endif
 
    static constexpr uint64_t known_good_warp_version = 10ull << 48 | 22000ull << 16;

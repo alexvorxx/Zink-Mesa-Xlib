@@ -13,6 +13,7 @@
 #define glsl_uint8_t_type __glsl_uint8_t_type
 #define glsl_uint64_t_type __glsl_uint64_t_type
 #define glsl_int16_t_type __glsl_int16_t_type
+#define glsl_vector_type __glsl_vector_type
 #include "nir.h"
 #include "util/blob.h"
 #include "util/disk_cache.h"
@@ -35,6 +36,7 @@
 #undef glsl_uint8_t_type
 #undef glsl_uint64_t_type
 #undef glsl_int16_t_type
+#undef glsl_vector_type
 
 void blob_finish(struct blob *);
 char *mesa_bytes_to_hex(char *buf, const uint8_t *hex_id, unsigned size);
@@ -52,3 +54,4 @@ const struct glsl_type *glsl_uint_type(void);
 const struct glsl_type *glsl_uint8_t_type(void);
 const struct glsl_type *glsl_uint64_t_type(void);
 const struct glsl_type *glsl_int16_t_type(void);
+const struct glsl_type *glsl_vector_type(enum glsl_base_type base_type, unsigned components);

@@ -419,6 +419,7 @@ svga_tgsi_scan_shader(struct svga_shader *shader)
    info->uses_images = tgsi_info->images_declared != 0;
    info->uses_image_size = tgsi_info->opcode_count[TGSI_OPCODE_RESQ] ? 1 : 0;
    info->uses_shader_buffers = tgsi_info->shader_buffers_declared != 0;
+   info->uses_samplers = tgsi_info->samplers_declared != 0;
    info->const_buffers_declared = tgsi_info->const_buffers_declared;
    info->shader_buffers_declared = tgsi_info->shader_buffers_declared;
 

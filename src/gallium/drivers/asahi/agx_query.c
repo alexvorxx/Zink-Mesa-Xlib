@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <stdint.h>
+#include "pipe/p_defines.h"
 #include "util/u_prim.h"
+#include "agx_device.h"
 #include "agx_state.h"
 #include "pool.h"
 
@@ -72,6 +75,16 @@ agx_begin_query(struct pipe_context *pctx, struct pipe_query *pquery)
       ctx->tf_prims_generated = query;
       break;
 
+   case PIPE_QUERY_TIME_ELAPSED:
+      ctx->time_elapsed = query;
+      query->timestamp_begin = UINT64_MAX;
+      query->timestamp_end = 0;
+      return true;
+
+   case PIPE_QUERY_TIMESTAMP:
+      /* No-op */
+      break;
+
    default:
       return false;
    }
@@ -94,6 +107,7 @@ static bool
 agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
 {
    struct agx_context *ctx = agx_context(pctx);
+   struct agx_device *dev = agx_device(pctx->screen);
    struct agx_query *query = (struct agx_query *)pquery;
 
    ctx->dirty |= AGX_DIRTY_QUERY;
@@ -110,6 +124,18 @@ agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
    case PIPE_QUERY_PRIMITIVES_EMITTED:
       ctx->tf_prims_generated = NULL;
       return true;
+   case PIPE_QUERY_TIME_ELAPSED:
+      ctx->time_elapsed = NULL;
+      return true;
+   case PIPE_QUERY_TIMESTAMP:
+      /* Timestamp logically written now, set up batches to MAX their finish
+       * time in. If there are no batches, it's just the current time stamp.
+       */
+      agx_add_timestamp_end_query(ctx, query);
+
+      query->timestamp_end = agx_get_gpu_timestamp(dev);
+
+      return true;
    default:
       return false;
    }
@@ -121,6 +147,7 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
 {
    struct agx_query *query = (struct agx_query *)pquery;
    struct agx_context *ctx = agx_context(pctx);
+   struct agx_device *dev = agx_device(pctx->screen);
 
    /* For GPU queries, flush the writer. When the writer is flushed, the GPU
     * will write the value, and when we wait for the writer, the CPU will read
@@ -137,6 +164,11 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
       struct agx_batch *writer = query->writer;
       agx_flush_batch_for_reason(ctx, writer, "GPU query");
       agx_sync_batch_for_reason(ctx, writer, "GPU query");
+   } else if (query->type == PIPE_QUERY_TIMESTAMP ||
+              query->type == PIPE_QUERY_TIME_ELAPSED) {
+      /* TODO: Optimize this... timestamp queries are bonkers on tilers. */
+      agx_flush_all(ctx, "Timestamp query");
+      agx_sync_all(ctx, "Timestamp query");
    }
 
    /* After syncing, there is no writer left, so query->value is ready */
@@ -152,6 +184,15 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
    case PIPE_QUERY_PRIMITIVES_GENERATED:
    case PIPE_QUERY_PRIMITIVES_EMITTED:
       vresult->u64 = query->value;
+      return true;
+
+   case PIPE_QUERY_TIMESTAMP:
+      vresult->u64 = agx_gpu_time_to_ns(dev, query->timestamp_end);
+      return true;
+
+   case PIPE_QUERY_TIME_ELAPSED:
+      vresult->u64 =
+         agx_gpu_time_to_ns(dev, query->timestamp_end - query->timestamp_begin);
       return true;
 
    default:
@@ -224,7 +265,8 @@ agx_get_query_address(struct agx_batch *batch, struct agx_query *query)
 }
 
 void
-agx_finish_batch_queries(struct agx_batch *batch)
+agx_finish_batch_queries(struct agx_batch *batch, uint64_t begin_ts,
+                         uint64_t end_ts)
 {
    uint64_t *occlusion = (uint64_t *)batch->occlusion_buffer.cpu;
 
@@ -271,6 +313,15 @@ agx_finish_batch_queries(struct agx_batch *batch)
       query->writer_index = 0;
       query->ptr.cpu = NULL;
       query->ptr.gpu = 0;
+   }
+
+   util_dynarray_foreach(&batch->timestamp_queries, struct agx_query *, it) {
+      struct agx_query *query = *it;
+      if (query == NULL)
+         continue;
+
+      query->timestamp_begin = MIN2(query->timestamp_begin, begin_ts);
+      query->timestamp_end = MAX2(query->timestamp_end, end_ts);
    }
 }
 

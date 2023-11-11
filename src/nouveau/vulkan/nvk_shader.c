@@ -28,6 +28,7 @@
 #include "util/mesa-sha1.h"
 
 #include "cla097.h"
+#include "clb097.h"
 #include "clc397.h"
 #include "clc597.h"
 #include "nvk_cl9097.h"
@@ -465,6 +466,15 @@ nvk_shader_stage_to_nir(struct nvk_device *dev,
    return VK_SUCCESS;
 }
 
+static inline bool
+nir_has_image_var(nir_shader *nir)
+{
+   nir_foreach_image_variable(_, nir)
+      return true;
+
+   return false;
+}
+
 void
 nvk_lower_nir(struct nvk_device *dev, nir_shader *nir,
               const struct vk_pipeline_robustness_state *rs,
@@ -554,6 +564,11 @@ nvk_lower_nir(struct nvk_device *dev, nir_shader *nir,
       NIR_PASS(_, nir, nir_opt_non_uniform_access);
       NIR_PASS(_, nir, nir_lower_non_uniform_access, &opts);
    }
+
+   /* TODO: Kepler image lowering requires image params to be loaded from the
+    * descriptor set which we don't currently support.
+    */
+   assert(dev->pdev->info.cls_eng3d >= MAXWELL_A || !nir_has_image_var(nir));
 
    NIR_PASS(_, nir, nvk_nir_lower_descriptors, rs, layout);
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_global,

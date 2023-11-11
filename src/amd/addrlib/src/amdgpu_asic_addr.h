@@ -29,6 +29,7 @@
 #define FAMILY_VGH     0x90 //# 144 / Van Gogh
 #define FAMILY_NV3     0x91 //# 145 / Navi: 3x
 #define FAMILY_GFX1103 0x94
+#define FAMILY_GFX1150 0x96
 #define FAMILY_RMB     0x92 //# 146 / Rembrandt
 #define FAMILY_RPL     0x95 //# 149 / Raphael
 #define FAMILY_MDN     0x97 //# 151 / Mendocino
@@ -101,6 +102,8 @@
 #define AMDGPU_GFX1103_R1_RANGE 0x01, 0x80 //# 1 <= x < 128
 #define AMDGPU_GFX1103_R2_RANGE 0x80, 0xFF //# 128 <= x < max
 
+#define AMDGPU_GFX1150_RANGE    0x01, 0xFF //# 1 <= x < max
+
 #define AMDGPU_REMBRANDT_RANGE  0x01, 0xFF //# 01 <= x < 255
 
 #define AMDGPU_RAPHAEL_RANGE    0x01, 0xFF //# 1 <= x < max
@@ -172,6 +175,7 @@
 #define ASICREV_IS_NAVI33_P(r)         ASICREV_IS(r, NAVI33)
 #define ASICREV_IS_GFX1103_R1(r)       ASICREV_IS(r, GFX1103_R1)
 #define ASICREV_IS_GFX1103_R2(r)       ASICREV_IS(r, GFX1103_R2)
+#define ASICREV_IS_GFX1150(r)          ASICREV_IS(r, GFX1150)
 
 #define ASICREV_IS_REMBRANDT(r)        ASICREV_IS(r, REMBRANDT)
 

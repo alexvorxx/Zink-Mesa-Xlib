@@ -8,13 +8,14 @@
 
 #include "util/simple_mtx.h"
 #include "util/sparse_array.h"
+#include "util/timespec.h"
 #include "util/vma.h"
 #include "agx_bo.h"
 #include "agx_formats.h"
 
 enum agx_dbg {
    AGX_DBG_TRACE = BITFIELD_BIT(0),
-   AGX_DBG_DEQP = BITFIELD_BIT(1),
+   AGX_DBG_NOCLIPCTRL = BITFIELD_BIT(1),
    AGX_DBG_NO16 = BITFIELD_BIT(2),
    AGX_DBG_DIRTY = BITFIELD_BIT(3),
    AGX_DBG_PRECOMPILE = BITFIELD_BIT(4),
@@ -50,6 +51,7 @@ struct drm_asahi_params_global {
    uint32_t gpu_generation;
    uint32_t gpu_variant;
    uint32_t num_dies;
+   uint32_t timer_frequency_hz;
 };
 
 /* How many power-of-two levels in the BO cache do we want? 2^14 minimum chosen
@@ -61,8 +63,14 @@ struct drm_asahi_params_global {
 /* Fencepost problem, hence the off-by-one */
 #define NR_BO_CACHE_BUCKETS (MAX_BO_CACHE_BUCKET - MIN_BO_CACHE_BUCKET + 1)
 
+/* Forward decl only, do not pull in all of NIR */
+struct nir_shader;
+
 struct agx_device {
    uint32_t debug;
+
+   /* NIR library of AGX helpers/shaders. Immutable once created. */
+   const struct nir_shader *libagx;
 
    char name[64];
    struct drm_asahi_params_global params;
@@ -138,5 +146,13 @@ int agx_import_sync_file(struct agx_device *dev, struct agx_bo *bo, int fd);
 int agx_export_sync_file(struct agx_device *dev, struct agx_bo *bo);
 
 void agx_debug_fault(struct agx_device *dev, uint64_t addr);
+
+uint64_t agx_get_gpu_timestamp(struct agx_device *dev);
+
+static inline uint64_t
+agx_gpu_time_to_ns(struct agx_device *dev, uint64_t gpu_time)
+{
+   return (gpu_time * NSEC_PER_SEC) / dev->params.timer_frequency_hz;
+}
 
 #endif

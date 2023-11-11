@@ -28,6 +28,7 @@
 
 #include "util/memstream.h"
 
+#include "ac_gpu_info.h"
 #include <array>
 #include <iostream>
 #include <vector>
@@ -54,6 +55,10 @@ static const std::array<aco_compiler_statistic_info, aco_num_statistics> statist
       aco_compiler_statistic_info{"Pre-Sched SGPRs", "SGPR usage before scheduling"};
    ret[aco_statistic_vgpr_presched] =
       aco_compiler_statistic_info{"Pre-Sched VGPRs", "VGPR usage before scheduling"};
+   ret[aco_statistic_valu] = aco_compiler_statistic_info{"VALU", "Number of VALU instructions"};
+   ret[aco_statistic_salu] = aco_compiler_statistic_info{"SALU", "Number of SALU instructions"};
+   ret[aco_statistic_vmem] = aco_compiler_statistic_info{"VMEM", "Number of VMEM instructions"};
+   ret[aco_statistic_smem] = aco_compiler_statistic_info{"SMEM", "Number of SMEM instructions"};
    return ret;
 }();
 
@@ -141,6 +146,8 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
 
       /* spilling and scheduling */
       live_vars = aco::live_var_analysis(program.get());
+      if (program->collect_statistics)
+         aco::collect_presched_stats(program.get());
       aco::spill(program.get(), live_vars);
    }
 
@@ -158,9 +165,6 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       llvm_ir = std::string(data, data + size);
       free(data);
    }
-
-   if (program->collect_statistics)
-      aco::collect_presched_stats(program.get());
 
    if ((aco::debug_flags & aco::DEBUG_LIVE_INFO) && options->dump_shader)
       aco_print_program(program.get(), stderr, live_vars, aco::print_live_vars | aco::print_kill);
@@ -424,4 +428,11 @@ aco_compile_ps_prolog(const struct aco_compiler_options* options,
 {
    aco_compile_shader_part(options, info, args, aco::select_ps_prolog, (void*)pinfo, build_prolog,
                            binary, true);
+}
+
+bool
+aco_is_gpu_supported(const struct radeon_info* info)
+{
+   /* Does not support compute only cards yet. */
+   return info->gfx_level >= GFX6 && info->has_graphics;
 }

@@ -492,15 +492,6 @@ void si_clear_buffer(struct si_context *sctx, struct pipe_resource *dst,
    }
 }
 
-void si_screen_clear_buffer(struct si_screen *sscreen, struct pipe_resource *dst, uint64_t offset,
-                            uint64_t size, unsigned value, unsigned flags)
-{
-   struct si_context *ctx = si_get_aux_context(&sscreen->aux_context.general);
-   si_clear_buffer(ctx, dst, offset, size, &value, 4, flags,
-                   SI_COHERENCY_SHADER, SI_AUTO_SELECT_CLEAR_METHOD);
-   si_put_aux_context_flush(&sscreen->aux_context.general);
-}
-
 static void si_pipe_clear_buffer(struct pipe_context *ctx, struct pipe_resource *dst,
                                  unsigned offset, unsigned size, const void *clear_value,
                                  int clear_value_size)

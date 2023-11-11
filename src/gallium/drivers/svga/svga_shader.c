@@ -289,6 +289,9 @@ svga_init_shader_key_common(const struct svga_context *svga,
    key->num_textures = MAX2(svga->curr.num_sampler_views[shader_type],
                             svga->curr.num_samplers[shader_type]);
 
+   if (!shader->info.uses_samplers)
+      key->num_textures = 0;
+
    key->num_samplers = 0;
 
    /* Set sampler_state_mapping only if GL43 is supported and

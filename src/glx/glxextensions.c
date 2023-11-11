@@ -109,7 +109,6 @@ static const struct extension_info known_glx_extensions[] = {
    { GLX(MESA_query_renderer),            N, Y },
    { GLX(MESA_swap_control),              N, Y },
    { GLX(NV_float_buffer),                N, N },
-   { GLX(OML_swap_method),                Y, N },
    { GLX(OML_sync_control),               N, Y },
    { GLX(SGIS_multisample),               Y, N },
    { GLX(SGIX_fbconfig),                  Y, N },

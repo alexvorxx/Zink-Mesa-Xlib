@@ -81,6 +81,7 @@ lower_fragcolor_intrin(nir_builder *b, nir_intrinsic_instr *instr, void *data)
       nir_variable *out_color = nir_variable_create(b->shader, nir_var_shader_out,
                                                     out->type, name);
       out_color->data.location = FRAG_RESULT_DATA0 + i;
+      out_color->data.location_frac = out->data.location_frac;
       out_color->data.driver_location = b->shader->num_outputs++;
       out_color->data.index = out->data.index;
       nir_store_var(b, out_color, frag_color, writemask);

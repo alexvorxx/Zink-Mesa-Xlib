@@ -465,7 +465,7 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeHEVC(vlVaContext *context, vlVaBuffer *
       vl_vlc_eatbits(&vlc, 3);
 
       struct vl_rbsp rbsp;
-      vl_rbsp_init(&rbsp, &vlc, ~0);
+      vl_rbsp_init(&rbsp, &vlc, ~0, context->packed_header_emulation_bytes);
 
       switch(nal_unit_type) {
       case HEVC_NAL_SPS:
@@ -476,6 +476,9 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeHEVC(vlVaContext *context, vlVaBuffer *
       default:
          break;
       }
+
+      if (!context->packed_header_emulation_bytes)
+         break;
    }
 
    return VA_STATUS_SUCCESS;

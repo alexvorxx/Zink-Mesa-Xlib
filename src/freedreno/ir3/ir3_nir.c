@@ -560,6 +560,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
             .ballot_components = max_subgroup_size / 32,
             .lower_to_scalar = true,
             .lower_vote_eq = true,
+            .lower_vote_bool_eq = true,
             .lower_subgroup_masks = true,
             .lower_read_invocation_to_cond = true,
             .lower_shuffle = true,

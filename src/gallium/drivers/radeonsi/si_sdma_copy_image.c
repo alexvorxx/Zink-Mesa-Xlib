@@ -408,6 +408,7 @@ bool si_sdma_copy_image(struct si_context *sctx, struct si_texture *dst, struct 
       case GFX10:
       case GFX10_3:
       case GFX11:
+      case GFX11_5:
          if (!si_sdma_v4_v5_copy_texture(sctx, dst, src))
             return false;
          break;

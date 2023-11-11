@@ -28,6 +28,7 @@
     - .etnaviv-rules
   script:
     - ./install/bare-metal/fastboot.sh
+  timeout: 20m
   variables:
     BM_CMDLINE: "ip=dhcp console=ttymxc0,115200n8 root=/dev/nfs rw nfsrootdebug init=/init $BM_KERNELARGS"
     BM_KERNEL: zImage
@@ -39,6 +40,7 @@
     - .etnaviv-rules
   script:
     - ./install/bare-metal/fastboot.sh
+  timeout: 20m
   variables:
     BM_CMDLINE: "ip=dhcp console=ttymxc0,115200n8 root=/dev/nfs rw nfsrootdebug init=/init $BM_KERNELARGS"
     BM_KERNEL: Image
@@ -89,6 +91,7 @@ gc2000_piglit:
     PIGLIT_PLATFORM: gbm
     PIGLIT_PROFILES: gpu
     TEST_PHASE_TIMEOUT: 40
+  timeout: 40m
 
 gc7000_gles2:
   extends:

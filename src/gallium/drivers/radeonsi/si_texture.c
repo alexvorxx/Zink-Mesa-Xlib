@@ -201,13 +201,11 @@ static int si_init_surface(struct si_screen *sscreen, struct radeon_surf *surfac
                            bool is_flushed_depth, bool tc_compatible_htile)
 {
    const struct util_format_description *desc = util_format_description(ptex->format);
-   bool is_depth, is_stencil;
+   bool is_depth = util_format_has_depth(desc);
+   bool is_stencil = util_format_has_stencil(desc);
    int r;
    unsigned bpe;
    uint64_t flags = 0;
-
-   is_depth = util_format_has_depth(desc);
-   is_stencil = util_format_has_stencil(desc);
 
    if (!is_flushed_depth && ptex->format == PIPE_FORMAT_Z32_FLOAT_S8X24_UINT) {
       bpe = 4; /* stencil is allocated separately */
@@ -291,6 +289,7 @@ static int si_init_surface(struct si_screen *sscreen, struct radeon_surf *surfac
          break;
 
       case GFX11:
+      case GFX11_5:
          break;
 
       default:
@@ -300,7 +299,7 @@ static int si_init_surface(struct si_screen *sscreen, struct radeon_surf *surfac
 
    if (is_scanout) {
       /* This should catch bugs in gallium users setting incorrect flags. */
-      assert(ptex->nr_samples <= 1 && ptex->array_size == 1 && ptex->depth0 == 1 &&
+      assert(ptex->nr_samples <= 1 && ptex->depth0 == 1 &&
              ptex->last_level == 0 && !(flags & RADEON_SURF_Z_OR_SBUFFER));
 
       flags |= RADEON_SURF_SCANOUT;
@@ -639,7 +638,9 @@ static bool si_resource_get_param(struct pipe_screen *screen, struct pipe_contex
       if (resource->target == PIPE_BUFFER) {
          *value = 0;
       } else {
-         uint64_t level_offset = tex->surface.is_linear ? tex->surface.u.gfx9.offset[level] : 0;
+         uint64_t level_offset = 0;
+         if (sscreen->info.gfx_level >= GFX9 && tex->surface.is_linear)
+            level_offset = tex->surface.u.gfx9.offset[level];
          *value = ac_surface_get_plane_offset(sscreen->info.gfx_level,
                                               &tex->surface, plane, layer)  + level_offset;
       }
@@ -1624,6 +1625,10 @@ static struct pipe_resource *si_texture_from_winsys_buffer(struct si_screen *ssc
    if (r)
       return NULL;
 
+   /* This is a hack to skip alignment checking for 3D textures */
+   if (templ->target == PIPE_TEXTURE_3D)
+      stride = 0;
+
    tex = si_texture_create_object(&sscreen->b, templ, &surface, NULL, buf,
                                   offset, stride, 0, 0);
    if (!tex)
@@ -1701,17 +1706,14 @@ static struct pipe_resource *si_texture_from_handle(struct pipe_screen *screen,
    struct si_screen *sscreen = (struct si_screen *)screen;
    struct pb_buffer *buf = NULL;
 
-   /* Support only 2D textures without mipmaps */
-   if ((templ->target != PIPE_TEXTURE_2D && templ->target != PIPE_TEXTURE_RECT &&
-        templ->target != PIPE_TEXTURE_2D_ARRAY) ||
-       templ->last_level != 0)
-      return NULL;
-
    buf = sscreen->ws->buffer_from_handle(sscreen->ws, whandle,
                                          sscreen->info.max_alignment,
                                          templ->bind & PIPE_BIND_PRIME_BLIT_DST);
    if (!buf)
       return NULL;
+
+   if (templ->target == PIPE_BUFFER)
+      return si_buffer_from_winsys_buffer(screen, templ, buf, 0);
 
    if (whandle->plane >= util_format_get_num_planes(whandle->format)) {
       struct si_auxiliary_texture *tex = CALLOC_STRUCT_CL(si_auxiliary_texture);

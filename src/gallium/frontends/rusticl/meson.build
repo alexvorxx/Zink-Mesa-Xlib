@@ -1,4 +1,4 @@
-# Copyright © 
+# Copyright ©
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -73,6 +73,7 @@ rusticl_files = files(
   'core/queue.rs',
   'core/util.rs',
   'core/version.rs',
+  'core/gl.rs',
 )
 
 rusticl_args = [
@@ -114,7 +115,17 @@ rusticl_bindgen_args = [
   '--anon-fields-prefix', 'anon_',
 ]
 
-if find_program('bindgen').version().version_compare('< 0.65')
+bindgen_version = find_program('bindgen').version()
+
+if bindgen_version == 'unknown'
+  error('Failed to detect bindgen version. If you are using bindgen 0.69.0, please either update to 0.69.1 or downgrade to 0.68.1. You can install the latest version for your user with `cargo install bindgen-cli`.')
+endif
+
+if bindgen_version.version_compare('< 0.62')
+  error('rusticl requires bindgen 0.62 or newer. If your distribution does not ship a recent enough version, you can install the latest version for your user with `cargo install bindgen-cli`.')
+endif
+
+if bindgen_version.version_compare('< 0.65')
   rusticl_bindgen_args += [
     '--size_t-is-usize',
   ]
@@ -158,10 +169,18 @@ rusticl_opencl_bindings_rs = rust.bindgen(
     '--raw-line', 'unsafe impl std::marker::Sync for _cl_image_desc {}',
     '--allowlist-type', 'cl_.*',
     '--allowlist-var', 'CL_.*',
+    # needed for gl_sharing extension
+    '--allowlist-var', 'GL_.*',
+    '--allowlist-var', 'MESA_GLINTEROP_.*',
+    '--allowlist-type', 'PFNEGLGETPROCADDRESSPROC',
+    '--allowlist-type', 'PFNGLXGETPROCADDRESSPROC',
+    '--allowlist-type', 'PFNMESAGLINTEROP.*',
     # some info types need to be strongly typed so we can implement various get_infos
-    '--new-type-alias-deref', 'cl_(mem|image|pipe)_info',
+    '--new-type-alias-deref', 'cl_(mem|image|pipe|gl_texture)_info',
     '--new-type-alias-deref', 'cl_kernel_(arg|work_group)_info',
     '--new-type-alias-deref', 'cl_(event|profiling)_info',
+    # turn gl interop enums into constfields so we can compare with rust types
+    '--constified-enum', 'MESA_GLINTEROP_.*',
   ],
 )
 
@@ -217,6 +236,25 @@ rusticl_mesa_bindings_inline_wrapper = static_library(
   ],
 )
 
+rusticl_libc_bindings_rs = rust.bindgen(
+  input : 'rusticl_libc_bindings.h',
+  output : 'rusticl_libc_bindings.rs',
+  dependencies: [
+    dep_valgrind,
+  ],
+  c_args : [
+    rusticl_bindgen_c_args,
+    pre_args,
+  ],
+  args : [
+    rusticl_bindgen_args,
+    '--allowlist-function',     'close',
+    '--allowlist-function',     'dlsym',
+    '--allowlist-function',     'free',
+    '--allowlist-function',     'malloc',
+  ]
+)
+
 rusticl_mesa_bindings_rs = rust.bindgen(
   input : 'rusticl_mesa_bindings.h',
   output : 'rusticl_mesa_bindings.rs',
@@ -236,10 +274,6 @@ rusticl_mesa_bindings_rs = rust.bindgen(
   ],
   args : [
     rusticl_bindgen_args,
-    # libc
-    '--allowlist-function',     'free',
-    '--allowlist-function',     'malloc',
-
     # mesa utils
     '--allowlist-function',     'blob_.*',
     '--allowlist-function',     'disk_cache_.*',
@@ -295,6 +329,9 @@ rusticl_mesa_bindings_rs = rust.bindgen(
     # rusticl C functions
     '--allowlist-function',     'rusticl_.*',
     '--allowlist-function',     'std(err|out)_ptr',
+
+    # winsys
+    '--allowlist-var',          'WINSYS_HANDLE_TYPE_.*',
   ],
 )
 
@@ -320,6 +357,16 @@ libmesa_rust_gen = static_library(
   ],
 )
 
+libc_rust_gen = static_library(
+  'libc_rust_gen',
+  rusticl_libc_bindings_rs,
+  gnu_symbol_visibility : 'hidden',
+  rust_crate_type : 'rlib',
+  rust_args : [
+    rusticl_gen_args,
+  ],
+)
+
 libmesa_rust_util = static_library(
   'mesa_rust_util',
   [libmesa_rust_util_files],
@@ -339,6 +386,7 @@ libmesa_rust = static_library(
     rusticl_args,
   ],
   link_with : [
+    libc_rust_gen,
     libmesa_rust_gen,
     libmesa_rust_util,
     rusticl_mesa_bindings_inline_wrapper,
@@ -364,6 +412,7 @@ librusticl = static_library(
     rusticl_args,
   ],
   link_with : [
+    libc_rust_gen,
     libmesa_rust,
     libmesa_rust_gen,
     libmesa_rust_util,

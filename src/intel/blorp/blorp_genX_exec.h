@@ -84,7 +84,7 @@ blorp_vf_invalidate_for_vb_48b_transitions(struct blorp_batch *batch,
 UNUSED static struct blorp_address
 blorp_get_workaround_address(struct blorp_batch *batch);
 
-static void
+static bool
 blorp_alloc_binding_table(struct blorp_batch *batch, unsigned num_entries,
                           unsigned state_size, unsigned state_alignment,
                           uint32_t *bt_offset, uint32_t *surface_offsets,
@@ -124,9 +124,11 @@ blorp_emit_pipeline(struct blorp_batch *batch,
                     const struct blorp_params *params);
 
 static void
-blorp_emit_breakpoint_pre_draw(struct blorp_batch *batch);
+blorp_emit_pre_draw(struct blorp_batch *batch,
+                    const struct blorp_params *params);
 static void
-blorp_emit_breakpoint_post_draw(struct blorp_batch *batch);
+blorp_emit_post_draw(struct blorp_batch *batch,
+                     const struct blorp_params *params);
 
 /***** BEGIN blorp_exec implementation ******/
 
@@ -1632,9 +1634,10 @@ blorp_setup_binding_table(struct blorp_batch *batch,
       bind_offset = params->pre_baked_binding_table_offset;
    } else {
       unsigned num_surfaces = 1 + params->src.enabled;
-      blorp_alloc_binding_table(batch, num_surfaces,
-                                isl_dev->ss.size, isl_dev->ss.align,
-                                &bind_offset, surface_offsets, surface_maps);
+      if (!blorp_alloc_binding_table(batch, num_surfaces,
+                                     isl_dev->ss.size, isl_dev->ss.align,
+                                     &bind_offset, surface_offsets, surface_maps))
+         return 0;
 
       if (params->dst.enabled) {
          blorp_emit_surface_state(batch, &params->dst,
@@ -2035,8 +2038,6 @@ blorp_exec_3d(struct blorp_batch *batch, const struct blorp_params *params)
    }
 #endif
 
-   blorp_measure_start(batch, params);
-
    blorp_emit_vertex_buffers(batch, params);
    blorp_emit_vertex_elements(batch, params);
 
@@ -2047,18 +2048,21 @@ blorp_exec_3d(struct blorp_batch *batch, const struct blorp_params *params)
    if (!(batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))
       blorp_emit_depth_stencil_config(batch, params);
 
-   blorp_emit_breakpoint_pre_draw(batch);
+   const UNUSED bool use_tbimr = false;
+   blorp_emit_pre_draw(batch, params);
    blorp_emit(batch, GENX(3DPRIMITIVE), prim) {
       prim.VertexAccessType = SEQUENTIAL;
       prim.PrimitiveTopologyType = _3DPRIM_RECTLIST;
 #if GFX_VER >= 7
       prim.PredicateEnable = batch->flags & BLORP_BATCH_PREDICATE_ENABLE;
 #endif
+#if GFX_VERx10 >= 125
+      prim.TBIMREnable = use_tbimr;
+#endif
       prim.VertexCountPerInstance = 3;
       prim.InstanceCount = params->num_layers;
    }
-   blorp_emit_breakpoint_post_draw(batch);
-   blorp_measure_end(batch, params);
+   blorp_emit_post_draw(batch, params);
 }
 
 #if GFX_VER >= 7

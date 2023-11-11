@@ -739,6 +739,12 @@ ChipFamily Gfx11Lib::HwlConvertChipFamily(
             {
             }
             break;
+        case FAMILY_GFX1150:
+            if (ASICREV_IS_GFX1150(chipRevision))
+            {
+                m_settings.isGfx1150 = 1;
+            }
+            break;
         case FAMILY_GFX1103:
             m_settings.isGfx1103 = 1;
             break;
@@ -1331,6 +1337,7 @@ UINT_32 Gfx11Lib::GetValidDisplaySwizzleModes(
 
         if (false
             || (m_settings.isGfx1103)
+            || (m_settings.isGfx1150)
            )
         {
             // Not all GPUs support displaying with 256kB swizzle modes.

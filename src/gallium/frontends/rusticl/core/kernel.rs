@@ -919,10 +919,20 @@ impl Kernel {
                     } else {
                         let format = mem.pipe_format;
                         let (formats, orders) = if arg.kind == KernelArgType::Image {
-                            iviews.push(res.pipe_image_view(format, false, app_img_info.as_ref()));
+                            iviews.push(res.pipe_image_view(
+                                format,
+                                false,
+                                mem.pipe_image_host_access(),
+                                app_img_info.as_ref(),
+                            ));
                             (&mut img_formats, &mut img_orders)
                         } else if arg.kind == KernelArgType::RWImage {
-                            iviews.push(res.pipe_image_view(format, true, app_img_info.as_ref()));
+                            iviews.push(res.pipe_image_view(
+                                format,
+                                true,
+                                mem.pipe_image_host_access(),
+                                app_img_info.as_ref(),
+                            ));
                             (&mut img_formats, &mut img_orders)
                         } else {
                             sviews.push((res.clone(), format, app_img_info));
@@ -1093,6 +1103,7 @@ impl Kernel {
                         RWFlags::RD,
                         ResourceMapType::Normal,
                     )
+                    .ok_or(CL_OUT_OF_RESOURCES)?
                     .with_ctx(ctx);
                 let mut buf: &[u8] =
                     unsafe { slice::from_raw_parts(tx.ptr().cast(), printf_size as usize) };

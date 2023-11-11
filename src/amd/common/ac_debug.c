@@ -60,7 +60,7 @@ struct ac_ib_parser {
    unsigned cur_dw;
 };
 
-static void ac_do_parse_ib(FILE *f, struct ac_ib_parser *ib);
+static void parse_gfx_compute_ib(FILE *f, struct ac_ib_parser *ib);
 
 static void print_spaces(FILE *f, unsigned num)
 {
@@ -117,6 +117,10 @@ static const struct si_reg *find_register(enum amd_gfx_level gfx_level, enum rad
    unsigned table_size;
 
    switch (gfx_level) {
+   case GFX11_5:
+      table = gfx115_reg_table;
+      table_size = ARRAY_SIZE(gfx115_reg_table);
+      break;
    case GFX11:
       table = gfx11_reg_table;
       table_size = ARRAY_SIZE(gfx11_reg_table);
@@ -561,7 +565,7 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
       }
 
       fprintf(f, "\n\035>------------------ nested begin ------------------\n");
-      ac_do_parse_ib(f, &ib_recurse);
+      parse_gfx_compute_ib(f, &ib_recurse);
       fprintf(f, "\n\035<------------------- nested end -------------------\n");
       break;
    }
@@ -659,7 +663,7 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
 /**
  * Parse and print an IB into a file.
  */
-static void ac_do_parse_ib(FILE *f, struct ac_ib_parser *ib)
+static void parse_gfx_compute_ib(FILE *f, struct ac_ib_parser *ib)
 {
    int current_trace_id = -1;
 
@@ -723,6 +727,171 @@ static void format_ib_output(FILE *f, char *out)
    }
 }
 
+static void parse_sdma_ib(FILE *f, struct ac_ib_parser *ib)
+{
+   while (ib->cur_dw < ib->num_dw) {
+      const uint32_t header = ac_ib_get(ib);
+      const uint32_t opcode = header & 0xff;
+      const uint32_t sub_op = (header >> 8) & 0xff;
+
+      switch (opcode) {
+      case CIK_SDMA_OPCODE_NOP: {
+         fprintf(f, "NOP\n");
+
+         const uint32_t count = header >> 16;
+         for (unsigned i = 0; i < count; ++i) {
+            ac_ib_get(ib);
+            fprintf(f, "\n");
+         }
+         break;
+      }
+      case CIK_SDMA_OPCODE_CONSTANT_FILL: {
+         fprintf(f, "CONSTANT_FILL\n");
+         ac_ib_get(ib);
+         fprintf(f, "\n");
+         ac_ib_get(ib);
+         fprintf(f, "\n");
+         uint32_t value = ac_ib_get(ib);
+         fprintf(f, "    fill value = %u\n", value);
+         uint32_t byte_count = ac_ib_get(ib) + 1;
+         fprintf(f, "    fill byte count = %u\n", byte_count);
+
+         unsigned dwords = byte_count / 4;
+         for (unsigned i = 0; i < dwords; ++i) {
+            ac_ib_get(ib);
+            fprintf(f, "\n");
+         }
+
+         break;
+      }
+      case CIK_SDMA_OPCODE_WRITE: {
+         fprintf(f, "WRITE\n");
+
+         /* VA */
+         ac_ib_get(ib);
+         fprintf(f, "\n");
+         ac_ib_get(ib);
+         fprintf(f, "\n");
+
+         uint32_t dwords = ac_ib_get(ib) + 1;
+         fprintf(f, "    written dword count = %u\n", dwords);
+
+         for (unsigned i = 0; i < dwords; ++i) {
+            ac_ib_get(ib);
+            fprintf(f, "\n");
+         }
+
+         break;
+      }
+      case CIK_SDMA_OPCODE_COPY: {
+         switch (sub_op) {
+         case CIK_SDMA_COPY_SUB_OPCODE_LINEAR: {
+            fprintf(f, "COPY LINEAR\n");
+
+            uint32_t copy_bytes = ac_ib_get(ib) + (ib->gfx_level >= GFX9 ? 1 : 0);
+            fprintf(f, "    copy bytes: %u\n", copy_bytes);
+            ac_ib_get(ib);
+            fprintf(f, "\n");
+            ac_ib_get(ib);
+            fprintf(f, "    src VA low\n");
+            ac_ib_get(ib);
+            fprintf(f, "    src VA high\n");
+            ac_ib_get(ib);
+            fprintf(f, "    dst VA low\n");
+            ac_ib_get(ib);
+            fprintf(f, "    dst VA high\n");
+
+            break;
+         }
+         case CIK_SDMA_COPY_SUB_OPCODE_LINEAR_SUB_WINDOW: {
+            fprintf(f, "COPY LINEAR_SUB_WINDOW\n");
+
+            for (unsigned i = 0; i < 12; ++i) {
+               ac_ib_get(ib);
+               fprintf(f, "\n");
+            }
+            break;
+         }
+         case CIK_SDMA_COPY_SUB_OPCODE_TILED_SUB_WINDOW: {
+            fprintf(f, "COPY TILED_SUB_WINDOW %s\n", header >> 31 ? "t2l" : "l2t");
+            uint32_t dcc = (header >> 19) & 1;
+
+            /* Tiled VA */
+            ac_ib_get(ib);
+            fprintf(f, "    tiled VA low\n");
+            ac_ib_get(ib);
+            fprintf(f, "    tiled VA high\n");
+
+            uint32_t dw3 = ac_ib_get(ib);
+            fprintf(f, "    tiled offset x = %u, y=%u\n", dw3 & 0xffff, dw3 >> 16);
+            uint32_t dw4 = ac_ib_get(ib);
+            fprintf(f, "    tiled offset z = %u, tiled width = %u\n", dw4 & 0xffff, (dw4 >> 16) + 1);
+            uint32_t dw5 = ac_ib_get(ib);
+            fprintf(f, "    tiled height = %u, tiled depth = %u\n", (dw5 & 0xffff) + 1, (dw5 >> 16) + 1);
+
+            /* Tiled image info */
+            ac_ib_get(ib);
+            fprintf(f, "    (tiled image info)\n");
+
+            /* Linear VA */
+            ac_ib_get(ib);
+            fprintf(f, "    linear VA low\n");
+            ac_ib_get(ib);
+            fprintf(f, "    linear VA high\n");
+
+            uint32_t dw9 = ac_ib_get(ib);
+            fprintf(f, "    linear offset x = %u, y=%u\n", dw9 & 0xffff, dw9 >> 16);
+            uint32_t dw10 = ac_ib_get(ib);
+            fprintf(f, "    linear offset z = %u, linear pitch = %u\n", dw10 & 0xffff, (dw10 >> 16) + 1);
+            uint32_t dw11 = ac_ib_get(ib);
+            fprintf(f, "    linear slice pitch = %u\n", dw11 + 1);
+            uint32_t dw12 = ac_ib_get(ib);
+            fprintf(f, "    copy width = %u, copy height = %u\n", (dw12 & 0xffff) + 1, (dw12 >> 16) + 1);
+            uint32_t dw13 = ac_ib_get(ib);
+            fprintf(f, "    copy depth = %u\n", dw13 + 1);
+
+            if (dcc) {
+               ac_ib_get(ib);
+               fprintf(f, "    metadata VA low\n");
+               ac_ib_get(ib);
+               fprintf(f, "    metadata VA high\n");
+               ac_ib_get(ib);
+               fprintf(f, "    (metadata config)\n");
+            }
+            break;
+         }
+         case CIK_SDMA_COPY_SUB_OPCODE_T2T_SUB_WINDOW: {
+            fprintf(f, "COPY T2T_SUB_WINDOW\n");
+            uint32_t dcc = (header >> 19) & 1;
+
+            for (unsigned i = 0; i < 14; ++i) {
+               ac_ib_get(ib);
+               fprintf(f, "\n");
+            }
+
+            if (dcc) {
+               ac_ib_get(ib);
+               fprintf(f, "    metadata VA low\n");
+               ac_ib_get(ib);
+               fprintf(f, "    metadata VA high\n");
+               ac_ib_get(ib);
+               fprintf(f, "    (metadata config)\n");
+            }
+            break;
+         }
+         default:
+            fprintf(f, "(unrecognized COPY sub op)\n");
+            break;
+         }
+         break;
+      }
+      default:
+         fprintf(f, " (unrecognized opcode)\n");
+         break;
+      }
+   }
+}
+
 /**
  * Parse and print an IB into a file.
  *
@@ -730,6 +899,8 @@ static void format_ib_output(FILE *f, char *out)
  * \param ib_ptr       IB
  * \param num_dw       size of the IB
  * \param gfx_level   gfx level
+ * \param family	chip family
+ * \param ip_type IP type
  * \param trace_ids	the last trace IDs that are known to have been reached
  *			and executed by the CP, typically read from a buffer
  * \param trace_id_count The number of entries in the trace_ids array.
@@ -739,7 +910,7 @@ static void format_ib_output(FILE *f, char *out)
  */
 void ac_parse_ib_chunk(FILE *f, uint32_t *ib_ptr, int num_dw, const int *trace_ids,
                        unsigned trace_id_count, enum amd_gfx_level gfx_level,
-                       enum radeon_family family,
+                       enum radeon_family family, enum amd_ip_type ip_type,
                        ac_debug_addr_callback addr_callback, void *addr_callback_data)
 {
    struct ac_ib_parser ib = {0};
@@ -758,7 +929,14 @@ void ac_parse_ib_chunk(FILE *f, uint32_t *ib_ptr, int num_dw, const int *trace_i
    u_memstream_open(&mem, &out, &outsize);
    FILE *const memf = u_memstream_get(&mem);
    ib.f = memf;
-   ac_do_parse_ib(memf, &ib);
+
+   if (ip_type == AMD_IP_GFX || ip_type == AMD_IP_COMPUTE)
+      parse_gfx_compute_ib(memf, &ib);
+   else if (ip_type == AMD_IP_SDMA)
+      parse_sdma_ib(memf, &ib);
+   else
+      unreachable("unsupported IP type");
+
    u_memstream_close(&mem);
 
    if (out) {
@@ -772,6 +950,20 @@ void ac_parse_ib_chunk(FILE *f, uint32_t *ib_ptr, int num_dw, const int *trace_i
    }
 }
 
+static const char *ip_name(const enum amd_ip_type ip)
+{
+   switch (ip) {
+   case AMD_IP_GFX:
+      return "GFX";
+   case AMD_IP_COMPUTE:
+      return "COMPUTE";
+   case AMD_IP_SDMA:
+      return "SDMA";
+   default:
+      return "Unknown";
+   }
+}
+
 /**
  * Parse and print an IB into a file.
  *
@@ -779,6 +971,8 @@ void ac_parse_ib_chunk(FILE *f, uint32_t *ib_ptr, int num_dw, const int *trace_i
  * \param ib		IB
  * \param num_dw	size of the IB
  * \param gfx_level	gfx level
+ * \param family	chip family
+ * \param ip_type IP type
  * \param trace_ids	the last trace IDs that are known to have been reached
  *			and executed by the CP, typically read from a buffer
  * \param trace_id_count The number of entries in the trace_ids array.
@@ -788,14 +982,14 @@ void ac_parse_ib_chunk(FILE *f, uint32_t *ib_ptr, int num_dw, const int *trace_i
  */
 void ac_parse_ib(FILE *f, uint32_t *ib, int num_dw, const int *trace_ids, unsigned trace_id_count,
                  const char *name, enum amd_gfx_level gfx_level, enum radeon_family family,
-                 ac_debug_addr_callback addr_callback, void *addr_callback_data)
+                 enum amd_ip_type ip_type, ac_debug_addr_callback addr_callback, void *addr_callback_data)
 {
-   fprintf(f, "------------------ %s begin ------------------\n", name);
+   fprintf(f, "------------------ %s begin - %s ------------------\n", name, ip_name(ip_type));
 
-   ac_parse_ib_chunk(f, ib, num_dw, trace_ids, trace_id_count, gfx_level, family, addr_callback,
-                     addr_callback_data);
+   ac_parse_ib_chunk(f, ib, num_dw, trace_ids, trace_id_count, gfx_level, family, ip_type,
+                     addr_callback, addr_callback_data);
 
-   fprintf(f, "------------------- %s end -------------------\n\n", name);
+   fprintf(f, "------------------- %s end - %s -------------------\n\n", name, ip_name(ip_type));
 }
 
 /**
@@ -985,4 +1179,52 @@ unsigned ac_get_wave_info(enum amd_gfx_level gfx_level,
    pclose(p);
    return num_waves;
 #endif
+}
+
+/* List of GFXHUB clients from AMDGPU source code. */
+static const char *const gfx10_gfxhub_client_ids[] = {
+   "CB/DB",
+   "Reserved",
+   "GE1",
+   "GE2",
+   "CPF",
+   "CPC",
+   "CPG",
+   "RLC",
+   "TCP",
+   "SQC (inst)",
+   "SQC (data)",
+   "SQG",
+   "Reserved",
+   "SDMA0",
+   "SDMA1",
+   "GCR",
+   "SDMA2",
+   "SDMA3",
+};
+
+static const char *
+ac_get_gfx10_gfxhub_client(unsigned cid)
+{
+   if (cid >= ARRAY_SIZE(gfx10_gfxhub_client_ids))
+      return "UNKNOWN";
+   return gfx10_gfxhub_client_ids[cid];
+}
+
+void ac_print_gpuvm_fault_status(FILE *output, enum amd_gfx_level gfx_level,
+                                 uint32_t status)
+{
+   if (gfx_level >= GFX10) {
+      const uint8_t cid = G_00A130_CID(status);
+
+      fprintf(output, "GCVM_L2_PROTECTION_FAULT_STATUS: 0x%x\n", status);
+      fprintf(output, "\t CLIENT_ID: (%s) 0x%x\n", ac_get_gfx10_gfxhub_client(cid), cid);
+      fprintf(output, "\t MORE_FAULTS: %d\n", G_00A130_MORE_FAULTS(status));
+      fprintf(output, "\t WALKER_ERROR: %d\n", G_00A130_WALKER_ERROR(status));
+      fprintf(output, "\t PERMISSION_FAULTS: %d\n", G_00A130_PERMISSION_FAULTS(status));
+      fprintf(output, "\t MAPPING_ERROR: %d\n", G_00A130_MAPPING_ERROR(status));
+      fprintf(output, "\t RW: %d\n", G_00A130_RW(status));
+   } else {
+      fprintf(output, "VM_CONTEXT1_PROTECTION_FAULT_STATUS: 0x%x\n", status);
+   }
 }

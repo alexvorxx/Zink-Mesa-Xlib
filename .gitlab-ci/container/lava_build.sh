@@ -62,6 +62,19 @@ elif [[ "$DEBIAN_ARCH" = "armhf" ]]; then
     DEVICE_TREES+=" tegra124-jetson-tk1.dtb"
     KERNEL_IMAGE_NAME="zImage"
     . .gitlab-ci/container/create-cross-file.sh armhf
+    CONTAINER_ARCH_PACKAGES=(
+      libegl1-mesa-dev:armhf
+      libelf-dev:armhf
+      libgbm-dev:armhf
+      libgles2-mesa-dev:armhf
+      libpng-dev:armhf
+      libudev-dev:armhf
+      libvulkan-dev:armhf
+      libwaffle-dev:armhf
+      libwayland-dev:armhf
+      libx11-xcb-dev:armhf
+      libxkbcommon-dev:armhf
+    )
 else
     GCC_ARCH="x86_64-linux-gnu"
     KERNEL_ARCH="x86_64"
@@ -69,7 +82,9 @@ else
     DEFCONFIG="arch/x86/configs/x86_64_defconfig"
     DEVICE_TREES=""
     KERNEL_IMAGE_NAME="bzImage"
-    ARCH_PACKAGES="libasound2-dev libcap-dev libfdt-dev libva-dev wayland-protocols p7zip"
+    CONTAINER_ARCH_PACKAGES=(
+      libasound2-dev libcap-dev libfdt-dev libva-dev wayland-protocols p7zip wine
+    )
 fi
 
 # Determine if we're in a cross build.
@@ -89,66 +104,55 @@ if [[ -e /cross_file-$DEBIAN_ARCH.txt ]]; then
     export CROSS_COMPILE="${GCC_ARCH}-"
 fi
 
+# no need to remove these at end, image isn't saved at the end
+CONTAINER_EPHEMERAL=(
+    automake
+    bc
+    "clang-${LLVM_VERSION}"
+    cmake
+    curl
+    mmdebstrap
+    git
+    glslang-tools
+    libdrm-dev
+    libegl1-mesa-dev
+    libxext-dev
+    libfontconfig-dev
+    libgbm-dev
+    libgl-dev
+    libgles2-mesa-dev
+    libglu1-mesa-dev
+    libglx-dev
+    libpng-dev
+    libssl-dev
+    libudev-dev
+    libvulkan-dev
+    libwaffle-dev
+    libwayland-dev
+    libx11-xcb-dev
+    libxcb-dri2-0-dev
+    libxkbcommon-dev
+    libwayland-dev
+    ninja-build
+    openssh-server
+    patch
+    protobuf-compiler
+    python-is-python3
+    python3-distutils
+    python3-mako
+    python3-numpy
+    python3-serial
+    python3-venv
+    unzip
+    zstd
+)
+
 apt-get update
 apt-get install -y --no-remove \
 		   -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' \
-                   ${EXTRA_LOCAL_PACKAGES} \
-                   ${ARCH_PACKAGES} \
-                   automake \
-                   bc \
-                   clang-${LLVM_VERSION} \
-                   cmake \
-		   curl \
-                   mmdebstrap \
-                   git \
-                   glslang-tools \
-                   libdrm-dev \
-                   libegl1-mesa-dev \
-                   libxext-dev \
-                   libfontconfig-dev \
-                   libgbm-dev \
-                   libgl-dev \
-                   libgles2-mesa-dev \
-                   libglu1-mesa-dev \
-                   libglx-dev \
-                   libpng-dev \
-                   libssl-dev \
-                   libudev-dev \
-                   libvulkan-dev \
-                   libwaffle-dev \
-                   libwayland-dev \
-                   libx11-xcb-dev \
-                   libxcb-dri2-0-dev \
-                   libxkbcommon-dev \
-                   libwayland-dev \
-                   ninja-build \
-                   openssh-server \
-                   patch \
-                   protobuf-compiler \
-                   python-is-python3 \
-                   python3-distutils \
-                   python3-mako \
-                   python3-numpy \
-                   python3-serial \
-                   python3-venv \
-                   unzip \
-                   zstd
-
-
-if [[ "$DEBIAN_ARCH" = "armhf" ]]; then
-    apt-get install -y --no-remove \
-                       libegl1-mesa-dev:armhf \
-                       libelf-dev:armhf \
-                       libgbm-dev:armhf \
-                       libgles2-mesa-dev:armhf \
-                       libpng-dev:armhf \
-                       libudev-dev:armhf \
-                       libvulkan-dev:armhf \
-                       libwaffle-dev:armhf \
-                       libwayland-dev:armhf \
-                       libx11-xcb-dev:armhf \
-                       libxkbcommon-dev:armhf
-fi
+		   "${CONTAINER_EPHEMERAL[@]}" \
+                   "${CONTAINER_ARCH_PACKAGES[@]}" \
+                   ${EXTRA_LOCAL_PACKAGES}
 
 ROOTFS=/lava-files/rootfs-${DEBIAN_ARCH}
 mkdir -p "$ROOTFS"

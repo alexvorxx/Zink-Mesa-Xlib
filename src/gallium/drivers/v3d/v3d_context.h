@@ -825,12 +825,8 @@ void v3d_disk_cache_store(struct v3d_context *v3d,
 
 /* Helper to call hw ver specific functions */
 #define v3d_X(devinfo, thing) ({                                \
-        __typeof(&v3d33_##thing) v3d_X_thing;                   \
+        __typeof(&v3d42_##thing) v3d_X_thing;                   \
         switch (devinfo->ver) {                                 \
-        case 33:                                                \
-        case 40:                                                \
-                v3d_X_thing = &v3d33_##thing;                   \
-                break;                                          \
         case 42:                                                \
                 v3d_X_thing = &v3d42_##thing;                   \
                 break;                                          \
@@ -846,19 +842,13 @@ void v3d_disk_cache_store(struct v3d_context *v3d,
 /* FIXME: The same for vulkan/opengl. Common place? define it at the
  * v3d_packet files?
  */
-#define V3D33_CLIPPER_XY_GRANULARITY 256.0f
 #define V3D42_CLIPPER_XY_GRANULARITY 256.0f
 #define V3D71_CLIPPER_XY_GRANULARITY 64.0f
 
 /* Helper to get hw-specific macro values */
 #define V3DV_X(devinfo, thing) ({                               \
-   __typeof(V3D33_##thing) V3D_X_THING;                         \
+   __typeof(V3D42_##thing) V3D_X_THING;                         \
    switch (devinfo->ver) {                                      \
-   case 33:                                                     \
-   case 40:                                                     \
-      V3D_X_THING = V3D33_##thing;                              \
-      break;                                                    \
-      case 41:                                                  \
    case 42:                                                     \
       V3D_X_THING = V3D42_##thing;                              \
       break;                                                    \
@@ -874,10 +864,6 @@ void v3d_disk_cache_store(struct v3d_context *v3d,
 #ifdef v3dX
 #  include "v3dx_context.h"
 #else
-#  define v3dX(x) v3d33_##x
-#  include "v3dx_context.h"
-#  undef v3dX
-
 #  define v3dX(x) v3d42_##x
 #  include "v3dx_context.h"
 #  undef v3dX

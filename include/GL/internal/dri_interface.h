@@ -31,7 +31,7 @@
  * between a DRI driver and driver loader.  Currently, the most common driver
  * loader is the XFree86 libGL.so.  However, other loaders do exist, and in
  * the future the server-side libglx.a will also be a loader.
- * 
+ *
  * \author Kevin E. Martin <kevin@precisioninsight.com>
  * \author Ian Romanick <idr@us.ibm.com>
  * \author Kristian Høgsberg <krh@redhat.com>
@@ -190,7 +190,7 @@ struct __DRItexBufferExtensionRec {
 
     /**
      * Method to override base texture image with the contents of a
-     * __DRIdrawable. 
+     * __DRIdrawable.
      *
      * For GLX_EXT_texture_from_pixmap with AIGLX.  Deprecated in favor of
      * setTexBuffer2 in version 2 of this interface.  Not used by post-2011 X.
@@ -457,12 +457,12 @@ struct __DRI2interopExtensionRec {
 
    /**
     * Same as MesaGLInterop*FlushObjects.
-    * 
+    *
     * \since 2
     */
    int (*flush_objects)(__DRIcontext *ctx,
                         unsigned count, struct mesa_glinterop_export_in *objects,
-                        GLsync *sync);
+                        GLsync *sync, int *fence_fd);
 };
 
 
@@ -544,7 +544,7 @@ struct __DRIsystemTimeExtensionRec {
 
     /**
      * Get the media stream counter (MSC) rate.
-     * 
+     *
      * Matching the definition in GLX_OML_sync_control, this function returns
      * the rate of the "media stream counter".  In practical terms, this is
      * the frame refresh rate of the display.
@@ -742,7 +742,7 @@ struct __DRIuseInvalidateExtensionRec {
 #define __DRI_ATTRIB_OPTIMAL_PBUFFER_WIDTH	37
 #define __DRI_ATTRIB_OPTIMAL_PBUFFER_HEIGHT	38
 #define __DRI_ATTRIB_VISUAL_SELECT_GROUP	39
-#define __DRI_ATTRIB_SWAP_METHOD		40
+#define __DRI_ATTRIB_SWAP_METHOD		40 // Parsed by the X server when our visuals return it as an attrib.
 #define __DRI_ATTRIB_MAX_SWAP_INTERVAL		41
 #define __DRI_ATTRIB_MIN_SWAP_INTERVAL		42
 #define __DRI_ATTRIB_BIND_TO_TEXTURE_RGB	43
@@ -759,7 +759,7 @@ struct __DRIuseInvalidateExtensionRec {
 #define __DRI_ATTRIB_MAX			54
 
 /* __DRI_ATTRIB_RENDER_TYPE */
-#define __DRI_ATTRIB_RGBA_BIT			0x01	
+#define __DRI_ATTRIB_RGBA_BIT			0x01
 #define __DRI_ATTRIB_COLOR_INDEX_BIT		0x02
 #define __DRI_ATTRIB_LUMINANCE_BIT		0x04
 #define __DRI_ATTRIB_FLOAT_BIT			0x08
@@ -782,8 +782,8 @@ struct __DRIuseInvalidateExtensionRec {
 /* Note that with the exception of __DRI_ATTRIB_SWAP_NONE, we need to define
  * the same tokens as GLX. This is because old and current X servers will
  * transmit the driconf value grabbed from the AIGLX driver untranslated as
- * the GLX fbconfig value. __DRI_ATTRIB_SWAP_NONE is only used by dri drivers
- * to signal to the dri core that the driconfig is single-buffer.
+ * the GLX fbconfig value. These defines are kept for X Server suorce compatibility,
+ * since Mesa no longer exposes GLX_OML_swap_method.
  */
 #define __DRI_ATTRIB_SWAP_NONE                  0x0000
 #define __DRI_ATTRIB_SWAP_EXCHANGE              0x8061
@@ -862,7 +862,7 @@ struct __DRIcoreExtensionRec {
 /**
  * Stored version of some component (i.e., server-side DRI module, kernel-side
  * DRM, etc.).
- * 
+ *
  * \todo
  * There are several data structures that explicitly store a major version,
  * minor version, and patch level.  These structures should be modified to
@@ -879,7 +879,7 @@ struct __DRIversionRec {
 /**
  * Framebuffer information record.  Used by libGL to communicate information
  * about the framebuffer to the driver's \c __driCreateNewScreen function.
- * 
+ *
  * In XFree86, most of this information is derrived from data returned by
  * calling \c XF86DRIGetDeviceInfo.
  *

@@ -458,7 +458,7 @@ bool ac_get_supported_modifiers(const struct radeon_info *info,
                                 uint64_t *mods);
 bool ac_modifier_has_dcc(uint64_t modifier);
 bool ac_modifier_has_dcc_retile(uint64_t modifier);
-bool ac_modifier_supports_dcc_image_stores(uint64_t modifier);
+bool ac_modifier_supports_dcc_image_stores(enum amd_gfx_level gfx_level, uint64_t modifier);
 void ac_modifier_max_extent(const struct radeon_info *info,
                             uint64_t modifier, uint32_t *width, uint32_t *height);
 

@@ -2,6 +2,7 @@ use mesa_rust_gen::*;
 
 use std::ptr;
 
+#[derive(PartialEq, Eq, Hash)]
 pub struct PipeResource {
     pipe: *mut pipe_resource,
     pub is_user: bool,
@@ -82,6 +83,7 @@ impl PipeResource {
         &self,
         format: pipe_format,
         read_write: bool,
+        host_access: u16,
         app_img_info: Option<&AppImgInfo>,
     ) -> pipe_image_view {
         let u = if let Some(app_img_info) = app_img_info {
@@ -130,7 +132,7 @@ impl PipeResource {
         pipe_image_view {
             resource: self.pipe(),
             format: format,
-            access: access,
+            access: access | host_access,
             shader_access: shader_access,
             u: u,
         }

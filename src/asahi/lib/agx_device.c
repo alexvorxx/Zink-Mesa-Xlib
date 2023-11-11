@@ -6,16 +6,24 @@
 
 #include "agx_device.h"
 #include <inttypes.h>
+#include "util/timespec.h"
 #include "agx_bo.h"
+#include "agx_compile.h"
 #include "decode.h"
+#include "glsl_types.h"
+#include "libagx_shaders.h"
 
 #include <fcntl.h>
 #include <xf86drm.h>
 #include "drm-uapi/dma-buf.h"
+#include "util/blob.h"
 #include "util/log.h"
 #include "util/os_file.h"
 #include "util/os_mman.h"
+#include "util/os_time.h"
 #include "util/simple_mtx.h"
+#include "git_sha1.h"
+#include "nir_serialize.h"
 
 /* TODO: Linux UAPI. Dummy defines to get some things to compile. */
 #define ASAHI_BIND_READ  0
@@ -334,6 +342,12 @@ agx_open_device(void *memctx, struct agx_device *dev)
    dev->queue_id = agx_create_command_queue(dev, 0 /* TODO: CAPS */);
    agx_get_global_ids(dev);
 
+   glsl_type_singleton_init_or_ref();
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)libagx_shaders_nir,
+                    sizeof(libagx_shaders_nir));
+   dev->libagx = nir_deserialize(memctx, &agx_nir_options, &blob);
+
    return true;
 }
 
@@ -443,4 +457,21 @@ agx_debug_fault(struct agx_device *dev, uint64_t addr)
    }
 
    pthread_mutex_unlock(&dev->bo_map_lock);
+}
+
+uint64_t
+agx_get_gpu_timestamp(struct agx_device *dev)
+{
+#if DETECT_ARCH_ARCH64
+   uint64_t ret;
+   __asm__ volatile("mrs \t%0, cntvct_el0" : "=r"(ret));
+   return ret;
+#elif DETECT_ARCH_X86 || DETECT_ARCH_X86_64
+   /* Maps to the above when run under FEX without thunking */
+   uint32_t high, low;
+   __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+   return (uint64_t)low | ((uint64_t)high << 32);
+#else
+   unreachable("Kernel support for fetching timestamps pending");
+#endif
 }

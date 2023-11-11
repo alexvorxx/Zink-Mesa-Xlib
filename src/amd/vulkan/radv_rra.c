@@ -104,6 +104,24 @@ rra_dump_chunk_description(uint64_t offset, uint64_t header_size, uint64_t data_
    fwrite(&chunk, sizeof(struct rra_file_chunk_description), 1, output);
 }
 
+enum rra_memory_type {
+   RRA_MEMORY_TYPE_UNKNOWN,
+   RRA_MEMORY_TYPE_DDR,
+   RRA_MEMORY_TYPE_DDR2,
+   RRA_MEMORY_TYPE_DDR3,
+   RRA_MEMORY_TYPE_DDR4,
+   RRA_MEMORY_TYPE_DDR5,
+   RRA_MEMORY_TYPE_GDDR3,
+   RRA_MEMORY_TYPE_GDDR4,
+   RRA_MEMORY_TYPE_GDDR5,
+   RRA_MEMORY_TYPE_GDDR6,
+   RRA_MEMORY_TYPE_HBM,
+   RRA_MEMORY_TYPE_HBM2,
+   RRA_MEMORY_TYPE_HBM3,
+   RRA_MEMORY_TYPE_LPDDR4,
+   RRA_MEMORY_TYPE_LPDDR5,
+};
+
 #define RRA_FILE_DEVICE_NAME_MAX_SIZE 256
 
 struct rra_asic_info {
@@ -133,25 +151,29 @@ amdgpu_vram_type_to_rra(uint32_t type)
 {
    switch (type) {
    case AMD_VRAM_TYPE_UNKNOWN:
-      return 0;
+      return RRA_MEMORY_TYPE_UNKNOWN;
    case AMD_VRAM_TYPE_DDR2:
-      return 2;
+      return RRA_MEMORY_TYPE_DDR2;
    case AMD_VRAM_TYPE_DDR3:
-      return 3;
+      return RRA_MEMORY_TYPE_DDR3;
    case AMD_VRAM_TYPE_DDR4:
-      return 4;
+      return RRA_MEMORY_TYPE_DDR4;
    case AMD_VRAM_TYPE_DDR5:
-      return 5;
+      return RRA_MEMORY_TYPE_DDR5;
    case AMD_VRAM_TYPE_HBM:
-      return 10;
+      return RRA_MEMORY_TYPE_HBM;
    case AMD_VRAM_TYPE_GDDR3:
-      return 6;
+      return RRA_MEMORY_TYPE_GDDR3;
    case AMD_VRAM_TYPE_GDDR4:
-      return 7;
+      return RRA_MEMORY_TYPE_GDDR4;
    case AMD_VRAM_TYPE_GDDR5:
-      return 8;
+      return RRA_MEMORY_TYPE_GDDR5;
    case AMD_VRAM_TYPE_GDDR6:
-      return 9;
+      return RRA_MEMORY_TYPE_GDDR6;
+   case AMD_VRAM_TYPE_LPDDR4:
+      return RRA_MEMORY_TYPE_LPDDR4;
+   case AMD_VRAM_TYPE_LPDDR5:
+      return RRA_MEMORY_TYPE_LPDDR5;
    default:
       unreachable("invalid vram type");
    }

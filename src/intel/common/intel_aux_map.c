@@ -559,7 +559,7 @@ get_aux_entry(struct intel_aux_map_context *ctx, uint64_t main_address,
       *l1_entry_map_out = &l1_map[l1_index];
 }
 
-static void
+static bool
 add_mapping(struct intel_aux_map_context *ctx, uint64_t main_address,
             uint64_t aux_address, uint64_t format_bits,
             bool *state_changed)
@@ -597,8 +597,18 @@ add_mapping(struct intel_aux_map_context *ctx, uint64_t main_address,
       if (aux_map_debug)
          fprintf(stderr, "AUX-MAP L1[0x%x] is already marked valid!\n",
                  l1_index);
-      assert(*l1_entry == l1_data);
+
+      if (*l1_entry != l1_data) {
+         if (aux_map_debug)
+            fprintf(stderr,
+                    "AUX-MAP L1[0x%x] overwrite 0x%"PRIx64" != 0x%"PRIx64"\n",
+                    l1_index, current_l1_data, l1_data);
+
+         return false;
+      }
    }
+
+   return true;
 }
 
 uint64_t *
@@ -614,7 +624,7 @@ intel_aux_map_get_entry(struct intel_aux_map_context *ctx,
    return l1_entry_map;
 }
 
-void
+bool
 intel_aux_map_add_mapping(struct intel_aux_map_context *ctx, uint64_t main_address,
                           uint64_t aux_address, uint64_t main_size_B,
                           uint64_t format_bits)
@@ -628,13 +638,18 @@ intel_aux_map_add_mapping(struct intel_aux_map_context *ctx, uint64_t main_addre
    const uint64_t aux_page_size = get_meta_page_size(ctx->format);
    assert((aux_address & get_page_mask(aux_page_size)) == 0);
    while (main_inc_addr - main_address < main_size_B) {
-      add_mapping(ctx, main_inc_addr, aux_inc_addr, format_bits, &state_changed);
+      if (!add_mapping(ctx, main_inc_addr, aux_inc_addr, format_bits,
+                       &state_changed)) {
+         break;
+      }
       main_inc_addr = main_inc_addr + main_page_size;
       aux_inc_addr = aux_inc_addr + aux_page_size;
    }
    pthread_mutex_unlock(&ctx->mutex);
    if (state_changed)
       p_atomic_inc(&ctx->state_num);
+
+   return main_inc_addr - main_address >= main_size_B;
 }
 
 /**

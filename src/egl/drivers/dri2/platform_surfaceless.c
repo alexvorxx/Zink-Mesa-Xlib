@@ -308,16 +308,12 @@ surfaceless_probe_device_sw(_EGLDisplay *disp)
 EGLBoolean
 dri2_initialize_surfaceless(_EGLDisplay *disp)
 {
-   struct dri2_egl_display *dri2_dpy;
    const char *err;
    bool driver_loaded = false;
-
-   dri2_dpy = calloc(1, sizeof *dri2_dpy);
+   struct dri2_egl_display *dri2_dpy = dri2_display_create();
    if (!dri2_dpy)
-      return _eglError(EGL_BAD_ALLOC, "eglInitialize");
+      return EGL_FALSE;
 
-   dri2_dpy->fd_render_gpu = -1;
-   dri2_dpy->fd_display_gpu = -1;
    disp->DriverData = (void *)dri2_dpy;
 
    /* When ForceSoftware is false, we try the HW driver.  When ForceSoftware

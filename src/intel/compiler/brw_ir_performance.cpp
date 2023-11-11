@@ -72,7 +72,7 @@ namespace {
       /* Register part of the GRF. */
       EU_DEPENDENCY_ID_GRF0 = 0,
       /* Register part of the MRF.  Only used on Gfx4-6. */
-      EU_DEPENDENCY_ID_MRF0 = EU_DEPENDENCY_ID_GRF0 + BRW_MAX_GRF,
+      EU_DEPENDENCY_ID_MRF0 = EU_DEPENDENCY_ID_GRF0 + XE2_MAX_GRF,
       /* Address register part of the ARF. */
       EU_DEPENDENCY_ID_ADDR0 = EU_DEPENDENCY_ID_MRF0 + 24,
       /* Accumulator register part of the ARF. */

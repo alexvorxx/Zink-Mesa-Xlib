@@ -1678,10 +1678,12 @@ nir_opt_sort_and_pack_stack(nir_shader *shader,
       }
 
       /* Sort scratch item by component size. */
-      qsort(util_dynarray_begin(&ops),
-            util_dynarray_num_elements(&ops, struct scratch_item),
-            sizeof(struct scratch_item),
-            sort_scratch_item_by_size_and_value_id);
+      if (util_dynarray_num_elements(&ops, struct scratch_item)) {
+         qsort(util_dynarray_begin(&ops),
+               util_dynarray_num_elements(&ops, struct scratch_item),
+               sizeof(struct scratch_item),
+               sort_scratch_item_by_size_and_value_id);
+      }
 
       /* Reorder things on the stack */
       _mesa_hash_table_u64_clear(value_id_to_item);

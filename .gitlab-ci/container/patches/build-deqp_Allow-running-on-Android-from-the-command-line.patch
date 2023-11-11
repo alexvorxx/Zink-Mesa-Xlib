@@ -1,4 +1,4 @@
-From ff48eb81b574dc119647a0b6c8df4d978da7e42a Mon Sep 17 00:00:00 2001
+From dc97ee83a813f6b170079ddf2a04bbb06221a5a7 Mon Sep 17 00:00:00 2001
 From: Tomeu Vizoso <tomeu.vizoso@collabora.com>
 Date: Fri, 26 Aug 2022 18:24:27 +0200
 Subject: [PATCH 1/2] Allow running on Android from the command line
@@ -20,10 +20,10 @@ Signed-off-by: Tomeu Vizoso <tomeu.vizoso@collabora.com>
  3 files changed, 33 insertions(+), 51 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 358f2c875..5e4644cc2 100644
+index f9c61d0db..d6ad2990b 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -247,7 +247,7 @@ include_directories(
+@@ -272,7 +272,7 @@ include_directories(
  	external/vulkancts/framework/vulkan
  	)
  
@@ -32,7 +32,7 @@ index 358f2c875..5e4644cc2 100644
  	# On Android deqp modules are compiled as libraries and linked into final .so
  	set(DEQP_MODULE_LIBRARIES )
  	set(DEQP_MODULE_ENTRY_POINTS )
-@@ -291,7 +291,7 @@ macro (add_deqp_module MODULE_NAME SRCS LIBS EXECLIBS ENTRY)
+@@ -316,7 +316,7 @@ macro (add_deqp_module MODULE_NAME SRCS LIBS EXECLIBS ENTRY)
  	set(DEQP_MODULE_LIBRARIES		${DEQP_MODULE_LIBRARIES} PARENT_SCOPE)
  	set(DEQP_MODULE_ENTRY_POINTS	${DEQP_MODULE_ENTRY_POINTS} PARENT_SCOPE)
  
@@ -41,8 +41,8 @@ index 358f2c875..5e4644cc2 100644
  		# Executable target
  		add_executable(${MODULE_NAME} ${PROJECT_SOURCE_DIR}/framework/platform/tcuMain.cpp ${ENTRY})
  		target_link_libraries(${MODULE_NAME} PUBLIC "${EXECLIBS}" "${MODULE_NAME}${MODULE_LIB_TARGET_POSTFIX}")
-@@ -365,37 +365,7 @@ add_subdirectory(external/vulkancts/vkscpc)
- add_subdirectory(external/openglcts)
+@@ -390,37 +390,7 @@ add_subdirectory(external/vulkancts/vkscpc ${MAYBE_EXCLUDE_FROM_ALL})
+ add_subdirectory(external/openglcts ${MAYBE_EXCLUDE_FROM_ALL})
  
  # Single-binary targets
 -if (DE_OS_IS_ANDROID)
@@ -169,5 +169,5 @@ index b8a35898c..cf02e6b70 100644
 +	return new tcu::Android::Platform(activity);
 +}
 -- 
-2.41.0
+2.42.0
 

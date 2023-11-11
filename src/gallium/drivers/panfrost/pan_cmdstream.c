@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2023 Amazon.com, Inc. or its affiliates.
  * Copyright (C) 2018 Alyssa Rosenzweig
  * Copyright (C) 2020 Collabora Ltd.
  * Copyright © 2017 Intel Corporation
@@ -37,6 +38,7 @@
 
 #include "genxml/gen_macros.h"
 
+#include "pan_afbc_cso.h"
 #include "pan_blend.h"
 #include "pan_blitter.h"
 #include "pan_bo.h"
@@ -1702,8 +1704,7 @@ panfrost_emit_null_texture(struct mali_texture_packed *out)
       cfg.height = 1;
       cfg.depth = 1;
       cfg.array_size = 1;
-      cfg.format = PAN_ARCH >= 7 ? panfrost_pipe_format_v7[PIPE_FORMAT_NONE].hw
-                                 : panfrost_pipe_format_v6[PIPE_FORMAT_NONE].hw;
+      cfg.format = MALI_PACK_FMT(CONSTANT, 0000, L);
 #if PAN_ARCH <= 7
       cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
 #endif
@@ -3757,16 +3758,11 @@ panfrost_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *info,
  */
 
 static void
-panfrost_launch_grid(struct pipe_context *pipe,
-                     const struct pipe_grid_info *info)
+panfrost_launch_grid_on_batch(struct pipe_context *pipe,
+                              struct panfrost_batch *batch,
+                              const struct pipe_grid_info *info)
 {
    struct panfrost_context *ctx = pan_context(pipe);
-
-   /* XXX - shouldn't be necessary with working memory barriers. Affected
-    * test: KHR-GLES31.core.compute_shader.pipeline-post-xfb */
-   panfrost_flush_all_batches(ctx, "Launch grid pre-barrier");
-
-   struct panfrost_batch *batch = panfrost_get_batch_for_fbo(ctx);
 
    if (info->indirect && !PAN_GPU_INDIRECTS) {
       struct pipe_transfer *transfer;
@@ -3782,7 +3778,7 @@ panfrost_launch_grid(struct pipe_context *pipe,
       pipe_buffer_unmap(pipe, transfer);
 
       if (params[0] && params[1] && params[2])
-         panfrost_launch_grid(pipe, &direct);
+         panfrost_launch_grid_on_batch(pipe, batch, &direct);
 
       return;
    }
@@ -3878,7 +3874,107 @@ panfrost_launch_grid(struct pipe_context *pipe,
    panfrost_add_job(&batch->pool.base, &batch->scoreboard,
                     MALI_JOB_TYPE_COMPUTE, true, false, indirect_dep, 0, &t,
                     false);
+}
+
+static void
+panfrost_launch_grid(struct pipe_context *pipe,
+                     const struct pipe_grid_info *info)
+{
+   struct panfrost_context *ctx = pan_context(pipe);
+
+   /* XXX - shouldn't be necessary with working memory barriers. Affected
+    * test: KHR-GLES31.core.compute_shader.pipeline-post-xfb */
+   panfrost_flush_all_batches(ctx, "Launch grid pre-barrier");
+
+   struct panfrost_batch *batch = panfrost_get_batch_for_fbo(ctx);
+   panfrost_launch_grid_on_batch(pipe, batch, info);
+
    panfrost_flush_all_batches(ctx, "Launch grid post-barrier");
+}
+
+#define AFBC_BLOCK_ALIGN 16
+
+static void
+panfrost_launch_afbc_shader(struct panfrost_batch *batch, void *cso,
+                            struct pipe_constant_buffer *cbuf,
+                            unsigned nr_blocks)
+{
+   struct pipe_context *pctx = &batch->ctx->base;
+   void *saved_cso = NULL;
+   struct pipe_constant_buffer saved_const = {};
+   struct pipe_grid_info grid = {
+      .block[0] = 1,
+      .block[1] = 1,
+      .block[2] = 1,
+      .grid[0] = nr_blocks,
+      .grid[1] = 1,
+      .grid[2] = 1,
+   };
+
+   struct panfrost_constant_buffer *pbuf =
+      &batch->ctx->constant_buffer[PIPE_SHADER_COMPUTE];
+   saved_cso = batch->ctx->uncompiled[PIPE_SHADER_COMPUTE];
+   util_copy_constant_buffer(&pbuf->cb[0], &saved_const, true);
+
+   pctx->bind_compute_state(pctx, cso);
+   pctx->set_constant_buffer(pctx, PIPE_SHADER_COMPUTE, 0, false, cbuf);
+
+   panfrost_launch_grid_on_batch(pctx, batch, &grid);
+
+   pctx->bind_compute_state(pctx, saved_cso);
+   pctx->set_constant_buffer(pctx, PIPE_SHADER_COMPUTE, 0, true, &saved_const);
+}
+
+#define LAUNCH_AFBC_SHADER(name, batch, rsrc, consts, nr_blocks)               \
+   struct pan_afbc_shader_data *shaders =                                      \
+      panfrost_afbc_get_shaders(batch->ctx, rsrc, AFBC_BLOCK_ALIGN);           \
+   struct pipe_constant_buffer constant_buffer = {                             \
+      .buffer_size = sizeof(consts),                                           \
+      .user_buffer = &consts};                                                 \
+   panfrost_launch_afbc_shader(batch, shaders->name##_cso, &constant_buffer,   \
+                               nr_blocks);
+
+static void
+panfrost_afbc_size(struct panfrost_batch *batch, struct panfrost_resource *src,
+                   struct panfrost_bo *metadata, unsigned offset,
+                   unsigned level)
+{
+   struct pan_image_slice_layout *slice = &src->image.layout.slices[level];
+   struct panfrost_afbc_size_info consts = {
+      .src =
+         src->image.data.bo->ptr.gpu + src->image.data.offset + slice->offset,
+      .metadata = metadata->ptr.gpu + offset,
+   };
+
+   panfrost_batch_read_rsrc(batch, src, PIPE_SHADER_COMPUTE);
+   panfrost_batch_write_bo(batch, metadata, PIPE_SHADER_COMPUTE);
+
+   LAUNCH_AFBC_SHADER(size, batch, src, consts, slice->afbc.nr_blocks);
+}
+
+static void
+panfrost_afbc_pack(struct panfrost_batch *batch, struct panfrost_resource *src,
+                   struct panfrost_bo *dst,
+                   struct pan_image_slice_layout *dst_slice,
+                   struct panfrost_bo *metadata, unsigned metadata_offset,
+                   unsigned level)
+{
+   struct pan_image_slice_layout *src_slice = &src->image.layout.slices[level];
+   struct panfrost_afbc_pack_info consts = {
+      .src = src->image.data.bo->ptr.gpu + src->image.data.offset +
+             src_slice->offset,
+      .dst = dst->ptr.gpu + dst_slice->offset,
+      .metadata = metadata->ptr.gpu + metadata_offset,
+      .header_size = dst_slice->afbc.header_size,
+      .src_stride = src_slice->afbc.stride,
+      .dst_stride = dst_slice->afbc.stride,
+   };
+
+   panfrost_batch_write_rsrc(batch, src, PIPE_SHADER_COMPUTE);
+   panfrost_batch_write_bo(batch, dst, PIPE_SHADER_COMPUTE);
+   panfrost_batch_add_bo(batch, metadata, PIPE_SHADER_COMPUTE);
+
+   LAUNCH_AFBC_SHADER(pack, batch, src, consts, dst_slice->afbc.nr_blocks);
 }
 
 static void *
@@ -4127,7 +4223,8 @@ panfrost_create_sampler_view(struct pipe_context *pctx,
    struct panfrost_sampler_view *so =
       rzalloc(pctx, struct panfrost_sampler_view);
 
-   pan_legalize_afbc_format(ctx, pan_resource(texture), template->format);
+   pan_legalize_afbc_format(ctx, pan_resource(texture), template->format,
+                            false);
 
    pipe_reference(NULL, &texture->reference);
 
@@ -4497,6 +4594,8 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
    screen->vtbl.init_polygon_list = init_polygon_list;
    screen->vtbl.get_compiler_options = GENX(pan_shader_get_compiler_options);
    screen->vtbl.compile_shader = GENX(pan_shader_compile);
+   screen->vtbl.afbc_size = panfrost_afbc_size;
+   screen->vtbl.afbc_pack = panfrost_afbc_pack;
 
    GENX(pan_blitter_init)
    (dev, &screen->blitter.bin_pool.base, &screen->blitter.desc_pool.base);

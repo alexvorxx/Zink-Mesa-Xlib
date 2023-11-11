@@ -63,9 +63,9 @@ dump_anv_vm_bind(struct anv_device *device,
    else
       sparse_debug("bo:---- ");
    sparse_debug("res_offset:%08"PRIx64" size:%08"PRIx64" "
-                "mem_offset:%08"PRIx64"\n",
+                "mem_offset:%08"PRIx64" addr:%016"PRIx64"\n",
                 bind->address - sparse->address, bind->size,
-                bind->bo_offset);
+                bind->bo_offset, bind->address);
 }
 
 static void
@@ -276,6 +276,36 @@ anv_sparse_get_standard_image_block_shape(enum isl_format format,
    return vk_extent3d_el_to_px(block_shape, layout);
 }
 
+static VkResult
+anv_sparse_bind_vm_bind(struct anv_device *device, int num_binds,
+                        struct anv_vm_bind *binds)
+{
+   /* FIXME: here we were supposed to issue a single vm_bind ioctl by calling
+    * vm_bind(device, num_binds, binds), but for an unknown reason some
+    * shader-related tests fail when we do that, so work around it for now.
+    * See: https://gitlab.freedesktop.org/drm/xe/kernel/-/issues/746
+    */
+   for (int b = 0; b < num_binds; b++) {
+      int rc = device->kmd_backend->vm_bind(device, 1, &binds[b]);
+      if (rc)
+         return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+   }
+   return VK_SUCCESS;
+}
+
+static VkResult
+anv_sparse_bind(struct anv_device *device,
+                struct anv_sparse_binding_data *sparse,
+                int num_binds, struct anv_vm_bind *binds)
+{
+   if (INTEL_DEBUG(DEBUG_SPARSE)) {
+      for (int b = 0; b < num_binds; b++)
+         dump_anv_vm_bind(device, sparse, &binds[b]);
+   }
+
+   return anv_sparse_bind_vm_bind(device, num_binds, binds);
+}
+
 VkResult
 anv_init_sparse_bindings(struct anv_device *device,
                          uint64_t size_,
@@ -302,12 +332,11 @@ anv_init_sparse_bindings(struct anv_device *device,
       .size = size,
       .op = ANV_VM_BIND,
    };
-   dump_anv_vm_bind(device, sparse, &bind);
-   int rc = device->kmd_backend->vm_bind(device, 1, &bind);
-   if (rc) {
+
+   VkResult res = anv_sparse_bind(device, sparse, 1, &bind);
+   if (res != VK_SUCCESS) {
       anv_vma_free(device, sparse->vma_heap, sparse->address, sparse->size);
-      return vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY,
-                       "failed to bind sparse buffer");
+      return res;
    }
 
    return VK_SUCCESS;
@@ -330,11 +359,9 @@ anv_free_sparse_bindings(struct anv_device *device,
       .size = sparse->size,
       .op = ANV_VM_UNBIND,
    };
-   dump_anv_vm_bind(device, sparse, &unbind);
-   int ret = device->kmd_backend->vm_bind(device, 1, &unbind);
-   if (ret)
-      return vk_errorf(device, VK_ERROR_UNKNOWN,
-                       "failed to unbind vm for sparse resource\n");
+   VkResult res = anv_sparse_bind(device, sparse, 1, &unbind);
+   if (res != VK_SUCCESS)
+      return res;
 
    anv_vma_free(device, sparse->vma_heap, sparse->address, sparse->size);
 
@@ -577,14 +604,7 @@ anv_sparse_bind_resource_memory(struct anv_device *device,
 {
    struct anv_vm_bind bind = vk_bind_to_anv_vm_bind(sparse, vk_bind);
 
-   dump_anv_vm_bind(device, sparse, &bind);
-   int rc = device->kmd_backend->vm_bind(device, 1, &bind);
-   if (rc) {
-      return vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY,
-                       "failed to bind sparse buffer");
-   }
-
-   return VK_SUCCESS;
+   return anv_sparse_bind(device, sparse, 1, &bind);
 }
 
 VkResult
@@ -656,11 +676,6 @@ anv_sparse_bind_image_memory(struct anv_queue *queue,
     * they're guaranteed to be contiguous, so we calculate how many blocks
     * that is and how big is each block to figure the bind size of a whole
     * line.
-    *
-    * TODO: if we're binding mip_level 0 and bind_extent_el.width is the total
-    * line, the whole rectangle is contiguous so we could do this with a
-    * single bind instead of per-line. We should figure out how common this is
-    * and consider implementing this special-case.
     */
    uint64_t line_bind_size_in_blocks = bind_extent_el.width /
                                        block_shape_el.width;
@@ -712,24 +727,26 @@ anv_sparse_bind_image_memory(struct anv_queue *queue,
          assert(opaque_bind.size % block_size_B == 0);
 
          assert(num_binds < binds_array_len);
-         binds[num_binds] = vk_bind_to_anv_vm_bind(sparse_data,
-                                                   &opaque_bind);
-         dump_anv_vm_bind(device, sparse_data, &binds[num_binds]);
-         num_binds++;
+
+         struct anv_vm_bind anv_bind = vk_bind_to_anv_vm_bind(sparse_data,
+                                                              &opaque_bind);
+         struct anv_vm_bind *prev_bind = num_binds > 0 ?
+                                          &binds[num_binds - 1] : NULL;
+         if (prev_bind &&
+             anv_bind.op == prev_bind->op &&
+             anv_bind.bo == prev_bind->bo &&
+             anv_bind.address == prev_bind->address + prev_bind->size &&
+             (anv_bind.bo_offset == prev_bind->bo_offset + prev_bind->size ||
+              anv_bind.bo == NULL)) {
+            prev_bind->size += anv_bind.size;
+         } else {
+            binds[num_binds] = anv_bind;
+            num_binds++;
+         }
       }
    }
 
-   /* FIXME: here we were supposed to issue a single vm_bind ioctl by calling
-    * vm_bind(device, num_binds, binds), but for an unknown reason some
-    * shader-related tests fail when we do that, so work around it for now.
-    */
-   for (int b = 0; b < num_binds; b++) {
-      int rc = device->kmd_backend->vm_bind(device, 1, &binds[b]);
-      if (rc) {
-         ret = vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
-         break;
-      }
-   }
+   ret = anv_sparse_bind(device, sparse_data, num_binds, binds);
 
    STACK_ARRAY_FINISH(binds);
 

@@ -106,6 +106,7 @@ static void radeon_vcn_enc_h264_get_spec_misc_param(struct radeon_encoder *enc,
       pic->pic_ctrl.deblocking_filter_control_present_flag;
    enc->enc_pic.spec_misc.redundant_pic_cnt_present_flag =
       pic->pic_ctrl.redundant_pic_cnt_present_flag;
+   enc->enc_pic.spec_misc.b_picture_enabled = !!pic->seq.max_num_reorder_frames;
 }
 
 static void radeon_vcn_enc_h264_get_rc_param(struct radeon_encoder *enc,
@@ -194,6 +195,7 @@ static void radeon_vcn_enc_h264_get_vui_param(struct radeon_encoder *enc,
       pic->seq.chroma_sample_loc_type_top_field;
    enc->enc_pic.vui_info.chroma_sample_loc_type_bottom_field =
       pic->seq.chroma_sample_loc_type_bottom_field;
+   enc->enc_pic.vui_info.max_num_reorder_frames = pic->seq.max_num_reorder_frames;
 }
 
 /* only checking the first slice to get num of mbs in slice to
@@ -780,9 +782,9 @@ static int setup_dpb(struct radeon_encoder *enc)
       full_size = align(full_size, 4);
 
       enc_pic->ctx_buf.two_pass_search_center_map_offset = offset;
-      if (is_h264)
+      if (is_h264 && !enc_pic->spec_misc.b_picture_enabled)
          offset += align((pre_size * 4 + full_size) * sizeof(uint32_t), enc->alignment);
-      else
+      else if (!is_h264)
          offset += align((pre_size * 52 + full_size) * sizeof(uint32_t), enc->alignment);
    } else
       enc_pic->ctx_buf.two_pass_search_center_map_offset = 0;
@@ -819,9 +821,15 @@ static int setup_dpb(struct radeon_encoder *enc)
    }
 
    enc_pic->ctx_buf.num_reconstructed_pictures = num_reconstructed_pictures;
-   enc_pic->ctx_buf.colloc_buffer_offset = 0;
-   enc->dpb_size = offset;
    enc->max_ltr_idx = 0;
+
+   if (enc_pic->spec_misc.b_picture_enabled) {
+      enc_pic->ctx_buf.colloc_buffer_offset = offset;
+      offset += (align((aligned_width / 16), 64) / 2) * (aligned_height / 16);
+   } else
+      enc_pic->ctx_buf.colloc_buffer_offset = 0;
+
+   enc->dpb_size = offset;
 
    return offset;
 }

@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::env;
 use std::ffi::CString;
+use std::mem::transmute;
 use std::os::raw::*;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -68,7 +69,7 @@ pub trait HelperContextWrapper {
         offset: i32,
         size: i32,
         rw: RWFlags,
-    ) -> PipeTransfer;
+    ) -> Option<PipeTransfer>;
 
     fn texture_map_directly(
         &self,
@@ -77,7 +78,12 @@ pub trait HelperContextWrapper {
         rw: RWFlags,
     ) -> Option<PipeTransfer>;
 
-    fn texture_map_coherent(&self, res: &PipeResource, bx: &pipe_box, rw: RWFlags) -> PipeTransfer;
+    fn texture_map_coherent(
+        &self,
+        res: &PipeResource,
+        bx: &pipe_box,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer>;
 
     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
     fn delete_compute_state(&self, cso: *mut c_void);
@@ -85,6 +91,9 @@ pub trait HelperContextWrapper {
     fn compute_state_subgroup_size(&self, state: *mut c_void, block: &[u32; 3]) -> u32;
 
     fn unmap(&self, tx: PipeTransfer);
+
+    fn is_create_fence_fd_supported(&self) -> bool;
+    fn import_fence(&self, fence_fd: &FenceFd) -> PipeFence;
 }
 
 pub struct HelperContext<'a> {
@@ -92,6 +101,16 @@ pub struct HelperContext<'a> {
 }
 
 impl<'a> HelperContext<'a> {
+    pub fn resource_copy_region(
+        &self,
+        src: &PipeResource,
+        dst: &PipeResource,
+        dst_offset: &[u32; 3],
+        bx: &pipe_box,
+    ) {
+        self.lock.resource_copy_region(src, dst, dst_offset, bx);
+    }
+
     pub fn buffer_subdata(
         &self,
         res: &PipeResource,
@@ -140,7 +159,7 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
         offset: i32,
         size: i32,
         rw: RWFlags,
-    ) -> PipeTransfer {
+    ) -> Option<PipeTransfer> {
         self.lock
             .buffer_map(res, offset, size, rw, ResourceMapType::Coherent)
     }
@@ -154,7 +173,12 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
         self.lock.texture_map_directly(res, bx, rw)
     }
 
-    fn texture_map_coherent(&self, res: &PipeResource, bx: &pipe_box, rw: RWFlags) -> PipeTransfer {
+    fn texture_map_coherent(
+        &self,
+        res: &PipeResource,
+        bx: &pipe_box,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer> {
         self.lock
             .texture_map(res, bx, rw, ResourceMapType::Coherent)
     }
@@ -178,16 +202,25 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
     fn unmap(&self, tx: PipeTransfer) {
         tx.with_ctx(&self.lock);
     }
+
+    fn is_create_fence_fd_supported(&self) -> bool {
+        self.lock.is_create_fence_fd_supported()
+    }
+
+    fn import_fence(&self, fd: &FenceFd) -> PipeFence {
+        self.lock.import_fence(fd)
+    }
 }
 
 impl_cl_type_trait!(cl_device_id, Device, CL_INVALID_DEVICE);
 
 impl Device {
-    fn new(screen: Arc<PipeScreen>) -> Option<Arc<Device>> {
+    fn new(screen: PipeScreen) -> Option<Arc<Device>> {
         if !Self::check_valid(&screen) {
             return None;
         }
 
+        let screen = Arc::new(screen);
         // Create before loading libclc as llvmpipe only creates the shader cache with the first
         // context being created.
         let helper_ctx = screen.create_context()?;
@@ -566,6 +599,10 @@ impl Device {
             add_feat(1, 0, 0, "__opencl_c_fp64");
         }
 
+        if self.is_gl_sharing_supported() {
+            add_ext(1, 0, 0, "cl_khr_gl_sharing");
+        }
+
         if self.int64_supported() {
             if self.embedded {
                 add_ext(1, 0, 0, "cles_khr_int64");
@@ -623,8 +660,8 @@ impl Device {
             .shader_param(pipe_shader_type::PIPE_SHADER_COMPUTE, cap)
     }
 
-    pub fn all() -> Vec<Arc<Device>> {
-        load_screens().into_iter().filter_map(Device::new).collect()
+    pub fn all() -> impl Iterator<Item = Arc<Device>> {
+        load_screens().filter_map(Device::new)
     }
 
     pub fn address_bits(&self) -> cl_uint {
@@ -634,9 +671,17 @@ impl Device {
 
     pub fn const_max_size(&self) -> cl_ulong {
         min(
-            self.max_mem_alloc(),
-            self.screen
-                .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64,
+            // Needed to fix the `api min_max_constant_buffer_size` CL CTS test as it can't really
+            // handle arbitrary values here. We might want to reconsider later and figure out how to
+            // advertize higher values without tripping of the test.
+            // should be at least 1 << 16 (native UBO size on NVidia)
+            // advertising more just in case it benefits other hardware
+            1 << 26,
+            min(
+                self.max_mem_alloc(),
+                self.screen
+                    .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64,
+            ),
         )
     }
 
@@ -680,6 +725,18 @@ impl Device {
         }
 
         self.screen.param(pipe_cap::PIPE_CAP_DOUBLES) == 1
+    }
+
+    pub fn is_gl_sharing_supported(&self) -> bool {
+        self.screen.param(pipe_cap::PIPE_CAP_DMABUF) != 0
+            && !self.is_device_software()
+            && self.screen.is_res_handle_supported()
+            && self.screen.device_uuid().is_some()
+            && self.helper_ctx().is_create_fence_fd_supported()
+    }
+
+    pub fn is_device_software(&self) -> bool {
+        self.screen.device_type() == pipe_loader_device_type::PIPE_LOADER_DEVICE_SOFTWARE
     }
 
     pub fn get_nir_options(&self) -> nir_shader_compiler_options {
@@ -750,8 +807,12 @@ impl Device {
     }
 
     pub fn image_buffer_size(&self) -> usize {
-        self.screen
-            .param(pipe_cap::PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT) as usize
+        min(
+            // the CTS requires it to not exceed `CL_MAX_MEM_ALLOC_SIZE`
+            self.max_mem_alloc(),
+            self.screen
+                .param(pipe_cap::PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT) as cl_ulong,
+        ) as usize
     }
 
     pub fn image_read_count(&self) -> cl_uint {
@@ -852,7 +913,7 @@ impl Device {
     pub fn param_max_size(&self) -> usize {
         min(
             self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE) as u32,
-            32 * 1024,
+            4 * 1024,
         ) as usize
     }
 
@@ -963,7 +1024,7 @@ impl Device {
     }
 }
 
-fn devs() -> &'static Vec<Arc<Device>> {
+pub fn devs() -> &'static Vec<Arc<Device>> {
     &Platform::get().devs
 }
 
@@ -973,4 +1034,14 @@ pub fn get_devs_for_type(device_type: cl_device_type) -> Vec<&'static Device> {
         .filter(|d| device_type & d.device_type(true) != 0)
         .map(Arc::as_ref)
         .collect()
+}
+
+pub fn get_dev_for_uuid(uuid: [c_char; UUID_SIZE]) -> Option<&'static Device> {
+    devs()
+        .iter()
+        .find(|d| {
+            let uuid: [c_uchar; UUID_SIZE] = unsafe { transmute(uuid) };
+            uuid == d.screen().device_uuid().unwrap()
+        })
+        .map(Arc::as_ref)
 }

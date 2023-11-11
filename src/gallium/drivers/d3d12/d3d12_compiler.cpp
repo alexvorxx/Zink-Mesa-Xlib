@@ -1113,9 +1113,10 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
          if (wrap_state.is_int_sampler) {
             memcpy(&key->tex_wrap_states[i], &wrap_state, sizeof(wrap_state));
             key->swizzle_state[i] = sel_ctx->ctx->tex_swizzle_state[stage][i];
-         }
-         else
+         } else {
             memset(&key->tex_wrap_states[i], 0, sizeof(key->tex_wrap_states[i]));
+            key->swizzle_state[i] = { PIPE_SWIZZLE_X,  PIPE_SWIZZLE_Y,  PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W };
+         }
       }
    }
 

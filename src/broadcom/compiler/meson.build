@@ -32,9 +32,7 @@ libbroadcom_compiler_files = files(
   'vir_to_qpu.c',
   'qpu_schedule.c',
   'qpu_validate.c',
-  'v3d33_tex.c',
-  'v3d40_tex.c',
-  'v3d33_vpm_setup.c',
+  'v3d_tex.c',
   'v3d_compiler.h',
   'v3d_nir_lower_io.c',
   'v3d_nir_lower_image_load_store.c',
@@ -43,6 +41,7 @@ libbroadcom_compiler_files = files(
   'v3d_nir_lower_logic_ops.c',
   'v3d_nir_lower_scratch.c',
   'v3d_nir_lower_txf_ms.c',
+  'v3d_packing.c',
 )
 
 libbroadcom_compiler = static_library(

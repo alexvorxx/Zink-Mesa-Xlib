@@ -2584,6 +2584,18 @@ guess_image_format_for_var(nir_shader *s, nir_variable *var)
    return true;
 }
 
+static void
+update_intrinsic_format_and_type(nir_intrinsic_instr *intr, nir_variable *var)
+{
+   nir_intrinsic_set_format(intr, var->data.image.format);
+   nir_alu_type alu_type =
+      nir_get_nir_type_for_glsl_base_type(glsl_get_sampler_result_type(glsl_without_array(var->type)));
+   if (nir_intrinsic_has_src_type(intr))
+      nir_intrinsic_set_src_type(intr, alu_type);
+   else if (nir_intrinsic_has_dest_type(intr))
+      nir_intrinsic_set_dest_type(intr, alu_type);
+}
+
 static bool
 update_intrinsic_formats(nir_builder *b, nir_intrinsic_instr *intr,
                          void *data)
@@ -2594,7 +2606,7 @@ update_intrinsic_formats(nir_builder *b, nir_intrinsic_instr *intr,
    if (deref) {
       nir_variable *var = nir_deref_instr_get_variable(deref);
       if (var)
-         nir_intrinsic_set_format(intr, var->data.image.format);
+         update_intrinsic_format_and_type(intr, var);
       return var != NULL;
    }
 
@@ -2605,7 +2617,7 @@ update_intrinsic_formats(nir_builder *b, nir_intrinsic_instr *intr,
    nir_foreach_variable_with_modes(var, b->shader, nir_var_image) {
       if (var->data.binding <= binding &&
           var->data.binding + aoa_size(var->type) > binding) {
-         nir_intrinsic_set_format(intr, var->data.image.format);
+         update_intrinsic_format_and_type(intr, var);
          return true;
       }
    }

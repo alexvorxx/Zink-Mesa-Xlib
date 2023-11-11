@@ -743,7 +743,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkRayTra
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    radv_pipeline_init(device, &pipeline->base.base, RADV_PIPELINE_RAY_TRACING);
-   pipeline->base.base.create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+   pipeline->base.base.create_flags = vk_rt_pipeline_create_flags(pCreateInfo);
    pipeline->stage_count = local_create_info.stageCount;
    pipeline->group_count = local_create_info.groupCount;
    pipeline->stages = stages;
@@ -847,7 +847,7 @@ radv_CreateRayTracingPipelinesKHR(VkDevice _device, VkDeferredOperationKHR defer
          result = r;
          pPipelines[i] = VK_NULL_HANDLE;
 
-         const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(&pCreateInfos[i]);
+         const VkPipelineCreateFlagBits2KHR create_flags = vk_rt_pipeline_create_flags(&pCreateInfos[i]);
          if (create_flags & VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR)
             break;
       }

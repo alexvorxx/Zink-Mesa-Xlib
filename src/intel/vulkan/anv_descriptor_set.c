@@ -280,7 +280,9 @@ anv_descriptor_size_for_mutable_type(const struct anv_physical_device *device,
 {
    unsigned size = 0;
 
-   if (!mutable_info || mutable_info->mutableDescriptorTypeListCount == 0) {
+   if (!mutable_info ||
+       mutable_info->mutableDescriptorTypeListCount == 0 ||
+       binding >= mutable_info->mutableDescriptorTypeListCount) {
       for(VkDescriptorType i = 0; i <= VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT; i++) {
 
          if (i == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC ||
@@ -1345,6 +1347,11 @@ anv_descriptor_set_create(struct anv_device *device,
 
       if (!pool->host_only) {
          set->desc_surface_state = anv_descriptor_pool_alloc_state(pool);
+         if (set->desc_surface_state.map == NULL) {
+            anv_descriptor_pool_free_set(pool, set);
+            return vk_error(pool, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         }
+
          anv_fill_buffer_surface_state(device, set->desc_surface_state.map,
                                        format, ISL_SWIZZLE_IDENTITY,
                                        ISL_SURF_USAGE_CONSTANT_BUFFER_BIT,
@@ -1533,7 +1540,7 @@ VkResult anv_FreeDescriptorSets(
    return VK_SUCCESS;
 }
 
-void
+bool
 anv_push_descriptor_set_init(struct anv_cmd_buffer *cmd_buffer,
                              struct anv_push_descriptor_set *push_set,
                              struct anv_descriptor_set_layout *layout)
@@ -1567,10 +1574,10 @@ anv_push_descriptor_set_init(struct anv_cmd_buffer *cmd_buffer,
       struct anv_physical_device *pdevice = cmd_buffer->device->physical;
       struct anv_state_stream *push_stream =
          pdevice->indirect_descriptors ?
-         &cmd_buffer->push_descriptor_stream :
+         &cmd_buffer->indirect_push_descriptor_stream :
          &cmd_buffer->surface_state_stream;
       uint64_t push_base_address = pdevice->indirect_descriptors ?
-         pdevice->va.push_descriptor_pool.addr :
+         pdevice->va.indirect_push_descriptor_pool.addr :
          pdevice->va.internal_surface_state_pool.addr;
 
       /* The previous buffer is either actively used by some GPU command (so
@@ -1580,6 +1587,9 @@ anv_push_descriptor_set_init(struct anv_cmd_buffer *cmd_buffer,
          anv_state_stream_alloc(push_stream,
                                 anv_descriptor_set_layout_descriptor_buffer_size(layout, 0),
                                 ANV_UBO_ALIGNMENT);
+      if (desc_mem.map == NULL)
+         return false;
+
       if (set->desc_mem.alloc_size) {
          /* TODO: Do we really need to copy all the time? */
          memcpy(desc_mem.map, set->desc_mem.map,
@@ -1593,6 +1603,8 @@ anv_push_descriptor_set_init(struct anv_cmd_buffer *cmd_buffer,
       set->desc_offset = anv_address_physical(set->desc_addr) -
                          push_base_address;
    }
+
+   return true;
 }
 
 void
@@ -1972,7 +1984,7 @@ anv_descriptor_set_write_buffer(struct anv_device *device,
       isl_buffer_fill_state(&device->isl_dev, desc_map,
                             .address = anv_address_physical(bind_addr),
                             .mocs = isl_mocs(&device->isl_dev, usage,
-                                             bind_addr.bo && bind_addr.bo->is_external),
+                                             bind_addr.bo && anv_bo_is_external(bind_addr.bo)),
                             .size_B = desc->bind_range,
                             .format = format,
                             .swizzle = ISL_SWIZZLE_IDENTITY,

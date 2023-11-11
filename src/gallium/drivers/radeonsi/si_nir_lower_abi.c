@@ -5,7 +5,6 @@
  */
 
 #include "nir_builder.h"
-#include "util/u_prim.h"
 
 #include "ac_nir.h"
 #include "si_pipe.h"
@@ -41,7 +40,7 @@ static nir_def *get_num_vert_per_prim(nir_builder *b, struct si_shader *shader,
 
    unsigned num_vertices;
    if (stage == MESA_SHADER_GEOMETRY) {
-      num_vertices = u_vertices_per_prim(info->base.gs.output_primitive);
+      num_vertices = mesa_vertices_per_prim(info->base.gs.output_primitive);
    } else if (stage == MESA_SHADER_VERTEX) {
       if (info->base.vs.blit_sgprs_amd)
          num_vertices = 3;
@@ -680,7 +679,7 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
       break;
    case nir_intrinsic_load_tess_rel_patch_id_amd:
       /* LLVM need to replace patch id arg, so have to be done in LLVM backend. */
-      if (!shader->use_aco)
+      if (!sel->screen->use_aco)
          return false;
 
       if (stage == MESA_SHADER_TESS_CTRL) {
@@ -740,7 +739,7 @@ static bool lower_tex(nir_builder *b, nir_instr *instr, struct lower_abi_state *
     */
 
    /* LLVM keep non-uniform sampler as index, so can't do this in NIR. */
-   if (tex->is_shadow && gfx_level >= GFX8 && gfx_level <= GFX9 && s->shader->use_aco) {
+   if (tex->is_shadow && gfx_level >= GFX8 && gfx_level <= GFX9 && sel->screen->use_aco) {
       int samp_index = nir_tex_instr_src_index(tex, nir_tex_src_sampler_handle);
       int comp_index = nir_tex_instr_src_index(tex, nir_tex_src_comparator);
       assert(samp_index >= 0 && comp_index >= 0);

@@ -105,6 +105,17 @@ panfrost_afbc_is_wide(uint64_t modifier)
 }
 
 /*
+ * Given an AFBC modifier, return the subblock size (subdivision of a
+ * superblock). This is always 4x4 for now as we only support one AFBC
+ * superblock layout.
+ */
+struct pan_block_size
+panfrost_afbc_subblock_size(uint64_t modifier)
+{
+   return (struct pan_block_size){4, 4};
+}
+
+/*
  * Given a format, determine the tile size used for u-interleaving. For formats
  * that are already block compressed, this is 4x4. For all other formats, this
  * is 16x16, hence the modifier name.
@@ -148,7 +159,7 @@ pan_afbc_tile_size(uint64_t modifier)
  * Determine the number of bytes between header rows for an AFBC image. For an
  * image with linear headers, this is simply the number of header blocks
  * (=superblocks) per row times the numbers of bytes per header block. For an
- * image with linear headers, this is multipled by the number of rows of
+ * image with tiled headers, this is multipled by the number of rows of
  * header blocks are in a tile together.
  */
 uint32_t
@@ -174,11 +185,20 @@ pan_afbc_stride_blocks(uint64_t modifier, uint32_t row_stride_bytes)
 }
 
 /*
+ * Determine the required alignment for the slice offset of an image. For
+ * now, this is always aligned on 64-byte boundaries. */
+uint32_t
+pan_slice_align(uint64_t modifier)
+{
+   return 64;
+}
+
+/*
  * Determine the required alignment for the body offset of an AFBC image. For
  * now, this depends only on whether tiling is in use. These minimum alignments
  * are required on all current GPUs.
  */
-static inline uint32_t
+uint32_t
 pan_afbc_body_align(uint64_t modifier)
 {
    return (modifier & AFBC_FORMAT_MOD_TILED) ? 4096 : 64;
@@ -359,7 +379,7 @@ pan_image_layout_init(const struct panfrost_device *dev,
       /* Align levels to cache-line as a performance improvement for
        * linear/tiled and as a requirement for AFBC */
 
-      offset = ALIGN_POT(offset, 64);
+      offset = ALIGN_POT(offset, pan_slice_align(layout->modifier));
 
       slice->offset = offset;
 
@@ -390,6 +410,9 @@ pan_image_layout_init(const struct panfrost_device *dev,
       if (afbc) {
          slice->row_stride =
             pan_afbc_row_stride(layout->modifier, effective_width);
+         slice->afbc.stride = effective_width / block_size.width;
+         slice->afbc.nr_blocks =
+            slice->afbc.stride * (effective_height / block_size.height);
          slice->afbc.header_size =
             ALIGN_POT(slice->row_stride * (effective_height / align_h),
                       pan_afbc_body_align(layout->modifier));

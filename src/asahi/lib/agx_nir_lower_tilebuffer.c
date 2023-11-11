@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <stdint.h>
 #include "compiler/agx_internal_formats.h"
 #include "compiler/glsl_types.h"
+#include "util/format/u_format.h"
 #include "util/macros.h"
 #include "agx_nir_format_helpers.h"
 #include "agx_pack.h"
@@ -57,6 +59,24 @@ store_tilebuffer(nir_builder *b, struct agx_tilebuffer_layout *tib,
          value = nir_f2f32(b, value);
    }
 
+   /* 8-bit formats must be clamped in software, so do so on store. Piglit
+    * gl-3.0-render-integer checks this.
+    */
+   const struct util_format_description *desc = util_format_description(format);
+   unsigned c = util_format_get_first_non_void_channel(format);
+
+   if (desc->channel[c].size == 8 && util_format_is_pure_integer(format)) {
+      assert(desc->is_array);
+
+      value = nir_u2u16(b, value);
+      if (util_format_is_pure_sint(logical_format)) {
+         value = nir_iclamp(b, value, nir_imm_intN_t(b, INT8_MIN, 16),
+                            nir_imm_intN_t(b, INT8_MAX, 16));
+      } else {
+         value = nir_umin(b, value, nir_imm_intN_t(b, UINT8_MAX, 16));
+      }
+   }
+
    uint8_t offset_B = agx_tilebuffer_offset_B(tib, rt);
    nir_store_local_pixel_agx(b, value, nir_imm_intN_t(b, ALL_SAMPLES, 16),
                              .base = offset_B, .write_mask = write_mask,
@@ -97,10 +117,6 @@ load_tilebuffer(nir_builder *b, struct agx_tilebuffer_layout *tib,
  *
  * Note that this lower happens after driver bindings are lowered, so the
  * bindless handle is in the AGX-specific format.
- *
- * Assumes that texture states are mapped to a bindless table is in u0_u1 and
- * texture/PBE descriptors are alternated for each render target. This is
- * ABI. If we need to make this more flexible for Vulkan later, we can.
  */
 static nir_def *
 handle_for_rt(nir_builder *b, unsigned base, unsigned rt, bool pbe,
@@ -109,13 +125,10 @@ handle_for_rt(nir_builder *b, unsigned base, unsigned rt, bool pbe,
    unsigned index = base + (2 * rt) + (pbe ? 1 : 0);
    *bindless = (*bindless) || (index >= AGX_NUM_TEXTURE_STATE_REGS);
 
-   if (*bindless) {
-      unsigned table = 0 * 2;
-      unsigned offset_B = index * AGX_TEXTURE_LENGTH;
-      return nir_imm_ivec2(b, table, offset_B);
-   } else {
+   if (*bindless)
+      return nir_load_texture_handle_agx(b, nir_imm_int(b, index));
+   else
       return nir_imm_intN_t(b, index, 16);
-   }
 }
 
 static enum glsl_sampler_dim

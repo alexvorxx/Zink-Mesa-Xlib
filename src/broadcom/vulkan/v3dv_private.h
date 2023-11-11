@@ -618,10 +618,10 @@ struct v3dv_device_memory {
 
 #define V3DV_MAX_PLANE_COUNT 3
 struct v3dv_format_plane {
-   /* One of V3D33_OUTPUT_IMAGE_FORMAT_*, or OUTPUT_IMAGE_FORMAT_NO */
+   /* One of V3D42_OUTPUT_IMAGE_FORMAT_*, or OUTPUT_IMAGE_FORMAT_NO */
    uint8_t rt_type;
 
-   /* One of V3D33_TEXTURE_DATA_FORMAT_*. */
+   /* One of V3D42_TEXTURE_DATA_FORMAT_*. */
    uint8_t tex_type;
 
    /* Swizzle to apply to the RGBA shader output for storing to the tile

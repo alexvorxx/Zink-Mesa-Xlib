@@ -36,7 +36,8 @@
 #include "v3d_screen.h"
 #include "v3d_context.h"
 #include "v3d_resource.h"
-#include "broadcom/cle/v3d_packet_v33_pack.h"
+/* The packets used here the same across V3D versions. */
+#include "broadcom/cle/v3d_packet_v42_pack.h"
 
 static void
 v3d_debug_resource_layout(struct v3d_resource *rsc, const char *caller)
@@ -99,7 +100,17 @@ v3d_resource_bo_alloc(struct v3d_resource *rsc)
         struct pipe_screen *pscreen = prsc->screen;
         struct v3d_bo *bo;
 
-        bo = v3d_bo_alloc(v3d_screen(pscreen), rsc->size, "resource");
+        /* Buffers may be read using ldunifa, which prefetches the next
+         * 4 bytes after a read. If the buffer's size is exactly a multiple
+         * of a page size and the shader reads the last 4 bytes with ldunifa
+         * the prefetching would read out of bounds and cause an MMU error,
+         * so we allocate extra space to avoid kernel error spamming.
+         */
+        uint32_t size = rsc->size;
+        if (rsc->base.target == PIPE_BUFFER && (size % 4096 == 0))
+                size += 4;
+
+        bo = v3d_bo_alloc(v3d_screen(pscreen), size, "resource");
         if (bo) {
                 v3d_bo_unreference(&rsc->bo);
                 rsc->bo = bo;
@@ -737,8 +748,6 @@ static struct v3d_resource *
 v3d_resource_setup(struct pipe_screen *pscreen,
                    const struct pipe_resource *tmpl)
 {
-        struct v3d_screen *screen = v3d_screen(pscreen);
-        struct v3d_device_info *devinfo = &screen->devinfo;
         struct v3d_resource *rsc = CALLOC_STRUCT(v3d_resource);
 
         if (!rsc)
@@ -750,34 +759,7 @@ v3d_resource_setup(struct pipe_screen *pscreen,
         pipe_reference_init(&prsc->reference, 1);
         prsc->screen = pscreen;
 
-        if (prsc->nr_samples <= 1 ||
-            devinfo->ver >= 40 ||
-            util_format_is_depth_or_stencil(prsc->format)) {
-                rsc->cpp = util_format_get_blocksize(prsc->format);
-                if (devinfo->ver < 40 && prsc->nr_samples > 1)
-                        rsc->cpp *= prsc->nr_samples;
-        } else {
-                assert(v3d_rt_format_supported(devinfo, prsc->format));
-                uint32_t output_image_format =
-                        v3d_get_rt_format(devinfo, prsc->format);
-                uint32_t internal_type;
-                uint32_t internal_bpp;
-                v3d_X(devinfo, get_internal_type_bpp_for_output_format)
-                   (output_image_format, &internal_type, &internal_bpp);
-
-                switch (internal_bpp) {
-                case V3D_INTERNAL_BPP_32:
-                        rsc->cpp = 4;
-                        break;
-                case V3D_INTERNAL_BPP_64:
-                        rsc->cpp = 8;
-                        break;
-                case V3D_INTERNAL_BPP_128:
-                        rsc->cpp = 16;
-                        break;
-                }
-        }
-
+        rsc->cpp = util_format_get_blocksize(prsc->format);
         rsc->serial_id++;
 
         assert(rsc->cpp);
@@ -1006,6 +988,9 @@ v3d_resource_from_handle(struct pipe_screen *pscreen,
         } else if (!rsc->tiled) {
                 slice->stride = whandle->stride;
         }
+
+        /* Prevent implicit clearing of the imported buffer contents. */
+        rsc->writes = 1;
 
         return prsc;
 

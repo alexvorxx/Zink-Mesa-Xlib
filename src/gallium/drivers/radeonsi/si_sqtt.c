@@ -798,11 +798,7 @@ static void si_emit_sqtt_userdata(struct si_context *sctx,
   while (num_dwords > 0) {
     uint32_t count = MIN2(num_dwords, 2);
 
-    /* Without the perfctr bit the CP might not always pass the
-     * write on correctly. */
-    radeon_set_uconfig_reg_seq(R_030D08_SQ_THREAD_TRACE_USERDATA_2, count,
-                               sctx->gfx_level >= GFX10);
-
+    radeon_set_uconfig_perfctr_reg_seq(R_030D08_SQ_THREAD_TRACE_USERDATA_2, count);
     radeon_emit_array(dwords, count);
 
     dwords += count;

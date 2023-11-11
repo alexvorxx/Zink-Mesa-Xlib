@@ -112,6 +112,6 @@ stw_interop_flush_objects(struct stw_context *ctx,
                           unsigned count, struct mesa_glinterop_export_in *objects,
                           GLsync *sync)
 {
-   return st_interop_flush_objects(ctx->st, count, objects, sync);
+   return st_interop_flush_objects(ctx->st, count, objects, sync, NULL);
 }
 

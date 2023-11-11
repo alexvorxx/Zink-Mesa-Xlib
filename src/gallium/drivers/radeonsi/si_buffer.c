@@ -184,8 +184,14 @@ bool si_alloc_resource(struct si_screen *sscreen, struct si_resource *res)
       fprintf(stderr, "\n");
    }
 
-   if (res->b.b.flags & SI_RESOURCE_FLAG_CLEAR)
-      si_screen_clear_buffer(sscreen, &res->b.b, 0, res->bo_size, 0, SI_OP_SYNC_AFTER);
+   if (res->b.b.flags & SI_RESOURCE_FLAG_CLEAR) {
+      struct si_context *ctx = si_get_aux_context(&sscreen->aux_context.general);
+      uint32_t value = 0;
+
+      si_clear_buffer(ctx, &res->b.b, 0, res->bo_size, &value, 4, SI_OP_SYNC_AFTER,
+                      SI_COHERENCY_SHADER, SI_AUTO_SELECT_CLEAR_METHOD);
+      si_put_aux_context_flush(&sscreen->aux_context.general);
+   }
 
    return true;
 }

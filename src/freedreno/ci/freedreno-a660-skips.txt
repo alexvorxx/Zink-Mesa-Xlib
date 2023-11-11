@@ -8,3 +8,6 @@ KHR-GL46.gpu_shader_fp64.builtin.inverse_dmat4
 
 # Exclude this test which might fail when a new extension is implemented.
 dEQP-VK.info.device_extensions
+
+# These tests seem to hang
+dEQP-VK.transform_feedback.primitives_generated_query.*reset.*

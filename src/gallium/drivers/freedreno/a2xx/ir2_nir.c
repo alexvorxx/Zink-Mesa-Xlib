@@ -789,11 +789,11 @@ static void
 setup_input(struct ir2_context *ctx, nir_variable *in)
 {
    struct fd2_shader_stateobj *so = ctx->so;
-   ASSERTED unsigned array_len = MAX2(glsl_get_length(in->type), 1);
    unsigned n = in->data.driver_location;
    unsigned slot = in->data.location;
 
-   assert(array_len == 1);
+   assert(glsl_type_is_vector_or_scalar(in->type) ||
+          glsl_type_is_unsized_array(in->type));
 
    /* handle later */
    if (ctx->so->type == MESA_SHADER_VERTEX)

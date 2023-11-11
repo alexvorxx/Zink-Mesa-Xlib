@@ -508,6 +508,8 @@ etna_reset_gpu_state(struct etna_context *ctx)
                            screen->specs.halti >= 0 ? 16 : 12, dummy_attribs);
    }
 
+   etna_cmd_stream_mark_end_of_context_init(stream);
+
    ctx->dirty = ~0L;
    ctx->dirty_sampler_views = ~0L;
    ctx->prev_active_samplers = ~0L;

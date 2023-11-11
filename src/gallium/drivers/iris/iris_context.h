@@ -914,6 +914,8 @@ struct iris_context {
 
       /** Resource holding the pixel pipe hashing tables. */
       struct pipe_resource *pixel_hashing_tables;
+
+      bool use_tbimr;
    } state;
 };
 
