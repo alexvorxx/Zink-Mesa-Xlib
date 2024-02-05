@@ -127,7 +127,7 @@ vk_device_init(struct vk_device *device,
                           "%s not supported",
                           pCreateInfo->ppEnabledExtensionNames[i]);
 
-#ifdef ANDROID
+#ifdef ANDROID_STRICT
       if (!vk_android_allowed_device_extensions.extensions[idx])
          return vk_errorf(physical_device, VK_ERROR_EXTENSION_NOT_PRESENT,
                           "%s not supported",
@@ -175,10 +175,10 @@ vk_device_init(struct vk_device *device,
       unreachable("Invalid timeline mode");
    }
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    mtx_init(&device->swapchain_private_mtx, mtx_plain);
    device->swapchain_private = NULL;
-#endif /* ANDROID */
+#endif /* DETECT_OS_ANDROID */
 
    simple_mtx_init(&device->trace_mtx, mtx_plain);
 
@@ -193,13 +193,13 @@ vk_device_finish(struct vk_device *device)
 
    vk_memory_trace_finish(device);
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    if (device->swapchain_private) {
       hash_table_foreach(device->swapchain_private, entry)
          util_sparse_array_finish(entry->data);
       ralloc_free(device->swapchain_private);
    }
-#endif /* ANDROID */
+#endif /* DETECT_OS_ANDROID */
 
    simple_mtx_destroy(&device->trace_mtx);
 

@@ -124,6 +124,7 @@ api_xml_files = files(
   'EXT_shader_image_load_store.xml',
   'EXT_texture_array.xml',
   'EXT_texture_integer.xml',
+  'EXT_texture_storage.xml',
   'EXT_transform_feedback.xml',
   'EXT_vertex_attrib_64bit.xml',
   'EXT_window_rectangles.xml',

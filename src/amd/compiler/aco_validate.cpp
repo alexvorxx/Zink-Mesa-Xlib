@@ -105,6 +105,99 @@ validate_ir(Program* program)
    for (Block& block : program->blocks) {
       for (aco_ptr<Instruction>& instr : block.instructions) {
 
+         unsigned pck_defs = instr_info.definitions[(int)instr->opcode];
+         unsigned pck_ops = instr_info.operands[(int)instr->opcode];
+
+         if (pck_defs != 0) {
+            /* Before GFX10 v_cmpx also writes VCC. */
+            if (instr->isVOPC() && program->gfx_level < GFX10 && pck_defs == exec_hi)
+               pck_defs = vcc | (exec_hi << 8);
+
+            for (unsigned i = 0; i < 4; i++) {
+               uint32_t def = (pck_defs >> (i * 8)) & 0xff;
+               if (def == 0) {
+                  check(i == instr->definitions.size(), "Too many definitions", instr.get());
+                  break;
+               } else {
+                  check(i < instr->definitions.size(), "Too few definitions", instr.get());
+                  if (i >= instr->definitions.size())
+                     break;
+               }
+
+               if (def == m0) {
+                  check(instr->definitions[i].isFixed() && instr->definitions[i].physReg() == m0,
+                        "Definition needs m0", instr.get());
+               } else if (def == scc) {
+                  check(instr->definitions[i].isFixed() && instr->definitions[i].physReg() == scc,
+                        "Definition needs scc", instr.get());
+               } else if (def == exec_hi) {
+                  RegClass rc = instr->isSALU() ? s2 : program->lane_mask;
+                  check(instr->definitions[i].isFixed() &&
+                           instr->definitions[i].physReg() == exec &&
+                           instr->definitions[i].regClass() == rc,
+                        "Definition needs exec", instr.get());
+               } else if (def == exec_lo) {
+                  check(instr->definitions[i].isFixed() &&
+                           instr->definitions[i].physReg() == exec_lo &&
+                           instr->definitions[i].regClass() == s1,
+                        "Definition needs exec_lo", instr.get());
+               } else if (def == vcc) {
+                  check(instr->definitions[i].regClass() == program->lane_mask,
+                        "Definition has to be lane mask", instr.get());
+                  check(!instr->definitions[i].isFixed() ||
+                           instr->definitions[i].physReg() == vcc || instr->isVOP3() ||
+                           instr->isSDWA(),
+                        "Definition has to be vcc", instr.get());
+               } else {
+                  check(instr->definitions[i].size() == def, "Definition has wrong size",
+                        instr.get());
+               }
+            }
+         }
+
+         if (pck_ops != 0) {
+            for (unsigned i = 0; i < 4; i++) {
+               uint32_t op = (pck_ops >> (i * 8)) & 0xff;
+               if (op == 0) {
+                  check(i == instr->operands.size(), "Too many operands", instr.get());
+                  break;
+               } else {
+                  check(i < instr->operands.size(), "Too few operands", instr.get());
+                  if (i >= instr->operands.size())
+                     break;
+               }
+
+               if (op == m0) {
+                  check(instr->operands[i].isFixed() && instr->operands[i].physReg() == m0,
+                        "Operand needs m0", instr.get());
+               } else if (op == scc) {
+                  check(instr->operands[i].isFixed() && instr->operands[i].physReg() == scc,
+                        "Operand needs scc", instr.get());
+               } else if (op == exec_hi) {
+                  RegClass rc = instr->isSALU() ? s2 : program->lane_mask;
+                  check(instr->operands[i].isFixed() && instr->operands[i].physReg() == exec &&
+                           instr->operands[i].hasRegClass() && instr->operands[i].regClass() == rc,
+                        "Operand needs exec", instr.get());
+               } else if (op == exec_lo) {
+                  check(instr->operands[i].isFixed() && instr->operands[i].physReg() == exec_lo &&
+                           instr->operands[i].hasRegClass() && instr->operands[i].regClass() == s1,
+                        "Operand needs exec_lo", instr.get());
+               } else if (op == vcc) {
+                  check(instr->operands[i].hasRegClass() &&
+                           instr->operands[i].regClass() == program->lane_mask,
+                        "Operand has to be lane mask", instr.get());
+                  check(!instr->operands[i].isFixed() || instr->operands[i].physReg() == vcc ||
+                           instr->isVOP3(),
+                        "Operand has to be vcc", instr.get());
+               } else {
+                  check(instr->operands[i].size() == op ||
+                           (instr->operands[i].isFixed() && instr->operands[i].physReg() >= 128 &&
+                            instr->operands[i].physReg() < 256),
+                        "Operand has wrong size", instr.get());
+               }
+            }
+         }
+
          /* check base format */
          Format base_format = instr->format;
          base_format = (Format)((uint32_t)base_format & ~(uint32_t)Format::SDWA);
@@ -229,7 +322,10 @@ validate_ir(Program* program)
          }
 
          /* check opsel */
-         if (instr->isVOP3() || instr->isVOP1() || instr->isVOP2() || instr->isVOPC()) {
+         if (instr->opcode == aco_opcode::v_permlane16_b32 ||
+             instr->opcode == aco_opcode::v_permlanex16_b32) {
+            check(instr->valu().opsel <= 0x3, "Unexpected opsel for permlane", instr.get());
+         } else if (instr->isVOP3() || instr->isVOP1() || instr->isVOP2() || instr->isVOPC()) {
             VALU_instruction& valu = instr->valu();
             check(valu.opsel == 0 || program->gfx_level >= GFX9, "Opsel is only supported on GFX9+",
                   instr.get());
@@ -358,7 +454,8 @@ validate_ir(Program* program)
                      continue;
                   }
                   if (instr->opcode == aco_opcode::v_permlane16_b32 ||
-                      instr->opcode == aco_opcode::v_permlanex16_b32) {
+                      instr->opcode == aco_opcode::v_permlanex16_b32 ||
+                      instr->opcode == aco_opcode::v_permlane64_b32) {
                      check(i != 0 || op.isOfType(RegType::vgpr),
                            "Operand 0 of v_permlane must be VGPR", instr.get());
                      check(i == 0 || op.isOfType(RegType::sgpr) || op.isConstant(),

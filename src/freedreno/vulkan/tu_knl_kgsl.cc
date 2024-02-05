@@ -529,7 +529,7 @@ kgsl_syncobj_wait(struct tu_device *device,
    }
 
    case KGSL_SYNCOBJ_STATE_FD: {
-      int ret = sync_wait(device->fd, get_relative_ms(abs_timeout_ns));
+      int ret = sync_wait(s->fd, get_relative_ms(abs_timeout_ns));
       if (ret) {
          assert(errno == ETIME);
          return VK_TIMEOUT;

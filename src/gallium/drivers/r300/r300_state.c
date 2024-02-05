@@ -1771,23 +1771,20 @@ static void r300_set_viewport_states(struct pipe_context* pipe,
 }
 
 static void r300_set_vertex_buffers_hwtcl(struct pipe_context* pipe,
-                                    unsigned count,
-                                    unsigned unbind_num_trailing_slots,
-                                    bool take_ownership,
+                                    unsigned count, bool take_ownership,
                                     const struct pipe_vertex_buffer* buffers)
 {
     struct r300_context* r300 = r300_context(pipe);
 
     util_set_vertex_buffers_count(r300->vertex_buffer,
-                                  &r300->nr_vertex_buffers,
-                                  buffers, count,
-                                  unbind_num_trailing_slots, take_ownership);
+                                  &r300->nr_vertex_buffers, buffers, count,
+                                  take_ownership);
 
     /* There must be at least one vertex buffer set, otherwise it locks up. */
     if (!r300->nr_vertex_buffers) {
         util_set_vertex_buffers_count(r300->vertex_buffer,
                                       &r300->nr_vertex_buffers,
-                                      &r300->dummy_vb, 1, 0, false);
+                                      &r300->dummy_vb, 1, false);
     }
 
     r300->vertex_arrays_dirty = true;
@@ -1795,7 +1792,6 @@ static void r300_set_vertex_buffers_hwtcl(struct pipe_context* pipe,
 
 static void r300_set_vertex_buffers_swtcl(struct pipe_context* pipe,
                                     unsigned count,
-                                    unsigned unbind_num_trailing_slots,
                                     bool take_ownership,
                                     const struct pipe_vertex_buffer* buffers)
 {
@@ -1803,11 +1799,9 @@ static void r300_set_vertex_buffers_swtcl(struct pipe_context* pipe,
     unsigned i;
 
     util_set_vertex_buffers_count(r300->vertex_buffer,
-                                  &r300->nr_vertex_buffers,
-                                  buffers, count,
-                                  unbind_num_trailing_slots, take_ownership);
-    draw_set_vertex_buffers(r300->draw, count,
-                            unbind_num_trailing_slots, buffers);
+                                  &r300->nr_vertex_buffers, buffers, count,
+                                  take_ownership);
+    draw_set_vertex_buffers(r300->draw, count, buffers);
 
     if (!buffers)
         return;

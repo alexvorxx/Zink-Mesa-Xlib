@@ -14,6 +14,7 @@ libasahi_lib_files = files(
   'agx_tilebuffer.c',
   'agx_nir_lower_alpha.c',
   'agx_nir_lower_gs.c',
+  'agx_nir_lower_ia.c',
   'agx_nir_lower_msaa.c',
   'agx_nir_lower_sample_intrinsics.c',
   'agx_nir_lower_tilebuffer.c',

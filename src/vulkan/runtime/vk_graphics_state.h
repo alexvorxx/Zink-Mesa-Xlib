@@ -103,10 +103,14 @@ enum mesa_vk_dynamic_graphics_state {
    MESA_VK_DYNAMIC_CB_WRITE_MASKS,
    MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS,
    MESA_VK_DYNAMIC_ATTACHMENT_FEEDBACK_LOOP_ENABLE,
+   MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP,
+   MESA_VK_DYNAMIC_INPUT_ATTACHMENT_MAP,
 
    /* Must be left at the end */
    MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX,
 };
+
+#define MESA_VK_ATTACHMENT_UNUSED (0xff)
 
 /** Populate a bitset with dynamic states
  *
@@ -128,7 +132,7 @@ struct vk_vertex_binding_state {
    /** VkVertexInputBindingDescription::inputRate */
    uint16_t input_rate;
 
-   /** VkVertexInputBindingDivisorDescriptionEXT::divisor or 1 */
+   /** VkVertexInputBindingDivisorDescriptionKHR::divisor or 1 */
    uint32_t divisor;
 };
 
@@ -351,29 +355,29 @@ struct vk_rasterization_state {
        */
       float width;
 
-      /** VkPipelineRasterizationLineStateCreateInfoEXT::lineRasterizationMode
+      /** VkPipelineRasterizationLineStateCreateInfoKHR::lineRasterizationMode
        *
-       * Will be set to VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT if
-       * VkPipelineRasterizationLineStateCreateInfoEXT is not provided.
+       * Will be set to VK_LINE_RASTERIZATION_MODE_DEFAULT_KHR if
+       * VkPipelineRasterizationLineStateCreateInfoKHR is not provided.
        *
        * MESA_VK_DYNAMIC_RS_LINE_MODE
        */
-      VkLineRasterizationModeEXT mode;
+      VkLineRasterizationModeKHR mode;
 
       struct {
-         /** VkPipelineRasterizationLineStateCreateInfoEXT::stippledLineEnable
+         /** VkPipelineRasterizationLineStateCreateInfoKHR::stippledLineEnable
           *
           * MESA_VK_DYNAMIC_RS_LINE_STIPPLE_ENABLE
           */
          bool enable;
 
-         /** VkPipelineRasterizationLineStateCreateInfoEXT::lineStippleFactor
+         /** VkPipelineRasterizationLineStateCreateInfoKHR::lineStippleFactor
           *
           * MESA_VK_DYNAMIC_RS_LINE_STIPPLE
           */
          uint32_t factor;
 
-         /** VkPipelineRasterizationLineStateCreateInfoEXT::lineStipplePattern
+         /** VkPipelineRasterizationLineStateCreateInfoKHR::lineStipplePattern
           *
           * MESA_VK_DYNAMIC_RS_LINE_STIPPLE
           */
@@ -664,6 +668,36 @@ struct vk_color_blend_state {
 };
 
 /***/
+struct vk_input_attachment_location_state {
+   /** VkRenderingInputAttachmentIndexInfoKHR::pColorAttachmentLocations
+    *
+    * MESA_VK_DYNAMIC_INPUT_ATTACHMENT_MAP
+    */
+   uint8_t color_map[MESA_VK_MAX_COLOR_ATTACHMENTS];
+
+   /** VkRenderingInputAttachmentIndexInfoKHR::pDepthInputAttachmentIndex
+    *
+    * MESA_VK_DYNAMIC_INPUT_ATTACHMENT_MAP
+    */
+   uint8_t depth_att;
+
+   /** VkRenderingInputAttachmentIndexInfoKHR::pStencilInputAttachmentIndex
+    *
+    * MESA_VK_DYNAMIC_INPUT_ATTACHMENT_MAP
+    */
+   uint8_t stencil_att;
+};
+
+/***/
+struct vk_color_attachment_location_state {
+   /** VkRenderingAttachmentLocationInfoKHR::pColorAttachmentLocations
+    *
+    * MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP
+    */
+   uint8_t color_map[MESA_VK_MAX_COLOR_ATTACHMENTS];
+};
+
+/***/
 struct vk_render_pass_state {
    /** Set of image aspects bound as color/depth/stencil attachments
     *
@@ -834,6 +868,12 @@ struct vk_dynamic_graphics_state {
    /** MESA_VK_DYNAMIC_ATTACHMENT_FEEDBACK_LOOP_ENABLE */
    VkImageAspectFlags feedback_loops;
 
+   /** MESA_VK_DYNAMIC_INPUT_ATTACHMENT_MAP */
+   struct vk_input_attachment_location_state ial;
+
+   /** MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP */
+   struct vk_color_attachment_location_state cal;
+
    /** For pipelines, which bits of dynamic state are set */
    BITSET_DECLARE(set, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
 
@@ -854,6 +894,8 @@ struct vk_graphics_pipeline_all_state {
    struct vk_sample_locations_state ms_sample_locations;
    struct vk_depth_stencil_state ds;
    struct vk_color_blend_state cb;
+   struct vk_input_attachment_location_state ial;
+   struct vk_color_attachment_location_state cal;
    struct vk_render_pass_state rp;
 };
 
@@ -910,6 +952,12 @@ struct vk_graphics_pipeline_state {
 
    /** Color blend state */
    const struct vk_color_blend_state *cb;
+
+   /** Input attachment mapping state */
+   const struct vk_input_attachment_location_state *ial;
+
+   /** Color attachment mapping state */
+   const struct vk_color_attachment_location_state *cal;
 
    /** Render pass state */
    const struct vk_render_pass_state *rp;
@@ -1159,6 +1207,21 @@ vk_cmd_set_cb_attachment_count(struct vk_command_buffer *cmd,
 
 const char *
 vk_dynamic_graphic_state_to_str(enum mesa_vk_dynamic_graphics_state state);
+
+/** Check whether the color attachment location map is the identity
+ *
+ * :param cal: |in| Color attachment location state
+ */
+static inline bool
+vk_color_attachment_location_state_is_identity(
+   const struct vk_color_attachment_location_state *cal)
+{
+   for (unsigned i = 0; i < ARRAY_SIZE(cal->color_map); i++) {
+      if (cal->color_map[i] != i)
+         return false;
+   }
+   return true;
+}
 
 #ifdef __cplusplus
 }

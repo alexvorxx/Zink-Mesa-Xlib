@@ -29,8 +29,6 @@
 #include "panvk_cs.h"
 #include "panvk_private.h"
 
-#include "pan_bo.h"
-
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "spirv/nir_spirv.h"
@@ -47,7 +45,7 @@ panvk_DestroyPipeline(VkDevice _device, VkPipeline _pipeline,
    VK_FROM_HANDLE(panvk_device, device, _device);
    VK_FROM_HANDLE(panvk_pipeline, pipeline, _pipeline);
 
-   panfrost_bo_unreference(pipeline->binary_bo);
-   panfrost_bo_unreference(pipeline->state_bo);
+   panvk_priv_bo_destroy(pipeline->binary_bo, NULL);
+   panvk_priv_bo_destroy(pipeline->state_bo, NULL);
    vk_object_free(&device->vk, pAllocator, pipeline);
 }

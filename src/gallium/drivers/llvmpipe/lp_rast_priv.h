@@ -102,6 +102,9 @@ struct lp_rasterizer_task
 
    util_semaphore work_ready;
    util_semaphore work_done;
+#ifdef _WIN32
+   util_semaphore exited;
+#endif
 };
 
 

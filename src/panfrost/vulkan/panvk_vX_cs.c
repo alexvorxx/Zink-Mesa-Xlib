@@ -28,7 +28,7 @@
 
 #include "vk_util.h"
 
-#include "pan_cs.h"
+#include "pan_desc.h"
 #include "pan_earlyzs.h"
 #include "pan_encoder.h"
 #include "pan_pool.h"
@@ -77,7 +77,6 @@ panvk_varying_hw_format(const struct panvk_device *dev,
                         const struct panvk_varyings_info *varyings,
                         gl_shader_stage stage, unsigned idx)
 {
-   const struct panfrost_device *pdev = &dev->physical_device->pdev;
    gl_varying_slot loc = varyings->stage[stage].loc[idx];
 
    switch (loc) {
@@ -95,8 +94,11 @@ panvk_varying_hw_format(const struct panvk_device *dev,
       return (MALI_SNAP_4 << 12) | MALI_RGB_COMPONENT_ORDER_RGBA;
 #endif
    default:
-      if (varyings->varying[loc].format != PIPE_FORMAT_NONE)
-         return pdev->formats[varyings->varying[loc].format].hw;
+      if (varyings->varying[loc].format != PIPE_FORMAT_NONE) {
+         enum pipe_format f = varyings->varying[loc].format;
+
+         return GENX(panfrost_format_from_pipe_format)(f)->hw;
+      }
 #if PAN_ARCH >= 7
       return (MALI_CONSTANT << 12) | MALI_RGB_COMPONENT_ORDER_0000;
 #else
@@ -279,7 +281,7 @@ panvk_emit_attrib(const struct panvk_device *dev,
                   const struct panvk_attrib_buf *bufs, unsigned buf_count,
                   unsigned idx, void *attrib)
 {
-   const struct panfrost_device *pdev = &dev->physical_device->pdev;
+   enum pipe_format f = attribs->attrib[idx].format;
    unsigned buf_idx = attribs->attrib[idx].buf;
    const struct panvk_attrib_buf_info *buf_info = &attribs->buf[buf_idx];
 
@@ -290,7 +292,7 @@ panvk_emit_attrib(const struct panvk_device *dev,
       if (buf_info->per_instance)
          cfg.offset += draw->first_instance * buf_info->stride;
 
-      cfg.format = pdev->formats[attribs->attrib[idx].format].hw;
+      cfg.format = GENX(panfrost_format_from_pipe_format)(f)->hw;
    }
 }
 
@@ -625,7 +627,6 @@ panvk_per_arch(emit_blend)(const struct panvk_device *dev,
       cfg.load_destination = pan_blend_reads_dest(blend->rts[rt].equation);
       cfg.round_to_fb_precision = !dithered;
 
-      const struct panfrost_device *pdev = &dev->physical_device->pdev;
       const struct util_format_description *format_desc =
          util_format_description(rts->format);
       unsigned chan_size = 0;
@@ -658,7 +659,7 @@ panvk_per_arch(emit_blend)(const struct panvk_device *dev,
        */
       cfg.internal.fixed_function.num_comps = 4;
       cfg.internal.fixed_function.conversion.memory_format =
-         panfrost_format_to_bifrost_blend(pdev, rts->format, dithered);
+         GENX(panfrost_dithered_format_from_pipe_format)(rts->format, dithered);
       cfg.internal.fixed_function.conversion.register_format =
          bifrost_blend_type_from_nir(pipeline->fs.info.bifrost.blend[rt].type);
       cfg.internal.fixed_function.rt = rt;
@@ -826,13 +827,11 @@ panvk_per_arch(emit_tiler_context)(const struct panvk_device *dev,
                                    unsigned width, unsigned height,
                                    const struct panfrost_ptr *descs)
 {
-   const struct panfrost_device *pdev = &dev->physical_device->pdev;
-
    pan_pack(descs->cpu + pan_size(TILER_CONTEXT), TILER_HEAP, cfg) {
-      cfg.size = pdev->tiler_heap->size;
-      cfg.base = pdev->tiler_heap->ptr.gpu;
-      cfg.bottom = pdev->tiler_heap->ptr.gpu;
-      cfg.top = pdev->tiler_heap->ptr.gpu + pdev->tiler_heap->size;
+      cfg.size = pan_kmod_bo_size(dev->tiler_heap->bo);
+      cfg.base = dev->tiler_heap->addr.dev;
+      cfg.bottom = dev->tiler_heap->addr.dev;
+      cfg.top = cfg.base + cfg.size;
    }
 
    pan_pack(descs->cpu, TILER_CONTEXT, cfg) {

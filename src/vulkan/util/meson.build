@@ -52,6 +52,9 @@ vk_physical_device_features_gen_depend_files = [
 vk_physical_device_properties_gen_depend_files = [
   files('vk_extensions.py'),
 ]
+vk_synchronization_helpers_gen_depend_files = [
+  files('vk_extensions.py'),
+]
 
 vk_entrypoints_gen = files('vk_entrypoints_gen.py')
 vk_extensions_gen = files('vk_extensions_gen.py')
@@ -60,6 +63,7 @@ vk_cmd_queue_gen = files('vk_cmd_queue_gen.py')
 vk_dispatch_trampolines_gen = files('vk_dispatch_trampolines_gen.py')
 vk_physical_device_features_gen = files('vk_physical_device_features_gen.py')
 vk_physical_device_properties_gen = files('vk_physical_device_properties_gen.py')
+vk_synchronization_helpers_gen = files('vk_synchronization_helpers_gen.py')
 
 files_vulkan_util = files(
   'vk_alloc.c',

@@ -135,6 +135,36 @@ struct intel_device_info_pat_entry {
    .coherency = INTEL_DEVICE_INFO_COHERENCY_MODE_##coh_     \
 }
 
+enum intel_cmat_scope
+{
+   INTEL_CMAT_SCOPE_NONE = 0,
+   INTEL_CMAT_SCOPE_SUBGROUP,
+};
+
+enum intel_cooperative_matrix_component_type
+{
+   INTEL_CMAT_FLOAT16,
+   INTEL_CMAT_FLOAT32,
+   INTEL_CMAT_SINT32,
+   INTEL_CMAT_SINT8,
+   INTEL_CMAT_UINT32,
+   INTEL_CMAT_UINT8,
+};
+
+struct intel_cooperative_matrix_configuration
+{
+   enum intel_cmat_scope scope;
+
+   /* Matrix A is MxK.
+    * Matrix B is KxN.
+    * Matrix C and Matrix Result are MxN.
+    *
+    * Result = A * B + C;
+    */
+   uint8_t m, n, k;
+   enum intel_cooperative_matrix_component_type a, b, c, result;
+};
+
 /**
  * Intel hardware information and quirks
  */
@@ -203,6 +233,7 @@ struct intel_device_info
    bool has_userptr_probe;
    bool has_context_isolation;
    bool has_set_pat_uapi;
+   bool has_indirect_unroll;
 
    /**
     * \name Intel hardware quirks
@@ -487,13 +518,18 @@ struct intel_device_info
    } mem;
 
    struct {
-      struct intel_device_info_pat_entry coherent;
+      /* To be used when CPU access is frequent, WB + 1 or 2 way coherent */
+      struct intel_device_info_pat_entry cached_coherent;
+      /* scanout and external BOs */
       struct intel_device_info_pat_entry scanout;
-      struct intel_device_info_pat_entry writeback;
+      /* BOs without special needs, can be WB not coherent or WC it depends on the platforms and KMD */
+      struct intel_device_info_pat_entry writeback_incoherent;
       struct intel_device_info_pat_entry writecombining;
    } pat;
 
    BITSET_DECLARE(workarounds, INTEL_WA_NUM);
+
+   struct intel_cooperative_matrix_configuration cooperative_matrix_configurations[4];
    /** @} */
 };
 
@@ -605,7 +641,7 @@ intel_vram_all_mappable(const struct intel_device_info *devinfo)
    return devinfo->mem.vram.unmappable.size == 0;
 }
 
-bool intel_get_device_info_from_fd(int fh, struct intel_device_info *devinfo);
+bool intel_get_device_info_from_fd(int fh, struct intel_device_info *devinfo, int min_ver, int max_ver);
 bool intel_get_device_info_from_pci_id(int pci_id,
                                        struct intel_device_info *devinfo);
 

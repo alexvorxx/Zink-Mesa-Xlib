@@ -715,50 +715,16 @@ gather_varying_component_info(nir_shader *producer, nir_shader *consumer,
 }
 
 static bool
-allow_pack_interp_type(nir_pack_varying_options options, int type)
+allow_pack_interp_type(nir_io_options options, int type)
 {
-   int sel;
-
    switch (type) {
    case INTERP_MODE_NONE:
-      sel = nir_pack_varying_interp_mode_none;
-      break;
    case INTERP_MODE_SMOOTH:
-      sel = nir_pack_varying_interp_mode_smooth;
-      break;
-   case INTERP_MODE_FLAT:
-      sel = nir_pack_varying_interp_mode_flat;
-      break;
    case INTERP_MODE_NOPERSPECTIVE:
-      sel = nir_pack_varying_interp_mode_noperspective;
-      break;
+      return options & nir_io_has_flexible_input_interpolation_except_flat;
    default:
       return false;
    }
-
-   return options & sel;
-}
-
-static bool
-allow_pack_interp_loc(nir_pack_varying_options options, int loc)
-{
-   int sel;
-
-   switch (loc) {
-   case INTERPOLATE_LOC_SAMPLE:
-      sel = nir_pack_varying_interp_loc_sample;
-      break;
-   case INTERPOLATE_LOC_CENTROID:
-      sel = nir_pack_varying_interp_loc_centroid;
-      break;
-   case INTERPOLATE_LOC_CENTER:
-      sel = nir_pack_varying_interp_loc_center;
-      break;
-   default:
-      return false;
-   }
-
-   return options & sel;
 }
 
 static void
@@ -767,7 +733,7 @@ static void
                           struct varying_component *info,
                           unsigned *cursor, unsigned *comp,
                           unsigned max_location,
-                          nir_pack_varying_options options)
+                          nir_io_options options)
 {
    unsigned tmp_cursor = *cursor;
    unsigned tmp_comp = *comp;
@@ -801,8 +767,7 @@ static void
           * if driver does not support it.
           */
          if (assigned_comps[tmp_cursor].interp_loc != info->interp_loc &&
-             (!allow_pack_interp_loc(options, assigned_comps[tmp_cursor].interp_loc) ||
-              !allow_pack_interp_loc(options, info->interp_loc))) {
+             !(options & nir_io_has_flexible_input_interpolation_except_flat)) {
             tmp_comp = 0;
             continue;
          }
@@ -870,8 +835,6 @@ compact_components(nir_shader *producer, nir_shader *consumer,
    qsort(varying_comp_info, varying_comp_info_size,
          sizeof(struct varying_component), cmp_varying_component);
 
-   nir_pack_varying_options options = consumer->options->pack_varying_options;
-
    unsigned cursor = 0;
    unsigned comp = 0;
 
@@ -892,11 +855,11 @@ compact_components(nir_shader *producer, nir_shader *consumer,
 
          assign_remap_locations(remap, assigned_comps, info,
                                 &cursor, &comp, MAX_VARYINGS_INCL_PATCH,
-                                options);
+                                consumer->options->io_options);
       } else {
          assign_remap_locations(remap, assigned_comps, info,
                                 &cursor, &comp, MAX_VARYING,
-                                options);
+                                consumer->options->io_options);
 
          /* Check if we failed to assign a remap location. This can happen if
           * for example there are a bunch of unmovable components with
@@ -910,7 +873,7 @@ compact_components(nir_shader *producer, nir_shader *consumer,
             comp = 0;
             assign_remap_locations(remap, assigned_comps, info,
                                    &cursor, &comp, MAX_VARYING,
-                                   options);
+                                   consumer->options->io_options);
          }
       }
    }

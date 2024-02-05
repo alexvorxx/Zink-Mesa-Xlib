@@ -25,6 +25,7 @@
 
 #include "vk_object.h"
 
+#include "util/detect_os.h"
 #include "util/u_math.h"
 
 #ifdef __cplusplus
@@ -49,6 +50,7 @@ struct vk_image {
    VkSampleCountFlagBits samples;
    VkImageTiling tiling;
    VkImageUsageFlags usage;
+   VkSharingMode sharing_mode;
 
    /* Derived from format */
    VkImageAspectFlags aspects;
@@ -62,7 +64,7 @@ struct vk_image {
    /* wsi_image_create_info::scanout */
    bool wsi_legacy_scanout;
 
-#ifndef _WIN32
+#if DETECT_OS_LINUX || DETECT_OS_BSD
    /* VK_EXT_drm_format_modifier
     *
     * Initialized by vk_image_create/init() to DRM_FORMAT_MOD_INVALID.  It's
@@ -75,7 +77,7 @@ struct vk_image {
    uint64_t drm_format_mod;
 #endif
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    /* AHARDWAREBUFFER_FORMAT for this image or 0
     *
     * A default is provided by the Vulkan runtime code based on the VkFormat

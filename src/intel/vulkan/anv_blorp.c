@@ -60,19 +60,22 @@ upload_blorp_shader(struct blorp_batch *batch, uint32_t stage,
    struct blorp_context *blorp = batch->blorp;
    struct anv_device *device = blorp->driver_ctx;
 
-   struct anv_pipeline_bind_map bind_map = {
-      .surface_count = 0,
-      .sampler_count = 0,
+   struct anv_pipeline_bind_map empty_bind_map = {};
+   struct anv_push_descriptor_info empty_push_desc_info = {};
+   struct anv_shader_upload_params upload_params = {
+      .stage               = stage,
+      .key_data            = key,
+      .key_size            = key_size,
+      .kernel_data         = kernel,
+      .kernel_size         = kernel_size,
+      .prog_data           = prog_data,
+      .prog_data_size      = prog_data_size,
+      .bind_map            = &empty_bind_map,
+      .push_desc_info      = &empty_push_desc_info,
    };
-   struct anv_push_descriptor_info push_desc_info = {};
 
    struct anv_shader_bin *bin =
-      anv_device_upload_kernel(device, device->internal_cache, stage,
-                               key, key_size, kernel, kernel_size,
-                               prog_data, prog_data_size,
-                               NULL, 0, NULL, &bind_map,
-                               &push_desc_info,
-                               0 /* dynamic_push_values */);
+      anv_device_upload_kernel(device, device->internal_cache, &upload_params);
 
    if (!bin)
       return false;
@@ -93,6 +96,8 @@ anv_device_init_blorp(struct anv_device *device)
 {
    const struct blorp_config config = {
       .use_mesh_shading = device->vk.enabled_extensions.EXT_mesh_shader,
+      .use_unrestricted_depth_range =
+         device->vk.enabled_extensions.EXT_depth_range_unrestricted,
    };
 
    blorp_init(&device->blorp, device, &device->isl_dev, &config);
@@ -344,6 +349,9 @@ copy_image(struct anv_cmd_buffer *cmd_buffer,
          }
       }
    } else {
+      /* This case handles the ycbcr images, aspect mask are compatible but
+       * don't need to be the same.
+       */
       struct blorp_surf src_surf, dst_surf;
       get_blorp_surf_for_anv_image(cmd_buffer, src_image, src_mask,
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
@@ -372,21 +380,24 @@ record_main_rcs_cmd_buffer_done(struct anv_cmd_buffer *cmd_buffer)
 {
    const struct intel_device_info *info = cmd_buffer->device->info;
 
-   if (cmd_buffer->companion_rcs_cmd_buffer == NULL) {
-      anv_create_companion_rcs_command_buffer(cmd_buffer);
-      /* Re-emit the aux table register in every command buffer.  This way we're
-       * ensured that we have the table even if this command buffer doesn't
-       * initialize any images.
-       */
-      if (cmd_buffer->device->info->has_aux_map) {
-         assert(cmd_buffer->companion_rcs_cmd_buffer != NULL);
-         anv_add_pending_pipe_bits(cmd_buffer->companion_rcs_cmd_buffer,
-                                   ANV_PIPE_AUX_TABLE_INVALIDATE_BIT,
-                                   "new cmd buffer with aux-tt");
-      }
+   const VkResult result = anv_cmd_buffer_ensure_rcs_companion(cmd_buffer);
+   if (result != VK_SUCCESS) {
+      anv_batch_set_error(&cmd_buffer->batch, result);
+      return ANV_STATE_NULL;
    }
 
    assert(cmd_buffer->companion_rcs_cmd_buffer != NULL);
+
+   /* Re-emit the aux table register in every command buffer.  This way we're
+    * ensured that we have the table even if this command buffer doesn't
+    * initialize any images.
+    */
+   if (cmd_buffer->device->info->has_aux_map) {
+      anv_add_pending_pipe_bits(cmd_buffer->companion_rcs_cmd_buffer,
+                                 ANV_PIPE_AUX_TABLE_INVALIDATE_BIT,
+                                 "new cmd buffer with aux-tt");
+   }
+
    return anv_genX(info, cmd_buffer_begin_companion_rcs_syncpoint)(cmd_buffer);
 }
 
@@ -397,6 +408,55 @@ end_main_rcs_cmd_buffer_done(struct anv_cmd_buffer *cmd_buffer,
    const struct intel_device_info *info = cmd_buffer->device->info;
    anv_genX(info, cmd_buffer_end_companion_rcs_syncpoint)(cmd_buffer,
                                                           syncpoint);
+}
+
+static bool
+anv_blorp_blitter_execute_on_companion(struct anv_cmd_buffer *cmd_buffer,
+                                       struct anv_image *image,
+                                       const VkCopyBufferToImageInfo2* pCopyBufferToImageInfo,
+                                       const VkCopyImageToBufferInfo2* pCopyImageToBufferInfo)
+{
+   if (!anv_cmd_buffer_is_blitter_queue(cmd_buffer))
+      return false;
+
+   assert((pCopyBufferToImageInfo && !pCopyImageToBufferInfo) ||
+          (pCopyImageToBufferInfo && !pCopyBufferToImageInfo));
+
+   bool blorp_execute_on_companion = false;
+   VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_NONE;
+   const uint32_t region_count = pCopyBufferToImageInfo ?
+                                 pCopyBufferToImageInfo->regionCount :
+                                 pCopyImageToBufferInfo->regionCount;
+
+   for (unsigned r = 0; r < region_count &&
+                            !blorp_execute_on_companion; r++) {
+      if (pCopyBufferToImageInfo) {
+         aspect_mask =
+            pCopyBufferToImageInfo->pRegions[r].imageSubresource.aspectMask;
+      } else {
+         aspect_mask =
+            pCopyImageToBufferInfo->pRegions[r].imageSubresource.aspectMask;
+      }
+
+      enum isl_format linear_format =
+         anv_get_isl_format(cmd_buffer->device->info, image->vk.format,
+                            aspect_mask, VK_IMAGE_TILING_LINEAR);
+      const struct isl_format_layout *linear_fmtl =
+         isl_format_get_layout(linear_format);
+
+      switch (linear_fmtl->bpb) {
+      case 96:
+         /* We can only support linear mode for 96bpp on blitter engine. */
+         blorp_execute_on_companion |=
+            image->vk.tiling != VK_IMAGE_TILING_LINEAR;
+         break;
+      default:
+         blorp_execute_on_companion |= linear_fmtl->bpb % 3 == 0;
+         break;
+      }
+   }
+
+   return blorp_execute_on_companion;
 }
 
 static bool
@@ -608,7 +668,18 @@ void anv_CmdCopyBufferToImage2(
    struct anv_cmd_buffer *main_cmd_buffer = cmd_buffer;
    UNUSED struct anv_state rcs_done = ANV_STATE_NULL;
 
-   if (anv_blorp_execute_on_companion(cmd_buffer, dst_image)) {
+   bool blorp_execute_on_companion =
+      anv_blorp_execute_on_companion(cmd_buffer, dst_image);
+
+   /* Check if any one of the aspects is incompatible with the blitter engine,
+    * if true, use the companion RCS command buffer for blit operation since 3
+    * component formats are not supported natively except 96bpb on the blitter.
+    */
+   blorp_execute_on_companion |=
+      anv_blorp_blitter_execute_on_companion(cmd_buffer, dst_image,
+                                             pCopyBufferToImageInfo, NULL);
+
+   if (blorp_execute_on_companion) {
       rcs_done = record_main_rcs_cmd_buffer_done(cmd_buffer);
       cmd_buffer = cmd_buffer->companion_rcs_cmd_buffer;
    }
@@ -671,6 +742,25 @@ void anv_CmdCopyImageToBuffer2(
    ANV_FROM_HANDLE(anv_image, src_image, pCopyImageToBufferInfo->srcImage);
    ANV_FROM_HANDLE(anv_buffer, dst_buffer, pCopyImageToBufferInfo->dstBuffer);
 
+   UNUSED struct anv_cmd_buffer *main_cmd_buffer = cmd_buffer;
+   UNUSED struct anv_state rcs_done = ANV_STATE_NULL;
+
+   bool blorp_execute_on_companion =
+      anv_blorp_execute_on_companion(cmd_buffer, src_image);
+
+   /* Check if any one of the aspects is incompatible with the blitter engine,
+    * if true, use the companion RCS command buffer for blit operation since 3
+    * component formats are not supported natively except 96bpb on the blitter.
+    */
+   blorp_execute_on_companion |=
+      anv_blorp_blitter_execute_on_companion(cmd_buffer, src_image, NULL,
+                                             pCopyImageToBufferInfo);
+
+   if (blorp_execute_on_companion) {
+      rcs_done = record_main_rcs_cmd_buffer_done(cmd_buffer);
+      cmd_buffer = cmd_buffer->companion_rcs_cmd_buffer;
+   }
+
    struct blorp_batch batch;
    anv_blorp_batch_init(cmd_buffer, &batch, 0);
 
@@ -683,6 +773,9 @@ void anv_CmdCopyImageToBuffer2(
    anv_add_buffer_write_pending_bits(cmd_buffer, "after copy image to buffer");
 
    anv_blorp_batch_finish(&batch);
+
+   if (rcs_done.alloc_size)
+      end_main_rcs_cmd_buffer_done(main_cmd_buffer, rcs_done);
 }
 
 static bool
@@ -1789,11 +1882,18 @@ anv_fast_clear_depth_stencil(struct anv_cmd_buffer *cmd_buffer,
        *
        * Set CS stall bit to guarantee that the fast clear starts the execution
        * after the tile cache flush completed.
+       *
+       * There is no Bspec requirement to flush the data cache but the
+       * experiment shows that flusing the data cache helps to resolve the
+       * corruption.
        */
+      unsigned wa_flush = cmd_buffer->device->info->verx10 >= 125 ?
+                          ANV_PIPE_DATA_CACHE_FLUSH_BIT : 0;
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_DEPTH_CACHE_FLUSH_BIT |
                                 ANV_PIPE_CS_STALL_BIT |
-                                ANV_PIPE_TILE_CACHE_FLUSH_BIT,
+                                ANV_PIPE_TILE_CACHE_FLUSH_BIT |
+                                wa_flush,
                                 "before clear hiz_ccs_wt");
    }
 

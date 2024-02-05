@@ -19,6 +19,15 @@
 #define RENCODE_FW_INTERFACE_MAJOR_VERSION   1
 #define RENCODE_FW_INTERFACE_MINOR_VERSION   20
 
+static void radeon_enc_session_info(struct radeon_encoder *enc)
+{
+   RADEON_ENC_BEGIN(enc->cmd.session_info);
+   RADEON_ENC_CS(enc->enc_pic.session_info.interface_version);
+   RADEON_ENC_READWRITE(enc->si->res->buf, enc->si->res->domains, 0x0);
+   RADEON_ENC_CS(0); /* padding 0, not used for vcn3 */
+   RADEON_ENC_END();
+}
+
 static void radeon_enc_spec_misc(struct radeon_encoder *enc)
 {
    enc->enc_pic.spec_misc.constrained_intra_pred_flag = 0;
@@ -292,7 +301,8 @@ static void radeon_enc_slice_header(struct radeon_encoder *enc)
       radeon_enc_code_fixed_bits(enc, 0x1, 1); /* direct_spatial_mv_pred_flag */
 
    /* ref_pic_list_modification() */
-   if (enc->enc_pic.picture_type != PIPE_H2645_ENC_PICTURE_TYPE_IDR) {
+   if (enc->enc_pic.picture_type != PIPE_H2645_ENC_PICTURE_TYPE_IDR &&
+       enc->enc_pic.picture_type != PIPE_H2645_ENC_PICTURE_TYPE_I) {
       radeon_enc_code_fixed_bits(enc, 0x0, 1);
 
       /* long-term reference */
@@ -338,6 +348,7 @@ static void radeon_enc_slice_header(struct radeon_encoder *enc)
    }
 
    if ((enc->enc_pic.picture_type != PIPE_H2645_ENC_PICTURE_TYPE_IDR) &&
+       (enc->enc_pic.picture_type != PIPE_H2645_ENC_PICTURE_TYPE_I) &&
        (enc->enc_pic.spec_misc.cabac_enable))
       radeon_enc_code_ue(enc, enc->enc_pic.spec_misc.cabac_init_idc);
 
@@ -403,8 +414,8 @@ static void radeon_enc_nalu_pps_hevc(struct radeon_encoder *enc)
    radeon_enc_code_se(enc, 0x0);
    radeon_enc_code_fixed_bits(enc, enc->enc_pic.hevc_spec_misc.constrained_intra_pred_flag, 1);
    radeon_enc_code_fixed_bits(enc, 0x1, 1);
-   if (enc->enc_pic.rc_session_init.rate_control_method ==
-      RENCODE_RATE_CONTROL_METHOD_NONE)
+   if (enc->enc_pic.rc_session_init.rate_control_method == RENCODE_RATE_CONTROL_METHOD_NONE &&
+       enc->enc_pic.enc_qp_map.qp_map_type == RENCODE_QP_MAP_TYPE_NONE)
       radeon_enc_code_fixed_bits(enc, 0x0, 1);
    else {
       radeon_enc_code_fixed_bits(enc, 0x1, 1);
@@ -521,6 +532,7 @@ void radeon_enc_3_0_init(struct radeon_encoder *enc)
 {
    radeon_enc_2_0_init(enc);
 
+   enc->session_info = radeon_enc_session_info;
    enc->session_init = radeon_enc_session_init;
    enc->ctx = radeon_enc_ctx;
    enc->quality_params = radeon_enc_quality_params;

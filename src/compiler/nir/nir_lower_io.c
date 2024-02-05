@@ -1570,7 +1570,8 @@ build_explicit_io_load(nir_builder *b, nir_intrinsic_instr *intrin,
       nir_def *zero = nir_imm_zero(b, load->num_components, bit_size);
 
       /* TODO: Better handle block_intel. */
-      const unsigned load_size = (bit_size / 8) * load->num_components;
+      assert(load->num_components == 1);
+      const unsigned load_size = bit_size / 8;
       nir_push_if(b, addr_is_in_bounds(b, addr, addr_format, load_size));
 
       nir_builder_instr_insert(b, &load->instr);
@@ -1755,7 +1756,8 @@ build_explicit_io_store(nir_builder *b, nir_intrinsic_instr *intrin,
 
    if (addr_format_needs_bounds_check(addr_format)) {
       /* TODO: Better handle block_intel. */
-      const unsigned store_size = (value->bit_size / 8) * store->num_components;
+      assert(store->num_components == 1);
+      const unsigned store_size = value->bit_size / 8;
       nir_push_if(b, addr_is_in_bounds(b, addr, addr_format, store_size));
 
       nir_builder_instr_insert(b, &store->instr);
@@ -1948,8 +1950,12 @@ nir_lower_explicit_io_instr(nir_builder *b,
    nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
    unsigned vec_stride = glsl_get_explicit_stride(deref->type);
    unsigned scalar_size = type_scalar_size_bytes(deref->type);
-   assert(vec_stride == 0 || glsl_type_is_vector(deref->type));
-   assert(vec_stride == 0 || vec_stride >= scalar_size);
+   if (vec_stride == 0) {
+      vec_stride = scalar_size;
+   } else {
+      assert(glsl_type_is_vector(deref->type));
+      assert(vec_stride >= scalar_size);
+   }
 
    uint32_t align_mul, align_offset;
    if (!nir_get_explicit_deref_align(deref, true, &align_mul, &align_offset)) {
@@ -1958,10 +1964,27 @@ nir_lower_explicit_io_instr(nir_builder *b,
       align_offset = 0;
    }
 
+   /* In order for bounds checking to be correct as per the Vulkan spec,
+    * we need to check at the individual component granularity.  Prior to
+    * robustness2, we're technically allowed to be sloppy by 16B.  Even with
+    * robustness2, UBO loads are allowed to have a granularity as high as 256B
+    * depending on hardware limits.  However, we have none of that information
+    * here.  Short of adding new address formats, the easiest way to do that
+    * is to just split any loads and stores into individual components here.
+    *
+    * TODO: At some point in the future we may want to add more ops similar to
+    * nir_intrinsic_load_global_constant_bounded and make bouds checking the
+    * back-end's problem.  Another option would be to somehow plumb more of
+    * that information through to nir_lower_explicit_io.  For now, however,
+    * scalarizing is at least correct.
+    */
+   bool scalarize = vec_stride > scalar_size ||
+                    addr_format_needs_bounds_check(addr_format);
+
    switch (intrin->intrinsic) {
    case nir_intrinsic_load_deref: {
       nir_def *value;
-      if (vec_stride > scalar_size) {
+      if (scalarize) {
          nir_def *comps[NIR_MAX_VEC_COMPONENTS] = {
             NULL,
          };
@@ -1990,7 +2013,7 @@ nir_lower_explicit_io_instr(nir_builder *b,
    case nir_intrinsic_store_deref: {
       nir_def *value = intrin->src[1].ssa;
       nir_component_mask_t write_mask = nir_intrinsic_write_mask(intrin);
-      if (vec_stride > scalar_size) {
+      if (scalarize) {
          for (unsigned i = 0; i < intrin->num_components; i++) {
             if (!(write_mask & (1 << i)))
                continue;
@@ -2491,9 +2514,10 @@ lower_vars_to_explicit(nir_shader *shader,
       if (var->data.mode != mode)
          continue;
 
-      unsigned size, align;
+      unsigned size, alignment;
       const struct glsl_type *explicit_type =
-         glsl_get_explicit_type_for_size_align(var->type, type_info, &size, &align);
+         glsl_get_explicit_type_for_size_align(var->type, type_info,
+                                               &size, &alignment);
 
       if (explicit_type != var->type)
          var->type = explicit_type;
@@ -2502,9 +2526,12 @@ lower_vars_to_explicit(nir_shader *shader,
          glsl_type_is_struct_or_ifc(explicit_type) &&
          glsl_get_length(explicit_type) == 0;
 
-      assert(util_is_power_of_two_nonzero(align) || is_empty_struct ||
+      assert(util_is_power_of_two_nonzero(alignment) || is_empty_struct ||
              glsl_type_is_cmat(glsl_without_array(explicit_type)));
-      var->data.driver_location = ALIGN_POT(offset, align);
+      assert(util_is_power_of_two_or_zero(var->data.alignment));
+      alignment = MAX2(alignment, var->data.alignment);
+
+      var->data.driver_location = ALIGN_POT(offset, alignment);
       offset = var->data.driver_location + size;
       progress = true;
    }
@@ -3163,8 +3190,7 @@ type_size_vec4(const struct glsl_type *type, bool bindless)
 void
 nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
 {
-   if (!nir->options->lower_io_variables ||
-       nir->info.stage == MESA_SHADER_COMPUTE)
+   if (nir->info.stage == MESA_SHADER_COMPUTE)
       return;
 
    bool has_indirect_inputs =
@@ -3232,6 +3258,9 @@ nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
 
    if (nir->xfb_info)
       NIR_PASS_V(nir, nir_io_add_intrinsic_xfb_info);
+
+   if (nir->options->lower_mediump_io)
+      nir->options->lower_mediump_io(nir);
 
    nir->info.io_lowered = true;
 }

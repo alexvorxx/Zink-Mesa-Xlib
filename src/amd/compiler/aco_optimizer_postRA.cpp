@@ -492,6 +492,13 @@ try_combine_dpp(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
       if (!op_instr_idx.found())
          continue;
 
+      /* is_overwritten_since only considers active lanes when the register could possibly
+       * have been overwritten from inactive lanes. Restrict this optimization to at most
+       * one block so that there is no possibility for clobbered inactive lanes.
+       */
+      if (ctx.current_block->index - op_instr_idx.block > 1)
+         continue;
+
       const Instruction* mov = ctx.get(op_instr_idx);
       if (mov->opcode != aco_opcode::v_mov_b32 || !mov->isDPP())
          continue;
@@ -568,7 +575,7 @@ unsigned
 num_encoded_alu_operands(const aco_ptr<Instruction>& instr)
 {
    if (instr->isSALU()) {
-      if (instr->isSOP2())
+      if (instr->isSOP2() || instr->isSOPC())
          return 2;
       else if (instr->isSOP1())
          return 1;

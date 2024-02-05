@@ -709,8 +709,8 @@ brw_nir_optimize(nir_shader *nir, bool is_scalar,
       }
 
       OPT(nir_opt_dead_cf);
-      if (OPT(nir_opt_trivial_continues)) {
-         /* If nir_opt_trivial_continues makes progress, then we need to clean
+      if (OPT(nir_opt_loop)) {
+         /* If nir_opt_loop makes progress, then we need to clean
           * things up if we want any hope of nir_opt_if or nir_opt_loop_unroll
           * to make progress.
           */
@@ -945,6 +945,7 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
       .lower_offset_filter =
          devinfo->verx10 >= 125 ? lower_xehp_tg4_offset_filter : NULL,
       .lower_invalid_implicit_lod = true,
+      .pack_lod_and_array_index = devinfo->ver >= 20,
    };
 
    /* In the case where TG4 coords are lowered to offsets and we have a
@@ -1001,6 +1002,7 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
       .lower_quad_broadcast_dynamic = true,
       .lower_elect = true,
       .lower_inverse_ballot = true,
+      .lower_rotate_to_shuffle = true,
    };
    OPT(nir_lower_subgroups, &subgroups_options);
 
@@ -1660,11 +1662,13 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
    } while (progress);
 
 
-   if (OPT(brw_nir_lower_conversions)) {
+   if (OPT(nir_lower_fp16_casts, nir_lower_fp16_split_fp64)) {
       if (OPT(nir_lower_int64)) {
          brw_nir_optimize(nir, is_scalar, devinfo);
       }
    }
+
+   OPT(brw_nir_lower_conversions);
 
    if (is_scalar)
       OPT(nir_lower_alu_to_scalar, NULL, NULL);
@@ -1736,6 +1740,13 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    nir_validate_ssa_dominance(nir, "before nir_convert_from_ssa");
 
+   /* Rerun the divergence analysis before convert_from_ssa as this pass has
+    * some assert on consistent divergence flags.
+    */
+   NIR_PASS(_, nir, nir_convert_to_lcssa, true, true);
+   NIR_PASS_V(nir, nir_divergence_analysis);
+   OPT(nir_opt_remove_phis);
+
    OPT(nir_convert_from_ssa, true);
 
    if (!is_scalar) {
@@ -1747,14 +1758,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    if (OPT(nir_opt_rematerialize_compares))
       OPT(nir_opt_dce);
-
-   /* This is the last pass we run before we start emitting stuff.  It
-    * determines when we need to insert boolean resolves on Gen <= 5.  We
-    * run it last because it stashes data in instr->pass_flags and we don't
-    * want that to be squashed by other NIR passes.
-    */
-   if (devinfo->ver <= 5)
-      brw_nir_analyze_boolean_resolves(nir);
 
    OPT(nir_opt_dce);
 
@@ -1768,6 +1771,15 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       brw_nir_adjust_payload(nir);
 
    nir_trivialize_registers(nir);
+
+   /* This is the last pass we run before we start emitting stuff.  It
+    * determines when we need to insert boolean resolves on Gen <= 5.  We
+    * run it last because it stashes data in instr->pass_flags and we don't
+    * want that to be squashed by other NIR passes.
+    */
+   if (devinfo->ver <= 5)
+      brw_nir_analyze_boolean_resolves(nir);
+
    nir_sweep(nir);
 
    if (unlikely(debug_enabled)) {

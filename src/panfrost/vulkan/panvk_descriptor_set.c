@@ -36,8 +36,6 @@
 #include "vk_descriptors.h"
 #include "vk_util.h"
 
-#include "pan_bo.h"
-
 /* FIXME: make sure those values are correct */
 #define PANVK_MAX_TEXTURES (1 << 16)
 #define PANVK_MAX_IMAGES   (1 << 8)
@@ -301,7 +299,7 @@ panvk_descriptor_set_destroy(struct panvk_device *device,
    vk_free(&device->vk.alloc, set->img_fmts);
    vk_free(&device->vk.alloc, set->img_attrib_bufs);
    if (set->desc_bo)
-      panfrost_bo_unreference(set->desc_bo);
+      panvk_priv_bo_destroy(set->desc_bo, NULL);
    vk_object_free(&device->vk, NULL, set);
 }
 

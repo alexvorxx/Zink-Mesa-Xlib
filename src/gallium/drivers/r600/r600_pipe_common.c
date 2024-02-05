@@ -43,7 +43,7 @@
 #include <sys/utsname.h>
 #include <stdlib.h>
 
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
 #include <llvm-c/TargetMachine.h>
 #endif
 
@@ -208,7 +208,7 @@ void r600_draw_rectangle(struct blitter_context *blitter,
 	vbuffer.buffer.resource = buf;
 	vbuffer.buffer_offset = offset;
 
-	rctx->b.set_vertex_buffers(&rctx->b, 1, 0, false, &vbuffer);
+	rctx->b.set_vertex_buffers(&rctx->b, 1, false, &vbuffer);
 	util_draw_arrays_instanced(&rctx->b, R600_PRIM_RECTANGLE_LIST, 0, 3,
 				   0, num_instances);
 	pipe_resource_reference(&buf, NULL);
@@ -352,7 +352,7 @@ static void r600_flush_from_st(struct pipe_context *ctx,
 
 	if (!radeon_emitted(&rctx->gfx.cs, rctx->initial_gfx_cs_size)) {
 		if (fence)
-			ws->fence_reference(&gfx_fence, rctx->last_gfx_fence);
+			ws->fence_reference(ws, &gfx_fence, rctx->last_gfx_fence);
 		if (!(flags & PIPE_FLUSH_DEFERRED))
 			ws->cs_sync_flush(&rctx->gfx.cs);
 	} else {
@@ -374,8 +374,8 @@ static void r600_flush_from_st(struct pipe_context *ctx,
 		struct r600_multi_fence *multi_fence =
 			CALLOC_STRUCT(r600_multi_fence);
 		if (!multi_fence) {
-			ws->fence_reference(&sdma_fence, NULL);
-			ws->fence_reference(&gfx_fence, NULL);
+			ws->fence_reference(ws, &sdma_fence, NULL);
+			ws->fence_reference(ws, &gfx_fence, NULL);
 			goto finish;
 		}
 
@@ -412,7 +412,7 @@ static void r600_flush_dma_ring(void *ctx, unsigned flags,
 
 	if (!radeon_emitted(cs, 0)) {
 		if (fence)
-			rctx->ws->fence_reference(fence, rctx->last_sdma_fence);
+			rctx->ws->fence_reference(rctx->ws, fence, rctx->last_sdma_fence);
 		return;
 	}
 
@@ -421,7 +421,7 @@ static void r600_flush_dma_ring(void *ctx, unsigned flags,
 
 	rctx->ws->cs_flush(cs, flags, &rctx->last_sdma_fence);
 	if (fence)
-		rctx->ws->fence_reference(fence, rctx->last_sdma_fence);
+		rctx->ws->fence_reference(rctx->ws, fence, rctx->last_sdma_fence);
 
 	if (check_vm) {
 		/* Use conservative timeout 800ms, after which we won't wait any
@@ -666,8 +666,8 @@ void r600_common_context_cleanup(struct r600_common_context *rctx)
 	slab_destroy_child(&rctx->pool_transfers_unsync);
 
 	u_suballocator_destroy(&rctx->allocator_zeroed_memory);
-	rctx->ws->fence_reference(&rctx->last_gfx_fence, NULL);
-	rctx->ws->fence_reference(&rctx->last_sdma_fence, NULL);
+	rctx->ws->fence_reference(rctx->ws, &rctx->last_gfx_fence, NULL);
+	rctx->ws->fence_reference(rctx->ws, &rctx->last_sdma_fence, NULL);
 	r600_resource_reference(&rctx->eop_bug_scratch, NULL);
 }
 
@@ -1072,8 +1072,8 @@ static void r600_fence_reference(struct pipe_screen *screen,
 	struct r600_multi_fence *rsrc = (struct r600_multi_fence *)src;
 
 	if (pipe_reference(&(*rdst)->reference, &rsrc->reference)) {
-		ws->fence_reference(&(*rdst)->gfx, NULL);
-		ws->fence_reference(&(*rdst)->sdma, NULL);
+		ws->fence_reference(ws, &(*rdst)->gfx, NULL);
+		ws->fence_reference(ws, &(*rdst)->sdma, NULL);
 		FREE(*rdst);
 	}
         *rdst = rsrc;
@@ -1272,7 +1272,7 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 
 	snprintf(rscreen->renderer_string, sizeof(rscreen->renderer_string),
 		 "%s (%sDRM %i.%i.%i%s"
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
 		 ", LLVM " MESA_LLVM_VERSION_STRING
 #endif
 		 ")",
@@ -1358,7 +1358,6 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		printf("drm = %i.%i.%i\n", rscreen->info.drm_major,
 		       rscreen->info.drm_minor, rscreen->info.drm_patchlevel);
 		printf("has_userptr = %i\n", rscreen->info.has_userptr);
-		printf("has_syncobj = %u\n", rscreen->info.has_syncobj);
 
 		printf("r600_max_quad_pipes = %i\n", rscreen->info.r600_max_quad_pipes);
 		printf("max_gpu_freq_mhz = %i\n", rscreen->info.max_gpu_freq_mhz);
@@ -1395,7 +1394,6 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		.lower_insert_byte = true,
 		.lower_insert_word = true,
 		.lower_ldexp = true,
-		.lower_rotate = true,
 		/* due to a bug in the shader compiler, some loops hang
 		 * if they are not unrolled, see:
 		 *    https://bugs.freedesktop.org/show_bug.cgi?id=86720
@@ -1454,7 +1452,8 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 			nir_lower_dceil |
 			nir_lower_dmod |
 			nir_lower_dsub |
-			nir_lower_dtrunc;
+			nir_lower_dtrunc |
+			nir_lower_dround_even;
 	}
 
         rscreen->nir_options_fs = rscreen->nir_options;

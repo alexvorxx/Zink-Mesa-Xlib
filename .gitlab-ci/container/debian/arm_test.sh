@@ -17,6 +17,8 @@ DEPS=(
     openssh-server
     procps
     python3-distutils
+    python3-filelock
+    python3-fire
     python3-minimal
     python3-serial
     rsync
@@ -26,6 +28,7 @@ DEPS=(
 
 apt-get install -y ca-certificates
 sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list.d/*
+echo "deb [trusted=yes] https://gitlab.freedesktop.org/gfx-ci/ci-deb-repo/-/raw/${PKG_REPO_REV}/ ${FDO_DISTRIBUTION_VERSION%-*} main" | tee /etc/apt/sources.list.d/gfx-ci_.list
 apt-get update
 
 apt-get install -y --no-remove "${DEPS[@]}"

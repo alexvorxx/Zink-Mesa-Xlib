@@ -451,14 +451,12 @@ etna_set_viewport_states(struct pipe_context *pctx, unsigned start_slot,
 
 static void
 etna_set_vertex_buffers(struct pipe_context *pctx, unsigned num_buffers,
-      unsigned unbind_num_trailing_slots, bool take_ownership,
-      const struct pipe_vertex_buffer *vb)
+      bool take_ownership, const struct pipe_vertex_buffer *vb)
 {
    struct etna_context *ctx = etna_context(pctx);
    struct etna_vertexbuf_state *so = &ctx->vertex_buffer;
 
-   util_set_vertex_buffers_mask(so->vb, &so->enabled_mask, vb,
-                                num_buffers, unbind_num_trailing_slots,
+   util_set_vertex_buffers_mask(so->vb, &so->enabled_mask, vb, num_buffers,
                                 take_ownership);
    so->count = util_last_bit(so->enabled_mask);
 
@@ -804,8 +802,9 @@ etna_record_flush_resources(struct etna_context *ctx)
 
    if (fb->nr_cbufs > 0) {
       struct etna_surface *surf = etna_surface(fb->cbufs[0]);
+      struct etna_resource *rsc = etna_resource(surf->prsc);
 
-      if (!etna_resource(surf->prsc)->explicit_flush)
+      if (rsc->shared && !rsc->explicit_flush)
          etna_context_add_flush_resource(ctx, surf->prsc);
    }
 

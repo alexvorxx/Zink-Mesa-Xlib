@@ -68,88 +68,124 @@
    radeon_emit(value); \
 } while (0)
 
-#define radeon_opt_set_reg(reg, reg_enum, idx, value, prefix_name, packet, category) do { \
+#define radeon_opt_set_reg(reg, reg_enum, idx, value, prefix_name, packet) do { \
    unsigned __value = (value); \
-   if (!((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0x1) || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __value) { \
+   if (!BITSET_TEST(sctx->tracked_regs.reg_saved_mask, (reg_enum)) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __value) { \
       radeon_set_reg(reg, idx, __value, prefix_name, packet); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_BIT(reg_enum); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __value; \
+      BITSET_SET(sctx->tracked_regs.reg_saved_mask, (reg_enum)); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __value; \
    } \
 } while (0)
 
 /* Set consecutive registers if any value is different. */
-#define radeon_opt_set_reg2(reg, reg_enum, v1, v2, prefix_name, packet, category) do { \
+#define radeon_opt_set_reg2(reg, reg_enum, v1, v2, prefix_name, packet) do { \
    unsigned __v1 = (v1), __v2 = (v2); \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0x3) != 0x3 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __v1 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] != __v2) { \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 1, 0x3) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2) { \
       radeon_set_reg_seq(reg, 2, 0, prefix_name, packet, 0); \
       radeon_emit(__v1); \
       radeon_emit(__v2); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_RANGE(reg_enum, 2); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __v1; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] = __v2; \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 1); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
    } \
 } while (0)
 
-#define radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, prefix_name, packet, category) do { \
+#define radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, prefix_name, packet) do { \
    unsigned __v1 = (v1), __v2 = (v2), __v3 = (v3); \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0x7) != 0x7 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __v1 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] != __v2 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] != __v3) { \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 2, 0x7) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 2] != __v3) { \
       radeon_set_reg_seq(reg, 3, 0, prefix_name, packet, 0); \
       radeon_emit(__v1); \
       radeon_emit(__v2); \
       radeon_emit(__v3); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_RANGE(reg_enum, 3); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __v1; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] = __v2; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] = __v3; \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 2); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 2] = __v3; \
    } \
 } while (0)
 
-#define radeon_opt_set_reg4(reg, reg_enum, v1, v2, v3, v4, prefix_name, packet, category) do { \
+#define radeon_opt_set_reg4(reg, reg_enum, v1, v2, v3, v4, prefix_name, packet) do { \
    unsigned __v1 = (v1), __v2 = (v2), __v3 = (v3), __v4 = (v4); \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0xf) != 0xf || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __v1 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] != __v2 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] != __v3 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] != __v4) { \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 3, 0xf) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 2] != __v3 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 3] != __v4) { \
       radeon_set_reg_seq(reg, 4, 0, prefix_name, packet, 0); \
       radeon_emit(__v1); \
       radeon_emit(__v2); \
       radeon_emit(__v3); \
       radeon_emit(__v4); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_RANGE(reg_enum, 4); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __v1; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] = __v2; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] = __v3; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] = __v4; \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 3); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 2] = __v3; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 3] = __v4; \
    } \
 } while (0)
 
-#define radeon_opt_set_reg5(reg, reg_enum, v1, v2, v3, v4, v5, prefix_name, packet, category) do { \
+#define radeon_opt_set_reg5(reg, reg_enum, v1, v2, v3, v4, v5, prefix_name, packet) do { \
    unsigned __v1 = (v1), __v2 = (v2), __v3 = (v3), __v4 = (v4), __v5 = (v5); \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0x1f) != 0x1f || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __v1 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] != __v2 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] != __v3 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] != __v4 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 4] != __v5) { \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 4, 0x1f) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 2] != __v3 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 3] != __v4 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 4] != __v5) { \
       radeon_set_reg_seq(reg, 5, 0, prefix_name, packet, 0); \
       radeon_emit(__v1); \
       radeon_emit(__v2); \
       radeon_emit(__v3); \
       radeon_emit(__v4); \
       radeon_emit(__v5); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_RANGE(reg_enum, 5); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __v1; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] = __v2; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] = __v3; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] = __v4; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 4] = __v5; \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 4); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 2] = __v3; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 3] = __v4; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 4] = __v5; \
+   } \
+} while (0)
+
+#define radeon_opt_set_reg6(reg, reg_enum, v1, v2, v3, v4, v5, v6, prefix_name, packet) do { \
+   unsigned __v1 = (v1), __v2 = (v2), __v3 = (v3), __v4 = (v4), __v5 = (v5), __v6 = (v6); \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 5, 0x3f) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 2] != __v3 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 3] != __v4 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 4] != __v5 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 5] != __v6) { \
+      radeon_set_reg_seq(reg, 6, 0, prefix_name, packet, 0); \
+      radeon_emit(__v1); \
+      radeon_emit(__v2); \
+      radeon_emit(__v3); \
+      radeon_emit(__v4); \
+      radeon_emit(__v5); \
+      radeon_emit(__v6); \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 5); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 2] = __v3; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 3] = __v4; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 4] = __v5; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 5] = __v6; \
    } \
 } while (0)
 
@@ -174,22 +210,25 @@
    radeon_set_reg(reg, 0, value, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg(_unused, reg, reg_enum, value) \
-   radeon_opt_set_reg(reg, reg_enum, 0, value, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg(reg, reg_enum, 0, value, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg_idx(_unused, reg, reg_enum, idx, value) \
-   radeon_opt_set_reg(reg, reg_enum, idx, value, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg(reg, reg_enum, idx, value, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg2(_unused, reg, reg_enum, v1, v2) \
-   radeon_opt_set_reg2(reg, reg_enum, v1, v2, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg2(reg, reg_enum, v1, v2, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg3(_unused, reg, reg_enum, v1, v2, v3) \
-   radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg4(_unused, reg, reg_enum, v1, v2, v3, v4) \
-   radeon_opt_set_reg4(reg, reg_enum, v1, v2, v3, v4, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg4(reg, reg_enum, v1, v2, v3, v4, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_reg5(_unused, reg, reg_enum, v1, v2, v3, v4, v5) \
-   radeon_opt_set_reg5(reg, reg_enum, v1, v2, v3, v4, v5, SI_CONTEXT, PKT3_SET_CONTEXT_REG, context)
+   radeon_opt_set_reg5(reg, reg_enum, v1, v2, v3, v4, v5, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
+
+#define radeon_opt_set_context_reg6(reg, reg_enum, v1, v2, v3, v4, v5, v6) \
+   radeon_opt_set_reg6(reg, reg_enum, v1, v2, v3, v4, v5, v6, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
 
 #define radeon_opt_set_context_regn(_unused, reg, values, saved_values, num) \
    radeon_opt_set_regn(reg, values, saved_values, num, SI_CONTEXT, PKT3_SET_CONTEXT_REG)
@@ -202,17 +241,17 @@
    radeon_set_reg(reg, 0, value, SI_SH, PKT3_SET_SH_REG)
 
 #define radeon_opt_set_sh_reg(_unused, reg, reg_enum, value) \
-   radeon_opt_set_reg(reg, reg_enum, 0, value, SI_SH, PKT3_SET_SH_REG, other)
+   radeon_opt_set_reg(reg, reg_enum, 0, value, SI_SH, PKT3_SET_SH_REG)
 
 #define radeon_opt_set_sh_reg2(_unused, reg, reg_enum, v1, v2) \
-   radeon_opt_set_reg2(reg, reg_enum, v1, v2, SI_SH, PKT3_SET_SH_REG, other)
+   radeon_opt_set_reg2(reg, reg_enum, v1, v2, SI_SH, PKT3_SET_SH_REG)
 
 #define radeon_opt_set_sh_reg3(_unused, reg, reg_enum, v1, v2, v3) \
-   radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, SI_SH, PKT3_SET_SH_REG, other)
+   radeon_opt_set_reg3(reg, reg_enum, v1, v2, v3, SI_SH, PKT3_SET_SH_REG)
 
 #define radeon_opt_set_sh_reg_idx(_unused, reg, reg_enum, idx, value) do { \
    assert(sctx->gfx_level >= GFX10); \
-   radeon_opt_set_reg(reg, reg_enum, idx, value, SI_SH, PKT3_SET_SH_REG_INDEX, other); \
+   radeon_opt_set_reg(reg, reg_enum, idx, value, SI_SH, PKT3_SET_SH_REG_INDEX); \
 } while (0)
 
 #define radeon_emit_32bit_pointer(_unused, va) do { \
@@ -230,13 +269,15 @@
    radeon_set_reg_seq(reg, num, 0, CIK_UCONFIG, PKT3_SET_UCONFIG_REG, 0)
 
 #define radeon_set_uconfig_perfctr_reg_seq(reg, num) \
-   radeon_set_reg_seq(reg, num, 0, CIK_UCONFIG, PKT3_SET_UCONFIG_REG, sctx->gfx_level >= GFX10)
+   radeon_set_reg_seq(reg, num, 0, CIK_UCONFIG, PKT3_SET_UCONFIG_REG, \
+                      sctx->gfx_level >= GFX10 && \
+                      sctx->ws->cs_get_ip_type(__cs) == AMD_IP_GFX)
 
 #define radeon_set_uconfig_reg(reg, value) \
    radeon_set_reg(reg, 0, value, CIK_UCONFIG, PKT3_SET_UCONFIG_REG)
 
 #define radeon_opt_set_uconfig_reg(_unused, reg, reg_enum, value) \
-   radeon_opt_set_reg(reg, reg_enum, 0, value, CIK_UCONFIG, PKT3_SET_UCONFIG_REG, other)
+   radeon_opt_set_reg(reg, reg_enum, 0, value, CIK_UCONFIG, PKT3_SET_UCONFIG_REG)
 
 #define RESOLVE_PKT3_SET_UCONFIG_REG_INDEX \
    (GFX_VERSION >= GFX10 || (GFX_VERSION == GFX9 && sctx->screen->info.me_fw_version >= 26) ? \
@@ -246,7 +287,7 @@
    radeon_set_reg(reg, idx, value, CIK_UCONFIG, RESOLVE_PKT3_SET_UCONFIG_REG_INDEX)
 
 #define radeon_opt_set_uconfig_reg_idx(_unused, _unused2, reg, reg_enum, idx, value) \
-   radeon_opt_set_reg(reg, reg_enum, idx, value, CIK_UCONFIG, RESOLVE_PKT3_SET_UCONFIG_REG_INDEX, other)
+   radeon_opt_set_reg(reg, reg_enum, idx, value, CIK_UCONFIG, RESOLVE_PKT3_SET_UCONFIG_REG_INDEX)
 
 #define radeon_set_privileged_config_reg(reg, value) do { \
    assert((reg) < CIK_UCONFIG_REG_OFFSET); \
@@ -268,35 +309,37 @@
    buffer[__i / 2].reg_value[__i % 2] = value; \
 } while (0)
 
-#define gfx11_opt_push_reg(reg, reg_enum, value, prefix_name, category, buffer, reg_count) do { \
+#define gfx11_opt_push_reg(reg, reg_enum, value, prefix_name, buffer, reg_count) do { \
    unsigned __value = value; \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0x1) != 0x1 || \
-       sctx->tracked_regs.category##_reg_value[reg_enum] != __value) { \
+   if (!BITSET_TEST(sctx->tracked_regs.reg_saved_mask, (reg_enum)) || \
+       sctx->tracked_regs.reg_value[reg_enum] != __value) { \
       gfx11_push_reg(reg, __value, prefix_name, buffer, reg_count); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_BIT(reg_enum); \
-      sctx->tracked_regs.category##_reg_value[reg_enum] = __value; \
+      BITSET_SET(sctx->tracked_regs.reg_saved_mask, (reg_enum)); \
+      sctx->tracked_regs.reg_value[reg_enum] = __value; \
    } \
 } while (0)
 
-#define gfx11_opt_push_reg4(reg, reg_enum, v1, v2, v3, v4, prefix_name, category, buffer, reg_count) do { \
+#define gfx11_opt_push_reg4(reg, reg_enum, v1, v2, v3, v4, prefix_name, buffer, reg_count) do { \
    unsigned __v1 = (v1); \
    unsigned __v2 = (v2); \
    unsigned __v3 = (v3); \
    unsigned __v4 = (v4); \
-   if (((sctx->tracked_regs.category##_reg_saved_mask >> (reg_enum)) & 0xf) != 0xf || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum)] != __v1 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] != __v2 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] != __v3 || \
-       sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] != __v4) { \
+   if (!BITSET_TEST_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                      (reg_enum), (reg_enum) + 3, 0xf) || \
+       sctx->tracked_regs.reg_value[(reg_enum)] != __v1 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 1] != __v2 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 2] != __v3 || \
+       sctx->tracked_regs.reg_value[(reg_enum) + 3] != __v4) { \
       gfx11_push_reg((reg), __v1, prefix_name, buffer, reg_count); \
       gfx11_push_reg((reg) + 4, __v2, prefix_name, buffer, reg_count); \
       gfx11_push_reg((reg) + 8, __v3, prefix_name, buffer, reg_count); \
       gfx11_push_reg((reg) + 12, __v4, prefix_name, buffer, reg_count); \
-      sctx->tracked_regs.category##_reg_saved_mask |= BITFIELD64_RANGE((reg_enum), 4); \
-      sctx->tracked_regs.category##_reg_value[(reg_enum)] = __v1; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 1] = __v2; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 2] = __v3; \
-      sctx->tracked_regs.category##_reg_value[(reg_enum) + 3] = __v4; \
+      BITSET_SET_RANGE_INSIDE_WORD(sctx->tracked_regs.reg_saved_mask, \
+                                   (reg_enum), (reg_enum) + 3); \
+      sctx->tracked_regs.reg_value[(reg_enum)] = __v1; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 1] = __v2; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 2] = __v3; \
+      sctx->tracked_regs.reg_value[(reg_enum) + 3] = __v4; \
    } \
 } while (0)
 
@@ -310,11 +353,11 @@
                   sctx->num_buffered_compute_sh_regs)
 
 #define gfx11_opt_push_gfx_sh_reg(reg, reg_enum, value) \
-   gfx11_opt_push_reg(reg, reg_enum, value, SI_SH, other, sctx->gfx11.buffered_gfx_sh_regs, \
+   gfx11_opt_push_reg(reg, reg_enum, value, SI_SH, sctx->gfx11.buffered_gfx_sh_regs, \
                       sctx->num_buffered_gfx_sh_regs)
 
 #define gfx11_opt_push_compute_sh_reg(reg, reg_enum, value) \
-   gfx11_opt_push_reg(reg, reg_enum, value, SI_SH, other, sctx->gfx11.buffered_compute_sh_regs, \
+   gfx11_opt_push_reg(reg, reg_enum, value, SI_SH, sctx->gfx11.buffered_compute_sh_regs, \
                       sctx->num_buffered_compute_sh_regs)
 
 /* GFX11 packet building helpers for SET_CONTEXT_REG_PAIRS_PACKED.
@@ -328,18 +371,18 @@
    gfx11_push_reg(reg, value, SI_CONTEXT, __cs_context_regs, __cs_context_reg_count)
 
 #define gfx11_opt_set_context_reg(reg, reg_enum, value) \
-   gfx11_opt_push_reg(reg, reg_enum, value, SI_CONTEXT, context, __cs_context_regs, \
+   gfx11_opt_push_reg(reg, reg_enum, value, SI_CONTEXT, __cs_context_regs, \
                       __cs_context_reg_count)
 
 #define gfx11_opt_set_context_reg4(reg, reg_enum, v1, v2, v3, v4) \
-   gfx11_opt_push_reg4(reg, reg_enum, v1, v2, v3, v4, SI_CONTEXT, context, __cs_context_regs, \
+   gfx11_opt_push_reg4(reg, reg_enum, v1, v2, v3, v4, SI_CONTEXT, __cs_context_regs, \
                        __cs_context_reg_count)
 
 #define gfx11_end_packed_context_regs() do { \
    if (__cs_context_reg_count >= 2) { \
       /* Align the count to 2 by duplicating the first register. */ \
       if (__cs_context_reg_count % 2 == 1) { \
-         gfx11_set_context_reg(__cs_context_regs[0].reg_offset[0] + SI_CONTEXT_REG_OFFSET, \
+         gfx11_set_context_reg(SI_CONTEXT_REG_OFFSET + __cs_context_regs[0].reg_offset[0] * 4, \
                                __cs_context_regs[0].reg_value[0]); \
       } \
       assert(__cs_context_reg_count % 2 == 0); \

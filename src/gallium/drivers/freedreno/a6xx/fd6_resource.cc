@@ -55,11 +55,27 @@ ok_ubwc_format(struct pipe_screen *pscreen, enum pipe_format pfmt)
       return info->a6xx.has_z24uint_s8uint;
 
    case PIPE_FORMAT_R8_G8B8_420_UNORM:
+      /* The difference between NV12 and R8_G8B8_420_UNORM is only where the
+       * conversion to RGB happens, with the latter it happens _after_ the
+       * texture samp instruction.  But dri2_get_mapping_by_fourcc() doesn't
+       * know this, so it asks for NV12 when it really meant to ask for
+       * R8_G8B8_420_UNORM.  Just treat them the same here to work around it:
+       */
+   case PIPE_FORMAT_NV12:
       return true;
 
    default:
       break;
    }
+
+   /* A690 seem to have broken UBWC for depth/stencil, it requires
+    * depth flushing where we cannot realistically place it, like between
+    * ordinary draw calls writing read/depth. WSL blob seem to use ubwc
+    * sometimes for depth/stencil.
+    */
+   if (info->a6xx.broken_ds_ubwc_quirk &&
+       util_format_is_depth_or_stencil(pfmt))
+      return false;
 
    switch (fd6_color_format(pfmt, TILE6_LINEAR)) {
    case FMT6_10_10_10_2_UINT:

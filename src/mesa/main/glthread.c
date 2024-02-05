@@ -39,6 +39,7 @@
 #include "util/u_atomic.h"
 #include "util/u_thread.h"
 #include "util/u_cpu_detect.h"
+#include "util/thread_sched.h"
 
 #include "state_tracker/st_context.h"
 
@@ -150,11 +151,36 @@ glthread_unmarshal_batch(void *job, void *gdata, int thread_index)
    batch->used = 0;
 
    unsigned batch_index = batch - ctx->GLThread.batches;
-   /* Atomically set this to -1 if it's equal to batch_index. */
-   p_atomic_cmpxchg(&ctx->GLThread.LastProgramChangeBatch, batch_index, -1);
-   p_atomic_cmpxchg(&ctx->GLThread.LastDListChangeBatchIndex, batch_index, -1);
+   _mesa_glthread_signal_call(&ctx->GLThread.LastProgramChangeBatch, batch_index);
+   _mesa_glthread_signal_call(&ctx->GLThread.LastDListChangeBatchIndex, batch_index);
 
    p_atomic_inc(&ctx->GLThread.stats.num_batches);
+}
+
+static void
+glthread_apply_thread_sched_policy(struct gl_context *ctx, bool initialization)
+{
+   struct glthread_state *glthread = &ctx->GLThread;
+
+   if (!glthread->thread_sched_enabled)
+      return;
+
+   /* Apply our thread scheduling policy for better multithreading
+    * performance.
+    */
+   if (initialization || ++glthread->pin_thread_counter % 128 == 0) {
+      int cpu = util_get_current_cpu();
+
+      if (cpu >= 0 &&
+          util_thread_sched_apply_policy(glthread->queue.threads[0],
+                                         UTIL_THREAD_GLTHREAD, cpu,
+                                         &glthread->thread_sched_state)) {
+         /* If it's successful, apply the policy to the driver threads too. */
+         ctx->pipe->set_context_param(ctx->pipe,
+                                      PIPE_CONTEXT_PARAM_UPDATE_THREAD_SCHEDULING,
+                                      cpu);
+      }
+   }
 }
 
 static void
@@ -222,10 +248,11 @@ _mesa_glthread_init(struct gl_context *ctx)
    glthread->used = 0;
    glthread->stats.queue = &glthread->queue;
 
-   glthread->LastDListChangeBatchIndex = -1;
+   _mesa_glthread_init_call_fence(&glthread->LastProgramChangeBatch);
+   _mesa_glthread_init_call_fence(&glthread->LastDListChangeBatchIndex);
 
    /* glthread takes over all L3 pinning */
-   ctx->st->pin_thread_counter = ST_L3_PINNING_DISABLED;
+   ctx->st->pin_thread_counter = ST_THREAD_SCHEDULER_DISABLED;
 
    _mesa_glthread_enable(ctx);
 
@@ -236,6 +263,11 @@ _mesa_glthread_init(struct gl_context *ctx)
                       glthread_thread_initialization, NULL, 0);
    util_queue_fence_wait(&fence);
    util_queue_fence_destroy(&fence);
+
+   glthread->thread_sched_enabled = ctx->pipe->set_context_param &&
+                                    util_thread_scheduler_enabled();
+   util_thread_scheduler_init_state(&glthread->thread_sched_state);
+   glthread_apply_thread_sched_policy(ctx, true);
 }
 
 static void
@@ -316,29 +348,14 @@ _mesa_glthread_flush_batch(struct gl_context *ctx)
    if (!glthread->used)
       return; /* the batch is empty */
 
-   /* Pin threads regularly to the same Zen CCX that the main thread is
-    * running on. The main thread can move between CCXs.
-    */
-   if (util_get_cpu_caps()->num_L3_caches > 1 &&
-       /* driver support */
-       ctx->pipe->set_context_param &&
-       ++glthread->pin_thread_counter % 128 == 0) {
-      int cpu = util_get_current_cpu();
-
-      if (cpu >= 0) {
-         uint16_t L3_cache = util_get_cpu_caps()->cpu_to_L3[cpu];
-         if (L3_cache != U_CPU_INVALID_L3) {
-            util_set_thread_affinity(glthread->queue.threads[0],
-                                     util_get_cpu_caps()->L3_affinity_mask[L3_cache],
-                                     NULL, util_get_cpu_caps()->num_cpu_mask_bits);
-            ctx->pipe->set_context_param(ctx->pipe,
-                                         PIPE_CONTEXT_PARAM_PIN_THREADS_TO_L3_CACHE,
-                                         L3_cache);
-         }
-      }
-   }
+   glthread_apply_thread_sched_policy(ctx, false);
 
    struct glthread_batch *next = glthread->next_batch;
+
+   /* Mark the end of the batch, but don't increment "used". */
+   struct marshal_cmd_base *last =
+      (struct marshal_cmd_base *)&next->buffer[glthread->used];
+   last->cmd_id = NUM_DISPATCH_CMD;
 
    p_atomic_add(&glthread->stats.num_offloaded_items, glthread->used);
    next->used = glthread->used;
@@ -384,7 +401,14 @@ _mesa_glthread_finish(struct gl_context *ctx)
       synced = true;
    }
 
+   glthread_apply_thread_sched_policy(ctx, false);
+
    if (glthread->used) {
+      /* Mark the end of the batch, but don't increment "used". */
+      struct marshal_cmd_base *last =
+         (struct marshal_cmd_base *)&next->buffer[glthread->used];
+      last->cmd_id = NUM_DISPATCH_CMD;
+
       p_atomic_add(&glthread->stats.num_direct_items, glthread->used);
       next->used = glthread->used;
       glthread->used = 0;

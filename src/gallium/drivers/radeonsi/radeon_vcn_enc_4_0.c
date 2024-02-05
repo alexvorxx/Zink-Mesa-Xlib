@@ -863,7 +863,7 @@ static void radeon_enc_obu_instruction(struct radeon_encoder *enc)
    radeon_enc_av1_bs_instruction_type(enc, RENCODE_AV1_BITSTREAM_INSTRUCTION_COPY, 0);
 
    radeon_enc_av1_temporal_delimiter(enc);
-   if (enc->enc_pic.need_av1_seq)
+   if (enc->enc_pic.need_av1_seq || enc->enc_pic.need_sequence_header)
       radeon_enc_av1_sequence_header(enc);
 
    /* if others OBU types are needed such as meta data, then they need to be byte aligned and added here

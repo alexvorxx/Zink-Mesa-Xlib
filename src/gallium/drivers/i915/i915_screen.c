@@ -117,7 +117,6 @@ static const nir_shader_compiler_options i915_compiler_options = {
    .lower_fdph = true,
    .lower_flrp32 = true,
    .lower_fmod = true,
-   .lower_rotate = true,
    .lower_sincos = true,
    .lower_uniforms_to_ubo = true,
    .lower_vector_cmp = true,
@@ -161,7 +160,6 @@ static const struct nir_shader_compiler_options gallivm_nir_options = {
    .lower_unpack_half_2x16 = true,
    .lower_extract_byte = true,
    .lower_extract_word = true,
-   .lower_rotate = true,
    .lower_uadd_carry = true,
    .lower_usub_borrow = true,
    .lower_mul_2x32_64 = true,
@@ -205,16 +203,14 @@ i915_optimize_nir(struct nir_shader *s)
       NIR_PASS(progress, s, nir_opt_dead_cf);
       NIR_PASS(progress, s, nir_opt_cse);
       NIR_PASS(progress, s, nir_opt_find_array_copies);
-      NIR_PASS(progress, s, nir_opt_if,
-               nir_opt_if_aggressive_last_continue |
-                  nir_opt_if_optimize_phi_true_false);
+      NIR_PASS(progress, s, nir_opt_if, nir_opt_if_optimize_phi_true_false);
       NIR_PASS(progress, s, nir_opt_peephole_select, ~0 /* flatten all IFs. */,
                true, true);
       NIR_PASS(progress, s, nir_opt_algebraic);
       NIR_PASS(progress, s, nir_opt_constant_folding);
       NIR_PASS(progress, s, nir_opt_shrink_stores, true);
       NIR_PASS(progress, s, nir_opt_shrink_vectors);
-      NIR_PASS(progress, s, nir_opt_trivial_continues);
+      NIR_PASS(progress, s, nir_opt_loop);
       NIR_PASS(progress, s, nir_opt_undef);
       NIR_PASS(progress, s, nir_opt_loop_unroll);
 

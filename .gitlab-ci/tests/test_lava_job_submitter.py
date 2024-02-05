@@ -9,8 +9,9 @@ import os
 import xmlrpc.client
 from contextlib import nullcontext as does_not_raise
 from datetime import datetime
-from itertools import chain, repeat
+from itertools import islice, repeat
 from pathlib import Path
+from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -341,13 +342,15 @@ def test_full_yaml_log(mock_proxy, frozen_time, lava_job_submitter):
         if not data_chunk:
             return
 
-        first_log_time = data_chunk[0]["dt"]
+        first_log = lava_yaml.load(data_chunk[0])[0]
+        first_log_time = first_log["dt"]
         frozen_time.move_to(first_log_time)
         yield
 
-        last_log_time = data_chunk[-1]["dt"]
+        last_log = lava_yaml.load(data_chunk[-1])[0]
+        last_log_time = last_log["dt"]
         frozen_time.move_to(last_log_time)
-        return
+        yield
 
     def time_travel_to_test_time():
         # Suppose that the first message timestamp of the entire LAVA job log is
@@ -357,22 +360,31 @@ def test_full_yaml_log(mock_proxy, frozen_time, lava_job_submitter):
             first_log_time = lava_yaml.load(first_log)[0]["dt"]
             frozen_time.move_to(first_log_time)
 
-    def load_lines() -> list:
+    def load_lines() -> Generator[tuple[bool, str], None, None]:
         with open("/tmp/log.yaml", "r") as f:
             # data = yaml.safe_load(f)
-            data = f.readlines()
-            stream = chain(data)
+            log_lines = f.readlines()
+            serial_message: str = ""
+            chunk_start_line = 0
+            chunk_end_line = 0
+            chunk_max_size = 100
             try:
                 while True:
-                    data_chunk = [next(stream) for _ in range(random.randint(0, 50))]
-                    serial_message = "".join(data_chunk)
+                    chunk_end_line = chunk_start_line + random.randint(1, chunk_max_size)
+                    # split the log in chunks of random size
+                    log_chunk = list(islice(log_lines, chunk_start_line, chunk_end_line))
+                    chunk_start_line = chunk_end_line + 1
+                    serial_message = "".join(log_chunk)
+                    # time_traveller_gen will make the time trave according to the timestamp from
+                    # the message
+                    time_traveller_gen = time_travel_from_log_chunk(log_chunk)
                     # Suppose that the first message timestamp is the same of
                     # log fetch RPC call
-                    time_travel_from_log_chunk(data_chunk)
+                    next(time_traveller_gen)
                     yield False, "[]"
                     # Travel to the same datetime of the last fetched log line
                     # in the chunk
-                    time_travel_from_log_chunk(data_chunk)
+                    next(time_traveller_gen)
                     yield False, serial_message
             except StopIteration:
                 yield True, serial_message
@@ -384,11 +396,20 @@ def test_full_yaml_log(mock_proxy, frozen_time, lava_job_submitter):
         proxy.scheduler.jobs.logs.side_effect = load_lines()
 
     proxy.scheduler.jobs.submit = reset_logs
-    with pytest.raises(MesaCIRetryError):
+    start_time = datetime.now()
+    try:
         time_travel_to_test_time()
-        lava_job_submitter.submit()
         retriable_follow_job(proxy, "")
-        print(lava_job_submitter.structured_log_file.read_text())
+    finally:
+        try:
+            # If the job fails, maybe there will be no structured log
+            print(lava_job_submitter.structured_log_file.read_text())
+        finally:
+            end_time = datetime.now()
+            print("---- Reproduction log stats ----")
+            print(f"Start time: {start_time}")
+            print(f"End time: {end_time}")
+            print(f"Duration: {end_time - start_time}")
 
 
 @pytest.mark.parametrize(

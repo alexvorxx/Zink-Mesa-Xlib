@@ -441,6 +441,7 @@ struct __DRI2fenceExtensionRec {
 struct mesa_glinterop_device_info;
 struct mesa_glinterop_export_in;
 struct mesa_glinterop_export_out;
+struct mesa_glinterop_flush_out;
 typedef struct __GLsync *GLsync;
 
 struct __DRI2interopExtensionRec {
@@ -462,7 +463,7 @@ struct __DRI2interopExtensionRec {
     */
    int (*flush_objects)(__DRIcontext *ctx,
                         unsigned count, struct mesa_glinterop_export_in *objects,
-                        GLsync *sync, int *fence_fd);
+                        struct mesa_glinterop_flush_out *out);
 };
 
 

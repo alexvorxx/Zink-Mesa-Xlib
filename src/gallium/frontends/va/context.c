@@ -103,7 +103,7 @@ static struct VADriverVTable vtable =
    &vlVaExportSurfaceHandle,
 #endif
 #if VA_CHECK_VERSION(1, 15, 0)
-   NULL, /* vaSyncSurface2 */
+   &vlVaSyncSurface2,
    &vlVaSyncBuffer,
 #endif
 #if VA_CHECK_VERSION(1, 21, 0)

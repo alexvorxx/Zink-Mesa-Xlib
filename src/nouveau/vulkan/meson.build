@@ -15,6 +15,7 @@ nvk_files = files(
   'nvk_cmd_meta.c',
   'nvk_cmd_pool.c',
   'nvk_cmd_pool.h',
+  'nvk_codegen.c',
   'nvk_compute_pipeline.c',
   'nvk_descriptor_set.h',
   'nvk_descriptor_set.c',
@@ -56,6 +57,8 @@ nvk_files = files(
   'nvk_sampler.h',
   'nvk_shader.c',
   'nvk_shader.h',
+  'nvk_upload_queue.c',
+  'nvk_upload_queue.h',
   'nvk_wsi.c',
   'nvk_wsi.h'
 )
@@ -74,6 +77,7 @@ nvk_entrypoints = custom_target(
 
 nvk_deps = [
   dep_libdrm,
+  idep_nak,
   idep_nil,
   idep_nir,
   idep_nouveau_mme,

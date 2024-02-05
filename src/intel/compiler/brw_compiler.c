@@ -72,8 +72,7 @@
    .max_unroll_iterations = 32,                                               \
    .force_indirect_unrolling = nir_var_function_temp,                         \
    .divergence_analysis_options =                                             \
-      (nir_divergence_single_prim_per_subgroup |                              \
-       nir_divergence_single_patch_per_tcs_subgroup |                         \
+      (nir_divergence_single_patch_per_tcs_subgroup |                         \
        nir_divergence_single_patch_per_tes_subgroup |                         \
        nir_divergence_shader_record_ptr_uniform)
 
@@ -121,6 +120,10 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
 
    /* Default to the sampler since that's what we've done since forever */
    compiler->indirect_ubos_use_sampler = true;
+
+   compiler->lower_dpas = devinfo->verx10 < 125 ||
+      intel_device_info_is_mtl(devinfo) ||
+      debug_get_bool_option("INTEL_LOWER_DPAS", false);
 
    /* There is no vec4 mode on Gfx10+, and we don't use it at all on Gfx8+. */
    for (int i = MESA_SHADER_VERTEX; i < MESA_ALL_SHADER_STAGES; i++) {
@@ -189,7 +192,8 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
       nir_options->has_bfm = devinfo->ver >= 7;
       nir_options->has_bfi = devinfo->ver >= 7;
 
-      nir_options->lower_rotate = devinfo->ver < 11;
+      nir_options->has_rotate16 = devinfo->ver >= 11;
+      nir_options->has_rotate32 = devinfo->ver >= 11;
       nir_options->lower_bitfield_reverse = devinfo->ver < 7;
       nir_options->lower_find_lsb = devinfo->ver < 7;
       nir_options->lower_ifind_msb = devinfo->ver < 7;
@@ -198,6 +202,9 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
       nir_options->has_sdot_4x8 = devinfo->ver >= 12;
       nir_options->has_udot_4x8 = devinfo->ver >= 12;
       nir_options->has_sudot_4x8 = devinfo->ver >= 12;
+      nir_options->has_sdot_4x8_sat = devinfo->ver >= 12;
+      nir_options->has_udot_4x8_sat = devinfo->ver >= 12;
+      nir_options->has_sudot_4x8_sat = devinfo->ver >= 12;
 
       nir_options->lower_int64_options = int64_options;
       nir_options->lower_doubles_options = fp64_options;
@@ -213,6 +220,10 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
          nir_options->divergence_analysis_options &=
             ~nir_divergence_single_patch_per_tcs_subgroup;
       }
+
+      if (devinfo->ver < 12)
+         nir_options->divergence_analysis_options |=
+            nir_divergence_single_prim_per_subgroup;
 
       compiler->nir_options[i] = nir_options;
    }
@@ -239,22 +250,28 @@ brw_get_compiler_config_value(const struct brw_compiler *compiler)
 
    insert_u64_bit(&config, compiler->precise_trig);
    bits++;
+   insert_u64_bit(&config, compiler->lower_dpas);
+   bits++;
+   insert_u64_bit(&config, compiler->mesh.mue_compaction);
+   bits++;
 
    uint64_t mask = DEBUG_DISK_CACHE_MASK;
    bits += util_bitcount64(mask);
-   while (mask != 0) {
-      const uint64_t bit = 1ULL << (ffsll(mask) - 1);
-      insert_u64_bit(&config, INTEL_DEBUG(bit));
-      mask &= ~bit;
-   }
+
+   u_foreach_bit64(bit, mask)
+      insert_u64_bit(&config, INTEL_DEBUG(1ULL << bit));
 
    mask = SIMD_DISK_CACHE_MASK;
    bits += util_bitcount64(mask);
-   while (mask != 0) {
-      const uint64_t bit = 1ULL << (ffsll(mask) - 1);
-      insert_u64_bit(&config, (intel_simd & bit) != 0);
-      mask &= ~bit;
-   }
+
+   u_foreach_bit64(bit, mask)
+      insert_u64_bit(&config, (intel_simd & (1ULL << bit)) != 0);
+
+   mask = 3;
+   bits += util_bitcount64(mask);
+
+   u_foreach_bit64(bit, mask)
+      insert_u64_bit(&config, (compiler->mesh.mue_header_packing & (1ULL << bit)) != 0);
 
    assert(bits <= util_bitcount64(UINT64_MAX));
 

@@ -59,7 +59,7 @@ endif
 libbroadcom_cle = static_library(
   'broadcom_cle',
   ['v3d_decoder.c', v3d_xml_h],
-  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_broadcom],
+  include_directories : [inc_include, inc_src, inc_broadcom],
   c_args : [no_override_init_args, expat_args],
   gnu_symbol_visibility : 'hidden',
   dependencies : [dep_libdrm, dep_valgrind, dep_expat, dep_zlib],

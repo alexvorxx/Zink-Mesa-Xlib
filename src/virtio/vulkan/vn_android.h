@@ -20,7 +20,7 @@
 /* venus implements VK_ANDROID_native_buffer up to spec version 7 */
 #define VN_ANDROID_NATIVE_BUFFER_SPEC_VERSION 7
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
 
 VkResult
 vn_android_image_from_anb(struct vn_device *dev,
@@ -53,7 +53,7 @@ vn_android_drm_format_to_vk_format(uint32_t format);
 uint32_t
 vn_android_get_ahb_buffer_memory_type_bits(struct vn_device *dev);
 
-uint32_t
+uint64_t
 vn_android_gralloc_get_shared_present_usage(void);
 
 #else
@@ -111,12 +111,12 @@ vn_android_get_ahb_buffer_memory_type_bits(UNUSED struct vn_device *dev)
    return 0;
 }
 
-static inline uint32_t
+static inline uint64_t
 vn_android_gralloc_get_shared_present_usage(void)
 {
    return 0;
 }
 
-#endif /* ANDROID */
+#endif /* DETECT_OS_ANDROID */
 
 #endif /* VN_ANDROID_H */

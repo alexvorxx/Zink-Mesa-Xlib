@@ -153,7 +153,8 @@ struct dzn_nir_blit_info {
          uint32_t sampler_dim : 4;
          uint32_t src_is_array : 1;
          uint32_t resolve_mode : 3;
-         uint32_t padding : 10;
+         uint32_t stencil_fallback : 1;
+         uint32_t padding : 9;
       };
       const uint32_t hash_key;
    };

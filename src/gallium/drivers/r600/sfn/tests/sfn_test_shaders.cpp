@@ -3244,6 +3244,8 @@ TestShader::from_string(const std::string& s)
    else
       return nullptr;
 
+   shader->reset_shader_id();
+
    while (std::getline(is, line)) {
       if (line.find_first_not_of(" \t") == std::string::npos)
          continue;

@@ -254,6 +254,7 @@ enum opcode {
    BRW_OPCODE_DP2,
    BRW_OPCODE_DP4A, /**< Gfx12+ */
    BRW_OPCODE_LINE,
+   BRW_OPCODE_DPAS,  /**< Gfx12.5+ */
    BRW_OPCODE_PLN, /**< G45+ */
    BRW_OPCODE_MAD, /**< Gfx6+ */
    BRW_OPCODE_LRP, /**< Gfx6+ */
@@ -986,6 +987,17 @@ enum urb_logical_srcs {
    URB_LOGICAL_NUM_SRCS
 };
 
+enum interpolator_logical_srcs {
+   /** Interpolation offset */
+   INTERP_SRC_OFFSET,
+   /** Message data  */
+   INTERP_SRC_MSG_DESC,
+   /** Flag register for dynamic mode */
+   INTERP_SRC_DYNAMIC_MODE,
+
+   INTERP_NUM_SRCS
+};
+
 
 #ifdef __cplusplus
 /**
@@ -1020,6 +1032,8 @@ enum ENUM_PACKED brw_predicate {
    BRW_PREDICATE_ALIGN16_REPLICATE_W =  5,
    BRW_PREDICATE_ALIGN16_ANY4H       =  6,
    BRW_PREDICATE_ALIGN16_ALL4H       =  7,
+   XE2_PREDICATE_ANY = 2,
+   XE2_PREDICATE_ALL = 3
 };
 
 enum ENUM_PACKED brw_reg_file {
@@ -1124,6 +1138,24 @@ enum tgl_sbid_mode {
    TGL_SBID_SRC = 1,
    TGL_SBID_DST = 2,
    TGL_SBID_SET = 4
+};
+
+
+enum gfx12_sub_byte_precision {
+   BRW_SUB_BYTE_PRECISION_NONE = 0,
+
+   /** 4 bits. Signedness determined by base type */
+   BRW_SUB_BYTE_PRECISION_4BIT = 1,
+
+   /** 2 bits. Signedness determined by base type */
+   BRW_SUB_BYTE_PRECISION_2BIT = 2,
+};
+
+enum gfx12_systolic_depth {
+   BRW_SYSTOLIC_DEPTH_16 = 0,
+   BRW_SYSTOLIC_DEPTH_2 = 1,
+   BRW_SYSTOLIC_DEPTH_4 = 2,
+   BRW_SYSTOLIC_DEPTH_8 = 3,
 };
 
 #ifdef __cplusplus
@@ -1366,6 +1398,7 @@ enum tgl_sync_function {
    TGL_SYNC_NOP = 0x0,
    TGL_SYNC_ALLRD = 0x2,
    TGL_SYNC_ALLWR = 0x3,
+   TGL_SYNC_FENCE = 0xd,
    TGL_SYNC_BAR = 0xe,
    TGL_SYNC_HOST = 0xf
 };
@@ -1450,6 +1483,8 @@ enum brw_message_target {
 #define GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_C    16
 #define GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_PO   17
 #define GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_PO_C 18
+#define XE2_SAMPLER_MESSAGE_SAMPLE_MLOD          18
+#define XE2_SAMPLER_MESSAGE_SAMPLE_COMPARE_MLOD  19
 #define HSW_SAMPLER_MESSAGE_SAMPLE_DERIV_COMPARE 20
 #define GFX9_SAMPLER_MESSAGE_SAMPLE_LZ           24
 #define GFX9_SAMPLER_MESSAGE_SAMPLE_C_LZ         25
@@ -1467,6 +1502,11 @@ enum brw_message_target {
 
 #define GFX10_SAMPLER_SIMD_MODE_SIMD8H                  5
 #define GFX10_SAMPLER_SIMD_MODE_SIMD16H                 6
+
+#define XE2_SAMPLER_SIMD_MODE_SIMD16                  1
+#define XE2_SAMPLER_SIMD_MODE_SIMD32                  2
+#define XE2_SAMPLER_SIMD_MODE_SIMD16H                 5
+#define XE2_SAMPLER_SIMD_MODE_SIMD32H                 6
 
 /* GFX9 changes SIMD mode 0 to mean SIMD8D, but lets us get the SIMD4x2
  * behavior by setting bit 22 of dword 2 in the message header. */

@@ -304,6 +304,8 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return true;
    case PIPE_CAP_UMA:
       return iris_bufmgr_vram_size(screen->bufmgr) == 0;
+   case PIPE_CAP_QUERY_MEMORY_INFO:
+      return iris_bufmgr_vram_size(screen->bufmgr) != 0;
    case PIPE_CAP_PREFER_BACK_BUFFER_REUSE:
       return false;
    case PIPE_CAP_FBFETCH:
@@ -428,9 +430,6 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
        * separately.
        */
       return devinfo->ver >= 11;
-
-   case PIPE_CAP_QUERY_TIMESTAMP_BITS:
-      return TIMESTAMP_BITS;
 
    case PIPE_CAP_TIMER_RESOLUTION:
       return DIV_ROUND_UP(1000000000ull, devinfo->timestamp_frequency);
@@ -657,7 +656,6 @@ iris_get_timestamp(struct pipe_screen *pscreen)
       return 0;
 
    result = intel_device_info_timebase_scale(screen->devinfo, result);
-   result &= (1ull << TIMESTAMP_BITS) - 1;
 
    return result;
 }
@@ -687,6 +685,23 @@ static void
 iris_query_memory_info(struct pipe_screen *pscreen,
                        struct pipe_memory_info *info)
 {
+   struct iris_screen *screen = (struct iris_screen *)pscreen;
+   struct intel_device_info di;
+   memcpy(&di, screen->devinfo, sizeof(di));
+
+   if (!intel_device_info_update_memory_info(&di, screen->fd))
+      return;
+
+   info->total_device_memory =
+      (di.mem.vram.mappable.size + di.mem.vram.unmappable.size) / 1024;
+   info->avail_device_memory =
+      (di.mem.vram.mappable.free + di.mem.vram.unmappable.free) / 1024;
+   info->total_staging_memory = di.mem.sram.mappable.size / 1024;
+   info->avail_staging_memory = di.mem.sram.mappable.free / 1024;
+
+   /* Neither kernel gives us any way to calculate this information */
+   info->device_memory_evicted = 0;
+   info->nr_device_memory_evictions = 0;
 }
 
 static const void *

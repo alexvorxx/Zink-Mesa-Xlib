@@ -8,7 +8,7 @@ set -ex
 # DEBIAN_X86_64_TEST_VK_TAG
 # KERNEL_ROOTFS_TAG
 
-REV="f7db20b03de6896d013826c0a731bc4417c1a5a0"
+REV="e9316bcd12544aaf7e753ce37fe50d64165d9598"
 
 git clone https://gitlab.freedesktop.org/mesa/piglit.git --single-branch --no-checkout /piglit
 pushd /piglit
@@ -16,18 +16,18 @@ git checkout "$REV"
 patch -p1 <$OLDPWD/.gitlab-ci/piglit/disable-vs_in.diff
 cmake -S . -B . -G Ninja -DCMAKE_BUILD_TYPE=Release $PIGLIT_OPTS $EXTRA_CMAKE_ARGS
 ninja $PIGLIT_BUILD_TARGETS
-# shellcheck disable=SC2038,SC2185 # TODO: rewrite find
-find -name .git -o -name '*ninja*' -o -iname '*cmake*' -o -name '*.[chao]' | xargs rm -rf
+find . -depth \( -name .git -o -name '*ninja*' -o -iname '*cmake*' -o -name '*.[chao]' \) -exec rm -rf {} \;
 rm -rf target_api
 if [ "$PIGLIT_BUILD_TARGETS" = "piglit_replayer" ]; then
-    # shellcheck disable=SC2038,SC2185 # TODO: rewrite find
-    find ! -regex "^\.$" \
+    find . -depth \
+         ! -regex "^\.$" \
          ! -regex "^\.\/piglit.*" \
          ! -regex "^\.\/framework.*" \
          ! -regex "^\.\/bin$" \
          ! -regex "^\.\/bin\/replayer\.py" \
          ! -regex "^\.\/templates.*" \
          ! -regex "^\.\/tests$" \
-         ! -regex "^\.\/tests\/replay\.py" 2>/dev/null | xargs rm -rf
+         ! -regex "^\.\/tests\/replay\.py" \
+         -exec rm -rf {} \; 2>/dev/null
 fi
 popd

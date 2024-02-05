@@ -85,7 +85,7 @@ static void get_task_info_param(struct rvce_encoder *enc)
    enc->enc_pic.ti.offset_of_next_task_info = 0xffffffff;
 }
 
-static void get_feedback_buffer_param(struct rvce_encoder *enc)
+static void get_feedback_buffer_param(struct rvce_encoder *enc, struct pipe_enc_feedback_metadata* metadata)
 {
    enc->enc_pic.fb.feedback_ring_size = 0x00000001;
 }
@@ -141,7 +141,7 @@ void si_vce_52_get_param(struct rvce_encoder *enc, struct pipe_h264_enc_picture_
    get_motion_estimation_param(enc, pic);
    get_pic_control_param(enc, pic);
    get_task_info_param(enc);
-   get_feedback_buffer_param(enc);
+   get_feedback_buffer_param(enc, NULL);
    get_vui_param(enc, pic);
    get_config_ext_param(enc);
 

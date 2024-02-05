@@ -937,6 +937,55 @@ lower_bit_size_callback(const nir_instr *instr, void *data)
    }
 }
 
+static bool
+merge_ubos_and_ssbos(nir_shader *nir)
+{
+   bool progress = false;
+   nir_foreach_variable_with_modes_safe(var, nir, nir_var_mem_ubo | nir_var_mem_ssbo) {
+      nir_variable *other_var = NULL;
+      nir_foreach_variable_with_modes(var2, nir, var->data.mode) {
+         if (var->data.descriptor_set == var2->data.descriptor_set &&
+             var->data.binding == var2->data.binding) {
+            other_var = var2;
+            break;
+         }
+      }
+
+      if (!other_var)
+         continue;
+
+      progress = true;
+      /* Merge types */
+      if (var->type != other_var->type) {
+         /* Pick the larger array size */
+         uint32_t desc_array_size = 1;
+         if (glsl_type_is_array(var->type))
+            desc_array_size = glsl_get_aoa_size(var->type);
+         if (glsl_type_is_array(other_var->type))
+            desc_array_size = MAX2(desc_array_size, glsl_get_aoa_size(other_var->type));
+
+         const glsl_type *struct_type = glsl_without_array(var->type);
+         if (var->data.mode == nir_var_mem_ubo) {
+            /* Pick the larger struct type; doesn't matter for ssbos */
+            uint32_t size = glsl_get_explicit_size(struct_type, false);
+            const glsl_type *other_type = glsl_without_array(other_var->type);
+            if (glsl_get_explicit_size(other_type, false) > size)
+               struct_type = other_type;
+         }
+
+         var->type = glsl_array_type(struct_type, desc_array_size, 0);
+         
+         /* An ssbo is non-writeable if all aliased vars are non-writeable */
+         if (var->data.mode == nir_var_mem_ssbo)
+            var->data.access &= ~(other_var->data.access & ACCESS_NON_WRITEABLE);
+
+         exec_node_remove(&other_var->node);
+      }
+   }
+   nir_shader_preserve_all_metadata(nir);
+   return progress;
+}
+
 void
 dxil_spirv_nir_passes(nir_shader *nir,
                       const struct dxil_spirv_runtime_conf *conf,
@@ -1030,6 +1079,9 @@ dxil_spirv_nir_passes(nir_shader *nir,
 
    NIR_PASS_V(nir, nir_opt_deref);
 
+   NIR_PASS_V(nir, nir_lower_memory_model);
+   NIR_PASS_V(nir, dxil_nir_lower_coherent_loads_and_stores);
+
    if (conf->inferred_read_only_images_as_srvs) {
       const nir_opt_access_options opt_access_options = {
          .is_vulkan = true,
@@ -1114,7 +1166,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
          NIR_PASS(progress, nir, nir_opt_undef);
          NIR_PASS(progress, nir, nir_opt_constant_folding);
          NIR_PASS(progress, nir, nir_opt_cse);
-         if (nir_opt_trivial_continues(nir)) {
+         if (nir_opt_loop(nir)) {
             progress = true;
             NIR_PASS(progress, nir, nir_copy_prop);
             NIR_PASS(progress, nir, nir_opt_dce);
@@ -1153,6 +1205,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
    NIR_PASS_V(nir, nir_remove_dead_variables,
               nir_var_uniform | nir_var_shader_in | nir_var_shader_out,
               NULL);
+   NIR_PASS_V(nir, merge_ubos_and_ssbos);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       dxil_sort_ps_outputs(nir);

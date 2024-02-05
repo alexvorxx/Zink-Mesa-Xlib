@@ -97,6 +97,13 @@ ds_pattern_bitmode(unsigned and_mask, unsigned or_mask, unsigned xor_mask)
     return and_mask | (or_mask << 5) | (xor_mask << 10);
 }
 
+inline unsigned
+ds_pattern_rotate(unsigned delta, unsigned mask)
+{
+    assert(delta < 32 && mask < 32);
+    return mask | (delta << 5) | 0xc000;
+}
+
 aco_ptr<Instruction> create_s_mov(Definition dst, Operand src);
 
 enum sendmsg {
@@ -497,7 +504,7 @@ public:
       aco_opcode op;
       Temp carry;
       if (carry_out) {
-         carry = tmp(s2);
+         carry = tmp(lm);
          if (borrow.op.isUndefined())
             op = reverse ? aco_opcode::v_subrev_co_u32 : aco_opcode::v_sub_co_u32;
          else

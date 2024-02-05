@@ -36,6 +36,7 @@
 #include "broadcom/compiler/v3d_compiler.h"
 #include "broadcom/common/v3d_macros.h"
 #include "broadcom/common/v3d_util.h"
+#include "broadcom/common/v3d_csd.h"
 #include "broadcom/cle/v3dx_pack.h"
 
 void
@@ -1266,22 +1267,6 @@ v3d_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
         if (V3D_DBG(ALWAYS_FLUSH))
                 v3d_flush(pctx);
 }
-
-#define V3D_CSD_CFG012_WG_COUNT_SHIFT 16
-#define V3D_CSD_CFG012_WG_OFFSET_SHIFT 0
-/* Allow this dispatch to start while the last one is still running. */
-#define V3D_CSD_CFG3_OVERLAP_WITH_PREV (1 << 26)
-/* Maximum supergroup ID.  6 bits. */
-#define V3D_CSD_CFG3_MAX_SG_ID_SHIFT 20
-/* Batches per supergroup minus 1.  8 bits. */
-#define V3D_CSD_CFG3_BATCHES_PER_SG_M1_SHIFT 12
-/* Workgroups per supergroup, 0 means 16 */
-#define V3D_CSD_CFG3_WGS_PER_SG_SHIFT 8
-#define V3D_CSD_CFG3_WG_SIZE_SHIFT 0
-
-#define V3D_CSD_CFG5_PROPAGATE_NANS (1 << 2)
-#define V3D_CSD_CFG5_SINGLE_SEG (1 << 1)
-#define V3D_CSD_CFG5_THREADING (1 << 0)
 
 static void
 v3d_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)

@@ -45,6 +45,8 @@ files_mesa_util = files(
   'compiler.h',
   'compress.c',
   'compress.h',
+  'thread_sched.c',
+  'thread_sched.h',
   'crc32.c',
   'crc32.h',
   'dag.c',

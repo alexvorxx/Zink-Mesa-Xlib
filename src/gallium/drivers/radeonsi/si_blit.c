@@ -733,7 +733,7 @@ static void si_check_render_feedback(struct si_context *sctx)
    /* There is no render feedback if color writes are disabled.
     * (e.g. a pixel shader with image stores)
     */
-   if (!si_get_total_colormask(sctx))
+   if (!si_any_colorbuffer_written(sctx))
       return;
 
    for (int i = 0; i < SI_NUM_GRAPHICS_SHADERS; ++i) {
@@ -961,6 +961,13 @@ void si_resource_copy_region(struct pipe_context *ctx, struct pipe_resource *dst
    if (si_compute_copy_image(sctx, dst, dst_level, src, src_level, dstx, dsty, dstz,
                              src_box, SI_OP_SYNC_BEFORE_AFTER))
       return;
+
+   /* If the blitter isn't available fail here instead of crashing. */
+   if (!sctx->blitter) {
+      fprintf(stderr, "si_resource_copy_region failed src_format: %s dst_format: %s\n",
+              util_format_name(src->format), util_format_name(dst->format));
+      return;
+   }
 
    assert(u_max_sample(dst) == u_max_sample(src));
 

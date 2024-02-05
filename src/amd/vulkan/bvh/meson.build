@@ -53,7 +53,12 @@ bvh_shaders = [
   [
     'leaf.comp',
     'leaf',
-    [],
+    ['ALWAYS_ACTIVE=0'],
+  ],
+  [
+    'leaf.comp',
+    'leaf_always_active',
+    ['ALWAYS_ACTIVE=1'],
   ],
   [
     'morton.comp',
@@ -63,12 +68,12 @@ bvh_shaders = [
   [
     'ploc_internal.comp',
     'ploc_internal',
-    ['EXTENDED_SAH=0'],
+    [],
   ],
   [
-    'ploc_internal.comp',
-    'ploc_internal_extended',
-    ['EXTENDED_SAH=1'],
+    'update.comp',
+    'update',
+    [],
   ],
 ]
 

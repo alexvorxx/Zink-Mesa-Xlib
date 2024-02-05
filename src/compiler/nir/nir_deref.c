@@ -26,9 +26,11 @@
 #include "nir.h"
 #include "nir_builder.h"
 
-static bool
-is_trivial_deref_cast(nir_deref_instr *cast)
+bool
+nir_deref_cast_is_trivial(nir_deref_instr *cast)
 {
+   assert(cast->deref_type == nir_deref_type_cast);
+
    nir_deref_instr *parent = nir_src_as_deref(cast->parent);
    if (!parent)
       return false;
@@ -57,7 +59,7 @@ nir_deref_path_init(nir_deref_path *path,
 
    *tail = NULL;
    for (nir_deref_instr *d = deref; d; d = nir_deref_instr_parent(d)) {
-      if (d->deref_type == nir_deref_type_cast && is_trivial_deref_cast(d))
+      if (d->deref_type == nir_deref_type_cast && nir_deref_cast_is_trivial(d))
          continue;
       count++;
       if (count <= max_short_path_len)
@@ -80,7 +82,7 @@ nir_deref_path_init(nir_deref_path *path,
    head = tail = path->path + count;
    *tail = NULL;
    for (nir_deref_instr *d = deref; d; d = nir_deref_instr_parent(d)) {
-      if (d->deref_type == nir_deref_type_cast && is_trivial_deref_cast(d))
+      if (d->deref_type == nir_deref_type_cast && nir_deref_cast_is_trivial(d))
          continue;
       *(--head) = d;
    }
@@ -451,6 +453,50 @@ void
 nir_fixup_deref_modes(nir_shader *shader)
 {
    nir_shader_instructions_pass(shader, nir_fixup_deref_modes_instr,
+                                nir_metadata_block_index |
+                                   nir_metadata_dominance |
+                                   nir_metadata_live_defs |
+                                   nir_metadata_instr_index,
+                                NULL);
+}
+
+static bool
+nir_fixup_deref_types_instr(UNUSED struct nir_builder *b, nir_instr *instr, UNUSED void *data)
+{
+   if (instr->type != nir_instr_type_deref)
+      return false;
+
+   nir_deref_instr *deref = nir_instr_as_deref(instr);
+   const struct glsl_type *parent_derived_type;
+   if (deref->deref_type == nir_deref_type_var) {
+      parent_derived_type = deref->var->type;
+   } else if (deref->deref_type == nir_deref_type_array ||
+              deref->deref_type == nir_deref_type_struct) {
+      nir_deref_instr *parent = nir_src_as_deref(deref->parent);
+      if (deref->deref_type == nir_deref_type_array) {
+         parent_derived_type = glsl_get_array_element(parent->type);
+      } else if (deref->deref_type == nir_deref_type_struct) {
+         parent_derived_type =
+            glsl_get_struct_field(parent->type, deref->strct.index);
+      } else {
+         unreachable("Unsupported deref type");
+      }
+   } else {
+      unreachable("Unsupported deref type");
+   }
+
+   if (deref->type == parent_derived_type)
+      return false;
+
+   deref->type = parent_derived_type;
+   return true;
+}
+
+/* Update deref types when array sizes have changed. */
+void
+nir_fixup_deref_types(nir_shader *shader)
+{
+   nir_shader_instructions_pass(shader, nir_fixup_deref_types_instr,
                                 nir_metadata_block_index |
                                    nir_metadata_dominance |
                                    nir_metadata_live_defs |
@@ -943,7 +989,7 @@ opt_alu_of_cast(nir_alu_instr *alu)
 static bool
 is_trivial_array_deref_cast(nir_deref_instr *cast)
 {
-   assert(is_trivial_deref_cast(cast));
+   assert(nir_deref_cast_is_trivial(cast));
 
    nir_deref_instr *parent = nir_src_as_deref(cast->parent);
 
@@ -1187,7 +1233,7 @@ opt_deref_cast(nir_builder *b, nir_deref_instr *cast)
       return true;
 
    progress |= opt_remove_cast_cast(cast);
-   if (!is_trivial_deref_cast(cast))
+   if (!nir_deref_cast_is_trivial(cast))
       return progress;
 
    /* If this deref still contains useful alignment information, we don't want
@@ -1239,7 +1285,7 @@ opt_deref_ptr_as_array(nir_builder *b, nir_deref_instr *deref)
        */
       if (parent->deref_type == nir_deref_type_cast &&
           parent->cast.align_mul == 0 &&
-          is_trivial_deref_cast(parent))
+          nir_deref_cast_is_trivial(parent))
          parent = nir_deref_instr_parent(parent);
       nir_def_rewrite_uses(&deref->def,
                            &parent->def);

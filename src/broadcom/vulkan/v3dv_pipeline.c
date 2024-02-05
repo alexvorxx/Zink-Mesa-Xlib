@@ -34,7 +34,6 @@
 
 #include "util/u_atomic.h"
 #include "util/os_time.h"
-#include "util/u_helpers.h"
 
 #include "vk_nir_convert_ycbcr.h"
 #include "vk_pipeline.h"
@@ -168,13 +167,18 @@ static const struct spirv_to_nir_options default_spirv_options =  {
       .multiview = true,
       .storage_8bit = true,
       .storage_16bit = true,
+      .subgroup_ballot = true,
       .subgroup_basic = true,
+      .subgroup_quad = true,
+      .subgroup_shuffle = true,
+      .subgroup_vote = true,
       .variable_pointers = true,
       .vk_memory_model = true,
       .vk_memory_model_device_scope = true,
       .physical_storage_buffer_address = true,
       .workgroup_memory_explicit_layout = true,
       .image_read_without_format = true,
+      .demote_to_helper_invocation = true,
     },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
@@ -227,7 +231,6 @@ const nir_shader_compiler_options v3dv_nir_options = {
    .lower_ldexp = true,
    .lower_mul_high = true,
    .lower_wpos_pntc = false,
-   .lower_rotate = true,
    .lower_to_scalar = true,
    .lower_device_index_to_zero = true,
    .lower_fquantize2f16 = true,

@@ -515,10 +515,11 @@ ir3_block_add_predecessor(struct ir3_block *block, struct ir3_block *pred)
 }
 
 void
-ir3_block_add_physical_predecessor(struct ir3_block *block,
-                                   struct ir3_block *pred)
+ir3_block_link_physical(struct ir3_block *pred,
+                        struct ir3_block *succ)
 {
-   array_insert(block, block->physical_predecessors, pred);
+   array_insert(pred, pred->physical_successors, succ);
+   array_insert(succ, succ->physical_predecessors, pred);
 }
 
 void
@@ -532,22 +533,6 @@ ir3_block_remove_predecessor(struct ir3_block *block, struct ir3_block *pred)
          }
 
          block->predecessors_count--;
-         return;
-      }
-   }
-}
-
-void
-ir3_block_remove_physical_predecessor(struct ir3_block *block, struct ir3_block *pred)
-{
-   for (unsigned i = 0; i < block->physical_predecessors_count; i++) {
-      if (block->physical_predecessors[i] == pred) {
-         if (i < block->physical_predecessors_count - 1) {
-            block->physical_predecessors[i] =
-               block->physical_predecessors[block->physical_predecessors_count - 1];
-         }
-
-         block->physical_predecessors_count--;
          return;
       }
    }

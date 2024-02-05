@@ -98,6 +98,8 @@ union agx_varyings {
 struct agx_uncompiled_shader_info {
    uint64_t inputs_flat_shaded;
    uint64_t inputs_linear_shaded;
+   uint8_t cull_distance_size;
+   bool has_edgeflags;
 };
 
 struct agx_shader_info {
@@ -121,6 +123,9 @@ struct agx_shader_info {
    /* Does the shader write point size? */
    bool writes_psiz;
 
+   /* Does the shader potentially draw to a nonzero viewport? */
+   bool nonzero_viewport;
+
    /* Does the shader write layer and/or viewport index? Written together */
    bool writes_layer_viewport;
 
@@ -138,6 +143,12 @@ struct agx_shader_info {
 
    /* Shader is incompatible with triangle merging */
    bool disable_tri_merging;
+
+   /* Reads draw ID system value */
+   bool uses_draw_id;
+
+   /* Reads base vertex/instance */
+   bool uses_base_param;
 
    /* Shader uses txf, requiring a workaround sampler in the given location */
    bool uses_txf;
@@ -233,6 +244,9 @@ void agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
 
 bool agx_nir_lower_discard_zs_emit(nir_shader *s);
 
+bool agx_nir_lower_cull_distance_fs(struct nir_shader *s,
+                                    unsigned nr_distances);
+
 bool agx_nir_needs_texture_crawl(nir_instr *instr);
 
 void agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
@@ -278,17 +292,13 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_hadd = true,
    .vectorize_io = true,
    .use_interpolated_input_intrinsics = true,
-   .lower_rotate = true,
    .has_isub = true,
    .support_16bit_alu = true,
    .max_unroll_iterations = 32,
    .lower_uniforms_to_ubo = true,
-   .force_indirect_unrolling_sampler = true,
-   .force_indirect_unrolling =
-      (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
    .lower_int64_options =
       (nir_lower_int64_options) ~(nir_lower_iadd64 | nir_lower_imul_2x32_64),
-   .lower_doubles_options = nir_lower_dmod,
+   .lower_doubles_options = (nir_lower_doubles_options)(~0),
    .lower_fquantize2f16 = true,
 };
 

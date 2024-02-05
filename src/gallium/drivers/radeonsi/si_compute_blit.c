@@ -395,7 +395,7 @@ static void si_compute_do_clear_or_copy(struct si_context *sctx, struct pipe_res
 
       if (!sctx->cs_copy_buffer) {
          sctx->cs_copy_buffer = si_create_dma_compute_shader(
-            &sctx->b, SI_COMPUTE_COPY_DW_PER_THREAD, shader_dst_stream_policy, true);
+            sctx, SI_COMPUTE_COPY_DW_PER_THREAD, shader_dst_stream_policy, true);
       }
 
       si_launch_grid_internal_ssbos(sctx, &info, sctx->cs_copy_buffer, flags, coher,
@@ -409,7 +409,7 @@ static void si_compute_do_clear_or_copy(struct si_context *sctx, struct pipe_res
 
       if (!sctx->cs_clear_buffer) {
          sctx->cs_clear_buffer = si_create_dma_compute_shader(
-            &sctx->b, SI_COMPUTE_CLEAR_DW_PER_THREAD, shader_dst_stream_policy, false);
+            sctx, SI_COMPUTE_CLEAR_DW_PER_THREAD, shader_dst_stream_policy, false);
       }
 
       si_launch_grid_internal_ssbos(sctx, &info, sctx->cs_clear_buffer, flags, coher,
@@ -526,6 +526,44 @@ void si_copy_buffer(struct si_context *sctx, struct pipe_resource *dst, struct p
    }
 }
 
+void si_compute_shorten_ubyte_buffer(struct si_context *sctx, struct pipe_resource *dst, struct pipe_resource *src,
+                                     uint64_t dst_offset, uint64_t src_offset, unsigned size, unsigned flags)
+{
+   if (!size)
+      return;
+
+   if (!sctx->cs_ubyte_to_ushort)
+      sctx->cs_ubyte_to_ushort = si_create_ubyte_to_ushort_compute_shader(sctx);
+
+   /* Use COHERENCY_NONE to get SI_CONTEXT_WB_L2 automatically used in
+    * si_launch_grid_internal_ssbos.
+    */
+   enum si_coherency coher = SI_COHERENCY_NONE;
+
+   si_improve_sync_flags(sctx, dst, src, &flags);
+
+   struct pipe_grid_info info = {};
+   info.block[0] = si_determine_wave_size(sctx->screen, NULL);
+   info.block[1] = 1;
+   info.block[2] = 1;
+   info.grid[0] = DIV_ROUND_UP(size, info.block[0]);
+   info.grid[1] = 1;
+   info.grid[2] = 1;
+   info.last_block[0] = size % info.block[0];
+
+   struct pipe_shader_buffer sb[2] = {};
+   sb[0].buffer = dst;
+   sb[0].buffer_offset = dst_offset;
+   sb[0].buffer_size = dst->width0;
+
+   sb[1].buffer = src;
+   sb[1].buffer_offset = src_offset;
+   sb[1].buffer_size = src->width0;
+
+   si_launch_grid_internal_ssbos(sctx, &info, sctx->cs_ubyte_to_ushort, flags, coher,
+                                 2, sb, 0x1);
+}
+
 static unsigned
 set_work_size(struct pipe_grid_info *info, unsigned block_x, unsigned block_y, unsigned block_z,
               unsigned work_x, unsigned work_y, unsigned work_z)
@@ -621,12 +659,30 @@ bool si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, u
     */
    if (!util_format_is_compressed(src->format) &&
        !util_format_is_compressed(dst->format) &&
-       !util_format_is_subsampled_422(src->format) &&
-       (!si_can_use_compute_blit(sctx, dst->format, dst->nr_samples, true,
-                                 vi_dcc_enabled(sdst, dst_level)) ||
-        !si_can_use_compute_blit(sctx, src->format, src->nr_samples, false,
-                                 vi_dcc_enabled(ssrc, src_level))))
-      return false;
+       !util_format_is_subsampled_422(src->format)) {
+      bool src_can_use_compute_blit =
+         si_can_use_compute_blit(sctx, src->format, src->nr_samples, false,
+                                 vi_dcc_enabled(ssrc, src_level));
+
+      if (!src_can_use_compute_blit)
+         return false;
+
+      bool dst_can_use_compute_blit =
+         si_can_use_compute_blit(sctx, dst->format, dst->nr_samples, true,
+                                 vi_dcc_enabled(sdst, dst_level));
+
+      if (!dst_can_use_compute_blit && !sctx->has_graphics &&
+          si_can_use_compute_blit(sctx, dst->format, dst->nr_samples, false,
+                                  vi_dcc_enabled(sdst, dst_level))) {
+         /* Non-graphics context don't have a blitter, so try harder to do
+          * a compute blit by disabling dcc on the destination texture.
+          */
+         dst_can_use_compute_blit = si_texture_disable_dcc(sctx, sdst);
+      }
+
+      if (!dst_can_use_compute_blit)
+         return false;
+   }
 
    enum pipe_format src_format = util_format_linear(src->format);
    enum pipe_format dst_format = util_format_linear(dst->format);
@@ -902,7 +958,7 @@ void si_compute_expand_fmask(struct pipe_context *ctx, struct pipe_resource *tex
    /* Bind the shader. */
    void **shader = &sctx->cs_fmask_expand[log_samples - 1][is_array];
    if (!*shader)
-      *shader = si_create_fmask_expand_cs(ctx, tex->nr_samples, is_array);
+      *shader = si_create_fmask_expand_cs(sctx, tex->nr_samples, is_array);
 
    /* Dispatch compute. */
    struct pipe_grid_info info = {0};

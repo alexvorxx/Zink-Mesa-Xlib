@@ -29,6 +29,7 @@
 #include "panvk_private.h"
 
 #include "pan_encoder.h"
+#include "pan_props.h"
 
 #include "util/rounding.h"
 #include "vk_format.h"
@@ -482,6 +483,8 @@ panvk_cmd_fb_info_init(struct panvk_cmd_buffer *cmdbuf)
    memset(cmdbuf->state.fb.crc_valid, 0, sizeof(cmdbuf->state.fb.crc_valid));
 
    *fbinfo = (struct pan_fb_info){
+      .tile_buf_budget = panfrost_query_optimal_tib_size(
+         cmdbuf->device->physical_device->model),
       .width = fb->width,
       .height = fb->height,
       .extent.maxx = fb->width - 1,

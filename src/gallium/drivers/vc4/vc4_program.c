@@ -31,9 +31,9 @@
 #include "util/ralloc.h"
 #include "util/hash_table.h"
 #include "tgsi/tgsi_dump.h"
+#include "compiler/glsl_types.h"
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
-#include "compiler/nir_types.h"
 #include "nir/tgsi_to_nir.h"
 #include "vc4_context.h"
 #include "vc4_qpu.h"
@@ -2169,7 +2169,6 @@ static const nir_shader_compiler_options nir_options = {
         .lower_ldexp = true,
         .lower_fneg = true,
         .lower_ineg = true,
-        .lower_rotate = true,
         .lower_to_scalar = true,
         .lower_umax = true,
         .lower_umin = true,

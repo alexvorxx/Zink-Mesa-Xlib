@@ -24,10 +24,6 @@ spec@arb_shader_image_load_store@shader-mem-barrier@Fragment shader/'volatile' q
 spec@arb_shader_image_load_store@shader-mem-barrier@Fragment shader/'volatile' qualifier memory barrier test/modulus=32
 spec@arb_shader_image_load_store@shader-mem-barrier@Fragment shader/'volatile' qualifier memory barrier test/modulus=64
 spec@arb_shader_image_load_store@shader-mem-barrier@Fragment shader/'volatile' qualifier memory barrier test/modulus=8
-spec@arb_shader_image_load_store@shader-mem-barrier@Geometry shader/'coherent' qualifier memory barrier test/modulus=128
-spec@arb_shader_image_load_store@shader-mem-barrier@Geometry shader/'coherent' qualifier memory barrier test/modulus=64
-spec@arb_shader_image_load_store@shader-mem-barrier@Geometry shader/'volatile' qualifier memory barrier test/modulus=128
-spec@arb_shader_image_load_store@shader-mem-barrier@Geometry shader/'volatile' qualifier memory barrier test/modulus=64
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation control shader/'coherent' qualifier memory barrier test/modulus=128
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation control shader/'coherent' qualifier memory barrier test/modulus=16
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation control shader/'coherent' qualifier memory barrier test/modulus=32
@@ -46,10 +42,6 @@ spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation evaluation shad
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation evaluation shader/'volatile' qualifier memory barrier test/modulus=32
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation evaluation shader/'volatile' qualifier memory barrier test/modulus=64
 spec@arb_shader_image_load_store@shader-mem-barrier@Tessellation evaluation shader/'volatile' qualifier memory barrier test/modulus=8
-spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'coherent' qualifier memory barrier test/modulus=128
-spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'coherent' qualifier memory barrier test/modulus=64
-spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'volatile' qualifier memory barrier test/modulus=128
-spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'volatile' qualifier memory barrier test/modulus=64
 
 # First noticed on ea2eade57b6a99d6db26d9571b3d2901e7106001
 # (https://gitlab.freedesktop.org/mesa/mesa/-/jobs/42417670);
@@ -85,3 +77,10 @@ spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC-GL_UNSIGNED
 # contradicts the resolution of GL_ARB_fragment_shader_interlock issue 1.
 # https://gitlab.freedesktop.org/mesa/piglit/-/issues/93
 spec@arb_fragment_shader_interlock@arb_fragment_shader_interlock-image-load-store
+
+# uprev Piglit in Mesa
+spec@arb_shader_image_load_store@shader-mem-barrier@Geometry shader.*
+spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader.*
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-modifiers
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-modifiers@autogen-AR24-0x200000000801b02-modifiers_test
+

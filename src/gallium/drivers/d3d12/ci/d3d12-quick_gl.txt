@@ -32,8 +32,6 @@ spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-last,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims line cull-front pv-last,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims pv-last,Fail
 spec@arb_draw_indirect@arb_draw_indirect-api-errors,Crash
-spec@arb_explicit_attrib_location@overlapping-locations-input-attribs api,Crash
-spec@arb_explicit_attrib_location@overlapping-locations-input-attribs shader,Crash
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
 spec@arb_get_program_binary@restore-sso-program,Fail
 spec@arb_point_sprite@arb_point_sprite-mipmap,Fail
@@ -138,8 +136,6 @@ spec@arb_texture_stencil8@texwrap formats@GL_STENCIL_INDEX8,Fail
 spec@arb_texture_stencil8@texwrap formats@GL_STENCIL_INDEX8- NPOT,Fail
 spec@arb_texture_stencil8@texwrap formats@GL_STENCIL_INDEX8- swizzled,Fail
 spec@arb_transform_feedback_instanced@draw-auto instanced,Fail
-spec@arb_vertex_attrib_64bit@arb_vertex_attrib_64bit-overlapping-locations api,Crash
-spec@arb_vertex_attrib_64bit@arb_vertex_attrib_64bit-overlapping-locations shader,Crash
 spec@arb_vertex_program@arb_vertex_program-matrix-property-bindings,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
 spec@ext_framebuffer_multisample@accuracy 16 srgb depthstencil,Fail
@@ -407,6 +403,9 @@ spec@nv_copy_depth_to_color@nv_copy_depth_to_color 1 0x223344ff,Fail
 spec@nv_copy_depth_to_color@nv_copy_depth_to_color 1 0x76356278,Fail
 wgl@wgl-multi-context-single-window,Fail
 
-# remove this after https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/843
-# is merged and piglit is updated
+# Should've been fixed by https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/843
+# but still seems to be failing.
 spec@arb_vertex_program@arb_vertex_program-property-bindings,Fail
+
+# SPIR-V tests
+spec@arb_gpu_shader5@arb_gpu_shader5-xfb-streams-without-invocations spirv,Crash

@@ -2458,7 +2458,7 @@ PUBLIC int
 MesaGLInteropGLXFlushObjects(Display *dpy, GLXContext context,
                              unsigned count,
                              struct mesa_glinterop_export_in *resources,
-                             GLsync *sync, int *fence_fd)
+                             struct mesa_glinterop_flush_out *out)
 {
    struct glx_context *gc = (struct glx_context*)context;
    int ret;
@@ -2475,7 +2475,7 @@ MesaGLInteropGLXFlushObjects(Display *dpy, GLXContext context,
       return MESA_GLINTEROP_UNSUPPORTED;
    }
 
-   ret = gc->vtable->interop_flush_objects(gc, count, resources, sync, fence_fd);
+   ret = gc->vtable->interop_flush_objects(gc, count, resources, out);
    __glXUnlock();
    return ret;
 }

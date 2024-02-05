@@ -483,7 +483,7 @@ FreedrenoDriver::init_perfcnt()
    for (const auto &countable : countables)
       countable.resolve();
 
-   info = fd_dev_info(dev_id);
+   info = fd_dev_info_raw(dev_id);
 
    io = fd_dt_find_io();
    if (!io) {

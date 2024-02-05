@@ -168,8 +168,10 @@ bool ir3_spill(struct ir3 *ir, struct ir3_shader_variant *v,
 
 bool ir3_lower_spill(struct ir3 *ir);
 
+void ir3_ra_shared(struct ir3_shader_variant *v, struct ir3_liveness *live);
+
 void ir3_ra_validate(struct ir3_shader_variant *v, unsigned full_size,
-                     unsigned half_size, unsigned block_count);
+                     unsigned half_size, unsigned block_count, bool shared_ra);
 
 void ir3_lower_copies(struct ir3_shader_variant *v);
 

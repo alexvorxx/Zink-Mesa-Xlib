@@ -63,7 +63,7 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
    /* Primitives generated queries (legacy). */
    if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = true;
-      radv_emit_streamout_enable(cmd_buffer);
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_STREAMOUT_ENABLE;
    }
 
    /* Primitives generated queries (NGG). */
@@ -106,7 +106,7 @@ radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_b
    /* Primitives generated queries (legacy). */
    if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = false;
-      radv_emit_streamout_enable(cmd_buffer);
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_STREAMOUT_ENABLE;
    }
 
    /* Primitives generated queries (NGG). */
@@ -141,6 +141,13 @@ radv_meta_save(struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_
 
       state->old_graphics_pipeline = cmd_buffer->state.graphics_pipeline;
 
+      for (unsigned i = 0; i <= MESA_SHADER_MESH; i++) {
+         if (i == MESA_SHADER_COMPUTE)
+            continue;
+
+         state->old_shader_objs[i] = cmd_buffer->state.shader_objs[i];
+      }
+
       /* Save all dynamic states. */
       state->dynamic = cmd_buffer->state.dynamic;
    }
@@ -149,6 +156,8 @@ radv_meta_save(struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_
       assert(!(state->flags & RADV_META_SAVE_GRAPHICS_PIPELINE));
 
       state->old_compute_pipeline = cmd_buffer->state.compute_pipeline;
+
+      state->old_shader_objs[MESA_SHADER_COMPUTE] = cmd_buffer->state.shader_objs[MESA_SHADER_COMPUTE];
    }
 
    if (state->flags & RADV_META_SAVE_DESCRIPTORS) {
@@ -186,6 +195,19 @@ radv_meta_restore(const struct radv_meta_saved_state *state, struct radv_cmd_buf
                               radv_pipeline_to_handle(&state->old_graphics_pipeline->base));
       } else {
          cmd_buffer->state.graphics_pipeline = NULL;
+
+         for (unsigned i = 0; i <= MESA_SHADER_MESH; i++) {
+            if (i == MESA_SHADER_COMPUTE)
+               continue;
+
+            if (!state->old_shader_objs[i])
+               continue;
+
+            VkShaderEXT old_shader_obj = radv_shader_object_to_handle(state->old_shader_objs[i]);
+            VkShaderStageFlagBits s = mesa_to_vk_shader_stage(i);
+
+            radv_CmdBindShadersEXT(radv_cmd_buffer_to_handle(cmd_buffer), 1, &s, &old_shader_obj);
+         }
       }
 
       /* Restore all dynamic states. */
@@ -202,6 +224,13 @@ radv_meta_restore(const struct radv_meta_saved_state *state, struct radv_cmd_buf
                               radv_pipeline_to_handle(&state->old_compute_pipeline->base));
       } else {
          cmd_buffer->state.compute_pipeline = NULL;
+
+         if (state->old_shader_objs[MESA_SHADER_COMPUTE]) {
+            VkShaderEXT old_shader_obj = radv_shader_object_to_handle(state->old_shader_objs[MESA_SHADER_COMPUTE]);
+            VkShaderStageFlagBits s = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            radv_CmdBindShadersEXT(radv_cmd_buffer_to_handle(cmd_buffer), 1, &s, &old_shader_obj);
+         }
       }
    }
 
@@ -215,8 +244,8 @@ radv_meta_restore(const struct radv_meta_saved_state *state, struct radv_cmd_buf
       if (state->flags & RADV_META_SAVE_GRAPHICS_PIPELINE)
          stages |= VK_SHADER_STAGE_ALL_GRAPHICS;
 
-      radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer), VK_NULL_HANDLE, stages, 0, MAX_PUSH_CONSTANTS_SIZE,
-                            state->push_constants);
+      vk_common_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer), VK_NULL_HANDLE, stages, 0,
+                                 MAX_PUSH_CONSTANTS_SIZE, state->push_constants);
    }
 
    if (state->flags & RADV_META_SAVE_RENDER) {
@@ -296,7 +325,7 @@ meta_free(void *_device, void *data)
 static bool
 radv_builtin_cache_path(char *path)
 {
-   char *xdg_cache_home = getenv("XDG_CACHE_HOME");
+   char *xdg_cache_home = secure_getenv("XDG_CACHE_HOME");
    const char *suffix = "/radv_builtin_shaders";
    const char *suffix2 = "/.cache/radv_builtin_shaders";
    struct passwd pwd, *result;
@@ -510,7 +539,7 @@ radv_device_init_meta(struct radv_device *device)
    if (result != VK_SUCCESS)
       goto fail_astc_decode;
 
-   if (device->uses_device_generated_commands) {
+   if (radv_uses_device_generated_commands(device)) {
       result = radv_device_init_dgc_prepare_state(device);
       if (result != VK_SUCCESS)
          goto fail_dgc;

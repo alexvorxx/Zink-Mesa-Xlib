@@ -334,30 +334,20 @@ st_update_array_templ(struct st_context *st,
                                     enabled_attribs,
                                     &velements, vbuffer, &num_vbuffers);
 
-   unsigned unbind_trailing_vbuffers =
-      st->last_num_vbuffers > num_vbuffers ?
-         st->last_num_vbuffers - num_vbuffers : 0;
-   st->last_num_vbuffers = num_vbuffers;
-
    struct cso_context *cso = st->cso_context;
 
    if (UPDATE == UPDATE_ALL) {
       velements.count = vp->num_inputs + vp_variant->key.passthrough_edgeflags;
 
       /* Set vertex buffers and elements. */
-      cso_set_vertex_buffers_and_elements(cso, &velements,
-                                          num_vbuffers,
-                                          unbind_trailing_vbuffers,
-                                          true,
-                                          uses_user_vertex_buffers,
-                                          vbuffer);
+      cso_set_vertex_buffers_and_elements(cso, &velements, num_vbuffers, true,
+                                          uses_user_vertex_buffers, vbuffer);
       /* The driver should clear this after it has processed the update. */
       ctx->Array.NewVertexElements = false;
       st->uses_user_vertex_buffers = uses_user_vertex_buffers;
    } else {
       /* Only vertex buffers. */
-      cso_set_vertex_buffers(cso, num_vbuffers, unbind_trailing_vbuffers,
-                             true, vbuffer);
+      cso_set_vertex_buffers(cso, num_vbuffers, true, vbuffer);
       /* This can change only when we update vertex elements. */
       assert(st->uses_user_vertex_buffers == uses_user_vertex_buffers);
    }

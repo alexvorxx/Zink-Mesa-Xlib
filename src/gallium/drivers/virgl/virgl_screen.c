@@ -97,6 +97,8 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
          return vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_MIRROR_CLAMP_TO_EDGE;
       FALLTHROUGH;
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:
+      if (vscreen->caps.caps.v2.host_feature_check_version >= 22)
+         return vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_MIRROR_CLAMP;
       return vscreen->caps.caps.v1.bset.mirror_clamp &&
              !(vscreen->caps.caps.v2.capability_bits & VIRGL_CAP_HOST_IS_GLES);
    case PIPE_CAP_TEXTURE_SWIZZLE:
@@ -1054,8 +1056,10 @@ static void virgl_disk_cache_create(struct virgl_screen *screen)
 {
    const struct build_id_note *note =
       build_id_find_nhdr_for_addr(virgl_disk_cache_create);
+   assert(note);
+
    unsigned build_id_len = build_id_length(note);
-   assert(note && build_id_len == 20); /* sha1 */
+   assert(build_id_len == 20); /* sha1 */
 
    const uint8_t *id_sha1 = build_id_data(note);
    assert(id_sha1);

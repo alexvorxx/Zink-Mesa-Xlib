@@ -1124,7 +1124,7 @@ vk_queue_finish(struct vk_queue *queue)
       vk_queue_submit_destroy(queue, submit);
    }
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    if (queue->anb_semaphore != VK_NULL_HANDLE) {
       struct vk_device *device = queue->base.device;
       device->dispatch_table.DestroySemaphore(vk_device_to_handle(device),
@@ -1142,7 +1142,7 @@ vk_queue_finish(struct vk_queue *queue)
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-vk_common_QueueSubmit2KHR(VkQueue _queue,
+vk_common_QueueSubmit2(VkQueue _queue,
                           uint32_t submitCount,
                           const VkSubmitInfo2 *pSubmits,
                           VkFence _fence)

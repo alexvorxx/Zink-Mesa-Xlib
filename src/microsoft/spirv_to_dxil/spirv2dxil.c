@@ -172,7 +172,7 @@ main(int argc, char **argv)
    memset(shaders, 0, sizeof(shaders));
    struct shader cur_shader = {
       .entry_point = "main",
-      .output_file = "",
+      .output_file = NULL,
    };
    gl_shader_stage shader_stage = MESA_SHADER_FRAGMENT;
 
@@ -183,6 +183,12 @@ main(int argc, char **argv)
    conf.zero_based_vertex_instance_id = true;
    conf.declared_read_only_images_as_srvs = true;
    conf.shader_model_max = SHADER_MODEL_6_2;
+
+   const unsigned supported_bit_sizes = 16 | 32 | 64;
+   dxil_get_nir_compiler_options(&nir_options, conf.shader_model_max, supported_bit_sizes, supported_bit_sizes);
+   // We will manually handle base_vertex when vertex_id and instance_id have
+   // have been already converted to zero-base.
+   nir_options.lower_base_vertex = false;
 
    bool any_shaders = false;
    while ((ch = getopt_long(argc, argv, "-s:e:o:m:x:vd", long_options, NULL)) !=
@@ -225,12 +231,6 @@ main(int argc, char **argv)
          return 1;
       }
    }
-
-   const unsigned supported_bit_sizes = 16 | 32 | 64;
-   dxil_get_nir_compiler_options(&nir_options, conf.shader_model_max, supported_bit_sizes, supported_bit_sizes);
-   // We will manually handle base_vertex when vertex_id and instance_id have
-   // have been already converted to zero-base.
-   nir_options.lower_base_vertex = false;
 
    if (!any_shaders) {
       fprintf(stderr, "Specify a shader filename\n");

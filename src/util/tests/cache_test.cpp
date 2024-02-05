@@ -37,6 +37,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "util/detect_os.h"
 #include "util/mesa-sha1.h"
 #include "util/disk_cache.h"
 #include "util/disk_cache_os.h"
@@ -190,7 +191,7 @@ test_disk_cache_create(void *mem_ctx, const char *cache_dir_name,
 
    disk_cache_destroy(cache);
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    /* Android doesn't try writing to disk (just calls the cache callbacks), so
     * the directory tests below don't apply.
     */
@@ -226,18 +227,21 @@ test_disk_cache_create(void *mem_ctx, const char *cache_dir_name,
 
    setenv("MESA_SHADER_CACHE_DIR", CACHE_TEST_TMP "/mesa-shader-cache-dir", 1);
    cache = disk_cache_create("test", driver_id, 0);
-   EXPECT_FALSE(cache_exists(cache))
+   EXPECT_TRUE(cache_exists(cache))
       << "disk_cache_create with MESA_SHADER_CACHE_DIR set with a non-existing parent directory";
+
+   disk_cache_destroy(cache);
+   rmrf_local(CACHE_TEST_TMP);
+   EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP;
 
    err = mkdir(CACHE_TEST_TMP, 0755);
    if (err != 0) {
       fprintf(stderr, "Error creating %s: %s\n", CACHE_TEST_TMP, strerror(errno));
       GTEST_FAIL();
    }
-   disk_cache_destroy(cache);
 
    cache = disk_cache_create("test", driver_id, 0);
-   EXPECT_TRUE(cache_exists(cache)) << "disk_cache_create with MESA_SHADER_CACHE_DIR set";
+   EXPECT_TRUE(cache_exists(cache)) << "disk_cache_create with MESA_SHADER_CACHE_DIR set with existing parent directory";
 
    path = ralloc_asprintf(
       mem_ctx, "%s%s", CACHE_TEST_TMP "/mesa-shader-cache-dir/", cache_dir_name);

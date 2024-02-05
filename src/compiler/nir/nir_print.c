@@ -752,9 +752,6 @@ get_location_str(unsigned location, gl_shader_stage stage,
       break;
    case MESA_SHADER_TESS_CTRL:
    case MESA_SHADER_TESS_EVAL:
-      if (location >= VARYING_SLOT_MAX)
-         break;
-      FALLTHROUGH;
    case MESA_SHADER_TASK:
    case MESA_SHADER_MESH:
    case MESA_SHADER_GEOMETRY:
@@ -1754,6 +1751,9 @@ print_tex_instr(nir_tex_instr *instr, print_state *state)
       case nir_tex_src_lod:
          fprintf(fp, "(lod)");
          break;
+      case nir_tex_src_combined_lod_and_array_index_intel:
+         fprintf(fp, "(combined_lod_and_array_index_intel)");
+         break;
       case nir_tex_src_min_lod:
          fprintf(fp, "(min_lod)");
          break;
@@ -2399,12 +2399,11 @@ print_shader_info(const struct shader_info *info, FILE *fp)
    fprintf(fp, "internal: %s\n", info->internal ? "true" : "false");
 
    if (gl_shader_stage_uses_workgroup(info->stage)) {
-      fprintf(fp, "workgroup-size: %u, %u, %u%s\n",
+      fprintf(fp, "workgroup_size: %u, %u, %u%s\n",
               info->workgroup_size[0],
               info->workgroup_size[1],
               info->workgroup_size[2],
               info->workgroup_size_variable ? " (variable)" : "");
-      fprintf(fp, "shared-size: %u\n", info->shared_size);
    }
 
    fprintf(fp, "stage: %d\n"
@@ -2535,8 +2534,8 @@ print_shader_info(const struct shader_info *info, FILE *fp)
       print_nz_bool(fp, "uses_fbfetch_output", info->fs.uses_fbfetch_output);
       print_nz_bool(fp, "color_is_dual_source", info->fs.color_is_dual_source);
 
+      print_nz_bool(fp, "require_full_quads", info->fs.require_full_quads);
       print_nz_bool(fp, "needs_quad_helper_invocations", info->fs.needs_quad_helper_invocations);
-      print_nz_bool(fp, "needs_all_helper_invocations", info->fs.needs_all_helper_invocations);
       print_nz_bool(fp, "uses_sample_qualifier", info->fs.uses_sample_qualifier);
       print_nz_bool(fp, "uses_sample_shading", info->fs.uses_sample_shading);
       print_nz_bool(fp, "early_fragment_tests", info->fs.early_fragment_tests);

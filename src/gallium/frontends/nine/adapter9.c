@@ -55,12 +55,11 @@ NineAdapter9_ctor( struct NineAdapter9 *This,
 
     This->ctx = pCTX;
     if (!hal->get_param(hal, PIPE_CAP_CLIP_HALFZ)) {
-        ERR("Driver doesn't support d3d9 coordinates\n");
-        return D3DERR_DRIVERINTERNALERROR;
-    }
-    if (This->ctx->ref &&
-        !This->ctx->ref->get_param(This->ctx->ref, PIPE_CAP_CLIP_HALFZ)) {
-        ERR("Warning: Sotware rendering driver doesn't support d3d9 coordinates\n");
+        WARN_ONCE("Driver doesn't natively support d3d9 coordinates\n");
+        if(!hal->get_param(hal, PIPE_CAP_NIR_COMPACT_ARRAYS)){
+            ERR("Driver doesn't support emulating d3d9 coordinates\n");
+            return D3DERR_DRIVERINTERNALERROR;
+        }
     }
     /* Old cards had tricks to bypass some restrictions to implement
      * everything and fit tight the requirements: number of constants,
@@ -87,7 +86,7 @@ NineAdapter9_ctor( struct NineAdapter9 *This,
                               PIPE_SHADER_CAP_MAX_INPUTS) < 10 ||
         hal->get_shader_param(hal, PIPE_SHADER_FRAGMENT,
                               PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS) < 16) {
-        ERR("Your card is not supported by Gallium Nine. Minimum requirement "
+        ERR("Your device is not supported by Gallium Nine. Minimum requirement "
             "is >= r500, >= nv50, >= i965\n");
         return D3DERR_DRIVERINTERNALERROR;
     }
@@ -100,7 +99,7 @@ NineAdapter9_ctor( struct NineAdapter9 *This,
                               PIPE_SHADER_CAP_MAX_TEMPS) < 40 ||
         hal->get_shader_param(hal, PIPE_SHADER_FRAGMENT,
                               PIPE_SHADER_CAP_MAX_INPUTS) < 20) /* we don't pack inputs as much as we could */
-        ERR("Your card is at the limit of Gallium Nine requirements. Some games "
+        WARN_ONCE("Your device is at the limit of Gallium Nine requirements. Some games "
             "may run into issues because requirements are too tight\n");
     return D3D_OK;
 }

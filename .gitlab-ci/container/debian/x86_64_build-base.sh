@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2086 # we want word splitting
 
+# When changing this file, you need to bump the following
+# .gitlab-ci/image-tags.yml tags:
+# DEBIAN_BUILD_TAG
+
 set -e
 set -o xtrace
 
@@ -9,6 +13,7 @@ export LLVM_VERSION="${LLVM_VERSION:=15}"
 
 apt-get install -y ca-certificates
 sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list.d/*
+echo "deb [trusted=yes] https://gitlab.freedesktop.org/gfx-ci/ci-deb-repo/-/raw/${PKG_REPO_REV}/ ${FDO_DISTRIBUTION_VERSION%-*} main" | tee /etc/apt/sources.list.d/gfx-ci_.list
 
 # Ephemeral packages (installed for this script and removed again at
 # the end)
@@ -24,6 +29,7 @@ DEPS=(
     dpkg-cross
     findutils
     flex
+    flatbuffers-compiler
     g++
     cmake
     gcc
@@ -36,6 +42,7 @@ DEPS=(
     libelf-dev
     libepoxy-dev
     libexpat1-dev
+    libflatbuffers-dev
     libgtk-3-dev
     "libllvm${LLVM_VERSION}"
     libomxil-bellagio-dev
@@ -51,6 +58,7 @@ DEPS=(
     libxrandr-dev
     libxrender-dev
     libxshmfence-dev
+    libxtensor-dev
     libxxf86vm-dev
     libwayland-egl-backend-dev
     make
@@ -81,8 +89,8 @@ apt-get install -y --no-remove "${DEPS[@]}" "${EPHEMERAL[@]}" \
 # Needed for ci-fairy, this revision is able to upload files to S3
 pip3 install --break-system-packages git+http://gitlab.freedesktop.org/freedesktop/ci-templates@ffe4d1b10aab7534489f0c4bbc4c5899df17d3f2
 
-# We need at least 1.2 for Rust's `debug_assertions`
-pip3 install --break-system-packages meson==1.2.0
+# We need at least 1.3.1 for rusticl
+pip3 install --break-system-packages 'meson==1.3.1'
 
 . .gitlab-ci/container/build-rust.sh
 

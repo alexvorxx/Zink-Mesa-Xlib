@@ -721,7 +721,10 @@ d3d12_resource_from_handle(struct pipe_screen *pscreen,
 
       if (res->base.b.format == PIPE_FORMAT_NONE) {
          /* Convert from typeless to a reasonable default */
-         res->base.b.format = d3d12_get_default_pipe_format(incoming_res_desc.Format);
+         if (incoming_res_desc.Format == DXGI_FORMAT_UNKNOWN)
+            res->base.b.format = PIPE_FORMAT_R8_UNORM;
+         else
+            res->base.b.format = d3d12_get_default_pipe_format(incoming_res_desc.Format);
 
          if (res->base.b.format == PIPE_FORMAT_NONE) {
             debug_printf("d3d12: Unable to deduce non-typeless resource format %d\n", incoming_res_desc.Format);

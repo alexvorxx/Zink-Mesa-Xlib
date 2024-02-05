@@ -650,11 +650,13 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
 
    uint32_t out_comps =
       (info->loc == FRAG_RESULT_DEPTH || info->loc == FRAG_RESULT_STENCIL) ? 1 : 4;
-   nir_variable *out =
-      nir_variable_create(b.shader, nir_var_shader_out,
-                          glsl_vector_type(info->out_type, out_comps),
-                          "out");
-   out->data.location = info->loc;
+   nir_variable *out = NULL;
+   if (!info->stencil_fallback) {
+      out = nir_variable_create(b.shader, nir_var_shader_out,
+                                glsl_vector_type(info->out_type, out_comps),
+                                "out");
+      out->data.location = info->loc;
+   }
 
    nir_def *res = NULL;
 
@@ -771,7 +773,16 @@ dzn_nir_blit_fs(const struct dzn_nir_blit_info *info)
       res = &tex->def;
    }
 
-   nir_store_var(&b, out, nir_trim_vector(&b, res, out_comps), 0xf);
+   if (info->stencil_fallback) {
+      nir_def *mask_desc =
+         dzn_nir_create_bo_desc(&b, nir_var_mem_ubo, 0, 0, "mask", 0);
+      nir_def *mask = nir_load_ubo(&b, 1, 32, mask_desc, nir_imm_int(&b, 0),
+         .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0);
+      nir_def *fail = nir_ieq_imm(&b, nir_iand(&b, nir_channel(&b, res, 0), mask), 0);
+      nir_discard_if(&b, fail);
+   } else {
+      nir_store_var(&b, out, nir_trim_vector(&b, res, out_comps), 0xf);
+   }
 
    return b.shader;
 }

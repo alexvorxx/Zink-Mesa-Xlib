@@ -1966,6 +1966,7 @@ iris_compile_fs(struct iris_screen *screen,
       .prog_data = fs_prog_data,
 
       .allow_spilling = true,
+      .max_polygons = UCHAR_MAX,
       .vue_map = vue_map,
    };
 
@@ -2223,7 +2224,7 @@ iris_compile_cs(struct iris_screen *screen,
    nir_shader *nir = nir_shader_clone(mem_ctx, ish->nir);
    const struct iris_cs_prog_key *const key = &shader->key.cs;
 
-   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics);
+   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics, devinfo, cs_prog_data);
 
    iris_setup_uniforms(devinfo, mem_ctx, nir, prog_data,
                        ish->kernel_input_size,

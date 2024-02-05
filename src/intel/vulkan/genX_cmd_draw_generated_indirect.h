@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef GENX_CMD_GENERATED_INDIRECT_DRAW_H
-#define GENX_CMD_GENERATED_INDIRECT_DRAW_H
+#ifndef GENX_CMD_DRAW_GENERATED_INDIRECT_H
+#define GENX_CMD_DRAW_GENERATED_INDIRECT_H
 
 #include <assert.h>
 #include <stdbool.h>
@@ -64,7 +64,8 @@ genX(cmd_buffer_emit_generate_draws)(struct anv_cmd_buffer *cmd_buffer,
    if (push_data_state.map == NULL)
       return ANV_STATE_NULL;
 
-   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
    const bool use_tbimr = cmd_buffer->state.gfx.dyn_state.use_tbimr;
 
@@ -118,13 +119,6 @@ genX(cmd_buffer_emit_generate_draws)(struct anv_cmd_buffer *cmd_buffer,
 static void
 genX(cmd_buffer_emit_indirect_generated_draws_init)(struct anv_cmd_buffer *cmd_buffer)
 {
-#if GFX_VER >= 12
-   anv_batch_emit(&cmd_buffer->batch, GENX(MI_ARB_CHECK), arb) {
-      arb.PreParserDisableMask = true;
-      arb.PreParserDisable = true;
-   }
-#endif
-
    anv_batch_emit_ensure_space(&cmd_buffer->generation.batch, 4);
 
    trace_intel_begin_generate_draws(&cmd_buffer->trace);
@@ -136,6 +130,13 @@ genX(cmd_buffer_emit_indirect_generated_draws_init)(struct anv_cmd_buffer *cmd_b
    }
 
    cmd_buffer->generation.return_addr = anv_batch_current_address(&cmd_buffer->batch);
+
+#if GFX_VER >= 12
+   anv_batch_emit(&cmd_buffer->batch, GENX(MI_ARB_CHECK), arb) {
+      arb.PreParserDisableMask = true;
+      arb.PreParserDisable = false;
+   }
+#endif
 
    trace_intel_end_generate_draws(&cmd_buffer->trace);
 
@@ -162,7 +163,8 @@ genX(cmd_buffer_get_draw_id_addr)(struct anv_cmd_buffer *cmd_buffer,
 #if GFX_VER >= 11
    return ANV_NULL_ADDRESS;
 #else
-   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
    if (!vs_prog_data->uses_drawid)
       return ANV_NULL_ADDRESS;
@@ -184,7 +186,8 @@ genX(cmd_buffer_get_generated_draw_stride)(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VER >= 11
    return 4 * GENX(3DPRIMITIVE_EXTENDED_length);
 #else
-   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
 
    uint32_t len = 0;
@@ -252,7 +255,8 @@ genX(cmd_buffer_emit_indirect_generated_draws_inplace)(struct anv_cmd_buffer *cm
          device->physical->va.dynamic_state_pool.size);
    }
 
-   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
 
    if (vs_prog_data->uses_baseinstance ||
@@ -360,6 +364,9 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
 
    if (cmd_buffer->generation.ring_bo == NULL) {
       const uint32_t bo_size = align(
+#if GFX_VER >= 12
+         GENX(MI_ARB_CHECK_length) * 4 +
+#endif
          draw_cmd_stride * MAX_RING_BO_ITEMS +
 #if GFX_VER == 9
          4 * MAX_RING_BO_ITEMS +
@@ -382,6 +389,8 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
    /* The ring bo has the following layout:
     *
     *   --------------------------------------------------
+    *   | MI_ARB_CHECK to resume CS prefetch (Gfx12+)    |
+    *   |------------------------------------------------|
     *   |            ring_count * 3DPRIMITIVE            |
     *   |------------------------------------------------|
     *   | jump instruction (either back to generate more |
@@ -397,6 +406,22 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
                 GENX(MI_BATCH_BUFFER_START_length) * 4,
    };
 
+   struct anv_address draw_cmds_addr = (struct anv_address) {
+      .bo = cmd_buffer->generation.ring_bo,
+#if GFX_VER >= 12
+      .offset = GENX(MI_ARB_CHECK_length) * 4,
+#endif
+   };
+
+#if GFX_VER >= 12
+   struct GENX(MI_ARB_CHECK) resume_prefetch = {
+      .PreParserDisableMask = true,
+      .PreParserDisable = false,
+   };
+   GENX(MI_ARB_CHECK_pack)(NULL, cmd_buffer->generation.ring_bo->map,
+                           &resume_prefetch);
+#endif
+
 #if GFX_VER == 9
    /* Mark the VB-0 as using the entire ring_bo, but only for the draw call
     * starting the generation batch. All the following ones will use the same
@@ -409,7 +434,8 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
       },
       cmd_buffer->generation.ring_bo->size);
 
-   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
 
    if (vs_prog_data->uses_baseinstance ||
@@ -443,16 +469,6 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
     */
    struct anv_address gen_addr = anv_batch_current_address(&cmd_buffer->batch);
 
-#if GFX_VER >= 12
-   /* Prior to Gfx12 we cannot disable the CS prefetch but it doesn't matter
-    * as the prefetch shouldn't follow the MI_BATCH_BUFFER_START.
-    */
-   anv_batch_emit(&cmd_buffer->batch, GENX(MI_ARB_CHECK), arb) {
-      arb.PreParserDisableMask = true;
-      arb.PreParserDisable = true;
-   }
-#endif
-
    struct anv_simple_shader simple_state = (struct anv_simple_shader) {
       .device               = device,
       .cmd_buffer           = cmd_buffer,
@@ -469,9 +485,7 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
       genX(cmd_buffer_emit_generate_draws)(
          cmd_buffer,
          &simple_state,
-         (struct anv_address) {
-            .bo = cmd_buffer->generation.ring_bo,
-         },
+         draw_cmds_addr,
          draw_cmd_stride,
          indirect_data_addr,
          indirect_data_stride,
@@ -492,13 +506,6 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
                              ANV_PIPE_CS_STALL_BIT,
                              "after generation flush");
 
-#if GFX_VER >= 12
-   anv_batch_emit(&cmd_buffer->batch, GENX(MI_ARB_CHECK), arb) {
-      arb.PreParserDisableMask = true;
-      arb.PreParserDisable = false;
-   }
-#endif
-
    trace_intel_end_generate_draws(&cmd_buffer->trace);
 
    if (cmd_buffer->state.conditional_render_enabled)
@@ -508,6 +515,16 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
    if (max_draw_count > 0) {
+#if GFX_VER >= 12
+      /* Prior to Gfx12 we cannot disable the CS prefetch but it doesn't matter
+       * as the prefetch shouldn't follow the MI_BATCH_BUFFER_START.
+       */
+      anv_batch_emit(&cmd_buffer->batch, GENX(MI_ARB_CHECK), arb) {
+         arb.PreParserDisableMask = true;
+         arb.PreParserDisable = true;
+      }
+#endif
+
       /* Jump into the ring buffer. */
       anv_batch_emit(&cmd_buffer->batch, GENX(MI_BATCH_BUFFER_START), bbs) {
          bbs.AddressSpaceIndicator = ASI_PPGTT;
@@ -619,44 +636,4 @@ genX(cmd_buffer_emit_indirect_generated_draws)(struct anv_cmd_buffer *cmd_buffer
    }
 }
 
-static void
-genX(cmd_buffer_flush_generated_draws)(struct anv_cmd_buffer *cmd_buffer)
-{
-   /* No return address setup means we don't have to do anything */
-   if (anv_address_is_null(cmd_buffer->generation.return_addr))
-      return;
-
-   struct anv_batch *batch = &cmd_buffer->generation.batch;
-
-   /* Wait for all the generation vertex shader to generate the commands. */
-   genX(emit_apply_pipe_flushes)(batch,
-                                 cmd_buffer->device,
-                                 _3D,
-#if GFX_VER == 9
-                                 ANV_PIPE_VF_CACHE_INVALIDATE_BIT |
-#endif
-                                 ANV_PIPE_DATA_CACHE_FLUSH_BIT |
-                                 ANV_PIPE_CS_STALL_BIT,
-                                 NULL /* emitted_bits */);
-
-#if GFX_VER >= 12
-   anv_batch_emit(batch, GENX(MI_ARB_CHECK), arb) {
-      arb.PreParserDisableMask = true;
-      arb.PreParserDisable = false;
-   }
-#else
-   /* Prior to Gfx12 we cannot disable the CS prefetch but it doesn't matter
-    * as the prefetch shouldn't follow the MI_BATCH_BUFFER_START.
-    */
-#endif
-
-   /* Return to the main batch. */
-   anv_batch_emit(batch, GENX(MI_BATCH_BUFFER_START), bbs) {
-      bbs.AddressSpaceIndicator = ASI_PPGTT;
-      bbs.BatchBufferStartAddress = cmd_buffer->generation.return_addr;
-   }
-
-   cmd_buffer->generation.return_addr = ANV_NULL_ADDRESS;
-}
-
-#endif /* GENX_CMD_GENERATED_INDIRECT_DRAW_H */
+#endif /* GENX_CMD_DRAW_GENERATED_INDIRECT_H */

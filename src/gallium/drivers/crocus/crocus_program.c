@@ -1851,6 +1851,7 @@ crocus_compile_fs(struct crocus_context *ice,
       .prog_data = fs_prog_data,
 
       .allow_spilling = true,
+      .max_polygons = 1,
       .vue_map = vue_map,
    };
    const unsigned *program =
@@ -2512,7 +2513,7 @@ crocus_compile_cs(struct crocus_context *ice,
 
    nir_shader *nir = nir_shader_clone(mem_ctx, ish->nir);
 
-   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics);
+   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics, devinfo, cs_prog_data);
 
    crocus_setup_uniforms(devinfo, mem_ctx, nir, prog_data, &system_values,
                          &num_system_values, &num_cbufs);

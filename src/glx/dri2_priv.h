@@ -83,7 +83,7 @@ dri2_interop_export_object(struct glx_context *ctx,
 _X_HIDDEN int
 dri2_interop_flush_objects(struct glx_context *ctx,
                            unsigned count, struct mesa_glinterop_export_in *objects,
-                           GLsync *sync, int *fence_fd);
+                           struct mesa_glinterop_flush_out *out);
 
 #ifdef __cplusplus
 }

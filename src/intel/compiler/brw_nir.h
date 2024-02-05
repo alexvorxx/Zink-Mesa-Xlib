@@ -169,7 +169,9 @@ void
 brw_nir_link_shaders(const struct brw_compiler *compiler,
                      nir_shader *producer, nir_shader *consumer);
 
-bool brw_nir_lower_cs_intrinsics(nir_shader *nir);
+bool brw_nir_lower_cs_intrinsics(nir_shader *nir,
+                                 const struct intel_device_info *devinfo,
+                                 struct brw_cs_prog_data *prog_data);
 bool brw_nir_lower_alpha_to_coverage(nir_shader *shader,
                                      const struct brw_wm_prog_key *key,
                                      const struct brw_wm_prog_data *prog_data);
@@ -188,6 +190,8 @@ void brw_nir_lower_tcs_outputs(nir_shader *nir, const struct brw_vue_map *vue,
 void brw_nir_lower_fs_outputs(nir_shader *nir);
 
 bool brw_nir_lower_conversions(nir_shader *nir);
+
+bool brw_nir_lower_cmat(nir_shader *nir, unsigned subgroup_size);
 
 bool brw_nir_lower_shading_rate_output(nir_shader *nir);
 

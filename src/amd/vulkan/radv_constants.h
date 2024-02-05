@@ -80,6 +80,8 @@
 #define RING_PS_ATTR             10
 #define RING_PS_SAMPLE_POSITIONS 11
 
+#define SI_GS_PER_ES 128
+
 /* max number of descriptor sets */
 #define MAX_SETS 32
 

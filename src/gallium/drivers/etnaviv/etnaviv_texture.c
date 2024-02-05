@@ -165,6 +165,14 @@ etna_update_sampler_source(struct pipe_sampler_view *view, int num)
    struct etna_context *ctx = etna_context(view->context);
    bool enable_sampler_ts = false;
 
+   if (base->shared && !_mesa_set_search(ctx->updated_resources, view->texture)) {
+      for (int i = view->u.tex.first_level; i <= view->u.tex.last_level; i++)
+         etna_resource_level_mark_changed(&base->levels[i]);
+
+      pipe_reference(NULL, &view->texture->reference);
+      _mesa_set_add(ctx->updated_resources, view->texture);
+   }
+
    if (base->render && etna_resource_newer(etna_resource(base->render), base))
       from = etna_resource(base->render);
 

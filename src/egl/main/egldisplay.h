@@ -106,9 +106,10 @@ struct _egl_extensions {
    EGLBoolean EXT_image_dma_buf_import;
    EGLBoolean EXT_image_dma_buf_import_modifiers;
    EGLBoolean EXT_pixel_format_float;
+   EGLBoolean EXT_present_opaque;
    EGLBoolean EXT_protected_content;
    EGLBoolean EXT_protected_surface;
-   EGLBoolean EXT_present_opaque;
+   EGLBoolean EXT_query_reset_notification_strategy;
    EGLBoolean EXT_surface_CTA861_3_metadata;
    EGLBoolean EXT_surface_SMPTE2086_metadata;
    EGLBoolean EXT_swap_buffers_with_damage;
@@ -207,6 +208,7 @@ struct _egl_display {
    EGLint Version;            /**< EGL version major*10+minor */
    EGLint ClientAPIs;         /**< Bitmask of APIs supported (EGL_xxx_BIT) */
    _EGLExtensions Extensions; /**< Extensions supported */
+   EGLBoolean RobustBufferAccess; /**< Supports robust buffer access behavior */
 
    /* these fields are derived from above */
    char VersionString[100];                        /**< EGL_VERSION */
@@ -255,6 +257,23 @@ static inline EGLDisplay
 _eglGetDisplayHandle(_EGLDisplay *disp)
 {
    return (EGLDisplay)((disp) ? disp : EGL_NO_DISPLAY);
+}
+
+static inline EGLBoolean
+_eglHasAttrib(_EGLDisplay *disp, EGLAttrib attrib)
+{
+   EGLAttrib *attribs = disp->Options.Attribs;
+
+   if (!attribs) {
+      return EGL_FALSE;
+   }
+
+   for (int i = 0; attribs[i] != EGL_NONE; i += 2) {
+      if (attrib == attribs[i]) {
+         return EGL_TRUE;
+      }
+   }
+   return EGL_FALSE;
 }
 
 extern void

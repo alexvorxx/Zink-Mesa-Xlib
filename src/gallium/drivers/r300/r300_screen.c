@@ -503,7 +503,6 @@ static int r300_get_video_param(struct pipe_screen *screen,
    .lower_ftrunc = true,                      \
    .lower_insert_byte = true,                 \
    .lower_insert_word = true,                 \
-   .lower_rotate = true,                      \
    .lower_uniforms_to_ubo = true,             \
    .lower_vector_cmp = true,                  \
    .no_integers = true,                       \
@@ -796,7 +795,7 @@ static void r300_fence_reference(struct pipe_screen *screen,
 {
     struct radeon_winsys *rws = r300_screen(screen)->rws;
 
-    rws->fence_reference(ptr, fence);
+    rws->fence_reference(rws, ptr, fence);
 }
 
 static bool r300_fence_finish(struct pipe_screen *screen,

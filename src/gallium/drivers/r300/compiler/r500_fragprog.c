@@ -122,7 +122,6 @@ static void r500_transform_IF_instr(
 		}
 	} else {
 		rc_compare_func compare_func = RC_COMPARE_FUNC_NEVER;
-		unsigned int reverse_srcs = 0;
 		unsigned int preserve_opcode = 0;
 		for (list_ptr = writer_list; list_ptr;
 						list_ptr = list_ptr->Next) {
@@ -134,15 +133,9 @@ static void r500_transform_IF_instr(
 			case RC_OPCODE_SNE:
 				compare_func = RC_COMPARE_FUNC_NOTEQUAL;
 				break;
-			case RC_OPCODE_SLE:
-				reverse_srcs = 1;
-				FALLTHROUGH;
 			case RC_OPCODE_SGE:
 				compare_func = RC_COMPARE_FUNC_GEQUAL;
 				break;
-			case RC_OPCODE_SGT:
-				reverse_srcs = 1;
-				FALLTHROUGH;
 			case RC_OPCODE_SLT:
 				compare_func = RC_COMPARE_FUNC_LESS;
 				break;
@@ -152,19 +145,14 @@ static void r500_transform_IF_instr(
 				break;
 			}
 			if (!preserve_opcode) {
-				writer->Inst->U.I.Opcode = RC_OPCODE_SUB;
+				writer->Inst->U.I.Opcode = RC_OPCODE_ADD;
+				writer->Inst->U.I.SrcReg[1].Negate =
+					~writer->Inst->U.I.SrcReg[1].Negate;
 			}
 			writer->Inst->U.I.DstReg.WriteMask = 0;
 			writer->Inst->U.I.DstReg.File = RC_FILE_NONE;
 			writer->Inst->U.I.WriteALUResult = alu_chan;
 			writer->Inst->U.I.ALUResultCompare = compare_func;
-			if (reverse_srcs) {
-				struct rc_src_register temp_src;
-				temp_src = writer->Inst->U.I.SrcReg[0];
-				writer->Inst->U.I.SrcReg[0] =
-					writer->Inst->U.I.SrcReg[1];
-				writer->Inst->U.I.SrcReg[1] = temp_src;
-			}
 		}
 	}
 

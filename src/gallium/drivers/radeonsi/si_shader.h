@@ -115,6 +115,7 @@
 #include "shader_info.h"
 #include "ac_binary.h"
 #include "ac_gpu_info.h"
+#include "util/mesa-sha1.h"
 #include "util/u_live_shader_cache.h"
 #include "util/u_queue.h"
 #include "si_pm4.h"
@@ -127,15 +128,22 @@ struct nir_shader;
 struct nir_instr;
 struct nir_lower_subgroups_options;
 
+#define SI_NUM_INTERP     32
 #define SI_MAX_ATTRIBS    16
 #define SI_MAX_VS_OUTPUTS 40
 #define SI_USER_CLIP_PLANE_MASK  0x3F
+
+#define INTERP_MODE_COLOR  INTERP_MODE_COUNT
 
 #define SI_PS_INPUT_CNTL_0000          (S_028644_OFFSET(0x20) | S_028644_DEFAULT_VAL(0))
 #define SI_PS_INPUT_CNTL_0001          (S_028644_OFFSET(0x20) | S_028644_DEFAULT_VAL(3))
 #define SI_PS_INPUT_CNTL_UNUSED        SI_PS_INPUT_CNTL_0000
 /* D3D9 behaviour for COLOR0 requires 0001. GL is undefined. */
 #define SI_PS_INPUT_CNTL_UNUSED_COLOR0 SI_PS_INPUT_CNTL_0001
+
+#define SI_VECTOR_ARG_IS_COLOR               BITFIELD_BIT(0)
+#define SI_VECTOR_ARG_COLOR_COMPONENT(x)     (((x) & 0x7) << 1)
+#define SI_GET_VECTOR_ARG_COLOR_COMPONENT(x) (((x) >> 1) & 0x7)
 
 /* SGPR user data indices */
 enum
@@ -247,8 +255,12 @@ enum
  * in the shader via vs_state_bits in legacy GS, the GS copy shader, and any NGG shader.
  */
 /* bit gap */
-#define GS_STATE_ESGS_VERTEX_STRIDE__SHIFT      10
-#define GS_STATE_ESGS_VERTEX_STRIDE__MASK       0xff /* max 32 * 4 + 1 */
+/* The number of ES outputs is derived from the last output index of SI_UNIQUE_SLOT_* + 1, which
+ * can be 55 at most. The ESGS vertex stride in dwords is: NUM_ES_OUTPUTS * 4 + 1
+ * Only used by GFX9+ to compute LDS addresses of GS inputs.
+ */
+#define GS_STATE_NUM_ES_OUTPUTS__SHIFT          13
+#define GS_STATE_NUM_ES_OUTPUTS__MASK           0x3f
 /* Small prim filter precision = num_samples / quant_mode, which can only be equal to 1/2^n
  * where n is between 4 and 12. Knowing that, we only need to store 4 bits of the FP32 exponent.
  * Set it like this: value = (fui(num_samples / quant_mode) >> 23) & 0xf;
@@ -256,14 +268,14 @@ enum
  * With 0x70 = 112, we get 2^(112 + value - 127) = 2^(value - 15), which is always a negative
  * exponent and it's equal to 1/2^(15 - value).
  */
-#define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__SHIFT 18
+#define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__SHIFT 19
 #define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__MASK  0xf
-#define GS_STATE_SMALL_PRIM_PRECISION__SHIFT    22
+#define GS_STATE_SMALL_PRIM_PRECISION__SHIFT    23
 #define GS_STATE_SMALL_PRIM_PRECISION__MASK     0xf
-#define GS_STATE_STREAMOUT_QUERY_ENABLED__SHIFT 26
+#define GS_STATE_STREAMOUT_QUERY_ENABLED__SHIFT 27
 #define GS_STATE_STREAMOUT_QUERY_ENABLED__MASK  0x1
-#define GS_STATE_PROVOKING_VTX_INDEX__SHIFT     27
-#define GS_STATE_PROVOKING_VTX_INDEX__MASK      0x3
+#define GS_STATE_PROVOKING_VTX_FIRST__SHIFT     28
+#define GS_STATE_PROVOKING_VTX_FIRST__MASK      0x1
 #define GS_STATE_OUTPRIM__SHIFT                 29
 #define GS_STATE_OUTPRIM__MASK                  0x3
 #define GS_STATE_PIPELINE_STATS_EMU__SHIFT      31
@@ -301,11 +313,19 @@ enum
 #define SI_NGG_CULL_CLIP_PLANE_ENABLE(enable) (((enable) & 0xff) << 5)
 #define SI_NGG_CULL_GET_CLIP_PLANE_ENABLE(x)  (((x) >> 5) & 0xff)
 
+struct si_shader_profile {
+   uint32_t sha1[SHA1_DIGEST_LENGTH32];
+   uint32_t options;
+};
+
+extern struct si_shader_profile si_shader_profiles[];
+unsigned si_get_num_shader_profiles(void);
+
 #define SI_PROFILE_WAVE32                    (1 << 0)
-#define SI_PROFILE_WAVE64                    (1 << 1)
+#define SI_PROFILE_GFX10_WAVE64              (1 << 1)
 /* bit gap */
 #define SI_PROFILE_VS_NO_BINNING             (1 << 3)
-#define SI_PROFILE_PS_NO_BINNING             (1 << 4)
+#define SI_PROFILE_GFX9_GFX10_PS_NO_BINNING  (1 << 4)
 #define SI_PROFILE_CLAMP_DIV_BY_ZERO         (1 << 5)
 
 enum si_shader_dump_type {
@@ -436,8 +456,8 @@ struct si_shader_info {
    uint64_t inputs_read; /* "get_unique_index" bits */
    uint64_t tcs_vgpr_only_inputs; /* TCS inputs that are only in VGPRs, not LDS. */
 
+   uint64_t outputs_written_before_tes_gs; /* "get_unique_index" bits */
    uint64_t outputs_written_before_ps; /* "get_unique_index" bits */
-   uint64_t outputs_written;           /* "get_unique_index" bits */
    uint32_t patch_outputs_written;     /* "get_unique_index_patch" bits */
 
    uint8_t clipdist_mask;
@@ -504,6 +524,7 @@ struct si_shader_info {
    bool uses_indirect_descriptor;
    bool has_divergent_loop;
    bool uses_sampleid;
+   bool uses_layer_id;
    bool has_non_uniform_tex_access;
 
    bool uses_vmem_sampler_or_bvh;
@@ -678,7 +699,7 @@ union si_shader_part_key {
       /* Color interpolation and two-side color selection. */
       unsigned colors_read : 8;       /* color input components read */
       unsigned num_interp_inputs : 5; /* BCOLOR is at this location */
-      unsigned num_pos_inputs : 3;
+      unsigned num_fragcoord_components : 3;
       unsigned wqm : 1;
       char color_attr_index[2];
       signed char color_interp_vgpr_index[2]; /* -1 == constant */
@@ -742,6 +763,7 @@ struct si_shader_key_ge {
       uint64_t kill_outputs; /* "get_unique_index" bits */
       unsigned kill_clip_distances : 8;
       unsigned kill_pointsize : 1;
+      unsigned kill_layer : 1;
       unsigned remove_streamout : 1;
 
       /* For NGG VS and TES. */
@@ -795,6 +817,9 @@ struct si_shader_key_ps {
       unsigned prefer_mono : 1;
       unsigned inline_uniforms:1;
 
+      /* This eliminates the FRONT_FACE input VGPR as well as shader code using it. */
+      int force_front_face_input : 2; /* 0 = gl_FrontFacing, 1 = true, -1 = false */
+
       /* This must be kept last to limit the number of variants
        * depending only on the uniform values.
        */
@@ -814,11 +839,14 @@ union si_shader_key {
 struct si_shader_binary_info {
    uint8_t vs_output_param_offset[NUM_TOTAL_VARYING_SLOTS];
    uint32_t vs_output_ps_input_cntl[NUM_TOTAL_VARYING_SLOTS];
+   union si_input_info ps_inputs[SI_NUM_INTERP];
+   uint8_t num_ps_inputs;
+   uint8_t ps_colors_read;
    uint8_t num_input_sgprs;
    uint8_t num_input_vgprs;
    bool uses_vmem_load_other; /* all other VMEM loads and atomics with return */
    bool uses_vmem_sampler_or_bvh;
-   uint8_t num_ps_pos_inputs;
+   uint8_t num_fragcoord_components;
    bool uses_instanceid;
    uint8_t nr_pos_exports;
    uint8_t nr_param_exports;
@@ -1032,6 +1060,8 @@ unsigned si_determine_wave_size(struct si_screen *sscreen, struct si_shader *sha
 void gfx9_get_gs_info(struct si_shader_selector *es, struct si_shader_selector *gs,
                       struct gfx9_gs_info *out);
 bool gfx10_is_ngg_passthrough(struct si_shader *shader);
+
+bool si_should_clear_lds(struct si_screen *sscreen, const struct nir_shader *shader);
 
 /* Inline helpers. */
 

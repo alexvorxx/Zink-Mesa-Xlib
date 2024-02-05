@@ -67,13 +67,15 @@
 #include "drm-uapi/panfrost_drm.h"
 
 #include "pan_blend.h"
-#include "pan_cs.h"
-#include "pan_device.h"
-#include "pan_scoreboard.h"
+#include "pan_blitter.h"
+#include "pan_desc.h"
+#include "pan_jc.h"
 #include "pan_texture.h"
 #include "panvk_mempool.h"
 #include "panvk_varyings.h"
 #include "vk_extensions.h"
+
+#include "kmod/pan_kmod.h"
 
 /* Pre-declarations needed for WSI entrypoints */
 struct wl_surface;
@@ -114,6 +116,26 @@ typedef uint32_t xcb_window_t;
 
 #define panvk_stub() assert(!"stub")
 
+struct panvk_device;
+
+/* Used for internal object allocation. */
+struct panvk_priv_bo {
+   struct panvk_device *dev;
+   struct pan_kmod_bo *bo;
+   struct {
+      mali_ptr dev;
+      void *host;
+   } addr;
+};
+
+struct panvk_priv_bo *panvk_priv_bo_create(struct panvk_device *dev,
+                                           size_t size, uint32_t flags,
+                                           const VkAllocationCallbacks *alloc,
+                                           VkSystemAllocationScope scope);
+
+void panvk_priv_bo_destroy(struct panvk_priv_bo *bo,
+                           const VkAllocationCallbacks *alloc);
+
 #define PANVK_META_COPY_BUF2IMG_NUM_FORMATS  12
 #define PANVK_META_COPY_IMG2BUF_NUM_FORMATS  12
 #define PANVK_META_COPY_IMG2IMG_NUM_FORMATS  14
@@ -129,6 +151,7 @@ panvk_meta_copy_tex_type(unsigned dim, bool isarray)
 }
 
 struct panvk_meta {
+
    struct panvk_pool bin_pool;
    struct panvk_pool desc_pool;
 
@@ -139,7 +162,10 @@ struct panvk_meta {
    struct {
       struct panvk_pool bin_pool;
       struct panvk_pool desc_pool;
+      struct pan_blitter_cache cache;
    } blitter;
+
+   struct pan_blend_shader_cache blend_shader_cache;
 
    struct {
       struct {
@@ -172,8 +198,16 @@ struct panvk_meta {
 struct panvk_physical_device {
    struct vk_physical_device vk;
 
-   /* The API agnostic device object. */
-   struct panfrost_device pdev;
+   struct {
+      struct pan_kmod_dev *dev;
+      struct pan_kmod_dev_props props;
+   } kmod;
+
+   const struct panfrost_model *model;
+   struct {
+      const struct pan_blendable_format *blendable;
+      const struct panfrost_format *all;
+   } formats;
 
    struct panvk_instance *instance;
 
@@ -186,7 +220,6 @@ struct panvk_physical_device {
    const struct vk_sync_type *sync_types[2];
 
    struct wsi_device wsi_device;
-   struct panvk_meta meta;
 
    int master_fd;
 };
@@ -199,6 +232,7 @@ enum panvk_debug_flags {
    PANVK_DEBUG_AFBC = 1 << 4,
    PANVK_DEBUG_LINEAR = 1 << 5,
    PANVK_DEBUG_DUMP = 1 << 6,
+   PANVK_DEBUG_NO_KNOWN_WARN = 1 << 7,
 };
 
 struct panvk_instance {
@@ -207,6 +241,10 @@ struct panvk_instance {
    uint32_t api_version;
 
    enum panvk_debug_flags debug_flags;
+
+   struct {
+      struct pan_kmod_allocator allocator;
+   } kmod;
 };
 
 VkResult panvk_wsi_init(struct panvk_physical_device *physical_device);
@@ -234,6 +272,17 @@ struct panvk_queue {
 struct panvk_device {
    struct vk_device vk;
 
+   struct {
+      struct pan_kmod_vm *vm;
+      struct pan_kmod_dev *dev;
+      struct pan_kmod_allocator allocator;
+   } kmod;
+
+   struct panvk_priv_bo *tiler_heap;
+   struct panvk_priv_bo *sample_positions;
+
+   struct panvk_meta meta;
+
    struct vk_device_dispatch_table cmd_dispatch;
 
    struct panvk_instance *instance;
@@ -242,6 +291,11 @@ struct panvk_device {
    int queue_count[PANVK_MAX_QUEUE_FAMILIES];
 
    struct panvk_physical_device *physical_device;
+
+   struct {
+      struct pandecode_context *decode_ctx;
+   } debug;
+
    int _lost;
 };
 
@@ -263,13 +317,13 @@ struct panvk_batch {
    struct list_head node;
    struct util_dynarray jobs;
    struct util_dynarray event_ops;
-   struct pan_scoreboard scoreboard;
+   struct pan_jc jc;
    struct {
       const struct panvk_framebuffer *info;
       struct panfrost_ptr desc;
    } fb;
    struct {
-      struct panfrost_bo *src, *dst;
+      struct pan_kmod_bo *src, *dst;
    } blit;
    struct panfrost_ptr tls;
    mali_ptr fragment_job;
@@ -296,7 +350,11 @@ struct panvk_event_op {
 
 struct panvk_device_memory {
    struct vk_object_base base;
-   struct panfrost_bo *bo;
+   struct pan_kmod_bo *bo;
+   struct {
+      mali_ptr dev;
+      void *host;
+   } addr;
 };
 
 struct panvk_buffer_desc {
@@ -317,7 +375,7 @@ struct panvk_descriptor_set {
    void *img_attrib_bufs;
    uint32_t *img_fmts;
 
-   struct panfrost_bo *desc_bo;
+   struct panvk_priv_bo *desc_bo;
 };
 
 #define MAX_SETS 4
@@ -397,7 +455,6 @@ struct panvk_pipeline_layout {
    unsigned num_dyn_ubos;
    unsigned num_dyn_ssbos;
    uint32_t num_imgs;
-   uint32_t num_sets;
 
    struct {
       uint32_t size;
@@ -473,8 +530,21 @@ struct panvk_descriptor_pool {
 struct panvk_buffer {
    struct vk_buffer vk;
 
-   struct panfrost_bo *bo;
-   VkDeviceSize bo_offset;
+   mali_ptr dev_addr;
+
+   /* TODO: See if we can rework the synchronization logic so we don't need to
+    * pass BOs around.
+    */
+   struct pan_kmod_bo *bo;
+
+   /* FIXME: Only used for index buffers to do the min/max index retrieval on
+    * the CPU side. This is all broken anyway and the min/max search should be
+    * done with a compute shader that also patches the job descriptor
+    * accordingly (basically an indirect draw).
+    *
+    * Make sure this field goes away as soon as we fixed indirect draws.
+    */
+   void *host_ptr;
 };
 
 static inline mali_ptr
@@ -483,7 +553,7 @@ panvk_buffer_gpu_ptr(const struct panvk_buffer *buffer, uint64_t offset)
    if (buffer->bo == NULL)
       return 0;
 
-   return buffer->bo->ptr.gpu + buffer->bo_offset + offset;
+   return buffer->dev_addr + offset;
 }
 
 static inline uint64_t
@@ -802,8 +872,8 @@ struct panvk_pipeline {
 
    uint32_t dynamic_state_mask;
 
-   struct panfrost_bo *binary_bo;
-   struct panfrost_bo *state_bo;
+   struct panvk_priv_bo *binary_bo;
+   struct panvk_priv_bo *state_bo;
 
    mali_ptr vpd;
    mali_ptr rsds[MESA_SHADER_STAGES];
@@ -897,6 +967,11 @@ struct panvk_pipeline {
 struct panvk_image {
    struct vk_image vk;
 
+   /* TODO: See if we can rework the synchronization logic so we don't need to
+    * pass BOs around.
+    */
+   struct pan_kmod_bo *bo;
+
    struct pan_image pimage;
 };
 
@@ -913,7 +988,7 @@ struct panvk_image_view {
 
    struct pan_image_view pview;
 
-   struct panfrost_bo *bo;
+   struct panvk_priv_bo *bo;
    struct {
       uint32_t tex[TEXTURE_DESC_WORDS];
       uint32_t img_attrib_buf[ATTRIB_BUF_DESC_WORDS * 2];
@@ -929,7 +1004,7 @@ struct panvk_sampler {
 
 struct panvk_buffer_view {
    struct vk_object_base base;
-   struct panfrost_bo *bo;
+   struct panvk_priv_bo *bo;
    struct {
       uint32_t tex[TEXTURE_DESC_WORDS];
       uint32_t img_attrib_buf[ATTRIB_BUF_DESC_WORDS * 2];
@@ -1094,7 +1169,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(panvk_sampler, base, VkSampler,
 #endif
 
 #ifdef PAN_ARCH
-bool panvk_per_arch(blend_needs_lowering)(const struct panfrost_device *dev,
+bool panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,
                                           const struct pan_blend_state *state,
                                           unsigned rt);
 

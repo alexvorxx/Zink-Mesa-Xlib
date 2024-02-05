@@ -98,3 +98,5 @@ dEQP-GLES31.functional.image_load_store.buffer.atomic.comp_swap_r32i_return_valu
 
 # First noticed in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/50933832
 spec@glsl-1.50@execution@redeclare-pervertex-out-subset-gs
+
+spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@glScissor

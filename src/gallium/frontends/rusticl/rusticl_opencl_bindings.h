@@ -1,7 +1,9 @@
 #include <CL/cl_icd.h>
-#include <EGL/egl.h>
 #include <GL/gl.h>
+#include <EGL/egl.h>
+#ifdef HAVE_X11_PLATFORM
 #include <GL/glx.h>
+#endif
 #include "GL/mesa_glinterop.h"
 
 #define DECL_CL_STRUCT(name) struct name { const cl_icd_dispatch *dispatch; }

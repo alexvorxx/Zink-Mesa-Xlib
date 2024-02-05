@@ -565,7 +565,6 @@ static void virgl_bind_vertex_elements_state(struct pipe_context *ctx,
 
 static void virgl_set_vertex_buffers(struct pipe_context *ctx,
                                     unsigned num_buffers,
-                                     unsigned unbind_num_trailing_slots,
                                      bool take_ownership,
                                     const struct pipe_vertex_buffer *buffers)
 {
@@ -574,7 +573,6 @@ static void virgl_set_vertex_buffers(struct pipe_context *ctx,
    util_set_vertex_buffers_count(vctx->vertex_buffer,
                                  &vctx->num_vertex_buffers,
                                  buffers, num_buffers,
-                                 unbind_num_trailing_slots,
                                  take_ownership);
 
    if (buffers) {
@@ -1227,7 +1225,7 @@ static void virgl_bind_sampler_states(struct pipe_context *ctx,
                                      void **samplers)
 {
    struct virgl_context *vctx = virgl_context(ctx);
-   uint32_t handles[PIPE_MAX_SHADER_SAMPLER_VIEWS];
+   uint32_t handles[PIPE_MAX_SAMPLERS];
    int i;
    for (i = 0; i < num_samplers; i++) {
       handles[i] = (unsigned long)(samplers[i]);

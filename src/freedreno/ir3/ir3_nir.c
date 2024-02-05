@@ -177,9 +177,9 @@ ir3_optimize_loop(struct ir3_compiler *compiler, nir_shader *s)
       }
 
       progress |= OPT(s, nir_opt_dead_cf);
-      if (OPT(s, nir_opt_trivial_continues)) {
+      if (OPT(s, nir_opt_loop)) {
          progress |= true;
-         /* If nir_opt_trivial_continues makes progress, then we need to clean
+         /* If nir_opt_loop makes progress, then we need to clean
           * things up if we want any hope of nir_opt_if or nir_opt_loop_unroll
           * to make progress.
           */
@@ -722,6 +722,13 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
    /* Lower scratch writemasks */
    progress |= OPT(s, nir_lower_wrmasks, should_split_wrmask, s);
 
+   if (OPT(s, nir_lower_locals_to_regs, 1)) {
+      progress = true;
+
+      /* Split 64b registers into two 32b ones. */
+      OPT_V(s, ir3_nir_lower_64b_regs);
+   }
+
    progress |= OPT(s, ir3_nir_lower_wide_load_store);
    progress |= OPT(s, ir3_nir_lower_64b_global);
    progress |= OPT(s, ir3_nir_lower_64b_intrinsics);
@@ -732,6 +739,8 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
    if (progress) {
       progress |= OPT(s, nir_opt_constant_folding);
    }
+
+   OPT(s, ir3_nir_opt_subgroups, so);
 
    /* Do the preamble before analysing UBO ranges, because it's usually
     * higher-value and because it can result in eliminating some indirect UBO

@@ -98,7 +98,7 @@ get_disasm_string(aco::Program* program, std::vector<uint32_t>& code, unsigned e
          aco::print_asm(program, code, exec_size / 4u, memf);
       } else {
          fprintf(memf, "Shader disassembly is not supported in the current configuration"
-#ifndef LLVM_AVAILABLE
+#if !LLVM_AVAILABLE
                        " (LLVM not available)"
 #endif
                        ", falling back to print_program.\n\n");
@@ -198,6 +198,10 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
    /* Lower to HW Instructions */
    aco::lower_to_hw_instr(program.get());
    validate(program.get());
+
+   /* Schedule hardware instructions for ILP */
+   if (!options->optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED_ILP))
+      aco::schedule_ilp(program.get());
 
    /* Insert Waitcnt */
    aco::insert_wait_states(program.get());
@@ -435,4 +439,52 @@ aco_is_gpu_supported(const struct radeon_info* info)
 {
    /* Does not support compute only cards yet. */
    return info->gfx_level >= GFX6 && info->has_graphics;
+}
+
+bool
+aco_nir_op_supports_packed_math_16bit(const nir_alu_instr* alu)
+{
+   switch (alu->op) {
+   case nir_op_f2f16: {
+      nir_shader* shader = nir_cf_node_get_function(&alu->instr.block->cf_node)->function->shader;
+      unsigned execution_mode = shader->info.float_controls_execution_mode;
+      return (shader->options->force_f2f16_rtz && !nir_is_rounding_mode_rtne(execution_mode, 16)) ||
+             nir_is_rounding_mode_rtz(execution_mode, 16);
+   }
+   case nir_op_fadd:
+   case nir_op_fsub:
+   case nir_op_fmul:
+   case nir_op_ffma:
+   case nir_op_fdiv:
+   case nir_op_flrp:
+   case nir_op_fabs:
+   case nir_op_fneg:
+   case nir_op_fsat:
+   case nir_op_fmin:
+   case nir_op_fmax:
+   case nir_op_f2f16_rtz:
+   case nir_op_iabs:
+   case nir_op_iadd:
+   case nir_op_iadd_sat:
+   case nir_op_uadd_sat:
+   case nir_op_isub:
+   case nir_op_isub_sat:
+   case nir_op_usub_sat:
+   case nir_op_ineg:
+   case nir_op_imul:
+   case nir_op_imin:
+   case nir_op_imax:
+   case nir_op_umin:
+   case nir_op_umax:
+   case nir_op_fddx:
+   case nir_op_fddy:
+   case nir_op_fddx_fine:
+   case nir_op_fddy_fine:
+   case nir_op_fddx_coarse:
+   case nir_op_fddy_coarse: return true;
+   case nir_op_ishl: /* TODO: in NIR, these have 32bit shift operands */
+   case nir_op_ishr: /* while Radeon needs 16bit operands when vectorized */
+   case nir_op_ushr:
+   default: return false;
+   }
 }

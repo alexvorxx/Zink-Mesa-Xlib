@@ -260,6 +260,39 @@ struct brw_reg {
    };
 };
 
+static inline unsigned
+phys_nr(const struct intel_device_info *devinfo, const struct brw_reg reg)
+{
+   if (devinfo->ver >= 20) {
+      if (reg.file == BRW_GENERAL_REGISTER_FILE)
+         return reg.nr / 2;
+      else if (reg.file == BRW_ARCHITECTURE_REGISTER_FILE &&
+               reg.nr >= BRW_ARF_ACCUMULATOR &&
+               reg.nr < BRW_ARF_FLAG)
+         return BRW_ARF_ACCUMULATOR + (reg.nr - BRW_ARF_ACCUMULATOR) / 2;
+      else
+         return reg.nr;
+   } else {
+      return reg.nr;
+   }
+}
+
+static inline unsigned
+phys_subnr(const struct intel_device_info *devinfo, const struct brw_reg reg)
+{
+   if (devinfo->ver >= 20) {
+      if (reg.file == BRW_GENERAL_REGISTER_FILE ||
+          (reg.file == BRW_ARCHITECTURE_REGISTER_FILE &&
+           reg.nr >= BRW_ARF_ACCUMULATOR &&
+           reg.nr < BRW_ARF_FLAG))
+         return (reg.nr & 1) * REG_SIZE + reg.subnr;
+      else
+         return reg.subnr;
+   } else {
+      return reg.subnr;
+   }
+}
+
 static inline bool
 brw_regs_equal(const struct brw_reg *a, const struct brw_reg *b)
 {
@@ -784,11 +817,23 @@ brw_vec1_grf(unsigned nr, unsigned subnr)
    return brw_vec1_reg(BRW_GENERAL_REGISTER_FILE, nr, subnr);
 }
 
+static inline struct brw_reg
+xe2_vec1_grf(unsigned nr, unsigned subnr)
+{
+   return brw_vec1_reg(BRW_GENERAL_REGISTER_FILE, 2 * nr + subnr / 8, subnr % 8);
+}
+
 /** Construct float[2] general-purpose register */
 static inline struct brw_reg
 brw_vec2_grf(unsigned nr, unsigned subnr)
 {
    return brw_vec2_reg(BRW_GENERAL_REGISTER_FILE, nr, subnr);
+}
+
+static inline struct brw_reg
+xe2_vec2_grf(unsigned nr, unsigned subnr)
+{
+   return brw_vec2_reg(BRW_GENERAL_REGISTER_FILE, 2 * nr + subnr / 8, subnr % 8);
 }
 
 /** Construct float[4] general-purpose register */
@@ -798,11 +843,23 @@ brw_vec4_grf(unsigned nr, unsigned subnr)
    return brw_vec4_reg(BRW_GENERAL_REGISTER_FILE, nr, subnr);
 }
 
+static inline struct brw_reg
+xe2_vec4_grf(unsigned nr, unsigned subnr)
+{
+   return brw_vec4_reg(BRW_GENERAL_REGISTER_FILE, 2 * nr + subnr / 8, subnr % 8);
+}
+
 /** Construct float[8] general-purpose register */
 static inline struct brw_reg
 brw_vec8_grf(unsigned nr, unsigned subnr)
 {
    return brw_vec8_reg(BRW_GENERAL_REGISTER_FILE, nr, subnr);
+}
+
+static inline struct brw_reg
+xe2_vec8_grf(unsigned nr, unsigned subnr)
+{
+   return brw_vec8_reg(BRW_GENERAL_REGISTER_FILE, 2 * nr + subnr / 8, subnr % 8);
 }
 
 /** Construct float[16] general-purpose register */
@@ -813,11 +870,22 @@ brw_vec16_grf(unsigned nr, unsigned subnr)
 }
 
 static inline struct brw_reg
+xe2_vec16_grf(unsigned nr, unsigned subnr)
+{
+   return brw_vec16_reg(BRW_GENERAL_REGISTER_FILE, 2 * nr + subnr / 8, subnr % 8);
+}
+
+static inline struct brw_reg
 brw_vecn_grf(unsigned width, unsigned nr, unsigned subnr)
 {
    return brw_vecn_reg(width, BRW_GENERAL_REGISTER_FILE, nr, subnr);
 }
 
+static inline struct brw_reg
+xe2_vecn_grf(unsigned width, unsigned nr, unsigned subnr)
+{
+   return brw_vecn_reg(width, BRW_GENERAL_REGISTER_FILE, nr + subnr / 8, subnr % 8);
+}
 
 static inline struct brw_reg
 brw_uw1_grf(unsigned nr, unsigned subnr)

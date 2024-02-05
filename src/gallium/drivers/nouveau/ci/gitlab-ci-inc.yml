@@ -1,10 +1,15 @@
 .nouveau-rules:
   stage: nouveau
   rules:
+    - !reference [.test, rules]
     - !reference [.anholt-farm-rules, rules]
     - !reference [.gl-rules, rules]
     - changes: &nouveau_file_list
-      - src/nouveau/**/*
+      - src/nouveau/*
+      - src/nouveau/codegen/**/*
+      - src/nouveau/drm-shim/**/*
+      - src/nouveau/headers/**/*
+      - src/nouveau/winsys/**/*
       - src/gallium/drivers/nouveau/**/*
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/nouveau/**/*
@@ -14,6 +19,7 @@
   stage: nouveau
   retry: !reference [.scheduled_pipeline-rules, retry]
   rules:
+    - !reference [.test, rules]
     - !reference [.anholt-farm-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes:

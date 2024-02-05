@@ -24,7 +24,7 @@
 #include "dxil_function.h"
 #include "dxil_module.h"
 
-#define MAX_FUNC_PARAMS 17
+#define MAX_FUNC_PARAMS 18
 
 struct predefined_func_descr {
    const char *base_name;
@@ -62,6 +62,8 @@ static struct  predefined_func_descr predefined_funcs[] = {
 {"dx.op.sampleCmp", "R", "i@@ffffiiiff", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.sampleCmpLevel", "R", "i@@ffffiiiff", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.sampleCmpLevelZero", "R", "i@@ffffiiif", DXIL_ATTR_KIND_READ_ONLY},
+{"dx.op.sampleCmpBias", "R", "i@@ffffiiifff", DXIL_ATTR_KIND_READ_ONLY},
+{"dx.op.sampleCmpGrad", "R", "i@@ffffiiiffffffff", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.textureLoad", "R", "i@iiiiiii", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.textureGather", "R", "i@@ffffiii", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.textureGatherCmp", "R", "i@@ffffiiif", DXIL_ATTR_KIND_READ_ONLY},

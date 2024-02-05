@@ -12,6 +12,7 @@
 # We're run from the root of the repo, make a helper var for our paths
 BM=$CI_PROJECT_DIR/install/bare-metal
 CI_COMMON=$CI_PROJECT_DIR/install/common
+CI_INSTALL=$CI_PROJECT_DIR/install
 
 # Runner config checks
 if [ -z "$BM_SERIAL" ]; then
@@ -67,11 +68,6 @@ fi
 
 if [ -z "$BM_CMDLINE" ]; then
   echo "Must set BM_CMDLINE to your board's kernel command line arguments"
-  exit 1
-fi
-
-if [ -z "$BM_BOOTCONFIG" ]; then
-  echo "Must set BM_BOOTCONFIG to your board's required boot configuration arguments"
   exit 1
 fi
 
@@ -180,12 +176,25 @@ date +'%F %T'
 
 echo "$BM_CMDLINE" > /tftp/cmdline.txt
 
-# Add some required options in config.txt
-printf "$BM_BOOTCONFIG" >> /tftp/config.txt
+# Add some options in config.txt, if defined
+if [ -n "$BM_BOOTCONFIG" ]; then
+  printf "$BM_BOOTCONFIG" >> /tftp/config.txt
+fi
 
 set +e
+STRUCTURED_LOG_FILE=job_detail.json
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update dut_job_type "${DEVICE_TYPE}"
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update farm "${FARM}"
 ATTEMPTS=3
+first_attempt=True
 while [ $((ATTEMPTS--)) -gt 0 ]; do
+  python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --create-dut-job dut_name "${CI_RUNNER_DESCRIPTION}"
+  # Update subtime time to CI_JOB_STARTED_AT only for the first run
+  if [ "$first_attempt" = "True" ]; then
+    python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update-dut-time submit "${CI_JOB_STARTED_AT}"
+  else
+    python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update-dut-time submit
+  fi
   python3 $BM/poe_run.py \
           --dev="$BM_SERIAL" \
           --powerup="$BM_POWERUP" \
@@ -195,10 +204,14 @@ while [ $((ATTEMPTS--)) -gt 0 ]; do
 
   if [ $ret -eq 2 ]; then
     echo "Did not detect boot sequence, retrying..."
+    python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --close-dut-job
+    first_attempt=False
   else
     ATTEMPTS=0
   fi
 done
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --close-dut-job
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --close
 set -e
 
 date +'%F %T'
@@ -206,6 +219,10 @@ date +'%F %T'
 # Bring artifacts back from the NFS dir to the build dir where gitlab-runner
 # will look for them.
 cp -Rp /nfs/results/. results/
+if [ -f "${STRUCTURED_LOG_FILE}" ]; then
+  cp -p ${STRUCTURED_LOG_FILE} results/
+  echo "Structured log file is available at ${ARTIFACTS_BASE_URL}/results/${STRUCTURED_LOG_FILE}"
+fi
 
 date +'%F %T'
 

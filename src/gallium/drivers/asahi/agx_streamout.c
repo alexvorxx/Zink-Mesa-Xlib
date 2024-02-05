@@ -67,7 +67,7 @@ agx_set_stream_output_targets(struct pipe_context *pctx, unsigned num_targets,
        * Gallium contract and it will work out fine. Probably should be
        * redefined to be ~0 instead of -1 but it doesn't really matter.
        */
-      if (offsets[i] != -1) {
+      if (offsets[i] != -1 && targets[i] != NULL) {
          pipe_buffer_write(pctx, agx_so_target(targets[i])->offset, 0, 4,
                            &offsets[i]);
       }
@@ -108,7 +108,7 @@ agx_batch_get_so_address(struct agx_batch *batch, unsigned buffer,
 
    /* Otherwise, write the target */
    struct agx_resource *rsrc = agx_resource(target->buffer);
-   agx_batch_writes(batch, rsrc);
+   agx_batch_writes(batch, rsrc, 0);
 
    *size = target->buffer_size;
    return rsrc->bo->ptr.gpu + target->buffer_offset;
@@ -121,10 +121,13 @@ agx_draw_vbo_from_xfb(struct pipe_context *pctx,
 {
    perf_debug_ctx(agx_context(pctx), "draw auto");
 
-   unsigned count;
-   pipe_buffer_read(pctx,
-                    agx_so_target(indirect->count_from_stream_output)->offset,
-                    0, 4, &count);
+   struct agx_streamout_target *so =
+      agx_so_target(indirect->count_from_stream_output);
+
+   unsigned offset_B;
+   pipe_buffer_read(pctx, so->offset, 0, 4, &offset_B);
+
+   unsigned count = offset_B / so->stride;
 
    /* XXX: Probably need to divide here */
 
@@ -160,11 +163,11 @@ agx_primitives_update_direct(struct agx_context *ctx,
                              const struct pipe_draw_info *info,
                              const struct pipe_draw_start_count_bias *draw)
 {
-   assert(ctx->active_queries && ctx->prims_generated && "precondition");
+   assert(ctx->active_queries && ctx->prims_generated[0] && "precondition");
    assert(!ctx->stage[PIPE_SHADER_GEOMETRY].shader &&
           "Geometry shaders use their own counting");
 
-   ctx->prims_generated->value +=
+   ctx->prims_generated[0]->value +=
       xfb_prims_for_vertices(info->mode, draw->count);
 }
 

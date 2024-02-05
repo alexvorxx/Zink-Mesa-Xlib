@@ -49,7 +49,7 @@ gl_nir_opts(nir_shader *nir)
    do {
       progress = false;
 
-      NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+      NIR_PASS(_, nir, nir_lower_vars_to_ssa);
 
       /* Linking deals with unused inputs/outputs, but here we can remove
        * things local to the shader in the hopes that we can cleanup other
@@ -66,17 +66,17 @@ gl_nir_opts(nir_shader *nir)
       NIR_PASS(progress, nir, nir_opt_dead_write_vars);
 
       if (nir->options->lower_to_scalar) {
-         NIR_PASS_V(nir, nir_lower_alu_to_scalar,
+         NIR_PASS(_, nir, nir_lower_alu_to_scalar,
                     nir->options->lower_to_scalar_filter, NULL);
-         NIR_PASS_V(nir, nir_lower_phis_to_scalar, false);
+         NIR_PASS(_, nir, nir_lower_phis_to_scalar, false);
       }
 
-      NIR_PASS_V(nir, nir_lower_alu);
-      NIR_PASS_V(nir, nir_lower_pack);
+      NIR_PASS(_, nir, nir_lower_alu);
+      NIR_PASS(_, nir, nir_lower_pack);
       NIR_PASS(progress, nir, nir_copy_prop);
       NIR_PASS(progress, nir, nir_opt_remove_phis);
       NIR_PASS(progress, nir, nir_opt_dce);
-      if (nir_opt_trivial_continues(nir)) {
+      if (nir_opt_loop(nir)) {
          progress = true;
          NIR_PASS(progress, nir, nir_copy_prop);
          NIR_PASS(progress, nir, nir_opt_dce);
@@ -124,7 +124,117 @@ gl_nir_opts(nir_shader *nir)
       }
    } while (progress);
 
-   NIR_PASS_V(nir, nir_lower_var_copies);
+   NIR_PASS(_, nir, nir_lower_var_copies);
+}
+
+struct emit_vertex_state {
+   int max_stream_allowed;
+   int invalid_stream_id;
+   bool invalid_stream_id_from_emit_vertex;
+   bool end_primitive_found;
+   unsigned used_streams;
+};
+
+/**
+ * Determine the highest stream id to which a (geometry) shader emits
+ * vertices. Also check whether End{Stream}Primitive is ever called.
+ */
+static void
+find_emit_vertex(struct emit_vertex_state *state, nir_shader *shader) {
+   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+
+   nir_foreach_block_safe(block, impl) {
+      nir_foreach_instr_safe(instr, block) {
+         if (instr->type == nir_instr_type_intrinsic) {
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+
+            if (intr->intrinsic == nir_intrinsic_emit_vertex ||
+                intr->intrinsic == nir_intrinsic_end_primitive) {
+               int stream_id = nir_intrinsic_stream_id(intr);
+               bool from_emit_vertex =
+                  intr->intrinsic == nir_intrinsic_emit_vertex;
+               state->end_primitive_found |=
+                  intr->intrinsic == nir_intrinsic_end_primitive;
+
+               if (stream_id < 0) {
+                  state->invalid_stream_id = stream_id;
+                  state->invalid_stream_id_from_emit_vertex = from_emit_vertex;
+                  return;
+               }
+
+               if (stream_id > state->max_stream_allowed) {
+                  state->invalid_stream_id = stream_id;
+                  state->invalid_stream_id_from_emit_vertex = from_emit_vertex;
+                  return;
+               }
+
+               state->used_streams |= 1 << stream_id;
+            }
+         }
+      }
+   }
+}
+
+/**
+ * Check if geometry shaders emit to non-zero streams and do corresponding
+ * validations.
+ */
+static void
+validate_geometry_shader_emissions(const struct gl_constants *consts,
+                                   struct gl_shader_program *prog)
+{
+   struct gl_linked_shader *sh = prog->_LinkedShaders[MESA_SHADER_GEOMETRY];
+
+   if (sh != NULL) {
+      struct emit_vertex_state state;
+      state.max_stream_allowed = consts->MaxVertexStreams - 1;
+      state.invalid_stream_id = 0;
+      state.invalid_stream_id_from_emit_vertex = false;
+      state.end_primitive_found = false;
+      state.used_streams = 0;
+
+      find_emit_vertex(&state, sh->Program->nir);
+
+      if (state.invalid_stream_id != 0) {
+         linker_error(prog, "Invalid call %s(%d). Accepted values for the "
+                      "stream parameter are in the range [0, %d].\n",
+                      state.invalid_stream_id_from_emit_vertex ?
+                         "EmitStreamVertex" : "EndStreamPrimitive",
+                      state.invalid_stream_id, state.max_stream_allowed);
+      }
+      prog->Geom.ActiveStreamMask = state.used_streams;
+      prog->Geom.UsesEndPrimitive = state.end_primitive_found;
+
+      /* From the ARB_gpu_shader5 spec:
+       *
+       *   "Multiple vertex streams are supported only if the output primitive
+       *    type is declared to be "points".  A program will fail to link if it
+       *    contains a geometry shader calling EmitStreamVertex() or
+       *    EndStreamPrimitive() if its output primitive type is not "points".
+       *
+       * However, in the same spec:
+       *
+       *   "The function EmitVertex() is equivalent to calling EmitStreamVertex()
+       *    with <stream> set to zero."
+       *
+       * And:
+       *
+       *   "The function EndPrimitive() is equivalent to calling
+       *    EndStreamPrimitive() with <stream> set to zero."
+       *
+       * Since we can call EmitVertex() and EndPrimitive() when we output
+       * primitives other than points, calling EmitStreamVertex(0) or
+       * EmitEndPrimitive(0) should not produce errors. This it also what Nvidia
+       * does. We can use prog->Geom.ActiveStreamMask to check whether only the
+       * first (zero) stream is active.
+       * stream.
+       */
+      if (prog->Geom.ActiveStreamMask & ~(1 << 0) &&
+          sh->Program->info.gs.output_primitive != MESA_PRIM_POINTS) {
+         linker_error(prog, "EmitStreamVertex(n) and EndStreamPrimitive(n) "
+                      "with n>0 requires point output\n");
+      }
+   }
 }
 
 bool
@@ -166,8 +276,8 @@ gl_nir_link_opts(nir_shader *producer, nir_shader *consumer)
    MESA_TRACE_FUNC();
 
    if (producer->options->lower_to_scalar) {
-      NIR_PASS_V(producer, nir_lower_io_to_scalar_early, nir_var_shader_out);
-      NIR_PASS_V(consumer, nir_lower_io_to_scalar_early, nir_var_shader_in);
+      NIR_PASS(_, producer, nir_lower_io_to_scalar_early, nir_var_shader_out);
+      NIR_PASS(_, consumer, nir_lower_io_to_scalar_early, nir_var_shader_in);
    }
 
    nir_lower_io_arrays_to_elements(producer, consumer);
@@ -178,12 +288,12 @@ gl_nir_link_opts(nir_shader *producer, nir_shader *consumer)
    if (nir_link_opt_varyings(producer, consumer))
       gl_nir_opts(consumer);
 
-   NIR_PASS_V(producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
-   NIR_PASS_V(consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
+   NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
+   NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
 
    if (nir_remove_unused_varyings(producer, consumer)) {
-      NIR_PASS_V(producer, nir_lower_global_vars_to_local);
-      NIR_PASS_V(consumer, nir_lower_global_vars_to_local);
+      NIR_PASS(_, producer, nir_lower_global_vars_to_local);
+      NIR_PASS(_, consumer, nir_lower_global_vars_to_local);
 
       gl_nir_opts(producer);
       gl_nir_opts(consumer);
@@ -192,9 +302,9 @@ gl_nir_link_opts(nir_shader *producer, nir_shader *consumer)
        * nir_compact_varyings() depends on all dead varyings being removed so
        * we need to call nir_remove_dead_variables() again here.
        */
-      NIR_PASS_V(producer, nir_remove_dead_variables, nir_var_shader_out,
+      NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out,
                  NULL);
-      NIR_PASS_V(consumer, nir_remove_dead_variables, nir_var_shader_in,
+      NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in,
                  NULL);
    }
 
@@ -889,7 +999,7 @@ remove_dead_varyings_pre_linking(nir_shader *nir)
  * - find every gl_Position write
  * - store 1.0 to gl_PointSize after every gl_Position write
  */
-void
+bool
 gl_nir_add_point_size(nir_shader *nir)
 {
    nir_variable *psiz = nir_create_variable_with_location(nir, nir_var_shader_out,
@@ -921,6 +1031,10 @@ gl_nir_add_point_size(nir_shader *nir)
       nir_deref_instr *deref = nir_build_deref_var(&b, psiz);
       nir_store_deref(&b, deref, nir_imm_float(&b, 1.0), BITFIELD_BIT(0));
    }
+
+   /* We always modify the entrypoint */
+   nir_metadata_preserve(impl, nir_metadata_block_index | nir_metadata_dominance);
+   return true;
 }
 
 static void
@@ -955,6 +1069,8 @@ gl_nir_zero_initialize_clip_distance(nir_shader *nir)
    if (clip_dist1)
       zero_array_members(&b, clip_dist1);
 
+   nir_metadata_preserve(impl, nir_metadata_dominance |
+                               nir_metadata_block_index);
    return true;
 }
 
@@ -975,7 +1091,7 @@ lower_patch_vertices_in(struct gl_shader_program *shader_prog)
        * lower TES gl_PatchVerticesIn to a constant.
        */
       uint32_t tes_patch_verts = tcs_nir->info.tess.tcs_vertices_out;
-      NIR_PASS_V(tes_nir, nir_lower_patch_vertices, tes_patch_verts, NULL);
+      NIR_PASS(_, tes_nir, nir_lower_patch_vertices, tes_patch_verts, NULL);
    }
 }
 
@@ -995,10 +1111,10 @@ preprocess_shader(const struct gl_constants *consts,
 
    if (prog->info.stage == MESA_SHADER_FRAGMENT && consts->HasFBFetch) {
       nir_shader_gather_info(prog->nir, nir_shader_get_entrypoint(prog->nir));
-      NIR_PASS_V(prog->nir, gl_nir_lower_blend_equation_advanced,
+      NIR_PASS(_, prog->nir, gl_nir_lower_blend_equation_advanced,
                  exts->KHR_blend_equation_advanced_coherent);
       nir_lower_global_vars_to_local(prog->nir);
-      NIR_PASS_V(prog->nir, nir_opt_combine_stores, nir_var_shader_out);
+      NIR_PASS(_, prog->nir, nir_opt_combine_stores, nir_var_shader_out);
    }
 
    /* Set the next shader stage hint for VS and TES. */
@@ -1020,57 +1136,57 @@ preprocess_shader(const struct gl_constants *consts,
    if (!consts->PointSizeFixed && prog->skip_pointsize_xfb &&
        stage < MESA_SHADER_FRAGMENT && stage != MESA_SHADER_TESS_CTRL &&
        gl_nir_can_add_pointsize_to_program(consts, prog)) {
-      NIR_PASS_V(nir, gl_nir_add_point_size);
+      NIR_PASS(_, nir, gl_nir_add_point_size);
    }
 
    if (stage < MESA_SHADER_FRAGMENT && stage != MESA_SHADER_TESS_CTRL &&
        (nir->info.outputs_written & (VARYING_BIT_CLIP_DIST0 | VARYING_BIT_CLIP_DIST1)))
-      NIR_PASS_V(nir, gl_nir_zero_initialize_clip_distance);
+      NIR_PASS(_, nir, gl_nir_zero_initialize_clip_distance);
 
    if (options->lower_all_io_to_temps ||
        nir->info.stage == MESA_SHADER_VERTEX ||
        nir->info.stage == MESA_SHADER_GEOMETRY) {
-      NIR_PASS_V(nir, nir_lower_io_to_temporaries,
+      NIR_PASS(_, nir, nir_lower_io_to_temporaries,
                  nir_shader_get_entrypoint(nir),
                  true, true);
    } else if (nir->info.stage == MESA_SHADER_FRAGMENT ||
               !consts->SupportsReadingOutputs) {
-      NIR_PASS_V(nir, nir_lower_io_to_temporaries,
+      NIR_PASS(_, nir, nir_lower_io_to_temporaries,
                  nir_shader_get_entrypoint(nir),
                  true, false);
    }
 
-   NIR_PASS_V(nir, nir_lower_global_vars_to_local);
-   NIR_PASS_V(nir, nir_split_var_copies);
-   NIR_PASS_V(nir, nir_lower_var_copies);
+   NIR_PASS(_, nir, nir_lower_global_vars_to_local);
+   NIR_PASS(_, nir, nir_split_var_copies);
+   NIR_PASS(_, nir, nir_lower_var_copies);
 
    if (gl_options->LowerPrecisionFloat16 && gl_options->LowerPrecisionInt16) {
-      NIR_PASS_V(nir, nir_lower_mediump_vars, nir_var_function_temp | nir_var_shader_temp | nir_var_mem_shared);
+      NIR_PASS(_, nir, nir_lower_mediump_vars, nir_var_function_temp | nir_var_shader_temp | nir_var_mem_shared);
    }
 
    if (options->lower_to_scalar) {
-      NIR_PASS_V(nir, nir_remove_dead_variables,
+      NIR_PASS(_, nir, nir_remove_dead_variables,
                  nir_var_function_temp | nir_var_shader_temp |
                  nir_var_mem_shared, NULL);
-      NIR_PASS_V(nir, nir_opt_copy_prop_vars);
-      NIR_PASS_V(nir, nir_lower_alu_to_scalar,
+      NIR_PASS(_, nir, nir_opt_copy_prop_vars);
+      NIR_PASS(_, nir, nir_lower_alu_to_scalar,
                  options->lower_to_scalar_filter, NULL);
    }
 
-   NIR_PASS_V(nir, nir_opt_barrier_modes);
+   NIR_PASS(_, nir, nir_opt_barrier_modes);
 
    /* before buffers and vars_to_ssa */
-   NIR_PASS_V(nir, gl_nir_lower_images, true);
+   NIR_PASS(_, nir, gl_nir_lower_images, true);
 
    if (prog->nir->info.stage == MESA_SHADER_COMPUTE) {
-      NIR_PASS_V(prog->nir, nir_lower_vars_to_explicit_types,
+      NIR_PASS(_, prog->nir, nir_lower_vars_to_explicit_types,
                  nir_var_mem_shared, shared_type_info);
-      NIR_PASS_V(prog->nir, nir_lower_explicit_io,
+      NIR_PASS(_, prog->nir, nir_lower_explicit_io,
                  nir_var_mem_shared, nir_address_format_32bit_offset);
    }
 
    /* Do a round of constant folding to clean up address calculations */
-   NIR_PASS_V(nir, nir_opt_constant_folding);
+   NIR_PASS(_, nir, nir_opt_constant_folding);
 }
 
 static bool
@@ -1102,7 +1218,7 @@ prelink_lowering(const struct gl_constants *consts,
       }
 
       if (options->lower_to_scalar) {
-         NIR_PASS_V(shader->Program->nir, nir_lower_load_const_to_scalar);
+         NIR_PASS(_, shader->Program->nir, nir_lower_load_const_to_scalar);
       }
    }
 
@@ -1123,14 +1239,18 @@ prelink_lowering(const struct gl_constants *consts,
 
       nir_opt_access_options opt_access_options;
       opt_access_options.is_vulkan = false;
-      NIR_PASS_V(nir, nir_opt_access, &opt_access_options);
+      NIR_PASS(_, nir, nir_opt_access, &opt_access_options);
+
+      if (consts->ShaderCompilerOptions[i].LowerCombinedClipCullDistance) {
+         NIR_PASS(_, nir, nir_lower_clip_cull_distance_to_vec4s);
+      }
 
       /* Combine clip and cull outputs into one array and set:
        * - shader_info::clip_distance_array_size
        * - shader_info::cull_distance_array_size
        */
       if (consts->CombinedClipCullDistanceArrays)
-         NIR_PASS_V(nir, nir_lower_clip_cull_distance_arrays);
+         NIR_PASS(_, nir, nir_lower_clip_cull_distance_arrays);
    }
 
    return true;
@@ -1180,7 +1300,7 @@ gl_nir_link_spirv(const struct gl_constants *consts,
       }
    }
 
-   if (!gl_nir_link_uniform_blocks(prog))
+   if (!gl_nir_link_uniform_blocks(consts, prog))
       return false;
 
    if (!gl_nir_link_uniforms(consts, prog, options->fill_parameters))
@@ -1319,6 +1439,9 @@ gl_nir_link_glsl(const struct gl_constants *consts,
 
    MESA_TRACE_FUNC();
 
+   /* Check and validate stream emissions in geometry shaders */
+   validate_geometry_shader_emissions(consts, prog);
+
    prog->last_vert_prog = NULL;
    for (int i = MESA_SHADER_GEOMETRY; i >= MESA_SHADER_VERTEX; i--) {
       if (prog->_LinkedShaders[i] == NULL)
@@ -1339,6 +1462,8 @@ gl_nir_link_glsl(const struct gl_constants *consts,
          first = i;
       last = i;
    }
+
+   gl_nir_lower_named_interface_blocks(prog);
 
    /* Validate the inputs of each stage with the output of the preceding
     * stage.
@@ -1450,8 +1575,28 @@ gl_nir_link_glsl(const struct gl_constants *consts,
                                    nir_var_mem_ubo | nir_var_mem_ssbo |
                                    nir_var_system_value,
                                    &opts);
+
+         if (shader->Program->info.stage == MESA_SHADER_FRAGMENT) {
+            nir_shader *nir = shader->Program->nir;
+            nir_foreach_variable_in_shader(var, nir) {
+               if (var->data.mode == nir_var_system_value &&
+                   (var->data.location == SYSTEM_VALUE_SAMPLE_ID ||
+                    var->data.location == SYSTEM_VALUE_SAMPLE_POS))
+                  nir->info.fs.uses_sample_shading = true;
+
+               if (var->data.mode == nir_var_shader_in && var->data.sample)
+                  nir->info.fs.uses_sample_shading = true;
+
+               if (var->data.mode == nir_var_shader_out &&
+                   var->data.fb_fetch_output)
+                  nir->info.fs.uses_sample_shading = true;
+            }
+         }
       }
    }
+
+   if (!gl_nir_link_uniform_blocks(consts, prog))
+      return false;
 
    if (!gl_nir_link_uniforms(consts, prog, true))
       return false;

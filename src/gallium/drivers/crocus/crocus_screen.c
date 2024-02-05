@@ -724,7 +724,7 @@ crocus_screen_create(int fd, const struct pipe_screen_config *config)
    if (!screen)
       return NULL;
 
-   if (!intel_get_device_info_from_fd(fd, &screen->devinfo))
+   if (!intel_get_device_info_from_fd(fd, &screen->devinfo, 4, 8))
       return NULL;
    screen->pci_id = screen->devinfo.pci_device_id;
 

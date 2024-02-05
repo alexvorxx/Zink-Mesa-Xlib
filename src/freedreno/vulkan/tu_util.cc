@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stdarg.h>
 
+#include "common/freedreno_rd_output.h"
 #include "util/u_math.h"
 #include "util/timespec.h"
 #include "vk_enum_to_str.h"
@@ -54,11 +55,19 @@ tu_env_init_once(void)
 
    if (TU_DEBUG(STARTUP))
       mesa_logi("TU_DEBUG=0x%x", tu_env.debug);
+
+   /* TU_DEBUG=rd functionality was moved to fd_rd_output. This debug option
+    * should translate to the basic-level FD_RD_DUMP_ENABLE option.
+    */
+   if (TU_DEBUG(RD))
+      fd_rd_dump_env.flags |= FD_RD_DUMP_ENABLE;
 }
 
 void
 tu_env_init(void)
 {
+   fd_rd_dump_env_init();
+
    static once_flag once = ONCE_FLAG_INIT;
    call_once(&once, tu_env_init_once);
 }
@@ -79,7 +88,6 @@ void PRINTFLIKE(3, 4)
 VkResult
 __vk_startup_errorf(struct tu_instance *instance,
                     VkResult error,
-                    bool always_print,
                     const char *file,
                     int line,
                     const char *format,
@@ -89,11 +97,6 @@ __vk_startup_errorf(struct tu_instance *instance,
    char buffer[256];
 
    const char *error_str = vk_Result_to_str(error);
-
-#ifndef DEBUG
-   if (!always_print)
-      return error;
-#endif
 
    if (format) {
       va_start(ap, format);

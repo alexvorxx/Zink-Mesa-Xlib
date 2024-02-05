@@ -146,6 +146,9 @@ disk_cache_type_create(const char *gpu_name,
          goto path_fail;
    }
 
+   if (!getenv("MESA_SHADER_CACHE_DIR") && !getenv("MESA_GLSL_CACHE_DIR"))
+      disk_cache_touch_cache_user_marker(cache->path);
+
    cache->type = cache_type;
 
    cache->stats.enabled = debug_get_bool_option("MESA_SHADER_CACHE_SHOW_STATS",
@@ -442,7 +445,7 @@ cache_put(void *job, void *gdata, int thread_index)
          goto done;
 
       /* If the cache is too large, evict something else first. */
-      while (*dc_job->cache->size + dc_job->size > dc_job->cache->max_size &&
+      while (p_atomic_read_relaxed(&dc_job->cache->size->value) + dc_job->size > dc_job->cache->max_size &&
              i < 8) {
          disk_cache_evict_lru_item(dc_job->cache);
          i++;

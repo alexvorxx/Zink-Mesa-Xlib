@@ -369,6 +369,7 @@ fs_generator::fire_fb_write(fs_inst *inst,
       brw_set_default_exec_size(p, BRW_EXECUTE_8);
       brw_set_default_mask_control(p, BRW_MASK_DISABLE);
       brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+      brw_set_default_flag_reg(p, 0, 0);
       brw_set_default_compression_control(p, BRW_COMPRESSION_NONE);
       brw_MOV(p, offset(retype(payload, BRW_REGISTER_TYPE_UD), 1),
               offset(retype(implied_header, BRW_REGISTER_TYPE_UD), 1));
@@ -1606,11 +1607,25 @@ fs_generator::enable_debug(const char *shader_name)
    this->shader_name = shader_name;
 }
 
+static gfx12_systolic_depth
+translate_systolic_depth(unsigned d)
+{
+   /* Could also return (ffs(d) - 1) & 3. */
+   switch (d) {
+   case 2:  return BRW_SYSTOLIC_DEPTH_2;
+   case 4:  return BRW_SYSTOLIC_DEPTH_4;
+   case 8:  return BRW_SYSTOLIC_DEPTH_8;
+   case 16: return BRW_SYSTOLIC_DEPTH_16;
+   default: unreachable("Invalid systolic depth.");
+   }
+}
+
 int
 fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                             struct shader_stats shader_stats,
                             const brw::performance &perf,
-                            struct brw_compile_stats *stats)
+                            struct brw_compile_stats *stats,
+                            unsigned max_polygons)
 {
    /* align to 64 byte boundary. */
    brw_realign(p, 64);
@@ -1665,8 +1680,10 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       if (inst->eot && is_accum_used &&
           intel_needs_workaround(devinfo, 14010017096)) {
          brw_set_default_exec_size(p, BRW_EXECUTE_16);
+         brw_set_default_group(p, 0);
          brw_set_default_mask_control(p, BRW_MASK_DISABLE);
          brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+         brw_set_default_flag_reg(p, 0, 0);
          brw_set_default_swsb(p, tgl_swsb_src_dep(swsb));
          brw_MOV(p, brw_acc_reg(8), brw_imm_f(0.0f));
          last_insn_offset = p->next_insn_offset;
@@ -1687,6 +1704,7 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
             brw_set_default_exec_size(p, BRW_EXECUTE_1);
             brw_set_default_mask_control(p, BRW_MASK_DISABLE);
             brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+            brw_set_default_flag_reg(p, 0, 0);
             brw_set_default_swsb(p, tgl_swsb_src_dep(swsb));
             brw_SYNC(p, TGL_SYNC_NOP);
             last_insn_offset = p->next_insn_offset;
@@ -1714,7 +1732,17 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       const bool compressed =
            inst->dst.component_size(inst->exec_size) > REG_SIZE;
       brw_set_default_compression(p, compressed);
-      brw_set_default_group(p, inst->group);
+
+      if ((devinfo->ver >= 20 || devinfo->ver < 7) && inst->group % 8 != 0) {
+         assert(inst->force_writemask_all);
+         assert(!inst->predicate && !inst->conditional_mod);
+         assert(!inst->writes_accumulator_implicitly(devinfo) &&
+                !inst->reads_accumulator_implicitly());
+         assert(inst->opcode != SHADER_OPCODE_SEL_EXEC);
+         brw_set_default_group(p, 0);
+      } else {
+         brw_set_default_group(p, inst->group);
+      }
 
       for (unsigned int i = 0; i < inst->sources; i++) {
          src[i] = brw_reg_from_fs_reg(devinfo, inst,
@@ -1744,7 +1772,14 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       brw_set_default_flag_reg(p, flag_subreg / 2, flag_subreg % 2);
       brw_set_default_saturate(p, inst->saturate);
       brw_set_default_mask_control(p, inst->force_writemask_all);
-      brw_set_default_acc_write_control(p, inst->writes_accumulator);
+      if (devinfo->ver >= 20 && inst->writes_accumulator) {
+         assert(inst->dst.is_accumulator() ||
+                inst->opcode == BRW_OPCODE_ADDC ||
+                inst->opcode == BRW_OPCODE_MACH ||
+                inst->opcode == BRW_OPCODE_SUBB);
+      } else {
+         brw_set_default_acc_write_control(p, inst->writes_accumulator);
+      }
       brw_set_default_swsb(p, swsb);
 
       unsigned exec_size = inst->exec_size;
@@ -1788,6 +1823,12 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
 
       case BRW_OPCODE_LINE:
          brw_LINE(p, dst, src[0], src[1]);
+         break;
+
+      case BRW_OPCODE_DPAS:
+         assert(devinfo->verx10 >= 125);
+         brw_DPAS(p, translate_systolic_depth(inst->sdepth), inst->rcount,
+                  dst, src[0], src[1], src[2]);
          break;
 
       case BRW_OPCODE_MAD:
@@ -2380,14 +2421,21 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
    brw_compact_instructions(p, start_offset, disasm_info);
    int after_size = p->next_insn_offset - start_offset;
 
-   if (unlikely(debug_flag)) {
-      unsigned char sha1[21];
-      char sha1buf[41];
+   bool dump_shader_bin = brw_should_dump_shader_bin();
+   unsigned char sha1[21];
+   char sha1buf[41];
 
+   if (unlikely(debug_flag || dump_shader_bin)) {
       _mesa_sha1_compute(p->store + start_offset / sizeof(brw_inst),
                          after_size, sha1);
       _mesa_sha1_format(sha1buf, sha1);
+   }
 
+   if (unlikely(dump_shader_bin))
+      brw_dump_shader_bin(p->store, start_offset, p->next_insn_offset,
+                          sha1buf);
+
+   if (unlikely(debug_flag)) {
       fprintf(stderr, "Native code for %s (src_hash 0x%08x) (sha1 %s)\n"
               "SIMD%d shader: %d instructions. %d loops. %u cycles. "
               "%d:%d spills:fills, %u sends, "
@@ -2439,6 +2487,7 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                         before_size, after_size);
    if (stats) {
       stats->dispatch_width = dispatch_width;
+      stats->max_polygons = max_polygons;
       stats->max_dispatch_width = dispatch_width;
       stats->instructions = before_size / 16 - nop_count;
       stats->sends = send_count;

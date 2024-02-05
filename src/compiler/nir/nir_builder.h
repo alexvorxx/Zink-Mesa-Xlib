@@ -1004,7 +1004,7 @@ nir_udiv_imm(nir_builder *build, nir_def *x, uint64_t y)
 
    if (y == 1) {
       return x;
-   } else if (util_is_power_of_two_nonzero(y)) {
+   } else if (util_is_power_of_two_nonzero64(y)) {
       return nir_ushr_imm(build, x, ffsll(y) - 1);
    } else {
       return nir_udiv(build, x, nir_imm_intN_t(build, y, x->bit_size));
@@ -1016,7 +1016,7 @@ nir_umod_imm(nir_builder *build, nir_def *x, uint64_t y)
 {
    assert(y > 0 && y <= u_uintN_max(x->bit_size));
 
-   if (util_is_power_of_two_nonzero(y)) {
+   if (util_is_power_of_two_nonzero64(y)) {
       return nir_iand_imm(build, x, y - 1);
    } else {
       return nir_umod(build, x, nir_imm_intN_t(build, y, x->bit_size));
@@ -1122,8 +1122,13 @@ nir_pack_bits(nir_builder *b, nir_def *src, unsigned dest_bit_size)
       break;
 
    case 32:
-      if (src->bit_size == 16)
-         return nir_pack_32_2x16(b, src);
+      switch (src->bit_size) {
+      case 32: return src;
+      case 16: return nir_pack_32_2x16(b, src);
+      case 8: return nir_pack_32_4x8(b, src);
+      default: break;
+      }
+
       break;
 
    default:
@@ -1144,7 +1149,7 @@ static inline nir_def *
 nir_unpack_bits(nir_builder *b, nir_def *src, unsigned dest_bit_size)
 {
    assert(src->num_components == 1);
-   assert(src->bit_size > dest_bit_size);
+   assert(src->bit_size >= dest_bit_size);
    const unsigned dest_num_components = src->bit_size / dest_bit_size;
    assert(dest_num_components <= NIR_MAX_VEC_COMPONENTS);
 
@@ -1161,8 +1166,13 @@ nir_unpack_bits(nir_builder *b, nir_def *src, unsigned dest_bit_size)
       break;
 
    case 32:
-      if (dest_bit_size == 16)
-         return nir_unpack_32_2x16(b, src);
+      switch (dest_bit_size) {
+      case 32: return src;
+      case 16: return nir_unpack_32_2x16(b, src);
+      case 8: return nir_unpack_32_4x8(b, src);
+      default: break;
+      }
+
       break;
 
    default:
@@ -1594,6 +1604,7 @@ nir_build_deref_follower(nir_builder *b, nir_deref_instr *parent,
    default:
       unreachable("Invalid deref instruction type");
    }
+   return NULL;
 }
 
 static inline nir_def *
@@ -1628,6 +1639,37 @@ nir_store_deref(nir_builder *build, nir_deref_instr *deref,
 {
    nir_store_deref_with_access(build, deref, value, writemask,
                                (enum gl_access_qualifier)0);
+}
+
+static inline void
+nir_build_write_masked_store(nir_builder *b, nir_deref_instr *vec_deref,
+                             nir_def *value, unsigned component)
+{
+   assert(value->num_components == 1);
+   unsigned num_components = glsl_get_components(vec_deref->type);
+   assert(num_components > 1 && num_components <= NIR_MAX_VEC_COMPONENTS);
+
+   nir_def *vec =
+      nir_vector_insert_imm(b, nir_undef(b, num_components, value->bit_size),
+                            value, component);
+   nir_store_deref(b, vec_deref, vec, (1u << component));
+}
+
+static inline void
+nir_build_write_masked_stores(nir_builder *b, nir_deref_instr *vec_deref,
+                              nir_def *value, nir_def *index,
+                              unsigned start, unsigned end)
+{
+   if (start == end - 1) {
+      nir_build_write_masked_store(b, vec_deref, value, start);
+   } else {
+      unsigned mid = start + (end - start) / 2;
+      nir_push_if(b, nir_ilt_imm(b, index, mid));
+      nir_build_write_masked_stores(b, vec_deref, value, index, start, mid);
+      nir_push_else(b, NULL);
+      nir_build_write_masked_stores(b, vec_deref, value, index, mid, end);
+      nir_pop_if(b, NULL);
+   }
 }
 
 static inline void

@@ -14,6 +14,85 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Set NIR options shared by ACO, LLVM, RADV, and radeonsi. */
+void ac_set_nir_options(struct radeon_info *info, bool use_llvm,
+                        nir_shader_compiler_options *options)
+{
+   /*        |---------------------------------- Performance & Availability --------------------------------|
+    *        |MAD/MAC/MADAK/MADMK|MAD_LEGACY|MAC_LEGACY|    FMA     |FMAC/FMAAK/FMAMK|FMA_LEGACY|PK_FMA_F16,|Best choice
+    * Arch   |    F32,F16,F64    | F32,F16  | F32,F16  |F32,F16,F64 |    F32,F16     |   F32    |PK_FMAC_F16|F16,F32,F64
+    * ------------------------------------------------------------------------------------------------------------------
+    * gfx6,7 |     1 , - , -     |  1 , -   |  1 , -   |1/4, - ,1/16|     - , -      |    -     |   - , -   | - ,MAD,FMA
+    * gfx8   |     1 , 1 , -     |  1 , -   |  - , -   |1/4, 1 ,1/16|     - , -      |    -     |   - , -   |MAD,MAD,FMA
+    * gfx9   |     1 ,1|0, -     |  1 , -   |  - , -   | 1 , 1 ,1/16|    0|1, -      |    -     |   2 , -   |FMA,MAD,FMA
+    * gfx10  |     1 , - , -     |  1 , -   |  1 , -   | 1 , 1 ,1/16|     1 , 1      |    -     |   2 , 2   |FMA,MAD,FMA
+    * gfx10.3|     - , - , -     |  - , -   |  - , -   | 1 , 1 ,1/16|     1 , 1      |    1     |   2 , 2   |  all FMA
+    * gfx11  |     - , - , -     |  - , -   |  - , -   | 2 , 2 ,1/16|     2 , 2      |    2     |   2 , 2   |  all FMA
+    *
+    * Tahiti, Hawaii, Carrizo, Vega20: FMA_F32 is full rate, FMA_F64 is 1/4
+    * gfx9 supports MAD_F16 only on Vega10, Raven, Raven2, Renoir.
+    * gfx9 supports FMAC_F32 only on Vega20, but doesn't support FMAAK and FMAMK.
+    *
+    * gfx8 prefers MAD for F16 because of MAC/MADAK/MADMK.
+    * gfx9 and newer prefer FMA for F16 because of the packed instruction.
+    * gfx10 and older prefer MAD for F32 because of the legacy instruction.
+    */
+
+   memset(options, 0, sizeof(*options));
+   options->vertex_id_zero_based = true;
+   options->lower_scmp = true;
+   options->lower_flrp16 = true;
+   options->lower_flrp32 = true;
+   options->lower_flrp64 = true;
+   options->lower_device_index_to_zero = true;
+   options->lower_fdiv = true;
+   options->lower_fmod = true;
+   options->lower_ineg = true;
+   options->lower_bitfield_insert = true;
+   options->lower_bitfield_extract = true;
+   options->lower_pack_snorm_4x8 = true;
+   options->lower_pack_unorm_4x8 = true;
+   options->lower_pack_half_2x16 = true;
+   options->lower_pack_64_2x32 = true;
+   options->lower_pack_64_4x16 = true;
+   options->lower_pack_32_2x16 = true;
+   options->lower_unpack_snorm_2x16 = true;
+   options->lower_unpack_snorm_4x8 = true;
+   options->lower_unpack_unorm_2x16 = true;
+   options->lower_unpack_unorm_4x8 = true;
+   options->lower_unpack_half_2x16 = true;
+   options->lower_fpow = true;
+   options->lower_mul_2x32_64 = true;
+   options->lower_iadd_sat = info->gfx_level <= GFX8;
+   options->lower_hadd = true;
+   options->lower_mul_32x16 = true;
+   options->has_bfe = true;
+   options->has_bfm = true;
+   options->has_bitfield_select = true;
+   options->has_fsub = true;
+   options->has_isub = true;
+   options->has_sdot_4x8 = info->has_accelerated_dot_product;
+   options->has_sudot_4x8 = info->has_accelerated_dot_product && info->gfx_level >= GFX11;
+   options->has_udot_4x8 = info->has_accelerated_dot_product;
+   options->has_sdot_4x8_sat = info->has_accelerated_dot_product;
+   options->has_sudot_4x8_sat = info->has_accelerated_dot_product && info->gfx_level >= GFX11;
+   options->has_udot_4x8_sat = info->has_accelerated_dot_product;
+   options->has_dot_2x16 = info->has_accelerated_dot_product && info->gfx_level < GFX11;
+   options->has_find_msb_rev = true;
+   options->has_pack_half_2x16_rtz = true;
+   options->has_bit_test = !use_llvm;
+   options->has_fmulz = true;
+   options->has_msad = true;
+   options->use_interpolated_input_intrinsics = true;
+   options->lower_int64_options = nir_lower_imul64 | nir_lower_imul_high64 | nir_lower_imul_2x32_64 | nir_lower_divmod64 |
+                                  nir_lower_minmax64 | nir_lower_iabs64 | nir_lower_iadd_sat64 | nir_lower_conv64;
+   options->divergence_analysis_options = nir_divergence_view_index_uniform;
+   options->optimize_quad_vote_to_reduce = true;
+   options->lower_fisnormal = true;
+   options->support_16bit_alu = info->gfx_level >= GFX8;
+   options->vectorize_vec2_16bit = info->has_packed_math_16bit;
+}
+
 unsigned ac_get_spi_shader_z_format(bool writes_z, bool writes_stencil, bool writes_samplemask,
                                     bool writes_mrt0_alpha)
 {
@@ -620,10 +699,10 @@ enum ac_image_dim ac_get_image_dim(enum amd_gfx_level gfx_level, enum glsl_sampl
 }
 
 unsigned ac_get_fs_input_vgpr_cnt(const struct ac_shader_config *config,
-                                  uint8_t *num_pos_inputs)
+                                  uint8_t *num_fragcoord_components)
 {
    unsigned num_input_vgprs = 0;
-   unsigned pos_inputs = 0;
+   unsigned fragcoord_components = 0;
 
    if (G_0286CC_PERSP_SAMPLE_ENA(config->spi_ps_input_addr))
       num_input_vgprs += 2;
@@ -643,19 +722,19 @@ unsigned ac_get_fs_input_vgpr_cnt(const struct ac_shader_config *config,
       num_input_vgprs += 1;
    if (G_0286CC_POS_X_FLOAT_ENA(config->spi_ps_input_addr)) {
       num_input_vgprs += 1;
-      pos_inputs++;
+      fragcoord_components++;
    }
    if (G_0286CC_POS_Y_FLOAT_ENA(config->spi_ps_input_addr)) {
       num_input_vgprs += 1;
-      pos_inputs++;
+      fragcoord_components++;
    }
    if (G_0286CC_POS_Z_FLOAT_ENA(config->spi_ps_input_addr)) {
       num_input_vgprs += 1;
-      pos_inputs++;
+      fragcoord_components++;
    }
    if (G_0286CC_POS_W_FLOAT_ENA(config->spi_ps_input_addr)) {
       num_input_vgprs += 1;
-      pos_inputs++;
+      fragcoord_components++;
    }
    if (G_0286CC_FRONT_FACE_ENA(config->spi_ps_input_addr))
       num_input_vgprs += 1;
@@ -666,8 +745,8 @@ unsigned ac_get_fs_input_vgpr_cnt(const struct ac_shader_config *config,
    if (G_0286CC_POS_FIXED_PT_ENA(config->spi_ps_input_addr))
       num_input_vgprs += 1;
 
-   if (num_pos_inputs)
-      *num_pos_inputs = pos_inputs;
+   if (num_fragcoord_components)
+      *num_fragcoord_components = fragcoord_components;
 
    return num_input_vgprs;
 }

@@ -45,7 +45,9 @@ radeonsi-stoney-traces:x86_64:
     - .radeonsi-stoney-test:x86_64
   variables:
     EGL_PLATFORM: surfaceless
+    PIGLIT_TRACES_FILE: traces-amd.yml
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
+    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 radv-raven-vkcts:x86_64:
   extends:
@@ -155,6 +157,7 @@ radeonsi-raven-va-full:x86_64:
     B2C_TIMEOUT_OVERALL_MINUTES: 240
     B2C_TIMEOUT_BOOT_RETRIES: 0
   tags:
+    - farm:$RUNNER_FARM_LOCATION
     - amdgpu:codename:STONEY
 
 vkcts-polaris10-valve:
@@ -167,6 +170,7 @@ vkcts-polaris10-valve:
     GPU_VERSION: radv-polaris10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
+    RADV_PERFTEST: shader_object
 
 vkcts-vega10-valve:
   extends:

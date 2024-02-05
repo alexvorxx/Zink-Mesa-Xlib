@@ -193,6 +193,7 @@ static const struct opc_info {
    OPC(1, OPC_READ_FIRST_MACRO, read_first.macro),
    OPC(1, OPC_SWZ_SHARED_MACRO, swz_shared.macro),
    OPC(1, OPC_SCAN_MACRO, scan.macro),
+   OPC(1, OPC_SCAN_CLUSTERS_MACRO, scan_clusters.macro),
    OPC(1, OPC_SHPS_MACRO, shps.macro),
    OPC(1, OPC_PUSH_CONSTS_LOAD_MACRO, push_consts_load.macro),
 

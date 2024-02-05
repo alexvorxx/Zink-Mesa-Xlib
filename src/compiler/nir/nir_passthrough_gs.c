@@ -21,12 +21,13 @@
  * SOFTWARE.
  */
 
+#include "util/ralloc.h"
 #include "util/u_memory.h"
 #include "nir.h"
 #include "nir_builder.h"
 #include "nir_xfb_info.h"
 
-static unsigned int
+static enum mesa_prim
 gs_in_prim_for_topology(enum mesa_prim prim)
 {
    switch (prim) {
@@ -145,7 +146,9 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
    nir->info.has_transform_feedback_varyings = prev_stage->info.has_transform_feedback_varyings;
    memcpy(nir->info.xfb_stride, prev_stage->info.xfb_stride, sizeof(prev_stage->info.xfb_stride));
    if (prev_stage->xfb_info) {
-      nir->xfb_info = mem_dup(prev_stage->xfb_info, nir_xfb_info_size(prev_stage->xfb_info->output_count));
+      size_t size = nir_xfb_info_size(prev_stage->xfb_info->output_count);
+      nir->xfb_info = ralloc_size(nir, size);
+      memcpy(nir->xfb_info, prev_stage->xfb_info, size);
    }
 
    bool handle_flat = output_lines && nir->info.gs.output_primitive != gs_out_prim_for_topology(primitive_type);
@@ -226,7 +229,7 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
    for (unsigned i = start_vert; i < end_vert || needs_closing; i += vert_step) {
       int idx = i < end_vert ? i : start_vert;
       /* Copy inputs to outputs. */
-      for (unsigned j = 0, oj = 0, of = 0; j < num_inputs; ++j) {
+      for (unsigned j = 0, oj = 0; j < num_inputs; ++j) {
          if (in_vars[j]->data.location == VARYING_SLOT_EDGE) {
             continue;
          }
@@ -235,7 +238,7 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
          if (in_vars[j]->data.location == VARYING_SLOT_POS || !handle_flat)
             index = nir_imm_int(&b, idx);
          else {
-            unsigned mask = 1u << (of++);
+            uint64_t mask = BITFIELD64_BIT(in_vars[j]->data.location);
             index = nir_bcsel(&b, nir_ieq_imm(&b, nir_iand_imm(&b, flat_interp_mask_def, mask), 0), nir_imm_int(&b, idx), pv_vert_index);
          }
          nir_deref_instr *value = nir_build_deref_array(&b, nir_build_deref_var(&b, in_vars[j]), index);

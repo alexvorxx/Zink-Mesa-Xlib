@@ -127,8 +127,6 @@ static_assert(alignof(struct MKSGuestStatInfoEntry) == 32, "");
 
 static thread_local struct svga_winsys_stats_timeframe *mksstat_tls_global = NULL;
 
-#define ALIGN(x, power_of_two) (((x) + (power_of_two) - 1) & ~((power_of_two) - 1))
-
 static const size_t mksstat_area_size_info = sizeof(MKSGuestStatInfoEntry) * (SVGA_STATS_COUNT_MAX + SVGA_STATS_TIME_MAX);
 static const size_t mksstat_area_size_stat = sizeof(MKSGuestStatCounter) * SVGA_STATS_COUNT_MAX +
                                              sizeof(MKSGuestStatCounterTime) * SVGA_STATS_TIME_MAX;
@@ -137,8 +135,8 @@ size_t
 vmw_svga_winsys_stats_len(void)
 {
    const size_t pg_size = getpagesize();
-   const size_t area_size_stat_pg = ALIGN(mksstat_area_size_stat, pg_size);
-   const size_t area_size_info_pg = ALIGN(mksstat_area_size_info, pg_size);
+   const size_t area_size_stat_pg = align_uintptr(mksstat_area_size_stat, pg_size);
+   const size_t area_size_info_pg = align_uintptr(mksstat_area_size_info, pg_size);
    const size_t area_size_strs = vmw_svga_winsys_stats_names_len();
    const size_t area_size = area_size_stat_pg + area_size_info_pg + area_size_strs;
 
@@ -187,7 +185,7 @@ vmw_mksstat_get_pstat_time(uint8_t *page_addr, size_t page_size)
 static inline MKSGuestStatInfoEntry *
 vmw_mksstat_get_pinfo(uint8_t *page_addr, size_t page_size)
 {
-   const size_t area_size_stat_pg = ALIGN(mksstat_area_size_stat, page_size);
+   const size_t area_size_stat_pg = align_uintptr(mksstat_area_size_stat, page_size);
    return (MKSGuestStatInfoEntry *)(page_addr + area_size_stat_pg);
 }
 
@@ -203,8 +201,8 @@ vmw_mksstat_get_pinfo(uint8_t *page_addr, size_t page_size)
 static inline char *
 vmw_mksstat_get_pstrs(uint8_t *page_addr, const size_t page_size)
 {
-   const size_t area_size_info_pg = ALIGN(mksstat_area_size_info, page_size);
-   const size_t area_size_stat_pg = ALIGN(mksstat_area_size_stat, page_size);
+   const size_t area_size_info_pg = align_uintptr(mksstat_area_size_info, page_size);
+   const size_t area_size_stat_pg = align_uintptr(mksstat_area_size_stat, page_size);
    return (char *)(page_addr + area_size_info_pg + area_size_stat_pg);
 }
 

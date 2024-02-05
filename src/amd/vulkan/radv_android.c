@@ -21,7 +21,9 @@
  * IN THE SOFTWARE.
  */
 
-#ifdef ANDROID
+#include "radv_private.h"
+
+#if DETECT_OS_ANDROID
 #include <libsync.h>
 #include <hardware/gralloc.h>
 #include <hardware/hardware.h>
@@ -32,15 +34,14 @@
 #if ANDROID_API_LEVEL >= 26
 #include <hardware/gralloc1.h>
 #endif
-#endif
+#endif /* DETECT_OS_ANDROID */
 
 #include "util/os_file.h"
 
-#include "radv_private.h"
 #include "vk_android.h"
 #include "vk_util.h"
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
 
 static int radv_hal_open(const struct hw_module_t *mod, const char *id, struct hw_device_t **dev);
 static int radv_hal_close(struct hw_device_t *dev);
@@ -366,7 +367,7 @@ radv_GetSwapchainGrallocUsage2ANDROID(VkDevice device_h, VkFormat format, VkImag
    return VK_ERROR_FORMAT_NOT_SUPPORTED;
 #endif
 }
-#endif
+#endif /* DETECT_OS_ANDROID */
 
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
 

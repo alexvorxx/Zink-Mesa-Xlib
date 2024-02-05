@@ -809,11 +809,13 @@ static int gfx6_compute_level(ADDR_HANDLE addrlib, const struct ac_surf_config *
       surf_level->mode = RADEON_SURF_MODE_LINEAR_ALIGNED;
       break;
    case ADDR_TM_1D_TILED_THIN1:
+   case ADDR_TM_1D_TILED_THICK:
    case ADDR_TM_PRT_TILED_THIN1:
       surf_level->mode = RADEON_SURF_MODE_1D;
       break;
    case ADDR_TM_2D_TILED_THIN1:
    case ADDR_TM_PRT_2D_TILED_THIN1:
+   case ADDR_TM_PRT_TILED_THICK:
       surf_level->mode = RADEON_SURF_MODE_2D;
       break;
    default:
@@ -1170,9 +1172,13 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib, const struct radeon_info *i
          AddrSurfInfoIn.tileMode = ADDR_TM_1D_TILED_THIN1;
       break;
    case RADEON_SURF_MODE_2D:
-      if (surf->flags & RADEON_SURF_PRT)
-         AddrSurfInfoIn.tileMode = ADDR_TM_PRT_2D_TILED_THIN1;
-      else
+      if (surf->flags & RADEON_SURF_PRT) {
+         if (config->is_3d && surf->bpe < 8) {
+            AddrSurfInfoIn.tileMode = ADDR_TM_PRT_2D_TILED_THICK;
+         } else {
+            AddrSurfInfoIn.tileMode = ADDR_TM_PRT_2D_TILED_THIN1;
+         }
+      } else
          AddrSurfInfoIn.tileMode = ADDR_TM_2D_TILED_THIN1;
       break;
    default:
@@ -1877,20 +1883,18 @@ static int gfx9_compute_miptree(struct ac_addrlib *addrlib, const struct radeon_
       util_next_power_of_two(LINEAR_PITCH_ALIGNMENT / surf->bpe);
 
    if (!compressed && surf->blk_w > 1 && out.pitch == out.pixelPitch &&
-       surf->u.gfx9.swizzle_mode == ADDR_SW_LINEAR) {
-      /* Adjust surf_pitch to be in elements units not in pixels */
+       surf->u.gfx9.swizzle_mode == ADDR_SW_LINEAR &&
+       in->numMipLevels == 1) {
+      /* Divide surf_pitch (= pitch in pixels) by blk_w to get a
+       * pitch in elements instead because that's what the hardware needs
+       * in resource descriptors.
+       * See the comment in si_descriptors.c.
+       */
       surf->u.gfx9.surf_pitch = align(surf->u.gfx9.surf_pitch / surf->blk_w,
                                       linear_alignment);
-      surf->u.gfx9.epitch =
-         MAX2(surf->u.gfx9.epitch, surf->u.gfx9.surf_pitch * surf->blk_w - 1);
-      /* The surface is really a surf->bpe bytes per pixel surface even if we
-       * use it as a surf->bpe bytes per element one.
-       * Adjust surf_slice_size and surf_size to reflect the change
-       * made to surf_pitch.
-       */
-      surf->u.gfx9.surf_slice_size =
-         MAX2(surf->u.gfx9.surf_slice_size,
-              (uint64_t)surf->u.gfx9.surf_pitch * out.height * surf->bpe * surf->blk_w);
+      surf->u.gfx9.epitch = surf->u.gfx9.surf_pitch - 1;
+       /* Adjust surf_slice_size and surf_size to reflect the change made to surf_pitch. */
+      surf->u.gfx9.surf_slice_size = (uint64_t)surf->u.gfx9.surf_pitch * out.height * surf->bpe;
       surf->surf_size = surf->u.gfx9.surf_slice_size * in->numSlices;
 
       for (unsigned i = 0; i < in->numMipLevels; i++) {
@@ -3093,8 +3097,9 @@ bool ac_surface_override_offset_stride(const struct radeon_info *info, struct ra
             surf->total_size = surf->surf_size = surf->u.gfx9.surf_slice_size * slices;
          }
       }
+
       surf->u.gfx9.surf_offset = offset;
-      if (surf->u.gfx9.zs.stencil_offset)
+      if (surf->has_stencil)
          surf->u.gfx9.zs.stencil_offset += offset;
    } else {
       if (pitch) {

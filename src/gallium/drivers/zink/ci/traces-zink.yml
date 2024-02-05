@@ -22,11 +22,6 @@ traces:
       label: [skip, broken, flakes]
       checksum: 9b5090a236350f04cb2a61c5f0c0fe0f
       text: https://gitlab.freedesktop.org/mesa/mesa/-/issues/8986
-  freedoom/freedoom-phase2-gl-high.trace:
-    gl-zink-anv-tgl:
-      label: [skip]
-      text: "Fails on CI as well as when run locally"
-      checksum: 288b762ac80ed76e18f848649a618be1
   glxgears/glxgears-2-v2.trace:
     gl-zink-anv-tgl:
       checksum: f53ac20e17da91c0359c31f2fa3f401e
@@ -35,7 +30,7 @@ traces:
       checksum: 433b69bea68cfe81914b857bbdc60ea5
   gputest/pixmark-piano-v2.trace:
     gl-zink-anv-tgl:
-      checksum: dcedec0979e2317e7c8277e463fb8f63
+      checksum: 4c7afcce5d87ec2bced65e92a1c9a41c
   gputest/triangle-v2.trace:
     gl-zink-anv-tgl:
       checksum: 5f694874b15bcd7a3689b387c143590b

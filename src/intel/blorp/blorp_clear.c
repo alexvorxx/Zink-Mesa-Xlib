@@ -755,13 +755,13 @@ blorp_clear_stencil_as_rgba(struct blorp_batch *batch,
 {
    assert((batch->flags & BLORP_BATCH_USE_COMPUTE) == 0);
 
+   /* Stencil mask support would require piles of shader magic */
+   if (stencil_mask != 0xff)
+      return false;
+
    /* We only support separate W-tiled stencil for now */
    if (surf->surf->format != ISL_FORMAT_R8_UINT ||
        surf->surf->tiling != ISL_TILING_W)
-      return false;
-
-   /* Stencil mask support would require piles of shader magic */
-   if (stencil_mask != 0xff)
       return false;
 
    if (surf->surf->samples > 1) {

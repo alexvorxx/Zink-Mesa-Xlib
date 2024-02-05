@@ -335,7 +335,14 @@ typedef enum ir3_instruction_flags {
     * before register assignment is done:
     */
    IR3_INSTR_MARK = BIT(15),
-   IR3_INSTR_UNUSED = BIT(16),
+
+   /* Used by shared register allocation when creating spill/reload instructions
+    * to inform validation that this is created by RA. This also may be set on
+    * an instruction where a spill has been folded into it.
+    */
+   IR3_INSTR_SHARED_SPILL = IR3_INSTR_MARK,
+
+   IR3_INSTR_UNUSED = BIT(17),
 } ir3_instruction_flags;
 
 struct ir3_instruction {
@@ -612,11 +619,12 @@ struct ir3_array {
 struct ir3_array *ir3_lookup_array(struct ir3 *ir, unsigned id);
 
 enum ir3_branch_type {
-   IR3_BRANCH_COND,   /* condition */
-   IR3_BRANCH_ANY,    /* subgroupAny(condition) */
-   IR3_BRANCH_ALL,    /* subgroupAll(condition) */
-   IR3_BRANCH_GETONE, /* subgroupElect() */
-   IR3_BRANCH_SHPS,   /* preamble start */
+   IR3_BRANCH_COND,    /* condition */
+   IR3_BRANCH_ANY,     /* subgroupAny(condition) */
+   IR3_BRANCH_ALL,     /* subgroupAll(condition) */
+   IR3_BRANCH_GETONE,  /* subgroupElect() */
+   IR3_BRANCH_GETLAST, /* getlast.w8 */
+   IR3_BRANCH_SHPS,    /* preamble start */
 };
 
 struct ir3_block {
@@ -646,12 +654,14 @@ struct ir3_block {
     */
    struct ir3_instruction *condition;
    struct ir3_block *successors[2];
-   struct ir3_block *physical_successors[2];
 
    DECLARE_ARRAY(struct ir3_block *, predecessors);
    DECLARE_ARRAY(struct ir3_block *, physical_predecessors);
+   DECLARE_ARRAY(struct ir3_block *, physical_successors);
 
    uint16_t start_ip, end_ip;
+
+   bool reconvergence_point;
 
    /* Track instructions which do not write a register but other-
     * wise must not be discarded (such as kill, stg, etc)
@@ -715,12 +725,9 @@ ir3_after_preamble(struct ir3 *ir)
 }
 
 void ir3_block_add_predecessor(struct ir3_block *block, struct ir3_block *pred);
-void ir3_block_add_physical_predecessor(struct ir3_block *block,
-                                        struct ir3_block *pred);
+void ir3_block_link_physical(struct ir3_block *pred, struct ir3_block *succ);
 void ir3_block_remove_predecessor(struct ir3_block *block,
                                   struct ir3_block *pred);
-void ir3_block_remove_physical_predecessor(struct ir3_block *block,
-                                           struct ir3_block *pred);
 unsigned ir3_block_get_pred_index(struct ir3_block *block,
                                   struct ir3_block *pred);
 
@@ -992,6 +999,21 @@ static inline bool
 is_tex(struct ir3_instruction *instr)
 {
    return (opc_cat(instr->opc) == 5) && instr->opc != OPC_TCINV;
+}
+
+static inline bool
+is_tex_shuffle(struct ir3_instruction *instr)
+{
+   switch (instr->opc) {
+   case OPC_BRCST_ACTIVE:
+   case OPC_QUAD_SHUFFLE_BRCST:
+   case OPC_QUAD_SHUFFLE_HORIZ:
+   case OPC_QUAD_SHUFFLE_VERT:
+   case OPC_QUAD_SHUFFLE_DIAG:
+      return true;
+   default:
+      return false;
+   }
 }
 
 static inline bool
@@ -1920,9 +1942,11 @@ soft_sy_delay(struct ir3_instruction *instr, struct ir3 *shader)
    }
 }
 
-
 /* unreachable block elimination: */
 bool ir3_remove_unreachable(struct ir3 *ir);
+
+/* calculate reconvergence information: */
+void ir3_calc_reconvergence(struct ir3_shader_variant *so);
 
 /* dead code elimination: */
 struct ir3_shader_variant;
@@ -2305,6 +2329,7 @@ INSTR1NODST(PREDT)
 INSTR0(PREDF)
 INSTR0(PREDE)
 INSTR0(GETONE)
+INSTR0(GETLAST)
 INSTR0(SHPS)
 INSTR0(SHPE)
 
@@ -2456,6 +2481,26 @@ ir3_SAM(struct ir3_block *block, opc_t opc, type_t type, unsigned wrmask,
    sam->cat5.type = type;
 
    return sam;
+}
+
+/* brcst.active rx, ry behaves like a conditional move: rx either keeps its
+ * value or is set to ry. In order to model this in SSA form, we add an extra
+ * argument (the initial value of rx) and tie it to the destination.
+ */
+static inline struct ir3_instruction *
+ir3_BRCST_ACTIVE(struct ir3_block *block, unsigned cluster_size,
+                 struct ir3_instruction *src,
+                 struct ir3_instruction *dst_default)
+{
+   struct ir3_instruction *brcst =
+      ir3_instr_create(block, OPC_BRCST_ACTIVE, 1, 2);
+   brcst->cat5.cluster_size = cluster_size;
+   brcst->cat5.type = TYPE_U32;
+   struct ir3_register *brcst_dst = __ssa_dst(brcst);
+   __ssa_src(brcst, src, 0);
+   struct ir3_register *default_src = __ssa_src(brcst, dst_default, 0);
+   ir3_reg_tie(brcst_dst, default_src);
+   return brcst;
 }
 
 /* cat6 instructions: */

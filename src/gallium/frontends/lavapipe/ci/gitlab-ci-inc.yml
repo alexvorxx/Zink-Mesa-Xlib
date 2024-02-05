@@ -1,6 +1,7 @@
 .lavapipe-rules:
   stage: software-renderer
   rules:
+    - !reference [.test, rules]
     - if: $FORCE_KERNEL_TAG != null
       when: never
     - !reference [.vulkan-rules, rules]
@@ -15,6 +16,7 @@
   stage: software-renderer
   retry: !reference [.scheduled_pipeline-rules, retry]
   rules:
+    - !reference [.test, rules]
     - !reference [.vulkan-manual-rules, rules]
     - !reference [.gl-manual-rules, rules]
     - changes: *lavapipe_file_list

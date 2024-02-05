@@ -98,6 +98,8 @@ d3d12_context_destroy(struct pipe_context *pctx)
    for (unsigned i = 0; i < ARRAY_SIZE(ctx->batches); ++i)
       d3d12_destroy_batch(ctx, &ctx->batches[i]);
    ctx->cmdlist->Release();
+   if (ctx->cmdlist2)
+      ctx->cmdlist2->Release();
    if (ctx->cmdlist8)
       ctx->cmdlist8->Release();
    d3d12_descriptor_pool_free(ctx->sampler_pool);
@@ -105,6 +107,7 @@ d3d12_context_destroy(struct pipe_context *pctx)
    slab_destroy_child(&ctx->transfer_pool);
    slab_destroy_child(&ctx->transfer_pool_unsync);
    d3d12_gs_variant_cache_destroy(ctx);
+   d3d12_tcs_variant_cache_destroy(ctx);
    d3d12_gfx_pipeline_state_cache_destroy(ctx);
    d3d12_compute_pipeline_state_cache_destroy(ctx);
    d3d12_root_signature_cache_destroy(ctx);
@@ -114,7 +117,6 @@ d3d12_context_destroy(struct pipe_context *pctx)
    pipe_resource_reference(&ctx->pstipple.texture, nullptr);
    pipe_sampler_view_reference(&ctx->pstipple.sampler_view, nullptr);
    util_dynarray_fini(&ctx->recently_destroyed_bos);
-   util_dynarray_fini(&ctx->ended_queries);
    FREE(ctx->pstipple.sampler_cso);
 
    u_suballocator_destroy(&ctx->query_allocator);
@@ -139,7 +141,6 @@ d3d12_create_vertex_elements_state(struct pipe_context *pctx,
    unsigned max_vb = 0;
    for (unsigned i = 0; i < num_elements; ++i) {
       cso->elements[i].SemanticName = "TEXCOORD";
-      cso->elements[i].SemanticIndex = i;
 
       enum pipe_format format_helper =
          d3d12_emulated_vtx_format((enum pipe_format)elements[i].src_format);
@@ -839,7 +840,7 @@ view_dimension(enum pipe_texture_target target, unsigned samples)
 }
 
 static D3D12_SHADER_COMPONENT_MAPPING
-component_mapping(enum pipe_swizzle swizzle, D3D12_SHADER_COMPONENT_MAPPING id)
+component_mapping(enum pipe_swizzle swizzle)
 {
    switch (swizzle) {
    case PIPE_SWIZZLE_X: return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0;
@@ -848,7 +849,6 @@ component_mapping(enum pipe_swizzle swizzle, D3D12_SHADER_COMPONENT_MAPPING id)
    case PIPE_SWIZZLE_W: return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3;
    case PIPE_SWIZZLE_0: return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0;
    case PIPE_SWIZZLE_1: return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_1;
-   case PIPE_SWIZZLE_NONE: return id;
    default:
       unreachable("unexpected swizzle");
    }
@@ -877,10 +877,10 @@ d3d12_init_sampler_view_descriptor(struct d3d12_sampler_view *sampler_view)
    }
 
    desc.Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
-      component_mapping((pipe_swizzle)sampler_view->swizzle_override_r, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0),
-      component_mapping((pipe_swizzle)sampler_view->swizzle_override_g, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1),
-      component_mapping((pipe_swizzle)sampler_view->swizzle_override_b, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2),
-      component_mapping((pipe_swizzle)sampler_view->swizzle_override_a, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3)
+      component_mapping((pipe_swizzle)sampler_view->swizzle_override_r),
+      component_mapping((pipe_swizzle)sampler_view->swizzle_override_g),
+      component_mapping((pipe_swizzle)sampler_view->swizzle_override_b),
+      component_mapping((pipe_swizzle)sampler_view->swizzle_override_a)
    );
 
    uint64_t offset = 0;
@@ -1334,15 +1334,11 @@ d3d12_set_polygon_stipple(struct pipe_context *pctx,
 static void
 d3d12_set_vertex_buffers(struct pipe_context *pctx,
                          unsigned num_buffers,
-                         unsigned unbind_num_trailing_slots,
                          bool take_ownership,
                          const struct pipe_vertex_buffer *buffers)
 {
    struct d3d12_context *ctx = d3d12_context(pctx);
-   util_set_vertex_buffers_count(ctx->vbs, &ctx->num_vbs,
-                                 buffers, num_buffers,
-                                 unbind_num_trailing_slots,
-                                 take_ownership);
+   util_set_vertex_buffers_count(ctx->vbs, &ctx->num_vbs, buffers, num_buffers, take_ownership);
 
    for (unsigned i = 0; i < ctx->num_vbs; ++i) {
       const struct pipe_vertex_buffer* buf = ctx->vbs + i;
@@ -2097,7 +2093,7 @@ d3d12_clear_render_target(struct pipe_context *pctx,
                                                ctx->num_sampler_views[PIPE_SHADER_FRAGMENT],
                                                ctx->sampler_views[PIPE_SHADER_FRAGMENT]);
       util_blitter_save_fragment_constant_buffer_slot(ctx->blitter, ctx->cbufs[PIPE_SHADER_FRAGMENT]);
-      util_blitter_save_vertex_buffer_slot(ctx->blitter, ctx->vbs);
+      util_blitter_save_vertex_buffers(ctx->blitter, ctx->vbs, ctx->num_vbs);
       util_blitter_save_sample_mask(ctx->blitter, ctx->gfx_pipeline_state.sample_mask, 0);
       util_blitter_save_so_targets(ctx->blitter, ctx->gfx_pipeline_state.num_so_targets, ctx->so_targets);
 
@@ -2378,6 +2374,21 @@ d3d12_memory_barrier(struct pipe_context *pctx, unsigned flags)
 }
 
 static void
+d3d12_texture_barrier(struct pipe_context *pctx, unsigned flags)
+{
+   struct d3d12_context *ctx = d3d12_context(pctx);
+
+   /* D3D doesn't really have an equivalent in the legacy barrier model. When using enhanced barriers,
+    * this could be a more specific global barrier. But for now, just flush the world with an aliasing barrier. */
+   D3D12_RESOURCE_BARRIER aliasingBarrier;
+   aliasingBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
+   aliasingBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+   aliasingBarrier.Aliasing.pResourceBefore = nullptr;
+   aliasingBarrier.Aliasing.pResourceAfter = nullptr;
+   ctx->cmdlist->ResourceBarrier(1, &aliasingBarrier);
+}
+
+static void
 d3d12_set_patch_vertices(struct pipe_context *pctx, uint8_t patch_vertices)
 {
    struct d3d12_context *ctx = d3d12_context(pctx);
@@ -2534,6 +2545,7 @@ d3d12_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    ctx->base.fence_server_sync = d3d12_wait;
 
    ctx->base.memory_barrier = d3d12_memory_barrier;
+   ctx->base.texture_barrier = d3d12_texture_barrier;
 
    ctx->base.get_sample_position = u_default_get_sample_position;
 

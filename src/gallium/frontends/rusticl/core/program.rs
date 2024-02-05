@@ -12,6 +12,7 @@ use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::ResourceType;
 use mesa_rust::util::disk_cache::*;
 use mesa_rust_gen::*;
+use rusticl_llvm_gen::*;
 use rusticl_opencl_gen::*;
 
 use std::collections::HashMap;
@@ -43,12 +44,25 @@ fn get_disk_cache() -> &'static Option<DiskCache> {
     let func_ptrs = [
         // ourselves
         get_disk_cache as _,
+        // LLVM
+        llvm_LLVMContext_LLVMContext as _,
+        // clang
+        clang_getClangFullVersion as _,
+        // SPIRV-LLVM-Translator
+        llvm_writeSpirv1 as _,
     ];
     unsafe {
         DISK_CACHE_ONCE.call_once(|| {
             DISK_CACHE = DiskCache::new("rusticl", &func_ptrs, 0);
         });
         &DISK_CACHE
+    }
+}
+
+fn clc_validator_options(dev: &Device) -> clc_validator_options {
+    clc_validator_options {
+        // has to match CL_DEVICE_MAX_PARAMETER_SIZE
+        limit_max_function_arg: dev.param_max_size() as u32,
     }
 }
 
@@ -76,6 +90,11 @@ pub struct NirKernelBuild {
     pub shared_size: u64,
     pub printf_info: Option<NirPrintfInfo>,
 }
+
+// SAFETY: `CSOWrapper` is only safe to use if the device supports `PIPE_CAP_SHAREABLE_SHADERS` and
+//         we make sure to set `nir_or_cso` to `KernelDevStateVariant::Cso` only if that's the case.
+unsafe impl Send for NirKernelBuild {}
+unsafe impl Sync for NirKernelBuild {}
 
 pub struct ProgramBuild {
     pub builds: HashMap<&'static Device, ProgramDevBuild>,
@@ -112,9 +131,10 @@ impl NirKernelBuild {
         let len = buf.len() as u32;
 
         if len > 0 {
+            // TODO bind as constant buffer
             let res = dev
                 .screen()
-                .resource_create_buffer(len, ResourceType::Normal)
+                .resource_create_buffer(len, ResourceType::Normal, PIPE_BIND_GLOBAL)
                 .unwrap();
 
             dev.helper_ctx()
@@ -275,9 +295,6 @@ fn prepare_options(options: &str, dev: &Device) -> Vec<CString> {
     if !options.contains("-cl-std=CL") {
         options.push_str(" -cl-std=CL");
         options.push_str(dev.clc_version.api_str());
-    }
-    if !dev.image_supported() {
-        options.push_str(" -U__IMAGE_SUPPORT__");
     }
     options.push_str(" -D__OPENCL_VERSION__=");
     options.push_str(dev.cl_version.clc_str());
@@ -596,16 +613,13 @@ impl Program {
     ) -> bool {
         let d = info.dev_build_mut(dev);
 
+        let val_options = clc_validator_options(dev);
         let (spirv, log) = match &self.src {
             ProgramSourceType::Il(spirv) => {
-                let options = clc_validator_options {
-                    // has to match CL_DEVICE_MAX_PARAMETER_SIZE
-                    limit_max_function_arg: dev.param_max_size() as u32,
-                };
                 if Platform::dbg().allow_invalid_spirv {
                     (Some(spirv.clone()), String::new())
                 } else {
-                    spirv.clone_on_validate(&options)
+                    spirv.clone_on_validate(&val_options)
                 }
             }
             ProgramSourceType::Src(src) => {
@@ -621,7 +635,7 @@ impl Program {
                     eprintln!("source code:\n{src}");
                 }
 
-                spirv::SPIRVBin::from_clc(
+                let (spirv, msgs) = spirv::SPIRVBin::from_clc(
                     src,
                     &args,
                     headers,
@@ -629,7 +643,18 @@ impl Program {
                     dev.cl_features(),
                     &dev.spirv_extensions,
                     dev.address_bits(),
-                )
+                );
+
+                if Platform::dbg().validate_spirv {
+                    if let Some(spirv) = spirv {
+                        let (res, spirv_msgs) = spirv.validate(&val_options);
+                        (res.then_some(spirv), format!("{}\n{}", msgs, spirv_msgs))
+                    } else {
+                        (None, msgs)
+                    }
+                } else {
+                    (spirv, msgs)
+                }
             }
             // do nothing if we got a library or binary
             _ => {
@@ -673,6 +698,17 @@ impl Program {
                 .collect();
 
             let (spirv, log) = spirv::SPIRVBin::link(&bins, lib);
+            let (spirv, log) = if Platform::dbg().validate_spirv {
+                if let Some(spirv) = spirv {
+                    let val_options = clc_validator_options(d);
+                    let (res, spirv_msgs) = spirv.validate(&val_options);
+                    (res.then_some(spirv), format!("{}\n{}", log, spirv_msgs))
+                } else {
+                    (None, log)
+                }
+            } else {
+                (spirv, log)
+            };
 
             let status;
             let bin_type;

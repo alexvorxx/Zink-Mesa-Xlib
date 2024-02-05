@@ -79,12 +79,22 @@ struct pipe_video_buffer;
 struct pipe_video_codec;
 struct pipe_viewport_state;
 struct pipe_compute_state;
+struct pipe_ml_operation;
+struct pipe_tensor;
 union pipe_color_union;
 union pipe_query_result;
 struct u_log_context;
 struct u_upload_mgr;
 struct util_debug_callback;
 struct u_vbuf;
+struct pipe_context;
+
+typedef void (*pipe_draw_func)(struct pipe_context *pipe,
+                               const struct pipe_draw_info *info,
+                               unsigned drawid_offset,
+                               const struct pipe_draw_indirect_info *indirect,
+                               const struct pipe_draw_start_count_bias *draws,
+                               unsigned num_draws);
 
 /**
  * Gallium rendering context.  Basically:
@@ -149,12 +159,7 @@ struct pipe_context {
     * \param draws         array of (start, count) pairs for direct draws
     * \param num_draws     number of direct draws; 1 for indirect multi draws
     */
-   void (*draw_vbo)(struct pipe_context *pipe,
-                    const struct pipe_draw_info *info,
-                    unsigned drawid_offset,
-                    const struct pipe_draw_indirect_info *indirect,
-                    const struct pipe_draw_start_count_bias *draws,
-                    unsigned num_draws);
+   pipe_draw_func draw_vbo;
 
    /**
     * Multi draw for display lists.
@@ -605,7 +610,6 @@ struct pipe_context {
     * Bind an array of vertex buffers to the specified slots.
     *
     * \param count           number of consecutive vertex buffers to bind.
-    * \param unbind_num_trailing_slots  unbind slots after the bound slots
     * \param take_ownership the caller holds buffer references and they
     *                        should be taken over by the callee. This means
     *                        that drivers shouldn't increment reference counts.
@@ -613,7 +617,6 @@ struct pipe_context {
     */
    void (*set_vertex_buffers)(struct pipe_context *,
                               unsigned num_buffers,
-                              unsigned unbind_num_trailing_slots,
                               bool take_ownership,
                               const struct pipe_vertex_buffer *);
 
@@ -1222,6 +1225,53 @@ struct pipe_context {
                                                      struct winsys_handle *handle,
                                                      unsigned usage );
 
+   /**
+    * Compiles a ML subgraph, to be executed later. The returned pipe_ml_subgraph
+    * should contain all information needed to execute the subgraph with as
+    * little effort as strictly needed.
+    *
+    * \param ctx         pipe context
+    * \param operations  array containing the definitions of the operations in the graph
+    * \param count       number of operations
+    * \return            a newly allocated pipe_ml_subgraph
+    */
+   struct pipe_ml_subgraph *(*ml_subgraph_create)(struct pipe_context *context,
+                                                  const struct pipe_ml_operation *operations,
+                                                  unsigned count);
+
+   /**
+    * Invokes a ML subgraph for a given input tensor.
+    *
+    * \param ctx         pipe context
+    * \param subgraph    previously-compiled subgraph
+    * \param input       tensor to use as the input
+    */
+   void (*ml_subgraph_invoke)(struct pipe_context *context,
+                              struct pipe_ml_subgraph *subgraph,
+                              struct pipe_tensor *input);
+
+   /**
+    * After a ML subgraph has been invoked, copy the contents of the output
+    * tensors to the provided buffers.
+    * 
+    * \param ctx           pipe context
+    * \param subgraph      previously-executed subgraph
+    * \param outputs_count number of output tensors to copy out
+    * \param output_idxs   array with the indices of output tensors
+    * \param outputs       array of buffers to copy the tensor data to
+    */
+   void (*ml_subgraph_read_output)(struct pipe_context *context,
+                                   struct pipe_ml_subgraph *subgraph,
+                                   unsigned outputs_count, unsigned output_idxs[], void *outputs[]);
+
+   /**
+    * Release all resources allocated by the implementation of ml_subgraph_create
+    * 
+    * \param ctx           pipe context
+    * \param subgraph      subgraph to release
+    */
+   void (*ml_subgraph_destroy)(struct pipe_context *context,
+                               struct pipe_ml_subgraph *subgraph);
 };
 
 

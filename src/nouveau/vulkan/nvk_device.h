@@ -10,11 +10,11 @@
 #include "nvk_descriptor_table.h"
 #include "nvk_heap.h"
 #include "nvk_queue.h"
+#include "nvk_upload_queue.h"
 #include "vk_device.h"
 #include "vk_meta.h"
 #include "vk_queue.h"
 
-struct novueau_ws_context;
 struct nvk_physical_device;
 struct vk_pipeline_cache;
 
@@ -35,7 +35,8 @@ struct nvk_device {
    struct nvk_physical_device *pdev;
 
    struct nouveau_ws_device *ws_dev;
-   struct nouveau_ws_context *ws_ctx;
+
+   struct nvk_upload_queue upload;
 
    struct nvk_descriptor_table images;
    struct nvk_descriptor_table samplers;

@@ -45,6 +45,7 @@
 #define AMDGPU_HW_IP_VCN_DEC 6
 #define AMDGPU_HW_IP_VCN_ENC 7
 #define AMDGPU_HW_IP_VCN_JPEG 8
+#define AMDGPU_HW_IP_VPE 9
 #define AMDGPU_IDS_FLAGS_FUSION 0x1
 #define AMDGPU_IDS_FLAGS_PREEMPTION 0x2
 #define AMDGPU_IDS_FLAGS_TMZ 0x4
@@ -338,14 +339,6 @@ static intptr_t readlink(const char *path, char *buf, size_t bufsiz)
 
 #define CIK_TILE_MODE_COLOR_2D 14
 
-static bool has_syncobj(int fd)
-{
-   uint64_t value;
-   if (drmGetCap(fd, DRM_CAP_SYNCOBJ, &value))
-      return false;
-   return value ? true : false;
-}
-
 static bool has_timeline_syncobj(int fd)
 {
    uint64_t value;
@@ -611,6 +604,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_DEC == AMD_IP_VCN_DEC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_ENC == AMD_IP_VCN_ENC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_JPEG == AMD_IP_VCN_JPEG);
+   STATIC_ASSERT(AMDGPU_HW_IP_VPE == AMD_IP_VPE);
 
    handle_env_var_force_family(info);
 
@@ -622,10 +616,17 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    assert(info->drm_major == 3);
    info->is_amdgpu = true;
 
-   if (info->drm_minor < 15) {
+   if (info->drm_minor < 27) {
       fprintf(stderr, "amdgpu: DRM version is %u.%u.%u, but this driver is "
-                      "only compatible with 3.15.0 (kernel 4.12) or later.\n",
+                      "only compatible with 3.27.0 (kernel 4.20+) or later.\n",
               info->drm_major, info->drm_minor, info->drm_patchlevel);
+      return false;
+   }
+
+   uint64_t cap;
+   r = drmGetCap(fd, DRM_CAP_SYNCOBJ, &cap);
+   if (r != 0 || cap == 0) {
+      fprintf(stderr, "amdgpu: syncobj support is missing but is required.\n");
       return false;
    }
 
@@ -698,6 +699,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    info->ip[AMD_IP_VCN_DEC].ib_pad_dw_mask = 0xf;
    info->ip[AMD_IP_VCN_ENC].ib_pad_dw_mask = 0x3f;
    info->ip[AMD_IP_VCN_JPEG].ib_pad_dw_mask = 0xf;
+   info->ip[AMD_IP_VPE].ib_pad_dw_mask = 0xf;
 
    /* Only require gfx or compute. */
    if (!info->ip[AMD_IP_GFX].num_queues && !info->ip[AMD_IP_COMPUTE].num_queues) {
@@ -1010,10 +1012,8 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    info->memory_freq_mhz_effective *= ac_memory_ops_per_clock(info->vram_type);
 
    info->has_userptr = true;
-   info->has_syncobj = has_syncobj(fd);
    info->has_timeline_syncobj = has_timeline_syncobj(fd);
-   info->has_fence_to_handle = info->has_syncobj && info->drm_minor >= 21;
-   info->has_local_buffers = info->drm_minor >= 20;
+   info->has_local_buffers = true;
    info->has_bo_metadata = true;
    info->has_eqaa_surface_allocator = info->gfx_level < GFX11;
    /* Disable sparse mappings on GFX6 due to VM faults in CP DMA. Enable them once
@@ -1067,7 +1067,9 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
       info->num_sqc_per_wgp = device_info.num_sqc_per_wgp;
    }
 
-   if (info->gfx_level >= GFX11 && info->drm_minor >= 52) {
+   /* Firmware wrongly reports 0 bytes of MALL being present on Navi33.
+    * Work around this by manually computing cache sizes. */
+   if (info->gfx_level >= GFX11 && info->drm_minor >= 52 && info->family != CHIP_NAVI33) {
       info->tcp_cache_size = device_info.tcp_cache_size * 1024;
       info->l1_cache_size = device_info.gl1c_cache_size * 1024;
       info->l2_cache_size = device_info.gl2c_cache_size * 1024;
@@ -1243,6 +1245,18 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
                                     info->family == CHIP_BONAIRE ||
                                     info->family == CHIP_KABINI;
 
+   /* HW bug workaround with async compute dispatches when threadgroup > 4096.
+    * The workaround is to change the "threadgroup" dimension mode to "thread"
+    * dimension mode.
+    */
+   info->has_async_compute_threadgroup_bug = info->family == CHIP_ICELAND ||
+                                             info->family == CHIP_TONGA;
+
+   /* GFX7 CP requires 32 bytes alignment for the indirect buffer arguments on
+    * the compute queue.
+    */
+   info->has_async_compute_align32_bug = info->gfx_level == GFX7;
+
    /* Support for GFX10.3 was added with F32_ME_FEATURE_VERSION_31 but the
     * feature version wasn't bumped.
     */
@@ -1259,11 +1273,16 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
 
    info->has_export_conflict_bug = info->gfx_level == GFX11;
 
-   /* GFX6-8 SDMA can't ignore page faults on unmapped sparse resources. */
-   info->sdma_supports_sparse = info->gfx_level >= GFX9;
+   /* Convert the SDMA version in the current GPU to an enum. */
+   info->sdma_ip_version =
+      (enum sdma_version)SDMA_VERSION_VALUE(info->ip[AMD_IP_SDMA].ver_major,
+                                            info->ip[AMD_IP_SDMA].ver_minor);
 
-   /* GFX10+ SDMA supports DCC and HTILE, but Navi 10 has issues with it according to PAL. */
-   info->sdma_supports_compression = info->gfx_level >= GFX10 && info->family != CHIP_NAVI10;
+   /* SDMA v1.0-3.x (GFX6-8) can't ignore page faults on unmapped sparse resources. */
+   info->sdma_supports_sparse = info->sdma_ip_version >= SDMA_4_0;
+
+   /* SDMA v5.0+ (GFX10+) supports DCC and HTILE, but Navi 10 has issues with it according to PAL. */
+   info->sdma_supports_compression = info->sdma_ip_version >= SDMA_5_0 && info->family != CHIP_NAVI10;
 
    /* Get the number of good compute units. */
    info->num_cu = 0;
@@ -1403,16 +1422,16 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    }
 
    if (info->gfx_level >= GFX10_3)
-      info->max_wave64_per_simd = 16;
+      info->max_waves_per_simd = 16;
    else if (info->gfx_level == GFX10)
-      info->max_wave64_per_simd = 20;
+      info->max_waves_per_simd = 20;
    else if (info->family >= CHIP_POLARIS10 && info->family <= CHIP_VEGAM)
-      info->max_wave64_per_simd = 8;
+      info->max_waves_per_simd = 8;
    else
-      info->max_wave64_per_simd = 10;
+      info->max_waves_per_simd = 10;
 
    if (info->gfx_level >= GFX10) {
-      info->num_physical_sgprs_per_simd = 128 * info->max_wave64_per_simd;
+      info->num_physical_sgprs_per_simd = 128 * info->max_waves_per_simd;
       info->min_sgpr_alloc = 128;
       info->sgpr_alloc_granularity = 128;
    } else if (info->gfx_level >= GFX8) {
@@ -1684,7 +1703,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    pcie_bandwidth = %1.1f GB/s\n", info->pcie_bandwidth_mbps / 1024.0);
    fprintf(f, "    clock_crystal_freq = %i KHz\n", info->clock_crystal_freq);
 
-   const char *ip_string[] = {
+   const char *ip_string[AMD_NUM_IP_TYPES] = {
       [AMD_IP_GFX] = "GFX",
       [AMD_IP_COMPUTE] = "COMP",
       [AMD_IP_SDMA] = "SDMA",
@@ -1694,6 +1713,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
       [AMD_IP_VCN_DEC] = "VCN_DEC",
       [AMD_IP_VCN_ENC] = (info->vcn_ip_version >= VCN_4_0_0) ? "VCN" : "VCN_ENC",
       [AMD_IP_VCN_JPEG] = "VCN_JPG",
+      [AMD_IP_VPE] = "VPE",
    };
 
    for (unsigned i = 0; i < AMD_NUM_IP_TYPES; i++) {
@@ -1799,9 +1819,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "Kernel & winsys capabilities:\n");
    fprintf(f, "    drm = %i.%i.%i\n", info->drm_major, info->drm_minor, info->drm_patchlevel);
    fprintf(f, "    has_userptr = %i\n", info->has_userptr);
-   fprintf(f, "    has_syncobj = %u\n", info->has_syncobj);
    fprintf(f, "    has_timeline_syncobj = %u\n", info->has_timeline_syncobj);
-   fprintf(f, "    has_fence_to_handle = %u\n", info->has_fence_to_handle);
    fprintf(f, "    has_local_buffers = %u\n", info->has_local_buffers);
    fprintf(f, "    has_bo_metadata = %u\n", info->has_bo_metadata);
    fprintf(f, "    has_eqaa_surface_allocator = %u\n", info->has_eqaa_surface_allocator);
@@ -1845,7 +1863,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    max_se = %i\n", info->max_se);
    fprintf(f, "    max_sa_per_se = %i\n", info->max_sa_per_se);
    fprintf(f, "    num_cu_per_sh = %i\n", info->num_cu_per_sh);
-   fprintf(f, "    max_wave64_per_simd = %i\n", info->max_wave64_per_simd);
+   fprintf(f, "    max_waves_per_simd = %i\n", info->max_waves_per_simd);
    fprintf(f, "    num_physical_sgprs_per_simd = %i\n", info->num_physical_sgprs_per_simd);
    fprintf(f, "    num_physical_wave64_vgprs_per_simd = %i\n",
            info->num_physical_wave64_vgprs_per_simd);
@@ -2145,7 +2163,7 @@ ac_get_compute_resource_limits(const struct radeon_info *info, unsigned waves_pe
       /* Gfx9 should set the limit to max instead of 0 to fix high priority compute. */
       if (info->gfx_level == GFX9 && !max_waves_per_sh) {
          max_waves_per_sh = info->max_good_cu_per_sa * info->num_simd_per_compute_unit *
-                            info->max_wave64_per_simd;
+                            info->max_waves_per_simd;
       }
 
       /* Force even distribution on all SIMDs in CU if the workgroup

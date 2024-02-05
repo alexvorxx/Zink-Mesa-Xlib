@@ -59,7 +59,8 @@ static void r600_blitter_begin(struct pipe_context *ctx, enum r600_blitter_op op
 		rctx->cmd_buf_is_compute = false;
 	}
 
-	util_blitter_save_vertex_buffer_slot(rctx->blitter, rctx->vertex_buffer_state.vb);
+	util_blitter_save_vertex_buffers(rctx->blitter, rctx->vertex_buffer_state.vb,
+                                         util_last_bit(rctx->vertex_buffer_state.enabled_mask));
 	util_blitter_save_vertex_elements(rctx->blitter, rctx->vertex_fetch_shader.cso);
 	util_blitter_save_vertex_shader(rctx->blitter, rctx->vs_shader);
 	util_blitter_save_geometry_shader(rctx->blitter, rctx->gs_shader);

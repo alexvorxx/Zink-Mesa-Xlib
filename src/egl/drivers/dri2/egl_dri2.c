@@ -73,7 +73,7 @@
 #include "egl_dri2.h"
 #include "egldefines.h"
 
-#define NUM_ATTRIBS 12
+#define NUM_ATTRIBS 16
 
 static const struct dri2_pbuffer_visual {
    const char *format_name;
@@ -892,6 +892,13 @@ dri2_setup_screen(_EGLDisplay *disp)
 
    disp->Extensions.EXT_create_context_robustness =
       get_screen_param(disp, PIPE_CAP_DEVICE_RESET_STATUS_QUERY);
+   disp->RobustBufferAccess =
+      get_screen_param(disp, PIPE_CAP_ROBUST_BUFFER_ACCESS_BEHAVIOR);
+
+   /* EXT_query_reset_notification_strategy complements and requires
+    * EXT_create_context_robustness. */
+   disp->Extensions.EXT_query_reset_notification_strategy =
+      disp->Extensions.EXT_create_context_robustness;
 
    if (dri2_dpy->fence) {
       disp->Extensions.KHR_fence_sync = EGL_TRUE;
@@ -1067,11 +1074,50 @@ dri2_setup_extensions(_EGLDisplay *disp)
        dri2_dpy->dri3_major_version != -1 &&
        !dri2_dpy->multibuffers_available &&
 #endif
+       (disp->Platform == EGL_PLATFORM_X11_KHR ||
+        disp->Platform == EGL_PLATFORM_XCB_EXT) &&
        !debug_get_bool_option("LIBGL_KOPPER_DRI2", false))
       return EGL_FALSE;
 
    loader_bind_extensions(dri2_dpy, optional_core_extensions,
                           ARRAY_SIZE(optional_core_extensions), extensions);
+   return EGL_TRUE;
+}
+
+EGLBoolean
+dri2_setup_device(_EGLDisplay *disp, EGLBoolean software)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   _EGLDevice *dev;
+   int render_fd;
+
+   /* Extensions must be loaded before calling this function */
+   assert(dri2_dpy->mesa);
+   /* If we're not software, we need a DRM node FD */
+   assert(software || dri2_dpy->fd_render_gpu >= 0);
+
+   /* fd_render_gpu is what we got from WSI, so might actually be a lie and
+    * not a render node... */
+   if (software) {
+      render_fd = -1;
+   } else if (loader_is_device_render_capable(dri2_dpy->fd_render_gpu)) {
+      render_fd = dri2_dpy->fd_render_gpu;
+   } else {
+      render_fd = dri2_dpy->mesa->queryCompatibleRenderOnlyDeviceFd(
+         dri2_dpy->fd_render_gpu);
+      if (render_fd < 0)
+         return EGL_FALSE;
+   }
+
+   dev = _eglFindDevice(render_fd, software);
+
+   if (render_fd >= 0 && render_fd != dri2_dpy->fd_render_gpu)
+      close(render_fd);
+
+   if (!dev)
+      return EGL_FALSE;
+
+   disp->Device = dev;
    return EGL_TRUE;
 }
 
@@ -1197,6 +1243,10 @@ dri2_display_destroy(_EGLDisplay *disp)
 
 #ifdef HAVE_WAYLAND_PLATFORM
    free(dri2_dpy->device_name);
+#endif
+
+#ifdef HAVE_ANDROID_PLATFORM
+   u_gralloc_destroy(&dri2_dpy->gralloc);
 #endif
 
    switch (disp->Platform) {
@@ -3664,7 +3714,7 @@ dri2_interop_export_object(_EGLDisplay *disp, _EGLContext *ctx,
 static int
 dri2_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx, unsigned count,
                            struct mesa_glinterop_export_in *objects,
-                           GLsync *sync, int *fence_fd)
+                           struct mesa_glinterop_flush_out *out)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_context *dri2_ctx = dri2_egl_context(ctx);
@@ -3673,7 +3723,7 @@ dri2_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx, unsigned count,
       return MESA_GLINTEROP_UNSUPPORTED;
 
    return dri2_dpy->interop->flush_objects(dri2_ctx->dri_context, count,
-                                           objects, sync, fence_fd);
+                                           objects, out);
 }
 
 const _EGLDriver _eglDriver = {

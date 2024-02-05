@@ -643,6 +643,10 @@ impl Device {
             // requires CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS
             //add_ext(1, 0, 0, "cl_khr_subgroups");
             add_feat(1, 0, 0, "__opencl_c_subgroups");
+
+            // we have lowering in `nir_lower_subgroups`, drivers can just use that
+            add_ext(1, 0, 0, "cl_khr_subgroup_shuffle");
+            add_ext(1, 0, 0, "cl_khr_subgroup_shuffle_relative");
         }
 
         if self.svm_supported() {
@@ -761,6 +765,18 @@ impl Device {
 
     pub fn pack_32_4x8_supported(&self) -> bool {
         self.get_nir_options().has_pack_32_4x8
+    }
+
+    pub fn sdot_4x8_sat_supported(&self) -> bool {
+        self.get_nir_options().has_sdot_4x8_sat
+    }
+
+    pub fn udot_4x8_sat_supported(&self) -> bool {
+        self.get_nir_options().has_udot_4x8_sat
+    }
+
+    pub fn sudot_4x8_sat_supported(&self) -> bool {
+        self.get_nir_options().has_sudot_4x8_sat
     }
 
     pub fn fp64_is_softfp(&self) -> bool {
@@ -990,6 +1006,12 @@ impl Device {
         id as u32
     }
 
+    pub fn prefers_real_buffer_in_cb0(&self) -> bool {
+        self.screen
+            .param(pipe_cap::PIPE_CAP_PREFER_REAL_BUFFER_IN_CONSTBUF0)
+            == 1
+    }
+
     pub fn shareable_shaders(&self) -> bool {
         self.screen.param(pipe_cap::PIPE_CAP_SHAREABLE_SHADERS) == 1
     }
@@ -1009,6 +1031,7 @@ impl Device {
     }
 
     pub fn cl_features(&self) -> clc_optional_features {
+        let subgroups_supported = self.subgroups_supported();
         clc_optional_features {
             fp16: self.fp16_supported(),
             fp64: self.fp64_supported(),
@@ -1017,9 +1040,10 @@ impl Device {
             images_read_write: self.image_read_write_supported(),
             images_write_3d: self.image_3d_write_supported(),
             integer_dot_product: true,
-            intel_subgroups: false,
-            subgroups: self.subgroups_supported(),
-            subgroups_ifp: false,
+            subgroups: subgroups_supported,
+            subgroups_shuffle: subgroups_supported,
+            subgroups_shuffle_relative: subgroups_supported,
+            ..Default::default()
         }
     }
 }

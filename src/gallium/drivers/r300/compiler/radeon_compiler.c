@@ -108,6 +108,25 @@ int rc_if_fail_helper(struct radeon_compiler * c, const char * file, int line, c
 	return 1;
 }
 
+void rc_mark_unused_channels(struct radeon_compiler * c, void *user)
+{
+	unsigned int srcmasks[3];
+
+	for(struct rc_instruction * inst = c->Program.Instructions.Next;
+	    inst != &c->Program.Instructions;
+	    inst = inst->Next) {
+
+		rc_compute_sources_for_writemask(inst, inst->U.I.DstReg.WriteMask, srcmasks);
+
+		for(unsigned int src = 0; src < 3; ++src) {
+			for(unsigned int chan = 0; chan < 4; ++chan) {
+				if (!GET_BIT(srcmasks[src], chan))
+					SET_SWZ(inst->U.I.SrcReg[src].Swizzle, chan, RC_SWIZZLE_UNUSED);
+			}
+		}
+	}
+}
+
 /**
  * Recompute c->Program.InputsRead and c->Program.OutputsWritten
  * based on which inputs and outputs are actually referenced

@@ -349,6 +349,15 @@ ubwc_possible(struct tu_device *device,
       return false;
    }
 
+   /* A690 seem to have broken UBWC for depth/stencil, it requires
+    * depth flushing where we cannot realistically place it, like between
+    * ordinary draw calls writing read/depth. WSL blob seem to use ubwc
+    * sometimes for depth/stencil.
+    */
+   if (info->a6xx.broken_ds_ubwc_quirk &&
+       vk_format_is_depth_or_stencil(format))
+      return false;
+
    /* Disable UBWC for D24S8 on A630 in some cases
     *
     * VK_IMAGE_ASPECT_STENCIL_BIT image view requires to be able to sample
@@ -717,7 +726,7 @@ tu_CreateImage(VkDevice _device,
          modifier = DRM_FORMAT_MOD_LINEAR;
    }
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    const VkNativeBufferANDROID *gralloc_info =
       vk_find_struct_const(pCreateInfo->pNext, NATIVE_BUFFER_ANDROID);
    int dma_buf;
@@ -737,7 +746,7 @@ tu_CreateImage(VkDevice _device,
 
    *pImage = tu_image_to_handle(image);
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    if (gralloc_info)
       return tu_import_memory_from_gralloc_handle(_device, dma_buf, alloc,
                                                   *pImage);
@@ -756,7 +765,7 @@ tu_DestroyImage(VkDevice _device,
    if (!image)
       return;
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    if (image->owned_memory != VK_NULL_HANDLE)
       tu_FreeMemory(_device, image->owned_memory, pAllocator);
 #endif

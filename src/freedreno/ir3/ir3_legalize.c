@@ -523,56 +523,11 @@ remove_unused_block(struct ir3_block *old_target)
 {
    list_delinit(&old_target->node);
 
-   /* If there are any physical predecessors due to fallthroughs, then they may
-    * fall through to any of the physical successors of this block. But we can
-    * only fit two, so just pick the "earliest" one, i.e. the fallthrough if
-    * possible.
-    *
-    * TODO: we really ought to have unlimited numbers of physical successors,
-    * both because of this and because we currently don't model some scenarios
-    * with nested break/continue correctly.
-    */
-   struct ir3_block *new_target;
-   if (old_target->physical_successors[1] &&
-       old_target->physical_successors[1]->start_ip <
-       old_target->physical_successors[0]->start_ip) {
-      new_target = old_target->physical_successors[1];
-   } else {
-      new_target = old_target->physical_successors[0];
-   }
-
-   for (unsigned i = 0; i < old_target->physical_predecessors_count; i++) {
-      struct ir3_block *pred = old_target->physical_predecessors[i];
-      if (pred->physical_successors[0] == old_target) {
-         if (!new_target) {
-            /* If we remove a physical successor, make sure the only physical
-             * successor is the first one.
-             */
-            pred->physical_successors[0] = pred->physical_successors[1];
-            pred->physical_successors[1] = NULL;
-         } else {
-            pred->physical_successors[0] = new_target;
-         }
-      } else {
-         assert(pred->physical_successors[1] == old_target);
-         pred->physical_successors[1] = new_target;
-      }
-      if (new_target)
-         ir3_block_add_physical_predecessor(new_target, pred);
-   }
-
    /* cleanup dangling predecessors: */
    for (unsigned i = 0; i < ARRAY_SIZE(old_target->successors); i++) {
       if (old_target->successors[i]) {
          struct ir3_block *succ = old_target->successors[i];
          ir3_block_remove_predecessor(succ, old_target);
-      }
-   }
-
-   for (unsigned i = 0; i < ARRAY_SIZE(old_target->physical_successors); i++) {
-      if (old_target->physical_successors[i]) {
-         struct ir3_block *succ = old_target->physical_successors[i];
-         ir3_block_remove_physical_predecessor(succ, old_target);
       }
    }
 }
@@ -591,21 +546,16 @@ retarget_jump(struct ir3_instruction *instr, struct ir3_block *new_target)
       cur_block->successors[1] = new_target;
    }
 
-   /* also update physical_successors: */
-   if (cur_block->physical_successors[0] == old_target) {
-      cur_block->physical_successors[0] = new_target;
-   } else {
-      assert(cur_block->physical_successors[1] == old_target);
-      cur_block->physical_successors[1] = new_target;
-   }
-
    /* update new target's predecessors: */
    ir3_block_add_predecessor(new_target, cur_block);
-   ir3_block_add_physical_predecessor(new_target, cur_block);
 
    /* and remove old_target's predecessor: */
    ir3_block_remove_predecessor(old_target, cur_block);
-   ir3_block_remove_physical_predecessor(old_target, cur_block);
+
+   /* If we reconverged at the old target, we'll reconverge at the new target
+    * too:
+    */
+   new_target->reconvergence_point |= old_target->reconvergence_point;
 
    instr->cat0.target = new_target;
 
@@ -627,6 +577,12 @@ opt_jump(struct ir3 *ir)
       block->index = index++;
 
    foreach_block (block, &ir->block_list) {
+      /* This pass destroys the physical CFG so don't keep it around to avoid
+       * validation errors.
+       */
+      block->physical_successors_count = 0;
+      block->physical_predecessors_count = 0;
+
       foreach_instr (instr, &block->instr_list) {
          if (!is_flow(instr) || !instr->cat0.target)
             continue;
@@ -707,51 +663,18 @@ mark_jp(struct ir3_block *block)
    target->flags |= IR3_INSTR_JP;
 }
 
-/* Mark points where control flow converges or diverges.
+/* Mark points where control flow reconverges.
  *
- * Divergence points could actually be re-convergence points where
- * "parked" threads are recoverged with threads that took the opposite
- * path last time around.  Possibly it is easier to think of (jp) as
- * "the execution mask might have changed".
+ * Re-convergence points are where "parked" threads are reconverged with threads
+ * that took the opposite path last time around. We already calculated them, we
+ * just need to mark them with (jp).
  */
 static void
 mark_xvergence_points(struct ir3 *ir)
 {
    foreach_block (block, &ir->block_list) {
-      /* We need to insert (jp) if an entry in the "branch stack" is created for
-       * our block. This happens if there is a predecessor to our block that may
-       * fallthrough to an earlier block in the physical CFG, either because it
-       * ends in a non-uniform conditional branch or because there's a
-       * fallthrough for an block in-between that also starts with (jp) and was
-       * pushed on the branch stack already.
-       */
-      for (unsigned i = 0; i < block->predecessors_count; i++) {
-         struct ir3_block *pred = block->predecessors[i];
-
-         for (unsigned j = 0; j < ARRAY_SIZE(pred->physical_successors); j++) {
-            if (pred->physical_successors[j] != NULL &&
-                pred->physical_successors[j]->start_ip < block->start_ip)
-               mark_jp(block);
-
-            /* If the predecessor just falls through to this block, we still
-             * need to check if it "falls through" by jumping to the block. This
-             * can happen if opt_jump fails and the block ends in two branches,
-             * or if there's an empty if-statement (which currently can happen
-             * with binning shaders after dead-code elimination) and the block
-             * before ends with a conditional branch directly to this block.
-             */
-            if (pred->physical_successors[j] == block) {
-               foreach_instr_rev (instr, &pred->instr_list) {
-                  if (!is_flow(instr))
-                     break;
-                  if (instr->cat0.target == block) {
-                     mark_jp(block);
-                     break;
-                  }
-               }
-            }
-         }
-      }
+      if (block->reconvergence_point)
+         mark_jp(block);
    }
 }
 
@@ -772,6 +695,7 @@ block_sched(struct ir3 *ir)
          struct ir3_instruction *br1, *br2;
 
          if (block->brtype == IR3_BRANCH_GETONE ||
+             block->brtype == IR3_BRANCH_GETLAST ||
              block->brtype == IR3_BRANCH_SHPS) {
             /* getone/shps can't be inverted, and it wouldn't even make sense
              * to follow it with an inverted branch, so follow it by an
@@ -780,6 +704,8 @@ block_sched(struct ir3 *ir)
             assert(!block->condition);
             if (block->brtype == IR3_BRANCH_GETONE)
                br1 = ir3_GETONE(block);
+            else if (block->brtype == IR3_BRANCH_GETLAST)
+               br1 = ir3_GETLAST(block);
             else
                br1 = ir3_SHPS(block);
             br1->cat0.target = block->successors[1];
@@ -817,6 +743,7 @@ block_sched(struct ir3 *ir)
                br2->cat0.brtype = BRANCH_ANY;
                break;
             case IR3_BRANCH_GETONE:
+            case IR3_BRANCH_GETLAST:
             case IR3_BRANCH_SHPS:
                unreachable("can't get here");
             }
@@ -948,6 +875,33 @@ nop_sched(struct ir3 *ir, struct ir3_shader_variant *so)
    }
 }
 
+static void
+dbg_sync_sched(struct ir3 *ir, struct ir3_shader_variant *so)
+{
+   foreach_block (block, &ir->block_list) {
+      foreach_instr_safe (instr, &block->instr_list) {
+         if (opc_cat(instr->opc) == 4 || opc_cat(instr->opc) == 5 ||
+             opc_cat(instr->opc) == 6) {
+            struct ir3_instruction *nop = ir3_NOP(block);
+            nop->flags |= IR3_INSTR_SS | IR3_INSTR_SY;
+            ir3_instr_move_after(nop, instr);
+         }
+      }
+   }
+}
+
+static void
+dbg_nop_sched(struct ir3 *ir, struct ir3_shader_variant *so)
+{
+   foreach_block (block, &ir->block_list) {
+      foreach_instr_safe (instr, &block->instr_list) {
+         struct ir3_instruction *nop = ir3_NOP(block);
+         nop->repeat = 5;
+         ir3_instr_move_before(nop, instr);
+      }
+   }
+}
+
 struct ir3_helper_block_data {
    /* Whether helper invocations may be used on any path starting at the
     * beginning of the block.
@@ -998,6 +952,7 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
       if (block->brtype == IR3_BRANCH_ALL ||
           block->brtype == IR3_BRANCH_ANY ||
           block->brtype == IR3_BRANCH_GETONE) {
+         bd->uses_helpers_beginning = true;
          bd->uses_helpers_end = true;
       }
 
@@ -1228,6 +1183,14 @@ ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
    }
 
    nop_sched(ir, so);
+
+   if (ir3_shader_debug & IR3_DBG_FULLSYNC) {
+      dbg_sync_sched(ir, so);
+   }
+
+   if (ir3_shader_debug & IR3_DBG_FULLNOP) {
+      dbg_nop_sched(ir, so);
+   }
 
    while (opt_jump(ir))
       ;

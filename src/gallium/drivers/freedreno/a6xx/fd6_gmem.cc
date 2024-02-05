@@ -231,8 +231,8 @@ emit_zs(struct fd_ringbuffer *ring, struct pipe_surface *zsbuf,
               A6XX_GRAS_SU_DEPTH_BUFFER_INFO(.depth_format = DEPTH6_NONE));
 
       OUT_PKT4(ring, REG_A6XX_GRAS_LRZ_BUFFER_BASE, 5);
-      OUT_RING(ring, 0x00000000); /* RB_DEPTH_FLAG_BUFFER_BASE_LO */
-      OUT_RING(ring, 0x00000000); /* RB_DEPTH_FLAG_BUFFER_BASE_HI */
+      OUT_RING(ring, 0x00000000); /* GRAS_LRZ_BUFFER_BASE_LO */
+      OUT_RING(ring, 0x00000000); /* GRAS_LRZ_BUFFER_BASE_HI */
       OUT_RING(ring, 0x00000000); /* GRAS_LRZ_BUFFER_PITCH */
       OUT_RING(ring, 0x00000000); /* GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_LO */
       OUT_RING(ring, 0x00000000); /* GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_HI */

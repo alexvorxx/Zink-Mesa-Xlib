@@ -9,6 +9,7 @@
 # We're run from the root of the repo, make a helper var for our paths
 BM=$CI_PROJECT_DIR/install/bare-metal
 CI_COMMON=$CI_PROJECT_DIR/install/common
+CI_INSTALL=$CI_PROJECT_DIR/install
 
 # Runner config checks
 if [ -z "$BM_SERIAL" ]; then
@@ -98,15 +99,26 @@ fi
 echo "$BM_CMDLINE" > /tftp/cmdline
 
 set +e
+STRUCTURED_LOG_FILE=job_detail.json
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update dut_job_type "${DEVICE_TYPE}"
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update farm "${FARM}"
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --create-dut-job dut_name "${CI_RUNNER_DESCRIPTION}"
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --update-dut-time submit "${CI_JOB_STARTED_AT}"
 python3 $BM/cros_servo_run.py \
         --cpu $BM_SERIAL \
         --ec $BM_SERIAL_EC \
         --test-timeout ${TEST_PHASE_TIMEOUT:-20}
 ret=$?
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --close-dut-job
+python3 $CI_INSTALL/custom_logger.py ${STRUCTURED_LOG_FILE} --close
 set -e
 
 # Bring artifacts back from the NFS dir to the build dir where gitlab-runner
 # will look for them.
 cp -Rp /nfs/results/. results/
+if [ -f "${STRUCTURED_LOG_FILE}" ]; then
+  cp -p ${STRUCTURED_LOG_FILE} results/
+  echo "Structured log file is available at https://${CI_PROJECT_ROOT_NAMESPACE}.pages.freedesktop.org/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/results/${STRUCTURED_LOG_FILE}"
+fi
 
 exit $ret

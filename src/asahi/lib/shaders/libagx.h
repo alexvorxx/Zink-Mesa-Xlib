@@ -10,6 +10,8 @@
 #ifndef __OPENCL_VERSION__
 #include <stdint.h>
 #else
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+
 typedef ulong uint64_t;
 typedef uint uint32_t;
 typedef ushort uint16_t;

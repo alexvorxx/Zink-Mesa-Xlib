@@ -208,7 +208,6 @@ spec@arb_separate_shader_objects@400 combinations by location,Fail
 spec@arb_separate_shader_objects@400 combinations by name,Fail
 spec@arb_texture_rectangle@1-1-linear-texture,Fail
 spec@arb_timer_query@query gl_timestamp,Fail
-spec@arb_timer_query@timestamp-get,Fail
 spec@arb_transform_feedback3@gl_skipcomponents1-1,Fail
 spec@arb_transform_feedback3@gl_skipcomponents1-2,Fail
 spec@arb_transform_feedback3@gl_skipcomponents1-3,Fail
@@ -344,7 +343,6 @@ spec@arb_uniform_buffer_object@execution@std140-struct-array-array-array-struct,
 spec@arb_uniform_buffer_object@execution@shared-array-struct-array-struct,Fail
 spec@arb_uniform_buffer_object@execution@std140-array-struct-array-struct,Fail
 
-dEQP-GLES31.functional.compute.indirect_dispatch.gen_in_compute.multi_dispatch_reuse_command,Fail
+# uprev Piglit in Mesa
+spec@glsl-1.40@uniform_buffer@two-stages,Fail
 
-# New CTS failures in 1.3.6.3
-KHR-GLES31.core.compute_shader.simple-compute-shared_context-persistent-buffer,Fail

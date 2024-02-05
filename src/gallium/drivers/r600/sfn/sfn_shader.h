@@ -149,6 +149,10 @@ public:
 
    virtual ~Shader() {}
 
+   auto shader_id() const {return m_shader_id;}
+   // Needed for testing
+   void reset_shader_id() {m_shader_id = 0;}
+
    bool add_info_from_string(std::istream& is);
 
    static Shader *translate_from_nir(nir_shader *nir,
@@ -378,6 +382,9 @@ private:
    uint32_t m_nloops{0};
    uint32_t m_required_registers{0};
 
+   int64_t m_shader_id;
+   static int64_t s_next_shader_id;
+
    class InstructionChain : public InstrVisitor {
    public:
       void visit(AluGroup *instr) override { (void)instr; }
@@ -414,7 +421,6 @@ private:
    std::list<Instr *, Allocator<Instr *>> m_loops;
    int m_control_flow_depth{0};
    std::list<nir_intrinsic_instr*> m_register_allocations;
-
 };
 
 } // namespace r600

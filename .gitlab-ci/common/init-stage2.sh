@@ -7,6 +7,8 @@
 # Second-stage init, used to set up devices and our job environment before
 # running tests.
 
+shopt -s extglob
+
 # Make sure to kill itself and all the children process from this script on
 # exiting, since any console output may interfere with LAVA signals handling,
 # which based on the log console.
@@ -105,6 +107,13 @@ export XDG_CACHE_HOME=/tmp
 
 # Make sure Python can find all our imports
 export PYTHONPATH=$(python3 -c "import sys;print(\":\".join(sys.path))")
+
+# If we need to specify a driver, it means several drivers could pick up this gpu;
+# ensure that the other driver can't accidentally be used
+if [ -n "$MESA_LOADER_DRIVER_OVERRIDE" ]; then
+  rm /install/lib/dri/!($MESA_LOADER_DRIVER_OVERRIDE)_dri.so
+fi
+ls -l /install/lib/dri/*_dri.so
 
 if [ "$HWCI_FREQ_MAX" = "true" ]; then
   # Ensure initialization of the DRM device (needed by MSM)

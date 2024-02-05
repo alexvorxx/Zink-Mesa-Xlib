@@ -911,6 +911,10 @@ fs_visitor::opt_bank_conflicts()
 {
    assert(grf_used || !"Must be called after register allocation");
 
+   /* TODO: Re-work this pass for Gfx20+. */
+   if (devinfo->ver >= 20)
+      return false;
+
    /* No ternary instructions -- No bank conflicts. */
    if (devinfo->ver < 6)
       return false;

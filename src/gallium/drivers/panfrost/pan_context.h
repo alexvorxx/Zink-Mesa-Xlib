@@ -321,6 +321,8 @@ struct panfrost_fs_key {
 
    /* User clip plane lowering */
    uint8_t clip_plane_enable;
+
+   bool line_smooth;
 };
 
 struct panfrost_shader_key {

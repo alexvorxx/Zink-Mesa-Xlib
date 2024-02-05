@@ -123,7 +123,6 @@ spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 
 # glcts failures
 GTF-GL46.gtf21.GL3Tests.texture_lod_bias.texture_lod_bias_all,Fail
-GTF-GL46.gtf21.GLCoverage.CoverageGL21,Crash
 GTF-GL46.gtf30.GL3Tests.fragment_coord_conventions.fragment_coord_conventions_multisample,Fail
 GTF-GL46.gtf32.GL3Tests.fragment_coord_conventions.fragment_coord_conventions_32_multisample,Fail
 GTF-GL46.gtf40.GL3Tests.transform_feedback2.transform_feedback2_two_buffers,Fail
@@ -152,5 +151,4 @@ KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-multiple-buffers
 KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-one-buffer-per-stream,Fail
 
 # I saw these on Navi31, but not Navi33
-dEQP-GLES3.functional.fragment_ops.interaction.basic_shader.39,Fail
 dEQP-GLES3.functional.fragment_ops.interaction.basic_shader.94,Fail

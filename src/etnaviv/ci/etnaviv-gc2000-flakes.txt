@@ -217,3 +217,14 @@ spec@arb_fragment_program@texturing@txp-2d
 spec@arb_vertex_program@instructions@xpd
 
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y410
+
+# uprev Piglit in Mesa
+dEQP-GLES2.functional.fbo.render.stencil_clear.tex2d_rgb_stencil_index8
+dEQP-GLES2.functional.shaders.random.all_features.fragment.72
+dEQP-GLES2.functional.shaders.random.texture.fragment.43
+dEQP-GLES2.functional.shaders.random.texture.vertex.19
+dEQP-GLES2.functional.shaders.random.texture.vertex.23
+dEQP-GLES2.functional.texture.format.l8_cube_pot
+spec@ati_fragment_shader@ati_fragment_shader-error04-endshader
+spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_rgba_s3tc_dxt1_ext
+

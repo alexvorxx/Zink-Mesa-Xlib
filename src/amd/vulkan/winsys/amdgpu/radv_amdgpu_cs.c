@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include "drm-uapi/amdgpu_drm.h"
 
+#include "util/detect_os.h"
 #include "util/os_time.h"
 #include "util/u_memory.h"
 #include "ac_debug.h"
@@ -42,6 +43,15 @@
 #include "vk_drm_syncobj.h"
 #include "vk_sync.h"
 #include "vk_sync_dummy.h"
+
+/* Some BSDs don't define ENODATA (and ENODATA is replaced with different error
+ * codes in the kernel).
+ */
+#if DETECT_OS_OPENBSD
+#define ENODATA ENOTSUP
+#elif DETECT_OS_FREEBSD || DETECT_OS_DRAGONFLY
+#define ENODATA ECONNREFUSED
+#endif
 
 /* Maximum allowed total number of submitted IBs. */
 #define RADV_MAX_IBS_PER_SUBMIT 192
@@ -265,7 +275,7 @@ radv_amdgpu_cs_get_new_ib(struct radeon_cmdbuf *_cs, uint32_t ib_size)
    cs->ib_mapped = cs->ws->base.buffer_map(cs->ib_buffer);
    if (!cs->ib_mapped) {
       cs->ws->base.buffer_destroy(&cs->ws->base, cs->ib_buffer);
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
    }
 
    cs->ib.ib_mc_address = radv_amdgpu_winsys_bo(cs->ib_buffer)->base.va;
@@ -325,7 +335,7 @@ get_nop_packet(struct radv_amdgpu_cs *cs)
    case AMDGPU_HW_IP_COMPUTE:
       return cs->ws->info.gfx_ib_pad_with_type2 ? PKT2_NOP_PAD : PKT3_NOP_PAD;
    case AMDGPU_HW_IP_DMA:
-      return cs->ws->info.gfx_level <= GFX6 ? 0xF0000000 : SDMA_NOP_PAD;
+      return cs->ws->info.gfx_level == GFX6 ? 0xF0000000 : SDMA_NOP_PAD;
    case AMDGPU_HW_IP_UVD:
    case AMDGPU_HW_IP_UVD_ENC:
       return PKT2_NOP_PAD;
@@ -730,7 +740,7 @@ radv_amdgpu_cs_execute_secondary(struct radeon_cmdbuf *_parent, struct radeon_cm
 
          mapped = ws->base.buffer_map(ib->bo);
          if (!mapped) {
-            parent->status = VK_ERROR_OUT_OF_HOST_MEMORY;
+            parent->status = VK_ERROR_OUT_OF_DEVICE_MEMORY;
             return;
          }
 
@@ -1487,32 +1497,6 @@ radv_amdgpu_ctx_wait_idle(struct radeon_winsys_ctx *rwctx, enum amd_ip_type ip_t
    return true;
 }
 
-static enum radv_reset_status
-radv_amdgpu_ctx_query_reset_status(struct radeon_winsys_ctx *rwctx)
-{
-   int ret;
-   struct radv_amdgpu_ctx *ctx = (struct radv_amdgpu_ctx *)rwctx;
-   uint64_t flags;
-
-   ret = amdgpu_cs_query_reset_state2(ctx->ctx, &flags);
-   if (ret) {
-      fprintf(stderr, "radv/amdgpu: amdgpu_cs_query_reset_state2 failed. (%i)\n", ret);
-      return RADV_NO_RESET;
-   }
-
-   if (flags & AMDGPU_CTX_QUERY2_FLAGS_RESET) {
-      if (flags & AMDGPU_CTX_QUERY2_FLAGS_GUILTY) {
-         /* Some job from this context once caused a GPU hang */
-         return RADV_GUILTY_CONTEXT_RESET;
-      } else {
-         /* Some job from other context caused a GPU hang */
-         return RADV_INNOCENT_CONTEXT_RESET;
-      }
-   }
-
-   return RADV_NO_RESET;
-}
-
 static uint32_t
 radv_to_amdgpu_pstate(enum radeon_ctx_pstate radv_pstate)
 {
@@ -1767,7 +1751,16 @@ radv_amdgpu_cs_submit(struct radv_amdgpu_ctx *ctx, struct radv_amdgpu_cs_request
          fprintf(stderr, "radv/amdgpu: Not enough memory for command submission.\n");
          result = VK_ERROR_OUT_OF_HOST_MEMORY;
       } else if (r == -ECANCELED) {
-         fprintf(stderr, "radv/amdgpu: The CS has been cancelled because the context is lost.\n");
+         fprintf(stderr,
+                 "radv/amdgpu: The CS has been cancelled because the context is lost. This context is innocent.\n");
+         result = VK_ERROR_DEVICE_LOST;
+      } else if (r == -ENODATA) {
+         fprintf(stderr, "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty "
+                         "of a soft recovery.\n");
+         result = VK_ERROR_DEVICE_LOST;
+      } else if (r == -ETIME) {
+         fprintf(stderr, "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty "
+                         "of a hard recovery.\n");
          result = VK_ERROR_DEVICE_LOST;
       } else {
          fprintf(stderr,
@@ -1793,7 +1786,6 @@ radv_amdgpu_cs_init_functions(struct radv_amdgpu_winsys *ws)
    ws->base.ctx_destroy = radv_amdgpu_ctx_destroy;
    ws->base.ctx_wait_idle = radv_amdgpu_ctx_wait_idle;
    ws->base.ctx_set_pstate = radv_amdgpu_ctx_set_pstate;
-   ws->base.ctx_query_reset_status = radv_amdgpu_ctx_query_reset_status;
    ws->base.cs_domain = radv_amdgpu_cs_domain;
    ws->base.cs_create = radv_amdgpu_cs_create;
    ws->base.cs_destroy = radv_amdgpu_cs_destroy;

@@ -31,7 +31,7 @@ libd3d10sw = shared_library(
   ['d3d10_gdi.c'],
   vs_module_defs : d3d10_sw_def,
   include_directories : [
-    inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_d3d10umd, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers,
+    inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_d3d10umd, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers, inc_winddk
   ],
   link_whole : [libd3d10umd],
   link_with : [

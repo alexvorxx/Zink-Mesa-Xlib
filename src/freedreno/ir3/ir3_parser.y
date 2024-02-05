@@ -83,6 +83,15 @@ static struct {
 	unsigned wrmask;
 } rflags;
 
+static struct {
+        uint32_t reg_address_hi;
+        uint32_t reg_address_lo;
+        uint32_t reg_tmp;
+
+        uint32_t regs_to_dump[128];
+        uint32_t regs_count;
+} meta_print_data;
+
 int ir3_yyget_lineno(void);
 
 static void new_label(const char *name)
@@ -1348,27 +1357,41 @@ cat7_instr:        cat7_barrier
 
 raw_instr: T_RAW   {new_instr(OPC_META_RAW)->raw.value = $1;}
 
-meta_print: T_OP_PRINT T_REGISTER ',' T_REGISTER {
+meta_print_regs:	meta_print_reg
+|					meta_print_reg meta_print_regs
+
+meta_print_reg: ',' T_REGISTER {
+	meta_print_data.regs_to_dump[meta_print_data.regs_count++] = $2;
+}
+
+meta_print_start: T_OP_PRINT T_REGISTER {
+	meta_print_data.reg_address_lo = $2;
+	meta_print_data.reg_address_hi = $2 + 2;
+	meta_print_data.reg_tmp = $2 + 4;
+	meta_print_data.regs_count = 0;
+}
+
+meta_print: meta_print_start meta_print_regs {
 	/* low */
 	new_instr(OPC_MOV);
 	instr->cat1.src_type = TYPE_U32;
 	instr->cat1.dst_type = TYPE_U32;
-	new_dst($2, IR3_REG_R);
+	new_dst(meta_print_data.reg_address_lo, 0);
 	new_src(0, IR3_REG_IMMED)->uim_val = info->shader_print_buffer_iova & 0xffffffff;
 
 	/* high */
 	new_instr(OPC_MOV);
 	instr->cat1.src_type = TYPE_U32;
 	instr->cat1.dst_type = TYPE_U32;
-	new_dst($2 + 2, IR3_REG_R);
+	new_dst(meta_print_data.reg_address_hi, 0);
 	new_src(0, IR3_REG_IMMED)->uim_val = info->shader_print_buffer_iova >> 32;
 
 	/* offset */
 	new_instr(OPC_MOV);
 	instr->cat1.src_type = TYPE_U32;
 	instr->cat1.dst_type = TYPE_U32;
-	new_dst($2 + 4, IR3_REG_R);
-	new_src(0, IR3_REG_IMMED)->uim_val = 4;
+	new_dst(meta_print_data.reg_tmp, 0);
+	new_src(0, IR3_REG_IMMED)->uim_val = 4 * meta_print_data.regs_count;
 
 	new_instr(OPC_NOP);
 	instr->repeat = 5;
@@ -1380,22 +1403,30 @@ meta_print: T_OP_PRINT T_REGISTER ',' T_REGISTER {
 	instr->cat6.type = TYPE_U32;
 	instr->cat6.iim_val = 1;
 
-	new_dst($2, IR3_REG_R);
-	new_src($2, IR3_REG_R);
-	new_src($2 + 4, IR3_REG_R);
+	new_dst(meta_print_data.reg_address_lo, 0);
+	new_src(meta_print_data.reg_address_lo, 0);
+	new_src(meta_print_data.reg_tmp, 0);
 
-	/* Store the value */
-	new_instr(OPC_STG);
-	dummy_dst();
-	instr->cat6.type = TYPE_U32;
-	instr->flags = IR3_INSTR_SY;
-	new_src($2, IR3_REG_R);
-	new_src(0, IR3_REG_IMMED)->iim_val = 0;
-	new_src($4, IR3_REG_R);
-	new_src(0, IR3_REG_IMMED)->iim_val = 1;
+	/* Store all regs */
+	for (uint32_t i = 0; i < meta_print_data.regs_count; i++) {
+		new_instr(OPC_STG);
+		dummy_dst();
+		instr->cat6.type = TYPE_U32;
+		instr->flags = IR3_INSTR_SY;
+		new_src(meta_print_data.reg_address_lo, 0);
+		new_src(0, IR3_REG_IMMED)->iim_val = 0;
+		new_src(meta_print_data.regs_to_dump[i], IR3_REG_R);
+		new_src(0, IR3_REG_IMMED)->iim_val = 1;
 
-	new_instr(OPC_NOP);
-	instr->flags = IR3_INSTR_SY;
+		new_instr(OPC_ADD_U);
+		instr->flags = IR3_INSTR_SS;
+		new_dst(meta_print_data.reg_address_lo, 0);
+		new_src(meta_print_data.reg_address_lo, 0);
+		new_src(0, IR3_REG_IMMED)->uim_val = 4;
+
+		new_instr(OPC_NOP);
+		instr->repeat = 5;
+	}
 }
 
 src:               T_REGISTER     { $$ = new_src($1, 0); }

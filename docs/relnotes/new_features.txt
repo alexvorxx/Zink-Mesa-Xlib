@@ -1,11 +1,5 @@
-New features
-------------
-VK_EXT_image_compression_control on RADV
-VK_EXT_device_fault on RADV
-OpenGL 3.2 on Asahi
-Geometry shaders on Asahi
-GL_ARB_texture_cube_map_array on Asahi
-GL_ARB_clip_control on Asahi
-GL_ARB_timer_query on Asahi
-GL_EXT_disjoint_timer_query on Asahi
-GL_ARB_base_instance on Asahi
+VK_KHR_shader_subgroup_rotate on RADV
+VK_KHR_load_store_op_none on RADV
+VK_KHR_line_rasterization on RADV
+VK_KHR_index_type_uint8 on RADV
+VK_KHR_shader_expect_assume on all Vulkan drivers

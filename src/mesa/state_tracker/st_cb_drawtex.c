@@ -301,7 +301,6 @@ st_DrawTex(struct gl_context *ctx, GLfloat x, GLfloat y, GLfloat z,
                            MESA_PRIM_TRIANGLE_FAN,
                            4,  /* verts */
                            numAttribs); /* attribs/vert */
-   st->last_num_vbuffers = MAX2(st->last_num_vbuffers, 1);
 
    pipe_resource_reference(&vbuffer, NULL);
 

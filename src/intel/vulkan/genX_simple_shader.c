@@ -184,29 +184,37 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
       ps.VectorMaskEnable       = prog_data->uses_vmask;
 
       ps.BindingTableEntryCount = GFX_VER == 9 ? 1 : 0;
+#if GFX_VER < 20
       ps.PushConstantEnable     = prog_data->base.nr_params > 0 ||
                                   prog_data->base.ubo_ranges[0].length;
+#endif
 
       ps.DispatchGRFStartRegisterForConstantSetupData0 =
          brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 0);
       ps.DispatchGRFStartRegisterForConstantSetupData1 =
          brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 1);
+#if GFX_VER < 20
       ps.DispatchGRFStartRegisterForConstantSetupData2 =
          brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 2);
+#endif
 
       ps.KernelStartPointer0 = state->kernel->kernel.offset +
          brw_wm_prog_data_prog_offset(prog_data, ps, 0);
       ps.KernelStartPointer1 = state->kernel->kernel.offset +
          brw_wm_prog_data_prog_offset(prog_data, ps, 1);
+#if GFX_VER < 20
       ps.KernelStartPointer2 = state->kernel->kernel.offset +
          brw_wm_prog_data_prog_offset(prog_data, ps, 2);
+#endif
 
       ps.MaximumNumberofThreadsPerPSD = device->info->max_threads_per_psd - 1;
    }
 
    anv_batch_emit(batch, GENX(3DSTATE_PS_EXTRA), psx) {
       psx.PixelShaderValid = true;
+#if GFX_VER < 20
       psx.AttributeEnable = prog_data->num_varying_inputs > 0;
+#endif
       psx.PixelShaderIsPerSample = prog_data->persample_dispatch;
       psx.PixelShaderComputedDepthMode = prog_data->computed_depth_mode;
       psx.PixelShaderComputesStencil = prog_data->computed_stencil;
@@ -313,6 +321,7 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_PRIMITIVE_REPLICATION);
 #endif
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_STREAMOUT);
+   BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC);
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_CLIP);
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_RASTER);
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SAMPLE_MASK);
@@ -547,6 +556,14 @@ genX(emit_simple_shader_dispatch)(struct anv_simple_shader *state,
          cw.ThreadGroupIDZDimension        = 1;
          cw.ExecutionMask                  = dispatch.right_mask;
          cw.PostSync.MOCS                  = anv_mocs(device, NULL, 0);
+
+#if GFX_VERx10 >= 125
+         cw.GenerateLocalID                = prog_data->generate_local_id != 0;
+         cw.EmitLocal                      = prog_data->generate_local_id;
+         cw.WalkOrder                      = prog_data->walk_order;
+         cw.TileLayout = prog_data->walk_order == BRW_WALK_ORDER_YXZ ?
+                         TileY32bpe : Linear;
+#endif
 
          cw.InterfaceDescriptor = (struct GENX(INTERFACE_DESCRIPTOR_DATA)) {
             .KernelStartPointer                = state->kernel->kernel.offset +

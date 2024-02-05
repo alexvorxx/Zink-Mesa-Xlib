@@ -55,12 +55,12 @@ get_geometry(const VkAccelerationStructureBuildGeometryInfoKHR *pInfo,
 
 static size_t align_transient_size(size_t bytes)
 {
-   return ALIGN(bytes, 64);
+   return align_uintptr(bytes, 64);
 }
 
 static size_t align_private_size(size_t bytes)
 {
-   return ALIGN(bytes, 64);
+   return align_uintptr(bytes, 64);
 }
 
 static size_t get_scheduler_size(size_t num_builds)
@@ -437,7 +437,7 @@ vk_to_grl_IndexFormat(VkIndexType type)
 {
    switch (type) {
    case VK_INDEX_TYPE_NONE_KHR:  return INDEX_FORMAT_NONE;
-   case VK_INDEX_TYPE_UINT8_EXT: unreachable("No UINT8 support yet");
+   case VK_INDEX_TYPE_UINT8_KHR: unreachable("No UINT8 support yet");
    case VK_INDEX_TYPE_UINT16:    return INDEX_FORMAT_R16_UINT;
    case VK_INDEX_TYPE_UINT32:    return INDEX_FORMAT_R32_UINT;
    default:
@@ -696,7 +696,7 @@ cmd_build_acceleration_structures(
       }
 
       size_t geom_struct_size = bs->num_geometries * sizeof(struct Geo);
-      size_t geom_prefix_sum_size = ALIGN(sizeof(uint32_t) * (bs->num_geometries + 1), 64);
+      size_t geom_prefix_sum_size = align_uintptr(sizeof(uint32_t) * (bs->num_geometries + 1), 64);
 
       bs->transient_size = geom_prefix_sum_size + geom_struct_size;
 

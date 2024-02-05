@@ -346,12 +346,10 @@ radv_get_wave_size(struct radv_device *device, gl_shader_stage stage, const stru
 
    if (stage == MESA_SHADER_GEOMETRY && !info->is_ngg)
       return 64;
-   else if (stage == MESA_SHADER_COMPUTE)
-      return info->cs.subgroup_size;
+   else if (stage == MESA_SHADER_COMPUTE || stage == MESA_SHADER_TASK)
+      return info->wave_size;
    else if (stage == MESA_SHADER_FRAGMENT)
       return device->physical_device->ps_wave_size;
-   else if (stage == MESA_SHADER_TASK)
-      return device->physical_device->cs_wave_size;
    else if (gl_shader_stage_is_rt(stage))
       return device->physical_device->rt_wave_size;
    else
@@ -386,10 +384,10 @@ radv_compute_esgs_itemsize(const struct radv_device *device, uint32_t num_varyin
 
 static void
 gather_info_input_decl_vs(const nir_shader *nir, unsigned location, const struct glsl_type *type,
-                          const struct radv_pipeline_key *key, struct radv_shader_info *info)
+                          const struct radv_graphics_state_key *gfx_state, struct radv_shader_info *info)
 {
    if (glsl_type_is_scalar(type) || glsl_type_is_vector(type)) {
-      if (key->vs.instance_rate_inputs & BITFIELD_BIT(location)) {
+      if (gfx_state->vi.instance_rate_inputs & BITFIELD_BIT(location)) {
          info->vs.needs_instance_id = true;
          info->vs.needs_base_instance = true;
       }
@@ -397,7 +395,7 @@ gather_info_input_decl_vs(const nir_shader *nir, unsigned location, const struct
       if (info->vs.use_per_attribute_vb_descs)
          info->vs.vb_desc_usage_mask |= BITFIELD_BIT(location);
       else
-         info->vs.vb_desc_usage_mask |= BITFIELD_BIT(key->vs.vertex_attribute_bindings[location]);
+         info->vs.vb_desc_usage_mask |= BITFIELD_BIT(gfx_state->vi.vertex_attribute_bindings[location]);
 
       info->vs.input_slot_usage_mask |= BITFIELD_RANGE(location, glsl_count_attribute_slots(type, false));
    } else if (glsl_type_is_matrix(type) || glsl_type_is_array(type)) {
@@ -405,29 +403,30 @@ gather_info_input_decl_vs(const nir_shader *nir, unsigned location, const struct
       unsigned stride = glsl_count_attribute_slots(elem, false);
 
       for (unsigned i = 0; i < glsl_get_length(type); ++i)
-         gather_info_input_decl_vs(nir, location + i * stride, elem, key, info);
+         gather_info_input_decl_vs(nir, location + i * stride, elem, gfx_state, info);
    } else {
       assert(glsl_type_is_struct_or_ifc(type));
 
       for (unsigned i = 0; i < glsl_get_length(type); i++) {
          const struct glsl_type *field = glsl_get_struct_field(type, i);
-         gather_info_input_decl_vs(nir, location, field, key, info);
+         gather_info_input_decl_vs(nir, location, field, gfx_state, info);
          location += glsl_count_attribute_slots(field, false);
       }
    }
 }
 
 static void
-gather_shader_info_vs(struct radv_device *device, const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
+gather_shader_info_vs(struct radv_device *device, const nir_shader *nir,
+                      const struct radv_graphics_state_key *gfx_state, const struct radv_shader_stage_key *stage_key,
                       struct radv_shader_info *info)
 {
-   if (pipeline_key->vs.has_prolog && nir->info.inputs_read) {
+   if (gfx_state->vs.has_prolog && nir->info.inputs_read) {
       info->vs.has_prolog = true;
       info->vs.dynamic_inputs = true;
    }
 
    /* Use per-attribute vertex descriptors to prevent faults and for correct bounds checking. */
-   info->vs.use_per_attribute_vb_descs = pipeline_key->vertex_robustness1 || info->vs.dynamic_inputs;
+   info->vs.use_per_attribute_vb_descs = stage_key->vertex_robustness1 || info->vs.dynamic_inputs;
 
    /* We have to ensure consistent input register assignments between the main shader and the
     * prolog.
@@ -437,7 +436,7 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir, const s
    info->vs.needs_draw_id |= info->vs.has_prolog;
 
    nir_foreach_shader_in_variable (var, nir)
-      gather_info_input_decl_vs(nir, var->data.location - VERT_ATTRIB_GENERIC0, var->type, pipeline_key, info);
+      gather_info_input_decl_vs(nir, var->data.location - VERT_ATTRIB_GENERIC0, var->type, gfx_state, info);
 
    if (info->vs.dynamic_inputs)
       info->vs.vb_desc_usage_mask = BITFIELD_MASK(util_last_bit(info->vs.vb_desc_usage_mask));
@@ -446,8 +445,7 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir, const s
     * through a user SGPR for NGG streamout with VS. Otherwise, the XFB offset is incorrectly
     * computed because using the maximum number of vertices can't work.
     */
-   info->vs.dynamic_num_verts_per_prim =
-      pipeline_key->vs.topology == V_008958_DI_PT_NONE && info->is_ngg && nir->xfb_info;
+   info->vs.dynamic_num_verts_per_prim = gfx_state->ia.topology == V_008958_DI_PT_NONE && info->is_ngg && nir->xfb_info;
 
    if (!info->outputs_linked)
       info->vs.num_linked_outputs = util_last_bit64(nir->info.outputs_written);
@@ -461,8 +459,8 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir, const s
 }
 
 static void
-gather_shader_info_tcs(struct radv_device *device, const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
-                       struct radv_shader_info *info)
+gather_shader_info_tcs(struct radv_device *device, const nir_shader *nir,
+                       const struct radv_graphics_state_key *gfx_state, struct radv_shader_info *info)
 {
    info->tcs.tcs_vertices_out = nir->info.tess.tcs_vertices_out;
    info->tcs.tes_inputs_read = ~0ULL;
@@ -475,17 +473,17 @@ gather_shader_info_tcs(struct radv_device *device, const nir_shader *nir, const 
       info->tcs.num_linked_patch_outputs = util_last_bit64(nir->info.patch_outputs_written);
    }
 
-   if (!(pipeline_key->dynamic_patch_control_points)) {
+   if (gfx_state->ts.patch_control_points) {
       /* Number of tessellation patches per workgroup processed by the current pipeline. */
       info->num_tess_patches =
-         get_tcs_num_patches(pipeline_key->tcs.tess_input_vertices, nir->info.tess.tcs_vertices_out,
+         get_tcs_num_patches(gfx_state->ts.patch_control_points, nir->info.tess.tcs_vertices_out,
                              info->tcs.num_linked_inputs, info->tcs.num_linked_outputs,
                              info->tcs.num_linked_patch_outputs, device->physical_device->hs.tess_offchip_block_dw_size,
                              device->physical_device->rad_info.gfx_level, device->physical_device->rad_info.family);
 
       /* LDS size used by VS+TCS for storing TCS inputs and outputs. */
       info->tcs.num_lds_blocks =
-         calculate_tess_lds_size(device->physical_device->rad_info.gfx_level, pipeline_key->tcs.tess_input_vertices,
+         calculate_tess_lds_size(device->physical_device->rad_info.gfx_level, gfx_state->ts.patch_control_points,
                                  nir->info.tess.tcs_vertices_out, info->tcs.num_linked_inputs, info->num_tess_patches,
                                  info->tcs.num_linked_outputs, info->tcs.num_linked_patch_outputs);
    }
@@ -683,8 +681,8 @@ gather_shader_info_gs(struct radv_device *device, const nir_shader *nir, struct 
 }
 
 static void
-gather_shader_info_mesh(const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
-                        struct radv_shader_info *info)
+gather_shader_info_mesh(struct radv_device *device, const nir_shader *nir,
+                        const struct radv_shader_stage_key *stage_key, struct radv_shader_info *info)
 {
    struct gfx10_ngg_info *ngg_info = &info->ngg_info;
 
@@ -724,7 +722,8 @@ gather_shader_info_mesh(const nir_shader *nir, const struct radv_pipeline_key *p
    ngg_info->prim_amp_factor = nir->info.mesh.max_primitives_out;
    ngg_info->vgt_esgs_ring_itemsize = 1;
 
-   info->ms.has_query = pipeline_key->mesh_shader_queries;
+   info->ms.has_query = device->cache_key.mesh_shader_queries;
+   info->ms.has_task = stage_key->has_task_shader;
 }
 
 static void
@@ -746,7 +745,7 @@ calc_mesh_workgroup_size(const struct radv_device *device, const nir_shader *nir
 
 static void
 gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
-                      const struct radv_pipeline_key *pipeline_key, struct radv_shader_info *info)
+                      const struct radv_graphics_state_key *gfx_state, struct radv_shader_info *info)
 {
    uint64_t per_primitive_input_mask = nir->info.inputs_read & nir->info.per_primitive_inputs;
    unsigned num_per_primitive_inputs = util_bitcount64(per_primitive_input_mask);
@@ -804,16 +803,24 @@ gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
    info->ps.pops_is_per_sample =
       info->ps.pops && (nir->info.fs.sample_interlock_ordered || nir->info.fs.sample_interlock_unordered);
 
-   info->ps.spi_ps_input = radv_compute_spi_ps_input(pipeline_key, info);
+   info->ps.spi_ps_input = radv_compute_spi_ps_input(gfx_state, info);
 
-   info->has_epilog = pipeline_key->ps.has_epilog && info->ps.colors_written;
+   info->has_epilog = gfx_state->ps.has_epilog && info->ps.colors_written;
 
-   info->ps.writes_mrt0_alpha = (pipeline_key->ps.alpha_to_coverage_via_mrtz && (info->ps.color0_written & 0x8)) &&
-                                (info->ps.writes_z || info->ps.writes_stencil || info->ps.writes_sample_mask);
+   if (!info->has_epilog) {
+      info->ps.mrt0_is_dual_src = gfx_state->ps.epilog.mrt0_is_dual_src;
+      info->ps.spi_shader_col_format = gfx_state->ps.epilog.spi_shader_col_format;
+   }
 
-   info->ps.mrt0_is_dual_src = pipeline_key->ps.epilog.mrt0_is_dual_src;
+   const bool export_alpha_and_mrtz =
+      (info->ps.color0_written & 0x8) && (info->ps.writes_z || info->ps.writes_stencil || info->ps.writes_sample_mask);
 
-   info->ps.spi_shader_col_format = pipeline_key->ps.epilog.spi_shader_col_format;
+   info->ps.exports_mrtz_via_epilog =
+      info->has_epilog && gfx_state->ps.exports_mrtz_via_epilog && export_alpha_and_mrtz;
+
+   if (!info->ps.exports_mrtz_via_epilog) {
+      info->ps.writes_mrt0_alpha = gfx_state->ms.alpha_to_coverage_via_mrtz && export_alpha_and_mrtz;
+   }
 
    nir_foreach_shader_in_variable (var, nir) {
       const struct glsl_type *type = var->data.per_vertex ? glsl_get_array_element(var->type) : var->type;
@@ -909,7 +916,7 @@ gather_shader_info_rt(const nir_shader *nir, struct radv_shader_info *info)
 }
 
 static void
-gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
+gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const struct radv_shader_stage_key *stage_key,
                       struct radv_shader_info *info)
 {
    info->cs.uses_ray_launch_size = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_RAY_LAUNCH_SIZE_ADDR_AMD);
@@ -925,20 +932,20 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const s
     * the subgroup size.
     */
    const bool require_full_subgroups =
-      pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_require_full || nir->info.cs.has_cooperative_matrix ||
+      stage_key->subgroup_require_full || nir->info.cs.has_cooperative_matrix ||
       (default_wave_size == 32 && nir->info.uses_wide_subgroup_intrinsics && local_size % RADV_SUBGROUP_SIZE == 0);
 
-   const unsigned required_subgroup_size = pipeline_key->stage_info[MESA_SHADER_COMPUTE].subgroup_required_size * 32;
+   const unsigned required_subgroup_size = stage_key->subgroup_required_size * 32;
 
    if (required_subgroup_size) {
-      info->cs.subgroup_size = required_subgroup_size;
+      info->wave_size = required_subgroup_size;
    } else if (require_full_subgroups) {
-      info->cs.subgroup_size = RADV_SUBGROUP_SIZE;
+      info->wave_size = RADV_SUBGROUP_SIZE;
    } else if (device->physical_device->rad_info.gfx_level >= GFX10 && local_size <= 32) {
       /* Use wave32 for small workgroups. */
-      info->cs.subgroup_size = 32;
+      info->wave_size = 32;
    } else {
-      info->cs.subgroup_size = default_wave_size;
+      info->wave_size = default_wave_size;
    }
 
    if (device->physical_device->rad_info.has_cs_regalloc_hang_bug) {
@@ -947,9 +954,11 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir, const s
 }
 
 static void
-gather_shader_info_task(const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
-                        struct radv_shader_info *info)
+gather_shader_info_task(struct radv_device *device, const nir_shader *nir,
+                        const struct radv_shader_stage_key *stage_key, struct radv_shader_info *info)
 {
+   gather_shader_info_cs(device, nir, stage_key, info);
+
    /* Task shaders always need these for the I/O lowering even if the API shader doesn't actually
     * use them.
     */
@@ -969,7 +978,7 @@ gather_shader_info_task(const nir_shader *nir, const struct radv_pipeline_key *p
    info->cs.linear_taskmesh_dispatch =
       nir->info.mesh.ts_mesh_dispatch_dimensions[1] == 1 && nir->info.mesh.ts_mesh_dispatch_dimensions[2] == 1;
 
-   info->cs.has_query = pipeline_key->mesh_shader_queries;
+   info->cs.has_query = device->cache_key.mesh_shader_queries;
 }
 
 static uint32_t
@@ -1068,9 +1077,9 @@ radv_nir_shader_info_init(gl_shader_stage stage, gl_shader_stage next_stage, str
 
 void
 radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *nir,
-                          const struct radv_shader_layout *layout, const struct radv_pipeline_key *pipeline_key,
-                          const enum radv_pipeline_type pipeline_type, bool consider_force_vrs,
-                          struct radv_shader_info *info)
+                          const struct radv_shader_layout *layout, const struct radv_shader_stage_key *stage_key,
+                          const struct radv_graphics_state_key *gfx_state, const enum radv_pipeline_type pipeline_type,
+                          bool consider_force_vrs, struct radv_shader_info *info)
 {
    struct nir_function *func = (struct nir_function *)exec_list_get_head_const(&nir->functions);
 
@@ -1099,7 +1108,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       uint64_t per_vtx_mask = nir->info.outputs_written & ~nir->info.per_primitive_outputs & ~special_mask;
 
       /* Mesh multivew is only lowered in ac_nir_lower_ngg, so we have to fake it here. */
-      if (nir->info.stage == MESA_SHADER_MESH && pipeline_key->has_multiview_view_index) {
+      if (nir->info.stage == MESA_SHADER_MESH && gfx_state->has_multiview_view_index) {
          per_prim_mask |= VARYING_BIT_LAYER;
          info->uses_view_index = true;
       }
@@ -1171,7 +1180,8 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       (nir->info.stage == MESA_SHADER_MESH && device->physical_device->rad_info.gfx_level < GFX11);
    info->cs.uses_local_invocation_idx = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_LOCAL_INVOCATION_INDEX) |
                                         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SUBGROUP_ID) |
-                                        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_NUM_SUBGROUPS);
+                                        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_NUM_SUBGROUPS) |
+                                        radv_shader_should_clear_lds(device, nir);
 
    if (nir->info.stage == MESA_SHADER_COMPUTE || nir->info.stage == MESA_SHADER_TASK ||
        nir->info.stage == MESA_SHADER_MESH) {
@@ -1184,13 +1194,13 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
 
    switch (nir->info.stage) {
    case MESA_SHADER_COMPUTE:
-      gather_shader_info_cs(device, nir, pipeline_key, info);
+      gather_shader_info_cs(device, nir, stage_key, info);
       break;
    case MESA_SHADER_TASK:
-      gather_shader_info_task(nir, pipeline_key, info);
+      gather_shader_info_task(device, nir, stage_key, info);
       break;
    case MESA_SHADER_FRAGMENT:
-      gather_shader_info_fs(device, nir, pipeline_key, info);
+      gather_shader_info_fs(device, nir, gfx_state, info);
       break;
    case MESA_SHADER_GEOMETRY:
       gather_shader_info_gs(device, nir, info);
@@ -1199,13 +1209,13 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       gather_shader_info_tes(device, nir, info);
       break;
    case MESA_SHADER_TESS_CTRL:
-      gather_shader_info_tcs(device, nir, pipeline_key, info);
+      gather_shader_info_tcs(device, nir, gfx_state, info);
       break;
    case MESA_SHADER_VERTEX:
-      gather_shader_info_vs(device, nir, pipeline_key, info);
+      gather_shader_info_vs(device, nir, gfx_state, stage_key, info);
       break;
    case MESA_SHADER_MESH:
-      gather_shader_info_mesh(nir, pipeline_key, info);
+      gather_shader_info_mesh(device, nir, stage_key, info);
       break;
    default:
       if (gl_shader_stage_is_rt(nir->info.stage))
@@ -1213,7 +1223,6 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       break;
    }
 
-   const struct radv_shader_stage_key *stage_key = &pipeline_key->stage_info[nir->info.stage];
    info->wave_size = radv_get_wave_size(device, nir->info.stage, info, stage_key);
    info->ballot_bit_size = radv_get_ballot_bit_size(device, nir->info.stage, info, stage_key);
 
@@ -1229,6 +1238,26 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
        */
       info->cs.uses_full_subgroups = pipeline_type != RADV_PIPELINE_RAY_TRACING && !nir->info.internal &&
                                      (info->workgroup_size % info->wave_size) == 0;
+      break;
+   case MESA_SHADER_VERTEX:
+      if (info->vs.as_ls) {
+         /* Set the maximum possible value by default, this will be optimized during linking if
+          * possible.
+          */
+         info->workgroup_size = 256;
+      } else {
+         info->workgroup_size = info->wave_size;
+      }
+      break;
+   case MESA_SHADER_TESS_CTRL:
+      if (gfx_state->ts.patch_control_points) {
+         info->workgroup_size = ac_compute_lshs_workgroup_size(
+            device->physical_device->rad_info.gfx_level, MESA_SHADER_TESS_CTRL, info->num_tess_patches,
+            gfx_state->ts.patch_control_points, info->tcs.tcs_vertices_out);
+      } else {
+         /* Set the maximum possible value when the workgroup size can't be determined. */
+         info->workgroup_size = 256;
+      }
       break;
    case MESA_SHADER_MESH:
       calc_mesh_workgroup_size(device, nir, info);
@@ -1510,18 +1539,18 @@ gfx10_get_ngg_info(const struct radv_device *device, struct radv_shader_stage *e
 
 static void
 gfx10_get_ngg_query_info(const struct radv_device *device, struct radv_shader_stage *es_stage,
-                         struct radv_shader_stage *gs_stage, const struct radv_pipeline_key *pipeline_key)
+                         struct radv_shader_stage *gs_stage, const struct radv_graphics_state_key *gfx_state)
 {
    struct radv_shader_info *info = gs_stage ? &gs_stage->info : &es_stage->info;
 
    info->gs.has_pipeline_stat_query = device->physical_device->emulate_ngg_gs_query_pipeline_stat && !!gs_stage;
    info->has_xfb_query = gs_stage ? !!gs_stage->nir->xfb_info : !!es_stage->nir->xfb_info;
-   info->has_prim_query = pipeline_key->primitives_generated_query || info->has_xfb_query;
+   info->has_prim_query = device->cache_key.primitives_generated_query || info->has_xfb_query;
 }
 
 static void
 radv_determine_ngg_settings(struct radv_device *device, struct radv_shader_stage *es_stage,
-                            struct radv_shader_stage *fs_stage, const struct radv_pipeline_key *pipeline_key)
+                            struct radv_shader_stage *fs_stage, const struct radv_graphics_state_key *gfx_state)
 {
    assert(es_stage->stage == MESA_SHADER_VERTEX || es_stage->stage == MESA_SHADER_TESS_EVAL);
    assert(!fs_stage || fs_stage->stage == MESA_SHADER_FRAGMENT);
@@ -1530,7 +1559,7 @@ radv_determine_ngg_settings(struct radv_device *device, struct radv_shader_stage
 
    unsigned num_vertices_per_prim = 0;
    if (es_stage->stage == MESA_SHADER_VERTEX) {
-      num_vertices_per_prim = radv_get_num_vertices_per_prim(pipeline_key);
+      num_vertices_per_prim = radv_get_num_vertices_per_prim(gfx_state);
    } else if (es_stage->stage == MESA_SHADER_TESS_EVAL) {
       num_vertices_per_prim = es_stage->nir->info.tess.point_mode                                   ? 1
                               : es_stage->nir->info.tess._primitive_mode == TESS_PRIMITIVE_ISOLINES ? 2
@@ -1554,13 +1583,13 @@ radv_determine_ngg_settings(struct radv_device *device, struct radv_shader_stage
 
 static void
 radv_link_shaders_info(struct radv_device *device, struct radv_shader_stage *producer,
-                       struct radv_shader_stage *consumer, const struct radv_pipeline_key *pipeline_key)
+                       struct radv_shader_stage *consumer, const struct radv_graphics_state_key *gfx_state)
 {
    /* Export primitive ID and clip/cull distances if read by the FS, or export unconditionally when
     * the next stage is unknown (with graphics pipeline library).
     */
    if (producer->info.next_stage == MESA_SHADER_FRAGMENT ||
-       !(pipeline_key->lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT)) {
+       !(gfx_state->lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT)) {
       struct radv_vs_output_info *outinfo = &producer->info.outinfo;
       const bool ps_prim_id_in = !consumer || consumer->info.ps.prim_id_input;
       const bool ps_clip_dists_in = !consumer || !!consumer->info.ps.num_input_clips_culls;
@@ -1587,11 +1616,11 @@ radv_link_shaders_info(struct radv_device *device, struct radv_shader_stage *pro
          struct radv_shader_stage *gs_stage = consumer && consumer->stage == MESA_SHADER_GEOMETRY ? consumer : NULL;
 
          gfx10_get_ngg_info(device, producer, gs_stage);
-         gfx10_get_ngg_query_info(device, producer, gs_stage, pipeline_key);
+         gfx10_get_ngg_query_info(device, producer, gs_stage, gfx_state);
 
          /* Determine other NGG settings like culling for VS or TES without GS. */
          if (!gs_stage) {
-            radv_determine_ngg_settings(device, producer, consumer, pipeline_key);
+            radv_determine_ngg_settings(device, producer, consumer, gfx_state);
          }
       } else if (consumer && consumer->stage == MESA_SHADER_GEOMETRY) {
          struct radv_shader_info *gs_info = &consumer->info;
@@ -1612,20 +1641,10 @@ radv_link_shaders_info(struct radv_device *device, struct radv_shader_stage *pro
       struct radv_shader_stage *vs_stage = producer;
       struct radv_shader_stage *tcs_stage = consumer;
 
-      if (pipeline_key->dynamic_patch_control_points) {
-         /* Set the workgroup size to the maximum possible value to ensure that compilers don't
-          * optimize barriers.
-          */
-         vs_stage->info.workgroup_size = 256;
-         tcs_stage->info.workgroup_size = 256;
-      } else {
+      if (gfx_state->ts.patch_control_points) {
          vs_stage->info.workgroup_size = ac_compute_lshs_workgroup_size(
             device->physical_device->rad_info.gfx_level, MESA_SHADER_VERTEX, tcs_stage->info.num_tess_patches,
-            pipeline_key->tcs.tess_input_vertices, tcs_stage->info.tcs.tcs_vertices_out);
-
-         tcs_stage->info.workgroup_size = ac_compute_lshs_workgroup_size(
-            device->physical_device->rad_info.gfx_level, MESA_SHADER_TESS_CTRL, tcs_stage->info.num_tess_patches,
-            pipeline_key->tcs.tess_input_vertices, tcs_stage->info.tcs.tcs_vertices_out);
+            gfx_state->ts.patch_control_points, tcs_stage->info.tcs.tcs_vertices_out);
 
          if (!radv_use_llvm_for_stage(device, MESA_SHADER_VERTEX)) {
             /* When the number of TCS input and output vertices are the same (typically 3):
@@ -1639,7 +1658,7 @@ radv_link_shaders_info(struct radv_device *device, struct radv_shader_stage *pro
              */
             vs_stage->info.vs.tcs_in_out_eq =
                device->physical_device->rad_info.gfx_level >= GFX9 &&
-               pipeline_key->tcs.tess_input_vertices == tcs_stage->info.tcs.tcs_vertices_out &&
+               gfx_state->ts.patch_control_points == tcs_stage->info.tcs.tcs_vertices_out &&
                vs_stage->nir->info.float_controls_execution_mode == tcs_stage->nir->info.float_controls_execution_mode;
 
             if (vs_stage->info.vs.tcs_in_out_eq)
@@ -1661,13 +1680,8 @@ radv_link_shaders_info(struct radv_device *device, struct radv_shader_stage *pro
       tcs_stage->info.tcs.tes_inputs_read = tes_stage->nir->info.inputs_read;
       tcs_stage->info.tcs.tes_patch_inputs_read = tes_stage->nir->info.patch_inputs_read;
 
-      if (!pipeline_key->dynamic_patch_control_points)
+      if (gfx_state->ts.patch_control_points)
          tes_stage->info.num_tess_patches = tcs_stage->info.num_tess_patches;
-   }
-
-   /* Task/mesh I/O uses the task ring buffers. */
-   if (producer->stage == MESA_SHADER_TASK) {
-      consumer->info.ms.has_task = true;
    }
 }
 
@@ -1708,7 +1722,7 @@ static const gl_shader_stage graphics_shader_order[] = {
 };
 
 void
-radv_nir_shader_info_link(struct radv_device *device, const struct radv_pipeline_key *pipeline_key,
+radv_nir_shader_info_link(struct radv_device *device, const struct radv_graphics_state_key *gfx_state,
                           struct radv_shader_stage *stages)
 {
    /* Walk backwards to link */
@@ -1719,18 +1733,18 @@ radv_nir_shader_info_link(struct radv_device *device, const struct radv_pipeline
       if (!stages[s].nir)
          continue;
 
-      radv_link_shaders_info(device, &stages[s], next_stage, pipeline_key);
+      radv_link_shaders_info(device, &stages[s], next_stage, gfx_state);
       next_stage = &stages[s];
    }
 
    if (device->physical_device->rad_info.gfx_level >= GFX9) {
       /* Merge shader info for VS+TCS. */
-      if (stages[MESA_SHADER_TESS_CTRL].nir) {
+      if (stages[MESA_SHADER_VERTEX].nir && stages[MESA_SHADER_TESS_CTRL].nir) {
          radv_nir_shader_info_merge(&stages[MESA_SHADER_VERTEX], &stages[MESA_SHADER_TESS_CTRL]);
       }
 
       /* Merge shader info for VS+GS or TES+GS. */
-      if (stages[MESA_SHADER_GEOMETRY].nir) {
+      if ((stages[MESA_SHADER_VERTEX].nir || stages[MESA_SHADER_TESS_EVAL].nir) && stages[MESA_SHADER_GEOMETRY].nir) {
          gl_shader_stage pre_stage = stages[MESA_SHADER_TESS_EVAL].nir ? MESA_SHADER_TESS_EVAL : MESA_SHADER_VERTEX;
 
          radv_nir_shader_info_merge(&stages[pre_stage], &stages[MESA_SHADER_GEOMETRY]);

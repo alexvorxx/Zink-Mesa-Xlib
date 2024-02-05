@@ -132,7 +132,7 @@ struct d3d12_screen {
    uint32_t revision;
    uint64_t driver_version;
    uint64_t memory_size_megabytes;
-   double timestamp_multiplier;
+   float timestamp_multiplier;
    bool have_load_at_vertex;
    bool support_shader_images;
    bool support_create_not_resident;

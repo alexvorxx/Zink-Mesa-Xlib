@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "util/blend.h"
 #include "util/macros.h"
 #include "common/v3d_debug.h"
 #include "common/v3d_device_info.h"
@@ -40,7 +41,6 @@
 #include "util/u_math.h"
 
 #include "qpu/qpu_instr.h"
-#include "pipe/p_state.h"
 
 /**
  * Maximum number of outstanding TMU operations we can queue for execution.
@@ -345,6 +345,11 @@ enum quniform_contents {
          QUNIFORM_INLINE_UBO_1,
          QUNIFORM_INLINE_UBO_2,
          QUNIFORM_INLINE_UBO_3,
+
+        /**
+         * Current value of DrawIndex for Multidraw
+         */
+        QUNIFORM_DRAW_ID,
 };
 
 static inline uint32_t v3d_unit_data_create(uint32_t unit, uint32_t value)
@@ -430,10 +435,8 @@ struct v3d_fs_key {
                 uint8_t swizzle[4];
         } color_fmt[V3D_MAX_DRAW_BUFFERS];
 
-        uint8_t logicop_func;
+        enum pipe_logicop logicop_func;
         uint32_t point_sprite_mask;
-
-        struct pipe_rt_blend_state blend;
 
         /* If the fragment shader reads gl_PrimitiveID then we have 2 scenarios:
          *
@@ -911,6 +914,12 @@ struct v3d_compile {
 
         bool tmu_dirty_rcl;
         bool has_global_address;
+
+        /* If we have processed a discard/terminate instruction. This may
+         * cause some lanes to be inactive even during uniform control
+         * flow.
+         */
+        bool emitted_discard;
 };
 
 struct v3d_uniform_list {
@@ -1175,7 +1184,7 @@ bool v3d_nir_lower_line_smooth(nir_shader *shader);
 bool v3d_nir_lower_logic_ops(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_scratch(nir_shader *s);
 bool v3d_nir_lower_txf_ms(nir_shader *s);
-bool v3d_nir_lower_image_load_store(nir_shader *s);
+bool v3d_nir_lower_image_load_store(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_load_store_bitsize(nir_shader *s);
 
 void v3d_vir_emit_tex(struct v3d_compile *c, nir_tex_instr *instr);
@@ -1304,6 +1313,23 @@ vir_##name##_dest(struct v3d_compile *c, struct qreg dest,               \
                                                a, c->undef));           \
 }
 
+#define VIR_SFU2(name)                                                   \
+static inline struct qreg                                                \
+vir_##name(struct v3d_compile *c, struct qreg a, struct qreg b)          \
+{                                                                        \
+        return vir_emit_def(c, vir_add_inst(V3D_QPU_A_##name,            \
+                                            c->undef,                    \
+                                            a, b));                      \
+}                                                                        \
+static inline struct qinst *                                             \
+vir_##name##_dest(struct v3d_compile *c, struct qreg dest,               \
+                  struct qreg a, struct qreg b)                          \
+{                                                                        \
+        return vir_emit_nondef(c, vir_add_inst(V3D_QPU_A_##name,         \
+                                               dest,                     \
+                                               a, b));                   \
+}
+
 #define VIR_A_ALU2(name) VIR_ALU2(name, vir_add_inst, V3D_QPU_A_##name)
 #define VIR_M_ALU2(name) VIR_ALU2(name, vir_mul_inst, V3D_QPU_M_##name)
 #define VIR_A_ALU1(name) VIR_ALU1(name, vir_add_inst, V3D_QPU_A_##name)
@@ -1402,6 +1428,28 @@ VIR_SFU(EXP)
 VIR_SFU(LOG)
 VIR_SFU(SIN)
 VIR_SFU(RSQRT2)
+
+VIR_SFU(BALLOT)
+VIR_SFU(BCASTF)
+VIR_SFU(ALLEQ)
+VIR_SFU(ALLFEQ)
+VIR_SFU2(ROTQ)
+VIR_SFU2(ROT)
+VIR_SFU2(SHUFFLE)
+
+VIR_A_ALU2(VPACK)
+VIR_A_ALU2(V8PACK)
+VIR_A_ALU2(V10PACK)
+VIR_A_ALU2(V11FPACK)
+
+VIR_M_ALU1(FTOUNORM16)
+VIR_M_ALU1(FTOSNORM16)
+
+VIR_M_ALU1(VFTOUNORM8)
+VIR_M_ALU1(VFTOSNORM8)
+
+VIR_M_ALU1(VFTOUNORM10LO)
+VIR_M_ALU1(VFTOUNORM10HI)
 
 static inline struct qinst *
 vir_MOV_cond(struct v3d_compile *c, enum v3d_qpu_cond cond,

@@ -150,13 +150,13 @@ get_parameter_match_type(const ir_variable *param,
    if (from_type == to_type)
       return PARAMETER_EXACT_MATCH;
 
-   if (to_type->is_double()) {
-      if (from_type->is_float())
+   if (glsl_type_is_double(to_type)) {
+      if (glsl_type_is_float(from_type))
          return PARAMETER_FLOAT_TO_DOUBLE;
       return PARAMETER_INT_TO_DOUBLE;
    }
 
-   if (to_type->is_float())
+   if (glsl_type_is_float(to_type))
       return PARAMETER_INT_TO_FLOAT;
 
    /* int -> uint and any other oddball conversions */
@@ -370,6 +370,18 @@ ir_function::matching_signature(_mesa_glsl_parse_state *state,
 }
 
 
+static inline const glsl_type *
+get_param_type(ir_instruction *inst)
+{
+   ir_variable *var = inst->as_variable();
+   if (var)
+      return var->type;
+
+   ir_rvalue *rvalue = inst->as_rvalue();
+   assert(rvalue != NULL);
+   return rvalue->type;
+}
+
 static bool
 parameter_lists_match_exact(const exec_list *list_a, const exec_list *list_b)
 {
@@ -379,13 +391,13 @@ parameter_lists_match_exact(const exec_list *list_a, const exec_list *list_b)
    for (/* empty */
 	; !node_a->is_tail_sentinel() && !node_b->is_tail_sentinel()
 	; node_a = node_a->next, node_b = node_b->next) {
-      ir_variable *a = (ir_variable *) node_a;
-      ir_variable *b = (ir_variable *) node_b;
+      ir_instruction *inst_a = (ir_instruction *) node_a;
+      ir_instruction *inst_b = (ir_instruction *) node_b;
 
       /* If the types of the parameters do not match, the parameters lists
        * are different.
        */
-      if (a->type != b->type)
+      if (get_param_type (inst_a) != get_param_type (inst_b))
          return false;
    }
 

@@ -646,6 +646,7 @@ enum pipe_conservative_raster_mode
 #define PIPE_IMAGE_ACCESS_COHERENT           (1 << 2)
 #define PIPE_IMAGE_ACCESS_VOLATILE           (1 << 3)
 #define PIPE_IMAGE_ACCESS_TEX2D_FROM_BUFFER  (1 << 4)
+#define PIPE_IMAGE_ACCESS_DRIVER_INTERNAL    (1 << 5)
 
 /**
  * Implementation capabilities/limits which are queried through
@@ -932,9 +933,9 @@ enum pipe_cap
    PIPE_CAP_ALLOW_GLTHREAD_BUFFER_SUBDATA_OPT,
    PIPE_CAP_NULL_TEXTURES,
    PIPE_CAP_ASTC_VOID_EXTENTS_NEED_DENORM_FLUSH,
-
    PIPE_CAP_VALIDATE_ALL_DIRTY_STATES,
    PIPE_CAP_HAS_CONST_BW,
+   PIPE_CAP_PERFORMANCE_MONITOR,
    PIPE_CAP_LAST,
    /* XXX do not add caps after PIPE_CAP_LAST! */
 };
@@ -1100,13 +1101,10 @@ enum pipe_resource_param
  */
 enum pipe_context_param
 {
-   /* A hint for the driver that it should pin its execution threads to
-    * a group of cores sharing a specific L3 cache if the CPU has multiple
-    * L3 caches. This is needed for good multithreading performance on
-    * AMD Zen CPUs. "value" is the L3 cache index. Drivers that don't have
-    * any internal threads or don't run on affected CPUs can ignore this.
+   /* Call util_thread_sched_apply_policy() for each driver thread that
+    * benefits from it.
     */
-   PIPE_CONTEXT_PARAM_PIN_THREADS_TO_L3_CACHE,
+   PIPE_CONTEXT_PARAM_UPDATE_THREAD_SCHEDULING,
 };
 
 /**

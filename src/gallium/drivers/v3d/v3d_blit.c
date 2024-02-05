@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "nir/pipe_nir.h"
 #include "util/format/u_format.h"
 #include "util/u_surface.h"
 #include "util/u_blitter.h"
@@ -41,7 +42,7 @@ v3d_blitter_save(struct v3d_context *v3d, bool op_blit, bool render_cond)
 {
         util_blitter_save_fragment_constant_buffer_slot(v3d->blitter,
                                                         v3d->constbuf[PIPE_SHADER_FRAGMENT].cb);
-        util_blitter_save_vertex_buffer_slot(v3d->blitter, v3d->vertexbuf.vb);
+        util_blitter_save_vertex_buffers(v3d->blitter, v3d->vertexbuf.vb, v3d->vertexbuf.count);
         util_blitter_save_vertex_elements(v3d->blitter, v3d->vtx);
         util_blitter_save_vertex_shader(v3d->blitter, v3d->prog.bind_vs);
         util_blitter_save_geometry_shader(v3d->blitter, v3d->prog.bind_gs);
@@ -476,12 +477,7 @@ v3d_get_sand8_vs(struct pipe_context *pctx)
         pos_out->data.location = VARYING_SLOT_POS;
         nir_store_var(&b, pos_out, nir_load_var(&b, pos_in), 0xf);
 
-        struct pipe_shader_state shader_tmpl = {
-                .type = PIPE_SHADER_IR_NIR,
-                .ir.nir = b.shader,
-        };
-
-        v3d->sand8_blit_vs = pctx->create_vs_state(pctx, &shader_tmpl);
+        v3d->sand8_blit_vs = pipe_shader_from_nir(pctx, b.shader);
 
         return v3d->sand8_blit_vs;
 }
@@ -621,12 +617,8 @@ v3d_get_sand8_fs(struct pipe_context *pctx, int cpp)
                       output,
                       0xF);
 
-        struct pipe_shader_state shader_tmpl = {
-                .type = PIPE_SHADER_IR_NIR,
-                .ir.nir = b.shader,
-        };
 
-        *cached_shader = pctx->create_fs_state(pctx, &shader_tmpl);
+        *cached_shader = pipe_shader_from_nir(pctx, b.shader);
 
         return *cached_shader;
 }
@@ -769,12 +761,7 @@ v3d_get_sand30_vs(struct pipe_context *pctx)
         pos_out->data.location = VARYING_SLOT_POS;
         nir_store_var(&b, pos_out, nir_load_var(&b, pos_in), 0xf);
 
-        struct pipe_shader_state shader_tmpl = {
-                .type = PIPE_SHADER_IR_NIR,
-                .ir.nir = b.shader,
-        };
-
-        v3d->sand30_blit_vs = pctx->create_vs_state(pctx, &shader_tmpl);
+        v3d->sand30_blit_vs = pipe_shader_from_nir(pctx, b.shader);
 
         return v3d->sand30_blit_vs;
 }
@@ -948,12 +935,8 @@ v3d_get_sand30_fs(struct pipe_context *pctx)
         nir_store_var(&b, color_out,
                       output,
                       0xf);
-        struct pipe_shader_state shader_tmpl = {
-                .type = PIPE_SHADER_IR_NIR,
-                .ir.nir = b.shader,
-        };
 
-        v3d->sand30_blit_fs = pctx->create_fs_state(pctx, &shader_tmpl);
+        v3d->sand30_blit_fs = pipe_shader_from_nir(pctx, b.shader);
 
         return v3d->sand30_blit_fs;
 }

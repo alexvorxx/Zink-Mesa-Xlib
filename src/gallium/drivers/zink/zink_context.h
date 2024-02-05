@@ -118,8 +118,6 @@ void
 zink_resource_buffer_barrier(struct zink_context *ctx, struct zink_resource *res, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 void
 zink_resource_buffer_barrier2(struct zink_context *ctx, struct zink_resource *res, VkAccessFlags flags, VkPipelineStageFlags pipeline);
-bool
-zink_resource_image_needs_barrier(struct zink_resource *res, VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 void
 zink_resource_image_barrier_init(VkImageMemoryBarrier *imb, struct zink_resource *res, VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 void
@@ -264,7 +262,6 @@ zink_component_mapping(enum pipe_swizzle swizzle)
    case PIPE_SWIZZLE_W: return VK_COMPONENT_SWIZZLE_A;
    case PIPE_SWIZZLE_0: return VK_COMPONENT_SWIZZLE_ZERO;
    case PIPE_SWIZZLE_1: return VK_COMPONENT_SWIZZLE_ONE;
-   case PIPE_SWIZZLE_NONE: return VK_COMPONENT_SWIZZLE_IDENTITY; // ???
    default:
       unreachable("unexpected swizzle");
    }

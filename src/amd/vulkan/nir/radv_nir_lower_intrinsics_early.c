@@ -29,7 +29,7 @@
 #include "radv_private.h"
 
 bool
-radv_nir_lower_intrinsics_early(nir_shader *nir, const struct radv_pipeline_key *key)
+radv_nir_lower_intrinsics_early(nir_shader *nir, bool lower_view_index_to_zero)
 {
    nir_function_impl *entry = nir_shader_get_entrypoint(nir);
    bool progress = false;
@@ -52,7 +52,7 @@ radv_nir_lower_intrinsics_early(nir_shader *nir, const struct radv_pipeline_key 
             def = nir_ior(&b, intrin->src[0].ssa, intrin->src[1].ssa);
             break;
          case nir_intrinsic_load_view_index:
-            if (key->has_multiview_view_index)
+            if (!lower_view_index_to_zero)
                continue;
             def = nir_imm_zero(&b, 1, 32);
             break;

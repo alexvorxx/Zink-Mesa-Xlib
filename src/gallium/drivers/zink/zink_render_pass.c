@@ -516,15 +516,15 @@ get_render_pass(struct zink_context *ctx)
       if (!_mesa_hash_table_insert_pre_hashed(ctx->render_pass_cache, hash, &rp->state, rp))
          return NULL;
       bool found = false;
-      struct set_entry *entry = _mesa_set_search_or_add(&ctx->render_pass_state_cache, &pstate, &found);
+      struct set_entry *cache_entry = _mesa_set_search_or_add(&ctx->render_pass_state_cache, &pstate, &found);
       struct zink_render_pass_pipeline_state *ppstate;
       if (!found) {
-         entry->key = ralloc(ctx, struct zink_render_pass_pipeline_state);
-         ppstate = (void*)entry->key;
+         cache_entry->key = ralloc(ctx, struct zink_render_pass_pipeline_state);
+         ppstate = (void*)cache_entry->key;
          memcpy(ppstate, &pstate, rp_state_size(&pstate));
          ppstate->id = ctx->render_pass_state_cache.entries;
       }
-      ppstate = (void*)entry->key;
+      ppstate = (void*)cache_entry->key;
       rp->pipeline_state = ppstate->id;
    }
    return rp;

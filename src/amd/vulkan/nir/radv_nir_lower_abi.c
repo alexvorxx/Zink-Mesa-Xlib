@@ -37,7 +37,7 @@ typedef struct {
    enum amd_gfx_level gfx_level;
    const struct radv_shader_args *args;
    const struct radv_shader_info *info;
-   const struct radv_pipeline_key *pl_key;
+   const struct radv_graphics_state_key *gfx_state;
    uint32_t address32_hi;
    nir_def *gsvs_ring[4];
 } lower_abi_state;
@@ -157,8 +157,8 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       break;
    case nir_intrinsic_load_patch_vertices_in:
       if (stage == MESA_SHADER_TESS_CTRL) {
-         if (s->pl_key->tcs.tess_input_vertices) {
-            replacement = nir_imm_int(b, s->pl_key->tcs.tess_input_vertices);
+         if (s->gfx_state->ts.patch_control_points) {
+            replacement = nir_imm_int(b, s->gfx_state->ts.patch_control_points);
          } else {
             replacement = GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout, TCS_OFFCHIP_LAYOUT_PATCH_CONTROL_POINTS);
          }
@@ -348,20 +348,20 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       break;
    }
    case nir_intrinsic_load_rasterization_samples_amd:
-      if (s->pl_key->dynamic_rasterization_samples) {
+      if (s->gfx_state->dynamic_rasterization_samples) {
          replacement = GET_SGPR_FIELD_NIR(s->args->ps_state, PS_STATE_NUM_SAMPLES);
       } else {
-         replacement = nir_imm_int(b, s->pl_key->ps.num_samples);
+         replacement = nir_imm_int(b, s->gfx_state->ms.rasterization_samples);
       }
       break;
    case nir_intrinsic_load_provoking_vtx_in_prim_amd: {
-      if (s->pl_key->dynamic_provoking_vtx_mode) {
+      if (s->gfx_state->dynamic_provoking_vtx_mode) {
          replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ngg_provoking_vtx);
       } else {
          unsigned provoking_vertex = 0;
-         if (s->pl_key->vs.provoking_vtx_last) {
+         if (s->gfx_state->rs.provoking_vtx_last) {
             if (stage == MESA_SHADER_VERTEX) {
-               provoking_vertex = radv_get_num_vertices_per_prim(s->pl_key) - 1;
+               provoking_vertex = radv_get_num_vertices_per_prim(s->gfx_state) - 1;
             } else if (stage == MESA_SHADER_GEOMETRY) {
                provoking_vertex = b->shader->info.gs.vertices_in - 1;
             } else {
@@ -436,7 +436,7 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
          if (s->info->vs.dynamic_num_verts_per_prim) {
             replacement = ac_nir_load_arg(b, &s->args->ac, s->args->num_verts_per_prim);
          } else {
-            replacement = nir_imm_int(b, radv_get_num_vertices_per_prim(s->pl_key));
+            replacement = nir_imm_int(b, radv_get_num_vertices_per_prim(s->gfx_state));
          }
       } else if (stage == MESA_SHADER_TESS_EVAL) {
          if (s->info->tes.point_mode) {
@@ -485,11 +485,11 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       break;
    }
    case nir_intrinsic_load_poly_line_smooth_enabled:
-      if (s->pl_key->dynamic_line_rast_mode) {
+      if (s->gfx_state->dynamic_line_rast_mode) {
          nir_def *line_rast_mode = GET_SGPR_FIELD_NIR(s->args->ps_state, PS_STATE_LINE_RAST_MODE);
-         replacement = nir_ieq_imm(b, line_rast_mode, VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT);
+         replacement = nir_ieq_imm(b, line_rast_mode, VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR);
       } else {
-         replacement = nir_imm_bool(b, s->pl_key->ps.line_smooth_enabled);
+         replacement = nir_imm_bool(b, s->gfx_state->rs.line_smooth_enabled);
       }
       break;
    case nir_intrinsic_load_initial_edgeflags_amd:
@@ -499,7 +499,7 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.load_provoking_vtx);
       break;
    case nir_intrinsic_load_rasterization_primitive_amd:
-      assert(s->pl_key->unknown_rast_prim);
+      assert(s->gfx_state->unknown_rast_prim);
       /* Load the primitive topology from an user SGPR when it's unknown at compile time (GPL). */
       replacement = GET_SGPR_FIELD_NIR(s->args->ps_state, PS_STATE_RAST_PRIM);
       break;
@@ -547,18 +547,18 @@ load_gsvs_ring(nir_builder *b, lower_abi_state *s, unsigned stream_id)
 }
 
 void
-radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level, const struct radv_shader_info *info,
-                   const struct radv_shader_args *args, const struct radv_pipeline_key *pl_key, uint32_t address32_hi)
+radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level, const struct radv_shader_stage *stage,
+                   const struct radv_graphics_state_key *gfx_state, uint32_t address32_hi)
 {
    lower_abi_state state = {
       .gfx_level = gfx_level,
-      .info = info,
-      .args = args,
-      .pl_key = pl_key,
+      .info = &stage->info,
+      .args = &stage->args,
+      .gfx_state = gfx_state,
       .address32_hi = address32_hi,
    };
 
-   if (shader->info.stage == MESA_SHADER_GEOMETRY && !info->is_ngg) {
+   if (shader->info.stage == MESA_SHADER_GEOMETRY && !stage->info.is_ngg) {
       nir_function_impl *impl = nir_shader_get_entrypoint(shader);
 
       nir_builder b = nir_builder_at(nir_before_impl(impl));

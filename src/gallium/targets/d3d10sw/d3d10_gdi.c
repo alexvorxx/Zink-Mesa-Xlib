@@ -33,10 +33,25 @@
 #include "softpipe/sp_public.h"
 #include "sw/gdi/gdi_sw_winsys.h"
 
+#include "winddk_compat.h"
+#include <d3dkmthk.h>
 
 extern struct pipe_screen *
 d3d10_create_screen(void);
 
+HDC d3d10_gdi_acquire_hdc(void *winsys_drawable_handle) {
+   D3DKMT_PRESENT *pPresentInfo = (D3DKMT_PRESENT *)winsys_drawable_handle;
+
+   HWND hWnd = pPresentInfo->hWindow;
+   return GetDC(hWnd);
+}
+
+void d3d10_gdi_release_hdc(void *winsys_drawable_handle, HDC hDC) {
+   D3DKMT_PRESENT *pPresentInfo = (D3DKMT_PRESENT *)winsys_drawable_handle;
+
+   HWND hWnd = pPresentInfo->hWindow;
+   ReleaseDC(hWnd, hDC);
+}
 
 struct pipe_screen *
 d3d10_create_screen(void)
@@ -46,7 +61,7 @@ d3d10_create_screen(void)
    struct pipe_screen *screen = NULL;
    struct sw_winsys *winsys;
 
-   winsys = gdi_create_sw_winsys();
+   winsys = gdi_create_sw_winsys(d3d10_gdi_acquire_hdc, d3d10_gdi_release_hdc);
    if(!winsys)
       goto no_winsys;
 

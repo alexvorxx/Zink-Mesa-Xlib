@@ -121,7 +121,9 @@ ForEachMacros:
   - nir_foreach_reg_decl
   - nir_foreach_reg_decl_safe
   - nir_foreach_reg_load
+  - nir_foreach_reg_load_safe
   - nir_foreach_reg_store
+  - nir_foreach_reg_store_safe
 
   - nir_foreach_if_use
   - nir_foreach_if_use_safe
@@ -185,6 +187,7 @@ ForEachMacros:
   - foreach_submitted
   - AGX_BATCH_FOREACH_BO_HANDLE
   - agx_pack
+  - agx_push
   - agx_usc_pack
   - agx_ppp_push
   - agx_foreach_block

@@ -257,7 +257,7 @@ lower_load_barycentric_coord(nir_builder *b, lower_fs_barycentric_state *state, 
 }
 
 bool
-radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_pipeline_key *key, unsigned rast_prim)
+radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_graphics_state_key *gfx_state, unsigned rast_prim)
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    bool progress = false;
@@ -265,8 +265,8 @@ radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_pipeline_key
    nir_builder b;
 
    lower_fs_barycentric_state state = {
-      .dynamic_rasterization_samples = key->dynamic_rasterization_samples,
-      .num_rasterization_samples = key->ps.num_samples,
+      .dynamic_rasterization_samples = gfx_state->dynamic_rasterization_samples,
+      .num_rasterization_samples = gfx_state->ms.rasterization_samples,
       .rast_prim = rast_prim,
    };
 

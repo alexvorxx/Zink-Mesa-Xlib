@@ -175,6 +175,7 @@ struct InstrPred {
 
          if (a->opcode == aco_opcode::v_permlane16_b32 ||
              a->opcode == aco_opcode::v_permlanex16_b32 ||
+             a->opcode == aco_opcode::v_permlane64_b32 ||
              a->opcode == aco_opcode::v_readfirstlane_b32)
             return aV.pass_flags == bV.pass_flags;
       }

@@ -409,9 +409,15 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
 {
    uint64_t slot_mask = 0;
    uint16_t slot_mask_16bit = 0;
+   bool is_patch_special = false;
 
    if (nir_intrinsic_infos[instr->intrinsic].index_map[NIR_INTRINSIC_IO_SEMANTICS] > 0) {
       nir_io_semantics semantics = nir_intrinsic_io_semantics(instr);
+
+      is_patch_special = semantics.location == VARYING_SLOT_TESS_LEVEL_INNER ||
+                         semantics.location == VARYING_SLOT_TESS_LEVEL_OUTER ||
+                         semantics.location == VARYING_SLOT_BOUNDING_BOX0 ||
+                         semantics.location == VARYING_SLOT_BOUNDING_BOX1;
 
       if (semantics.location >= VARYING_SLOT_PATCH0 &&
           semantics.location <= VARYING_SLOT_PATCH31) {
@@ -515,7 +521,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_load_input_vertex:
    case nir_intrinsic_load_interpolated_input:
       if (shader->info.stage == MESA_SHADER_TESS_EVAL &&
-          instr->intrinsic == nir_intrinsic_load_input) {
+          instr->intrinsic == nir_intrinsic_load_input &&
+          !is_patch_special) {
          shader->info.patch_inputs_read |= slot_mask;
          if (!nir_src_is_const(*nir_get_io_offset_src(instr)))
             shader->info.patch_inputs_read_indirectly |= slot_mask;
@@ -540,7 +547,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_load_per_vertex_output:
    case nir_intrinsic_load_per_primitive_output:
       if (shader->info.stage == MESA_SHADER_TESS_CTRL &&
-          instr->intrinsic == nir_intrinsic_load_output) {
+          instr->intrinsic == nir_intrinsic_load_output &&
+          !is_patch_special) {
          shader->info.patch_outputs_read |= slot_mask;
          if (!nir_src_is_const(*nir_get_io_offset_src(instr)))
             shader->info.patch_outputs_accessed_indirectly |= slot_mask;
@@ -574,7 +582,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_store_per_vertex_output:
    case nir_intrinsic_store_per_primitive_output:
       if (shader->info.stage == MESA_SHADER_TESS_CTRL &&
-          instr->intrinsic == nir_intrinsic_store_output) {
+          instr->intrinsic == nir_intrinsic_store_output &&
+          !is_patch_special) {
          shader->info.patch_outputs_written |= slot_mask;
          if (!nir_src_is_const(*nir_get_io_offset_src(instr)))
             shader->info.patch_outputs_accessed_indirectly |= slot_mask;
@@ -672,6 +681,7 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_load_gs_header_ir3:
    case nir_intrinsic_load_tcs_header_ir3:
    case nir_intrinsic_load_ray_triangle_vertex_positions:
+   case nir_intrinsic_load_layer_id:
       BITSET_SET(shader->info.system_values_read,
                  nir_system_value_from_intrinsic(instr->intrinsic));
       break;
@@ -724,6 +734,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
       }
       break;
 
+   case nir_intrinsic_quad_vote_any:
+   case nir_intrinsic_quad_vote_all:
    case nir_intrinsic_quad_broadcast:
    case nir_intrinsic_quad_swap_horizontal:
    case nir_intrinsic_quad_swap_vertical:
@@ -738,13 +750,8 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_vote_feq:
    case nir_intrinsic_vote_ieq:
    case nir_intrinsic_ballot:
-   case nir_intrinsic_ballot_bit_count_exclusive:
-   case nir_intrinsic_ballot_bit_count_inclusive:
-   case nir_intrinsic_ballot_bitfield_extract:
-   case nir_intrinsic_ballot_bit_count_reduce:
-   case nir_intrinsic_ballot_find_lsb:
-   case nir_intrinsic_ballot_find_msb:
    case nir_intrinsic_first_invocation:
+   case nir_intrinsic_last_invocation:
    case nir_intrinsic_read_invocation:
    case nir_intrinsic_read_first_invocation:
    case nir_intrinsic_elect:
@@ -755,11 +762,13 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_shuffle_xor:
    case nir_intrinsic_shuffle_up:
    case nir_intrinsic_shuffle_down:
-   case nir_intrinsic_write_invocation_amd:
-      if (shader->info.stage == MESA_SHADER_FRAGMENT)
-         shader->info.fs.needs_all_helper_invocations = true;
-
+   case nir_intrinsic_rotate:
+   case nir_intrinsic_masked_swizzle_amd:
       shader->info.uses_wide_subgroup_intrinsics = true;
+
+      if (shader->info.stage == MESA_SHADER_FRAGMENT &&
+          shader->info.fs.require_full_quads)
+         shader->info.fs.needs_quad_helper_invocations = true;
       break;
 
    case nir_intrinsic_end_primitive:
@@ -972,7 +981,6 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
       shader->info.fs.color_is_dual_source = false;
       shader->info.fs.uses_fbfetch_output = false;
       shader->info.fs.needs_quad_helper_invocations = false;
-      shader->info.fs.needs_all_helper_invocations = false;
    }
    if (shader->info.stage == MESA_SHADER_TESS_CTRL) {
       shader->info.tess.tcs_cross_invocation_inputs_read = 0;

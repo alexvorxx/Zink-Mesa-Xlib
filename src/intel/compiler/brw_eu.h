@@ -197,12 +197,16 @@ const struct brw_shader_reloc *brw_get_shader_relocs(struct brw_codegen *p,
                                                      unsigned *num_relocs);
 const unsigned *brw_get_program( struct brw_codegen *p, unsigned *sz );
 
+bool brw_should_dump_shader_bin(void);
+void brw_dump_shader_bin(void *assembly, int start_offset, int end_offset,
+                         const char *identifier);
+
 bool brw_try_override_assembly(struct brw_codegen *p, int start_offset,
                                const char *identifier);
 
-void brw_realign(struct brw_codegen *p, unsigned align);
+void brw_realign(struct brw_codegen *p, unsigned alignment);
 int brw_append_data(struct brw_codegen *p, void *data,
-                    unsigned size, unsigned align);
+                    unsigned size, unsigned alignment);
 brw_inst *brw_next_insn(struct brw_codegen *p, unsigned opcode);
 void brw_add_reloc(struct brw_codegen *p, uint32_t id,
                    enum brw_shader_reloc_type type,
@@ -410,6 +414,20 @@ brw_sampler_desc(const struct intel_device_info *devinfo,
    const unsigned desc = (SET_BITS(binding_table_index, 7, 0) |
                           SET_BITS(sampler, 11, 8));
 
+   /* From GFX20 Bspec: Shared Functions - Message Descriptor -
+    * Sampling Engine:
+    *
+    *    Message Type[5]  31  This bit represents the upper bit of message type
+    *                         6-bit encoding (c.f. [16:12]). This bit is set
+    *                         for messages with programmable offsets.
+    */
+   if (devinfo->ver >= 20)
+      return desc | SET_BITS(msg_type & 0x1F, 16, 12) |
+             SET_BITS(simd_mode & 0x3, 18, 17) |
+             SET_BITS(simd_mode >> 2, 29, 29) |
+             SET_BITS(return_format, 30, 30) |
+             SET_BITS(msg_type >> 5, 31, 31);
+
    /* From the CHV Bspec: Shared Functions - Message Descriptor -
     * Sampling Engine:
     *
@@ -452,7 +470,9 @@ brw_sampler_desc_sampler(UNUSED const struct intel_device_info *devinfo,
 static inline unsigned
 brw_sampler_desc_msg_type(const struct intel_device_info *devinfo, uint32_t desc)
 {
-   if (devinfo->ver >= 7)
+   if (devinfo->ver >= 20)
+      return GET_BITS(desc, 31, 31) << 5 | GET_BITS(desc, 16, 12);
+   else if (devinfo->ver >= 7)
       return GET_BITS(desc, 16, 12);
    else if (devinfo->verx10 >= 45)
       return GET_BITS(desc, 15, 12);
@@ -1907,6 +1927,10 @@ void brw_CMPN(struct brw_codegen *p,
               unsigned conditional,
               struct brw_reg src0,
               struct brw_reg src1);
+
+brw_inst *brw_DPAS(struct brw_codegen *p, enum gfx12_systolic_depth sdepth,
+                   unsigned rcount, struct brw_reg dest, struct brw_reg src0,
+                   struct brw_reg src1, struct brw_reg src2);
 
 void
 brw_untyped_atomic(struct brw_codegen *p,

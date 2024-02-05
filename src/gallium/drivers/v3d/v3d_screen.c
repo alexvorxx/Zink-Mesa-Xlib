@@ -54,9 +54,10 @@ v3d_screen_get_name(struct pipe_screen *pscreen)
 
         if (!screen->name) {
                 screen->name = ralloc_asprintf(screen,
-                                               "V3D %d.%d",
+                                               "V3D %d.%d.%d",
                                                screen->devinfo.ver / 10,
-                                               screen->devinfo.ver % 10);
+                                               screen->devinfo.ver % 10,
+                                               screen->devinfo.rev);
         }
 
         return screen->name;
@@ -290,6 +291,9 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
         case PIPE_CAP_IMAGE_STORE_FORMATTED:
                 return false;
+
+        case PIPE_CAP_NATIVE_FENCE_FD:
+                return true;
 
         default:
                 return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -716,7 +720,6 @@ static const nir_shader_compiler_options v3d_nir_options = {
         .lower_ldexp = true,
         .lower_mul_high = true,
         .lower_wpos_pntc = true,
-        .lower_rotate = true,
         .lower_to_scalar = true,
         .lower_int64_options = nir_lower_imul_2x32_64,
         .lower_fquantize2f16 = true,
@@ -926,7 +929,7 @@ v3d_screen_create(int fd, const struct pipe_screen_config *config,
                 v3d_has_feature(screen, DRM_V3D_PARAM_SUPPORTS_CACHE_FLUSH);
         screen->has_perfmon = v3d_has_feature(screen, DRM_V3D_PARAM_SUPPORTS_PERFMON);
 
-        v3d_fence_init(screen);
+        v3d_fence_screen_init(screen);
 
         v3d_process_debug_variable();
 

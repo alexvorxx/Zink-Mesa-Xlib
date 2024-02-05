@@ -231,6 +231,8 @@ enum intel_batch_decode_flags {
     *     - COMPUTE_WALKER
     */
    INTEL_BATCH_DECODE_ACCUMULATE  = (1 << 6),
+   /** Print vertex buffer data */
+   INTEL_BATCH_DECODE_VB_DATA     = (1 << 7),
 };
 
 #define INTEL_BATCH_DECODE_DEFAULT_FLAGS \
@@ -238,7 +240,8 @@ enum intel_batch_decode_flags {
     INTEL_BATCH_DECODE_OFFSETS |         \
     INTEL_BATCH_DECODE_FLOATS |          \
     INTEL_BATCH_DECODE_SURFACES |        \
-    INTEL_BATCH_DECODE_SAMPLERS)
+    INTEL_BATCH_DECODE_SAMPLERS |        \
+    INTEL_BATCH_DECODE_VB_DATA)
 
 struct intel_batch_decode_bo {
    uint64_t addr;

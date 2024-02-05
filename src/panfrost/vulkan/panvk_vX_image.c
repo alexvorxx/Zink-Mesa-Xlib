@@ -113,19 +113,23 @@ panvk_per_arch(CreateImageView)(VkDevice _device,
    };
    panvk_convert_swizzle(&view->vk.swizzle, view->pview.swizzle);
 
-   struct panfrost_device *pdev = &device->physical_device->pdev;
-
    if (view->vk.usage &
        (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
       unsigned bo_size =
          GENX(panfrost_estimate_texture_payload_size)(&view->pview) +
          pan_size(TEXTURE);
 
-      view->bo = panfrost_bo_create(pdev, bo_size, 0, "Texture descriptor");
+      view->bo = panvk_priv_bo_create(device, bo_size, 0, pAllocator,
+                                      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 
       STATIC_ASSERT(sizeof(view->descs.tex) >= pan_size(TEXTURE));
-      GENX(panfrost_new_texture)
-      (pdev, &view->pview, &view->descs.tex, &view->bo->ptr);
+
+      struct panfrost_ptr ptr = {
+         .gpu = view->bo->addr.dev,
+         .cpu = view->bo->addr.host,
+      };
+
+      GENX(panfrost_new_texture)(&view->pview, &view->descs.tex, &ptr);
    }
 
    if (view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -141,9 +145,9 @@ panvk_per_arch(CreateImageView)(VkDevice _device,
          cfg.type = image->pimage.layout.modifier == DRM_FORMAT_MOD_LINEAR
                        ? MALI_ATTRIBUTE_TYPE_3D_LINEAR
                        : MALI_ATTRIBUTE_TYPE_3D_INTERLEAVED;
-         cfg.pointer = image->pimage.data.bo->ptr.gpu + offset;
+         cfg.pointer = image->pimage.data.base + offset;
          cfg.stride = util_format_get_blocksize(view->pview.format);
-         cfg.size = image->pimage.data.bo->size - offset;
+         cfg.size = pan_kmod_bo_size(image->bo) - offset;
       }
 
       attrib_buf += pan_size(ATTRIBUTE_BUFFER);
@@ -185,7 +189,6 @@ panvk_per_arch(CreateBufferView)(VkDevice _device,
 
    view->fmt = vk_format_to_pipe_format(pCreateInfo->format);
 
-   struct panfrost_device *pdev = &device->physical_device->pdev;
    mali_ptr address = panvk_buffer_gpu_ptr(buffer, pCreateInfo->offset);
    unsigned size =
       panvk_buffer_range(buffer, pCreateInfo->offset, pCreateInfo->range);
@@ -196,22 +199,23 @@ panvk_per_arch(CreateBufferView)(VkDevice _device,
 
    if (buffer->vk.usage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT) {
       unsigned bo_size = pan_size(SURFACE_WITH_STRIDE);
-      view->bo = panfrost_bo_create(pdev, bo_size, 0, "Texture descriptor");
+      view->bo = panvk_priv_bo_create(device, bo_size, 0, pAllocator,
+                                      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 
-      pan_pack(view->bo->ptr.cpu, SURFACE_WITH_STRIDE, cfg) {
+      pan_pack(view->bo->addr.host, SURFACE_WITH_STRIDE, cfg) {
          cfg.pointer = address;
       }
 
       pan_pack(view->descs.tex, TEXTURE, cfg) {
          cfg.dimension = MALI_TEXTURE_DIMENSION_1D;
-         cfg.format = pdev->formats[view->fmt].hw;
+         cfg.format = GENX(panfrost_format_from_pipe_format)(view->fmt)->hw;
          cfg.width = view->elems;
          cfg.depth = cfg.height = 1;
          cfg.swizzle = PAN_V6_SWIZZLE(R, G, B, A);
          cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
          cfg.levels = 1;
          cfg.array_size = 1;
-         cfg.surfaces = view->bo->ptr.gpu;
+         cfg.surfaces = view->bo->addr.dev;
          cfg.maximum_lod = cfg.minimum_lod = 0;
       }
    }

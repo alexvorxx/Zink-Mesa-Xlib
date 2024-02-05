@@ -208,6 +208,7 @@ typedef struct __GLXattributeMachineRec
 struct mesa_glinterop_device_info;
 struct mesa_glinterop_export_in;
 struct mesa_glinterop_export_out;
+struct mesa_glinterop_flush_out;
 
 struct glx_context_vtable {
    void (*destroy)(struct glx_context *ctx);
@@ -222,7 +223,7 @@ struct glx_context_vtable {
                                 struct mesa_glinterop_export_out *out);
    int (*interop_flush_objects)(struct glx_context *ctx,
                                 unsigned count, struct mesa_glinterop_export_in *objects,
-                                GLsync *sync, int *fence_fd);
+                                struct mesa_glinterop_flush_out *out);
 };
 
 /**

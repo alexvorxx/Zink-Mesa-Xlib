@@ -344,7 +344,7 @@ traces:
       text: missing 3/4 of rendered image
       checksum: e7f01e62180b60aef8c67fc4977c90d1
     freedreno-a530:
-      checksum: 777ecb806510d9a038a0d06d44deeb6f
+      checksum: c0db49f777798ec7da518bb9eff099c8
     freedreno-a618:
       label: [skip]
     freedreno-a630:
@@ -353,7 +353,7 @@ traces:
         One of the material textures appears brighter on freedreno than
         i965 in a way that is probably wrong.
     zink-a618:
-      checksum: ba79e6d4a64b4391d3e9e20d3d630f0a
+      checksum: d4ac6b6dd39f5a63a7b6e0b39f81daa3
     zink-a630:
       checksum: e64bcc59d61d1c75ce5eeb109343d9bd
 
@@ -704,27 +704,6 @@ traces:
       label: [skip, flakes]
       text: Inconsistent rendering, but looks good.
 
-  freedoom/freedoom-phase2-gl-high.trace:
-    freedreno-a306:
-      label: [unsupported]
-    freedreno-a530:
-      label: [unsupported]
-      text: needs GL 4.6
-    freedreno-a618:
-      checksum: a2dbcd27c404a1bb0f7d60476d93d22c
-    freedreno-a630:
-      checksum: a2dbcd27c404a1bb0f7d60476d93d22c
-    zink-a618:
-      label: [crash]
-      text: |-
-        ../src/gallium/drivers/zink/zink_context.c:541: update_descriptor_state_ubo:
-        Assertion `ctx->di.ubos[shader][slot].range <= screen->info.props.limits.maxUniformBufferRange' failed.
-    zink-a630:
-      label: [crash]
-      text: |-
-        ../src/gallium/drivers/zink/zink_context.c:541: update_descriptor_state_ubo:
-        Assertion `ctx->di.ubos[shader][slot].range <= screen->info.props.limits.maxUniformBufferRange' failed.
-
   unvanquished/unvanquished-lowest.trace:
     freedreno-a306:
       label: [skip]
@@ -733,6 +712,7 @@ traces:
     freedreno-a618:
       checksum: ae37867b1a9a94d2be9ff6c7e2009813
     freedreno-a630:
+      label: [skip, flakes]
       checksum: ae37867b1a9a94d2be9ff6c7e2009813
     zink-a618:
       checksum: ae37867b1a9a94d2be9ff6c7e2009813

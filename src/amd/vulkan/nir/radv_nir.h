@@ -36,35 +36,37 @@ extern "C" {
 typedef struct nir_shader nir_shader;
 struct radeon_info;
 struct radv_pipeline_layout;
-struct radv_pipeline_key;
 struct radv_shader_stage;
 struct radv_shader_info;
 struct radv_shader_args;
 struct radv_shader_layout;
 struct radv_device;
+struct radv_graphics_state_key;
 
-void radv_nir_apply_pipeline_layout(nir_shader *shader, struct radv_device *device, const struct radv_shader_info *info,
-                                    const struct radv_shader_args *args, const struct radv_shader_layout *layout);
+void radv_nir_apply_pipeline_layout(nir_shader *shader, struct radv_device *device,
+                                    const struct radv_shader_stage *stage);
 
-void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level, const struct radv_shader_info *info,
-                        const struct radv_shader_args *args, const struct radv_pipeline_key *pl_key,
-                        uint32_t address32_hi);
+void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level, const struct radv_shader_stage *stage,
+                        const struct radv_graphics_state_key *gfx_state, uint32_t address32_hi);
 
 bool radv_nir_lower_hit_attrib_derefs(nir_shader *shader);
 
-bool radv_nir_lower_ray_queries(struct nir_shader *shader, struct radv_device *device);
+bool radv_nir_lower_ray_payload_derefs(nir_shader *shader, uint32_t offset);
+
+bool radv_nir_lower_ray_queries(nir_shader *shader, struct radv_device *device);
 
 bool radv_nir_lower_vs_inputs(nir_shader *shader, const struct radv_shader_stage *vs_stage,
-                              const struct radv_pipeline_key *pl_key, const struct radeon_info *rad_info);
+                              const struct radv_graphics_state_key *gfx_state, const struct radeon_info *rad_info);
 
 bool radv_nir_lower_primitive_shading_rate(nir_shader *nir, enum amd_gfx_level gfx_level);
 
 bool radv_nir_lower_fs_intrinsics(nir_shader *nir, const struct radv_shader_stage *fs_stage,
-                                  const struct radv_pipeline_key *key);
+                                  const struct radv_graphics_state_key *gfx_state);
 
-bool radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_pipeline_key *key, unsigned rast_prim);
+bool radv_nir_lower_fs_barycentric(nir_shader *shader, const struct radv_graphics_state_key *gfx_state,
+                                   unsigned rast_prim);
 
-bool radv_nir_lower_intrinsics_early(nir_shader *nir, const struct radv_pipeline_key *key);
+bool radv_nir_lower_intrinsics_early(nir_shader *nir, bool lower_view_index_to_zero);
 
 bool radv_nir_lower_view_index(nir_shader *nir, bool per_primitive);
 
@@ -78,7 +80,7 @@ void radv_nir_lower_io(struct radv_device *device, nir_shader *nir);
 
 bool radv_nir_lower_io_to_mem(struct radv_device *device, struct radv_shader_stage *stage);
 
-void radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_key *key);
+void radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_graphics_state_key *gfx_state);
 
 bool radv_nir_lower_cooperative_matrix(nir_shader *shader, unsigned wave_size);
 

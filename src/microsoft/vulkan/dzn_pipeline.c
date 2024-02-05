@@ -384,7 +384,7 @@ enum dxil_shader_model
    dzn_get_shader_model(const struct dzn_physical_device *pdev)
 {
    static_assert(D3D_SHADER_MODEL_6_0 == 0x60 && SHADER_MODEL_6_0 == 0x60000, "Validating math below");
-   static_assert(D3D_SHADER_MODEL_6_7 == 0x67 && SHADER_MODEL_6_7 == 0x60007, "Validating math below");
+   static_assert(D3D_SHADER_MODEL_6_8 == 0x68 && SHADER_MODEL_6_8 == 0x60008, "Validating math below");
    return ((pdev->shader_model & 0xf0) << 12) | (pdev->shader_model & 0xf);
 }
 
@@ -450,7 +450,7 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
       }
    }
 
-   if (!res) {
+   if (!res && !(instance->debug_flags & DZN_DEBUG_EXPERIMENTAL)) {
       if (err) {
          mesa_loge(
                "== VALIDATION ERROR =============================================\n"
@@ -1511,6 +1511,7 @@ dzn_graphics_pipeline_translate_zsa(struct dzn_device *device,
       in->pRasterizationState;
    const VkPipelineDepthStencilStateCreateInfo *in_zsa =
       in_rast->rasterizerDiscardEnable ? NULL : in->pDepthStencilState;
+   const VkPipelineRenderingCreateInfo *ri = vk_find_struct_const(in, PIPELINE_RENDERING_CREATE_INFO);
 
    if (!in_zsa ||
        in_rast->cullMode == VK_CULL_MODE_FRONT_AND_BACK) {
@@ -1530,21 +1531,26 @@ dzn_graphics_pipeline_translate_zsa(struct dzn_device *device,
    D3D12_DEPTH_STENCIL_DESC2 desc;
    memset(&desc, 0, sizeof(desc));
 
-   desc.DepthEnable =
-      in_zsa->depthTestEnable || in_zsa->depthBoundsTestEnable;
-   desc.DepthWriteMask =
-      in_zsa->depthWriteEnable ?
-      D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-   desc.DepthFunc =
-      in_zsa->depthTestEnable ?
-      dzn_translate_compare_op(in_zsa->depthCompareOp) :
-      D3D12_COMPARISON_FUNC_ALWAYS;
+   bool has_no_depth = ri && ri->depthAttachmentFormat == VK_FORMAT_UNDEFINED;
+   bool has_no_stencil = ri && ri->stencilAttachmentFormat == VK_FORMAT_UNDEFINED;
+
+   desc.DepthEnable = !has_no_depth &&
+      (in_zsa->depthTestEnable || in_zsa->depthBoundsTestEnable);
+   if (desc.DepthEnable) {
+      desc.DepthWriteMask =
+         in_zsa->depthWriteEnable ?
+         D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+      desc.DepthFunc =
+         in_zsa->depthTestEnable ?
+         dzn_translate_compare_op(in_zsa->depthCompareOp) :
+         D3D12_COMPARISON_FUNC_ALWAYS;
+   }
    pipeline->zsa.depth_bounds.enable = in_zsa->depthBoundsTestEnable;
    pipeline->zsa.depth_bounds.min = in_zsa->minDepthBounds;
    pipeline->zsa.depth_bounds.max = in_zsa->maxDepthBounds;
    desc.DepthBoundsTestEnable = in_zsa->depthBoundsTestEnable;
-   desc.StencilEnable = in_zsa->stencilTestEnable;
-   if (in_zsa->stencilTestEnable) {
+   desc.StencilEnable = in_zsa->stencilTestEnable && !has_no_stencil;
+   if (desc.StencilEnable) {
       desc.FrontFace.StencilFailOp = translate_stencil_op(in_zsa->front.failOp);
       desc.FrontFace.StencilDepthFailOp = translate_stencil_op(in_zsa->front.depthFailOp);
       desc.FrontFace.StencilPassOp = translate_stencil_op(in_zsa->front.passOp);

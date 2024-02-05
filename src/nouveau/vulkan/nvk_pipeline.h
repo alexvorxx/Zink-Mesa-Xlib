@@ -23,7 +23,7 @@ struct nvk_pipeline {
 
    enum nvk_pipeline_type type;
 
-   struct nvk_shader shaders[MESA_SHADER_STAGES];
+   struct nvk_shader *shaders[MESA_SHADER_STAGES];
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(nvk_pipeline, base, VkPipeline,
@@ -56,6 +56,8 @@ struct nvk_graphics_pipeline {
 
    uint32_t push_data[192];
    uint32_t push_dw_count;
+
+   float min_sample_shading;
 
    struct vk_vertex_input_state _dynamic_vi;
    struct vk_sample_locations_state _dynamic_sl;

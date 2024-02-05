@@ -1051,6 +1051,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
    params.consts_ptr = consts_ptr;
    params.system_values = &system_values;
    params.inputs = interp->inputs;
+   params.num_inputs = interp->num_attribs - 1;
    params.context_type = context_type;
    params.context_ptr = context_ptr;
    params.resources_type = resources_type;
@@ -3984,7 +3985,7 @@ llvmpipe_create_fs_state(struct pipe_context *pipe,
    nir_tgsi_scan_shader(nir, &shader->info.base, true);
    shader->info.num_texs = shader->info.base.opcode_count[TGSI_OPCODE_TEX];
 
-   llvmpipe_register_shader(pipe, &shader->base, false);
+   llvmpipe_register_shader(pipe, &shader->base);
 
    shader->draw_data = draw_create_fragment_shader(llvmpipe->draw, templ);
    if (shader->draw_data == NULL) {
@@ -4120,8 +4121,6 @@ llvmpipe_destroy_fs(struct llvmpipe_context *llvmpipe,
 {
    /* Delete draw module's data */
    draw_delete_fragment_shader(llvmpipe->draw, shader->draw_data);
-
-   llvmpipe_register_shader(&llvmpipe->pipe, &shader->base, true);
 
    ralloc_free(shader->base.ir.nir);
    assert(shader->variants_cached == 0);

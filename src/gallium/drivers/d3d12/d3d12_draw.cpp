@@ -443,7 +443,8 @@ fill_compute_state_vars(struct d3d12_context *ctx,
          cmd_sig_key->params_root_const_offset = size;
          size += 4;
          break;
-      case D3D12_STATE_VAR_TRANSFORM_GENERIC0: {
+      case D3D12_STATE_VAR_TRANSFORM_GENERIC0:
+      case D3D12_STATE_VAR_TRANSFORM_GENERIC1: {
          unsigned idx = shader->state_vars[j].var - D3D12_STATE_VAR_TRANSFORM_GENERIC0;
          ptr[0] = ctx->transform_state_vars[idx * 4];
          ptr[1] = ctx->transform_state_vars[idx * 4 + 1];

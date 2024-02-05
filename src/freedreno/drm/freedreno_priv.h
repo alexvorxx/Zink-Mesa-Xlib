@@ -401,6 +401,7 @@ struct fd_submit_funcs {
 struct fd_submit {
    int32_t refcnt;
    struct fd_pipe *pipe;
+   struct fd_device *dev;
    const struct fd_submit_funcs *funcs;
 
    struct fd_ringbuffer *primary;
@@ -455,6 +456,9 @@ struct fd_bo_funcs {
     * Optional, if upload is supported, should upload be preferred?
     */
    bool (*prefer_upload)(struct fd_bo *bo, unsigned len);
+
+   void (*set_metadata)(struct fd_bo *bo, void *metadata, uint32_t metadata_size);
+   int (*get_metadata)(struct fd_bo *bo, void *metadata, uint32_t metadata_size);
 };
 
 void fd_bo_add_fence(struct fd_bo *bo, struct fd_fence *fence);
@@ -553,6 +557,12 @@ VG_BO_OBTAIN(struct fd_bo *bo)
       VALGRIND_MALLOCLIKE_BLOCK(bo->map, bo->size, 0, 1);
    }
 }
+/* special case for fd_bo_upload */
+static inline void
+VG_BO_MAPPED(struct fd_bo *bo)
+{
+   VALGRIND_MALLOCLIKE_BLOCK(bo->map, bo->size, 0, 1);
+}
 #else
 static inline void
 VG_BO_ALLOC(struct fd_bo *bo)
@@ -568,6 +578,10 @@ VG_BO_RELEASE(struct fd_bo *bo)
 }
 static inline void
 VG_BO_OBTAIN(struct fd_bo *bo)
+{
+}
+static inline void
+VG_BO_MAPPED(struct fd_bo *bo)
 {
 }
 #endif

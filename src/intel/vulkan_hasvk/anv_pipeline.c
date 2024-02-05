@@ -472,7 +472,7 @@ anv_pipeline_hash_compute(struct anv_compute_pipeline *pipeline,
    const bool rba = device->vk.enabled_features.robustBufferAccess;
    _mesa_sha1_update(&ctx, &rba, sizeof(rba));
 
-   const bool afs = device->physical->instance->assume_full_subgroups;
+   const uint8_t afs = device->physical->instance->assume_full_subgroups;
    _mesa_sha1_update(&ctx, &afs, sizeof(afs));
 
    _mesa_sha1_update(&ctx, stage->shader_sha1,
@@ -639,8 +639,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
       }
    }
 
-   if (gl_shader_stage_is_compute(nir->info.stage))
-      NIR_PASS(_, nir, brw_nir_lower_cs_intrinsics);
+   if (gl_shader_stage_is_compute(nir->info.stage)) {
+      NIR_PASS(_, nir, brw_nir_lower_cs_intrinsics, compiler->devinfo,
+               &stage->prog_data.cs);
+   }
 
    stage->nir = nir;
 }
@@ -1154,7 +1156,7 @@ static bool
 anv_graphics_pipeline_load_cached_shaders(struct anv_graphics_pipeline *pipeline,
                                           struct vk_pipeline_cache *cache,
                                           struct anv_pipeline_stage *stages,
-                                          VkPipelineCreationFeedbackEXT *pipeline_feedback)
+                                          VkPipelineCreationFeedback *pipeline_feedback)
 {
    unsigned found = 0;
    unsigned cache_hits = 0;
@@ -1277,7 +1279,7 @@ anv_graphics_pipeline_compile(struct anv_graphics_pipeline *pipeline,
    ANV_FROM_HANDLE(anv_pipeline_layout, layout, info->layout);
    VkResult result;
 
-   VkPipelineCreationFeedbackEXT pipeline_feedback = {
+   VkPipelineCreationFeedback pipeline_feedback = {
       .flags = VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT,
    };
    int64_t pipeline_start = os_time_get_nano();
@@ -1581,7 +1583,9 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
        * a size.
        */
       if (stage.nir->info.subgroup_size == SUBGROUP_SIZE_FULL_SUBGROUPS)
-         stage.nir->info.subgroup_size = BRW_SUBGROUP_SIZE;
+         stage.nir->info.subgroup_size =
+            device->physical->instance->assume_full_subgroups != 0 ?
+            device->physical->instance->assume_full_subgroups : BRW_SUBGROUP_SIZE;
 
       stage.num_stats = 1;
 

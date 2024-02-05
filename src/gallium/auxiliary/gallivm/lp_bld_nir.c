@@ -644,43 +644,26 @@ do_alu_action(struct lp_build_nir_context *bld_base,
                               bld_base->dbl_bld.vec_type, "");
       break;
    case nir_op_f2i8:
-      result = LLVMBuildFPToSI(builder,
-                               src[0],
-                               bld_base->uint8_bld.vec_type, "");
-      break;
    case nir_op_f2i16:
-      result = LLVMBuildFPToSI(builder,
-                               src[0],
-                               bld_base->uint16_bld.vec_type, "");
-      break;
    case nir_op_f2i32:
-      result = LLVMBuildFPToSI(builder, src[0], bld_base->base.int_vec_type, "");
-      break;
-   case nir_op_f2u8:
-      result = LLVMBuildFPToUI(builder,
-                               src[0],
-                               bld_base->uint8_bld.vec_type, "");
-      break;
-   case nir_op_f2u16:
-      result = LLVMBuildFPToUI(builder,
-                               src[0],
-                               bld_base->uint16_bld.vec_type, "");
-      break;
-   case nir_op_f2u32:
-      result = LLVMBuildFPToUI(builder,
-                               src[0],
-                               bld_base->base.int_vec_type, "");
-      break;
    case nir_op_f2i64:
-      result = LLVMBuildFPToSI(builder,
-                               src[0],
-                               bld_base->int64_bld.vec_type, "");
+   case nir_op_f2u8:
+   case nir_op_f2u16:
+   case nir_op_f2u32:
+   case nir_op_f2u64: {
+      nir_alu_type dst_type = nir_op_infos[instr->op].output_type;
+      bool is_unsigned = nir_alu_type_get_base_type(dst_type) == nir_type_uint;
+      LLVMTypeRef int_type = get_int_bld(bld_base, is_unsigned, nir_alu_type_get_type_size(dst_type))->vec_type;
+
+      char name[64];
+      char tmp[64];
+      char intrinsic[64];
+      snprintf(name, sizeof(name), "llvm.fpto%ci.sat", is_unsigned ? 'u' : 's');
+      lp_format_intrinsic(tmp, 64, name, int_type);
+      lp_format_intrinsic(intrinsic, 64, tmp, LLVMTypeOf(src[0]));
+      result = lp_build_intrinsic_unary(builder, intrinsic, int_type, src[0]);
       break;
-   case nir_op_f2u64:
-      result = LLVMBuildFPToUI(builder,
-                               src[0],
-                               bld_base->uint64_bld.vec_type, "");
-      break;
+   }
    case nir_op_fabs:
       result = lp_build_abs(get_flt_bld(bld_base, src_bit_size[0]), src[0]);
       break;
@@ -1821,7 +1804,8 @@ visit_image_size(struct lp_build_nir_context *bld_base,
    params.target = glsl_sampler_to_pipe(nir_intrinsic_image_dim(instr),
                                         nir_intrinsic_image_array(instr));
    params.sizes_out = result;
-
+   params.ms = nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS ||
+      nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_SUBPASS_MS;
    params.format = nir_intrinsic_format(instr);
 
    bld_base->image_size(bld_base, &params);
@@ -1840,6 +1824,8 @@ visit_image_samples(struct lp_build_nir_context *bld_base,
    params.target = glsl_sampler_to_pipe(nir_intrinsic_image_dim(instr),
                                         nir_intrinsic_image_array(instr));
    params.sizes_out = result;
+   params.ms = nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS ||
+      nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_SUBPASS_MS;
    params.samples_only = true;
 
    params.format = nir_intrinsic_format(instr);
@@ -2369,6 +2355,8 @@ visit_txs(struct lp_build_nir_context *bld_base, nir_tex_instr *instr)
    params.sizes_out = sizes_out;
    params.samples_only = (instr->op == nir_texop_texture_samples);
    params.texture_unit_offset = texture_unit_offset;
+   params.ms = instr->sampler_dim == GLSL_SAMPLER_DIM_MS ||
+      instr->sampler_dim == GLSL_SAMPLER_DIM_SUBPASS_MS;
 
    if (instr->op == nir_texop_query_levels)
       params.explicit_lod = bld_base->uint_bld.zero;
@@ -2979,7 +2967,7 @@ lp_build_opt_nir(struct nir_shader *nir)
    }
 
    NIR_PASS_V(nir, nir_lower_flrp, 16|32|64, true);
-   NIR_PASS_V(nir, nir_lower_fp16_casts, nir_lower_fp16_all);
+   NIR_PASS_V(nir, nir_lower_fp16_casts, nir_lower_fp16_all | nir_lower_fp16_split_fp64);
    do {
       progress = false;
       NIR_PASS(progress, nir, nir_opt_constant_folding);

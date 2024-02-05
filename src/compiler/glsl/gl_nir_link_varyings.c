@@ -43,7 +43,6 @@
 #include "gl_nir_link_varyings.h"
 #include "gl_nir_linker.h"
 #include "linker_util.h"
-#include "nir_gl_types.h"
 #include "string_to_uint_map.h"
 
 #define SAFE_MASK_FROM_INDEX(i) (((i) >= 32) ? ~0 : ((1 << (i)) - 1))
@@ -746,7 +745,7 @@ gl_nir_cross_validate_outputs_to_inputs(const struct gl_constants *consts,
          if (!validate_explicit_variable_location(consts,
                                                   output_explicit_locations,
                                                   var, prog, producer)) {
-            return;
+            goto out;
          }
       }
    }
@@ -800,7 +799,7 @@ gl_nir_cross_validate_outputs_to_inputs(const struct gl_constants *consts,
             if (!validate_explicit_variable_location(consts,
                                                      input_explicit_locations,
                                                      input, prog, consumer)) {
-               return;
+               goto out;
             }
 
             while (idx < slot_limit) {
@@ -808,7 +807,7 @@ gl_nir_cross_validate_outputs_to_inputs(const struct gl_constants *consts,
                   linker_error(prog,
                                "Invalid location %u in %s shader\n", idx,
                                _mesa_shader_stage_to_string(consumer->Stage));
-                  return;
+                  goto out;
                }
 
                output = output_explicit_locations[idx][input->data.location_frac].var;
@@ -871,6 +870,7 @@ gl_nir_cross_validate_outputs_to_inputs(const struct gl_constants *consts,
       }
    }
 
+ out:
    _mesa_symbol_table_dtor(table);
 }
 
@@ -3851,8 +3851,8 @@ link_shader_opts(struct varying_matches *vm,
     */
    if (producer->options->lower_to_scalar && !vm->disable_varying_packing &&
       !vm->disable_xfb_packing) {
-      NIR_PASS_V(producer, nir_lower_io_to_scalar_early, nir_var_shader_out);
-      NIR_PASS_V(consumer, nir_lower_io_to_scalar_early, nir_var_shader_in);
+      NIR_PASS(_, producer, nir_lower_io_to_scalar_early, nir_var_shader_out);
+      NIR_PASS(_, consumer, nir_lower_io_to_scalar_early, nir_var_shader_in);
    }
 
    gl_nir_opts(producer);
@@ -3861,12 +3861,12 @@ link_shader_opts(struct varying_matches *vm,
    if (nir_link_opt_varyings(producer, consumer))
       gl_nir_opts(consumer);
 
-   NIR_PASS_V(producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
-   NIR_PASS_V(consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
+   NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
+   NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
 
    if (remove_unused_varyings(producer, consumer, prog, mem_ctx)) {
-      NIR_PASS_V(producer, nir_lower_global_vars_to_local);
-      NIR_PASS_V(consumer, nir_lower_global_vars_to_local);
+      NIR_PASS(_, producer, nir_lower_global_vars_to_local);
+      NIR_PASS(_, consumer, nir_lower_global_vars_to_local);
 
       gl_nir_opts(producer);
       gl_nir_opts(consumer);
@@ -3875,9 +3875,9 @@ link_shader_opts(struct varying_matches *vm,
        * nir_compact_varyings() depends on all dead varyings being removed so
        * we need to call nir_remove_dead_variables() again here.
        */
-      NIR_PASS_V(producer, nir_remove_dead_variables, nir_var_shader_out,
+      NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out,
                  NULL);
-      NIR_PASS_V(consumer, nir_remove_dead_variables, nir_var_shader_in,
+      NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in,
                  NULL);
    }
 
@@ -4282,9 +4282,9 @@ link_varyings(struct gl_shader_program *prog, unsigned first,
 
    if (!prog->SeparateShader) {
       /* If not SSO remove unused varyings from the first/last stage */
-      NIR_PASS_V(prog->_LinkedShaders[first]->Program->nir,
+      NIR_PASS(_, prog->_LinkedShaders[first]->Program->nir,
                  nir_remove_dead_variables, nir_var_shader_in, NULL);
-      NIR_PASS_V(prog->_LinkedShaders[last]->Program->nir,
+      NIR_PASS(_, prog->_LinkedShaders[last]->Program->nir,
                  nir_remove_dead_variables, nir_var_shader_out, NULL);
    } else {
       /* Sort inputs / outputs into a canonical order.  This is necessary so
@@ -4390,7 +4390,7 @@ link_varyings(struct gl_shader_program *prog, unsigned first,
                              has_xfb_qualifiers, mem_ctx))
       return false;
 
-   return true;
+   return prog->data->LinkStatus != LINKING_FAILURE;
 }
 
 /**

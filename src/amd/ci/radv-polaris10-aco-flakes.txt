@@ -1,2 +1,0 @@
-dEQP-VK.dynamic_rendering.basic.*
-dEQP-VK.dynamic_rendering.primary_cmd_buff.basic.*

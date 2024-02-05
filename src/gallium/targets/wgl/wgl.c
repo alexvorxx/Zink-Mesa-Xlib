@@ -116,7 +116,7 @@ wgl_screen_create(HDC hDC)
    struct sw_winsys *winsys;
    UNUSED bool sw_only = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false);
 
-   winsys = gdi_create_sw_winsys();
+   winsys = gdi_create_sw_winsys(gdi_sw_acquire_hdc_by_value, gdi_sw_release_hdc_by_value);
    if (!winsys)
       return NULL;
 

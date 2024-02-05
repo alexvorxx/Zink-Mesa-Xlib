@@ -29,6 +29,7 @@
 #include "brw_vec4_tes.h"
 #include "dev/intel_debug.h"
 #include "util/macros.h"
+#include "util/u_debug.h"
 
 enum brw_reg_type
 brw_type_for_base_type(const struct glsl_type *type)
@@ -163,6 +164,13 @@ brw_instruction_name(const struct brw_isa_info *isa, enum opcode op)
 
       if (devinfo->ver > 7 && op == BRW_OPCODE_F16TO32)
          return "f16to32";
+
+      /* DPAS instructions may transiently exist on platforms that do not
+       * support DPAS. They will eventually be lowered, but in the meantime it
+       * must be possible to query the instruction name.
+       */
+      if (devinfo->verx10 < 125 && op == BRW_OPCODE_DPAS)
+         return "dpas";
 
       assert(brw_opcode_desc(isa, op)->name);
       return brw_opcode_desc(isa, op)->name;
@@ -936,6 +944,7 @@ backend_instruction::can_do_source_mods() const
    case BRW_OPCODE_ROR:
    case BRW_OPCODE_SUBB:
    case BRW_OPCODE_DP4A:
+   case BRW_OPCODE_DPAS:
    case SHADER_OPCODE_BROADCAST:
    case SHADER_OPCODE_CLUSTER_BROADCAST:
    case SHADER_OPCODE_MOV_INDIRECT:
@@ -1222,7 +1231,7 @@ void
 backend_shader::dump_instructions(const char *name) const
 {
    FILE *file = stderr;
-   if (name && geteuid() != 0) {
+   if (name && __normal_user()) {
       file = fopen(name, "w");
       if (!file)
          file = stderr;
@@ -1365,8 +1374,9 @@ brw_compile_tes(const struct brw_compiler *compiler,
    }
 
    if (is_scalar) {
+      const unsigned dispatch_width = devinfo->ver >= 20 ? 16 : 8;
       fs_visitor v(compiler, &params->base, &key->base,
-                   &prog_data->base.base, nir, 8,
+                   &prog_data->base.base, nir, dispatch_width,
                    params->base.stats != NULL, debug_enabled);
       if (!v.run_tes()) {
          params->base.error_str =
@@ -1389,7 +1399,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
                                         nir->info.name));
       }
 
-      g.generate_code(v.cfg, 8, v.shader_stats,
+      g.generate_code(v.cfg, dispatch_width, v.shader_stats,
                       v.performance_analysis.require(), params->base.stats);
 
       g.add_const_data(nir->constant_data, nir->constant_data_size);

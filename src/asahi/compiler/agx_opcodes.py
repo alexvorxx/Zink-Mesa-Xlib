@@ -104,6 +104,7 @@ GATHER = enum("gather", {
 
 OFFSET = immediate("offset", "bool")
 SHADOW = immediate("shadow", "bool")
+QUERY_LOD = immediate("query_lod", "bool")
 SCOREBOARD = immediate("scoreboard")
 ICOND = immediate("icond", "enum agx_icond")
 FCOND = immediate("fcond", "enum agx_fcond")
@@ -258,6 +259,12 @@ op("simd_shuffle",
                    0xFF | L | (1 << 47) | (3 << 38) | (3 << 26), 6, _),
     srcs = 2)
 
+for T, T_bit, cond in [('f', 0, FCOND), ('i', 1, ICOND)]:
+    for window, w_bit in [('quad_', 0), ('', 1)]:
+        op(f"{T}cmp_{window}ballot",
+           encoding_32 = (0b0100010 | (T_bit << 4) | (w_bit << 48), 0, 8, _),
+           srcs = 2, imms = [cond, INVERT_COND])
+
 op("icmpsel",
       encoding_32 = (0x12, 0x7F, 8, 10),
       srcs = 4, imms = [ICOND])
@@ -276,7 +283,7 @@ op("fcmp", _, srcs = 2, imms = [FCOND, INVERT_COND])
 op("texture_sample",
       encoding_32 = (0x31, 0x7F, 8, 10), # XXX WRONG SIZE
       srcs = 6, imms = [DIM, LOD_MODE, MASK, SCOREBOARD, OFFSET, SHADOW,
-								GATHER])
+                        QUERY_LOD, GATHER])
 for memory, can_reorder in [("texture", True), ("image", False)]:
     op(f"{memory}_load", encoding_32 = (0x71, 0x7F, 8, 10), # XXX WRONG SIZE
        srcs = 6, imms = [DIM, LOD_MODE, MASK, SCOREBOARD, OFFSET],
@@ -422,6 +429,11 @@ memory_barrier("image_barrier_4", 3, 1, 10)
 
 memory_barrier("flush_memory_to_texture", 0, 0, 4)
 
+memory_barrier("memory_barrier_2", 2, 2, 9)
+memory_barrier("memory_barrier_3", 2, 1, 9)
+memory_barrier("unknown_barrier_1", 0, 3, 3)
+memory_barrier("unknown_barrier_2", 0, 3, 0)
+
 op("doorbell", (0x60020 | 0x28 << 32, (1 << 48) - 1, 6, _), dests = 0,
       can_eliminate = False, can_reorder = False, imms = [IMM])
 
@@ -436,13 +448,13 @@ op("stack_adjust",
 # source is offset
 op("stack_load",
       encoding_32 = (0x35, (1 << 20) - 1, 6, 8),
-      srcs = 1, imms = [FORMAT, MASK], can_reorder = False,
+      srcs = 1, imms = [FORMAT, MASK, SCOREBOARD], can_reorder = False,
       schedule_class = "load")
 
 # sources are value and offset
 op("stack_store",
       encoding_32 = (0xb5, (1 << 20) - 1, 6, 8),
-      dests = 0, srcs = 2, imms = [FORMAT, MASK],
+      dests = 0, srcs = 2, imms = [FORMAT, MASK, SCOREBOARD],
       can_eliminate=False, schedule_class = "store")
 
 # Convenient aliases.

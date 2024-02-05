@@ -85,7 +85,7 @@
 #define DETECT_ARCH_ARM 1
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 #define DETECT_ARCH_AARCH64 1
 #endif
 
@@ -95,6 +95,10 @@
 
 #if defined(__mips__)
 #define DETECT_ARCH_MIPS 1
+#endif
+
+#if defined(__hppa__)
+#define DETECT_ARCH_HPPA 1
 #endif
 
 #ifndef DETECT_ARCH_X86
@@ -135,6 +139,10 @@
 
 #ifndef DETECT_ARCH_MIPS
 #define DETECT_ARCH_MIPS 0
+#endif
+
+#ifndef DETECT_ARCH_HPPA
+#define DETECT_ARCH_HPPA 0
 #endif
 
 #endif /* UTIL_DETECT_ARCH_H_ */

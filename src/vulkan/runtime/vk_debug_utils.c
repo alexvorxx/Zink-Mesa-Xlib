@@ -197,7 +197,7 @@ vk_common_SetDebugUtilsObjectNameEXT(
 {
    VK_FROM_HANDLE(vk_device, device, _device);
 
-#ifdef ANDROID
+#if DETECT_OS_ANDROID
    if (pNameInfo->objectType == VK_OBJECT_TYPE_SWAPCHAIN_KHR ||
        pNameInfo->objectType == VK_OBJECT_TYPE_SURFACE_KHR) {
 #else

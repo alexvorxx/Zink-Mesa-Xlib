@@ -151,12 +151,15 @@ ShaderInput::set_uses_interpolate_at_centroid()
    m_uses_interpolate_at_centroid = true;
 }
 
+int64_t Shader::s_next_shader_id = 1;
+
 Shader::Shader(const char *type_id, unsigned atomic_base):
     m_current_block(nullptr),
     m_type_id(type_id),
     m_chip_class(ISA_CC_R600),
     m_next_block(0),
-    m_atomic_base(atomic_base)
+    m_atomic_base(atomic_base),
+    m_shader_id(s_next_shader_id++)
 {
    m_instr_factory = new InstrFactory();
    m_chain_instr.this_shader = this;
@@ -578,11 +581,11 @@ Shader::scan_shader(const nir_function *func)
 bool
 Shader::scan_uniforms(nir_variable *uniform)
 {
-   if (uniform->type->contains_atomic()) {
-      int natomics = uniform->type->atomic_size() / 4; /* ATOMIC_COUNTER_SIZE */
+   if (glsl_contains_atomic(uniform->type)) {
+      int natomics = glsl_atomic_size(uniform->type) / 4; /* ATOMIC_COUNTER_SIZE */
       m_nhwatomic += natomics;
 
-      if (uniform->type->is_array())
+      if (glsl_type_is_array(uniform->type))
          m_indirect_files |= 1 << TGSI_FILE_HW_ATOMIC;
 
       m_flags.set(sh_uses_atomics);
@@ -607,10 +610,10 @@ Shader::scan_uniforms(nir_variable *uniform)
       m_atomics.push_back(atom);
    }
 
-   auto type = uniform->type->is_array() ? uniform->type->without_array() : uniform->type;
-   if (type->is_image() || uniform->data.mode == nir_var_mem_ssbo) {
+   auto type = glsl_without_array(uniform->type);
+   if (glsl_type_is_image(type) || uniform->data.mode == nir_var_mem_ssbo) {
       m_flags.set(sh_uses_images);
-      if (uniform->type->is_array() && !(uniform->data.mode == nir_var_mem_ssbo))
+      if (glsl_type_is_array(uniform->type) && !(uniform->data.mode == nir_var_mem_ssbo))
          m_indirect_files |= 1 << TGSI_FILE_IMAGE;
    }
 
@@ -1615,6 +1618,7 @@ void
 Shader::print_header(std::ostream& os) const
 {
    assert(m_chip_class <= ISA_CC_CAYMAN);
+   os << "Shader: " << m_shader_id << "\n";
    os << m_type_id << "\n";
    os << "CHIPCLASS " << chip_class_names[m_chip_class] << "\n";
    print_properties(os);

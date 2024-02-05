@@ -1091,6 +1091,10 @@ radv_get_modifier_flags(struct radv_physical_device *dev, VkFormat format, uint6
    features &= ~VK_FORMAT_FEATURE_2_DISJOINT_BIT;
 
    if (ac_modifier_has_dcc(modifier)) {
+      /* We don't enable DCC for multi-planar formats */
+      if (vk_format_get_plane_count(format) > 1)
+         return 0;
+
       /* Only disable support for STORAGE_IMAGE on modifiers that
        * do not support DCC image stores.
        */
@@ -1136,16 +1140,11 @@ radv_list_drm_format_modifiers(struct radv_physical_device *dev, VkFormat format
 
    for (unsigned i = 0; i < mod_count; ++i) {
       VkFormatFeatureFlags2 features = radv_get_modifier_flags(dev, format, mods[i], format_props);
-      unsigned planes = vk_format_get_plane_count(format);
-      if (planes == 1) {
-         if (ac_modifier_has_dcc_retile(mods[i]))
-            planes = 3;
-         else if (ac_modifier_has_dcc(mods[i]))
-            planes = 2;
-      }
-
       if (!features)
          continue;
+
+      unsigned planes =
+         vk_format_get_plane_count(format) + ac_modifier_has_dcc(mods[i]) + ac_modifier_has_dcc_retile(mods[i]);
 
       vk_outarray_append_typed(VkDrmFormatModifierPropertiesEXT, &out, out_props)
       {
@@ -1192,16 +1191,11 @@ radv_list_drm_format_modifiers_2(struct radv_physical_device *dev, VkFormat form
 
    for (unsigned i = 0; i < mod_count; ++i) {
       VkFormatFeatureFlags2 features = radv_get_modifier_flags(dev, format, mods[i], format_props);
-      unsigned planes = vk_format_get_plane_count(format);
-      if (planes == 1) {
-         if (ac_modifier_has_dcc_retile(mods[i]))
-            planes = 3;
-         else if (ac_modifier_has_dcc(mods[i]))
-            planes = 2;
-      }
-
       if (!features)
          continue;
+
+      unsigned planes =
+         vk_format_get_plane_count(format) + ac_modifier_has_dcc(mods[i]) + ac_modifier_has_dcc_retile(mods[i]);
 
       vk_outarray_append_typed(VkDrmFormatModifierProperties2EXT, &out, out_props)
       {
@@ -1699,7 +1693,7 @@ radv_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    }
 
    if (ycbcr_props) {
-      ycbcr_props->combinedImageSamplerDescriptorCount = vk_format_get_plane_count(format);
+      ycbcr_props->combinedImageSamplerDescriptorCount = 1;
    }
 
    if (texture_lod_props) {
@@ -1965,6 +1959,10 @@ radv_dcc_formats_compatible(enum amd_gfx_level gfx_level, VkFormat format1, VkFo
    unsigned size1, size2;
    int i;
 
+   /* All formats are compatible on GFX11. */
+   if (gfx_level >= GFX11)
+      return true;
+
    if (format1 == format2)
       return true;
 
@@ -1987,16 +1985,8 @@ radv_dcc_formats_compatible(enum amd_gfx_level gfx_level, VkFormat format1, VkFo
        (type1 == dcc_channel_float) != (type2 == dcc_channel_float) || size1 != size2)
       return false;
 
-   if (type1 != type2) {
-      /* FIXME: All formats should be compatible on GFX11 but for some reasons DCC with signedness
-       * reinterpretation doesn't work as expected, like R8_UINT<->R8_SINT. Note that disabling
-       * fast-clears doesn't help.
-       */
-      if (gfx_level >= GFX11)
-         return false;
-
+   if (type1 != type2)
       *sign_reinterpret = true;
-   }
 
    return true;
 }

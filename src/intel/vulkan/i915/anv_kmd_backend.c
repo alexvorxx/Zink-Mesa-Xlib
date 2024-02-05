@@ -59,6 +59,23 @@ i915_gem_create(struct anv_device *device,
       if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE, &gem_create))
          return 0;
 
+      if ((alloc_flags & ANV_BO_ALLOC_HOST_CACHED_COHERENT) == ANV_BO_ALLOC_HOST_CACHED_COHERENT) {
+         /* We don't want to change these defaults if it's going to be shared
+          * with another process.
+          */
+         assert(!(alloc_flags & ANV_BO_ALLOC_EXTERNAL));
+
+         /* Regular objects are created I915_CACHING_CACHED on LLC platforms and
+          * I915_CACHING_NONE on non-LLC platforms.  For many internal state
+          * objects, we'd rather take the snooping overhead than risk forgetting
+          * a CLFLUSH somewhere.  Userptr objects are always created as
+          * I915_CACHING_CACHED, which on non-LLC means snooped so there's no
+          * need to do this there.
+          */
+         if (device->info->has_caching_uapi && !device->info->has_llc)
+            i915_gem_set_caching(device, gem_create.handle, I915_CACHING_CACHED);
+      }
+
       *actual_size = gem_create.size;
       return gem_create.handle;
    }
@@ -78,15 +95,17 @@ i915_gem_create(struct anv_device *device,
          flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
 
    struct drm_i915_gem_create_ext_memory_regions ext_regions = {
-      .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },
       .num_regions = num_regions,
       .regions = (uintptr_t)i915_regions,
    };
    struct drm_i915_gem_create_ext gem_create = {
       .size = size,
-      .extensions = (uintptr_t) &ext_regions,
       .flags = flags,
    };
+
+   intel_i915_gem_add_ext(&gem_create.extensions,
+                          I915_GEM_CREATE_EXT_MEMORY_REGIONS,
+                          &ext_regions.base);
 
    struct drm_i915_gem_create_ext_set_pat set_pat_param = { 0 };
    if (device->info->has_set_pat_uapi) {
@@ -97,12 +116,19 @@ i915_gem_create(struct anv_device *device,
                              &set_pat_param.base);
    }
 
+   struct drm_i915_gem_create_ext_protected_content protected_param = { 0 };
+   if (alloc_flags & ANV_BO_ALLOC_PROTECTED) {
+      intel_i915_gem_add_ext(&gem_create.extensions,
+                             I915_GEM_CREATE_EXT_PROTECTED_CONTENT,
+                             &protected_param.base);
+   }
+
    if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &gem_create))
       return 0;
 
    *actual_size = gem_create.size;
 
-   if (alloc_flags & ANV_BO_ALLOC_SNOOPED) {
+   if ((alloc_flags & ANV_BO_ALLOC_HOST_CACHED_COHERENT) == ANV_BO_ALLOC_HOST_CACHED_COHERENT) {
       /* We don't want to change these defaults if it's going to be shared
        * with another process.
        */
@@ -198,8 +224,7 @@ i915_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
 }
 
 static int
-i915_vm_bind(struct anv_device *device, int num_binds,
-             struct anv_vm_bind *binds)
+i915_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit)
 {
    return 0;
 }
@@ -268,6 +293,7 @@ anv_i915_kmd_backend_get(void)
       .vm_bind_bo = i915_vm_bind_bo,
       .vm_unbind_bo = i915_vm_bind_bo,
       .execute_simple_batch = i915_execute_simple_batch,
+      .execute_trtt_batch = i915_execute_trtt_batch,
       .queue_exec_locked = i915_queue_exec_locked,
       .queue_exec_trace = i915_queue_exec_trace,
       .bo_alloc_flags_to_bo_flags = i915_bo_alloc_flags_to_bo_flags,

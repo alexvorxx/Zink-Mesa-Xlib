@@ -27,11 +27,11 @@
 #include "radv_private.h"
 
 static bool
-radv_should_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_key *key)
+radv_should_lower_poly_line_smooth(nir_shader *nir, const struct radv_graphics_state_key *gfx_state)
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
 
-   if (!key->ps.line_smooth_enabled && !key->dynamic_line_rast_mode)
+   if (!gfx_state->rs.line_smooth_enabled && !gfx_state->dynamic_line_rast_mode)
       return false;
 
    nir_foreach_block (block, impl) {
@@ -53,11 +53,11 @@ radv_should_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_k
 }
 
 void
-radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_pipeline_key *key)
+radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_graphics_state_key *gfx_state)
 {
    bool progress = false;
 
-   if (!radv_should_lower_poly_line_smooth(nir, key))
+   if (!radv_should_lower_poly_line_smooth(nir, gfx_state))
       return;
 
    NIR_PASS(progress, nir, nir_lower_poly_line_smooth, RADV_NUM_SMOOTH_AA_SAMPLES);

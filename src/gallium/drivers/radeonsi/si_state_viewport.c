@@ -33,8 +33,14 @@ static void si_get_small_prim_cull_info(struct si_context *sctx, struct si_small
       line_width = roundf(line_width);
    line_width = MAX2(line_width, 1);
 
-   info.clip_half_line_width[0] = line_width * 0.5 / fabs(info.scale[0]);
-   info.clip_half_line_width[1] = line_width * 0.5 / fabs(info.scale[1]);
+   float half_line_width = line_width * 0.5;
+   if (info.scale[0] == 0 || info.scale[1] == 0) {
+     info.clip_half_line_width[0] = 0;
+     info.clip_half_line_width[1] = 0;
+   } else {
+     info.clip_half_line_width[0] = half_line_width / fabs(info.scale[0]);
+     info.clip_half_line_width[1] = half_line_width / fabs(info.scale[1]);
+   }
 
    /* If the Y axis is inverted (OpenGL default framebuffer), reverse it.
     * This is because the viewport transformation inverts the clip space
@@ -249,7 +255,6 @@ static void si_emit_guardband(struct si_context *sctx, unsigned index)
    struct si_signed_scissor vp_as_scissor;
    struct pipe_viewport_state vp;
    float left, top, right, bottom, max_range, guardband_x, guardband_y;
-   float discard_x, discard_y;
 
    if (sctx->vs_writes_viewport_index) {
       /* Shaders can draw to any viewport. Make a union of all
@@ -339,28 +344,17 @@ static void si_emit_guardband(struct si_context *sctx, unsigned index)
    guardband_x = MIN2(-left, right);
    guardband_y = MIN2(-top, bottom);
 
-   discard_x = 1.0;
-   discard_y = 1.0;
+   float discard_x = 1.0;
+   float discard_y = 1.0;
+   float distance = sctx->current_clip_discard_distance;
 
-   if (unlikely(util_prim_is_points_or_lines(sctx->current_rast_prim))) {
-      /* When rendering wide points or lines, we need to be more
-       * conservative about when to discard them entirely. */
-      float pixels;
+   /* Add half the point size / line width */
+   discard_x += distance / (2.0 * vp.scale[0]);
+   discard_y += distance / (2.0 * vp.scale[1]);
 
-      if (sctx->current_rast_prim == MESA_PRIM_POINTS)
-         pixels = rs->max_point_size;
-      else
-         pixels = rs->line_width;
-
-      /* Add half the point size / line width */
-      discard_x += pixels / (2.0 * vp.scale[0]);
-      discard_y += pixels / (2.0 * vp.scale[1]);
-
-      /* Discard primitives that would lie entirely outside the clip
-       * region. */
-      discard_x = MIN2(discard_x, guardband_x);
-      discard_y = MIN2(discard_y, guardband_y);
-   }
+   /* Discard primitives that would lie entirely outside the viewport area. */
+   discard_x = MIN2(discard_x, guardband_x);
+   discard_y = MIN2(discard_y, guardband_y);
 
    unsigned pa_su_vtx_cntl = S_028BE4_PIX_CENTER(rs->half_pixel_center) |
                              S_028BE4_ROUND_MODE(V_028BE4_X_ROUND_TO_EVEN) |
@@ -483,8 +477,7 @@ static void si_set_viewport_states(struct pipe_context *pctx, unsigned start_slo
    }
 
    if (start_slot == 0) {
-      ctx->viewport0_y_inverted =
-         -state->scale[1] + state->translate[1] > state->scale[1] + state->translate[1];
+      ctx->viewport0_y_inverted = state->scale[1] < 0;
 
       /* NGG cull state uses the viewport and quant mode. */
       if (ctx->screen->use_ngg_culling)
@@ -610,6 +603,7 @@ void si_update_vs_viewport_state(struct si_context *ctx)
 
    if (ctx->vs_disables_clipping_viewport != vs_window_space) {
       ctx->vs_disables_clipping_viewport = vs_window_space;
+      si_mark_atom_dirty(ctx, &ctx->atoms.s.guardband);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.scissors);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.viewports);
    }

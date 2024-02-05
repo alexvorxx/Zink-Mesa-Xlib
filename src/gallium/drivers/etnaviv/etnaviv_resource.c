@@ -678,6 +678,7 @@ etna_resource_from_handle(struct pipe_screen *pscreen,
    rsc->layout = modifier_to_layout(modifier);
    rsc->modifier = modifier;
 
+   rsc->shared = true;
    if (usage & PIPE_HANDLE_USAGE_EXPLICIT_FLUSH)
       rsc->explicit_flush = true;
 
@@ -780,6 +781,7 @@ etna_resource_get_handle(struct pipe_screen *pscreen,
    }
    handle->modifier = etna_resource_modifier(rsc);
 
+   rsc->shared = true;
    if (!(usage & PIPE_HANDLE_USAGE_EXPLICIT_FLUSH))
       rsc->explicit_flush = false;
 

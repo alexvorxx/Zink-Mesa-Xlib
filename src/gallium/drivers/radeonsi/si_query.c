@@ -693,6 +693,12 @@ static struct pipe_query *si_query_hw_create(struct si_screen *sscreen, unsigned
       if ((index == PIPE_STAT_QUERY_GS_PRIMITIVES || index == PIPE_STAT_QUERY_GS_INVOCATIONS) &&
           sscreen->use_ngg && (sscreen->info.gfx_level >= GFX10 && sscreen->info.gfx_level <= GFX10_3))
          query->flags |= SI_QUERY_EMULATE_GS_COUNTERS;
+
+      /* GFX11 only emulates PIPE_STAT_QUERY_GS_PRIMITIVES because the shader culls,
+       * which makes the statistic incorrect.
+       */
+      if (sscreen->info.gfx_level >= GFX11 && index == PIPE_STAT_QUERY_GS_PRIMITIVES)
+         query->flags |= SI_QUERY_EMULATE_GS_COUNTERS;
       break;
    default:
       assert(0);

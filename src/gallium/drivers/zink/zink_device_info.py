@@ -69,6 +69,9 @@ EXTENSIONS = [
     Extension("VK_KHR_maintenance5",
               alias="maint5",
               features=True, properties=True),
+    Extension("VK_KHR_maintenance6",
+              alias="maint6",
+              features=True, properties=True),
     Extension("VK_KHR_external_memory"),
     Extension("VK_KHR_external_memory_fd"),
     Extension("VK_KHR_vulkan_memory_model"),
@@ -794,12 +797,12 @@ if __name__ == "__main__":
     lookup = TemplateLookup()
     lookup.put_string("helpers", include_template)
 
-    with open(header_path, "w") as header_file:
+    with open(header_path, "w", encoding='utf-8') as header_file:
         header = Template(header_code, lookup=lookup).render(extensions=extensions, versions=versions, registry=registry).strip()
         header = replace_code(header, replacement)
         print(header, file=header_file)
 
-    with open(impl_path, "w") as impl_file:
+    with open(impl_path, "w", encoding='utf-8') as impl_file:
         impl = Template(impl_code, lookup=lookup).render(extensions=extensions, versions=versions, registry=registry).strip()
         impl = replace_code(impl, replacement)
         print(impl, file=impl_file)

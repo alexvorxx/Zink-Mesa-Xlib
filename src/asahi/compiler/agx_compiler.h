@@ -54,13 +54,13 @@ agx_size_align_16(enum agx_size size)
 
 /* Keep synced with hash_index */
 typedef struct {
-   /* Sufficient for as many SSA values as we need. Immediates and uniforms fit
-    * in 16-bits */
-   unsigned value : 22;
+   /* Sufficient for as many SSA values, immediates, and uniforms as we need. */
+   uint32_t value;
 
    /* Indicates that this source kills the referenced value (because it is the
     * last use in a block and the source is not live after the block). Set by
-    * liveness analysis. */
+    * liveness analysis.
+    */
    bool kill : 1;
 
    /* Cache hints */
@@ -71,18 +71,39 @@ typedef struct {
    bool abs : 1;
    bool neg : 1;
 
+   unsigned channels_m1     : 3;
    enum agx_size size       : 2;
    enum agx_index_type type : 3;
+   unsigned padding         : 18;
 } agx_index;
+
+static inline unsigned
+agx_channels(agx_index idx)
+{
+   return idx.channels_m1 + 1;
+}
+
+static inline unsigned
+agx_index_size_16(agx_index idx)
+{
+   return agx_size_align_16(idx.size) * agx_channels(idx);
+}
+
+static inline agx_index
+agx_get_vec_index(unsigned value, enum agx_size size, unsigned channels)
+{
+   return (agx_index){
+      .value = value,
+      .channels_m1 = channels - 1,
+      .size = size,
+      .type = AGX_INDEX_NORMAL,
+   };
+}
 
 static inline agx_index
 agx_get_index(unsigned value, enum agx_size size)
 {
-   return (agx_index){
-      .value = value,
-      .size = size,
-      .type = AGX_INDEX_NORMAL,
-   };
+   return agx_get_vec_index(value, size, 1);
 }
 
 static inline agx_index
@@ -113,6 +134,19 @@ agx_register(uint32_t imm, enum agx_size size)
    return (agx_index){
       .value = imm,
       .size = size,
+      .type = AGX_INDEX_REGISTER,
+   };
+}
+
+static inline agx_index
+agx_register_like(uint32_t imm, agx_index like)
+{
+   assert(imm < AGX_NUM_REGS);
+
+   return (agx_index){
+      .value = imm,
+      .channels_m1 = like.channels_m1,
+      .size = like.size,
       .type = AGX_INDEX_REGISTER,
    };
 }
@@ -311,6 +345,7 @@ typedef struct {
    enum agx_dim dim       : 4;
    bool offset            : 1;
    bool shadow            : 1;
+   bool query_lod         : 1;
    enum agx_gather gather : 3;
 
    /* TODO: Handle iter ops more efficient */
@@ -330,7 +365,7 @@ typedef struct {
    bool saturate : 1;
    unsigned mask : 4;
 
-   unsigned padding : 9;
+   unsigned padding : 8;
 } agx_instr;
 
 static inline void
@@ -364,9 +399,6 @@ typedef struct agx_block {
     * mapping of SSA names to registers at the end of the block.
     */
    uint8_t *ssa_to_reg_out;
-
-   /* Register allocation */
-   BITSET_DECLARE(regs_out, AGX_NUM_REGS);
 
    /* Is this block a loop header? If not, all of its predecessors precede it in
     * source order.
@@ -442,6 +474,12 @@ agx_remove_instruction(agx_instr *ins)
 }
 
 static inline agx_index
+agx_vec_temp(agx_context *ctx, enum agx_size size, unsigned channels)
+{
+   return agx_get_vec_index(ctx->alloc++, size, channels);
+}
+
+static inline agx_index
 agx_temp(agx_context *ctx, enum agx_size size)
 {
    return agx_get_index(ctx->alloc++, size);
@@ -467,7 +505,8 @@ agx_size_for_bits(unsigned bits)
 static inline agx_index
 agx_def_index(nir_def *ssa)
 {
-   return agx_get_index(ssa->index, agx_size_for_bits(ssa->bit_size));
+   return agx_get_vec_index(ssa->index, agx_size_for_bits(ssa->bit_size),
+                            ssa->num_components);
 }
 
 static inline agx_index
@@ -479,7 +518,8 @@ agx_src_index(nir_src *src)
 static inline agx_index
 agx_vec_for_def(agx_context *ctx, nir_def *def)
 {
-   return agx_temp(ctx, agx_size_for_bits(def->bit_size));
+   return agx_vec_temp(ctx, agx_size_for_bits(def->bit_size),
+                       def->num_components);
 }
 
 static inline agx_index
@@ -832,8 +872,7 @@ agx_validate(UNUSED agx_context *ctx, UNUSED const char *after_str)
 }
 #endif
 
-unsigned agx_read_registers(const agx_instr *I, unsigned s);
-unsigned agx_write_registers(const agx_instr *I, unsigned d);
+enum agx_size agx_split_width(const agx_instr *I);
 bool agx_allows_16bit_immediate(agx_instr *I);
 
 struct agx_copy {

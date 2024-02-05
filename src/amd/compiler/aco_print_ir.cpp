@@ -713,7 +713,7 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
       const DPP8_instruction& dpp = instr->dpp8();
       fprintf(output, " dpp8:[");
       for (unsigned i = 0; i < 8; i++)
-         fprintf(output, "%s%u", i ? "," : "", (dpp.lane_sel >> (i * 3)) & 0x8);
+         fprintf(output, "%s%u", i ? "," : "", (dpp.lane_sel >> (i * 3)) & 0x7);
       fprintf(output, "]");
       if (dpp.fetch_inactive)
          fprintf(output, " fi");

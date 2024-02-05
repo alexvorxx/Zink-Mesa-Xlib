@@ -33,7 +33,7 @@
 typedef struct {
    const struct radv_shader_args *args;
    const struct radv_shader_info *info;
-   const struct radv_pipeline_key *pl_key;
+   const struct radv_graphics_state_key *gfx_state;
    const struct radeon_info *rad_info;
 } lower_vs_inputs_state;
 
@@ -81,7 +81,7 @@ lower_load_vs_input_from_prolog(nir_builder *b, nir_intrinsic_instr *intrin, low
 static nir_def *
 calc_vs_input_index_instance_rate(nir_builder *b, unsigned location, lower_vs_inputs_state *s)
 {
-   const uint32_t divisor = s->pl_key->vs.instance_rate_divisors[location];
+   const uint32_t divisor = s->gfx_state->vi.instance_rate_divisors[location];
    nir_def *start_instance = nir_load_base_instance(b);
 
    if (divisor == 0)
@@ -94,7 +94,7 @@ calc_vs_input_index_instance_rate(nir_builder *b, unsigned location, lower_vs_in
 static nir_def *
 calc_vs_input_index(nir_builder *b, unsigned location, lower_vs_inputs_state *s)
 {
-   if (s->pl_key->vs.instance_rate_inputs & BITFIELD_BIT(location))
+   if (s->gfx_state->vi.instance_rate_inputs & BITFIELD_BIT(location))
       return calc_vs_input_index_instance_rate(b, location, s);
 
    return nir_iadd(b, nir_load_first_vertex(b), nir_load_vertex_id_zero_base(b));
@@ -233,10 +233,10 @@ lower_load_vs_input(nir_builder *b, nir_intrinsic_instr *intrin, lower_vs_inputs
    if (!dest_use_mask)
       return nir_undef(b, dest_num_components, bit_size);
 
-   const uint32_t attrib_binding = s->pl_key->vs.vertex_attribute_bindings[location];
-   const uint32_t attrib_offset = s->pl_key->vs.vertex_attribute_offsets[location];
-   const uint32_t attrib_stride = s->pl_key->vs.vertex_attribute_strides[location];
-   const enum pipe_format attrib_format = s->pl_key->vs.vertex_attribute_formats[location];
+   const uint32_t attrib_binding = s->gfx_state->vi.vertex_attribute_bindings[location];
+   const uint32_t attrib_offset = s->gfx_state->vi.vertex_attribute_offsets[location];
+   const uint32_t attrib_stride = s->gfx_state->vi.vertex_attribute_strides[location];
+   const enum pipe_format attrib_format = s->gfx_state->vi.vertex_attribute_formats[location];
    const struct util_format_description *f = util_format_description(attrib_format);
    const struct ac_vtx_format_info *vtx_info =
       ac_get_vtx_format_info(s->rad_info->gfx_level, s->rad_info->family, attrib_format);
@@ -328,7 +328,7 @@ lower_load_vs_input(nir_builder *b, nir_intrinsic_instr *intrin, lower_vs_inputs
          loads[num_loads++] = nir_load_buffer_amd(b, channels, bit_size, descriptor, zero, zero, index,
                                                   .base = const_off, .memory_modes = nir_var_shader_in);
       } else {
-         const unsigned align_mul = MAX2(1, s->pl_key->vs.vertex_binding_align[attrib_binding]);
+         const unsigned align_mul = MAX2(1, s->gfx_state->vi.vertex_binding_align[attrib_binding]);
          const unsigned align_offset = const_off % align_mul;
 
          loads[num_loads++] = nir_load_typed_buffer_amd(
@@ -411,14 +411,14 @@ lower_vs_input_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
 
 bool
 radv_nir_lower_vs_inputs(nir_shader *shader, const struct radv_shader_stage *vs_stage,
-                         const struct radv_pipeline_key *pl_key, const struct radeon_info *rad_info)
+                         const struct radv_graphics_state_key *gfx_state, const struct radeon_info *rad_info)
 {
    assert(shader->info.stage == MESA_SHADER_VERTEX);
 
    lower_vs_inputs_state state = {
       .info = &vs_stage->info,
       .args = &vs_stage->args,
-      .pl_key = pl_key,
+      .gfx_state = gfx_state,
       .rad_info = rad_info,
    };
 

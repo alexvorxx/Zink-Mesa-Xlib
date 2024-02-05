@@ -5,6 +5,7 @@
  */
 
 #include "compiler/nir/nir.h"
+#include "ac_shader_util.h"
 #include "radeon_uvd_enc.h"
 #include "radeon_vce.h"
 #include "radeon_video.h"
@@ -18,7 +19,8 @@
 
 /* The capabilities reported by the kernel has priority
    over the existing logic in si_get_video_param */
-#define QUERYABLE_KERNEL   (!!(sscreen->info.drm_minor >= 41))
+#define QUERYABLE_KERNEL   (sscreen->info.is_amdgpu && \
+   !!(sscreen->info.drm_minor >= 41))
 #define KERNEL_DEC_CAP(codec, attrib)    \
    (codec > PIPE_VIDEO_FORMAT_UNKNOWN && codec <= PIPE_VIDEO_FORMAT_AV1) ? \
    (sscreen->info.dec_caps.codec_info[codec - 1].valid ? \
@@ -160,6 +162,8 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_ALLOW_GLTHREAD_BUFFER_SUBDATA_OPT: /* TODO: remove if it's slow */
    case PIPE_CAP_NULL_TEXTURES:
    case PIPE_CAP_HAS_CONST_BW:
+   case PIPE_CAP_FENCE_SIGNAL:
+   case PIPE_CAP_NATIVE_FENCE_FD:
       return 1;
 
    case PIPE_CAP_TEXTURE_TRANSFER_MODES:
@@ -259,30 +263,25 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VERTEX_BUFFER_STRIDE_4BYTE_ALIGNED_ONLY:
    case PIPE_CAP_VERTEX_ELEMENT_SRC_OFFSET_4BYTE_ALIGNED_ONLY:
    case PIPE_CAP_PREFER_BACK_BUFFER_REUSE:
-      return 0;
-
-   case PIPE_CAP_SPARSE_BUFFER_PAGE_SIZE:
-      return enable_sparse ? RADEON_SPARSE_PAGE_SIZE : 0;
-
    case PIPE_CAP_UMA:
    case PIPE_CAP_PREFER_IMM_ARRAYS_AS_CONSTBUF:
       return 0;
 
+   case PIPE_CAP_PERFORMANCE_MONITOR:
+      return sscreen->info.gfx_level >= GFX7 && sscreen->info.gfx_level <= GFX10_3;
+
+   case PIPE_CAP_SPARSE_BUFFER_PAGE_SIZE:
+      return enable_sparse ? RADEON_SPARSE_PAGE_SIZE : 0;
+
    case PIPE_CAP_CONTEXT_PRIORITY_MASK:
-      if (!(sscreen->info.is_amdgpu && sscreen->info.drm_minor >= 22))
+      if (!sscreen->info.is_amdgpu)
          return 0;
       return PIPE_CONTEXT_PRIORITY_LOW |
              PIPE_CONTEXT_PRIORITY_MEDIUM |
              PIPE_CONTEXT_PRIORITY_HIGH;
 
-   case PIPE_CAP_FENCE_SIGNAL:
-      return sscreen->info.has_syncobj;
-
    case PIPE_CAP_CONSTBUF0_FLAGS:
       return SI_RESOURCE_FLAG_32BIT;
-
-   case PIPE_CAP_NATIVE_FENCE_FD:
-      return sscreen->info.has_fence_to_handle;
 
    case PIPE_CAP_DRAW_PARAMETERS:
    case PIPE_CAP_MULTI_DRAW_INDIRECT:
@@ -293,6 +292,7 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 30;
 
    case PIPE_CAP_MAX_VARYINGS:
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
       return 32;
 
    case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
@@ -310,10 +310,7 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
        */
       return 256;
    case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
-      return 1024;
-   case PIPE_CAP_MAX_GS_INVOCATIONS:
-      /* Even though the hw supports more, we officially wanna expose only 32. */
-      return 32;
+      return 4095;
 
    case PIPE_CAP_MAX_VERTEX_ATTRIB_STRIDE:
       return 2048;
@@ -573,6 +570,64 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
                                   (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN) ||
                                   (profile == PIPE_VIDEO_PROFILE_AV1_MAIN);
 
+   /* Return the capability of Video Post Processor.
+    * Have to determine the HW version of VPE.
+    * Have to check the HW limitation and
+    * Check if the VPE exists and is valid
+    */
+   if (sscreen->info.ip[AMD_IP_VPE].num_queues && entrypoint == PIPE_VIDEO_ENTRYPOINT_PROCESSING) {
+
+      switch(param) {
+      case PIPE_VIDEO_CAP_SUPPORTED:
+         return true;
+      case PIPE_VIDEO_CAP_MAX_WIDTH:
+         return 10240;
+      case PIPE_VIDEO_CAP_MAX_HEIGHT:
+         return 10240;
+      case PIPE_VIDEO_CAP_VPP_MAX_INPUT_WIDTH:
+         return 10240;
+      case PIPE_VIDEO_CAP_VPP_MAX_INPUT_HEIGHT:
+         return 10240;
+      case PIPE_VIDEO_CAP_VPP_MIN_INPUT_WIDTH:
+         return 16;
+      case PIPE_VIDEO_CAP_VPP_MIN_INPUT_HEIGHT:
+         return 16;
+      case PIPE_VIDEO_CAP_VPP_MAX_OUTPUT_WIDTH:
+         return 10240;
+      case PIPE_VIDEO_CAP_VPP_MAX_OUTPUT_HEIGHT:
+         return 10240;
+      case PIPE_VIDEO_CAP_VPP_MIN_OUTPUT_WIDTH:
+         return 16;
+      case PIPE_VIDEO_CAP_VPP_MIN_OUTPUT_HEIGHT:
+         return 16;
+      case PIPE_VIDEO_CAP_VPP_ORIENTATION_MODES:
+         /* VPE 1st generation does not support orientation
+          * Have to determine the version and features of VPE in future.
+          */
+         return PIPE_VIDEO_VPP_ORIENTATION_DEFAULT;
+      case PIPE_VIDEO_CAP_VPP_BLEND_MODES:
+         /* VPE 1st generation does not support blending.
+          * Have to determine the version and features of VPE in future.
+          */
+         return PIPE_VIDEO_VPP_BLEND_MODE_NONE;
+      case PIPE_VIDEO_CAP_PREFERED_FORMAT:
+         return PIPE_FORMAT_NV12;
+      case PIPE_VIDEO_CAP_PREFERS_INTERLACED:
+         return false;
+      case PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE:
+         return true;
+      case PIPE_VIDEO_CAP_REQUIRES_FLUSH_ON_END_FRAME:
+         /* true: VPP flush function will be called within vaEndPicture() */
+         /* false: VPP flush function will be skipped */
+         return false;
+      case PIPE_VIDEO_CAP_SUPPORTS_INTERLACED:
+         /* for VPE we prefer non-interlaced buffer */
+         return false;
+      default:
+         return 0;
+      }
+   }
+
    if (entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
       if (!(sscreen->info.ip[AMD_IP_VCE].num_queues ||
             sscreen->info.ip[AMD_IP_UVD_ENC].num_queues ||
@@ -748,7 +803,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          else
             return 0;
       case PIPE_VIDEO_CAP_EFC_SUPPORTED:
-         return ((sscreen->info.family >= CHIP_RENOIR) &&
+         return ((sscreen->info.family > CHIP_RENOIR) &&
                  !(sscreen->debug_flags & DBG(NO_EFC)));
 
       case PIPE_VIDEO_CAP_ENC_MAX_REFERENCES_PER_FRAME:
@@ -758,6 +813,29 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             return refPicList0 | (refPicList1 << 16);
          } else
             return 1;
+
+      case PIPE_VIDEO_CAP_ENC_INTRA_REFRESH:
+         if (sscreen->info.vcn_ip_version >= VCN_1_0_0) {
+            int value = PIPE_VIDEO_ENC_INTRA_REFRESH_ROW |
+                        PIPE_VIDEO_ENC_INTRA_REFRESH_COLUMN |
+                        PIPE_VIDEO_ENC_INTRA_REFRESH_P_FRAME;
+            return value;
+         }
+         else
+            return 0;
+
+      case PIPE_VIDEO_CAP_ENC_ROI:
+         if (sscreen->info.vcn_ip_version >= VCN_1_0_0) {
+            union pipe_enc_cap_roi attrib;
+            attrib.value = 0;
+
+            attrib.bits.num_roi_regions = PIPE_ENC_ROI_REGION_NUM_MAX;
+            attrib.bits.roi_rc_priority_support = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.roi_rc_qp_delta_support = PIPE_ENC_FEATURE_SUPPORTED;
+            return attrib.value;
+         }
+         else
+            return 0;
 
       default:
          return 0;
@@ -810,7 +888,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          }
          if (sscreen->info.family < CHIP_CARRIZO || sscreen->info.family >= CHIP_VEGA10)
             return false;
-         if (!(sscreen->info.is_amdgpu && sscreen->info.drm_minor >= 19)) {
+         if (!sscreen->info.is_amdgpu) {
             RVID_ERR("No MJPEG support for the kernel version\n");
             return false;
          }
@@ -870,6 +948,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
 
       if (format >= PIPE_VIDEO_FORMAT_HEVC)
          return false;
+
       return true;
    }
    case PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE:
@@ -911,6 +990,11 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       }
    case PIPE_VIDEO_CAP_SUPPORTS_CONTIGUOUS_PLANES_MAP:
       return true;
+   case PIPE_VIDEO_CAP_ROI_CROP_DEC:
+      if (codec == PIPE_VIDEO_FORMAT_JPEG &&
+          sscreen->info.vcn_ip_version == VCN_4_0_3)
+         return true;
+      return false;
    default:
       return 0;
    }
@@ -921,6 +1005,23 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
                                        enum pipe_video_entrypoint entrypoint)
 {
    struct si_screen *sscreen = (struct si_screen *)screen;
+
+   if (sscreen->info.ip[AMD_IP_VPE].num_queues && entrypoint == PIPE_VIDEO_ENTRYPOINT_PROCESSING) {
+      /* Todo:
+       * Unable to confirm whether it is asking for an input or output type
+       * Have to modify va frontend for solving this problem
+       */
+      /* VPE Supported input type */
+      if ((format == PIPE_FORMAT_NV12) || (format == PIPE_FORMAT_NV21) || (format == PIPE_FORMAT_P010))
+         return true;
+
+      /* VPE Supported output type */
+      if ((format == PIPE_FORMAT_A8R8G8B8_UNORM) || (format == PIPE_FORMAT_A8B8G8R8_UNORM) || (format == PIPE_FORMAT_R8G8B8A8_UNORM) ||
+          (format == PIPE_FORMAT_B8G8R8A8_UNORM) || (format == PIPE_FORMAT_X8R8G8B8_UNORM) || (format == PIPE_FORMAT_X8B8G8R8_UNORM) ||
+          (format == PIPE_FORMAT_R8G8B8X8_UNORM) || (format == PIPE_FORMAT_B8G8R8X8_UNORM) || (format == PIPE_FORMAT_A2R10G10B10_UNORM) ||
+          (format == PIPE_FORMAT_A2B10G10R10_UNORM) || (format == PIPE_FORMAT_B10G10R10A2_UNORM) || (format == PIPE_FORMAT_R10G10B10A2_UNORM))
+         return true;
+   }
 
    /* HEVC 10 bit decoding should use P010 instead of NV12 if possible */
    if (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10)
@@ -1219,7 +1320,7 @@ static void si_init_renderer_string(struct si_screen *sscreen)
       snprintf(kernel_version, sizeof(kernel_version), ", %s", uname_data.release);
 
    const char *compiler_name =
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
       !sscreen->use_aco ? "LLVM " MESA_LLVM_VERSION_STRING :
 #endif
       "ACO";
@@ -1258,7 +1359,8 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
        ((sscreen->info.vcn_ip_version >= VCN_4_0_0) ?
 	 sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues : sscreen->info.ip[AMD_IP_VCN_DEC].num_queues) ||
        sscreen->info.ip[AMD_IP_VCN_JPEG].num_queues || sscreen->info.ip[AMD_IP_VCE].num_queues ||
-       sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues) {
+       sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues ||
+       sscreen->info.ip[AMD_IP_VPE].num_queues) {
       sscreen->b.get_video_param = si_get_video_param;
       sscreen->b.is_video_format_supported = si_vid_is_format_supported;
    } else {
@@ -1268,109 +1370,69 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
 
    si_init_renderer_string(sscreen);
 
+   /*        |---------------------------------- Performance & Availability --------------------------------|
+    *        |MAD/MAC/MADAK/MADMK|MAD_LEGACY|MAC_LEGACY|    FMA     |FMAC/FMAAK/FMAMK|FMA_LEGACY|PK_FMA_F16,|Best choice
+    * Arch   |    F32,F16,F64    | F32,F16  | F32,F16  |F32,F16,F64 |    F32,F16     |   F32    |PK_FMAC_F16|F16,F32,F64
+    * ------------------------------------------------------------------------------------------------------------------
+    * gfx6,7 |     1 , - , -     |  1 , -   |  1 , -   |1/4, - ,1/16|     - , -      |    -     |   - , -   | - ,MAD,FMA
+    * gfx8   |     1 , 1 , -     |  1 , -   |  - , -   |1/4, 1 ,1/16|     - , -      |    -     |   - , -   |MAD,MAD,FMA
+    * gfx9   |     1 ,1|0, -     |  1 , -   |  - , -   | 1 , 1 ,1/16|    0|1, -      |    -     |   2 , -   |FMA,MAD,FMA
+    * gfx10  |     1 , - , -     |  1 , -   |  1 , -   | 1 , 1 ,1/16|     1 , 1      |    -     |   2 , 2   |FMA,MAD,FMA
+    * gfx10.3|     - , - , -     |  - , -   |  - , -   | 1 , 1 ,1/16|     1 , 1      |    1     |   2 , 2   |  all FMA
+    * gfx11  |     - , - , -     |  - , -   |  - , -   | 2 , 2 ,1/16|     2 , 2      |    2     |   2 , 2   |  all FMA
+    *
+    * Tahiti, Hawaii, Carrizo, Vega20: FMA_F32 is full rate, FMA_F64 is 1/4
+    * gfx9 supports MAD_F16 only on Vega10, Raven, Raven2, Renoir.
+    * gfx9 supports FMAC_F32 only on Vega20, but doesn't support FMAAK and FMAMK.
+    *
+    * gfx8 prefers MAD for F16 because of MAC/MADAK/MADMK.
+    * gfx9 and newer prefer FMA for F16 because of the packed instruction.
+    * gfx10 and older prefer MAD for F32 because of the legacy instruction.
+    */
    bool use_fma32 =
       sscreen->info.gfx_level >= GFX10_3 ||
       (sscreen->info.family >= CHIP_GFX940 && !sscreen->info.has_graphics) ||
       /* fma32 is too slow for gpu < gfx9, so apply the option only for gpu >= gfx9 */
       (sscreen->info.gfx_level >= GFX9 && sscreen->options.force_use_fma32);
 
-   const struct nir_shader_compiler_options nir_options = {
-      .vertex_id_zero_based = true,
-      .lower_scmp = true,
-      .lower_flrp16 = true,
-      .lower_flrp32 = true,
-      .lower_flrp64 = true,
-      .lower_fdiv = true,
-      .lower_bitfield_insert = true,
-      .lower_bitfield_extract = true,
-      /*        |---------------------------------- Performance & Availability --------------------------------|
-       *        |MAD/MAC/MADAK/MADMK|MAD_LEGACY|MAC_LEGACY|    FMA     |FMAC/FMAAK/FMAMK|FMA_LEGACY|PK_FMA_F16,|Best choice
-       * Arch   |    F32,F16,F64    | F32,F16  | F32,F16  |F32,F16,F64 |    F32,F16     | F32,F16  |PK_FMAC_F16|F16,F32,F64
-       * ------------------------------------------------------------------------------------------------------------------
-       * gfx6,7 |     1 , - , -     |  1 , -   |  1 , -   |1/4, - ,1/16|     - , -      |  - , -   |   - , -   | - ,MAD,FMA
-       * gfx8   |     1 , 1 , -     |  1 , -   |  - , -   |1/4, 1 ,1/16|     - , -      |  - , -   |   - , -   |MAD,MAD,FMA
-       * gfx9   |     1 ,1|0, -     |  1 , -   |  - , -   | 1 , 1 ,1/16|    0|1, -      |  - , 1   |   2 , -   |FMA,MAD,FMA
-       * gfx10  |     1 , - , -     |  1 , -   |  1 , -   | 1 , 1 ,1/16|     1 , 1      |  - , -   |   2 , 2   |FMA,MAD,FMA
-       * gfx10.3|     - , - , -     |  - , -   |  - , -   | 1 , 1 ,1/16|     1 , 1      |  1 , -   |   2 , 2   |  all FMA
-       *
-       * Tahiti, Hawaii, Carrizo, Vega20: FMA_F32 is full rate, FMA_F64 is 1/4
-       * gfx9 supports MAD_F16 only on Vega10, Raven, Raven2, Renoir.
-       * gfx9 supports FMAC_F32 only on Vega20, but doesn't support FMAAK and FMAMK.
-       *
-       * gfx8 prefers MAD for F16 because of MAC/MADAK/MADMK.
-       * gfx9 and newer prefer FMA for F16 because of the packed instruction.
-       * gfx10 and older prefer MAD for F32 because of the legacy instruction.
-       */
-      .lower_ffma16 = sscreen->info.gfx_level < GFX9,
-      .lower_ffma32 = !use_fma32,
-      .lower_ffma64 = false,
-      .fuse_ffma16 = sscreen->info.gfx_level >= GFX9,
-      .fuse_ffma32 = use_fma32,
-      .fuse_ffma64 = true,
-      .lower_fmod = true,
-      .lower_fpow = true,
-      .lower_ineg = true,
-      .lower_pack_snorm_4x8 = true,
-      .lower_pack_unorm_4x8 = true,
-      .lower_pack_half_2x16 = true,
-      .lower_pack_64_2x32 = true,
-      .lower_pack_64_4x16 = true,
-      .lower_pack_32_2x16 = true,
-      .lower_unpack_snorm_2x16 = true,
-      .lower_unpack_snorm_4x8 = true,
-      .lower_unpack_unorm_2x16 = true,
-      .lower_unpack_unorm_4x8 = true,
-      .lower_unpack_half_2x16 = true,
-      .lower_extract_byte = true,
-      .lower_extract_word = true,
-      .lower_insert_byte = true,
-      .lower_insert_word = true,
-      .lower_hadd = true,
-      .lower_hadd64 = true,
-      .lower_fisnormal = true,
-      .lower_rotate = true,
-      .lower_to_scalar = true,
-      .lower_to_scalar_filter = sscreen->info.has_packed_math_16bit ?
-                                   si_alu_to_scalar_packed_math_filter : NULL,
-      .has_sdot_4x8 = sscreen->info.has_accelerated_dot_product,
-      .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
-      .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
-      .has_dot_2x16 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level < GFX11,
-      .has_bfe = true,
-      .has_bfm = true,
-      .has_bitfield_select = true,
-      .optimize_sample_mask_in = true,
-      .max_unroll_iterations = 128,
-      .max_unroll_iterations_aggressive = 128,
-      .use_interpolated_input_intrinsics = true,
-      .lower_uniforms_to_ubo = true,
-      .support_16bit_alu = sscreen->info.gfx_level >= GFX8,
-      .vectorize_vec2_16bit = sscreen->info.has_packed_math_16bit,
-      .pack_varying_options =
-         nir_pack_varying_interp_mode_none |
-         nir_pack_varying_interp_mode_smooth |
-         nir_pack_varying_interp_mode_noperspective |
-         nir_pack_varying_interp_loc_center |
-         nir_pack_varying_interp_loc_sample |
-         nir_pack_varying_interp_loc_centroid,
-      .lower_io_variables = true,
-      /* HW supports indirect indexing for: | Enabled in driver
-       * -------------------------------------------------------
-       * TCS inputs                         | Yes
-       * TES inputs                         | Yes
-       * GS inputs                          | No
-       * -------------------------------------------------------
-       * VS outputs before TCS              | No
-       * TCS outputs                        | Yes
-       * VS/TES outputs before GS           | No
-       */
-      .support_indirect_inputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
-                                 BITFIELD_BIT(MESA_SHADER_TESS_EVAL),
-      .support_indirect_outputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL),
-      .lower_int64_options =
-         nir_lower_imul64 | nir_lower_imul_high64 | nir_lower_imul_2x32_64 |
-         nir_lower_divmod64 | nir_lower_minmax64 | nir_lower_iabs64 |
-         nir_lower_iadd_sat64 | nir_lower_conv64,
-   };
-   *sscreen->nir_options = nir_options;
+   nir_shader_compiler_options *options = sscreen->nir_options;
+   ac_set_nir_options(&sscreen->info, !sscreen->use_aco, options);
+
+   options->lower_ffma16 = sscreen->info.gfx_level < GFX9;
+   options->lower_ffma32 = !use_fma32;
+   options->lower_ffma64 = false;
+   options->fuse_ffma16 = sscreen->info.gfx_level >= GFX9;
+   options->fuse_ffma32 = use_fma32;
+   options->fuse_ffma64 = true;
+   options->lower_uniforms_to_ubo = true;
+   options->lower_layer_fs_input_to_sysval = true;
+   options->optimize_sample_mask_in = true;
+   options->lower_to_scalar = true;
+   options->lower_to_scalar_filter =
+      sscreen->info.has_packed_math_16bit ? si_alu_to_scalar_packed_math_filter : NULL;
+   options->max_unroll_iterations = 128;
+   options->max_unroll_iterations_aggressive = 128;
+   /* For OpenGL, rounding mode is undefined. We want fast packing with v_cvt_pkrtz_f16,
+    * but if we use it, all f32->f16 conversions have to round towards zero,
+    * because both scalar and vec2 down-conversions have to round equally.
+    *
+    * For OpenCL, rounding mode is explicit. This will only lower f2f16 to f2f16_rtz
+    * when execution mode is rtz instead of rtne.
+    */
+   options->force_f2f16_rtz = true;
+   options->io_options = nir_io_has_flexible_input_interpolation_except_flat |
+                         nir_io_glsl_lower_derefs;
+   /* HW supports indirect indexing for: | Enabled in driver
+    * -------------------------------------------------------
+    * TCS inputs                         | Yes
+    * TES inputs                         | Yes
+    * GS inputs                          | No
+    * -------------------------------------------------------
+    * VS outputs before TCS              | No
+    * TCS outputs                        | Yes
+    * VS/TES outputs before GS           | No
+    */
+   options->support_indirect_inputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
+                                      BITFIELD_BIT(MESA_SHADER_TESS_EVAL);
+   options->support_indirect_outputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL);
 }

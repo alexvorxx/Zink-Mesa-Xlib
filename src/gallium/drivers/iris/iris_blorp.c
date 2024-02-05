@@ -287,6 +287,7 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
 {
    struct iris_context *ice = blorp_batch->blorp->driver_ctx;
    struct iris_batch *batch = blorp_batch->driver_batch;
+   uint32_t pc_flags = 0;
 
 #if GFX_VER >= 11
    /* The PIPE_CONTROL command description says:
@@ -297,10 +298,8 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
     *     is set due to new association of BTI, PS Scoreboard Stall bit must
     *     be set in this packet."
     */
-   iris_emit_pipe_control_flush(batch,
-                                "workaround: RT BTI change [blorp]",
-                                PIPE_CONTROL_RENDER_TARGET_FLUSH |
-                                PIPE_CONTROL_STALL_AT_SCOREBOARD);
+   pc_flags = PIPE_CONTROL_RENDER_TARGET_FLUSH |
+              PIPE_CONTROL_STALL_AT_SCOREBOARD;
 #endif
 
    /* Check if blorp ds state matches ours. */
@@ -308,9 +307,15 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
       const bool blorp_ds_state =
          params->depth.enabled || params->stencil.enabled;
       if (ice->state.ds_write_state != blorp_ds_state) {
-         blorp_batch->flags |= BLORP_BATCH_NEED_PSS_STALL_SYNC;
+         pc_flags |= PIPE_CONTROL_PSS_STALL_SYNC;
          ice->state.ds_write_state = blorp_ds_state;
       }
+   }
+
+   if (pc_flags != 0) {
+      iris_emit_pipe_control_flush(batch,
+                                   "workaround: prior to [blorp]",
+                                   pc_flags);
    }
 
    if (params->depth.enabled &&
@@ -487,7 +492,8 @@ blorp_measure_end(struct blorp_batch *blorp_batch,
                          params->num_samples,
                          params->shader_pipeline,
                          params->dst.view.format,
-                         params->src.view.format);
+                         params->src.view.format,
+                         (blorp_batch->flags & BLORP_BATCH_PREDICATE_ENABLE));
 }
 
 void

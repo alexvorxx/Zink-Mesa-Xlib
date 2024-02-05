@@ -121,7 +121,7 @@ panvk_lower_sysvals(nir_builder *b, nir_instr *instr, void *data)
 }
 
 static void
-panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
+panvk_lower_blend(struct panvk_device *dev, nir_shader *nir,
                   struct panfrost_compile_inputs *inputs,
                   struct pan_blend_state *blend_state)
 {
@@ -135,7 +135,7 @@ panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
    for (unsigned rt = 0; rt < blend_state->rt_count; rt++) {
       struct pan_blend_rt_state *rt_state = &blend_state->rts[rt];
 
-      if (!panvk_per_arch(blend_needs_lowering)(pdev, blend_state, rt))
+      if (!panvk_per_arch(blend_needs_lowering)(dev, blend_state, rt))
          continue;
 
       enum pipe_format fmt = rt_state->format;
@@ -218,7 +218,6 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
                               const VkAllocationCallbacks *alloc)
 {
    VK_FROM_HANDLE(vk_shader_module, module, stage_info->module);
-   struct panfrost_device *pdev = &dev->physical_device->pdev;
    struct panvk_shader *shader;
 
    shader = vk_zalloc2(&dev->vk.alloc, alloc, sizeof(*shader), 8,
@@ -254,7 +253,7 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
               true, true);
 
    struct panfrost_compile_inputs inputs = {
-      .gpu_id = pdev->gpu_id,
+      .gpu_id = dev->physical_device->kmod.props.gpu_prod_id,
       .no_ubo_to_push = true,
       .no_idvs = true, /* TODO */
    };
@@ -264,7 +263,7 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
 
    NIR_PASS_V(nir, nir_opt_copy_prop_vars);
    NIR_PASS_V(nir, nir_opt_combine_stores, nir_var_all);
-   NIR_PASS_V(nir, nir_opt_trivial_continues);
+   NIR_PASS_V(nir, nir_opt_loop);
 
    /* Do texture lowering here.  Yes, it's a duplication of the texture
     * lowering in bifrost_compile.  However, we need to lower texture stuff
@@ -347,7 +346,7 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
    pan_shader_preprocess(nir, inputs.gpu_id);
 
    if (stage == MESA_SHADER_FRAGMENT) {
-      panvk_lower_blend(pdev, nir, &inputs, blend_state);
+      panvk_lower_blend(dev, nir, &inputs, blend_state);
    }
 
    struct sysval_options sysval_options = {
@@ -365,7 +364,7 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
       for (unsigned rt = 0; rt < MAX_RTS; ++rt)
          rt_formats[rt] = blend_state->rts[rt].format;
 
-      NIR_PASS_V(nir, GENX(pan_inline_rt_conversion), pdev, rt_formats);
+      NIR_PASS_V(nir, GENX(pan_inline_rt_conversion), rt_formats);
    }
 
    GENX(pan_shader_compile)(nir, &inputs, &shader->binary, &shader->info);

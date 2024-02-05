@@ -29,8 +29,6 @@
 #include "panvk_cs.h"
 #include "panvk_private.h"
 
-#include "pan_bo.h"
-
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "spirv/nir_spirv.h"
@@ -160,19 +158,18 @@ panvk_pipeline_builder_upload_shaders(struct panvk_pipeline_builder *builder,
    if (builder->shader_total_size == 0)
       return VK_SUCCESS;
 
-   struct panfrost_bo *bin_bo =
-      panfrost_bo_create(&builder->device->physical_device->pdev,
-                         builder->shader_total_size, PAN_BO_EXECUTE, "Shader");
+   struct panvk_priv_bo *bin_bo = panvk_priv_bo_create(
+      builder->device, builder->shader_total_size, PAN_KMOD_BO_FLAG_EXECUTABLE,
+      NULL, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 
    pipeline->binary_bo = bin_bo;
-   panfrost_bo_mmap(bin_bo);
 
    for (uint32_t i = 0; i < MESA_SHADER_STAGES; i++) {
       const struct panvk_shader *shader = builder->shaders[i];
       if (!shader)
          continue;
 
-      memcpy(pipeline->binary_bo->ptr.cpu + builder->stages[i].shader_offset,
+      memcpy(pipeline->binary_bo->addr.host + builder->stages[i].shader_offset,
              util_dynarray_element(&shader->binary, uint8_t, 0),
              util_dynarray_num_elements(&shader->binary, uint8_t));
    }
@@ -184,7 +181,6 @@ static void
 panvk_pipeline_builder_alloc_static_state_bo(
    struct panvk_pipeline_builder *builder, struct panvk_pipeline *pipeline)
 {
-   struct panfrost_device *pdev = &builder->device->physical_device->pdev;
    unsigned bo_size = 0;
 
    for (uint32_t i = 0; i < MESA_SHADER_STAGES; i++) {
@@ -211,9 +207,8 @@ panvk_pipeline_builder_alloc_static_state_bo(
    }
 
    if (bo_size) {
-      pipeline->state_bo =
-         panfrost_bo_create(pdev, bo_size, 0, "Pipeline descriptors");
-      panfrost_bo_mmap(pipeline->state_bo);
+      pipeline->state_bo = panvk_priv_bo_create(
+         builder->device, bo_size, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    }
 }
 
@@ -259,14 +254,14 @@ panvk_pipeline_builder_init_shaders(struct panvk_pipeline_builder *builder,
       /* Handle empty shaders gracefully */
       if (util_dynarray_num_elements(&builder->shaders[i]->binary, uint8_t)) {
          shader_ptr =
-            pipeline->binary_bo->ptr.gpu + builder->stages[i].shader_offset;
+            pipeline->binary_bo->addr.dev + builder->stages[i].shader_offset;
       }
 
       if (i != MESA_SHADER_FRAGMENT) {
          void *rsd =
-            pipeline->state_bo->ptr.cpu + builder->stages[i].rsd_offset;
+            pipeline->state_bo->addr.host + builder->stages[i].rsd_offset;
          mali_ptr gpu_rsd =
-            pipeline->state_bo->ptr.gpu + builder->stages[i].rsd_offset;
+            pipeline->state_bo->addr.dev + builder->stages[i].rsd_offset;
 
          panvk_per_arch(emit_non_fs_rsd)(builder->device, &shader->info,
                                          shader_ptr, rsd);
@@ -280,9 +275,9 @@ panvk_pipeline_builder_init_shaders(struct panvk_pipeline_builder *builder,
    }
 
    if (builder->create_info.gfx && !pipeline->fs.dynamic_rsd) {
-      void *rsd = pipeline->state_bo->ptr.cpu +
+      void *rsd = pipeline->state_bo->addr.host +
                   builder->stages[MESA_SHADER_FRAGMENT].rsd_offset;
-      mali_ptr gpu_rsd = pipeline->state_bo->ptr.gpu +
+      mali_ptr gpu_rsd = pipeline->state_bo->addr.dev +
                          builder->stages[MESA_SHADER_FRAGMENT].rsd_offset;
       void *bd = rsd + pan_size(RENDERER_STATE);
 
@@ -320,11 +315,11 @@ panvk_pipeline_builder_parse_viewport(struct panvk_pipeline_builder *builder,
    if (!builder->rasterizer_discard &&
        panvk_pipeline_static_state(pipeline, VK_DYNAMIC_STATE_VIEWPORT) &&
        panvk_pipeline_static_state(pipeline, VK_DYNAMIC_STATE_SCISSOR)) {
-      void *vpd = pipeline->state_bo->ptr.cpu + builder->vpd_offset;
+      void *vpd = pipeline->state_bo->addr.host + builder->vpd_offset;
       panvk_per_arch(emit_viewport)(
          builder->create_info.gfx->pViewportState->pViewports,
          builder->create_info.gfx->pViewportState->pScissors, vpd);
-      pipeline->vpd = pipeline->state_bo->ptr.gpu + builder->vpd_offset;
+      pipeline->vpd = pipeline->state_bo->addr.dev + builder->vpd_offset;
    }
    if (panvk_pipeline_static_state(pipeline, VK_DYNAMIC_STATE_VIEWPORT))
       pipeline->viewport =
@@ -394,7 +389,7 @@ panvk_pipeline_builder_parse_input_assembly(
 }
 
 bool
-panvk_per_arch(blend_needs_lowering)(const struct panfrost_device *dev,
+panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,
                                      const struct pan_blend_state *state,
                                      unsigned rt)
 {
@@ -418,7 +413,8 @@ panvk_per_arch(blend_needs_lowering)(const struct panfrost_device *dev,
    if (!pan_blend_is_homogenous_constant(constant_mask, state->constants))
       return true;
 
-   bool supports_2src = pan_blend_supports_2src(dev->arch);
+   unsigned arch = pan_arch(dev->physical_device->kmod.props.gpu_prod_id);
+   bool supports_2src = pan_blend_supports_2src(arch);
    return !pan_blend_can_fixed_function(state->rts[rt].equation, supports_2src);
 }
 
@@ -426,7 +422,6 @@ static void
 panvk_pipeline_builder_parse_color_blend(struct panvk_pipeline_builder *builder,
                                          struct panvk_pipeline *pipeline)
 {
-   struct panfrost_device *pdev = &builder->device->physical_device->pdev;
    pipeline->blend.state.logicop_enable =
       builder->create_info.gfx->pColorBlendState->logicOpEnable;
    pipeline->blend.state.logicop_func =
@@ -475,10 +470,10 @@ panvk_pipeline_builder_parse_color_blend(struct panvk_pipeline_builder *builder,
 
       pipeline->blend.reads_dest |= pan_blend_reads_dest(out->equation);
 
-      unsigned constant_mask =
-         panvk_per_arch(blend_needs_lowering)(pdev, &pipeline->blend.state, i)
-            ? 0
-            : pan_blend_constant_mask(out->equation);
+      unsigned constant_mask = panvk_per_arch(blend_needs_lowering)(
+                                  builder->device, &pipeline->blend.state, i)
+                                  ? 0
+                                  : pan_blend_constant_mask(out->equation);
       pipeline->blend.constant[i].index = ffs(constant_mask) - 1;
       if (constant_mask) {
          /* On Bifrost, the blend constant is expressed with a UNORM of the
@@ -666,7 +661,7 @@ panvk_pipeline_builder_init_fs_state(struct panvk_pipeline_builder *builder,
 
    pipeline->fs.dynamic_rsd =
       pipeline->dynamic_state_mask & PANVK_DYNAMIC_FS_RSD_MASK;
-   pipeline->fs.address = pipeline->binary_bo->ptr.gpu +
+   pipeline->fs.address = pipeline->binary_bo->addr.dev +
                           builder->stages[MESA_SHADER_FRAGMENT].shader_offset;
    pipeline->fs.info = builder->shaders[MESA_SHADER_FRAGMENT]->info;
    pipeline->fs.rt_mask = builder->active_color_attachments;

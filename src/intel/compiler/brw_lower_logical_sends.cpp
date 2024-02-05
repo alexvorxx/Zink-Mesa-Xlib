@@ -27,6 +27,7 @@
 
 #include "brw_eu.h"
 #include "brw_fs.h"
+#include "brw_fs_builder.h"
 
 using namespace brw;
 
@@ -836,58 +837,76 @@ is_high_sampler(const struct intel_device_info *devinfo, const fs_reg &sampler)
 
 static unsigned
 sampler_msg_type(const intel_device_info *devinfo,
-                 opcode opcode, bool shadow_compare)
+                 opcode opcode, bool shadow_compare, bool has_min_lod)
 {
    assert(devinfo->ver >= 5);
    switch (opcode) {
    case SHADER_OPCODE_TEX:
-      return shadow_compare ? GFX5_SAMPLER_MESSAGE_SAMPLE_COMPARE :
-                              GFX5_SAMPLER_MESSAGE_SAMPLE;
+      if (devinfo->ver >= 20 && has_min_lod) {
+         return shadow_compare ? XE2_SAMPLER_MESSAGE_SAMPLE_COMPARE_MLOD :
+                                 XE2_SAMPLER_MESSAGE_SAMPLE_MLOD;
+      } else {
+         return shadow_compare ? GFX5_SAMPLER_MESSAGE_SAMPLE_COMPARE :
+                                 GFX5_SAMPLER_MESSAGE_SAMPLE;
+      }
    case FS_OPCODE_TXB:
       return shadow_compare ? GFX5_SAMPLER_MESSAGE_SAMPLE_BIAS_COMPARE :
                               GFX5_SAMPLER_MESSAGE_SAMPLE_BIAS;
    case SHADER_OPCODE_TXL:
+      assert(!has_min_lod);
       return shadow_compare ? GFX5_SAMPLER_MESSAGE_SAMPLE_LOD_COMPARE :
                               GFX5_SAMPLER_MESSAGE_SAMPLE_LOD;
    case SHADER_OPCODE_TXL_LZ:
+      assert(!has_min_lod);
       return shadow_compare ? GFX9_SAMPLER_MESSAGE_SAMPLE_C_LZ :
                               GFX9_SAMPLER_MESSAGE_SAMPLE_LZ;
    case SHADER_OPCODE_TXS:
    case SHADER_OPCODE_IMAGE_SIZE_LOGICAL:
+      assert(!has_min_lod);
       return GFX5_SAMPLER_MESSAGE_SAMPLE_RESINFO;
    case SHADER_OPCODE_TXD:
       assert(!shadow_compare || devinfo->verx10 >= 75);
       return shadow_compare ? HSW_SAMPLER_MESSAGE_SAMPLE_DERIV_COMPARE :
                               GFX5_SAMPLER_MESSAGE_SAMPLE_DERIVS;
    case SHADER_OPCODE_TXF:
+      assert(!has_min_lod);
       return GFX5_SAMPLER_MESSAGE_SAMPLE_LD;
    case SHADER_OPCODE_TXF_LZ:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 9);
       return GFX9_SAMPLER_MESSAGE_SAMPLE_LD_LZ;
    case SHADER_OPCODE_TXF_CMS_W:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 9);
       return GFX9_SAMPLER_MESSAGE_SAMPLE_LD2DMS_W;
    case SHADER_OPCODE_TXF_CMS:
+      assert(!has_min_lod);
       return devinfo->ver >= 7 ? GFX7_SAMPLER_MESSAGE_SAMPLE_LD2DMS :
                                  GFX5_SAMPLER_MESSAGE_SAMPLE_LD;
    case SHADER_OPCODE_TXF_UMS:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 7);
       return GFX7_SAMPLER_MESSAGE_SAMPLE_LD2DSS;
    case SHADER_OPCODE_TXF_MCS:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 7);
       return GFX7_SAMPLER_MESSAGE_SAMPLE_LD_MCS;
    case SHADER_OPCODE_LOD:
+      assert(!has_min_lod);
       return GFX5_SAMPLER_MESSAGE_LOD;
    case SHADER_OPCODE_TG4:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 7);
       return shadow_compare ? GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_C :
                               GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4;
       break;
    case SHADER_OPCODE_TG4_OFFSET:
+      assert(!has_min_lod);
       assert(devinfo->ver >= 7);
       return shadow_compare ? GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_PO_C :
                               GFX7_SAMPLER_MESSAGE_SAMPLE_GATHER4_PO;
    case SHADER_OPCODE_SAMPLEINFO:
+      assert(!has_min_lod);
       return GFX6_SAMPLER_MESSAGE_SAMPLE_SAMPLEINFO;
    default:
       unreachable("not reached");
@@ -995,7 +1014,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
        * and we have an explicit header, we need to set up the sampler
        * writemask.  It's reversed from normal: 1 means "don't write".
        */
-      unsigned reg_count = regs_written(inst) - residency;
+      unsigned reg_count = regs_written(inst) - reg_unit(devinfo) * residency;
       if (!inst->eot && reg_count < 4 * reg_width) {
          assert(reg_count % reg_width == 0);
          unsigned mask = ~((1 << (reg_count / reg_width)) - 1) & 0xf;
@@ -1076,6 +1095,33 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
       }
    }
 
+   /* Change the opcode to account for LOD being zero before the
+    * switch-statement that emits sources based on the opcode.
+    */
+   if (devinfo->ver >= 9 && lod.is_zero()) {
+      if (op == SHADER_OPCODE_TXL)
+         op = SHADER_OPCODE_TXL_LZ;
+      else if (op == SHADER_OPCODE_TXF)
+         op = SHADER_OPCODE_TXF_LZ;
+   }
+
+   /* On Xe2 and newer platforms, min_lod is the first parameter specifically
+    * so that a bunch of other, possibly unused, parameters don't need to also
+    * be included.
+    */
+   const unsigned msg_type =
+      sampler_msg_type(devinfo, op, inst->shadow_compare,
+                       min_lod.file != BAD_FILE);
+
+   const bool min_lod_is_first = devinfo->ver >= 20 &&
+      (msg_type == XE2_SAMPLER_MESSAGE_SAMPLE_MLOD ||
+       msg_type == XE2_SAMPLER_MESSAGE_SAMPLE_COMPARE_MLOD);
+
+   if (min_lod_is_first) {
+      assert(min_lod.file != BAD_FILE);
+      bld.MOV(sources[length++], min_lod);
+   }
+
    if (shadow_c.file != BAD_FILE) {
       bld.MOV(sources[length], shadow_c);
       length++;
@@ -1087,10 +1133,6 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
    switch (op) {
    case FS_OPCODE_TXB:
    case SHADER_OPCODE_TXL:
-      if (devinfo->ver >= 9 && op == SHADER_OPCODE_TXL && lod.is_zero()) {
-         op = SHADER_OPCODE_TXL_LZ;
-         break;
-      }
       bld.MOV(sources[length], lod);
       length++;
       break;
@@ -1127,6 +1169,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
       length++;
       break;
    case SHADER_OPCODE_TXF:
+   case SHADER_OPCODE_TXF_LZ:
       /* Unfortunately, the parameters for LD are intermixed: u, lod, v, r.
        * On Gfx9 they are u, v, lod, r
        */
@@ -1142,9 +1185,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
          length++;
       }
 
-      if (devinfo->ver >= 9 && lod.is_zero()) {
-         op = SHADER_OPCODE_TXF_LZ;
-      } else {
+      if (op != SHADER_OPCODE_TXF_LZ) {
          bld.MOV(retype(sources[length], payload_signed_type), lod);
          length++;
       }
@@ -1238,7 +1279,7 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
                  offset(coordinate, bld, i));
    }
 
-   if (min_lod.file != BAD_FILE) {
+   if (min_lod.file != BAD_FILE && !min_lod_is_first) {
       /* Account for all of the missing coordinate sources */
       if (op == SHADER_OPCODE_TXD && devinfo->verx10 >= 125) {
          /* On DG2 and newer platforms, sample_d can only be used with 1D and
@@ -1278,13 +1319,23 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
                                      header_size, REG_SIZE * reg_unit(devinfo));
    unsigned mlen = load_payload_inst->size_written / REG_SIZE;
    unsigned simd_mode = 0;
-   if (payload_type_bit_size == 16) {
-      assert(devinfo->ver >= 11);
-      simd_mode = inst->exec_size <= 8 ? GFX10_SAMPLER_SIMD_MODE_SIMD8H :
-                                         GFX10_SAMPLER_SIMD_MODE_SIMD16H;
+   if (devinfo->ver < 20) {
+      if (payload_type_bit_size == 16) {
+         assert(devinfo->ver >= 11);
+         simd_mode = inst->exec_size <= 8 ? GFX10_SAMPLER_SIMD_MODE_SIMD8H :
+            GFX10_SAMPLER_SIMD_MODE_SIMD16H;
+      } else {
+         simd_mode = inst->exec_size <= 8 ? BRW_SAMPLER_SIMD_MODE_SIMD8 :
+            BRW_SAMPLER_SIMD_MODE_SIMD16;
+      }
    } else {
-      simd_mode = inst->exec_size <= 8 ? BRW_SAMPLER_SIMD_MODE_SIMD8 :
-                                         BRW_SAMPLER_SIMD_MODE_SIMD16;
+      if (payload_type_bit_size == 16) {
+         simd_mode = inst->exec_size <= 16 ? XE2_SAMPLER_SIMD_MODE_SIMD16H :
+            XE2_SAMPLER_SIMD_MODE_SIMD32H;
+      } else {
+         simd_mode = inst->exec_size <= 16 ? XE2_SAMPLER_SIMD_MODE_SIMD16 :
+            XE2_SAMPLER_SIMD_MODE_SIMD32;
+      }
    }
 
    /* Generate the SEND. */
@@ -1292,8 +1343,8 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
    inst->mlen = mlen;
    inst->header_size = header_size;
 
-   const unsigned msg_type =
-      sampler_msg_type(devinfo, op, inst->shadow_compare);
+   assert(msg_type == sampler_msg_type(devinfo, op, inst->shadow_compare,
+                                       min_lod.file != BAD_FILE));
 
    inst->sfid = BRW_SFID_SAMPLER;
    if (surface.file == IMM &&
@@ -1501,11 +1552,11 @@ emit_predicate_on_vector_mask(const fs_builder &bld, fs_inst *inst)
 
    const fs_builder ubld = bld.exec_all().group(1, 0);
 
-   const fs_visitor *v = static_cast<const fs_visitor *>(bld.shader);
+   const fs_visitor &s = *bld.shader;
    const fs_reg vector_mask = ubld.vgrf(BRW_REGISTER_TYPE_UW);
    ubld.UNDEF(vector_mask);
    ubld.emit(SHADER_OPCODE_READ_SR_REG, vector_mask, brw_imm_ud(3));
-   const unsigned subreg = sample_mask_flag_subreg(v);
+   const unsigned subreg = sample_mask_flag_subreg(s);
 
    ubld.MOV(brw_flag_subreg(subreg + inst->group / 16), vector_mask);
 
@@ -1513,6 +1564,7 @@ emit_predicate_on_vector_mask(const fs_builder &bld, fs_inst *inst)
       assert(inst->predicate == BRW_PREDICATE_NORMAL);
       assert(!inst->predicate_inverse);
       assert(inst->flag_subreg == 0);
+      assert(s.devinfo->ver < 20);
       /* Combine the vector mask with the existing predicate by using a
        * vertical predication mode.
        */
@@ -1641,7 +1693,7 @@ lower_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    const bool has_side_effects = inst->has_side_effects();
 
    fs_reg sample_mask = allow_sample_mask.ud ? brw_sample_mask_reg(bld) :
-                                               fs_reg(brw_imm_d(0xffff));
+                                               fs_reg(brw_imm_ud(0xffffffff));
 
    /* From the BDW PRM Volume 7, page 147:
     *
@@ -1901,7 +1953,7 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
 
    /* Predicate the instruction on the sample mask if needed */
    fs_reg sample_mask = allow_sample_mask.ud ? brw_sample_mask_reg(bld) :
-                                               fs_reg(brw_imm_d(0xffff));
+                                               fs_reg(brw_imm_ud(0xffffffff));
    if (sample_mask.file != BAD_FILE && sample_mask.file != IMM)
       brw_emit_predicate_on_sample_mask(bld, inst);
 
@@ -2727,17 +2779,17 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
    unsigned mode;
    switch (inst->opcode) {
    case FS_OPCODE_INTERPOLATE_AT_SAMPLE:
-      assert(inst->src[0].file == BAD_FILE);
+      assert(inst->src[INTERP_SRC_OFFSET].file == BAD_FILE);
       mode = GFX7_PIXEL_INTERPOLATOR_LOC_SAMPLE;
       break;
 
    case FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET:
-      assert(inst->src[0].file == BAD_FILE);
+      assert(inst->src[INTERP_SRC_OFFSET].file == BAD_FILE);
       mode = GFX7_PIXEL_INTERPOLATOR_LOC_SHARED_OFFSET;
       break;
 
    case FS_OPCODE_INTERPOLATE_AT_PER_SLOT_OFFSET:
-      payload = inst->src[0];
+      payload = inst->src[INTERP_SRC_OFFSET];
       mlen = 2 * inst->exec_size / 8;
       mode = GFX7_PIXEL_INTERPOLATOR_LOC_PER_SLOT_OFFSET;
       break;
@@ -2747,10 +2799,9 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
    }
 
    const bool dynamic_mode =
-      inst->opcode == FS_OPCODE_INTERPOLATE_AT_SAMPLE &&
-      wm_prog_key->multisample_fbo == BRW_SOMETIMES;
+      inst->src[INTERP_SRC_DYNAMIC_MODE].file != BAD_FILE;
 
-   fs_reg desc = inst->src[1];
+   fs_reg desc = inst->src[INTERP_SRC_MSG_DESC];
    uint32_t desc_imm =
       brw_pixel_interp_desc(devinfo,
                             /* Leave the mode at 0 if persample_dispatch is
@@ -2799,8 +2850,10 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
       const fs_builder &ubld = bld.exec_all().group(8, 0);
       desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
 
-      check_dynamic_msaa_flag(ubld, wm_prog_data,
-                              BRW_WM_MSAA_FLAG_MULTISAMPLE_FBO);
+      /* The predicate should have been built in brw_fs_nir.cpp when emitting
+       * NIR code. This guarantees that we do not have incorrect interactions
+       * with the flag register holding the predication result.
+       */
       if (orig_desc.file == IMM) {
          /* Not using SEL here because we would generate an instruction with 2
           * immediate sources which is not supported by HW.
@@ -2994,7 +3047,7 @@ lower_get_buffer_size(const fs_builder &bld, fs_inst *inst)
    /* Since we can only execute this instruction on uniform bti/surface
     * handles, brw_fs_nir.cpp should already have limited this to SIMD8.
     */
-   assert(inst->exec_size == 8);
+   assert(inst->exec_size == (devinfo->ver < 20 ? 8 : 16));
 
    fs_reg surface = inst->src[GET_BUFFER_SIZE_SRC_SURFACE];
    fs_reg surface_handle = inst->src[GET_BUFFER_SIZE_SRC_SURFACE_HANDLE];
@@ -3303,7 +3356,7 @@ fs_visitor::lower_uniform_pull_constant_loads()
          invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
       } else if (devinfo->ver >= 7) {
          const fs_builder ubld = fs_builder(this, block, inst).exec_all();
-         fs_reg header = bld.exec_all().group(8, 0).vgrf(BRW_REGISTER_TYPE_UD);
+         fs_reg header = fs_builder(this, 8).exec_all().vgrf(BRW_REGISTER_TYPE_UD);
 
          ubld.group(8, 0).MOV(header,
                               retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));

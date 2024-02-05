@@ -1941,8 +1941,8 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
-                    const VkBlitImageInfo2* pBlitImageInfo)
+tu_CmdBlitImage2(VkCommandBuffer commandBuffer,
+                 const VkBlitImageInfo2 *pBlitImageInfo)
 
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
@@ -1971,7 +1971,7 @@ tu_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
       tu_disable_lrz(cmd, &cmd->cs, dst_image);
    }
 }
-TU_GENX(tu_CmdBlitImage2KHR);
+TU_GENX(tu_CmdBlitImage2);
 
 static void
 copy_compressed(VkFormat format,
@@ -2074,8 +2074,8 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdCopyBufferToImage2KHR(VkCommandBuffer commandBuffer,
-                            const VkCopyBufferToImageInfo2 *pCopyBufferToImageInfo)
+tu_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
+                         const VkCopyBufferToImageInfo2 *pCopyBufferToImageInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_image, dst_image, pCopyBufferToImageInfo->dstImage);
@@ -2089,7 +2089,7 @@ tu_CmdCopyBufferToImage2KHR(VkCommandBuffer commandBuffer,
       tu_disable_lrz(cmd, &cmd->cs, dst_image);
    }
 }
-TU_GENX(tu_CmdCopyBufferToImage2KHR);
+TU_GENX(tu_CmdCopyBufferToImage2);
 
 template <chip CHIP>
 static void
@@ -2163,8 +2163,8 @@ tu_copy_image_to_buffer(struct tu_cmd_buffer *cmd,
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdCopyImageToBuffer2KHR(VkCommandBuffer commandBuffer,
-                            const VkCopyImageToBufferInfo2* pCopyImageToBufferInfo)
+tu_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
+                         const VkCopyImageToBufferInfo2 *pCopyImageToBufferInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_image, src_image, pCopyImageToBufferInfo->srcImage);
@@ -2174,7 +2174,7 @@ tu_CmdCopyImageToBuffer2KHR(VkCommandBuffer commandBuffer,
       tu_copy_image_to_buffer<CHIP>(cmd, src_image, dst_buffer,
                               pCopyImageToBufferInfo->pRegions + i);
 }
-TU_GENX(tu_CmdCopyImageToBuffer2KHR);
+TU_GENX(tu_CmdCopyImageToBuffer2);
 
 /* Tiled formats don't support swapping, which means that we can't support
  * formats that require a non-WZYX swap like B8G8R8A8 natively. Also, some
@@ -2406,8 +2406,8 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdCopyImage2KHR(VkCommandBuffer commandBuffer,
-                    const VkCopyImageInfo2* pCopyImageInfo)
+tu_CmdCopyImage2(VkCommandBuffer commandBuffer,
+                 const VkCopyImageInfo2 *pCopyImageInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_image, src_image, pCopyImageInfo->srcImage);
@@ -2432,7 +2432,7 @@ tu_CmdCopyImage2KHR(VkCommandBuffer commandBuffer,
       tu_disable_lrz(cmd, &cmd->cs, dst_image);
    }
 }
-TU_GENX(tu_CmdCopyImage2KHR);
+TU_GENX(tu_CmdCopyImage2);
 
 template <chip CHIP>
 static void
@@ -2470,8 +2470,8 @@ copy_buffer(struct tu_cmd_buffer *cmd,
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdCopyBuffer2KHR(VkCommandBuffer commandBuffer,
-                     const VkCopyBufferInfo2 *pCopyBufferInfo)
+tu_CmdCopyBuffer2(VkCommandBuffer commandBuffer,
+                  const VkCopyBufferInfo2 *pCopyBufferInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_buffer, src_buffer, pCopyBufferInfo->srcBuffer);
@@ -2485,7 +2485,7 @@ tu_CmdCopyBuffer2KHR(VkCommandBuffer commandBuffer,
                   region->size, 1);
    }
 }
-TU_GENX(tu_CmdCopyBuffer2KHR);
+TU_GENX(tu_CmdCopyBuffer2);
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
@@ -2554,8 +2554,8 @@ TU_GENX(tu_CmdFillBuffer);
 
 template <chip CHIP>
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdResolveImage2KHR(VkCommandBuffer commandBuffer,
-                       const VkResolveImageInfo2* pResolveImageInfo)
+tu_CmdResolveImage2(VkCommandBuffer commandBuffer,
+                    const VkResolveImageInfo2 *pResolveImageInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_image, src_image, pResolveImageInfo->srcImage);
@@ -2594,7 +2594,7 @@ tu_CmdResolveImage2KHR(VkCommandBuffer commandBuffer,
 
    ops->teardown(cmd, cs);
 }
-TU_GENX(tu_CmdResolveImage2KHR);
+TU_GENX(tu_CmdResolveImage2);
 
 #define for_each_layer(layer, layer_mask, layers) \
    for (uint32_t layer = 0; \

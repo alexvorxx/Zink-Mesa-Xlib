@@ -27,6 +27,7 @@
 #include <vulkan/vk_icd.h>
 
 #include "c11/threads.h"
+#include "util/detect_os.h"
 #include "util/macros.h"
 #include "util/sparse_array.h"
 

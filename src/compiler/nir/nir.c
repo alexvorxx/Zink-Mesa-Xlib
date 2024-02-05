@@ -2195,6 +2195,8 @@ nir_intrinsic_from_system_value(gl_system_value val)
       return nir_intrinsic_load_sample_pos_or_center;
    case SYSTEM_VALUE_SAMPLE_MASK_IN:
       return nir_intrinsic_load_sample_mask_in;
+   case SYSTEM_VALUE_LAYER_ID:
+      return nir_intrinsic_load_layer_id;
    case SYSTEM_VALUE_LOCAL_INVOCATION_ID:
       return nir_intrinsic_load_local_invocation_id;
    case SYSTEM_VALUE_LOCAL_INVOCATION_INDEX:
@@ -2305,6 +2307,14 @@ nir_intrinsic_from_system_value(gl_system_value val)
       return nir_intrinsic_load_shader_index;
    case SYSTEM_VALUE_COALESCED_INPUT_COUNT:
       return nir_intrinsic_load_coalesced_input_count;
+   case SYSTEM_VALUE_WARPS_PER_SM_NV:
+      return nir_intrinsic_load_warps_per_sm_nv;
+   case SYSTEM_VALUE_SM_COUNT_NV:
+      return nir_intrinsic_load_sm_count_nv;
+   case SYSTEM_VALUE_WARP_ID_NV:
+      return nir_intrinsic_load_warp_id_nv;
+   case SYSTEM_VALUE_SM_ID_NV:
+      return nir_intrinsic_load_sm_id_nv;
    default:
       unreachable("system value does not directly correspond to intrinsic");
    }
@@ -2348,6 +2358,8 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
       return SYSTEM_VALUE_SAMPLE_POS_OR_CENTER;
    case nir_intrinsic_load_sample_mask_in:
       return SYSTEM_VALUE_SAMPLE_MASK_IN;
+   case nir_intrinsic_load_layer_id:
+      return SYSTEM_VALUE_LAYER_ID;
    case nir_intrinsic_load_local_invocation_id:
       return SYSTEM_VALUE_LOCAL_INVOCATION_ID;
    case nir_intrinsic_load_local_invocation_index:
@@ -2465,6 +2477,14 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
       return SYSTEM_VALUE_SHADER_INDEX;
    case nir_intrinsic_load_coalesced_input_count:
       return SYSTEM_VALUE_COALESCED_INPUT_COUNT;
+   case nir_intrinsic_load_warps_per_sm_nv:
+      return SYSTEM_VALUE_WARPS_PER_SM_NV;
+   case nir_intrinsic_load_sm_count_nv:
+      return SYSTEM_VALUE_SM_COUNT_NV;
+   case nir_intrinsic_load_warp_id_nv:
+      return SYSTEM_VALUE_WARP_ID_NV;
+   case nir_intrinsic_load_sm_id_nv:
+      return SYSTEM_VALUE_SM_ID_NV;
    default:
       unreachable("intrinsic doesn't produce a system value");
    }
@@ -2848,16 +2868,6 @@ nir_op_is_vec(nir_op op)
    }
 }
 
-bool
-nir_alu_instr_channel_used(const nir_alu_instr *instr, unsigned src,
-                           unsigned channel)
-{
-   if (nir_op_infos[instr->op].input_sizes[src] > 0)
-      return channel < nir_op_infos[instr->op].input_sizes[src];
-
-   return channel < instr->def.num_components;
-}
-
 nir_component_mask_t
 nir_alu_instr_src_read_mask(const nir_alu_instr *instr, unsigned src)
 {
@@ -3198,6 +3208,7 @@ nir_tex_instr_src_type(const nir_tex_instr *instr, unsigned src)
    case nir_tex_src_sampler_offset:
    case nir_tex_src_texture_handle:
    case nir_tex_src_sampler_handle:
+   case nir_tex_src_combined_lod_and_array_index_intel:
       return nir_type_uint;
 
    case nir_num_tex_src_types:
@@ -3377,7 +3388,7 @@ nir_remove_varying(nir_intrinsic_instr *intr, gl_shader_stage next_shader)
  * This marks the output store instruction as not feeding fixed-function
  * logic. If the instruction has no other use, it's removed.
  */
-void
+bool
 nir_remove_sysval_output(nir_intrinsic_instr *intr)
 {
    nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
@@ -3387,8 +3398,10 @@ nir_remove_sysval_output(nir_intrinsic_instr *intr)
       /* Demote the store instruction. */
       sem.no_sysval_output = true;
       nir_intrinsic_set_io_semantics(intr, sem);
+      return false;
    } else {
       nir_instr_remove(&intr->instr);
+      return true;
    }
 }
 
@@ -3409,4 +3422,11 @@ nir_remove_non_exported(nir_shader *nir)
       if (!func->is_exported)
          exec_node_remove(&func->node);
    }
+}
+
+unsigned
+nir_static_workgroup_size(const nir_shader *s)
+{
+   return s->info.workgroup_size[0] * s->info.workgroup_size[1] *
+          s->info.workgroup_size[2];
 }

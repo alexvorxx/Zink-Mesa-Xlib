@@ -588,6 +588,8 @@ enum isl_tiling {
    ISL_TILING_4,
    /** 64K tiling.*/
    ISL_TILING_64,
+   /** Xe2 64K tiling.*/
+   ISL_TILING_64_XE2,
    /** Tiling format for HiZ surfaces */
    ISL_TILING_HIZ,
    /** Tiling format for CCS surfaces */
@@ -611,6 +613,7 @@ typedef uint32_t isl_tiling_flags_t;
 #define ISL_TILING_ICL_Ys_BIT             (1u << ISL_TILING_ICL_Ys)
 #define ISL_TILING_4_BIT                  (1u << ISL_TILING_4)
 #define ISL_TILING_64_BIT                 (1u << ISL_TILING_64)
+#define ISL_TILING_64_XE2_BIT             (1u << ISL_TILING_64_XE2)
 #define ISL_TILING_HIZ_BIT                (1u << ISL_TILING_HIZ)
 #define ISL_TILING_CCS_BIT                (1u << ISL_TILING_CCS)
 #define ISL_TILING_GFX12_CCS_BIT          (1u << ISL_TILING_GFX12_CCS)
@@ -629,6 +632,11 @@ typedef uint32_t isl_tiling_flags_t;
                                            ISL_TILING_SKL_Ys_BIT | \
                                            ISL_TILING_ICL_Yf_BIT | \
                                            ISL_TILING_ICL_Ys_BIT)
+
+/** Any Tiling 64 */
+#define ISL_TILING_STD_64_MASK            (ISL_TILING_64_BIT | \
+                                           ISL_TILING_64_XE2_BIT)
+
 /** @} */
 
 /**
@@ -1927,7 +1935,7 @@ isl_device_init(struct isl_device *dev,
                 const struct intel_device_info *info);
 
 isl_sample_count_mask_t ATTRIBUTE_CONST
-isl_device_get_sample_counts(struct isl_device *dev);
+isl_device_get_sample_counts(const struct isl_device *dev);
 
 /**
  * :returns: The isl_format_layout for the given isl_format
@@ -2148,6 +2156,8 @@ enum isl_format isl_format_rgb_to_rgba(enum isl_format rgb) ATTRIBUTE_CONST;
 enum isl_format isl_format_rgb_to_rgbx(enum isl_format rgb) ATTRIBUTE_CONST;
 enum isl_format isl_format_rgbx_to_rgba(enum isl_format rgb) ATTRIBUTE_CONST;
 
+bool isl_format_support_sampler_route_to_lsc(enum isl_format fmt);
+
 union isl_color_value
 isl_color_value_swizzle(union isl_color_value src,
                         struct isl_swizzle swizzle,
@@ -2203,6 +2213,12 @@ static inline bool
 isl_tiling_is_std_y(enum isl_tiling tiling)
 {
    return (1u << tiling) & ISL_TILING_STD_Y_MASK;
+}
+
+static inline bool
+isl_tiling_is_64(enum isl_tiling tiling)
+{
+   return (1u << tiling) & ISL_TILING_STD_64_MASK;
 }
 
 uint32_t
@@ -2342,6 +2358,30 @@ isl_drm_modifier_has_aux(uint64_t modifier)
 
    return isl_drm_modifier_get_info(modifier)->supports_render_compression ||
           isl_drm_modifier_get_info(modifier)->supports_media_compression;
+}
+
+static inline bool
+isl_drm_modifier_plane_is_clear_color(uint64_t modifier, uint32_t plane)
+{
+   if (modifier == DRM_FORMAT_MOD_INVALID)
+      return false;
+
+   ASSERTED const struct isl_drm_modifier_info *mod_info =
+      isl_drm_modifier_get_info(modifier);
+   assert(mod_info);
+
+   switch (modifier) {
+   case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+   case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
+      assert(mod_info->supports_clear_color);
+      return plane == 2;
+   case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
+      assert(mod_info->supports_clear_color);
+      return plane == 1;
+   default:
+      assert(!mod_info->supports_clear_color);
+      return false;
+   }
 }
 
 /** Returns the default isl_aux_state for the given modifier.
@@ -3106,6 +3146,12 @@ isl_aux_op_to_name(enum isl_aux_op op);
 
 const char *
 isl_tiling_to_name(enum isl_tiling tiling);
+
+const char *
+isl_aux_usage_to_name(enum isl_aux_usage usage);
+
+const char *
+isl_aux_state_to_name(enum isl_aux_state state);
 
 #ifdef __cplusplus
 }

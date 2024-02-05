@@ -112,7 +112,7 @@ hud_draw_colored_prims(struct hud_context *hud, unsigned prim,
                  &vbuffer.buffer_offset, &vbuffer.buffer.resource);
    u_upload_unmap(hud->pipe->stream_uploader);
 
-   cso_set_vertex_buffers(cso, 1, 0, false, &vbuffer);
+   cso_set_vertex_buffers(cso, 1, false, &vbuffer);
    pipe_resource_reference(&vbuffer.buffer.resource, NULL);
    cso_set_fragment_shader_handle(hud->cso, hud->fs_color);
    cso_draw_arrays(cso, prim, 0, num_vertices);
@@ -601,7 +601,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
 
       pipe->set_constant_buffer(pipe, PIPE_SHADER_VERTEX, 0, false, &hud->constbuf);
 
-      cso_set_vertex_buffers(cso, 1, 0, false, &hud->bg.vbuf);
+      cso_set_vertex_buffers(cso, 1, false, &hud->bg.vbuf);
       cso_draw_arrays(cso, MESA_PRIM_QUADS, 0, hud->bg.num_vertices);
    }
    pipe_resource_reference(&hud->bg.vbuf.buffer.resource, NULL);
@@ -610,7 +610,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
    if (hud->text.num_vertices) {
       cso_set_vertex_shader_handle(cso, hud->vs_text);
       cso_set_vertex_elements(cso, &hud->text_velems);
-      cso_set_vertex_buffers(cso, 1, 0, false, &hud->text.vbuf);
+      cso_set_vertex_buffers(cso, 1, false, &hud->text.vbuf);
       cso_set_fragment_shader_handle(hud->cso, hud->fs_text);
       cso_draw_arrays(cso, MESA_PRIM_QUADS, 0, hud->text.num_vertices);
       cso_set_vertex_elements(cso, &hud->velems);
@@ -635,7 +635,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
 
    if (hud->whitelines.num_vertices) {
       cso_set_vertex_shader_handle(cso, hud->vs_color);
-      cso_set_vertex_buffers(cso, 1, 0, false, &hud->whitelines.vbuf);
+      cso_set_vertex_buffers(cso, 1, false, &hud->whitelines.vbuf);
       cso_set_fragment_shader_handle(hud->cso, hud->fs_color);
       cso_draw_arrays(cso, MESA_PRIM_LINES, 0, hud->whitelines.num_vertices);
    }
@@ -762,7 +762,7 @@ void
 hud_run(struct hud_context *hud, struct cso_context *cso,
         struct pipe_resource *tex)
 {
-   struct pipe_context *pipe = cso ? cso_get_pipe_context(cso) : NULL;
+   struct pipe_context *pipe = cso ? cso->pipe : NULL;
 
    /* If "cso" is the recording or drawing context or NULL, execute
     * the operation. Otherwise, don't do anything.
@@ -998,16 +998,16 @@ hud_graph_add_value(struct hud_graph *gr, double value)
    value = value > gr->pane->ceiling ? gr->pane->ceiling : value;
 
    if (gr->fd) {
-      if (gr->fd == stdout) {
+      if (gr->fd == stdout && !gr->separator) {
          fprintf(gr->fd, "%s: ", gr->name);
       }
       if (fabs(value - lround(value)) > FLT_EPSILON) {
          fprintf(gr->fd, get_float_modifier(value), value);
-         fprintf(gr->fd, "\n");
       }
       else {
-         fprintf(gr->fd, "%" PRIu64 "\n", (uint64_t) lround(value));
+         fprintf(gr->fd, "%" PRIu64, (uint64_t) lround(value));
       }
+      fprintf(gr->fd, "%s", gr->separator ? gr->separator : "\n");
    }
 
    if (gr->index == gr->pane->max_num_vertices) {
@@ -1073,7 +1073,8 @@ static void strcat_without_spaces(char *dst, const char *src)
  * is a HUD variable such as "fps", or "cpu"
  */
 static void
-hud_graph_set_dump_file(struct hud_graph *gr, const char *hud_dump_dir, bool to_stdout)
+hud_graph_set_dump_file(struct hud_graph *gr, const char *hud_dump_dir,
+                        bool to_stdout, const char *separator)
 {
    if (hud_dump_dir) {
       char *dump_file = malloc(strlen(hud_dump_dir) + sizeof(PATH_SEP)
@@ -1093,6 +1094,8 @@ hud_graph_set_dump_file(struct hud_graph *gr, const char *hud_dump_dir, bool to_
       /* flush output after each line is written */
       setvbuf(gr->fd, NULL, _IOLBF, 0);
    }
+
+   gr->separator = separator;
 }
 
 /**
@@ -1231,6 +1234,7 @@ hud_parse_env_var(struct hud_context *hud, struct pipe_screen *screen,
    bool dyn_ceiling = false;
    bool reset_colors = false;
    bool sort_items = false;
+   bool is_csv = false;
    bool to_stdout = false;
    const char *period_env;
 
@@ -1395,6 +1399,10 @@ hud_parse_env_var(struct hud_context *hud, struct pipe_screen *screen,
       else if (strcmp(name, "stdout") == 0) {
          to_stdout = true;
       }
+      else if (strcmp(name, "csv") == 0) {
+         to_stdout = true;
+         is_csv = true;
+      }
       else {
          bool processed = false;
 
@@ -1551,7 +1559,16 @@ hud_parse_env_var(struct hud_context *hud, struct pipe_screen *screen,
          struct hud_graph *gr;
 
          LIST_FOR_EACH_ENTRY(gr, &pane->graph_list, head) {
-            hud_graph_set_dump_file(gr, hud_dump_dir, to_stdout);
+            char *separator = NULL;
+
+            if (is_csv) {
+               if (gr ==
+                   list_last_entry(&pane->graph_list, struct hud_graph, head))
+                  separator = "\n";
+               else
+                  separator = ", ";
+            }
+            hud_graph_set_dump_file(gr, hud_dump_dir, to_stdout, separator);
          }
       }
    }
@@ -1610,6 +1627,7 @@ print_help(struct pipe_screen *screen)
    puts("");
    puts("  Available names:");
    puts("    stdout (prints the counters value to stdout)");
+   puts("    csv (prints the counter values to stdout as CSV, use + to separate names)");
    puts("    fps");
    puts("    frametime");
    puts("    cpu");
@@ -1703,7 +1721,7 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
                      struct st_context *st,
                      hud_st_invalidate_state_func st_invalidate_state)
 {
-   struct pipe_context *pipe = cso_get_pipe_context(cso);
+   struct pipe_context *pipe = cso->pipe;
 
    assert(!hud->pipe);
    hud->pipe = pipe;
@@ -1916,7 +1934,7 @@ hud_create(struct cso_context *cso, struct hud_context *share,
 
       if (context_id == record_ctx) {
          assert(!share->record_pipe);
-         hud_set_record_context(share, cso_get_pipe_context(cso));
+         hud_set_record_context(share, cso->pipe);
       }
 
       if (context_id == draw_ctx) {
@@ -1927,7 +1945,7 @@ hud_create(struct cso_context *cso, struct hud_context *share,
       return share;
    }
 
-   struct pipe_screen *screen = cso_get_pipe_context(cso)->screen;
+   struct pipe_screen *screen = cso->pipe->screen;
    struct hud_context *hud;
    unsigned i;
    unsigned default_period_ms = 500;/* default period (1/2 second) */
@@ -1974,8 +1992,7 @@ hud_create(struct cso_context *cso, struct hud_context *share,
       return NULL;
 
    /* font (the context is only used for the texture upload) */
-   if (!util_font_create(cso_get_pipe_context(cso),
-                         UTIL_FONT_FIXED_8X13, &hud->font)) {
+   if (!util_font_create(cso->pipe, UTIL_FONT_FIXED_8X13, &hud->font)) {
       FREE(hud);
       return NULL;
    }
@@ -2050,7 +2067,7 @@ hud_create(struct cso_context *cso, struct hud_context *share,
 #endif
 
    if (record_ctx == 0)
-      hud_set_record_context(hud, cso_get_pipe_context(cso));
+      hud_set_record_context(hud, cso->pipe);
    if (draw_ctx == 0)
       hud_set_draw_context(hud, cso, st, st_invalidate_state);
 
@@ -2065,7 +2082,7 @@ hud_create(struct cso_context *cso, struct hud_context *share,
 void
 hud_destroy(struct hud_context *hud, struct cso_context *cso)
 {
-   if (!cso || hud->record_pipe == cso_get_pipe_context(cso))
+   if (!cso || hud->record_pipe == cso->pipe)
       hud_unset_record_context(hud);
 
    if (!cso || hud->cso == cso)

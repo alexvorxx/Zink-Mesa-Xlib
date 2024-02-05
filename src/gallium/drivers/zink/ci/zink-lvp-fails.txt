@@ -120,7 +120,6 @@ spec@ext_framebuffer_multisample@interpolation 4 centroid-edges,Fail
 spec@ext_framebuffer_multisample@interpolation 4 non-centroid-deriv-disabled,Fail
 spec@ext_framebuffer_multisample@interpolation 4 non-centroid-disabled,Fail
 spec@ext_packed_float@query-rgba-signed-components,Fail
-spec@intel_performance_query@intel_performance_query-issue_2235,Fail
 
 spec@khr_texture_compression_astc@miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@miptree-gl srgb-fp@sRGB decode full precision,Fail
@@ -228,7 +227,6 @@ spec@glsl-4.00@execution@conversion@vert-conversion-explicit-double-float,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec3-vec3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec4-vec4,Fail
-spec@glsl-4.50@execution@ssbo-atomiccompswap-int,Fail
 
 spec@ext_transform_feedback@tessellation quads wireframe,Fail
 

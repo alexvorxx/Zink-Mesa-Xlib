@@ -691,6 +691,8 @@ vl_compositor_yuv_deint_full(struct vl_compositor_state *s,
    vl_compositor_render(s, c, dst_surfaces[0], NULL, false);
 
    if (dst_rect) {
+      dst_rect->x0 /= 2;
+      dst_rect->y0 /= 2;
       dst_rect->x1 /= 2;
       dst_rect->y1 /= 2;
    }
@@ -727,6 +729,8 @@ vl_compositor_convert_rgb_to_yuv(struct vl_compositor_state *s,
    vl_compositor_render(s, c, dst_surfaces[0], NULL, false);
 
    if (dst_rect) {
+      dst_rect->x0 /= 2;
+      dst_rect->y0 /= 2;
       dst_rect->x1 /= 2;
       dst_rect->y1 /= 2;
    }
@@ -814,7 +818,7 @@ vl_compositor_init_state(struct vl_compositor_state *s, struct pipe_context *pip
       pipe->screen,
       PIPE_BIND_CONSTANT_BUFFER,
       PIPE_USAGE_DEFAULT,
-      sizeof(csc_matrix) + 12*sizeof(float) + 10*sizeof(int)
+      sizeof(csc_matrix) + 16*sizeof(float) + 2*sizeof(int)
    );
 
    if (!s->shader_params)

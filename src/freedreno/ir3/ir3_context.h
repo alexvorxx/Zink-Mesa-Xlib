@@ -107,11 +107,6 @@ struct ir3_context {
 
    unsigned num_arrays;
 
-   /* Tracking for max level of flowcontrol (branchstack) needed
-    * by a5xx+:
-    */
-   unsigned stack, max_stack;
-
    unsigned loop_id;
    unsigned loop_depth;
 

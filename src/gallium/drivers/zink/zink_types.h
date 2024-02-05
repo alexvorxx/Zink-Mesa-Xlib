@@ -647,10 +647,11 @@ struct zink_batch_state {
    struct util_dynarray bindless_releases[2];
 
    struct util_dynarray zombie_samplers;
-   struct util_dynarray dead_framebuffers;
 
    struct set active_queries; /* zink_query objects which were active at some point in this batch */
    struct util_dynarray dead_querypools;
+
+   struct util_dynarray freed_sparse_backing_bos;
 
    struct zink_batch_descriptor_data dd;
 
@@ -816,7 +817,7 @@ struct zink_shader {
    unsigned num_texel_buffers;
    uint32_t ubos_used; // bitfield of which ubo indices are used
    uint32_t ssbos_used; // bitfield of which ssbo indices are used
-   uint32_t flat_flags;
+   uint64_t flat_flags;
    bool bindless;
    bool can_inline;
    bool has_uniforms;
@@ -1418,6 +1419,10 @@ struct zink_screen {
    simple_mtx_t copy_context_lock;
    struct zink_context *copy_context;
 
+   struct zink_batch_state *free_batch_states; //unused batch states
+   struct zink_batch_state *last_free_batch_state; //for appending
+   simple_mtx_t free_batch_states_lock;
+
    simple_mtx_t semaphores_lock;
    struct util_dynarray semaphores;
    struct util_dynarray fd_semaphores;
@@ -1685,6 +1690,7 @@ struct zink_sampler_view {
    union {
       struct zink_surface *image_view;
       struct zink_buffer_view *buffer_view;
+      unsigned tbo_size;
    };
    struct zink_surface *cube_array;
    /* Optional sampler view returning red (depth) in all channels, for shader rewrites. */
@@ -1755,12 +1761,6 @@ struct zink_rendering_info {
 };
 
 
-typedef void (*pipe_draw_vbo_func)(struct pipe_context *pipe,
-                                   const struct pipe_draw_info *info,
-                                   unsigned drawid_offset,
-                                   const struct pipe_draw_indirect_info *indirect,
-                                   const struct pipe_draw_start_count_bias *draws,
-                                   unsigned num_draws);
 typedef void (*pipe_draw_vertex_state_func)(struct pipe_context *ctx,
                                             struct pipe_vertex_state *vstate,
                                             uint32_t partial_velem_mask,
@@ -1798,7 +1798,7 @@ struct zink_context {
 
    unsigned flags;
 
-   pipe_draw_vbo_func draw_vbo[2]; //batch changed
+   pipe_draw_func draw_vbo[2]; //batch changed
    pipe_draw_vertex_state_func draw_state[2]; //batch changed
    pipe_launch_grid_func launch_grid[2]; //batch changed
 
@@ -1937,6 +1937,9 @@ struct zink_context {
       bool inverted;
       bool active; //this is the internal vk state
    } render_condition;
+   struct {
+      uint64_t render_passes;
+   } hud;
 
    struct {
       bool valid;
@@ -2043,6 +2046,7 @@ struct zink_context {
    bool unordered_blitting : 1;
    bool vertex_state_changed : 1;
    bool blend_state_changed : 1;
+   bool blend_color_changed : 1;
    bool sample_mask_changed : 1;
    bool rast_state_changed : 1;
    bool line_width_changed : 1;

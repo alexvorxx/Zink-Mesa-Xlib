@@ -64,6 +64,15 @@ lookup_bo(struct hash_table *tbl, uint32_t key)
        * checking for refcnt==0 (ie. 1 after p_atomic_inc_return).
        */
       if (p_atomic_inc_return(&bo->refcnt) == 1) {
+         /* Restore the zombified reference count, so if another thread
+          * that ends up calling lookup_bo() gets the table_lock before
+          * the thread deleting the bo does, it doesn't mistakenly see
+          * that the BO is live.
+          *
+          * We are holding the table_lock here so we can't be racing
+          * with another caller of lookup_bo()
+          */
+         p_atomic_dec(&bo->refcnt);
          return &zombie;
       }
 
@@ -96,7 +105,8 @@ fd_bo_init_common(struct fd_bo *bo, struct fd_device *dev)
    bo->max_fences = 1;
    bo->fences = &bo->_inline_fence;
 
-   VG_BO_ALLOC(bo);
+   if (!bo->map)
+      VG_BO_ALLOC(bo);
 }
 
 /* allocate a new buffer object, call w/ table_lock held */
@@ -132,9 +142,11 @@ bo_new(struct fd_device *dev, uint32_t size, uint32_t flags,
 
    if (size < FD_BO_HEAP_BLOCK_SIZE) {
       if ((flags == 0) && dev->default_heap)
-         return fd_bo_heap_alloc(dev->default_heap, size);
-      if ((flags == RING_FLAGS) && dev->ring_heap)
-         return fd_bo_heap_alloc(dev->ring_heap, size);
+         bo = fd_bo_heap_alloc(dev->default_heap, size);
+      else if ((flags == RING_FLAGS) && dev->ring_heap)
+         bo = fd_bo_heap_alloc(dev->ring_heap, size);
+      if (bo)
+         return bo;
    }
 
    /* demote cached-coherent to WC if not supported: */
@@ -593,6 +605,22 @@ fd_bo_is_cached(struct fd_bo *bo)
    return !!(bo->alloc_flags & FD_BO_CACHED_COHERENT);
 }
 
+void
+fd_bo_set_metadata(struct fd_bo *bo, void *metadata, uint32_t metadata_size)
+{
+   if (!bo->funcs->set_metadata)
+      return;
+   bo->funcs->set_metadata(bo, metadata, metadata_size);
+}
+
+int
+fd_bo_get_metadata(struct fd_bo *bo, void *metadata, uint32_t metadata_size)
+{
+   if (!bo->funcs->get_metadata)
+      return -ENOSYS;
+   return bo->funcs->get_metadata(bo, metadata, metadata_size);
+}
+
 void *
 fd_bo_map_os_mmap(struct fd_bo *bo)
 {
@@ -606,15 +634,9 @@ fd_bo_map_os_mmap(struct fd_bo *bo)
                   bo->dev->fd, offset);
 }
 
-void *
-fd_bo_map(struct fd_bo *bo)
+static void *
+__fd_bo_map(struct fd_bo *bo)
 {
-   /* don't allow mmap'ing something allocated with FD_BO_NOMAP
-    * for sanity
-    */
-   if (bo->alloc_flags & FD_BO_NOMAP)
-      return NULL;
-
    if (!bo->map) {
       bo->map = bo->funcs->map(bo);
       if (bo->map == MAP_FAILED) {
@@ -626,6 +648,28 @@ fd_bo_map(struct fd_bo *bo)
    return bo->map;
 }
 
+void *
+fd_bo_map(struct fd_bo *bo)
+{
+   /* don't allow mmap'ing something allocated with FD_BO_NOMAP
+    * for sanity
+    */
+   if (bo->alloc_flags & FD_BO_NOMAP)
+      return NULL;
+
+   return __fd_bo_map(bo);
+}
+
+static void *
+fd_bo_map_for_upload(struct fd_bo *bo)
+{
+   void *addr = __fd_bo_map(bo);
+   if (bo->alloc_flags & FD_BO_NOMAP)
+      VG_BO_MAPPED(bo);
+
+   return addr;
+}
+
 void
 fd_bo_upload(struct fd_bo *bo, void *src, unsigned off, unsigned len)
 {
@@ -634,7 +678,7 @@ fd_bo_upload(struct fd_bo *bo, void *src, unsigned off, unsigned len)
       return;
    }
 
-   memcpy((uint8_t *)bo->funcs->map(bo) + off, src, len);
+   memcpy((uint8_t *)fd_bo_map_for_upload(bo) + off, src, len);
 }
 
 bool

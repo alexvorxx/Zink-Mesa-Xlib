@@ -25,8 +25,22 @@ struct vn_command_pool {
 
    struct list_head command_buffers;
 
+   /* This list of free query batches has dual usage depending if
+    * the command pool is a vn_feedback_pool. The usage is exclusive
+    * and the list only contains recycled query batches allocated
+    * from the cmd pool itself so no locking is needed between the two
+    * usages.
+    *
+    * For feedback cmd pool, batch alloc and free with the free list is
+    * during queue submissions. Thus proper locking is needed since
+    * submissions with different queues are not externally synchronized.
+    *
+    * For a normal cmd pool, it recycles query batches used for
+    * injecting query copies/resets and merging batches for secondary
+    * command buffers during recording. No additional locking is needed
+    * as those commands are already protected by external synchronization.
+    */
    struct list_head free_query_batches;
-   struct list_head free_query_feedback_cmds;
 
    /* Temporary storage for scrubbing VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. The
     * storage's lifetime is the command pool's lifetime. We increase the
@@ -84,11 +98,9 @@ struct vn_command_buffer {
 
    struct vn_command_buffer_builder builder;
 
-   struct vn_command_buffer *linked_query_feedback_cmd;
+   struct vn_query_feedback_cmd *linked_query_feedback_cmd;
 
    struct list_head head;
-
-   struct list_head feedback_head;
 };
 VK_DEFINE_HANDLE_CASTS(vn_command_buffer,
                        base.base,

@@ -76,25 +76,33 @@
       }                                                                      \
    } while (false)
 
-static void
+static inline void
 vn_render_pass_count_present_src(const VkRenderPassCreateInfo *create_info,
                                  uint32_t *initial_count,
                                  uint32_t *final_count)
 {
+   if (VN_PRESENT_SRC_INTERNAL_LAYOUT == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+      *initial_count = *final_count = 0;
+      return;
+   }
    COUNT_PRESENT_SRC(create_info->pAttachments, create_info->attachmentCount,
                      initial_count, final_count);
 }
 
-static void
+static inline void
 vn_render_pass_count_present_src2(const VkRenderPassCreateInfo2 *create_info,
                                   uint32_t *initial_count,
                                   uint32_t *final_count)
 {
+   if (VN_PRESENT_SRC_INTERNAL_LAYOUT == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+      *initial_count = *final_count = 0;
+      return;
+   }
    COUNT_PRESENT_SRC(create_info->pAttachments, create_info->attachmentCount,
                      initial_count, final_count);
 }
 
-static void
+static inline void
 vn_render_pass_replace_present_src(struct vn_render_pass *pass,
                                    const VkRenderPassCreateInfo *create_info,
                                    VkAttachmentDescription *out_atts)
@@ -103,7 +111,7 @@ vn_render_pass_replace_present_src(struct vn_render_pass *pass,
                        create_info->attachmentCount, out_atts);
 }
 
-static void
+static inline void
 vn_render_pass_replace_present_src2(struct vn_render_pass *pass,
                                     const VkRenderPassCreateInfo2 *create_info,
                                     VkAttachmentDescription2 *out_atts)
@@ -237,7 +245,7 @@ vn_CreateRenderPass(VkDevice device,
    }
 
    VkRenderPass pass_handle = vn_render_pass_to_handle(pass);
-   vn_async_vkCreateRenderPass(dev->instance, device, pCreateInfo, NULL,
+   vn_async_vkCreateRenderPass(dev->primary_ring, device, pCreateInfo, NULL,
                                &pass_handle);
 
    if (pCreateInfo == &local_pass_info)
@@ -293,7 +301,7 @@ vn_CreateRenderPass2(VkDevice device,
       pass->subpasses[i].view_mask = pCreateInfo->pSubpasses[i].viewMask;
 
    VkRenderPass pass_handle = vn_render_pass_to_handle(pass);
-   vn_async_vkCreateRenderPass2(dev->instance, device, pCreateInfo, NULL,
+   vn_async_vkCreateRenderPass2(dev->primary_ring, device, pCreateInfo, NULL,
                                 &pass_handle);
 
    if (pCreateInfo == &local_pass_info)
@@ -317,7 +325,7 @@ vn_DestroyRenderPass(VkDevice device,
    if (!pass)
       return;
 
-   vn_async_vkDestroyRenderPass(dev->instance, device, renderPass, NULL);
+   vn_async_vkDestroyRenderPass(dev->primary_ring, device, renderPass, NULL);
 
    vn_object_base_fini(&pass->base);
    vk_free(alloc, pass);
@@ -332,8 +340,8 @@ vn_GetRenderAreaGranularity(VkDevice device,
    struct vn_render_pass *pass = vn_render_pass_from_handle(renderPass);
 
    if (!pass->granularity.width) {
-      vn_call_vkGetRenderAreaGranularity(dev->instance, device, renderPass,
-                                         &pass->granularity);
+      vn_call_vkGetRenderAreaGranularity(dev->primary_ring, device,
+                                         renderPass, &pass->granularity);
    }
 
    *pGranularity = pass->granularity;
@@ -371,7 +379,7 @@ vn_CreateFramebuffer(VkDevice device,
           sizeof(*pCreateInfo->pAttachments) * view_count);
 
    VkFramebuffer fb_handle = vn_framebuffer_to_handle(fb);
-   vn_async_vkCreateFramebuffer(dev->instance, device, pCreateInfo, NULL,
+   vn_async_vkCreateFramebuffer(dev->primary_ring, device, pCreateInfo, NULL,
                                 &fb_handle);
 
    *pFramebuffer = fb_handle;
@@ -392,7 +400,8 @@ vn_DestroyFramebuffer(VkDevice device,
    if (!fb)
       return;
 
-   vn_async_vkDestroyFramebuffer(dev->instance, device, framebuffer, NULL);
+   vn_async_vkDestroyFramebuffer(dev->primary_ring, device, framebuffer,
+                                 NULL);
 
    vn_object_base_fini(&fb->base);
    vk_free(alloc, fb);

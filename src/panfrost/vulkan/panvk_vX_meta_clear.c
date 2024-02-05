@@ -24,6 +24,7 @@
 #include "nir/nir_builder.h"
 #include "pan_blitter.h"
 #include "pan_encoder.h"
+#include "pan_props.h"
 #include "pan_shader.h"
 
 #include "panvk_private.h"
@@ -32,11 +33,12 @@
 #include "vk_format.h"
 
 static mali_ptr
-panvk_meta_clear_color_attachment_shader(struct panfrost_device *pdev,
-                                         struct pan_pool *bin_pool,
+panvk_meta_clear_color_attachment_shader(struct panvk_device *dev,
                                          enum glsl_base_type base_type,
                                          struct pan_shader_info *shader_info)
 {
+   struct pan_pool *bin_pool = &dev->meta.bin_pool.base;
+
    nir_builder b = nir_builder_init_simple_shader(
       MESA_SHADER_FRAGMENT, GENX(pan_shader_get_compiler_options)(),
       "panvk_meta_clear_attachment(base_type=%d)", base_type);
@@ -51,7 +53,7 @@ panvk_meta_clear_color_attachment_shader(struct panfrost_device *pdev,
    nir_store_var(&b, out, clear_values, 0xff);
 
    struct panfrost_compile_inputs inputs = {
-      .gpu_id = pdev->gpu_id,
+      .gpu_id = dev->physical_device->kmod.props.gpu_prod_id,
       .is_blit = true,
       .no_ubo_to_push = true,
    };
@@ -74,8 +76,7 @@ panvk_meta_clear_color_attachment_shader(struct panfrost_device *pdev,
 }
 
 static mali_ptr
-panvk_meta_clear_color_attachment_emit_rsd(struct panfrost_device *pdev,
-                                           struct pan_pool *desc_pool,
+panvk_meta_clear_color_attachment_emit_rsd(struct pan_pool *desc_pool,
                                            enum pipe_format format, unsigned rt,
                                            struct pan_shader_info *shader_info,
                                            mali_ptr shader)
@@ -111,7 +112,7 @@ panvk_meta_clear_color_attachment_emit_rsd(struct panfrost_device *pdev,
       cfg.internal.fixed_function.num_comps = 4;
       cfg.internal.fixed_function.rt = rt;
       cfg.internal.fixed_function.conversion.memory_format =
-         panfrost_format_to_bifrost_blend(pdev, format, false);
+         GENX(panfrost_dithered_format_from_pipe_format)(format, false);
       cfg.internal.fixed_function.conversion.register_format =
          shader_info->bifrost.blend[0].format;
    }
@@ -120,8 +121,7 @@ panvk_meta_clear_color_attachment_emit_rsd(struct panfrost_device *pdev,
 }
 
 static mali_ptr
-panvk_meta_clear_zs_attachment_emit_rsd(struct panfrost_device *pdev,
-                                        struct pan_pool *desc_pool,
+panvk_meta_clear_zs_attachment_emit_rsd(struct pan_pool *desc_pool,
                                         VkImageAspectFlags mask,
                                         VkClearDepthStencilValue value)
 {
@@ -184,8 +184,7 @@ panvk_meta_clear_attachment_emit_dcd(struct pan_pool *pool, mali_ptr coords,
 
 static struct panfrost_ptr
 panvk_meta_clear_attachment_emit_tiler_job(struct pan_pool *desc_pool,
-                                           struct pan_scoreboard *scoreboard,
-                                           mali_ptr coords,
+                                           struct pan_jc *jc, mali_ptr coords,
                                            mali_ptr push_constants,
                                            mali_ptr vpd, mali_ptr rsd,
                                            mali_ptr tsd, mali_ptr tiler)
@@ -215,8 +214,8 @@ panvk_meta_clear_attachment_emit_tiler_job(struct pan_pool *desc_pool,
       cfg.address = tiler;
    }
 
-   panfrost_add_job(desc_pool, scoreboard, MALI_JOB_TYPE_TILER, false, false, 0,
-                    0, &job, false);
+   pan_jc_add_job(desc_pool, jc, MALI_JOB_TYPE_TILER, false, false, 0, 0, &job,
+                  false);
    return job;
 }
 
@@ -256,9 +255,7 @@ panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf,
                             const VkClearValue *clear_value,
                             const VkClearRect *clear_rect)
 {
-   struct panvk_physical_device *dev = cmdbuf->device->physical_device;
-   struct panfrost_device *pdev = &dev->pdev;
-   struct panvk_meta *meta = &cmdbuf->device->physical_device->meta;
+   struct panvk_meta *meta = &cmdbuf->device->meta;
    struct panvk_batch *batch = cmdbuf->state.batch;
    const struct panvk_render_pass *pass = cmdbuf->state.pass;
    const struct panvk_render_pass_attachment *att =
@@ -300,17 +297,17 @@ panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf,
                                            sizeof(*clear_value), 16);
 
       rsd = panvk_meta_clear_color_attachment_emit_rsd(
-         pdev, &cmdbuf->desc_pool.base, att->format, rt, shader_info, shader);
+         &cmdbuf->desc_pool.base, att->format, rt, shader_info, shader);
    } else {
       rsd = panvk_meta_clear_zs_attachment_emit_rsd(
-         pdev, &cmdbuf->desc_pool.base, mask, clear_value->depthStencil);
+         &cmdbuf->desc_pool.base, mask, clear_value->depthStencil);
    }
 
    struct panfrost_ptr job;
 
    job = panvk_meta_clear_attachment_emit_tiler_job(
-      &cmdbuf->desc_pool.base, &batch->scoreboard, coordinates, pushconsts, vpd,
-      rsd, tsd, tiler);
+      &cmdbuf->desc_pool.base, &batch->jc, coordinates, pushconsts, vpd, rsd,
+      tsd, tiler);
 
    util_dynarray_append(&batch->jobs, void *, job.cpu);
 }
@@ -333,6 +330,8 @@ panvk_meta_clear_color_img(struct panvk_cmd_buffer *cmdbuf,
 
    cmdbuf->state.fb.crc_valid[0] = false;
    *fbinfo = (struct pan_fb_info){
+      .tile_buf_budget = panfrost_query_optimal_tib_size(
+         cmdbuf->device->physical_device->model),
       .nr_samples = img->pimage.layout.nr_samples,
       .rt_count = 1,
       .rts[0].view = &view,
@@ -402,6 +401,8 @@ panvk_meta_clear_zs_img(struct panvk_cmd_buffer *cmdbuf,
 
    cmdbuf->state.fb.crc_valid[0] = false;
    *fbinfo = (struct pan_fb_info){
+      .tile_buf_budget = panfrost_query_optimal_tib_size(
+         cmdbuf->device->physical_device->model),
       .nr_samples = img->pimage.layout.nr_samples,
       .rt_count = 1,
       .zs.clear_value.depth = value->depth,
@@ -492,26 +493,26 @@ panvk_per_arch(CmdClearAttachments)(VkCommandBuffer commandBuffer,
 }
 
 static void
-panvk_meta_clear_attachment_init(struct panvk_physical_device *dev)
+panvk_meta_clear_attachment_init(struct panvk_device *dev)
 {
    dev->meta.clear_attachment.color[GLSL_TYPE_UINT].shader =
       panvk_meta_clear_color_attachment_shader(
-         &dev->pdev, &dev->meta.bin_pool.base, GLSL_TYPE_UINT,
+         dev, GLSL_TYPE_UINT,
          &dev->meta.clear_attachment.color[GLSL_TYPE_UINT].shader_info);
 
    dev->meta.clear_attachment.color[GLSL_TYPE_INT].shader =
       panvk_meta_clear_color_attachment_shader(
-         &dev->pdev, &dev->meta.bin_pool.base, GLSL_TYPE_INT,
+         dev, GLSL_TYPE_INT,
          &dev->meta.clear_attachment.color[GLSL_TYPE_INT].shader_info);
 
    dev->meta.clear_attachment.color[GLSL_TYPE_FLOAT].shader =
       panvk_meta_clear_color_attachment_shader(
-         &dev->pdev, &dev->meta.bin_pool.base, GLSL_TYPE_FLOAT,
+         dev, GLSL_TYPE_FLOAT,
          &dev->meta.clear_attachment.color[GLSL_TYPE_FLOAT].shader_info);
 }
 
 void
-panvk_per_arch(meta_clear_init)(struct panvk_physical_device *dev)
+panvk_per_arch(meta_clear_init)(struct panvk_device *dev)
 {
    panvk_meta_clear_attachment_init(dev);
 }

@@ -49,6 +49,7 @@ rm -rf /root/.rustup
 
 ############### Build dEQP GL
 
+DEQP_API=GL \
 DEQP_TARGET="android" \
 EXTRA_CMAKE_ARGS="-DDEQP_TARGET_TOOLCHAIN=ndk-modern -DANDROID_NDK_PATH=/$ndk -DANDROID_ABI=x86_64 -DDE_ANDROID_API=28" \
 . .gitlab-ci/container/build-deqp.sh

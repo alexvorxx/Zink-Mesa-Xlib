@@ -2152,7 +2152,8 @@ dxil_module_get_uav_res_props_const(struct dxil_module *m,
       return NULL;
 
    uint32_t dwords[2];
-   dwords[0] = get_basic_srv_uav_res_props_dword(true, false, false /*TODO*/, false,
+   enum gl_access_qualifier access = nir_intrinsic_has_access(intr) ? nir_intrinsic_access(intr) : 0;
+   dwords[0] = get_basic_srv_uav_res_props_dword(true, false, (access & ACCESS_COHERENT) != 0, false,
                                                  dxil_sampler_dim_to_resource_kind(nir_intrinsic_image_dim(intr),
                                                                                    nir_intrinsic_image_array(intr)));
    unsigned num_comps = intr->num_components ? intr->num_components : 1;

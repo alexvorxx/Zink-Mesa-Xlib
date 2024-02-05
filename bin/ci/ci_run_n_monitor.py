@@ -26,17 +26,19 @@ from typing import TYPE_CHECKING, Iterable, Literal, Optional
 import gitlab
 from colorama import Fore, Style
 from gitlab_common import (
+    GITLAB_URL,
+    TOKEN_DIR,
+    get_gitlab_pipeline_from_url,
     get_gitlab_project,
+    get_token_from_default_dir,
+    pretty_duration,
     read_token,
     wait_for_pipeline,
-    pretty_duration,
 )
 from gitlab_gql import GitlabGQL, create_job_needs_dag, filter_dag, print_dag
 
 if TYPE_CHECKING:
     from gitlab_gql import Dag
-
-GITLAB_URL = "https://gitlab.freedesktop.org"
 
 REFRESH_WAIT_LOG = 10
 REFRESH_WAIT_JOBS = 6
@@ -61,6 +63,9 @@ COMPLETED_STATUSES = ["success", "failed"]
 def print_job_status(job, new_status=False) -> None:
     """It prints a nice, colored job status with a link to the job."""
     if job.status == "canceled":
+        return
+
+    if new_status and job.status == "created":
         return
 
     if job.duration:
@@ -102,10 +107,11 @@ def monitor_pipeline(
     target_id = None
 
     while True:
+        deps_failed = []
         to_cancel = []
         for job in pipeline.jobs.list(all=True, sort="desc"):
             # target jobs
-            if target_jobs_regex.match(job.name):
+            if target_jobs_regex.fullmatch(job.name):
                 target_id = job.id
 
                 if stress and job.status in ["success", "failed"]:
@@ -130,6 +136,8 @@ def monitor_pipeline(
             # run dependencies and cancel the rest
             if job.name in dependencies:
                 enable_job(project, job, "dep", True)
+                if job.status == "failed":
+                    deps_failed.append(job.name)
             else:
                 to_cancel.append(job)
 
@@ -162,6 +170,18 @@ def monitor_pipeline(
             {"failed"}.intersection(target_statuses.values())
             and not set(["running", "pending"]).intersection(target_statuses.values())
         ):
+            return None, 1
+
+        if (
+            {"skipped"}.intersection(target_statuses.values())
+            and not {"running", "pending"}.intersection(target_statuses.values())
+        ):
+            print(
+                Fore.RED,
+                "Target in skipped state, aborting. Failed dependencies:",
+                deps_failed,
+                Fore.RESET,
+            )
             return None, 1
 
         if {"success", "manual"}.issuperset(target_statuses.values()):
@@ -254,11 +274,15 @@ def parse_args() -> None:
         metavar="target-job",
         help="Target job regex. For multiple targets, separate with pipe | character",
         required=True,
+        nargs=argparse.ONE_OR_MORE,
     )
     parser.add_argument(
         "--token",
         metavar="token",
-        help="force GitLab token, otherwise it's read from ~/.config/gitlab-token",
+        type=str,
+        default=get_token_from_default_dir(),
+        help="Use the provided GitLab token or token file, "
+             f"otherwise it's read from {TOKEN_DIR / 'gitlab-token'}",
     )
     parser.add_argument(
         "--force-manual", action="store_true", help="Force jobs marked as manual"
@@ -282,6 +306,11 @@ def parse_args() -> None:
     mutex_group1.add_argument(
         "--pipeline-url",
         help="URL of the pipeline to use, instead of auto-detecting it.",
+    )
+    mutex_group1.add_argument(
+        "--mr",
+        type=int,
+        help="ID of a merge request; the latest pipeline in that MR will be used.",
     )
 
     args = parser.parse_args()
@@ -314,8 +343,31 @@ def print_detected_jobs(
     print_job_set(Fore.BLUE, "target", target_jobs)
 
 
-def find_dependencies(target_jobs_regex: re.Pattern, project_path: str, iid: int) -> set[str]:
-    gql_instance = GitlabGQL()
+def find_dependencies(token: str | None,
+                      target_jobs_regex: re.Pattern,
+                      project_path: str,
+                      iid: int) -> set[str]:
+    """
+    Find the dependencies of the target jobs in a GitLab pipeline.
+
+    This function uses the GitLab GraphQL API to fetch the job dependency graph
+    of a pipeline, filters the graph to only include the target jobs and their
+    dependencies, and returns the names of these jobs.
+
+    Args:
+        token (str | None): The GitLab API token. If None, the API is accessed without
+                            authentication.
+        target_jobs_regex (re.Pattern): A regex pattern to match the names of the target jobs.
+        project_path (str): The path of the GitLab project.
+        iid (int): The internal ID of the pipeline.
+
+    Returns:
+        set[str]: A set of the names of the target jobs and their dependencies.
+
+    Raises:
+        SystemExit: If no target jobs are found in the pipeline.
+    """
+    gql_instance = GitlabGQL(token=token)
     dag = create_job_needs_dag(
         gql_instance, {"projectPath": project_path.path_with_namespace, "iid": iid}
     )
@@ -346,34 +398,32 @@ if __name__ == "__main__":
         REV: str = args.rev
 
         if args.pipeline_url:
-            assert args.pipeline_url.startswith(GITLAB_URL)
-            url_path = args.pipeline_url[len(GITLAB_URL):]
-            url_path_components = url_path.split("/")
-            project_name = "/".join(url_path_components[1:3])
-            assert url_path_components[3] == "-"
-            assert url_path_components[4] == "pipelines"
-            pipeline_id = int(url_path_components[5])
-            cur_project = gl.projects.get(project_name)
-            pipe = cur_project.pipelines.get(pipeline_id)
+            pipe, cur_project = get_gitlab_pipeline_from_url(gl, args.pipeline_url)
             REV = pipe.sha
         else:
-            REV = check_output(['git', 'rev-parse', REV]).decode('ascii').strip()
-
             mesa_project = gl.projects.get("mesa/mesa")
-            user_project = get_gitlab_project(gl, args.project)
-            (pipe, cur_project) = wait_for_pipeline([mesa_project, user_project], REV)
+            projects = [mesa_project]
+            if args.mr:
+                REV = mesa_project.mergerequests.get(args.mr).sha
+            else:
+                REV = check_output(['git', 'rev-parse', REV]).decode('ascii').strip()
+                projects.append(get_gitlab_project(gl, args.project))
+            (pipe, cur_project) = wait_for_pipeline(projects, REV)
 
         print(f"Revision: {REV}")
         print(f"Pipeline: {pipe.web_url}")
 
-        target_jobs_regex = re.compile(args.target.strip())
+        target = '|'.join(args.target)
+        target_jobs_regex = re.compile(target.strip())
 
         deps = set()
-        if args.target:
-            print("🞋 job: " + Fore.BLUE + args.target + Style.RESET_ALL)
-            deps = find_dependencies(
-                target_jobs_regex=target_jobs_regex, iid=pipe.iid, project_path=cur_project
-            )
+        print("🞋 job: " + Fore.BLUE + target + Style.RESET_ALL)
+        deps = find_dependencies(
+            token=token,
+            target_jobs_regex=target_jobs_regex,
+            iid=pipe.iid,
+            project_path=cur_project
+        )
         target_job_id, ret = monitor_pipeline(
             cur_project, pipe, target_jobs_regex, deps, args.force_manual, args.stress
         )

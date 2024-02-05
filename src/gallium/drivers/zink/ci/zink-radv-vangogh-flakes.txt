@@ -77,5 +77,15 @@ spec@arb_gpu_shader5@texturegather@vs-rg-0-unorm-2d
 spec@arb_uniform_buffer_object@maxuniformblocksize@fs
 spec@arb_texture_gather@texturegather@fs-rg-red-unorm-2d
 spec@ext_texture_array@copyteximage 1d_array samples=2
+
 dEQP-GLES31.functional.copy_image.mixed.viewclass_128_bits_mixed.rgba32ui_srgb8_alpha8_astc_12x10_khr.renderbuffer_to_cubemap
 dEQP-GLES31.functional.copy_image.mixed.viewclass_128_bits_mixed.srgb8_alpha8_astc_10x8_khr_rgba32ui.cubemap_to_texture2d
+dEQP-GLES31.functional.srgb_texture_decode.skip_decode.srg8.using_sampler
+
+# uprev Piglit in Mesa
+spec@!opengl 1.0@rasterpos@glsl_vs_gs_linked
+spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-modifiers@autogen-AR24-0x200000008567b03-modifiers_test
+spec@ext_image_dma_buf_import@ext_image_dma_buf_import-modifiers@autogen-AR24-0x200000008567b03-stress_test
+spec@glsl-1.50@execution@redeclare-pervertex-out-subset-gs
+

@@ -163,6 +163,33 @@ int etna_gpu_get_param(struct etna_gpu *gpu, enum etna_param_id param,
 	case ETNA_GPU_NUM_VARYINGS:
 		*value = get_param(dev, core, ETNA_GPU_NUM_VARYINGS);
 		return 0;
+	case ETNA_SOFTPIN_START_ADDR:
+		*value = get_param(dev, core, ETNA_SOFTPIN_START_ADDR);
+		return 0;
+	case ETNA_GPU_PRODUCT_ID:
+		*value = get_param(dev, core, ETNA_GPU_PRODUCT_ID);
+		return 0;
+	case ETNA_GPU_CUSTOMER_ID:
+		*value = get_param(dev, core, ETNA_GPU_CUSTOMER_ID);
+		return 0;
+	case ETNA_GPU_ECO_ID:
+		*value = get_param(dev, core, ETNA_GPU_ECO_ID);
+		return 0;
+	case ETNA_GPU_NN_CORE_COUNT:
+		*value = get_param(dev, core, ETNA_GPU_NN_CORE_COUNT);
+		return 0;
+	case ETNA_GPU_NN_MAD_PER_CORE:
+		*value = get_param(dev, core, ETNA_GPU_NN_MAD_PER_CORE);
+		return 0;
+	case ETNA_GPU_TP_CORE_COUNT:
+		*value = get_param(dev, core, ETNA_GPU_TP_CORE_COUNT);
+		return 0;
+	case ETNA_GPU_ON_CHIP_SRAM_SIZE:
+		*value = get_param(dev, core, ETNA_GPU_ON_CHIP_SRAM_SIZE);
+		return 0;
+	case ETNA_GPU_AXI_SRAM_SIZE:
+		*value = get_param(dev, core, ETNA_GPU_AXI_SRAM_SIZE);
+		return 0;
 
 	default:
 		ERROR_MSG("invalid param id: %d", param);

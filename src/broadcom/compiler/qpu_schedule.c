@@ -85,6 +85,7 @@ struct schedule_state {
         struct schedule_node *last_unif;
         struct schedule_node *last_rtop;
         struct schedule_node *last_unifa;
+        struct schedule_node *last_setmsf;
         enum direction dir;
         /* Estimated cycle when the current instruction would start. */
         uint32_t time;
@@ -378,11 +379,22 @@ calculate_deps(struct schedule_state *state, struct schedule_node *n)
 
         case V3D_QPU_A_MSF:
                 add_read_dep(state, state->last_tlb, n);
+                add_read_dep(state, state->last_setmsf, n);
                 break;
 
         case V3D_QPU_A_SETMSF:
+                add_write_dep(state, &state->last_setmsf, n);
+                add_write_dep(state, &state->last_tmu_write, n);
+                FALLTHROUGH;
         case V3D_QPU_A_SETREVF:
                 add_write_dep(state, &state->last_tlb, n);
+                break;
+
+        case V3D_QPU_A_BALLOT:
+        case V3D_QPU_A_BCASTF:
+        case V3D_QPU_A_ALLEQ:
+        case V3D_QPU_A_ALLFEQ:
+                add_read_dep(state, state->last_setmsf, n);
                 break;
 
         default:

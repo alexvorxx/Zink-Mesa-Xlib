@@ -1175,6 +1175,12 @@ static void si_clear(struct pipe_context *ctx, unsigned buffers,
          si_mark_atom_dirty(sctx, &sctx->atoms.s.db_render_state);
       }
 
+      /* TODO: This hack fixes dEQP-GLES[23].functional.fragment_ops.random.* on Navi31.
+       * The root cause is unknown.
+       */
+      if (sctx->gfx_level == GFX11 || sctx->gfx_level == GFX11_5)
+         needs_db_flush = true;
+
       if (needs_db_flush) {
          sctx->flags |= SI_CONTEXT_FLUSH_AND_INV_DB;
          si_mark_atom_dirty(sctx, &sctx->atoms.s.cache_flush);

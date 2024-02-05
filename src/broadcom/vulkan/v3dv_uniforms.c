@@ -657,6 +657,10 @@ v3dv_write_uniforms_wg_offsets(struct v3dv_cmd_buffer *cmd_buffer,
          cl_aligned_u32(&uniforms, pipeline->spill.size_per_thread);
          break;
 
+      case QUNIFORM_DRAW_ID:
+         cl_aligned_u32(&uniforms, job->cmd_buffer->state.draw_id);
+         break;
+
       default:
          unreachable("unsupported quniform_contents uniform type\n");
       }

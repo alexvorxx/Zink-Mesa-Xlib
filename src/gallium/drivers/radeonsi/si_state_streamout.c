@@ -64,6 +64,9 @@ static void si_set_streamout_targets(struct pipe_context *ctx, unsigned num_targ
    unsigned old_num_targets = sctx->streamout.num_targets;
    unsigned i;
 
+   if (!old_num_targets && !num_targets)
+      return;
+
    /* We are going to unbind the buffers. Mark which caches need to be flushed. */
    if (old_num_targets && sctx->streamout.begin_emitted) {
       /* Stop streamout. */
@@ -101,9 +104,8 @@ static void si_set_streamout_targets(struct pipe_context *ctx, unsigned num_targ
     *    spec@ext_transform_feedback@immediate-reuse
     *    spec@ext_transform_feedback@immediate-reuse-index-buffer
     *    spec@ext_transform_feedback@immediate-reuse-uniform-buffer
-    *    .. and some dEQP-GLES[23].functional.fragment_ops.random.*
     */
-   if (sctx->gfx_level >= GFX11)
+   if (sctx->gfx_level >= GFX11 && old_num_targets)
       si_flush_gfx_cs(sctx, 0, NULL);
 
    /* Streamout buffers must be bound in 2 places:
@@ -359,6 +361,9 @@ static void si_emit_streamout_enable(struct si_context *sctx, unsigned index)
 
 static void si_set_streamout_enable(struct si_context *sctx, bool enable)
 {
+   if (sctx->gfx_level >= GFX11)
+      return;
+
    bool old_strmout_en = si_get_strmout_en(sctx);
    unsigned old_hw_enabled_mask = sctx->streamout.hw_enabled_mask;
 
@@ -368,9 +373,8 @@ static void si_set_streamout_enable(struct si_context *sctx, bool enable)
       sctx->streamout.enabled_mask | (sctx->streamout.enabled_mask << 4) |
       (sctx->streamout.enabled_mask << 8) | (sctx->streamout.enabled_mask << 12);
 
-   if (sctx->gfx_level < GFX11 &&
-       ((old_strmout_en != si_get_strmout_en(sctx)) ||
-        (old_hw_enabled_mask != sctx->streamout.hw_enabled_mask)))
+   if ((old_strmout_en != si_get_strmout_en(sctx)) ||
+       (old_hw_enabled_mask != sctx->streamout.hw_enabled_mask))
       si_mark_atom_dirty(sctx, &sctx->atoms.s.streamout_enable);
 }
 

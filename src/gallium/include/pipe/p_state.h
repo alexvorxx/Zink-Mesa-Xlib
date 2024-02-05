@@ -314,17 +314,6 @@ pipe_shader_state_from_tgsi(struct pipe_shader_state *state,
    memset(&state->stream_output, 0, sizeof(state->stream_output));
 }
 
-static inline void
-pipe_shader_state_from_nir(struct pipe_shader_state *state,
-                           void *nir)
-{
-   state->type = PIPE_SHADER_IR_NIR;
-   state->ir.nir = nir;
-   state->tokens = NULL;
-   memset(&state->stream_output, 0, sizeof(state->stream_output));
-}
-
-
 struct pipe_stencil_state
 {
    unsigned enabled:1;  /**< stencil[0]: stencil enabled, stencil[1]: two-side enabled */
@@ -1029,6 +1018,148 @@ struct pipe_grid_info
    unsigned draw_count;
    unsigned indirect_draw_count_offset;
    struct pipe_resource *indirect_draw_count;
+};
+
+/**
+ * Encapsulates all info about a tensor. Only types supported are INT8 and UINT8.
+ */
+struct pipe_tensor {
+   /**
+    * Memory-backing for this tensor (use pipe_buffer_*).
+    */
+   struct pipe_resource *resource;
+   /**
+    * Index of this tensor in the subgraph that contains it.
+    */
+   unsigned index;
+   /**
+    * Dimensions of this tensor.
+    */
+   unsigned dims[4];
+   /**
+    * Scale used to quantize this tensor. Only per-tensor quantization is supported.
+    */
+   float scale;
+   /**
+    * Zero-point used to quantize this tensor.
+    */
+   int zero_point;
+   /**
+    * Whether the tensor contains data in INT8 or UINT8 format.
+    */
+   bool is_signed;
+};
+
+/**
+ * Type of a pipe_ml_operation.
+ */
+enum pipe_ml_operation_type {
+   PIPE_ML_OPERATION_TYPE_ADD,
+   PIPE_ML_OPERATION_TYPE_CONVOLUTION,
+   PIPE_ML_OPERATION_TYPE_POOLING,
+};
+
+/**
+ * Information about a single operation inside a ML subgraph.
+ */
+struct pipe_ml_operation
+{
+   /**
+    * Type of operation.
+    */
+   enum pipe_ml_operation_type type;
+
+   /**
+    * Tensor used as input.
+    */
+   struct pipe_tensor *input_tensor;
+
+   /**
+    * Tensor used as output.
+    */
+   struct pipe_tensor *output_tensor;
+
+   union {
+      struct {
+         /**
+          * For convolutions, tensor containing the weights.
+          */
+         struct pipe_tensor *weight_tensor;
+         /**
+          * For convolutions, tensor containing the biases.
+          */
+         struct pipe_tensor *bias_tensor;
+
+         /**
+          * Stride used to access the input tensor on the x axis.
+          */
+         unsigned stride_x;
+
+         /**
+          * Stride used to access the input tensor on the x axis.
+          */
+         unsigned stride_y;
+
+         /**
+          * Whether to use padding of type same when accessing the input tensor.
+          */
+         bool padding_same;
+
+         /**
+          * Whether this is a pointwise (1x1 kernels) convolution.
+          */
+         bool pointwise;
+
+         /**
+          * Whether this is a depthwise convolution.
+          */
+         bool depthwise;
+      } conv;
+      struct {
+         /**
+          * Stride used to access the input tensor on the x axis.
+          */
+         unsigned stride_x;
+
+         /**
+          * Stride used to access the input tensor on the x axis.
+          */
+         unsigned stride_y;
+
+         /**
+          * Width of the area used for pooling.
+          */
+         unsigned filter_width;
+
+         /**
+          * Height of the area used for pooling.
+          */
+         unsigned filter_height;
+
+         /**
+          * Whether to use padding of type same when accessing the input tensor.
+          */
+         bool padding_same;
+      } pooling;
+      struct {
+         /**
+          * Additional input tensor, to be added to the other one.
+          */
+         struct pipe_tensor *input_tensor;
+      } add;
+   };
+};
+
+/**
+ * Subgraph that drivers can subclass to keep the output of the subgraph
+ * compilation process.
+ */
+struct pipe_ml_subgraph
+{
+   /**
+    * pipe_context that owns this subgraph.
+    */
+   struct pipe_context *context;
 };
 
 /**

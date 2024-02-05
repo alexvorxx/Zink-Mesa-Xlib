@@ -52,7 +52,6 @@ static unsigned translate_opcode(unsigned opcode)
         case TGSI_OPCODE_SLT: return RC_OPCODE_SLT;
         case TGSI_OPCODE_SGE: return RC_OPCODE_SGE;
         case TGSI_OPCODE_MAD: return RC_OPCODE_MAD;
-        case TGSI_OPCODE_LRP: return RC_OPCODE_LRP;
         case TGSI_OPCODE_FRC: return RC_OPCODE_FRC;
         case TGSI_OPCODE_ROUND: return RC_OPCODE_ROUND;
         case TGSI_OPCODE_EX2: return RC_OPCODE_EX2;
@@ -63,9 +62,7 @@ static unsigned translate_opcode(unsigned opcode)
         case TGSI_OPCODE_DDY: return RC_OPCODE_DDY;
         case TGSI_OPCODE_KILL: return RC_OPCODE_KILP;
         case TGSI_OPCODE_SEQ: return RC_OPCODE_SEQ;
-        case TGSI_OPCODE_SGT: return RC_OPCODE_SGT;
         case TGSI_OPCODE_SIN: return RC_OPCODE_SIN;
-        case TGSI_OPCODE_SLE: return RC_OPCODE_SLE;
         case TGSI_OPCODE_SNE: return RC_OPCODE_SNE;
         case TGSI_OPCODE_TEX: return RC_OPCODE_TEX;
         case TGSI_OPCODE_TXD: return RC_OPCODE_TXD;
@@ -81,7 +78,6 @@ static unsigned translate_opcode(unsigned opcode)
         case TGSI_OPCODE_ELSE: return RC_OPCODE_ELSE;
         case TGSI_OPCODE_ENDIF: return RC_OPCODE_ENDIF;
         case TGSI_OPCODE_ENDLOOP: return RC_OPCODE_ENDLOOP;
-        case TGSI_OPCODE_TRUNC: return RC_OPCODE_TRUNC;
         case TGSI_OPCODE_CONT: return RC_OPCODE_CONT;
         case TGSI_OPCODE_NOP: return RC_OPCODE_NOP;
         case TGSI_OPCODE_KILL_IF: return RC_OPCODE_KIL;

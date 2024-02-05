@@ -18,26 +18,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-xml_files = [
-  'a2xx.xml',
-  'a3xx.xml',
-  'a4xx.xml',
-  'a5xx.xml',
-  'a6xx.xml',
-  'a6xx_gmu.xml',
-  'ocmem.xml',
-  'adreno_control_regs.xml',
-  'adreno_pipe_regs.xml',
-  'adreno_common.xml',
-  'adreno_pm4.xml',
-]
-
 xml_reg_files = [
   'a2xx.xml',
   'a3xx.xml',
   'a4xx.xml',
   'a5xx.xml',
   'a6xx.xml',
+]
+
+xml_files = xml_reg_files
+xml_files += [
+  'a6xx_gmu.xml',
+  'ocmem.xml',
+  'adreno_control_regs.xml',
+  'adreno_pipe_regs.xml',
+  'adreno_common.xml',
+  'adreno_pm4.xml',
 ]
 
 freedreno_py_header_files = []

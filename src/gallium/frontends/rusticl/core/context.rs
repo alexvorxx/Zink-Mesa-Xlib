@@ -9,7 +9,7 @@ use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::ResourceType;
-use mesa_rust_gen::pipe_format;
+use mesa_rust_gen::*;
 use mesa_rust_util::properties::Properties;
 use rusticl_opencl_gen::*;
 
@@ -27,7 +27,7 @@ pub struct Context {
     pub devs: Vec<&'static Device>,
     pub properties: Properties<cl_context_properties>,
     pub dtors: Mutex<Vec<DeleteContextCB>>,
-    pub svm_ptrs: Mutex<BTreeMap<*const c_void, Layout>>,
+    pub svm_ptrs: Mutex<BTreeMap<usize, Layout>>,
     pub gl_ctx_manager: Option<GLCtxManager>,
 }
 
@@ -62,13 +62,17 @@ impl Context {
             let mut resource = None;
 
             if !user_ptr.is_null() && !copy {
-                resource = dev
-                    .screen()
-                    .resource_create_buffer_from_user(adj_size, user_ptr)
+                resource = dev.screen().resource_create_buffer_from_user(
+                    adj_size,
+                    user_ptr,
+                    PIPE_BIND_GLOBAL,
+                )
             }
 
             if resource.is_none() {
-                resource = dev.screen().resource_create_buffer(adj_size, res_type)
+                resource = dev
+                    .screen()
+                    .resource_create_buffer(adj_size, res_type, PIPE_BIND_GLOBAL)
             }
 
             let resource = resource.ok_or(CL_OUT_OF_RESOURCES);
@@ -184,14 +188,15 @@ impl Context {
     }
 
     pub fn add_svm_ptr(&self, ptr: *mut c_void, layout: Layout) {
-        self.svm_ptrs.lock().unwrap().insert(ptr, layout);
+        self.svm_ptrs.lock().unwrap().insert(ptr as usize, layout);
     }
 
     pub fn find_svm_alloc(&self, ptr: *const c_void) -> Option<(*const c_void, Layout)> {
         let lock = self.svm_ptrs.lock().unwrap();
-        if let Some((&base, layout)) = lock.range(..=ptr).next_back() {
+        if let Some((&base, layout)) = lock.range(..=ptr as usize).next_back() {
             // SAFETY: we really just do some pointer math here...
             unsafe {
+                let base = base as *const c_void;
                 // we check if ptr is within [base..base+size)
                 // means we can check if ptr - (base + size) < 0
                 if ptr.offset_from(base.add(layout.size())) < 0 {
@@ -203,6 +208,7 @@ impl Context {
     }
 
     pub fn remove_svm_ptr(&self, ptr: *const c_void) -> Option<Layout> {
+        let ptr = ptr as usize;
         self.svm_ptrs.lock().unwrap().remove(&ptr)
     }
 

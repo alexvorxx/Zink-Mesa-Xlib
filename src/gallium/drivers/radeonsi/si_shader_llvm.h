@@ -37,9 +37,6 @@ struct si_shader_context {
 
    struct ac_llvm_compiler *compiler;
 
-   /* Preloaded descriptors. */
-   LLVMValueRef instance_divisor_constbuf;
-
    LLVMValueRef gs_ngg_emit;
    struct ac_llvm_pointer gs_ngg_scratch;
    LLVMValueRef return_value;

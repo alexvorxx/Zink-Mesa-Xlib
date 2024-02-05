@@ -69,21 +69,6 @@ struct state {
    bool progress;
 };
 
-static unsigned
-decomposed_primitive_size(nir_builder *b)
-{
-   enum mesa_prim outprim = b->shader->info.gs.output_primitive;
-
-   if (outprim == MESA_PRIM_POINTS)
-      return 1;
-   else if (outprim == MESA_PRIM_LINE_STRIP)
-      return 2;
-   else if (outprim == MESA_PRIM_TRIANGLE_STRIP)
-      return 3;
-   else
-      unreachable("Invalid GS output primitive type.");
-}
-
 /**
  * Replace emit_vertex intrinsics with:
  *
@@ -158,7 +143,8 @@ rewrite_emit_vertex(nir_intrinsic_instr *intrin, struct state *state)
       /* We form a new primitive for every vertex emitted after the first
        * complete primitive (since we're outputting strips).
        */
-      unsigned min_verts = decomposed_primitive_size(b);
+      unsigned min_verts =
+         mesa_vertices_per_prim(b->shader->info.gs.output_primitive);
       nir_def *new_prim = nir_uge_imm(b, vtx_per_prim_cnt, min_verts);
 
       /* Increment the decomposed primitive count by 1 if we formed a complete
@@ -200,7 +186,8 @@ overwrite_incomplete_primitives(struct state *state, unsigned stream)
    assert(state->count_vtx_per_prim);
 
    nir_builder *b = state->builder;
-   unsigned outprim_min_vertices = decomposed_primitive_size(b);
+   unsigned outprim_min_vertices =
+      mesa_vertices_per_prim(b->shader->info.gs.output_primitive);
 
    /* Total count of vertices emitted so far. */
    nir_def *vtxcnt_total =

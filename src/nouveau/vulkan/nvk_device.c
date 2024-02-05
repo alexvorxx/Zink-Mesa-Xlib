@@ -67,7 +67,7 @@ nvk_slm_area_ensure(struct nvk_device *dev,
    /* The hardware seems to require this alignment for
     * NV9097_SET_SHADER_LOCAL_MEMORY_E_DEFAULT_SIZE_PER_WARP
     */
-   bytes_per_warp = ALIGN(bytes_per_warp, 0x200);
+   bytes_per_warp = align64(bytes_per_warp, 0x200);
 
    uint64_t bytes_per_mp = bytes_per_warp * dev->pdev->info.max_warps_per_mp;
    uint64_t bytes_per_tpc = bytes_per_mp * dev->pdev->info.mp_per_tpc;
@@ -75,7 +75,7 @@ nvk_slm_area_ensure(struct nvk_device *dev,
    /* The hardware seems to require this alignment for
     * NVA0C0_SET_SHADER_LOCAL_MEMORY_NON_THROTTLED_A_SIZE_LOWER.
     */
-   bytes_per_tpc = ALIGN(bytes_per_tpc, 0x8000);
+   bytes_per_tpc = align64(bytes_per_tpc, 0x8000);
 
    /* nvk_slm_area::bytes_per_mp only ever increases so we can check this
     * outside the lock and exit early in the common case.  We only need to
@@ -92,7 +92,7 @@ nvk_slm_area_ensure(struct nvk_device *dev,
    /* The hardware seems to require this alignment for
     * NV9097_SET_SHADER_LOCAL_MEMORY_D_SIZE_LOWER.
     */
-   size = ALIGN(size, 0x20000);
+   size = align64(size, 0x20000);
 
    struct nouveau_ws_bo *bo =
       nouveau_ws_bo_new(dev->ws_dev, size, 0,
@@ -166,20 +166,15 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    dev->vk.command_buffer_ops = &nvk_cmd_buffer_ops;
    dev->pdev = pdev;
 
-   ret = nouveau_ws_context_create(dev->ws_dev, &dev->ws_ctx);
-   if (ret) {
-      if (ret == -ENOSPC)
-         result = vk_error(dev, VK_ERROR_TOO_MANY_OBJECTS);
-      else
-         result = vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   result = nvk_upload_queue_init(dev, &dev->upload);
+   if (result != VK_SUCCESS)
       goto fail_ws_dev;
-   }
 
    result = nvk_descriptor_table_init(dev, &dev->images,
                                       8 * 4 /* tic entry size */,
                                       1024, 1024 * 1024);
    if (result != VK_SUCCESS)
-      goto fail_ws_ctx;
+      goto fail_upload;
 
    /* Reserve the descriptor at offset 0 to be the null descriptor */
    uint32_t null_image[8] = { 0, };
@@ -201,7 +196,7 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
     */
    result = nvk_heap_init(dev, &dev->shader_heap,
                           NOUVEAU_WS_BO_LOCAL | NOUVEAU_WS_BO_NO_SHARE,
-                          NOUVEAU_WS_BO_WR,
+                          0 /* map_flags */,
                           4096 /* overalloc */,
                           dev->pdev->info.cls_eng3d < VOLTA_A);
    if (result != VK_SUCCESS)
@@ -277,8 +272,8 @@ fail_samplers:
    nvk_descriptor_table_finish(dev, &dev->samplers);
 fail_images:
    nvk_descriptor_table_finish(dev, &dev->images);
-fail_ws_ctx:
-   nouveau_ws_context_destroy(dev->ws_ctx);
+fail_upload:
+   nvk_upload_queue_finish(dev, &dev->upload);
 fail_ws_dev:
    nouveau_ws_device_destroy(dev->ws_dev);
 fail_init:
@@ -304,12 +299,16 @@ nvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
       nouveau_ws_bo_destroy(dev->vab_memory);
    nouveau_ws_bo_destroy(dev->zero_page);
    vk_device_finish(&dev->vk);
+
+   /* Idle the upload queue before we tear down heaps */
+   nvk_upload_queue_sync(dev, &dev->upload);
+
    nvk_slm_area_finish(&dev->slm);
    nvk_heap_finish(dev, &dev->event_heap);
    nvk_heap_finish(dev, &dev->shader_heap);
    nvk_descriptor_table_finish(dev, &dev->samplers);
    nvk_descriptor_table_finish(dev, &dev->images);
-   nouveau_ws_context_destroy(dev->ws_ctx);
+   nvk_upload_queue_finish(dev, &dev->upload);
    nouveau_ws_device_destroy(dev->ws_dev);
    vk_free(&dev->vk.alloc, dev);
 }

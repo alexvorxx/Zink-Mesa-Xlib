@@ -381,6 +381,24 @@ impl PipeContext {
         unsafe { self.pipe.as_ref().delete_sampler_state.unwrap()(self.pipe.as_ptr(), ptr) }
     }
 
+    pub fn bind_constant_buffer(&self, idx: u32, res: &PipeResource) {
+        let cb = pipe_constant_buffer {
+            buffer: res.pipe(),
+            buffer_offset: 0,
+            buffer_size: res.width(),
+            user_buffer: ptr::null(),
+        };
+        unsafe {
+            self.pipe.as_ref().set_constant_buffer.unwrap()(
+                self.pipe.as_ptr(),
+                pipe_shader_type::PIPE_SHADER_COMPUTE,
+                idx,
+                false,
+                &cb,
+            )
+        }
+    }
+
     pub fn set_constant_buffer(&self, idx: u32, data: &[u8]) {
         let cb = pipe_constant_buffer {
             buffer: ptr::null_mut(),
@@ -502,7 +520,8 @@ impl PipeContext {
         unsafe { self.pipe.as_ref().sampler_view_destroy.unwrap()(self.pipe.as_ptr(), view) }
     }
 
-    pub fn set_shader_images(&self, images: &[pipe_image_view]) {
+    pub fn set_shader_images(&self, images: &[PipeImageView]) {
+        let images = PipeImageView::slice_to_pipe(images);
         unsafe {
             self.pipe.as_ref().set_shader_images.unwrap()(
                 self.pipe.as_ptr(),

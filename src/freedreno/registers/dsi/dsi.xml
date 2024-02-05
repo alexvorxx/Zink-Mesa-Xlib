@@ -149,6 +149,7 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 		<bitfield name="HSA_POWER_STOP" pos="16" type="boolean"/>
 		<bitfield name="HBP_POWER_STOP" pos="20" type="boolean"/>
 		<bitfield name="HFP_POWER_STOP" pos="24" type="boolean"/>
+		<bitfield name="DATABUS_WIDEN" pos="25" type="boolean"/>
 		<bitfield name="PULSE_MODE_HSA_HE" pos="28" type="boolean"/>
 	</reg32>
 	<reg32 offset="0x0001c" name="VID_CFG1">

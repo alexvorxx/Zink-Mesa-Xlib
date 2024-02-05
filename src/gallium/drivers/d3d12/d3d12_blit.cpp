@@ -557,7 +557,7 @@ util_blit_save_state(struct d3d12_context *ctx)
                                             ctx->num_sampler_views[PIPE_SHADER_FRAGMENT],
                                             ctx->sampler_views[PIPE_SHADER_FRAGMENT]);
    util_blitter_save_fragment_constant_buffer_slot(ctx->blitter, ctx->cbufs[PIPE_SHADER_FRAGMENT]);
-   util_blitter_save_vertex_buffer_slot(ctx->blitter, ctx->vbs);
+   util_blitter_save_vertex_buffers(ctx->blitter, ctx->vbs, ctx->num_vbs);
    util_blitter_save_sample_mask(ctx->blitter, ctx->gfx_pipeline_state.sample_mask, 0);
    util_blitter_save_so_targets(ctx->blitter, ctx->gfx_pipeline_state.num_so_targets, ctx->so_targets);
 }

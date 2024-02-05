@@ -22,24 +22,18 @@ nvk_get_image_plane_format_features(struct nvk_physical_device *pdev,
 {
    VkFormatFeatureFlags2 features = 0;
 
-   if (tiling != VK_IMAGE_TILING_OPTIMAL)
-      return 0;
-
    enum pipe_format p_format = vk_format_to_pipe_format(vk_format);
    if (p_format == PIPE_FORMAT_NONE)
-      return 0;
-
-   if (!nil_format_supports_texturing(&pdev->info, p_format))
       return 0;
 
    /* You can't tile a non-power-of-two */
    if (!util_is_power_of_two_nonzero(util_format_get_blocksize(p_format)))
       return 0;
 
-   features |= VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT;
-   features |= VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
-   features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
-   features |= VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
+   if (nil_format_supports_texturing(&pdev->info, p_format)) {
+      features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
+      features |= VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
+   }
 
    if (nil_format_supports_filtering(&pdev->info, p_format)) {
       features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
@@ -52,7 +46,8 @@ nvk_get_image_plane_format_features(struct nvk_physical_device *pdev,
       features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;
    }
 
-   if (nil_format_supports_color_targets(&pdev->info, p_format)) {
+   if (nil_format_supports_color_targets(&pdev->info, p_format) && 
+       tiling != VK_IMAGE_TILING_LINEAR) {
       features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT;
       if (nil_format_supports_blending(&pdev->info, p_format))
          features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
@@ -60,7 +55,8 @@ nvk_get_image_plane_format_features(struct nvk_physical_device *pdev,
    }
 
    if (vk_format_is_depth_or_stencil(vk_format)) {
-      if (!nil_format_supports_depth_stencil(&pdev->info, p_format))
+      if (!nil_format_supports_depth_stencil(&pdev->info, p_format) ||
+          tiling == VK_IMAGE_TILING_LINEAR)
          return 0;
 
       features |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -73,8 +69,14 @@ nvk_get_image_plane_format_features(struct nvk_physical_device *pdev,
          features |= VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT;
    }
 
-   if (p_format == PIPE_FORMAT_R32_UINT || p_format == PIPE_FORMAT_R32_SINT)
+   if (p_format == PIPE_FORMAT_R32_UINT || p_format == PIPE_FORMAT_R32_SINT ||
+       p_format == PIPE_FORMAT_R64_UINT || p_format == PIPE_FORMAT_R64_SINT)
       features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
+
+   if (features != 0) {
+      features |= VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT;
+      features |= VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+   }
 
    return features;
 }
@@ -140,16 +142,16 @@ nvk_get_image_format_features(struct nvk_physical_device *pdev,
    return features;
 }
 
-static VkFormatFeatureFlags2KHR
+static VkFormatFeatureFlags2
 vk_image_usage_to_format_features(VkImageUsageFlagBits usage_flag)
 {
    assert(util_bitcount(usage_flag) == 1);
    switch (usage_flag) {
    case VK_IMAGE_USAGE_TRANSFER_SRC_BIT:
-      return VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT_KHR |
+      return VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
              VK_FORMAT_FEATURE_BLIT_SRC_BIT;
    case VK_IMAGE_USAGE_TRANSFER_DST_BIT:
-      return VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT_KHR |
+      return VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
              VK_FORMAT_FEATURE_BLIT_DST_BIT;
    case VK_IMAGE_USAGE_SAMPLED_BIT:
       return VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
@@ -187,7 +189,7 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
 {
    VK_FROM_HANDLE(nvk_physical_device, pdev, physicalDevice);
 
-   const VkPhysicalDeviceExternalImageFormatInfo *external_info = NULL;
+   const VkPhysicalDeviceExternalImageFormatInfo *external_info =
       vk_find_struct_const(pImageFormatInfo->pNext,
                            PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
 
@@ -218,7 +220,7 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
    if (features == 0)
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
-   if (vk_format_is_compressed(pImageFormatInfo->format) &&
+   if (pImageFormatInfo->tiling == VK_IMAGE_TILING_LINEAR &&
        pImageFormatInfo->type != VK_IMAGE_TYPE_2D)
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
@@ -245,10 +247,12 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
    default:
       unreachable("Invalid image type");
    }
+   if (pImageFormatInfo->tiling == VK_IMAGE_TILING_LINEAR)
+      maxArraySize = 1;
 
    assert(util_is_power_of_two_nonzero(max_dim));
    uint32_t maxMipLevels = util_logbase2(max_dim) + 1;
-   if (ycbcr_info != NULL)
+   if (ycbcr_info != NULL || pImageFormatInfo->tiling == VK_IMAGE_TILING_LINEAR)
        maxMipLevels = 1;
 
    VkSampleCountFlags sampleCounts = VK_SAMPLE_COUNT_1_BIT;
@@ -282,7 +286,7 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
       view_usage = 0;
 
    u_foreach_bit(b, view_usage) {
-      VkFormatFeatureFlags2KHR usage_features =
+      VkFormatFeatureFlags2 usage_features =
          vk_image_usage_to_format_features(1 << b);
       if (usage_features && !(features & usage_features))
          return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -539,9 +543,13 @@ nvk_image_plane_alloc_vma(struct nvk_device *dev,
 
    if (sparse_bound || plane->nil.pte_kind) {
       plane->vma_size_B = plane->nil.size_B;
-      plane->addr = nouveau_ws_alloc_vma(dev->ws_dev, plane->vma_size_B,
+      plane->addr = nouveau_ws_alloc_vma(dev->ws_dev, 0, plane->vma_size_B,
                                          plane->nil.align_B,
-                                         sparse_resident);
+                                         false, sparse_resident);
+      if (plane->addr == 0) {
+         return vk_errorf(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                          "Sparse VMA allocation failed");
+      }
    }
 
    return VK_SUCCESS;
@@ -560,7 +568,7 @@ nvk_image_plane_finish(struct nvk_device *dev,
 
       nouveau_ws_bo_unbind_vma(dev->ws_dev, plane->addr, plane->vma_size_B);
       nouveau_ws_free_vma(dev->ws_dev, plane->addr, plane->vma_size_B,
-                          sparse_resident);
+                          false, sparse_resident);
    }
 }
 
@@ -660,7 +668,7 @@ nvk_get_image_memory_requirements(struct nvk_device *dev,
                                   VkImageAspectFlags aspects,
                                   VkMemoryRequirements2 *pMemoryRequirements)
 {
-   uint32_t memory_types = (1 << dev->pdev->mem_type_cnt) - 1;
+   uint32_t memory_types = (1 << dev->pdev->mem_type_count) - 1;
 
    // TODO hope for the best?
 
@@ -674,11 +682,6 @@ nvk_get_image_memory_requirements(struct nvk_device *dev,
          nvk_image_plane_add_req(&image->planes[plane], &size_B, &align_B);
    }
 
-   assert(image->vk.external_handle_types == 0 || image->plane_count == 1);
-   bool needs_dedicated =
-      image->vk.external_handle_types != 0 &&
-      image->planes[0].nil.pte_kind != 0;
-
    if (image->stencil_copy_temp.nil.size_B > 0)
       nvk_image_plane_add_req(&image->stencil_copy_temp, &size_B, &align_B);
 
@@ -690,8 +693,8 @@ nvk_get_image_memory_requirements(struct nvk_device *dev,
       switch (ext->sType) {
       case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {
          VkMemoryDedicatedRequirements *dedicated = (void *)ext;
-         dedicated->prefersDedicatedAllocation = needs_dedicated;
-         dedicated->requiresDedicatedAllocation = needs_dedicated;
+         dedicated->prefersDedicatedAllocation = false;
+         dedicated->requiresDedicatedAllocation = false;
          break;
       }
       default:
@@ -720,7 +723,7 @@ nvk_GetImageMemoryRequirements2(VkDevice device,
 
 VKAPI_ATTR void VKAPI_CALL 
 nvk_GetDeviceImageMemoryRequirements(VkDevice device,
-                                     const VkDeviceImageMemoryRequirementsKHR *pInfo,
+                                     const VkDeviceImageMemoryRequirements *pInfo,
                                      VkMemoryRequirements2 *pMemoryRequirements)
 {
    VK_FROM_HANDLE(nvk_device, dev, device);
@@ -751,7 +754,7 @@ nvk_GetImageSparseMemoryRequirements2(VkDevice device,
 
 VKAPI_ATTR void VKAPI_CALL
 nvk_GetDeviceImageSparseMemoryRequirements(VkDevice device,
-                                           const VkDeviceImageMemoryRequirementsKHR* pInfo,
+                                           const VkDeviceImageMemoryRequirements* pInfo,
                                            uint32_t *pSparseMemoryRequirementCount,
                                            VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
 {
@@ -770,9 +773,17 @@ nvk_get_image_subresource_layout(UNUSED struct nvk_device *dev,
    const uint8_t p = nvk_image_aspects_to_plane(image, isr->aspectMask);
    const struct nvk_image_plane *plane = &image->planes[p];
 
+   uint64_t offset_B = 0;
+   if (!image->disjoint) {
+      uint32_t align_B = 0;
+      for (unsigned plane = 0; plane < p; plane++)
+         nvk_image_plane_add_req(&image->planes[plane], &offset_B, &align_B);
+   }
+   offset_B += nil_image_level_layer_offset_B(&plane->nil, isr->mipLevel,
+                                              isr->arrayLayer);
+
    pLayout->subresourceLayout = (VkSubresourceLayout) {
-      .offset = nil_image_level_layer_offset_B(&plane->nil, isr->mipLevel,
-                                               isr->arrayLayer),
+      .offset = offset_B,
       .size = nil_image_level_size_B(&plane->nil, isr->mipLevel),
       .rowPitch = plane->nil.levels[isr->mipLevel].row_stride_B,
       .arrayPitch = plane->nil.array_stride_B,
@@ -819,21 +830,15 @@ nvk_image_plane_bind(struct nvk_device *dev,
    *offset_B = align64(*offset_B, (uint64_t)plane->nil.align_B);
 
    if (plane->vma_size_B) {
-      if (mem != NULL) {
-         nouveau_ws_bo_bind_vma(dev->ws_dev,
-                                mem->bo,
-                                plane->addr,
-                                plane->vma_size_B,
-                                *offset_B,
-                                plane->nil.pte_kind);
-      } else {
-         nouveau_ws_bo_unbind_vma(dev->ws_dev,
-                                  plane->addr,
-                                  plane->vma_size_B);
-      }
+      nouveau_ws_bo_bind_vma(dev->ws_dev,
+                             mem->bo,
+                             plane->addr,
+                             plane->vma_size_B,
+                             *offset_B,
+                             plane->nil.pte_kind);
    } else {
       assert(plane->nil.pte_kind == 0);
-      plane->addr = mem != NULL ? mem->bo->offset + *offset_B : 0;
+      plane->addr = mem->bo->offset + *offset_B;
    }
 
    *offset_B += plane->nil.size_B;

@@ -307,14 +307,14 @@ useful for exercising the compiler. To build, use options:
 
 Then run an OpenGL workload with environment variable:
 
-.. code-block:: console
+.. code-block:: sh
 
    LD_PRELOAD=~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so
 
 For example to compile a shader with shaderdb and print some statistics along
 with the IR:
 
-.. code-block:: console
+.. code-block:: sh
 
    ~/shader-db$ AGX_MESA_DEBUG=shaders,shaderdb ASAHI_MESA_DEBUG=precompile LIBGL_DRIVERS_PATH=~/lib/dri/ LD_PRELOAD=~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so ./run shaders/glmark/1-12.shader_test
 
@@ -357,3 +357,8 @@ concepts used in PowerVR GPUs appear in AGX.
    Image Synthesis Processor
       The Image Synthesis Processor is responsible for the rasterization stage
       of the rendering pipeline.
+
+   PBE
+   Pixel BackEnd
+      Hardware unit which writes to color attachements and images. Also the
+      name for a descriptor passed to :term:`PBE` instructions.

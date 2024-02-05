@@ -47,7 +47,7 @@ libbroadcom_compiler_files = files(
 libbroadcom_compiler = static_library(
   'broadcom_compiler',
   [libbroadcom_compiler_files, v3d_xml_pack],
-  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_broadcom],
+  include_directories : [inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_broadcom],
   c_args : [no_override_init_args],
   gnu_symbol_visibility : 'hidden',
   dependencies : [dep_libdrm, dep_valgrind, idep_nir_headers],

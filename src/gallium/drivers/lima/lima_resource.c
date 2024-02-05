@@ -28,6 +28,7 @@
 #include "util/u_inlines.h"
 #include "util/u_math.h"
 #include "util/u_debug.h"
+#include "util/u_resource.h"
 #include "util/u_transfer.h"
 #include "util/u_surface.h"
 #include "util/u_transfer_helper.h"
@@ -447,7 +448,8 @@ lima_resource_get_param(struct pipe_screen *pscreen,
                         enum pipe_resource_param param,
                         unsigned usage, uint64_t *value)
 {
-   struct lima_resource *res = lima_resource(pres);
+   struct lima_resource *res =
+          (struct lima_resource *)util_resource_at_index(pres, plane);
 
    switch (param) {
    case PIPE_RESOURCE_PARAM_STRIDE:
@@ -461,7 +463,9 @@ lima_resource_get_param(struct pipe_screen *pscreen,
          *value = DRM_FORMAT_MOD_ARM_16X16_BLOCK_U_INTERLEAVED;
       else
          *value = DRM_FORMAT_MOD_LINEAR;
-
+      return true;
+   case PIPE_RESOURCE_PARAM_NPLANES:
+      *value = util_resource_num(pres);
       return true;
    default:
       return false;
@@ -833,8 +837,8 @@ lima_util_blitter_save_states(struct lima_context *ctx)
    util_blitter_save_scissor(ctx->blitter, &ctx->scissor);
    util_blitter_save_vertex_elements(ctx->blitter,
                                      ctx->vertex_elements);
-   util_blitter_save_vertex_buffer_slot(ctx->blitter,
-                                        ctx->vertex_buffers.vb);
+   util_blitter_save_vertex_buffers(ctx->blitter,
+                                    ctx->vertex_buffers.vb, ctx->vertex_buffers.count);
 
    util_blitter_save_framebuffer(ctx->blitter, &ctx->framebuffer.base);
 

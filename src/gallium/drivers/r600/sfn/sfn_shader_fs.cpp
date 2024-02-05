@@ -135,7 +135,6 @@ barycentric_ij_index(nir_intrinsic_instr *intr)
    switch (nir_intrinsic_interp_mode(intr)) {
    case INTERP_MODE_NONE:
    case INTERP_MODE_SMOOTH:
-   case INTERP_MODE_COLOR:
       return index;
    case INTERP_MODE_NOPERSPECTIVE:
       return index + 3;
@@ -418,9 +417,6 @@ FragmentShader::scan_input(nir_intrinsic_instr *intr, int index_src_id)
          tgsi_interpolate = TGSI_INTERPOLATE_LINEAR;
          break;
       case INTERP_MODE_FLAT:
-         break;
-      case INTERP_MODE_COLOR:
-         tgsi_interpolate = TGSI_INTERPOLATE_COLOR;
          break;
       case INTERP_MODE_EXPLICIT:
       default:

@@ -123,13 +123,15 @@ anv_shader_bin_create(struct anv_device *device,
 
    int rv_count = 0;
    struct brw_shader_reloc_value reloc_values[6];
-   assert((device->physical->va.instruction_state_pool.addr & 0xffffffff) == 0);
+   assert((device->physical->va.indirect_descriptor_pool.addr & 0xffffffff) == 0);
+   assert((device->physical->va.internal_surface_state_pool.addr & 0xffffffff) == 0);
    reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
       .id = BRW_SHADER_RELOC_DESCRIPTORS_ADDR_HIGH,
       .value = device->physical->indirect_descriptors ?
                (device->physical->va.indirect_descriptor_pool.addr >> 32) :
-               (device->physical->va.binding_table_pool.addr >> 32),
+               (device->physical->va.internal_surface_state_pool.addr >> 32),
    };
+   assert((device->physical->va.instruction_state_pool.addr & 0xffffffff) == 0);
    reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
       .id = BRW_SHADER_RELOC_CONST_DATA_ADDR_LOW,
       .value = shader_data_addr,
@@ -384,31 +386,27 @@ anv_device_search_for_kernel(struct anv_device *device,
 struct anv_shader_bin *
 anv_device_upload_kernel(struct anv_device *device,
                          struct vk_pipeline_cache *cache,
-                         gl_shader_stage stage,
-                         const void *key_data, uint32_t key_size,
-                         const void *kernel_data, uint32_t kernel_size,
-                         const struct brw_stage_prog_data *prog_data,
-                         uint32_t prog_data_size,
-                         const struct brw_compile_stats *stats,
-                         uint32_t num_stats,
-                         const nir_xfb_info *xfb_info,
-                         const struct anv_pipeline_bind_map *bind_map,
-                         const struct anv_push_descriptor_info *push_desc_info,
-                         enum anv_dynamic_push_bits dynamic_push_values)
+                         const struct anv_shader_upload_params *params)
 {
    /* Use the default pipeline cache if none is specified */
    if (cache == NULL)
       cache = device->default_pipeline_cache;
 
    struct anv_shader_bin *shader =
-      anv_shader_bin_create(device, stage,
-                            key_data, key_size,
-                            kernel_data, kernel_size,
-                            prog_data, prog_data_size,
-                            stats, num_stats,
-                            xfb_info, bind_map,
-                            push_desc_info,
-                            dynamic_push_values);
+      anv_shader_bin_create(device,
+                            params->stage,
+                            params->key_data,
+                            params->key_size,
+                            params->kernel_data,
+                            params->kernel_size,
+                            params->prog_data,
+                            params->prog_data_size,
+                            params->stats,
+                            params->num_stats,
+                            params->xfb_info,
+                            params->bind_map,
+                            params->push_desc_info,
+                            params->dynamic_push_values);
    if (shader == NULL)
       return NULL;
 

@@ -39,19 +39,11 @@
 extern "C" {
 #endif
 
-struct cso_context;
-struct u_vbuf;
-
-struct cso_context_base {
+struct cso_context {
    struct pipe_context *pipe;
 
    /* This is equal to either pipe_context::draw_vbo or u_vbuf_draw_vbo. */
-   void (*draw_vbo)(struct pipe_context *pipe,
-                    const struct pipe_draw_info *info,
-                    unsigned drawid_offset,
-                    const struct pipe_draw_indirect_info *indirect,
-                    const struct pipe_draw_start_count_bias *draws,
-                    unsigned num_draws);
+   pipe_draw_func draw_vbo;
 };
 
 #define CSO_NO_USER_VERTEX_BUFFERS (1 << 0)
@@ -103,7 +95,6 @@ cso_set_vertex_elements(struct cso_context *ctx,
 
 void cso_set_vertex_buffers(struct cso_context *ctx,
                             unsigned count,
-                            unsigned unbind_trailing_count,
                             bool take_ownership,
                             const struct pipe_vertex_buffer *buffers);
 
@@ -213,7 +204,6 @@ void
 cso_set_vertex_buffers_and_elements(struct cso_context *ctx,
                                     const struct cso_velems_state *velems,
                                     unsigned vb_count,
-                                    unsigned unbind_trailing_vb_count,
                                     bool take_ownership,
                                     bool uses_user_vertex_buffers,
                                     const struct pipe_vertex_buffer *vbuffers);
@@ -227,14 +217,6 @@ void
 cso_draw_arrays(struct cso_context *cso, unsigned mode, unsigned start, unsigned count);
 
 /* Inline functions. */
-
-static inline struct pipe_context *
-cso_get_pipe_context(struct cso_context *cso)
-{
-   struct cso_context_base *cso_base = (struct cso_context_base *)cso;
-
-   return cso_base->pipe;
-}
 
 static ALWAYS_INLINE void
 cso_draw_vbo(struct cso_context *cso,
@@ -257,10 +239,7 @@ cso_draw_vbo(struct cso_context *cso,
    /* Indirect only uses indirect->draw_count, not num_draws. */
    assert(!indirect || num_draws == 1);
 
-   struct cso_context_base *cso_base = (struct cso_context_base *)cso;
-
-   cso_base->draw_vbo(cso_base->pipe, info, drawid_offset, indirect, draws,
-                      num_draws);
+   cso->draw_vbo(cso->pipe, info, drawid_offset, indirect, draws, num_draws);
 }
 
 #ifdef __cplusplus

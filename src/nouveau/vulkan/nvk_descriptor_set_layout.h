@@ -11,6 +11,7 @@
 #include "vk_object.h"
 
 struct nvk_device;
+struct nvk_physical_device;
 struct nvk_sampler;
 struct vk_pipeline_layout;
 
@@ -62,9 +63,11 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(nvk_descriptor_set_layout, vk.base,
                                VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
 
-void nvk_descriptor_stride_align_for_type(VkDescriptorType type,
-                                          const VkMutableDescriptorTypeListEXT *type_list,
-                                          uint32_t *stride, uint32_t *align);
+void
+nvk_descriptor_stride_align_for_type(const struct nvk_physical_device *pdev,
+                                     VkDescriptorType type,
+                                     const VkMutableDescriptorTypeListEXT *type_list,
+                                     uint32_t *stride, uint32_t *alignment);
 
 static inline struct nvk_descriptor_set_layout *
 vk_to_nvk_descriptor_set_layout(struct vk_descriptor_set_layout *layout)
@@ -72,7 +75,4 @@ vk_to_nvk_descriptor_set_layout(struct vk_descriptor_set_layout *layout)
    return container_of(layout, struct nvk_descriptor_set_layout, vk);
 }
 
-uint8_t
-nvk_descriptor_set_layout_dynbuf_start(const struct vk_pipeline_layout *pipeline_layout,
-                                       int set_layout_idx);
 #endif

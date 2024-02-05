@@ -7,6 +7,7 @@ caselists = [
     "/deqp/mustpass/gles31-khr-master.txt",
     "/deqp/mustpass/gles3-khr-master.txt",
     "/deqp/mustpass/gles2-khr-master.txt",
+    "/deqp/mustpass/gl31-master.txt",
 ]
 deqp_args = [
     "--deqp-gl-config-name=rgba8888d24s8ms0",

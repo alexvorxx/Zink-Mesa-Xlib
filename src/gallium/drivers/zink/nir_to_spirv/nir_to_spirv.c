@@ -3055,15 +3055,15 @@ emit_image_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
    type_to_dim(glsl_get_sampler_dim(type), &is_ms);
    SpvId sample = is_ms ? get_src(ctx, &intr->src[2], &atype) : emit_uint_const(ctx, 32, 0);
    SpvId coord = get_image_coords(ctx, type, &intr->src[1]);
-   enum glsl_base_type glsl_type = glsl_get_sampler_result_type(type);
-   SpvId base_type = get_glsl_basetype(ctx, glsl_type);
+   enum glsl_base_type glsl_result_type = glsl_get_sampler_result_type(type);
+   SpvId base_type = get_glsl_basetype(ctx, glsl_result_type);
    SpvId texel = spirv_builder_emit_image_texel_pointer(&ctx->builder, base_type, img_var, coord, sample);
    SpvId param2 = 0;
 
    /* The type of Value must be the same as Result Type.
     * The type of the value pointed to by Pointer must be the same as Result Type.
     */
-   nir_alu_type ntype = nir_get_nir_type_for_glsl_base_type(glsl_type);
+   nir_alu_type ntype = nir_get_nir_type_for_glsl_base_type(glsl_result_type);
    if (ptype != ntype) {
       SpvId cast_type = get_def_type(ctx, &intr->def, ntype);
       param = emit_bitcast(ctx, cast_type, param);
@@ -3583,9 +3583,9 @@ emit_tex(struct ntv_context *ctx, nir_tex_instr *tex)
             unsigned num_components = nir_src_num_components(tex->src[i].src);
 
             SpvId components[NIR_MAX_VEC_COMPONENTS];
-            for (int i = 0; i < num_components; ++i) {
-               int64_t tmp = nir_const_value_as_int(cv[i], bit_size);
-               components[i] = emit_int_const(ctx, bit_size, tmp);
+            for (int j = 0; j < num_components; ++j) {
+               int64_t tmp = nir_const_value_as_int(cv[j], bit_size);
+               components[j] = emit_int_const(ctx, bit_size, tmp);
             }
 
             if (num_components > 1) {
@@ -4774,7 +4774,7 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
       /* this could be huge, so only alloc if needed since it's extremely unlikely to
        * ever be used by anything except cts
        */
-      ctx.resident_defs = ralloc_array_size(ctx.mem_ctx,
+      ctx.resident_defs = rzalloc_array_size(ctx.mem_ctx,
                                             sizeof(SpvId), entry->ssa_alloc);
       if (!ctx.resident_defs)
          goto fail;

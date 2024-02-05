@@ -569,14 +569,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
 
    switch (ctx->stage) {
    case MESA_SHADER_VERTEX:
-      /* preload instance_divisor_constbuf to be used for input load after culling */
-      if (ctx->shader->key.ge.opt.ngg_culling &&
-          ctx->shader->key.ge.part.vs.prolog.instance_divisor_is_fetched) {
-         struct ac_llvm_pointer buf = ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->internal_bindings);
-         ctx->instance_divisor_constbuf =
-            ac_build_load_to_sgpr(
-               &ctx->ac, buf, LLVMConstInt(ctx->ac.i32, SI_VS_CONST_INSTANCE_DIVISORS, 0));
-      }
       break;
 
    case MESA_SHADER_TESS_CTRL:

@@ -198,8 +198,6 @@ vn_feedback_pool_alloc_locked(struct vn_feedback_pool *pool,
                               uint32_t size,
                               uint32_t *out_offset)
 {
-   VN_TRACE_FUNC();
-
    /* Default values of pool->used and pool->alignment are used to trigger the
     * initial pool grow, and will be properly initialized after that.
     */
@@ -222,9 +220,6 @@ struct vn_feedback_slot *
 vn_feedback_pool_alloc(struct vn_feedback_pool *pool,
                        enum vn_feedback_type type)
 {
-   /* TODO Make slot size variable for VkQueryPool feedback. Currently it's
-    * MAX2(sizeof(VkResult), sizeof(uint64_t)).
-    */
    static const uint32_t slot_size = 8;
    struct vn_feedback_buffer *feedback_buf;
    uint32_t offset;
@@ -595,23 +590,10 @@ vn_feedback_query_cmd_record(VkCommandBuffer cmd_handle,
                                         offset, buf_size);
 }
 
-static void
-vn_cmd_record_batched_query_feedback(VkCommandBuffer *cmd_handle,
-                                     struct list_head *combined_query_batches)
-{
-   list_for_each_entry_safe(struct vn_feedback_query_batch, batch,
-                            combined_query_batches, head) {
-      vn_feedback_query_cmd_record(
-         *cmd_handle, vn_query_pool_to_handle(batch->query_pool),
-         batch->query, batch->query_count, batch->copy);
-   }
-}
-
 VkResult
-vn_feedback_query_batch_record(VkDevice dev_handle,
-                               struct vn_feedback_cmd_pool *feedback_pool,
-                               struct list_head *combined_query_batches,
-                               VkCommandBuffer *out_cmd_handle)
+vn_feedback_query_cmd_alloc(VkDevice dev_handle,
+                            struct vn_feedback_cmd_pool *feedback_pool,
+                            struct vn_query_feedback_cmd **out_feedback_cmd)
 {
    const VkCommandBufferAllocateInfo info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -622,49 +604,93 @@ vn_feedback_query_batch_record(VkDevice dev_handle,
    };
    struct vn_command_pool *cmd_pool =
       vn_command_pool_from_handle(feedback_pool->pool);
-   VkCommandBuffer feedback_cmd_handle;
-   VkResult result;
+   struct vn_query_feedback_cmd *feedback_cmd = NULL;
 
    simple_mtx_lock(&feedback_pool->mutex);
+   if (!list_is_empty(&feedback_pool->free_query_feedback_cmds)) {
+      feedback_cmd =
+         list_first_entry(&feedback_pool->free_query_feedback_cmds,
+                          struct vn_query_feedback_cmd, head);
+      list_del(&feedback_cmd->head);
+   }
+   simple_mtx_unlock(&feedback_pool->mutex);
 
-   if (!list_is_empty(&cmd_pool->free_query_feedback_cmds)) {
-      struct vn_command_buffer *free_cmd =
-         list_first_entry(&cmd_pool->free_query_feedback_cmds,
-                          struct vn_command_buffer, feedback_head);
-      feedback_cmd_handle = vn_command_buffer_to_handle(free_cmd);
-      list_del(&free_cmd->feedback_head);
-   } else {
+   if (!feedback_cmd) {
+      VkCommandBuffer feedback_cmd_handle;
+      VkResult result;
+
+      feedback_cmd =
+         vk_alloc(&cmd_pool->allocator, sizeof(*feedback_cmd),
+                  VN_DEFAULT_ALIGN, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      if (!feedback_cmd)
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+      simple_mtx_lock(&feedback_pool->mutex);
       result =
          vn_AllocateCommandBuffers(dev_handle, &info, &feedback_cmd_handle);
-      if (result != VK_SUCCESS)
-         goto out_unlock;
+      simple_mtx_unlock(&feedback_pool->mutex);
+
+      if (result != VK_SUCCESS) {
+         vk_free(&cmd_pool->allocator, feedback_cmd);
+         return result;
+      }
+
+      feedback_cmd->pool = feedback_pool;
+      feedback_cmd->cmd = vn_command_buffer_from_handle(feedback_cmd_handle);
    }
 
+   *out_feedback_cmd = feedback_cmd;
+
+   return VK_SUCCESS;
+}
+
+void
+vn_feedback_query_cmd_free(struct vn_query_feedback_cmd *feedback_cmd)
+{
+   simple_mtx_lock(&feedback_cmd->pool->mutex);
+   vn_ResetCommandBuffer(vn_command_buffer_to_handle(feedback_cmd->cmd), 0);
+   list_add(&feedback_cmd->head,
+            &feedback_cmd->pool->free_query_feedback_cmds);
+   simple_mtx_unlock(&feedback_cmd->pool->mutex);
+}
+
+VkResult
+vn_feedback_query_batch_record(VkDevice dev_handle,
+                               struct vn_query_feedback_cmd *feedback_cmd,
+                               struct list_head *combined_query_batches)
+{
    static const VkCommandBufferBeginInfo begin_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
    };
+   VkCommandBuffer feedback_cmd_handle =
+      vn_command_buffer_to_handle(feedback_cmd->cmd);
+   VkResult result;
+
+   simple_mtx_lock(&feedback_cmd->pool->mutex);
 
    result = vn_BeginCommandBuffer(feedback_cmd_handle, &begin_info);
    if (result != VK_SUCCESS) {
-      vn_FreeCommandBuffers(dev_handle, feedback_pool->pool, 1,
+      vn_FreeCommandBuffers(dev_handle, feedback_cmd->pool->pool, 1,
                             &feedback_cmd_handle);
       goto out_unlock;
    }
 
-   vn_cmd_record_batched_query_feedback(&feedback_cmd_handle,
-                                        combined_query_batches);
+   list_for_each_entry_safe(struct vn_feedback_query_batch, batch,
+                            combined_query_batches, head) {
+      vn_feedback_query_cmd_record(
+         feedback_cmd_handle, vn_query_pool_to_handle(batch->query_pool),
+         batch->query, batch->query_count, batch->copy);
+   }
 
    result = vn_EndCommandBuffer(feedback_cmd_handle);
    if (result != VK_SUCCESS) {
-      vn_FreeCommandBuffers(dev_handle, feedback_pool->pool, 1,
+      vn_FreeCommandBuffers(dev_handle, feedback_cmd->pool->pool, 1,
                             &feedback_cmd_handle);
       goto out_unlock;
    }
 
-   *out_cmd_handle = feedback_cmd_handle;
-
 out_unlock:
-   simple_mtx_unlock(&feedback_pool->mutex);
+   simple_mtx_unlock(&feedback_cmd->pool->mutex);
 
    return result;
 }
@@ -754,6 +780,7 @@ vn_feedback_cmd_pools_init(struct vn_device *dev)
       }
 
       simple_mtx_init(&pools[i].mutex, mtx_plain);
+      list_inithead(&pools[i].free_query_feedback_cmds);
    }
 
    dev->cmd_pools = pools;
@@ -771,6 +798,11 @@ vn_feedback_cmd_pools_fini(struct vn_device *dev)
       return;
 
    for (uint32_t i = 0; i < dev->queue_family_count; i++) {
+      list_for_each_entry_safe(struct vn_query_feedback_cmd, feedback_cmd,
+                               &dev->cmd_pools[i].free_query_feedback_cmds,
+                               head)
+         vk_free(alloc, feedback_cmd);
+
       vn_DestroyCommandPool(dev_handle, dev->cmd_pools[i].pool, alloc);
       simple_mtx_destroy(&dev->cmd_pools[i].mutex);
    }

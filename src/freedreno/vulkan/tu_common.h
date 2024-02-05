@@ -31,6 +31,7 @@
 #include "c11/threads.h"
 #include "util/rounding.h"
 #include "util/bitscan.h"
+#include "util/detect_os.h"
 #include "util/list.h"
 #include "util/log.h"
 #include "util/macros.h"

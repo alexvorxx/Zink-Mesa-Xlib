@@ -293,12 +293,8 @@ init_context(isel_context* ctx, nir_shader* shader)
 
    /* Init NIR range analysis. */
    ctx->range_ht = _mesa_pointer_hash_table_create(NULL);
-   ctx->ub_config.min_subgroup_size = 64;
-   ctx->ub_config.max_subgroup_size = 64;
-   if (ctx->shader->info.stage == MESA_SHADER_COMPUTE && ctx->program->info.cs.subgroup_size) {
-      ctx->ub_config.min_subgroup_size = ctx->program->info.cs.subgroup_size;
-      ctx->ub_config.max_subgroup_size = ctx->program->info.cs.subgroup_size;
-   }
+   ctx->ub_config.min_subgroup_size = ctx->program->wave_size;
+   ctx->ub_config.max_subgroup_size = ctx->program->wave_size;
    ctx->ub_config.max_workgroup_invocations = 2048;
    ctx->ub_config.max_workgroup_count[0] = 65535;
    ctx->ub_config.max_workgroup_count[1] = 65535;
@@ -396,7 +392,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_op_frexp_sig:
                case nir_op_frexp_exp:
                case nir_op_cube_amd:
-               case nir_op_sad_u8x4:
+               case nir_op_msad_4x8:
                case nir_op_udot_4x8_uadd:
                case nir_op_sdot_4x8_iadd:
                case nir_op_sudot_4x8_iadd:
@@ -482,11 +478,12 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_vote_all:
                case nir_intrinsic_vote_any:
                case nir_intrinsic_read_first_invocation:
+               case nir_intrinsic_as_uniform:
                case nir_intrinsic_read_invocation:
                case nir_intrinsic_first_invocation:
                case nir_intrinsic_ballot:
+               case nir_intrinsic_ballot_relaxed:
                case nir_intrinsic_bindless_image_samples:
-               case nir_intrinsic_load_force_vrs_rates_amd:
                case nir_intrinsic_load_scalar_arg_amd:
                case nir_intrinsic_load_lds_ngg_scratch_base_amd:
                case nir_intrinsic_load_lds_ngg_gs_out_vertex_base_amd:
@@ -555,6 +552,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_quad_swap_diagonal:
                case nir_intrinsic_quad_swizzle_amd:
                case nir_intrinsic_masked_swizzle_amd:
+               case nir_intrinsic_rotate:
                case nir_intrinsic_inclusive_scan:
                case nir_intrinsic_exclusive_scan:
                case nir_intrinsic_reduce:

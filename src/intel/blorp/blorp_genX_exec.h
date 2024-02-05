@@ -631,8 +631,10 @@ blorp_emit_cc_viewport(struct blorp_batch *batch)
 {
    uint32_t cc_vp_offset;
    blorp_emit_dynamic(batch, GENX(CC_VIEWPORT), vp, 32, &cc_vp_offset) {
-      vp.MinimumDepth = 0.0;
-      vp.MaximumDepth = 1.0;
+      vp.MinimumDepth = batch->blorp->config.use_unrestricted_depth_range ?
+                           -FLT_MAX : 0.0;
+      vp.MaximumDepth = batch->blorp->config.use_unrestricted_depth_range ?
+                           FLT_MAX : 1.0;
    }
 
 #if GFX_VER >= 7
@@ -727,9 +729,10 @@ blorp_emit_vs_config(struct blorp_batch *batch,
          vs.MaximumNumberofThreads =
             batch->blorp->isl_dev->info->max_vs_threads - 1;
 
-#if GFX_VER >= 8
-         vs.SIMD8DispatchEnable =
-            vs_prog_data->base.dispatch_mode == DISPATCH_MODE_SIMD8;
+         assert(GFX_VER < 8 ||
+                vs_prog_data->base.dispatch_mode == DISPATCH_MODE_SIMD8);
+#if GFX_VER >= 8 && GFX_VER < 20
+         vs.SIMD8DispatchEnable = true;
 #endif
       }
    }
@@ -945,22 +948,28 @@ blorp_emit_ps_config(struct blorp_batch *batch,
             brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 0);
          ps.DispatchGRFStartRegisterForConstantSetupData1 =
             brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 1);
+#if GFX_VER < 20
          ps.DispatchGRFStartRegisterForConstantSetupData2 =
             brw_wm_prog_data_dispatch_grf_start_reg(prog_data, ps, 2);
+#endif
 
          ps.KernelStartPointer0 = params->wm_prog_kernel +
                                   brw_wm_prog_data_prog_offset(prog_data, ps, 0);
          ps.KernelStartPointer1 = params->wm_prog_kernel +
                                   brw_wm_prog_data_prog_offset(prog_data, ps, 1);
+#if GFX_VER < 20
          ps.KernelStartPointer2 = params->wm_prog_kernel +
                                   brw_wm_prog_data_prog_offset(prog_data, ps, 2);
+#endif
       }
    }
 
    blorp_emit(batch, GENX(3DSTATE_PS_EXTRA), psx) {
       if (prog_data) {
          psx.PixelShaderValid = true;
+#if GFX_VER < 20
          psx.AttributeEnable = prog_data->num_varying_inputs > 0;
+#endif
          psx.PixelShaderIsPerSample = prog_data->persample_dispatch;
          psx.PixelShaderComputedDepthMode = prog_data->computed_depth_mode;
 #if GFX_VER >= 9
@@ -1259,18 +1268,6 @@ blorp_emit_depth_stencil_state(struct blorp_batch *batch,
       return 0;
 
    GENX(3DSTATE_WM_DEPTH_STENCIL_pack)(NULL, dw, &ds);
-
-#if GFX_VERx10 >= 125
-   /* Check if need PSS Stall sync. */
-   if (intel_needs_workaround(batch->blorp->compiler->devinfo, 18019816803) &&
-       batch->flags & BLORP_BATCH_NEED_PSS_STALL_SYNC) {
-      blorp_emit(batch, GENX(PIPE_CONTROL), pc) {
-            pc.PSSStallSyncEnable = true;
-      }
-      batch->flags &= ~BLORP_BATCH_NEED_PSS_STALL_SYNC;
-   }
-#endif
-
 #else
    uint32_t offset;
    void *state = blorp_alloc_dynamic_state(batch,
@@ -1854,6 +1851,9 @@ blorp_emit_gfx8_hiz_op(struct blorp_batch *batch,
       blorp_emit_depth_stencil_config(batch, params);
    }
 
+   /* TODO - If we ever start using 3DSTATE_WM_HZ_OP::StencilBufferResolveEnable
+    * we need to implement required steps, flushes documented in Wa_1605967699.
+    */
    blorp_emit(batch, GENX(3DSTATE_WM_HZ_OP), hzp) {
       switch (params->hiz_op) {
       case ISL_AUX_OP_FAST_CLEAR:
@@ -1861,6 +1861,9 @@ blorp_emit_gfx8_hiz_op(struct blorp_batch *batch,
          hzp.DepthBufferClearEnable = params->depth.enabled;
          hzp.StencilClearValue = params->stencil_ref;
          hzp.FullSurfaceDepthandStencilClear = params->full_surface_hiz_op;
+#if GFX_VER >= 20
+         hzp.DepthClearValue = params->depth.clear_color.f32[0];
+#endif
          break;
       case ISL_AUX_OP_FULL_RESOLVE:
          assert(params->full_surface_hiz_op);
@@ -2014,6 +2017,16 @@ blorp_update_clear_color(UNUSED struct blorp_batch *batch,
       }
    }
 #endif
+}
+
+static bool
+blorp_uses_bti_rt_writes(const struct blorp_batch *batch, const struct blorp_params *params)
+{
+   if (batch->flags & (BLORP_BATCH_USE_BLITTER | BLORP_BATCH_USE_COMPUTE))
+      return false;
+
+   /* HIZ clears use WM_HZ ops rather than a clear shader using RT writes. */
+   return params->hiz_op == ISL_AUX_OP_NONE;
 }
 
 static void
@@ -2181,6 +2194,14 @@ blorp_exec_compute(struct blorp_batch *batch, const struct blorp_params *params)
       cw.IndirectDataStartAddress       = push_const_offset;
       cw.IndirectDataLength             = push_const_size;
 
+#if GFX_VERx10 >= 125
+      cw.GenerateLocalID                = cs_prog_data->generate_local_id != 0;
+      cw.EmitLocal                      = cs_prog_data->generate_local_id;
+      cw.WalkOrder                      = cs_prog_data->walk_order;
+      cw.TileLayout = cs_prog_data->walk_order == BRW_WALK_ORDER_YXZ ?
+                      TileY32bpe : Linear;
+#endif
+
       cw.InterfaceDescriptor = (struct GENX(INTERFACE_DESCRIPTOR_DATA)) {
          .KernelStartPointer = params->cs_prog_kernel,
          .SamplerStatePointer = samplers_offset,
@@ -2325,6 +2346,7 @@ xy_bcb_tiling(const struct isl_surf *surf)
    case ISL_TILING_4:
       return XY_TILE_4;
    case ISL_TILING_64:
+   case ISL_TILING_64_XE2:
       return XY_TILE_64;
 #else
    case ISL_TILING_Y0:
@@ -2380,6 +2402,7 @@ xy_aux_mode(const struct brw_blorp_surface_info *info)
    switch (info->aux_usage) {
    case ISL_AUX_USAGE_CCS_E:
    case ISL_AUX_USAGE_FCV_CCS_E:
+   case ISL_AUX_USAGE_STC_CCS:
       return XY_CCS_E;
    case ISL_AUX_USAGE_NONE:
       return XY_NONE;
@@ -2476,7 +2499,9 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
       blt.DestinationHorizontalAlign = isl_encode_halign(dst_align.width);
       blt.DestinationVerticalAlign = isl_encode_valign(dst_align.height);
-      blt.DestinationDepthStencilResource = false;
+      /* XY_BLOCK_COPY_BLT only supports AUX_CCS. */
+      blt.DestinationDepthStencilResource =
+         params->dst.aux_usage == ISL_AUX_USAGE_STC_CCS;
       blt.DestinationTargetMemory =
          params->dst.addr.local_hint ? XY_MEM_LOCAL : XY_MEM_SYSTEM;
 
@@ -2511,7 +2536,9 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.SourceMipTailStartLOD = src_surf->miptail_start_level;
       blt.SourceHorizontalAlign = isl_encode_halign(src_align.width);
       blt.SourceVerticalAlign = isl_encode_valign(src_align.height);
-      blt.SourceDepthStencilResource = false;
+      /* XY_BLOCK_COPY_BLT only supports AUX_CCS. */
+      blt.SourceDepthStencilResource =
+         params->src.aux_usage == ISL_AUX_USAGE_STC_CCS;
       blt.SourceTargetMemory =
          params->src.addr.local_hint ? XY_MEM_LOCAL : XY_MEM_SYSTEM;
 
@@ -2594,7 +2621,9 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
       blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
       blt.DestinationHorizontalAlign = isl_encode_halign(dst_align.width);
       blt.DestinationVerticalAlign = isl_encode_valign(dst_align.height);
-      blt.DestinationDepthStencilResource = false;
+      /* XY_FAST_COLOR_BLT only supports AUX_CCS. */
+      blt.DestinationDepthStencilResource =
+         params->dst.aux_usage == ISL_AUX_USAGE_STC_CCS;
       blt.DestinationTargetMemory =
          params->dst.addr.local_hint ? XY_MEM_LOCAL : XY_MEM_SYSTEM;
 

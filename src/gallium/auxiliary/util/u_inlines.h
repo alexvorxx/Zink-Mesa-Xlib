@@ -492,9 +492,7 @@ pipe_buffer_copy(struct pipe_context *pipe,
                  unsigned size)
 {
    struct pipe_box box;
-   /* only these fields are used */
-   box.x = (int)src_offset;
-   box.width = (int)size;
+   u_box_1d(src_offset, size, &box);
    pipe->resource_copy_region(pipe, dst, 0, dst_offset, 0, 0, src, 0, &box);
 }
 

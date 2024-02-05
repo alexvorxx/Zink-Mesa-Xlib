@@ -260,6 +260,17 @@ fn release_program(program: cl_program) -> CLResult<()> {
     program.release()
 }
 
+fn debug_logging(p: &Program, devs: &[&Device]) {
+    if Platform::dbg().program {
+        for dev in devs {
+            let msg = p.log(dev);
+            if !msg.is_empty() {
+                eprintln!("{}", msg);
+            }
+        }
+    }
+}
+
 #[cl_entrypoint]
 fn build_program(
     program: cl_program,
@@ -297,14 +308,10 @@ fn build_program(
     //• CL_INVALID_OPERATION if the build of a program executable for any of the devices listed in device_list by a previous call to clBuildProgram for program has not completed.
     //• CL_INVALID_OPERATION if program was not created with clCreateProgramWithSource, clCreateProgramWithIL or clCreateProgramWithBinary.
 
+    debug_logging(p, &devs);
     if res {
         Ok(())
     } else {
-        if Platform::dbg().program {
-            for dev in &devs {
-                eprintln!("{}", p.log(dev));
-            }
-        }
         Err(CL_BUILD_PROGRAM_FAILURE)
     }
 }
@@ -381,14 +388,10 @@ fn compile_program(
     // • CL_INVALID_COMPILER_OPTIONS if the compiler options specified by options are invalid.
     // • CL_INVALID_OPERATION if the compilation or build of a program executable for any of the devices listed in device_list by a previous call to clCompileProgram or clBuildProgram for program has not completed.
 
+    debug_logging(p, &devs);
     if res {
         Ok(())
     } else {
-        if Platform::dbg().program {
-            for dev in &devs {
-                eprintln!("{}", p.log(dev));
-            }
-        }
         Err(CL_COMPILE_PROGRAM_FAILURE)
     }
 }
@@ -451,6 +454,7 @@ pub fn link_program(
         cb.call(&res);
     }
 
+    debug_logging(&res, &devs);
     Ok((cl_program::from_arc(res), code))
 
     //• CL_INVALID_LINKER_OPTIONS if the linker options specified by options are invalid.

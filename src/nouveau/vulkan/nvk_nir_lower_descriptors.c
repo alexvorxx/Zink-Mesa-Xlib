@@ -8,17 +8,538 @@
 #include "nvk_shader.h"
 
 #include "vk_pipeline.h"
-#include "vk_pipeline_layout.h"
 
 #include "nir_builder.h"
 #include "nir_deref.h"
 
+struct lower_desc_cbuf {
+   struct nvk_cbuf key;
+
+   uint32_t use_count;
+
+   uint64_t start;
+   uint64_t end;
+};
+
+static uint32_t
+hash_cbuf(const void *data)
+{
+   return _mesa_hash_data(data, sizeof(struct nvk_cbuf));
+}
+
+static bool
+cbufs_equal(const void *a, const void *b)
+{
+   return memcmp(a, b, sizeof(struct nvk_cbuf)) == 0;
+}
+
+static int
+compar_cbufs(const void *_a, const void *_b)
+{
+   const struct lower_desc_cbuf *a = _a;
+   const struct lower_desc_cbuf *b = _b;
+
+#define COMPAR(field, pos) \
+   if (a->field < b->field) return -(pos); \
+   if (a->field > b->field) return (pos);
+
+   /* Sort by most used first */
+   COMPAR(use_count, -1)
+
+   /* Keep the list stable by then sorting by key fields. */
+   COMPAR(key.type, 1)
+   COMPAR(key.desc_set, 1)
+   COMPAR(key.dynamic_idx, 1)
+   COMPAR(key.desc_offset, 1)
+
+#undef COMPAR
+
+   return 0;
+}
+
 struct lower_descriptors_ctx {
-   const struct vk_pipeline_layout *layout;
+   const struct nvk_descriptor_set_layout *set_layouts[NVK_MAX_SETS];
+
    bool clamp_desc_array_bounds;
    nir_address_format ubo_addr_format;
    nir_address_format ssbo_addr_format;
+
+   struct hash_table *cbufs;
+   struct nvk_cbuf_map *cbuf_map;
 };
+
+static void
+record_cbuf_use(const struct nvk_cbuf *key, uint64_t start, uint64_t end,
+                struct lower_descriptors_ctx *ctx)
+{
+   struct hash_entry *entry = _mesa_hash_table_search(ctx->cbufs, key);
+   if (entry != NULL) {
+      struct lower_desc_cbuf *cbuf = entry->data;
+      cbuf->use_count++;
+      cbuf->start = MIN2(cbuf->start, start);
+      cbuf->end = MAX2(cbuf->end, end);
+   } else {
+      struct lower_desc_cbuf *cbuf =
+         ralloc(ctx->cbufs, struct lower_desc_cbuf);
+      *cbuf = (struct lower_desc_cbuf) {
+         .key = *key,
+         .use_count = 1,
+         .start = start,
+         .end = end,
+      };
+      _mesa_hash_table_insert(ctx->cbufs, &cbuf->key, cbuf);
+   }
+}
+
+static const struct nvk_descriptor_set_binding_layout *
+get_binding_layout(uint32_t set, uint32_t binding,
+                   const struct lower_descriptors_ctx *ctx)
+{
+   assert(set < NVK_MAX_SETS);
+   assert(ctx->set_layouts[set] != NULL);
+
+   const struct nvk_descriptor_set_layout *set_layout = ctx->set_layouts[set];
+
+   assert(binding < set_layout->binding_count);
+   return &set_layout->binding[binding];
+}
+
+static void
+record_descriptor_cbuf_use(uint32_t set, uint32_t binding, nir_src *index,
+                           struct lower_descriptors_ctx *ctx)
+{
+   const struct nvk_descriptor_set_binding_layout *binding_layout =
+      get_binding_layout(set, binding, ctx);
+
+   const struct nvk_cbuf key = {
+      .type = NVK_CBUF_TYPE_DESC_SET,
+      .desc_set = set,
+   };
+
+   uint64_t start, end;
+   if (index == NULL) {
+      /* When we don't have an index, assume 0 */
+      start = binding_layout->offset;
+      end = start + binding_layout->stride;
+   } else if (nir_src_is_const(*index)) {
+      start = binding_layout->offset +
+              nir_src_as_uint(*index) * binding_layout->stride;
+      end = start + binding_layout->stride;
+   } else {
+      start = binding_layout->offset;
+      end = start + binding_layout->array_size * binding_layout->stride;
+   }
+
+   record_cbuf_use(&key, start, end, ctx);
+}
+
+static void
+record_vulkan_resource_cbuf_use(nir_intrinsic_instr *intrin,
+                                struct lower_descriptors_ctx *ctx)
+{
+   assert(intrin->intrinsic == nir_intrinsic_vulkan_resource_index);
+   const VkDescriptorType desc_type = nir_intrinsic_desc_type(intrin);
+
+   /* These we'll handle later */
+   if (desc_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+       desc_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+      return;
+
+   record_descriptor_cbuf_use(nir_intrinsic_desc_set(intrin),
+                              nir_intrinsic_binding(intrin),
+                              &intrin->src[0], ctx);
+}
+
+static void
+record_deref_descriptor_cbuf_use(nir_deref_instr *deref,
+                                 struct lower_descriptors_ctx *ctx)
+{
+   nir_src *index_src = NULL;
+   if (deref->deref_type == nir_deref_type_array) {
+      index_src = &deref->arr.index;
+      deref = nir_deref_instr_parent(deref);
+   }
+
+   assert(deref->deref_type == nir_deref_type_var);
+   nir_variable *var = deref->var;
+
+   record_descriptor_cbuf_use(var->data.descriptor_set,
+                              var->data.binding,
+                              index_src, ctx);
+}
+
+static void
+record_tex_descriptor_cbuf_use(nir_tex_instr *tex,
+                               struct lower_descriptors_ctx *ctx)
+{
+   const int texture_src_idx =
+      nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
+   const int sampler_src_idx =
+      nir_tex_instr_src_index(tex, nir_tex_src_sampler_deref);
+
+   if (texture_src_idx >= 0) {
+      nir_deref_instr *deref = nir_src_as_deref(tex->src[texture_src_idx].src);
+      record_deref_descriptor_cbuf_use(deref, ctx);
+   }
+
+   if (sampler_src_idx >= 0) {
+      nir_deref_instr *deref = nir_src_as_deref(tex->src[sampler_src_idx].src);
+      record_deref_descriptor_cbuf_use(deref, ctx);
+   }
+}
+
+static struct nvk_cbuf
+ubo_deref_to_cbuf(nir_deref_instr *deref,
+                  nir_intrinsic_instr **resource_index_out,
+                  uint64_t *offset_out,
+                  uint64_t *start_out, uint64_t *end_out,
+                  const struct lower_descriptors_ctx *ctx)
+{
+   assert(nir_deref_mode_is(deref, nir_var_mem_ubo));
+
+   /* In case we early return */
+   *offset_out = 0;
+   *start_out = 0;
+   *end_out = UINT64_MAX;
+   *resource_index_out = NULL;
+
+   const struct nvk_cbuf invalid = {
+      .type = NVK_CBUF_TYPE_INVALID,
+   };
+
+   uint64_t offset = 0;
+   uint64_t range = glsl_get_explicit_size(deref->type, false);
+   bool offset_valid = true;
+   while (deref->deref_type != nir_deref_type_cast) {
+      nir_deref_instr *parent = nir_deref_instr_parent(deref);
+
+      switch (deref->deref_type) {
+      case nir_deref_type_var:
+         unreachable("Buffers don't use variables in Vulkan");
+
+      case nir_deref_type_array:
+      case nir_deref_type_array_wildcard: {
+         uint32_t stride = nir_deref_instr_array_stride(deref);
+         if (deref->deref_type == nir_deref_type_array &&
+             nir_src_is_const(deref->arr.index)) {
+            offset += nir_src_as_uint(deref->arr.index) * stride;
+         } else {
+            range = glsl_get_length(parent->type) * stride;
+         }
+         break;
+      }
+
+      case nir_deref_type_ptr_as_array:
+         /* All bets are off.  We shouldn't see these most of the time
+          * anyway, even with variable pointers.
+          */
+         offset_valid = false;
+         unreachable("Variable pointers aren't allowed on UBOs");
+         break;
+
+      case nir_deref_type_struct: {
+         offset += glsl_get_struct_field_offset(parent->type,
+                                                deref->strct.index);
+         break;
+      }
+
+      default:
+         unreachable("Unknown deref type");
+      }
+
+      deref = parent;
+   }
+
+   nir_intrinsic_instr *load_desc = nir_src_as_intrinsic(deref->parent);
+   if (load_desc == NULL ||
+       load_desc->intrinsic != nir_intrinsic_load_vulkan_descriptor)
+      return invalid;
+
+   nir_intrinsic_instr *res_index = nir_src_as_intrinsic(load_desc->src[0]);
+   if (res_index == NULL ||
+       res_index->intrinsic != nir_intrinsic_vulkan_resource_index)
+      return invalid;
+
+   /* We try to early return as little as possible prior to this point so we
+    * can return the resource index intrinsic in as many cases as possible.
+    * After this point, though, early returns are fair game.
+    */
+   *resource_index_out = res_index;
+
+   if (!offset_valid || !nir_src_is_const(res_index->src[0]))
+      return invalid;
+
+   uint32_t set = nir_intrinsic_desc_set(res_index);
+   uint32_t binding = nir_intrinsic_binding(res_index);
+   uint32_t index = nir_src_as_uint(res_index->src[0]);
+
+   const struct nvk_descriptor_set_binding_layout *binding_layout =
+      get_binding_layout(set, binding, ctx);
+
+   switch (binding_layout->type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+      *offset_out = 0;
+      *start_out = offset;
+      *end_out = offset + range;
+      return (struct nvk_cbuf) {
+         .type = NVK_CBUF_TYPE_UBO_DESC,
+         .desc_set = set,
+         .desc_offset = binding_layout->offset +
+                        index * binding_layout->stride,
+      };
+   }
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: {
+      *offset_out = 0;
+      *start_out = offset;
+      *end_out = offset + range;
+
+      return (struct nvk_cbuf) {
+         .type = NVK_CBUF_TYPE_DYNAMIC_UBO,
+         .desc_set = set,
+         .dynamic_idx = binding_layout->dynamic_buffer_index + index,
+      };
+   }
+
+   case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: {
+      *offset_out = binding_layout->offset;
+      *start_out = binding_layout->offset + offset;
+      *end_out = *start_out + range;
+
+      return (struct nvk_cbuf) {
+         .type = NVK_CBUF_TYPE_DESC_SET,
+         .desc_set = set,
+      };
+   }
+
+   default:
+      return invalid;
+   }
+}
+
+static void
+record_load_ubo_cbuf_uses(nir_deref_instr *deref,
+                          struct lower_descriptors_ctx *ctx)
+{
+   assert(nir_deref_mode_is(deref, nir_var_mem_ubo));
+
+   UNUSED uint64_t offset;
+   uint64_t start, end;
+   nir_intrinsic_instr *res_index;
+   struct nvk_cbuf cbuf =
+      ubo_deref_to_cbuf(deref, &res_index, &offset, &start, &end, ctx);
+
+   if (cbuf.type != NVK_CBUF_TYPE_INVALID) {
+      record_cbuf_use(&cbuf, start, end, ctx);
+   } else if (res_index != NULL) {
+      record_vulkan_resource_cbuf_use(res_index, ctx);
+   }
+}
+
+static bool
+record_cbuf_uses_instr(UNUSED nir_builder *b, nir_instr *instr, void *_ctx)
+{
+   struct lower_descriptors_ctx *ctx = _ctx;
+
+   switch (instr->type) {
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+      switch (intrin->intrinsic) {
+      case nir_intrinsic_vulkan_resource_index:
+         record_vulkan_resource_cbuf_use(intrin, ctx);
+         return false;
+
+      case nir_intrinsic_load_deref: {
+         nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+         if (nir_deref_mode_is(deref, nir_var_mem_ubo))
+            record_load_ubo_cbuf_uses(deref, ctx);
+         return false;
+      }
+
+      case nir_intrinsic_image_deref_load:
+      case nir_intrinsic_image_deref_store:
+      case nir_intrinsic_image_deref_atomic:
+      case nir_intrinsic_image_deref_atomic_swap:
+      case nir_intrinsic_image_deref_size:
+      case nir_intrinsic_image_deref_samples:
+      case nir_intrinsic_image_deref_load_param_intel:
+      case nir_intrinsic_image_deref_load_raw_intel:
+      case nir_intrinsic_image_deref_store_raw_intel: {
+         nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+         record_deref_descriptor_cbuf_use(deref, ctx);
+         return false;
+      }
+
+      default:
+         return false;
+      }
+      unreachable("All cases return false");
+   }
+
+   case nir_instr_type_tex:
+      record_tex_descriptor_cbuf_use(nir_instr_as_tex(instr), ctx);
+      return false;
+
+   default:
+      return false;
+   }
+}
+
+static void
+build_cbuf_map(nir_shader *nir, struct lower_descriptors_ctx *ctx)
+{
+   ctx->cbufs = _mesa_hash_table_create(NULL, hash_cbuf, cbufs_equal);
+
+   nir_shader_instructions_pass(nir, record_cbuf_uses_instr,
+                                nir_metadata_all, (void *)ctx);
+
+   struct lower_desc_cbuf *cbufs =
+      ralloc_array(ctx->cbufs, struct lower_desc_cbuf,
+                   _mesa_hash_table_num_entries(ctx->cbufs));
+
+   uint32_t num_cbufs = 0;
+   hash_table_foreach(ctx->cbufs, entry) {
+      struct lower_desc_cbuf *cbuf = entry->data;
+
+      /* We currently only start cbufs at the beginning so if it starts after
+       * the max cbuf size, there's no point in including it in the list.
+       */
+      if (cbuf->start > NVK_MAX_CBUF_SIZE)
+         continue;
+
+      cbufs[num_cbufs++] = *cbuf;
+   }
+
+   qsort(cbufs, num_cbufs, sizeof(*cbufs), compar_cbufs);
+
+   uint32_t mapped_cbuf_count = 0;
+
+   /* Root descriptors always go in cbuf 0 */
+   ctx->cbuf_map->cbufs[mapped_cbuf_count++] = (struct nvk_cbuf) {
+      .type = NVK_CBUF_TYPE_ROOT_DESC,
+   };
+
+   if (nir->constant_data_size > 0) {
+      ctx->cbuf_map->cbufs[mapped_cbuf_count++] = (struct nvk_cbuf) {
+         .type = NVK_CBUF_TYPE_SHADER_DATA,
+      };
+   }
+
+   uint8_t max_cbuf_bindings;
+   if (nir->info.stage == MESA_SHADER_COMPUTE ||
+       nir->info.stage == MESA_SHADER_KERNEL) {
+      max_cbuf_bindings = 8;
+   } else {
+      max_cbuf_bindings = 16;
+   }
+
+   for (uint32_t i = 0; i < num_cbufs; i++) {
+      if (mapped_cbuf_count >= max_cbuf_bindings)
+         break;
+
+      /* We can't support indirect cbufs in compute yet */
+      if ((nir->info.stage == MESA_SHADER_COMPUTE ||
+           nir->info.stage == MESA_SHADER_KERNEL) &&
+          cbufs[i].key.type == NVK_CBUF_TYPE_UBO_DESC)
+         continue;
+
+      ctx->cbuf_map->cbufs[mapped_cbuf_count++] = cbufs[i].key;
+   }
+   ctx->cbuf_map->cbuf_count = mapped_cbuf_count;
+
+   ralloc_free(ctx->cbufs);
+   ctx->cbufs = NULL;
+}
+
+static int
+get_mapped_cbuf_idx(const struct nvk_cbuf *key,
+                    const struct lower_descriptors_ctx *ctx)
+{
+   if (ctx->cbuf_map == NULL)
+      return -1;
+
+   for (uint32_t c = 0; c < ctx->cbuf_map->cbuf_count; c++) {
+      if (cbufs_equal(&ctx->cbuf_map->cbufs[c], key)) {
+         return c;
+      }
+   }
+
+   return -1;
+}
+
+static bool
+lower_load_ubo_intrin(nir_builder *b, nir_intrinsic_instr *load, void *_ctx)
+{
+   const struct lower_descriptors_ctx *ctx = _ctx;
+
+   if (load->intrinsic != nir_intrinsic_load_deref)
+      return false;
+
+   nir_deref_instr *deref = nir_src_as_deref(load->src[0]);
+   if (!nir_deref_mode_is(deref, nir_var_mem_ubo))
+      return false;
+
+   uint64_t offset, end;
+   UNUSED uint64_t start;
+   UNUSED nir_intrinsic_instr *res_index;
+   struct nvk_cbuf cbuf_key =
+      ubo_deref_to_cbuf(deref, &res_index, &offset, &start, &end, ctx);
+
+   if (cbuf_key.type == NVK_CBUF_TYPE_INVALID)
+      return false;
+
+   if (end > NVK_MAX_CBUF_SIZE)
+      return false;
+
+   int cbuf_idx = get_mapped_cbuf_idx(&cbuf_key, ctx);
+   if (cbuf_idx < 0)
+      return false;
+
+   b->cursor = nir_before_instr(&load->instr);
+
+   nir_deref_path path;
+   nir_deref_path_init(&path, deref, NULL);
+
+   nir_def *addr = nir_imm_ivec2(b, cbuf_idx, offset);
+   nir_address_format addr_format = nir_address_format_32bit_index_offset;
+   for (nir_deref_instr **p = &path.path[1]; *p != NULL; p++)
+      addr = nir_explicit_io_address_from_deref(b, *p, addr, addr_format);
+
+   nir_deref_path_finish(&path);
+
+   nir_lower_explicit_io_instr(b, load, addr, addr_format);
+
+   return true;
+}
+
+static bool
+lower_load_constant(nir_builder *b, nir_intrinsic_instr *load,
+                    const struct lower_descriptors_ctx *ctx)
+{
+   assert(load->intrinsic == nir_intrinsic_load_constant);
+
+   const struct nvk_cbuf cbuf_key = {
+      .type = NVK_CBUF_TYPE_SHADER_DATA,
+   };
+   int cbuf_idx = get_mapped_cbuf_idx(&cbuf_key, ctx);
+   assert(cbuf_idx >= 0);
+
+   uint32_t base = nir_intrinsic_base(load);
+   uint32_t range = nir_intrinsic_range(load);
+
+   b->cursor = nir_before_instr(&load->instr);
+
+   nir_def *offset = nir_iadd_imm(b, load->src[0].ssa, base);
+   nir_def *data = nir_load_ubo(b, load->def.num_components, load->def.bit_size,
+                                nir_imm_int(b, cbuf_idx), offset,
+                                .align_mul = nir_intrinsic_align_mul(load),
+                                .align_offset = nir_intrinsic_align_offset(load),
+                                .range_base = base, .range = range);
+
+   nir_def_rewrite_uses(&load->def, data);
+
+   return true;
+}
 
 static nir_def *
 load_descriptor_set_addr(nir_builder *b, uint32_t set,
@@ -32,18 +553,31 @@ load_descriptor_set_addr(nir_builder *b, uint32_t set,
                        .align_mul = 8, .align_offset = 0, .range = ~0);
 }
 
-static const struct nvk_descriptor_set_binding_layout *
-get_binding_layout(uint32_t set, uint32_t binding,
-                   const struct lower_descriptors_ctx *ctx)
+static nir_def *
+load_dynamic_buffer_start(nir_builder *b, uint32_t set,
+                          const struct lower_descriptors_ctx *ctx)
 {
-   const struct vk_pipeline_layout *layout = ctx->layout;
+   int dynamic_buffer_start_imm = 0;
+   for (uint32_t s = 0; s < set; s++) {
+      if (ctx->set_layouts[s] == NULL) {
+         dynamic_buffer_start_imm = -1;
+         break;
+      }
 
-   assert(set < layout->set_count);
-   const struct nvk_descriptor_set_layout *set_layout =
-      vk_to_nvk_descriptor_set_layout(layout->set_layouts[set]);
+      dynamic_buffer_start_imm += ctx->set_layouts[s]->dynamic_buffer_count;
+   }
 
-   assert(binding < set_layout->binding_count);
-   return &set_layout->binding[binding];
+   if (dynamic_buffer_start_imm >= 0) {
+      return nir_imm_int(b, dynamic_buffer_start_imm);
+   } else {
+      uint32_t root_offset =
+         nvk_root_descriptor_offset(set_dynamic_buffer_start) + set;
+
+      return nir_u2u32(b, nir_load_ubo(b, 1, 8, nir_imm_int(b, 0),
+                                       nir_imm_int(b, root_offset),
+                                       .align_mul = 1, .align_offset = 0,
+                                       .range = ~0));
+   }
 }
 
 static nir_def *
@@ -61,20 +595,25 @@ load_descriptor(nir_builder *b, unsigned num_components, unsigned bit_size,
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
       /* Get the index in the root descriptor table dynamic_buffers array. */
-      uint8_t dynamic_buffer_start =
-         nvk_descriptor_set_layout_dynbuf_start(ctx->layout, set);
+      nir_def *dynamic_buffer_start = load_dynamic_buffer_start(b, set, ctx);
 
-      index = nir_iadd_imm(b, index,
-                           dynamic_buffer_start +
-                           binding_layout->dynamic_buffer_index);
+      index = nir_iadd(b, index,
+                       nir_iadd_imm(b, dynamic_buffer_start,
+                                    binding_layout->dynamic_buffer_index));
 
       nir_def *root_desc_offset =
          nir_iadd_imm(b, nir_imul_imm(b, index, sizeof(struct nvk_buffer_address)),
                       nvk_root_descriptor_offset(dynamic_buffers));
 
-      return nir_load_ubo(b, num_components, bit_size,
-                          nir_imm_int(b, 0), root_desc_offset,
-                          .align_mul = 16, .align_offset = 0, .range = ~0);
+      assert(num_components == 4 && bit_size == 32);
+      nir_def *desc =
+         nir_load_ubo(b, 4, 32, nir_imm_int(b, 0), root_desc_offset,
+                      .align_mul = 16, .align_offset = 0, .range = ~0);
+      /* We know a priori that the the .w compnent (offset) is zero */
+      return nir_vec4(b, nir_channel(b, desc, 0),
+                         nir_channel(b, desc, 1),
+                         nir_channel(b, desc, 2),
+                         nir_imm_int(b, 0));
    }
 
    case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: {
@@ -99,14 +638,42 @@ load_descriptor(nir_builder *b, unsigned num_components, unsigned bit_size,
          nir_iadd_imm(b, nir_imul_imm(b, index, binding_layout->stride),
                          binding_layout->offset + offset_B);
 
-      unsigned desc_align = (1 << (ffs(binding_layout->stride) - 1));
-      desc_align = MIN2(desc_align, 16);
+      unsigned desc_align_mul = (1 << (ffs(binding_layout->stride) - 1));
+      desc_align_mul = MIN2(desc_align_mul, 16);
+      unsigned desc_align_offset = binding_layout->offset + offset_B;
+      desc_align_offset %= desc_align_mul;
 
-      nir_def *set_addr = load_descriptor_set_addr(b, set, ctx);
-      return nir_load_global_constant_offset(b, num_components, bit_size,
-                                             set_addr, desc_ubo_offset,
-                                             .align_mul = desc_align,
-                                             .align_offset = 0);
+      const struct nvk_cbuf cbuf_key = {
+         .type = NVK_CBUF_TYPE_DESC_SET,
+         .desc_set = set,
+      };
+      int cbuf_idx = get_mapped_cbuf_idx(&cbuf_key, ctx);
+
+      nir_def *desc;
+      if (cbuf_idx >= 0) {
+         desc = nir_load_ubo(b, num_components, bit_size,
+                             nir_imm_int(b, cbuf_idx),
+                             desc_ubo_offset,
+                             .align_mul = desc_align_mul,
+                             .align_offset = desc_align_offset,
+                             .range = ~0);
+      } else {
+         nir_def *set_addr = load_descriptor_set_addr(b, set, ctx);
+         desc = nir_load_global_constant_offset(b, num_components, bit_size,
+                                                set_addr, desc_ubo_offset,
+                                                .align_mul = desc_align_mul,
+                                                .align_offset = desc_align_offset);
+      }
+      if (binding_layout->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+          binding_layout->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+         /* We know a priori that the the .w compnent (offset) is zero */
+         assert(num_components == 4 && bit_size == 32);
+         desc = nir_vec4(b, nir_channel(b, desc, 0),
+                            nir_channel(b, desc, 1),
+                            nir_channel(b, desc, 2),
+                            nir_imm_int(b, 0));
+      }
+      return desc;
    }
    }
 }
@@ -164,46 +731,29 @@ try_lower_load_vulkan_descriptor(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 static bool
-lower_num_workgroups(nir_builder *b, nir_intrinsic_instr *load,
-                     const struct lower_descriptors_ctx *ctx)
+_lower_sysval_to_root_table(nir_builder *b, nir_intrinsic_instr *intrin,
+                            uint32_t root_table_offset,
+                            const struct lower_descriptors_ctx *ctx)
 {
-   const uint32_t root_table_offset =
-      nvk_root_descriptor_offset(cs.group_count);
+   b->cursor = nir_instr_remove(&intrin->instr);
 
-   b->cursor = nir_instr_remove(&load->instr);
+   nir_def *val = nir_load_ubo(b, intrin->def.num_components,
+                               intrin->def.bit_size,
+                               nir_imm_int(b, 0), /* Root table */
+                               nir_imm_int(b, root_table_offset),
+                               .align_mul = 4,
+                               .align_offset = 0,
+                               .range = root_table_offset + 3 * 4);
 
-   nir_def *val = nir_load_ubo(b, 3, 32,
-                                   nir_imm_int(b, 0), /* Root table */
-                                   nir_imm_int(b, root_table_offset),
-                                   .align_mul = 4,
-                                   .align_offset = 0,
-                                   .range = root_table_offset + 3 * 4);
-
-   nir_def_rewrite_uses(&load->def, val);
+   nir_def_rewrite_uses(&intrin->def, val);
 
    return true;
 }
 
-static bool
-lower_load_base_workgroup_id(nir_builder *b, nir_intrinsic_instr *load,
-                             const struct lower_descriptors_ctx *ctx)
-{
-   const uint32_t root_table_offset =
-      nvk_root_descriptor_offset(cs.base_group);
-
-   b->cursor = nir_instr_remove(&load->instr);
-
-   nir_def *val = nir_load_ubo(b, 3, 32,
-                                   nir_imm_int(b, 0),
-                                   nir_imm_int(b, root_table_offset),
-                                   .align_mul = 4,
-                                   .align_offset = 0,
-                                   .range = root_table_offset + 3 * 4);
-
-   nir_def_rewrite_uses(&load->def, val);
-
-   return true;
-}
+#define lower_sysval_to_root_table(b, intrin, member, ctx)           \
+   _lower_sysval_to_root_table(b, intrin,                            \
+                               nvk_root_descriptor_offset(member),   \
+                               ctx)
 
 static bool
 lower_load_push_constant(nir_builder *b, nir_intrinsic_instr *load,
@@ -225,27 +775,6 @@ lower_load_push_constant(nir_builder *b, nir_intrinsic_instr *load,
                    .align_offset = 0,
                    .range = push_region_offset + base +
                             nir_intrinsic_range(load));
-
-   nir_def_rewrite_uses(&load->def, val);
-
-   return true;
-}
-
-static bool
-lower_load_view_index(nir_builder *b, nir_intrinsic_instr *load,
-                      const struct lower_descriptors_ctx *ctx)
-{
-   const uint32_t root_table_offset =
-      nvk_root_descriptor_offset(draw.view_index);
-
-   b->cursor = nir_instr_remove(&load->instr);
-
-   nir_def *val = nir_load_ubo(b, 1, 32,
-                                   nir_imm_int(b, 0),
-                                   nir_imm_int(b, root_table_offset),
-                                   .align_mul = 4,
-                                   .align_offset = 0,
-                                   .range = root_table_offset + 4);
 
    nir_def_rewrite_uses(&load->def, val);
 
@@ -341,6 +870,9 @@ try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
                  const struct lower_descriptors_ctx *ctx)
 {
    switch (intrin->intrinsic) {
+   case nir_intrinsic_load_constant:
+      return lower_load_constant(b, intrin, ctx);
+
    case nir_intrinsic_load_vulkan_descriptor:
       return try_lower_load_vulkan_descriptor(b, intrin, ctx);
 
@@ -348,16 +880,26 @@ try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
       unreachable("Should have been lowered by nir_lower_cs_intrinsics()");
 
    case nir_intrinsic_load_num_workgroups:
-      return lower_num_workgroups(b, intrin, ctx);
+      return lower_sysval_to_root_table(b, intrin, cs.group_count, ctx);
 
    case nir_intrinsic_load_base_workgroup_id:
-      return lower_load_base_workgroup_id(b, intrin, ctx);
+      return lower_sysval_to_root_table(b, intrin, cs.base_group, ctx);
 
    case nir_intrinsic_load_push_constant:
       return lower_load_push_constant(b, intrin, ctx);
 
+   case nir_intrinsic_load_base_vertex:
+   case nir_intrinsic_load_first_vertex:
+      return lower_sysval_to_root_table(b, intrin, draw.base_vertex, ctx);
+
+   case nir_intrinsic_load_base_instance:
+      return lower_sysval_to_root_table(b, intrin, draw.base_instance, ctx);
+
+   case nir_intrinsic_load_draw_id:
+      return lower_sysval_to_root_table(b, intrin, draw.draw_id, ctx);
+
    case nir_intrinsic_load_view_index:
-      return lower_load_view_index(b, intrin, ctx);
+      return lower_sysval_to_root_table(b, intrin, draw.view_index, ctx);
 
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_image_deref_store:
@@ -495,15 +1037,17 @@ lower_ssbo_resource_index(nir_builder *b, nir_intrinsic_instr *intrin,
                       nir_imm_int(b, root_desc_addr_offset),
                       .align_mul = 8, .align_offset = 0, .range = ~0);
 
-      const uint8_t dynamic_buffer_start =
-         nvk_descriptor_set_layout_dynbuf_start(ctx->layout, set) +
-         binding_layout->dynamic_buffer_index;
+      nir_def *dynamic_buffer_start =
+         nir_iadd_imm(b, load_dynamic_buffer_start(b, set, ctx),
+                      binding_layout->dynamic_buffer_index);
 
-      const uint32_t dynamic_binding_offset =
-         nvk_root_descriptor_offset(dynamic_buffers) +
-         dynamic_buffer_start * sizeof(struct nvk_buffer_address);
+      nir_def *dynamic_binding_offset =
+         nir_iadd_imm(b, nir_imul_imm(b, dynamic_buffer_start,
+                                      sizeof(struct nvk_buffer_address)),
+                      nvk_root_descriptor_offset(dynamic_buffers));
 
-      binding_addr = nir_iadd_imm(b, root_desc_addr, dynamic_binding_offset);
+      binding_addr = nir_iadd(b, root_desc_addr,
+                                 nir_u2u64(b, dynamic_binding_offset));
       binding_stride = sizeof(struct nvk_buffer_address);
       break;
    }
@@ -598,9 +1142,9 @@ lower_load_ssbo_descriptor(nir_builder *b, nir_intrinsic_instr *intrin,
    case nir_address_format_64bit_global:
       /* Mask off the binding stride */
       addr = nir_iand_imm(b, addr, BITFIELD64_MASK(56));
-      desc = nir_build_load_global(b, 1, 64, addr,
-                                   .access = ACCESS_NON_WRITEABLE,
-                                   .align_mul = 16, .align_offset = 0);
+      desc = nir_build_load_global_constant(b, 1, 64, addr,
+                                            .align_mul = 16,
+                                            .align_offset = 0);
       break;
 
    case nir_address_format_64bit_global_32bit_offset: {
@@ -660,10 +1204,11 @@ lower_ssbo_descriptor_instr(nir_builder *b, nir_instr *instr,
 bool
 nvk_nir_lower_descriptors(nir_shader *nir,
                           const struct vk_pipeline_robustness_state *rs,
-                          const struct vk_pipeline_layout *layout)
+                          uint32_t set_layout_count,
+                          struct vk_descriptor_set_layout * const *set_layouts,
+                          struct nvk_cbuf_map *cbuf_map_out)
 {
    struct lower_descriptors_ctx ctx = {
-      .layout = layout,
       .clamp_desc_array_bounds =
          rs->storage_buffers != VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT ||
          rs->uniform_buffers != VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT ||
@@ -672,18 +1217,49 @@ nvk_nir_lower_descriptors(nir_shader *nir,
       .ubo_addr_format = nvk_buffer_addr_format(rs->uniform_buffers),
    };
 
-   /* We run in two passes.  The first attempts to lower everything it can.
-    * In the variable pointers case, some SSBO intrinsics may fail to lower
-    * but that's okay.  The second pass cleans up any SSBO intrinsics which
-    * are left and lowers them to slightly less efficient but variable-
-    * pointers-correct versions.
+   assert(set_layout_count <= NVK_MAX_SETS);
+   for (uint32_t s = 0; s < set_layout_count; s++) {
+      if (set_layouts[s] != NULL)
+         ctx.set_layouts[s] = vk_to_nvk_descriptor_set_layout(set_layouts[s]);
+   }
+
+   /* We run in four passes:
+    *
+    *  1. Find ranges of UBOs that we can promote to bound UBOs.  Nothing is
+    *     actually lowered in this pass.  It's just analysis.
+    *
+    *  2. Try to lower UBO loads to cbufs based on the map we just created.
+    *     We need to do this before the main lowering pass because it relies
+    *     on the original descriptor load intrinsics.
+    *
+    *  3. Attempt to lower everything with direct descriptors.  This may fail
+    *     to lower some SSBO intrinsics when variable pointers are used.
+    *
+    *  4. Clean up any SSBO intrinsics which are left and lower them to
+    *     slightly less efficient but variable- pointers-correct versions.
     */
-   return nir_shader_instructions_pass(nir, try_lower_descriptors_instr,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance,
-                                       (void *)&ctx) |
-          nir_shader_instructions_pass(nir, lower_ssbo_descriptor_instr,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance,
-                                       (void *)&ctx);
+
+   bool pass_lower_ubo = false;
+   if (cbuf_map_out != NULL) {
+      ctx.cbuf_map = cbuf_map_out;
+      build_cbuf_map(nir, &ctx);
+
+      pass_lower_ubo =
+         nir_shader_intrinsics_pass(nir, lower_load_ubo_intrin,
+                                    nir_metadata_block_index |
+                                    nir_metadata_dominance,
+                                    (void *)&ctx);
+   }
+
+   bool pass_lower_descriptors =
+      nir_shader_instructions_pass(nir, try_lower_descriptors_instr,
+                                   nir_metadata_block_index |
+                                   nir_metadata_dominance,
+                                   (void *)&ctx);
+   bool pass_lower_ssbo =
+      nir_shader_instructions_pass(nir, lower_ssbo_descriptor_instr,
+                                   nir_metadata_block_index |
+                                   nir_metadata_dominance,
+                                   (void *)&ctx);
+   return pass_lower_ubo || pass_lower_descriptors || pass_lower_ssbo;
 }

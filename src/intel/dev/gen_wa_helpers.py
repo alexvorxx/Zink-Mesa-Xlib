@@ -77,18 +77,20 @@ enum intel_workaround_id {
    INTEL_WA_NUM
 };
 
-/* These defines are used to identify when a workaround potentially applies
- * in genxml code.  They should not be used directly. intel_needs_workaround()
- * checks these definitions to eliminate bitset tests at compile time.
+/* These defines apply workarounds to a subset of platforms within a graphics
+ * generation.  They must be used in conjunction with intel_needs_workaround()
+ * to check platform details.  Use these macros to compile out genxml code on
+ * generations where it can never execute.  Whenever possible, prefer use of
+ * INTEL_NEEDS_WA_{num} instead of INTEL_WA_{num}_GFX_VER
  */
 % for a in wa_def:
 #define INTEL_WA_${a}_GFX_VER ${wa_macro[a]}
 % endfor
 
-/* These defines are suitable for use to compile out genxml code using #if
- * guards.  Workarounds that apply to part of a generation must use a
- * combination of run time checks and INTEL_WA_{NUM}_GFX_VER macros.  Those
- * workarounds are 'poisoned' below.
+/* These defines may be used to compile out genxml workaround implementations
+ * using #if guards.  If a definition has been 'poisoned' below, then it applies to a
+ * subset of a graphics generation.  In that case, use INTEL_WA_{NUM}_GFX_VER macros
+ * in conjunction with calls to intel_needs_workaround().
  */
 % for a in partial_gens:
     % if partial_gens[a]:
@@ -247,8 +249,9 @@ def partial_gens(wa_def):
 
         # eliminate each platform specifically indicated by the WA, to see if
         # are left over.
-        for platform in bug["mesa_platforms"]:
-            wa_required_for_completeness.remove(platform)
+        for platform, desc in bug["mesa_platforms"].items():
+            if desc["steppings"] == "all":
+                wa_required_for_completeness.remove(platform)
 
         # if any platform remains in the required set, then this wa *partially*
         # applies to one of the gfxvers.

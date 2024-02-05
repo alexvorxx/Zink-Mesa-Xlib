@@ -28,9 +28,13 @@
 
 #include "panvk_private.h"
 
-#include "pan_bo.h"
+#include "decode.h"
+
 #include "pan_encoder.h"
 #include "pan_util.h"
+#include "pan_props.h"
+#include "pan_samples.h"
+
 #include "vk_cmd_enqueue_entrypoints.h"
 #include "vk_common_entrypoints.h"
 
@@ -112,10 +116,15 @@ panvk_get_device_uuid(void *uuid)
 }
 
 static const struct debug_control panvk_debug_options[] = {
-   {"startup", PANVK_DEBUG_STARTUP}, {"nir", PANVK_DEBUG_NIR},
-   {"trace", PANVK_DEBUG_TRACE},     {"sync", PANVK_DEBUG_SYNC},
-   {"afbc", PANVK_DEBUG_AFBC},       {"linear", PANVK_DEBUG_LINEAR},
-   {"dump", PANVK_DEBUG_DUMP},       {NULL, 0}};
+   {"startup", PANVK_DEBUG_STARTUP},
+   {"nir", PANVK_DEBUG_NIR},
+   {"trace", PANVK_DEBUG_TRACE},
+   {"sync", PANVK_DEBUG_SYNC},
+   {"afbc", PANVK_DEBUG_AFBC},
+   {"linear", PANVK_DEBUG_LINEAR},
+   {"dump", PANVK_DEBUG_DUMP},
+   {"no_known_warn", PANVK_DEBUG_NO_KNOWN_WARN},
+   {NULL, 0}};
 
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
 #define PANVK_USE_WSI_PLATFORM
@@ -149,6 +158,7 @@ panvk_get_device_extensions(const struct panvk_physical_device *device,
 {
    *ext = (struct vk_device_extension_table){
       .KHR_copy_commands2 = true,
+      .KHR_shader_expect_assume = true,
       .KHR_storage_buffer_storage_class = true,
       .KHR_descriptor_update_template = true,
 #ifdef PANVK_USE_WSI_PLATFORM
@@ -236,7 +246,7 @@ panvk_get_features(const struct panvk_physical_device *device,
       .separateDepthStencilLayouts = false,
       .hostQueryReset = false,
       .timelineSemaphore = false,
-      .bufferDeviceAddress = false,
+      .bufferDeviceAddress = true,
       .bufferDeviceAddressCaptureReplay = false,
       .bufferDeviceAddressMultiDevice = false,
       .vulkanMemoryModel = false,
@@ -280,6 +290,9 @@ panvk_get_features(const struct panvk_physical_device *device,
       /* VK_EXT_custom_border_color */
       .customBorderColors = true,
       .customBorderColorWithoutFormat = true,
+
+      /* VK_KHR_shader_expect_assume */
+      .shaderExpectAssume = true,
    };
 }
 
@@ -292,8 +305,7 @@ panvk_physical_device_finish(struct panvk_physical_device *device)
 {
    panvk_wsi_finish(device);
 
-   panvk_arch_dispatch(device->pdev.arch, meta_cleanup, device);
-   panfrost_close_device(&device->pdev);
+   pan_kmod_dev_destroy(device->kmod.dev);
    if (device->master_fd != -1)
       close(device->master_fd);
 
@@ -305,6 +317,25 @@ panvk_destroy_physical_device(struct vk_physical_device *device)
 {
    panvk_physical_device_finish((struct panvk_physical_device *)device);
    vk_free(&device->instance->alloc, device);
+}
+
+static void *
+panvk_kmod_zalloc(const struct pan_kmod_allocator *allocator,
+                  size_t size, bool transient)
+{
+   const VkAllocationCallbacks *vkalloc = allocator->priv;
+
+   return vk_zalloc(vkalloc, size, 8,
+                    transient ? VK_SYSTEM_ALLOCATION_SCOPE_COMMAND
+                              : VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+}
+
+static void
+panvk_kmod_free(const struct pan_kmod_allocator *allocator, void *data)
+{
+   const VkAllocationCallbacks *vkalloc = allocator->priv;
+
+   return vk_free(vkalloc, data);
 }
 
 VkResult
@@ -335,6 +366,12 @@ panvk_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
       vk_free(pAllocator, instance);
       return vk_error(NULL, result);
    }
+
+   instance->kmod.allocator = (struct pan_kmod_allocator){
+      .zalloc = panvk_kmod_zalloc,
+      .free = panvk_kmod_free,
+      .priv = &instance->vk.alloc,
+   };
 
    instance->vk.physical_devices.try_create_for_drm =
       panvk_physical_device_try_create;
@@ -442,25 +479,28 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    }
 
    device->master_fd = master_fd;
-   if (instance->debug_flags & PANVK_DEBUG_TRACE)
-      device->pdev.debug |= PAN_DBG_TRACE;
 
-   device->pdev.debug |= PAN_DBG_NO_CACHE;
-   panfrost_open_device(NULL, fd, &device->pdev);
-   fd = -1;
+   device->kmod.dev = pan_kmod_dev_create(fd, PAN_KMOD_DEV_FLAG_OWNS_FD,
+                                          &instance->kmod.allocator);
+   pan_kmod_dev_query_props(device->kmod.dev, &device->kmod.props);
 
-   if (device->pdev.arch <= 5 || device->pdev.arch >= 8) {
+   unsigned arch = pan_arch(device->kmod.props.gpu_prod_id);
+
+   device->model = panfrost_get_model(device->kmod.props.gpu_prod_id);
+   device->formats.all = panfrost_format_table(arch);
+   device->formats.blendable = panfrost_blendable_format_table(arch);
+
+   if (arch <= 5 || arch >= 8) {
       result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
-                         "%s not supported", device->pdev.model->name);
+                         "%s not supported", device->model->name);
       goto fail;
    }
 
-   panvk_arch_dispatch(device->pdev.arch, meta_init, device);
-
    memset(device->name, 0, sizeof(device->name));
-   sprintf(device->name, "%s", device->pdev.model->name);
+   sprintf(device->name, "%s", device->model->name);
 
-   if (panvk_device_get_cache_uuid(device->pdev.gpu_id, device->cache_uuid)) {
+   if (panvk_device_get_cache_uuid(device->kmod.props.gpu_prod_id,
+                                   device->cache_uuid)) {
       result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
                          "cannot generate UUID");
       goto fail_close_device;
@@ -471,7 +511,8 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    panvk_get_driver_uuid(&device->device_uuid);
    panvk_get_device_uuid(&device->device_uuid);
 
-   device->drm_syncobj_type = vk_drm_syncobj_get_type(device->pdev.fd);
+   device->drm_syncobj_type =
+      vk_drm_syncobj_get_type(device->kmod.dev->fd);
    /* We don't support timelines in the uAPI yet and we don't want it getting
     * suddenly turned on by vk_drm_syncobj_get_type() without us adding panvk
     * code for it first.
@@ -491,7 +532,7 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    return VK_SUCCESS;
 
 fail_close_device:
-   panfrost_close_device(&device->pdev);
+   pan_kmod_dev_destroy(device->kmod.dev);
 fail:
    if (fd != -1)
       close(fd);
@@ -789,8 +830,6 @@ static VkResult
 panvk_queue_init(struct panvk_device *device, struct panvk_queue *queue,
                  int idx, const VkDeviceQueueCreateInfo *create_info)
 {
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
-
    VkResult result = vk_queue_init(&queue->vk, &device->vk, create_info, idx);
    if (result != VK_SUCCESS)
       return result;
@@ -800,13 +839,15 @@ panvk_queue_init(struct panvk_device *device, struct panvk_queue *queue,
       .flags = DRM_SYNCOBJ_CREATE_SIGNALED,
    };
 
-   int ret = drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_CREATE, &create);
+   int ret = drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_CREATE, &create);
    if (ret) {
       vk_queue_finish(&queue->vk);
       return VK_ERROR_OUT_OF_HOST_MEMORY;
    }
 
-   switch (pdev->arch) {
+   unsigned arch = pan_arch(device->physical_device->kmod.props.gpu_prod_id);
+
+   switch (arch) {
    case 6:
       queue->vk.driver_submit = panvk_v6_queue_submit;
       break;
@@ -827,12 +868,118 @@ panvk_queue_finish(struct panvk_queue *queue)
    vk_queue_finish(&queue->vk);
 }
 
+struct panvk_priv_bo *panvk_priv_bo_create(struct panvk_device *dev,
+                                           size_t size, uint32_t flags,
+                                           const struct VkAllocationCallbacks *alloc,
+                                           VkSystemAllocationScope scope)
+{
+   int ret;
+   struct panvk_priv_bo *priv_bo =
+      vk_zalloc2(&dev->vk.alloc, alloc, sizeof(*priv_bo), 8, scope);
+
+   if (!priv_bo)
+      return NULL;
+
+   struct pan_kmod_bo *bo =
+      pan_kmod_bo_alloc(dev->kmod.dev, dev->kmod.vm, size, flags);
+   if (!bo)
+      goto err_free_priv_bo;
+
+   priv_bo->bo = bo;
+   priv_bo->dev = dev;
+
+   if (!(flags & PAN_KMOD_BO_FLAG_NO_MMAP)) {
+      priv_bo->addr.host = pan_kmod_bo_mmap(
+         bo, 0, pan_kmod_bo_size(bo), PROT_READ | PROT_WRITE, MAP_SHARED, NULL);
+      if (priv_bo->addr.host == MAP_FAILED)
+         goto err_put_bo;
+   }
+
+   struct pan_kmod_vm_op op = {
+      .type = PAN_KMOD_VM_OP_TYPE_MAP,
+      .va = {
+         .start = PAN_KMOD_VM_MAP_AUTO_VA,
+         .size = pan_kmod_bo_size(bo),
+      },
+      .map = {
+         .bo = priv_bo->bo,
+         .bo_offset = 0,
+      },
+   };
+
+   ret = pan_kmod_vm_bind(dev->kmod.vm, PAN_KMOD_VM_OP_MODE_IMMEDIATE, &op, 1);
+   if (ret)
+      goto err_munmap_bo;
+
+
+   priv_bo->addr.dev = op.va.start;
+
+   if (dev->debug.decode_ctx) {
+      pandecode_inject_mmap(dev->debug.decode_ctx, priv_bo->addr.dev,
+                            priv_bo->addr.host, pan_kmod_bo_size(priv_bo->bo),
+                            NULL);
+   }
+
+   return priv_bo;
+
+err_munmap_bo:
+   if (priv_bo->addr.host) {
+      ret = os_munmap(priv_bo->addr.host, pan_kmod_bo_size(bo));
+      assert(!ret);
+   }
+
+err_put_bo:
+   pan_kmod_bo_put(bo);
+
+err_free_priv_bo:
+   vk_free2(&dev->vk.alloc, alloc, priv_bo);
+   return NULL;
+}
+
+void
+panvk_priv_bo_destroy(struct panvk_priv_bo *priv_bo,
+                      const VkAllocationCallbacks *alloc)
+{
+   if (!priv_bo)
+      return;
+
+   struct panvk_device *dev = priv_bo->dev;
+
+   if (dev->debug.decode_ctx) {
+      pandecode_inject_free(dev->debug.decode_ctx, priv_bo->addr.dev,
+                            pan_kmod_bo_size(priv_bo->bo));
+   }
+
+   struct pan_kmod_vm_op op = {
+      .type = PAN_KMOD_VM_OP_TYPE_UNMAP,
+      .va = {
+         .start = priv_bo->addr.dev,
+         .size = pan_kmod_bo_size(priv_bo->bo),
+      },
+   };
+   ASSERTED int ret =
+      pan_kmod_vm_bind(dev->kmod.vm, PAN_KMOD_VM_OP_MODE_IMMEDIATE, &op, 1);
+   assert(!ret);
+
+   if (priv_bo->addr.host) {
+      ret = os_munmap(priv_bo->addr.host, pan_kmod_bo_size(priv_bo->bo));
+      assert(!ret);
+   }
+
+   pan_kmod_bo_put(priv_bo->bo);
+   vk_free2(&dev->vk.alloc, alloc, priv_bo);
+}
+
+/* Always reserve the lower 32MB. */
+#define PANVK_VA_RESERVE_BOTTOM 0x2000000ull
+
 VkResult
 panvk_CreateDevice(VkPhysicalDevice physicalDevice,
                    const VkDeviceCreateInfo *pCreateInfo,
                    const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
 {
    VK_FROM_HANDLE(panvk_physical_device, physical_device, physicalDevice);
+   struct panvk_instance *instance = physical_device->instance;
    VkResult result;
    struct panvk_device *device;
 
@@ -844,8 +991,9 @@ panvk_CreateDevice(VkPhysicalDevice physicalDevice,
    const struct vk_device_entrypoint_table *dev_entrypoints;
    const struct vk_command_buffer_ops *cmd_buffer_ops;
    struct vk_device_dispatch_table dispatch_table;
+   unsigned arch = pan_arch(physical_device->kmod.props.gpu_prod_id);
 
-   switch (physical_device->pdev.arch) {
+   switch (arch) {
    case 6:
       dev_entrypoints = &panvk_v6_device_entrypoints;
       cmd_buffer_ops = &panvk_v6_cmd_buffer_ops;
@@ -896,8 +1044,43 @@ panvk_CreateDevice(VkPhysicalDevice physicalDevice,
    device->instance = physical_device->instance;
    device->physical_device = physical_device;
 
-   const struct panfrost_device *pdev = &physical_device->pdev;
-   vk_device_set_drm_fd(&device->vk, pdev->fd);
+   device->kmod.allocator = (struct pan_kmod_allocator){
+      .zalloc = panvk_kmod_zalloc,
+      .free = panvk_kmod_free,
+      .priv = &device->vk.alloc,
+   };
+   device->kmod.dev =
+      pan_kmod_dev_create(dup(physical_device->kmod.dev->fd),
+                          PAN_KMOD_DEV_FLAG_OWNS_FD, &device->kmod.allocator);
+
+   if (instance->debug_flags & PANVK_DEBUG_TRACE)
+      device->debug.decode_ctx = pandecode_create_context(false);
+
+   /* 32bit address space, with the lower 32MB reserved. We clamp
+    * things so it matches kmod VA range limitations.
+    */
+   uint64_t user_va_start = panfrost_clamp_to_usable_va_range(
+      device->kmod.dev, PANVK_VA_RESERVE_BOTTOM);
+   uint64_t user_va_end =
+      panfrost_clamp_to_usable_va_range(device->kmod.dev, 1ull << 32);
+
+   device->kmod.vm =
+      pan_kmod_vm_create(device->kmod.dev, PAN_KMOD_VM_FLAG_AUTO_VA,
+                         user_va_start, user_va_end - user_va_start);
+
+   device->tiler_heap = panvk_priv_bo_create(
+      device, 128 * 1024 * 1024,
+      PAN_KMOD_BO_FLAG_NO_MMAP | PAN_KMOD_BO_FLAG_ALLOC_ON_FAULT,
+      &device->vk.alloc, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+
+   device->sample_positions = panvk_priv_bo_create(
+      device, panfrost_sample_positions_buffer_size(), 0,
+      &device->vk.alloc, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+   panfrost_upload_sample_positions(device->sample_positions->addr.host);
+
+   vk_device_set_drm_fd(&device->vk, device->kmod.dev->fd);
+
+   panvk_arch_dispatch(arch, meta_init, device);
 
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
       const VkDeviceQueueCreateInfo *queue_create =
@@ -936,6 +1119,13 @@ fail:
          vk_object_free(&device->vk, NULL, device->queues[i]);
    }
 
+   panvk_arch_dispatch(pan_arch(physical_device->kmod.props.gpu_prod_id),
+                       meta_cleanup, device);
+   panvk_priv_bo_destroy(device->tiler_heap, &device->vk.alloc);
+   panvk_priv_bo_destroy(device->sample_positions, &device->vk.alloc);
+   pan_kmod_vm_destroy(device->kmod.vm);
+   pan_kmod_dev_destroy(device->kmod.dev);
+
    vk_free(&device->vk.alloc, device);
    return result;
 }
@@ -944,9 +1134,13 @@ void
 panvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
+   struct panvk_physical_device *physical_device = device->physical_device;
 
    if (!device)
       return;
+
+   if (device->debug.decode_ctx)
+      pandecode_destroy_context(device->debug.decode_ctx);
 
    for (unsigned i = 0; i < PANVK_MAX_QUEUE_FAMILIES; i++) {
       for (unsigned q = 0; q < device->queue_count[i]; q++)
@@ -955,6 +1149,12 @@ panvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
          vk_object_free(&device->vk, NULL, device->queues[i]);
    }
 
+   panvk_arch_dispatch(pan_arch(physical_device->kmod.props.gpu_prod_id),
+                       meta_cleanup, device);
+   panvk_priv_bo_destroy(device->tiler_heap, &device->vk.alloc);
+   panvk_priv_bo_destroy(device->sample_positions, &device->vk.alloc);
+   pan_kmod_vm_destroy(device->kmod.vm);
+   pan_kmod_dev_destroy(device->kmod.dev);
    vk_free(&device->vk.alloc, device);
 }
 
@@ -974,7 +1174,6 @@ panvk_QueueWaitIdle(VkQueue _queue)
    if (panvk_device_is_lost(queue->device))
       return VK_ERROR_DEVICE_LOST;
 
-   const struct panfrost_device *pdev = &queue->device->physical_device->pdev;
    struct drm_syncobj_wait wait = {
       .handles = (uint64_t)(uintptr_t)(&queue->sync),
       .count_handles = 1,
@@ -983,7 +1182,7 @@ panvk_QueueWaitIdle(VkQueue _queue)
    };
    int ret;
 
-   ret = drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_WAIT, &wait);
+   ret = drmIoctl(queue->vk.base.device->drm_fd, DRM_IOCTL_SYNCOBJ_WAIT, &wait);
    assert(!ret);
 
    return VK_SUCCESS;
@@ -1027,6 +1226,7 @@ panvk_AllocateMemory(VkDevice _device,
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
    struct panvk_device_memory *mem;
+   bool can_be_exported = false;
 
    assert(pAllocateInfo->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
 
@@ -1036,8 +1236,20 @@ panvk_AllocateMemory(VkDevice _device,
       return VK_SUCCESS;
    }
 
-   mem = vk_object_alloc(&device->vk, pAllocator, sizeof(*mem),
-                         VK_OBJECT_TYPE_DEVICE_MEMORY);
+   const VkExportMemoryAllocateInfo *export_info =
+      vk_find_struct_const(pAllocateInfo->pNext, EXPORT_MEMORY_ALLOCATE_INFO);
+
+   if (export_info) {
+      if (export_info->handleTypes &
+          ~(VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT |
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT))
+         return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
+      else if (export_info->handleTypes)
+         can_be_exported = true;
+   }
+
+   mem = vk_object_zalloc(&device->vk, pAllocator, sizeof(*mem),
+                          VK_OBJECT_TYPE_DEVICE_MEMORY);
    if (mem == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
@@ -1057,16 +1269,38 @@ panvk_AllocateMemory(VkDevice _device,
        * reference counting.  We need to maintain a per-instance handle-to-bo
        * table and add reference count to panvk_bo.
        */
-      mem->bo = panfrost_bo_import(&device->physical_device->pdev, fd_info->fd);
+      mem->bo = pan_kmod_bo_import(device->kmod.dev, fd_info->fd, 0);
       /* take ownership and close the fd */
       close(fd_info->fd);
    } else {
-      mem->bo = panfrost_bo_create(&device->physical_device->pdev,
-                                   pAllocateInfo->allocationSize, 0,
-                                   "User-requested memory");
+      mem->bo = pan_kmod_bo_alloc(device->kmod.dev,
+                                  can_be_exported ? NULL : device->kmod.vm,
+                                  pAllocateInfo->allocationSize, 0);
    }
 
-   assert(mem->bo);
+   /* Always GPU-map at creation time. */
+   struct pan_kmod_vm_op op = {
+      .type = PAN_KMOD_VM_OP_TYPE_MAP,
+      .va = {
+         .start = PAN_KMOD_VM_MAP_AUTO_VA,
+         .size = pan_kmod_bo_size(mem->bo),
+      },
+      .map = {
+         .bo = mem->bo,
+         .bo_offset = 0,
+      },
+   };
+
+   ASSERTED int ret =
+      pan_kmod_vm_bind(device->kmod.vm, PAN_KMOD_VM_OP_MODE_IMMEDIATE, &op, 1);
+   assert(!ret);
+
+   mem->addr.dev = op.va.start;
+
+   if (device->debug.decode_ctx) {
+      pandecode_inject_mmap(device->debug.decode_ctx, mem->addr.dev, NULL,
+                            pan_kmod_bo_size(mem->bo), NULL);
+   }
 
    *pMem = panvk_device_memory_to_handle(mem);
 
@@ -1083,7 +1317,24 @@ panvk_FreeMemory(VkDevice _device, VkDeviceMemory _mem,
    if (mem == NULL)
       return;
 
-   panfrost_bo_unreference(mem->bo);
+   if (device->debug.decode_ctx) {
+      pandecode_inject_free(device->debug.decode_ctx, mem->addr.dev,
+                            pan_kmod_bo_size(mem->bo));
+   }
+
+   struct pan_kmod_vm_op op = {
+      .type = PAN_KMOD_VM_OP_TYPE_UNMAP,
+      .va = {
+         .start = mem->addr.dev,
+         .size = pan_kmod_bo_size(mem->bo),
+      },
+   };
+
+   ASSERTED int ret =
+      pan_kmod_vm_bind(device->kmod.vm, PAN_KMOD_VM_OP_MODE_IMMEDIATE, &op, 1);
+   assert(!ret);
+
+   pan_kmod_bo_put(mem->bo);
    vk_object_free(&device->vk, pAllocator, mem);
 }
 
@@ -1099,22 +1350,32 @@ panvk_MapMemory(VkDevice _device, VkDeviceMemory _memory, VkDeviceSize offset,
       return VK_SUCCESS;
    }
 
-   if (!mem->bo->ptr.cpu)
-      panfrost_bo_mmap(mem->bo);
+   /* Already mapped. */
+   if (mem->addr.host)
+      return vk_error(device, VK_ERROR_MEMORY_MAP_FAILED);
 
-   *ppData = mem->bo->ptr.cpu;
+   void *addr = pan_kmod_bo_mmap(mem->bo, 0, pan_kmod_bo_size(mem->bo),
+                                 PROT_READ | PROT_WRITE, MAP_SHARED, NULL);
+   if (addr == MAP_FAILED)
+      return vk_error(device, VK_ERROR_MEMORY_MAP_FAILED);
 
-   if (*ppData) {
-      *ppData += offset;
-      return VK_SUCCESS;
-   }
-
-   return vk_error(device, VK_ERROR_MEMORY_MAP_FAILED);
+   mem->addr.host = addr;
+   *ppData = mem->addr.host + offset;
+   return VK_SUCCESS;
 }
 
 void
 panvk_UnmapMemory(VkDevice _device, VkDeviceMemory _memory)
 {
+   VK_FROM_HANDLE(panvk_device_memory, mem, _memory);
+
+   if (mem->addr.host) {
+      ASSERTED int ret =
+         os_munmap((void *)mem->addr.host, pan_kmod_bo_size(mem->bo));
+
+      assert(!ret);
+      mem->addr.host = NULL;
+   }
 }
 
 VkResult
@@ -1131,6 +1392,14 @@ panvk_InvalidateMappedMemoryRanges(VkDevice _device, uint32_t memoryRangeCount,
    return VK_SUCCESS;
 }
 
+VkDeviceAddress
+panvk_GetBufferDeviceAddress(VkDevice _device, const VkBufferDeviceAddressInfo *pInfo)
+{
+   VK_FROM_HANDLE(panvk_buffer, buffer, pInfo->buffer);
+
+   return buffer->dev_addr;
+}
+
 void
 panvk_GetBufferMemoryRequirements2(VkDevice device,
                                    const VkBufferMemoryRequirementsInfo2 *pInfo,
@@ -1138,11 +1407,11 @@ panvk_GetBufferMemoryRequirements2(VkDevice device,
 {
    VK_FROM_HANDLE(panvk_buffer, buffer, pInfo->buffer);
 
-   const uint64_t align = 64;
-   const uint64_t size = align64(buffer->vk.size, align);
+   const uint64_t alignment = 64;
+   const uint64_t size = align64(buffer->vk.size, alignment);
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits = 1;
-   pMemoryRequirements->memoryRequirements.alignment = align;
+   pMemoryRequirements->memoryRequirements.alignment = alignment;
    pMemoryRequirements->memoryRequirements.size = size;
 }
 
@@ -1153,11 +1422,11 @@ panvk_GetImageMemoryRequirements2(VkDevice device,
 {
    VK_FROM_HANDLE(panvk_image, image, pInfo->image);
 
-   const uint64_t align = 4096;
+   const uint64_t alignment = 4096;
    const uint64_t size = panvk_image_get_total_size(image);
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits = 1;
-   pMemoryRequirements->memoryRequirements.alignment = align;
+   pMemoryRequirements->memoryRequirements.alignment = alignment;
    pMemoryRequirements->memoryRequirements.size = size;
 }
 
@@ -1184,13 +1453,48 @@ panvk_BindBufferMemory2(VkDevice device, uint32_t bindInfoCount,
    for (uint32_t i = 0; i < bindInfoCount; ++i) {
       VK_FROM_HANDLE(panvk_device_memory, mem, pBindInfos[i].memory);
       VK_FROM_HANDLE(panvk_buffer, buffer, pBindInfos[i].buffer);
+      struct pan_kmod_bo *old_bo = buffer->bo;
 
       if (mem) {
-         buffer->bo = mem->bo;
-         buffer->bo_offset = pBindInfos[i].memoryOffset;
+         buffer->bo = pan_kmod_bo_get(mem->bo);
+         buffer->dev_addr = mem->addr.dev + pBindInfos[i].memoryOffset;
+
+         /* FIXME: Only host map for index buffers so we can do the min/max
+          * index retrieval on the CPU. This is all broken anyway and the
+          * min/max search should be done with a compute shader that also
+          * patches the job descriptor accordingly (basically an indirect draw).
+          *
+          * Make sure this goes away as soon as we fixed indirect draws.
+          */
+         if (buffer->vk.usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+            VkDeviceSize offset = pBindInfos[i].memoryOffset;
+            VkDeviceSize pgsize = getpagesize();
+            off_t map_start = offset & ~(pgsize - 1);
+            off_t map_end = offset + buffer->vk.size;
+            void *map_addr =
+               pan_kmod_bo_mmap(mem->bo, map_start, map_end - map_start,
+                                PROT_WRITE, MAP_SHARED, NULL);
+
+            assert(map_addr != MAP_FAILED);
+            buffer->host_ptr = map_addr + (offset & pgsize);
+         }
       } else {
          buffer->bo = NULL;
+         buffer->dev_addr = 0;
+         buffer->host_ptr = NULL;
+         if (buffer->host_ptr) {
+            VkDeviceSize pgsize = getpagesize();
+            uintptr_t map_start = (uintptr_t)buffer->host_ptr & ~(pgsize - 1);
+            uintptr_t map_end = (uintptr_t)buffer->host_ptr + buffer->vk.size;
+            ASSERTED int ret =
+               os_munmap((void *)map_start, map_end - map_start);
+
+            assert(!ret);
+            buffer->host_ptr = NULL;
+         }
       }
+
+      pan_kmod_bo_put(old_bo);
    }
    return VK_SUCCESS;
 }
@@ -1202,31 +1506,41 @@ panvk_BindImageMemory2(VkDevice device, uint32_t bindInfoCount,
    for (uint32_t i = 0; i < bindInfoCount; ++i) {
       VK_FROM_HANDLE(panvk_image, image, pBindInfos[i].image);
       VK_FROM_HANDLE(panvk_device_memory, mem, pBindInfos[i].memory);
+      struct pan_kmod_bo *old_bo = image->bo;
 
       if (mem) {
-         image->pimage.data.bo = mem->bo;
+         image->bo = pan_kmod_bo_get(mem->bo);
+         image->pimage.data.base = mem->addr.dev;
          image->pimage.data.offset = pBindInfos[i].memoryOffset;
          /* Reset the AFBC headers */
          if (drm_is_afbc(image->pimage.layout.modifier)) {
-            void *base =
-               image->pimage.data.bo->ptr.cpu + image->pimage.data.offset;
+            /* Transient CPU mapping */
+            void *base = pan_kmod_bo_mmap(mem->bo, 0, pan_kmod_bo_size(mem->bo),
+                                          PROT_WRITE, MAP_SHARED, NULL);
+
+            assert(base != MAP_FAILED);
 
             for (unsigned layer = 0; layer < image->pimage.layout.array_size;
                  layer++) {
                for (unsigned level = 0; level < image->pimage.layout.nr_slices;
                     level++) {
-                  void *header = base +
+                  void *header = base + image->pimage.data.offset +
                                  (layer * image->pimage.layout.array_stride) +
                                  image->pimage.layout.slices[level].offset;
                   memset(header, 0,
                          image->pimage.layout.slices[level].afbc.header_size);
                }
             }
+
+            ASSERTED int ret = os_munmap(base, pan_kmod_bo_size(mem->bo));
+            assert(!ret);
          }
       } else {
-         image->pimage.data.bo = NULL;
+         image->bo = NULL;
          image->pimage.data.offset = pBindInfos[i].memoryOffset;
       }
+
+      pan_kmod_bo_put(old_bo);
    }
 
    return VK_SUCCESS;
@@ -1237,7 +1551,6 @@ panvk_CreateEvent(VkDevice _device, const VkEventCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator, VkEvent *pEvent)
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
    struct panvk_event *event = vk_object_zalloc(
       &device->vk, pAllocator, sizeof(*event), VK_OBJECT_TYPE_EVENT);
    if (!event)
@@ -1247,7 +1560,7 @@ panvk_CreateEvent(VkDevice _device, const VkEventCreateInfo *pCreateInfo,
       .flags = 0,
    };
 
-   int ret = drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_CREATE, &create);
+   int ret = drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_CREATE, &create);
    if (ret)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
@@ -1263,13 +1576,12 @@ panvk_DestroyEvent(VkDevice _device, VkEvent _event,
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
    VK_FROM_HANDLE(panvk_event, event, _event);
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
 
    if (!event)
       return;
 
    struct drm_syncobj_destroy destroy = {.handle = event->syncobj};
-   drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_DESTROY, &destroy);
+   drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_DESTROY, &destroy);
 
    vk_object_free(&device->vk, pAllocator, event);
 }
@@ -1279,7 +1591,6 @@ panvk_GetEventStatus(VkDevice _device, VkEvent _event)
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
    VK_FROM_HANDLE(panvk_event, event, _event);
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
    bool signaled;
 
    struct drm_syncobj_wait wait = {
@@ -1289,7 +1600,7 @@ panvk_GetEventStatus(VkDevice _device, VkEvent _event)
       .flags = DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT,
    };
 
-   int ret = drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_WAIT, &wait);
+   int ret = drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_WAIT, &wait);
    if (ret) {
       if (errno == ETIME)
          signaled = false;
@@ -1308,7 +1619,6 @@ panvk_SetEvent(VkDevice _device, VkEvent _event)
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
    VK_FROM_HANDLE(panvk_event, event, _event);
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
 
    struct drm_syncobj_array objs = {
       .handles = (uint64_t)(uintptr_t)&event->syncobj,
@@ -1320,7 +1630,7 @@ panvk_SetEvent(VkDevice _device, VkEvent _event)
     * command executes.
     * https://www.khronos.org/registry/vulkan/specs/1.2/html/chap6.html#commandbuffers-submission-progress
     */
-   if (drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_SIGNAL, &objs))
+   if (drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_SIGNAL, &objs))
       return VK_ERROR_DEVICE_LOST;
 
    return VK_SUCCESS;
@@ -1331,13 +1641,12 @@ panvk_ResetEvent(VkDevice _device, VkEvent _event)
 {
    VK_FROM_HANDLE(panvk_device, device, _device);
    VK_FROM_HANDLE(panvk_event, event, _event);
-   const struct panfrost_device *pdev = &device->physical_device->pdev;
 
    struct drm_syncobj_array objs = {
       .handles = (uint64_t)(uintptr_t)&event->syncobj,
       .count_handles = 1};
 
-   if (drmIoctl(pdev->fd, DRM_IOCTL_SYNCOBJ_RESET, &objs))
+   if (drmIoctl(device->vk.drm_fd, DRM_IOCTL_SYNCOBJ_RESET, &objs))
       return VK_ERROR_DEVICE_LOST;
 
    return VK_SUCCESS;
@@ -1372,6 +1681,18 @@ panvk_DestroyBuffer(VkDevice _device, VkBuffer _buffer,
    if (!buffer)
       return;
 
+   if (buffer->host_ptr) {
+      VkDeviceSize pgsize = getpagesize();
+      uintptr_t map_start = (uintptr_t)buffer->host_ptr & ~(pgsize - 1);
+      uintptr_t map_end =
+         ALIGN_POT((uintptr_t)buffer->host_ptr + buffer->vk.size, pgsize);
+      ASSERTED int ret = os_munmap((void *)map_start, map_end - map_start);
+
+      assert(!ret);
+      buffer->host_ptr = NULL;
+   }
+
+   pan_kmod_bo_put(buffer->bo);
    vk_buffer_destroy(&device->vk, pAllocator, &buffer->vk);
 }
 
@@ -1445,7 +1766,7 @@ panvk_GetMemoryFdKHR(VkDevice _device, const VkMemoryGetFdInfoKHR *pGetFdInfo,
       pGetFdInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT ||
       pGetFdInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
 
-   int prime_fd = panfrost_bo_export(memory->bo);
+   int prime_fd = pan_kmod_bo_export(memory->bo);
    if (prime_fd < 0)
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 

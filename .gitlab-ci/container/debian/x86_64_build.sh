@@ -83,12 +83,7 @@ rm -rf $XORGMACROS_VERSION
 
 . .gitlab-ci/container/build-shader-db.sh
 
-git clone https://github.com/microsoft/DirectX-Headers -b v1.711.3-preview --depth 1
-pushd DirectX-Headers
-meson setup build --backend=ninja --buildtype=release -Dbuild-test=false
-meson install -C build
-popd
-rm -rf DirectX-Headers
+. .gitlab-ci/container/build-directx-headers.sh
 
 python3 -m pip install --break-system-packages -r .gitlab-ci/lava/requirements.txt
 

@@ -261,7 +261,7 @@ static void test_modifier(const struct radeon_info *info,
       unsigned aligned_pitch, aligned_height;
       if (modifier != DRM_FORMAT_MOD_LINEAR) {
          unsigned block_size_bits =
-            block_size_bits = surf.u.gfx9.swizzle_mode >= ADDR_SW_256KB_Z_X ? 18 : 16;
+            surf.u.gfx9.swizzle_mode >= ADDR_SW_256KB_Z_X ? 18 : 16;
 
          surf_size = block_count(dims[i][0], dims[i][1],
                   elem_bits, block_size_bits, &aligned_pitch,

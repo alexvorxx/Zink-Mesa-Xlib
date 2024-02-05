@@ -109,7 +109,20 @@ isl_device_setup_mocs(struct isl_device *dev)
 {
    dev->mocs.protected_mask = 0;
 
-   if (dev->info->ver >= 12) {
+   if (dev->info->ver >= 20) {
+      /* L3+L4=WB; BSpec: 71582 */
+      dev->mocs.internal = 1 << 1;
+      dev->mocs.external = 1 << 1;
+      dev->mocs.protected_mask = 3 << 0;
+      /* TODO: Setting to uncached
+       * WA 14018443005:
+       *  Ensure that any compression-enabled resource from gfx memory subject
+       *  to app recycling (e.g. OGL sparse resource backing memory or
+       *  Vulkan heaps) is never PAT/MOCS'ed as L3:UC.
+       */
+      dev->mocs.blitter_dst = 1 << 1;
+      dev->mocs.blitter_src = 1 << 1;
+   } else if (dev->info->ver >= 12) {
       if (intel_device_info_is_mtl(dev->info)) {
          /* Cached L3+L4; BSpec: 45101 */
          dev->mocs.internal = 1 << 1;
@@ -117,6 +130,12 @@ isl_device_setup_mocs(struct isl_device *dev)
          dev->mocs.external = 14 << 1;
          /* Uncached - GO:Mem */
          dev->mocs.uncached = 5 << 1;
+         /* TODO: XY_BLOCK_COPY_BLT don't mention what should be the L4 cache
+          * mode so for now it is setting L4 as uncached following what is
+          * asked for L3
+          */
+         dev->mocs.blitter_dst = 9 << 1;
+         dev->mocs.blitter_src = 9 << 1;
       } else if (intel_device_info_is_dg2(dev->info)) {
          /* L3CC=WB; BSpec: 45101 */
          dev->mocs.internal = 3 << 1;
@@ -401,7 +420,7 @@ isl_device_init(struct isl_device *dev,
  * supported.
  */
 isl_sample_count_mask_t ATTRIBUTE_CONST
-isl_device_get_sample_counts(struct isl_device *dev)
+isl_device_get_sample_counts(const struct isl_device *dev)
 {
    if (ISL_GFX_VER(dev) >= 9) {
       return ISL_SAMPLE_COUNT_1_BIT |
@@ -543,6 +562,8 @@ tiling_max_mip_tail(enum isl_tiling tiling,
 {
    /* In theory, miptails work for multisampled images, but we don't support
     * mipmapped multisampling.
+    *
+    * BSpec 58770: Xe2 does not support miptails on multisampled images.
     */
    if (samples > 1)
       return 0;
@@ -591,6 +612,7 @@ tiling_max_mip_tail(enum isl_tiling tiling,
       break;
 
    case ISL_TILING_64:
+   case ISL_TILING_64_XE2:
       /* ATS-M PRMS, Volume 5: Memory Data Formats :
        *
        *    - Tiling and Mip Tail for 1D Surfaces :
@@ -828,6 +850,85 @@ isl_tiling_get_info(enum isl_tiling tiling,
       phys_B.h = 64 * 1024 / phys_B.w;
       break;
 
+   case ISL_TILING_64_XE2:
+      /* The tables below are taken from BSpec 58767 which are formulated in
+       * terms of the Cv and Cu constants. This is different from the tables in
+       * the "Tile64 Format" page which should be equivalent but are usually in
+       * terms of pixels.
+       *
+       * Also note that Cv and Cu are HxW order to match the Bspec table, not
+       * WxH order like you might expect.
+       */
+#define tile_extent2d(bs, cv, cu, a) \
+      isl_extent4d((1 << cu) / bs, 1 << cv, 1, a)
+#define tile_extent3d(bs, cr, cv, cu) \
+      isl_extent4d((1 << cu) / bs, 1 << cv, 1 << cr, 1)
+
+      if (dim == ISL_SURF_DIM_3D) {
+          switch (format_bpb) {
+          case 128: logical_el = tile_extent3d(bs, 4, 4, 8); break;
+          case  64: logical_el = tile_extent3d(bs, 4, 4, 8); break;
+          case  32: logical_el = tile_extent3d(bs, 4, 5, 7); break;
+          case  16: logical_el = tile_extent3d(bs, 5, 5, 6); break;
+          case   8: logical_el = tile_extent3d(bs, 5, 5, 6); break;
+          default: unreachable("Unsupported format size for 3D");
+          }
+      } else {
+          if (samples == 1 || msaa_layout == ISL_MSAA_LAYOUT_INTERLEAVED) {
+              switch (format_bpb) {
+              case 128: logical_el = tile_extent2d(bs, 6, 10, 1); break;
+              case  64: logical_el = tile_extent2d(bs, 6, 10, 1); break;
+              case  32: logical_el = tile_extent2d(bs, 7,  9, 1); break;
+              case  16: logical_el = tile_extent2d(bs, 7,  9, 1); break;
+              case   8: logical_el = tile_extent2d(bs, 8,  8, 1); break;
+              default: unreachable("Unsupported format size.");
+              }
+          } else if (samples == 2) {
+              switch (format_bpb) {
+              case 128: logical_el = tile_extent2d(bs, 5, 10, 2); break;
+              case  64: logical_el = tile_extent2d(bs, 6,  9, 2); break;
+              case  32: logical_el = tile_extent2d(bs, 7,  8, 2); break;
+              case  16: logical_el = tile_extent2d(bs, 7,  8, 2); break;
+              case   8: logical_el = tile_extent2d(bs, 8,  7, 2); break;
+              default: unreachable("Unsupported format size.");
+              }
+          } else if (samples == 4) {
+              switch (format_bpb) {
+              case 128: logical_el = tile_extent2d(bs, 5,  9, 4); break;
+              case  64: logical_el = tile_extent2d(bs, 5,  9, 4); break;
+              case  32: logical_el = tile_extent2d(bs, 6,  8, 4); break;
+              case  16: logical_el = tile_extent2d(bs, 6,  8, 4); break;
+              case   8: logical_el = tile_extent2d(bs, 7,  7, 4); break;
+              default: unreachable("Unsupported format size.");
+              }
+          } else if (samples == 8) {
+              switch (format_bpb) {
+              case 128: logical_el = tile_extent2d(bs, 5,  8, 8); break;
+              case  64: logical_el = tile_extent2d(bs, 5,  8, 8); break;
+              case  32: logical_el = tile_extent2d(bs, 5,  8, 8); break;
+              case  16: logical_el = tile_extent2d(bs, 6,  7, 8); break;
+              case   8: logical_el = tile_extent2d(bs, 6,  7, 8); break;
+              default: unreachable("Unsupported format size.");
+              }
+          } else if (samples == 16) {
+              switch (format_bpb) {
+              case 128: logical_el = tile_extent2d(bs, 4,  8, 16); break;
+              case  64: logical_el = tile_extent2d(bs, 5,  7, 16); break;
+              case  32: logical_el = tile_extent2d(bs, 5,  7, 16); break;
+              case  16: logical_el = tile_extent2d(bs, 5,  7, 16); break;
+              case   8: logical_el = tile_extent2d(bs, 6,  6, 16); break;
+              default: unreachable("Unsupported format size.");
+              }
+          }
+      }
+
+#undef tile_extent2d
+#undef tile_extent3d
+
+      phys_B.w = logical_el.w * bs;
+      phys_B.h = 64 * 1024 / phys_B.w;
+      break;
+
    case ISL_TILING_HIZ:
       /* HiZ buffers are required to have a 128bpb HiZ format. The tiling has
        * the same physical dimensions as Y-tiling but actually has two HiZ
@@ -1007,7 +1108,7 @@ isl_surf_choose_tiling(const struct isl_device *dev,
     * shapes.
     */
    if (info->usage & ISL_SURF_USAGE_SPARSE_BIT) {
-      CHOOSE(ISL_TILING_64);
+      CHOOSE(ISL_GFX_VER(dev) >= 20 ? ISL_TILING_64_XE2 : ISL_TILING_64);
       CHOOSE(ISL_TILING_ICL_Ys);
       CHOOSE(ISL_TILING_SKL_Ys);
    }
@@ -1034,7 +1135,7 @@ isl_surf_choose_tiling(const struct isl_device *dev,
    CHOOSE(ISL_TILING_ICL_Yf);
    CHOOSE(ISL_TILING_SKL_Ys);
    CHOOSE(ISL_TILING_ICL_Ys);
-   CHOOSE(ISL_TILING_64);
+   CHOOSE(ISL_GFX_VER(dev) >= 20 ? ISL_TILING_64_XE2 : ISL_TILING_64);
 
    CHOOSE(ISL_TILING_X);
    CHOOSE(ISL_TILING_W);
@@ -1513,6 +1614,7 @@ isl_get_miptail_level_offset_el(enum isl_tiling tiling,
    case ISL_SURF_DIM_2D:
       switch (tiling) {
       case ISL_TILING_64:
+      case ISL_TILING_64_XE2:
       case ISL_TILING_ICL_Yf:
       case ISL_TILING_ICL_Ys:
          assert(row < ARRAY_SIZE(icl_std_y_2d_miptail_offset_el));
@@ -1536,6 +1638,7 @@ isl_get_miptail_level_offset_el(enum isl_tiling tiling,
    case ISL_SURF_DIM_3D:
       switch (tiling) {
       case ISL_TILING_64:
+      case ISL_TILING_64_XE2:
          assert(row < ARRAY_SIZE(acm_tile64_3d_miptail_offset_el));
          assert(col < ARRAY_SIZE(acm_tile64_3d_miptail_offset_el[0]));
          *x_offset_el = acm_tile64_3d_miptail_offset_el[row][col][0];
@@ -1593,7 +1696,8 @@ isl_choose_miptail_start_level(const struct isl_device *dev,
    if (ISL_GFX_VER(dev) == 12 && isl_format_is_yuv(info->format))
       return 15;
 
-   assert(tile_info->tiling == ISL_TILING_64 || isl_tiling_is_std_y(tile_info->tiling));
+   assert(isl_tiling_is_64(tile_info->tiling) ||
+          isl_tiling_is_std_y(tile_info->tiling));
    assert(info->samples == 1);
 
    uint32_t max_miptail_levels = tile_info->max_miptail_levels;
@@ -1815,7 +1919,7 @@ isl_calc_phys_slice0_extent_sa_gfx4_2d(
 
       if (l >= miptail_start_level) {
          assert(l == miptail_start_level);
-         assert(tile_info->tiling == ISL_TILING_64 ||
+         assert(isl_tiling_is_64(tile_info->tiling) ||
                 isl_tiling_is_std_y(tile_info->tiling));
          assert(w == tile_info->logical_extent_el.w * fmtl->bw);
          assert(h == tile_info->logical_extent_el.h * fmtl->bh);
@@ -1858,7 +1962,7 @@ isl_calc_phys_total_extent_el_gfx4_2d(
                                            array_pitch_span,
                                            &phys_slice0_sa);
 
-   if (tile_info->tiling == ISL_TILING_64 ||
+   if (isl_tiling_is_64(tile_info->tiling) ||
        isl_tiling_is_std_y(tile_info->tiling)) {
       *phys_total_el = (struct isl_extent4d) {
          .w = isl_align_div_npot(phys_slice0_sa.w, fmtl->bw),
@@ -2548,19 +2652,45 @@ isl_calc_base_alignment(const struct isl_device *dev,
       if (tile_info->tiling == ISL_TILING_GFX12_CCS)
          base_alignment_B = MAX(base_alignment_B, 4096);
 
-      /* Platforms using an aux map require that images be granularity-aligned
-       * if they're going to used with CCS. This is because the Aux
-       * translation table maps main surface addresses to aux addresses at a
-       * granularity in the main surface. Because we don't know for sure in
-       * ISL if a surface will use CCS, we have to guess based on the
-       * DISABLE_AUX usage bit. The one thing we do know is that we haven't
-       * enable CCS on linear images yet so we can avoid the extra alignment
-       * there.
-       */
       if (dev->info->has_aux_map &&
+          (isl_format_supports_ccs_d(dev->info, info->format) ||
+           isl_format_supports_ccs_e(dev->info, info->format)) &&
+          !INTEL_DEBUG(DEBUG_NO_CCS) &&
           !(info->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)) {
+         /* Wa_22015614752:
+          *
+          * Due to L3 cache being tagged with (engineID, vaID) and the CCS
+          * block/cacheline being 256 bytes, 2 engines accessing a 64Kb range
+          * with compression will generate 2 different CCS cacheline entries
+          * in L3, this will lead to corruptions. To avoid this, we need to
+          * ensure 2 images do not share a 256 bytes CCS cacheline. With a
+          * ratio of compression of 1/256, this is 64Kb alignment (even for
+          * Tile4...)
+          *
+          * ATS-M PRMS, Vol 2a: Command Reference: Instructions,
+          * XY_CTRL_SURF_COPY_BLT, "Size of Control Surface Copy" field, the
+          * CCS blocks are 256 bytes :
+          *
+          *    "This field indicates size of the Control Surface or CCS copy.
+          *     It is expressed in terms of number of 256B block of CCS, where
+          *     each 256B block of CCS corresponds to 64KB of main surface."
+          */
+         if (intel_needs_workaround(dev->info, 22015614752)) {
+            base_alignment_B = MAX(base_alignment_B,
+                                   256 /* cacheline */ * 256 /* AUX ratio */);
+         }
+
+         /* Platforms using an aux map require that images be
+          * granularity-aligned if they're going to used with CCS. This is
+          * because the Aux translation table maps main surface addresses to
+          * aux addresses at a granularity in the main surface. Because we
+          * don't know for sure in ISL if a surface will use CCS, we have to
+          * guess based on the DISABLE_AUX usage bit. The one thing we do know
+          * is that we haven't enable CCS on linear images yet so we can avoid
+          * the extra alignment there.
+          */
          base_alignment_B = MAX(base_alignment_B, dev->info->verx10 >= 125 ?
-               1024 * 1024 : 64 * 1024);
+                                1024 * 1024 : 64 * 1024);
       }
    }
 
@@ -2858,7 +2988,8 @@ isl_surf_supports_ccs(const struct isl_device *dev,
    if (surf->miptail_start_level < surf->levels) {
       const uint32_t miptail_levels = surf->levels - surf->miptail_start_level;
       if (miptail_levels + isl_get_miptail_base_row(surf->tiling) > 11) {
-         assert(surf->tiling == ISL_TILING_64 || isl_tiling_is_std_y(surf->tiling));
+         assert(isl_tiling_is_64(surf->tiling) ||
+                isl_tiling_is_std_y(surf->tiling));
          return false;
       }
    }
@@ -2948,17 +3079,18 @@ isl_surf_supports_ccs(const struct isl_device *dev,
       if (ISL_GFX_VER(dev) == 12 &&
           surf->dim == ISL_SURF_DIM_3D &&
           (surf->tiling == ISL_TILING_ICL_Ys ||
-           surf->tiling == ISL_TILING_64) &&
+           isl_tiling_is_64(surf->tiling)) &&
           (format_bpb == 64 || format_bpb == 128))
          return false;
 
       /* TODO: Handle the other tiling formats */
-      if (surf->tiling != ISL_TILING_Y0 && surf->tiling != ISL_TILING_4 &&
-          surf->tiling != ISL_TILING_64)
+      if (surf->tiling != ISL_TILING_Y0 &&
+          surf->tiling != ISL_TILING_4 &&
+          !isl_tiling_is_64(surf->tiling))
          return false;
 
       /* TODO: Handle single-sampled Tile64. */
-      if (surf->samples == 1 && surf->tiling == ISL_TILING_64)
+      if (surf->samples == 1 && isl_tiling_is_64(surf->tiling))
          return false;
    } else {
       /* ISL_GFX_VER(dev) < 12 */
@@ -3162,7 +3294,8 @@ get_image_offset_sa_gfx4_2d(const struct isl_surf *surf,
       (surf->msaa_layout == ISL_MSAA_LAYOUT_ARRAY ? surf->samples : 1);
 
    uint32_t x = 0, y;
-   if (isl_tiling_is_std_y(surf->tiling) || surf->tiling == ISL_TILING_64) {
+   if (isl_tiling_is_std_y(surf->tiling) ||
+       isl_tiling_is_64(surf->tiling)) {
       y = 0;
       if (surf->dim == ISL_SURF_DIM_3D) {
          *z_offset_sa = logical_array_layer;
@@ -3676,7 +3809,8 @@ isl_surf_get_uncompressed_surf(const struct isl_device *dev,
    /* If we ever enable 3D block formats, we'll need to re-think this */
    assert(fmtl->bd == 1);
 
-   if (isl_tiling_is_std_y(surf->tiling) || surf->tiling == ISL_TILING_64) {
+   if (isl_tiling_is_std_y(surf->tiling) ||
+       isl_tiling_is_64(surf->tiling)) {
       /* If the requested level is not part of the miptail, we just offset to
        * the requested level. Because we're using standard tilings and aren't
        * in the miptail, arrays and 3D textures should just work so long as we
@@ -4362,4 +4496,40 @@ isl_tiling_to_name(enum isl_tiling tiling)
    };
    assert(tiling < ARRAY_SIZE(names));
    return names[tiling];
+}
+
+const char *
+isl_aux_usage_to_name(enum isl_aux_usage usage)
+{
+   static const char *names[] = {
+      [ISL_AUX_USAGE_NONE]       = "none",
+      [ISL_AUX_USAGE_HIZ]        = "hiz",
+      [ISL_AUX_USAGE_MCS]        = "mcs",
+      [ISL_AUX_USAGE_CCS_D]      = "ccs-d",
+      [ISL_AUX_USAGE_CCS_E]      = "ccs-e",
+      [ISL_AUX_USAGE_FCV_CCS_E]  = "fcv-ccs-e",
+      [ISL_AUX_USAGE_MC]         = "mc",
+      [ISL_AUX_USAGE_HIZ_CCS_WT] = "hiz-ccs-wt",
+      [ISL_AUX_USAGE_HIZ_CCS]    = "hiz-ccs",
+      [ISL_AUX_USAGE_MCS_CCS]    = "mcs-ccs",
+      [ISL_AUX_USAGE_STC_CCS]    = "stc-ccs",
+   };
+   assert(usage < ARRAY_SIZE(names));
+   return names[usage];
+}
+
+const char *
+isl_aux_state_to_name(enum isl_aux_state state)
+{
+   static const char *names[] = {
+      [ISL_AUX_STATE_CLEAR]               = "clear",
+      [ISL_AUX_STATE_PARTIAL_CLEAR]       = "partial_clear",
+      [ISL_AUX_STATE_COMPRESSED_CLEAR]    = "compressed_clear",
+      [ISL_AUX_STATE_COMPRESSED_NO_CLEAR] = "compressed_no_clear",
+      [ISL_AUX_STATE_RESOLVED]            = "resolved",
+      [ISL_AUX_STATE_PASS_THROUGH]        = "pass-through",
+      [ISL_AUX_STATE_AUX_INVALID]         = "invalid",
+   };
+   assert(state < ARRAY_SIZE(names));
+   return names[state];
 }

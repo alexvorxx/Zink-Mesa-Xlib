@@ -236,7 +236,7 @@ VkResult genX(CreateQueryPool)(
 
    result = anv_device_alloc_bo(device, "query-pool", size,
                                 ANV_BO_ALLOC_MAPPED |
-                                ANV_BO_ALLOC_SNOOPED,
+                                ANV_BO_ALLOC_HOST_CACHED_COHERENT,
                                 0 /* explicit_address */,
                                 &pool->bo);
    if (result != VK_SUCCESS)
@@ -258,6 +258,8 @@ VkResult genX(CreateQueryPool)(
       }
    }
 
+   ANV_RMV(query_pool_create, device, pool, false);
+
    *pQueryPool = anv_query_pool_to_handle(pool);
 
    return VK_SUCCESS;
@@ -278,6 +280,8 @@ void genX(DestroyQueryPool)(
 
    if (!pool)
       return;
+
+   ANV_RMV(resource_destroy, device, pool);
 
    anv_device_release_bo(device, pool->bo);
    vk_object_free(&device->vk, pAllocator, pool);
@@ -1403,13 +1407,28 @@ void genX(CmdWriteTimestamp2)(
 
       bool cs_stall_needed =
          (GFX_VER == 9 && cmd_buffer->device->info->gt == 4);
-      genx_batch_emit_pipe_control_write
-         (&cmd_buffer->batch, cmd_buffer->device->info,
-          cmd_buffer->state.current_pipeline, WriteTimestamp,
-          anv_address_add(query_addr, 8), 0,
-          cs_stall_needed ? ANV_PIPE_CS_STALL_BIT : 0);
 
-      emit_query_pc_availability(cmd_buffer, query_addr, true);
+      if (anv_cmd_buffer_is_blitter_queue(cmd_buffer) ||
+          anv_cmd_buffer_is_video_queue(cmd_buffer)) {
+         /* Wa_16018063123 - emit fast color dummy blit before MI_FLUSH_DW. */
+         if (intel_needs_workaround(cmd_buffer->device->info, 16018063123)) {
+            genX(batch_emit_fast_color_dummy_blit)(&cmd_buffer->batch,
+                                                   cmd_buffer->device);
+         }
+         anv_batch_emit(&cmd_buffer->batch, GENX(MI_FLUSH_DW), dw) {
+            dw.Address = anv_address_add(query_addr, 8);
+            dw.PostSyncOperation = WriteTimestamp;
+         }
+         emit_query_mi_flush_availability(cmd_buffer, query_addr, true);
+      } else {
+         genx_batch_emit_pipe_control_write
+            (&cmd_buffer->batch, cmd_buffer->device->info,
+             cmd_buffer->state.current_pipeline, WriteTimestamp,
+             anv_address_add(query_addr, 8), 0,
+             cs_stall_needed ? ANV_PIPE_CS_STALL_BIT : 0);
+         emit_query_pc_availability(cmd_buffer, query_addr, true);
+      }
+
    }
 
 

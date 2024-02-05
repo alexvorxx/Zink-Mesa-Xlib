@@ -59,22 +59,30 @@ store_tilebuffer(nir_builder *b, struct agx_tilebuffer_layout *tib,
          value = nir_f2f32(b, value);
    }
 
-   /* 8-bit formats must be clamped in software, so do so on store. Piglit
-    * gl-3.0-render-integer checks this.
+   /* Pure integer formatss need to be clamped in software, at least in some
+    * cases. We do so on store. Piglit gl-3.0-render-integer checks this, as
+    * does KHR-GL33.packed_pixels.*.
     */
-   const struct util_format_description *desc = util_format_description(format);
-   unsigned c = util_format_get_first_non_void_channel(format);
+   const struct util_format_description *desc =
+      util_format_description(logical_format);
+   unsigned c = util_format_get_first_non_void_channel(logical_format);
 
-   if (desc->channel[c].size == 8 && util_format_is_pure_integer(format)) {
-      assert(desc->is_array);
+   if (desc->channel[c].size <= 16 &&
+       util_format_is_pure_integer(logical_format)) {
+
+      unsigned bits[4] = {
+         desc->channel[0].size,
+         desc->channel[1].size,
+         desc->channel[2].size,
+         desc->channel[3].size,
+      };
+
+      if (util_format_is_pure_sint(logical_format))
+         value = nir_format_clamp_sint(b, value, bits);
+      else
+         value = nir_format_clamp_uint(b, value, bits);
 
       value = nir_u2u16(b, value);
-      if (util_format_is_pure_sint(logical_format)) {
-         value = nir_iclamp(b, value, nir_imm_intN_t(b, INT8_MIN, 16),
-                            nir_imm_intN_t(b, INT8_MAX, 16));
-      } else {
-         value = nir_umin(b, value, nir_imm_intN_t(b, UINT8_MAX, 16));
-      }
    }
 
    uint8_t offset_B = agx_tilebuffer_offset_B(tib, rt);
@@ -185,11 +193,11 @@ store_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
 
    if (bindless) {
       nir_bindless_image_store(b, image, coords, sample, value, lod,
-                               .image_dim = dim, .image_array = !!layer_id,
+                               .image_dim = dim, .image_array = true,
                                .format = format);
    } else {
       nir_image_store(b, image, coords, sample, value, lod, .image_dim = dim,
-                      .image_array = !!layer_id, .format = format);
+                      .image_array = true, .format = format);
    }
 
    if (nr_samples > 1)
@@ -216,12 +224,12 @@ load_memory(nir_builder *b, unsigned bindless_base, unsigned nr_samples,
    nir_begin_invocation_interlock(b);
 
    if (bindless) {
-      return nir_bindless_image_load(
-         b, comps, bit_size, image, coords, sample, lod, .image_dim = dim,
-         .image_array = !!layer_id, .format = format);
+      return nir_bindless_image_load(b, comps, bit_size, image, coords, sample,
+                                     lod, .image_dim = dim, .image_array = true,
+                                     .format = format);
    } else {
       return nir_image_load(b, comps, bit_size, image, coords, sample, lod,
-                            .image_dim = dim, .image_array = !!layer_id,
+                            .image_dim = dim, .image_array = true,
                             .format = format);
    }
 }
@@ -238,10 +246,7 @@ agx_internal_layer_id(nir_builder *b)
 static nir_def *
 tib_layer_id(nir_builder *b, struct ctx *ctx)
 {
-   if (!ctx->tib->layered) {
-      /* If we're not layered, there's no explicit layer ID */
-      return NULL;
-   } else if (ctx->layer_id_sr) {
+   if (ctx->layer_id_sr) {
       return agx_internal_layer_id(b);
    } else {
       /* Otherwise, the layer ID is loaded as a flat varying. */

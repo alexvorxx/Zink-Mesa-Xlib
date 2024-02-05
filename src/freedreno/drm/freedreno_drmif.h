@@ -309,6 +309,8 @@ void fd_bo_upload(struct fd_bo *bo, void *src, unsigned off, unsigned len);
 bool fd_bo_prefer_upload(struct fd_bo *bo, unsigned len);
 int fd_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op);
 bool fd_bo_is_cached(struct fd_bo *bo);
+void fd_bo_set_metadata(struct fd_bo *bo, void *metadata, uint32_t metadata_size);
+int fd_bo_get_metadata(struct fd_bo *bo, void *metadata, uint32_t metadata_size);
 
 #ifdef __cplusplus
 } /* end of extern "C" */

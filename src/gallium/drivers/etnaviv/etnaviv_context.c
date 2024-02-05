@@ -33,6 +33,7 @@
 #include "etnaviv_debug.h"
 #include "etnaviv_emit.h"
 #include "etnaviv_fence.h"
+#include "etnaviv_ml.h"
 #include "etnaviv_query.h"
 #include "etnaviv_query_acc.h"
 #include "etnaviv_rasterizer.h"
@@ -108,6 +109,9 @@ etna_context_destroy(struct pipe_context *pctx)
 
    if (ctx->pending_resources)
       _mesa_hash_table_destroy(ctx->pending_resources, NULL);
+
+   if (ctx->updated_resources)
+      _mesa_set_destroy(ctx->updated_resources, NULL);
 
    if (ctx->flush_resources)
       _mesa_set_destroy(ctx->flush_resources, NULL);
@@ -433,6 +437,17 @@ etna_reset_gpu_state(struct etna_context *ctx)
    struct etna_screen *screen = ctx->screen;
    uint32_t dummy_attribs[VIVS_NFE_GENERIC_ATTRIB__LEN] = { 0 };
 
+   if (ctx->compute_only) {
+      /* compute only context does not make use of any of the dirty state tracking. */
+      assert(ctx->dirty == 0);
+      assert(ctx->dirty_sampler_views == 0);
+      assert(ctx->prev_active_samplers == 0);
+
+      etna_cmd_stream_mark_end_of_context_init(stream);
+
+      return;
+   }
+
    etna_set_state(stream, VIVS_GL_API_MODE, VIVS_GL_API_MODE_OPENGL);
    etna_set_state(stream, VIVS_PA_W_CLIP_LIMIT, 0x34000001);
    etna_set_state(stream, VIVS_PA_FLAGS, 0x00000000); /* blob sets ZCONVERT_BYPASS on GC3000+, this messes up z for us */
@@ -534,6 +549,13 @@ etna_flush(struct pipe_context *pctx, struct pipe_fence_handle **fence,
          pipe_resource_reference(&prsc, NULL);
       }
       _mesa_set_clear(ctx->flush_resources, NULL);
+
+      /* reset shared resources update tracking */
+      set_foreach(ctx->updated_resources, entry) {
+         struct pipe_resource *prsc = (struct pipe_resource *)entry->key;
+         pipe_resource_reference(&prsc, NULL);
+      }
+      _mesa_set_clear(ctx->updated_resources, NULL);
    }
 
    etna_cmd_stream_flush(ctx->stream, ctx->in_fence_fd,
@@ -625,10 +647,17 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    if (!ctx->flush_resources)
       goto fail;
 
+   ctx->updated_resources = _mesa_set_create(NULL, _mesa_hash_pointer,
+                                             _mesa_key_pointer_equal);
+   if (!ctx->updated_resources)
+      goto fail;
+
    /* context ctxate setup */
    ctx->screen = screen;
    /* need some sane default in case gallium frontends don't set some state: */
    ctx->sample_mask = 0xffff;
+
+   ctx->compute_only = flags & PIPE_CONTEXT_COMPUTE_ONLY;
 
    /*  Set sensible defaults for state */
    etna_reset_gpu_state(ctx);
@@ -637,6 +666,10 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
 
    pctx->destroy = etna_context_destroy;
    pctx->draw_vbo = etna_draw_vbo;
+   pctx->ml_subgraph_create = etna_ml_subgraph_create;
+   pctx->ml_subgraph_invoke = etna_ml_subgraph_invoke;
+   pctx->ml_subgraph_read_output = etna_ml_subgraph_read_outputs;
+   pctx->ml_subgraph_destroy = etna_ml_subgraph_destroy;
    pctx->flush = etna_context_flush;
    pctx->set_debug_callback = etna_set_debug_callback;
    pctx->create_fence_fd = etna_create_fence_fd;

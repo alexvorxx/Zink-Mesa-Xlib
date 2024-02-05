@@ -213,7 +213,7 @@ d3d12_video_encoder_references_manager_av1::print_virtual_dpb_entries()
                 "Number of DPB virtual entries is %" PRIu64 " entries for frame with OrderHint "
                 "%d (PictureIndex %d) are: \n%s \n",
                 m_PhysicalAllocationsStorage.get_number_of_pics_in_dpb(),
-                m_CurrentFrameReferencesData.pVirtualDPBEntries.size(),
+                static_cast<uint64_t>(m_CurrentFrameReferencesData.pVirtualDPBEntries.size()),
                 m_CurrentFramePicParams.OrderHint,
                 m_CurrentFramePicParams.PictureIndex,
                 dpbContents.c_str());
@@ -294,7 +294,7 @@ d3d12_video_encoder_references_manager_av1::get_dpb_physical_slot_refcount_from_
    return refCount;
 }
 
-void
+bool
 d3d12_video_encoder_references_manager_av1::get_current_frame_picture_control_data(
    D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA &codecAllocation)
 {
@@ -321,6 +321,7 @@ d3d12_video_encoder_references_manager_av1::get_current_frame_picture_control_da
 #endif
 
    *codecAllocation.pAV1PicData = m_CurrentFramePicParams;
+   return true;
 }
 
 void

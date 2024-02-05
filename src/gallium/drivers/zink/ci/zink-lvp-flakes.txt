@@ -34,3 +34,7 @@ spec@ext_texture_array@texsubimage array
 
 # crash in https://gitlab.freedesktop.org/mesa/mesa/-/jobs/48476882 and others
 KHR-GL46.layout_location.sampler_2d_shadow
+
+# uprev Piglit in Mesa
+spec@ext_framebuffer_multisample@accuracy all_samples depth_draw small depthstencil
+

@@ -27,6 +27,7 @@
  */
 
 #include <xf86drm.h>
+#include <libsync.h>
 #include "v3d_context.h"
 /* The OQ/semaphore packets are the same across V3D versions. */
 #define V3D_VERSION 42
@@ -514,11 +515,23 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
         if (cl_offset(&job->bcl) > 0)
                 v3d_X(devinfo, bcl_epilogue)(v3d, job);
 
-        /* While the RCL will implicitly depend on the last RCL to have
-         * finished, we also need to block on any previous TFU job we may have
-         * dispatched.
-         */
-        job->submit.in_sync_rcl = v3d->out_sync;
+        if (v3d->in_fence_fd >= 0) {
+                /* PIPE_CAP_NATIVE_FENCE */
+                if (drmSyncobjImportSyncFile(v3d->fd, v3d->in_syncobj,
+                                             v3d->in_fence_fd)) {
+                   fprintf(stderr, "Failed to import native fence.\n");
+                } else {
+                   job->submit.in_sync_bcl = v3d->in_syncobj;
+                }
+                close(v3d->in_fence_fd);
+                v3d->in_fence_fd = -1;
+        } else {
+                /* While the RCL will implicitly depend on the last RCL to have
+                 * finished, we also need to block on any previous TFU job we
+                 * may have dispatched.
+                 */
+                job->submit.in_sync_rcl = v3d->out_sync;
+        }
 
         /* Update the sync object for the last rendering by our context. */
         job->submit.out_sync = v3d->out_sync;

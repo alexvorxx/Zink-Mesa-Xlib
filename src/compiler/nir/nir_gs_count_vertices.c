@@ -105,7 +105,7 @@ nir_gs_count_vertices_and_primitives(const nir_shader *shader,
             if (cnt_found[stream] && prmcnt != prmcnt_arr[stream])
                prmcnt = -1;
             if (cnt_found[stream] && decomposed_prmcnt != decomposed_prmcnt_arr[stream])
-               prmcnt = -1;
+               decomposed_prmcnt = -1;
 
             vtxcnt_arr[stream] = vtxcnt;
             prmcnt_arr[stream] = prmcnt;

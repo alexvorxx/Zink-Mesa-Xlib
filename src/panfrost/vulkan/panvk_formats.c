@@ -39,10 +39,9 @@ static void
 get_format_properties(struct panvk_physical_device *physical_device,
                       VkFormat format, VkFormatProperties *out_properties)
 {
-   struct panfrost_device *pdev = &physical_device->pdev;
    VkFormatFeatureFlags tex = 0, buffer = 0;
    enum pipe_format pfmt = vk_format_to_pipe_format(format);
-   const struct panfrost_format fmt = pdev->formats[pfmt];
+   const struct panfrost_format fmt = physical_device->formats.all[pfmt];
 
    if (!pfmt || !fmt.hw)
       goto end;

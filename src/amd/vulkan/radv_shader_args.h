@@ -61,7 +61,10 @@ struct radv_shader_args {
    struct ac_arg vs_inputs[MAX_VERTEX_ATTRIBS];
 
    /* PS epilogs */
-   struct ac_arg ps_epilog_inputs[MAX_RTS];
+   struct ac_arg colors[MAX_RTS];
+   struct ac_arg depth;
+   struct ac_arg stencil;
+   struct ac_arg sample_mask;
 
    /* TCS */
    /* # [0:5] = the number of patch control points
@@ -103,10 +106,10 @@ radv_shader_args_from_ac(struct ac_shader_args *args)
    return container_of(args, struct radv_shader_args, ac);
 }
 
-struct radv_pipeline_key;
+struct radv_graphics_state_key;
 struct radv_shader_info;
 
-void radv_declare_shader_args(const struct radv_device *device, const struct radv_pipeline_key *key,
+void radv_declare_shader_args(const struct radv_device *device, const struct radv_graphics_state_key *gfx_state,
                               const struct radv_shader_info *info, gl_shader_stage stage,
                               gl_shader_stage previous_stage, struct radv_shader_args *args);
 

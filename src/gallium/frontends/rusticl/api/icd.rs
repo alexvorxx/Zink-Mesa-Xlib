@@ -435,6 +435,12 @@ extern "C" fn cl_get_extension_function_address(
         "clSetKernelExecInfoARM" => cl_set_kernel_exec_info as *mut ::std::ffi::c_void,
         "clSVMAllocARM" => cl_svm_alloc as *mut ::std::ffi::c_void,
         "clSVMFreeARM" => cl_svm_free as *mut ::std::ffi::c_void,
+
+        // DPCPP bug https://github.com/intel/llvm/issues/9964
+        "clSetProgramSpecializationConstant" => {
+            cl_set_program_specialization_constant as *mut ::std::ffi::c_void
+        }
+
         _ => ptr::null_mut(),
     }
 }

@@ -57,7 +57,8 @@ static void blorp_measure_end(struct blorp_batch *_batch,
                          params->num_samples,
                          params->shader_pipeline,
                          params->dst.view.format,
-                         params->src.view.format);
+                         params->src.view.format,
+                         (_batch->flags & BLORP_BATCH_PREDICATE_ENABLE));
 }
 
 static void *
@@ -85,15 +86,6 @@ blorp_surface_reloc(struct blorp_batch *batch, uint32_t ss_offset,
    struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
    VkResult result;
 
-   if (ANV_ALWAYS_SOFTPIN) {
-      result = anv_reloc_list_add_bo(&cmd_buffer->surface_relocs,
-                                     &cmd_buffer->vk.pool->alloc,
-                                     address.buffer);
-      if (unlikely(result != VK_SUCCESS))
-         anv_batch_set_error(&cmd_buffer->batch, result);
-      return;
-   }
-
    uint64_t address_u64 = 0;
    result = anv_reloc_list_add(&cmd_buffer->surface_relocs,
                                &cmd_buffer->vk.pool->alloc,
@@ -112,16 +104,8 @@ static uint64_t
 blorp_get_surface_address(struct blorp_batch *blorp_batch,
                           struct blorp_address address)
 {
-   if (ANV_ALWAYS_SOFTPIN) {
-      struct anv_address anv_addr = {
-         .bo = address.buffer,
-         .offset = address.offset,
-      };
-      return anv_address_physical(anv_addr);
-   } else {
-      /* We'll let blorp_surface_reloc write the address. */
-      return 0;
-   }
+   /* We'll let blorp_surface_reloc write the address. */
+   return 0;
 }
 
 static struct blorp_address

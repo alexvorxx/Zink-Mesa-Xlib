@@ -71,7 +71,7 @@ if dep_libarchive.found()
   )
 
   foreach kmd : freedreno_kmds
-    if not (kmd in ['kgsl', 'msm'])
+    if not (kmd in ['kgsl', 'msm', 'wsl'])
       warning('replay not supported for ' + kmd + ' KMD')
       continue
     endif
@@ -88,7 +88,10 @@ if dep_libarchive.found()
     if kmd == 'kgsl'
       replay_flags += '-DFD_REPLAY_KGSL'
     elif kmd == 'msm'
+      replay_flags += '-DFD_REPLAY_MSM'
       replay_deps += dep_libdrm
+    elif kmd == 'wsl'
+      replay_flags += '-DFD_REPLAY_WSL'
     endif
 
     replay = executable(

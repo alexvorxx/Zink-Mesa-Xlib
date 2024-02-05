@@ -28,6 +28,7 @@ pack_header = """
 #include <stdio.h>
 #include <inttypes.h>
 #include "util/bitpack_helpers.h"
+#include "util/half_float.h"
 #define FILE_TYPE FILE
 #define CONSTANT const
 #else
@@ -84,9 +85,26 @@ util_sign_extend(uint64_t val, unsigned width)
    return (int64_t)(val << shift) >> shift;
 }
 
+static inline uint16_t
+_mesa_float_to_half(float f)
+{
+   union { half h; uint16_t w; } hi;
+   hi.h = convert_half(f);
+   return hi.w;
+}
+
+static inline float
+_mesa_half_to_float(uint16_t w)
+{
+   union { half h; uint16_t w; } hi;
+   hi.w = w;
+   return convert_float(hi.h);
+}
+
 #endif
 
 #define __gen_unpack_float(x, y, z) uif(__gen_unpack_uint(x, y, z))
+#define __gen_unpack_half(x, y, z) _mesa_half_to_float(__gen_unpack_uint(x, y, z))
 
 static inline uint64_t
 __gen_unpack_uint(CONSTANT uint32_t *restrict cl, uint32_t start, uint32_t end)
@@ -284,7 +302,7 @@ class Field(object):
             type = 'uint64_t'
         elif self.type == 'bool':
             type = 'bool'
-        elif self.type in ['float', 'lod']:
+        elif self.type in ['float', 'half', 'lod']:
             type = 'float'
         elif self.type in ['uint', 'hex'] and self.end - self.start > 32:
             type = 'uint64_t'
@@ -406,7 +424,7 @@ class Group(object):
             elif field.modifier[0] == "minus":
                 print("   assert(values->{} >= {});".format(field.name, field.modifier[1]))
             elif field.modifier[0] == "log2":
-                print("   assert(util_is_power_of_two_nonzero(values->{}));".format(field.name))
+                print("   assert(IS_POT_NONZERO(values->{}));".format(field.name))
 
         for index in range(math.ceil(self.length / 4)):
             # Handle MBZ words
@@ -459,6 +477,9 @@ class Group(object):
                 elif field.type == "float":
                     assert(start == 0 and end == 31)
                     s = "util_bitpack_float({})".format(value)
+                elif field.type == "half":
+                    assert(start == 0 and end == 15)
+                    s = "_mesa_float_to_half({})".format(value)
                 elif field.type == "lod":
                     assert(end - start + 1 == 10)
                     s = "__gen_pack_lod(%s, %d, %d)" % (value, start, end)
@@ -528,6 +549,8 @@ class Group(object):
                 convert = "__gen_unpack_uint"
             elif field.type == "float":
                 convert = "__gen_unpack_float"
+            elif field.type == "half":
+                convert = "__gen_unpack_half"
             elif field.type == "lod":
                 convert = "__gen_unpack_lod"
             else:
@@ -578,7 +601,7 @@ class Group(object):
                 print('   fprintf(fp, "%*s{}: %d\\n", indent, "", {});'.format(name, val))
             elif field.type == "bool":
                 print('   fprintf(fp, "%*s{}: %s\\n", indent, "", {} ? "true" : "false");'.format(name, val))
-            elif field.type in ["float", "lod"]:
+            elif field.type in ["float", "lod", "half"]:
                 print('   fprintf(fp, "%*s{}: %f\\n", indent, "", {});'.format(name, val))
             elif field.type in ["uint", "hex"] and (field.end - field.start) >= 32:
                 print('   fprintf(fp, "%*s{}: 0x%" PRIx64 "\\n", indent, "", {});'.format(name, val))

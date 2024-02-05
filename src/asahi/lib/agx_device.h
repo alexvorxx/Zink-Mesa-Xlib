@@ -31,6 +31,7 @@ enum agx_dbg {
    AGX_DBG_SMALLTILE = BITFIELD_BIT(14),
    AGX_DBG_NOMSAA = BITFIELD_BIT(15),
    AGX_DBG_NOSHADOW = BITFIELD_BIT(16),
+   AGX_DBG_VARYINGS = BITFIELD_BIT(17),
 };
 
 /* Dummy partial declarations, pending real UAPI */
@@ -82,9 +83,6 @@ struct agx_device {
    /* VM handle */
    uint32_t vm_id;
 
-   /* Queue handle */
-   uint32_t queue_id;
-
    /* VMA heaps */
    simple_mtx_t vma_lock;
    uint64_t shader_base;
@@ -134,13 +132,6 @@ void agx_bo_mmap(struct agx_bo *bo);
 uint64_t agx_get_global_id(struct agx_device *dev);
 
 uint32_t agx_create_command_queue(struct agx_device *dev, uint32_t caps);
-
-int agx_submit_single(struct agx_device *dev, enum drm_asahi_cmd_type cmd_type,
-                      uint32_t barriers, struct drm_asahi_sync *in_syncs,
-                      unsigned in_sync_count, struct drm_asahi_sync *out_syncs,
-                      unsigned out_sync_count, void *cmdbuf,
-                      uint32_t result_handle, uint32_t result_off,
-                      uint32_t result_size);
 
 int agx_import_sync_file(struct agx_device *dev, struct agx_bo *bo, int fd);
 int agx_export_sync_file(struct agx_device *dev, struct agx_bo *bo);

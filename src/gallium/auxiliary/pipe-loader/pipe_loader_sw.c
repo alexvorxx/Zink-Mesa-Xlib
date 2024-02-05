@@ -31,6 +31,7 @@
 
 #include "pipe_loader_priv.h"
 
+#include "util/detect_os.h"
 #include "util/os_file.h"
 #include "util/u_memory.h"
 #include "util/u_dl.h"
@@ -78,7 +79,7 @@ static const struct sw_driver_descriptor driver_descriptors = {
          .create_winsys_kms_dri = kms_dri_create_winsys,
       },
 #endif
-#ifndef __ANDROID__
+#if !DETECT_OS_ANDROID
       {
          .name = "null",
          .create_winsys = null_sw_create,
@@ -107,7 +108,7 @@ static const struct sw_driver_descriptor kopper_driver_descriptors = {
          .create_winsys_kms_dri = kms_dri_create_winsys,
       },
 #endif
-#ifndef __ANDROID__
+#if !DETECT_OS_ANDROID
       {
          .name = "null",
          .create_winsys = null_sw_create,

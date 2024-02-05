@@ -16,6 +16,7 @@ use mesa_rust::pipe::resource::*;
 use mesa_rust::pipe::screen::*;
 
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::c_void;
@@ -25,6 +26,7 @@ use std::sync::Arc;
 type CLGLMappings = Option<HashMap<Arc<PipeResource>, Arc<PipeResource>>>;
 
 pub struct XPlatManager {
+    #[cfg(glx)]
     glx_get_proc_addr: PFNGLXGETPROCADDRESSPROC,
     egl_get_proc_addr: PFNEGLGETPROCADDRESSPROC,
 }
@@ -38,6 +40,7 @@ impl Default for XPlatManager {
 impl XPlatManager {
     pub fn new() -> Self {
         Self {
+            #[cfg(glx)]
             glx_get_proc_addr: Self::get_proc_address_func("glXGetProcAddress"),
             egl_get_proc_addr: Self::get_proc_address_func("eglGetProcAddress"),
         }
@@ -51,14 +54,28 @@ impl XPlatManager {
         }
     }
 
+    #[cfg(glx)]
+    unsafe fn get_func_glx(&self, cname: &CStr) -> CLResult<__GLXextFuncPtr> {
+        unsafe {
+            Ok(self
+                .glx_get_proc_addr
+                .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?(
+                cname.as_ptr().cast(),
+            ))
+        }
+    }
+
+    // in theory it should return CLResult<__GLXextFuncPtr> but luckily it's identical
+    #[cfg(not(glx))]
+    unsafe fn get_func_glx(&self, _: &CStr) -> CLResult<__eglMustCastToProperFunctionPointerType> {
+        Err(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)
+    }
+
     fn get_func<T>(&self, name: &str) -> CLResult<T> {
         let cname = CString::new(name).unwrap();
         unsafe {
             let raw_func = if name.starts_with("glX") {
-                self.glx_get_proc_addr
-                    .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?(
-                    cname.as_ptr().cast()
-                )
+                self.get_func_glx(&cname)?
             } else if name.starts_with("egl") {
                 self.egl_get_proc_addr
                     .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?(
@@ -120,6 +137,13 @@ pub struct GLCtxManager {
     gl_ctx: GLCtx,
 }
 
+// SAFETY: We do have a few pointers inside [GLCtxManager], but nothing really relevant here:
+//  * pointers of the GLX/EGL context and _XDisplay/EGLDisplay, but we don't do much with them
+//    except calling into our mesa internal GL sharing extension, which properly locks data.
+//  * pointer to the _XDisplay/EGLDisplay
+unsafe impl Send for GLCtxManager {}
+unsafe impl Sync for GLCtxManager {}
+
 impl GLCtxManager {
     pub fn new(
         gl_context: *mut c_void,
@@ -160,7 +184,7 @@ impl GLCtxManager {
                 interop_dev_info: info,
                 xplat_manager: xplat_manager,
             }))
-        } else if !glx_display.is_null() {
+        } else if !glx_display.is_null() && cfg!(glx) {
             let glx_query_device_info_func = xplat_manager
                 .MesaGLInteropGLXQueryDeviceInfo()?
                 .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?;
@@ -193,7 +217,7 @@ impl GLCtxManager {
     ) -> CLResult<GLExportManager> {
         let xplat_manager = &self.xplat_manager;
         let mut export_in = mesa_glinterop_export_in {
-            version: 1,
+            version: 2,
             target: target,
             obj: texture,
             miplevel: miplevel as u32,
@@ -203,6 +227,14 @@ impl GLCtxManager {
 
         let mut export_out = mesa_glinterop_export_out {
             version: 2,
+            ..Default::default()
+        };
+
+        let mut fd = -1;
+
+        let mut flush_out = mesa_glinterop_flush_out {
+            version: 1,
+            fence_fd: &mut fd,
             ..Default::default()
         };
 
@@ -217,14 +249,12 @@ impl GLCtxManager {
                         .MesaGLInteropEGLFlushObjects()?
                         .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?;
 
-                    let mut fd = -1;
                     let err_flush = egl_flush_objects_func(
                         disp.cast(),
                         ctx.cast(),
                         1,
                         &mut export_in,
-                        ptr::null_mut(),
-                        &mut fd,
+                        &mut flush_out,
                     );
                     // TODO: use fence_server_sync in ctx inside the queue thread
                     let fence_fd = FenceFd { fd };
@@ -253,14 +283,12 @@ impl GLCtxManager {
                         .MesaGLInteropGLXFlushObjects()?
                         .ok_or(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR)?;
 
-                    let mut fd = -1;
                     let err_flush = glx_flush_objects_func(
                         disp.cast(),
                         ctx.cast(),
                         1,
                         &mut export_in,
-                        ptr::null_mut(),
-                        &mut fd,
+                        &mut flush_out,
                     );
                     // TODO: use fence_server_sync in ctx inside the queue thread
                     let fence_fd = FenceFd { fd };

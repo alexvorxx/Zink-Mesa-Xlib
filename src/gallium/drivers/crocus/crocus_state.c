@@ -3659,7 +3659,6 @@ crocus_delete_state(struct pipe_context *ctx, void *state)
 static void
 crocus_set_vertex_buffers(struct pipe_context *ctx,
                           unsigned count,
-                          unsigned unbind_num_trailing_slots,
                           bool take_ownership,
                           const struct pipe_vertex_buffer *buffers)
 {
@@ -3667,12 +3666,9 @@ crocus_set_vertex_buffers(struct pipe_context *ctx,
    struct crocus_screen *screen = (struct crocus_screen *) ctx->screen;
    const unsigned padding =
       (GFX_VERx10 < 75 && screen->devinfo.platform != INTEL_PLATFORM_BYT) * 2;
-   ice->state.bound_vertex_buffers &=
-      ~u_bit_consecutive64(0, count + unbind_num_trailing_slots);
 
    util_set_vertex_buffers_mask(ice->state.vertex_buffers, &ice->state.bound_vertex_buffers,
-                                buffers, count, unbind_num_trailing_slots,
-                                take_ownership);
+                                buffers, count, take_ownership);
 
    for (unsigned i = 0; i < count; i++) {
       struct pipe_vertex_buffer *state =

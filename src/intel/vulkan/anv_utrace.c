@@ -366,7 +366,8 @@ anv_utrace_create_ts_buffer(struct u_trace_context *utctx, uint32_t size_b)
 
    memset(bo->map, 0, bo->size);
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
-   if (device->physical->memory.need_flush)
+   if (device->physical->memory.need_flush &&
+       anv_bo_needs_host_cache_flush(bo->alloc_flags))
       intel_flush_range(bo->map, bo->size);
 #endif
 
@@ -403,17 +404,29 @@ anv_utrace_record_ts(struct u_trace *ut, void *cs,
 
    /* Is this a end of compute trace point? */
    const bool is_end_compute =
-      (cs == NULL && cmd_buffer->last_compute_walker != NULL && end_of_pipe);
+      cs == NULL &&
+      (cmd_buffer->last_compute_walker != NULL ||
+       cmd_buffer->last_indirect_dispatch != NULL) &&
+      end_of_pipe;
 
    enum anv_timestamp_capture_type capture_type = end_of_pipe ?
-      is_end_compute ? ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER :
-      ANV_TIMESTAMP_CAPTURE_END_OF_PIPE : ANV_TIMESTAMP_CAPTURE_TOP_OF_PIPE;
+      (is_end_compute ?
+       (cmd_buffer->last_indirect_dispatch != NULL ?
+        ANV_TIMESTAMP_REWRITE_INDIRECT_DISPATCH : ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER) :
+       ANV_TIMESTAMP_CAPTURE_END_OF_PIPE) : ANV_TIMESTAMP_CAPTURE_TOP_OF_PIPE;
+
+   void *addr = capture_type ==  ANV_TIMESTAMP_REWRITE_INDIRECT_DISPATCH ?
+                cmd_buffer->last_indirect_dispatch :
+                capture_type ==  ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER ?
+                cmd_buffer->last_compute_walker : NULL;
+
    device->physical->cmd_emit_timestamp(batch, device, ts_address,
                                         capture_type,
-                                        is_end_compute ?
-                                        cmd_buffer->last_compute_walker : NULL);
-   if (is_end_compute)
-         cmd_buffer->last_compute_walker = NULL;
+                                        addr);
+   if (is_end_compute) {
+      cmd_buffer->last_compute_walker = NULL;
+      cmd_buffer->last_indirect_dispatch = NULL;
+   }
 }
 
 static uint64_t
@@ -467,7 +480,7 @@ void
 anv_device_utrace_init(struct anv_device *device)
 {
    anv_bo_pool_init(&device->utrace_bo_pool, device, "utrace",
-                    ANV_BO_ALLOC_MAPPED | ANV_BO_ALLOC_SNOOPED);
+                    ANV_BO_ALLOC_MAPPED | ANV_BO_ALLOC_HOST_CACHED_COHERENT);
    intel_ds_device_init(&device->ds, device->info, device->fd,
                         device->physical->local_minor,
                         INTEL_DS_API_VULKAN);

@@ -70,7 +70,7 @@ rm -rf _build
 meson setup _build \
       --native-file=native.file \
       --wrap-mode=nofallback \
-      --force-fallback-for perfetto \
+      --force-fallback-for perfetto,syn \
       ${CROSS+--cross "$CROSS_FILE"} \
       -D prefix=$PWD/install \
       -D libdir=lib \
@@ -87,7 +87,7 @@ meson setup _build \
       -D gallium-opencl=disabled \
       -D gallium-drivers=${GALLIUM_DRIVERS:-[]} \
       -D vulkan-drivers=${VULKAN_DRIVERS:-[]} \
-      -D video-codecs=h264dec,h264enc,h265dec,h265enc,vc1dec \
+      -D video-codecs=all \
       -D werror=true \
       ${EXTRA_OPTION}
 cd _build

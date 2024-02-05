@@ -254,6 +254,7 @@ struct ir3_compiler {
 void ir3_compiler_destroy(struct ir3_compiler *compiler);
 struct ir3_compiler *ir3_compiler_create(struct fd_device *dev,
                                          const struct fd_dev_id *dev_id,
+                                         const struct fd_dev_info *dev_info,
                                          const struct ir3_compiler_options *options);
 
 void ir3_disk_cache_init(struct ir3_compiler *compiler);
@@ -298,6 +299,8 @@ enum ir3_shader_debug {
    IR3_DBG_SPILLALL = BITFIELD_BIT(12),
    IR3_DBG_NOPREAMBLE = BITFIELD_BIT(13),
    IR3_DBG_SHADER_INTERNAL = BITFIELD_BIT(14),
+   IR3_DBG_FULLSYNC = BITFIELD_BIT(15),
+   IR3_DBG_FULLNOP = BITFIELD_BIT(16),
 
    /* DEBUG-only options: */
    IR3_DBG_SCHEDMSGS = BITFIELD_BIT(20),

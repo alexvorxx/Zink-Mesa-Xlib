@@ -27,7 +27,7 @@ vn_descriptor_set_layout_destroy(struct vn_device *dev,
       vn_descriptor_set_layout_to_handle(layout);
    const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
-   vn_async_vkDestroyDescriptorSetLayout(dev->instance, dev_handle,
+   vn_async_vkDestroyDescriptorSetLayout(dev->primary_ring, dev_handle,
                                          layout_handle, NULL);
 
    vn_object_base_fini(&layout->base);
@@ -96,8 +96,8 @@ vn_GetDescriptorSetLayoutSupport(
    struct vn_device *dev = vn_device_from_handle(device);
 
    /* TODO per-device cache */
-   vn_call_vkGetDescriptorSetLayoutSupport(dev->instance, device, pCreateInfo,
-                                           pSupport);
+   vn_call_vkGetDescriptorSetLayoutSupport(dev->primary_ring, device,
+                                           pCreateInfo, pSupport);
 }
 
 static void
@@ -187,7 +187,7 @@ vn_descriptor_set_layout_init(
       }
    }
 
-   vn_async_vkCreateDescriptorSetLayout(dev->instance, dev_handle,
+   vn_async_vkCreateDescriptorSetLayout(dev->primary_ring, dev_handle,
                                         create_info, NULL, &layout_handle);
 }
 
@@ -387,8 +387,10 @@ vn_CreateDescriptorPool(VkDevice device,
    list_inithead(&pool->descriptor_sets);
 
    VkDescriptorPool pool_handle = vn_descriptor_pool_to_handle(pool);
-   vn_async_vkCreateDescriptorPool(dev->instance, device, pCreateInfo, NULL,
-                                   &pool_handle);
+   vn_async_vkCreateDescriptorPool(dev->primary_ring, device, pCreateInfo,
+                                   NULL, &pool_handle);
+
+   vn_tls_set_async_pipeline_create();
 
    *pDescriptorPool = pool_handle;
 
@@ -411,11 +413,7 @@ vn_DestroyDescriptorPool(VkDevice device,
 
    alloc = pAllocator ? pAllocator : &pool->allocator;
 
-   /* We must emit vkDestroyDescriptorPool before freeing the sets in
-    * pool->descriptor_sets.  Otherwise, another thread might reuse their
-    * object ids while they still refer to the sets in the renderer.
-    */
-   vn_async_vkDestroyDescriptorPool(dev->instance, device, descriptorPool,
+   vn_async_vkDestroyDescriptorPool(dev->primary_ring, device, descriptorPool,
                                     NULL);
 
    list_for_each_entry_safe(struct vn_descriptor_set, set,
@@ -602,7 +600,7 @@ vn_ResetDescriptorPool(VkDevice device,
       vn_descriptor_pool_from_handle(descriptorPool);
    const VkAllocationCallbacks *alloc = &pool->allocator;
 
-   vn_async_vkResetDescriptorPool(dev->instance, device, descriptorPool,
+   vn_async_vkResetDescriptorPool(dev->primary_ring, device, descriptorPool,
                                   flags);
 
    list_for_each_entry_safe(struct vn_descriptor_set, set,
@@ -621,7 +619,6 @@ vn_AllocateDescriptorSets(VkDevice device,
                           const VkDescriptorSetAllocateInfo *pAllocateInfo,
                           VkDescriptorSet *pDescriptorSets)
 {
-   VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
    struct vn_descriptor_pool *pool =
       vn_descriptor_pool_from_handle(pAllocateInfo->descriptorPool);
@@ -704,11 +701,11 @@ vn_AllocateDescriptorSets(VkDevice device,
    }
 
    if (pool->async_set_allocation) {
-      vn_async_vkAllocateDescriptorSets(dev->instance, device, pAllocateInfo,
-                                        pDescriptorSets);
+      vn_async_vkAllocateDescriptorSets(dev->primary_ring, device,
+                                        pAllocateInfo, pDescriptorSets);
    } else {
       result = vn_call_vkAllocateDescriptorSets(
-         dev->instance, device, pAllocateInfo, pDescriptorSets);
+         dev->primary_ring, device, pAllocateInfo, pDescriptorSets);
       if (result != VK_SUCCESS)
          goto fail;
    }
@@ -740,13 +737,12 @@ vn_FreeDescriptorSets(VkDevice device,
                       uint32_t descriptorSetCount,
                       const VkDescriptorSet *pDescriptorSets)
 {
-   VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
    struct vn_descriptor_pool *pool =
       vn_descriptor_pool_from_handle(descriptorPool);
    const VkAllocationCallbacks *alloc = &pool->allocator;
 
-   vn_async_vkFreeDescriptorSets(dev->instance, device, descriptorPool,
+   vn_async_vkFreeDescriptorSets(dev->primary_ring, device, descriptorPool,
                                  descriptorSetCount, pDescriptorSets);
 
    for (uint32_t i = 0; i < descriptorSetCount; i++) {
@@ -995,7 +991,6 @@ vn_UpdateDescriptorSets(VkDevice device,
                         uint32_t descriptorCopyCount,
                         const VkCopyDescriptorSet *pDescriptorCopies)
 {
-   VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
    const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
@@ -1008,9 +1003,9 @@ vn_UpdateDescriptorSets(VkDevice device,
       return;
    }
 
-   vn_async_vkUpdateDescriptorSets(dev->instance, device, update->write_count,
-                                   update->writes, descriptorCopyCount,
-                                   pDescriptorCopies);
+   vn_async_vkUpdateDescriptorSets(dev->primary_ring, device,
+                                   update->write_count, update->writes,
+                                   descriptorCopyCount, pDescriptorCopies);
 
    vk_free(alloc, update);
 }
@@ -1299,7 +1294,6 @@ vn_UpdateDescriptorSetWithTemplate(
    VkDescriptorUpdateTemplate descriptorUpdateTemplate,
    const void *pData)
 {
-   VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
    struct vn_descriptor_update_template *templ =
       vn_descriptor_update_template_from_handle(descriptorUpdateTemplate);
@@ -1310,8 +1304,9 @@ vn_UpdateDescriptorSetWithTemplate(
    struct vn_update_descriptor_sets *update =
       vn_update_descriptor_set_with_template_locked(templ, set, pData);
 
-   vn_async_vkUpdateDescriptorSets(dev->instance, device, update->write_count,
-                                   update->writes, 0, NULL);
+   vn_async_vkUpdateDescriptorSets(dev->primary_ring, device,
+                                   update->write_count, update->writes, 0,
+                                   NULL);
 
    mtx_unlock(&templ->mutex);
 }

@@ -626,6 +626,10 @@ struct v3d_context {
         struct pipe_query *cond_query;
         bool cond_cond;
         enum pipe_render_cond_flag cond_mode;
+
+        int in_fence_fd;
+        /** Handle of the syncobj that holds in_fence_fd for submission. */
+        uint32_t in_syncobj;
         /** @} */
 };
 
@@ -781,11 +785,14 @@ bool v3d_generate_mipmap(struct pipe_context *pctx,
 void
 v3d_fence_unreference(struct v3d_fence **fence);
 
-struct v3d_fence *v3d_fence_create(struct v3d_context *v3d);
+struct v3d_fence *v3d_fence_create(struct v3d_context *v3d, int fd);
 
 bool v3d_fence_wait(struct v3d_screen *screen,
                     struct v3d_fence *fence,
                     uint64_t timeout_ns);
+
+int v3d_fence_context_init(struct v3d_context *v3d);
+void v3d_fence_context_finish(struct v3d_context *v3d);
 
 void v3d_update_primitive_counters(struct v3d_context *v3d);
 

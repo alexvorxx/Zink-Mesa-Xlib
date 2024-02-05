@@ -129,7 +129,6 @@ dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_linear_linear
 dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linear_clamp,Fail
 dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linear_mirror,Fail
 dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linear_repeat,Fail
-dEQP-GLES2.functional.uniform_api.random.0,Fail
 fast_color_clear@fcc-read-after-clear blit tex,Fail
 fast_color_clear@fcc-read-after-clear copy rb,Fail
 fast_color_clear@fcc-read-after-clear copy tex,Fail
@@ -158,7 +157,6 @@ spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
 spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
 spec@arb_depth_texture@depth-level-clamp,Fail
 spec@arb_depth_texture@fbo-depth-gl_depth_component16-tex1d,Fail
-spec@arb_depth_texture@fbo-depth-gl_depth_component24-blit,Fail
 spec@arb_depth_texture@texwrap formats bordercolor,Fail
 spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT16- border color only,Fail
 spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT24- border color only,Fail
@@ -207,7 +205,6 @@ spec@arb_occlusion_query@occlusion_query_meta_fragments,Fail
 spec@arb_pixel_buffer_object@cubemap npot pbo,Fail
 spec@arb_pixel_buffer_object@fbo-pbo-readpixels-small,Fail
 spec@arb_pixel_buffer_object@texsubimage array pbo,Fail
-spec@arb_pixel_buffer_object@texsubimage-depth-formats pbo,Fail
 spec@arb_point_sprite@arb_point_sprite-interactions 1.0,Fail
 spec@arb_point_sprite@arb_point_sprite-mipmap,Fail
 spec@arb_provoking_vertex@arb-provoking-vertex-clipped-geometry-flatshading,Fail
@@ -275,9 +272,6 @@ spec@arb_texture_rectangle@texwrap rect bordercolor@GL_RGBA8- border color only,
 spec@arb_texture_rectangle@texwrap rect proj bordercolor,Fail
 spec@arb_texture_rectangle@texwrap rect proj bordercolor@GL_RGBA8- projected- border color only,Fail
 
-spec@arb_texture_storage@texture-storage@2D mipmap rendering ,Fail
-spec@arb_texture_storage@texture-storage,Fail
-spec@arb_vertex_buffer_object@pos-array,Fail
 spec@arb_vertex_program@big-param,Fail
 spec@arb_vertex_program@clip-plane-transformation arb,Fail
 
@@ -319,11 +313,9 @@ spec@ext_framebuffer_multisample@accuracy all_samples stencil_draw small depthst
 spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve depthstencil,Fail
 spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve small depthstencil,Fail
 
-spec@ext_framebuffer_object@fbo-alphatest-formats,Crash
 spec@ext_framebuffer_object@fbo-blending-format-quirks,Fail
-spec@ext_framebuffer_object@fbo-blending-formats,Crash
-spec@ext_framebuffer_object@fbo-clear-formats,Crash
-spec@ext_framebuffer_object@fbo-colormask-formats,Crash
+spec@ext_framebuffer_object@fbo-blending-formats,Fail
+spec@ext_framebuffer_object@fbo-blending-formats@GL_RGB10,Fail
 spec@ext_framebuffer_object@fbo-copyteximage,Fail
 spec@ext_framebuffer_object@fbo-copyteximage-simple,Fail
 spec@ext_framebuffer_object@fbo-cubemap,Fail
@@ -346,7 +338,6 @@ spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y416,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_vyuy,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yvyu,Fail
 spec@ext_packed_depth_stencil@depth_stencil texture,Fail
-spec@ext_packed_depth_stencil@fbo-depth-gl_depth24_stencil8-copypixels,Fail
 spec@ext_packed_depth_stencil@fbo-stencil-gl_depth24_stencil8-blit,Fail
 spec@ext_packed_depth_stencil@texwrap formats bordercolor,Fail
 spec@ext_packed_depth_stencil@texwrap formats bordercolor@GL_DEPTH24_STENCIL8- border color only,Fail
@@ -382,7 +373,6 @@ spec@ext_texture_format_bgra8888@api-errors,Fail
 
 spec@ext_texture_lod_bias@lodbias,Fail
 
-spec@ext_texture_srgb@fbo-alphatest-formats,Crash
 spec@ext_texture_srgb@texwrap formats bordercolor,Fail
 spec@ext_texture_srgb@texwrap formats bordercolor@GL_SLUMINANCE8_ALPHA8- border color only,Fail
 spec@ext_texture_srgb@texwrap formats bordercolor@GL_SLUMINANCE8- border color only,Fail
@@ -529,7 +519,6 @@ spec@nv_conditional_render@copytexsubimage,Fail
 spec@nv_conditional_render@dlist,Fail
 spec@nv_conditional_render@drawpixels,Fail
 spec@nv_conditional_render@vertex_array,Fail
-spec@nv_copy_image@nv_copy_image-simple --tex-to-tex,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-lines,Fail
 spec@nv_primitive_restart@primitive-restart-draw-mode-triangles,Fail
 
@@ -1860,7 +1849,6 @@ spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)-
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right middle PV: LAST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: FIRST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: LAST,Fail
-spec@!opengl 1.1@getteximage-luminance,Crash
 spec@!opengl 1.1@gl-1.1-xor-copypixels,Fail
 spec@!opengl 1.1@gl-1.1-xor,Fail
 spec@!opengl 1.1@line-flat-clip-color,Fail
@@ -1976,7 +1964,6 @@ spec@!opengl 1.1@two-sided-lighting,Fail
 spec@!opengl 1.1@user-clip,Fail
 spec@!opengl 1.2@copyteximage 3d,Fail
 spec@!opengl 1.2@lodclamp-between-max,Fail
-spec@!opengl 1.2@texture-packed-formats,Fail
 spec@!opengl 1.2@texwrap 3d bordercolor,Fail
 spec@!opengl 1.2@texwrap 3d bordercolor@GL_RGBA8- border color only,Fail
 spec@!opengl 1.2@texwrap 3d proj bordercolor,Fail

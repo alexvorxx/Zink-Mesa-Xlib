@@ -153,7 +153,7 @@ d3d12_video_bitstream_builder_av1::write_temporal_delimiter_obu(std::vector<uint
       write_obu_header(&bitstream_full_obu, OBU_TEMPORAL_DELIMITER, obu_extension_flag, temporal_id, spatial_id);
 
       // Write the data size
-      const size_t obu_size_in_bytes = 0;
+      const uint64_t obu_size_in_bytes = 0;
       debug_printf("obu_size: %" PRIu64 " (temporal_delimiter_obu() has empty payload as per AV1 codec spec)\n",
                    obu_size_in_bytes);
       pack_obu_header_size(&bitstream_full_obu, obu_size_in_bytes);
@@ -197,7 +197,7 @@ d3d12_video_bitstream_builder_av1::write_sequence_header(const av1_seq_header_t 
       write_obu_header(&bitstream_full_obu, OBU_SEQUENCE_HEADER, obu_extension_flag, temporal_id, spatial_id);
 
       // Write the data size
-      const size_t obu_size_in_bytes = static_cast<size_t>(bitstream_seq.get_byte_count());
+      const uint64_t obu_size_in_bytes = bitstream_seq.get_byte_count();
       debug_printf("obu_size: %" PRIu64 "\n", obu_size_in_bytes);
       pack_obu_header_size(&bitstream_full_obu, obu_size_in_bytes);
 
@@ -305,6 +305,14 @@ get_relative_dist(int a, int b, int OrderHintBits, uint8_t enable_order_hint)
    int m = 1 << (OrderHintBits - 1);
    diff = (diff & (m - 1)) - (diff & m);
    return diff;
+}
+
+static uint32_t
+tile_log2(uint32_t blkSize, uint32_t target)
+{
+   uint32_t k = 0;
+   for (k = 0; (blkSize << k) < target; k++);
+   return k;
 }
 
 void
@@ -438,13 +446,13 @@ d3d12_video_bitstream_builder_av1::write_pic_data(d3d12_video_encoder_bitstream 
          unsigned maxTileWidthSb = pPicHdr->tile_info.tile_support_caps.MaxTileWidth;
          unsigned maxTileAreaSb = pPicHdr->tile_info.tile_support_caps.MaxTileArea;
 
-         unsigned minLog2TileCols = log2(pPicHdr->tile_info.tile_support_caps.MinTileCols);
-         unsigned maxLog2TileCols = log2(pPicHdr->tile_info.tile_support_caps.MaxTileCols);
-         unsigned log2TileCols = log2(pPicHdr->tile_info.tile_partition.ColCount);
+         unsigned minLog2TileCols = tile_log2(maxTileWidthSb, pPicHdr->tile_info.tile_support_caps.MinTileCols);
+         unsigned maxLog2TileCols = tile_log2(1, pPicHdr->tile_info.tile_support_caps.MaxTileCols);
+         unsigned log2TileCols = tile_log2(1, pPicHdr->tile_info.tile_partition.ColCount);
 
-         unsigned minLog2TileRows = log2(pPicHdr->tile_info.tile_support_caps.MinTileRows);
-         unsigned maxLog2TileRows = log2(pPicHdr->tile_info.tile_support_caps.MaxTileRows);
-         unsigned log2TileRows = log2(pPicHdr->tile_info.tile_partition.RowCount);
+         unsigned minLog2TileRows = tile_log2(1, pPicHdr->tile_info.tile_support_caps.MinTileRows);
+         unsigned maxLog2TileRows = tile_log2(1, pPicHdr->tile_info.tile_support_caps.MaxTileRows);
+         unsigned log2TileRows = tile_log2(1, pPicHdr->tile_info.tile_partition.RowCount);
 
          pBit->put_bits(1, pPicHdr->tile_info.uniform_tile_spacing_flag);   // uniform_tile_spacing_flag
 
@@ -802,7 +810,7 @@ d3d12_video_bitstream_builder_av1::write_frame_header(const av1_seq_header_t *pS
       debug_printf("frame_header_obu() bytes (without OBU_FRAME nor OBU_FRAME_HEADER alignment padding): %" PRId32 "\n",
                    bitstream_pic.get_byte_count());   // May be bit unaligned at this point (see padding below)
       debug_printf("extra_obu_size_bytes (ie. tile_group_obu_size if writing OBU_FRAME ): %" PRIu64 "\n",
-                   extra_obu_size_bytes);
+                   static_cast<uint64_t>(extra_obu_size_bytes));
 
       // Write the obu_header
       constexpr uint32_t obu_extension_flag = 0;
@@ -825,7 +833,7 @@ d3d12_video_bitstream_builder_av1::write_frame_header(const av1_seq_header_t *pS
       bitstream_pic.flush();
 
       // Write the obu_size element
-      const size_t obu_size_in_bytes = bitstream_pic.get_byte_count() + extra_obu_size_bytes;
+      const uint64_t obu_size_in_bytes = bitstream_pic.get_byte_count() + extra_obu_size_bytes;
       debug_printf("obu_size: %" PRIu64 "\n", obu_size_in_bytes);
       pack_obu_header_size(&bitstream_full_obu, obu_size_in_bytes);
 
@@ -862,7 +870,7 @@ d3d12_video_bitstream_builder_av1::calculate_tile_group_obu_size(
 
    bool tile_start_and_end_present_flag = !(tileGroup.tg_start == 0 && (tileGroup.tg_end == (NumTiles - 1)));
    if (!(NumTiles == 1 || !tile_start_and_end_present_flag)) {
-      uint8_t tileBits = log2(TilesPartition.ColCount) + log2(TilesPartition.RowCount);
+      uint8_t tileBits = tile_log2(1, TilesPartition.ColCount) + tile_log2(1, TilesPartition.RowCount);
       tile_group_obu_size_bits += tileBits;   // tg_start	f(tileBits)
       tile_group_obu_size_bits += tileBits;   // tg_end	   f(tileBits)
    }
@@ -913,7 +921,7 @@ d3d12_video_bitstream_builder_av1::write_obu_tile_group_header(size_t tile_group
 
    // Write the obu_size element
    pack_obu_header_size(&bitstream_full_obu, tile_group_obu_size);
-   debug_printf("obu_size: %" PRIu64 "\n", tile_group_obu_size);
+   debug_printf("obu_size: %" PRIu64 "\n", static_cast<uint64_t>(tile_group_obu_size));
 
    bitstream_full_obu.flush();
 

@@ -45,6 +45,7 @@
 #include "sfn_scheduler.h"
 #include "sfn_shader.h"
 #include "sfn_split_address_loads.h"
+#include "util/u_debug.h"
 #include "util/u_prim.h"
 
 #include <vector>
@@ -442,7 +443,7 @@ r600_nir_lower_atomics(nir_shader *shader)
    std::map<unsigned, nir_variable *> sorted_var;
 
    nir_foreach_variable_with_modes_safe(var, shader, nir_var_uniform) {
-      if (var->type->contains_atomic()) {
+      if (glsl_contains_atomic(var->type)) {
          sorted_var[(var->data.binding << 16) | var->data.offset] = var;
          exec_node_remove(&var->node);
       }
@@ -450,7 +451,7 @@ r600_nir_lower_atomics(nir_shader *shader)
 
    for (auto& [dummy, var] : sorted_var) {
       auto iindex = binding_offset.find(var->data.binding);
-      unsigned offset_update = var->type->atomic_size() / 4; /* ATOMIC_COUNTER_SIZE */
+      unsigned offset_update = glsl_atomic_size(var->type) / 4; /* ATOMIC_COUNTER_SIZE */
       if (iindex == binding_offset.end()) {
          var->data.index = 0;
          binding_offset[var->data.binding] = offset_update;
@@ -646,7 +647,7 @@ optimize_once(nir_shader *shader)
    NIR_PASS(progress, shader, nir_opt_copy_prop_vars);
    NIR_PASS(progress, shader, nir_opt_remove_phis);
 
-   if (nir_opt_trivial_continues(shader)) {
+   if (nir_opt_loop(shader)) {
       progress = true;
       NIR_PASS(progress, shader, nir_copy_prop);
       NIR_PASS(progress, shader, nir_opt_dce);
@@ -746,6 +747,9 @@ r600_finalize_nir_common(nir_shader *nir, enum amd_gfx_level gfx_level)
       ;
 }
 
+DEBUG_GET_ONCE_NUM_OPTION(skip_opt_start, "R600_SFN_SKIP_OPT_START", -1);
+DEBUG_GET_ONCE_NUM_OPTION(skip_opt_end, "R600_SFN_SKIP_OPT_END", -1);
+
 void
 r600_lower_and_optimize_nir(nir_shader *sh,
                             const union r600_shader_key *key,
@@ -758,6 +762,7 @@ r600_lower_and_optimize_nir(nir_shader *sh,
       ((sh->info.bit_sizes_float | sh->info.bit_sizes_int) & 64);
 
    r600::sort_uniforms(sh);
+   NIR_PASS_V(sh, r600_nir_fix_kcache_indirect_access);
 
    while (optimize_once(sh))
       ;
@@ -893,9 +898,17 @@ r600_finalize_and_optimize_shader(r600::Shader *shader)
       shader->print(std::cerr);
    }
 
-   if (!r600::sfn_log.has_debug_flag(r600::SfnLog::noopt)) {
-      optimize(*shader);
+   auto sfn_skip_opt_start = debug_get_option_skip_opt_start();
+   auto sfn_skip_opt_end = debug_get_option_skip_opt_end();
+   bool skip_shader_opt_per_id = sfn_skip_opt_start >= 0 &&
+                                 sfn_skip_opt_start <= shader->shader_id() &&
+                                 sfn_skip_opt_end >= shader->shader_id();
 
+   bool skip_shader_opt = r600::sfn_log.has_debug_flag(r600::SfnLog::noopt) ||
+                          skip_shader_opt_per_id;
+
+   if (!skip_shader_opt) {
+      optimize(*shader);
       if (r600::sfn_log.has_debug_flag(r600::SfnLog::steps)) {
          std::cerr << "Shader after optimization\n";
          shader->print(std::cerr);
@@ -909,9 +922,8 @@ r600_finalize_and_optimize_shader(r600::Shader *shader)
       shader->print(std::cerr);
    }
    
-   if (!r600::sfn_log.has_debug_flag(r600::SfnLog::noopt)) {
+   if (!skip_shader_opt) {
       optimize(*shader);
-
       if (r600::sfn_log.has_debug_flag(r600::SfnLog::steps)) {
          std::cerr << "Shader after optimization\n";
          shader->print(std::cerr);

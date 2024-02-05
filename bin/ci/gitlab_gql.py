@@ -9,13 +9,14 @@ from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from itertools import accumulate
-from os import getenv
 from pathlib import Path
 from subprocess import check_output
+from textwrap import dedent
 from typing import Any, Iterable, Optional, Pattern, TypedDict, Union
 
 import yaml
 from filecache import DAY, filecache
+from gitlab_common import get_token_from_default_dir
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 from graphql import DocumentNode
@@ -33,18 +34,6 @@ Dag = dict[str, DagNode]
 
 
 StageSeq = OrderedDict[str, set[str]]
-TOKEN_DIR = Path(getenv("XDG_CONFIG_HOME") or Path.home() / ".config")
-
-
-def get_token_from_default_dir() -> str:
-    token_file = TOKEN_DIR / "gitlab-token"
-    try:
-        return str(token_file.resolve())
-    except FileNotFoundError as ex:
-        print(
-            f"Could not find {token_file}, please provide a token file as an argument"
-        )
-        raise ex
 
 
 def get_project_root_dir():
@@ -337,7 +326,7 @@ def create_job_needs_dag(gl_gql: GitlabGQL, params, disable_cache: bool = True) 
 
 
 def filter_dag(dag: Dag, regex: Pattern) -> Dag:
-    jobs_with_regex: set[str] = {job for job in dag if regex.match(job)}
+    jobs_with_regex: set[str] = {job for job in dag if regex.fullmatch(job)}
     return Dag({job: data for job, data in dag.items() if job in sorted(jobs_with_regex)})
 
 
@@ -349,9 +338,10 @@ def print_dag(dag: Dag) -> None:
 
 
 def fetch_merged_yaml(gl_gql: GitlabGQL, params) -> dict[str, Any]:
-    gitlab_yml_file = get_project_root_dir() / ".gitlab-ci.yml"
-    content = Path(gitlab_yml_file).read_text().strip()
-    params["content"] = content
+    params["content"] = dedent("""\
+    include:
+      - local: .gitlab-ci.yml
+    """)
     raw_response = gl_gql.query("job_details.gql", params)
     if merged_yaml := raw_response["ciConfig"]["mergedYaml"]:
         return yaml.safe_load(merged_yaml)
@@ -438,7 +428,7 @@ def recurse_among_variables_space(var_graph) -> bool:
     return updated
 
 
-def get_job_final_definition(job_name, merged_yaml, project_path, sha):
+def print_job_final_definition(job_name, merged_yaml, project_path, sha):
     job = merged_yaml[job_name]
     variables = get_variables(job, merged_yaml, project_path, sha)
 
@@ -482,14 +472,22 @@ def parse_args() -> Namespace:
         required=False,
         help="Regex pattern for the job name to be considered",
     )
-    parser.add_argument("--print-dag", action="store_true", help="Print job needs DAG")
-    parser.add_argument(
+    mutex_group_print = parser.add_mutually_exclusive_group()
+    mutex_group_print.add_argument(
+        "--print-dag",
+        action="store_true",
+        help="Print job needs DAG",
+    )
+    mutex_group_print.add_argument(
         "--print-merged-yaml",
         action="store_true",
         help="Print the resulting YAML for the specific SHA",
     )
-    parser.add_argument(
-        "--print-job-manifest", type=str, help="Print the resulting job data"
+    mutex_group_print.add_argument(
+        "--print-job-manifest",
+        metavar='JOB_NAME',
+        type=str,
+        help="Print the resulting job data"
     )
     parser.add_argument(
         "--gitlab-token-file",
@@ -509,31 +507,29 @@ def main():
 
     sha = check_output(['git', 'rev-parse', args.sha]).decode('ascii').strip()
 
-    args.iid = from_sha_to_pipeline_iid(gl_gql, {"projectPath": args.project_path, "sha": sha})
-
     if args.print_dag:
+        iid = from_sha_to_pipeline_iid(gl_gql, {"projectPath": args.project_path, "sha": sha})
         dag = create_job_needs_dag(
-            gl_gql, {"projectPath": args.project_path, "iid": args.iid}, disable_cache=True
+            gl_gql, {"projectPath": args.project_path, "iid": iid}, disable_cache=True
         )
 
         if args.regex:
             dag = filter_dag(dag, re.compile(args.regex))
+
         print_dag(dag)
 
-    if args.print_merged_yaml:
-        print(
-            fetch_merged_yaml(
-                gl_gql, {"projectPath": args.project_path, "sha": sha}
-            )
-        )
-
-    if args.print_job_manifest:
+    if args.print_merged_yaml or args.print_job_manifest:
         merged_yaml = fetch_merged_yaml(
             gl_gql, {"projectPath": args.project_path, "sha": sha}
         )
-        get_job_final_definition(
-            args.print_job_manifest, merged_yaml, args.project_path, sha
-        )
+
+        if args.print_merged_yaml:
+            print(yaml.dump(merged_yaml, indent=2))
+
+        if args.print_job_manifest:
+            print_job_final_definition(
+                args.print_job_manifest, merged_yaml, args.project_path, sha
+            )
 
 
 if __name__ == "__main__":

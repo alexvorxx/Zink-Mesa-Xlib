@@ -308,12 +308,6 @@ impl NirShader {
         unsafe { (*self.nir.as_ptr()).info.num_textures }
     }
 
-    pub fn reset_scratch_size(&mut self) {
-        unsafe {
-            (*self.nir.as_ptr()).scratch_size = 0;
-        }
-    }
-
     pub fn scratch_size(&self) -> u32 {
         unsafe { (*self.nir.as_ptr()).scratch_size }
     }
@@ -443,6 +437,15 @@ impl NirShader {
         unsafe {
             self.nir.as_mut().info.float_controls_execution_mode |=
                 float_controls::FLOAT_CONTROLS_DENORM_PRESERVE_FP16 as u32;
+        }
+    }
+
+    pub fn set_fp_rounding_mode_rtne(&mut self) {
+        unsafe {
+            self.nir.as_mut().info.float_controls_execution_mode |=
+                float_controls::FLOAT_CONTROLS_ROUNDING_MODE_RTE_FP16 as u32
+                    | float_controls::FLOAT_CONTROLS_ROUNDING_MODE_RTE_FP32 as u32
+                    | float_controls::FLOAT_CONTROLS_ROUNDING_MODE_RTE_FP64 as u32;
         }
     }
 

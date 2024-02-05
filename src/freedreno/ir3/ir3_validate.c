@@ -84,6 +84,9 @@ validate_src(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
    validate_assert(ctx, src->wrmask == reg->wrmask);
    validate_assert(ctx, reg_class_flags(src) == reg_class_flags(reg));
 
+   if (src->flags & IR3_REG_CONST)
+      validate_assert(ctx, !(src->flags & IR3_REG_SHARED));
+
    if (reg->tied) {
       validate_assert(ctx, reg->tied->tied == reg);
       bool found = false;
@@ -246,6 +249,27 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
          validate_assert(ctx, reg_class_flags(instr->dsts[1]) ==
                               reg_class_flags(instr->srcs[0]));
          validate_assert(ctx, reg_class_flags(instr->dsts[2]) == IR3_REG_SHARED);
+      } else if (instr->opc == OPC_SCAN_CLUSTERS_MACRO) {
+         validate_assert(ctx, instr->dsts_count >= 2 && instr->dsts_count < 5);
+         validate_assert(ctx, instr->srcs_count >= 2 && instr->srcs_count < 4);
+         validate_assert(ctx,
+                         reg_class_flags(instr->dsts[0]) == IR3_REG_SHARED);
+         validate_assert(ctx, reg_class_flags(instr->dsts[1]) ==
+                                 reg_class_flags(instr->srcs[1]));
+
+         /* exclusive scan */
+         if (instr->srcs_count == 3) {
+            validate_assert(ctx, instr->dsts_count >= 3);
+            validate_assert(ctx, reg_class_flags(instr->srcs[2]) ==
+                                    reg_class_flags(instr->srcs[1]));
+            validate_assert(ctx, reg_class_flags(instr->dsts[2]) ==
+                                    reg_class_flags(instr->srcs[1]));
+         }
+
+         /* scratch register */
+         validate_assert(ctx,
+                         reg_class_flags(instr->dsts[instr->dsts_count - 1]) ==
+                            reg_class_flags(instr->srcs[1]));
       } else {
          foreach_dst (dst, instr)
             validate_reg_size(ctx, dst, instr->cat1.dst_type);
@@ -369,7 +393,7 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
 static bool
 is_physical_successor(struct ir3_block *block, struct ir3_block *succ)
 {
-   for (unsigned i = 0; i < ARRAY_SIZE(block->physical_successors); i++)
+   for (unsigned i = 0; i < block->physical_successors_count; i++)
       if (block->physical_successors[i] == succ)
          return true;
    return false;
@@ -423,12 +447,12 @@ ir3_validate(struct ir3 *ir)
             ctx->current_instr = NULL;
 
             /* Each logical successor should also be a physical successor: */
-            validate_assert(ctx, is_physical_successor(block, block->successors[i]));
+            if (block->physical_successors_count > 0)
+               validate_assert(ctx, is_physical_successor(block, block->successors[i]));
          }
       }
 
       validate_assert(ctx, block->successors[0] || !block->successors[1]);
-      validate_assert(ctx, block->physical_successors[0] || !block->physical_successors[1]);
    }
 
    ralloc_free(ctx);

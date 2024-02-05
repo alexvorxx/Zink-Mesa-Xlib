@@ -8,6 +8,7 @@ export LLVM_VERSION="${LLVM_VERSION:=15}"
 
 apt-get -y install ca-certificates
 sed -i -e 's/http:\/\/deb/https:\/\/deb/g' /etc/apt/sources.list.d/*
+echo "deb [trusted=yes] https://gitlab.freedesktop.org/gfx-ci/ci-deb-repo/-/raw/${PKG_REPO_REV}/ ${FDO_DISTRIBUTION_VERSION%-*} main" | tee /etc/apt/sources.list.d/gfx-ci_.list
 apt-get update
 
 # Ephemeral packages (installed for this script and removed again at the end)
@@ -26,6 +27,7 @@ DEPS=(
     cmake
     curl
     fastboot
+    flatbuffers-compiler
     flex
     g++
     git
@@ -35,6 +37,7 @@ DEPS=(
     libdrm-dev
     libelf-dev
     libexpat1-dev
+    libflatbuffers-dev
     libvulkan-dev
     libx11-dev
     libx11-xcb-dev
@@ -49,6 +52,7 @@ DEPS=(
     libxext-dev
     libxrandr-dev
     libxshmfence-dev
+    libxtensor-dev
     libxxf86vm-dev
     libwayland-dev
     libwayland-egl-backend-dev

@@ -238,15 +238,11 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
        *     the z planes of the frustrum as described in Primitive Clipping.
        *     Otherwise depth clipping is controlled by the state set in
        *     VkPipelineRasterizationDepthClipStateCreateInfoEXT."
-       *
-       * Note: neither depth clamping nor VK_EXT_depth_clip_enable are actually
-       * supported in the driver yet, so in practice we are always enabling Z
-       * clipping for now.
        */
       bool z_clamp_enable = rs_info && rs_info->depthClampEnable;
       bool z_clip_enable = false;
       const VkPipelineRasterizationDepthClipStateCreateInfoEXT *clip_info =
-         ds_info ? vk_find_struct_const(ds_info->pNext,
+         rs_info ? vk_find_struct_const(rs_info->pNext,
                                         PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT) :
                    NULL;
       if (clip_info)
@@ -270,7 +266,7 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
 }
 
 static uint32_t
-translate_stencil_op(enum pipe_stencil_op op)
+translate_stencil_op(VkStencilOp op)
 {
    switch (op) {
    case VK_STENCIL_OP_KEEP:

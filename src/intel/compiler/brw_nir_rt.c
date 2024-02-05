@@ -525,7 +525,7 @@ brw_nir_create_raygen_trampoline(const struct brw_compiler *compiler,
       }
    }
 
-   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics);
+   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics, devinfo, NULL);
 
    const bool is_scalar = true;
    brw_nir_optimize(nir, is_scalar, devinfo);

@@ -13,6 +13,7 @@
 
 #include <xf86drm.h>
 
+#include "nvk_cl9039.h"
 #include "nvk_cl9097.h"
 #include "nvk_cl90b5.h"
 #include "nvk_cla0c0.h"
@@ -34,8 +35,6 @@ nvk_queue_state_finish(struct nvk_device *dev,
       nouveau_ws_bo_destroy(qs->images.bo);
    if (qs->samplers.bo)
       nouveau_ws_bo_destroy(qs->samplers.bo);
-   if (qs->shaders.bo)
-      nouveau_ws_bo_destroy(qs->shaders.bo);
    if (qs->slm.bo)
       nouveau_ws_bo_destroy(qs->slm.bo);
    if (qs->push.bo) {
@@ -87,19 +86,6 @@ nvk_queue_state_update(struct nvk_device *dev,
       /* No change */
       if (bo)
          nouveau_ws_bo_destroy(bo);
-   }
-
-   if (dev->shader_heap.contiguous) {
-      bo = nvk_heap_get_contiguous_bo_ref(&dev->shader_heap);
-      if (qs->shaders.bo != bo) {
-         if (qs->shaders.bo)
-            nouveau_ws_bo_destroy(qs->shaders.bo);
-         qs->shaders.bo = bo;
-         dirty = true;
-      } else {
-         if (bo)
-            nouveau_ws_bo_destroy(bo);
-      }
    }
 
    bo = nvk_slm_area_get_bo_ref(&dev->slm, &bytes_per_warp, &bytes_per_tpc);
@@ -179,20 +165,6 @@ nvk_queue_state_update(struct nvk_device *dev,
       P_IMMD(p, NV9097, INVALIDATE_SAMPLER_CACHE_NO_WFI, {
          .lines = LINES_ALL
       });
-   }
-
-   if (qs->shaders.bo) {
-      /* Compute */
-      assert(dev->pdev->info.cls_compute < VOLTA_COMPUTE_A);
-      P_MTHD(p, NVA0C0, SET_PROGRAM_REGION_A);
-      P_NVA0C0_SET_PROGRAM_REGION_A(p, qs->shaders.bo->offset >> 32);
-      P_NVA0C0_SET_PROGRAM_REGION_B(p, qs->shaders.bo->offset);
-
-      /* 3D */
-      assert(dev->pdev->info.cls_eng3d < VOLTA_A);
-      P_MTHD(p, NV9097, SET_PROGRAM_REGION_A);
-      P_NV9097_SET_PROGRAM_REGION_A(p, qs->shaders.bo->offset >> 32);
-      P_NV9097_SET_PROGRAM_REGION_B(p, qs->shaders.bo->offset);
    }
 
    if (qs->slm.bo) {
@@ -312,34 +284,89 @@ nvk_queue_submit(struct vk_queue *vk_queue,
    return VK_SUCCESS;
 }
 
+static VkResult
+nvk_queue_init_context_state(struct nvk_queue *queue,
+                             VkQueueFlags queue_flags)
+{
+   struct nvk_device *dev = nvk_queue_device(queue);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   VkResult result;
+
+   uint32_t push_data[2048];
+   struct nv_push push;
+   nv_push_init(&push, push_data, ARRAY_SIZE(push_data));
+   struct nv_push *p = &push;
+
+   /* M2MF state */
+   if (pdev->info.cls_m2mf <= FERMI_MEMORY_TO_MEMORY_FORMAT_A) {
+      /* we absolutely do not support Fermi, but if somebody wants to toy
+       * around with it, this is a must
+       */
+      P_MTHD(p, NV9039, SET_OBJECT);
+      P_NV9039_SET_OBJECT(p, {
+         .class_id = dev->pdev->info.cls_m2mf,
+         .engine_id = 0,
+      });
+   }
+
+   if (queue_flags & VK_QUEUE_GRAPHICS_BIT) {
+      result = nvk_push_draw_state_init(dev, p);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   if (queue_flags & VK_QUEUE_COMPUTE_BIT) {
+      result = nvk_push_dispatch_state_init(dev, p);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   return nvk_queue_submit_simple(queue, nv_push_dw_count(&push),
+                                  push_data, 0, NULL);
+}
+
 VkResult
 nvk_queue_init(struct nvk_device *dev, struct nvk_queue *queue,
                const VkDeviceQueueCreateInfo *pCreateInfo,
                uint32_t index_in_family)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
    VkResult result;
+
+   assert(pCreateInfo->queueFamilyIndex < pdev->queue_family_count);
+   const struct nvk_queue_family *queue_family =
+      &pdev->queue_families[pCreateInfo->queueFamilyIndex];
+
+   VkQueueFlags queue_flags = queue_family->queue_flags;
+
+   /* We rely on compute shaders for queries */
+   if (queue_family->queue_flags & VK_QUEUE_GRAPHICS_BIT)
+      queue_flags |= VK_QUEUE_COMPUTE_BIT;
+
+   /* We currently rely on 3D engine MMEs for indirect dispatch */
+   if (queue_family->queue_flags & VK_QUEUE_COMPUTE_BIT)
+      queue_flags |= VK_QUEUE_GRAPHICS_BIT;
 
    result = vk_queue_init(&queue->vk, &dev->vk, pCreateInfo, index_in_family);
    if (result != VK_SUCCESS)
       return result;
 
+   queue->vk.driver_submit = nvk_queue_submit;
+
    nvk_queue_state_init(&queue->state);
 
-   queue->vk.driver_submit = nvk_queue_submit;
-   int err = drmSyncobjCreate(dev->ws_dev->fd, 0, &queue->syncobj_handle);
-   if (err < 0) {
-      result = vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto fail_init;
-   }
-
-
-   result = nvk_queue_init_context_draw_state(queue);
+   result = nvk_queue_init_drm_nouveau(dev, queue, queue_flags);
    if (result != VK_SUCCESS)
-      goto fail_empty_push;
+      goto fail_init;
+
+   result = nvk_queue_init_context_state(queue, queue_flags);
+   if (result != VK_SUCCESS)
+      goto fail_drm;
 
    return VK_SUCCESS;
 
-fail_empty_push:
+fail_drm:
+   nvk_queue_finish_drm_nouveau(dev, queue);
 fail_init:
    vk_queue_finish(&queue->vk);
 
@@ -350,8 +377,7 @@ void
 nvk_queue_finish(struct nvk_device *dev, struct nvk_queue *queue)
 {
    nvk_queue_state_finish(dev, &queue->state);
-   ASSERTED int err = drmSyncobjDestroy(dev->ws_dev->fd, queue->syncobj_handle);
-   assert(err == 0);
+   nvk_queue_finish_drm_nouveau(dev, queue);
    vk_queue_finish(&queue->vk);
 }
 

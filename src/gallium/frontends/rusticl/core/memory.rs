@@ -49,7 +49,7 @@ impl MappingTransfer {
 
 struct Mappings {
     tx: HashMap<&'static Device, MappingTransfer>,
-    maps: HashMap<*mut c_void, u32>,
+    maps: HashMap<usize, u32>,
 }
 
 impl Mappings {
@@ -58,6 +58,11 @@ impl Mappings {
             tx: HashMap::new(),
             maps: HashMap::new(),
         })
+    }
+
+    fn contains_ptr(&self, ptr: *mut c_void) -> bool {
+        let ptr = ptr as usize;
+        self.maps.contains_key(&ptr)
     }
 
     fn mark_pending(&mut self, dev: &Device) {
@@ -71,6 +76,7 @@ impl Mappings {
     }
 
     fn increase_ref(&mut self, dev: &Device, ptr: *mut c_void) -> bool {
+        let ptr = ptr as usize;
         let res = self.maps.is_empty();
         *self.maps.entry(ptr).or_default() += 1;
         self.unmark_pending(dev);
@@ -78,6 +84,7 @@ impl Mappings {
     }
 
     fn decrease_ref(&mut self, ptr: *mut c_void, dev: &Device) -> (bool, Option<&PipeResource>) {
+        let ptr = ptr as usize;
         if let Some(r) = self.maps.get_mut(&ptr) {
             *r -= 1;
 
@@ -584,7 +591,7 @@ impl Mem {
         } else {
             let shadow = dev
                 .screen()
-                .resource_create_buffer(size as u32, ResourceType::Staging)
+                .resource_create_buffer(size as u32, ResourceType::Staging, 0)
                 .ok_or(CL_OUT_OF_RESOURCES)?;
             let tx = ctx
                 .buffer_map_coherent(&shadow, 0, size, rw)
@@ -1282,13 +1289,13 @@ impl Mem {
     }
 
     pub fn is_mapped_ptr(&self, ptr: *mut c_void) -> bool {
-        self.maps.lock().unwrap().maps.contains_key(&ptr)
+        self.maps.lock().unwrap().contains_ptr(ptr)
     }
 
     // TODO: only sync on unmap when the memory is not mapped for writing
     pub fn unmap(&self, q: &Arc<Queue>, ctx: &PipeContext, ptr: *mut c_void) -> CLResult<()> {
         let mut lock = self.maps.lock().unwrap();
-        if !lock.maps.contains_key(&ptr) {
+        if !lock.contains_ptr(ptr) {
             return Ok(());
         }
 

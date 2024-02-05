@@ -1243,12 +1243,7 @@ ir3_shader_branchstack_hw(const struct ir3_shader_variant *v)
    if (v->compiler->gen < 5)
       return v->branchstack;
 
-   if (v->branchstack > 0) {
-      uint32_t branchstack = v->branchstack / 2 + 1;
-      return MIN2(branchstack, v->compiler->branchstack_size / 2);
-   } else {
-      return 0;
-   }
+   return DIV_ROUND_UP(MIN2(v->branchstack, v->compiler->branchstack_size), 2);
 }
 
 ENDC;

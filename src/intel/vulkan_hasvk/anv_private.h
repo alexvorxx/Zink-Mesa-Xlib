@@ -55,6 +55,7 @@
 #include "ds/intel_driver_ds.h"
 #include "util/bitset.h"
 #include "util/bitscan.h"
+#include "util/detect_os.h"
 #include "util/macros.h"
 #include "util/hash_table.h"
 #include "util/list.h"
@@ -463,11 +464,7 @@ anv_bo_unwrap(struct anv_bo *bo)
 static inline bool
 anv_bo_is_pinned(struct anv_bo *bo)
 {
-#if defined(GFX_VERx10) && GFX_VERx10 >= 90
-   /* Sky Lake and later always uses softpin */
-   assert(bo->flags & EXEC_OBJECT_PINNED);
-   return true;
-#elif defined(GFX_VERx10) && GFX_VERx10 < 80
+#if defined(GFX_VERx10) && GFX_VERx10 < 80
    /* Haswell and earlier never use softpin */
    assert(!(bo->flags & EXEC_OBJECT_PINNED));
    assert(!bo->has_fixed_address);
@@ -944,10 +941,11 @@ struct anv_instance {
     /**
      * Workarounds for game bugs.
      */
-    bool                                        assume_full_subgroups;
+    uint8_t                                     assume_full_subgroups;
     bool                                        limit_trig_input_range;
     bool                                        sample_mask_out_opengl_behaviour;
     float                                       lower_depth_range_rate;
+    bool                                        report_vk_1_3;
 
     /* HW workarounds */
     bool                                        no_16bit;
@@ -1099,20 +1097,10 @@ struct anv_device {
     struct intel_ds_device                       ds;
 };
 
-#if defined(GFX_VERx10) && GFX_VERx10 >= 90
-#define ANV_ALWAYS_SOFTPIN true
-#else
-#define ANV_ALWAYS_SOFTPIN false
-#endif
-
 static inline bool
 anv_use_relocations(const struct anv_physical_device *pdevice)
 {
-#if defined(GFX_VERx10) && GFX_VERx10 >= 90
-   /* Sky Lake and later always uses softpin */
-   assert(!pdevice->use_relocations);
-   return false;
-#elif defined(GFX_VERx10) && GFX_VERx10 < 80
+#if defined(GFX_VERx10) && GFX_VERx10 < 80
    /* Haswell and earlier never use softpin */
    assert(pdevice->use_relocations);
    return true;
@@ -1395,16 +1383,9 @@ anv_batch_emit_reloc(struct anv_batch *batch,
                      void *location, struct anv_bo *bo, uint32_t delta)
 {
    uint64_t address_u64 = 0;
-   VkResult result;
-
-   if (ANV_ALWAYS_SOFTPIN) {
-      address_u64 = bo->offset + delta;
-      result = anv_reloc_list_add_bo(batch->relocs, batch->alloc, bo);
-   } else {
-      result = anv_reloc_list_add(batch->relocs, batch->alloc,
-                                  location - batch->start, bo, delta,
-                                  &address_u64);
-   }
+   VkResult result = anv_reloc_list_add(batch->relocs, batch->alloc,
+                                        location - batch->start, bo, delta,
+                                        &address_u64);
    if (unlikely(result != VK_SUCCESS)) {
       anv_batch_set_error(batch, result);
       return 0;

@@ -183,7 +183,9 @@ tcs_output_needs_vmem(nir_intrinsic_instr *intrin,
                    ? st->tes_inputs_read
                    : st->tes_patch_inputs_read;
 
-   return match_mask(MESA_SHADER_TESS_CTRL, intrin, mask, true);
+   /* no_varying indicates that TES doesn't read the output. */
+   return !nir_intrinsic_io_semantics(intrin).no_varying &&
+          match_mask(MESA_SHADER_TESS_CTRL, intrin, mask, true);
 }
 
 static bool

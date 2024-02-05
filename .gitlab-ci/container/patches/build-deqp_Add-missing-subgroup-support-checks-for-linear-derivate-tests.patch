@@ -1,0 +1,29 @@
+From 7c9aa6f846f9f2f0d70b5c4a8e7c99a3d31b3b1a Mon Sep 17 00:00:00 2001
+From: Rob Clark <robdclark@chromium.org>
+Date: Sat, 27 Jan 2024 10:59:00 -0800
+Subject: [PATCH] Add missing subgroup support checks for linear derivate tests
+
+Some of these tests require subgroup ops support, but didn't bother
+checking whether they were supported.  Add this missing checks.
+---
+ .../vulkan/shaderrender/vktShaderRenderDerivateTests.cpp   | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/external/vulkancts/modules/vulkan/shaderrender/vktShaderRenderDerivateTests.cpp b/external/vulkancts/modules/vulkan/shaderrender/vktShaderRenderDerivateTests.cpp
+index 3253505958..709044f2e8 100644
+--- a/external/vulkancts/modules/vulkan/shaderrender/vktShaderRenderDerivateTests.cpp
++++ b/external/vulkancts/modules/vulkan/shaderrender/vktShaderRenderDerivateTests.cpp
+@@ -1145,6 +1145,13 @@ LinearDerivateCase::~LinearDerivateCase (void)
+ TestInstance* LinearDerivateCase::createInstance (Context& context) const
+ {
+ 	DE_ASSERT(m_uniformSetup != DE_NULL);
++	if (m_fragmentTmpl.find("gl_SubgroupInvocationID") != std::string::npos) {
++		if (!subgroups::areQuadOperationsSupportedForStages(context, VK_SHADER_STAGE_FRAGMENT_BIT))
++			throw tcu::NotSupportedError("test requires VK_SUBGROUP_FEATURE_QUAD_BIT");
++
++		if (subgroups::getSubgroupSize(context) < 4)
++			throw tcu::NotSupportedError("test requires subgroupSize >= 4");
++	}
+ 	return new LinearDerivateCaseInstance(context, *m_uniformSetup, m_definitions, m_values);
+ }
+ 

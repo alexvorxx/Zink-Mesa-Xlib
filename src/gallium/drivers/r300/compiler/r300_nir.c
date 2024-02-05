@@ -22,7 +22,43 @@
 
 #include "r300_nir.h"
 
+#include "compiler/nir/nir_builder.h"
 #include "r300_screen.h"
+
+bool
+r300_is_only_used_as_float(const nir_alu_instr *instr)
+{
+   nir_foreach_use(src, &instr->def) {
+      if (nir_src_is_if(src))
+         return false;
+
+      nir_instr *user_instr = nir_src_parent_instr(src);
+      if (user_instr->type == nir_instr_type_alu) {
+         nir_alu_instr *alu = nir_instr_as_alu(user_instr);
+         switch (alu->op) {
+         case nir_op_mov:
+         case nir_op_vec2:
+         case nir_op_vec3:
+         case nir_op_vec4:
+         case nir_op_bcsel:
+         case nir_op_b32csel:
+            if (!r300_is_only_used_as_float(alu))
+               return false;
+            break;
+         default:
+	    break;
+         }
+
+         const nir_op_info *info = &nir_op_infos[alu->op];
+         nir_alu_src *alu_src = exec_node_data(nir_alu_src, src, src);
+         int src_idx = alu_src - &alu->src[0];
+         if ((info->input_types[src_idx] & nir_type_int) ||
+             (info->input_types[src_idx] & nir_type_bool))
+            return false;
+      }
+   }
+   return true;
+}
 
 static unsigned char
 r300_should_vectorize_instr(const nir_instr *instr, const void *data)
@@ -57,6 +93,16 @@ r300_should_vectorize_io(unsigned align, unsigned bit_size,
    return true;
 }
 
+static bool
+set_speculate(nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *_)
+{
+   if (intr->intrinsic == nir_intrinsic_load_ubo_vec4) {
+      nir_intrinsic_set_access(intr, nir_intrinsic_access(intr) | ACCESS_CAN_SPECULATE);
+      return true;
+   }
+   return false;
+}
+
 static void
 r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
 {
@@ -85,8 +131,15 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       NIR_PASS(progress, s, nir_opt_copy_prop_vars);
       NIR_PASS(progress, s, nir_opt_dead_write_vars);
 
-      NIR_PASS(progress, s, nir_opt_if, nir_opt_if_aggressive_last_continue | nir_opt_if_optimize_phi_true_false);
+      NIR_PASS(progress, s, nir_opt_if, nir_opt_if_optimize_phi_true_false);
+      if (is_r500)
+         nir_shader_intrinsics_pass(s, set_speculate,
+                                    nir_metadata_block_index |
+                                    nir_metadata_dominance, NULL);
       NIR_PASS(progress, s, nir_opt_peephole_select, is_r500 ? 8 : ~0, true, true);
+      if (s->info.stage == MESA_SHADER_FRAGMENT) {
+         NIR_PASS(progress, s, r300_nir_lower_bool_to_float_fs);
+      }
       NIR_PASS(progress, s, nir_opt_algebraic);
       NIR_PASS(progress, s, nir_opt_constant_folding);
       nir_load_store_vectorize_options vectorize_opts = {
@@ -97,7 +150,7 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       NIR_PASS(progress, s, nir_opt_load_store_vectorize, &vectorize_opts);
       NIR_PASS(progress, s, nir_opt_shrink_stores, true);
       NIR_PASS(progress, s, nir_opt_shrink_vectors);
-      NIR_PASS(progress, s, nir_opt_trivial_continues);
+      NIR_PASS(progress, s, nir_opt_loop);
       NIR_PASS(progress, s, nir_opt_vectorize, r300_should_vectorize_instr, NULL);
       NIR_PASS(progress, s, nir_opt_undef);
       if(!progress)

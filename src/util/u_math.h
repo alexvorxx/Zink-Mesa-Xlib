@@ -633,8 +633,8 @@ util_memcpy_cpu_to_le32(void * restrict dest, const void * restrict src, size_t 
 #if defined(ALIGN)
 #undef ALIGN
 #endif
-static inline uintptr_t
-ALIGN(uintptr_t value, int32_t alignment)
+static inline uint32_t
+ALIGN(uint32_t value, uint32_t alignment)
 {
    assert(util_is_power_of_two_nonzero(alignment));
    return ALIGN_POT(value, alignment);
@@ -682,6 +682,16 @@ static inline uint64_t
 align64(uint64_t value, uint64_t alignment)
 {
    assert(util_is_power_of_two_nonzero64(alignment));
+   return ALIGN_POT(value, alignment);
+}
+
+/**
+ * Align a value(uintptr_t, intptr_t, ptrdiff_t), only works pot alignemnts.
+ */
+static inline uintptr_t
+align_uintptr(uintptr_t value, uintptr_t alignment)
+{
+   assert(util_is_power_of_two_nonzero_uintptr(alignment));
    return ALIGN_POT(value, alignment);
 }
 

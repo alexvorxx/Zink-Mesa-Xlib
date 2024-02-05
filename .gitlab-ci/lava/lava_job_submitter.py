@@ -458,10 +458,8 @@ class LAVAJobSubmitter(PathResolver):
                 self.finish_script(last_attempt_job)
 
     def print_log_artifact_url(self):
-        base_url = "https://$CI_PROJECT_ROOT_NAMESPACE.pages.freedesktop.org/"
-        artifacts_path = "-/$CI_PROJECT_NAME/-/jobs/$CI_JOB_ID/artifacts/"
         relative_log_path = self.structured_log_file.relative_to(pathlib.Path.cwd())
-        full_path = f"{base_url}{artifacts_path}{relative_log_path}"
+        full_path = f"$ARTIFACTS_BASE_URL/{relative_log_path}"
         artifact_url = path.expandvars(full_path)
 
         print_log(f"Structural Logging data available at: {artifact_url}")

@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 #include "pipe/p_defines.h"
+#include "util/macros.h"
+#include "util/u_inlines.h"
 #include "util/u_prim.h"
 #include "agx_device.h"
 #include "agx_state.h"
@@ -35,18 +37,49 @@ is_occlusion(struct agx_query *query)
    }
 }
 
-static void
-agx_destroy_query(struct pipe_context *ctx, struct pipe_query *pquery)
+static bool
+is_timer(struct agx_query *query)
 {
+   switch (query->type) {
+   case PIPE_QUERY_TIMESTAMP:
+   case PIPE_QUERY_TIME_ELAPSED:
+      return true;
+   default:
+      return false;
+   }
+}
+
+static void
+agx_destroy_query(struct pipe_context *pctx, struct pipe_query *pquery)
+{
+   struct agx_context *ctx = agx_context(pctx);
    struct agx_query *query = (struct agx_query *)pquery;
 
    /* It is legal for the query to be destroyed before its value is read,
     * particularly during application teardown. In this case, don't leave a
     * dangling reference to the query.
     */
-   if (query->writer && is_occlusion(query)) {
-      *util_dynarray_element(&query->writer->occlusion_queries,
-                             struct agx_query *, query->writer_index) = NULL;
+   if (query->writer) {
+      assert(!is_timer(query) && "single writer not used here");
+
+      struct agx_batch *writer = query->writer;
+      struct util_dynarray *array = is_occlusion(query)
+                                       ? &writer->occlusion_queries
+                                       : &writer->nonocclusion_queries;
+      struct agx_query **ptr =
+         util_dynarray_element(array, struct agx_query *, query->writer_index);
+
+      assert((*ptr) == query && "data structure invariant");
+      *ptr = NULL;
+   } else if (is_timer(query)) {
+      /* Potentially has many writers! We need them all to synchronize so they
+       * don't have dangling references. Syncing will destroy batches that hold
+       * references as required.
+       *
+       * TODO: Optimize this, timestamp queries are bonkers on tilers.
+       */
+      agx_flush_all(ctx, "Destroying time query");
+      agx_sync_all(ctx, "Destroying time query");
    }
 
    free(query);
@@ -68,11 +101,19 @@ agx_begin_query(struct pipe_context *pctx, struct pipe_query *pquery)
       break;
 
    case PIPE_QUERY_PRIMITIVES_GENERATED:
-      ctx->prims_generated = query;
+      ctx->prims_generated[query->index] = query;
       break;
 
    case PIPE_QUERY_PRIMITIVES_EMITTED:
-      ctx->tf_prims_generated = query;
+      ctx->tf_prims_generated[query->index] = query;
+      break;
+
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+      ctx->tf_overflow[query->index] = query;
+      break;
+
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      ctx->tf_any_overflow = query;
       break;
 
    case PIPE_QUERY_TIME_ELAPSED:
@@ -119,10 +160,16 @@ agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
       ctx->occlusion_query = NULL;
       return true;
    case PIPE_QUERY_PRIMITIVES_GENERATED:
-      ctx->prims_generated = NULL;
+      ctx->prims_generated[query->index] = NULL;
       return true;
    case PIPE_QUERY_PRIMITIVES_EMITTED:
-      ctx->tf_prims_generated = NULL;
+      ctx->tf_prims_generated[query->index] = NULL;
+      return true;
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+      ctx->tf_overflow[query->index] = NULL;
+      return true;
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      ctx->tf_any_overflow = NULL;
       return true;
    case PIPE_QUERY_TIME_ELAPSED:
       ctx->time_elapsed = NULL;
@@ -180,6 +227,11 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
       vresult->b = query->value;
       return true;
 
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      vresult->b = query->value > 0;
+      return true;
+
    case PIPE_QUERY_OCCLUSION_COUNTER:
    case PIPE_QUERY_PRIMITIVES_GENERATED:
    case PIPE_QUERY_PRIMITIVES_EMITTED:
@@ -198,6 +250,55 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
    default:
       unreachable("Other queries not yet supported");
    }
+}
+
+static void
+agx_get_query_result_resource(struct pipe_context *pipe, struct pipe_query *q,
+                              enum pipe_query_flags flags,
+                              enum pipe_query_value_type result_type, int index,
+                              struct pipe_resource *resource, unsigned offset)
+{
+   struct agx_query *query = (struct agx_query *)q;
+
+   /* TODO: Don't cheat XXX */
+   struct agx_context *ctx = agx_context(pipe);
+   agx_sync_all(ctx, "Stubbed QBOs");
+
+   union pipe_query_result result;
+   if (index < 0) {
+      /* availability */
+      result.u64 = 1;
+   } else {
+      bool ready = agx_get_query_result(pipe, q, true, &result);
+      assert(ready);
+   }
+
+   switch (query->type) {
+   case PIPE_QUERY_OCCLUSION_PREDICATE:
+   case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
+      result.u32 = result.b;
+      break;
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      result.u32 = (bool)(result.u32 > 0);
+      break;
+   default:
+      break;
+   }
+
+   /* Clamp to type, arb_query_buffer_object-qbo tests */
+   if (result_type == PIPE_QUERY_TYPE_U32) {
+      result.u32 = MIN2(result.u64, u_uintN_max(32));
+   } else if (result_type == PIPE_QUERY_TYPE_I32) {
+      int64_t x = result.u64;
+      x = MAX2(MIN2(x, u_intN_max(32)), u_intN_min(32));
+      result.u32 = x;
+   }
+
+   if (result_type <= PIPE_QUERY_TYPE_U32)
+      pipe_buffer_write(pipe, resource, offset, 4, &result.u32);
+   else
+      pipe_buffer_write(pipe, resource, offset, 8, &result.u64);
 }
 
 static void
@@ -363,6 +464,7 @@ agx_init_query_functions(struct pipe_context *pctx)
    pctx->begin_query = agx_begin_query;
    pctx->end_query = agx_end_query;
    pctx->get_query_result = agx_get_query_result;
+   pctx->get_query_result_resource = agx_get_query_result_resource;
    pctx->set_active_query_state = agx_set_active_query_state;
    pctx->render_condition = agx_render_condition;
 

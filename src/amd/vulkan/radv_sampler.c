@@ -47,6 +47,7 @@ radv_tex_wrap(VkSamplerAddressMode address_mode)
       unreachable("illegal tex wrap mode");
       break;
    }
+   return 0;
 }
 
 static unsigned
@@ -73,6 +74,7 @@ radv_tex_compare(VkCompareOp op)
       unreachable("illegal compare mode");
       break;
    }
+   return 0;
 }
 
 static unsigned
@@ -200,8 +202,9 @@ radv_init_sampler(struct radv_device *device, struct radv_sampler *sampler, cons
       device->physical_device->rad_info.gfx_level == GFX8 || device->physical_device->rad_info.gfx_level == GFX9;
    unsigned filter_mode = radv_tex_filter_mode(sampler->vk.reduction_mode);
    unsigned depth_compare_func = V_008F30_SQ_TEX_DEPTH_COMPARE_NEVER;
-   bool trunc_coord = (pCreateInfo->minFilter == VK_FILTER_NEAREST && pCreateInfo->magFilter == VK_FILTER_NEAREST) ||
-                      device->physical_device->rad_info.conformant_trunc_coord;
+   bool trunc_coord = ((pCreateInfo->minFilter == VK_FILTER_NEAREST && pCreateInfo->magFilter == VK_FILTER_NEAREST) ||
+                       device->physical_device->rad_info.conformant_trunc_coord) &&
+                      !device->disable_trunc_coord;
    bool uses_border_color = pCreateInfo->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER ||
                             pCreateInfo->addressModeV == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER ||
                             pCreateInfo->addressModeW == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
@@ -245,12 +248,12 @@ radv_init_sampler(struct radv_device *device, struct radv_sampler *sampler, cons
 
    if (device->physical_device->rad_info.gfx_level >= GFX10) {
       sampler->state[2] |= S_008F38_LOD_BIAS(radv_float_to_sfixed(CLAMP(pCreateInfo->mipLodBias, -32, 31), 8)) |
-                           S_008F38_ANISO_OVERRIDE_GFX10(device->instance->disable_aniso_single_level);
+                           S_008F38_ANISO_OVERRIDE_GFX10(device->instance->drirc.disable_aniso_single_level);
    } else {
       sampler->state[2] |= S_008F38_LOD_BIAS(radv_float_to_sfixed(CLAMP(pCreateInfo->mipLodBias, -16, 16), 8)) |
                            S_008F38_DISABLE_LSB_CEIL(device->physical_device->rad_info.gfx_level <= GFX8) |
                            S_008F38_FILTER_PREC_FIX(1) |
-                           S_008F38_ANISO_OVERRIDE_GFX8(device->instance->disable_aniso_single_level &&
+                           S_008F38_ANISO_OVERRIDE_GFX8(device->instance->drirc.disable_aniso_single_level &&
                                                         device->physical_device->rad_info.gfx_level >= GFX8);
    }
 

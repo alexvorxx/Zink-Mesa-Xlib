@@ -27,7 +27,7 @@
 
 #include "aco_interface.h"
 
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
 #include "ac_llvm_util.h"
 #endif
 
@@ -56,7 +56,6 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    /* Shader compiler options the shader cache should be aware of: */
    {"w32ge", DBG(W32_GE), "Use Wave32 for vertex, tessellation, and geometry shaders."},
    {"w32ps", DBG(W32_PS), "Use Wave32 for pixel shaders."},
-   {"w32psdiscard", DBG(W32_PS_DISCARD), "Use Wave32 for pixel shaders even if they contain discard and LLVM is buggy."},
    {"w32cs", DBG(W32_CS), "Use Wave32 for computes shaders."},
    {"w64ge", DBG(W64_GE), "Use Wave64 for vertex, tessellation, and geometry shaders."},
    {"w64ps", DBG(W64_PS), "Use Wave64 for pixel shaders."},
@@ -136,7 +135,7 @@ static const struct debug_named_value test_options[] = {
 
 struct ac_llvm_compiler *si_create_llvm_compiler(struct si_screen *sscreen)
 {
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
    struct ac_llvm_compiler *compiler = CALLOC_STRUCT(ac_llvm_compiler);
    if (!compiler)
       return NULL;
@@ -180,7 +179,7 @@ void si_init_aux_async_compute_ctx(struct si_screen *sscreen)
 
 static void si_destroy_llvm_compiler(struct ac_llvm_compiler *compiler)
 {
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
    ac_destroy_llvm_compiler(compiler);
    FREE(compiler);
 #endif
@@ -276,6 +275,8 @@ static void si_destroy_context(struct pipe_context *context)
       sctx->b.delete_compute_state(&sctx->b, sctx->cs_clear_buffer_rmw);
    if (sctx->cs_copy_buffer)
       sctx->b.delete_compute_state(&sctx->b, sctx->cs_copy_buffer);
+   if (sctx->cs_ubyte_to_ushort)
+      sctx->b.delete_compute_state(&sctx->b, sctx->cs_ubyte_to_ushort);
    for (unsigned i = 0; i < ARRAY_SIZE(sctx->cs_copy_image); i++) {
       for (unsigned j = 0; j < ARRAY_SIZE(sctx->cs_copy_image[i]); j++) {
          for (unsigned k = 0; k < ARRAY_SIZE(sctx->cs_copy_image[i][j]); k++) {
@@ -350,7 +351,7 @@ static void si_destroy_context(struct pipe_context *context)
 
    u_suballocator_destroy(&sctx->allocator_zeroed_memory);
 
-   sctx->ws->fence_reference(&sctx->last_gfx_fence, NULL);
+   sctx->ws->fence_reference(sctx->ws, &sctx->last_gfx_fence, NULL);
    si_resource_reference(&sctx->eop_bug_scratch, NULL);
    si_resource_reference(&sctx->eop_bug_scratch_tmz, NULL);
    si_resource_reference(&sctx->shadowing.registers, NULL);
@@ -446,7 +447,7 @@ static void si_set_debug_callback(struct pipe_context *ctx, const struct util_de
    struct si_screen *screen = sctx->screen;
 
    util_queue_finish(&screen->shader_compiler_queue);
-   util_queue_finish(&screen->shader_compiler_queue_low_priority);
+   util_queue_finish(&screen->shader_compiler_queue_opt_variants);
 
    if (cb)
       sctx->debug = *cb;
@@ -469,7 +470,7 @@ static void si_set_context_param(struct pipe_context *ctx, enum pipe_context_par
    struct radeon_winsys *ws = ((struct si_context *)ctx)->ws;
 
    switch (param) {
-   case PIPE_CONTEXT_PARAM_PIN_THREADS_TO_L3_CACHE:
+   case PIPE_CONTEXT_PARAM_UPDATE_THREAD_SCHEDULING:
       ws->pin_threads_to_L3_cache(ws, value);
       break;
    default:;
@@ -721,7 +722,8 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
        ((sscreen->info.vcn_ip_version >= VCN_4_0_0) ?
 	 sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues : sscreen->info.ip[AMD_IP_VCN_DEC].num_queues) ||
        sscreen->info.ip[AMD_IP_VCN_JPEG].num_queues || sscreen->info.ip[AMD_IP_VCE].num_queues ||
-       sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues) {
+       sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues ||
+       sscreen->info.ip[AMD_IP_VPE].num_queues) {
       sctx->b.create_video_codec = si_uvd_create_decoder;
       sctx->b.create_video_buffer = si_video_buffer_create;
       if (screen->resource_create_with_modifiers)
@@ -978,6 +980,9 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
 
    si_resource_reference(&sscreen->attribute_ring, NULL);
 
+   util_queue_destroy(&sscreen->shader_compiler_queue);
+   util_queue_destroy(&sscreen->shader_compiler_queue_opt_variants);
+
    for (unsigned i = 0; i < ARRAY_SIZE(sscreen->aux_contexts); i++) {
       if (!sscreen->aux_contexts[i].ctx)
          continue;
@@ -999,9 +1004,6 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
    if (sscreen->async_compute_context) {
       sscreen->async_compute_context->destroy(sscreen->async_compute_context);
    }
-
-   util_queue_destroy(&sscreen->shader_compiler_queue);
-   util_queue_destroy(&sscreen->shader_compiler_queue_low_priority);
 
    /* Release the reference on glsl types of the compiler threads. */
    glsl_type_singleton_decref();
@@ -1085,7 +1087,7 @@ static void si_test_gds_memory_management(struct si_context *sctx, unsigned allo
 {
    struct radeon_winsys *ws = sctx->ws;
    struct radeon_cmdbuf cs[8];
-   struct pb_buffer *gds_bo[ARRAY_SIZE(cs)];
+   struct pb_buffer_lean *gds_bo[ARRAY_SIZE(cs)];
 
    for (unsigned i = 0; i < ARRAY_SIZE(cs); i++) {
       ws->cs_create(&cs[i], sctx->ctx, AMD_IP_COMPUTE, NULL, NULL);
@@ -1131,7 +1133,7 @@ static void si_disk_cache_create(struct si_screen *sscreen)
     * the LLVM function identifier. ACO is a built-in component in mesa, so no need
     * to add aco function here.
     */
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
    if (!sscreen->use_aco &&
        !disk_cache_get_function_identifier(LLVMInitializeAMDGPUTargetInfo, &ctx))
       return;
@@ -1191,6 +1193,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
                            &sscreen->pa_sc_raster_config_1, &sscreen->se_tile_repeat);
    }
 
+   sscreen->context_roll_log_filename = debug_get_option("AMD_ROLLS", NULL);
    sscreen->debug_flags = debug_get_flags_option("R600_DEBUG", radeonsi_debug_options, 0);
    sscreen->debug_flags |= debug_get_flags_option("AMD_DEBUG", radeonsi_debug_options, 0);
    test_flags = debug_get_flags_option("AMD_TEST", test_options, 0);
@@ -1204,7 +1207,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    if (sscreen->debug_flags & DBG(SHADOW_REGS))
       sscreen->info.register_shadowing_required = true;
 
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
    sscreen->use_aco = (sscreen->debug_flags & DBG(USE_ACO));
 #else
    sscreen->use_aco = true;
@@ -1336,7 +1339,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    if (!util_queue_init(&sscreen->shader_compiler_queue, "sh", num_slots,
                         num_comp_hi_threads,
                         UTIL_QUEUE_INIT_RESIZE_IF_FULL |
-                           UTIL_QUEUE_INIT_SET_FULL_THREAD_AFFINITY, NULL)) {
+                        UTIL_QUEUE_INIT_SET_FULL_THREAD_AFFINITY, NULL)) {
       si_destroy_shader_cache(sscreen);
       FREE(sscreen->nir_options);
       FREE(sscreen);
@@ -1344,11 +1347,10 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       return NULL;
    }
 
-   if (!util_queue_init(&sscreen->shader_compiler_queue_low_priority, "shlo", num_slots,
+   if (!util_queue_init(&sscreen->shader_compiler_queue_opt_variants, "sh_opt", num_slots,
                         num_comp_lo_threads,
                         UTIL_QUEUE_INIT_RESIZE_IF_FULL |
-                           UTIL_QUEUE_INIT_SET_FULL_THREAD_AFFINITY |
-                           UTIL_QUEUE_INIT_USE_MINIMUM_PRIORITY, NULL)) {
+                        UTIL_QUEUE_INIT_SET_FULL_THREAD_AFFINITY, NULL)) {
       si_destroy_shader_cache(sscreen);
       FREE(sscreen->nir_options);
       FREE(sscreen);
@@ -1553,7 +1555,7 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
    if (!version)
      return NULL;
 
-#ifdef LLVM_AVAILABLE
+#if LLVM_AVAILABLE
    /* LLVM must be initialized before util_queue because both u_queue and LLVM call atexit,
     * and LLVM must call it first because its atexit handler executes C++ destructors,
     * which must be done after our compiler threads using LLVM in u_queue are finished

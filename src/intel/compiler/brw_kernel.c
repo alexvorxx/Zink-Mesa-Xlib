@@ -48,6 +48,7 @@ load_clc_shader(struct brw_compiler *compiler, struct disk_cache *disk_cache,
       p_atomic_cmpxchg(&compiler->clc_shader, NULL, nir);
    if (old_nir == NULL) {
       /* We won the race */
+      ralloc_steal(compiler, nir);
       return nir;
    } else {
       /* Someone else built the shader first */
@@ -425,7 +426,7 @@ brw_kernel_from_spirv(struct brw_compiler *compiler,
 
    NIR_PASS_V(nir, nir_lower_convert_alu_types, NULL);
 
-   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics);
+   NIR_PASS_V(nir, brw_nir_lower_cs_intrinsics, devinfo, NULL);
    NIR_PASS_V(nir, lower_kernel_intrinsics);
 
    struct brw_cs_prog_key key = { };

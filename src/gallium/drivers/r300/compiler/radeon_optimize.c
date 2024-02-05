@@ -242,27 +242,6 @@ static int is_src_uniform_constant(struct rc_src_register src,
 	return 1;
 }
 
-static void constant_folding_add(struct rc_instruction * inst)
-{
-	rc_swizzle swz = 0;
-	unsigned int negate = 0;
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[0], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			inst->U.I.SrcReg[0] = inst->U.I.SrcReg[1];
-			return;
-		}
-	}
-
-	if (is_src_uniform_constant(inst->U.I.SrcReg[1], &swz, &negate)) {
-		if (swz == RC_SWIZZLE_ZERO) {
-			inst->U.I.Opcode = RC_OPCODE_MOV;
-			return;
-		}
-	}
-}
-
 /**
  * Replace 0.0, 1.0 and 0.5 immediate constants by their
  * respective swizzles. Simplify instructions like ADD dst, src, 0;
@@ -343,10 +322,6 @@ static void constant_folding(struct radeon_compiler * c, struct rc_instruction *
 
 		inst->U.I.SrcReg[src] = newsrc;
 	}
-
-	if (c->type == RC_FRAGMENT_PROGRAM &&
-		inst->U.I.Opcode == RC_OPCODE_ADD)
-		constant_folding_add(inst);
 
 	/* In case this instruction has been converted, make sure all of the
 	 * registers that are no longer used are empty. */

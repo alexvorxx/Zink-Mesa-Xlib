@@ -707,46 +707,6 @@ static void allocate_temporary_registers(struct radeon_compiler *c, void *user)
 }
 
 /**
- * R3xx-R4xx vertex engine does not support the Absolute source operand modifier
- * and the Saturate opcode modifier. Only Absolute is currently transformed.
- */
-static int transform_nonnative_modifiers(
-	struct radeon_compiler *c,
-	struct rc_instruction *inst,
-	void* unused)
-{
-	const struct rc_opcode_info *opcode = rc_get_opcode_info(inst->U.I.Opcode);
-	unsigned i;
-
-	/* Transform ABS(a) to MAX(a, -a). */
-	for (i = 0; i < opcode->NumSrcRegs; i++) {
-		if (inst->U.I.SrcReg[i].Abs) {
-			struct rc_instruction *new_inst;
-			unsigned temp;
-
-			inst->U.I.SrcReg[i].Abs = 0;
-
-			temp = rc_find_free_temporary(c);
-
-			new_inst = rc_insert_new_instruction(c, inst->Prev);
-			new_inst->U.I.Opcode = RC_OPCODE_MAX;
-			new_inst->U.I.DstReg.File = RC_FILE_TEMPORARY;
-			new_inst->U.I.DstReg.Index = temp;
-			new_inst->U.I.SrcReg[0] = inst->U.I.SrcReg[i];
-			new_inst->U.I.SrcReg[0].Swizzle = RC_SWIZZLE_XYZW;
-			new_inst->U.I.SrcReg[1] = inst->U.I.SrcReg[i];
-			new_inst->U.I.SrcReg[1].Swizzle = RC_SWIZZLE_XYZW;
-			new_inst->U.I.SrcReg[1].Negate ^= RC_MASK_XYZW;
-
-			inst->U.I.SrcReg[i].File = RC_FILE_TEMPORARY;
-			inst->U.I.SrcReg[i].Index = temp;
-			inst->U.I.SrcReg[i].RelAddr = 0;
-		}
-	}
-	return 1;
-}
-
-/**
  * Vertex engine cannot read two inputs or two constants at the same time.
  * Introduce intermediate MOVs to temporary registers to account for this.
  */
@@ -845,15 +805,6 @@ void r3xx_compile_vertex_program(struct r300_vertex_program_compiler *c)
 		{ NULL, NULL }
 	};
 
-	/* Note: These passes have to be done separately from ALU rewrite,
-	 * otherwise non-native ALU instructions with source conflits
-	 * or non-native modifiers will not be treated properly.
-	 */
-	struct radeon_program_transformation emulate_modifiers[] = {
-		{ &transform_nonnative_modifiers, NULL },
-		{ NULL, NULL }
-	};
-
 	struct radeon_program_transformation resolve_src_conflicts[] = {
 		{ &transform_source_conflicts, NULL },
 		{ NULL, NULL }
@@ -864,8 +815,7 @@ void r3xx_compile_vertex_program(struct r300_vertex_program_compiler *c)
 		/* NAME				DUMP PREDICATE	FUNCTION			PARAM */
 		{"add artificial outputs",	0, 1,		rc_vs_add_artificial_outputs,	NULL},
 		{"native rewrite",		1, 1,		rc_local_transform,		alu_rewrite},
-		{"emulate modifiers",		1, !is_r500,	rc_local_transform,		emulate_modifiers},
-		{"deadcode",			1, opt,		rc_dataflow_deadcode,		NULL},
+		{"unused channels",		1, opt,		rc_mark_unused_channels,	NULL},
 		{"dataflow optimize",		1, opt,		rc_optimize,			NULL},
 		/* This pass must be done after optimizations. */
 		{"source conflict resolve",	1, 1,		rc_local_transform,		resolve_src_conflicts},

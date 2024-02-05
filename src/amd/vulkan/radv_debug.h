@@ -89,6 +89,9 @@ enum {
    RADV_PERFTEST_VIDEO_DECODE = 1u << 11,
    RADV_PERFTEST_DMA_SHADERS = 1u << 12,
    RADV_PERFTEST_GS_FAST_LAUNCH_2 = 1u << 13,
+   RADV_PERFTEST_TRANSFER_QUEUE = 1u << 14,
+   RADV_PERFTEST_SHADER_OBJECT = 1u << 15,
+   RADV_PERFTEST_NIR_CACHE = 1u << 16,
 };
 
 bool radv_init_trace(struct radv_device *device);
