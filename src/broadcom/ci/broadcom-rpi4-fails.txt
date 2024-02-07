@@ -508,3 +508,5 @@ KHR-GL31.texture_size_promotion.functional,Fail
 # uprev Piglit in Mesa
 spec@glsl-1.40@uniform_buffer@two-stages,Fail
 
+# Couldn't reproduce locally
+spec@oes_packed_depth_stencil@depth_stencil texture gles2,Fail

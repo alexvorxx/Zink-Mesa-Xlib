@@ -53,6 +53,7 @@ static const struct debug_control vn_perf_options[] = {
    { "no_tiled_wsi_image", VN_PERF_NO_TILED_WSI_IMAGE },
    { "no_multi_ring", VN_PERF_NO_MULTI_RING },
    { "no_async_image_create", VN_PERF_NO_ASYNC_IMAGE_CREATE },
+   { "no_async_image_format", VN_PERF_NO_ASYNC_IMAGE_FORMAT },
    { NULL, 0 },
    /* clang-format on */
 };

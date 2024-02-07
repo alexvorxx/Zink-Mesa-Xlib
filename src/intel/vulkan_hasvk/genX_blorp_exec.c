@@ -250,6 +250,13 @@ blorp_flush_range(struct blorp_batch *batch, void *start, size_t size)
     */
 }
 
+static void
+blorp_pre_emit_urb_config(struct blorp_batch *blorp_batch,
+                          struct intel_urb_config *urb_cfg)
+{
+   /* Dummy. */
+}
+
 static const struct intel_l3_config *
 blorp_get_l3_config(struct blorp_batch *batch)
 {

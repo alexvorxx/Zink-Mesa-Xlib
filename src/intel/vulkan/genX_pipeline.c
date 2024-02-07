@@ -371,27 +371,42 @@ void
 genX(emit_urb_setup)(struct anv_device *device, struct anv_batch *batch,
                      const struct intel_l3_config *l3_config,
                      VkShaderStageFlags active_stages,
-                     const unsigned entry_size[4],
+                     const struct intel_urb_config *urb_cfg_in,
+                     struct intel_urb_config *urb_cfg_out,
                      enum intel_urb_deref_block_size *deref_block_size)
 {
    const struct intel_device_info *devinfo = device->info;
 
-   unsigned entries[4];
-   unsigned start[4];
    bool constrained;
    intel_get_urb_config(devinfo, l3_config,
                         active_stages &
                            VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
                         active_stages & VK_SHADER_STAGE_GEOMETRY_BIT,
-                        entry_size, entries, start, deref_block_size,
+                        urb_cfg_out, deref_block_size,
                         &constrained);
+
+#if INTEL_NEEDS_WA_16014912113
+      if (intel_urb_setup_changed(urb_cfg_in, urb_cfg_out,
+          MESA_SHADER_TESS_EVAL) && urb_cfg_in->size[0] != 0) {
+         for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
+            anv_batch_emit(batch, GENX(3DSTATE_URB_VS), urb) {
+               urb._3DCommandSubOpcode      += i;
+               urb.VSURBStartingAddress      = urb_cfg_in->start[i];
+               urb.VSURBEntryAllocationSize  = urb_cfg_in->size[i] - 1;
+               urb.VSNumberofURBEntries      = i == 0 ? 256 : 0;
+            }
+         }
+         genx_batch_emit_pipe_control(batch, device->info, _3D,
+                                      ANV_PIPE_HDC_PIPELINE_FLUSH_BIT);
+      }
+#endif
 
    for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
       anv_batch_emit(batch, GENX(3DSTATE_URB_VS), urb) {
          urb._3DCommandSubOpcode      += i;
-         urb.VSURBStartingAddress      = start[i];
-         urb.VSURBEntryAllocationSize  = entry_size[i] - 1;
-         urb.VSNumberofURBEntries      = entries[i];
+         urb.VSURBStartingAddress      = urb_cfg_out->start[i];
+         urb.VSURBEntryAllocationSize  = urb_cfg_out->size[i] - 1;
+         urb.VSNumberofURBEntries      = urb_cfg_out->entries[i];
       }
    }
 #if GFX_VERx10 >= 125
@@ -458,21 +473,18 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
       return;
    }
 #endif
-
-   unsigned entry_size[4];
    for (int i = MESA_SHADER_VERTEX; i <= MESA_SHADER_GEOMETRY; i++) {
       const struct brw_vue_prog_data *prog_data =
          !anv_pipeline_has_stage(pipeline, i) ? NULL :
          (const struct brw_vue_prog_data *) pipeline->base.shaders[i]->prog_data;
 
-      entry_size[i] = prog_data ? prog_data->urb_entry_size : 1;
+      pipeline->urb_cfg.size[i] = prog_data ? prog_data->urb_entry_size : 1;
    }
 
    struct anv_device *device = pipeline->base.base.device;
    const struct intel_device_info *devinfo = device->info;
 
-   unsigned entries[4];
-   unsigned start[4];
+
    bool constrained;
    intel_get_urb_config(devinfo,
                         pipeline->base.base.l3_config,
@@ -480,17 +492,18 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
                            VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
                         pipeline->base.base.active_stages &
                            VK_SHADER_STAGE_GEOMETRY_BIT,
-                        entry_size, entries, start, deref_block_size,
+                        &pipeline->urb_cfg, deref_block_size,
                         &constrained);
 
    for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
       anv_pipeline_emit(pipeline, final.urb, GENX(3DSTATE_URB_VS), urb) {
          urb._3DCommandSubOpcode      += i;
-         urb.VSURBStartingAddress      = start[i];
-         urb.VSURBEntryAllocationSize  = entry_size[i] - 1;
-         urb.VSNumberofURBEntries      = entries[i];
+         urb.VSURBStartingAddress      = pipeline->urb_cfg.start[i];
+         urb.VSURBEntryAllocationSize  = pipeline->urb_cfg.size[i] - 1;
+         urb.VSNumberofURBEntries      = pipeline->urb_cfg.entries[i];
       }
    }
+
 #if GFX_VERx10 >= 125
    if (device->vk.enabled_extensions.EXT_mesh_shader) {
       anv_pipeline_emit(pipeline, final.urb, GENX(3DSTATE_URB_ALLOC_TASK), zero);

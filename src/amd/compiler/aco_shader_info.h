@@ -228,6 +228,7 @@ enum aco_statistic {
    aco_statistic_salu,
    aco_statistic_vmem,
    aco_statistic_smem,
+   aco_statistic_vopd,
    aco_num_statistics
 };
 

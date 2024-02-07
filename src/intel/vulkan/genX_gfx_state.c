@@ -1413,8 +1413,14 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       &cmd_buffer->vk.dynamic_graphics_state;
    struct anv_gfx_dynamic_state *hw_state = &gfx->dyn_state;
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_URB))
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_URB)) {
+      genX(urb_workaround)(cmd_buffer, &pipeline->urb_cfg);
+
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.urb);
+
+      memcpy(&gfx->urb_cfg, &pipeline->urb_cfg,
+             sizeof(struct intel_urb_config));
+   }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MULTISAMPLE))
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.ms);

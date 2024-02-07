@@ -1744,6 +1744,7 @@ copy_query_results_with_shader(struct anv_cmd_buffer *cmd_buffer,
          ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_COMPUTE :
          ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_FRAGMENT],
       .l3_config            = device->internal_kernels_l3_config,
+      .urb_cfg              = &cmd_buffer->state.gfx.urb_cfg,
    };
    genX(emit_simple_shader_init)(&state);
 

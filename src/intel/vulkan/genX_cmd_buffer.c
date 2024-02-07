@@ -395,22 +395,18 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
                        0, base_layer, layer_count, ISL_AUX_OP_AMBIGUATE);
    }
 
-#if GFX_VER == 12
-   /* Depth/Stencil writes by the render pipeline to D16 & S8 formats use a
-    * different pairing bit for the compression cache line. This means that
-    * there is potential for aliasing with the wrong cache if you use another
-    * format OR a piece of HW that does not use the same pairing. To avoid
-    * this, flush the tile cache as the compression data does not live in the
-    * color/depth cache.
+   /* Additional tile cache flush for MTL:
+    *
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
     */
-   if (image->planes[depth_plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS &&
-       final_needs_depth && !initial_depth_valid &&
-       anv_image_format_is_d16_or_s8(image)) {
+   if (intel_device_info_is_mtl(cmd_buffer->device->info) &&
+       image->planes[depth_plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS &&
+       final_needs_depth && !initial_depth_valid) {
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_TILE_CACHE_FLUSH_BIT,
-                                "D16 or S8 HIZ-CCS flush");
+                                "HIZ-CCS flush");
    }
-#endif
 }
 
 /* Transitions a HiZ-enabled depth buffer from one layout to another. Unless
@@ -467,17 +463,15 @@ transition_stencil_buffer(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
-   /* Depth/Stencil writes by the render pipeline to D16 & S8 formats use a
-    * different pairing bit for the compression cache line. This means that
-    * there is potential for aliasing with the wrong cache if you use another
-    * format OR a piece of HW that does not use the same pairing. To avoid
-    * this, flush the tile cache as the compression data does not live in the
-    * color/depth cache.
+   /* Additional tile cache flush for MTL:
+    *
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
     */
-   if (anv_image_format_is_d16_or_s8(image)) {
+   if (intel_device_info_is_mtl(cmd_buffer->device->info)) {
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_TILE_CACHE_FLUSH_BIT,
-                                "D16 or S8 HIZ-CCS flush");
+                                "HIZ-CCS flush");
    }
 #endif
 }
@@ -2956,6 +2950,7 @@ genX(CmdExecuteCommands)(
    container->state.current_hash_scale = 0;
    container->state.gfx.push_constant_stages = 0;
    container->state.gfx.ds_write_state = false;
+   memset(&container->state.gfx.urb_cfg, 0, sizeof(struct intel_urb_config));
    memcpy(container->state.gfx.dyn_state.dirty,
           device->gfx_dirty_state,
           sizeof(container->state.gfx.dyn_state.dirty));
@@ -5509,6 +5504,30 @@ genX(batch_emit_fast_color_dummy_blit)(struct anv_batch *batch,
       blt.DestinationSurfaceType = XY_SURFTYPE_2D;
       blt.DestinationSurfaceQPitch = 4;
       blt.DestinationTiling = XY_TILE_LINEAR;
+   }
+#endif
+}
+
+void
+genX(urb_workaround)(struct anv_cmd_buffer *cmd_buffer,
+                     const struct intel_urb_config *urb_cfg)
+{
+#if INTEL_NEEDS_WA_16014912113
+   const struct intel_urb_config *current =
+      &cmd_buffer->state.gfx.urb_cfg;
+   if (intel_urb_setup_changed(urb_cfg, current, MESA_SHADER_TESS_EVAL) &&
+       current->size[0] != 0) {
+      for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
+         anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_VS), urb) {
+            urb._3DCommandSubOpcode      += i;
+            urb.VSURBStartingAddress      = current->start[i];
+            urb.VSURBEntryAllocationSize  = current->size[i] - 1;
+            urb.VSNumberofURBEntries      = i == 0 ? 256 : 0;
+         }
+      }
+      anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+         pc.HDCPipelineFlushEnable = true;
+      }
    }
 #endif
 }

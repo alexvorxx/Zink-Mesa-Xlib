@@ -443,6 +443,12 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
       fprintf(output, " attr%d.%c", vintrp.attribute, "xyzw"[vintrp.component]);
       break;
    }
+   case Format::VOPD: {
+      const VOPD_instruction& vopd = instr->vopd();
+      // TODO: beautify
+      fprintf(output, " %s", instr_info.name[(int)vopd.opy]);
+      break;
+   }
    case Format::DS: {
       const DS_instruction& ds = instr->ds();
       if (ds.offset0)

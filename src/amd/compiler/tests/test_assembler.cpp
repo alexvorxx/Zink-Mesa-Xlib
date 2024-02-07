@@ -1055,3 +1055,62 @@ BEGIN_TEST(assembler.vop3_dpp)
 
    finish_assembler_test();
 END_TEST
+
+BEGIN_TEST(assembler.vopd)
+   if (!setup_cs(NULL, GFX11))
+      return;
+
+   Definition dst_v0 = bld.def(v1);
+   dst_v0.setFixed(PhysReg(256));
+
+   Definition dst_v1 = bld.def(v1);
+   dst_v1.setFixed(PhysReg(256 + 1));
+
+   Operand op_v0(bld.tmp(v1));
+   op_v0.setFixed(PhysReg(256 + 0));
+
+   Operand op_v1(bld.tmp(v1));
+   op_v1.setFixed(PhysReg(256 + 1));
+
+   Operand op_v2(bld.tmp(v1));
+   op_v2.setFixed(PhysReg(256 + 2));
+
+   Operand op_v3(bld.tmp(v1));
+   op_v3.setFixed(PhysReg(256 + 3));
+
+   Operand op_s0(bld.tmp(s1));
+   op_s0.setFixed(PhysReg(0));
+
+   Operand op_vcc(bld.tmp(s1));
+   op_vcc.setFixed(vcc);
+
+   //>> BB0:
+   //! v_dual_mov_b32 v0, v0 :: v_dual_mov_b32 v1, v1 ; ca100100 00000101
+   bld.vopd(aco_opcode::v_dual_mov_b32, dst_v0, dst_v1, op_v0, op_v1, aco_opcode::v_dual_mov_b32);
+
+   //! v_dual_mov_b32 v0, 0x60 :: v_dual_mov_b32 v1, s0 ; ca1000ff 00000000 00000060
+   bld.vopd(aco_opcode::v_dual_mov_b32, dst_v0, dst_v1, Operand::c32(96), op_s0,
+            aco_opcode::v_dual_mov_b32);
+
+   //! v_dual_mov_b32 v0, s0 :: v_dual_mov_b32 v1, 0x60 ; ca100000 000000ff 00000060
+   bld.vopd(aco_opcode::v_dual_mov_b32, dst_v0, dst_v1, op_s0, Operand::c32(96),
+            aco_opcode::v_dual_mov_b32);
+
+   //! v_dual_mul_f32 v0, v0, v1 :: v_dual_mov_b32 v1, v2 ; c8d00300 00000102
+   bld.vopd(aco_opcode::v_dual_mul_f32, dst_v0, dst_v1, op_v0, op_v1, op_v2,
+            aco_opcode::v_dual_mov_b32);
+
+   //! v_dual_fmac_f32 v0, v1, v2 :: v_dual_mov_b32 v1, v3 ; c8100501 00000103
+   bld.vopd(aco_opcode::v_dual_fmac_f32, dst_v0, dst_v1, op_v1, op_v2, op_v0, op_v3,
+            aco_opcode::v_dual_mov_b32);
+
+   //! v_dual_mov_b32 v0, v0 :: v_dual_and_b32 v1, v1, v2 ; ca240100 00000501
+   bld.vopd(aco_opcode::v_dual_mov_b32, dst_v0, dst_v1, op_v0, op_v1, op_v2,
+            aco_opcode::v_dual_and_b32);
+
+   //! v_dual_cndmask_b32 v0, v0, v1 :: v_dual_cndmask_b32 v1, v2, v3 ; ca520300 00000702
+   bld.vopd(aco_opcode::v_dual_cndmask_b32, dst_v0, dst_v1, op_v0, op_v1, op_vcc, op_v2, op_v3,
+            op_vcc, aco_opcode::v_dual_cndmask_b32);
+
+   finish_assembler_test();
+END_TEST

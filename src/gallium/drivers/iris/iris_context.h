@@ -714,11 +714,12 @@ struct iris_context {
       struct iris_compiled_shader *prog[MESA_SHADER_STAGES];
       struct iris_compiled_shader *last_vue_shader;
       struct {
-         unsigned size[4];
-         unsigned entries[4];
-         unsigned start[4];
+         struct intel_urb_config cfg;
          bool constrained;
       } urb;
+
+      /** Last urb emitted by the driver. */
+      struct intel_urb_config last_urb;
 
       /** Uploader for shader assembly from the driver thread */
       struct u_upload_mgr *uploader_driver;
@@ -1180,21 +1181,6 @@ iris_execute_indirect_draw_supported(const struct iris_context *ice,
 #ifdef genX
 #  include "iris_genx_protos.h"
 #else
-#  define genX(x) gfx4_##x
-#  include "iris_genx_protos.h"
-#  undef genX
-#  define genX(x) gfx5_##x
-#  include "iris_genx_protos.h"
-#  undef genX
-#  define genX(x) gfx6_##x
-#  include "iris_genx_protos.h"
-#  undef genX
-#  define genX(x) gfx7_##x
-#  include "iris_genx_protos.h"
-#  undef genX
-#  define genX(x) gfx75_##x
-#  include "iris_genx_protos.h"
-#  undef genX
 #  define genX(x) gfx8_##x
 #  include "iris_genx_protos.h"
 #  undef genX

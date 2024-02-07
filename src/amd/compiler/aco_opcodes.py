@@ -89,6 +89,7 @@ class Format(IntEnum):
    VINTRP = auto()
    # Vector ALU Formats
    VINTERP_INREG = auto()
+   VOPD = auto()
    VOP1 = 1 << 7
    VOP2 = 1 << 8
    VOPC = 1 << 9
@@ -186,6 +187,8 @@ class Format(IntEnum):
       elif self == Format.VOP3P:
          return [('uint8_t', 'opsel_lo', None),
                  ('uint8_t', 'opsel_hi', None)]
+      elif self == Format.VOPD:
+         return [('aco_opcode', 'opy', None)]
       elif self == Format.VINTERP_INREG:
          return [('unsigned', 'wait_exp', 7),
                  ('uint8_t', 'opsel', 0)]
@@ -1270,6 +1273,29 @@ VOP3 = {
 }
 for (gfx6, gfx7, gfx8, gfx9, gfx10, gfx11, name, in_mod, out_mod, defs, ops, cls) in default_class(VOP3, InstrClass.Valu32):
    opcode(name, gfx7, gfx9, gfx10, gfx11, Format.VOP3, cls, in_mod, out_mod, definitions = defs, operands = ops)
+
+
+VOPD = {
+   (0x00, "v_dual_fmac_f32"),
+   (0x01, "v_dual_fmaak_f32"),
+   (0x02, "v_dual_fmamk_f32"),
+   (0x03, "v_dual_mul_f32"),
+   (0x04, "v_dual_add_f32"),
+   (0x05, "v_dual_sub_f32"),
+   (0x06, "v_dual_subrev_f32"),
+   (0x07, "v_dual_mul_dx9_zero_f32"),
+   (0x08, "v_dual_mov_b32"),
+   (0x09, "v_dual_cndmask_b32"),
+   (0x0a, "v_dual_max_f32"),
+   (0x0b, "v_dual_min_f32"),
+   (0x0c, "v_dual_dot2acc_f32_f16"),
+   (0x0d, "v_dual_dot2acc_f32_bf16"),
+   (0x10, "v_dual_add_nc_u32"),
+   (0x11, "v_dual_lshlrev_b32"),
+   (0x12, "v_dual_and_b32"),
+}
+for gfx11, name in VOPD:
+   opcode(name, -1, -1, -1, gfx11, format = Format.VOPD, cls = InstrClass.Valu32)
 
 
 # DS instructions: 3 inputs (1 addr, 2 data), 1 output

@@ -255,6 +255,18 @@ blorp_flush_range(struct blorp_batch *batch, void *start, size_t size)
     */
 }
 
+static void
+blorp_pre_emit_urb_config(struct blorp_batch *blorp_batch,
+                          struct intel_urb_config *urb_cfg)
+{
+   struct anv_cmd_buffer *cmd_buffer = blorp_batch->driver_batch;
+   genX(urb_workaround)(cmd_buffer, urb_cfg);
+
+   /* Update urb config. */
+   memcpy(&cmd_buffer->state.gfx.urb_cfg, urb_cfg,
+          sizeof(struct intel_urb_config));
+}
+
 static const struct intel_l3_config *
 blorp_get_l3_config(struct blorp_batch *batch)
 {

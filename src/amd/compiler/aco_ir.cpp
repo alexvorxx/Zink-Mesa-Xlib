@@ -45,8 +45,9 @@ static const struct debug_control aco_debug_options[] = {
    {"force-waitdeps", DEBUG_FORCE_WAITDEPS},
    {"novn", DEBUG_NO_VN},
    {"noopt", DEBUG_NO_OPT},
-   {"nosched", DEBUG_NO_SCHED | DEBUG_NO_SCHED_ILP},
+   {"nosched", DEBUG_NO_SCHED | DEBUG_NO_SCHED_ILP | DEBUG_NO_SCHED_VOPD},
    {"nosched-ilp", DEBUG_NO_SCHED_ILP},
+   {"nosched-vopd", DEBUG_NO_SCHED_VOPD},
    {"perfinfo", DEBUG_PERF_INFO},
    {"liveinfo", DEBUG_LIVE_INFO},
    {NULL, 0}};

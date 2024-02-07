@@ -274,6 +274,13 @@ blorp_flush_range(UNUSED struct blorp_batch *blorp_batch,
     */
 }
 
+static void
+blorp_pre_emit_urb_config(struct blorp_batch *blorp_batch,
+                          struct intel_urb_config *urb_cfg)
+{
+   genX(urb_workaround)(blorp_batch->driver_batch, urb_cfg);
+}
+
 static const struct intel_l3_config *
 blorp_get_l3_config(struct blorp_batch *blorp_batch)
 {
@@ -410,8 +417,8 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
    ice->state.dirty |= ~skip_bits;
    ice->state.stage_dirty |= ~skip_stage_bits;
 
-   for (int i = 0; i < ARRAY_SIZE(ice->shaders.urb.size); i++)
-      ice->shaders.urb.size[i] = 0;
+   for (int i = 0; i < ARRAY_SIZE(ice->shaders.urb.cfg.size); i++)
+      ice->shaders.urb.cfg.size[i] = 0;
 
    if (params->src.enabled)
       iris_bo_bump_seqno(params->src.addr.buffer, batch->next_seqno,

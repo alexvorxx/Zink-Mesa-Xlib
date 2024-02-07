@@ -177,11 +177,19 @@ option(
 )
 
 option(
-  'gallium-windows-dll-name',
+  'gallium-wgl-dll-name',
   type : 'string',
   value : 'libgallium_wgl',
-  description : 'name of gallium megadriver DLL built for Windows. ' +
+  description : 'name of gallium wgl target DLL built for Windows. ' +
                 'defaults to libgallium_wgl.dll to match DRI',
+)
+
+option(
+  'gallium-d3d10-dll-name',
+  type : 'string',
+  value : 'libgallium_d3d10',
+  description : 'name of gallium d3d10 target DLL built for Windows. ' +
+                'defaults to libgallium_d3d10.dll to match DRI',
 )
 
 option(

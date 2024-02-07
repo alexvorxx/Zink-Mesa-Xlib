@@ -128,6 +128,7 @@ enum vn_perf {
    VN_PERF_NO_TILED_WSI_IMAGE = 1ull << 10,
    VN_PERF_NO_MULTI_RING = 1ull << 11,
    VN_PERF_NO_ASYNC_IMAGE_CREATE = 1ull << 12,
+   VN_PERF_NO_ASYNC_IMAGE_FORMAT = 1ull << 13,
 };
 
 typedef uint64_t vn_object_id;
@@ -534,5 +535,17 @@ vn_tls_get_ring(struct vn_instance *instance);
 
 void
 vn_tls_destroy_ring(struct vn_tls_ring *tls_ring);
+
+static inline uint32_t
+vn_cache_key_hash_function(const void *key)
+{
+   return _mesa_hash_data(key, SHA1_DIGEST_LENGTH);
+}
+
+static inline bool
+vn_cache_key_equal_function(const void *key1, const void *key2)
+{
+   return memcmp(key1, key2, SHA1_DIGEST_LENGTH) == 0;
+}
 
 #endif /* VN_COMMON_H */

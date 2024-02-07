@@ -46,19 +46,6 @@ vn_image_cache_debug_dump(struct vn_image_reqs_cache *cache)
    vn_log(NULL, "  skip %u\n", cache->debug.cache_skip_count);
 }
 
-static uint32_t
-vn_image_cache_key_hash_function(const void *key)
-{
-   return _mesa_hash_data(key, SHA1_DIGEST_LENGTH);
-}
-
-static bool
-vn_image_cache_key_equal_function(const void *void_a, const void *void_b)
-{
-   const struct vn_image_reqs_cache_entry *a = void_a, *b = void_b;
-   return memcmp(a, b, SHA1_DIGEST_LENGTH) == 0;
-}
-
 static bool
 vn_image_get_image_reqs_key(struct vn_device *dev,
                             const VkImageCreateInfo *create_info,
@@ -160,8 +147,8 @@ vn_image_reqs_cache_init(struct vn_device *dev)
    if (VN_PERF(NO_ASYNC_IMAGE_CREATE))
       return;
 
-   cache->ht = _mesa_hash_table_create(NULL, vn_image_cache_key_hash_function,
-                                       vn_image_cache_key_equal_function);
+   cache->ht = _mesa_hash_table_create(NULL, vn_cache_key_hash_function,
+                                       vn_cache_key_equal_function);
    if (!cache->ht)
       return;
 
@@ -231,8 +218,15 @@ vn_image_store_reqs_in_cache(struct vn_device *dev,
    assert(cache->ht);
 
    simple_mtx_lock(&cache->mutex);
-   uint32_t cache_entry_count = _mesa_hash_table_num_entries(cache->ht);
-   if (cache_entry_count == IMAGE_REQS_CACHE_MAX_ENTRIES) {
+
+   /* Check if entry was added before lock */
+   if (_mesa_hash_table_search(cache->ht, key)) {
+      simple_mtx_unlock(&cache->mutex);
+      return;
+   }
+
+   if (_mesa_hash_table_num_entries(cache->ht) ==
+       IMAGE_REQS_CACHE_MAX_ENTRIES) {
       /* Evict/use the last entry in the lru list for this new entry */
       cache_entry =
          list_last_entry(&cache->lru, struct vn_image_reqs_cache_entry, head);
@@ -242,11 +236,11 @@ vn_image_store_reqs_in_cache(struct vn_device *dev,
    } else {
       cache_entry = vk_zalloc(alloc, sizeof(*cache_entry), VN_DEFAULT_ALIGN,
                               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      if (!cache_entry) {
+         simple_mtx_unlock(&cache->mutex);
+         return;
+      }
    }
-   simple_mtx_unlock(&cache->mutex);
-
-   if (!cache_entry)
-      return;
 
    for (uint32_t i = 0; i < plane_count; i++)
       cache_entry->requirements[i] = requirements[i];
@@ -254,12 +248,10 @@ vn_image_store_reqs_in_cache(struct vn_device *dev,
    memcpy(cache_entry->key, key, SHA1_DIGEST_LENGTH);
    cache_entry->plane_count = plane_count;
 
-   simple_mtx_lock(&cache->mutex);
-   if (!_mesa_hash_table_search(cache->ht, cache_entry->key)) {
-      _mesa_hash_table_insert(dev->image_reqs_cache.ht, cache_entry->key,
-                              cache_entry);
-      list_add(&cache_entry->head, &cache->lru);
-   }
+   _mesa_hash_table_insert(dev->image_reqs_cache.ht, cache_entry->key,
+                           cache_entry);
+   list_add(&cache_entry->head, &cache->lru);
+
    simple_mtx_unlock(&cache->mutex);
 }
 

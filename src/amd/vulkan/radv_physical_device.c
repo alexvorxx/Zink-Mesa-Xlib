@@ -1345,7 +1345,8 @@ radv_get_physical_device_properties(struct radv_physical_device *pdevice)
    p->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT |
                                     VK_SUBGROUP_FEATURE_ARITHMETIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT |
                                     VK_SUBGROUP_FEATURE_CLUSTERED_BIT | VK_SUBGROUP_FEATURE_QUAD_BIT |
-                                    VK_SUBGROUP_FEATURE_SHUFFLE_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
+                                    VK_SUBGROUP_FEATURE_SHUFFLE_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT |
+                                    VK_SUBGROUP_FEATURE_ROTATE_BIT_KHR | VK_SUBGROUP_FEATURE_ROTATE_CLUSTERED_BIT_KHR;
    p->subgroupQuadOperationsInAllStages = true;
 
    p->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
@@ -1698,7 +1699,7 @@ radv_get_physical_device_properties(struct radv_physical_device *pdevice)
    /* VK_NV_device_generated_commands */
    p->maxIndirectCommandsStreamCount = 1;
    p->maxIndirectCommandsStreamStride = UINT32_MAX;
-   p->maxIndirectCommandsTokenCount = UINT32_MAX;
+   p->maxIndirectCommandsTokenCount = 512;
    p->maxIndirectCommandsTokenOffset = UINT16_MAX;
    p->minIndirectCommandsBufferOffsetAlignment = 4;
    p->minSequencesCountBufferOffsetAlignment = 4;
@@ -2050,12 +2051,12 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    if ((device->instance->debug_flags & RADV_DEBUG_INFO))
       ac_print_gpu_info(&device->rad_info, stdout);
 
+   radv_init_physical_device_decoder(device);
+
    radv_physical_device_init_queue_table(device);
 
    /* We don't check the error code, but later check if it is initialized. */
    ac_init_perfcounters(&device->rad_info, false, false, &device->ac_perfcounters);
-
-   radv_init_physical_device_decoder(device);
 
    /* The WSI is structured as a layer on top of the driver, so this has
     * to be the last part of initialization (at least until we get other

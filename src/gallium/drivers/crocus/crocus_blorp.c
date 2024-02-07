@@ -261,20 +261,31 @@ blorp_get_l3_config(struct blorp_batch *blorp_batch)
    struct crocus_batch *batch = blorp_batch->driver_batch;
    return batch->screen->l3_config_3d;
 }
-#else /* GFX_VER < 7 */
+#endif
+
+static void
+blorp_pre_emit_urb_config(struct blorp_batch *blorp_batch,
+                          struct intel_urb_config *urb_cfg)
+{
+   /* Dummy. */
+}
+
 static void
 blorp_emit_urb_config(struct blorp_batch *blorp_batch,
-                      unsigned vs_entry_size,
-                      UNUSED unsigned sf_entry_size)
+                      struct intel_urb_config *urb_cfg)
 {
+#if GFX_VER < 7
    struct crocus_batch *batch = blorp_batch->driver_batch;
 #if GFX_VER <= 5
-   batch->screen->vtbl.calculate_urb_fence(batch, 0, vs_entry_size, sf_entry_size);
+   batch->screen->vtbl.calculate_urb_fence(batch, 0,
+                                           urb_cfg->size[MESA_SHADER_VERTEX],
+                                           urb_cfg->size[MESA_SHADER_FRAGMENT]);
 #else
-   genX(crocus_upload_urb)(batch, vs_entry_size, false, vs_entry_size);
+   genX(crocus_upload_urb)(batch, urb_cfg->size[MESA_SHADER_VERTEX], false,
+                           urb_cfg->size[MESA_SHADER_VERTEX]);
+#endif
 #endif
 }
-#endif
 
 static void
 crocus_blorp_exec(struct blorp_batch *blorp_batch,

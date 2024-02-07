@@ -37,7 +37,6 @@
 #include "util/u_transfer.h"
 #include "util/u_upload_mgr.h"
 #include "intel/compiler/brw_compiler.h"
-#include "intel/compiler/brw_eu_defines.h"
 #include "compiler/shader_info.h"
 #include "iris_context.h"
 #include "iris_defines.h"

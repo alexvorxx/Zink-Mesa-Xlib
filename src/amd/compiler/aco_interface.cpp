@@ -59,6 +59,7 @@ static const std::array<aco_compiler_statistic_info, aco_num_statistics> statist
    ret[aco_statistic_salu] = aco_compiler_statistic_info{"SALU", "Number of SALU instructions"};
    ret[aco_statistic_vmem] = aco_compiler_statistic_info{"VMEM", "Number of VMEM instructions"};
    ret[aco_statistic_smem] = aco_compiler_statistic_info{"SMEM", "Number of SMEM instructions"};
+   ret[aco_statistic_vopd] = aco_compiler_statistic_info{"VOPD", "Number of VOPD instructions"};
    return ret;
 }();
 
@@ -198,6 +199,9 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
    /* Lower to HW Instructions */
    aco::lower_to_hw_instr(program.get());
    validate(program.get());
+
+   if (!options->optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED_VOPD))
+      aco::schedule_vopd(program.get());
 
    /* Schedule hardware instructions for ILP */
    if (!options->optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED_ILP))

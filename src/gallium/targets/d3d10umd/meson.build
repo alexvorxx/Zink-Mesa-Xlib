@@ -19,17 +19,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-d3d10_sw_def = custom_target(
-  'd3d10_sw.def',
-  input: 'd3d10_sw.def.in',
-  output : 'd3d10_sw.def',
+libgallium_d3d10_def = custom_target(
+  'd3d10.def',
+  input: 'd3d10.def.in',
+  output : 'd3d10.def',
   command : gen_vs_module_defs_normal_command,
 )
 
-libd3d10sw = shared_library(
-  'd3d10sw',
+gallium_d3d10_name = get_option('gallium-d3d10-dll-name')
+libgallium_d3d10 = shared_library(
+  gallium_d3d10_name,
   ['d3d10_gdi.c'],
-  vs_module_defs : d3d10_sw_def,
+  vs_module_defs : libgallium_d3d10_def,
   include_directories : [
     inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_d3d10umd, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers, inc_winddk
   ],
@@ -40,20 +41,20 @@ libd3d10sw = shared_library(
   dependencies : [
     dep_ws2_32, idep_nir, driver_swrast
   ],
-  name_prefix : '',  # otherwise mingw will create libd3d10sw.dll
+  name_prefix: '',
   install : true,
 )
 
 if with_tests
   test(
-    'd3d10sw',
+    'd3d10',
     executable(
-      'test_d3d10sw',
+      'test_d3d10',
       files('tests/tri.cpp'),
       cpp_args : [cpp_msvc_compat_args],
       dependencies : [cpp.find_library('d3d11')],
-      link_with : [libd3d10sw],
+      link_with : [libgallium_d3d10],
     ),
-    suite : ['d3d10sw'],
+    suite : ['d3d10'],
   )
 endif

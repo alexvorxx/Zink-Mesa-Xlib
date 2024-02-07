@@ -1,15 +1,14 @@
-The resulting d3d10sw.dll implements D3D10's software rendering interface, like
-WARP.
+When compiled with `gallium-driver=llvmpipe` or `gallium-driver=softpipe` the resulting libgallium_d3d10.dll implements D3D10's software rendering interface, like WARP.
 
 
 It can be used directly from WLK 1.6 and WHCK 2.0 D3D10+ tests, via the -Src
 and -SWDLL options. For example:
 
-    wgf11blend.exe -Debug -DoNotCatchExceptions -DXGI:1.1 -FeatureLevel:10.0 -Src:SW -SWDLL:d3d10sw.dll -LogClean -LogVerbose
+    wgf11blend.exe -Debug -DoNotCatchExceptions -DXGI:1.1 -FeatureLevel:10.0 -Src:SW -SWDLL:libgallium_d3d10.dll -LogClean -LogVerbose
 
 However, as of WHCK version 2.1 this mechanism no longer works reliably.
 Either you use WHCK 2.0 binaries, or you must use the alternative method
-cribed below (of copying d3d10sw.dll into the executable directory and rename
+described below (of copying libgallium_d3d10.dll into the executable directory and rename
 it such that it matches the D3D10 UMD of the test machine).
 
 
@@ -17,7 +16,7 @@ Examples can be easily modified to load it too:
 
     D3D10CreateDeviceAndSwapChain(NULL,
                                   D3D10_DRIVER_TYPE_SOFTWARE,
-                                  LoadLibraryA("d3d10sw"), /* Software */
+                                  LoadLibraryA("libgallium_d3d10"), /* Software */
                                   Flags,
                                   D3D10_SDK_VERSION,
                                   &SwapChainDesc,
@@ -26,7 +25,7 @@ Examples can be easily modified to load it too:
 
     D3D11CreateDeviceAndSwapChain(NULL, /* pAdapter */
                                   D3D_DRIVER_TYPE_SOFTWARE,
-                                  LoadLibraryA("d3d10sw"), /* Software */
+                                  LoadLibraryA("libgallium_d3d10"), /* Software */
                                   Flags,
                                   FeatureLevels,
                                   sizeof FeatureLevels / sizeof FeatureLevels[0],

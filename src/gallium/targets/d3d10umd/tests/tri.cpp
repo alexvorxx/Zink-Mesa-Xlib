@@ -96,7 +96,7 @@ main(int argc, char *argv[])
         D3D_FEATURE_LEVEL_10_0
     };
 
-    HMODULE hSoftware = LoadLibraryA("d3d10sw.dll");
+    HMODULE hSoftware = LoadLibraryA("libgallium_d3d10.dll");
     if (!hSoftware) {
        return EXIT_FAILURE;
     }

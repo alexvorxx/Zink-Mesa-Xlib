@@ -344,6 +344,9 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
       struct ir3_block *store = ir3_block_create(ir);
       list_add(&store->node, &body->node);
 
+      body->reconvergence_point = true;
+      after_block->reconvergence_point = true;
+
       link_blocks(before_block, body, 0);
 
       link_blocks(body, store, 0);

@@ -3565,25 +3565,38 @@ is_residency_code(nir_def *src)
 }
 
 static bool
+lower_sparse_and_instr(nir_builder *b, nir_intrinsic_instr *instr, void *data)
+{
+   if (instr->intrinsic != nir_intrinsic_sparse_residency_code_and)
+      return false;
+
+   b->cursor = nir_before_instr(&instr->instr);
+   nir_def *src0;
+   if (is_residency_code(instr->src[0].ssa))
+      src0 = nir_is_sparse_texels_resident(b, 1, instr->src[0].ssa);
+   else
+      src0 = instr->src[0].ssa;
+   nir_def *src1;
+   if (is_residency_code(instr->src[1].ssa))
+      src1 = nir_is_sparse_texels_resident(b, 1, instr->src[1].ssa);
+   else
+      src1 = instr->src[1].ssa;
+   nir_def *def = nir_iand(b, src0, src1);
+   nir_def_rewrite_uses_after(&instr->def, def, &instr->instr);
+   nir_instr_remove(&instr->instr);
+   return true;
+}
+
+static bool
+lower_sparse_and(nir_shader *shader)
+{
+   return nir_shader_intrinsics_pass(shader, lower_sparse_and_instr,
+                                     nir_metadata_dominance, NULL);
+}
+
+static bool
 lower_sparse_instr(nir_builder *b, nir_intrinsic_instr *instr, void *data)
 {
-   if (instr->intrinsic == nir_intrinsic_sparse_residency_code_and) {
-      b->cursor = nir_before_instr(&instr->instr);
-      nir_def *src0;
-      if (is_residency_code(instr->src[0].ssa))
-         src0 = nir_is_sparse_texels_resident(b, 1, instr->src[0].ssa);
-      else
-         src0 = instr->src[0].ssa;
-      nir_def *src1;
-      if (is_residency_code(instr->src[1].ssa))
-         src1 = nir_is_sparse_texels_resident(b, 1, instr->src[1].ssa);
-      else
-         src1 = instr->src[1].ssa;
-      nir_def *def = nir_iand(b, src0, src1);
-      nir_def_rewrite_uses_after(&instr->def, def, &instr->instr);
-      nir_instr_remove(&instr->instr);
-      return true;
-   }
    if (instr->intrinsic != nir_intrinsic_is_sparse_texels_resident)
       return false;
 
@@ -4021,7 +4034,10 @@ zink_shader_compile(struct zink_screen *screen, bool can_shobj, struct zink_shad
          zs->can_inline = false;
    } else if (need_optimize)
       optimize_nir(nir, zs, true);
-   NIR_PASS_V(nir, lower_sparse);
+   bool has_sparse = false;
+   NIR_PASS(has_sparse, nir, lower_sparse);
+   if (has_sparse)
+      optimize_nir(nir, zs, false);
    
    struct zink_shader_object obj = compile_module(screen, zs, nir, can_shobj, pg);
    ralloc_free(nir);
@@ -5472,6 +5488,7 @@ zink_shader_create(struct zink_screen *screen, struct nir_shader *nir)
 
    NIR_PASS_V(nir, lower_basevertex);
    NIR_PASS_V(nir, lower_baseinstance);
+   NIR_PASS_V(nir, lower_sparse_and);
    NIR_PASS_V(nir, split_bitfields);
    NIR_PASS_V(nir, nir_lower_frexp); /* TODO: Use the spirv instructions for this. */
 

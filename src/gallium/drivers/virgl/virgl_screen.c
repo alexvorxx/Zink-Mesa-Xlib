@@ -936,7 +936,7 @@ static void virgl_flush_frontbuffer(struct pipe_screen *screen,
 
    if (vws->flush_frontbuffer) {
       virgl_flush_eq(vctx, vctx, NULL);
-      vws->flush_frontbuffer(vws, vres->hw_res, level, layer, winsys_drawable_handle,
+      vws->flush_frontbuffer(vws, vctx->cbuf, vres->hw_res, level, layer, winsys_drawable_handle,
                              sub_box);
    }
 }
@@ -1054,6 +1054,10 @@ static struct disk_cache *virgl_get_disk_shader_cache (struct pipe_screen *pscre
 
 static void virgl_disk_cache_create(struct virgl_screen *screen)
 {
+   struct mesa_sha1 sha1_ctx;
+   _mesa_sha1_init(&sha1_ctx);
+
+#ifdef HAVE_DL_ITERATE_PHDR
    const struct build_id_note *note =
       build_id_find_nhdr_for_addr(virgl_disk_cache_create);
    assert(note);
@@ -1064,9 +1068,8 @@ static void virgl_disk_cache_create(struct virgl_screen *screen)
    const uint8_t *id_sha1 = build_id_data(note);
    assert(id_sha1);
 
-   struct mesa_sha1 sha1_ctx;
-   _mesa_sha1_init(&sha1_ctx);
    _mesa_sha1_update(&sha1_ctx, id_sha1, build_id_len);
+#endif
 
    /* When we switch the host the caps might change and then we might have to
     * apply different lowering. */

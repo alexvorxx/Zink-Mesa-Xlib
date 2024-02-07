@@ -103,7 +103,9 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
     * allocate space for the VS.  Even though one isn't run, we need VUEs to
     * store the data that VF is going to pass to SOL.
     */
-   const unsigned entry_size[4] = { DIV_ROUND_UP(32, 64), 1, 1, 1 };
+   struct intel_urb_config urb_cfg_out = {
+      .size = { DIV_ROUND_UP(32, 64), 1, 1, 1 },
+   };
 
    genX(emit_l3_config)(batch, device, state->l3_config);
 
@@ -112,7 +114,7 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
    enum intel_urb_deref_block_size deref_block_size;
    genX(emit_urb_setup)(device, batch, state->l3_config,
                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                        entry_size, &deref_block_size);
+                        state->urb_cfg, &urb_cfg_out, &deref_block_size);
 
    anv_batch_emit(batch, GENX(3DSTATE_PS_BLEND), ps_blend) {
       ps_blend.HasWriteableRT = true;
@@ -343,6 +345,10 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
       BITSET_SET(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL);
       BITSET_SET(hw_state->dirty, ANV_GFX_STATE_TASK_CONTROL);
    }
+
+   /* Update urb config after simple shader. */
+   memcpy(&state->cmd_buffer->state.gfx.urb_cfg, &urb_cfg_out,
+          sizeof(struct intel_urb_config));
 
    state->cmd_buffer->state.gfx.vb_dirty = BITFIELD_BIT(0);
    state->cmd_buffer->state.gfx.dirty |= ~(ANV_CMD_DIRTY_INDEX_BUFFER |

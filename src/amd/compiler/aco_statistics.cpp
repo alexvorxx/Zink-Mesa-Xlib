@@ -540,6 +540,8 @@ collect_preasm_stats(Program* program)
          if (instr->isSALU() && !instr->isSOPP() &&
              instr_info.classes[(int)instr->opcode] != instr_class::waitcnt)
             program->statistics[aco_statistic_salu]++;
+         if (instr->isVOPD())
+            program->statistics[aco_statistic_vopd]++;
 
          if ((instr->isVMEM() || instr->isScratch() || instr->isGlobal()) &&
              !instr->operands.empty()) {

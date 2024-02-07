@@ -48,6 +48,8 @@ void genX(emit_3dprimitive_was)(struct iris_batch *batch,
                                 const struct pipe_draw_indirect_info *indirect,
                                 uint32_t primitive_topology,
                                 uint32_t vertex_count);
+void genX(urb_workaround)(struct iris_batch *batch,
+                          const struct intel_urb_config *urb_cfg);
 
 static inline void
 genX(maybe_emit_breakpoint)(struct iris_batch *batch,
