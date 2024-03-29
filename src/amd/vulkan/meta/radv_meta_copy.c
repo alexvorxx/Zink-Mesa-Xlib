@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "radv_formats.h"
 #include "radv_meta.h"
 #include "radv_private.h"
 #include "radv_sdma.h"
@@ -75,10 +76,10 @@ alloc_transfer_temp_bo(struct radv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->transfer.copy_temp)
       return true;
 
-   const struct radv_device *const device = cmd_buffer->device;
-   const VkResult r = device->ws->buffer_create(device->ws, RADV_SDMA_TRANSFER_TEMP_BYTES, 4096, RADEON_DOMAIN_VRAM,
-                                                RADEON_FLAG_NO_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING,
-                                                RADV_BO_PRIORITY_SCRATCH, 0, &cmd_buffer->transfer.copy_temp);
+   struct radv_device *device = cmd_buffer->device;
+   const VkResult r = radv_bo_create(device, RADV_SDMA_TRANSFER_TEMP_BYTES, 4096, RADEON_DOMAIN_VRAM,
+                                     RADEON_FLAG_NO_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING,
+                                     RADV_BO_PRIORITY_SCRATCH, 0, true, &cmd_buffer->transfer.copy_temp);
 
    if (r != VK_SUCCESS) {
       vk_command_buffer_set_error(&cmd_buffer->vk, r);

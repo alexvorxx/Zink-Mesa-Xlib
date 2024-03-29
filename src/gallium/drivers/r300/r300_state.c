@@ -1045,8 +1045,6 @@ static void* r300_create_fs_state(struct pipe_context* pipe,
     fs->state = *shader;
 
     if (fs->state.type == PIPE_SHADER_IR_NIR) {
-       if (r300->screen->caps.is_r500)
-           NIR_PASS_V(shader->ir.nir, r300_transform_fs_trig_input);
        fs->state.tokens = nir_to_rc(shader->ir.nir, pipe->screen);
     } else {
        assert(fs->state.type == PIPE_SHADER_IR_TGSI);
@@ -1118,6 +1116,8 @@ static void r300_delete_fs_state(struct pipe_context* pipe, void* shader)
 {
     struct r300_fragment_shader* fs = (struct r300_fragment_shader*)shader;
     struct r300_fragment_shader_code *tmp, *ptr = fs->first;
+
+    free(fs->shader->code.constants_remap_table);
 
     while (ptr) {
         tmp = ptr;
@@ -1771,14 +1771,14 @@ static void r300_set_viewport_states(struct pipe_context* pipe,
 }
 
 static void r300_set_vertex_buffers_hwtcl(struct pipe_context* pipe,
-                                    unsigned count, bool take_ownership,
+                                    unsigned count,
                                     const struct pipe_vertex_buffer* buffers)
 {
     struct r300_context* r300 = r300_context(pipe);
 
     util_set_vertex_buffers_count(r300->vertex_buffer,
                                   &r300->nr_vertex_buffers, buffers, count,
-                                  take_ownership);
+                                  true);
 
     /* There must be at least one vertex buffer set, otherwise it locks up. */
     if (!r300->nr_vertex_buffers) {
@@ -1792,7 +1792,6 @@ static void r300_set_vertex_buffers_hwtcl(struct pipe_context* pipe,
 
 static void r300_set_vertex_buffers_swtcl(struct pipe_context* pipe,
                                     unsigned count,
-                                    bool take_ownership,
                                     const struct pipe_vertex_buffer* buffers)
 {
     struct r300_context* r300 = r300_context(pipe);
@@ -1800,7 +1799,7 @@ static void r300_set_vertex_buffers_swtcl(struct pipe_context* pipe,
 
     util_set_vertex_buffers_count(r300->vertex_buffer,
                                   &r300->nr_vertex_buffers, buffers, count,
-                                  take_ownership);
+                                  true);
     draw_set_vertex_buffers(r300->draw, count, buffers);
 
     if (!buffers)
@@ -1954,19 +1953,9 @@ static void* r300_create_vs_state(struct pipe_context* pipe,
        if (r300->screen->caps.has_tcl) {
            if (r300->screen->caps.is_r500) {
                ntr_options = &hwtcl_r500_options;
-
-               /* Only nine should set both NTT shader name and
-                * use_legacy_math_rules and D3D9 already mandates
-                * the proper range for the trigonometric inputs.
-                */
-               struct shader_info *info = &(((struct nir_shader *)(shader->ir.nir))->info);
-               if (!info->use_legacy_math_rules ||
-                   !(info->name && !strcmp("TTN", info->name))) {
-                   NIR_PASS_V(shader->ir.nir, r300_transform_vs_trig_input);
-               }
-           }
-           else
+           } else {
                ntr_options = &hwtcl_r300_options;
+           }
        } else {
            ntr_options = &swtcl_options;
        }

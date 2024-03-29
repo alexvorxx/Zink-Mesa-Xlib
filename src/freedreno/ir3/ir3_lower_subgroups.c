@@ -203,9 +203,6 @@ split_block(struct ir3 *ir, struct ir3_block *before_block,
       rem_instr->block = after_block;
    }
 
-   after_block->brtype = before_block->brtype;
-   after_block->condition = before_block->condition;
-
    return after_block;
 }
 
@@ -217,16 +214,42 @@ link_blocks(struct ir3_block *pred, struct ir3_block *succ, unsigned index)
    ir3_block_link_physical(pred, succ);
 }
 
+static void
+link_blocks_jump(struct ir3_block *pred, struct ir3_block *succ)
+{
+   ir3_JUMP(pred);
+   link_blocks(pred, succ, 0);
+}
+
+static void
+link_blocks_branch(struct ir3_block *pred, struct ir3_block *target,
+                   struct ir3_block *fallthrough, unsigned opc,
+                   struct ir3_instruction *condition)
+{
+   unsigned nsrc = condition ? 1 : 0;
+   struct ir3_instruction *branch = ir3_instr_create(pred, opc, 0, nsrc);
+
+   if (condition) {
+      struct ir3_register *cond_dst = condition->dsts[0];
+      struct ir3_register *src =
+         ir3_src_create(branch, cond_dst->num, cond_dst->flags);
+      src->def = cond_dst;
+   }
+
+   link_blocks(pred, target, 0);
+   link_blocks(pred, fallthrough, 1);
+}
+
 static struct ir3_block *
 create_if(struct ir3 *ir, struct ir3_block *before_block,
-          struct ir3_block *after_block)
+          struct ir3_block *after_block, unsigned opc,
+          struct ir3_instruction *condition)
 {
    struct ir3_block *then_block = ir3_block_create(ir);
    list_add(&then_block->node, &before_block->node);
 
-   link_blocks(before_block, then_block, 0);
-   link_blocks(before_block, after_block, 1);
-   link_blocks(then_block, after_block, 0);
+   link_blocks_branch(before_block, then_block, after_block, opc, condition);
+   link_blocks_jump(then_block, after_block);
 
    return then_block;
 }
@@ -296,16 +319,14 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
 
       after_block->reconvergence_point = true;
 
-      link_blocks(before_block, header, 0);
+      link_blocks_jump(before_block, header);
 
-      link_blocks(header, exit, 0);
-      link_blocks(header, footer, 1);
-      header->brtype = IR3_BRANCH_GETONE;
+      link_blocks_branch(header, exit, footer, OPC_GETONE, NULL);
 
-      link_blocks(exit, after_block, 0);
+      link_blocks_jump(exit, after_block);
       ir3_block_link_physical(exit, footer);
 
-      link_blocks(footer, header, 0);
+      link_blocks_jump(footer, header);
 
       struct ir3_register *exclusive = instr->dsts[0];
       struct ir3_register *inclusive = instr->dsts[1];
@@ -347,15 +368,11 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
       body->reconvergence_point = true;
       after_block->reconvergence_point = true;
 
-      link_blocks(before_block, body, 0);
+      link_blocks_jump(before_block, body);
 
-      link_blocks(body, store, 0);
-      link_blocks(body, after_block, 1);
-      body->brtype = IR3_BRANCH_GETLAST;
+      link_blocks_branch(body, store, after_block, OPC_GETLAST, NULL);
 
-      link_blocks(store, after_block, 0);
-      link_blocks(store, body, 1);
-      store->brtype = IR3_BRANCH_GETONE;
+      link_blocks_branch(store, after_block, body, OPC_GETONE, NULL);
 
       struct ir3_register *reduce = instr->dsts[0];
       struct ir3_register *inclusive = instr->dsts[1];
@@ -392,55 +409,57 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
 
       mov_reg(store, reduce, inclusive);
    } else {
-      struct ir3_block *then_block = create_if(ir, before_block, after_block);
-
       /* For ballot, the destination must be initialized to 0 before we do
        * the movmsk because the condition may be 0 and then the movmsk will
        * be skipped. Because it's a shared register we have to wrap the
        * initialization in a getone block.
        */
       if (instr->opc == OPC_BALLOT_MACRO) {
-         before_block->brtype = IR3_BRANCH_GETONE;
-         before_block->condition = NULL;
+         struct ir3_block *then_block =
+            create_if(ir, before_block, after_block, OPC_GETONE, NULL);
          mov_immed(instr->dsts[0], then_block, 0);
          after_block->reconvergence_point = true;
          before_block = after_block;
          after_block = split_block(ir, before_block, instr);
-         then_block = create_if(ir, before_block, after_block);
       }
+
+      struct ir3_instruction *condition = NULL;
+      unsigned branch_opc = 0;
 
       switch (instr->opc) {
       case OPC_BALLOT_MACRO:
       case OPC_READ_COND_MACRO:
       case OPC_ANY_MACRO:
       case OPC_ALL_MACRO:
-         before_block->condition = instr->srcs[0]->def->instr;
+         condition = instr->srcs[0]->def->instr;
          break;
       default:
-         before_block->condition = NULL;
          break;
       }
 
       switch (instr->opc) {
       case OPC_BALLOT_MACRO:
       case OPC_READ_COND_MACRO:
-         before_block->brtype = IR3_BRANCH_COND;
          after_block->reconvergence_point = true;
+         branch_opc = OPC_BR;
          break;
       case OPC_ANY_MACRO:
-         before_block->brtype = IR3_BRANCH_ANY;
+         branch_opc = OPC_BANY;
          break;
       case OPC_ALL_MACRO:
-         before_block->brtype = IR3_BRANCH_ALL;
+         branch_opc = OPC_BALL;
          break;
       case OPC_ELECT_MACRO:
       case OPC_SWZ_SHARED_MACRO:
-         before_block->brtype = IR3_BRANCH_GETONE;
          after_block->reconvergence_point = true;
+         branch_opc = OPC_GETONE;
          break;
       default:
          unreachable("bad opcode");
       }
+
+      struct ir3_block *then_block =
+         create_if(ir, before_block, after_block, branch_opc, condition);
 
       switch (instr->opc) {
       case OPC_ALL_MACRO:

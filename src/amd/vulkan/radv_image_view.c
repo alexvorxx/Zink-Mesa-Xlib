@@ -25,6 +25,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "radv_formats.h"
 #include "radv_private.h"
 
 #include "gfx10_format_table.h"

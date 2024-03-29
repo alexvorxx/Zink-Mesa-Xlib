@@ -38,6 +38,7 @@ extern "C" {
 #endif
 
 struct vk_command_buffer_ops;
+struct vk_device_shader_ops;
 struct vk_sync;
 
 enum vk_queue_submit_mode {
@@ -129,6 +130,9 @@ struct vk_device {
 
    /** Command buffer vtable when using the common command pool */
    const struct vk_command_buffer_ops *command_buffer_ops;
+
+   /** Shader vtable for VK_EXT_shader_object and common pipelines */
+   const struct vk_device_shader_ops *shader_ops;
 
    /** Driver provided callback for capturing traces
     * 

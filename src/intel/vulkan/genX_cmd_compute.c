@@ -33,7 +33,7 @@
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
-#include "common/intel_genX_state.h"
+#include "common/intel_genX_state_brw.h"
 
 #include "ds/intel_tracepoints.h"
 
@@ -101,6 +101,8 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
 
    genX(cmd_buffer_config_l3)(cmd_buffer, pipeline->base.l3_config);
 
+   genX(flush_descriptor_buffers)(cmd_buffer, &comp_state->base);
+
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
    /* Apply any pending pipeline flushes we may have.  We want to apply them
@@ -138,16 +140,10 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
    }
 
-   const uint32_t push_descriptor_dirty =
-      cmd_buffer->state.push_descriptors_dirty &
-      pipeline->base.use_push_descriptor;
-   if (push_descriptor_dirty) {
-      genX(cmd_buffer_flush_push_descriptor_set)(cmd_buffer,
-                                                 &cmd_buffer->state.compute.base,
-                                                 &pipeline->base);
-      cmd_buffer->state.descriptors_dirty |= push_descriptor_dirty;
-      cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
-   }
+   cmd_buffer->state.descriptors_dirty |=
+      genX(cmd_buffer_flush_push_descriptors)(cmd_buffer,
+                                              &cmd_buffer->state.compute.base,
+                                              &pipeline->base);
 
    if ((cmd_buffer->state.descriptors_dirty & VK_SHADER_STAGE_COMPUTE_BIT) ||
        cmd_buffer->state.compute.pipeline_dirty) {
@@ -268,7 +264,7 @@ static inline struct GENX(INTERFACE_DESCRIPTOR_DATA)
 get_interface_descriptor_data(struct anv_cmd_buffer *cmd_buffer,
                               const struct anv_shader_bin *shader,
                               const struct brw_cs_prog_data *prog_data,
-                              const struct brw_cs_dispatch_info *dispatch)
+                              const struct intel_cs_dispatch_info *dispatch)
 {
    const struct intel_device_info *devinfo = cmd_buffer->device->info;
 
@@ -298,7 +294,7 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
    bool predicate = cmd_buffer->state.conditional_render_enabled;
 
-   const struct brw_cs_dispatch_info dispatch =
+   const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
    const int dispatch_size = dispatch.simd_size / 16;
 
@@ -342,7 +338,7 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    const bool predicate = cmd_buffer->state.conditional_render_enabled;
 
    const struct intel_device_info *devinfo = pipeline->base.device->info;
-   const struct brw_cs_dispatch_info dispatch =
+   const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
 
    cmd_buffer->last_compute_walker =
@@ -362,7 +358,7 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
          .GenerateLocalID                = prog_data->generate_local_id != 0,
          .EmitLocal                      = prog_data->generate_local_id,
          .WalkOrder                      = prog_data->walk_order,
-         .TileLayout = prog_data->walk_order == BRW_WALK_ORDER_YXZ ?
+         .TileLayout = prog_data->walk_order == INTEL_WALK_ORDER_YXZ ?
                        TileY32bpe : Linear,
          .LocalXMaximum                  = prog_data->local_size[0] - 1,
          .LocalYMaximum                  = prog_data->local_size[1] - 1,
@@ -392,7 +388,7 @@ emit_gpgpu_walker(struct anv_cmd_buffer *cmd_buffer,
    const bool predicate = cmd_buffer->state.conditional_render_enabled;
 
    const struct intel_device_info *devinfo = pipeline->base.device->info;
-   const struct brw_cs_dispatch_info dispatch =
+   const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
 
    anv_batch_emit(&cmd_buffer->batch, GENX(GPGPU_WALKER), ggw) {
@@ -474,14 +470,13 @@ void genX(CmdDispatchBase)(
 
    if (prog_data->uses_num_work_groups) {
       struct anv_state state =
-         anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, 12, 4);
+         anv_cmd_buffer_alloc_temporary_state(cmd_buffer, 12, 4);
       uint32_t *sizes = state.map;
       sizes[0] = groupCountX;
       sizes[1] = groupCountY;
       sizes[2] = groupCountZ;
       cmd_buffer->state.compute.num_workgroups =
-         anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
-                                      state);
+         anv_cmd_buffer_temporary_state_address(cmd_buffer, state);
 
       /* The num_workgroups buffer goes in the binding table */
       cmd_buffer->state.descriptors_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
@@ -538,16 +533,15 @@ void genX(CmdDispatchIndirect)(
    trace_intel_end_compute(&cmd_buffer->trace, 0, 0, 0);
 }
 
-struct anv_state
+struct anv_address
 genX(cmd_buffer_ray_query_globals)(struct anv_cmd_buffer *cmd_buffer)
 {
 #if GFX_VERx10 >= 125
    struct anv_device *device = cmd_buffer->device;
 
    struct anv_state state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
-                                         BRW_RT_DISPATCH_GLOBALS_SIZE,
-                                         64);
+      anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
+                                           BRW_RT_DISPATCH_GLOBALS_SIZE, 64);
    struct brw_rt_scratch_layout layout;
    uint32_t stack_ids_per_dss = 2048; /* TODO: can we use a lower value in
                                        * some cases?
@@ -573,7 +567,7 @@ genX(cmd_buffer_ray_query_globals)(struct anv_cmd_buffer *cmd_buffer)
    };
    GENX(RT_DISPATCH_GLOBALS_pack)(NULL, state.map, &rtdg);
 
-   return state;
+   return anv_cmd_buffer_temporary_state_address(cmd_buffer, state);
 #else
    unreachable("Not supported");
 #endif
@@ -593,8 +587,7 @@ genX(cmd_buffer_dispatch_kernel)(struct anv_cmd_buffer *cmd_buffer,
 
    genX(cmd_buffer_config_l3)(cmd_buffer, kernel->l3_config);
 
-   if (anv_cmd_buffer_is_render_queue(cmd_buffer))
-      genX(flush_pipeline_select_gpgpu)(cmd_buffer);
+   genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
    /* Apply any pending pipeline flushes we may have.  We want to apply them
     * now because, if any of those flushes are for things like push constants,
@@ -638,7 +631,7 @@ genX(cmd_buffer_dispatch_kernel)(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
-   struct brw_cs_dispatch_info dispatch =
+   struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, cs_prog_data, NULL);
 
    anv_batch_emit(&cmd_buffer->batch, GENX(COMPUTE_WALKER), cw) {
@@ -740,10 +733,10 @@ cmd_buffer_emit_rt_dispatch_globals(struct anv_cmd_buffer *cmd_buffer,
    struct anv_cmd_ray_tracing_state *rt = &cmd_buffer->state.rt;
 
    struct anv_state rtdg_state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
-                                         BRW_RT_PUSH_CONST_OFFSET +
-                                         sizeof(struct anv_push_constants),
-                                         64);
+      anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
+                                           BRW_RT_PUSH_CONST_OFFSET +
+                                           sizeof(struct anv_push_constants),
+                                           64);
 
    struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
       .MemBaseAddress     = (struct anv_address) {
@@ -788,10 +781,10 @@ cmd_buffer_emit_rt_dispatch_globals_indirect(struct anv_cmd_buffer *cmd_buffer,
    struct anv_cmd_ray_tracing_state *rt = &cmd_buffer->state.rt;
 
    struct anv_state rtdg_state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
-                                         BRW_RT_PUSH_CONST_OFFSET +
-                                         sizeof(struct anv_push_constants),
-                                         64);
+      anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
+                                           BRW_RT_PUSH_CONST_OFFSET +
+                                           sizeof(struct anv_push_constants),
+                                           64);
 
    struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
       .MemBaseAddress     = (struct anv_address) {
@@ -809,9 +802,7 @@ cmd_buffer_emit_rt_dispatch_globals_indirect(struct anv_cmd_buffer *cmd_buffer,
    GENX(RT_DISPATCH_GLOBALS_pack)(NULL, rtdg_state.map, &rtdg);
 
    struct anv_address rtdg_addr =
-      anv_state_pool_state_address(
-         &cmd_buffer->device->dynamic_state_pool,
-         rtdg_state);
+      anv_cmd_buffer_temporary_state_address(cmd_buffer, rtdg_state);
 
    struct mi_builder b;
    mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
@@ -883,21 +874,18 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
    trace_intel_begin_rays(&cmd_buffer->trace);
 
    genX(cmd_buffer_config_l3)(cmd_buffer, pipeline->base.l3_config);
+
+   genX(flush_descriptor_buffers)(cmd_buffer, &rt->base);
+
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
    cmd_buffer->state.rt.pipeline_dirty = false;
 
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-   const VkShaderStageFlags push_descriptor_dirty =
-      cmd_buffer->state.push_descriptors_dirty &
-      pipeline->base.use_push_descriptor;
-   if (push_descriptor_dirty) {
-      genX(cmd_buffer_flush_push_descriptor_set)(cmd_buffer,
-                                                 &cmd_buffer->state.rt.base,
-                                                 &pipeline->base);
-      cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
-   }
+   genX(cmd_buffer_flush_push_descriptors)(cmd_buffer,
+                                           &cmd_buffer->state.rt.base,
+                                           &pipeline->base);
 
    /* Add these to the reloc list as they're internal buffers that don't
     * actually have relocs to pick them up manually.
@@ -924,8 +912,7 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
           sizeof(struct anv_push_constants));
 
    struct anv_address rtdg_addr =
-      anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
-                                   rtdg_state);
+      anv_cmd_buffer_temporary_state_address(cmd_buffer, rtdg_state);
 
    uint8_t local_size_log2[3];
    uint32_t global_size[3] = {};
@@ -1045,7 +1032,7 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    const struct brw_cs_prog_data *cs_prog_data =
       brw_cs_prog_data_const(device->rt_trampoline->prog_data);
-   struct brw_cs_dispatch_info dispatch =
+   struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(device->info, cs_prog_data, NULL);
 
    anv_batch_emit(&cmd_buffer->batch, GENX(COMPUTE_WALKER), cw) {

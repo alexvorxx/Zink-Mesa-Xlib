@@ -243,10 +243,18 @@ get_implicit_conversion_operation(const glsl_type *to, const glsl_type *from,
                                   struct _mesa_glsl_parse_state *state)
 {
    switch (to->base_type) {
+   case GLSL_TYPE_FLOAT16:
+      switch (from->base_type) {
+      case GLSL_TYPE_INT: return ir_unop_i2f16;
+      case GLSL_TYPE_UINT: return ir_unop_u2f16;
+      default: return (ir_expression_operation)0;
+      }
+
    case GLSL_TYPE_FLOAT:
       switch (from->base_type) {
       case GLSL_TYPE_INT: return ir_unop_i2f;
       case GLSL_TYPE_UINT: return ir_unop_u2f;
+      case GLSL_TYPE_FLOAT16: return ir_unop_f162f;
       default: return (ir_expression_operation)0;
       }
 
@@ -264,6 +272,7 @@ get_implicit_conversion_operation(const glsl_type *to, const glsl_type *from,
       switch (from->base_type) {
       case GLSL_TYPE_INT: return ir_unop_i2d;
       case GLSL_TYPE_UINT: return ir_unop_u2d;
+      case GLSL_TYPE_FLOAT16: return ir_unop_f162d;
       case GLSL_TYPE_FLOAT: return ir_unop_f2d;
       case GLSL_TYPE_INT64: return ir_unop_i642d;
       case GLSL_TYPE_UINT64: return ir_unop_u642d;
@@ -2113,6 +2122,10 @@ ast_expression::do_hir(exec_list *instructions,
       result = new(ctx) ir_constant(this->primary_expression.uint_constant);
       break;
 
+   case ast_float16_constant:
+      result = new(ctx) ir_constant(float16_t(this->primary_expression.float16_constant));
+      break;
+
    case ast_float_constant:
       result = new(ctx) ir_constant(this->primary_expression.float_constant);
       break;
@@ -2256,6 +2269,7 @@ ast_expression::has_sequence_subexpression() const
    case ast_identifier:
    case ast_int_constant:
    case ast_uint_constant:
+   case ast_float16_constant:
    case ast_float_constant:
    case ast_bool_constant:
    case ast_double_constant:
@@ -4285,6 +4299,11 @@ apply_type_qualifier_to_variable(const struct ast_type_qualifier *qual,
       switch (glsl_without_array(var->type)->base_type) {
       case GLSL_TYPE_FLOAT:
          /* Ok in all GLSL versions */
+         break;
+      case GLSL_TYPE_FLOAT16:
+         if (state->AMD_gpu_shader_half_float_enable)
+            break;
+         _mesa_glsl_error(loc, state, "illegal type for a varying variable");
          break;
       case GLSL_TYPE_UINT:
       case GLSL_TYPE_INT:

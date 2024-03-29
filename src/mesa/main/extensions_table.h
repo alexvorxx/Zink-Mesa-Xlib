@@ -13,6 +13,7 @@ EXT(AMD_conservative_depth                  , ARB_conservative_depth            
 EXT(AMD_depth_clamp_separate                , AMD_depth_clamp_separate               , GLL, GLC,  x ,  x , 2009)
 EXT(AMD_draw_buffers_blend                  , ARB_draw_buffers_blend                 , GLL, GLC,  x ,  x , 2009)
 EXT(AMD_framebuffer_multisample_advanced    , AMD_framebuffer_multisample_advanced   , GLL, GLC,  x , ES2, 2018)
+EXT(AMD_gpu_shader_half_float               , AMD_gpu_shader_half_float              ,  40,  40,  x ,  x , 2016)
 EXT(AMD_gpu_shader_int64                    , ARB_gpu_shader_int64                   ,  x , GLC,  x ,  x , 2015)
 EXT(AMD_multi_draw_indirect                 , ARB_draw_indirect                      , GLL, GLC,  x ,  x , 2011)
 EXT(AMD_performance_monitor                 , AMD_performance_monitor                , GLL, GLC,  x , ES2, 2007)

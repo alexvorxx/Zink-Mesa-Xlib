@@ -69,8 +69,7 @@ create_global()
 static void
 create_mimg(bool nsa, Temp desc = Temp(0, s8))
 {
-   aco_ptr<MIMG_instruction> mimg{
-      create_instruction<MIMG_instruction>(aco_opcode::image_sample, Format::MIMG, 5, 1)};
+   aco_ptr<Instruction> mimg{create_instruction(aco_opcode::image_sample, Format::MIMG, 5, 1)};
    mimg->definitions[0] = Definition(PhysReg(256), v1);
    mimg->operands[0] = Operand(desc);
    mimg->operands[0].setFixed(PhysReg(0));
@@ -78,8 +77,8 @@ create_mimg(bool nsa, Temp desc = Temp(0, s8))
    mimg->operands[2] = Operand(v1);
    for (unsigned i = 0; i < 2; i++)
       mimg->operands[3 + i] = Operand(PhysReg(256 + (nsa ? i * 2 : i)), v1);
-   mimg->dmask = 0x1;
-   mimg->dim = ac_image_2d;
+   mimg->mimg().dmask = 0x1;
+   mimg->mimg().dim = ac_image_2d;
 
    bld.insert(std::move(mimg));
 }
@@ -213,24 +212,24 @@ BEGIN_TEST(form_hard_clauses.nsa)
 
       //>> p_unit_test 0
       //! s_clause imm:1
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[1\]')
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[1\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[1\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[1\]')
       bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
       create_mimg(false);
       create_mimg(false);
 
       //>> p_unit_test 1
       //~gfx10_3! s_clause imm:1
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[1\]')
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[2\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[1\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[2\]')
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1u));
       create_mimg(false);
       create_mimg(true);
 
       //>> p_unit_test 2
       //~gfx10_3! s_clause imm:1
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[2\]')
-      //; search_re('image_sample .* %0:v\[0\], %0:v\[2\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[2\]')
+      //; search_re(r'image_sample .* %0:v\[0\], %0:v\[2\]')
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2u));
       create_mimg(true);
       create_mimg(true);

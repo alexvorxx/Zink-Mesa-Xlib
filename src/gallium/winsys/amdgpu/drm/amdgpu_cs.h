@@ -12,6 +12,10 @@
 #include "util/u_memory.h"
 #include "drm-uapi/amdgpu_drm.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Smaller submits means the GPU gets busy sooner and there is less
  * waiting for buffers and fences. Proof:
  *   http://www.phoronix.com/scan.php?page=article&item=mesa-111-si&num=1
@@ -20,7 +24,7 @@
 
 struct amdgpu_ctx {
    struct pipe_reference reference;
-   struct amdgpu_winsys *ws;
+   struct amdgpu_winsys *aws;
    amdgpu_context_handle ctx;
    amdgpu_bo_handle user_fence_bo;
    uint64_t *user_fence_cpu_address_base;
@@ -36,7 +40,6 @@ struct amdgpu_ctx {
 
 struct amdgpu_cs_buffer {
    struct amdgpu_winsys_bo *bo;
-   unsigned slab_real_idx; /* index of underlying real BO, used by slab buffers only */
    unsigned usage;
 };
 
@@ -84,7 +87,7 @@ struct amdgpu_cs_context {
    struct drm_amdgpu_cs_chunk_ib chunk_ib[IB_NUM];
    uint32_t                    *ib_main_addr; /* the beginning of IB before chaining */
 
-   struct amdgpu_winsys *ws;
+   struct amdgpu_winsys *aws;
 
    /* Buffers. */
    struct amdgpu_buffer_list   buffer_lists[NUM_BO_LIST_TYPES];
@@ -112,7 +115,7 @@ struct amdgpu_cs_context {
 
 struct amdgpu_cs {
    struct amdgpu_ib main_ib; /* must be first because this is inherited */
-   struct amdgpu_winsys *ws;
+   struct amdgpu_winsys *aws;
    struct amdgpu_ctx *ctx;
 
    /*
@@ -121,6 +124,11 @@ struct amdgpu_cs {
    struct drm_amdgpu_cs_chunk_fence fence_chunk;
    enum amd_ip_type ip_type;
    unsigned queue_index;
+
+   /* Whether this queue uses amdgpu_winsys_bo::alt_fence instead of generating its own
+    * sequence numbers for synchronization.
+    */
+   bool uses_alt_fence;
 
    /* We flip between these two CS. While one is being consumed
     * by the kernel in another thread, the other one is being filled
@@ -156,7 +164,7 @@ struct amdgpu_fence {
    struct pipe_reference reference;
    uint32_t syncobj;
 
-   struct amdgpu_winsys *ws;
+   struct amdgpu_winsys *aws;
 
    /* The following field aren't set for imported fences. */
    struct amdgpu_ctx *ctx;  /* submission context */
@@ -177,11 +185,6 @@ struct amdgpu_fence {
 
 void amdgpu_fence_destroy(struct amdgpu_fence *fence);
 
-static inline bool amdgpu_fence_is_syncobj(struct amdgpu_fence *fence)
-{
-   return fence->ctx == NULL;
-}
-
 static inline void amdgpu_ctx_reference(struct amdgpu_ctx **dst, struct amdgpu_ctx *src)
 {
    struct amdgpu_ctx *old_dst = *dst;
@@ -189,6 +192,7 @@ static inline void amdgpu_ctx_reference(struct amdgpu_ctx **dst, struct amdgpu_c
    if (pipe_reference(old_dst ? &old_dst->reference : NULL,
                       src ? &src->reference : NULL)) {
       amdgpu_cs_ctx_free(old_dst->ctx);
+      amdgpu_bo_cpu_unmap(old_dst->user_fence_bo);
       amdgpu_bo_free(old_dst->user_fence_bo);
       FREE(old_dst);
    }
@@ -265,6 +269,10 @@ amdgpu_bo_is_referenced_by_cs_with_usage(struct amdgpu_cs *cs,
 bool amdgpu_fence_wait(struct pipe_fence_handle *fence, uint64_t timeout,
                        bool absolute);
 void amdgpu_cs_sync_flush(struct radeon_cmdbuf *rcs);
-void amdgpu_cs_init_functions(struct amdgpu_screen_winsys *ws);
+void amdgpu_cs_init_functions(struct amdgpu_screen_winsys *sws);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

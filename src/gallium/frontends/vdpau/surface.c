@@ -253,10 +253,8 @@ vlVdpVideoSurfaceGetBitsYCbCr(VdpVideoSurface surface,
       vlVdpVideoSurfaceSize(vlsurface, i, &width, &height);
 
       for (j = 0; j < sv->texture->array_size; ++j) {
-         struct pipe_box box = {
-            0, 0, j,
-            width, height, 1
-         };
+         struct pipe_box box;
+         u_box_3d(0, 0, j, width, height, 1, &box);
          struct pipe_transfer *transfer;
          uint8_t *map;
 
@@ -391,10 +389,8 @@ vlVdpVideoSurfacePutBitsYCbCr(VdpVideoSurface surface,
       vlVdpVideoSurfaceSize(p_surf, i, &width, &height);
 
       for (j = 0; j < tex->array_size; ++j) {
-         struct pipe_box dst_box = {
-            0, 0, j,
-            width, height, 1
-         };
+         struct pipe_box dst_box;
+         u_box_3d(0, 0, j, width, height, 1, &dst_box);
 
          if (conversion == CONVERSION_YV12_TO_NV12 && i == 1) {
             struct pipe_transfer *transfer;

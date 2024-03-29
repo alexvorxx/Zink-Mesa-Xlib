@@ -37,6 +37,7 @@
 #include "util/u_process.h"
 #include "util/u_screen.h"
 #include "util/u_video.h"
+#include "util/xmlconfig.h"
 
 #include <fcntl.h>
 
@@ -107,10 +108,6 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
 
    /* Native MRT is introduced with v5 */
    bool has_mrt = (dev->arch >= 5);
-
-   /* Only kernel drivers >= 1.1 can allocate HEAP BOs */
-   bool has_heap = panfrost_device_kmod_version_major(dev) > 1 ||
-                   panfrost_device_kmod_version_minor(dev) >= 1;
 
    switch (param) {
    case PIPE_CAP_NPOT_TEXTURES:
@@ -333,7 +330,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 0;
 
    case PIPE_CAP_DRAW_INDIRECT:
-      return has_heap;
+      return 1;
 
    case PIPE_CAP_START_INSTANCE:
    case PIPE_CAP_DRAW_PARAMETERS:
@@ -838,6 +835,9 @@ panfrost_create_screen(int fd, const struct pipe_screen_config *config,
 
    struct panfrost_device *dev = pan_device(&screen->base);
 
+   driParseConfigFiles(config->options, config->options_info, 0,
+                       "panfrost", NULL, NULL, NULL, 0, NULL, 0);
+
    /* Debug must be set first for pandecode to work correctly */
    dev->debug =
       debug_get_flags_option("PAN_MESA_DEBUG", panfrost_debug_options, 0);
@@ -855,6 +855,11 @@ panfrost_create_screen(int fd, const struct pipe_screen_config *config,
       panfrost_destroy_screen(&(screen->base));
       return NULL;
    }
+
+   screen->force_afbc_packing = dev->debug & PAN_DBG_FORCE_PACK;
+   if (!screen->force_afbc_packing)
+      screen->force_afbc_packing = driQueryOptionb(config->options,
+                                                   "pan_force_afbc_packing");
 
    dev->ro = ro;
 
@@ -902,6 +907,8 @@ panfrost_create_screen(int fd, const struct pipe_screen_config *config,
       panfrost_cmdstream_screen_init_v7(screen);
    else if (dev->arch == 9)
       panfrost_cmdstream_screen_init_v9(screen);
+   else if (dev->arch == 10)
+      panfrost_cmdstream_screen_init_v10(screen);
    else
       unreachable("Unhandled architecture major");
 

@@ -813,7 +813,7 @@
     <field name="Command SubType" start="27" end="28" type="uint" default="1" />
     <field name="Command Type" start="29" end="31" type="uint" default="3" />
   </instruction>
-  <instruction name="PIPE_CONTROL" bias="2" length="6" engine="render">
+  <instruction name="PIPE_CONTROL" bias="2" length="6" engine="render|compute">
     <field name="DWord Length" start="0" end="7" type="uint" default="4" />
     <field name="HDC Pipeline Flush Enable" start="9" end="9" type="bool" />
     <field name="L3 Read Only Cache Invalidation Enable" start="10" end="10" type="bool" />
@@ -862,4 +862,7 @@
     <field name="Address" start="66" end="111" type="address" />
     <field name="Immediate Data" start="128" end="191" type="uint" />
   </instruction>
+  <register name="GFX_TRTT_VA_RANGE" length="1" num="0x4404">
+    <field name="TR-VA Base" start="0" end="12" type="uint" />
+  </register>
 </genxml>

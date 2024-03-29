@@ -454,7 +454,7 @@ More examples:
 
 .. code-block:: sh
 
-  ./replay --override=0 --generator=./generate_rd test_replay.rd
+  ./replay --override=0 test_replay.rd
 
 Editing Command Stream (a6xx+)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -467,7 +467,7 @@ Given the address space bounds the generated program creates a new ``rd`` which
 could be used to override cmdstream with 'replay'. Generated ``rd`` is not replayable
 on its own and depends on buffers provided by the source ``rd``.
 
-C source could be compiled using rdcompiler-meson.build as an example.
+C source could be compiled by putting it into src/freedreno/decode/generate-rd.cc.
 
 The workflow would look like this:
 
@@ -476,15 +476,15 @@ The workflow would look like this:
 
 .. code-block:: sh
 
-  ./rddecompiler -s %cmd_stream_n% example.rd > generate_rd.c
+  ./rddecompiler -s %cmd_stream_n% example.rd > src/freedreno/decode/generate-rd.cc
 
-3. Edit the command stream;
-4. Compile it back, see rdcompiler-meson.build for the instructions;
+3. Edit the command stream;;
+4. Compile and deploy freedreno tools;
 5. Plug the generator into cmdstream replay:
 
 .. code-block:: sh
 
-  ./replay --override=%cmd_stream_№% --generator=~/generate_rd
+  ./replay --override=%cmd_stream_№%
 
 6. Repeat 3-5.
 

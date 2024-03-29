@@ -538,6 +538,14 @@ static const nir_shader_compiler_options r300_vs_compiler_options = {
    .max_unroll_iterations = 32,
 };
 
+static const nir_shader_compiler_options r400_vs_compiler_options = {
+   COMMON_NIR_OPTIONS,
+   .lower_fsat = true, /* No fsat in pre-r500 VS */
+
+   /* Note: has HW loops support, but only 256 ALU instructions. */
+   .max_unroll_iterations = 32,
+};
+
 static const nir_shader_compiler_options r300_fs_compiler_options = {
    COMMON_NIR_OPTIONS,
    .lower_fpow = true, /* POW is only in the VS */
@@ -563,10 +571,14 @@ r300_get_compiler_options(struct pipe_screen *pscreen,
        else
          return &r500_fs_compiler_options;
    } else {
-      if (shader == PIPE_SHADER_VERTEX)
+      if (shader == PIPE_SHADER_VERTEX) {
+         if (r300screen->caps.is_r400)
+            return &r400_vs_compiler_options;
+
          return &r300_vs_compiler_options;
-       else
+      } else {
          return &r300_fs_compiler_options;
+      }
    }
 }
 

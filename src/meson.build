@@ -63,6 +63,9 @@ if cc.get_argument_syntax() == 'msvc'
 else
   idep_getopt = null_dep
 endif
+if with_gallium or with_gbm or with_platform_wayland
+  subdir('loader')
+endif
 if with_gallium
   subdir('mapi')
 endif
@@ -114,9 +117,6 @@ if with_any_nouveau
 endif
 if with_gallium_asahi or with_tools.contains('asahi')
   subdir('asahi')
-endif
-if with_gallium or with_gbm
-  subdir('loader')
 endif
 if with_gbm
   subdir('gbm')

@@ -1176,6 +1176,8 @@ fd_screen_create(int fd,
          !driQueryOptionb(config->options, "disable_conservative_lrz");
    screen->driconf.enable_throttling =
          !driQueryOptionb(config->options, "disable_throttling");
+   screen->driconf.dual_color_blend_by_location =
+         driQueryOptionb(config->options, "dual_color_blend_by_location");
 
    struct sysinfo si;
    sysinfo(&si);

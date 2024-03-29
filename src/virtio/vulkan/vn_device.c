@@ -32,6 +32,7 @@ vn_queue_fini(struct vn_queue *queue)
    if (queue->sparse_semaphore != VK_NULL_HANDLE) {
       vn_DestroySemaphore(dev_handle, queue->sparse_semaphore, NULL);
    }
+   vn_cached_storage_fini(&queue->storage);
    vn_queue_base_fini(&queue->base);
 }
 
@@ -46,27 +47,22 @@ vn_queue_init(struct vn_device *dev,
    if (result != VK_SUCCESS)
       return result;
 
-   VkDeviceQueueTimelineInfoMESA timeline_info;
-   const struct vn_renderer_info *renderer_info =
-      &dev->instance->renderer->info;
-   if (renderer_info->supports_multiple_timelines) {
-      int ring_idx = vn_instance_acquire_ring_idx(dev->instance);
-      if (ring_idx < 0) {
-         vn_log(dev->instance, "failed binding VkQueue to renderer timeline");
-         return VK_ERROR_INITIALIZATION_FAILED;
-      }
-      queue->ring_idx = (uint32_t)ring_idx;
+   vn_cached_storage_init(&queue->storage, &dev->base.base.alloc);
 
-      timeline_info = (VkDeviceQueueTimelineInfoMESA){
-         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_TIMELINE_INFO_MESA,
-         .ringIdx = queue->ring_idx,
-      };
+   const int ring_idx = vn_instance_acquire_ring_idx(dev->instance);
+   if (ring_idx < 0) {
+      vn_log(dev->instance, "failed binding VkQueue to renderer timeline");
+      return VK_ERROR_INITIALIZATION_FAILED;
    }
+   queue->ring_idx = (uint32_t)ring_idx;
 
+   const VkDeviceQueueTimelineInfoMESA timeline_info = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_TIMELINE_INFO_MESA,
+      .ringIdx = queue->ring_idx,
+   };
    const VkDeviceQueueInfo2 device_queue_info = {
       .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-      .pNext =
-         renderer_info->supports_multiple_timelines ? &timeline_info : NULL,
+      .pNext = &timeline_info,
       .flags = queue_info->flags,
       .queueFamilyIndex = queue_info->queueFamilyIndex,
       .queueIndex = queue_index,
@@ -385,7 +381,7 @@ vn_device_feedback_pool_init(struct vn_device *dev)
    const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
    if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK) &&
-       VN_PERF(NO_TIMELINE_SEM_FEEDBACK))
+       VN_PERF(NO_SEMAPHORE_FEEDBACK))
       return VK_SUCCESS;
 
    return vn_feedback_pool_init(dev, &dev->feedback_pool, pool_size, alloc);
@@ -395,7 +391,7 @@ static inline void
 vn_device_feedback_pool_fini(struct vn_device *dev)
 {
    if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK) &&
-       VN_PERF(NO_TIMELINE_SEM_FEEDBACK))
+       VN_PERF(NO_SEMAPHORE_FEEDBACK))
       return;
 
    vn_feedback_pool_fini(&dev->feedback_pool);
@@ -493,7 +489,7 @@ vn_device_init(struct vn_device *dev,
 
    result = vn_device_init_queues(dev, create_info);
    if (result != VK_SUCCESS)
-      goto out_cmd_pools_fini;
+      goto out_feedback_cmd_pools_fini;
 
    vn_buffer_reqs_cache_init(dev);
    vn_image_reqs_cache_init(dev);
@@ -505,7 +501,7 @@ vn_device_init(struct vn_device *dev,
 
    return VK_SUCCESS;
 
-out_cmd_pools_fini:
+out_feedback_cmd_pools_fini:
    vn_feedback_cmd_pools_fini(dev);
 
 out_feedback_pool_fini:
@@ -611,10 +607,8 @@ vn_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
     * Otherwise, another thread might reuse their ring_idx while they
     * are still bound to the queues in the renderer.
     */
-   if (dev->renderer->info.supports_multiple_timelines) {
-      for (uint32_t i = 0; i < dev->queue_count; i++) {
-         vn_instance_release_ring_idx(dev->instance, dev->queues[i].ring_idx);
-      }
+   for (uint32_t i = 0; i < dev->queue_count; i++) {
+      vn_instance_release_ring_idx(dev->instance, dev->queues[i].ring_idx);
    }
 
    vk_free(alloc, dev->queues);

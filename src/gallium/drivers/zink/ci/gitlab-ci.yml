@@ -110,6 +110,7 @@ zink-radv-polaris10-valve:
   variables:
     GPU_VERSION: zink-radv-polaris10
     ZINK_DEBUG: quiet
+    RADV_PERFTEST: shader_object
 
 zink-radv-navi10-valve:
   extends:
@@ -120,6 +121,7 @@ zink-radv-navi10-valve:
   variables:
     B2C_TIMEOUT_OVERALL_MINUTES: 30
     GPU_VERSION: zink-radv-navi10
+    RADV_PERFTEST: shader_object
 
 zink-radv-vangogh-valve:
   timeout: 35m
@@ -135,6 +137,7 @@ zink-radv-vangogh-valve:
     B2C_TIMEOUT_BOOT_MINUTES: 30
     B2C_TIMEOUT_OVERALL_MINUTES: 30
     FDO_CI_CONCURRENT: 6
+    RADV_PERFTEST: shader_object
   # Override the list of tags to drop `priority:low`
   tags:
     - farm:$RUNNER_FARM_LOCATION
@@ -150,3 +153,4 @@ zink-radv-navi31-valve:
     GPU_VERSION: zink-radv-navi31
     B2C_TIMEOUT_BOOT_MINUTES: 75
     B2C_TIMEOUT_OVERALL_MINUTES: 75
+    RADV_PERFTEST: shader_object

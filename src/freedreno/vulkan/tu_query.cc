@@ -18,6 +18,7 @@
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_device.h"
+#include "tu_rmv.h"
 
 #include "common/freedreno_gpu_event.h"
 
@@ -333,6 +334,9 @@ tu_CreateQueryPool(VkDevice _device,
    pool->stride = slot_size;
    pool->size = pCreateInfo->queryCount;
    pool->pipeline_statistics = pCreateInfo->pipelineStatistics;
+
+   TU_RMV(query_pool_create, device, pool);
+
    *pQueryPool = tu_query_pool_to_handle(pool);
 
    return VK_SUCCESS;
@@ -348,6 +352,8 @@ tu_DestroyQueryPool(VkDevice _device,
 
    if (!pool)
       return;
+
+   TU_RMV(resource_destroy, device, pool);
 
    tu_bo_finish(device, pool->bo);
    vk_object_free(&device->vk, pAllocator, pool);
@@ -1171,7 +1177,7 @@ emit_end_occlusion_query(struct tu_cmd_buffer *cmdbuf,
       }
    } else {
       /* A7XX TODO: Calculate (end - begin) via ZPASS_DONE. */
-      tu_cs_emit_pkt7(cs, CP_EVENT_WRITE, 3);
+      tu_cs_emit_pkt7(cs, CP_EVENT_WRITE7, 3);
       tu_cs_emit(cs, CP_EVENT_WRITE7_0(.event = ZPASS_DONE,
                                        .write_sample_count = true).value);
       tu_cs_emit_qw(cs, end_iova);

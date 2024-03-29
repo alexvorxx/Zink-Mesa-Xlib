@@ -37,6 +37,18 @@ r300-rv530-deqp-gles2:
     # see https://gitlab.freedesktop.org/mesa/mesa/-/issues/8093
     RADEON_DEBUG: nohiz
 
+r300-rv530-nine:
+  extends:
+    - .ondracka-rv530
+    - .r300-nine-manual-rules
+  variables:
+    GTEST: "/NineTests/NineTests"
+    HWCI_TEST_SCRIPT: "/install/gtest-runner.sh"
+    B2C_JOB_SUCCESS_REGEX: '^\+ GTEST_EXITCODE=0\r$'
+    HWCI_START_WESTON: 1
+    GPU_VERSION: r300-rv530-nohiz
+    FDO_CI_CONCURRENT: 1
+
 r300-rv380-deqp-gles2:
   extends:
     - .ondracka-rv380

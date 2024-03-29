@@ -42,14 +42,13 @@
 static void
 svga_set_vertex_buffers(struct pipe_context *pipe,
                         unsigned count,
-                        bool take_ownership,
                         const struct pipe_vertex_buffer *buffers)
 {
    struct svga_context *svga = svga_context(pipe);
 
    util_set_vertex_buffers_count(svga->curr.vb,
                                  &svga->curr.num_vertex_buffers,
-                                 buffers, count, take_ownership);
+                                 buffers, count, true);
 
    svga->dirty |= SVGA_NEW_VBUFFER;
 }

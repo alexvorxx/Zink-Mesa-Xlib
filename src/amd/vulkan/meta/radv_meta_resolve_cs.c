@@ -27,6 +27,7 @@
 #include "nir/nir_builder.h"
 #include "nir/nir_format_convert.h"
 
+#include "radv_formats.h"
 #include "radv_meta.h"
 #include "radv_private.h"
 #include "sid.h"

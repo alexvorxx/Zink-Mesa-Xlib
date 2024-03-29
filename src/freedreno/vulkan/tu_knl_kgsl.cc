@@ -24,6 +24,7 @@
 #include "tu_cs.h"
 #include "tu_device.h"
 #include "tu_dynamic_rendering.h"
+#include "tu_rmv.h"
 
 static int
 safe_ioctl(int fd, unsigned long request, void *arg)
@@ -117,6 +118,12 @@ kgsl_bo_init(struct tu_device *dev,
 
    *out_bo = bo;
 
+   TU_RMV(bo_allocate, dev, bo);
+   if (flags & TU_BO_ALLOC_INTERNAL_RESOURCE) {
+      TU_RMV(internal_resource_create, dev, bo);
+      TU_RMV(resource_name, dev, bo, name);
+   }
+
    return VK_SUCCESS;
 }
 
@@ -190,6 +197,7 @@ kgsl_bo_map(struct tu_device *dev, struct tu_bo *bo)
       return vk_error(dev, VK_ERROR_MEMORY_MAP_FAILED);
 
    bo->map = map;
+   TU_RMV(bo_map, dev, bo);
 
    return VK_SUCCESS;
 }
@@ -207,8 +215,12 @@ kgsl_bo_finish(struct tu_device *dev, struct tu_bo *bo)
    if (!p_atomic_dec_zero(&bo->refcnt))
       return;
 
-   if (bo->map)
+   if (bo->map) {
+      TU_RMV(bo_unmap, dev, bo);
       munmap(bo->map, bo->size);
+   }
+
+   TU_RMV(bo_destroy, dev, bo);
 
    struct kgsl_gpumem_free_id req = {
       .id = bo->gem_handle

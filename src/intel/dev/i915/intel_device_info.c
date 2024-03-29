@@ -608,7 +608,7 @@ bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *d
    devinfo->has_tiling_uapi = has_get_tiling(fd);
    devinfo->has_caching_uapi =
       devinfo->platform < INTEL_PLATFORM_DG2_START && !devinfo->has_local_mem;
-   if (devinfo->ver > 12 || intel_device_info_is_mtl(devinfo))
+   if (devinfo->ver > 12 || intel_device_info_is_mtl_or_arl(devinfo))
       devinfo->has_set_pat_uapi = true;
 
    if (getparam(fd, I915_PARAM_MMAP_GTT_VERSION, &val))

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "asahi/compiler/agx_compile.h"
+#include "asahi/lib/agx_nir_passes.h"
 #include "compiler/glsl_types.h"
 #include "compiler/nir/nir_builder.h"
 #include "agx_state.h"
@@ -23,27 +23,15 @@
  */
 
 /*
- * We support the following merged shader stages:
- *
- *    VS/GS
- *    VS/TCS
- *    TES/GS
- *
- * TCS and GS are always merged. So, we lower TCS and GS samplers to bindless
- * and let VS and TES have exclusive binding table access.
+ * We only support VS/TCS merging, so we lower TCS samplers to bindless and let
+ * VS have exclusive binding table access.
  *
  * This could be optimized but it should be good enough for now.
  */
 static bool
 agx_stage_needs_bindless(enum pipe_shader_type stage)
 {
-   switch (stage) {
-   case MESA_SHADER_TESS_CTRL:
-   case MESA_SHADER_GEOMETRY:
-      return true;
-   default:
-      return false;
-   }
+   return stage == MESA_SHADER_TESS_CTRL;
 }
 
 static bool
@@ -134,8 +122,9 @@ lower(nir_builder *b, nir_instr *instr, void *data)
        * The GL spec says out-of-bounds image indexing is undefined, but
        * faulting is not acceptable for robustness.
        */
-      index =
-         nir_umin(b, index, nir_imm_int(b, b->shader->info.num_images - 1));
+      index = nir_umin(
+         b, index,
+         nir_imm_intN_t(b, b->shader->info.num_images - 1, index->bit_size));
 
       index = nir_iadd_imm(b, nir_imul_imm(b, index, 2), offset);
       nir_src_rewrite(&intr->src[0], nir_load_texture_handle_agx(b, index));
@@ -167,8 +156,9 @@ lower(nir_builder *b, nir_instr *instr, void *data)
          index = nir_imm_int(b, tex->texture_index);
 
       /* As above */
-      index =
-         nir_umin(b, index, nir_imm_int(b, b->shader->info.num_textures - 1));
+      index = nir_umin(
+         b, index,
+         nir_imm_intN_t(b, b->shader->info.num_textures - 1, index->bit_size));
 
       nir_tex_instr_add_src(tex, nir_tex_src_texture_handle,
                             nir_load_texture_handle_agx(b, index));

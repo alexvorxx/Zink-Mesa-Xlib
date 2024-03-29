@@ -98,8 +98,7 @@ radv_calibrated_timestamps_enabled(const struct radv_physical_device *pdevice)
 static bool
 radv_shader_object_enabled(const struct radv_physical_device *pdevice)
 {
-   return pdevice->rad_info.gfx_level < GFX9 && !pdevice->use_llvm &&
-          pdevice->instance->perftest_flags & RADV_PERFTEST_SHADER_OBJECT;
+   return !pdevice->use_llvm && pdevice->instance->perftest_flags & RADV_PERFTEST_SHADER_OBJECT;
 }
 
 bool
@@ -138,14 +137,45 @@ parse_hex(char *out, const char *in, unsigned length)
    }
 }
 
+static void
+radv_physical_device_init_cache_key(struct radv_physical_device *pdevice)
+{
+   struct radv_physical_device_cache_key *key = &pdevice->cache_key;
+
+   key->family = pdevice->rad_info.family;
+   key->ptr_size = sizeof(void *);
+   key->conformant_trunc_coord = pdevice->rad_info.conformant_trunc_coord;
+
+   key->clear_lds = pdevice->instance->drirc.clear_lds;
+   key->cs_wave32 = pdevice->cs_wave_size == 32;
+   key->disable_aniso_single_level =
+      pdevice->instance->drirc.disable_aniso_single_level && pdevice->rad_info.gfx_level < GFX8;
+   key->disable_shrink_image_store = pdevice->instance->drirc.disable_shrink_image_store;
+   key->disable_sinking_load_input_fs = pdevice->instance->drirc.disable_sinking_load_input_fs;
+   key->dual_color_blend_by_location = pdevice->instance->drirc.dual_color_blend_by_location;
+   key->emulate_rt = !!(pdevice->instance->perftest_flags & RADV_PERFTEST_EMULATE_RT);
+   key->ge_wave32 = pdevice->ge_wave_size == 32;
+   key->invariant_geom = !!(pdevice->instance->debug_flags & RADV_DEBUG_INVARIANT_GEOM);
+   key->lower_discard_to_demote = !!(pdevice->instance->debug_flags & RADV_DEBUG_DISCARD_TO_DEMOTE);
+   key->mesh_fast_launch_2 = pdevice->mesh_fast_launch_2;
+   key->no_fmask = !!(pdevice->instance->debug_flags & RADV_DEBUG_NO_FMASK);
+   key->no_ngg_gs = !!(pdevice->instance->debug_flags & RADV_DEBUG_NO_NGG_GS);
+   key->no_rt = !!(pdevice->instance->debug_flags & RADV_DEBUG_NO_RT);
+   key->ps_wave32 = pdevice->ps_wave_size == 32;
+   key->rt_wave64 = pdevice->rt_wave_size == 64;
+   key->split_fma = !!(pdevice->instance->debug_flags & RADV_DEBUG_SPLIT_FMA);
+   key->ssbo_non_uniform = pdevice->instance->drirc.ssbo_non_uniform;
+   key->tex_non_uniform = pdevice->instance->drirc.tex_non_uniform;
+   key->use_llvm = pdevice->use_llvm;
+   key->use_ngg = pdevice->use_ngg;
+   key->use_ngg_culling = pdevice->use_ngg_culling;
+}
+
 static int
 radv_device_get_cache_uuid(struct radv_physical_device *pdevice, void *uuid)
 {
-   enum radeon_family family = pdevice->rad_info.family;
-   bool conformant_trunc_coord = pdevice->rad_info.conformant_trunc_coord;
    struct mesa_sha1 ctx;
    unsigned char sha1[20];
-   unsigned ptr_size = sizeof(void *);
 
    memset(uuid, 0, VK_UUID_SIZE);
    _mesa_sha1_init(&ctx);
@@ -167,9 +197,7 @@ radv_device_get_cache_uuid(struct radv_physical_device *pdevice, void *uuid)
       return -1;
 #endif
 
-   _mesa_sha1_update(&ctx, &family, sizeof(family));
-   _mesa_sha1_update(&ctx, &conformant_trunc_coord, sizeof(conformant_trunc_coord));
-   _mesa_sha1_update(&ctx, &ptr_size, sizeof(ptr_size));
+   _mesa_sha1_update(&ctx, &pdevice->cache_key, sizeof(pdevice->cache_key));
    _mesa_sha1_final(&ctx, sha1);
 
    memcpy(uuid, sha1, VK_UUID_SIZE);
@@ -216,7 +244,10 @@ radv_physical_device_init_queue_table(struct radv_physical_device *pdevice)
       idx++;
    }
 
-   pdevice->vk_queue_to_radv[idx++] = RADV_QUEUE_SPARSE;
+   if (radv_sparse_queue_enabled(pdevice)) {
+      pdevice->vk_queue_to_radv[idx] = RADV_QUEUE_SPARSE;
+      idx++;
+   }
 
    pdevice->num_queues = idx;
 }
@@ -505,7 +536,9 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_shader_float16_int8 = true,
       .KHR_shader_float_controls = true,
       .KHR_shader_integer_dot_product = true,
+      .KHR_shader_maximal_reconvergence = true,
       .KHR_shader_non_semantic_info = true,
+      .KHR_shader_quad_control = true,
       .KHR_shader_subgroup_extended_types = true,
       .KHR_shader_subgroup_rotate = true,
       .KHR_shader_subgroup_uniform_control_flow = true,
@@ -522,6 +555,9 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_variable_pointers = true,
       .KHR_vertex_attribute_divisor = true,
       .KHR_video_queue = !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
+      .KHR_video_decode_av1 =
+         (device->rad_info.vcn_ip_version >= VCN_3_0_0 && device->rad_info.vcn_ip_version != VCN_3_0_33 &&
+          VIDEO_CODEC_AV1DEC && !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE)),
       .KHR_video_decode_queue = !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
       .KHR_video_decode_h264 = VIDEO_CODEC_H264DEC && !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
       .KHR_video_decode_h265 = VIDEO_CODEC_H265DEC && !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
@@ -573,6 +609,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_inline_uniform_block = true,
       .EXT_line_rasterization = true,
       .EXT_load_store_op_none = true,
+      .EXT_map_memory_placed = true,
       .EXT_memory_budget = true,
       .EXT_memory_priority = true,
       .EXT_mesh_shader = radv_taskmesh_enabled(device),
@@ -645,8 +682,8 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .GOOGLE_user_type = true,
       .INTEL_shader_integer_functions2 = true,
       .NV_compute_shader_derivatives = true,
-      .NV_device_generated_commands = device->instance->drirc.enable_dgc,
-      .NV_device_generated_commands_compute = device->instance->drirc.enable_dgc,
+      .NV_device_generated_commands = !device->use_llvm && device->instance->drirc.enable_dgc,
+      .NV_device_generated_commands_compute = !device->use_llvm && device->instance->drirc.enable_dgc,
       /* Undocumented extension purely for vkd3d-proton. This check is to prevent anyone else from
        * using it.
        */
@@ -924,6 +961,11 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
       /* VK_KHR_shader_subgroup_uniform_control_flow */
       .shaderSubgroupUniformControlFlow = true,
 
+      /* VK_EXT_map_memory_placed */
+      .memoryMapPlaced = true,
+      .memoryMapRangePlaced = false,
+      .memoryUnmapReserve = true,
+
       /* VK_EXT_multi_draw */
       .multiDraw = true,
 
@@ -1106,7 +1148,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
 
       /* VK_NV_device_generated_commands_compute */
       .deviceGeneratedCompute = true,
-      .deviceGeneratedComputePipelines = false,
+      .deviceGeneratedComputePipelines = true,
       .deviceGeneratedComputeCaptureReplay = false,
 
       /* VK_KHR_cooperative_matrix */
@@ -1135,6 +1177,12 @@ radv_physical_device_get_features(const struct radv_physical_device *pdevice, st
 
       /* VK_KHR_shader_expect_assume */
       .shaderExpectAssume = true,
+
+      /* VK_KHR_shader_maximal_reconvergence */
+      .shaderMaximalReconvergence = true,
+
+      /* VK_KHR_shader_quad_control */
+      .shaderQuadControl = true,
    };
 }
 
@@ -1820,6 +1868,11 @@ radv_get_physical_device_properties(struct radv_physical_device *pdevice)
    /* VK_EXT_shader_object */
    radv_device_get_cache_uuid(pdevice, p->shaderBinaryUUID);
    p->shaderBinaryVersion = 1;
+
+   /* VK_EXT_map_memory_placed */
+   uint64_t os_page_size = 4096;
+   os_get_page_size(&os_page_size);
+   p->minPlacedMemoryMapAlignment = os_page_size;
 }
 
 static VkResult
@@ -1947,18 +2000,6 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    snprintf(device->marketing_name, sizeof(device->name), "%s (RADV %s%s)",
             marketing_name ? marketing_name : "AMD Unknown", device->rad_info.name, radv_get_compiler_string(device));
 
-   if (radv_device_get_cache_uuid(device, device->cache_uuid)) {
-      result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED, "cannot generate UUID");
-      goto fail_wsi;
-   }
-
-   /* The gpu id is already embedded in the uuid so we just pass "radv"
-    * when creating the cache.
-    */
-   char buf[VK_UUID_SIZE * 2 + 1];
-   mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
-   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
-
    if (!radv_is_conformant(device))
       vk_warn_non_conformant_implementation("radv");
 
@@ -1983,6 +2024,9 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
 
    device->emulate_ngg_gs_query_pipeline_stat = device->use_ngg && device->rad_info.gfx_level < GFX11;
 
+   device->mesh_fast_launch_2 =
+      device->rad_info.gfx_level >= GFX11 && !(device->instance->debug_flags & RADV_DEBUG_NO_GS_FAST_LAUNCH_2);
+
    device->emulate_mesh_shader_queries = device->rad_info.gfx_level == GFX10_3;
 
    /* Determine the number of threads per wave for all stages. */
@@ -2003,13 +2047,15 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
          device->ge_wave_size = 32;
 
       /* Default to 32 on RDNA1-2 as that gives better perf due to less issues with divergence.
-       * However, on GFX11 default to wave64 as ACO does not support VOPD yet, and with the VALU
-       * dependence wave32 would likely be a net-loss (as well as the SALU count becoming more
-       * problematic)
+       * However, on RDNA3+ default to wave64 as implicit dual issuing is likely better than
+       * wave32 VOPD for VALU dependent code.
+       * (as well as the SALU count becoming more problematic with wave32)
        */
-      if (!(device->instance->perftest_flags & RADV_PERFTEST_RT_WAVE_64) &&
-          !(device->instance->drirc.force_rt_wave64) && device->rad_info.gfx_level < GFX11)
+      if (device->instance->perftest_flags & RADV_PERFTEST_RT_WAVE_32 || device->rad_info.gfx_level < GFX11)
          device->rt_wave_size = 32;
+
+      if (device->instance->perftest_flags & RADV_PERFTEST_RT_WAVE_64 || device->instance->drirc.force_rt_wave64)
+         device->rt_wave_size = 64;
    }
 
    device->max_shared_size = device->rad_info.gfx_level >= GFX7 ? 65536 : 32768;
@@ -2045,6 +2091,20 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
       device->render_devid = render_stat.st_rdev;
    }
 #endif
+
+   radv_physical_device_init_cache_key(device);
+
+   if (radv_device_get_cache_uuid(device, device->cache_uuid)) {
+      result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED, "cannot generate UUID");
+      goto fail_wsi;
+   }
+
+   /* The gpu id is already embedded in the uuid so we just pass "radv"
+    * when creating the cache.
+    */
+   char buf[VK_UUID_SIZE * 2 + 1];
+   mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
+   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
 
    radv_get_physical_device_properties(device);
 
@@ -2145,7 +2205,7 @@ static void
 radv_get_physical_device_queue_family_properties(struct radv_physical_device *pdevice, uint32_t *pCount,
                                                  VkQueueFamilyProperties **pQueueFamilyProperties)
 {
-   int num_queue_families = 2;
+   int num_queue_families = 1;
    int idx;
    if (pdevice->rad_info.ip[AMD_IP_COMPUTE].num_queues > 0 &&
        !(pdevice->instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE))
@@ -2160,6 +2220,10 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
       num_queue_families++;
    }
 
+   if (radv_sparse_queue_enabled(pdevice)) {
+      num_queue_families++;
+   }
+
    if (pQueueFamilyProperties == NULL) {
       *pCount = num_queue_families;
       return;
@@ -2171,7 +2235,7 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
    idx = 0;
    if (*pCount >= 1) {
       VkQueueFlags gfx_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-      if (pdevice->instance->drirc.legacy_sparse_binding)
+      if (!radv_sparse_queue_enabled(pdevice))
          gfx_flags |= VK_QUEUE_SPARSE_BINDING_BIT;
       *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
          .queueFlags = gfx_flags,
@@ -2185,7 +2249,7 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
    if (pdevice->rad_info.ip[AMD_IP_COMPUTE].num_queues > 0 &&
        !(pdevice->instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE)) {
       VkQueueFlags compute_flags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-      if (pdevice->instance->drirc.legacy_sparse_binding)
+      if (!radv_sparse_queue_enabled(pdevice))
          compute_flags |= VK_QUEUE_SPARSE_BINDING_BIT;
       if (*pCount > idx) {
          *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
@@ -2224,14 +2288,16 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
       }
    }
 
-   if (*pCount > idx) {
-      *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
-         .queueFlags = VK_QUEUE_SPARSE_BINDING_BIT,
-         .queueCount = 1,
-         .timestampValidBits = 64,
-         .minImageTransferGranularity = (VkExtent3D){1, 1, 1},
-      };
-      idx++;
+   if (radv_sparse_queue_enabled(pdevice)) {
+      if (*pCount > idx) {
+         *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
+            .queueFlags = VK_QUEUE_SPARSE_BINDING_BIT,
+            .queueCount = 1,
+            .timestampValidBits = 64,
+            .minImageTransferGranularity = (VkExtent3D){1, 1, 1},
+         };
+         idx++;
+      }
    }
 
    *pCount = idx;
@@ -2278,9 +2344,16 @@ radv_GetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, ui
          }
          case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR: {
             VkQueueFamilyVideoPropertiesKHR *prop = (VkQueueFamilyVideoPropertiesKHR *)ext;
-            if (pQueueFamilyProperties[i].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR)
-               prop->videoCodecOperations =
-                  VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
+            prop->videoCodecOperations = 0;
+            if (pQueueFamilyProperties[i].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) {
+               if (VIDEO_CODEC_H264DEC)
+                  prop->videoCodecOperations |= VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+               if (VIDEO_CODEC_H265DEC)
+                  prop->videoCodecOperations |= VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
+               if (VIDEO_CODEC_AV1DEC && pdevice->rad_info.vcn_ip_version >= VCN_3_0_0 &&
+                   pdevice->rad_info.vcn_ip_version != VCN_3_0_33)
+                  prop->videoCodecOperations |= VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+            }
             break;
          }
          default:

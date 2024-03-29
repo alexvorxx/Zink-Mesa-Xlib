@@ -47,6 +47,9 @@ struct panfrost_model {
    /* GPU ID */
    uint32_t gpu_id;
 
+   /* GPU variant. */
+   uint32_t gpu_variant;
+
    /* Marketing name for the GPU, used as the GL_RENDERER */
    const char *name;
 
@@ -72,7 +75,8 @@ struct panfrost_model {
    } quirks;
 };
 
-const struct panfrost_model *panfrost_get_model(uint32_t gpu_id);
+const struct panfrost_model *panfrost_get_model(uint32_t gpu_id,
+                                                uint32_t gpu_variant);
 
 unsigned panfrost_query_l2_slices(const struct pan_kmod_dev_props *props);
 
@@ -94,5 +98,9 @@ unsigned panfrost_query_optimal_tib_size(const struct panfrost_model *model);
 
 uint64_t panfrost_clamp_to_usable_va_range(const struct pan_kmod_dev *dev,
                                            uint64_t va);
+
+unsigned
+panfrost_compute_max_thread_count(const struct pan_kmod_dev_props *props,
+                                  unsigned work_reg_count);
 
 #endif

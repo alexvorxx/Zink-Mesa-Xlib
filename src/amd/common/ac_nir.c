@@ -1259,3 +1259,26 @@ ac_nir_lower_legacy_gs(nir_shader *nir,
    if (progress)
       nir_metadata_preserve(impl, nir_metadata_none);
 }
+
+/* Shader logging function for printing nir_def values. The driver prints this after
+ * command submission.
+ *
+ * Ring buffer layout: {uint32_t num_dwords; vec4; vec4; vec4; ... }
+ * - The buffer size must be 2^N * 16 + 4
+ * - num_dwords is incremented atomically and the ring wraps around, removing
+ *   the oldest entries.
+ */
+void
+ac_nir_store_debug_log_amd(nir_builder *b, nir_def *uvec4)
+{
+   nir_def *buf = nir_load_debug_log_desc_amd(b);
+   nir_def *zero = nir_imm_int(b, 0);
+
+   nir_def *max_index =
+      nir_iadd_imm(b, nir_ushr_imm(b, nir_iadd_imm(b, nir_channel(b, buf, 2), -4), 4), -1);
+   nir_def *index = nir_ssbo_atomic(b, 32, buf, zero, nir_imm_int(b, 1),
+                                    .atomic_op = nir_atomic_op_iadd);
+   index = nir_iand(b, index, max_index);
+   nir_def *offset = nir_iadd_imm(b, nir_imul_imm(b, index, 16), 4);
+   nir_store_buffer_amd(b, uvec4, buf, offset, zero, zero);
+}

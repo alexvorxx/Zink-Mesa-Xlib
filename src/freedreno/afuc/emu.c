@@ -34,7 +34,7 @@
 
 #include "freedreno_pm4.h"
 
-#include "isaspec.h"
+#include "afuc-isa.h"
 
 #include "emu.h"
 #include "util.h"
@@ -145,7 +145,7 @@ emu_instr(struct emu *emu, struct afuc_instr *instr)
       uint32_t val = emu_alu(emu, instr->opc,
                              emu_get_gpr_reg(emu, instr->src1),
                              instr->has_immed ? instr->immed : 
-                             emu_get_gpr_reg(emu, instr->src2));
+                             emu_get_gpr_reg_alu(emu, instr->src2, instr->peek));
       emu_set_gpr_reg(emu, instr->dst, val);
 
       if (instr->xmov) {
@@ -370,11 +370,11 @@ void
 emu_step(struct emu *emu)
 {
    struct afuc_instr *instr;
-   bool decoded = isa_decode((void *)&instr,
-                             (void *)&emu->instrs[emu->gpr_regs.pc],
-                             &(struct isa_decode_options) {
-                              .gpu_id = gpuver,
-                             });
+   bool decoded =
+      afuc_isa_decode((void *)&instr, (void *)&emu->instrs[emu->gpr_regs.pc],
+                      &(struct isa_decode_options){
+                         .gpu_id = gpuver,
+                      });
 
    if (!decoded) {
       uint32_t instr_val = emu->instrs[emu->gpr_regs.pc];
@@ -460,14 +460,23 @@ emu_step(struct emu *emu)
 void
 emu_run_bootstrap(struct emu *emu)
 {
-   EMU_CONTROL_REG(PACKET_TABLE_WRITE_ADDR);
+   EMU_CONTROL_REG(THREAD_SYNC);
 
    emu->quiet = true;
    emu->run_mode = true;
+   emu->bootstrap_mode = true;
+   emu->bootstrap_finished = false;
 
-   while (emu_get_reg32(emu, &PACKET_TABLE_WRITE_ADDR) < 0x80) {
+   if (gpuver == 6 && emu->processor == EMU_PROC_LPAC) {
+      /* Emulate what the SQE bootstrap routine does after launching LPAC */
+      emu_set_reg32(emu, &THREAD_SYNC, 1u << 0);
+   }
+
+   while (!emu->bootstrap_finished && !emu->waitin) {
       emu_step(emu);
    }
+
+   emu->bootstrap_mode = false;
 }
 
 
@@ -545,7 +554,7 @@ emu_init(struct emu *emu)
       break;
    }
 
-   if (emu->gpu_id == 730) {
+   if (emu->gpu_id == 730 || emu->gpu_id == 740) {
       emu_set_control_reg(emu, 0xef, 1 << 21);
       emu_set_control_reg(emu, 0, 7 << 28);
    } else if (emu->gpu_id == 660) {

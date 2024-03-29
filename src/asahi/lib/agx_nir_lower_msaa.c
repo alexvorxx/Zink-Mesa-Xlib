@@ -4,25 +4,22 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "agx_compile.h"
 #include "agx_tilebuffer.h"
 #include "nir.h"
 #include "nir_builder.h"
 
 static bool
-lower_wrapped(nir_builder *b, nir_instr *instr, void *data)
+lower_wrapped(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    nir_def *sample_id = data;
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   b->cursor = nir_before_instr(instr);
+   b->cursor = nir_before_instr(&intr->instr);
 
    switch (intr->intrinsic) {
    case nir_intrinsic_load_sample_id: {
       unsigned size = intr->def.bit_size;
       nir_def_rewrite_uses(&intr->def, nir_u2uN(b, sample_id, size));
-      nir_instr_remove(instr);
+      nir_instr_remove(&intr->instr);
       return true;
    }
 
@@ -90,21 +87,18 @@ agx_nir_wrap_per_sample_loop(nir_shader *shader, uint8_t nr_samples)
    nir_metadata_preserve(impl, nir_metadata_none);
 
    /* Use the loop counter as the sample ID each iteration */
-   nir_shader_instructions_pass(
-      shader, lower_wrapped, nir_metadata_block_index | nir_metadata_dominance,
-      index);
+   nir_shader_intrinsics_pass(shader, lower_wrapped,
+                              nir_metadata_block_index | nir_metadata_dominance,
+                              index);
    return true;
 }
 
 static bool
-lower_sample_mask_write(nir_builder *b, nir_instr *instr, void *data)
+lower_sample_mask_write(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    struct agx_msaa_state *state = data;
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
+   b->cursor = nir_before_instr(&intr->instr);
 
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   b->cursor = nir_before_instr(instr);
    if (intr->intrinsic != nir_intrinsic_store_output)
       return false;
 
@@ -112,13 +106,8 @@ lower_sample_mask_write(nir_builder *b, nir_instr *instr, void *data)
    if (sem.location != FRAG_RESULT_SAMPLE_MASK)
       return false;
 
-   /* Sample mask writes are ignored unless multisampling is used. */
-   if (state->nr_samples == 1) {
-      nir_instr_remove(instr);
-      return true;
-   }
-
-   /* The Vulkan spec says:
+   /* Sample mask writes are ignored unless multisampling is used. If it is
+    * used, the Vulkan spec says:
     *
     *    If sample shading is enabled, bits written to SampleMask
     *    corresponding to samples that are not being shaded by the fragment
@@ -127,9 +116,12 @@ lower_sample_mask_write(nir_builder *b, nir_instr *instr, void *data)
     * That will be satisfied by outputting gl_SampleMask for the whole pixel
     * and then lowering sample shading after (splitting up discard targets).
     */
-   nir_discard_agx(b, nir_inot(b, nir_u2u16(b, intr->src[0].ssa)));
-   b->shader->info.fs.uses_discard = true;
-   nir_instr_remove(instr);
+   if (state->nr_samples != 1) {
+      nir_discard_agx(b, nir_inot(b, nir_u2u16(b, intr->src[0].ssa)));
+      b->shader->info.fs.uses_discard = true;
+   }
+
+   nir_instr_remove(&intr->instr);
    return true;
 }
 
@@ -182,7 +174,7 @@ agx_nir_lower_monolithic_msaa(nir_shader *shader, struct agx_msaa_state *state)
 
    /* Lower gl_SampleMask writes */
    if (shader->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)) {
-      nir_shader_instructions_pass(
+      nir_shader_intrinsics_pass(
          shader, lower_sample_mask_write,
          nir_metadata_block_index | nir_metadata_dominance, state);
    }
@@ -195,6 +187,8 @@ agx_nir_lower_monolithic_msaa(nir_shader *shader, struct agx_msaa_state *state)
    nir_shader_intrinsics_pass(shader, lower_sample_mask_read,
                               nir_metadata_block_index | nir_metadata_dominance,
                               &state->nr_samples);
+
+   agx_nir_lower_sample_mask(shader);
 
    /* In single sampled programs, interpolateAtSample needs to return the
     * center pixel. TODO: Generalize for dynamic sample count.

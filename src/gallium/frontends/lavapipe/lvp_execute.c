@@ -24,6 +24,7 @@
 /* use a gallium context to execute a command buffer */
 
 #include "lvp_private.h"
+#include "lvp_acceleration_structure.h"
 
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
@@ -44,7 +45,6 @@
 #include "util/format/u_format_zs.h"
 #include "util/ptralloc.h"
 #include "tgsi/tgsi_from_mesa.h"
-#include "vulkan/util/vk_util.h"
 
 #include "vk_blend.h"
 #include "vk_cmd_enqueue_entrypoints.h"
@@ -532,14 +532,14 @@ static void emit_state(struct rendering_state *state)
       state->vb_strides_dirty = false;
    }
 
-   if (state->vb_dirty) {
-      cso_set_vertex_buffers(state->cso, state->num_vb, false, state->vb);
-      state->vb_dirty = false;
-   }
-
    if (state->ve_dirty) {
       cso_set_vertex_elements(state->cso, &state->velem);
       state->ve_dirty = false;
+   }
+
+   if (state->vb_dirty) {
+      cso_set_vertex_buffers(state->cso, state->num_vb, false, state->vb);
+      state->vb_dirty = false;
    }
 
    bool pcbuf_dirty[LVP_SHADER_STAGES] = {false};
@@ -3830,7 +3830,7 @@ static void handle_draw_mesh_tasks_indirect_count(struct vk_cmd_queue_entry *cmd
 }
 
 static VkBuffer
-get_buffer(struct rendering_state *state, uint8_t *ptr, size_t *offset)
+get_buffer(struct rendering_state *state, const uint8_t *ptr, size_t *offset)
 {
    simple_mtx_lock(&state->device->bda_lock);
    hash_table_foreach(&state->device->bda, he) {
@@ -4310,6 +4310,109 @@ handle_dispatch_graph(struct vk_cmd_queue_entry *cmd, struct rendering_state *st
 }
 #endif
 
+static struct pipe_resource *
+get_buffer_pipe(struct rendering_state *state, const void *ptr)
+{
+   size_t offset;
+   VK_FROM_HANDLE(lvp_buffer, buffer, get_buffer(state, ptr, &offset));
+   return buffer->bo;
+}
+
+static void
+handle_copy_acceleration_structure(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
+{
+   struct vk_cmd_copy_acceleration_structure_khr *copy = &cmd->u.copy_acceleration_structure_khr;
+
+   VK_FROM_HANDLE(vk_acceleration_structure, src, copy->info->src);
+   VK_FROM_HANDLE(vk_acceleration_structure, dst, copy->info->dst);
+
+   struct pipe_box box = { 0 };
+   u_box_1d(src->offset, MIN2(src->size, dst->size), &box);
+   state->pctx->resource_copy_region(state->pctx, lvp_buffer_from_handle(dst->buffer)->bo, 0,
+                                     dst->offset, 0, 0,
+                                     lvp_buffer_from_handle(src->buffer)->bo, 0, &box);
+}
+
+static void
+handle_copy_memory_to_acceleration_structure(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
+{
+   struct vk_cmd_copy_memory_to_acceleration_structure_khr *copy = &cmd->u.copy_memory_to_acceleration_structure_khr;
+
+   VK_FROM_HANDLE(vk_acceleration_structure, accel_struct, copy->info->dst);
+
+   struct lvp_bvh_header *dst = (void *)(uintptr_t)vk_acceleration_structure_get_va(accel_struct);
+   const struct lvp_accel_struct_serialization_header *src = copy->info->src.hostAddress;
+
+   memcpy(dst, &src->instances[src->instance_count], src->compacted_size);
+
+   for (uint32_t i = 0; i < src->instance_count; i++) {
+      uint8_t *leaf_nodes = (uint8_t *)dst;
+      leaf_nodes += dst->leaf_nodes_offset;
+      struct lvp_bvh_instance_node *node = (struct lvp_bvh_instance_node *)leaf_nodes;
+      node[i].bvh_ptr = src->instances[i];
+   }
+}
+
+static void
+handle_copy_acceleration_structure_to_memory(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
+{
+   struct vk_cmd_copy_acceleration_structure_to_memory_khr *copy = &cmd->u.copy_acceleration_structure_to_memory_khr;
+
+   VK_FROM_HANDLE(vk_acceleration_structure, accel_struct, copy->info->src);
+
+   struct lvp_bvh_header *src = (void *)(uintptr_t)vk_acceleration_structure_get_va(accel_struct);
+   struct lvp_accel_struct_serialization_header *dst = copy->info->dst.hostAddress;
+
+   lvp_device_get_cache_uuid(dst->driver_uuid);
+   lvp_device_get_cache_uuid(dst->accel_struct_compat);
+   dst->serialization_size = src->serialization_size;
+   dst->compacted_size = accel_struct->size;
+   dst->instance_count = src->instance_count;
+
+   for (uint32_t i = 0; i < src->instance_count; i++) {
+      uint8_t *leaf_nodes = (uint8_t *)src;
+      leaf_nodes += src->leaf_nodes_offset;
+      struct lvp_bvh_instance_node *node = (struct lvp_bvh_instance_node *)leaf_nodes;
+      dst->instances[i] = node[i].bvh_ptr;
+   }
+
+   memcpy(&dst->instances[dst->instance_count], src, accel_struct->size);
+}
+
+static void
+handle_build_acceleration_structures(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
+{
+   struct vk_cmd_build_acceleration_structures_khr *build = &cmd->u.build_acceleration_structures_khr;
+
+   for (uint32_t i = 0; i < build->info_count; i++)
+      lvp_build_acceleration_structure(&build->infos[i], build->pp_build_range_infos[i]);
+}
+
+static void
+handle_write_acceleration_structures_properties(struct vk_cmd_queue_entry *cmd, struct rendering_state *state)
+{
+   struct vk_cmd_write_acceleration_structures_properties_khr *write = &cmd->u.write_acceleration_structures_properties_khr;
+
+   VK_FROM_HANDLE(lvp_query_pool, pool, write->query_pool);
+
+   uint64_t *dst = pool->data;
+   dst += write->first_query;
+
+   for (uint32_t i = 0; i < write->acceleration_structure_count; i++) {
+      VK_FROM_HANDLE(vk_acceleration_structure, accel_struct, write->acceleration_structures[i]);
+
+      if (write->query_type == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR) {
+         dst[i] = accel_struct->size;
+         continue;
+      }
+
+      assert (write->query_type == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR);
+
+      struct lvp_bvh_header *header = (void *)(uintptr_t)vk_acceleration_structure_get_va(accel_struct);
+      dst[i] = header->serialization_size;
+   }
+}
+
 void lvp_add_enqueue_cmd_entrypoints(struct vk_device_dispatch_table *disp)
 {
    struct vk_device_dispatch_table cmd_enqueue_dispatch;
@@ -4449,6 +4552,13 @@ void lvp_add_enqueue_cmd_entrypoints(struct vk_device_dispatch_table *disp)
 
    ENQUEUE_CMD(CmdSetRenderingAttachmentLocationsKHR)
    ENQUEUE_CMD(CmdSetRenderingInputAttachmentIndicesKHR)
+
+   ENQUEUE_CMD(CmdCopyAccelerationStructureKHR)
+   ENQUEUE_CMD(CmdCopyMemoryToAccelerationStructureKHR)
+   ENQUEUE_CMD(CmdCopyAccelerationStructureToMemoryKHR)
+   ENQUEUE_CMD(CmdBuildAccelerationStructuresKHR)
+   ENQUEUE_CMD(CmdBuildAccelerationStructuresIndirectKHR)
+   ENQUEUE_CMD(CmdWriteAccelerationStructuresPropertiesKHR)
 
 #undef ENQUEUE_CMD
 }
@@ -4815,6 +4925,23 @@ static void lvp_execute_cmd_buffer(struct list_head *cmds,
          break;
       case VK_CMD_SET_RENDERING_INPUT_ATTACHMENT_INDICES_KHR:
          handle_rendering_input_attachment_indices(cmd, state);
+         break;
+      case VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR:
+         handle_copy_acceleration_structure(cmd, state);
+         break;
+      case VK_CMD_COPY_MEMORY_TO_ACCELERATION_STRUCTURE_KHR:
+         handle_copy_memory_to_acceleration_structure(cmd, state);
+         break;
+      case VK_CMD_COPY_ACCELERATION_STRUCTURE_TO_MEMORY_KHR:
+         handle_copy_acceleration_structure_to_memory(cmd, state);
+         break;
+      case VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR:
+         handle_build_acceleration_structures(cmd, state);
+         break;
+      case VK_CMD_BUILD_ACCELERATION_STRUCTURES_INDIRECT_KHR:
+         break;
+      case VK_CMD_WRITE_ACCELERATION_STRUCTURES_PROPERTIES_KHR:
+         handle_write_acceleration_structures_properties(cmd, state);
          break;
       default:
          fprintf(stderr, "Unsupported command %s\n", vk_cmd_queue_type_names[cmd->type]);

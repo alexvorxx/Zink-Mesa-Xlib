@@ -126,6 +126,7 @@ typedef enum {
    OPC_BRNE,
    OPC_JUMP,
    OPC_RAW_LITERAL,
+   OPC_JUMPTBL,
 } afuc_opc;
 
 /**
@@ -178,7 +179,18 @@ struct afuc_instr {
    bool is_literal : 1;
    bool rep : 1;
    bool preincrement : 1;
+   bool peek : 1;
 };
+
+/* Literal offsets are sometimes encoded as NOP instructions, which on a6xx+
+ * must have a high 8 bits of 0x01.
+ */
+static inline uint32_t
+afuc_nop_literal(uint32_t x, unsigned gpuver)
+{
+   assert((x >> 24) == 0);
+   return gpuver < 6 ? x : x | (1 << 24);
+}
 
 void print_control_reg(uint32_t id);
 void print_sqe_reg(uint32_t id);

@@ -46,7 +46,6 @@
 #include "util/u_upload_mgr.h"
 #include "util/ralloc.h"
 #include "util/xmlconfig.h"
-#include "drm-uapi/i915_drm.h"
 #include "iris_context.h"
 #include "iris_defines.h"
 #include "iris_fence.h"
@@ -54,7 +53,6 @@
 #include "iris_resource.h"
 #include "iris_screen.h"
 #include "compiler/glsl_types.h"
-#include "intel/compiler/brw_compiler.h"
 #include "intel/common/intel_gem.h"
 #include "intel/common/intel_l3_config.h"
 #include "intel/common/intel_uuid.h"
@@ -301,6 +299,7 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_ALPHA_TO_COVERAGE_DITHER_CONTROL:
    case PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE:
    case PIPE_CAP_HAS_CONST_BW:
+   case PIPE_CAP_CL_GL_SHARING:
       return true;
    case PIPE_CAP_UMA:
       return iris_bufmgr_vram_size(screen->bufmgr) == 0;
@@ -309,8 +308,9 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_PREFER_BACK_BUFFER_REUSE:
       return false;
    case PIPE_CAP_FBFETCH:
-      return BRW_MAX_DRAW_BUFFERS;
+      return IRIS_MAX_DRAW_BUFFERS;
    case PIPE_CAP_FBFETCH_COHERENT:
+      return devinfo->ver >= 9 && devinfo->ver < 20;
    case PIPE_CAP_CONSERVATIVE_RASTER_INNER_COVERAGE:
    case PIPE_CAP_POST_DEPTH_COVERAGE:
    case PIPE_CAP_SHADER_STENCIL_EXPORT:
@@ -323,7 +323,7 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
       return 1;
    case PIPE_CAP_MAX_RENDER_TARGETS:
-      return BRW_MAX_DRAW_BUFFERS;
+      return IRIS_MAX_DRAW_BUFFERS;
    case PIPE_CAP_MAX_TEXTURE_2D_SIZE:
       return 16384;
    case PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS:
@@ -335,9 +335,9 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
       return 2048;
    case PIPE_CAP_MAX_STREAM_OUTPUT_SEPARATE_COMPONENTS:
-      return BRW_MAX_SOL_BINDINGS / IRIS_MAX_SOL_BUFFERS;
+      return IRIS_MAX_SOL_BINDINGS / IRIS_MAX_SOL_BUFFERS;
    case PIPE_CAP_MAX_STREAM_OUTPUT_INTERLEAVED_COMPONENTS:
-      return BRW_MAX_SOL_BINDINGS;
+      return IRIS_MAX_SOL_BINDINGS;
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
       return 460;
@@ -704,18 +704,6 @@ iris_query_memory_info(struct pipe_screen *pscreen,
    info->nr_device_memory_evictions = 0;
 }
 
-static const void *
-iris_get_compiler_options(struct pipe_screen *pscreen,
-                          enum pipe_shader_ir ir,
-                          enum pipe_shader_type pstage)
-{
-   struct iris_screen *screen = (struct iris_screen *) pscreen;
-   gl_shader_stage stage = stage_from_pipe(pstage);
-   assert(ir == PIPE_SHADER_IR_NIR);
-
-   return screen->compiler->nir_options[stage];
-}
-
 static struct disk_cache *
 iris_get_disk_shader_cache(struct pipe_screen *pscreen)
 {
@@ -732,41 +720,6 @@ iris_get_default_l3_config(const struct intel_device_info *devinfo,
    const struct intel_l3_weights w =
       intel_get_default_l3_weights(devinfo, wants_dc_cache, has_slm);
    return intel_get_l3_config(devinfo, w);
-}
-
-static void
-iris_shader_debug_log(void *data, unsigned *id, const char *fmt, ...)
-{
-   struct util_debug_callback *dbg = data;
-   va_list args;
-
-   if (!dbg->debug_message)
-      return;
-
-   va_start(args, fmt);
-   dbg->debug_message(dbg->data, id, UTIL_DEBUG_TYPE_SHADER_INFO, fmt, args);
-   va_end(args);
-}
-
-static void
-iris_shader_perf_log(void *data, unsigned *id, const char *fmt, ...)
-{
-   struct util_debug_callback *dbg = data;
-   va_list args;
-   va_start(args, fmt);
-
-   if (INTEL_DEBUG(DEBUG_PERF)) {
-      va_list args_copy;
-      va_copy(args_copy, args);
-      vfprintf(stderr, fmt, args_copy);
-      va_end(args_copy);
-   }
-
-   if (dbg->debug_message) {
-      dbg->debug_message(dbg->data, id, UTIL_DEBUG_TYPE_PERF_INFO, fmt, args);
-   }
-
-   va_end(args);
 }
 
 static void
@@ -791,8 +744,6 @@ iris_init_identifier_bo(struct iris_screen *screen)
 
    assert(iris_bo_is_real(screen->workaround_bo));
 
-   screen->workaround_bo->real.kflags |=
-      EXEC_OBJECT_CAPTURE | EXEC_OBJECT_ASYNC;
    screen->workaround_address = (struct iris_address) {
       .bo = screen->workaround_bo,
       .offset = ALIGN(
@@ -832,7 +783,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       break;
    }
 
-   brw_process_intel_debug_variable();
+   process_intel_debug_variable();
 
    screen->bufmgr = iris_bufmgr_get_for_fd(fd, bo_reuse);
    if (!screen->bufmgr)
@@ -863,7 +814,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
 
    screen->workaround_bo =
       iris_bo_alloc(screen->bufmgr, "workaround", 4096, 4096,
-                    IRIS_MEMZONE_OTHER, BO_ALLOC_NO_SUBALLOC);
+                    IRIS_MEMZONE_OTHER, BO_ALLOC_NO_SUBALLOC | BO_ALLOC_CAPTURE);
    if (!screen->workaround_bo)
       return NULL;
 
@@ -891,16 +842,14 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       driQueryOptionb(config->options, "intel_enable_wa_14018912822");
    screen->driconf.enable_tbimr =
       driQueryOptionb(config->options, "intel_tbimr");
+   screen->driconf.generated_indirect_threshold =
+      driQueryOptioni(config->options, "generated_indirect_threshold");
 
    screen->precompile = debug_get_bool_option("shader_precompile", true);
 
    isl_device_init(&screen->isl_dev, screen->devinfo);
 
-   screen->compiler = brw_compiler_create(screen, screen->devinfo);
-   screen->compiler->shader_debug_log = iris_shader_debug_log;
-   screen->compiler->shader_perf_log = iris_shader_perf_log;
-   screen->compiler->supports_shader_constants = true;
-   screen->compiler->indirect_ubos_use_sampler = screen->devinfo->ver < 12;
+   iris_compiler_init(screen);
 
    screen->l3_config_3d = iris_get_default_l3_config(screen->devinfo, false);
    screen->l3_config_cs = iris_get_default_l3_config(screen->devinfo, true);
@@ -941,6 +890,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
    iris_init_screen_program_functions(pscreen);
 
    genX_call(screen->devinfo, init_screen_state, screen);
+   genX_call(screen->devinfo, init_screen_gen_state, screen);
 
    glsl_type_singleton_init_or_ref();
 

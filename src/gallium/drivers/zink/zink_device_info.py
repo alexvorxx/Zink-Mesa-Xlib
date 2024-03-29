@@ -94,6 +94,7 @@ EXTENSIONS = [
     Extension("VK_EXT_external_memory_host", alias="ext_host_mem", properties=True),
     Extension("VK_EXT_queue_family_foreign"),
     Extension("VK_KHR_swapchain_mutable_format"),
+    Extension("VK_KHR_incremental_present"),
     Extension("VK_EXT_provoking_vertex",
               alias="pv",
               features=True,
@@ -148,10 +149,6 @@ EXTENSIONS = [
     Extension("VK_EXT_sample_locations",
               alias="sample_locations",
               properties=True),
-    Extension("VK_EXT_conservative_rasterization",
-              alias="cons_raster",
-              properties=True,
-              conditions=["$props.fullyCoveredFragmentShaderInputVariable"]),
     Extension("VK_KHR_shader_draw_parameters"),
     Extension("VK_KHR_sampler_mirror_clamp_to_edge"),
     Extension("VK_EXT_descriptor_buffer", alias="db", features=True, properties=True),
@@ -194,6 +191,9 @@ EXTENSIONS = [
               features=True),
     Extension("VK_KHR_dynamic_rendering",
               alias="dynamic_render",
+              features=True),
+    Extension("VK_KHR_dynamic_rendering_local_read",
+              alias="drlr",
               features=True),
     Extension("VK_EXT_multisampled_render_to_single_sampled",
               alias="msrtss",
@@ -322,7 +322,8 @@ EXTENSIONS = [
               features=True,
               conditions=["$feats.shaderDemoteToHelperInvocation"]),
     Extension("VK_KHR_shader_float_controls",
-              alias="float_controls")
+              alias="float_controls"),
+    Extension("VK_KHR_format_feature_flags2"),
 ]
 
 # constructor: Versions(device_version(major, minor, patch), struct_version(major, minor))

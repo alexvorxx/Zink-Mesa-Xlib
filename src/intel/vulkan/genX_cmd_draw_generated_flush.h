@@ -29,7 +29,7 @@
 
 #include "util/macros.h"
 
-#include "common/intel_genX_state.h"
+#include "common/intel_genX_state_brw.h"
 
 #include "anv_private.h"
 

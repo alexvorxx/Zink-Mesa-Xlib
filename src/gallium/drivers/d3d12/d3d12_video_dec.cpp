@@ -705,13 +705,14 @@ d3d12_video_decoder_end_frame(struct pipe_video_codec *codec,
       // Copy all format subresources/texture planes
       for (PlaneSlice = 0; PlaneSlice < pD3D12Dec->m_decodeFormatInfo.PlaneCount; PlaneSlice++) {
          assert(d3d12OutputArguments.OutputSubresource < INT16_MAX);
-         struct pipe_box box = { 0,
-                                 0,
-                                 // src array slice, taken as Z for TEXTURE_2D_ARRAY
-                                 static_cast<int16_t>(d3d12OutputArguments.OutputSubresource),
-                                 static_cast<int>(pPipeDstViews[PlaneSlice]->texture->width0),
-                                 static_cast<int16_t>(pPipeDstViews[PlaneSlice]->texture->height0),
-                                 1 };
+         struct pipe_box box;
+         u_box_3d(0,
+                  0,
+                  // src array slice, taken as Z for TEXTURE_2D_ARRAY
+                  static_cast<int16_t>(d3d12OutputArguments.OutputSubresource),
+                  static_cast<int>(pPipeDstViews[PlaneSlice]->texture->width0),
+                  static_cast<int16_t>(pPipeDstViews[PlaneSlice]->texture->height0),
+                  1, &box);
 
          pD3D12Dec->base.context->resource_copy_region(pD3D12Dec->base.context,
                                                        pPipeDstViews[PlaneSlice]->texture,              // dst

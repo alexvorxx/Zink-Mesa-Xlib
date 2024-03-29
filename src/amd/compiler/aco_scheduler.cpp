@@ -424,7 +424,7 @@ bool
 is_done_sendmsg(amd_gfx_level gfx_level, const Instruction* instr)
 {
    if (gfx_level <= GFX10_3 && instr->opcode == aco_opcode::s_sendmsg)
-      return (instr->sopp().imm & sendmsg_id_mask) == sendmsg_gs_done;
+      return (instr->salu().imm & sendmsg_id_mask) == sendmsg_gs_done;
    return false;
 }
 
@@ -577,7 +577,7 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    if (upwards) {
       if (instr->opcode == aco_opcode::p_pops_gfx9_add_exiting_wave_id ||
           (instr->opcode == aco_opcode::s_wait_event &&
-           !(instr->sopp().imm & wait_event_imm_dont_wait_export_ready))) {
+           !(instr->salu().imm & wait_event_imm_dont_wait_export_ready))) {
          return hazard_fail_unreorderable;
       }
    } else {

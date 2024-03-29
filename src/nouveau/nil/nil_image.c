@@ -77,7 +77,7 @@ nil_extent4d_align(struct nil_extent4d ext, struct nil_extent4d alignment)
    };
 }
 
-static inline struct nil_extent4d
+struct nil_extent4d
 nil_px_extent_sa(enum nil_sample_layout sample_layout)
 {
    switch (sample_layout) {
@@ -142,6 +142,39 @@ nil_extent4d_el_to_B(struct nil_extent4d extent_el,
    return extent_B;
 }
 
+static struct nil_offset4d
+nil_offset4d_el_to_B(struct nil_offset4d offset_el,
+                     uint32_t B_per_el)
+{
+   struct nil_offset4d offset_B = offset_el;
+   offset_B.x *= B_per_el;
+   return offset_B;
+}
+
+static struct nil_extent4d
+nil_extent4d_px_to_B(struct nil_extent4d extent_px,
+                     enum pipe_format format,
+                     enum nil_sample_layout sample_layout)
+{
+   const struct nil_extent4d extent_el =
+      nil_extent4d_px_to_el(extent_px, format, sample_layout);
+   const uint32_t B_per_el = util_format_get_blocksize(format);
+
+   return nil_extent4d_el_to_B(extent_el, B_per_el);
+}
+
+static struct nil_offset4d
+nil_offset4d_px_to_B(struct nil_offset4d offset_px,
+                     enum pipe_format format,
+                     enum nil_sample_layout sample_layout)
+{
+   const struct nil_offset4d offset_el =
+      nil_offset4d_px_to_el(offset_px, format, sample_layout);
+   const uint32_t B_per_el = util_format_get_blocksize(format);
+
+   return nil_offset4d_el_to_B(offset_el, B_per_el);
+}
+
 static struct nil_extent4d
 nil_extent4d_B_to_GOB(struct nil_extent4d extent_B,
                       bool gob_height_8)
@@ -156,12 +189,12 @@ nil_extent4d_B_to_GOB(struct nil_extent4d extent_B,
    return nil_extent4d_div_round_up(extent_B, gob_extent_B);
 }
 
-static struct nil_extent4d
+struct nil_extent4d
 nil_tiling_extent_B(struct nil_tiling tiling)
 {
    if (tiling.is_tiled) {
       return (struct nil_extent4d) {
-         .w = NIL_GOB_WIDTH_B, /* Tiles are always 1 GOB wide */
+         .w = NIL_GOB_WIDTH_B << tiling.x_log2,
          .h = NIL_GOB_HEIGHT(tiling.gob_height_8) << tiling.y_log2,
          .d = NIL_GOB_DEPTH << tiling.z_log2,
          .a = 1,
@@ -170,6 +203,39 @@ nil_tiling_extent_B(struct nil_tiling tiling)
       /* We handle linear images in nil_image_create */
       return nil_extent4d(1, 1, 1, 1);
    }
+}
+
+/** Clamps the tiling to less than 2x the given extent in each dimension
+ *
+ * This operation is done by the hardware at each LOD.
+ */
+static struct nil_tiling
+nil_tiling_clamp(struct nil_tiling tiling, struct nil_extent4d extent_B)
+{
+   if (!tiling.is_tiled)
+      return tiling;
+
+   const struct nil_extent4d tiling_extent_B = nil_tiling_extent_B(tiling);
+
+   /* The moment the LOD is smaller than a tile, tiling.x_log2 goes to 0 */
+   if (extent_B.w < tiling_extent_B.w ||
+       extent_B.h < tiling_extent_B.h ||
+       extent_B.d < tiling_extent_B.d)
+      tiling.x_log2 = 0;
+
+   const struct nil_extent4d extent_GOB =
+      nil_extent4d_B_to_GOB(extent_B, tiling.gob_height_8);
+
+   tiling.y_log2 = MIN2(tiling.y_log2, util_logbase2_ceil(extent_GOB.h));
+   tiling.z_log2 = MIN2(tiling.z_log2, util_logbase2_ceil(extent_GOB.d));
+
+   return tiling;
+}
+
+static bool
+nil_tiling_eq(struct nil_tiling a, struct nil_tiling b)
+{
+   return memcmp(&a, &b, sizeof(b)) == 0;
 }
 
 enum nil_sample_layout
@@ -187,7 +253,9 @@ nil_choose_sample_layout(uint32_t samples)
 }
 
 static struct nil_tiling
-choose_tiling(struct nil_extent4d extent_B,
+choose_tiling(struct nil_extent4d extent_px,
+              enum pipe_format format,
+              enum nil_sample_layout sample_layout,
               enum nil_image_usage_flags usage)
 {
    if (usage & NIL_IMAGE_USAGE_LINEAR_BIT)
@@ -196,24 +264,99 @@ choose_tiling(struct nil_extent4d extent_B,
    struct nil_tiling tiling = {
       .is_tiled = true,
       .gob_height_8 = true,
+      .y_log2 = 5,
+      .z_log2 = 5,
    };
-
-   const struct nil_extent4d extent_GOB =
-      nil_extent4d_B_to_GOB(extent_B, tiling.gob_height_8);
-
-   const uint32_t height_log2 = util_logbase2_ceil(extent_GOB.height);
-   const uint32_t depth_log2 = util_logbase2_ceil(extent_GOB.depth);
-
-   tiling.y_log2 = MIN2(height_log2, 5);
-   tiling.z_log2 = MIN2(depth_log2, 5);
 
    if (usage & NIL_IMAGE_USAGE_2D_VIEW_BIT)
       tiling.z_log2 = 0;
 
-   return tiling;
+   const struct nil_extent4d extent_B =
+      nil_extent4d_px_to_B(extent_px, format, sample_layout);
+
+   return nil_tiling_clamp(tiling, extent_B);
 }
 
-static uint32_t
+static struct nil_extent4d
+nil_sparse_block_extent_el(enum pipe_format format,
+                           enum nil_image_dim dim)
+{
+   /* Taken from Vulkan 1.3.279 spec section entitled "Standard Sparse Image
+    * Block Shapes".
+    */
+   switch (dim) {
+   case NIL_IMAGE_DIM_2D:
+      switch (util_format_get_blocksizebits(format)) {
+      case 8:   return nil_extent4d(256, 256, 1, 1);
+      case 16:  return nil_extent4d(256, 128, 1, 1);
+      case 32:  return nil_extent4d(128, 128, 1, 1);
+      case 64:  return nil_extent4d(128, 64,  1, 1);
+      case 128: return nil_extent4d(64,  64,  1, 1);
+      default:  unreachable("Invalid texel size");
+      }
+   case NIL_IMAGE_DIM_3D:
+      switch (util_format_get_blocksizebits(format)) {
+      case 8:   return nil_extent4d(64, 32, 32, 1);
+      case 16:  return nil_extent4d(32, 32, 32, 1);
+      case 32:  return nil_extent4d(32, 32, 16, 1);
+      case 64:  return nil_extent4d(32, 16, 16, 1);
+      case 128: return nil_extent4d(16, 16, 16, 1);
+      default:  unreachable("Invalid texel size");
+      }
+   default:
+      unreachable("Invalid dimension");
+   }
+}
+
+struct nil_extent4d
+nil_sparse_block_extent_px(enum pipe_format format,
+                           enum nil_image_dim dim,
+                           enum nil_sample_layout sample_layout)
+{
+   struct nil_extent4d block_extent_el =
+      nil_sparse_block_extent_el(format, dim);
+   const struct nil_extent4d el_extent_sa = nil_el_extent_sa(format);
+   struct nil_extent4d block_extent_sa =
+      nil_extent4d_mul(block_extent_el, el_extent_sa);
+
+   return nil_extent4d_div_round_up(block_extent_sa,
+                                    nil_px_extent_sa(sample_layout));
+}
+
+static struct nil_extent4d
+nil_sparse_block_extent_B(enum pipe_format format,
+                          enum nil_image_dim dim)
+{
+   const struct nil_extent4d block_extent_el =
+      nil_sparse_block_extent_el(format, dim);
+   const uint32_t B_per_el = util_format_get_blocksize(format);
+   return nil_extent4d_el_to_B(block_extent_el, B_per_el);
+}
+
+static struct nil_tiling
+sparse_tiling(enum pipe_format format, enum nil_image_dim dim)
+{
+   const struct nil_extent4d sparse_block_extent_B =
+      nil_sparse_block_extent_B(format, dim);
+
+   assert(util_is_power_of_two_or_zero(sparse_block_extent_B.w));
+   assert(util_is_power_of_two_or_zero(sparse_block_extent_B.h));
+   assert(util_is_power_of_two_or_zero(sparse_block_extent_B.d));
+
+   const bool gob_height_8 = true;
+   const struct nil_extent4d sparse_block_extent_GOB =
+      nil_extent4d_B_to_GOB(sparse_block_extent_B, gob_height_8);
+
+   return (struct nil_tiling) {
+      .is_tiled = true,
+      .gob_height_8 = gob_height_8,
+      .x_log2 = util_logbase2(sparse_block_extent_GOB.w),
+      .y_log2 = util_logbase2(sparse_block_extent_GOB.h),
+      .z_log2 = util_logbase2(sparse_block_extent_GOB.d),
+   };
+}
+
+uint32_t
 nil_tiling_size_B(struct nil_tiling tiling)
 {
    const struct nil_extent4d extent_B = nil_tiling_extent_B(tiling);
@@ -225,6 +368,32 @@ nil_extent4d_B_to_tl(struct nil_extent4d extent_B,
                      struct nil_tiling tiling)
 {
    return nil_extent4d_div_round_up(extent_B, nil_tiling_extent_B(tiling));
+}
+
+struct nil_extent4d
+nil_extent4d_px_to_tl(struct nil_extent4d extent_px,
+                      struct nil_tiling tiling, enum pipe_format format,
+                      enum nil_sample_layout sample_layout)
+{
+   const struct nil_extent4d extent_B =
+      nil_extent4d_px_to_B(extent_px, format, sample_layout);
+
+   const struct nil_extent4d tiling_extent_B = nil_tiling_extent_B(tiling);
+
+   return nil_extent4d_div_round_up(extent_B, tiling_extent_B);
+}
+
+struct nil_offset4d
+nil_offset4d_px_to_tl(struct nil_offset4d offset_px,
+                      struct nil_tiling tiling, enum pipe_format format,
+                      enum nil_sample_layout sample_layout)
+{
+   const struct nil_offset4d offset_B =
+      nil_offset4d_px_to_B(offset_px, format, sample_layout);
+
+   const struct nil_extent4d tiling_extent_B = nil_tiling_extent_B(tiling);
+
+   return nil_offset4d_div_round_down(offset_B, tiling_extent_B);
 }
 
 struct nil_extent4d
@@ -249,11 +418,33 @@ image_level_extent_B(const struct nil_image *image, uint32_t level)
 {
    const struct nil_extent4d level_extent_px =
       nil_image_level_extent_px(image, level);
-   const struct nil_extent4d level_extent_el =
-      nil_extent4d_px_to_el(level_extent_px, image->format,
-                            image->sample_layout);
-   const uint32_t B_per_el = util_format_get_blocksize(image->format);
-   return nil_extent4d_el_to_B(level_extent_el, B_per_el);
+
+   return nil_extent4d_px_to_B(level_extent_px, image->format,
+                               image->sample_layout);
+}
+
+uint64_t
+nil_image_level_size_B(const struct nil_image *image,
+                       uint32_t level)
+{
+   assert(level < image->num_levels);
+
+   /* See the nil_image::levels[] computations */
+   struct nil_extent4d lvl_ext_B = image_level_extent_B(image, level);
+
+   if (image->levels[level].tiling.is_tiled) {
+      struct nil_extent4d lvl_tiling_ext_B =
+         nil_tiling_extent_B(image->levels[level].tiling);
+      lvl_ext_B = nil_extent4d_align(lvl_ext_B, lvl_tiling_ext_B);
+
+      return (uint64_t)lvl_ext_B.w *
+             (uint64_t)lvl_ext_B.h *
+             (uint64_t)lvl_ext_B.d;
+   } else {
+      assert(lvl_ext_B.d == 1);
+      return (uint64_t)image->levels[level].row_stride_B *
+             (uint64_t)lvl_ext_B.h;
+   }
 }
 
 static uint8_t
@@ -409,22 +600,40 @@ nil_image_init(struct nv_device_info *dev,
       break;
    }
 
+   const enum nil_sample_layout sample_layout =
+      nil_choose_sample_layout(info->samples);
+
+   struct nil_tiling tiling;
+   if (info->usage & NIL_IMAGE_USAGE_SPARSE_RESIDENCY_BIT) {
+      tiling = sparse_tiling(info->format, info->dim);
+   } else {
+      tiling = choose_tiling(info->extent_px, info->format,
+                             sample_layout, info->usage);
+   }
+
    *image = (struct nil_image) {
       .dim = info->dim,
       .format = info->format,
       .extent_px = info->extent_px,
-      .sample_layout = nil_choose_sample_layout(info->samples),
+      .sample_layout = sample_layout,
       .num_levels = info->levels,
    };
+
+   /* If the client requested sparse, default mip_tail_firs_lod to the number
+    * of mip levels and we'll clamp it as needed in the loop below.
+    */
+   if (info->usage & NIL_IMAGE_USAGE_SPARSE_RESIDENCY_BIT)
+      image->mip_tail_first_lod = info->levels;
 
    uint64_t layer_size_B = 0;
    for (uint32_t l = 0; l < info->levels; l++) {
       struct nil_extent4d lvl_ext_B = image_level_extent_B(image, l);
+      if (tiling.is_tiled) {
+         struct nil_tiling lvl_tiling = nil_tiling_clamp(tiling, lvl_ext_B);
 
-      /* Tiling is chosen per-level with LOD0 acting as a maximum */
-      struct nil_tiling lvl_tiling = choose_tiling(lvl_ext_B, info->usage);
+         if (!nil_tiling_eq(tiling, lvl_tiling))
+            image->mip_tail_first_lod = MIN2(image->mip_tail_first_lod, l);
 
-      if (lvl_tiling.is_tiled) {
          /* Align the size to tiles */
          struct nil_extent4d lvl_tiling_ext_B = nil_tiling_extent_B(lvl_tiling);
          lvl_ext_B = nil_extent4d_align(lvl_ext_B, lvl_tiling_ext_B);
@@ -434,10 +643,6 @@ nil_image_init(struct nv_device_info *dev,
             .tiling = lvl_tiling,
             .row_stride_B = lvl_ext_B.width,
          };
-
-         layer_size_B += (uint64_t)lvl_ext_B.w *
-                         (uint64_t)lvl_ext_B.h *
-                         (uint64_t)lvl_ext_B.d;
       } else {
          /* Linear images need to be 2D */
          assert(image->dim == NIL_IMAGE_DIM_2D);
@@ -448,25 +653,35 @@ nil_image_init(struct nv_device_info *dev,
 
          image->levels[l] = (struct nil_image_level) {
             .offset_B = layer_size_B,
-            .tiling = lvl_tiling,
+            .tiling = tiling,
             /* Row stride needs to be aligned to 128B for render to work */
             .row_stride_B = align(lvl_ext_B.width, 128),
          };
-
-         assert(lvl_ext_B.d == 1);
-         layer_size_B += (uint64_t)image->levels[l].row_stride_B * 
-                         (uint64_t)lvl_ext_B.h;
-
       }
+      layer_size_B += nil_image_level_size_B(image, l);
    }
 
-   /* Align the image and array stride to a single level0 tile */
-   image->align_B = nil_tiling_size_B(image->levels[0].tiling);
+   /* We use the tiling for level 0 instead of the tiling selected above
+    * because, in the case of sparse residency with small images, level 0 may
+    * have a smaller tiling than what we tried to use.  However, the level 0
+    * tiling is the one we program in the hardware so that's the one we need
+    * to use for array stride calculations and the like.
+    */
+   const uint32_t lvl0_tiling_size_B =
+      nil_tiling_size_B(image->levels[0].tiling);
 
-   /* I have no idea why but hardware seems to align layer strides */
-   image->array_stride_B = (uint32_t)align64(layer_size_B, image->align_B);
+   /* The array stride has to be aligned to the size of a level 0 tile */
+   image->array_stride_B = align(layer_size_B, lvl0_tiling_size_B);
 
    image->size_B = (uint64_t)image->array_stride_B * image->extent_px.a;
+   image->align_B = lvl0_tiling_size_B;
+
+   /* If the client requested sparse residency, we need a 64K alignment or
+    * else sparse binding may fail.  This is true regardless of whether or
+    * not we actually select a 64K tile format.
+    */
+   if (info->usage & NIL_IMAGE_USAGE_SPARSE_RESIDENCY_BIT)
+      image->align_B = MAX2(image->align_B, (1 << 16));
 
    if (image->levels[0].tiling.is_tiled) {
       image->tile_mode = (uint16_t)image->levels[0].tiling.y_log2 << 4 |
@@ -487,20 +702,32 @@ nil_image_init(struct nv_device_info *dev,
    return true;
 }
 
+/** Offset of the given Z slice within the level */
 uint64_t
-nil_image_level_size_B(const struct nil_image *image, uint32_t level)
+nil_image_level_z_offset_B(const struct nil_image *image,
+                           uint32_t level, uint32_t z)
 {
    assert(level < image->num_levels);
+   const struct nil_extent4d lvl_extent_px =
+      nil_image_level_extent_px(image, level);
+   assert(z < lvl_extent_px.d);
 
-   /* See the nil_image::levels[] computations */
-   struct nil_extent4d lvl_ext_B = image_level_extent_B(image, level);
-   struct nil_extent4d lvl_tiling_ext_B =
-      nil_tiling_extent_B(image->levels[level].tiling);
-   lvl_ext_B = nil_extent4d_align(lvl_ext_B, lvl_tiling_ext_B);
+   const struct nil_tiling *lvl_tiling = &image->levels[level].tiling;
 
-   return (uint64_t)lvl_ext_B.w *
-          (uint64_t)lvl_ext_B.h *
-          (uint64_t)lvl_ext_B.d;
+   const uint32_t z_tl = z >> lvl_tiling->z_log2;
+   const uint32_t z_GOB = z & BITFIELD_MASK(lvl_tiling->z_log2);
+
+   const struct nil_extent4d lvl_extent_tl =
+      nil_extent4d_px_to_tl(lvl_extent_px, *lvl_tiling,
+                            image->format, image->sample_layout);
+   uint64_t offset_B = lvl_extent_tl.w * lvl_extent_tl.h * (uint64_t)z_tl *
+                       nil_tiling_size_B(*lvl_tiling);
+
+   const struct nil_extent4d tiling_extent_B =
+      nil_tiling_extent_B(*lvl_tiling);
+   offset_B += tiling_extent_B.w * tiling_extent_B.h * z_GOB;
+
+   return offset_B;
 }
 
 uint64_t
@@ -556,6 +783,7 @@ nil_image_for_level(const struct nil_image *image_in,
       .size_B = size_B,
       .tile_mode = image_in->tile_mode,
       .pte_kind = image_in->pte_kind,
+      .mip_tail_first_lod = level < image_in->mip_tail_first_lod ? 1 : 0,
    };
 }
 
@@ -621,4 +849,26 @@ nil_image_3d_level_as_2d_array(const struct nil_image *image_3d,
    image_2d_out->extent_px.d = 1;
    image_2d_out->extent_px.a = lvl_image.extent_px.d;
    image_2d_out->array_stride_B = z_stride;
+}
+
+/** For a multisampled image, returns an image of samples
+ *
+ * The resulting image is supersampled with each pixel in the original
+ * consuming some number pixels in the supersampled images according to the
+ * original image's sample layout
+ */
+void
+nil_msaa_image_as_sa(const struct nil_image *image_msaa,
+                     struct nil_image *image_sa_out)
+{
+   assert(image_msaa->dim == NIL_IMAGE_DIM_2D);
+   assert(image_msaa->num_levels == 1);
+
+   const struct nil_extent4d extent_sa =
+      nil_extent4d_px_to_sa(image_msaa->extent_px,
+                            image_msaa->sample_layout);
+
+   *image_sa_out = *image_msaa;
+   image_sa_out->extent_px = extent_sa;
+   image_sa_out->sample_layout = NIL_SAMPLE_LAYOUT_1X1;
 }

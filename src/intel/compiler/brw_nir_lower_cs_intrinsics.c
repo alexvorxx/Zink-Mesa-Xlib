@@ -339,7 +339,7 @@ brw_nir_lower_cs_intrinsics(nir_shader *nir,
          (nir->info.num_images == 0 && nir->info.num_textures == 0);
 
       prog_data->walk_order =
-         linear ? BRW_WALK_ORDER_XYZ : BRW_WALK_ORDER_YXZ;
+         linear ? INTEL_WALK_ORDER_XYZ : INTEL_WALK_ORDER_YXZ;
 
       /* nir_lower_compute_system_values will replace any references to
        * SYSTEM_VALUE_LOCAL_INVOCATION_ID vector components with zero for

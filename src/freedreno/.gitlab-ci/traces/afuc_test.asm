@@ -27,7 +27,7 @@
 ; this to avoid having to host the actual firmware, especially the disassembled
 ; version, in Mesa.
 [01000001]
-[01000000]
+[#jumptbl]
 loc02:
 ; packet table loading:
 mov $01, 0x0830 ; CP_SQE_INSTR_BASE
@@ -334,3 +334,6 @@ UNKN126:
 UNKN127:
         waitin
         mov $01, $data
+
+jumptbl:
+.jumptbl

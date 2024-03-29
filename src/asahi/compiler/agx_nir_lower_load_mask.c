@@ -12,12 +12,8 @@
  * load_interpolated_input becomes iter instructions, which lack a write mask.
  */
 static bool
-pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
+pass(struct nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
    if (intr->intrinsic != nir_intrinsic_load_interpolated_input)
       return false;
 
@@ -25,7 +21,7 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
    if (mask == 0 || mask == nir_component_mask(intr->num_components))
       return false;
 
-   b->cursor = nir_before_instr(instr);
+   b->cursor = nir_before_instr(&intr->instr);
    unsigned bit_size = intr->def.bit_size;
    nir_def *comps[4] = {NULL};
 
@@ -39,7 +35,7 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
          assert(next_zero >= 2);
          assert(count >= 1);
 
-         nir_instr *clone = nir_instr_clone(b->shader, instr);
+         nir_instr *clone = nir_instr_clone(b->shader, &intr->instr);
          nir_intrinsic_instr *clone_intr = nir_instr_as_intrinsic(clone);
 
          /* Shrink the load to count contiguous components */
@@ -75,6 +71,6 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
 bool
 agx_nir_lower_load_mask(nir_shader *shader)
 {
-   return nir_shader_instructions_pass(
+   return nir_shader_intrinsics_pass(
       shader, pass, nir_metadata_block_index | nir_metadata_dominance, NULL);
 }

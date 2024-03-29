@@ -659,19 +659,19 @@ radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *me
 
       result = radv_image_create_layout(device, create_info, NULL, NULL, mem->image);
       if (result != VK_SUCCESS) {
-         device->ws->buffer_destroy(device->ws, mem->bo);
+         radv_bo_destroy(device, mem->bo);
          mem->bo = NULL;
          return result;
       }
 
       if (alloc_size < mem->image->size) {
-         device->ws->buffer_destroy(device->ws, mem->bo);
+         radv_bo_destroy(device, mem->bo);
          mem->bo = NULL;
          return VK_ERROR_INVALID_EXTERNAL_HANDLE;
       }
    } else if (mem->buffer) {
       if (alloc_size < mem->buffer->vk.size) {
-         device->ws->buffer_destroy(device->ws, mem->bo);
+         radv_bo_destroy(device, mem->bo);
          mem->bo = NULL;
          return VK_ERROR_INVALID_EXTERNAL_HANDLE;
       }

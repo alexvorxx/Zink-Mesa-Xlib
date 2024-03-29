@@ -151,6 +151,7 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
         case PIPE_CAP_CUBE_MAP_ARRAY:
         case PIPE_CAP_NIR_COMPACT_ARRAYS:
+        case PIPE_CAP_TEXTURE_BARRIER:
                 return 1;
 
         case PIPE_CAP_POLYGON_OFFSET_CLAMP:

@@ -46,7 +46,7 @@ BEGIN_TEST(setup_reduce_temp.divergent_if_phi)
       program.get(), bld, Operand(inputs[0]),
       [&]() -> void
       {
-         //>> s1: %_, s2: %_, s1: %_:scc = p_reduce %a, %lv, lv1: undef op:umin32 cluster_size:64
+         //>> s1: %_, s2: %_, s1: %_:scc = p_reduce %a, (latekill)%lv, lv1: undef op:umin32 cluster_size:64
          Instruction* reduce =
             bld.reduction(aco_opcode::p_reduce, bld.def(s1), bld.def(bld.lm), bld.def(s1, scc),
                           inputs[1], Operand(v1.as_linear()), Operand(v1.as_linear()), umin32);
@@ -58,7 +58,7 @@ BEGIN_TEST(setup_reduce_temp.divergent_if_phi)
       });
    bld.pseudo(aco_opcode::p_phi, bld.def(v1), Operand::c32(1), Operand::zero());
    //>> /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, top-level, merge, */
-   //! p_end_linear_vgpr %lv
+   //! p_end_linear_vgpr (latekill)%lv
 
    finish_setup_reduce_temp_test();
 END_TEST

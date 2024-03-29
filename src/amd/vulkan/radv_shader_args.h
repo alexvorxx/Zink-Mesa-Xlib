@@ -47,6 +47,7 @@ struct radv_shader_args {
 
    /* NGG */
    struct ac_arg ngg_provoking_vtx;
+   struct ac_arg ngg_lds_layout;
 
    /* NGG GS */
    struct ac_arg ngg_culling_settings;
@@ -54,7 +55,6 @@ struct radv_shader_args {
    struct ac_arg ngg_viewport_translate[2];
 
    /* Fragment shaders */
-   struct ac_arg ps_epilog_pc;
    struct ac_arg ps_state;
 
    struct ac_arg prolog_inputs;
@@ -70,15 +70,11 @@ struct radv_shader_args {
    /* # [0:5] = the number of patch control points
     * # [6:11] = the number of tessellation patches
     * # [12:19] = the LS-HS vertex stride in DWORDS
+    * # [20:28] = reserved for future use
+    * # [29:30] = tess_primitive_mode
+    * # [31] = whether TES reads tess factors
     */
    struct ac_arg tcs_offchip_layout;
-   struct ac_arg tcs_epilog_pc;
-
-   /* TCS epilogs */
-   struct ac_arg patch_base;
-   struct ac_arg tcs_out_current_patch_data_offset;
-   struct ac_arg invocation_id;
-   struct ac_arg rel_patch_id;
 
    /* TES */
    /* # [0:7] = the number of tessellation patches
@@ -86,11 +82,17 @@ struct radv_shader_args {
     */
    struct ac_arg tes_state;
 
+   /* GS */
+   struct ac_arg vgt_esgs_ring_itemsize;
+
    /* NGG VS streamout */
    struct ac_arg num_verts_per_prim;
 
    /* For non-monolithic VS or TES on GFX9+. */
    struct ac_arg next_stage_pc;
+
+   /* PS/TCS epilogs PC. */
+   struct ac_arg epilog_pc;
 
    struct radv_userdata_locations user_sgprs_locs;
    unsigned num_user_sgprs;
@@ -115,9 +117,6 @@ void radv_declare_shader_args(const struct radv_device *device, const struct rad
 
 void radv_declare_ps_epilog_args(const struct radv_device *device, const struct radv_ps_epilog_key *key,
                                  struct radv_shader_args *args);
-
-void radv_declare_tcs_epilog_args(const struct radv_device *device, const struct radv_tcs_epilog_key *key,
-                                  struct radv_shader_args *args);
 
 void radv_declare_rt_shader_args(enum amd_gfx_level gfx_level, struct radv_shader_args *args);
 #endif

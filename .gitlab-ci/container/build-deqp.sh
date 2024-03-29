@@ -10,8 +10,15 @@
 
 set -ex -o pipefail
 
+# See `deqp_build_targets` below for which release is used to produce which
+# binary. Unless this comment has bitrotten:
+# - the VK release produces `deqp-vk`,
+# - the GL release produces `glcts`, and
+# - the GLES release produces `deqp-gles*` and `deqp-egl`
 
-DEQP_VERSION=vulkan-cts-1.3.7.0
+DEQP_VK_VERSION=1.3.7.0
+DEQP_GL_VERSION=4.6.4.0
+DEQP_GLES_VERSION=3.2.10.0
 
 # Patches to VulkanCTS may come from commits in their repo (listed in
 # cts_commits_to_backport) or patch files stored in our repo (in the patch
@@ -32,23 +39,25 @@ vk_cts_commits_to_backport=(
 
     # Fix several issues in dynamic rendering basic tests
     c5453824b498c981c6ba42017d119f5de02a3e34
+
+    # Add setVisible for VulkanWindowDirectDrm
+    a8466bf6ea98f6cd6733849ad8081775318a3e3e
 )
 
 # shellcheck disable=SC2034
 vk_cts_patch_files=(
-  # Android specific patches.
-  build-deqp_Allow-running-on-Android-from-the-command-line.patch
-  build-deqp_Android-prints-to-stdout-instead-of-logcat.patch
-
-  # Change zlib URL because the one from zlib.net requires a human-verification
-  # Forward-port of b61f15f09adb6b7c9eefc7f7c44612c0c390abe5 into modern dEQP codebase
-  build-deqp_Change-zlib-URL-because-the-one-from-zlib.net-requir.patch
-
   # Derivate subgroup fix
   # https://github.com/KhronosGroup/VK-GL-CTS/pull/442
-  build-deqp_Use-subgroups-helper-in-derivate-tests.patch
-  build-deqp_Add-missing-subgroup-support-checks-for-linear-derivate-tests.patch
+  build-deqp-vk_Use-subgroups-helper-in-derivate-tests.patch
+  build-deqp-vk_Add-missing-subgroup-support-checks-for-linear-derivate-tests.patch
 )
+
+if [ "${DEQP_TARGET}" = 'android' ]; then
+  vk_cts_patch_files+=(
+    build-deqp-vk_Allow-running-on-Android-from-the-command-line.patch
+    build-deqp-vk_Android-prints-to-stdout-instead-of-logcat.patch
+  )
+fi
 
 # shellcheck disable=SC2034
 gl_cts_commits_to_backport=(
@@ -56,14 +65,32 @@ gl_cts_commits_to_backport=(
 
 # shellcheck disable=SC2034
 gl_cts_patch_files=(
-  # Android specific patches.
-  build-deqp_Allow-running-on-Android-from-the-command-line.patch
-  build-deqp_Android-prints-to-stdout-instead-of-logcat.patch
-
-  # Change zlib URL because the one from zlib.net requires a human-verification
-  # Forward-port of b61f15f09adb6b7c9eefc7f7c44612c0c390abe5 into modern dEQP codebase
-  build-deqp_Change-zlib-URL-because-the-one-from-zlib.net-requir.patch
 )
+
+if [ "${DEQP_TARGET}" = 'android' ]; then
+  gl_cts_patch_files+=(
+    build-deqp-gl_Allow-running-on-Android-from-the-command-line.patch
+    build-deqp-gl_Android-prints-to-stdout-instead-of-logcat.patch
+  )
+fi
+
+# shellcheck disable=SC2034
+# GLES builds also EGL
+gles_cts_commits_to_backport=(
+  # Implement support for the EGL_EXT_config_select_group extension
+  88ba9ac270db5be600b1ecacbc6d9db0c55d5be4
+)
+
+# shellcheck disable=SC2034
+gles_cts_patch_files=(
+)
+
+if [ "${DEQP_TARGET}" = 'android' ]; then
+  gles_cts_patch_files+=(
+    build-deqp-gles_Allow-running-on-Android-from-the-command-line.patch
+    build-deqp-gles_Android-prints-to-stdout-instead-of-logcat.patch
+  )
+fi
 
 
 ### Careful editing anything below this line
@@ -71,6 +98,14 @@ gl_cts_patch_files=(
 
 git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
+
+# shellcheck disable=SC2153
+case "${DEQP_API}" in
+  VK) DEQP_VERSION="vulkan-cts-$DEQP_VK_VERSION";;
+  GL) DEQP_VERSION="opengl-cts-$DEQP_GL_VERSION";;
+  GLES) DEQP_VERSION="opengl-es-cts-$DEQP_GLES_VERSION";;
+esac
+
 git clone \
     https://github.com/KhronosGroup/VK-GL-CTS.git \
     -b $DEQP_VERSION \
@@ -116,22 +151,31 @@ popd
 
 pushd /deqp
 
-if [ "${DEQP_API}" = 'GL' ] && [ "${DEQP_TARGET}" != 'android' ]; then
+if [ "${DEQP_API}" = 'GLES' ]; then
+  if [ "${DEQP_TARGET}" = 'android' ]; then
+    cmake -S /VK-GL-CTS -B . -G Ninja \
+        -DDEQP_TARGET=android \
+        -DCMAKE_BUILD_TYPE=Release \
+        $EXTRA_CMAKE_ARGS
+    mold --run ninja modules/egl/deqp-egl
+    mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-android
+  else
     # When including EGL/X11 testing, do that build first and save off its
     # deqp-egl binary.
     cmake -S /VK-GL-CTS -B . -G Ninja \
         -DDEQP_TARGET=x11_egl_glx \
         -DCMAKE_BUILD_TYPE=Release \
         $EXTRA_CMAKE_ARGS
-    ninja modules/egl/deqp-egl
+    mold --run ninja modules/egl/deqp-egl
     mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-x11
 
     cmake -S /VK-GL-CTS -B . -G Ninja \
         -DDEQP_TARGET=wayland \
         -DCMAKE_BUILD_TYPE=Release \
         $EXTRA_CMAKE_ARGS
-    ninja modules/egl/deqp-egl
+    mold --run ninja modules/egl/deqp-egl
     mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-wayland
+  fi
 fi
 
 cmake -S /VK-GL-CTS -B . -G Ninja \
@@ -153,10 +197,10 @@ case "${DEQP_API}" in
     ;;
   GL)
     deqp_build_targets+=(glcts)
+    ;;
+  GLES)
     deqp_build_targets+=(deqp-gles{2,3,31})
-    if [ "${DEQP_TARGET}" = 'android' ]; then
-      deqp_build_targets+=(deqp-egl)
-    fi
+    # deqp-egl also comes from this build, but it is handled separately above.
     ;;
 esac
 if [ "${DEQP_TARGET}" != 'android' ]; then
@@ -166,10 +210,6 @@ if [ "${DEQP_TARGET}" != 'android' ]; then
 fi
 
 mold --run ninja "${deqp_build_targets[@]}"
-
-if [ "${DEQP_TARGET}" = 'android' ]; then
-    mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-android
-fi
 
 if [ "${DEQP_TARGET}" != 'android' ]; then
     # Copy out the mustpass lists we want.
@@ -184,20 +224,23 @@ if [ "${DEQP_TARGET}" != 'android' ]; then
 
     if [ "${DEQP_API}" = 'GL' ]; then
         cp \
-            /deqp/external/openglcts/modules/gl_cts/data/mustpass/gles/aosp_mustpass/3.2.6.x/*.txt \
-            /deqp/mustpass/.
+            /VK-GL-CTS/external/openglcts/data/mustpass/gl/khronos_mustpass/4.6.1.x/*-main.txt \
+            /deqp/mustpass/
         cp \
-            /deqp/external/openglcts/modules/gl_cts/data/mustpass/egl/aosp_mustpass/3.2.6.x/egl-master.txt \
-            /deqp/mustpass/.
+            /VK-GL-CTS/external/openglcts/data/mustpass/gl/khronos_mustpass_single/4.6.1.x/*-single.txt \
+            /deqp/mustpass/
+    fi
+
+    if [ "${DEQP_API}" = 'GLES' ]; then
         cp \
-            /deqp/external/openglcts/modules/gl_cts/data/mustpass/gles/khronos_mustpass/3.2.6.x/*-master.txt \
-            /deqp/mustpass/.
+            /VK-GL-CTS/external/openglcts/data/mustpass/gles/aosp_mustpass/3.2.6.x/*.txt \
+            /deqp/mustpass/
         cp \
-            /deqp/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass/4.6.1.x/*-master.txt \
-            /deqp/mustpass/.
+            /VK-GL-CTS/external/openglcts/data/mustpass/egl/aosp_mustpass/3.2.6.x/egl-main.txt \
+            /deqp/mustpass/
         cp \
-            /deqp/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass_single/4.6.1.x/*-single.txt \
-            /deqp/mustpass/.
+            /VK-GL-CTS/external/openglcts/data/mustpass/gles/khronos_mustpass/3.2.6.x/*-main.txt \
+            /deqp/mustpass/
     fi
 
     # Save *some* executor utils, but otherwise strip things down
@@ -209,7 +252,7 @@ if [ "${DEQP_TARGET}" != 'android' ]; then
 fi
 
 # Remove other mustpass files, since we saved off the ones we wanted to conventient locations above.
-rm -rf /deqp/external/openglcts/modules/gl_cts/data/mustpass
+rm -rf /deqp/external/**/mustpass/
 rm -rf /deqp/external/vulkancts/modules/vulkan/vk-master*
 rm -rf /deqp/external/vulkancts/modules/vulkan/vk-default
 
@@ -223,6 +266,8 @@ if [ "${DEQP_API}" = 'VK' ]; then
 fi
 if [ "${DEQP_API}" = 'GL' ]; then
   ${STRIP_CMD:-strip} external/openglcts/modules/glcts
+fi
+if [ "${DEQP_API}" = 'GLES' ]; then
   ${STRIP_CMD:-strip} modules/*/deqp-*
 fi
 du -sh ./*

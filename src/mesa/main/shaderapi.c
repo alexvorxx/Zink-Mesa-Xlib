@@ -412,12 +412,12 @@ create_shader(struct gl_context *ctx, GLenum type)
    struct gl_shader *sh;
    GLuint name;
 
-   _mesa_HashLockMutex(ctx->Shared->ShaderObjects);
-   name = _mesa_HashFindFreeKeyBlock(ctx->Shared->ShaderObjects, 1);
+   _mesa_HashLockMutex(&ctx->Shared->ShaderObjects);
+   name = _mesa_HashFindFreeKeyBlock(&ctx->Shared->ShaderObjects, 1);
    sh = _mesa_new_shader(name, _mesa_shader_enum_to_shader_stage(type));
    sh->Type = type;
-   _mesa_HashInsertLocked(ctx->Shared->ShaderObjects, name, sh, true);
-   _mesa_HashUnlockMutex(ctx->Shared->ShaderObjects);
+   _mesa_HashInsertLocked(&ctx->Shared->ShaderObjects, name, sh);
+   _mesa_HashUnlockMutex(&ctx->Shared->ShaderObjects);
 
    return name;
 }
@@ -442,17 +442,17 @@ create_shader_program(struct gl_context *ctx)
    GLuint name;
    struct gl_shader_program *shProg;
 
-   _mesa_HashLockMutex(ctx->Shared->ShaderObjects);
+   _mesa_HashLockMutex(&ctx->Shared->ShaderObjects);
 
-   name = _mesa_HashFindFreeKeyBlock(ctx->Shared->ShaderObjects, 1);
+   name = _mesa_HashFindFreeKeyBlock(&ctx->Shared->ShaderObjects, 1);
 
    shProg = _mesa_new_shader_program(name);
 
-   _mesa_HashInsertLocked(ctx->Shared->ShaderObjects, name, shProg, true);
+   _mesa_HashInsertLocked(&ctx->Shared->ShaderObjects, name, shProg);
 
    assert(shProg->RefCount == 1);
 
-   _mesa_HashUnlockMutex(ctx->Shared->ShaderObjects);
+   _mesa_HashUnlockMutex(&ctx->Shared->ShaderObjects);
 
    return name;
 }
@@ -1356,14 +1356,12 @@ link_program(struct gl_context *ctx, struct gl_shader_program *shProg,
          _mesa_use_program(ctx, stage, shProg, prog, ctx->_Shader);
       }
 
-      if (ctx->Pipeline.Objects) {
-         struct update_programs_in_pipeline_params params = {
-            .ctx = ctx,
-            .shProg = shProg
-         };
-         _mesa_HashWalk(ctx->Pipeline.Objects, update_programs_in_pipeline,
-                        &params);
-      }
+      struct update_programs_in_pipeline_params params = {
+         .ctx = ctx,
+         .shProg = shProg
+      };
+      _mesa_HashWalk(&ctx->Pipeline.Objects, update_programs_in_pipeline,
+                     &params);
    }
 
 #ifndef CUSTOM_SHADER_REPLACEMENT

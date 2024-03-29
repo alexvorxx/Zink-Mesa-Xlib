@@ -79,7 +79,7 @@ BEGIN_TEST(assembler.long_jump.unconditional_forwards)
    //! s_nop 0                                                     ; bf800000
    //!(then repeated 32767 times)
    for (unsigned i = 0; i < INT16_MAX + 1; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 0);
+      bld.sopp(aco_opcode::s_nop, 0);
 
    //! BB2:
    //! s_endpgm                                                    ; bf810000
@@ -110,7 +110,7 @@ BEGIN_TEST(assembler.long_jump.conditional_forwards)
    //! s_nop 0 ; bf800000
    //!(then repeated 32767 times)
    for (unsigned i = 0; i < INT16_MAX + 1; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 0);
+      bld.sopp(aco_opcode::s_nop, 0);
 
    //! BB2:
    //! s_endpgm                                                    ; bf810000
@@ -131,7 +131,7 @@ BEGIN_TEST(assembler.long_jump.unconditional_backwards)
    //! s_nop 0                                                     ; bf800000
    //!(then repeated 32767 times)
    for (unsigned i = 0; i < INT16_MAX + 1; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 0);
+      bld.sopp(aco_opcode::s_nop, 0);
 
    //! s_getpc_b64 s[0:1]                                          ; be801f00
    //! s_addc_u32 s0, s0, 0xfffdfffc                               ; 8200ff00 fffdfffc
@@ -158,7 +158,7 @@ BEGIN_TEST(assembler.long_jump.conditional_backwards)
    //! s_nop 0                                                     ; bf800000
    //!(then repeated 32767 times)
    for (unsigned i = 0; i < INT16_MAX + 1; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 0);
+      bld.sopp(aco_opcode::s_nop, 0);
 
    //! s_cbranch_execz BB1                                         ; bf880006
    //! s_getpc_b64 s[0:1]                                          ; be801f00
@@ -213,7 +213,7 @@ BEGIN_TEST(assembler.long_jump.constaddr)
    bld.reset(program->create_and_insert_block());
 
    for (unsigned i = 0; i < INT16_MAX + 1; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 0);
+      bld.sopp(aco_opcode::s_nop, 0);
 
    bld.reset(program->create_and_insert_block());
 
@@ -249,7 +249,7 @@ BEGIN_TEST(assembler.long_jump.discard_early_exit)
    //!(then repeated 32766 times)
    //! s_endpgm                                                    ; bf810000
    for (unsigned i = 0; i < INT16_MAX; i++)
-      bld.sopp(aco_opcode::s_nop, -1, 1);
+      bld.sopp(aco_opcode::s_nop, 1);
 
    //! BB2:
    //! s_endpgm                                                    ; bf810000
@@ -269,8 +269,7 @@ BEGIN_TEST(assembler.v_add3)
 
       //~gfx9>> v_add3_u32 v0, 0, 0, 0 ; d1ff0000 02010080
       //~gfx10>> v_add3_u32 v0, 0, 0, 0 ; d76d0000 02010080
-      aco_ptr<VALU_instruction> add3{
-         create_instruction<VALU_instruction>(aco_opcode::v_add3_u32, Format::VOP3, 3, 1)};
+      aco_ptr<Instruction> add3{create_instruction(aco_opcode::v_add3_u32, Format::VOP3, 3, 1)};
       add3->operands[0] = Operand::zero();
       add3->operands[1] = Operand::zero();
       add3->operands[2] = Operand::zero();
@@ -288,13 +287,12 @@ BEGIN_TEST(assembler.v_add3_clamp)
 
       //~gfx9>> integer addition + clamp ; d1ff8000 02010080
       //~gfx10>> integer addition + clamp ; d76d8000 02010080
-      aco_ptr<VALU_instruction> add3{
-         create_instruction<VALU_instruction>(aco_opcode::v_add3_u32, Format::VOP3, 3, 1)};
+      aco_ptr<Instruction> add3{create_instruction(aco_opcode::v_add3_u32, Format::VOP3, 3, 1)};
       add3->operands[0] = Operand::zero();
       add3->operands[1] = Operand::zero();
       add3->operands[2] = Operand::zero();
       add3->definitions[0] = Definition(PhysReg(0), v1);
-      add3->clamp = 1;
+      add3->valu().clamp = 1;
       bld.insert(std::move(add3));
 
       finish_assembler_test();
@@ -740,6 +738,9 @@ BEGIN_TEST(assembler.gfx11.flat)
 
    //! scratch_load_b32 v42, v10, s32                              ; dc510000 2aa0000a
    bld.scratch(aco_opcode::scratch_load_dword, dst_v1, op_v1, op_s1);
+
+   //! scratch_load_b32 v42, off, off                              ; dc510000 2a7c0080
+   bld.scratch(aco_opcode::scratch_load_dword, dst_v1, Operand(v1), Operand(s1));
 
    //! global_load_b32 v42, v[20:21], off offset:-42               ; dc521fd6 2a7c0014
    bld.global(aco_opcode::global_load_dword, dst_v1, op_v2, Operand(s1), -42);

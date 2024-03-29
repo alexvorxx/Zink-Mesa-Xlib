@@ -1298,8 +1298,7 @@ cso_set_vertex_buffers(struct cso_context *cso,
       return;
    }
 
-   struct pipe_context *pipe = ctx->base.pipe;
-   pipe->set_vertex_buffers(pipe, count, take_ownership, buffers);
+   util_set_vertex_buffers(ctx->base.pipe, count, take_ownership, buffers);
 }
 
 
@@ -1319,7 +1318,6 @@ void
 cso_set_vertex_buffers_and_elements(struct cso_context *cso,
                                     const struct cso_velems_state *velems,
                                     unsigned vb_count,
-                                    bool take_ownership,
                                     bool uses_user_vertex_buffers,
                                     const struct pipe_vertex_buffer *vbuffers)
 {
@@ -1336,8 +1334,8 @@ cso_set_vertex_buffers_and_elements(struct cso_context *cso,
             ctx->base.draw_vbo = u_vbuf_draw_vbo;
       }
 
-      u_vbuf_set_vertex_buffers(vbuf, vb_count, take_ownership, vbuffers);
       u_vbuf_set_vertex_elements(vbuf, velems);
+      u_vbuf_set_vertex_buffers(vbuf, vb_count, true, vbuffers);
       return;
    }
 
@@ -1349,8 +1347,8 @@ cso_set_vertex_buffers_and_elements(struct cso_context *cso,
          ctx->base.draw_vbo = pipe->draw_vbo;
    }
 
-   pipe->set_vertex_buffers(pipe, vb_count, take_ownership, vbuffers);
    cso_set_vertex_elements_direct(ctx, velems);
+   pipe->set_vertex_buffers(pipe, vb_count, vbuffers);
 }
 
 
@@ -1739,8 +1737,6 @@ cso_restore_state(struct cso_context *ctx, unsigned unbind)
       cso->base.pipe->set_constant_buffer(cso->base.pipe, PIPE_SHADER_FRAGMENT, 0, false, NULL);
    if (state_mask & CSO_BIT_VERTEX_ELEMENTS)
       cso_restore_vertex_elements(cso);
-   if (unbind & CSO_UNBIND_VERTEX_BUFFER0)
-      cso->base.pipe->set_vertex_buffers(cso->base.pipe, 0, false, NULL);
    if (state_mask & CSO_BIT_STREAM_OUTPUTS)
       cso_restore_stream_outputs(cso);
    if (state_mask & CSO_BIT_PAUSE_QUERIES)

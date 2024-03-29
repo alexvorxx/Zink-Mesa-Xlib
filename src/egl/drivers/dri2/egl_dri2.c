@@ -75,56 +75,14 @@
 
 #define NUM_ATTRIBS 16
 
-static const struct dri2_pbuffer_visual {
-   const char *format_name;
-   unsigned int dri_image_format;
-   int rgba_shifts[4];
-   unsigned int rgba_sizes[4];
-} dri2_pbuffer_visuals[] = {
-   /* clang-format off */
-   {
-      "ABGR16F",
-      __DRI_IMAGE_FORMAT_ABGR16161616F,
-      { 0, 16, 32, 48 },
-      { 16, 16, 16, 16 }
-   },
-   {
-      "XBGR16F",
-      __DRI_IMAGE_FORMAT_XBGR16161616F,
-      { 0, 16, 32, -1 },
-      { 16, 16, 16, 0 }
-   },
-   {
-      "A2RGB10",
-      __DRI_IMAGE_FORMAT_ARGB2101010,
-      { 20, 10, 0, 30 },
-      { 10, 10, 10, 2 }
-   },
-   {
-      "X2RGB10",
-      __DRI_IMAGE_FORMAT_XRGB2101010,
-      { 20, 10, 0, -1 },
-      { 10, 10, 10, 0 }
-   },
-   {
-      "ARGB8888",
-      __DRI_IMAGE_FORMAT_ARGB8888,
-      { 16, 8, 0, 24 },
-      { 8, 8, 8, 8 }
-   },
-   {
-      "RGB888",
-      __DRI_IMAGE_FORMAT_XRGB8888,
-      { 16, 8, 0, -1 },
-      { 8, 8, 8, 0 }
-   },
-   {
-      "RGB565",
-      __DRI_IMAGE_FORMAT_RGB565,
-      { 11, 5, 0, -1 },
-      { 5, 6, 5, 0 }
-   },
-   /* clang-format on */
+static const enum pipe_format dri2_pbuffer_visuals[] = {
+   PIPE_FORMAT_R16G16B16A16_FLOAT,
+   PIPE_FORMAT_R16G16B16X16_FLOAT,
+   PIPE_FORMAT_B10G10R10A2_UNORM,
+   PIPE_FORMAT_B10G10R10X2_UNORM,
+   PIPE_FORMAT_BGRA8888_UNORM,
+   PIPE_FORMAT_BGRX8888_UNORM,
+   PIPE_FORMAT_B5G6R5_UNORM,
 };
 
 static void
@@ -368,37 +326,17 @@ dri2_get_render_type_float(const __DRIcoreExtension *core,
    *is_float = (render_type & __DRI_ATTRIB_FLOAT_BIT) ? true : false;
 }
 
-unsigned int
+enum pipe_format
 dri2_image_format_for_pbuffer_config(struct dri2_egl_display *dri2_dpy,
                                      const __DRIconfig *config)
 {
-   int shifts[4];
-   unsigned int sizes[4];
-
-   dri2_get_shifts_and_sizes(dri2_dpy->core, config, shifts, sizes);
-
-   for (unsigned i = 0; i < ARRAY_SIZE(dri2_pbuffer_visuals); ++i) {
-      const struct dri2_pbuffer_visual *visual = &dri2_pbuffer_visuals[i];
-
-      if (shifts[0] == visual->rgba_shifts[0] &&
-          shifts[1] == visual->rgba_shifts[1] &&
-          shifts[2] == visual->rgba_shifts[2] &&
-          shifts[3] == visual->rgba_shifts[3] &&
-          sizes[0] == visual->rgba_sizes[0] &&
-          sizes[1] == visual->rgba_sizes[1] &&
-          sizes[2] == visual->rgba_sizes[2] &&
-          sizes[3] == visual->rgba_sizes[3]) {
-         return visual->dri_image_format;
-      }
-   }
-
-   return __DRI_IMAGE_FORMAT_NONE;
+   struct gl_config *gl_config = (struct gl_config *) config;
+   return gl_config->color_format;
 }
 
 struct dri2_egl_config *
-dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
-                EGLint surface_type, const EGLint *attr_list,
-                const int *rgba_shifts, const unsigned int *rgba_sizes)
+dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config,
+                EGLint surface_type, const EGLint *attr_list)
 {
    struct dri2_egl_config *conf;
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
@@ -406,13 +344,11 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
    unsigned int attrib, value, double_buffer;
    bool srgb = false;
    EGLint key, bind_to_texture_rgb, bind_to_texture_rgba;
-   int dri_shifts[4] = {-1, -1, -1, -1};
-   unsigned int dri_sizes[4] = {0, 0, 0, 0};
    _EGLConfig *matching_config;
    EGLint num_configs = 0;
    EGLint config_id;
 
-   _eglInitConfig(&base, disp, id);
+   _eglInitConfig(&base, disp, _eglGetArraySize(disp->Configs) + 1);
 
    double_buffer = 0;
    bind_to_texture_rgb = 0;
@@ -458,55 +394,19 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
          break;
 
       case __DRI_ATTRIB_RED_SIZE:
-         dri_sizes[0] = value;
          base.RedSize = value;
          break;
 
-      case __DRI_ATTRIB_RED_MASK:
-         dri_shifts[0] = ffs(value) - 1;
-         break;
-
-      case __DRI_ATTRIB_RED_SHIFT:
-         dri_shifts[0] = value;
-         break;
-
       case __DRI_ATTRIB_GREEN_SIZE:
-         dri_sizes[1] = value;
          base.GreenSize = value;
          break;
 
-      case __DRI_ATTRIB_GREEN_MASK:
-         dri_shifts[1] = ffs(value) - 1;
-         break;
-
-      case __DRI_ATTRIB_GREEN_SHIFT:
-         dri_shifts[1] = value;
-         break;
-
       case __DRI_ATTRIB_BLUE_SIZE:
-         dri_sizes[2] = value;
          base.BlueSize = value;
          break;
 
-      case __DRI_ATTRIB_BLUE_MASK:
-         dri_shifts[2] = ffs(value) - 1;
-         break;
-
-      case __DRI_ATTRIB_BLUE_SHIFT:
-         dri_shifts[2] = value;
-         break;
-
       case __DRI_ATTRIB_ALPHA_SIZE:
-         dri_sizes[3] = value;
          base.AlphaSize = value;
-         break;
-
-      case __DRI_ATTRIB_ALPHA_MASK:
-         dri_shifts[3] = ffs(value) - 1;
-         break;
-
-      case __DRI_ATTRIB_ALPHA_SHIFT:
-         dri_shifts[3] = value;
          break;
 
       case __DRI_ATTRIB_ACCUM_RED_SIZE:
@@ -546,12 +446,6 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
       for (int i = 0; attr_list[i] != EGL_NONE; i += 2)
          _eglSetConfigKey(&base, attr_list[i], attr_list[i + 1]);
 
-   if (rgba_shifts && memcmp(rgba_shifts, dri_shifts, sizeof(dri_shifts)))
-      return NULL;
-
-   if (rgba_sizes && memcmp(rgba_sizes, dri_sizes, sizeof(dri_sizes)))
-      return NULL;
-
    base.NativeRenderable = EGL_TRUE;
 
    base.SurfaceType = surface_type;
@@ -579,7 +473,7 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
    base.MaxSwapInterval = dri2_dpy->max_swap_interval;
 
    if (!_eglValidateConfig(&base, EGL_FALSE)) {
-      _eglLog(_EGL_DEBUG, "DRI2: failed to validate config %d", id);
+      _eglLog(_EGL_DEBUG, "DRI2: failed to validate config %d", base.ConfigID);
       return NULL;
    }
 
@@ -619,38 +513,44 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
    return conf;
 }
 
-EGLBoolean
+static int
+dri2_pbuffer_visual_index(enum pipe_format format)
+{
+   for (unsigned i = 0; i < ARRAY_SIZE(dri2_pbuffer_visuals); i++) {
+      if (dri2_pbuffer_visuals[i] == format)
+         return i;
+   }
+
+   return -1;
+}
+
+void
 dri2_add_pbuffer_configs_for_visuals(_EGLDisplay *disp)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    unsigned int format_count[ARRAY_SIZE(dri2_pbuffer_visuals)] = {0};
-   unsigned int config_count = 0;
 
    for (unsigned i = 0; dri2_dpy->driver_configs[i] != NULL; i++) {
-      for (unsigned j = 0; j < ARRAY_SIZE(dri2_pbuffer_visuals); j++) {
-         struct dri2_egl_config *dri2_conf;
+      struct dri2_egl_config *dri2_conf;
+      struct gl_config *gl_config =
+         (struct gl_config *) dri2_dpy->driver_configs[i];
+      int idx = dri2_pbuffer_visual_index(gl_config->color_format);
 
-         dri2_conf = dri2_add_config(disp, dri2_dpy->driver_configs[i],
-                                     config_count + 1, EGL_PBUFFER_BIT, NULL,
-                                     dri2_pbuffer_visuals[j].rgba_shifts,
-                                     dri2_pbuffer_visuals[j].rgba_sizes);
+      if (idx == -1)
+         continue;
 
-         if (dri2_conf) {
-            if (dri2_conf->base.ConfigID == config_count + 1)
-               config_count++;
-            format_count[j]++;
-         }
-      }
+      dri2_conf = dri2_add_config(disp, dri2_dpy->driver_configs[i],
+                                  EGL_PBUFFER_BIT, NULL);
+      if (dri2_conf)
+         format_count[idx]++;
    }
 
    for (unsigned i = 0; i < ARRAY_SIZE(format_count); i++) {
       if (!format_count[i]) {
          _eglLog(_EGL_DEBUG, "No DRI config supports native format %s",
-                 dri2_pbuffer_visuals[i].format_name);
+                 util_format_name(dri2_pbuffer_visuals[i]));
       }
    }
-
-   return (config_count != 0);
 }
 
 GLboolean
@@ -1074,8 +974,9 @@ dri2_setup_extensions(_EGLDisplay *disp)
        dri2_dpy->dri3_major_version != -1 &&
        !dri2_dpy->multibuffers_available &&
 #endif
-       (disp->Platform == EGL_PLATFORM_X11_KHR ||
-        disp->Platform == EGL_PLATFORM_XCB_EXT) &&
+       /* this is enum _egl_platform_type */
+       (disp->Platform == _EGL_PLATFORM_X11 ||
+        disp->Platform == _EGL_PLATFORM_XCB) &&
        !debug_get_bool_option("LIBGL_KOPPER_DRI2", false))
       return EGL_FALSE;
 
@@ -1179,6 +1080,12 @@ dri2_initialize(_EGLDisplay *disp)
 
    if (!ret)
       return EGL_FALSE;
+
+   if (_eglGetArraySize(disp->Configs) == 0) {
+      _eglError(EGL_NOT_INITIALIZED, "failed to add any EGLConfigs");
+      dri2_display_destroy(disp);
+      return EGL_FALSE;
+   }
 
    dri2_dpy = dri2_egl_display(disp);
    p_atomic_inc(&dri2_dpy->ref_count);
@@ -1679,7 +1586,7 @@ dri2_create_drawable(struct dri2_egl_display *dri2_dpy,
       dri2_surf->dri_drawable = dri2_dpy->kopper->createNewDrawable(
          dri2_dpy->dri_screen_render_gpu, config, loaderPrivate,
          &(__DRIkopperDrawableInfo){
-#ifdef HAVE_X11_PLATFORM
+#if defined(HAVE_X11_PLATFORM) && defined(HAVE_DRI3)
             .multiplanes_available = dri2_dpy->multibuffers_available,
 #endif
             .is_pixmap = dri2_surf->base.Type == EGL_PBUFFER_BIT ||
@@ -2486,20 +2393,6 @@ dri2_query_surface(_EGLDisplay *disp, _EGLSurface *surf, EGLint attribute,
    return ret;
 }
 
-static struct wl_buffer *
-dri2_create_wayland_buffer_from_image(_EGLDisplay *disp, _EGLImage *img)
-{
-   struct dri2_egl_display *dri2_dpy = dri2_egl_display_lock(disp);
-   struct wl_buffer *ret = NULL;
-
-   if (dri2_dpy->vtbl->create_wayland_buffer_from_image)
-      ret = dri2_dpy->vtbl->create_wayland_buffer_from_image(disp, img);
-
-   mtx_unlock(&dri2_dpy->lock);
-
-   return ret;
-}
-
 #ifdef HAVE_LIBDRM
 static _EGLImage *
 dri2_create_image_mesa_drm_buffer(_EGLDisplay *disp, _EGLContext *ctx,
@@ -2524,7 +2417,7 @@ dri2_create_image_mesa_drm_buffer(_EGLDisplay *disp, _EGLContext *ctx,
 
    switch (attrs.DRMBufferFormatMESA) {
    case EGL_DRM_BUFFER_FORMAT_ARGB32_MESA:
-      format = __DRI_IMAGE_FORMAT_ARGB8888;
+      format = PIPE_FORMAT_B8G8R8A8_UNORM;
       pitch = attrs.DRMBufferStrideMESA;
       break;
    default:
@@ -2977,7 +2870,7 @@ dri2_create_drm_image_mesa(_EGLDisplay *disp, const EGLint *attr_list)
 
    switch (attrs.DRMBufferFormatMESA) {
    case EGL_DRM_BUFFER_FORMAT_ARGB32_MESA:
-      format = __DRI_IMAGE_FORMAT_ARGB8888;
+      format = PIPE_FORMAT_B8G8R8A8_UNORM;
       break;
    default:
       _eglError(EGL_BAD_PARAMETER, __func__);
@@ -3442,6 +3335,7 @@ dri2_create_sync(_EGLDisplay *disp, EGLenum type, const EGLAttrib *attrib_list)
          goto fail;
       }
 
+#if !defined(__APPLE__) && !defined(__MACOSX)
       /* change clock attribute to CLOCK_MONOTONIC */
       ret = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 
@@ -3449,6 +3343,7 @@ dri2_create_sync(_EGLDisplay *disp, EGLenum type, const EGLAttrib *attrib_list)
          _eglError(EGL_BAD_ACCESS, "eglCreateSyncKHR");
          goto fail;
       }
+#endif
 
       ret = pthread_cond_init(&dri2_sync->cond, &attr);
 
@@ -3750,7 +3645,6 @@ const _EGLDriver _eglDriver = {
    .QueryBufferAge = dri2_query_buffer_age,
    .CreateImageKHR = dri2_create_image,
    .DestroyImageKHR = dri2_destroy_image_khr,
-   .CreateWaylandBufferFromImageWL = dri2_create_wayland_buffer_from_image,
    .QuerySurface = dri2_query_surface,
    .QueryDriverName = dri2_query_driver_name,
    .QueryDriverConfig = dri2_query_driver_config,

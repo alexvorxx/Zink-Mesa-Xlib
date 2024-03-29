@@ -26,6 +26,7 @@ import sys
 
 a = 'a'
 b = 'b'
+c = 'c'
 
 # common conditions to improve readability
 volta = 'nak->sm >= 70 && nak->sm < 75'
@@ -36,6 +37,11 @@ algebraic_lowering = [
     (('imax', 'a', 'b'), ('bcsel', ('ilt', a, b), b, a), volta),
     (('umin', 'a', 'b'), ('bcsel', ('ult', a, b), a, b), volta),
     (('umax', 'a', 'b'), ('bcsel', ('ult', a, b), b, a), volta),
+]
+
+late_optimizations = [
+    (('iadd@32', ('imul(nak_is_only_used_by_iadd)', a, b), c),
+     ('imad', a, b, c), 'nak->sm >= 70'),
 ]
 
 def main():
@@ -52,7 +58,7 @@ def main():
             f.write('#include "nak_private.h"')
             f.write(nir_algebraic.AlgebraicPass(
                 "nak_nir_lower_algebraic_late",
-                algebraic_lowering,
+                algebraic_lowering + late_optimizations,
                 [
                     ("const struct nak_compiler *", "nak"),
                 ]).render())

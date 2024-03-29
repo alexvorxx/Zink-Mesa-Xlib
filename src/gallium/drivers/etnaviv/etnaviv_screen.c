@@ -899,7 +899,7 @@ etna_get_specs(struct etna_screen *screen)
       DBG("could not get ETNA_GPU_NUM_VARYINGS");
       goto fail;
    }
-   screen->specs.max_varyings = MAX2(val, ETNA_NUM_VARYINGS);
+   screen->specs.max_varyings = MIN2(val, ETNA_NUM_VARYINGS);
 
    if (etna_gpu_get_param(screen->gpu, ETNA_GPU_NN_CORE_COUNT, &val)) {
       DBG("could not get ETNA_GPU_NN_CORE_COUNT");

@@ -263,7 +263,7 @@ process_live_temps_per_block(Program* program, live& lives, Block* block, unsign
    } else {
       for (unsigned t : live) {
          RegClass rc = program->temp_rc[t];
-         std::vector<unsigned>& preds = rc.is_linear() ? block->linear_preds : block->logical_preds;
+         Block::edge_vec& preds = rc.is_linear() ? block->linear_preds : block->logical_preds;
 
 #ifndef NDEBUG
          if (preds.empty())
@@ -285,7 +285,7 @@ process_live_temps_per_block(Program* program, live& lives, Block* block, unsign
       Instruction* insn = block->instructions[phi_idx].get();
       assert(is_phi(insn));
       /* directly insert into the predecessors live-out set */
-      std::vector<unsigned>& preds =
+      Block::edge_vec& preds =
          insn->opcode == aco_opcode::p_phi ? block->logical_preds : block->linear_preds;
       for (unsigned i = 0; i < preds.size(); ++i) {
          Operand& operand = insn->operands[i];

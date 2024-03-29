@@ -3,14 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef __AGX_PUBLIC_H_
-#define __AGX_PUBLIC_H_
+#pragma once
 
 #include "compiler/nir/nir.h"
 #include "util/u_dynarray.h"
-
-/* 32 user varyings + some system values */
-#define AGX_MAX_VARYING_SLOTS (48)
+#include "shader_enums.h"
 
 struct agx_varyings_vs {
    /* The number of user varyings of each type. The varyings must be allocated
@@ -42,18 +39,24 @@ struct agx_varyings_vs {
     *
     * If the slot is not written, this must be ~0.
     */
-   unsigned slots[AGX_MAX_VARYING_SLOTS];
+   unsigned slots[VARYING_SLOT_MAX];
 
    /* Slot for the combined layer/viewport 32-bit sysval output, or ~0 if none
     * is written. What's at slots[VARYING_SLOT_LAYER] is the varying output.
     */
    unsigned layer_viewport_slot;
+
+   /* Base slot for the clip distance sysval outputs, or ~0 if none is written.
+    * What's at slots[VARYING_SLOT_CLIP_DIST0] is the varying output.
+    */
+   unsigned clip_dist_slot;
+   unsigned nr_clip_dists;
 };
 
 /* Conservative bound, * 4 due to offsets (TODO: maybe worth eliminating
  * coefficient register aliasing?)
  */
-#define AGX_MAX_CF_BINDINGS (AGX_MAX_VARYING_SLOTS * 4)
+#define AGX_MAX_CF_BINDINGS (VARYING_SLOT_MAX * 4)
 
 struct agx_varyings_fs {
    /* Number of coefficient registers used */
@@ -100,6 +103,9 @@ struct agx_uncompiled_shader_info {
    uint64_t inputs_linear_shaded;
    uint8_t cull_distance_size;
    bool has_edgeflags;
+
+   /* Number of bindful textures, images used */
+   unsigned nr_bindful_textures, nr_bindful_images;
 };
 
 struct agx_shader_info {
@@ -110,6 +116,9 @@ struct agx_shader_info {
 
    /* Local memory allocation in bytes */
    unsigned local_size;
+
+   /* Scratch memory allocation in bytes for main/preamble respectively */
+   unsigned scratch_size, preamble_scratch_size;
 
    /* Does the shader have a preamble? If so, it is at offset preamble_offset.
     * The main shader is at offset main_offset. The preamble is executed first.
@@ -154,13 +163,13 @@ struct agx_shader_info {
    bool uses_txf;
    unsigned txf_sampler;
 
-   /* Number of bindful textures, images used */
-   unsigned nr_bindful_textures, nr_bindful_images;
-
    /* Number of 16-bit registers used by the main shader and preamble
     * respectively.
     */
    unsigned nr_gprs, nr_preamble_gprs;
+
+   /* Output mask set during driver lowering */
+   uint64_t outputs;
 };
 
 #define AGX_MAX_RTS (8)
@@ -206,13 +215,6 @@ struct agx_fs_shader_key {
     * tilebuffer loads (including blending).
     */
    bool ignore_tib_dependencies;
-
-   /* In a monolithic fragment shader or in a fragment epilogue, the number of
-    * samples in the tilebuffer. In a non-monolithic fragment shader, leave
-    * zero. This is used for the correct lowering of sample_mask instructions,
-    * to ensure that all samples are written out. Can be set conservatively.
-    */
-   unsigned nr_samples;
 };
 
 struct agx_shader_key {
@@ -227,27 +229,29 @@ struct agx_shader_key {
    /* Library routines to link against */
    const nir_shader *libagx;
 
+   /* Whether scratch memory is available in the given shader stage */
+   bool has_scratch;
+
+   /* Whether we're compiling the helper program used for scratch allocation.
+    * This has special register allocation requirements.
+    */
+   bool is_helper;
+
    union {
       struct agx_vs_shader_key vs;
       struct agx_fs_shader_key fs;
    };
 };
 
-/* Texture backend flags */
-#define AGX_TEXTURE_FLAG_NO_CLAMP (1 << 0)
-
-bool agx_nir_lower_texture_early(nir_shader *s, bool support_lod_bias);
-
 void agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
                         bool allow_mediump,
                         struct agx_uncompiled_shader_info *out);
 
 bool agx_nir_lower_discard_zs_emit(nir_shader *s);
+bool agx_nir_lower_sample_mask(nir_shader *s);
 
 bool agx_nir_lower_cull_distance_fs(struct nir_shader *s,
                                     unsigned nr_distances);
-
-bool agx_nir_needs_texture_crawl(nir_instr *instr);
 
 void agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
                             struct util_debug_callback *debug,
@@ -260,6 +264,7 @@ struct agx_occupancy {
 };
 
 struct agx_occupancy agx_occupancy_for_register_count(unsigned halfregs);
+unsigned agx_max_registers_for_occupancy(unsigned occupancy);
 
 static const nir_shader_compiler_options agx_nir_options = {
    .lower_fdiv = true,
@@ -301,5 +306,3 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_doubles_options = (nir_lower_doubles_options)(~0),
    .lower_fquantize2f16 = true,
 };
-
-#endif

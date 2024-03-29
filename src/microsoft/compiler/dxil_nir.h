@@ -40,6 +40,7 @@ bool dxil_nir_lower_constant_to_temp(nir_shader *shader);
 bool dxil_nir_flatten_var_arrays(nir_shader *shader, nir_variable_mode modes);
 bool dxil_nir_lower_var_bit_size(nir_shader *shader, nir_variable_mode modes,
                                  unsigned min_bit_size, unsigned max_bit_size);
+bool dxil_nir_remove_oob_array_accesses(nir_shader *shader);
 struct dxil_nir_lower_loads_stores_options {
    bool use_16bit_ssbo;
 };

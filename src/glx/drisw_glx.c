@@ -21,7 +21,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#if defined(GLX_DIRECT_RENDERING) && !defined(GLX_USE_APPLEGL)
+#if defined(GLX_DIRECT_RENDERING) && (!defined(GLX_USE_APPLEGL) || defined(GLX_USE_APPLE))
 
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
@@ -995,16 +995,20 @@ driswCreateScreenDriver(int screen, struct glx_display *priv,
        goto handle_error;
    }
 
+#if defined(HAVE_DRI3)
    if (pdpyp->zink) {
       bool err;
       psc->has_multibuffer = dri3_check_multibuffer(priv->dpy, &err);
       if (!psc->has_multibuffer &&
           !debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) &&
           !debug_get_bool_option("LIBGL_KOPPER_DRI2", false)) {
-         CriticalErrorMessageF("DRI3 not available\n");
+         /* only print error if zink was explicitly requested */
+         if (pdpyp->zink == TRY_ZINK_YES)
+            CriticalErrorMessageF("DRI3 not available\n");
          goto handle_error;
       }
    }
+#endif
 
    glx_config_destroy_list(psc->base.configs);
    psc->base.configs = configs;
@@ -1049,7 +1053,8 @@ driswCreateScreenDriver(int screen, struct glx_display *priv,
    glx_screen_cleanup(&psc->base);
    free(psc);
 
-   CriticalErrorMessageF("failed to load driver: %s\n", driver);
+   if (pdpyp->zink == TRY_ZINK_YES)
+      CriticalErrorMessageF("failed to load driver: %s\n", driver);
 
    return NULL;
 }
@@ -1079,7 +1084,7 @@ driswDestroyDisplay(__GLXDRIdisplay * dpy)
  * display pointer.
  */
 _X_HIDDEN __GLXDRIdisplay *
-driswCreateDisplay(Display * dpy, bool zink)
+driswCreateDisplay(Display * dpy, enum try_zink zink)
 {
    struct drisw_display *pdpyp;
 

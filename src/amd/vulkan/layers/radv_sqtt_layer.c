@@ -26,7 +26,6 @@
 #include "radv_shader.h"
 #include "vk_common_entrypoints.h"
 #include "vk_semaphore.h"
-#include "wsi_common_entrypoints.h"
 
 #include "ac_rgp.h"
 #include "ac_sqtt.h"
@@ -208,8 +207,22 @@ radv_sqtt_reloc_graphics_shaders(struct radv_device *device, struct radv_graphic
    }
 
    if (device->shader_use_invisible_vram) {
-      if (!radv_shader_dma_submit(device, submission, &pipeline->base.shader_upload_seq))
+      uint64_t upload_seq = 0;
+
+      if (!radv_shader_dma_submit(device, submission, &upload_seq))
          return VK_ERROR_UNKNOWN;
+
+      for (int i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i) {
+         struct radv_shader *shader = pipeline->base.shaders[i];
+
+         if (!shader)
+            continue;
+
+         shader->upload_seq = upload_seq;
+      }
+
+      if (pipeline->base.gs_copy_shader)
+         pipeline->base.gs_copy_shader->upload_seq = upload_seq;
    }
 
    pipeline->sqtt_shaders_reloc = reloc;
@@ -341,7 +354,7 @@ radv_describe_begin_cmd_buffer(struct radv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->qf == RADV_QUEUE_GENERAL)
       marker.queue_flags |= VK_QUEUE_GRAPHICS_BIT;
 
-   if (cmd_buffer->device->instance->drirc.legacy_sparse_binding)
+   if (!radv_sparse_queue_enabled(cmd_buffer->device->physical_device))
       marker.queue_flags |= VK_QUEUE_SPARSE_BINDING_BIT;
 
    radv_emit_sqtt_userdata(cmd_buffer, &marker, sizeof(marker) / 4);
@@ -1320,13 +1333,6 @@ sqtt_CmdDebugMarkerInsertEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerM
 {
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
    radv_write_user_event_marker(cmd_buffer, UserEventTrigger, pMarkerInfo->pMarkerName);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-sqtt_DebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarkerObjectNameInfoEXT *pNameInfo)
-{
-   /* no-op */
-   return VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

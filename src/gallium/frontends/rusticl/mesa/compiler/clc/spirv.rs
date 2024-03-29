@@ -25,6 +25,10 @@ pub struct SPIRVBin {
     info: Option<clc_parsed_spirv>,
 }
 
+// Safety: SPIRVBin is not mutable and is therefore Send and Sync, needed due to `clc_binary::data`
+unsafe impl Send for SPIRVBin {}
+unsafe impl Sync for SPIRVBin {}
+
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct SPIRVKernelArg {
     pub name: String,

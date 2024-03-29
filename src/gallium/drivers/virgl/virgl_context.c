@@ -569,7 +569,6 @@ static void virgl_bind_vertex_elements_state(struct pipe_context *ctx,
 
 static void virgl_set_vertex_buffers(struct pipe_context *ctx,
                                     unsigned num_buffers,
-                                     bool take_ownership,
                                     const struct pipe_vertex_buffer *buffers)
 {
    struct virgl_context *vctx = virgl_context(ctx);
@@ -577,7 +576,7 @@ static void virgl_set_vertex_buffers(struct pipe_context *ctx,
    util_set_vertex_buffers_count(vctx->vertex_buffer,
                                  &vctx->num_vertex_buffers,
                                  buffers, num_buffers,
-                                 take_ownership);
+                                 true);
 
    if (buffers) {
       for (unsigned i = 0; i < num_buffers; i++) {

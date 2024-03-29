@@ -28,7 +28,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+
 #include "c11/threads.h"
+#include "common/intel_bind_timeline.h"
 #include "util/macros.h"
 #include "util/u_atomic.h"
 #include "util/u_dynarray.h"
@@ -180,6 +182,14 @@ enum iris_heap {
    /** Device-local memory (VRAM).  Cannot be placed in system memory! */
    IRIS_HEAP_DEVICE_LOCAL,
 
+   /**
+    * Device-local memory (VRAM) + guarantee that is CPU visible.
+    *
+    * To be used in cases that cannot be placed in system memory!
+    * This will only be used when running in small PCIe bar systems.
+    */
+   IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR,
+
    /** Device-local memory that may be evicted to system memory if needed. */
    IRIS_HEAP_DEVICE_LOCAL_PREFERRED,
 
@@ -192,7 +202,8 @@ static inline bool
 iris_heap_is_device_local(enum iris_heap heap)
 {
    return heap == IRIS_HEAP_DEVICE_LOCAL ||
-          heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED;
+          heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED ||
+          heap == IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR;
 }
 
 #define IRIS_BATCH_COUNT 3
@@ -285,8 +296,6 @@ struct iris_bo {
 
    union {
       struct {
-         uint64_t kflags;
-
          time_t free_time;
 
          /** Mapped address for the buffer, saved across map/unmap cycles */
@@ -325,6 +334,12 @@ struct iris_bo {
 
          /** Boolean of whether this buffer is protected (HW encryption) */
          bool protected;
+
+         /** Boolean of whether this buffer needs to be captured in error dump.
+          * Xe KMD requires this to be set before vm bind while i915 needs
+          * this set before batch_submit().
+          */
+         bool capture;
       } real;
       struct {
          struct pb_slab_entry entry;
@@ -342,6 +357,8 @@ struct iris_bo {
 #define BO_ALLOC_LMEM        (1<<5)
 #define BO_ALLOC_PROTECTED   (1<<6)
 #define BO_ALLOC_SHARED      (1<<7)
+#define BO_ALLOC_CAPTURE     (1<<8)
+#define BO_ALLOC_CPU_VISIBLE (1<<9)
 
 /**
  * Allocate a buffer object.
@@ -620,6 +637,8 @@ const struct iris_kmd_backend *
 iris_bufmgr_get_kernel_driver_backend(struct iris_bufmgr *bufmgr);
 uint32_t iris_bufmgr_get_global_vm_id(struct iris_bufmgr *bufmgr);
 bool iris_bufmgr_use_global_vm_id(struct iris_bufmgr *bufmgr);
+struct intel_bind_timeline *iris_bufmgr_get_bind_timeline(struct iris_bufmgr *bufmgr);
+bool iris_bufmgr_compute_engine_supported(struct iris_bufmgr *bufmgr);
 
 enum iris_madvice {
    IRIS_MADVICE_WILL_NEED = 0,

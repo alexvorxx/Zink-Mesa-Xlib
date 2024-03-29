@@ -1120,8 +1120,8 @@ struct pipe_resource *r300_texture_create(struct pipe_screen *screen,
     struct r300_screen *rscreen = r300_screen(screen);
     enum radeon_bo_layout microtile, macrotile;
 
-    if ((base->flags & R300_RESOURCE_FLAG_TRANSFER) ||
-        (base->bind & (PIPE_BIND_SCANOUT | PIPE_BIND_LINEAR))) {
+    if (base->flags & R300_RESOURCE_FLAG_TRANSFER ||
+        base->bind & PIPE_BIND_LINEAR) {
         microtile = RADEON_LAYOUT_LINEAR;
         macrotile = RADEON_LAYOUT_LINEAR;
     } else {
@@ -1223,7 +1223,8 @@ struct pipe_surface* r300_create_surface_custom(struct pipe_context * ctx,
                                                tex->b.nr_samples,
                                                tex->tex.microtile,
                                                tex->tex.macrotile[level],
-                                               DIM_HEIGHT, 0);
+                                               DIM_HEIGHT, 0,
+                                               tex->b.bind & PIPE_BIND_SCANOUT);
 
         surface->cbzb_height = align((surface->base.height + 1) / 2,
                                      tile_height);

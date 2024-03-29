@@ -793,6 +793,11 @@ struct v3d_compile {
         struct qreg cs_shared_offset;
         int local_invocation_index_bits;
 
+        /* Starting value of the sample mask in a fragment shader. We use
+         * this to identify lanes that have been terminated/discarded.
+         */
+        struct qreg start_msf;
+
         /* If the shader uses subgroup functionality */
         bool has_subgroups;
 

@@ -81,7 +81,6 @@ llvmpipe_delete_vertex_elements_state(struct pipe_context *pipe, void *velems)
 static void
 llvmpipe_set_vertex_buffers(struct pipe_context *pipe,
                             unsigned count,
-                            bool take_ownership,
                             const struct pipe_vertex_buffer *buffers)
 {
    struct llvmpipe_context *llvmpipe = llvmpipe_context(pipe);
@@ -90,8 +89,7 @@ llvmpipe_set_vertex_buffers(struct pipe_context *pipe,
 
    util_set_vertex_buffers_count(llvmpipe->vertex_buffer,
                                  &llvmpipe->num_vertex_buffers,
-                                 buffers, count,
-                                 take_ownership);
+                                 buffers, count, true);
 
    llvmpipe->dirty |= LP_NEW_VERTEX;
 

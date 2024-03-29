@@ -25,6 +25,7 @@ DEPS=(
     bison
     ccache
     curl
+    "clang-${LLVM_VERSION}"
     "clang-format-${LLVM_VERSION}"
     dpkg-cross
     findutils
@@ -85,6 +86,10 @@ apt-get update
 
 apt-get install -y --no-remove "${DEPS[@]}" "${EPHEMERAL[@]}" \
         $EXTRA_LOCAL_PACKAGES
+
+. .gitlab-ci/container/build-llvm-spirv.sh
+
+. .gitlab-ci/container/build-libclc.sh
 
 # Needed for ci-fairy, this revision is able to upload files to S3
 pip3 install --break-system-packages git+http://gitlab.freedesktop.org/freedesktop/ci-templates@ffe4d1b10aab7534489f0c4bbc4c5899df17d3f2

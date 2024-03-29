@@ -32,20 +32,22 @@ enum ENUM_PACKED nil_sample_layout {
 enum nil_sample_layout nil_choose_sample_layout(uint32_t samples);
 
 enum nil_image_usage_flags {
-   NIL_IMAGE_USAGE_RENDER_TARGET_BIT   = BITFIELD_BIT(0),
-   NIL_IMAGE_USAGE_DEPTH_BIT           = BITFIELD_BIT(1),
-   NIL_IMAGE_USAGE_STENCIL_BIT         = BITFIELD_BIT(2),
-   NIL_IMAGE_USAGE_TEXTURE_BIT         = BITFIELD_BIT(3),
-   NIL_IMAGE_USAGE_STORAGE_BIT         = BITFIELD_BIT(4),
-   NIL_IMAGE_USAGE_CUBE_BIT            = BITFIELD_BIT(5),
-   NIL_IMAGE_USAGE_2D_VIEW_BIT         = BITFIELD_BIT(6),
-   NIL_IMAGE_USAGE_LINEAR_BIT          = BITFIELD_BIT(7),
+   NIL_IMAGE_USAGE_RENDER_TARGET_BIT      = BITFIELD_BIT(0),
+   NIL_IMAGE_USAGE_DEPTH_BIT              = BITFIELD_BIT(1),
+   NIL_IMAGE_USAGE_STENCIL_BIT            = BITFIELD_BIT(2),
+   NIL_IMAGE_USAGE_TEXTURE_BIT            = BITFIELD_BIT(3),
+   NIL_IMAGE_USAGE_STORAGE_BIT            = BITFIELD_BIT(4),
+   NIL_IMAGE_USAGE_CUBE_BIT               = BITFIELD_BIT(5),
+   NIL_IMAGE_USAGE_2D_VIEW_BIT            = BITFIELD_BIT(6),
+   NIL_IMAGE_USAGE_LINEAR_BIT             = BITFIELD_BIT(7),
+   NIL_IMAGE_USAGE_SPARSE_RESIDENCY_BIT   = BITFIELD_BIT(8),
 };
 
 enum ENUM_PACKED nil_view_type {
    NIL_VIEW_TYPE_1D,
    NIL_VIEW_TYPE_2D,
    NIL_VIEW_TYPE_3D,
+   NIL_VIEW_TYPE_3D_SLICED,
    NIL_VIEW_TYPE_CUBE,
    NIL_VIEW_TYPE_1D_ARRAY,
    NIL_VIEW_TYPE_2D_ARRAY,
@@ -69,6 +71,8 @@ nil_extent4d(uint32_t w, uint32_t h, uint32_t d, uint32_t a)
    e.a = a;
    return e;
 }
+
+struct nil_extent4d nil_px_extent_sa(enum nil_sample_layout sample_layout);
 
 struct nil_extent4d
 nil_extent4d_px_to_el(struct nil_extent4d extent_px,
@@ -106,9 +110,12 @@ nil_offset4d_px_to_el(struct nil_offset4d offset_px,
 struct nil_tiling {
    bool is_tiled:1;
    bool gob_height_8:1; /**< GOB height is 4 or 8 */
+   uint8_t x_log2:3; /**< log2 of the Y tile dimension in GOBs */
    uint8_t y_log2:3; /**< log2 of the Y tile dimension in GOBs */
    uint8_t z_log2:3; /**< log2 of the Z tile dimension in GOBs */
+   uint8_t pad:5;
 };
+static_assert(sizeof(struct nil_tiling) == 2, "This struct has no holes");
 
 struct nil_image_init_info {
    enum nil_image_dim dim;
@@ -129,7 +136,11 @@ struct nil_image_level {
    /** Tiling for this level */
    struct nil_tiling tiling;
 
-   /** Stride between rows in bytes */
+   /** Stride between rows in bytes
+    *
+    * For linear images, this is the obvious stride.  For tiled images, it's
+    * the width of the mip level rounded up to the tile size.
+    */
    uint32_t row_stride_B;
 };
 
@@ -140,6 +151,7 @@ struct nil_image {
    struct nil_extent4d extent_px;
    enum nil_sample_layout sample_layout;
    uint8_t num_levels;
+   uint8_t mip_tail_first_lod;
 
    struct nil_image_level levels[NIL_MAX_LEVELS];
 
@@ -187,6 +199,16 @@ struct nil_view {
    float min_lod_clamp;
 };
 
+struct nil_extent4d
+nil_tiling_extent_B(struct nil_tiling tiling);
+
+uint32_t
+nil_tiling_size_B(struct nil_tiling tiling);
+
+struct nil_extent4d
+nil_tiling_extent_px(struct nil_tiling tiling, enum pipe_format format,
+                     enum nil_sample_layout sample_layout);
+
 bool nil_image_init(struct nv_device_info *dev,
                     struct nil_image *image,
                     const struct nil_image_init_info *restrict info);
@@ -199,6 +221,32 @@ nil_image_level_layer_offset_B(const struct nil_image *image,
    assert(layer < image->extent_px.array_len);
    return image->levels[level].offset_B + (layer * image->array_stride_B);
 }
+
+uint64_t nil_image_level_z_offset_B(const struct nil_image *image,
+                                    uint32_t level, uint32_t z);
+
+static inline uint32_t
+nil_image_mip_tail_offset_B(const struct nil_image *image)
+{
+   assert(image->mip_tail_first_lod > 0);
+   return image->levels[image->mip_tail_first_lod].offset_B;
+}
+
+static inline uint32_t
+nil_image_mip_tail_size_B(const struct nil_image *image)
+{
+   return image->array_stride_B - nil_image_mip_tail_offset_B(image);
+}
+
+struct nil_extent4d
+nil_extent4d_px_to_tl(struct nil_extent4d extent_px,
+                      struct nil_tiling tiling, enum pipe_format format,
+                      enum nil_sample_layout sample_layout);
+
+struct nil_offset4d
+nil_offset4d_px_to_tl(struct nil_offset4d offset_px,
+                      struct nil_tiling tiling, enum pipe_format format,
+                      enum nil_sample_layout sample_layout);
 
 struct nil_extent4d nil_image_level_extent_px(const struct nil_image *image,
                                               uint32_t level);
@@ -224,6 +272,9 @@ void nil_image_3d_level_as_2d_array(const struct nil_image *image_3d,
                                     struct nil_image *image_2d_out,
                                     uint64_t *offset_B_out);
 
+void nil_msaa_image_as_sa(const struct nil_image *image_msaa,
+                          struct nil_image *image_sa_out);
+
 void nil_image_fill_tic(struct nv_device_info *dev,
                         const struct nil_image *image,
                         const struct nil_view *view,
@@ -235,5 +286,10 @@ void nil_buffer_fill_tic(struct nv_device_info *dev,
                          enum pipe_format format,
                          uint32_t num_elements,
                          void *desc_out);
+
+struct nil_extent4d
+nil_sparse_block_extent_px(enum pipe_format format,
+                           enum nil_image_dim dim,
+                           enum nil_sample_layout sample_layout);
 
 #endif /* NIL_IMAGE_H */

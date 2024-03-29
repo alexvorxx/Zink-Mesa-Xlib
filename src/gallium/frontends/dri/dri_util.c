@@ -53,6 +53,7 @@
 #include "main/errors.h"
 #include "loader/loader.h"
 #include "GL/internal/mesa_interface.h"
+#include "loader_dri_helper.h"
 
 driOptionDescription __dri2ConfigOptions[] = {
       DRI_CONF_SECTION_DEBUG
@@ -751,6 +752,7 @@ driCreateNewDrawable(__DRIscreen *psp,
     struct dri_screen *screen = dri_screen(psp);
     struct dri_drawable *drawable =
        screen->create_drawable(screen, &config->modes, GL_FALSE, data);
+   drawable->buffer_age = 0;
 
     return opaque_dri_drawable(drawable);
 }
@@ -846,6 +848,16 @@ driGetAPIMask(__DRIscreen *screen)
  * driver.
  */
 static void
+driSwapBuffersWithDamage(__DRIdrawable *pdp, int nrects, const int *rects)
+{
+   struct dri_drawable *drawable = dri_drawable(pdp);
+
+   assert(drawable->screen->swrast_loader);
+
+   drawable->swap_buffers_with_damage(drawable, nrects, rects);
+}
+
+static void
 driSwapBuffers(__DRIdrawable *pdp)
 {
    struct dri_drawable *drawable = dri_drawable(pdp);
@@ -853,6 +865,13 @@ driSwapBuffers(__DRIdrawable *pdp)
    assert(drawable->screen->swrast_loader);
 
    drawable->swap_buffers(drawable);
+}
+
+static int
+driSWRastQueryBufferAge(__DRIdrawable *pdp)
+{
+   struct dri_drawable *drawable = dri_drawable(pdp);
+   return drawable->buffer_age;
 }
 
 /** Core interface */
@@ -867,6 +886,7 @@ const __DRIcoreExtension driCoreExtension = {
     .createNewDrawable          = NULL,
     .destroyDrawable            = driDestroyDrawable,
     .swapBuffers                = driSwapBuffers, /* swrast */
+    .swapBuffersWithDamage      = driSwapBuffersWithDamage, /* swrast */
     .createNewContext           = driCreateNewContext, /* swrast */
     .copyContext                = driCopyContext,
     .destroyContext             = driDestroyContext,
@@ -915,6 +935,7 @@ const __DRIswrastExtension driSWRastExtension = {
     .createNewContextForAPI     = driCreateNewContextForAPI,
     .createContextAttribs       = driCreateContextAttribs,
     .createNewScreen2           = driSWRastCreateNewScreen2,
+    .queryBufferAge             = driSWRastQueryBufferAge,
 };
 
 const __DRI2configQueryExtension dri2ConfigQueryExtension = {

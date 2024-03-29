@@ -770,6 +770,8 @@ genX(init_physical_device_state)(ASSERTED struct anv_physical_device *pdevice)
 #endif
 
    pdevice->cmd_emit_timestamp = genX(cmd_emit_timestamp);
+
+   pdevice->gpgpu_pipeline_value = GPGPU;
 }
 
 VkResult
@@ -816,6 +818,17 @@ genX(init_device_state)(struct anv_device *device)
       }
       if (res != VK_SUCCESS)
          return res;
+   }
+
+   if (device->vk.enabled_extensions.EXT_descriptor_buffer &&
+       device->slice_hash.alloc_size) {
+      device->slice_hash_db =
+         anv_state_pool_alloc(&device->dynamic_state_db_pool,
+                              device->slice_hash.alloc_size, 64);
+
+      memcpy(device->slice_hash_db.map,
+             device->slice_hash.map,
+             device->slice_hash.alloc_size);
    }
 
    return res;
@@ -1100,16 +1113,23 @@ VkResult genX(CreateSampler)(
    sampler->n_planes = ycbcr_info ? ycbcr_info->n_planes : 1;
 
    uint32_t border_color_stride = 64;
-   uint32_t border_color_offset;
+   uint32_t border_color_offset, border_color_db_offset = 0;
+   void *border_color_ptr;
    if (sampler->vk.border_color <= VK_BORDER_COLOR_INT_OPAQUE_WHITE) {
       border_color_offset = device->border_colors.offset +
                             pCreateInfo->borderColor *
                             border_color_stride;
+      border_color_db_offset = device->border_colors_db.offset +
+                               pCreateInfo->borderColor *
+                               border_color_stride;
+      border_color_ptr = device->border_colors.map +
+                         pCreateInfo->borderColor * border_color_stride;
    } else {
       assert(vk_border_color_is_custom(sampler->vk.border_color));
       sampler->custom_border_color =
          anv_state_reserved_pool_alloc(&device->custom_border_colors);
       border_color_offset = sampler->custom_border_color.offset;
+      border_color_ptr = sampler->custom_border_color.map;
 
       union isl_color_value color = { .u32 = {
          sampler->vk.border_color_value.uint32[0],
@@ -1130,20 +1150,21 @@ VkResult genX(CreateSampler)(
          color = isl_color_value_swizzle(color, fmt_plane->swizzle, true);
       }
 
-      memcpy(sampler->custom_border_color.map, color.u32, sizeof(color));
-   }
+      memcpy(border_color_ptr, color.u32, sizeof(color));
 
-   /* If we have bindless, allocate enough samplers.  We allocate 32 bytes
-    * for each sampler instead of 16 bytes because we want all bindless
-    * samplers to be 32-byte aligned so we don't have to use indirect
-    * sampler messages on them.
-    */
-   sampler->bindless_state =
-      anv_state_pool_alloc(&device->dynamic_state_pool,
-                           sampler->n_planes * 32, 32);
+      if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
+         sampler->custom_border_color_db =
+            anv_state_reserved_pool_alloc(&device->custom_border_colors_db);
+         border_color_db_offset = sampler->custom_border_color_db.offset;
+         memcpy(sampler->custom_border_color_db.map, color.u32, sizeof(color));
+      }
+   }
 
    const bool seamless_cube =
       !(pCreateInfo->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT);
+
+   struct mesa_sha1 ctx;
+   _mesa_sha1_init(&ctx);
 
    for (unsigned p = 0; p < sampler->n_planes; p++) {
       const bool plane_has_chroma =
@@ -1201,8 +1222,6 @@ VkResult genX(CreateSampler)(
                                         pCreateInfo->compareOp : VK_COMPARE_OP_NEVER],
          .CubeSurfaceControlMode = seamless_cube ? OVERRIDE : PROGRAMMED,
 
-         .BorderColorPointer = border_color_offset,
-
          .LODClampMagnificationMode = MIPNONE,
 
          .MaximumAnisotropy = vk_to_intel_max_anisotropy(pCreateInfo->maxAnisotropy),
@@ -1224,17 +1243,84 @@ VkResult genX(CreateSampler)(
             sampler->vk.reduction_mode != VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE,
       };
 
+      /* Pack a version of the SAMPLER_STATE without the border color. We'll
+       * use it to store into the shader cache and also for hashing.
+       */
+      GENX(SAMPLER_STATE_pack)(NULL, sampler->state_no_bc[p], &sampler_state);
+      _mesa_sha1_update(&ctx, sampler->state_no_bc[p], sizeof(sampler->state_no_bc[p]));
+
+      /* Put border color after the hashing, we don't want the allocation
+       * order of border colors to influence the hash. We just need th
+       * parameters to be hashed.
+       */
+      sampler_state.BorderColorPointer = border_color_offset;
       GENX(SAMPLER_STATE_pack)(NULL, sampler->state[p], &sampler_state);
 
-      if (sampler->bindless_state.map) {
-         memcpy(sampler->bindless_state.map + p * 32,
-                sampler->state[p], GENX(SAMPLER_STATE_length) * 4);
+      if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
+         sampler_state.BorderColorPointer = border_color_db_offset;
+         GENX(SAMPLER_STATE_pack)(NULL, sampler->db_state[p], &sampler_state);
       }
    }
+
+   /* If we have bindless, allocate enough samplers.  We allocate 32 bytes
+    * for each sampler instead of 16 bytes because we want all bindless
+    * samplers to be 32-byte aligned so we don't have to use indirect
+    * sampler messages on them.
+    */
+   sampler->bindless_state =
+      anv_state_pool_alloc(&device->dynamic_state_pool,
+                           sampler->n_planes * 32, 32);
+   if (sampler->bindless_state.map) {
+      memcpy(sampler->bindless_state.map, sampler->state,
+             sampler->n_planes * GENX(SAMPLER_STATE_length) * 4);
+   }
+   if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
+      sampler->bindless_state_db =
+         anv_state_pool_alloc(&device->dynamic_state_db_pool,
+                              sampler->n_planes * 32, 32);
+      if (sampler->bindless_state_db.map) {
+         memcpy(sampler->bindless_state_db.map, sampler->db_state,
+                sampler->n_planes * GENX(SAMPLER_STATE_length) * 4);
+      }
+   }
+
+   /* Hash the border color */
+   _mesa_sha1_update(&ctx, border_color_ptr,
+                     sizeof(union isl_color_value));
+
+   _mesa_sha1_final(&ctx, sampler->sha1);
 
    *pSampler = anv_sampler_to_handle(sampler);
 
    return VK_SUCCESS;
+}
+
+void
+genX(emit_embedded_sampler)(struct anv_device *device,
+                            struct anv_embedded_sampler *sampler,
+                            struct anv_pipeline_embedded_sampler_binding *binding)
+{
+   sampler->border_color_state =
+      anv_state_pool_alloc(&device->dynamic_state_db_pool,
+                           sizeof(struct gfx8_border_color), 64);
+   memcpy(sampler->border_color_state.map,
+          binding->border_color,
+          sizeof(binding->border_color));
+
+   sampler->sampler_state =
+      anv_state_pool_alloc(&device->dynamic_state_db_pool,
+                           ANV_SAMPLER_STATE_SIZE, 32);
+
+   struct GENX(SAMPLER_STATE) sampler_state = {
+      .BorderColorPointer = sampler->border_color_state.offset,
+   };
+   uint32_t dwords[GENX(SAMPLER_STATE_length)];
+   GENX(SAMPLER_STATE_pack)(NULL, dwords, &sampler_state);
+
+   for (uint32_t i = 0; i < GENX(SAMPLER_STATE_length); i++) {
+      ((uint32_t *)sampler->sampler_state.map)[i] =
+         dwords[i] | binding->sampler_state[i];
+   }
 }
 
 /* Wa_14015814527
@@ -1304,10 +1390,16 @@ genX(init_trtt_context_state)(struct anv_queue *queue)
    anv_batch_write_reg(&batch, GENX(GFX_TRTT_NULL), trtt_null) {
       trtt_null.NullTileDetectionValue = ANV_TRTT_L1_NULL_TILE_VAL;
    }
+#if GFX_VER >= 20
+   anv_batch_write_reg(&batch, GENX(GFX_TRTT_VA_RANGE), trtt_va_range) {
+      trtt_va_range.TRVABase = device->physical->va.trtt.addr >> 44;
+   }
+#else
    anv_batch_write_reg(&batch, GENX(GFX_TRTT_VA_RANGE), trtt_va_range) {
       trtt_va_range.TRVAMaskValue = 0xF;
       trtt_va_range.TRVADataValue = 0xF;
    }
+#endif
 
    uint64_t l3_addr = trtt->l3_addr;
    assert((l3_addr & 0xFFF) == 0);

@@ -52,17 +52,17 @@ BEGIN_TEST(d3d11_derivs.simple)
 
    //>> v1: %x = v_interp_p2_f32 %_, %_:m0, (kill)%_ attr0.x
    //>> v1: %y = v_interp_p2_f32 (kill)%_, (kill)%_:m0, (kill)%_ attr0.y
-   //>> v2: %vec = p_create_vector (kill)%x, (kill)%y
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv2: %wqm = p_start_linear_vgpr (kill)%x, (kill)%y
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2d
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                                             ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                                         ; $_
    //>> v_interp_p2_f32_e32 v#ry_tmp, v#_, attr0.y                                         ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                       ; $_
    //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                       ; $_
    //>> image_sample v[#_:#_], v[#rx:#ry], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_2D ; $_ $_
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
@@ -93,17 +93,17 @@ BEGIN_TEST(d3d11_derivs.constant)
    pbld.add_vsfs(vs, fs);
 
    //>> v1: %x = v_interp_p2_f32 (kill)%_, (kill)%_:m0, (kill)%_ attr0.x
-   //>> v2: %vec = p_create_vector (kill)%x, -0.5
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv2: %wqm = p_start_linear_vgpr (kill)%x, -0.5
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2d
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                                             ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                                         ; $_
    //>> v_mov_b32_e32 v#ry, -0.5                                                           ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                       ; $_
    //>> image_sample v[#_:#_], v[#rx:#ry], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_2D ; $_ $_
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
 END_TEST
@@ -133,11 +133,11 @@ BEGIN_TEST(d3d11_derivs.discard)
    pbld.add_vsfs(vs, fs);
 
    /* The interpolation must be done before the discard_if. */
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%_
+   //>> lv2: %wqm = p_start_linear_vgpr (kill)%_, (kill)%_
    //>> s2: %_:exec, s1: (kill)%_:scc = s_andn2_b64 %_:exec, %_
    //>> s2: %_, s1: %_:scc = s_andn2_b64 (kill)%_, (kill)%_
    //>> p_exit_early_if (kill)%_:scc
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (kill)%wqm 2d
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)(kill)%wqm 2d
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 END_TEST
 
@@ -166,18 +166,17 @@ BEGIN_TEST(d3d11_derivs.bias)
    pbld.add_vsfs(vs, fs);
 
    //>> s2: %_:s[0-1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0-1], v1: %bias:v[2] = p_startpgm
-   //>> v3: %vec = p_create_vector v1: undef, (kill)%_, (kill)%_
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr v1: undef, (kill)%_, (kill)%_
    //>> BB1
-   //>> v4: %_ = image_sample_b (kill)%_, (kill)%_, v1: undef, %wqm, (kill)%bias 2d
+   //>> v4: %_ = image_sample_b (kill)%_, (kill)%_, v1: undef, (latekill)%wqm, (kill)%bias 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                                                       ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                                                   ; $_
    //>> v_interp_p2_f32_e32 v#ry_tmp, v#_, attr0.y                                                   ; $_
-   //>> v_mov_b32_e32 v#rb, v2                                                                       ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                                 ; $_
    //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                                 ; $_
    //>> BB1:
    //>> image_sample_b v[#_:#_], [v#rb, v#rx, v#ry], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_2D ; $_ $_ $_
@@ -209,18 +208,18 @@ BEGIN_TEST(d3d11_derivs.offset)
    PipelineBuilder pbld(get_vk_device(GFX9));
    pbld.add_vsfs(vs, fs);
 
-   //>> v3: %vec = p_create_vector v1: undef, (kill)%_, (kill)%_
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr v1: undef, (kill)%_, (kill)%_
    //>> BB1
    //>> v1: %offset = p_parallelcopy 0x201
-   //>> v4: %_ = image_sample_o (kill)%_, (kill)%_, v1: undef, %wqm, (kill)%offset 2d
+   //>> v4: %_ = image_sample_o (kill)%_, (kill)%_, v1: undef, (latekill)%wqm, (kill)%offset 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                            ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                        ; $_
    //>> v_interp_p2_f32_e32 v#ry_tmp, v#_, attr0.y                        ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                      ; $_
    //>> v_mov_b32_e32 v#ry, v#ry_tmp                                      ; $_
    //>> BB1:
    //>> v_mov_b32_e32 v#ro_tmp, 0x201                                     ; $_ $_
@@ -255,20 +254,21 @@ BEGIN_TEST(d3d11_derivs.array)
    pbld.add_vsfs(vs, fs);
 
    //>> v1: %layer = v_rndne_f32 (kill)%_
-   //>> v3: %vec = p_create_vector (kill)%_, (kill)%_, (kill)%layer
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr (kill)%_, (kill)%_, (kill)%layer
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2darray da
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2darray da
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
    //>> v_interp_p2_f32_e32 v#rl_tmp, v#_, attr0.z                                               ; $_
-   //>> v_rndne_f32_e32 v#rl, v#rl_tmp                                                           ; $_
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                                                   ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                                               ; $_
    //>> v_interp_p2_f32_e32 v#ry_tmp, v#_, attr0.y                                               ; $_
+   //>> v_rndne_f32_e32 v#rl_tmp, v#rl_tmp                                                       ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                             ; $_
    //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                             ; $_
+   //>> v_mov_b32_e32 v#rl, v#rl_tmp                                                             ; $_
    //>> BB1:
    //; success = rx+1 == ry and rx+2 == rl
    //>> image_sample v[#_:#_], v[#rx:#rl], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_2D_ARRAY ; $_ $_
@@ -301,21 +301,21 @@ BEGIN_TEST(d3d11_derivs.bias_array)
 
    //>> s2: %_:s[0-1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0-1], v1: %bias:v[2] = p_startpgm
    //>> v1: %layer = v_rndne_f32 (kill)%_
-   //>> v4: %vec = p_create_vector v1: undef, (kill)%_, (kill)%_, (kill)%layer
-   //>> lv4: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv4: %wqm = p_start_linear_vgpr v1: undef, (kill)%_, (kill)%_, (kill)%layer
    //>> BB1
-   //>> v4: %_ = image_sample_b (kill)%_, (kill)%_, v1: undef, %wqm, (kill)%bias 2darray da
+   //>> v4: %_ = image_sample_b (kill)%_, (kill)%_, v1: undef, (latekill)%wqm, (kill)%bias 2darray da
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
    //>> v_interp_p2_f32_e32 v#rl_tmp, v#_, attr0.z                                                             ; $_
-   //>> v_rndne_f32_e32 v#rl, v#rl_tmp                                                                         ; $_
    //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                                                             ; $_
    //>> v_interp_p2_f32_e32 v#ry_tmp, v#_, attr0.y                                                             ; $_
+   //>> v_rndne_f32_e32 v#rl_tmp, v#rl_tmp                                                                     ; $_
    //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                                           ; $_
    //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                                           ; $_
+   //>> v_mov_b32_e32 v#rl, v#rl_tmp                                                                           ; $_
    //>> BB1:
    //>> image_sample_b v[#_:#_], [v2, v#rx, v#ry, v#rl], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_2D_ARRAY ; $_ $_ $_
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
@@ -346,17 +346,17 @@ BEGIN_TEST(d3d11_derivs._1d_gfx9)
    pbld.add_vsfs(vs, fs);
 
    //>> v1: %x = v_interp_p2_f32 (kill)%_, (kill)%_:m0, (kill)%_ attr0.x
-   //>> v2: %vec = p_create_vector (kill)%x, 0.5
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv2: %wqm = p_start_linear_vgpr (kill)%x, 0.5
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2d
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_interp_p2_f32_e32 v#rx, v#_, attr0.x                    ; $_
+   //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                ; $_
    //>> v_mov_b32_e32 v#ry, 0.5                                   ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                              ; $_
    //; success = rx+1 == ry
    //>> image_sample v[#_:#_], v#rx, s[#_:#_], s[#_:#_] dmask:0xf ; $_ $_
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
@@ -388,20 +388,20 @@ BEGIN_TEST(d3d11_derivs._1d_array_gfx9)
 
    //>> v1: %layer = v_rndne_f32 (kill)%_
    //>> v1: %x = v_interp_p2_f32 (kill)%_, (kill)%_:m0, (kill)%_ attr0.x
-   //>> v3: %vec = p_create_vector (kill)%x, 0.5, (kill)%layer
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr (kill)%x, 0.5, (kill)%layer
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2darray da
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2darray da
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
    //>> v_interp_p2_f32_e32 v#rl_tmp, v#_, attr0.y                   ; $_
    //>> v_interp_p2_f32_e32 v#rx_tmp, v#_, attr0.x                   ; $_
-   //>> v_rndne_f32_e32 v#rl, v#rl_tmp                               ; $_
+   //>> v_rndne_f32_e32 v#rl_tmp, v#rl_tmp                           ; $_
    //>> v_mov_b32_e32 v#ry, 0.5                                      ; $_
    //>> v_mov_b32_e32 v#rx, v#rx_tmp                                 ; $_
+   //>> v_mov_b32_e32 v#rl, v#rl_tmp                                 ; $_
    //>> BB1:
    //; success = rx+1 == ry and rx+2 == rl
    //>> image_sample v[#_:#_], v#rx, s[#_:#_], s[#_:#_] dmask:0xf da ; $_ $_
@@ -435,18 +435,20 @@ BEGIN_TEST(d3d11_derivs.cube)
    //>> v1: %face = v_cubeid_f32 (kill)%_, (kill)%_, (kill)%_
    //>> v1: %x = v_fmaak_f32 (kill)%_, %_, 0x3fc00000
    //>> v1: %y = v_fmaak_f32 (kill)%_, (kill)%_, 0x3fc00000
-   //>> v3: %vec = p_create_vector (kill)%x, (kill)%y, (kill)%face
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr (kill)%x, (kill)%y, (kill)%face
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm cube da
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm cube da
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
-   //>> v_cubeid_f32 v#rf, v#_, v#_, v#_                                                     ; $_ $_
-   //>> v_fmaak_f32 v#rx, v#_, v#_, 0x3fc00000                                               ; $_ $_
-   //>> v_fmaak_f32 v#ry, v#_, v#_, 0x3fc00000                                               ; $_ $_
+   //>> v_cubeid_f32 v#rf_tmp, v#_, v#_, v#_                                                 ; $_ $_
+   //>> v_mov_b32_e32 v#rf, v#rf_tmp                                                         ; $_
+   //>> v_fmaak_f32 v#rx_tmp, v#_, v#_, 0x3fc00000                                           ; $_ $_
+   //>> v_fmaak_f32 v#ry_tmp, v#_, v#_, 0x3fc00000                                           ; $_ $_
+   //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                         ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                         ; $_
    //; success = rx+1 == ry and rx+2 == rf
    //>> image_sample v[#_:#_], v[#rx:#rf], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_CUBE ; $_ $_
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "Assembly");
@@ -481,20 +483,22 @@ BEGIN_TEST(d3d11_derivs.cube_array)
    //>> v1: %x = v_fmaak_f32 (kill)%_, %_, 0x3fc00000
    //>> v1: %y = v_fmaak_f32 (kill)%_, (kill)%_, 0x3fc00000
    //>> v1: %face_layer = v_fmamk_f32 (kill)%layer, (kill)%face, 0x41000000
-   //>> v3: %vec = p_create_vector (kill)%x, (kill)%y, (kill)%face_layer
-   //>> lv3: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv3: %wqm = p_start_linear_vgpr (kill)%x, (kill)%y, (kill)%face_layer
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm cube da
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm cube da
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 
    //>> v_rndne_f32_e32 v#rl, v#_                                                             ; $_
    //>> v_cubeid_f32 v#rf, v#_, v#_, v#_                                                      ; $_ $_
-   //>> v_fmaak_f32 v#rx, v#_, v#_, 0x3fc00000                                                ; $_ $_
-   //>> v_fmaak_f32 v#ry, v#_, v#_, 0x3fc00000                                                ; $_ $_
-   //>> v_fmamk_f32 v#rlf, v#rl, 0x41000000, v#rf                                             ; $_ $_
+   //>> v_fmamk_f32 v#rlf_tmp, v#rl, 0x41000000, v#rf                                         ; $_ $_
+   //>> v_fmaak_f32 v#rx_tmp, v#_, v#_, 0x3fc00000                                            ; $_ $_
+   //>> v_fmaak_f32 v#ry_tmp, v#_, v#_, 0x3fc00000                                            ; $_ $_
+   //>> v_mov_b32_e32 v#ry, v#ry_tmp                                                          ; $_
+   //>> v_mov_b32_e32 v#rlf, v#rlf_tmp                                                        ; $_
+   //>> v_mov_b32_e32 v#rx, v#rx_tmp                                                          ; $_
    //>> BB1:
    //; success = rx+1 == ry and rx+2 == rlf
    //>> image_sample v[#_:#_], v[#rx:#rlf], s[#_:#_], s[#_:#_] dmask:0xf dim:SQ_RSRC_IMG_CUBE ; $_ $_
@@ -560,13 +564,12 @@ BEGIN_TEST(d3d11_derivs.bc_optimize)
    //>> v1: %y_coord2 = v_cndmask_b32 (kill)%_, %_, (kill)%_
    //>> v1: %x = v_interp_p2_f32 (kill)%_, %_:m0, (kill)%_ attr0.x
    //>> v1: %y = v_interp_p2_f32 (kill)%y_coord2, (kill)%_:m0, (kill)%_ attr0.y
-   //>> v2: %vec = p_create_vector (kill)%x, (kill)%y
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv2: %wqm = p_start_linear_vgpr (kill)%x, (kill)%y
    //>> BB1
-   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, %wqm 2d
+   //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 END_TEST
 
@@ -596,8 +599,7 @@ BEGIN_TEST(d3d11_derivs.get_lod)
 
    //>> v1: %x = v_interp_p2_f32 %_, %_:m0, (kill)%_ attr0.x
    //>> v1: %y = v_interp_p2_f32 (kill)%_, (kill)%_:m0, (kill)%_ attr0.y
-   //>> v2: %vec = p_create_vector %x, %y
-   //>> lv2: %wqm = p_start_linear_vgpr (kill)%vec
+   //>> lv2: %wqm = p_start_linear_vgpr %x, %y
    //>> v1: %x0 = v_mov_b32 %x quad_perm:[0,0,0,0] bound_ctrl:1 fi
    //>> v1: %x1_m_x0 = v_sub_f32 %x, %x0 quad_perm:[1,1,1,1] bound_ctrl:1 fi
    //>> v1: %x2_m_x0 = v_sub_f32 (kill)%x, (kill)%x0 quad_perm:[2,2,2,2] bound_ctrl:1 fi
@@ -605,10 +607,10 @@ BEGIN_TEST(d3d11_derivs.get_lod)
    //>> v1: %y1_m_y0 = v_sub_f32 %y, %y0 quad_perm:[1,1,1,1] bound_ctrl:1 fi
    //>> v1: %y2_m_y0 = v_sub_f32 (kill)%y, (kill)%y0 quad_perm:[2,2,2,2] bound_ctrl:1 fi
    //>> BB1
-   //>> v2: %_ = image_get_lod (kill)%_, (kill)%_, v1: undef, %wqm 2d
+   //>> v2: %_ = image_get_lod (kill)%_, (kill)%_, v1: undef, (latekill)%wqm 2d
    //>> BB2
    //>> BB6
-   //>> p_end_linear_vgpr (kill)%wqm
+   //>> p_end_linear_vgpr (latekill)(kill)%wqm
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 END_TEST
 

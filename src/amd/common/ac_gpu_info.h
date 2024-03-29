@@ -96,6 +96,7 @@ struct radeon_info {
    bool has_small_prim_filter_sample_loc_bug;
    bool has_ls_vgpr_init_bug;
    bool has_pops_missed_overlap_bug;
+   bool has_null_index_buffer_clamping_bug;
    bool has_zero_index_buffer_bug;
    bool has_image_load_dcc_bug;
    bool has_two_planes_iterate256_bug;
@@ -183,6 +184,9 @@ struct radeon_info {
    uint32_t uvd_fw_version;
    uint32_t vce_fw_version;
    uint32_t vce_harvest_config;
+   uint32_t vcn_dec_version;
+   uint32_t vcn_enc_major_version;
+   uint32_t vcn_enc_minor_version;
    struct video_caps_info {
       struct video_codec_cap {
          uint32_t valid;

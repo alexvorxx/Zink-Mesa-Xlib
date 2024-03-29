@@ -143,10 +143,12 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
          ycbcr_2plane_444_formats;
 
       /* KHR */
+      VkPhysicalDeviceFragmentShadingRateFeaturesKHR fragment_shading_rate;
       VkPhysicalDeviceShaderClockFeaturesKHR shader_clock;
       VkPhysicalDeviceShaderExpectAssumeFeaturesKHR expect_assume;
 
       /* EXT */
+      VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachment_feedback_loop_layout;
       VkPhysicalDeviceBorderColorSwizzleFeaturesEXT border_color_swizzle;
       VkPhysicalDeviceColorWriteEnableFeaturesEXT color_write_enable;
       VkPhysicalDeviceConditionalRenderingFeaturesEXT conditional_rendering;
@@ -246,10 +248,12 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
    VN_ADD_PNEXT_EXT(feats2, YCBCR_2_PLANE_444_FORMATS_FEATURES_EXT, local_feats.ycbcr_2plane_444_formats, exts->EXT_ycbcr_2plane_444_formats);
 
    /* KHR */
+   VN_ADD_PNEXT_EXT(feats2, FRAGMENT_SHADING_RATE_FEATURES_KHR, local_feats.fragment_shading_rate, exts->KHR_fragment_shading_rate);
    VN_ADD_PNEXT_EXT(feats2, SHADER_CLOCK_FEATURES_KHR, local_feats.shader_clock, exts->KHR_shader_clock);
    VN_ADD_PNEXT_EXT(feats2, SHADER_EXPECT_ASSUME_FEATURES_KHR, local_feats.expect_assume, exts->KHR_shader_expect_assume);
 
    /* EXT */
+   VN_ADD_PNEXT_EXT(feats2, ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT, local_feats.attachment_feedback_loop_layout, exts->EXT_attachment_feedback_loop_layout);
    VN_ADD_PNEXT_EXT(feats2, BORDER_COLOR_SWIZZLE_FEATURES_EXT, local_feats.border_color_swizzle, exts->EXT_border_color_swizzle);
    VN_ADD_PNEXT_EXT(feats2, COLOR_WRITE_ENABLE_FEATURES_EXT, local_feats.color_write_enable, exts->EXT_color_write_enable);
    VN_ADD_PNEXT_EXT(feats2, CONDITIONAL_RENDERING_FEATURES_EXT, local_feats.conditional_rendering, exts->EXT_conditional_rendering);
@@ -457,6 +461,7 @@ vn_physical_device_init_properties(struct vn_physical_device *physical_dev)
    }
 
    /* KHR */
+   VN_ADD_PNEXT_EXT(props2, FRAGMENT_SHADING_RATE_PROPERTIES_KHR, props->fragment_shading_rate, exts->KHR_fragment_shading_rate);
    VN_ADD_PNEXT_EXT(props2, PUSH_DESCRIPTOR_PROPERTIES_KHR, props->push_descriptor, exts->KHR_push_descriptor);
 
    /* EXT */
@@ -695,6 +700,13 @@ vn_physical_device_init_properties(struct vn_physical_device *physical_dev)
    VN_SET_CORE_VALUE(vk12_props, conformanceVersion.patch, 0);
 
    vn_physical_device_init_uuids(physical_dev);
+
+   /* Disable unsupported VkPhysicalDeviceFragmentShadingRatePropertiesKHR */
+   if (exts->KHR_fragment_shading_rate) {
+      /* TODO: Add support for VK_EXT_sample_locations */
+      VN_SET_CORE_VALUE(&props->fragment_shading_rate,
+                        fragmentShadingRateWithCustomSampleLocations, false);
+   }
 }
 
 static VkResult
@@ -1123,12 +1135,14 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_ycbcr_2plane_444_formats = true,
 
       /* KHR */
+      .KHR_fragment_shading_rate = true,
       .KHR_pipeline_library = true,
       .KHR_push_descriptor = true,
       .KHR_shader_clock = true,
       .KHR_shader_expect_assume = true,
 
       /* EXT */
+      .EXT_attachment_feedback_loop_layout = true,
       .EXT_border_color_swizzle = true,
       .EXT_calibrated_timestamps = true,
       .EXT_color_write_enable = true,
@@ -1791,13 +1805,20 @@ static void
 vn_physical_device_add_format_properties(
    struct vn_physical_device *physical_dev,
    struct vn_format_properties_entry *entry,
-   const VkFormatProperties *props)
+   const VkFormatProperties *props,
+   const VkFormatProperties3 *props3)
 {
    simple_mtx_lock(&physical_dev->format_update_mutex);
    if (!entry->valid) {
       entry->properties = *props;
       entry->valid = true;
    }
+
+   if (props3 && !entry->props3_valid) {
+      entry->properties3 = *props3;
+      entry->props3_valid = true;
+   }
+
    simple_mtx_unlock(&physical_dev->format_update_mutex);
 }
 
@@ -1837,6 +1858,7 @@ vn_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          /* clang-format off */
 
       /* KHR */
+      CASE(FRAGMENT_SHADING_RATE_PROPERTIES_KHR, fragment_shading_rate);
       CASE(PUSH_DESCRIPTOR_PROPERTIES_KHR, push_descriptor);
 
       /* EXT */
@@ -1960,12 +1982,32 @@ vn_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice,
       vn_physical_device_from_handle(physicalDevice);
    struct vn_ring *ring = physical_dev->instance->ring.ring;
 
+   /* VkFormatProperties3 is cached if its the only struct in pNext */
+   VkFormatProperties3 *props3 = NULL;
+   if (pFormatProperties->pNext) {
+      const VkBaseOutStructure *base = pFormatProperties->pNext;
+      if (base->sType == VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3 &&
+          base->pNext == NULL) {
+         props3 = (VkFormatProperties3 *)base;
+      }
+   }
+
    struct vn_format_properties_entry *entry = NULL;
-   if (!pFormatProperties->pNext) {
+   if (!pFormatProperties->pNext || props3) {
       entry = vn_physical_device_get_format_properties(physical_dev, format);
       if (entry->valid) {
-         pFormatProperties->formatProperties = entry->properties;
-         return;
+         const bool has_valid_props3 = props3 && entry->props3_valid;
+         if (has_valid_props3)
+            *props3 = entry->properties3;
+
+         /* Make the host call if our cache doesn't have props3 but the app
+          * now requests it.
+          */
+         if (!props3 || has_valid_props3) {
+            pFormatProperties->formatProperties = entry->properties;
+            pFormatProperties->pNext = props3;
+            return;
+         }
       }
    }
 
@@ -1974,7 +2016,7 @@ vn_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice,
 
    if (entry) {
       vn_physical_device_add_format_properties(
-         physical_dev, entry, &pFormatProperties->formatProperties);
+         physical_dev, entry, &pFormatProperties->formatProperties, props3);
    }
 }
 
@@ -2777,4 +2819,18 @@ vn_GetPhysicalDeviceCalibrateableTimeDomainsEXT(
 
    return vn_call_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(
       ring, physicalDevice, pTimeDomainCount, pTimeDomains);
+}
+
+VkResult
+vn_GetPhysicalDeviceFragmentShadingRatesKHR(
+   VkPhysicalDevice physicalDevice,
+   uint32_t *pFragmentShadingRateCount,
+   VkPhysicalDeviceFragmentShadingRateKHR *pFragmentShadingRates)
+{
+   struct vn_physical_device *physical_dev =
+      vn_physical_device_from_handle(physicalDevice);
+   struct vn_ring *ring = physical_dev->instance->ring.ring;
+
+   return vn_call_vkGetPhysicalDeviceFragmentShadingRatesKHR(
+      ring, physicalDevice, pFragmentShadingRateCount, pFragmentShadingRates);
 }

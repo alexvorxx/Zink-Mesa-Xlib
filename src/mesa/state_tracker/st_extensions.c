@@ -606,7 +606,7 @@ void st_init_limits(struct pipe_screen *screen,
    c->VertexBufferOffsetIsInt32 =
       screen->get_param(screen, PIPE_CAP_SIGNED_VERTEX_BUFFER_OFFSET);
 
-   c->AllowDynamicVAOFastPath =
+   c->UseVAOFastPath =
          screen->get_param(screen, PIPE_CAP_ALLOW_DYNAMIC_VAO_FASTPATH);
 
    c->glBeginEndBufferSize =
@@ -626,6 +626,9 @@ void st_init_limits(struct pipe_screen *screen,
 
    c->AllowGLThreadBufferSubDataOpt =
       screen->get_param(screen, PIPE_CAP_ALLOW_GLTHREAD_BUFFER_SUBDATA_OPT);
+
+   c->HasDrawVertexState =
+      screen->get_param(screen, PIPE_CAP_DRAW_VERTEX_STATE);
 }
 
 
@@ -846,6 +849,7 @@ void st_init_extensions(struct pipe_screen *screen,
 
       { o(AMD_depth_clamp_separate),         PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE      },
       { o(AMD_framebuffer_multisample_advanced), PIPE_CAP_FRAMEBUFFER_MSAA_CONSTRAINTS },
+      { o(AMD_gpu_shader_half_float),        PIPE_CAP_FP16                             },
       { o(AMD_performance_monitor),          PIPE_CAP_PERFORMANCE_MONITOR              },
       { o(AMD_pinned_memory),                PIPE_CAP_RESOURCE_FROM_USER_MEMORY        },
       { o(ATI_meminfo),                      PIPE_CAP_QUERY_MEMORY_INFO                },

@@ -275,7 +275,7 @@ main_unmarshal_table_c = custom_target(
   'unmarshal_table.c',
   input : ['gl_unmarshal_table.py', 'gl_and_es_API.xml'],
   output : 'unmarshal_table.c',
-  command : [prog_python, '@INPUT0@', '@INPUT1@'],
+  command : [prog_python, '@INPUT0@', '@INPUT1@', sizeof_pointer],
   depend_files : files('marshal_XML.py') + glapi_gen_depends,
   capture : true,
 )
@@ -286,7 +286,7 @@ foreach x : ['0', '1', '2', '3', '4', '5', '6', '7']
     'marshal_generated' + x + '.c',
     input : ['gl_marshal.py', 'gl_and_es_API.xml'],
     output : 'marshal_generated' + x + '.c',
-    command : [prog_python, '@INPUT0@', '@INPUT1@', x, '8'],
+    command : [prog_python, '@INPUT0@', '@INPUT1@', x, '8', sizeof_pointer],
     depend_files : files('marshal_XML.py') + glapi_gen_depends,
     capture : true,
   )

@@ -108,8 +108,8 @@ get_output(Program* program, unsigned block_idx, ssa_state* state)
    }
 
    /* create phi */
-   aco_ptr<Pseudo_instruction> phi{create_instruction<Pseudo_instruction>(
-      aco_opcode::p_linear_phi, Format::PSEUDO, num_preds, 1)};
+   aco_ptr<Instruction> phi{
+      create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, num_preds, 1)};
    for (unsigned i = 0; i < num_preds; i++)
       phi->operands[i] = state->outputs[block.linear_preds[i]];
    phi->definitions[0] = Definition(output.getTemp());
@@ -347,8 +347,8 @@ lower_divergent_bool_phi(Program* program, ssa_state* state, Block* block,
 
    unsigned num_preds = block->linear_preds.size();
    if (phi->operands.size() != num_preds) {
-      Pseudo_instruction* new_phi{create_instruction<Pseudo_instruction>(
-         aco_opcode::p_linear_phi, Format::PSEUDO, num_preds, 1)};
+      Instruction* new_phi{
+         create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, num_preds, 1)};
       new_phi->definitions[0] = phi->definitions[0];
       phi.reset(new_phi);
    } else {

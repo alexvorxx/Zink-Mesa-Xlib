@@ -27,7 +27,7 @@
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
 
-#include "common/intel_genX_state.h"
+#include "common/intel_genX_state_brw.h"
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
 #include "nir/nir_xfb_info.h"
@@ -513,6 +513,20 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
 
 }
 
+static bool
+sbe_primitive_id_override(struct anv_graphics_pipeline *pipeline)
+{
+   const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
+   if (!wm_prog_data)
+      return false;
+
+   const struct intel_vue_map *fs_input_map =
+      &anv_pipeline_get_last_vue_prog_data(pipeline)->vue_map;
+
+   return (wm_prog_data->inputs & VARYING_BIT_PRIMITIVE_ID) &&
+          fs_input_map->varying_to_slot[VARYING_SLOT_PRIMITIVE_ID] == -1;
+}
+
 static void
 emit_3dstate_sbe(struct anv_graphics_pipeline *pipeline)
 {
@@ -543,7 +557,7 @@ emit_3dstate_sbe(struct anv_graphics_pipeline *pipeline)
          sbe.AttributeActiveComponentFormat[i] = ACF_XYZW;
 
       if (anv_pipeline_is_primitive(pipeline)) {
-         const struct brw_vue_map *fs_input_map =
+         const struct intel_vue_map *fs_input_map =
             &anv_pipeline_get_last_vue_prog_data(pipeline)->vue_map;
 
          int first_slot =
@@ -615,15 +629,13 @@ emit_3dstate_sbe(struct anv_graphics_pipeline *pipeline)
          /* Ask the hardware to supply PrimitiveID if the fragment shader
           * reads it but a previous stage didn't write one.
           */
-         if ((wm_prog_data->inputs & VARYING_BIT_PRIMITIVE_ID) &&
-             fs_input_map->varying_to_slot[VARYING_SLOT_PRIMITIVE_ID] == -1) {
+         if (sbe_primitive_id_override(pipeline)) {
             sbe.PrimitiveIDOverrideAttributeSelect =
                wm_prog_data->urb_setup[VARYING_SLOT_PRIMITIVE_ID];
             sbe.PrimitiveIDOverrideComponentX = true;
             sbe.PrimitiveIDOverrideComponentY = true;
             sbe.PrimitiveIDOverrideComponentZ = true;
             sbe.PrimitiveIDOverrideComponentW = true;
-            pipeline->primitive_id_override = true;
          }
       } else {
          assert(anv_pipeline_is_mesh(pipeline));
@@ -727,14 +739,14 @@ genX(raster_polygon_mode)(const struct anv_graphics_pipeline *pipeline,
       unreachable("Unsupported GS output topology");
    } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
       switch (get_tes_prog_data(pipeline)->output_topology) {
-      case BRW_TESS_OUTPUT_TOPOLOGY_POINT:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_POINT:
          return VK_POLYGON_MODE_POINT;
 
-      case BRW_TESS_OUTPUT_TOPOLOGY_LINE:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_LINE:
          return VK_POLYGON_MODE_LINE;
 
-      case BRW_TESS_OUTPUT_TOPOLOGY_TRI_CW:
-      case BRW_TESS_OUTPUT_TOPOLOGY_TRI_CCW:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CW:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CCW:
          return polygon_mode;
       }
       unreachable("Unsupported TCS output topology");
@@ -988,7 +1000,7 @@ emit_3dstate_streamout(struct anv_graphics_pipeline *pipeline,
 {
    const struct brw_vue_prog_data *prog_data =
       anv_pipeline_get_last_vue_prog_data(pipeline);
-   const struct brw_vue_map *vue_map = &prog_data->vue_map;
+   const struct intel_vue_map *vue_map = &prog_data->vue_map;
 
    nir_xfb_info *xfb_info;
    if (anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY))
@@ -1344,7 +1356,7 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
       ds.MaximumNumberofThreads = devinfo->max_tes_threads - 1;
 
       ds.ComputeWCoordinateEnable =
-         tes_prog_data->domain == BRW_TESS_DOMAIN_TRI;
+         tes_prog_data->domain == INTEL_TESS_DOMAIN_TRI;
 
       ds.PatchURBEntryReadLength = tes_prog_data->base.urb_read_length;
       ds.PatchURBEntryReadOffset = 0;
@@ -1357,7 +1369,7 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
          DISPATCH_MODE_SIMD8_SINGLE_PATCH :
          DISPATCH_MODE_SIMD4X2;
 #else
-      assert(tes_prog_data->base.dispatch_mode == DISPATCH_MODE_SIMD8);
+      assert(tes_prog_data->base.dispatch_mode == INTEL_DISPATCH_MODE_SIMD8);
       ds.DispatchMode = DISPATCH_MODE_SIMD8_SINGLE_PATCH;
 #endif
 
@@ -1423,7 +1435,7 @@ emit_3dstate_te(struct anv_graphics_pipeline *pipeline)
              *
              * Disable Tessellation Distribution when primitive Id is enabled.
              */
-            if (pipeline->primitive_id_override ||
+            if (sbe_primitive_id_override(pipeline) ||
                 geom_or_tess_prim_id_used(pipeline))
                te.TessellationDistributionMode = TEDMODE_OFF;
          }
@@ -1810,7 +1822,7 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
 
    const struct intel_device_info *devinfo = pipeline->base.base.device->info;
    const struct brw_task_prog_data *task_prog_data = get_task_prog_data(pipeline);
-   const struct brw_cs_dispatch_info task_dispatch =
+   const struct intel_cs_dispatch_info task_dispatch =
       brw_cs_get_dispatch_info(devinfo, &task_prog_data->base, NULL);
 
    anv_pipeline_emit(pipeline, final.task_shader,
@@ -1867,7 +1879,7 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
 
    const struct intel_device_info *devinfo = pipeline->base.base.device->info;
    const struct brw_mesh_prog_data *mesh_prog_data = get_mesh_prog_data(pipeline);
-   const struct brw_cs_dispatch_info mesh_dispatch =
+   const struct intel_cs_dispatch_info mesh_dispatch =
       brw_cs_get_dispatch_info(devinfo, &mesh_prog_data->base, NULL);
 
    const unsigned output_topology =
@@ -1949,12 +1961,18 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
 #endif
 
 #if GFX_VERx10 >= 125
+   bool needs_instance_granularity =
+      intel_needs_workaround(pipeline->base.base.device->info, 14019166699) &&
+      (sbe_primitive_id_override(pipeline) ||
+       geom_or_tess_prim_id_used(pipeline));
+
    anv_pipeline_emit(pipeline, partial.vfg, GENX(3DSTATE_VFG), vfg) {
       /* If 3DSTATE_TE: TE Enable == 1 then RR_STRICT else RR_FREE*/
       vfg.DistributionMode =
          anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ? RR_STRICT :
          RR_FREE;
-      vfg.DistributionGranularity = BatchLevelGranularity;
+      vfg.DistributionGranularity = needs_instance_granularity ?
+         InstanceLevelGranularity : BatchLevelGranularity;
 #if INTEL_WA_14014851047_GFX_VER
       vfg.GranularityThresholdDisable =
          intel_needs_workaround(pipeline->base.base.device->info, 14014851047);
@@ -2061,7 +2079,7 @@ genX(compute_pipeline_emit)(struct anv_compute_pipeline *pipeline)
 
    anv_pipeline_setup_l3_config(&pipeline->base, cs_prog_data->base.total_shared > 0);
 
-   const struct brw_cs_dispatch_info dispatch =
+   const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, cs_prog_data, NULL);
    const uint32_t vfe_curbe_allocation =
       ALIGN(cs_prog_data->push.per_thread.regs * dispatch.threads +

@@ -2639,17 +2639,15 @@ dzn_cmd_buffer_copy_img_chunk(struct dzn_cmd_buffer *cmdbuf,
 
    ID3D12GraphicsCommandList1_CopyTextureRegion(cmdlist, tmp_loc, 0, 0, 0, &src_loc, &src_box);
 
-   if (r > 0 || l > 0) {
-      if (cmdbuf->enhanced_barriers) {
-         dzn_cmd_buffer_buffer_barrier(cmdbuf, tmp_loc->pResource,
-                                       D3D12_BARRIER_SYNC_COPY, D3D12_BARRIER_SYNC_COPY,
-                                       D3D12_BARRIER_ACCESS_COPY_DEST, D3D12_BARRIER_ACCESS_COPY_SOURCE);
-      } else {
-         dzn_cmd_buffer_queue_transition_barriers(cmdbuf, tmp_loc->pResource, 0, 1,
-                                                  D3D12_RESOURCE_STATE_COPY_DEST,
-                                                  D3D12_RESOURCE_STATE_COPY_SOURCE,
-                                                  DZN_QUEUE_TRANSITION_FLUSH);
-      }
+   if (cmdbuf->enhanced_barriers) {
+      dzn_cmd_buffer_buffer_barrier(cmdbuf, tmp_loc->pResource,
+                                    D3D12_BARRIER_SYNC_COPY, D3D12_BARRIER_SYNC_COPY,
+                                    D3D12_BARRIER_ACCESS_COPY_DEST, D3D12_BARRIER_ACCESS_COPY_SOURCE);
+   } else {
+      dzn_cmd_buffer_queue_transition_barriers(cmdbuf, tmp_loc->pResource, 0, 1,
+                                                D3D12_RESOURCE_STATE_COPY_DEST,
+                                                D3D12_RESOURCE_STATE_COPY_SOURCE,
+                                                DZN_QUEUE_TRANSITION_FLUSH);
    }
 
    tmp_desc->Format =

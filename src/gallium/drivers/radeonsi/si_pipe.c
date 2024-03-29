@@ -223,8 +223,6 @@ static void si_destroy_context(struct pipe_context *context)
 
    pipe_resource_reference(&sctx->esgs_ring, NULL);
    pipe_resource_reference(&sctx->gsvs_ring, NULL);
-   pipe_resource_reference(&sctx->tess_rings, NULL);
-   pipe_resource_reference(&sctx->tess_rings_tmz, NULL);
    pipe_resource_reference(&sctx->null_const_buf.buffer, NULL);
    pipe_resource_reference(&sctx->sample_pos_buffer, NULL);
    si_resource_reference(&sctx->border_color_buffer, NULL);
@@ -787,16 +785,11 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    if (sctx->gfx_level >= GFX9) {
       /* The LS output / HS input layout can be communicated
        * directly instead of via user SGPRs for merged LS-HS.
-       * This also enables jumping over the VS prolog for HS-only waves.
-       *
-       * When the LS VGPR fix is needed, monolithic shaders can:
-       *  - avoid initializing EXEC in both the LS prolog
-       *    and the LS main part when !vs_needs_prolog
-       *  - remove the fixup for unused input VGPRs
+       * This also enables jumping over the VS for HS-only waves.
        */
       sctx->shader.tcs.key.ge.opt.prefer_mono = 1;
 
-      /* This enables jumping over the VS prolog for GS-only waves. */
+      /* This enables jumping over the VS for GS-only waves. */
       sctx->shader.gs.key.ge.opt.prefer_mono = 1;
    }
 
@@ -868,6 +861,8 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
          }
       }
       simple_mtx_unlock(&sscreen->async_compute_context_lock);
+
+      si_reset_debug_log_buffer(sctx);
    }
 
    sctx->initial_gfx_cs_size = sctx->gfx_cs.current.cdw;
@@ -962,8 +957,8 @@ static struct pipe_context *si_pipe_create_context(struct pipe_screen *screen, v
 static void si_destroy_screen(struct pipe_screen *pscreen)
 {
    struct si_screen *sscreen = (struct si_screen *)pscreen;
-   struct si_shader_part *parts[] = {sscreen->vs_prologs, sscreen->tcs_epilogs,
-                                     sscreen->ps_prologs, sscreen->ps_epilogs};
+   struct si_shader_part *parts[] = {sscreen->tcs_epilogs, sscreen->ps_prologs,
+                                     sscreen->ps_epilogs};
    unsigned i;
 
    if (!sscreen->ws->unref(sscreen->ws))
@@ -979,6 +974,8 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
    }
 
    si_resource_reference(&sscreen->attribute_ring, NULL);
+   pipe_resource_reference(&sscreen->tess_rings, NULL);
+   pipe_resource_reference(&sscreen->tess_rings_tmz, NULL);
 
    util_queue_destroy(&sscreen->shader_compiler_queue);
    util_queue_destroy(&sscreen->shader_compiler_queue_opt_variants);
@@ -1036,6 +1033,7 @@ static void si_destroy_screen(struct pipe_screen *pscreen)
 
    simple_mtx_destroy(&sscreen->gpu_load_mutex);
    simple_mtx_destroy(&sscreen->gds_mutex);
+   simple_mtx_destroy(&sscreen->tess_ring_lock);
 
    radeon_bo_reference(sscreen->ws, &sscreen->gds_oa, NULL);
 
@@ -1282,6 +1280,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    (void)simple_mtx_init(&sscreen->async_compute_context_lock, mtx_plain);
    (void)simple_mtx_init(&sscreen->gpu_load_mutex, mtx_plain);
    (void)simple_mtx_init(&sscreen->gds_mutex, mtx_plain);
+   (void)simple_mtx_init(&sscreen->tess_ring_lock, mtx_plain);
 
    si_init_gs_info(sscreen);
    if (!si_init_shader_cache(sscreen)) {

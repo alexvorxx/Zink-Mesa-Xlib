@@ -61,6 +61,13 @@ fd_reg_stomp_allowed(chip CHIP, uint16_t reg)
        * certain debug register between BR/BV. This one causes GPU to hang.
        */
       case REG_A7XX_SP_UNKNOWN_AE73:
+      case REG_A7XX_RB_UNKNOWN_8E79:
+      case REG_A7XX_SP_UNKNOWN_AE09:
+      case REG_A6XX_TPL1_UNKNOWN_B602:
+         return false;
+      case REG_A7XX_SP_GS_VGPR_CONFIG:
+      case REG_A7XX_SP_FS_VGPR_CONFIG:
+      case REG_A7XX_SP_CS_VGPR_CONFIG:
          return false;
       }
       break;

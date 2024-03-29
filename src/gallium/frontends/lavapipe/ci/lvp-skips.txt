@@ -19,3 +19,16 @@ dEQP-VK.graphicsfuzz.spv-stable-maze-flatten-copy-composite
 
 # Those tests time out reliably
 dEQP-VK.graphicsfuzz.spv-stable-pillars-volatile-nontemporal-store
+
+# timing out in llvm jit
+dEQP-VK.ray_query.advanced.null_as.tese.aabbs
+dEQP-VK.ray_query.advanced.null_as.tese.triangles
+dEQP-VK.ray_query.watertightness.nomiss.tesc.aabbs
+dEQP-VK.ray_query.watertightness.nomiss.tesc.triangles
+dEQP-VK.ray_query.watertightness.nomiss.tese.aabbs
+dEQP-VK.ray_query.watertightness.nomiss.tese.triangles
+dEQP-VK.ray_query.watertightness.nomiss.vert.aabbs
+dEQP-VK.ray_query.watertightness.nomiss.vert.triangles
+dEQP-VK.ray_query.watertightness.singlehit.tesc.triangles
+dEQP-VK.ray_query.watertightness.singlehit.tese.triangles
+dEQP-VK.ray_query.watertightness.singlehit.vert.triangles

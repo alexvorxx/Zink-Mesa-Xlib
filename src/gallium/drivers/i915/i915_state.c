@@ -992,14 +992,13 @@ i915_delete_rasterizer_state(struct pipe_context *pipe, void *raster)
 
 static void
 i915_set_vertex_buffers(struct pipe_context *pipe, unsigned count,
-                        bool take_ownership,
                         const struct pipe_vertex_buffer *buffers)
 {
    struct i915_context *i915 = i915_context(pipe);
    struct draw_context *draw = i915->draw;
 
    util_set_vertex_buffers_count(i915->vertex_buffers, &i915->nr_vertex_buffers,
-                                 buffers, count, take_ownership);
+                                 buffers, count, true);
 
    /* pass-through to draw module */
    draw_set_vertex_buffers(draw, count, buffers);

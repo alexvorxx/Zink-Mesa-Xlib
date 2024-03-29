@@ -8,12 +8,12 @@ lavapipe:
     DEQP_FRACTION: 18
   stage: software-renderer
   extends:
-    - .deqp-test-vk
+    - .deqp-test
     - .lavapipe-test
 
 lavapipe-vk-asan:
   extends:
-    - .deqp-test-vk
+    - .deqp-test
     - .lavapipe-test
   variables:
     GPU_VERSION: lvp-asan

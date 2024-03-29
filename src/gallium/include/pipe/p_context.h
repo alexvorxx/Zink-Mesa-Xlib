@@ -410,6 +410,15 @@ struct pipe_context {
    void * (*create_vertex_elements_state)(struct pipe_context *,
                                           unsigned num_elements,
                                           const struct pipe_vertex_element *);
+   /**
+    * Bind vertex elements state.
+    *
+    * Frontends MUST call set_vertex_buffers after bind_vertex_elements_state
+    * and before the next draw. This ensures the driver can apply the state
+    * change before the next draw. Drivers MAY use this constraint to merge
+    * vertex elements and vertex buffers in set_vertex_buffers instead of
+    * in draw_vbo.
+    */
    void   (*bind_vertex_elements_state)(struct pipe_context *, void *);
    void   (*delete_vertex_elements_state)(struct pipe_context *, void *);
 
@@ -609,15 +618,19 @@ struct pipe_context {
    /**
     * Bind an array of vertex buffers to the specified slots.
     *
+    * Unlike other set functions, the caller should always increment
+    * the buffer reference counts because the driver should only copy
+    * the pipe_resource pointers. This is the same behavior as setting
+    * take_ownership = true in other functions.
+    *
+    * count must be equal to the maximum used vertex buffer index + 1
+    * in vertex elements or 0.
+    *
     * \param count           number of consecutive vertex buffers to bind.
-    * \param take_ownership the caller holds buffer references and they
-    *                        should be taken over by the callee. This means
-    *                        that drivers shouldn't increment reference counts.
     * \param buffers         array of the buffers to bind
     */
    void (*set_vertex_buffers)(struct pipe_context *,
-                              unsigned num_buffers,
-                              bool take_ownership,
+                              unsigned count,
                               const struct pipe_vertex_buffer *);
 
    /*@}*/

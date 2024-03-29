@@ -192,6 +192,9 @@ vn_cs_encoder_write(struct vn_cs_encoder *enc,
 void
 vn_cs_encoder_commit(struct vn_cs_encoder *enc);
 
+bool
+vn_cs_encoder_needs_roundtrip(struct vn_cs_encoder *enc);
+
 static inline void
 vn_cs_decoder_init(struct vn_cs_decoder *dec, const void *data, size_t size)
 {

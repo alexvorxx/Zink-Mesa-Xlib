@@ -37,8 +37,8 @@ e = 'e'
 # y = frac(x / 2PI + 0.5) * 2PI - PI
 #
 transform_trig_input_vs_r500 = [
-        (('fsin', 'a'), ('fsin', ('fadd', ('fmul', ('ffract', ('fadd', ('fmul', 'a', 1 / (2 * pi)) , 0.5)), 2 * pi), -pi))),
-        (('fcos', 'a'), ('fcos', ('fadd', ('fmul', ('ffract', ('fadd', ('fmul', 'a', 1 / (2 * pi)) , 0.5)), 2 * pi), -pi))),
+        (('fsin', 'a(needs_vs_trig_input_fixup)'), ('fsin', ('fadd', ('fmul', ('ffract', ('fadd', ('fmul', 'a', 1 / (2 * pi)) , 0.5)), 2 * pi), -pi))),
+        (('fcos', 'a(needs_vs_trig_input_fixup)'), ('fcos', ('fadd', ('fmul', ('ffract', ('fadd', ('fmul', 'a', 1 / (2 * pi)) , 0.5)), 2 * pi), -pi))),
 ]
 
 # Transform input to range [-PI, PI]:
@@ -46,8 +46,8 @@ transform_trig_input_vs_r500 = [
 # y = frac(x / 2PI)
 #
 transform_trig_input_fs_r500 = [
-        (('fsin', 'a'), ('fsin', ('ffract', ('fmul', 'a', 1 / (2 * pi))))),
-        (('fcos', 'a'), ('fcos', ('ffract', ('fmul', 'a', 1 / (2 * pi))))),
+        (('fsin', 'a(needs_fs_trig_input_fixup)'), ('fsin', ('ffract', ('fmul', 'a', 1 / (2 * pi))))),
+        (('fcos', 'a(needs_fs_trig_input_fixup)'), ('fcos', ('ffract', ('fmul', 'a', 1 / (2 * pi))))),
 ]
 
 # The is a pattern produced by wined3d for A0 register load.

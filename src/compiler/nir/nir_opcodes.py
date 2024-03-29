@@ -1029,6 +1029,9 @@ triop("flrp", tfloat, "", "src0 * (1 - src2) + src1 * src2")
 triop("iadd3", tint, _2src_commutative + associative, "src0 + src1 + src2",
       description = "Ternary addition")
 
+triop("imad", tint, _2src_commutative + associative, "src0 * src1 + src2",
+      description = "Integer multiply-add")
+
 csel_description = """
 A vector conditional select instruction (like ?:, but operating per-
 component on vectors). The condition is {} bool ({}).

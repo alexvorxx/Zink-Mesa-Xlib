@@ -140,6 +140,26 @@ if dep_libarchive.found()
     build_by_default: with_tools.contains('freedreno'),
     install: install_fd_decode_tools,
   )
+
+  generate_rd = executable(
+    'generate_rd',
+    [
+      'generate-rd.cc'
+    ],
+    include_directories: [
+      inc_freedreno,
+      inc_freedreno_rnn,
+      inc_include,
+      inc_src,
+    ],
+    link_with: [
+      libfreedreno_cffdec,
+    ],
+    dependencies : [
+      idep_nir,
+    ],
+    install: install_fd_decode_tools,
+  )
 else
   warning('libarchive not found, not building replay or rddecompiler')
 endif

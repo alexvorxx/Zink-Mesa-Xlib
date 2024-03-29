@@ -340,6 +340,17 @@ glsl2spirv = files('glsl2spirv.py')
 
 devenv.set('DRIRC_CONFIGDIR', meson.current_source_dir())
 
+_libparson = static_library(
+  'parson',
+  ['parson.c', 'parson.h'],
+  gnu_symbol_visibility : 'hidden',
+  build_by_default : false,
+)
+
+idep_parson = declare_dependency(
+  link_with :  _libparson,
+)
+
 if with_tests
   # DRI_CONF macros use designated initializers (required for union
   # initializaiton), so we need c++2a since gtest forces us to use c++

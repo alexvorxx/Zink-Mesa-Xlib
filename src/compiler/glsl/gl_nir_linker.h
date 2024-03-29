@@ -55,6 +55,9 @@ struct gl_nir_linker_options {
 
 void gl_nir_opts(nir_shader *nir);
 
+void gl_nir_detect_recursion_linked(struct gl_shader_program *prog,
+                                    nir_shader *shader);
+
 bool gl_nir_link_spirv(const struct gl_constants *consts,
                        const struct gl_extensions *exts,
                        struct gl_shader_program *prog,
@@ -127,6 +130,10 @@ bool lower_packed_varying_needs_lowering(nir_shader *shader, nir_variable *var,
                                          bool xfb_enabled,
                                          bool disable_xfb_packing,
                                          bool disable_varying_packing);
+
+void
+gl_nir_lower_optimize_varyings(const struct gl_constants *consts,
+                               struct gl_shader_program *prog, bool spirv);
 
 #ifdef __cplusplus
 } /* extern "C" */

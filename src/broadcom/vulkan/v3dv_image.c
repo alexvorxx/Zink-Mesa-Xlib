@@ -328,25 +328,35 @@ v3d_setup_plane_slices(struct v3dv_image *image, uint8_t plane,
    return true;
 }
 
-static bool
+static VkResult
 v3d_setup_slices(struct v3dv_image *image, bool disjoint,
                  const VkSubresourceLayout *plane_layouts)
 {
    if (disjoint && image->plane_count == 1)
       disjoint = false;
 
-   uint32_t offset = 0;
+   uint64_t offset = 0;
    for (uint8_t plane = 0; plane < image->plane_count; plane++) {
       offset = disjoint ? 0 : offset;
       if (!v3d_setup_plane_slices(image, plane, offset, plane_layouts)) {
          assert(plane_layouts);
-         return false;
+         return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
       }
-      offset += align(image->planes[plane].size, 64);
+      offset += align64(image->planes[plane].size, 64);
    }
 
+   /* From the Vulkan spec:
+    *
+    *   "If the size of the resultant image would exceed maxResourceSize, then
+    *    vkCreateImage must fail and return VK_ERROR_OUT_OF_DEVICE_MEMORY. This
+    *    failure may occur even when all image creation parameters satisfy their
+    *    valid usage requirements."
+    */
+   if (offset > 0xffffffff)
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
    image->non_disjoint_size = disjoint ? 0 : offset;
-   return true;
+   return VK_SUCCESS;
 }
 
 uint32_t
@@ -379,15 +389,9 @@ v3dv_update_image_layout(struct v3dv_device *device,
 
    image->vk.drm_format_mod = modifier;
 
-   bool ok =
-      v3d_setup_slices(image, disjoint,
-                       explicit_mod_info ? explicit_mod_info->pPlaneLayouts : NULL);
-   if (!ok) {
-      assert(explicit_mod_info);
-      return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
-   }
-
-   return VK_SUCCESS;
+   return v3d_setup_slices(image, disjoint,
+                           explicit_mod_info ? explicit_mod_info->pPlaneLayouts :
+                                               NULL);
 }
 
 VkResult

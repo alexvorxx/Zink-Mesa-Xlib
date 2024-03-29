@@ -132,6 +132,7 @@ struct sw_winsys
    (*displaytarget_display)( struct sw_winsys *ws, 
                              struct sw_displaytarget *dt,
                              void *context_private,
+                             unsigned nboxes,
                              struct pipe_box *box );
 
    void 

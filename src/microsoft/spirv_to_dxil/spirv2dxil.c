@@ -180,6 +180,8 @@ main(int argc, char **argv)
    memset(&conf, 0, sizeof(conf));
    conf.runtime_data_cbv.base_shader_register = 0;
    conf.runtime_data_cbv.register_space = 31;
+   conf.push_constant_cbv.base_shader_register = 0;
+   conf.push_constant_cbv.register_space = 30;
    conf.zero_based_vertex_instance_id = true;
    conf.declared_read_only_images_as_srvs = true;
    conf.shader_model_max = SHADER_MODEL_6_2;

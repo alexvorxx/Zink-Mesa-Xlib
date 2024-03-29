@@ -270,6 +270,17 @@ const nir_lower_subgroups_options si_nir_subgroups_options = {
    .lower_boolean_shuffle = true,
 };
 
+void si_lower_mediump_io(nir_shader *nir)
+{
+   NIR_PASS_V(nir, nir_lower_mediump_io,
+              /* TODO: LLVM fails to compile this test if VS inputs are 16-bit:
+               * dEQP-GLES31.functional.shaders.builtin_functions.integer.bitfieldinsert.uvec3_lowp_geometry
+               */
+              (nir->info.stage != MESA_SHADER_VERTEX ? nir_var_shader_in : 0) | nir_var_shader_out,
+              BITFIELD64_BIT(VARYING_SLOT_PNTC) | BITFIELD64_RANGE(VARYING_SLOT_VAR0, 32),
+              true);
+}
+
 /**
  * Perform "lowering" operations on the NIR that are run once when the shader
  * selector is created.
@@ -350,16 +361,6 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
          options.shuffle_local_ids_for_quad_derivatives = true;
          NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
       }
-   }
-
-   if (sscreen->b.get_shader_param(&sscreen->b, PIPE_SHADER_FRAGMENT, PIPE_SHADER_CAP_FP16)) {
-      NIR_PASS_V(nir, nir_lower_mediump_io,
-                 /* TODO: LLVM fails to compile this test if VS inputs are 16-bit:
-                  * dEQP-GLES31.functional.shaders.builtin_functions.integer.bitfieldinsert.uvec3_lowp_geometry
-                  */
-                 (nir->info.stage != MESA_SHADER_VERTEX ? nir_var_shader_in : 0) | nir_var_shader_out,
-                 BITFIELD64_BIT(VARYING_SLOT_PNTC) | BITFIELD64_RANGE(VARYING_SLOT_VAR0, 32),
-                 true);
    }
 
    si_nir_opts(sscreen, nir, true);

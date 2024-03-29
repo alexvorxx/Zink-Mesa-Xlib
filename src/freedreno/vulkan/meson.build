@@ -12,12 +12,14 @@ tu_entrypoints = custom_target(
     '--tmpl-prefix', 'tu', '--tmpl-param', 'chip CHIP',
     '--tmpl-variants', '<A6XX>', '<A7XX>',
     '--beta', with_vulkan_beta.to_string(),
+    '--device-prefix', 'tu_rmv',
   ],
   depend_files : vk_entrypoints_gen_depend_files,
 )
 
 
 libtu_files = files(
+  'layers/tu_rmv_layer.cc',
   'tu_autotune.cc',
   'tu_clear_blit.cc',
   'tu_cmd_buffer.cc',
@@ -34,6 +36,7 @@ libtu_files = files(
   'tu_pass.cc',
   'tu_pipeline.cc',
   'tu_query.cc',
+  'tu_rmv.cc',
   'tu_shader.cc',
   'tu_suballoc.cc',
   'tu_util.cc',

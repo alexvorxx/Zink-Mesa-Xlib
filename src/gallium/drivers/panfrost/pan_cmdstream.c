@@ -46,6 +46,7 @@
 #include "pan_bo.h"
 #include "pan_cmdstream.h"
 #include "pan_context.h"
+#include "pan_csf.h"
 #include "pan_indirect_dispatch.h"
 #include "pan_jm.h"
 #include "pan_job.h"
@@ -60,6 +61,8 @@
  * functions. */
 #if PAN_ARCH <= 9
 #define JOBX(__suffix) GENX(jm_##__suffix)
+#elif PAN_ARCH <= 10
+#define JOBX(__suffix) GENX(csf_##__suffix)
 #else
 #error "Unsupported arch"
 #endif
@@ -1771,8 +1774,7 @@ emit_image_bufs(struct panfrost_batch *batch, enum pipe_shader_type shader,
 
       struct panfrost_resource *rsrc = pan_resource(image->resource);
 
-      /* TODO: MSAA */
-      assert(image->resource->nr_samples <= 1 && "MSAA'd images not supported");
+      bool is_msaa = image->resource->nr_samples > 1;
 
       bool is_3d = rsrc->base.target == PIPE_TEXTURE_3D;
       bool is_buffer = rsrc->base.target == PIPE_BUFFER;
@@ -1780,8 +1782,8 @@ emit_image_bufs(struct panfrost_batch *batch, enum pipe_shader_type shader,
       unsigned offset = is_buffer ? image->u.buf.offset
                                   : panfrost_texture_offset(
                                        &rsrc->image.layout, image->u.tex.level,
-                                       is_3d ? 0 : image->u.tex.first_layer,
-                                       is_3d ? image->u.tex.first_layer : 0);
+                                       (is_3d || is_msaa) ? 0 : image->u.tex.first_layer,
+                                       (is_3d || is_msaa) ? image->u.tex.first_layer : 0);
 
       panfrost_track_image_access(batch, shader, image);
 
@@ -1804,16 +1806,26 @@ emit_image_bufs(struct panfrost_batch *batch, enum pipe_shader_type shader,
 
       pan_pack(bufs + (i * 2) + 1, ATTRIBUTE_BUFFER_CONTINUATION_3D, cfg) {
          unsigned level = image->u.tex.level;
+         unsigned r_dim;
 
+         if (is_3d) {
+            r_dim = u_minify(rsrc->base.depth0, level);
+         } else if (is_msaa) {
+            r_dim = u_minify(image->resource->nr_samples, level);
+         } else {
+            r_dim = image->u.tex.last_layer - image->u.tex.first_layer + 1;
+         }
          cfg.s_dimension = u_minify(rsrc->base.width0, level);
          cfg.t_dimension = u_minify(rsrc->base.height0, level);
-         cfg.r_dimension =
-            is_3d ? u_minify(rsrc->base.depth0, level)
-                  : image->u.tex.last_layer - image->u.tex.first_layer + 1;
+         cfg.r_dimension = r_dim;
 
          cfg.row_stride = rsrc->image.layout.slices[level].row_stride;
 
-         if (rsrc->base.target != PIPE_TEXTURE_2D) {
+         if (is_msaa) {
+            unsigned samples = rsrc->base.nr_samples;
+            cfg.slice_stride =
+               panfrost_get_layer_stride(&rsrc->image.layout, level) / samples;
+         } else if (rsrc->base.target != PIPE_TEXTURE_2D) {
             cfg.slice_stride =
                panfrost_get_layer_stride(&rsrc->image.layout, level);
          }
@@ -2835,7 +2847,7 @@ panfrost_draw_get_vertex_count(struct panfrost_batch *batch,
       panfrost_increase_vertex_count(batch, vertex_count);
    }
 
-   if (info->instance_count > 1) {
+   if (PAN_ARCH <= 9 && info->instance_count > 1) {
       unsigned count = vertex_count;
 
       /* Index-Driven Vertex Shading requires different instances to
@@ -3664,6 +3676,16 @@ context_populate_vtbl(struct pipe_context *pipe)
    pipe->get_sample_position = u_default_get_sample_position;
 }
 
+static void
+context_init(struct panfrost_context *ctx)
+{
+}
+
+static void
+context_cleanup(struct panfrost_context *ctx)
+{
+}
+
 #if PAN_ARCH <= 5
 
 /* Returns the polygon list's GPU address if available, or otherwise allocates
@@ -3755,7 +3777,10 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
    screen->vtbl.prepare_shader = prepare_shader;
    screen->vtbl.screen_destroy = screen_destroy;
    screen->vtbl.context_populate_vtbl = context_populate_vtbl;
+   screen->vtbl.context_init = JOBX(init_context);
+   screen->vtbl.context_cleanup = JOBX(cleanup_context);
    screen->vtbl.init_batch = JOBX(init_batch);
+   screen->vtbl.cleanup_batch = JOBX(cleanup_batch);
    screen->vtbl.submit_batch = submit_batch;
    screen->vtbl.get_blend_shader = GENX(pan_blend_get_shader_locked);
    screen->vtbl.get_compiler_options = GENX(pan_shader_get_compiler_options);

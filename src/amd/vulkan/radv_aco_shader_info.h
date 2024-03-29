@@ -54,9 +54,6 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv
    ASSIGN_FIELD(vs.tcs_temp_only_input_mask);
    ASSIGN_FIELD(vs.has_prolog);
    ASSIGN_FIELD(tcs.num_lds_blocks);
-   ASSIGN_FIELD(tcs.num_linked_outputs);
-   ASSIGN_FIELD(tcs.num_linked_patch_outputs);
-   ASSIGN_FIELD(tcs.tcs_vertices_out);
    ASSIGN_FIELD(ps.num_interp);
    ASSIGN_FIELD(cs.uses_full_subgroups);
    aco_info->ps.spi_ps_input_ena = radv->ps.spi_ps_input;
@@ -64,10 +61,10 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info, const struct radv
    aco_info->gfx9_gs_ring_lds_size = radv->gs_ring_info.lds_size;
    aco_info->is_trap_handler_shader = radv->type == RADV_SHADER_TYPE_TRAP_HANDLER;
    aco_info->image_2d_view_of_3d = radv_key->image_2d_view_of_3d;
-   aco_info->ps.epilog_pc = radv_args->ps_epilog_pc;
+   aco_info->epilog_pc = radv_args->epilog_pc;
    aco_info->hw_stage = radv_select_hw_stage(radv, gfx_level);
-   aco_info->tcs.epilog_pc = radv_args->tcs_epilog_pc;
    aco_info->tcs.tcs_offchip_layout = radv_args->tcs_offchip_layout;
+   aco_info->tcs.pass_tessfactors_by_reg = true;
    aco_info->next_stage_pc = radv_args->next_stage_pc;
 }
 
@@ -88,22 +85,6 @@ radv_aco_convert_vs_prolog_key(struct aco_vs_prolog_info *aco_info, const struct
    ASSIGN_FIELD(next_stage);
 
    aco_info->inputs = radv_args->prolog_inputs;
-}
-
-static inline void
-radv_aco_convert_tcs_epilog_key(struct aco_tcs_epilog_info *aco_info, const struct radv_tcs_epilog_key *radv,
-                                const struct radv_shader_args *radv_args)
-{
-   aco_info->pass_tessfactors_by_reg = false;
-   ASSIGN_FIELD(tcs_out_patch_fits_subgroup);
-   ASSIGN_FIELD(primitive_mode);
-   ASSIGN_FIELD(tes_reads_tessfactors);
-
-   aco_info->tcs_offchip_layout = radv_args->tcs_offchip_layout;
-   aco_info->invocation_id = radv_args->invocation_id;
-   aco_info->rel_patch_id = radv_args->rel_patch_id;
-   aco_info->tcs_out_current_patch_data_offset = radv_args->tcs_out_current_patch_data_offset;
-   aco_info->patch_base = radv_args->patch_base;
 }
 
 static inline void

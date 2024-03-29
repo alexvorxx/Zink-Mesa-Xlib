@@ -577,7 +577,7 @@ static void r600_bind_vertex_elements(struct pipe_context *ctx, void *state)
 }
 
 static void r600_set_vertex_buffers(struct pipe_context *ctx,
-				    unsigned count, bool take_ownership,
+				    unsigned count,
 				    const struct pipe_vertex_buffer *input)
 {
 	struct r600_context *rctx = (struct r600_context *)ctx;
@@ -595,13 +595,8 @@ static void r600_set_vertex_buffers(struct pipe_context *ctx,
 			   (vb[i].is_user_buffer != input[i].is_user_buffer))) {
 			if (input[i].buffer.resource) {
 				vb[i].buffer_offset = input[i].buffer_offset;
-				if (take_ownership) {
-					pipe_resource_reference(&vb[i].buffer.resource, NULL);
-					vb[i].buffer.resource = input[i].buffer.resource;
-				} else {
-					pipe_resource_reference(&vb[i].buffer.resource,
-								input[i].buffer.resource);
-				}
+				pipe_resource_reference(&vb[i].buffer.resource, NULL);
+				vb[i].buffer.resource = input[i].buffer.resource;
 				new_buffer_mask |= 1 << i;
 				r600_context_add_resource_size(ctx, input[i].buffer.resource);
 			} else {
@@ -609,13 +604,8 @@ static void r600_set_vertex_buffers(struct pipe_context *ctx,
 				disable_mask |= 1 << i;
 			}
 		} else if (input[i].buffer.resource) {
-			if (take_ownership) {
-				pipe_resource_reference(&vb[i].buffer.resource, NULL);
-				vb[i].buffer.resource = input[i].buffer.resource;
-			} else {
-				pipe_resource_reference(&vb[i].buffer.resource,
-							input[i].buffer.resource);
-			}
+			pipe_resource_reference(&vb[i].buffer.resource, NULL);
+			vb[i].buffer.resource = input[i].buffer.resource;
 		}
 	}
 

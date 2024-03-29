@@ -18,6 +18,11 @@ struct si_shader_profile si_shader_profiles[] =
       SI_PROFILE_VS_NO_BINNING,
    },
    {
+      /* Viewperf/Energy */
+      {0x17118671, 0xd0102e0c, 0x947f3592, 0xb2057e7b, 0x4da5d9b0},
+      SI_PROFILE_NO_OPT_UNIFORM_VARYINGS,    /* Uniform propagation regresses performance. */
+   },
+   {
       /* Viewperf/Medical */
       {0x4dce4331, 0x38f778d5, 0x1b75a717, 0x3e454fb9, 0xeb1527f0},
       SI_PROFILE_GFX9_GFX10_PS_NO_BINNING,
@@ -794,9 +799,6 @@ void si_nir_scan_shader(struct si_screen *sscreen, const struct nir_shader *nir,
          nir->info.stage == MESA_SHADER_VERTEX && !info->base.vs.blit_sgprs_amd ? info->num_inputs : 0;
       unsigned num_vbos_in_sgprs = si_num_vbos_in_user_sgprs_inline(sscreen->info.gfx_level);
       info->num_vbos_in_user_sgprs = MIN2(info->num_vs_inputs, num_vbos_in_sgprs);
-
-      /* The prolog is a no-op if there are no inputs. */
-      info->vs_needs_prolog = info->num_inputs && !info->base.vs.blit_sgprs_amd;
    }
 
    if (nir->info.stage == MESA_SHADER_VERTEX ||

@@ -46,7 +46,6 @@ if [ -z "$DEQP_SUITE" ]; then
     DEQP_WIDTH=${DEQP_WIDTH:-256}
     DEQP_HEIGHT=${DEQP_HEIGHT:-256}
     DEQP_CONFIG=${DEQP_CONFIG:-rgba8888d24s8ms0}
-    DEQP_VARIANT=${DEQP_VARIANT:-master}
 
     DEQP_OPTIONS="$DEQP_OPTIONS --deqp-surface-width=$DEQP_WIDTH --deqp-surface-height=$DEQP_HEIGHT"
     DEQP_OPTIONS="$DEQP_OPTIONS --deqp-surface-type=${DEQP_SURFACE_TYPE:-pbuffer}"
@@ -60,16 +59,16 @@ if [ -z "$DEQP_SUITE" ]; then
 
     # Generate test case list file.
     if [ "$DEQP_VER" = "vk" ]; then
-       MUSTPASS=/deqp/mustpass/vk-$DEQP_VARIANT.txt
+       MUSTPASS=/deqp/mustpass/vk-master.txt
        DEQP=/deqp/external/vulkancts/modules/vulkan/deqp-vk
     elif [ "$DEQP_VER" = "gles2" ] || [ "$DEQP_VER" = "gles3" ] || [ "$DEQP_VER" = "gles31" ] || [ "$DEQP_VER" = "egl" ]; then
-       MUSTPASS=/deqp/mustpass/$DEQP_VER-$DEQP_VARIANT.txt
+       MUSTPASS=/deqp/mustpass/$DEQP_VER-main.txt
        DEQP=/deqp/modules/$DEQP_VER/deqp-$DEQP_VER
     elif [ "$DEQP_VER" = "gles2-khr" ] || [ "$DEQP_VER" = "gles3-khr" ] || [ "$DEQP_VER" = "gles31-khr" ] || [ "$DEQP_VER" = "gles32-khr" ]; then
-       MUSTPASS=/deqp/mustpass/$DEQP_VER-$DEQP_VARIANT.txt
+       MUSTPASS=/deqp/mustpass/$DEQP_VER-main.txt
        DEQP=/deqp/external/openglcts/modules/glcts
     else
-       MUSTPASS=/deqp/mustpass/$DEQP_VER-$DEQP_VARIANT.txt
+       MUSTPASS=/deqp/mustpass/$DEQP_VER-main.txt
        DEQP=/deqp/external/openglcts/modules/glcts
     fi
 
@@ -170,7 +169,7 @@ fi
 uncollapsed_section_switch deqp "deqp: deqp-runner"
 
 # Print the detailed version with the list of backports and local patches
-for api in vk gl; do
+for api in vk gl gles; do
   deqp_version_log=/deqp/version-$api
   if [ -r "$deqp_version_log" ]; then
     cat "$deqp_version_log"

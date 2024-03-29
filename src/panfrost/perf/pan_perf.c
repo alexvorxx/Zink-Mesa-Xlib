@@ -72,13 +72,21 @@ panfrost_lookup_counters(const char *name)
 void
 panfrost_perf_init(struct panfrost_perf *perf, int fd)
 {
+   ASSERTED drmVersionPtr version = drmGetVersion(fd);
+
+   /* We only support panfrost at the moment. */
+   assert(version && !strcmp(version->name, "panfrost"));
+
+   drmFreeVersion(version);
+
    perf->dev = pan_kmod_dev_create(fd, 0, NULL);
    assert(perf->dev);
 
    struct pan_kmod_dev_props props = {};
    pan_kmod_dev_query_props(perf->dev, &props);
 
-   const struct panfrost_model *model = panfrost_get_model(props.gpu_prod_id);
+   const struct panfrost_model *model =
+      panfrost_get_model(props.gpu_prod_id, props.gpu_variant);
    if (model == NULL)
       unreachable("Invalid GPU ID");
 

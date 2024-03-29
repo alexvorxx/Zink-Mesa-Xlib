@@ -1424,7 +1424,10 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
    uint32_t history_size = MIN2(history_header->offset, device->rra_trace.ray_history_buffer_size);
 
    uint32_t token_size;
-   for (uint32_t offset = sizeof(struct radv_ray_history_header); offset < history_size; offset += token_size) {
+   for (uint32_t offset = sizeof(struct radv_ray_history_header);; offset += token_size) {
+      if (offset + sizeof(struct radv_packed_end_trace_token) > history_size)
+         break;
+
       struct radv_packed_end_trace_token *src = (void *)(history + offset);
       token_size = src->header.hit ? sizeof(struct radv_packed_end_trace_token)
                                    : offsetof(struct radv_packed_end_trace_token, primitive_id);

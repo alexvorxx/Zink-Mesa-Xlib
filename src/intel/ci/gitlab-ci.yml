@@ -24,12 +24,13 @@ anv-jsl:
 
 anv-tgl:
   extends:
-    - .anv-tgl-test
+    - .lava-acer-cp514-2h-1160g7-volteer:x86_64
+    - .anv-test
   variables:
     DEQP_SUITE: anv-tgl
     DEQP_FRACTION: 5 # temporarily drop network load
     VK_DRIVER: intel
-  parallel: 6 # 15 - 3 zink - 3 post-merge perf + headroom
+  parallel: 5  # 5 - 5 # -1 for zink, but it's disabled now
 
 # Takes too long since the 1.3.7.0 CTS uprev.
 .anv-tgl-full:
@@ -82,7 +83,8 @@ anv-jsl-angle-full:
 
 anv-tgl-angle:
   extends:
-    - .anv-tgl-test
+    - .lava-acer-cp514-2h-1130g7-volteer:x86_64
+    - .anv-test
     - .anv-angle-test
   variables:
     DEQP_SUITE: anv-tgl-angle
@@ -244,6 +246,7 @@ iris-kbl-traces-performance:
 
 intel-tgl-skqp:
   extends:
+    - .lava-acer-cp514-2h-1130g7-volteer:x86_64
     - .intel-tgl-test
   variables:
     DEQP_SUITE: intel-tgl-skqp

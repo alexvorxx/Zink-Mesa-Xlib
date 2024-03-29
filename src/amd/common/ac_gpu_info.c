@@ -55,6 +55,7 @@
 #define AMDGPU_INFO_FW_GFX_ME 0x04
 #define AMDGPU_INFO_FW_GFX_PFP 0x05
 #define AMDGPU_INFO_FW_GFX_CE 0x06
+#define AMDGPU_INFO_FW_VCN 0x0e
 #define AMDGPU_INFO_DEV_INFO 0x16
 #define AMDGPU_INFO_MEMORY 0x19
 #define AMDGPU_INFO_VIDEO_CAPS_DECODE 0
@@ -289,6 +290,11 @@ static int amdgpu_query_firmware_version(amdgpu_device_handle dev, unsigned fw_t
 static int amdgpu_query_hw_ip_info(amdgpu_device_handle dev, unsigned type,
    unsigned ip_instance,
    struct drm_amdgpu_info_hw_ip *info)
+{
+   return -EINVAL;
+}
+static int amdgpu_query_hw_ip_count(amdgpu_device_handle dev, unsigned type,
+   uint32_t *count)
 {
    return -EINVAL;
 }
@@ -591,7 +597,8 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    struct amdgpu_gpu_info amdinfo;
    struct drm_amdgpu_info_device device_info = {0};
    struct amdgpu_buffer_size_alignments alignment_info = {0};
-   uint32_t vce_version = 0, vce_feature = 0, uvd_version = 0, uvd_feature = 0;
+   uint32_t vce_version = 0, vce_feature = 0, uvd_version = 0, uvd_feature = 0,
+            vcn_version = 0, vcn_feature = 0;
    int r, i, j;
    amdgpu_device_handle dev = dev_p;
 
@@ -678,7 +685,15 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
                   device_info.family == FAMILY_MDN)
             info->ip[AMD_IP_GFX].ver_minor = info->ip[AMD_IP_COMPUTE].ver_minor = 3;
       }
-      info->ip[ip_type].num_queues = util_bitcount(ip_info.available_rings);
+      if (ip_type >= AMD_IP_VCN_DEC && ip_type <= AMD_IP_VCN_JPEG) {
+         uint32_t num_inst;
+         r = amdgpu_query_hw_ip_count(dev, ip_type, &num_inst);
+         if (r)
+            fprintf(stderr, "amdgpu: failed to query ip count for vcn or jpeg\n");
+         else
+            info->ip[ip_type].num_queues = num_inst;
+      } else
+         info->ip[ip_type].num_queues = util_bitcount(ip_info.available_rings);
 
       /* According to the kernel, only SDMA and VPE require 256B alignment, but use it
        * for all queues because the kernel reports wrong limits for some of the queues.
@@ -737,6 +752,12 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_VCE, 0, 0, &vce_version, &vce_feature);
    if (r) {
       fprintf(stderr, "amdgpu: amdgpu_query_firmware_version(vce) failed.\n");
+      return false;
+   }
+
+   r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_VCN, 0, 0, &vcn_version, &vcn_feature);
+   if (r) {
+      fprintf(stderr, "amdgpu: amdgpu_query_firmware_version(vcn) failed.\n");
       return false;
    }
 
@@ -858,6 +879,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
          break;
       case FAMILY_GFX1150:
          identify_chip(GFX1150);
+         identify_chip(GFX1151);
          break;
       }
 
@@ -975,6 +997,9 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
       case VCN_IP_VERSION(4, 0, 5):
          info->vcn_ip_version = VCN_4_0_5;
          break;
+      case VCN_IP_VERSION(4, 0, 6):
+         info->vcn_ip_version = VCN_4_0_6;
+         break;
       default:
          info->vcn_ip_version = VCN_UNKNOWN;
       }
@@ -1008,6 +1033,9 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    info->num_cu_per_sh = device_info.num_cu_per_sh;
    info->uvd_fw_version = info->ip[AMD_IP_UVD].num_queues ? uvd_version : 0;
    info->vce_fw_version = info->ip[AMD_IP_VCE].num_queues ? vce_version : 0;
+   info->vcn_dec_version = (vcn_version & 0x0F000000) >> 24;
+   info->vcn_enc_major_version = (vcn_version & 0x00F00000) >> 20;
+   info->vcn_enc_minor_version = (vcn_version & 0x000FF000) >> 12;
 
    info->memory_freq_mhz_effective *= ac_memory_ops_per_clock(info->vram_type);
 
@@ -1206,6 +1234,11 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
     * depth/stencil samples with POPS (PAL waMiscPopsMissedOverlap).
     */
    info->has_pops_missed_overlap_bug = info->family == CHIP_VEGA10 || info->family == CHIP_RAVEN;
+
+   /* GFX6 hw bug when the IBO addr is 0 which causes invalid clamping (underflow).
+    * Setting the IB addr to 2 or higher solves this issue.
+    */
+   info->has_null_index_buffer_clamping_bug = info->gfx_level == GFX6;
 
    /* Drawing from 0-sized index buffers causes hangs on gfx10. */
    info->has_zero_index_buffer_bug = info->gfx_level == GFX10;
@@ -1619,8 +1652,16 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
             exit(1);
          }
 
-         ac_parse_ib(stdout, ib, size / 4, NULL, 0, "IB", info->gfx_level, info->family,
-                     AMD_IP_GFX, NULL, NULL);
+         struct ac_ib_parser ib_parser = {
+            .f = stdout,
+            .ib = ib,
+            .num_dw = size / 4,
+            .gfx_level = info->gfx_level,
+            .family = info->family,
+            .ip_type = AMD_IP_GFX,
+         };
+
+         ac_parse_ib(&ib_parser, "IB");
          free(ib);
          exit(0);
       }

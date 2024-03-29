@@ -1061,17 +1061,15 @@ lower_subgroups_instr(nir_builder *b, nir_instr *instr, void *_options)
       break;
 
    case nir_intrinsic_rotate:
-      if (nir_intrinsic_execution_scope(intrin) == SCOPE_SUBGROUP) {
-         if (options->lower_rotate_to_shuffle &&
-             (!options->lower_boolean_shuffle || intrin->src[0].ssa->bit_size != 1))
-            return lower_to_shuffle(b, intrin, options);
-         else if (options->lower_to_scalar && intrin->num_components > 1)
-            return lower_subgroup_op_to_scalar(b, intrin);
-         else if (options->lower_boolean_shuffle && intrin->src[0].ssa->bit_size == 1)
-            return lower_boolean_shuffle(b, intrin, options);
-         else if (options->lower_shuffle_to_32bit && intrin->src[0].ssa->bit_size == 64)
-            return lower_subgroup_op_to_32bit(b, intrin);
-      }
+      if (options->lower_rotate_to_shuffle &&
+          (!options->lower_boolean_shuffle || intrin->src[0].ssa->bit_size != 1))
+         return lower_to_shuffle(b, intrin, options);
+      else if (options->lower_to_scalar && intrin->num_components > 1)
+         return lower_subgroup_op_to_scalar(b, intrin);
+      else if (options->lower_boolean_shuffle && intrin->src[0].ssa->bit_size == 1)
+         return lower_boolean_shuffle(b, intrin, options);
+      else if (options->lower_shuffle_to_32bit && intrin->src[0].ssa->bit_size == 64)
+         return lower_subgroup_op_to_32bit(b, intrin);
       break;
    case nir_intrinsic_masked_swizzle_amd:
       if (options->lower_to_scalar && intrin->num_components > 1) {

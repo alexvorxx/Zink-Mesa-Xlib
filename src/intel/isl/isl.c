@@ -123,7 +123,7 @@ isl_device_setup_mocs(struct isl_device *dev)
       dev->mocs.blitter_dst = 1 << 1;
       dev->mocs.blitter_src = 1 << 1;
    } else if (dev->info->ver >= 12) {
-      if (intel_device_info_is_mtl(dev->info)) {
+      if (intel_device_info_is_mtl_or_arl(dev->info)) {
          /* Cached L3+L4; BSpec: 45101 */
          dev->mocs.internal = 1 << 1;
          /* Displayables cached to L3+L4:WT */
@@ -267,10 +267,16 @@ isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
    uint32_t mask = (usage & ISL_SURF_USAGE_PROTECTED_BIT) ?
       dev->mocs.protected_mask : 0;
 
+   if (usage & ISL_SURF_USAGE_BLITTER_SRC_BIT)
+      return dev->mocs.blitter_src | mask;
+
+   if (usage & ISL_SURF_USAGE_BLITTER_DST_BIT)
+      return dev->mocs.blitter_dst | mask;
+
    if (external)
       return dev->mocs.external | mask;
 
-   if (intel_device_info_is_mtl(dev->info) &&
+   if (intel_device_info_is_mtl_or_arl(dev->info) &&
        (usage & ISL_SURF_USAGE_STREAM_OUT_BIT))
       return dev->mocs.uncached | mask;
 
@@ -279,7 +285,7 @@ isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
          return dev->mocs.internal | mask;
 
       if (usage & ISL_SURF_USAGE_CPB_BIT)
-         return dev->mocs.internal;
+         return dev->mocs.internal | mask;
 
       /* Using L1:HDC for storage buffers breaks Vulkan memory model
        * tests that use shader atomics.  This isn't likely to work out,
@@ -2374,7 +2380,7 @@ _isl_notify_failure(const struct isl_surf_init_info *surf_info,
 
    snprintf(msg + ret, sizeof(msg) - ret,
             " extent=%ux%ux%u dim=%s msaa=%ux levels=%u rpitch=%u fmt=%s "
-            "usages=%s%s%s%s%s%s%s%s%s%s%s%s%s%s "
+            "usages=%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s "
             "tiling_flags=%s%s%s%s%s%s%s%s%s%s%s%s%s",
             surf_info->width, surf_info->height,
             surf_info->dim == ISL_SURF_DIM_3D ?
@@ -2385,20 +2391,22 @@ _isl_notify_failure(const struct isl_surf_init_info *surf_info,
             surf_info->row_pitch_B,
             isl_format_get_name(surf_info->format) + strlen("ISL_FORMAT_"),
 
-            PRINT_USAGE(RENDER_TARGET,   "rt"),
-            PRINT_USAGE(DEPTH,           "depth"),
-            PRINT_USAGE(STENCIL,         "stenc"),
-            PRINT_USAGE(TEXTURE,         "tex"),
-            PRINT_USAGE(CUBE,            "cube"),
-            PRINT_USAGE(DISABLE_AUX,     "noaux"),
-            PRINT_USAGE(DISPLAY,         "disp"),
-            PRINT_USAGE(HIZ,             "hiz"),
-            PRINT_USAGE(MCS,             "mcs"),
-            PRINT_USAGE(CCS,             "ccs"),
-            PRINT_USAGE(VERTEX_BUFFER,   "vb"),
-            PRINT_USAGE(INDEX_BUFFER,    "ib"),
-            PRINT_USAGE(CONSTANT_BUFFER, "const"),
-            PRINT_USAGE(STAGING,         "stage"),
+            PRINT_USAGE(RENDER_TARGET,       "rt"),
+            PRINT_USAGE(DEPTH,               "depth"),
+            PRINT_USAGE(STENCIL,             "stenc"),
+            PRINT_USAGE(TEXTURE,             "tex"),
+            PRINT_USAGE(CUBE,                "cube"),
+            PRINT_USAGE(DISABLE_AUX,         "noaux"),
+            PRINT_USAGE(DISPLAY,             "disp"),
+            PRINT_USAGE(HIZ,                 "hiz"),
+            PRINT_USAGE(MCS,                 "mcs"),
+            PRINT_USAGE(CCS,                 "ccs"),
+            PRINT_USAGE(VERTEX_BUFFER,       "vb"),
+            PRINT_USAGE(INDEX_BUFFER,        "ib"),
+            PRINT_USAGE(CONSTANT_BUFFER,     "const"),
+            PRINT_USAGE(STAGING,             "stage"),
+            PRINT_USAGE(SPARSE,              "sparse"),
+            PRINT_USAGE(NO_AUX_TT_ALIGNMENT, "no-aux-align"),
 
             PRINT_TILING(LINEAR,         "linear"),
             PRINT_TILING(W,              "W"),
@@ -2689,8 +2697,10 @@ isl_calc_base_alignment(const struct isl_device *dev,
           * is that we haven't enable CCS on linear images yet so we can avoid
           * the extra alignment there.
           */
-         base_alignment_B = MAX(base_alignment_B, dev->info->verx10 >= 125 ?
-                                1024 * 1024 : 64 * 1024);
+         if (!(info->usage & ISL_SURF_USAGE_NO_AUX_TT_ALIGNMENT_BIT)) {
+            base_alignment_B = MAX(base_alignment_B, dev->info->verx10 >= 125 ?
+                                   1024 * 1024 : 64 * 1024);
+         }
       }
    }
 
@@ -3023,6 +3033,12 @@ isl_surf_supports_ccs(const struct isl_device *dev,
       return false;
 
    if (ISL_GFX_VER(dev) >= 12) {
+      /* Wa_1406738321: 3D textures need a blit to a new surface in order to
+       * perform a resolve. For now, just disable CCS on TGL.
+       */
+      if (dev->info->verx10 == 120 && surf->dim == ISL_SURF_DIM_3D)
+         return false;
+
       if (isl_surf_usage_is_stencil(surf->usage)) {
          /* HiZ and MCS aren't allowed with stencil */
          assert(hiz_or_mcs_surf == NULL || hiz_or_mcs_surf->size_B == 0);
@@ -3030,11 +3046,41 @@ isl_surf_supports_ccs(const struct isl_device *dev,
          /* Multi-sampled stencil cannot have CCS */
          if (surf->samples > 1)
             return false;
+
+         /* No CCS support for 3D Depth/Stencil values
+          *
+          * According to HSD 22015614752, there are issues with multiple engines
+          * accessing the same CCS cacheline in parallel. For 2D depth/stencil,
+          * we can upgrade to Tile64 to avoid any issues,
+          * but we can't do the same for 3D depth/stencil.
+          *
+          * For that case, we can't use Tile64 because the depth/stencil
+          * hardware can't actually output 3D Tile64 data.
+          *
+          * Let's just disable CCS instead.
+          */
+         if (surf->dim == ISL_SURF_DIM_3D)
+            return false;
       } else if (isl_surf_usage_is_depth(surf->usage)) {
          const struct isl_surf *hiz_surf = hiz_or_mcs_surf;
 
          /* With depth surfaces, HIZ is required for CCS. */
          if (hiz_surf == NULL || hiz_surf->size_B == 0)
+            return false;
+
+         /* No CCS support for 3D Depth/Stencil values
+          *
+          * According to HSD 22015614752, there are issues with multiple engines
+          * accessing the same CCS cacheline in parallel. For 2D depth/stencil,
+          * we can upgrade to Tile64 to avoid any issues,
+          * but we can't do the same for 3D depth/stencil.
+          *
+          * For that case, we can't use Tile64 because the depth/stencil
+          * hardware can't actually output 3D Tile64 data.
+          *
+          * Let's just disable CCS instead.
+          */
+         if (surf->dim == ISL_SURF_DIM_3D)
             return false;
 
          assert(hiz_surf->usage & ISL_SURF_USAGE_HIZ_BIT);
@@ -3058,12 +3104,6 @@ isl_surf_supports_ccs(const struct isl_device *dev,
        * 512B.
        */
       if (surf->row_pitch_B % 512 != 0)
-         return false;
-
-      /* TODO: According to Wa_1406738321, 3D textures need a blit to a new
-       * surface in order to perform a resolve. For now, just disable CCS.
-       */
-      if (surf->dim == ISL_SURF_DIM_3D)
          return false;
 
       /* BSpec 44930: (Gfx12, Gfx12.5)

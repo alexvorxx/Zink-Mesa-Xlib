@@ -23,6 +23,8 @@
 #ifndef R300_NIR_H
 #define R300_NIR_H
 
+#include <math.h>
+
 #include "pipe/p_screen.h"
 #include "compiler/nir/nir.h"
 
@@ -76,6 +78,80 @@ is_only_used_by_load_ubo_vec4(const nir_alu_instr *instr)
             return false;
    }
    return true;
+}
+
+static inline bool
+check_instr_and_src_value(nir_op op, nir_instr **instr, double value)
+{
+   if ((*instr)->type != nir_instr_type_alu)
+      return false;
+   nir_alu_instr *alu = nir_instr_as_alu(*instr);
+   if (alu->op != op)
+      return false;
+   unsigned i;
+   for (i = 0; i <= 2; i++) {
+      if (i == 2) {
+            return false;
+      }
+      nir_alu_src src = alu->src[i];
+      if (nir_src_is_const(src.src)) {
+            /* All components must be reading the same value. */
+            for (unsigned j = 0; j < alu->def.num_components - 1; j++) {
+               if (src.swizzle[j] != src.swizzle[j + 1]) {
+                  return false;
+               }
+            }
+            if (fabs(nir_src_comp_as_float(src.src, src.swizzle[0]) - value) < 1e-5) {
+               break;
+            }
+      }
+   }
+   *instr = alu->src[1 - i].src.ssa->parent_instr;
+   return true;
+}
+
+static inline bool
+needs_vs_trig_input_fixup(UNUSED struct hash_table *ht, const nir_alu_instr *instr, unsigned src,
+                          unsigned num_components, const uint8_t *swizzle)
+{
+   /* We are checking for fadd(fmul(ffract(a), 2*pi), -pi) pattern
+    * emitted by us and also some wined3d shaders.
+    * Start with check for fadd(a, -pi).
+    */
+   nir_instr *parent = instr->src[src].src.ssa->parent_instr;
+   if (!check_instr_and_src_value(nir_op_fadd, &parent, -3.141592))
+      return true;
+   /* Now check for fmul(a, 2 * pi). */
+   if (!check_instr_and_src_value(nir_op_fmul, &parent, 6.283185))
+      return true;
+
+   /* Finally check for ffract(a). */
+   if (parent->type != nir_instr_type_alu)
+      return true;
+   nir_alu_instr *fract = nir_instr_as_alu(parent);
+   if (fract->op != nir_op_ffract)
+      return true;
+   return false;
+}
+
+static inline bool
+needs_fs_trig_input_fixup(UNUSED struct hash_table *ht, const nir_alu_instr *instr, unsigned src,
+                          unsigned num_components, const uint8_t *swizzle)
+{
+   /* We are checking for ffract(a * (1 / 2 * pi)) pattern. */
+   nir_instr *parent = instr->src[src].src.ssa->parent_instr;
+   if (parent->type != nir_instr_type_alu)
+      return true;
+   nir_alu_instr *fract = nir_instr_as_alu(parent);
+   if (fract->op != nir_op_ffract)
+      return true;
+   parent = fract->src[0].src.ssa->parent_instr;
+
+   /* Now check for fmul(a, 1 / (2 * pi)). */
+   if (!check_instr_and_src_value(nir_op_fmul, &parent, 0.1591549))
+      return true;
+
+   return false;
 }
 
 bool r300_is_only_used_as_float(const nir_alu_instr *instr);

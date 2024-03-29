@@ -21,17 +21,7 @@ struct lower_desc_cbuf {
    uint64_t end;
 };
 
-static uint32_t
-hash_cbuf(const void *data)
-{
-   return _mesa_hash_data(data, sizeof(struct nvk_cbuf));
-}
-
-static bool
-cbufs_equal(const void *a, const void *b)
-{
-   return memcmp(a, b, sizeof(struct nvk_cbuf)) == 0;
-}
+DERIVE_HASH_TABLE(nvk_cbuf);
 
 static int
 compar_cbufs(const void *_a, const void *_b)
@@ -361,10 +351,7 @@ record_cbuf_uses_instr(UNUSED nir_builder *b, nir_instr *instr, void *_ctx)
       case nir_intrinsic_image_deref_atomic:
       case nir_intrinsic_image_deref_atomic_swap:
       case nir_intrinsic_image_deref_size:
-      case nir_intrinsic_image_deref_samples:
-      case nir_intrinsic_image_deref_load_param_intel:
-      case nir_intrinsic_image_deref_load_raw_intel:
-      case nir_intrinsic_image_deref_store_raw_intel: {
+      case nir_intrinsic_image_deref_samples: {
          nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
          record_deref_descriptor_cbuf_use(deref, ctx);
          return false;
@@ -388,7 +375,7 @@ record_cbuf_uses_instr(UNUSED nir_builder *b, nir_instr *instr, void *_ctx)
 static void
 build_cbuf_map(nir_shader *nir, struct lower_descriptors_ctx *ctx)
 {
-   ctx->cbufs = _mesa_hash_table_create(NULL, hash_cbuf, cbufs_equal);
+   ctx->cbufs = nvk_cbuf_table_create(NULL);
 
    nir_shader_instructions_pass(nir, record_cbuf_uses_instr,
                                 nir_metadata_all, (void *)ctx);
@@ -459,7 +446,7 @@ get_mapped_cbuf_idx(const struct nvk_cbuf *key,
       return -1;
 
    for (uint32_t c = 0; c < ctx->cbuf_map->cbuf_count; c++) {
-      if (cbufs_equal(&ctx->cbuf_map->cbufs[c], key)) {
+      if (nvk_cbuf_equal(&ctx->cbuf_map->cbufs[c], key)) {
          return c;
       }
    }
@@ -813,6 +800,80 @@ load_resource_deref_desc(nir_builder *b,
                           set, binding, index, offset_B, ctx);
 }
 
+static void
+lower_msaa_image_intrin(nir_builder *b, nir_intrinsic_instr *intrin)
+{
+   assert(nir_intrinsic_image_dim(intrin) == GLSL_SAMPLER_DIM_MS);
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   nir_def *desc = intrin->src[0].ssa;
+   nir_def *sw_log2 = nir_ubitfield_extract_imm(b, desc, 20, 2);
+   nir_def *sh_log2 = nir_ubitfield_extract_imm(b, desc, 22, 2);
+
+   nir_def *sw = nir_ishl(b, nir_imm_int(b, 1), sw_log2);
+   nir_def *sh = nir_ishl(b, nir_imm_int(b, 1), sh_log2);
+   nir_def *num_samples = nir_imul(b, sw, sh);
+
+   switch (intrin->intrinsic) {
+   case nir_intrinsic_bindless_image_load:
+   case nir_intrinsic_bindless_image_store:
+   case nir_intrinsic_bindless_image_atomic:
+   case nir_intrinsic_bindless_image_atomic_swap: {
+      nir_def *x = nir_channel(b, intrin->src[1].ssa, 0);
+      nir_def *y = nir_channel(b, intrin->src[1].ssa, 1);
+      nir_def *z = nir_channel(b, intrin->src[1].ssa, 2);
+      nir_def *w = nir_channel(b, intrin->src[1].ssa, 3);
+      nir_def *s = intrin->src[2].ssa;
+
+      nir_def *sw_mask = nir_iadd_imm(b, sw, -1);
+      nir_def *sx = nir_iand(b, s, sw_mask);
+      nir_def *sy = nir_ishr(b, s, sw_log2);
+
+      x = nir_imad(b, x, sw, sx);
+      y = nir_imad(b, y, sh, sy);
+
+      /* Make OOB sample indices OOB X/Y indices */
+      x = nir_bcsel(b, nir_ult(b, s, num_samples), x, nir_imm_int(b, -1));
+
+      nir_src_rewrite(&intrin->src[1], nir_vec4(b, x, y, z, w));
+      nir_src_rewrite(&intrin->src[2], nir_undef(b, 1, 32));
+      break;
+   }
+
+   case nir_intrinsic_bindless_image_size: {
+      b->cursor = nir_after_instr(&intrin->instr);
+
+      nir_def *size = &intrin->def;
+      nir_def *w = nir_channel(b, size, 0);
+      nir_def *h = nir_channel(b, size, 1);
+
+      w = nir_ushr(b, w, sw_log2);
+      h = nir_ushr(b, h, sh_log2);
+
+      size = nir_vector_insert_imm(b, size, w, 0);
+      size = nir_vector_insert_imm(b, size, h, 1);
+
+      nir_def_rewrite_uses_after(&intrin->def, size, size->parent_instr);
+      break;
+   }
+
+   case nir_intrinsic_bindless_image_samples: {
+      /* We need to handle NULL descriptors explicitly */
+      nir_def *samples =
+         nir_bcsel(b, nir_ieq(b, desc, nir_imm_int(b, 0)),
+                      nir_imm_int(b, 0), num_samples);
+      nir_def_rewrite_uses(&intrin->def, samples);
+      break;
+   }
+
+   default:
+      unreachable("Unknown image intrinsic");
+   }
+
+   nir_intrinsic_set_image_dim(intrin, GLSL_SAMPLER_DIM_2D);
+}
+
 static bool
 lower_image_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
                    const struct lower_descriptors_ctx *ctx)
@@ -822,12 +883,8 @@ lower_image_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
    nir_def *desc = load_resource_deref_desc(b, 1, 32, deref, 0, ctx);
    nir_rewrite_image_intrinsic(intrin, desc, true);
 
-   /* We treat 3D images as 2D arrays */
-   if (nir_intrinsic_image_dim(intrin) == GLSL_SAMPLER_DIM_3D) {
-      assert(!nir_intrinsic_image_array(intrin));
-      nir_intrinsic_set_image_dim(intrin, GLSL_SAMPLER_DIM_2D);
-      nir_intrinsic_set_image_array(intrin, true);
-   }
+   if (nir_intrinsic_image_dim(intrin) == GLSL_SAMPLER_DIM_MS)
+      lower_msaa_image_intrin(b, intrin);
 
    return true;
 }
@@ -902,14 +959,12 @@ try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
       return lower_sysval_to_root_table(b, intrin, draw.view_index, ctx);
 
    case nir_intrinsic_image_deref_load:
+   case nir_intrinsic_image_deref_sparse_load:
    case nir_intrinsic_image_deref_store:
    case nir_intrinsic_image_deref_atomic:
    case nir_intrinsic_image_deref_atomic_swap:
    case nir_intrinsic_image_deref_size:
    case nir_intrinsic_image_deref_samples:
-   case nir_intrinsic_image_deref_load_param_intel:
-   case nir_intrinsic_image_deref_load_raw_intel:
-   case nir_intrinsic_image_deref_store_raw_intel:
       return lower_image_intrin(b, intrin, ctx);
 
    case nir_intrinsic_interp_deref_at_sample:
@@ -943,7 +998,8 @@ lower_tex(nir_builder *b, nir_tex_instr *tex,
    nir_def *plane_ssa = nir_steal_tex_src(tex, nir_tex_src_plane);
    const uint32_t plane =
       plane_ssa ? nir_src_as_uint(nir_src_for_ssa(plane_ssa)) : 0;
-   const uint64_t plane_offset_B = plane * sizeof(struct nvk_image_descriptor);
+   const uint64_t plane_offset_B =
+      plane * sizeof(struct nvk_sampled_image_descriptor);
 
    nir_def *combined_handle;
    if (texture == sampler) {

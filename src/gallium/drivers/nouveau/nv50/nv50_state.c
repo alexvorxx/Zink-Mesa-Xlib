@@ -1085,7 +1085,6 @@ nv50_set_window_rectangles(struct pipe_context *pipe,
 static void
 nv50_set_vertex_buffers(struct pipe_context *pipe,
                         unsigned count,
-                        bool take_ownership,
                         const struct pipe_vertex_buffer *vb)
 {
    struct nv50_context *nv50 = nv50_context(pipe);
@@ -1096,7 +1095,7 @@ nv50_set_vertex_buffers(struct pipe_context *pipe,
 
    unsigned last_count = nv50->num_vtxbufs;
    util_set_vertex_buffers_count(nv50->vtxbuf, &nv50->num_vtxbufs, vb,
-                                 count, take_ownership);
+                                 count, true);
 
    unsigned clear_mask =
       last_count > count ? BITFIELD_RANGE(count, last_count - count) : 0;

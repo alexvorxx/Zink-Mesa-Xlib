@@ -16,7 +16,6 @@ nvk_files = files(
   'nvk_cmd_pool.c',
   'nvk_cmd_pool.h',
   'nvk_codegen.c',
-  'nvk_compute_pipeline.c',
   'nvk_descriptor_set.h',
   'nvk_descriptor_set.c',
   'nvk_descriptor_set_layout.c',
@@ -31,7 +30,6 @@ nvk_files = files(
   'nvk_event.h',
   'nvk_format.c',
   'nvk_format.h',
-  'nvk_graphics_pipeline.c',
   'nvk_heap.c',
   'nvk_heap.h',
   'nvk_image.c',
@@ -45,8 +43,6 @@ nvk_files = files(
   'nvk_nir_lower_descriptors.c',
   'nvk_physical_device.c',
   'nvk_physical_device.h',
-  'nvk_pipeline.c',
-  'nvk_pipeline.h',
   'nvk_private.h',
   'nvk_query_pool.c',
   'nvk_query_pool.h',
@@ -118,7 +114,7 @@ libvulkan_nouveau = shared_library(
 icd_lib_path = join_paths(get_option('prefix'), get_option('libdir'))
 icd_file_name = 'libvulkan_nouveau.so'
 if with_platform_windows
-  icd_lib_path = join_paths(get_option('prefix'), get_option('bindir'))
+  icd_lib_path = import('fs').relative_to(get_option('bindir'), with_vulkan_icd_dir)
   icd_file_name = 'vulkan_nouveau.dll'
 endif
 
@@ -138,23 +134,21 @@ nouveau_icd = custom_target(
   install : true,
 )
 
-if meson.version().version_compare('>= 0.58')
-  _dev_icdname = 'nouveau_devenv_icd.@0@.json'.format(host_machine.cpu())
-  custom_target(
-    'nouveau_devenv_icd',
-    input : [vk_icd_gen, vk_api_xml],
-    output : _dev_icdname,
-    command : [
-      prog_python, '@INPUT0@',
-      '--api-version', '1.3', '--xml', '@INPUT1@',
-      '--lib-path', meson.current_build_dir() / icd_file_name,
-      '--out', '@OUTPUT@',
-    ],
-    build_by_default : true,
-  )
+_dev_icdname = 'nouveau_devenv_icd.@0@.json'.format(host_machine.cpu())
+custom_target(
+  'nouveau_devenv_icd',
+  input : [vk_icd_gen, vk_api_xml],
+  output : _dev_icdname,
+  command : [
+    prog_python, '@INPUT0@',
+    '--api-version', '1.3', '--xml', '@INPUT1@',
+    '--lib-path', meson.current_build_dir() / icd_file_name,
+    '--out', '@OUTPUT@',
+  ],
+  build_by_default : true,
+)
 
-  devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
-endif
+devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
 
 if with_tests and not with_platform_android
   test(

@@ -662,6 +662,14 @@ begin_render_pass(struct zink_context *ctx)
    rpbi.renderArea.extent.width = fb_state->width;
    rpbi.renderArea.extent.height = fb_state->height;
 
+   if (ctx->fb_state.cbufs[0]) {
+      struct zink_resource *res = zink_resource(ctx->fb_state.cbufs[0]->texture);
+      if (zink_is_swapchain(res)) {
+         if (res->use_damage)
+            rpbi.renderArea = res->damage;
+      }
+   }
+
    VkClearValue clears[PIPE_MAX_COLOR_BUFS + 1] = {0};
    unsigned clear_buffers = 0;
    uint32_t clear_validate = 0;

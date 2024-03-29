@@ -229,7 +229,7 @@ def traverse_dag_needs(jobs_metadata: Dag) -> None:
         partial = True
 
         while partial:
-            next_depth: set[str] = {n for dn in final_needs for n in jobs_metadata[dn]["needs"]}
+            next_depth: set[str] = {n for dn in final_needs if dn in jobs_metadata for n in jobs_metadata[dn]["needs"]}
             partial: bool = not final_needs.issuperset(next_depth)
             final_needs = final_needs.union(next_depth)
 
@@ -343,8 +343,12 @@ def fetch_merged_yaml(gl_gql: GitlabGQL, params) -> dict[str, Any]:
       - local: .gitlab-ci.yml
     """)
     raw_response = gl_gql.query("job_details.gql", params)
-    if merged_yaml := raw_response["ciConfig"]["mergedYaml"]:
+    ci_config = raw_response["ciConfig"]
+    if merged_yaml := ci_config["mergedYaml"]:
         return yaml.safe_load(merged_yaml)
+    if "errors" in ci_config:
+        for error in ci_config["errors"]:
+            print(error)
 
     gl_gql.invalidate_query_cache()
     raise ValueError(

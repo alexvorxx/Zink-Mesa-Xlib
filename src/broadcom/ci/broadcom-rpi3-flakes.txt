@@ -12,6 +12,8 @@ spec@ext_framebuffer_blit@fbo-sys-sub-blit
 spec@egl_chromium_sync_control@conformance
 
 # CMA allocations that may sometimes succeed
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=4
 
@@ -37,4 +39,9 @@ spec@arb_depth_texture@depthstencil-render-miplevels 273 d=z24
 spec@arb_shader_texture_lod@execution@tex-miplevel-selection *lod 1d
 spec@arb_occlusion_query2@render
 
-spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4
+# Updated by ci-collate, found in this job run: https://gitlab.freedesktop.org/mesa/mesa/-/jobs/56164970
+glx@glx-multithread-clearbuffer
+
+spec@arb_vertex_buffer_object@vbo-subdata-many drawarrays
+spec@arb_vertex_buffer_object@vbo-subdata-many drawelements
+spec@arb_vertex_buffer_object@vbo-subdata-many drawrangeelements

@@ -60,7 +60,7 @@ extern simple_mtx_t fence_lock;
 #define SUBALLOC_SIZE (32 * 1024)
 /* Maximum known alignment requirement is a6xx's TEX_CONST at 16 dwords */
 #define SUBALLOC_ALIGNMENT 64
-#define RING_FLAGS (FD_BO_GPUREADONLY | FD_BO_CACHED_COHERENT)
+#define RING_FLAGS (FD_BO_GPUREADONLY | FD_BO_CACHED_COHERENT | FD_BO_HINT_COMMAND)
 
 /*
  * Stupid/simple growable array implementation:
@@ -192,7 +192,7 @@ struct fd_bo_heap *fd_bo_heap_new(struct fd_device *dev, uint32_t flags);
 void fd_bo_heap_destroy(struct fd_bo_heap *heap);
 
 struct fd_bo *fd_bo_heap_block(struct fd_bo *bo);
-struct fd_bo *fd_bo_heap_alloc(struct fd_bo_heap *heap, uint32_t size);
+struct fd_bo *fd_bo_heap_alloc(struct fd_bo_heap *heap, uint32_t size, uint32_t flags);
 
 static inline uint32_t
 submit_offset(struct fd_bo *bo, uint32_t offset)

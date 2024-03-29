@@ -349,6 +349,9 @@ Core Mesa environment variables
       * - ``rra``
         - Radeon Raytracing Analyzer
         - ``RADV``
+      * - ``ctxroll``
+        - Context rolls
+        - ``RADV``
 
    - Creating RMV captures requires the ``scripts/setup.sh`` script in the
      Radeon Developer Tools folder to be run beforehand
@@ -1266,18 +1269,20 @@ RADV driver environment variables
       disable FMASK compression on MSAA images (GFX6-GFX10.3)
    ``nogpl``
       disable VK_EXT_graphics_pipeline_library
+   ``nogsfastlaunch2``
+      disable GS_FAST_LAUNCH=2 for Mesh shaders (GFX11 only)
    ``nohiz``
       disable HIZ for depthstencil images
    ``noibs``
       disable directly recording command buffers in GPU-visible memory
-   ``nomemorycache``
-      disable memory shaders cache
    ``nomeshshader``
       disable mesh shader support on GFX10.3+
    ``nongg``
       disable NGG for GFX10 and GFX10.3
    ``nonggc``
-      disable NGG culling on GPUs where it's enabled by default (GFX10.3+ only).
+      disable NGG culling on GPUs where it's enabled by default (GFX10.3 only).
+   ``nongg_gs``
+      disable NGG GS for GFX10 and GFX10.3
    ``nort``
       skip executing vkCmdTraceRays and ray queries (RT extensions will still be
       advertised)
@@ -1341,8 +1346,6 @@ RADV driver environment variables
       rt extensions with older hardware.
    ``gewave32``
       enable wave32 for vertex/tess/geometry shaders (GFX10+)
-   ``gsfastlaunch2``
-      use GS_FAST_LAUNCH=2 for Mesh shaders (GFX11+)
    ``localbos``
       enable local BOs
    ``nggc``
@@ -1353,12 +1356,14 @@ RADV driver environment variables
       disable optimizations that get enabled when all VRAM is CPU visible.
    ``pswave32``
       enable wave32 for pixel shaders (GFX10+)
+   ``rtwave32``
+      enable wave32 for ray tracing shaders (GFX11+)
    ``rtwave64``
-      enable wave64 for ray tracing shaders (GFX10+)
+      enable wave64 for ray tracing shaders (GFX10-10.3)
    ``sam``
       enable optimizations to move more driver internal objects to VRAM.
    ``shader_object``
-      enable experimental implementation of VK_EXT_shader_object (GFX6-8)
+      enable experimental implementation of VK_EXT_shader_object
    ``transfer_queue``
       enable experimental transfer queue support (GFX9+, not yet spec compliant)
    ``video_decode``

@@ -62,7 +62,7 @@ _Present(DXGI_DDI_ARG_PRESENT *pPresentData)
    Resource *pSrcResource = CastResource(pPresentData->hSurfaceToPresent);
 
    device->pipe->screen->flush_frontbuffer(device->pipe->screen, device->pipe, 
-      pSrcResource->resource, 0, 0, pPresentData->pDXGIContext, NULL);
+      pSrcResource->resource, 0, 0, pPresentData->pDXGIContext, 0, NULL);
 
    return S_OK;
 }

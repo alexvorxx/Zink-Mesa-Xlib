@@ -204,7 +204,7 @@ static inline int sync_accumulate(const char *name, int *fd1, int fd2)
 /* Helper macro to complain if fd is non-negative and not a valid fence fd.
  * Sprinkle this around to help catch fd lifetime issues.
  */
-#ifdef DEBUG
+#if MESA_DEBUG
 #  include "util/log.h"
 #  define validate_fence_fd(fd) do {                                         \
       if (((fd) >= 0) && !sync_valid_fd(fd))                                 \

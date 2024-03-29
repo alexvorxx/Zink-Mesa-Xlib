@@ -88,12 +88,6 @@ void aco_compile_tcs_epilog(const struct aco_compiler_options* options,
                             const struct ac_shader_args* args,
                             aco_shader_part_callback* build_epilog, void** binary);
 
-void aco_compile_gl_vs_prolog(const struct aco_compiler_options* options,
-                              const struct aco_shader_info* info,
-                              const struct aco_gl_vs_prolog_info* pinfo,
-                              const struct ac_shader_args* args,
-                              aco_shader_part_callback* build_prolog, void** binary);
-
 void aco_compile_ps_prolog(const struct aco_compiler_options* options,
                            const struct aco_shader_info* info,
                            const struct aco_ps_prolog_info* pinfo,
@@ -105,6 +99,9 @@ uint64_t aco_get_codegen_flags();
 bool aco_is_gpu_supported(const struct radeon_info* info);
 
 bool aco_nir_op_supports_packed_math_16bit(const nir_alu_instr* alu);
+
+void aco_print_asm(const struct radeon_info *info, unsigned wave_size,
+                   uint32_t *binary, unsigned num_dw);
 
 #ifdef __cplusplus
 }

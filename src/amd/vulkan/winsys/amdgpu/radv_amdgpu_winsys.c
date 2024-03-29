@@ -294,6 +294,9 @@ radv_amdgpu_winsys_create(int fd, uint64_t debug_flags, uint64_t perftest_flags,
 
    ws->syncobj_sync_type = vk_drm_syncobj_get_type(amdgpu_device_get_fd(ws->dev));
    if (ws->syncobj_sync_type.features) {
+      /* multi wait is always supported */
+      ws->syncobj_sync_type.features |= VK_SYNC_FEATURE_GPU_MULTI_WAIT;
+
       ws->sync_types[num_sync_types++] = &ws->syncobj_sync_type;
       if (!(ws->syncobj_sync_type.features & VK_SYNC_FEATURE_TIMELINE)) {
          ws->emulated_timeline_sync_type = vk_sync_timeline_get_type(&ws->syncobj_sync_type);

@@ -52,7 +52,6 @@ extern "C" {
 #endif
 
 struct intel_device_info;
-struct brw_image_param;
 
 #ifndef ISL_GFX_VER
 /**
@@ -1150,6 +1149,9 @@ typedef uint64_t isl_surf_usage_flags_t;
 #define ISL_SURF_USAGE_STREAM_OUT_BIT          (1u << 18)
 #define ISL_SURF_USAGE_2D_3D_COMPATIBLE_BIT    (1u << 19)
 #define ISL_SURF_USAGE_SPARSE_BIT              (1u << 20)
+#define ISL_SURF_USAGE_NO_AUX_TT_ALIGNMENT_BIT (1u << 21)
+#define ISL_SURF_USAGE_BLITTER_DST_BIT         (1u << 22)
+#define ISL_SURF_USAGE_BLITTER_SRC_BIT         (1u << 23)
 /** @} */
 
 /**
@@ -1926,6 +1928,48 @@ struct isl_cpb_emit_info {
    uint32_t mocs;
 };
 
+/*
+ * Image metadata structure as laid out in the shader parameter
+ * buffer.  Entries have to be 16B-aligned for the vec4 back-end to be
+ * able to use them.  That's okay because the padding and any unused
+ * entries [most of them except when we're doing untyped surface
+ * access] will be removed by the uniform packing pass.
+ */
+#define ISL_IMAGE_PARAM_OFFSET_OFFSET           0
+#define ISL_IMAGE_PARAM_SIZE_OFFSET             4
+#define ISL_IMAGE_PARAM_STRIDE_OFFSET           8
+#define ISL_IMAGE_PARAM_TILING_OFFSET           12
+#define ISL_IMAGE_PARAM_SWIZZLING_OFFSET        16
+#define ISL_IMAGE_PARAM_SIZE                    20
+
+struct isl_image_param {
+   /** Offset applied to the X and Y surface coordinates. */
+   uint32_t offset[2];
+
+   /** Surface X, Y and Z dimensions. */
+   uint32_t size[3];
+
+   /** X-stride in bytes, Y-stride in pixels, horizontal slice stride in
+    * pixels, vertical slice stride in pixels.
+    */
+   uint32_t stride[4];
+
+   /** Log2 of the tiling modulus in the X, Y and Z dimension. */
+   uint32_t tiling[3];
+
+   /**
+    * Right shift to apply for bit 6 address swizzling.  Two different
+    * swizzles can be specified and will be applied one after the other.  The
+    * resulting address will be:
+    *
+    *  addr' = addr ^ ((1 << 6) & ((addr >> swizzling[0]) ^
+    *                              (addr >> swizzling[1])))
+    *
+    * Use \c 0xff if any of the swizzles is not required.
+    */
+   uint32_t swizzling[2];
+};
+
 extern const struct isl_format_layout isl_format_layouts[];
 extern const char isl_format_names[];
 extern const uint16_t isl_format_name_offsets[];
@@ -2226,6 +2270,16 @@ isl_tiling_to_i915_tiling(enum isl_tiling tiling);
 
 enum isl_tiling
 isl_tiling_from_i915_tiling(uint32_t tiling);
+
+
+/**
+ * Return an isl_aux_state to describe an auxiliary surface that is either
+ * uninitialized or zeroed.
+ */
+enum isl_aux_state
+isl_aux_get_initial_state(const struct intel_device_info *devinfo,
+                          enum isl_aux_usage usage,
+                          bool zeroed);
 
 /**
  * Return an isl_aux_op needed to enable an access to occur in an
@@ -2683,13 +2737,13 @@ isl_surf_get_ccs_surf(const struct isl_device *dev,
 
 void
 isl_surf_fill_image_param(const struct isl_device *dev,
-                          struct brw_image_param *param,
+                          struct isl_image_param *param,
                           const struct isl_surf *surf,
                           const struct isl_view *view);
 
 void
 isl_buffer_fill_image_param(const struct isl_device *dev,
-                            struct brw_image_param *param,
+                            struct isl_image_param *param,
                             enum isl_format format,
                             uint64_t size);
 

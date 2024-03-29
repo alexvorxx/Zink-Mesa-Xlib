@@ -923,7 +923,7 @@ panfrost_load_tiled_images(struct panfrost_transfer *transfer,
    }
 }
 
-#ifdef DEBUG
+#if MESA_DEBUG
 
 static unsigned
 get_superblock_size(uint32_t *hdr, unsigned uncompressed_size)
@@ -1308,7 +1308,8 @@ panfrost_ptr_map(struct pipe_context *pctx, struct pipe_resource *resource,
 
       if (usage & PIPE_MAP_WRITE) {
          BITSET_SET(rsrc->valid.data, level);
-         panfrost_minmax_cache_invalidate(rsrc->index_cache, &transfer->base);
+         panfrost_minmax_cache_invalidate(
+            rsrc->index_cache, transfer->base.box.x, transfer->base.box.width);
       }
 
       return bo->ptr.cpu + rsrc->image.layout.slices[level].offset +
@@ -1618,7 +1619,7 @@ panfrost_ptr_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
                ctx, pan_resource(trans->staging.rsrc),
                "AFBC write staging blit");
 
-            if (dev->debug & PAN_DBG_FORCE_PACK) {
+            if (pan_screen(pctx->screen)->force_afbc_packing) {
                if (panfrost_should_pack_afbc(dev, prsrc))
                   panfrost_pack_afbc(ctx, prsrc);
             }
@@ -1664,7 +1665,10 @@ panfrost_ptr_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
    util_range_add(&prsrc->base, &prsrc->valid_buffer_range, transfer->box.x,
                   transfer->box.x + transfer->box.width);
 
-   panfrost_minmax_cache_invalidate(prsrc->index_cache, transfer);
+   if (transfer->usage & PIPE_MAP_WRITE) {
+      panfrost_minmax_cache_invalidate(prsrc->index_cache, transfer->box.x,
+                                       transfer->box.width);
+   }
 
    /* Derefence the resource */
    pipe_resource_reference(&transfer->resource, NULL);

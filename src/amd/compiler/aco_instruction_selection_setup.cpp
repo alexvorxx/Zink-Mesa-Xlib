@@ -469,7 +469,6 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_workgroup_id:
                case nir_intrinsic_load_num_workgroups:
                case nir_intrinsic_load_ray_launch_size:
-               case nir_intrinsic_load_ray_launch_size_addr_amd:
                case nir_intrinsic_load_sbt_base_amd:
                case nir_intrinsic_load_subgroup_id:
                case nir_intrinsic_load_num_subgroups:
@@ -532,7 +531,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_bvh64_intersect_ray_amd:
                case nir_intrinsic_load_vector_arg_amd:
                case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
-               case nir_intrinsic_ordered_xfb_counter_add_amd:
+               case nir_intrinsic_ordered_xfb_counter_add_gfx11_amd:
                case nir_intrinsic_cmat_muladd_amd: type = RegType::vgpr; break;
                case nir_intrinsic_load_shared:
                case nir_intrinsic_load_shared2_amd:
@@ -636,6 +635,8 @@ init_context(isel_context* ctx, nir_shader* shader)
    ctx->program->constant_data.insert(ctx->program->constant_data.end(),
                                       (uint8_t*)shader->constant_data,
                                       (uint8_t*)shader->constant_data + shader->constant_data_size);
+
+   BITSET_CLEAR_RANGE(ctx->output_args, 0, BITSET_SIZE(ctx->output_args));
 }
 
 void

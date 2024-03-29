@@ -134,7 +134,6 @@ pub struct BitView<'a, BS: BitViewable + ?Sized> {
     range: Range<usize>,
 }
 
-#[allow(dead_code)]
 impl<'a, BS: BitViewable + ?Sized> BitView<'a, BS> {
     pub fn new(parent: &'a BS) -> Self {
         let len = parent.bits();
@@ -186,7 +185,6 @@ pub struct BitMutView<'a, BS: BitMutViewable + ?Sized> {
     range: Range<usize>,
 }
 
-#[allow(dead_code)]
 impl<'a, BS: BitMutViewable + ?Sized> BitMutView<'a, BS> {
     pub fn new(parent: &'a mut BS) -> Self {
         let len = parent.bits();
@@ -218,7 +216,6 @@ impl<'a, BS: BitMutViewable + ?Sized> BitMutView<'a, BS> {
         new_start..new_end
     }
 
-    #[allow(dead_code)]
     pub fn get_bit(&self, bit: usize) -> bool {
         self.get_bit_range_u64(bit..(bit + 1)) != 0
     }

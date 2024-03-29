@@ -150,15 +150,20 @@ SOFTWARE.
 
 <bitset name="#alu-2src" extends="#instruction-rep">
 	<display>
-		{REP}{XMOV}{NAME} {DST}, {SRC1}, {SRC2}
+		{REP}{XMOV}{PEEK}{NAME} {DST}, {SRC1}, {SRC2}
 	</display>
 
-	<pattern low="5" high="8">xxxx</pattern>
+	<pattern low="5" high="7">xxx</pattern>
+	<field name="PEEK" pos="8" type="bool" display="(peek)"/>
 	<field name="XMOV" low="9" high="10" type="#xmov"/>
 	<field name="DST" low="11" high="15" type="#dst"/>
 	<field name="SRC2" low="16" high="20" type="#src"/>
 	<field name="SRC1" low="21" high="25" type="#src"/>
 	<pattern low="27" high="31">10011</pattern>
+
+	<encode>
+		<map name="PEEK">src->peek</map>
+	</encode>
 </bitset>
 
 <bitset name="#alu-1src" extends="#instruction-rep">
@@ -254,7 +259,7 @@ SOFTWARE.
 	<override>
 		<expr>{SRC1} == 0</expr>
 		<display>
-			{REP}{XMOV}mov {DST}, {SRC2}
+			{REP}{XMOV}{PEEK}mov {DST}, {SRC2}
 		</display>
 	</override>
 	<pattern low="0" high="4">00110</pattern>

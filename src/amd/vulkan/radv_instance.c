@@ -53,7 +53,6 @@ static const struct debug_control radv_debug_options[] = {{"nofastclears", RADV_
                                                           {"nobinning", RADV_DEBUG_NOBINNING},
                                                           {"nongg", RADV_DEBUG_NO_NGG},
                                                           {"metashaders", RADV_DEBUG_DUMP_META_SHADERS},
-                                                          {"nomemorycache", RADV_DEBUG_NO_MEMORY_CACHE},
                                                           {"discardtodemote", RADV_DEBUG_DISCARD_TO_DEMOTE},
                                                           {"llvm", RADV_DEBUG_LLVM},
                                                           {"forcecompress", RADV_DEBUG_FORCE_COMPRESS},
@@ -77,6 +76,8 @@ static const struct debug_control radv_debug_options[] = {{"nofastclears", RADV_
                                                           {"videoarraypath", RADV_DEBUG_VIDEO_ARRAY_PATH},
                                                           {"nort", RADV_DEBUG_NO_RT},
                                                           {"nomeshshader", RADV_DEBUG_NO_MESH_SHADER},
+                                                          {"nongg_gs", RADV_DEBUG_NO_NGG_GS},
+                                                          {"nogsfastlaunch2", RADV_DEBUG_NO_GS_FAST_LAUNCH_2},
                                                           {NULL, 0}};
 
 const char *
@@ -99,10 +100,10 @@ static const struct debug_control radv_perftest_options[] = {{"localbos", RADV_P
                                                              {"rtwave64", RADV_PERFTEST_RT_WAVE_64},
                                                              {"video_decode", RADV_PERFTEST_VIDEO_DECODE},
                                                              {"dmashaders", RADV_PERFTEST_DMA_SHADERS},
-                                                             {"gsfastlaunch2", RADV_PERFTEST_GS_FAST_LAUNCH_2},
                                                              {"transfer_queue", RADV_PERFTEST_TRANSFER_QUEUE},
                                                              {"shader_object", RADV_PERFTEST_SHADER_OBJECT},
                                                              {"nircache", RADV_PERFTEST_NIR_CACHE},
+                                                             {"rtwave32", RADV_PERFTEST_RT_WAVE_32},
                                                              {NULL, 0}};
 
 const char *
@@ -115,6 +116,7 @@ radv_get_perftest_option_name(int id)
 static const struct debug_control trace_options[] = {
    {"rgp", RADV_TRACE_MODE_RGP},
    {"rra", RADV_TRACE_MODE_RRA},
+   {"ctxroll", RADV_TRACE_MODE_CTX_ROLLS},
    {NULL, 0},
 };
 
@@ -126,13 +128,14 @@ static const driOptionDescription radv_dri_options[] = {
       DRI_CONF_VK_X11_STRICT_IMAGE_COUNT(false)
       DRI_CONF_VK_X11_ENSURE_MIN_IMAGE_COUNT(false)
       DRI_CONF_VK_KHR_PRESENT_WAIT(false)
-      DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
+      DRI_CONF_VK_XWAYLAND_WAIT_READY(false)
       DRI_CONF_RADV_REPORT_LLVM9_VERSION_STRING(false)
       DRI_CONF_RADV_ENABLE_MRT_OUTPUT_NAN_FIXUP(false)
       DRI_CONF_RADV_DISABLE_SHRINK_IMAGE_STORE(false)
       DRI_CONF_RADV_NO_DYNAMIC_BOUNDS(false)
       DRI_CONF_RADV_OVERRIDE_UNIFORM_OFFSET_ALIGNMENT(0)
       DRI_CONF_RADV_CLEAR_LDS(false)
+      DRI_CONF_RADV_DISABLE_NGG_GS(false)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
@@ -158,12 +161,12 @@ static const driOptionDescription radv_dri_options[] = {
       DRI_CONF_RADV_FLUSH_BEFORE_TIMESTAMP_WRITE(false)
       DRI_CONF_RADV_RT_WAVE64(false)
       DRI_CONF_RADV_LEGACY_SPARSE_BINDING(false)
+      DRI_CONF_RADV_FORCE_PSTATE_PEAK_GFX11_DGPU(false)
       DRI_CONF_DUAL_COLOR_BLEND_BY_LOCATION(false)
       DRI_CONF_RADV_OVERRIDE_GRAPHICS_SHADER_VERSION(0)
       DRI_CONF_RADV_OVERRIDE_COMPUTE_SHADER_VERSION(0)
       DRI_CONF_RADV_OVERRIDE_RAY_TRACING_SHADER_VERSION(0)
       DRI_CONF_RADV_SSBO_NON_UNIFORM(false)
-      DRI_CONF_RADV_FORCE_ACTIVE_ACCEL_STRUCT_LEAVES(false)
       DRI_CONF_RADV_APP_LAYER()
    DRI_CONF_SECTION_END
 };
@@ -201,6 +204,9 @@ radv_init_dri_options(struct radv_instance *instance)
    if (driQueryOptionb(&instance->drirc.options, "radv_disable_dcc"))
       instance->debug_flags |= RADV_DEBUG_NO_DCC;
 
+   if (driQueryOptionb(&instance->drirc.options, "radv_disable_ngg_gs"))
+      instance->debug_flags |= RADV_DEBUG_NO_NGG_GS;
+
    instance->drirc.clear_lds = driQueryOptionb(&instance->drirc.options, "radv_clear_lds");
 
    instance->drirc.zero_vram = driQueryOptionb(&instance->drirc.options, "radv_zero_vram");
@@ -234,6 +240,9 @@ radv_init_dri_options(struct radv_instance *instance)
 
    instance->drirc.legacy_sparse_binding = driQueryOptionb(&instance->drirc.options, "radv_legacy_sparse_binding");
 
+   instance->drirc.force_pstate_peak_gfx11_dgpu =
+      driQueryOptionb(&instance->drirc.options, "radv_force_pstate_peak_gfx11_dgpu");
+
    instance->drirc.override_graphics_shader_version =
       driQueryOptioni(&instance->drirc.options, "radv_override_graphics_shader_version");
    instance->drirc.override_compute_shader_version =
@@ -255,9 +264,6 @@ radv_init_dri_options(struct radv_instance *instance)
 
    instance->drirc.vk_require_etc2 = driQueryOptionb(&instance->drirc.options, "vk_require_etc2");
    instance->drirc.vk_require_astc = driQueryOptionb(&instance->drirc.options, "vk_require_astc");
-
-   instance->drirc.force_active_accel_struct_leaves =
-      driQueryOptionb(&instance->drirc.options, "radv_force_active_accel_struct_leaves");
 }
 
 static const struct vk_instance_extension_table radv_instance_extensions_supported = {
@@ -294,6 +300,9 @@ static const struct vk_instance_extension_table radv_instance_extensions_support
    .EXT_direct_mode_display = true,
    .EXT_display_surface_counter = true,
    .EXT_acquire_drm_display = true,
+#endif
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   .EXT_headless_surface = true,
 #endif
 };
 

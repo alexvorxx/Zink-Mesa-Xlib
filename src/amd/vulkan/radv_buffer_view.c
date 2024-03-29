@@ -27,6 +27,7 @@
 
 #include "gfx10_format_table.h"
 
+#include "radv_formats.h"
 #include "radv_private.h"
 
 void

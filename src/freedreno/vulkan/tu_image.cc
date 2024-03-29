@@ -21,6 +21,7 @@
 #include "tu_descriptor_set.h"
 #include "tu_device.h"
 #include "tu_formats.h"
+#include "tu_rmv.h"
 
 uint32_t
 tu6_plane_count(VkFormat format)
@@ -310,9 +311,10 @@ ubwc_possible(struct tu_device *device,
 
    /* In copy_format, we treat snorm as unorm to avoid clamping.  But snorm
     * and unorm are UBWC incompatible for special values such as all 0's or
-    * all 1's.  Disable UBWC for snorm.
+    * all 1's prior to a740.  Disable UBWC for snorm.
     */
-   if (vk_format_is_snorm(format))
+   if (vk_format_is_snorm(format) &&
+       !info->a7xx.ubwc_unorm_snorm_int_compatible)
       return false;
 
    if (!info->a6xx.has_8bpp_ubwc &&
@@ -330,22 +332,15 @@ ubwc_possible(struct tu_device *device,
       return false;
    }
 
-   /* Disable UBWC for storage images.
+   /* Disable UBWC for storage images when not supported.
     *
-    * The closed GL driver skips UBWC for storage images (and additionally
-    * uses linear for writeonly images).  We seem to have image tiling working
-    * in freedreno in general, so turnip matches that.  freedreno also enables
-    * UBWC on images, but it's not really tested due to the lack of
-    * UBWC-enabled mipmaps in freedreno currently.  Just match the closed GL
-    * behavior of no UBWC.
-   */
-   if ((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) {
-      if (device) {
-         perf_debug(device,
-                    "Disabling UBWC for %s storage image, but should be "
-                    "possible to support",
-                    util_format_name(vk_format_to_pipe_format(format)));
-      }
+    * Prior to a7xx, storage images must be readonly or writeonly to use UBWC.
+    * Freedreno can determine when this isn't the case and decompress the
+    * image on-the-fly, but we don't know which image a binding corresponds to
+    * and we can't change the descriptor so we can't do this.
+    */
+   if (((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) &&
+       !info->a6xx.supports_ibo_ubwc) {
       return false;
    }
 
@@ -374,17 +369,10 @@ ubwc_possible(struct tu_device *device,
        (stencil_usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)))
       return false;
 
-   /* This meant to disable UBWC for MSAA z24s8, but accidentally disables it
-    * for all MSAA.  https://gitlab.freedesktop.org/mesa/mesa/-/issues/7438
-    */
-   if (!info->a6xx.has_z24uint_s8uint && samples > VK_SAMPLE_COUNT_1_BIT) {
-      if (device) {
-         perf_debug(device,
-                    "Disabling UBWC for %d-sample %s image, but it should be "
-                    "possible to support",
-                    samples,
-                    util_format_name(vk_format_to_pipe_format(format)));
-      }
+   if (!info->a6xx.has_z24uint_s8uint &&
+       (format == VK_FORMAT_D24_UNORM_S8_UINT ||
+        format == VK_FORMAT_X8_D24_UNORM_PACK32) &&
+       samples > VK_SAMPLE_COUNT_1_BIT) {
       return false;
    }
 
@@ -505,7 +493,8 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
        !vk_format_is_depth_or_stencil(image->vk.format)) {
       const VkImageFormatListCreateInfo *fmt_list =
          vk_find_struct_const(pCreateInfo->pNext, IMAGE_FORMAT_LIST_CREATE_INFO);
-      if (!tu6_mutable_format_list_ubwc_compatible(fmt_list)) {
+      if (!tu6_mutable_format_list_ubwc_compatible(device->physical_device->info,
+                                                   fmt_list)) {
          if (ubwc_enabled) {
             if (fmt_list && fmt_list->viewFormatCount == 2) {
                perf_debug(
@@ -744,6 +733,12 @@ tu_CreateImage(VkDevice _device,
       return result;
    }
 
+   TU_RMV(image_create, device, image);
+
+#ifdef HAVE_PERFETTO
+   tu_perfetto_log_create_image(device, image);
+#endif
+
    *pImage = tu_image_to_handle(image);
 
 #if DETECT_OS_ANDROID
@@ -764,6 +759,12 @@ tu_DestroyImage(VkDevice _device,
 
    if (!image)
       return;
+
+   TU_RMV(image_destroy, device, image);
+
+#ifdef HAVE_PERFETTO
+   tu_perfetto_log_destroy_image(device, image);
+#endif
 
 #if DETECT_OS_ANDROID
    if (image->owned_memory != VK_NULL_HANDLE)

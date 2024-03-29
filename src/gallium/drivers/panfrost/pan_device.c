@@ -71,7 +71,8 @@ panfrost_open_device(void *memctx, int fd, struct panfrost_device *dev)
    pan_kmod_dev_query_props(dev->kmod.dev, &dev->kmod.props);
 
    dev->arch = pan_arch(dev->kmod.props.gpu_prod_id);
-   dev->model = panfrost_get_model(dev->kmod.props.gpu_prod_id);
+   dev->model = panfrost_get_model(dev->kmod.props.gpu_prod_id,
+                                   dev->kmod.props.gpu_variant);
 
    /* If we don't recognize the model, bail early */
    if (!dev->model)
@@ -85,9 +86,9 @@ panfrost_open_device(void *memctx, int fd, struct panfrost_device *dev)
    uint64_t user_va_end =
       panfrost_clamp_to_usable_va_range(dev->kmod.dev, 1ull << 32);
 
-   dev->kmod.vm =
-      pan_kmod_vm_create(dev->kmod.dev, PAN_KMOD_VM_FLAG_AUTO_VA, user_va_start,
-                         user_va_end - user_va_start);
+   dev->kmod.vm = pan_kmod_vm_create(
+      dev->kmod.dev, PAN_KMOD_VM_FLAG_AUTO_VA | PAN_KMOD_VM_FLAG_TRACK_ACTIVITY,
+      user_va_start, user_va_end - user_va_start);
    if (!dev->kmod.vm)
       goto err_free_kmod_dev;
 
@@ -116,10 +117,16 @@ panfrost_open_device(void *memctx, int fd, struct panfrost_device *dev)
 
    /* Tiler heap is internally required by the tiler, which can only be
     * active for a single job chain at once, so a single heap can be
-    * shared across batches/contextes */
+    * shared across batches/contextes.
+    *
+    * Heap management is completely different on CSF HW, don't allocate the
+    * heap BO in that case.
+    */
 
-   dev->tiler_heap = panfrost_bo_create(
-      dev, 128 * 1024 * 1024, PAN_BO_INVISIBLE | PAN_BO_GROWABLE, "Tiler heap");
+   if (dev->arch < 10) {
+      dev->tiler_heap = panfrost_bo_create(
+         dev, 128 * 1024 * 1024, PAN_BO_INVISIBLE | PAN_BO_GROWABLE, "Tiler heap");
+   }
 
    pthread_mutex_init(&dev->submit_lock, NULL);
 

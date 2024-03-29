@@ -417,6 +417,8 @@ spec@!opengl 3.1@primitive-restart-xfb generated,Fail
 spec@!opengl 3.1@primitive-restart-xfb written,Fail
 spec@!opengl es 3.0@gles-3.0-transform-feedback-uniform-buffer-object,Fail
 
+dEQP-GLES31.functional.texture.border_clamp.range_clamp.linear_float_color,Fail
+
 # The following tests started to fail after CI fix, see
 # https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/16325
 dEQP-VK.rasterization.interpolation_multisample_4_bit.lines_wide,Fail
@@ -430,7 +432,6 @@ dEQP-VK.spirv_assembly.instruction.compute.workgroup_memory.float32,Crash
 dEQP-VK.spirv_assembly.instruction.compute.workgroup_memory.int32,Crash
 dEQP-VK.spirv_assembly.instruction.compute.workgroup_memory.uint32,Crash
 
-dEQP-VK.api.command_buffers.record_many_draws_secondary_2,Fail
 dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.1d_to_1d.r16g16_snorm.r16g16_snorm.general_optimal,Fail
 dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.1d_to_1d.r16g16b16a16_uint.r16g16b16a16_uint.optimal_general,Fail
 dEQP-VK.api.copy_and_blit.core.image_to_image.all_formats.color.1d_to_1d.r8_uint.r8_uint.general_optimal,Fail

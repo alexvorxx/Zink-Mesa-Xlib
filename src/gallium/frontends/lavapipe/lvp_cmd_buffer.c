@@ -138,6 +138,9 @@ VKAPI_ATTR void VKAPI_CALL lvp_CmdPushDescriptorSetWithTemplate2KHR(
       case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
          info_size += sizeof(VkBufferView) * entry->descriptorCount;
          break;
+      case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+         info_size += sizeof(VkAccelerationStructureKHR) * entry->descriptorCount;
+         break;
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
@@ -300,6 +303,23 @@ VKAPI_ATTR void VKAPI_CALL lvp_CmdPushDescriptorSet2KHR(
                   typed_memcpy(arr, write->pBufferInfo, write->descriptorCount);
                }
                break;
+
+            case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+               const VkWriteDescriptorSetAccelerationStructureKHR *accel_structs =
+                  vk_find_struct_const(write->pNext, WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+
+               uint32_t accel_structs_size = sizeof(VkAccelerationStructureKHR) * accel_structs->accelerationStructureCount;
+               VkWriteDescriptorSetAccelerationStructureKHR *write_accel_structs =
+                  rzalloc_size(ctx, sizeof(VkWriteDescriptorSetAccelerationStructureKHR) + accel_structs_size);
+            
+               write_accel_structs->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+               write_accel_structs->accelerationStructureCount = accel_structs->accelerationStructureCount;
+               write_accel_structs->pAccelerationStructures = (void *)&write_accel_structs[1];
+               memcpy((void *)write_accel_structs->pAccelerationStructures, accel_structs->pAccelerationStructures, accel_structs_size);
+
+               dstwrite->pNext = write_accel_structs;
+               break;
+            }
 
             default:
                break;

@@ -2002,7 +2002,7 @@ fill_res_props_dwords(uint32_t dwords[2],
       dwords[0] = get_basic_srv_uav_res_props_dword(true,
          get_int_from_mdnode(mdnode, 9),
          get_int_from_mdnode(mdnode, 7),
-         get_int_from_mdnode(mdnode, 6),
+         get_int_from_mdnode(mdnode, 8),
          kind);
       break;
    case DXIL_RESOURCE_CLASS_CBV:

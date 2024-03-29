@@ -74,7 +74,7 @@ saturate_propagation_test::saturate_propagation_test()
 
    bld = fs_builder(v).at_end();
 
-   devinfo->ver = 6;
+   devinfo->ver = 9;
    devinfo->verx10 = devinfo->ver * 10;
 }
 
@@ -108,7 +108,7 @@ saturate_propagation(fs_visitor *v)
       v->cfg->dump();
    }
 
-   bool ret = v->opt_saturate_propagation();
+   bool ret = brw_fs_opt_saturate_propagation(*v);
 
    if (print) {
       fprintf(stderr, "\n= After =\n");
@@ -653,8 +653,16 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
    fs_reg src0 = v->vgrf(glsl_float_type());
    fs_reg src1 = v->vgrf(glsl_float_type());
    fs_reg src2 = v->vgrf(glsl_vec2_type());
+
+   fs_reg tex_srcs[TEX_LOGICAL_NUM_SRCS];
+   tex_srcs[TEX_LOGICAL_SRC_COORDINATE] = src2;
+   tex_srcs[TEX_LOGICAL_SRC_SURFACE] = brw_imm_ud(0);
+   tex_srcs[TEX_LOGICAL_SRC_COORD_COMPONENTS] = brw_imm_ud(2);
+   tex_srcs[TEX_LOGICAL_SRC_GRAD_COMPONENTS] = brw_imm_ud(0);
+   tex_srcs[TEX_LOGICAL_SRC_RESIDENCY] = brw_imm_ud(0);
+
    bld.ADD(offset(dst0, bld, 2), src0, src1);
-   bld.emit(SHADER_OPCODE_TEX, dst0, src2)
+   bld.emit(SHADER_OPCODE_TEX_LOGICAL, dst0, tex_srcs, TEX_LOGICAL_NUM_SRCS)
       ->size_written = 8 * REG_SIZE;
    set_saturate(true, bld.MOV(dst1, offset(dst0, bld, 2)));
 
@@ -679,7 +687,7 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
    EXPECT_EQ(2, block0->end_ip);
    EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
    EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(SHADER_OPCODE_TEX, instruction(block0, 1)->opcode);
+   EXPECT_EQ(SHADER_OPCODE_TEX_LOGICAL, instruction(block0, 1)->opcode);
    EXPECT_FALSE(instruction(block0, 0)->saturate);
    EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
    EXPECT_TRUE(instruction(block0, 2)->saturate);

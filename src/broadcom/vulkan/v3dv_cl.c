@@ -122,7 +122,7 @@ v3dv_cl_ensure_space_with_branch(struct v3dv_cl *cl, uint32_t space)
     * end with a 'return from sub list' command.
     */
    bool needs_return_from_sub_list = false;
-   if (cl->job->type == V3DV_JOB_TYPE_GPU_CL_SECONDARY && cl->size > 0)
+   if (cl->job->type == V3DV_JOB_TYPE_GPU_CL_INCOMPLETE && cl->size > 0)
          needs_return_from_sub_list = true;
 
    /*

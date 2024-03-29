@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <libgen.h>
 #if FD_REPLAY_KGSL
 #include "../vulkan/msm_kgsl.h"
 #elif FD_REPLAY_MSM
@@ -75,20 +76,20 @@ static int handle_file(const char *filename, uint32_t first_submit,
                        uint64_t base_addr, const char *cmdstreamgen);
 
 static void
-print_usage(const char *name)
+print_usage(const char *name, const char *default_csgen)
 {
    /* clang-format off */
    fprintf(stderr, "Usage:\n\n"
-           "\t%s [OPTSIONS]... FILE...\n\n"
+           "\t%s [OPTIONS]... FILE...\n\n"
            "Options:\n"
            "\t-e, --exe=NAME         - only use cmdstream from named process\n"
            "\t-o  --override=submit  - № of the submit to override\n"
-           "\t-g  --generator=path   - executable which generate cmdstream for override\n"
+           "\t-g  --generator=path   - executable which generate cmdstream for override (default: %s)\n"
            "\t-f  --first=submit     - first submit № to replay\n"
            "\t-l  --last=submit      - last submit № to replay\n"
            "\t-a  --address=address  - base iova address on WSL\n"
            "\t-h, --help             - show this message\n"
-           , name);
+           , name, default_csgen);
    /* clang-format on */
    exit(2);
 }
@@ -115,7 +116,11 @@ main(int argc, char **argv)
    uint32_t first_submit = 0;
    uint32_t last_submit = -1;
    uint64_t base_addr = 0;
-   const char *cmdstreamgen = NULL;
+
+   char *default_csgen = malloc(PATH_MAX);
+   snprintf(default_csgen, PATH_MAX, "%s/generate_rd", dirname(argv[0]));
+
+   const char *csgen = default_csgen;
 
    while ((c = getopt_long(argc, argv, "e:o:g:f:l:a:h", opts, NULL)) != -1) {
       switch (c) {
@@ -129,7 +134,7 @@ main(int argc, char **argv)
          submit_to_override = strtoul(optarg, NULL, 0);
          break;
       case 'g':
-         cmdstreamgen = optarg;
+         csgen = optarg;
          break;
       case 'f':
          first_submit = strtoul(optarg, NULL, 0);
@@ -142,13 +147,13 @@ main(int argc, char **argv)
          break;
       case 'h':
       default:
-         print_usage(argv[0]);
+         print_usage(argv[0], default_csgen);
       }
    }
 
    while (optind < argc) {
       ret = handle_file(argv[optind], first_submit, last_submit,
-                        submit_to_override, base_addr, cmdstreamgen);
+                        submit_to_override, base_addr, csgen);
       if (ret) {
          fprintf(stderr, "error reading: %s\n", argv[optind]);
          fprintf(stderr, "continuing..\n");
@@ -157,7 +162,7 @@ main(int argc, char **argv)
    }
 
    if (ret)
-      print_usage(argv[0]);
+      print_usage(argv[0], default_csgen);
 
    return ret;
 }
@@ -203,6 +208,10 @@ struct device {
    uint64_t va_iova;
 
    struct u_vector wrbufs;
+
+#ifdef FD_REPLAY_MSM
+   uint32_t queue_id;
+#endif
 
 #ifdef FD_REPLAY_KGSL
    uint32_t context_id;
@@ -359,14 +368,15 @@ device_dump_wrbuf(struct device *dev)
    if (!u_vector_length(&dev->wrbufs))
       return;
 
-   char buffer_dir[256];
-   snprintf(buffer_dir, sizeof(buffer_dir), "%s/buffers", exename);
+   char buffer_dir[PATH_MAX];
+   getcwd(buffer_dir, sizeof(buffer_dir));
+   strcat(buffer_dir, "/buffers");
    rmdir(buffer_dir);
    mkdir(buffer_dir, 0777);
 
    struct wrbuf *wrbuf;
    u_vector_foreach(wrbuf, &dev->wrbufs) {
-      char buffer_path[256];
+      char buffer_path[PATH_MAX];
       snprintf(buffer_path, sizeof(buffer_path), "%s/%s", buffer_dir, wrbuf->name);
       FILE *f = fopen(buffer_path, "wb");
       if (!f) {
@@ -379,8 +389,16 @@ device_dump_wrbuf(struct device *dev)
          fprintf(stderr, "Error getting buffer for %s\n", buffer_path);
          goto end_it;
       }
-      const void *buffer = buf->map + (wrbuf->iova - buf->iova);
-      fwrite(buffer, wrbuf->size, 1, f);
+
+      uint64_t offset = wrbuf->iova - buf->iova;
+      uint64_t size = MIN2(wrbuf->size, buf->size - offset);
+      if (size != wrbuf->size) {
+         fprintf(stderr, "Warning: Clamping buffer %s as it's smaller than expected (0x%lx < 0x%lx)\n", wrbuf->name, size, wrbuf->size);
+      }
+
+      printf("Dumping %s (0x%lx - 0x%lx)\n", wrbuf->name, wrbuf->iova, wrbuf->iova + size);
+
+      fwrite(buf->map + offset, size, 1, f);
 
       end_it:
       fclose(f);
@@ -459,6 +477,19 @@ device_create(uint64_t base_addr)
 
       printf("Allocated iova %" PRIx64 "\n", dev->va_iova);
    }
+
+   struct drm_msm_submitqueue req_queue = {
+      .flags = 0,
+      .prio = 0,
+   };
+
+   ret = drmCommandWriteRead(dev->fd, DRM_MSM_SUBMITQUEUE_NEW, &req_queue,
+                             sizeof(req_queue));
+   if (ret) {
+      err(1, "DRM_MSM_SUBMITQUEUE_NEW failure");
+   }
+
+   dev->queue_id = req_queue.id;
 
    rb_tree_init(&dev->buffers);
    util_vma_heap_init(&dev->vma, va_start, ROUND_DOWN_TO(va_size, 4096));
@@ -543,7 +574,7 @@ device_submit_cmdstreams(struct device *dev)
 
    struct drm_msm_gem_submit submit_req = {
       .flags = MSM_PIPE_3D0,
-      .queueid = 0,
+      .queueid = dev->queue_id,
       .bos = (uint64_t)(uintptr_t)bo_list,
       .nr_bos = bo_count,
       .cmds = (uint64_t)(uintptr_t)cmds,
@@ -568,7 +599,7 @@ device_submit_cmdstreams(struct device *dev)
     */
    struct drm_msm_wait_fence wait_req = {
       .fence = submit_req.fence,
-      .queueid = 0,
+      .queueid = dev->queue_id,
    };
    get_abs_timeout(&wait_req.timeout, 1000000000);
 
@@ -585,6 +616,8 @@ device_submit_cmdstreams(struct device *dev)
    device_print_cp_log(dev);
 
    device_dump_wrbuf(dev);
+   u_vector_finish(&dev->wrbufs);
+   u_vector_init(&dev->wrbufs, 8, sizeof(struct wrbuf));
 
    device_free_buffers(dev);
 }
@@ -592,7 +625,9 @@ device_submit_cmdstreams(struct device *dev)
 static void
 buffer_mem_alloc(struct device *dev, struct buffer *buf)
 {
-   util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   bool success = util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   if (!success)
+      errx(1, "Failed to allocate buffer");
 
    if (!dev->has_set_iova) {
       uint64_t offset = buf->iova - dev->va_iova;
@@ -721,6 +756,7 @@ device_create(uint64_t base_addr)
    rb_tree_init(&dev->buffers);
    util_vma_heap_init(&dev->vma, req.gpuaddr, ROUND_DOWN_TO(FAKE_ADDRESS_SPACE_SIZE, 4096));
    u_vector_init(&dev->cmdstreams, 8, sizeof(struct cmdstream));
+   u_vector_init(&dev->wrbufs, 8, sizeof(struct wrbuf));
 
    struct kgsl_drawctxt_create drawctxt_req = {
       .flags = KGSL_CONTEXT_SAVE_GMEM |
@@ -794,6 +830,8 @@ device_submit_cmdstreams(struct device *dev)
    device_print_cp_log(dev);
 
    device_dump_wrbuf(dev);
+   u_vector_finish(&dev->wrbufs);
+   u_vector_init(&dev->wrbufs, 8, sizeof(struct wrbuf));
 
    device_free_buffers(dev);
 }
@@ -801,7 +839,9 @@ device_submit_cmdstreams(struct device *dev)
 static void
 buffer_mem_alloc(struct device *dev, struct buffer *buf)
 {
-   util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   bool success = util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   if (!success)
+      errx(1, "Failed to allocate buffer");
 
    buf->map = ((uint8_t*)dev->va_map) + (buf->iova - dev->va_iova);
 }
@@ -1058,6 +1098,7 @@ device_create(uint64_t base_addr)
    rb_tree_init(&dev->buffers);
    util_vma_heap_init(&dev->vma, dev->va_iova, ROUND_DOWN_TO(alloc_size, 4096));
    u_vector_init(&dev->cmdstreams, 8, sizeof(struct cmdstream));
+   u_vector_init(&dev->wrbufs, 8, sizeof(struct wrbuf));
 
    printf("Allocated iova at 0x%" PRIx64 "\n", dev->va_iova);
 
@@ -1155,6 +1196,8 @@ device_submit_cmdstreams(struct device *dev)
    device_print_cp_log(dev);
 
    device_dump_wrbuf(dev);
+   u_vector_finish(&dev->wrbufs);
+   u_vector_init(&dev->wrbufs, 8, sizeof(struct wrbuf));
 
    device_free_buffers(dev);
 }
@@ -1162,7 +1205,9 @@ device_submit_cmdstreams(struct device *dev)
 static void
 buffer_mem_alloc(struct device *dev, struct buffer *buf)
 {
-   util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   bool success = util_vma_heap_alloc_addr(&dev->vma, buf->iova, buf->size);
+   if (!success)
+      errx(1, "Failed to allocate buffer");
 
    buf->map = ((uint8_t*)dev->va_map) + (buf->iova - dev->va_iova);
 }
@@ -1214,11 +1259,8 @@ override_cmdstream(struct device *dev, struct cmdstream *cs,
    /* Find a free space for the new cmdstreams and resources we will use
     * when overriding existing cmdstream.
     */
-   /* TODO: should the size be configurable? */
-   uint64_t hole_size = 32 * 1024 * 1024;
-   dev->vma.alloc_high = true;
-   uint64_t hole_iova = util_vma_heap_alloc(&dev->vma, hole_size, 4096);
-   dev->vma.alloc_high = false;
+   uint64_t hole_size = util_vma_heap_get_max_free_continuous_size(&dev->vma);
+   uint64_t hole_iova = util_vma_heap_alloc(&dev->vma, hole_size, 1);
    util_vma_heap_free(&dev->vma, hole_iova, hole_size);
 
    char cmd[2048];
@@ -1283,8 +1325,25 @@ override_cmdstream(struct device *dev, struct cmdstream *cs,
          uint64_t *p = (uint64_t *)ps.buf;
          wrbuf->iova = p[0];
          wrbuf->size = p[1];
-         wrbuf->name = calloc(1, p[2]);
-         memcpy(wrbuf->name, (char *)ps.buf + 3 * sizeof(uint64_t), p[2]);
+         bool clear = p[2];
+         int name_len = ps.sz - (3 * sizeof(uint64_t));
+         wrbuf->name = calloc(sizeof(char), name_len);
+         memcpy(wrbuf->name, (char*)(p + 3), name_len); // includes null terminator
+
+         if (clear) {
+            struct buffer *buf = device_get_buffer(dev, wrbuf->iova);
+            assert(buf);
+
+            uint64_t offset = wrbuf->iova - buf->iova;
+            uint64_t end = MIN2(offset + wrbuf->size, buf->size);
+            while (offset < end) {
+               static const uint64_t clear_value = 0xdeadbeefdeadbeef;
+               memcpy(buf->map + offset, &clear_value,
+                      MIN2(sizeof(clear_value), end - offset));
+               offset += sizeof(clear_value);
+            }
+         }
+
          break;
       }
       default:

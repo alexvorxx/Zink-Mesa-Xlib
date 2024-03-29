@@ -27,13 +27,13 @@
 #include "util/mesa-sha1.h"
 #include "util/u_atomic.h"
 #include "util/u_debug.h"
-#include "vulkan/util/vk_util.h"
 #include "aco_interface.h"
 #include "nir_serialize.h"
 #include "radv_debug.h"
 #include "radv_private.h"
 #include "radv_shader.h"
 #include "vk_pipeline.h"
+#include "vk_util.h"
 
 static bool
 radv_is_cache_disabled(struct radv_device *device)

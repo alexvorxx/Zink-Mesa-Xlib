@@ -187,14 +187,13 @@ lima_delete_vertex_elements_state(struct pipe_context *pctx, void *hwcso)
 static void
 lima_set_vertex_buffers(struct pipe_context *pctx,
                         unsigned count,
-                        bool take_ownership,
                         const struct pipe_vertex_buffer *vb)
 {
    struct lima_context *ctx = lima_context(pctx);
    struct lima_context_vertex_buffer *so = &ctx->vertex_buffers;
 
    util_set_vertex_buffers_mask(so->vb, &so->enabled_mask,
-                                vb, count, take_ownership);
+                                vb, count, true);
    so->count = util_last_bit(so->enabled_mask);
 
    ctx->dirty |= LIMA_CONTEXT_DIRTY_VERTEX_BUFF;

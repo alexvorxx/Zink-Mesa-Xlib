@@ -9,7 +9,7 @@
 #include "nvk_entrypoints.h"
 #include "nvk_mme.h"
 #include "nvk_physical_device.h"
-#include "nvk_pipeline.h"
+#include "nvk_shader.h"
 
 #include "nouveau_context.h"
 
@@ -41,6 +41,11 @@
 #define NVC6C0_QMDV03_00_VAL_SET(p,a...) NVVAL_MW_SET((p), NVC6C0, QMDV03_00, ##a)
 #define NVC6C0_QMDV03_00_DEF_SET(p,a...) NVDEF_MW_SET((p), NVC6C0, QMDV03_00, ##a)
 
+#define QMD_DEF_SET(qmd, class_id, version_major, version_minor, a...) \
+   NVDEF_MW_SET((qmd), NV##class_id, QMDV##version_major##_##version_minor, ##a)
+#define QMD_VAL_SET(qmd, class_id, version_major, version_minor, a...) \
+   NVVAL_MW_SET((qmd), NV##class_id, QMDV##version_major##_##version_minor, ##a)
+
 VkResult
 nvk_push_dispatch_state_init(struct nvk_device *dev, struct nv_push *p)
 {
@@ -70,7 +75,9 @@ nvk_push_dispatch_state_init(struct nvk_device *dev, struct nv_push *p)
 static inline uint16_t
 nvk_cmd_buffer_compute_cls(struct nvk_cmd_buffer *cmd)
 {
-   return nvk_cmd_buffer_device(cmd)->pdev->info.cls_compute;
+   struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   return pdev->info.cls_compute;
 }
 
 void
@@ -95,6 +102,129 @@ void
 nvk_cmd_invalidate_compute_state(struct nvk_cmd_buffer *cmd)
 {
    memset(&cmd->state.cs, 0, sizeof(cmd->state.cs));
+}
+
+static int
+gv100_sm_config_smem_size(uint32_t size)
+{
+   if      (size > 64 * 1024) size = 96 * 1024;
+   else if (size > 32 * 1024) size = 64 * 1024;
+   else if (size > 16 * 1024) size = 32 * 1024;
+   else if (size >  8 * 1024) size = 16 * 1024;
+   else                       size =  8 * 1024;
+   return (size / 4096) + 1;
+}
+
+#define nvk_qmd_init_base(qmd, shader, class_id, version_major, version_minor)   \
+do {                                                                                                   \
+   QMD_DEF_SET(qmd, class_id, version_major, version_minor, API_VISIBLE_CALL_LIMIT, NO_CHECK);         \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, BARRIER_COUNT, shader->info.num_barriers);      \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, CTA_THREAD_DIMENSION0,                     \
+                                                            shader->info.cs.local_size[0]);                 \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, CTA_THREAD_DIMENSION1,                     \
+                                                            shader->info.cs.local_size[1]);                 \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, CTA_THREAD_DIMENSION2,                     \
+                                                            shader->info.cs.local_size[2]);                 \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, QMD_MAJOR_VERSION, version_major);         \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, QMD_VERSION, version_minor);               \
+   QMD_DEF_SET(qmd, class_id, version_major, version_minor, SAMPLER_INDEX, INDEPENDENTLY);             \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, SHADER_LOCAL_MEMORY_HIGH_SIZE, 0);         \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, SHADER_LOCAL_MEMORY_LOW_SIZE,              \
+                                                            align(shader->info.slm_size, 0x10));            \
+   QMD_VAL_SET(qmd, class_id, version_major, version_minor, SHARED_MEMORY_SIZE,                        \
+                                                            align(shader->info.cs.smem_size, 0x100));       \
+} while (0)
+
+static void
+nva0c0_qmd_init(uint32_t *qmd, const struct nvk_shader *shader)
+{
+   nvk_qmd_init_base(qmd, shader, A0C0, 00, 06);
+
+   if (shader->info.cs.smem_size <= (16 << 10))
+      NVA0C0_QMDV00_06_DEF_SET(qmd, L1_CONFIGURATION, DIRECTLY_ADDRESSABLE_MEMORY_SIZE_16KB);
+   else if (shader->info.cs.smem_size <= (32 << 10))
+      NVA0C0_QMDV00_06_DEF_SET(qmd, L1_CONFIGURATION, DIRECTLY_ADDRESSABLE_MEMORY_SIZE_32KB);
+   else if (shader->info.cs.smem_size <= (48 << 10))
+      NVA0C0_QMDV00_06_DEF_SET(qmd, L1_CONFIGURATION, DIRECTLY_ADDRESSABLE_MEMORY_SIZE_48KB);
+   else
+      unreachable("Invalid shared memory size");
+
+   uint64_t addr = shader->hdr_addr;
+   assert(addr < 0xffffffff);
+   NVA0C0_QMDV00_06_VAL_SET(qmd, PROGRAM_OFFSET, addr);
+   NVA0C0_QMDV00_06_VAL_SET(qmd, REGISTER_COUNT, shader->info.num_gprs);
+   NVA0C0_QMDV00_06_VAL_SET(qmd, SASS_VERSION, 0x30);
+}
+
+static void
+nvc0c0_qmd_init(uint32_t *qmd, const struct nvk_shader *shader)
+{
+   nvk_qmd_init_base(qmd, shader, C0C0, 02, 01);
+
+   uint64_t addr = shader->hdr_addr;
+   assert(addr < 0xffffffff);
+
+   NVC0C0_QMDV02_01_VAL_SET(qmd, SM_GLOBAL_CACHING_ENABLE, 1);
+   NVC0C0_QMDV02_01_VAL_SET(qmd, PROGRAM_OFFSET, addr);
+   NVC0C0_QMDV02_01_VAL_SET(qmd, REGISTER_COUNT, shader->info.num_gprs);
+}
+
+static void
+nvc3c0_qmd_init(uint32_t *qmd, const struct nvk_shader *shader)
+{
+   nvk_qmd_init_base(qmd, shader, C3C0, 02, 02);
+
+   NVC3C0_QMDV02_02_VAL_SET(qmd, SM_GLOBAL_CACHING_ENABLE, 1);
+   /* those are all QMD 2.2+ */
+   NVC3C0_QMDV02_02_VAL_SET(qmd, MIN_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(shader->info.cs.smem_size));
+   NVC3C0_QMDV02_02_VAL_SET(qmd, MAX_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(NVK_MAX_SHARED_SIZE));
+   NVC3C0_QMDV02_02_VAL_SET(qmd, TARGET_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(shader->info.cs.smem_size));
+
+   NVC3C0_QMDV02_02_VAL_SET(qmd, REGISTER_COUNT_V, shader->info.num_gprs);
+
+   uint64_t addr = shader->hdr_addr;
+   NVC3C0_QMDV02_02_VAL_SET(qmd, PROGRAM_ADDRESS_LOWER, addr & 0xffffffff);
+   NVC3C0_QMDV02_02_VAL_SET(qmd, PROGRAM_ADDRESS_UPPER, addr >> 32);
+}
+
+static void
+nvc6c0_qmd_init(uint32_t *qmd, const struct nvk_shader *shader)
+{
+   nvk_qmd_init_base(qmd, shader, C6C0, 03, 00);
+
+   NVC6C0_QMDV03_00_VAL_SET(qmd, SM_GLOBAL_CACHING_ENABLE, 1);
+   /* those are all QMD 2.2+ */
+   NVC6C0_QMDV03_00_VAL_SET(qmd, MIN_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(shader->info.cs.smem_size));
+   NVC6C0_QMDV03_00_VAL_SET(qmd, MAX_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(NVK_MAX_SHARED_SIZE));
+   NVC6C0_QMDV03_00_VAL_SET(qmd, TARGET_SM_CONFIG_SHARED_MEM_SIZE,
+                            gv100_sm_config_smem_size(shader->info.cs.smem_size));
+
+   NVC6C0_QMDV03_00_VAL_SET(qmd, REGISTER_COUNT_V, shader->info.num_gprs);
+
+   uint64_t addr = shader->hdr_addr;
+   NVC6C0_QMDV03_00_VAL_SET(qmd, PROGRAM_ADDRESS_LOWER, addr & 0xffffffff);
+   NVC6C0_QMDV03_00_VAL_SET(qmd, PROGRAM_ADDRESS_UPPER, addr >> 32);
+}
+
+static void
+nvk_qmd_init(struct nvk_physical_device *pdev,
+             uint32_t *qmd, const struct nvk_shader *shader)
+{
+   if (pdev->info.cls_compute >= AMPERE_COMPUTE_A)
+      nvc6c0_qmd_init(qmd, shader);
+   else if (pdev->info.cls_compute >= VOLTA_COMPUTE_A)
+      nvc3c0_qmd_init(qmd, shader);
+   else if (pdev->info.cls_compute >= PASCAL_COMPUTE_A)
+      nvc0c0_qmd_init(qmd, shader);
+   else if (pdev->info.cls_compute >= KEPLER_COMPUTE_A)
+      nva0c0_qmd_init(qmd, shader);
+   else
+      unreachable("Unknown GPU generation");
 }
 
 static void
@@ -171,18 +301,16 @@ nvc6c0_cp_launch_desc_set_cb(uint32_t *qmd, unsigned index,
 
 
 void
-nvk_cmd_bind_compute_pipeline(struct nvk_cmd_buffer *cmd,
-                              struct nvk_compute_pipeline *pipeline)
+nvk_cmd_bind_compute_shader(struct nvk_cmd_buffer *cmd,
+                            struct nvk_shader *shader)
 {
-   cmd->state.cs.pipeline = pipeline;
+   cmd->state.cs.shader = shader;
 }
 
 static uint32_t
 nvk_compute_local_size(struct nvk_cmd_buffer *cmd)
 {
-   const struct nvk_compute_pipeline *pipeline = cmd->state.cs.pipeline;
-   const struct nvk_shader *shader =
-      pipeline->base.shaders[MESA_SHADER_COMPUTE];
+   const struct nvk_shader *shader = cmd->state.cs.shader;
 
    return shader->info.cs.local_size[0] *
           shader->info.cs.local_size[1] *
@@ -196,7 +324,7 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
    struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
    struct nvk_physical_device *pdev = nvk_device_physical(dev);
    const uint32_t min_cbuf_alignment = nvk_min_cbuf_alignment(&pdev->info);
-   const struct nvk_compute_pipeline *pipeline = cmd->state.cs.pipeline;
+   const struct nvk_shader *shader = cmd->state.cs.shader;
    struct nvk_descriptor_state *desc = &cmd->state.cs.descriptors;
    VkResult result;
 
@@ -224,7 +352,7 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
 
    uint32_t qmd[128];
    memset(qmd, 0, sizeof(qmd));
-   memcpy(qmd, pipeline->qmd_template, sizeof(pipeline->qmd_template));
+   nvk_qmd_init(pdev, qmd, shader);
 
    if (nvk_cmd_buffer_compute_cls(cmd) >= AMPERE_COMPUTE_A) {
       nvc6c0_qmd_set_dispatch_size(nvk_cmd_buffer_device(cmd), qmd,
@@ -244,8 +372,6 @@ nvk_flush_compute_state(struct nvk_cmd_buffer *cmd,
                                    desc->root.cs.group_count[2]);
    }
 
-   const struct nvk_shader *shader =
-      pipeline->base.shaders[MESA_SHADER_COMPUTE];
    for (uint32_t c = 0; c < shader->cbuf_map.cbuf_count; c++) {
       const struct nvk_cbuf *cbuf = &shader->cbuf_map.cbufs[c];
 
@@ -438,7 +564,7 @@ nvk_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
    struct nvk_descriptor_state *desc = &cmd->state.cs.descriptors;
 
    /* TODO: Indirect dispatch pre-Turing */
-   assert(nvk_cmd_buffer_device(cmd)->pdev->info.cls_eng3d >= TURING_A);
+   assert(nvk_cmd_buffer_compute_cls(cmd) >= TURING_COMPUTE_A);
 
    desc->root.cs.base_group[0] = 0;
    desc->root.cs.base_group[1] = 0;

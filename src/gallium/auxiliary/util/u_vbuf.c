@@ -444,7 +444,7 @@ void u_vbuf_destroy(struct u_vbuf *mgr)
 {
    unsigned i;
 
-   mgr->pipe->set_vertex_buffers(mgr->pipe, 0, false, NULL);
+   mgr->pipe->set_vertex_buffers(mgr->pipe, 0, NULL);
 
    for (i = 0; i < PIPE_MAX_ATTRIBS; i++)
       pipe_vertex_buffer_unreference(&mgr->vertex_buffer[i]);
@@ -1018,7 +1018,7 @@ void u_vbuf_set_vertex_buffers(struct u_vbuf *mgr,
          pipe_vertex_buffer_unreference(&mgr->real_vertex_buffer[i]);
       }
 
-      pipe->set_vertex_buffers(pipe, 0, false, NULL);
+      pipe->set_vertex_buffers(pipe, 0, NULL);
       return;
    }
 
@@ -1402,7 +1402,7 @@ static void u_vbuf_set_driver_vertex_buffers(struct u_vbuf *mgr)
        * to skip atomic reference counting there. These are freshly uploaded
        * user buffers that can be discarded after this call.
        */
-      pipe->set_vertex_buffers(pipe, count, true, mgr->real_vertex_buffer);
+      pipe->set_vertex_buffers(pipe, count, mgr->real_vertex_buffer);
 
       /* We don't own the VBO references now. Set them to NULL. */
       for (unsigned i = 0; i < count; i++) {
@@ -1411,7 +1411,7 @@ static void u_vbuf_set_driver_vertex_buffers(struct u_vbuf *mgr)
       }
    } else {
       /* Slow path where we have to keep VBO references. */
-      pipe->set_vertex_buffers(pipe, count, false, mgr->real_vertex_buffer);
+      util_set_vertex_buffers(pipe, count, false, mgr->real_vertex_buffer);
    }
    mgr->vertex_buffers_dirty = false;
 }

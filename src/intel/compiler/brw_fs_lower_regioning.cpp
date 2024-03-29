@@ -66,7 +66,7 @@ namespace {
           * lowering pass will detect the mismatch in has_invalid_src_region
           * and fix the sources of the multiply instead of the destination.
           */
-         return inst->dst.stride * type_sz(inst->dst.type);
+         return inst->dst.hstride * type_sz(inst->dst.type);
       } else if (type_sz(inst->dst.type) < get_exec_type_size(inst) &&
           !is_byte_raw_mov(inst)) {
          return get_exec_type_size(inst);
@@ -184,7 +184,6 @@ namespace {
           * support 64-bit types at all.
           */
          if ((!has_64bit || devinfo->verx10 >= 125 ||
-              devinfo->platform == INTEL_PLATFORM_CHV ||
               intel_device_info_is_9lp(devinfo)) && type_sz(t) > 4)
             return BRW_REGISTER_TYPE_UD;
          else
@@ -192,9 +191,7 @@ namespace {
 
       case SHADER_OPCODE_BROADCAST:
       case SHADER_OPCODE_MOV_INDIRECT:
-         if (((devinfo->verx10 == 70 ||
-               devinfo->platform == INTEL_PLATFORM_CHV ||
-               intel_device_info_is_9lp(devinfo) ||
+         if (((intel_device_info_is_9lp(devinfo) ||
                devinfo->verx10 >= 125) && type_sz(inst->src[0].type) > 4) ||
              (devinfo->verx10 >= 125 &&
               brw_reg_type_is_floating_point(inst->src[0].type)))
@@ -220,7 +217,6 @@ namespace {
       case UNIFORM:
       case IMM:
       case VGRF:
-      case MRF:
       case ATTR:
          return reg.stride * type_sz(reg.type);
       case ARF:
@@ -256,24 +252,6 @@ namespace {
       if (is_send(inst) || inst->is_math() || inst->is_control_source(i) ||
           inst->opcode == BRW_OPCODE_DPAS) {
          return false;
-      }
-
-      /* Empirical testing shows that Broadwell has a bug affecting half-float
-       * MAD instructions when any of its sources has a non-zero offset, such
-       * as:
-       *
-       * mad(8) g18<1>HF -g17<4,4,1>HF g14.8<4,4,1>HF g11<4,4,1>HF { align16 1Q };
-       *
-       * We used to generate code like this for SIMD8 executions where we
-       * used to pack components Y and W of a vector at offset 16B of a SIMD
-       * register. The problem doesn't occur if the stride of the source is 0.
-       */
-      if (devinfo->ver == 8 &&
-          inst->opcode == BRW_OPCODE_MAD &&
-          inst->src[i].type == BRW_REGISTER_TYPE_HF &&
-          reg_offset(inst->src[i]) % REG_SIZE > 0 &&
-          inst->src[i].stride != 0) {
-         return true;
       }
 
       const unsigned dst_byte_offset = reg_offset(inst->dst) % (reg_unit(devinfo) * REG_SIZE);
@@ -663,15 +641,15 @@ namespace {
 }
 
 bool
-fs_visitor::lower_regioning()
+brw_fs_lower_regioning(fs_visitor &s)
 {
    bool progress = false;
 
-   foreach_block_and_inst_safe(block, fs_inst, inst, cfg)
-      progress |= lower_instruction(this, block, inst);
+   foreach_block_and_inst_safe(block, fs_inst, inst, s.cfg)
+      progress |= lower_instruction(&s, block, inst);
 
    if (progress)
-      invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
+      s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
 
    return progress;
 }

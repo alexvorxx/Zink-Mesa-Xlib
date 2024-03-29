@@ -77,20 +77,21 @@ vn_deps = [
   dep_thread,
   idep_mesautil,
   idep_vulkan_util,
-  idep_vulkan_runtime,
+  idep_vulkan_lite_runtime,
   idep_vulkan_wsi,
   idep_xmlconfig,
 ]
 
 vn_flags = [
   no_override_init_args,
-]
+] + cc.get_supported_arguments([
+  '-Werror=switch',
+])
 
 vn_libs = []
 
 if with_platform_wayland or with_platform_x11
   libvn_files += files('vn_wsi.c')
-  libvn_files += wsi_entrypoints[0]
   vn_flags += '-DVN_USE_WSI_PLATFORM'
 endif
 

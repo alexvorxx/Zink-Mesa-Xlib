@@ -469,7 +469,6 @@ fd_set_viewport_states(struct pipe_context *pctx, unsigned start_slot,
 
 static void
 fd_set_vertex_buffers(struct pipe_context *pctx, unsigned count,
-                      bool take_ownership,
                       const struct pipe_vertex_buffer *vb) in_dt
 {
    struct fd_context *ctx = fd_context(pctx);
@@ -492,7 +491,7 @@ fd_set_vertex_buffers(struct pipe_context *pctx, unsigned count,
    }
 
    util_set_vertex_buffers_mask(so->vb, &so->enabled_mask, vb, count,
-                                take_ownership);
+                                true);
    so->count = util_last_bit(so->enabled_mask);
 
    if (!vb)

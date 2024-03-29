@@ -1,4 +1,5 @@
 #include "nir/nir_builder.h"
+#include "radv_debug.h"
 #include "radv_meta.h"
 #include "radv_sdma.h"
 

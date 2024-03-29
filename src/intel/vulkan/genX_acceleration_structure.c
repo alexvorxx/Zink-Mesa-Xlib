@@ -835,8 +835,7 @@ cmd_build_acceleration_structures(
                    &data, sizeof(data));
    }
 
-   if (anv_cmd_buffer_is_render_queue(cmd_buffer))
-      genX(flush_pipeline_select_gpgpu)(cmd_buffer);
+   genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
    /* Due to the nature of GRL and its heavy use of jumps/predication, we
     * cannot tell exactly in what order the CFE_STATE we insert are going to

@@ -25,7 +25,6 @@
 #include "rmv/vk_rmv_tokens.h"
 #include "anv_private.h"
 #include "vk_common_entrypoints.h"
-#include "wsi_common_entrypoints.h"
 
 VkResult anv_rmv_QueuePresentKHR(
     VkQueue                                  _queue,
@@ -74,19 +73,6 @@ VkResult anv_rmv_InvalidateMappedMemoryRanges(
    vk_rmv_log_misc_token(&device->vk, VK_RMV_MISC_EVENT_TYPE_INVALIDATE_RANGES);
 
    return VK_SUCCESS;
-}
-
-VkResult anv_rmv_DebugMarkerSetObjectNameEXT(
-    VkDevice                                    device,
-    const VkDebugMarkerObjectNameInfoEXT*       pNameInfo)
-{
-   assert(pNameInfo->sType == VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT);
-   VkDebugUtilsObjectNameInfoEXT name_info;
-   name_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-   name_info.objectType = pNameInfo->objectType;
-   name_info.objectHandle = pNameInfo->object;
-   name_info.pObjectName = pNameInfo->pObjectName;
-   return anv_rmv_SetDebugUtilsObjectNameEXT(device, &name_info);
 }
 
 VkResult anv_rmv_SetDebugUtilsObjectNameEXT(

@@ -120,6 +120,7 @@ struct st_zombie_shader_node
    struct list_head node;
 };
 
+typedef void (*st_update_func_t)(struct st_context *st);
 
 struct st_context
 {
@@ -127,6 +128,9 @@ struct st_context
    struct pipe_screen *screen;
    struct pipe_context *pipe;
    struct cso_context *cso_context;
+
+   /* The list of state update functions. */
+   st_update_func_t update_functions[ST_NUM_ATOMS];
 
    struct pipe_frontend_screen *frontend_screen; /* e.g. dri_screen */
    void *frontend_context; /* e.g. dri_context */
@@ -513,10 +517,6 @@ st_api_destroy_drawable(struct pipe_frontend_drawable *drawable);
 
 void
 st_screen_destroy(struct pipe_frontend_screen *fscreen);
-
-typedef void (*st_update_func_t)(struct st_context *st);
-
-extern st_update_func_t st_update_functions[ST_NUM_ATOMS];
 
 #ifdef __cplusplus
 }

@@ -31,7 +31,7 @@
 
 #include "util/os_file.h"
 
-#include "isa.h"
+#include "ir3-isa.h"
 
 
 static void
@@ -47,7 +47,7 @@ main(int argc, char **argv)
 	size_t sz;
 	void *raw = os_read_file(argv[1], &sz);
 
-	isa_disasm(raw, sz, stdout, &(struct isa_decode_options) {
+	ir3_isa_disasm(raw, sz, stdout, &(struct isa_decode_options) {
 		.show_errors = true,
 		.branch_labels = true,
 		.pre_instr_cb = disasm_instr_cb,

@@ -231,7 +231,7 @@ get_sync_info(const Instruction* instr)
     */
    if (instr->opcode == aco_opcode::p_pops_gfx9_overlapped_wave_wait_done ||
        (instr->opcode == aco_opcode::s_wait_event &&
-        !(instr->sopp().imm & wait_event_imm_dont_wait_export_ready))) {
+        !(instr->salu().imm & wait_event_imm_dont_wait_export_ready))) {
       return memory_sync_info(storage_buffer | storage_image, semantic_acquire, scope_queuefamily);
    } else if (instr->opcode == aco_opcode::p_pops_gfx9_ordered_section_done) {
       return memory_sync_info(storage_buffer | storage_image, semantic_release, scope_queuefamily);
@@ -327,8 +327,8 @@ convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
 
    aco_ptr<Instruction> tmp = std::move(instr);
    Format format = asSDWA(withoutVOP3(tmp->format));
-   instr.reset(create_instruction<SDWA_instruction>(tmp->opcode, format, tmp->operands.size(),
-                                                    tmp->definitions.size()));
+   instr.reset(
+      create_instruction(tmp->opcode, format, tmp->operands.size(), tmp->definitions.size()));
    std::copy(tmp->operands.cbegin(), tmp->operands.cend(), instr->operands.begin());
    std::copy(tmp->definitions.cbegin(), tmp->definitions.cend(), instr->definitions.begin());
 
@@ -415,6 +415,9 @@ can_use_DPP(amd_gfx_level gfx_level, const aco_ptr<Instruction>& instr, bool dpp
              instr->opcode == aco_opcode::v_dot2_f32_bf16;
    }
 
+   if (instr->opcode == aco_opcode::v_pk_fmac_f16)
+      return gfx_level < GFX11;
+
    /* there are more cases but those all take 64-bit inputs */
    return instr->opcode != aco_opcode::v_madmk_f32 && instr->opcode != aco_opcode::v_madak_f32 &&
           instr->opcode != aco_opcode::v_madmk_f16 && instr->opcode != aco_opcode::v_madak_f16 &&
@@ -448,11 +451,11 @@ convert_to_DPP(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr, bool dpp8)
    Format format =
       (Format)((uint32_t)tmp->format | (uint32_t)(dpp8 ? Format::DPP8 : Format::DPP16));
    if (dpp8)
-      instr.reset(create_instruction<DPP8_instruction>(tmp->opcode, format, tmp->operands.size(),
-                                                       tmp->definitions.size()));
+      instr.reset(
+         create_instruction(tmp->opcode, format, tmp->operands.size(), tmp->definitions.size()));
    else
-      instr.reset(create_instruction<DPP16_instruction>(tmp->opcode, format, tmp->operands.size(),
-                                                        tmp->definitions.size()));
+      instr.reset(
+         create_instruction(tmp->opcode, format, tmp->operands.size(), tmp->definitions.size()));
    std::copy(tmp->operands.cbegin(), tmp->operands.cend(), instr->operands.begin());
    std::copy(tmp->definitions.cbegin(), tmp->definitions.cend(), instr->definitions.begin());
 
@@ -1375,8 +1378,8 @@ dealloc_vgprs(Program* program)
    if (!block.instructions.empty() && block.instructions.back()->opcode == aco_opcode::s_endpgm) {
       bld.reset(&block.instructions, block.instructions.begin() + (block.instructions.size() - 1));
       /* Due to a hazard, an s_nop is needed before "s_sendmsg sendmsg_dealloc_vgprs". */
-      bld.sopp(aco_opcode::s_nop, -1, 0);
-      bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_dealloc_vgprs);
+      bld.sopp(aco_opcode::s_nop, 0);
+      bld.sopp(aco_opcode::s_sendmsg, sendmsg_dealloc_vgprs);
    }
 
    return true;
@@ -1387,6 +1390,66 @@ Instruction::isTrans() const noexcept
 {
    return instr_info.classes[(int)opcode] == instr_class::valu_transcendental32 ||
           instr_info.classes[(int)opcode] == instr_class::valu_double_transcendental;
+}
+
+static size_t
+get_instr_data_size(Format format)
+{
+   switch (format) {
+   case Format::SOP1:
+   case Format::SOP2:
+   case Format::SOPC:
+   case Format::SOPK:
+   case Format::SOPP: return sizeof(SALU_instruction);
+   case Format::SMEM: return sizeof(SMEM_instruction);
+   case Format::PSEUDO: return sizeof(Pseudo_instruction);
+   case Format::PSEUDO_BARRIER: return sizeof(Pseudo_barrier_instruction);
+   case Format::PSEUDO_REDUCTION: return sizeof(Pseudo_reduction_instruction);
+   case Format::PSEUDO_BRANCH: return sizeof(Pseudo_branch_instruction);
+   case Format::DS: return sizeof(DS_instruction);
+   case Format::FLAT:
+   case Format::GLOBAL:
+   case Format::SCRATCH: return sizeof(FLAT_instruction);
+   case Format::LDSDIR: return sizeof(LDSDIR_instruction);
+   case Format::MTBUF: return sizeof(MTBUF_instruction);
+   case Format::MUBUF: return sizeof(MUBUF_instruction);
+   case Format::MIMG: return sizeof(MIMG_instruction);
+   case Format::VOPD: return sizeof(VOPD_instruction);
+   case Format::VINTERP_INREG: return sizeof(VINTERP_inreg_instruction);
+   case Format::VINTRP: return sizeof(VINTRP_instruction);
+   case Format::EXP: return sizeof(Export_instruction);
+   default:
+      if ((uint16_t)format & (uint16_t)Format::DPP16)
+         return sizeof(DPP16_instruction);
+      else if ((uint16_t)format & (uint16_t)Format::DPP8)
+         return sizeof(DPP8_instruction);
+      else if ((uint16_t)format & (uint16_t)Format::SDWA)
+         return sizeof(SDWA_instruction);
+      else
+         return sizeof(VALU_instruction);
+   }
+}
+
+Instruction*
+create_instruction(aco_opcode opcode, Format format, uint32_t num_operands,
+                   uint32_t num_definitions)
+{
+   size_t size = get_instr_data_size(format);
+   size_t total_size = size + num_operands * sizeof(Operand) + num_definitions * sizeof(Definition);
+
+   void* data = instruction_buffer->allocate(total_size, alignof(uint32_t));
+   memset(data, 0, total_size);
+   Instruction* inst = (Instruction*)data;
+
+   inst->opcode = opcode;
+   inst->format = format;
+
+   uint16_t operands_offset = size - offsetof(Instruction, operands);
+   inst->operands = aco::span<Operand>(operands_offset, num_operands);
+   uint16_t definitions_offset = (char*)inst->operands.end() - (char*)&inst->definitions;
+   inst->definitions = aco::span<Definition>(definitions_offset, num_definitions);
+
+   return inst;
 }
 
 } // namespace aco

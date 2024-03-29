@@ -739,7 +739,7 @@ make_null_texture(GLint width, GLint height, GLint depth, GLenum format)
    const GLint numPixels = width * height * depth;
    GLubyte *data = (GLubyte *) malloc(numPixels * components * sizeof(GLubyte));
 
-#ifdef DEBUG
+#if MESA_DEBUG
    /*
     * Let's see if anyone finds this.  If glTexImage2D() is called with
     * a NULL image pointer then load the texture image with something
@@ -2476,6 +2476,15 @@ copytexture_error_check( struct gl_context *ctx, GLuint dimensions,
       case GL_RGB10_A2:
          break;
 
+      case GL_RED:
+      case GL_RG:
+         /* GL_EXT_texture_rg adds support for GL_RED and GL_RG as an internal
+          * format
+          */
+         if (_mesa_has_EXT_texture_rg(ctx))
+            break;
+
+      FALLTHROUGH;
       default:
          _mesa_error(ctx, GL_INVALID_ENUM,
                      "glCopyTexImage%dD(internalFormat=%s)", dimensions,
@@ -2881,7 +2890,7 @@ _mesa_update_fbo_texture(struct gl_context *ctx,
       info.texObj = texObj;
       info.level = level;
       info.face = face;
-      _mesa_HashWalk(ctx->Shared->FrameBuffers, check_rtt_cb, &info);
+      _mesa_HashWalk(&ctx->Shared->FrameBuffers, check_rtt_cb, &info);
    }
 }
 
@@ -3065,9 +3074,7 @@ lookup_texture_ext_dsa(struct gl_context *ctx, GLenum target, GLuint texture,
       texObj = ctx->Shared->DefaultTex[targetIndex];
       assert(texObj);
    } else {
-      bool isGenName;
       texObj = _mesa_lookup_texture(ctx, texture);
-      isGenName = texObj != NULL;
       if (!texObj && _mesa_is_desktop_gl_core(ctx)) {
          _mesa_error(ctx, GL_INVALID_OPERATION, "%s(non-gen name)", caller);
          return NULL;
@@ -3081,7 +3088,7 @@ lookup_texture_ext_dsa(struct gl_context *ctx, GLenum target, GLuint texture,
          }
 
          /* insert into hash table */
-         _mesa_HashInsert(ctx->Shared->TexObjects, texObj->Name, texObj, isGenName);
+         _mesa_HashInsert(&ctx->Shared->TexObjects, texObj->Name, texObj);
       }
 
       if (texObj->Target != boundTarget) {
@@ -4565,22 +4572,33 @@ copyteximage(struct gl_context *ctx, GLuint dims, struct gl_texture_object *texO
                return;
          }
       }
-      /* From Page 139 of OpenGL ES 3.0 spec:
-       *    "If internalformat is sized, the internal format of the new texel
-       *    array is internalformat, and this is also the new texel array’s
-       *    effective internal format. If the component sizes of internalformat
-       *    do not exactly match the corresponding component sizes of the source
-       *    buffer’s effective internal format, described below, an
-       *    INVALID_OPERATION error is generated. If internalformat is unsized,
-       *    the internal format of the new texel array is the effective internal
-       *    format of the source buffer, and this is also the new texel array’s
-       *    effective internal format.
-       */
-      else if (formats_differ_in_component_sizes (texFormat, rb->Format)) {
+      else {
+         /* From Page 139 of OpenGL ES 3.0 spec:
+         *    "If internalformat is sized, the internal format of the new texel
+         *    array is internalformat, and this is also the new texel array’s
+         *    effective internal format. If the component sizes of internalformat
+         *    do not exactly match the corresponding component sizes of the source
+         *    buffer’s effective internal format, described below, an
+         *    INVALID_OPERATION error is generated. If internalformat is unsized,
+         *    the internal format of the new texel array is the effective internal
+         *    format of the source buffer, and this is also the new texel array’s
+         *    effective internal format.
+         */
+         enum pipe_format rb_format = st_choose_format(ctx->st, rb->InternalFormat,
+                                                       GL_NONE, GL_NONE,
+                                                       PIPE_TEXTURE_2D, 0, 0, 0,
+                                                       false, false);
+         enum pipe_format new_format = st_choose_format(ctx->st, internalFormat,
+                                                        GL_NONE, GL_NONE,
+                                                        PIPE_TEXTURE_2D, 0, 0, 0,
+                                                        false, false);
+         /* this comparison must be done on the API format, not the driver format */
+         if (formats_differ_in_component_sizes (new_format, rb_format)) {
             _mesa_error(ctx, GL_INVALID_OPERATION,
                         "glCopyTexImage%uD(component size changed in"
                         " internal format)", dims);
             return;
+         }
       }
    }
 
@@ -7105,14 +7123,14 @@ texture_image_multisample(struct gl_context *ctx, GLuint dims,
             if (!st_SetTextureStorageForMemoryObject(ctx, texObj,
                                                      memObj, 1, width,
                                                      height, depth,
-                                                     offset)) {
+                                                     offset, func)) {
 
                _mesa_init_teximage_fields(ctx, texImage, 0, 0, 0, 0,
                                           internalformat, texFormat);
             }
          } else {
             if (!st_AllocTextureStorage(ctx, texObj, 1,
-                                        width, height, depth)) {
+                                        width, height, depth, func)) {
                /* tidy up the texture image state. strictly speaking,
                 * we're allowed to just leave this in whatever state we
                 * like, but being tidy is good.

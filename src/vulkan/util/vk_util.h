@@ -316,12 +316,6 @@ struct vk_pipeline_cache_header {
    memcpy((dest), (src), (count) * sizeof(*(src))); \
 } while (0)
 
-void
-vk_compiler_cache_init(void);
-
-void
-vk_compiler_cache_finish(void);
-
 static inline gl_shader_stage
 vk_to_mesa_shader_stage(VkShaderStageFlagBits vk_stage)
 {
@@ -381,6 +375,17 @@ vk_index_type_to_bytes(enum VkIndexType type)
    case VK_INDEX_TYPE_UINT16:    return 2;
    case VK_INDEX_TYPE_UINT32:    return 4;
    default:                      unreachable("Invalid index type");
+   }
+}
+
+static inline uint32_t
+vk_index_to_restart(enum VkIndexType type)
+{
+   switch (type) {
+   case VK_INDEX_TYPE_UINT8_KHR: return 0xff;
+   case VK_INDEX_TYPE_UINT16:    return 0xffff;
+   case VK_INDEX_TYPE_UINT32:    return 0xffffffff;
+   default:                      unreachable("unexpected index type");
    }
 }
 

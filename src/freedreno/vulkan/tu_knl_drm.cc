@@ -10,6 +10,7 @@
 
 #include "tu_knl_drm.h"
 #include "tu_device.h"
+#include "tu_rmv.h"
 
 static inline void
 tu_sync_cacheline_to_gpu(void const *p __attribute__((unused)))
@@ -164,9 +165,12 @@ tu_drm_bo_finish(struct tu_device *dev, struct tu_bo *bo)
       return;
    }
 
-   if (bo->map)
+   if (bo->map) {
+      TU_RMV(bo_unmap, dev, bo);
       munmap(bo->map, bo->size);
+   }
 
+   TU_RMV(bo_destroy, dev, bo);
    tu_debug_bos_del(dev, bo);
 
    mtx_lock(&dev->bo_mutex);

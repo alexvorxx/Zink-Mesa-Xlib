@@ -275,7 +275,7 @@ int8_using_mul_add(const fs_builder &bld, fs_inst *inst)
 }
 
 bool
-brw_lower_dpas(fs_visitor &v)
+brw_fs_lower_dpas(fs_visitor &v)
 {
    bool progress = false;
 

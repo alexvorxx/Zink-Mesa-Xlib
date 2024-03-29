@@ -102,6 +102,21 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
          }
       }
       break;
+   case nir_intrinsic_load_tcs_tess_levels_to_tes_amd:
+      if (s->info->outputs_linked) {
+         replacement = nir_imm_bool(b, s->info->tcs.tes_reads_tess_factors);
+      } else {
+         replacement =
+            nir_ine_imm(b, GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout, TCS_OFFCHIP_LAYOUT_TES_READS_TF), 0);
+      }
+      break;
+   case nir_intrinsic_load_tcs_primitive_mode_amd:
+      if (s->info->outputs_linked) {
+         replacement = nir_imm_int(b, s->info->tes._primitive_mode);
+      } else {
+         replacement = GET_SGPR_FIELD_NIR(s->args->tcs_offchip_layout, TCS_OFFCHIP_LAYOUT_PRIMITIVE_MODE);
+      }
+      break;
    case nir_intrinsic_load_ring_esgs_amd:
       replacement = load_ring(b, stage == MESA_SHADER_GEOMETRY ? RING_ESGS_GS : RING_ESGS_VS, s);
       break;
@@ -285,9 +300,13 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
    case nir_intrinsic_load_esgs_vertex_stride_amd: {
       /* Emulate VGT_ESGS_RING_ITEMSIZE on GFX9+ to reduce context register writes. */
       assert(s->gfx_level >= GFX9);
-      const unsigned stride =
-         s->info->is_ngg ? s->info->ngg_info.vgt_esgs_ring_itemsize : s->info->gs_ring_info.vgt_esgs_ring_itemsize;
-      replacement = nir_imm_int(b, stride);
+      if (s->info->merged_shader_compiled_separately) {
+         replacement = ac_nir_load_arg(b, &s->args->ac, s->args->vgt_esgs_ring_itemsize);
+      } else {
+         const unsigned stride =
+            s->info->is_ngg ? s->info->ngg_info.vgt_esgs_ring_itemsize : s->info->gs_ring_info.vgt_esgs_ring_itemsize;
+         replacement = nir_imm_int(b, stride);
+      }
       break;
    }
    case nir_intrinsic_load_hs_out_patch_data_offset_amd: {
@@ -423,10 +442,18 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
       break;
 
    case nir_intrinsic_load_lds_ngg_gs_out_vertex_base_amd:
-      replacement = nir_imm_int(b, s->info->ngg_info.esgs_ring_size);
+      if (s->info->merged_shader_compiled_separately) {
+         replacement = GET_SGPR_FIELD_NIR(s->args->ngg_lds_layout, NGG_LDS_LAYOUT_GS_OUT_VERTEX_BASE);
+      } else {
+         replacement = nir_imm_int(b, s->info->ngg_info.esgs_ring_size);
+      }
       break;
    case nir_intrinsic_load_lds_ngg_scratch_base_amd:
-      replacement = nir_imm_int(b, s->info->ngg_info.scratch_lds_base);
+      if (s->info->merged_shader_compiled_separately) {
+         replacement = GET_SGPR_FIELD_NIR(s->args->ngg_lds_layout, NGG_LDS_LAYOUT_SCRATCH_BASE);
+      } else {
+         replacement = nir_imm_int(b, s->info->ngg_info.scratch_lds_base);
+      }
       break;
    case nir_intrinsic_load_num_vertices_per_primitive_amd: {
       unsigned num_vertices;

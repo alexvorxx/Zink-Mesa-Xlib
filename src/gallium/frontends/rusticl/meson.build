@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-rust = import('unstable-rust')
+rust = import('rust')
 
 libmesa_rust_util_files = files(
   'util/lib.rs',
@@ -91,13 +91,6 @@ rusticl_args = [
   '-Aclippy::too_many_arguments',
   '-Aclippy::type_complexity',
 ]
-
-if rustc.version().version_compare('>=1.72')
-  rusticl_args += [
-    # Needs to be fixed
-    '-Aclippy::arc-with-non-send-sync'
-  ]
-endif
 
 if with_platform_x11
   rusticl_args += [

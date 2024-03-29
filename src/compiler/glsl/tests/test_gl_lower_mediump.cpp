@@ -31,6 +31,7 @@
 #include "nir.h"
 #include "builtin_functions.h"
 #include "nir.h"
+#include "gl_nir.h"
 #include "glsl_to_nir.h"
 #include "nir_builder.h"
 #include "program.h"
@@ -200,6 +201,8 @@ namespace
       };
 
       nir = glsl_to_nir(&ctx->Const, whole_program, MESA_SHADER_FRAGMENT, &compiler_options);
+
+      gl_nir_inline_functions(nir);
 
       standalone_destroy_shader_program(whole_program);
 
@@ -438,10 +441,7 @@ TEST_F(gl_nir_lower_mediump_test, func_args_in_mediump)
 
    EXPECT_PRED_FORMAT2(glsl_ir_contains, fs_ir, "expression float f162f (expression float16_t * (expression float16_t f2fmp (var_ref x) ) (expression float16_t f2fmp (var_ref y) ) )");
 
-   /* NIR optimization will notice that we downconvert the highp to mediump just
-    * to multiply and cast back up, and just multiply in highp instead.
-    */
-   EXPECT_EQ(op_dest_bits(nir_op_fmul), 32);
+   EXPECT_EQ(op_dest_bits(nir_op_fmul), 16);
 }
 
 TEST_F(gl_nir_lower_mediump_test, func_args_inout_mediump)

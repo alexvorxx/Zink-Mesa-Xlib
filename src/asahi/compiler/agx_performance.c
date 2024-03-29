@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "agx_compile.h"
 #include "agx_compiler.h"
 
 /* Table describing the relationship between registers pressure and thread
@@ -28,4 +29,20 @@ agx_occupancy_for_register_count(unsigned halfregs)
    }
 
    unreachable("Register count must be less than the maximum");
+}
+
+unsigned
+agx_max_registers_for_occupancy(unsigned occupancy)
+{
+   unsigned max_regs = 0;
+
+   for (unsigned i = 0; i < ARRAY_SIZE(occupancies); ++i) {
+      if (occupancy <= occupancies[i].max_threads)
+         max_regs = occupancies[i].max_registers;
+      else
+         break;
+   }
+
+   assert(max_regs > 0 && "Thread count must be less than the maximum");
+   return max_regs;
 }

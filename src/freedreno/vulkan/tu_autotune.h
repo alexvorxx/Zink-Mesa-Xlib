@@ -141,10 +141,12 @@ struct tu_cs *tu_autotune_on_submit(struct tu_device *dev,
 
 struct tu_autotune_results_buffer;
 
+template <chip CHIP>
 void tu_autotune_begin_renderpass(struct tu_cmd_buffer *cmd,
                                   struct tu_cs *cs,
                                   struct tu_renderpass_result *autotune_result);
 
+template <chip CHIP>
 void tu_autotune_end_renderpass(struct tu_cmd_buffer *cmd,
                                 struct tu_cs *cs,
                                 struct tu_renderpass_result *autotune_result);

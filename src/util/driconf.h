@@ -594,6 +594,10 @@
    DRI_CONF_OPT_B(tu_dont_reserve_descriptor_set, def, \
                   "Don't internally reserve one of the HW descriptor sets for descriptor set dynamic offset support, this frees up an extra descriptor set at the cost of that feature")
 
+#define DRI_CONF_TU_ALLOW_OOB_INDIRECT_UBO_LOADS(def) \
+   DRI_CONF_OPT_B(tu_allow_oob_indirect_ubo_loads, def, \
+                  "Some D3D11 games rely on out-of-bounds indirect UBO loads to return real values from underlying bound descriptor, this prevents us from lowering indirectly accessed UBOs to consts")
+
 /**
  * \brief venus specific configuration options
  */
@@ -698,6 +702,10 @@
    DRI_CONF_OPT_B(radv_legacy_sparse_binding, def, \
                   "Enable legacy sparse binding (with implicit synchronization) on the graphics and compute queue")
 
+#define DRI_CONF_RADV_FORCE_PSTATE_PEAK_GFX11_DGPU(def) \
+   DRI_CONF_OPT_B(radv_force_pstate_peak_gfx11_dgpu, def, \
+                  "Force the performance level to profile_peak (all clocks to the highest levels) for RDNA3 dGPUs")
+
 /**
  * Overrides for forcing re-compilation of pipelines when RADV_BUILD_ID_OVERRIDE is enabled.
  * These need to be bumped every time a compiler bugfix is backported (up to 8 shader
@@ -720,9 +728,8 @@
 #define DRI_CONF_RADV_CLEAR_LDS(def) \
    DRI_CONF_OPT_B(radv_clear_lds, def, "Clear LDS at the end of shaders. Might decrease performance.")
 
-#define DRI_CONF_RADV_FORCE_ACTIVE_ACCEL_STRUCT_LEAVES(def) \
-   DRI_CONF_OPT_B(radv_force_active_accel_struct_leaves, def, \
-                  "Force leaf nodes of acceleration structures to be marked active.")
+#define DRI_CONF_RADV_DISABLE_NGG_GS(def) \
+   DRI_CONF_OPT_B(radv_disable_ngg_gs, def, "Disable NGG GS on GFX10/GFX10.3.")
 
 /**
  * \brief ANV specific configuration options
@@ -777,6 +784,9 @@
    DRI_CONF_OPT_B(anv_disable_fcv, def, \
                   "Disable FCV optimization")
 
+#define DRI_CONF_ANV_EXTERNAL_MEMORY_IMPLICIT_SYNC(def) \
+   DRI_CONF_OPT_B(anv_external_memory_implicit_sync, def, "Implicit sync on external BOs")
+
 #define DRI_CONF_ANV_HASVK_OVERRIDE_API_VERSION(def) \
    DRI_CONF_OPT_B(hasvk_report_vk_1_3_version, def, \
                   "Override intel_hasvk API version")
@@ -790,5 +800,8 @@
 
 #define DRI_CONF_DZN_ENABLE_8BIT_LOADS_STORES(def) \
    DRI_CONF_OPT_B(dzn_enable_8bit_loads_stores, def, "Enable VK_KHR_8bit_loads_stores")
+
+#define DRI_CONF_DZN_DISABLE(def) \
+   DRI_CONF_OPT_B(dzn_disable, def, "Fail instance creation")
 
 #endif

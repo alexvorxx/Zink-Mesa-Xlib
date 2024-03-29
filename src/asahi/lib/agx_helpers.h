@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef __AGX_HELPERS_H
-#define __AGX_HELPERS_H
+#pragma once
 
 #include <stdbool.h>
 #include "asahi/compiler/agx_compile.h"
@@ -157,5 +156,3 @@ agx_translate_shade_model(struct agx_varyings_fs *fs, unsigned binding,
          return AGX_SHADE_MODEL_FLAT_VERTEX_0;
    }
 }
-
-#endif

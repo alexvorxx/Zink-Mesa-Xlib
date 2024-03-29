@@ -16,6 +16,7 @@ mod liveness;
 mod lower_copy_swap;
 mod lower_par_copies;
 mod nir;
+mod nir_instr_printer;
 mod opt_bar_prop;
 mod opt_copy_prop;
 mod opt_dce;

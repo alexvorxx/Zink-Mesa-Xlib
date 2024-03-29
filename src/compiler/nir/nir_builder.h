@@ -182,6 +182,7 @@ nir_shader_intrinsics_pass(nir_shader *shader,
 }
 
 void nir_builder_instr_insert(nir_builder *build, nir_instr *instr);
+void nir_builder_instr_insert_at_top(nir_builder *build, nir_instr *instr);
 
 static inline nir_instr *
 nir_builder_last_instr(nir_builder *build)
@@ -250,9 +251,7 @@ nir_undef(nir_builder *build, unsigned num_components, unsigned bit_size)
    if (!undef)
       return NULL;
 
-   nir_instr_insert(nir_before_impl(build->impl), &undef->instr);
-   if (build->update_divergence)
-      nir_update_instr_divergence(build->shader, &undef->instr);
+   nir_builder_instr_insert_at_top(build, &undef->instr);
 
    return &undef->def;
 }
@@ -1601,6 +1600,16 @@ nir_build_deref_follower(nir_builder *b, nir_deref_instr *parent,
                                                  leader->cast.ptr_stride,
                                                  leader->cast.align_mul,
                                                  leader->cast.align_offset);
+
+   case nir_deref_type_ptr_as_array: {
+      assert(parent->deref_type == nir_deref_type_array ||
+             parent->deref_type == nir_deref_type_ptr_as_array ||
+             parent->deref_type == nir_deref_type_cast);
+      nir_def *index = nir_i2iN(b, leader->arr.index.ssa,
+                                parent->def.bit_size);
+      return nir_build_deref_ptr_as_array(b, parent, index);
+   }
+
    default:
       unreachable("Invalid deref instruction type");
    }
@@ -1832,7 +1841,7 @@ nir_decl_reg(nir_builder *b, unsigned num_components, unsigned bit_size,
    nir_intrinsic_set_divergent(decl, true);
    nir_def_init(&decl->instr, &decl->def, 1, 32);
 
-   nir_instr_insert(nir_before_impl(b->impl), &decl->instr);
+   nir_builder_instr_insert_at_top(b, &decl->instr);
 
    return &decl->def;
 }
@@ -2031,12 +2040,12 @@ nir_goto(nir_builder *build, struct nir_block *target)
 }
 
 static inline void
-nir_goto_if(nir_builder *build, struct nir_block *target, nir_src cond,
+nir_goto_if(nir_builder *build, struct nir_block *target, nir_def *cond,
             struct nir_block *else_target)
 {
    assert(!build->impl->structured);
    nir_jump_instr *jump = nir_jump_instr_create(build->shader, nir_jump_goto_if);
-   jump->condition = cond;
+   jump->condition = nir_src_for_ssa(cond);
    jump->target = target;
    jump->else_target = else_target;
    nir_builder_instr_insert(build, &jump->instr);

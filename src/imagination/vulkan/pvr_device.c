@@ -155,6 +155,9 @@ static const struct vk_instance_extension_table pvr_instance_extensions = {
    .KHR_get_physical_device_properties2 = true,
    .KHR_get_surface_capabilities2 = PVR_USE_WSI_PLATFORM,
    .KHR_surface = PVR_USE_WSI_PLATFORM,
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   .EXT_headless_surface = PVR_USE_WSI_PLATFORM,
+#endif
    .EXT_debug_report = true,
    .EXT_debug_utils = true,
 };
@@ -180,12 +183,14 @@ static void pvr_physical_device_get_supported_extensions(
       .KHR_external_semaphore_fd = PVR_USE_WSI_PLATFORM,
       .KHR_get_memory_requirements2 = true,
       .KHR_image_format_list = true,
+      .KHR_index_type_uint8 = true,
       .KHR_shader_expect_assume = true,
       .KHR_swapchain = PVR_USE_WSI_PLATFORM,
       .KHR_timeline_semaphore = true,
       .KHR_uniform_buffer_standard_layout = true,
       .EXT_external_memory_dma_buf = true,
       .EXT_host_query_reset = true,
+      .EXT_index_type_uint8 = true,
       .EXT_memory_budget = true,
       .EXT_private_data = true,
       .EXT_scalar_block_layout = true,
@@ -255,6 +260,9 @@ static void pvr_physical_device_get_supported_features(
       .sparseResidencyAliased = false,
       .variableMultisampleRate = false,
       .inheritedQueries = false,
+
+      /* VK_KHR_index_type_uint8 */
+      .indexTypeUint8 = true,
 
       /* Vulkan 1.2 / VK_KHR_timeline_semaphore */
       .timelineSemaphore = true,
@@ -372,10 +380,12 @@ pvr_get_physical_device_descriptor_limits(
 }
 
 static bool pvr_physical_device_get_properties(
-   const struct pvr_device_info *const dev_info,
-   const struct pvr_device_runtime_info *const dev_runtime_info,
+   const struct pvr_physical_device *const pdevice,
    struct vk_properties *const properties)
 {
+   const struct pvr_device_info *const dev_info = &pdevice->dev_info;
+   const struct pvr_device_runtime_info *const dev_runtime_info =
+      &pdevice->dev_runtime_info;
    const struct pvr_descriptor_limits *descriptor_limits =
       pvr_get_physical_device_descriptor_limits(dev_info, dev_runtime_info);
 
@@ -536,7 +546,7 @@ static bool pvr_physical_device_get_properties(
       .viewportBoundsRange[1] = 2U * max_render_size,
 
       .viewportSubPixelBits = 0,
-      .minMemoryMapAlignment = 64U,
+      .minMemoryMapAlignment = pdevice->ws->page_size,
       .minTexelBufferOffsetAlignment = 16U,
       .minUniformBufferOffsetAlignment = 4U,
       .minStorageBufferOffsetAlignment = 4U,
@@ -759,9 +769,7 @@ static VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
    pvr_physical_device_get_supported_extensions(&supported_extensions);
    pvr_physical_device_get_supported_features(&pdevice->dev_info,
                                               &supported_features);
-   if (!pvr_physical_device_get_properties(&pdevice->dev_info,
-                                           &pdevice->dev_runtime_info,
-                                           &supported_properties)) {
+   if (!pvr_physical_device_get_properties(pdevice, &supported_properties)) {
       result = vk_errorf(instance,
                          VK_ERROR_INITIALIZATION_FAILED,
                          "Failed to collect physical device properties");
@@ -1167,7 +1175,7 @@ uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
 
    num_tile_in_flight /= num_allocs;
 
-#if defined(DEBUG)
+#if MESA_DEBUG
    /* Validate the above result. */
 
    assert(num_tile_in_flight >= MIN2(num_tile_in_flight, max_tiles_in_flight));

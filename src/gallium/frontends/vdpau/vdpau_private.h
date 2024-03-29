@@ -276,6 +276,8 @@ ProfileToPipe(VdpDecoderProfile vdpau_profile)
          return PIPE_VIDEO_PROFILE_HEVC_MAIN_12;
       case VDP_DECODER_PROFILE_HEVC_MAIN_444:
          return PIPE_VIDEO_PROFILE_HEVC_MAIN_444;
+      case VDP_DECODER_PROFILE_AV1_MAIN:
+         return PIPE_VIDEO_PROFILE_AV1_MAIN;
       default:
          return PIPE_VIDEO_PROFILE_UNKNOWN;
    }
@@ -319,6 +321,8 @@ PipeToProfile(enum pipe_video_profile p_profile)
          return VDP_DECODER_PROFILE_HEVC_MAIN_12;
       case PIPE_VIDEO_PROFILE_HEVC_MAIN_444:
          return VDP_DECODER_PROFILE_HEVC_MAIN_444;
+      case PIPE_VIDEO_PROFILE_AV1_MAIN:
+         return VDP_DECODER_PROFILE_AV1_MAIN;
       default:
          assert(0);
          return -1;

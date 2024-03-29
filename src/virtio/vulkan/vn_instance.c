@@ -48,6 +48,9 @@ static const struct vk_instance_extension_table
 #ifdef VK_USE_PLATFORM_XLIB_KHR
       .KHR_xlib_surface = true,
 #endif
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+      .EXT_headless_surface = true,
+#endif
    };
 
 static const driOptionDescription vn_dri_options[] = {
@@ -112,8 +115,6 @@ vn_instance_init_renderer_versions(struct vn_instance *instance)
 static inline void
 vn_instance_fini_ring(struct vn_instance *instance)
 {
-   mtx_destroy(&instance->ring.roundtrip_mutex);
-
    vn_watchdog_fini(&instance->ring.watchdog);
 
    list_for_each_entry_safe(struct vn_tls_ring, tls_ring,
@@ -145,9 +146,6 @@ vn_instance_init_ring(struct vn_instance *instance)
    list_inithead(&instance->ring.tls_rings);
 
    vn_watchdog_init(&instance->ring.watchdog);
-
-   mtx_init(&instance->ring.roundtrip_mutex, mtx_plain);
-   instance->ring.roundtrip_next = 1;
 
    return VK_SUCCESS;
 }
@@ -210,42 +208,9 @@ vn_instance_init_renderer(struct vn_instance *instance)
              renderer_info->vk_ext_command_serialization_spec_version);
       vn_log(instance, "VK_MESA_venus_protocol spec version %d",
              renderer_info->vk_mesa_venus_protocol_spec_version);
-      vn_log(instance, "supports blob id 0: %d",
-             renderer_info->supports_blob_id_0);
-      vn_log(instance, "allow_vk_wait_syncs: %d",
-             renderer_info->allow_vk_wait_syncs);
-      vn_log(instance, "supports_multiple_timelines: %d",
-             renderer_info->supports_multiple_timelines);
    }
 
    return VK_SUCCESS;
-}
-
-VkResult
-vn_instance_submit_roundtrip(struct vn_instance *instance,
-                             uint64_t *roundtrip_seqno)
-{
-   const uint64_t ring_id = vn_ring_get_id(instance->ring.ring);
-   uint32_t local_data[8];
-   struct vn_cs_encoder local_enc =
-      VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
-
-   mtx_lock(&instance->ring.roundtrip_mutex);
-   const uint64_t seqno = instance->ring.roundtrip_next++;
-   vn_encode_vkSubmitVirtqueueSeqnoMESA(&local_enc, 0, ring_id, seqno);
-   VkResult result = vn_renderer_submit_simple(
-      instance->renderer, local_data, vn_cs_encoder_get_len(&local_enc));
-   mtx_unlock(&instance->ring.roundtrip_mutex);
-
-   *roundtrip_seqno = seqno;
-   return result;
-}
-
-void
-vn_instance_wait_roundtrip(struct vn_instance *instance,
-                           uint64_t roundtrip_seqno)
-{
-   vn_async_vkWaitVirtqueueSeqnoMESA(instance->ring.ring, roundtrip_seqno);
 }
 
 /* instance commands */
@@ -390,6 +355,11 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    if (VN_DEBUG(INIT)) {
       vn_log(instance, "supports multi-plane wsi format modifiers: %s",
              instance->enable_wsi_multi_plane_modifiers ? "yes" : "no");
+   }
+
+   const char *engine_name = instance->base.base.app_info.engine_name;
+   if (engine_name) {
+      instance->engine_is_zink = strcmp(engine_name, "mesa zink") == 0;
    }
 
    *pInstance = instance_handle;

@@ -123,7 +123,6 @@ void
 ac_nir_lower_hs_outputs_to_mem(nir_shader *shader,
                                ac_nir_map_io_driver_location map,
                                enum amd_gfx_level gfx_level,
-                               bool tes_reads_tessfactors,
                                uint64_t tes_inputs_read,
                                uint64_t tes_patch_inputs_read,
                                unsigned num_reserved_tcs_outputs,
@@ -131,7 +130,8 @@ ac_nir_lower_hs_outputs_to_mem(nir_shader *shader,
                                unsigned wave_size,
                                bool no_inputs_in_lds,
                                bool pass_tessfactors_by_reg,
-                               bool emit_tess_factor_write);
+                               bool emit_tess_factor_write,
+                               bool emit_tess_factor_output);
 
 void
 ac_nir_lower_tes_inputs_to_mem(nir_shader *shader,
@@ -351,6 +351,9 @@ typedef struct {
 
 bool
 ac_nir_lower_tex(nir_shader *nir, const ac_nir_lower_tex_options *options);
+
+void
+ac_nir_store_debug_log_amd(nir_builder *b, nir_def *uvec4);
 
 #ifdef __cplusplus
 }

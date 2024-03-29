@@ -120,7 +120,7 @@ agx_build_tilebuffer_layout(enum pipe_format *formats, uint8_t nr_cbufs,
 enum pipe_format
 agx_tilebuffer_physical_format(struct agx_tilebuffer_layout *tib, unsigned rt)
 {
-   return agx_pixel_format[tib->logical_format[rt]].internal;
+   return agx_pixel_format[tib->logical_format[rt]].renderable;
 }
 
 bool

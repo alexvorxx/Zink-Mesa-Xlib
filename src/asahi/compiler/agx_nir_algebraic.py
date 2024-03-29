@@ -83,6 +83,26 @@ lower_pack = [
       ('isub', 32, 'bits'))),
 ]
 
+# Rewriting bcsel(a || b, ...) in terms of bcsel(a, ...) and bcsel(b, ...) lets
+# our rules to fuse compare-and-select do a better job, assuming that a and b
+# are comparisons themselves.
+lower_selects = [
+        (('bcsel', ('ior(is_used_once)', a, b), c, d),
+         ('bcsel', a, c, ('bcsel', b, c, d))),
+
+        (('bcsel', ('iand(is_used_once)', a, b), c, d),
+         ('bcsel', a, ('bcsel', b, c, d), d)),
+]
+
+for T, sizes, one in [('f', [16, 32], 1.0),
+                      ('i', [8, 16, 32], 1),
+                      ('b', [32], -1)]:
+    for size in sizes:
+        lower_selects.extend([
+            ((f'b2{T}{size}', ('inot', 'a@1')), ('bcsel', a, 0, one)),
+            ((f'b2{T}{size}', 'a@1'), ('bcsel', a, one, 0)),
+        ])
+
 fuse_extr = []
 for start in range(32):
     fuse_extr.extend([
@@ -170,10 +190,10 @@ def run():
     print('#include "agx_nir.h"')
 
     print(nir_algebraic.AlgebraicPass("agx_nir_lower_algebraic_late",
-                                      lower_sm5_shift + lower_pack).render())
+                                      lower_sm5_shift + lower_pack +
+                                      lower_selects).render())
     print(nir_algebraic.AlgebraicPass("agx_nir_fuse_algebraic_late",
-                                      fuse_extr + fuse_ubfe + fuse_imad).render())
-    print(nir_algebraic.AlgebraicPass("agx_nir_opt_ixor_bcsel",
+                                      fuse_extr + fuse_ubfe + fuse_imad +
                                       ixor_bcsel).render())
 
 

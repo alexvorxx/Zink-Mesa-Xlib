@@ -28,6 +28,7 @@
 #include "tu_device.h"
 #include "tu_image.h"
 #include "tu_formats.h"
+#include "tu_rmv.h"
 
 static inline uint8_t *
 pool_base(struct tu_descriptor_pool *pool)
@@ -277,7 +278,9 @@ tu_CreateDescriptorSetLayout(
    if (pCreateInfo->flags &
        VK_DESCRIPTOR_SET_LAYOUT_CREATE_EMBEDDED_IMMUTABLE_SAMPLERS_BIT_EXT) {
       result = tu_bo_init_new(device, &set_layout->embedded_samplers,
-                              set_layout->size, TU_BO_ALLOC_ALLOW_DUMP,
+                              set_layout->size,
+                              (enum tu_bo_alloc_flags) (TU_BO_ALLOC_ALLOW_DUMP |
+                                                        TU_BO_ALLOC_INTERNAL_RESOURCE),
                               "embedded samplers");
       if (result != VK_SUCCESS) {
          vk_object_free(&device->vk, pAllocator, set_layout);
@@ -820,6 +823,8 @@ tu_CreateDescriptorPool(VkDevice _device,
 
    list_inithead(&pool->desc_sets);
 
+   TU_RMV(descriptor_pool_create, device, pCreateInfo, pool);
+
    *pDescriptorPool = tu_descriptor_pool_to_handle(pool);
    return VK_SUCCESS;
 
@@ -840,6 +845,8 @@ tu_DestroyDescriptorPool(VkDevice _device,
 
    if (!pool)
       return;
+
+   TU_RMV(resource_destroy, device, pool);
 
    list_for_each_entry_safe(struct tu_descriptor_set, set,
                             &pool->desc_sets, pool_link) {

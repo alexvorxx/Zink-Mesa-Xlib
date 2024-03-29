@@ -174,7 +174,7 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
 {
    unsigned idx = block->index;
    Builder bld(ctx.program, &instructions);
-   std::vector<unsigned>& preds = block->linear_preds;
+   Block::edge_vec& preds = block->linear_preds;
    bool restore_exec = false;
 
    /* start block */
@@ -237,10 +237,10 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
 
       /* create ssa names for outer exec masks */
       if (info.has_discard && preds.size() > 1) {
-         aco_ptr<Pseudo_instruction> phi;
+         aco_ptr<Instruction> phi;
          for (int i = 0; i < info.num_exec_masks - 1; i++) {
-            phi.reset(create_instruction<Pseudo_instruction>(aco_opcode::p_linear_phi,
-                                                             Format::PSEUDO, preds.size(), 1));
+            phi.reset(
+               create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1));
             phi->definitions[0] = bld.def(bld.lm);
             phi->operands[0] = get_exec_op(ctx.info[preds[0]].exec[i].first);
             ctx.info[idx].exec[i].first = bld.insert(std::move(phi));
@@ -251,8 +251,8 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
 
       if (info.has_divergent_continue) {
          /* create ssa name for loop active mask */
-         aco_ptr<Pseudo_instruction> phi{create_instruction<Pseudo_instruction>(
-            aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1)};
+         aco_ptr<Instruction> phi{
+            create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1)};
          phi->definitions[0] = bld.def(bld.lm);
          phi->operands[0] = get_exec_op(ctx.info[preds[0]].exec.back().first);
          ctx.info[idx].exec.back().first = bld.insert(std::move(phi));
@@ -270,7 +270,7 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
          assert(ctx.info[pred].exec.size() >= info.num_exec_masks);
 
       /* fill the loop header phis */
-      std::vector<unsigned>& header_preds = header->linear_preds;
+      Block::edge_vec& header_preds = header->linear_preds;
       int instr_idx = 0;
       if (info.has_discard && header_preds.size() > 1) {
          while (instr_idx < info.num_exec_masks - 1) {
@@ -312,8 +312,8 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
             ctx.info[idx].exec.emplace_back(same, type);
          } else {
             /* create phi for loop footer */
-            aco_ptr<Pseudo_instruction> phi{create_instruction<Pseudo_instruction>(
-               aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1)};
+            aco_ptr<Instruction> phi{
+               create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1)};
             phi->definitions[0] = bld.def(bld.lm);
             for (unsigned i = 0; i < phi->operands.size(); i++)
                phi->operands[i] = get_exec_op(ctx.info[preds[i]].exec[exec_idx].first);
@@ -498,16 +498,14 @@ process_instructions(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instructio
          Definition dst = instr->definitions[0];
          assert(dst.size() == bld.lm.size());
          if (state == Exact) {
-            instr.reset(create_instruction<SOP1_instruction>(bld.w64or32(Builder::s_mov),
-                                                             Format::SOP1, 1, 1));
+            instr.reset(create_instruction(bld.w64or32(Builder::s_mov), Format::SOP1, 1, 1));
             instr->operands[0] = Operand::zero();
             instr->definitions[0] = dst;
          } else {
             std::pair<Operand, uint8_t>& exact_mask = info.exec[0];
             assert(exact_mask.second & mask_type_exact);
 
-            instr.reset(create_instruction<SOP2_instruction>(bld.w64or32(Builder::s_andn2),
-                                                             Format::SOP2, 2, 2));
+            instr.reset(create_instruction(bld.w64or32(Builder::s_andn2), Format::SOP2, 2, 2));
             instr->operands[0] = Operand(exec, bld.lm); /* current exec */
             instr->operands[1] = Operand(exact_mask.first);
             instr->definitions[0] = dst;

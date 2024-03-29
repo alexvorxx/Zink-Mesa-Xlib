@@ -900,6 +900,14 @@ si_vpe_processor_process_frame(struct pipe_video_codec *codec,
       //         build_param->streams[0].tm_params.enable_3dlut);
    }
 
+   if(vpe_handle->level == VPE_IP_LEVEL_1_1) {
+      build_param->num_instances = 2;
+      build_param->collaboration_mode = true;
+   } else {
+      build_param->num_instances = 1;
+      build_param->collaboration_mode = false;
+   }
+
    result = vpe_check_support(vpe_handle, build_param, &bufs_required);
    if (VPE_STATUS_OK != result) {
       SIVPE_ERR("Check support failed with result: %d\n", result);

@@ -65,7 +65,7 @@ validate_error(struct ir3_validate_ctx *ctx, const char *condstr)
 static unsigned
 reg_class_flags(struct ir3_register *reg)
 {
-   return reg->flags & (IR3_REG_HALF | IR3_REG_SHARED);
+   return reg->flags & (IR3_REG_HALF | IR3_REG_SHARED | IR3_REG_PREDICATE);
 }
 
 static void
@@ -77,6 +77,9 @@ validate_src(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
 
    if (!(reg->flags & IR3_REG_SSA) || !reg->def)
       return;
+
+   if (reg->flags & IR3_REG_PREDICATE)
+      validate_assert(ctx, !(reg->flags & (IR3_REG_SHARED | IR3_REG_HALF)));
 
    struct ir3_register *src = reg->def;
 
@@ -429,6 +432,7 @@ ir3_validate(struct ir3 *ir)
 
       struct ir3_instruction *prev = NULL;
       foreach_instr (instr, &block->instr_list) {
+         validate_assert(ctx, instr->block == block);
          ctx->current_instr = instr;
          if (instr->opc == OPC_META_PHI) {
             /* phis must be the first in the block */

@@ -54,7 +54,7 @@
 #include <windows.h>
 #endif
 
-#ifdef DEBUG
+#if MESA_DEBUG
 int jit_line = 0;
 const struct lp_rast_state *jit_state = NULL;
 const struct lp_rasterizer_task *jit_task = NULL;
@@ -1005,7 +1005,7 @@ rasterize_bin(struct lp_rasterizer_task *task,
 
    lp_rast_tile_end(task);
 
-#ifdef DEBUG
+#if MESA_DEBUG
    /* Debug/Perf flags:
     */
    if (bin->head->count == 1) {

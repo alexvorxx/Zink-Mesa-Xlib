@@ -43,8 +43,6 @@ struct nvk_descriptor_set_binding_layout {
 struct nvk_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
 
-   unsigned char sha1[20];
-
    /* Size of the descriptor buffer for this descriptor set */
    /* Does not contain the size needed for variable count descriptors */
    uint32_t non_variable_descriptor_buffer_size;

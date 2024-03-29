@@ -75,6 +75,8 @@ static const struct vk_instance_extension_table lvp_instance_extensions_supporte
    .KHR_get_surface_capabilities2            = true,
    .KHR_surface                              = true,
    .KHR_surface_protected_capabilities       = true,
+   .EXT_swapchain_colorspace                 = true,
+   .EXT_surface_maintenance1                 = true,
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    .KHR_wayland_surface                      = true,
@@ -88,16 +90,21 @@ static const struct vk_instance_extension_table lvp_instance_extensions_supporte
 #ifdef VK_USE_PLATFORM_XLIB_KHR
    .KHR_xlib_surface                         = true,
 #endif
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   .EXT_headless_surface                     = true,
+#endif
 };
 
 static const struct vk_device_extension_table lvp_device_extensions_supported = {
    .KHR_8bit_storage                      = true,
    .KHR_16bit_storage                     = true,
+   .KHR_acceleration_structure            = true,
    .KHR_bind_memory2                      = true,
    .KHR_buffer_device_address             = true,
    .KHR_create_renderpass2                = true,
    .KHR_copy_commands2                    = true,
    .KHR_dedicated_allocation              = true,
+   .KHR_deferred_host_operations          = true,
    .KHR_depth_stencil_resolve             = true,
    .KHR_descriptor_update_template        = true,
    .KHR_device_group                      = true,
@@ -132,6 +139,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_multiview                         = true,
    .KHR_push_descriptor                   = true,
    .KHR_pipeline_library                  = true,
+   .KHR_ray_query                         = true,
    .KHR_relaxed_block_layout              = true,
    .KHR_sampler_mirror_clamp_to_edge      = true,
    .KHR_sampler_ycbcr_conversion          = true,
@@ -142,6 +150,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_shader_expect_assume              = true,
    .KHR_shader_float16_int8               = true,
    .KHR_shader_integer_dot_product        = true,
+   .KHR_shader_maximal_reconvergence      = true,
    .KHR_shader_non_semantic_info          = true,
    .KHR_shader_subgroup_extended_types    = true,
    .KHR_shader_terminate_invocation       = true,
@@ -217,6 +226,9 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_shader_subgroup_vote              = true,
    .EXT_shader_viewport_index_layer       = true,
    .EXT_subgroup_size_control             = true,
+#ifdef LVP_USE_WSI_PLATFORM
+   .EXT_swapchain_maintenance1            = true,
+#endif
    .EXT_texel_buffer_alignment            = true,
    .EXT_transform_feedback                = true,
    .EXT_vertex_attribute_divisor          = true,
@@ -391,6 +403,13 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
 
+      /* VK_KHR_acceleration_structure */
+      .accelerationStructure = true,
+      .accelerationStructureCaptureReplay = false,
+      .accelerationStructureIndirectBuild = false,
+      .accelerationStructureHostCommands = false,
+      .descriptorBindingAccelerationStructureUpdateAfterBind = true,
+
       /* VK_EXT_descriptor_buffer */
       .descriptorBuffer = true,
       .descriptorBufferCaptureReplay = false,
@@ -449,6 +468,9 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
 
       /* VK_EXT_attachment_feedback_loop_layout_dynamic_state */
       .attachmentFeedbackLoopDynamicState = true,
+
+      /* VK_KHR_ray_query */
+      .rayQuery = true,
 
       /* VK_EXT_shader_object */
       .shaderObject = true,
@@ -619,9 +641,17 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       /* VK_KHR_shader_expect_assume */
       .shaderExpectAssume = true,
 
+      /* VK_KHR_shader_maximal_reconvergence */
+      .shaderMaximalReconvergence = true,
+
       /* VK_AMDX_shader_enqueue */
 #ifdef VK_ENABLE_BETA_EXTENSIONS
       .shaderEnqueue = true,
+#endif
+
+#ifdef LVP_USE_WSI_PLATFORM
+      /* VK_EXT_swapchain_maintenance1 */
+      .swapchainMaintenance1 = true,
 #endif
    };
 }
@@ -986,12 +1016,12 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
       .storageBufferDescriptorSize = sizeof(struct lp_descriptor),
       .robustStorageBufferDescriptorSize = sizeof(struct lp_descriptor),
       .inputAttachmentDescriptorSize = sizeof(struct lp_descriptor),
-      .accelerationStructureDescriptorSize = 0,
-      .maxSamplerDescriptorBufferRange = 1<<27, //spec minimum
-      .maxResourceDescriptorBufferRange = 1<<28, //spec minimum
-      .resourceDescriptorBufferAddressSpaceSize = 1<<27, //spec minimum
-      .samplerDescriptorBufferAddressSpaceSize = 1<<27, //spec minimum
-      .descriptorBufferAddressSpaceSize = 1<<27, //spec minimum
+      .accelerationStructureDescriptorSize = sizeof(struct lp_descriptor),
+      .maxSamplerDescriptorBufferRange = UINT32_MAX,
+      .maxResourceDescriptorBufferRange = UINT32_MAX,
+      .resourceDescriptorBufferAddressSpaceSize = UINT32_MAX,
+      .samplerDescriptorBufferAddressSpaceSize = UINT32_MAX,
+      .descriptorBufferAddressSpaceSize = UINT32_MAX,
 
       /* VK_EXT_graphics_pipeline_library */
       .graphicsPipelineLibraryFastLinking = VK_TRUE,
@@ -1045,6 +1075,16 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
       .maxExecutionGraphShaderPayloadCount = LVP_MAX_EXEC_GRAPH_PAYLOADS,
       .executionGraphDispatchAddressAlignment = 4,
 #endif
+
+      /* VK_KHR_acceleration_structure */
+      .maxGeometryCount = (1 << 24) - 1,
+      .maxInstanceCount = (1 << 24) - 1,
+      .maxPrimitiveCount = (1 << 24) - 1,
+      .maxPerStageDescriptorAccelerationStructures = MAX_DESCRIPTORS,
+      .maxPerStageDescriptorUpdateAfterBindAccelerationStructures = MAX_DESCRIPTORS,
+      .maxDescriptorSetAccelerationStructures = MAX_DESCRIPTORS,
+      .maxDescriptorSetUpdateAfterBindAccelerationStructures = MAX_DESCRIPTORS,
+      .minAccelerationStructureScratchOffsetAlignment = 128,
    };
 
    /* Vulkan 1.0 */
@@ -1199,7 +1239,6 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateInstance(
    instance->vk.physical_devices.enumerate = lvp_enumerate_physical_devices;
    instance->vk.physical_devices.destroy = lvp_destroy_physical_device;
 
-   //   _mesa_locale_init();
    //   VG(VALGRIND_CREATE_MEMPOOL(instance, 0, false));
 
    *pInstance = lvp_instance_to_handle(instance);
@@ -1215,7 +1254,6 @@ VKAPI_ATTR void VKAPI_CALL lvp_DestroyInstance(
 
    if (!instance)
       return;
-   //   _mesa_locale_fini();
 
    pipe_loader_release(&instance->devs, instance->num_devices);
 

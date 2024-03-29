@@ -499,7 +499,7 @@ vlVaPutSurface(VADriverContextP ctx, VASurfaceID surface_id, void* draw, short s
    drv->pipe->flush(drv->pipe, NULL, 0);
 
    screen->flush_frontbuffer(screen, drv->pipe, tex, 0, 0,
-                             vscreen->get_private(vscreen), NULL);
+                             vscreen->get_private(vscreen), 0, NULL);
 
 
    pipe_resource_reference(&tex, NULL);
@@ -725,6 +725,16 @@ vlVaQuerySurfaceAttributes(VADriverContextP ctx, VAConfigID config_id,
                                   config->profile, config->entrypoint,
                                   PIPE_VIDEO_CAP_MAX_HEIGHT);
       i++;
+#if VA_CHECK_VERSION(1, 21, 0)
+      attribs[i].type = VASurfaceAttribAlignmentSize;
+      attribs[i].value.type = VAGenericValueTypeInteger;
+      attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
+      attribs[i].value.value.i =
+         pscreen->get_video_param(pscreen,
+                                  config->profile, config->entrypoint,
+                                  PIPE_VIDEO_CAP_ENC_SURFACE_ALIGNMENT);
+      i++;
+#endif
    } else {
       attribs[i].type = VASurfaceAttribMaxWidth;
       attribs[i].value.type = VAGenericValueTypeInteger;
@@ -1029,21 +1039,23 @@ vlVaHandleSurfaceAllocate(vlVaDriver *drv, vlVaSurface *surface,
       return VA_STATUS_ERROR_ALLOCATION_FAILED;
 
    surfaces = surface->buffer->get_surfaces(surface->buffer);
-   for (i = 0; i < VL_MAX_SURFACES; ++i) {
-      union pipe_color_union c;
-      memset(&c, 0, sizeof(c));
+   if (surfaces) {
+      for (i = 0; i < VL_MAX_SURFACES; ++i) {
+         union pipe_color_union c;
+         memset(&c, 0, sizeof(c));
 
-      if (!surfaces[i])
-         continue;
+         if (!surfaces[i])
+            continue;
 
-      if (i > !!surface->buffer->interlaced)
-         c.f[0] = c.f[1] = c.f[2] = c.f[3] = 0.5f;
+         if (i > !!surface->buffer->interlaced)
+            c.f[0] = c.f[1] = c.f[2] = c.f[3] = 0.5f;
 
-      drv->pipe->clear_render_target(drv->pipe, surfaces[i], &c, 0, 0,
-				     surfaces[i]->width, surfaces[i]->height,
-				     false);
+         drv->pipe->clear_render_target(drv->pipe, surfaces[i], &c, 0, 0,
+                  surfaces[i]->width, surfaces[i]->height,
+                  false);
+      }
+      drv->pipe->flush(drv->pipe, NULL, 0);
    }
-   drv->pipe->flush(drv->pipe, NULL, 0);
 
    return VA_STATUS_SUCCESS;
 }

@@ -34,11 +34,13 @@ dep_syn = dependency('syn',
 libnak_c_files = files(
   'nak.h',
   'nak_nir.c',
-  'nak_nir_add_barriers.c',
+  'nak_nir_lower_cf.c',
+  'nak_nir_lower_fs_inputs.c',
+  'nak_nir_lower_gs_intrinsics.c',
   'nak_nir_lower_scan_reduce.c',
   'nak_nir_lower_tex.c',
   'nak_nir_lower_vtg_io.c',
-  'nak_nir_lower_gs_intrinsics.c',
+  'nak_memstream.c',
 )
 
 _libbitview_rs = static_library(

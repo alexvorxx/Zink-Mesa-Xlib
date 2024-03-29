@@ -404,6 +404,16 @@ enum pipe_flush_flags
 #define PIPE_CONTEXT_NO_LOD_BIAS (1 << 8)
 
 /**
+ * Create a media-only context. Use in pipe_screen::context_create.
+ * This disables draw, blit, and clear*, render_condition, and other graphics.
+ * This also disabled all compute related functions
+ * functions. Interop with other media contexts is still allowed.
+ * This allows scheduling jobs on a media-only hardware command queue that
+ * can run in parallel with media without stalling it.
+ */
+#define PIPE_CONTEXT_MEDIA_ONLY      (1 << 9)
+
+/**
  * Flags for pipe_context::memory_barrier.
  */
 #define PIPE_BARRIER_MAPPED_BUFFER     (1 << 0)
@@ -808,6 +818,7 @@ enum pipe_cap
    PIPE_CAP_GLSL_TESS_LEVELS_AS_INPUTS,
    PIPE_CAP_FBFETCH,
    PIPE_CAP_LEGACY_MATH_RULES,
+   PIPE_CAP_FP16,
    PIPE_CAP_DOUBLES,
    PIPE_CAP_INT64,
    PIPE_CAP_TGSI_TEX_TXF_LZ,
@@ -860,6 +871,7 @@ enum pipe_cap
    PIPE_CAP_IMAGE_STORE_FORMATTED,
    PIPE_CAP_THROTTLE,
    PIPE_CAP_DMABUF,
+   PIPE_CAP_CL_GL_SHARING,
    PIPE_CAP_PREFER_COMPUTE_FOR_MULTIMEDIA,
    PIPE_CAP_FRAGMENT_SHADER_INTERLOCK,
    PIPE_CAP_FBFETCH_COHERENT,

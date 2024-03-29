@@ -22,6 +22,7 @@ EPHEMERAL=(
     "libclang-cpp${LLVM_VERSION}-dev"
     libdrm-dev
     libgles2-mesa-dev
+    libgtest-dev
     libpciaccess-dev
     libpng-dev
     libudev-dev
@@ -30,6 +31,9 @@ EPHEMERAL=(
     libwayland-dev
     libx11-xcb-dev
     libxcb-dri2-0-dev
+    libxcb-dri3-dev
+    libxcb-present-dev
+    libxfixes-dev
     libxkbcommon-dev
     libxrandr-dev
     libxrender-dev
@@ -61,6 +65,7 @@ DEPS=(
     spirv-tools
     sysvinit-core
     weston
+    xwayland
 )
 
 apt-get update
@@ -81,6 +86,10 @@ DEQP_API=GL \
 DEQP_TARGET=surfaceless \
 . .gitlab-ci/container/build-deqp.sh
 
+DEQP_API=GLES \
+DEQP_TARGET=surfaceless \
+. .gitlab-ci/container/build-deqp.sh
+
 ############### Build apitrace
 
 . .gitlab-ci/container/build-apitrace.sh
@@ -88,6 +97,10 @@ DEQP_TARGET=surfaceless \
 ############### Build validation layer for zink
 
 . .gitlab-ci/container/build-vulkan-validation.sh
+
+############### Build nine tests
+
+. .gitlab-ci/container/build-ninetests.sh
 
 ############### Uninstall the build software
 

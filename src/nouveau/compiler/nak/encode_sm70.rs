@@ -1149,7 +1149,7 @@ impl SM70Instr {
         } else {
             self.set_field(64..72, 255_u8);
         }
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_reg_src(24..32, op.srcs[0]);
         self.set_reg_src(32..40, op.srcs[1]);
@@ -1174,7 +1174,7 @@ impl SM70Instr {
         } else {
             self.set_field(64..72, 255_u8);
         }
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_reg_src(24..32, op.srcs[0]);
         self.set_reg_src(32..40, op.srcs[1]);
@@ -1202,7 +1202,7 @@ impl SM70Instr {
         } else {
             self.set_field(64..72, 255_u8);
         }
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_reg_src(24..32, op.srcs[0]);
         self.set_reg_src(32..40, op.srcs[1]);
@@ -1254,7 +1254,7 @@ impl SM70Instr {
         } else {
             self.set_field(64..72, 255_u8);
         }
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_reg_src(24..32, op.srcs[0]);
         self.set_reg_src(32..40, op.srcs[1]);
@@ -1361,7 +1361,7 @@ impl SM70Instr {
         self.set_dst(op.dst);
         self.set_reg_src(24..32, op.coord);
         self.set_reg_src(64..72, op.handle);
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_image_dim(61..64, op.image_dim);
         self.set_mem_order(&op.mem_order);
@@ -1397,7 +1397,7 @@ impl SM70Instr {
         self.set_reg_src(24..32, op.coord);
         self.set_reg_src(32..40, op.data);
         self.set_reg_src(64..72, op.handle);
-        self.set_pred_dst(81..84, op.resident);
+        self.set_pred_dst(81..84, op.fault);
 
         self.set_image_dim(61..64, op.image_dim);
         self.set_mem_order(&op.mem_order);

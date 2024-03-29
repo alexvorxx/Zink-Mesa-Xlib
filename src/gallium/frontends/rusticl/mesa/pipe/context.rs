@@ -604,7 +604,7 @@ impl PipeContext {
 
     pub fn svm_migrate(
         &self,
-        ptrs: &[*const c_void],
+        ptrs: &[usize],
         sizes: &[usize],
         to_device: bool,
         content_undefined: bool,
@@ -615,7 +615,7 @@ impl PipeContext {
                 cb(
                     self.pipe.as_ptr(),
                     ptrs.len() as u32,
-                    ptrs.as_ptr(),
+                    ptrs.as_ptr().cast(),
                     sizes.as_ptr(),
                     to_device,
                     content_undefined,

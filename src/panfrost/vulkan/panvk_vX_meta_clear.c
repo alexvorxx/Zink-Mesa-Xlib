@@ -27,16 +27,23 @@
 #include "pan_props.h"
 #include "pan_shader.h"
 
-#include "panvk_private.h"
-#include "panvk_vX_meta.h"
+#include "panvk_cmd_buffer.h"
+#include "panvk_device.h"
+#include "panvk_entrypoints.h"
+#include "panvk_image.h"
+#include "panvk_meta.h"
+#include "panvk_physical_device.h"
 
 #include "vk_format.h"
+#include "vk_render_pass.h"
 
 static mali_ptr
 panvk_meta_clear_color_attachment_shader(struct panvk_device *dev,
                                          enum glsl_base_type base_type,
                                          struct pan_shader_info *shader_info)
 {
+   struct panvk_physical_device *phys_dev =
+      to_panvk_physical_device(dev->vk.physical);
    struct pan_pool *bin_pool = &dev->meta.bin_pool.base;
 
    nir_builder b = nir_builder_init_simple_shader(
@@ -53,7 +60,7 @@ panvk_meta_clear_color_attachment_shader(struct panvk_device *dev,
    nir_store_var(&b, out, clear_values, 0xff);
 
    struct panfrost_compile_inputs inputs = {
-      .gpu_id = dev->physical_device->kmod.props.gpu_prod_id,
+      .gpu_id = phys_dev->kmod.props.gpu_prod_id,
       .is_blit = true,
       .no_ubo_to_push = true,
    };
@@ -249,17 +256,15 @@ panvk_meta_get_format_type(enum pipe_format format)
 }
 
 static void
-panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf,
-                            unsigned attachment, unsigned rt,
+panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf, unsigned rt,
                             VkImageAspectFlags mask,
                             const VkClearValue *clear_value,
                             const VkClearRect *clear_rect)
 {
-   struct panvk_meta *meta = &cmdbuf->device->meta;
+   struct panvk_device *dev = to_panvk_device(cmdbuf->vk.base.device);
+   struct panvk_meta *meta = &dev->meta;
    struct panvk_batch *batch = cmdbuf->state.batch;
-   const struct panvk_render_pass *pass = cmdbuf->state.pass;
-   const struct panvk_render_pass_attachment *att =
-      &pass->attachments[attachment];
+   enum pipe_format pfmt = cmdbuf->state.fb.info.rts[rt].view->format;
    unsigned minx = MAX2(clear_rect->rect.offset.x, 0);
    unsigned miny = MAX2(clear_rect->rect.offset.y, 0);
    unsigned maxx =
@@ -281,9 +286,9 @@ panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf,
    mali_ptr coordinates =
       pan_pool_upload_aligned(&cmdbuf->desc_pool.base, rect, sizeof(rect), 64);
 
-   enum glsl_base_type base_type = panvk_meta_get_format_type(att->format);
+   enum glsl_base_type base_type = panvk_meta_get_format_type(pfmt);
 
-   mali_ptr tiler = batch->tiler.descs.gpu;
+   mali_ptr tiler = batch->tiler.ctx_desc.gpu;
    mali_ptr tsd = batch->tls.gpu;
 
    mali_ptr pushconsts = 0, rsd = 0;
@@ -297,7 +302,7 @@ panvk_meta_clear_attachment(struct panvk_cmd_buffer *cmdbuf,
                                            sizeof(*clear_value), 16);
 
       rsd = panvk_meta_clear_color_attachment_emit_rsd(
-         &cmdbuf->desc_pool.base, att->format, rt, shader_info, shader);
+         &cmdbuf->desc_pool.base, pfmt, rt, shader_info, shader);
    } else {
       rsd = panvk_meta_clear_zs_attachment_emit_rsd(
          &cmdbuf->desc_pool.base, mask, clear_value->depthStencil);
@@ -318,6 +323,9 @@ panvk_meta_clear_color_img(struct panvk_cmd_buffer *cmdbuf,
                            const VkClearColorValue *color,
                            const VkImageSubresourceRange *range)
 {
+   struct panvk_device *dev = to_panvk_device(cmdbuf->vk.base.device);
+   struct panvk_physical_device *phys_dev =
+      to_panvk_physical_device(dev->vk.physical);
    struct pan_fb_info *fbinfo = &cmdbuf->state.fb.info;
    struct pan_image_view view = {
       .format = img->pimage.layout.format,
@@ -330,8 +338,7 @@ panvk_meta_clear_color_img(struct panvk_cmd_buffer *cmdbuf,
 
    cmdbuf->state.fb.crc_valid[0] = false;
    *fbinfo = (struct pan_fb_info){
-      .tile_buf_budget = panfrost_query_optimal_tib_size(
-         cmdbuf->device->physical_device->model),
+      .tile_buf_budget = panfrost_query_optimal_tib_size(phys_dev->model),
       .nr_samples = img->pimage.layout.nr_samples,
       .rt_count = 1,
       .rts[0].view = &view,
@@ -360,14 +367,14 @@ panvk_meta_clear_color_img(struct panvk_cmd_buffer *cmdbuf,
       for (unsigned layer = range->baseArrayLayer;
            layer < range->baseArrayLayer + layer_count; layer++) {
          view.first_layer = view.last_layer = layer;
-         panvk_cmd_open_batch(cmdbuf);
+         panvk_per_arch(cmd_open_batch)(cmdbuf);
          panvk_per_arch(cmd_alloc_fb_desc)(cmdbuf);
          panvk_per_arch(cmd_close_batch)(cmdbuf);
       }
    }
 }
 
-void
+VKAPI_ATTR void VKAPI_CALL
 panvk_per_arch(CmdClearColorImage)(VkCommandBuffer commandBuffer, VkImage image,
                                    VkImageLayout imageLayout,
                                    const VkClearColorValue *pColor,
@@ -389,6 +396,9 @@ panvk_meta_clear_zs_img(struct panvk_cmd_buffer *cmdbuf,
                         const VkClearDepthStencilValue *value,
                         const VkImageSubresourceRange *range)
 {
+   struct panvk_device *dev = to_panvk_device(cmdbuf->vk.base.device);
+   struct panvk_physical_device *phys_dev =
+      to_panvk_physical_device(dev->vk.physical);
    struct pan_fb_info *fbinfo = &cmdbuf->state.fb.info;
    struct pan_image_view view = {
       .format = img->pimage.layout.format,
@@ -401,8 +411,7 @@ panvk_meta_clear_zs_img(struct panvk_cmd_buffer *cmdbuf,
 
    cmdbuf->state.fb.crc_valid[0] = false;
    *fbinfo = (struct pan_fb_info){
-      .tile_buf_budget = panfrost_query_optimal_tib_size(
-         cmdbuf->device->physical_device->model),
+      .tile_buf_budget = panfrost_query_optimal_tib_size(phys_dev->model),
       .nr_samples = img->pimage.layout.nr_samples,
       .rt_count = 1,
       .zs.clear_value.depth = value->depth,
@@ -437,7 +446,7 @@ panvk_meta_clear_zs_img(struct panvk_cmd_buffer *cmdbuf,
       for (unsigned layer = range->baseArrayLayer;
            layer < range->baseArrayLayer + layer_count; layer++) {
          view.first_layer = view.last_layer = layer;
-         panvk_cmd_open_batch(cmdbuf);
+         panvk_per_arch(cmd_open_batch)(cmdbuf);
          panvk_per_arch(cmd_alloc_fb_desc)(cmdbuf);
          panvk_per_arch(cmd_close_batch)(cmdbuf);
       }
@@ -446,7 +455,7 @@ panvk_meta_clear_zs_img(struct panvk_cmd_buffer *cmdbuf,
    memset(fbinfo, 0, sizeof(*fbinfo));
 }
 
-void
+VKAPI_ATTR void VKAPI_CALL
 panvk_per_arch(CmdClearDepthStencilImage)(
    VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
    const VkClearDepthStencilValue *pDepthStencil, uint32_t rangeCount,
@@ -461,7 +470,7 @@ panvk_per_arch(CmdClearDepthStencilImage)(
       panvk_meta_clear_zs_img(cmdbuf, img, pDepthStencil, &pRanges[i]);
 }
 
-void
+VKAPI_ATTR void VKAPI_CALL
 panvk_per_arch(CmdClearAttachments)(VkCommandBuffer commandBuffer,
                                     uint32_t attachmentCount,
                                     const VkClearAttachment *pAttachments,
@@ -469,24 +478,24 @@ panvk_per_arch(CmdClearAttachments)(VkCommandBuffer commandBuffer,
                                     const VkClearRect *pRects)
 {
    VK_FROM_HANDLE(panvk_cmd_buffer, cmdbuf, commandBuffer);
-   const struct panvk_subpass *subpass = cmdbuf->state.subpass;
+   const struct vk_subpass *subpass =
+      &cmdbuf->vk.render_pass->subpasses[cmdbuf->vk.subpass_idx];
 
    for (unsigned i = 0; i < attachmentCount; i++) {
       for (unsigned j = 0; j < rectCount; j++) {
 
-         uint32_t attachment, rt = 0;
+         uint32_t attachment = VK_ATTACHMENT_UNUSED, rt = 0;
          if (pAttachments[i].aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) {
             rt = pAttachments[i].colorAttachment;
-            attachment = subpass->color_attachments[rt].idx;
-         } else {
-            attachment = subpass->zs_attachment.idx;
+            attachment = subpass->color_attachments[rt].attachment;
+         } else if (subpass->depth_stencil_attachment) {
+            attachment = subpass->depth_stencil_attachment->attachment;
          }
 
          if (attachment == VK_ATTACHMENT_UNUSED)
             continue;
 
-         panvk_meta_clear_attachment(cmdbuf, attachment, rt,
-                                     pAttachments[i].aspectMask,
+         panvk_meta_clear_attachment(cmdbuf, rt, pAttachments[i].aspectMask,
                                      &pAttachments[i].clearValue, &pRects[j]);
       }
    }

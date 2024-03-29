@@ -44,6 +44,19 @@ vk_swizzle_to_pipe(VkComponentSwizzle swizzle)
 }
 
 static void
+image_single_level_view(struct nil_image *image,
+                        struct nil_view *view,
+                        uint64_t *base_addr)
+{
+   assert(view->num_levels == 1);
+
+   uint64_t offset_B;
+   nil_image_for_level(image, view->base_level, image, &offset_B);
+   *base_addr += offset_B;
+   view->base_level = 0;
+}
+
+static void
 image_uncompressed_view(struct nil_image *image,
                         struct nil_view *view,
                         uint64_t *base_addr)
@@ -159,6 +172,8 @@ nvk_image_view_init(struct nvk_device *dev,
          nil_view.type != NIL_VIEW_TYPE_3D)
          image_3d_view_as_2d_array(&nil_image, &nil_view, &base_addr);
 
+      view->planes[view_plane].sample_layout = nil_image.sample_layout;
+
       if (view->vk.usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
                            VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
          uint32_t tic[8];
@@ -185,12 +200,19 @@ nvk_image_view_init(struct nvk_device *dev,
              */
             assert(view->vk.base_array_layer == 0);
             assert(view->vk.layer_count == 1);
-            nil_view.type = NIL_VIEW_TYPE_2D_ARRAY;
             nil_view.num_levels = 1;
-            nil_view.base_array_layer = view->vk.storage.z_slice_offset;
-            nil_view.array_len = view->vk.storage.z_slice_count;
-            image_3d_view_as_2d_array(&nil_image, &nil_view, &base_addr);
+            image_single_level_view(&nil_image, &nil_view, &base_addr);
+
+            if (view->vk.storage.z_slice_offset > 0 ||
+                view->vk.storage.z_slice_count < nil_image.extent_px.depth) {
+               nil_view.type = NIL_VIEW_TYPE_3D_SLICED;
+               nil_view.base_array_layer = view->vk.storage.z_slice_offset;
+               nil_view.array_len = view->vk.storage.z_slice_count;
+            }
          }
+
+         if (image->vk.samples != VK_SAMPLE_COUNT_1_BIT)
+            nil_msaa_image_as_sa(&nil_image, &nil_image);
 
          uint32_t tic[8];
          nil_image_fill_tic(&nvk_device_physical(dev)->info,

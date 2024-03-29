@@ -780,10 +780,8 @@ radv_destroy_descriptor_pool(struct radv_device *device, const VkAllocationCallb
       }
    }
 
-   if (pool->bo) {
-      radv_rmv_log_bo_destroy(device, pool->bo);
-      device->ws->buffer_destroy(device->ws, pool->bo);
-   }
+   if (pool->bo)
+      radv_bo_destroy(device, pool->bo);
    if (pool->host_bo)
       vk_free2(&device->vk.alloc, pAllocator, pool->host_bo);
 
@@ -792,10 +790,9 @@ radv_destroy_descriptor_pool(struct radv_device *device, const VkAllocationCallb
    vk_free2(&device->vk.alloc, pAllocator, pool);
 }
 
-VkResult
+static VkResult
 radv_create_descriptor_pool(struct radv_device *device, const VkDescriptorPoolCreateInfo *pCreateInfo,
-                            const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool,
-                            bool is_internal)
+                            const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool)
 {
    struct radv_descriptor_pool *pool;
    uint64_t size = sizeof(struct radv_descriptor_pool);
@@ -916,13 +913,13 @@ radv_create_descriptor_pool(struct radv_device *device, const VkDescriptorPoolCr
          if (device->instance->drirc.zero_vram)
             flags |= RADEON_FLAG_ZERO_VRAM;
 
-         VkResult result = device->ws->buffer_create(device->ws, bo_size, 32, RADEON_DOMAIN_VRAM, flags,
-                                                     RADV_BO_PRIORITY_DESCRIPTOR, 0, &pool->bo);
+         VkResult result = radv_bo_create(device, bo_size, 32, RADEON_DOMAIN_VRAM, flags, RADV_BO_PRIORITY_DESCRIPTOR,
+                                          0, false, &pool->bo);
          if (result != VK_SUCCESS) {
             radv_destroy_descriptor_pool(device, pAllocator, pool);
             return vk_error(device, result);
          }
-         pool->mapped_ptr = (uint8_t *)device->ws->buffer_map(pool->bo);
+         pool->mapped_ptr = (uint8_t *)radv_buffer_map(device->ws, pool->bo);
          if (!pool->mapped_ptr) {
             radv_destroy_descriptor_pool(device, pAllocator, pool);
             return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -940,7 +937,7 @@ radv_create_descriptor_pool(struct radv_device *device, const VkDescriptorPoolCr
    pool->max_entry_count = pCreateInfo->maxSets;
 
    *pDescriptorPool = radv_descriptor_pool_to_handle(pool);
-   radv_rmv_log_descriptor_pool_create(device, pCreateInfo, *pDescriptorPool, is_internal);
+   radv_rmv_log_descriptor_pool_create(device, pCreateInfo, *pDescriptorPool);
    return VK_SUCCESS;
 }
 
@@ -949,7 +946,7 @@ radv_CreateDescriptorPool(VkDevice _device, const VkDescriptorPoolCreateInfo *pC
                           const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
-   return radv_create_descriptor_pool(device, pCreateInfo, pAllocator, pDescriptorPool, false);
+   return radv_create_descriptor_pool(device, pCreateInfo, pAllocator, pDescriptorPool);
 }
 
 VKAPI_ATTR void VKAPI_CALL

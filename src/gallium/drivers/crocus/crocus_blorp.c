@@ -43,7 +43,7 @@
 #include "util/u_upload_mgr.h"
 #include "intel/common/intel_l3_config.h"
 
-#include "blorp/blorp_genX_exec.h"
+#include "blorp/blorp_genX_exec_elk.h"
 
 #if GFX_VER <= 5
 #include "gen4_blorp_exec.h"
@@ -444,8 +444,7 @@ genX(crocus_init_blorp)(struct crocus_context *ice)
 {
    struct crocus_screen *screen = (struct crocus_screen *)ice->ctx.screen;
 
-   blorp_init(&ice->blorp, ice, &screen->isl_dev, NULL);
-   ice->blorp.compiler = screen->compiler;
+   blorp_init_elk(&ice->blorp, ice, &screen->isl_dev, screen->compiler, NULL);
    ice->blorp.lookup_shader = crocus_blorp_lookup_shader;
    ice->blorp.upload_shader = crocus_blorp_upload_shader;
    ice->blorp.exec = crocus_blorp_exec;

@@ -34,7 +34,7 @@ gs_in_prim_for_topology(enum mesa_prim prim)
    case MESA_PRIM_QUADS:
       return MESA_PRIM_LINES_ADJACENCY;
    default:
-      return prim;
+      return u_decomposed_prim(prim);
    }
 }
 
@@ -147,8 +147,7 @@ nir_create_passthrough_gs(const nir_shader_compiler_options *options,
    memcpy(nir->info.xfb_stride, prev_stage->info.xfb_stride, sizeof(prev_stage->info.xfb_stride));
    if (prev_stage->xfb_info) {
       size_t size = nir_xfb_info_size(prev_stage->xfb_info->output_count);
-      nir->xfb_info = ralloc_size(nir, size);
-      memcpy(nir->xfb_info, prev_stage->xfb_info, size);
+      nir->xfb_info = ralloc_memdup(nir, prev_stage->xfb_info, size);
    }
 
    bool handle_flat = output_lines && nir->info.gs.output_primitive != gs_out_prim_for_topology(primitive_type);

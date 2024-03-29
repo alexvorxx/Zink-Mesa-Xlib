@@ -2263,8 +2263,6 @@ nir_intrinsic_from_system_value(gl_system_value val)
       return nir_intrinsic_load_ray_launch_id;
    case SYSTEM_VALUE_RAY_LAUNCH_SIZE:
       return nir_intrinsic_load_ray_launch_size;
-   case SYSTEM_VALUE_RAY_LAUNCH_SIZE_ADDR_AMD:
-      return nir_intrinsic_load_ray_launch_size_addr_amd;
    case SYSTEM_VALUE_RAY_WORLD_ORIGIN:
       return nir_intrinsic_load_ray_world_origin;
    case SYSTEM_VALUE_RAY_WORLD_DIRECTION:
@@ -2433,8 +2431,6 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
       return SYSTEM_VALUE_RAY_LAUNCH_ID;
    case nir_intrinsic_load_ray_launch_size:
       return SYSTEM_VALUE_RAY_LAUNCH_SIZE;
-   case nir_intrinsic_load_ray_launch_size_addr_amd:
-      return SYSTEM_VALUE_RAY_LAUNCH_SIZE_ADDR_AMD;
    case nir_intrinsic_load_ray_world_origin:
       return SYSTEM_VALUE_RAY_WORLD_ORIGIN;
    case nir_intrinsic_load_ray_world_direction:
@@ -3149,6 +3145,8 @@ nir_tex_instr_has_implicit_derivative(const nir_tex_instr *instr)
    case nir_texop_txb:
    case nir_texop_lod:
       return true;
+   case nir_texop_tg4:
+      return instr->is_gather_implicit_lod;
    default:
       return false;
    }
@@ -3208,7 +3206,6 @@ nir_tex_instr_src_type(const nir_tex_instr *instr, unsigned src)
    case nir_tex_src_sampler_offset:
    case nir_tex_src_texture_handle:
    case nir_tex_src_sampler_handle:
-   case nir_tex_src_combined_lod_and_array_index_intel:
       return nir_type_uint;
 
    case nir_num_tex_src_types:

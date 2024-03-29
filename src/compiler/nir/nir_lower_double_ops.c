@@ -645,8 +645,21 @@ lower_doubles_instr_to_soft(nir_builder *b, nir_alu_instr *instr,
 
    assert(nir_op_infos[instr->op].num_inputs + 1 == func->num_params);
    for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; i++) {
+      nir_alu_type n_type =
+         nir_alu_type_get_base_type(nir_op_infos[instr->op].input_types[i]);
+      /* Add bitsize */
+      n_type = n_type | instr->src[0].src.ssa->bit_size;
+
+      const struct glsl_type *param_type =
+         glsl_scalar_type(nir_get_glsl_base_type_for_nir_type(n_type));
+
+      nir_variable *param =
+         nir_local_variable_create(b->impl, param_type, "param");
+      nir_deref_instr *param_deref = nir_build_deref_var(b, param);
+      nir_store_deref(b, param_deref, nir_mov_alu(b, instr->src[i], 1), ~0);
+
       assert(i + 1 < ARRAY_SIZE(params));
-      params[i + 1] = nir_mov_alu(b, instr->src[i], 1);
+      params[i + 1] = &param_deref->def;
    }
 
    nir_inline_function_impl(b, func->impl, params, NULL);

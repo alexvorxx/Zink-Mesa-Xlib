@@ -193,7 +193,7 @@ wgl_present(struct pipe_screen *screen,
 
 #ifdef GALLIUM_ZINK
    if (use_zink) {
-      screen->flush_frontbuffer(screen, ctx, res, 0, 0, hDC, NULL);
+      screen->flush_frontbuffer(screen, ctx, res, 0, 0, hDC, 0, NULL);
       return;
    }
 #endif

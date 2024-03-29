@@ -9,7 +9,17 @@
 static uint
 align(uint x, uint y)
 {
-   return (x + 1) & ~(y - 1);
+   return (x + y - 1) & ~(y - 1);
+}
+
+/* Compatible with util/u_math.h */
+static inline uint
+util_logbase2_ceil(uint n)
+{
+   if (n <= 1)
+      return 0;
+   else
+      return 32 - clz(n - 1);
 }
 
 /* Swap the two non-provoking vertices third vert in odd triangles. This
@@ -40,7 +50,146 @@ libagx_xfb_vertex_address(global struct agx_geometry_params *p, uint base_index,
    return (uintptr_t)(p->xfb_base[buffer]) + xfb_offset;
 }
 
-/* TODO: Primitive restart */
+uint
+libagx_vertex_id_for_line_loop(uint prim, uint vert, uint num_prims)
+{
+   /* (0, 1), (1, 2), (2, 0) */
+   if (prim == (num_prims - 1) && vert == 1)
+      return 0;
+   else
+      return prim + vert;
+}
+
+uint
+libagx_vertex_id_for_line_class(enum mesa_prim mode, uint prim, uint vert,
+                                uint num_prims)
+{
+   /* Line list, line strip, or line loop */
+   if (mode == MESA_PRIM_LINE_LOOP && prim == (num_prims - 1) && vert == 1)
+      return 0;
+
+   if (mode == MESA_PRIM_LINES)
+      prim *= 2;
+
+   return prim + vert;
+}
+
+uint
+libagx_vertex_id_for_tri_fan(uint prim, uint vert, bool flatshade_first)
+{
+   /* Vulkan spec section 20.1.7 gives (i + 1, i + 2, 0) for a provoking
+    * first. OpenGL instead wants (0, i + 1, i + 2) with a provoking last.
+    * Piglit clipflat expects us to switch between these orders depending on
+    * provoking vertex, to avoid trivializing the fan.
+    *
+    * Rotate accordingly.
+    */
+   if (flatshade_first) {
+      vert = vert + 1;
+      vert = (vert == 2) ? 0 : vert;
+   }
+
+   /* The simpler form assuming last is provoking. */
+   return (vert == 0) ? 0 : prim + vert;
+}
+
+uint
+libagx_vertex_id_for_tri_class(enum mesa_prim mode, uint prim, uint vert,
+                               bool flatshade_first)
+{
+   if (flatshade_first && mode == MESA_PRIM_TRIANGLE_FAN) {
+      vert = vert + 1;
+      vert = (vert == 3) ? 0 : vert;
+   }
+
+   if (mode == MESA_PRIM_TRIANGLE_FAN && vert == 0)
+      return 0;
+
+   if (mode == MESA_PRIM_TRIANGLES)
+      prim *= 3;
+
+   /* Triangle list, triangle strip, or triangle fan */
+   if (mode == MESA_PRIM_TRIANGLE_STRIP) {
+      unsigned pv = flatshade_first ? 0 : 2;
+
+      bool even = (prim & 1) == 0;
+      bool provoking = vert == pv;
+
+      vert = ((provoking || even) ? vert : ((3 - pv) - vert));
+   }
+
+   return prim + vert;
+}
+
+uint
+libagx_vertex_id_for_line_adj_class(enum mesa_prim mode, uint prim, uint vert)
+{
+   /* Line list adj or line strip adj */
+   if (mode == MESA_PRIM_LINES_ADJACENCY)
+      prim *= 4;
+
+   return prim + vert;
+}
+
+uint
+libagx_vertex_id_for_tri_strip_adj(uint prim, uint vert, uint num_prims,
+                                   bool flatshade_first)
+{
+   /* See Vulkan spec section 20.1.11 "Triangle Strips With Adjancency".
+    *
+    * There are different cases for first/middle/last/only primitives and for
+    * odd/even primitives.  Determine which case we're in.
+    */
+   bool last = prim == (num_prims - 1);
+   bool first = prim == 0;
+   bool even = (prim & 1) == 0;
+   bool even_or_first = even || first;
+
+   /* When the last vertex is provoking, we rotate the primitives
+    * accordingly. This seems required for OpenGL.
+    */
+   if (!flatshade_first && !even_or_first) {
+      vert = (vert + 4u) % 6u;
+   }
+
+   /* Offsets per the spec. The spec lists 6 cases with 6 offsets. Luckily,
+    * there are lots of patterns we can exploit, avoiding a full 6x6 LUT.
+    *
+    * Here we assume the first vertex is provoking, the Vulkan default.
+    */
+   uint offsets[6] = {
+      0,
+      first ? 1 : (even ? -2 : 3),
+      even_or_first ? 2 : 4,
+      last ? 5 : 6,
+      even_or_first ? 4 : 2,
+      even_or_first ? 3 : -2,
+   };
+
+   /* Ensure NIR can see thru the local array */
+   uint offset = 0;
+   for (uint i = 1; i < 6; ++i) {
+      if (i == vert)
+         offset = offsets[i];
+   }
+
+   /* Finally add to the base of the primitive */
+   return (prim * 2) + offset;
+}
+
+uint
+libagx_vertex_id_for_tri_adj_class(enum mesa_prim mode, uint prim, uint vert,
+                                   uint nr, bool flatshade_first)
+{
+   /* Tri adj list or tri adj strip */
+   if (mode == MESA_PRIM_TRIANGLE_STRIP_ADJACENCY) {
+      return libagx_vertex_id_for_tri_strip_adj(prim, vert, nr,
+                                                flatshade_first);
+   } else {
+      return (6 * prim) + vert;
+   }
+}
+
 uint
 libagx_vertex_id_for_topology(enum mesa_prim mode, bool flatshade_first,
                               uint prim, uint vert, uint num_prims)
@@ -50,24 +199,17 @@ libagx_vertex_id_for_topology(enum mesa_prim mode, bool flatshade_first,
    case MESA_PRIM_LINES:
    case MESA_PRIM_TRIANGLES:
    case MESA_PRIM_LINES_ADJACENCY:
-   case MESA_PRIM_TRIANGLES_ADJACENCY: {
+   case MESA_PRIM_TRIANGLES_ADJACENCY:
       /* Regular primitive: every N vertices defines a primitive */
       return (prim * mesa_vertices_per_prim(mode)) + vert;
-   }
 
-   case MESA_PRIM_LINE_LOOP: {
-      /* (0, 1), (1, 2), (2, 0) */
-      if (prim == (num_prims - 1) && vert == 1)
-         return 0;
-      else
-         return prim + vert;
-   }
+   case MESA_PRIM_LINE_LOOP:
+      return libagx_vertex_id_for_line_loop(prim, vert, num_prims);
 
    case MESA_PRIM_LINE_STRIP:
-   case MESA_PRIM_LINE_STRIP_ADJACENCY: {
+   case MESA_PRIM_LINE_STRIP_ADJACENCY:
       /* (i, i + 1) or (i, ..., i + 3) */
       return prim + vert;
-   }
 
    case MESA_PRIM_TRIANGLE_STRIP: {
       /* Order depends on the provoking vert.
@@ -80,66 +222,14 @@ libagx_vertex_id_for_topology(enum mesa_prim mode, bool flatshade_first,
       return prim + libagx_map_vertex_in_tri_strip(prim, vert, flatshade_first);
    }
 
-   case MESA_PRIM_TRIANGLE_FAN: {
-      /* Vulkan spec section 20.1.7 gives (i + 1, i + 2, 0) for a provoking
-       * first. OpenGL instead wants (0, i + 1, i + 2) with a provoking last.
-       * Piglit clipflat expects us to switch between these orders depending on
-       * provoking vertex, to avoid trivializing the fan.
-       *
-       * Rotate accordingly.
-       */
-      if (flatshade_first)
-         vert = (vert + 1) % 3;
+   case MESA_PRIM_TRIANGLE_FAN:
+      return libagx_vertex_id_for_tri_fan(prim, vert, flatshade_first);
 
-      /* The simpler form assuming last is provoking. */
-      return (vert == 0) ? 0 : prim + vert;
-   }
-
-   case MESA_PRIM_TRIANGLE_STRIP_ADJACENCY: {
-      /* See Vulkan spec section 20.1.11 "Triangle Strips With Adjancency".
-       *
-       * There are different cases for first/middle/last/only primitives and for
-       * odd/even primitives.  Determine which case we're in.
-       */
-      bool last = prim == (num_prims - 1);
-      bool first = prim == 0;
-      bool even = (prim & 1) == 0;
-      bool even_or_first = even || first;
-
-      /* When the last vertex is provoking, we rotate the primitives
-       * accordingly. This seems required for OpenGL.
-       */
-      if (!flatshade_first && !even_or_first) {
-         vert = (vert + 4u) % 6u;
-      }
-
-      /* Offsets per the spec. The spec lists 6 cases with 6 offsets. Luckily,
-       * there are lots of patterns we can exploit, avoiding a full 6x6 LUT.
-       *
-       * Here we assume the first vertex is provoking, the Vulkan default.
-       */
-      uint offsets[6] = {
-         0,
-         first ? 1 : (even ? -2 : 3),
-         even_or_first ? 2 : 4,
-         last ? 5 : 6,
-         even_or_first ? 4 : 2,
-         even_or_first ? 3 : -2,
-      };
-
-      /* Ensure NIR can see thru the local array */
-      uint offset = 0;
-      for (uint i = 1; i < 6; ++i) {
-         if (i == vert)
-            offset = offsets[i];
-      }
-
-      /* Finally add to the base of the primitive */
-      return (prim * 2) + offset;
-   }
+   case MESA_PRIM_TRIANGLE_STRIP_ADJACENCY:
+      return libagx_vertex_id_for_tri_strip_adj(prim, vert, num_prims,
+                                                flatshade_first);
 
    default:
-      /* Invalid */
       return 0;
    }
 }
@@ -196,6 +286,7 @@ setup_unroll_for_draw(global struct agx_ia_state *ia, constant uint *in_draw,
                                                                                \
       uint count = in_draw[0];                                                 \
       constant INDEX *in = (constant INDEX *)ia->index_buffer;                 \
+      in += in_draw[2];                                                        \
                                                                                \
       global INDEX *out =                                                      \
          setup_unroll_for_draw(ia, in_draw, draw, mode, sizeof(INDEX));        \
@@ -247,40 +338,6 @@ libagx_index_buffer(constant struct agx_ia_state *p, uint id,
 }
 
 uint
-libagx_multidraw_draw_id(constant struct agx_ia_state *p, uint raw_id)
-{
-   global uint *sums = p->prefix_sums;
-
-   /* TODO: replace with binary search or interpolation search */
-   uint i = 0;
-   for (i = 0; raw_id >= sums[i]; ++i)
-      ;
-   return i;
-}
-
-uint
-libagx_multidraw_param(constant struct agx_ia_state *p, uint draw_id, uint word)
-{
-   global uint *draw = (global uint *)(p->draws + (draw_id * p->draw_stride));
-   return draw[word];
-}
-
-uint
-libagx_multidraw_primitive_id(constant struct agx_ia_state *p, uint draw_id,
-                              uint raw_id, enum mesa_prim mode)
-{
-   uint start = draw_id > 0 ? p->prefix_sums[draw_id - 1] : 0;
-   uint raw_offset = raw_id - start;
-
-   /* Note: if we wanted, we could precompute magic divisors in the setup kernel
-    * to avoid the non-constant division here.
-    */
-   uint vertex_count = libagx_multidraw_param(p, draw_id, 0);
-   uint primitive_count = u_decomposed_prims_for_vertices(mode, vertex_count);
-   return raw_offset % primitive_count;
-}
-
-uint
 libagx_setup_xfb_buffer(global struct agx_geometry_params *p, uint i)
 {
    global uint *off_ptr = p->xfb_offs_ptrs[i];
@@ -298,40 +355,45 @@ libagx_setup_xfb_buffer(global struct agx_geometry_params *p, uint i)
  * b + 2, ..., b + n - 1, -1), where b (base) is the first vertex in the prim, n
  * (count) is the number of verts in the prims, and -1 is the prim restart index
  * used to signal the end of the prim.
+ *
+ * For points, we write index buffers without restart, just as a sideband to
+ * pass data into the vertex shader.
  */
 void
 libagx_end_primitive(global int *index_buffer, uint total_verts,
                      uint verts_in_prim, uint total_prims,
-                     uint invocation_vertex_base, uint invocation_prim_base)
+                     uint invocation_vertex_base, uint invocation_prim_base,
+                     uint geometry_base, bool restart)
 {
    /* Previous verts/prims are from previous invocations plus earlier
     * prims in this invocation. For the intra-invocation counts, we
     * subtract the count for this prim from the inclusive sum NIR gives us.
     */
-   uint previous_verts = invocation_vertex_base + (total_verts - verts_in_prim);
-   uint previous_prims = invocation_prim_base + (total_prims - 1);
+   uint previous_verts_in_invoc = (total_verts - verts_in_prim);
+   uint previous_verts = invocation_vertex_base + previous_verts_in_invoc;
+   uint previous_prims = restart ? invocation_prim_base + (total_prims - 1) : 0;
+
+   /* The indices are encoded as: (unrolled ID * output vertices) + vertex. */
+   uint index_base = geometry_base + previous_verts_in_invoc;
 
    /* Index buffer contains 1 index for each vertex and 1 for each prim */
    global int *out = &index_buffer[previous_verts + previous_prims];
 
    /* Write out indices for the strip */
    for (uint i = 0; i < verts_in_prim; ++i) {
-      out[i] = previous_verts + i;
+      out[i] = index_base + i;
    }
 
-   out[verts_in_prim] = -1;
+   if (restart)
+      out[verts_in_prim] = -1;
 }
 
 void
 libagx_build_gs_draw(global struct agx_geometry_params *p, bool indexed,
-                     uint vertices, uint primitives, uint output_stride_B)
+                     uint vertices, uint primitives)
 {
    global uint *descriptor = p->indirect_desc;
    global struct agx_geometry_state *state = p->state;
-
-   /* Allocate the output buffer (per vertex) */
-   p->output_buffer = (global uint *)(state->heap + state->heap_bottom);
-   state->heap_bottom += align(vertices * output_stride_B, 4);
 
    /* Setup the indirect draw descriptor */
    if (indexed) {
@@ -361,104 +423,54 @@ libagx_build_gs_draw(global struct agx_geometry_params *p, bool indexed,
    }
 }
 
-uint2
-process_draw(global uint *draw, enum mesa_prim mode)
-{
-   /* Regardless of indexing being enabled, this holds */
-   uint vertex_count = draw[0];
-   uint instance_count = draw[1];
-
-   uint prim_per_instance = u_decomposed_prims_for_vertices(mode, vertex_count);
-   return (uint2)(prim_per_instance, instance_count);
-}
-
-uint2
-process_multidraw(global struct agx_ia_state *s, uint local_id,
-                  enum mesa_prim mode)
-{
-   uintptr_t draw_ptr = s->draws;
-   uint draw_stride = s->draw_stride;
-
-   /* Determine the number of draws. This is given by the application, but must
-    * be clamped to the minimum provided to the driver, implementing spec text:
-    *
-    *    The actual number of executed draw calls is the minimum of the count
-    *    specified in countBuffer and maxDrawCount.
-    */
-   uint len = min(*(s->count), s->max_draws);
-
-   /* Prefix sum the vertex counts (multiplied by instance counts) across draws.
-    * The number of draws is expected to be small, so this serialization should
-    * be ok in practice. See libagx_prefix_sum for algorithm details.
-    */
-   uint i, count = 0;
-   uint len_remainder = len % 32;
-   uint len_rounded_down = len - len_remainder;
-
-   for (i = local_id; i < len_rounded_down; i += 32) {
-      global uint *draw_ = (global uint *)(draw_ptr + (i * draw_stride));
-      uint2 draw = process_draw(draw_, mode);
-
-      /* Total primitives */
-      uint value = draw.x * draw.y;
-
-      /* TODO: use inclusive once that's wired up */
-      uint value_prefix_sum = sub_group_scan_exclusive_add(value) + value;
-      s->prefix_sums[i] = count + value_prefix_sum;
-      count += sub_group_broadcast(value_prefix_sum, 31);
-   }
-
-   if (local_id < len_remainder) {
-      global uint *draw_ = (global uint *)(draw_ptr + (i * draw_stride));
-      uint2 draw = process_draw(draw_, mode);
-      uint value = draw.x * draw.y;
-
-      /* TODO: use inclusive once that's wired up */
-      s->prefix_sums[i] = count + sub_group_scan_exclusive_add(value) + value;
-   }
-
-   return (uint2)(len > 0 ? s->prefix_sums[len - 1] : 0, 1);
-}
-
 void
 libagx_gs_setup_indirect(global struct agx_geometry_params *p,
                          global struct agx_ia_state *ia, enum mesa_prim mode,
-                         uint local_id, bool multidraw)
+                         uint local_id)
 {
-   /* Determine the (primitives, instances) grid size. For multidraw, this will
-    * be a synthetic grid for the entire collection, but that's ok.
-    */
-   uint2 draw = multidraw ? process_multidraw(ia, local_id, mode)
-                          : process_draw((global uint *)ia->draws, mode);
+   global uint *in_draw = (global uint *)ia->draws;
 
-   /* Elect a single lane */
-   if (multidraw && local_id != 0)
-      return;
+   /* Determine the (primitives, instances) grid size. */
+   uint vertex_count = in_draw[0];
+   uint instance_count = in_draw[1];
 
-   /* There are primitives*instances primitives total */
-   p->input_primitives = draw.x * draw.y;
+   /* Calculate number of primitives input into the GS */
+   uint prim_per_instance = u_decomposed_prims_for_vertices(mode, vertex_count);
+   p->input_primitives = prim_per_instance * instance_count;
+   p->input_vertices = vertex_count;
 
-   /* Invoke as (primitives, instances, 1) */
-   p->gs_grid[0] = draw.x;
-   p->gs_grid[1] = draw.y;
+   /* Invoke VS as (vertices, instances, 1); GS as (primitives, instances, 1) */
+   p->vs_grid[0] = vertex_count;
+   p->vs_grid[1] = instance_count;
+   p->vs_grid[2] = 1;
+
+   p->gs_grid[0] = prim_per_instance;
+   p->gs_grid[1] = instance_count;
    p->gs_grid[2] = 1;
+
+   p->primitives_log2 = util_logbase2_ceil(prim_per_instance);
 
    /* If indexing is enabled, the third word is the offset into the index buffer
     * in elements. Apply that offset now that we have it. For a hardware
     * indirect draw, the hardware would do this for us, but for software input
     * assembly we need to do it ourselves.
-    *
-    * For multidraw, this happens per-draw in the input assembly instead. We
-    * could do that for non-multidraw too, but it'd be less efficient.
     */
-   if (ia->index_buffer && !multidraw) {
+   if (ia->index_buffer) {
       ia->index_buffer += ((constant uint *)ia->draws)[2] * ia->index_size_B;
    }
 
-   /* We may need to allocate a GS count buffer, do so now */
+   /* We may need to allocate VS and GS count buffers, do so now */
    global struct agx_geometry_state *state = p->state;
+
+   uint vertex_buffer_size =
+      libagx_tcs_in_size(vertex_count * instance_count, p->vs_outputs);
+
    p->count_buffer = (global uint *)(state->heap + state->heap_bottom);
-   state->heap_bottom += align(p->input_primitives * p->count_buffer_stride, 4);
+   state->heap_bottom +=
+      align(p->input_primitives * p->count_buffer_stride, 16);
+
+   p->vertex_buffer = (global uint *)(state->heap + state->heap_bottom);
+   state->heap_bottom += align(vertex_buffer_size, 4);
 }
 
 void
@@ -503,4 +515,12 @@ bool
 libagx_is_provoking_last(global struct agx_ia_state *ia)
 {
    return !ia->flatshade_first;
+}
+
+uintptr_t
+libagx_vertex_output_address(constant struct agx_geometry_params *p, uint vtx,
+                             gl_varying_slot location, uint64_t vs_outputs)
+{
+   return (uintptr_t)p->vertex_buffer +
+          libagx_tcs_in_offs(vtx, location, vs_outputs);
 }

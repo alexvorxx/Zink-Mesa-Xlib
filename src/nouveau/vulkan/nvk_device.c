@@ -8,6 +8,7 @@
 #include "nvk_entrypoints.h"
 #include "nvk_instance.h"
 #include "nvk_physical_device.h"
+#include "nvk_shader.h"
 
 #include "vk_pipeline_cache.h"
 #include "vulkan/wsi/wsi_common.h"
@@ -57,6 +58,7 @@ nvk_slm_area_ensure(struct nvk_device *dev,
                     struct nvk_slm_area *area,
                     uint32_t bytes_per_thread)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
    assert(bytes_per_thread < (1 << 24));
 
    /* TODO: Volta+doesn't use CRC */
@@ -69,8 +71,8 @@ nvk_slm_area_ensure(struct nvk_device *dev,
     */
    bytes_per_warp = align64(bytes_per_warp, 0x200);
 
-   uint64_t bytes_per_mp = bytes_per_warp * dev->pdev->info.max_warps_per_mp;
-   uint64_t bytes_per_tpc = bytes_per_mp * dev->pdev->info.mp_per_tpc;
+   uint64_t bytes_per_mp = bytes_per_warp * pdev->info.max_warps_per_mp;
+   uint64_t bytes_per_tpc = bytes_per_mp * pdev->info.mp_per_tpc;
 
    /* The hardware seems to require this alignment for
     * NVA0C0_SET_SHADER_LOCAL_MEMORY_NON_THROTTLED_A_SIZE_LOWER.
@@ -87,7 +89,7 @@ nvk_slm_area_ensure(struct nvk_device *dev,
    if (likely(bytes_per_tpc <= area->bytes_per_tpc))
       return VK_SUCCESS;
 
-   uint64_t size = bytes_per_tpc * dev->pdev->info.tpc_count;
+   uint64_t size = bytes_per_tpc * pdev->info.tpc_count;
 
    /* The hardware seems to require this alignment for
     * NV9097_SET_SHADER_LOCAL_MEMORY_D_SIZE_LOWER.
@@ -146,6 +148,8 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
+   dev->vk.shader_ops = &nvk_device_shader_ops;
+
    drmDevicePtr drm_device = NULL;
    int ret = drmGetDeviceFromDevId(pdev->render_dev, 0, &drm_device);
    if (ret != 0) {
@@ -164,7 +168,6 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
 
    vk_device_set_drm_fd(&dev->vk, dev->ws_dev->fd);
    dev->vk.command_buffer_ops = &nvk_cmd_buffer_ops;
-   dev->pdev = pdev;
 
    result = nvk_upload_queue_init(dev, &dev->upload);
    if (result != VK_SUCCESS)
@@ -191,14 +194,20 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto fail_images;
 
-   /* The I-cache pre-fetches and we don't really know by how much.  Over-
-    * allocate shader BOs by 4K to ensure we don't run past.
+   /* If we have a full BAR, go ahead and do shader uploads on the CPU.
+    * Otherwise, we fall back to doing shader uploads via the upload queue.
+    *
+    * Also, the I-cache pre-fetches and we don't really know by how much.
+    * Over-allocating shader BOs by 4K ensures we don't run past.
     */
+   enum nouveau_ws_bo_map_flags shader_map_flags = 0;
+   if (pdev->info.bar_size_B >= pdev->info.vram_size_B)
+      shader_map_flags = NOUVEAU_WS_BO_WR;
    result = nvk_heap_init(dev, &dev->shader_heap,
                           NOUVEAU_WS_BO_LOCAL | NOUVEAU_WS_BO_NO_SHARE,
-                          0 /* map_flags */,
+                          shader_map_flags,
                           4096 /* overalloc */,
-                          dev->pdev->info.cls_eng3d < VOLTA_A);
+                          pdev->info.cls_eng3d < VOLTA_A);
    if (result != VK_SUCCESS)
       goto fail_samplers;
 
@@ -222,8 +231,8 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    memset(zero_map, 0, 0x1000);
    nouveau_ws_bo_unmap(dev->zero_page, zero_map);
 
-   if (dev->pdev->info.cls_eng3d >= FERMI_A &&
-       dev->pdev->info.cls_eng3d < MAXWELL_A) {
+   if (pdev->info.cls_eng3d >= FERMI_A &&
+       pdev->info.cls_eng3d < MAXWELL_A) {
       /* max size is 256k */
       dev->vab_memory = nouveau_ws_bo_new(dev->ws_dev, 1 << 17, 1 << 20,
                                           NOUVEAU_WS_BO_LOCAL |
@@ -311,6 +320,58 @@ nvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    nvk_upload_queue_finish(dev, &dev->upload);
    nouveau_ws_device_destroy(dev->ws_dev);
    vk_free(&dev->vk.alloc, dev);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+nvk_GetCalibratedTimestampsKHR(VkDevice _device,
+                               uint32_t timestampCount,
+                               const VkCalibratedTimestampInfoKHR *pTimestampInfos,
+                               uint64_t *pTimestamps,
+                               uint64_t *pMaxDeviation)
+{
+   VK_FROM_HANDLE(nvk_device, dev, _device);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   uint64_t max_clock_period = 0;
+   uint64_t begin, end;
+   int d;
+
+#ifdef CLOCK_MONOTONIC_RAW
+   begin = vk_clock_gettime(CLOCK_MONOTONIC_RAW);
+#else
+   begin = vk_clock_gettime(CLOCK_MONOTONIC);
+#endif
+
+   for (d = 0; d < timestampCount; d++) {
+      switch (pTimestampInfos[d].timeDomain) {
+      case VK_TIME_DOMAIN_DEVICE_KHR:
+         pTimestamps[d] = nouveau_ws_device_timestamp(pdev->ws_dev);
+         max_clock_period = MAX2(max_clock_period, 1); /* FIXME: Is timestamp period actually 1? */
+         break;
+      case VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR:
+         pTimestamps[d] = vk_clock_gettime(CLOCK_MONOTONIC);
+         max_clock_period = MAX2(max_clock_period, 1);
+         break;
+
+#ifdef CLOCK_MONOTONIC_RAW
+      case VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR:
+         pTimestamps[d] = begin;
+         break;
+#endif
+      default:
+         pTimestamps[d] = 0;
+         break;
+      }
+   }
+
+#ifdef CLOCK_MONOTONIC_RAW
+   end = vk_clock_gettime(CLOCK_MONOTONIC_RAW);
+#else
+   end = vk_clock_gettime(CLOCK_MONOTONIC);
+#endif
+
+   *pMaxDeviation = vk_time_max_deviation(begin, end, max_clock_period);
+
+   return VK_SUCCESS;
 }
 
 VkResult

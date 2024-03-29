@@ -6,6 +6,7 @@
 
 #include "agx_compiler.h"
 #include "agx_debug.h"
+#include "agx_opcodes.h"
 
 /* Validatation doesn't make sense in release builds */
 #ifndef NDEBUG
@@ -67,6 +68,16 @@ agx_validate_block_form(agx_block *block)
    return true;
 }
 
+/*
+ * Only moves and phis use stack. Phis cannot use moves due to their
+ * parallel nature, so we allow phis to take memory, later lowered to moves.
+ */
+static bool
+is_stack_valid(agx_instr *I)
+{
+   return (I->op == AGX_OPCODE_MOV) || (I->op == AGX_OPCODE_PHI);
+}
+
 static bool
 agx_validate_sources(agx_instr *I)
 {
@@ -91,6 +102,8 @@ agx_validate_sources(agx_instr *I)
       } else if (I->op == AGX_OPCODE_COLLECT && !agx_is_null(src)) {
          agx_validate_assert(src.size == I->src[0].size);
       }
+
+      agx_validate_assert(!src.memory || is_stack_valid(I));
    }
 
    return true;
@@ -115,6 +128,9 @@ agx_validate_defs(agx_instr *I, BITSET_WORD *defs)
          return false;
 
       BITSET_SET(defs, I->dest[d].value);
+
+      if (I->dest[d].memory && !is_stack_valid(I))
+         return false;
    }
 
    return true;
@@ -127,6 +143,10 @@ agx_write_registers(const agx_instr *I, unsigned d)
    unsigned size = agx_size_align_16(I->dest[d].size);
 
    switch (I->op) {
+   case AGX_OPCODE_MOV:
+      /* Tautological */
+      return agx_index_size_16(I->dest[d]);
+
    case AGX_OPCODE_ITER:
    case AGX_OPCODE_ITERPROJ:
       assert(1 <= I->channels && I->channels <= 4);
@@ -194,6 +214,10 @@ agx_read_registers(const agx_instr *I, unsigned s)
    unsigned size = agx_size_align_16(I->src[s].size);
 
    switch (I->op) {
+   case AGX_OPCODE_MOV:
+      /* Tautological */
+      return agx_index_size_16(I->src[0]);
+
    case AGX_OPCODE_SPLIT:
       return I->nr_dests * agx_size_align_16(agx_split_width(I));
 
@@ -352,7 +376,7 @@ agx_validate_sr(const agx_instr *I)
 {
    bool none = (I->op == AGX_OPCODE_GET_SR);
    bool coverage = (I->op == AGX_OPCODE_GET_SR_COVERAGE);
-   bool barrier = false; /* unused so far, will be GET_SR_BARRIER */
+   bool barrier = (I->op == AGX_OPCODE_GET_SR_BARRIER);
 
    /* Filter get_sr instructions */
    if (!(none || coverage || barrier))
@@ -365,9 +389,9 @@ agx_validate_sr(const agx_instr *I)
    case AGX_SR_IS_ACTIVE_THREAD:
       return coverage;
 
-   case AGX_SR_OPFIFO_CMD:
-   case AGX_SR_OPFIFO_DATA_L:
-   case AGX_SR_OPFIFO_DATA_H:
+   case AGX_SR_HELPER_OP:
+   case AGX_SR_HELPER_ARG_L:
+   case AGX_SR_HELPER_ARG_H:
       return barrier;
 
    default:

@@ -237,6 +237,7 @@ struct lp_descriptor {
          struct lp_jit_image image;
       };
       struct lp_jit_buffer buffer;
+      uint64_t accel_struct;
    };
 
    /* Store sample/image functions in the same location since some d3d12 games

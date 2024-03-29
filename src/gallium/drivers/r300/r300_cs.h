@@ -43,7 +43,7 @@
     struct radeon_winsys *cs_winsys = (context)->rws; \
     int cs_count = 0; (void) cs_count; (void) cs_winsys;
 
-#ifdef DEBUG
+#if MESA_DEBUG
 
 #define BEGIN_CS(size) do { \
     assert(size <= (cs_copy->current.max_dw - cs_copy->current.cdw)); \

@@ -54,7 +54,7 @@
 #include "vk_util.h"
 #include "vk_deferred_operation.h"
 #include "vk_drm_syncobj.h"
-#include "common/intel_defines.h"
+#include "common/i915/intel_defines.h"
 #include "common/intel_uuid.h"
 #include "perf/intel_perf.h"
 
@@ -183,6 +183,9 @@ static const struct vk_instance_extension_table instance_extensions = {
    .EXT_direct_mode_display                  = true,
    .EXT_display_surface_counter              = true,
    .EXT_acquire_drm_display                  = true,
+#endif
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   .EXT_headless_surface                     = true,
 #endif
 };
 
@@ -827,7 +830,7 @@ anv_physical_device_init_disk_cache(struct anv_physical_device *device)
    _mesa_sha1_format(timestamp, device->driver_build_sha1);
 
    const uint64_t driver_flags =
-      brw_get_compiler_config_value(device->compiler);
+      elk_get_compiler_config_value(device->compiler);
    device->vk.disk_cache = disk_cache_create(renderer, timestamp, driver_flags);
 #endif
 }
@@ -980,7 +983,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    int fd;
    int master_fd = -1;
 
-   brw_process_intel_debug_variable();
+   process_intel_debug_variable();
 
    fd = open(path, O_RDWR | O_CLOEXEC);
    if (fd < 0) {
@@ -1184,7 +1187,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->always_flush_cache = INTEL_DEBUG(DEBUG_STALL) ||
       driQueryOptionb(&instance->dri_options, "always_flush_cache");
 
-   device->compiler = brw_compiler_create(NULL, &device->info);
+   device->compiler = elk_compiler_create(NULL, &device->info);
    if (device->compiler == NULL) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_base;
@@ -1599,7 +1602,7 @@ anv_get_physical_device_properties_1_1(struct anv_physical_device *pdevice,
    p->deviceNodeMask = 0;
    p->deviceLUIDValid = false;
 
-   p->subgroupSize = BRW_SUBGROUP_SIZE;
+   p->subgroupSize = ELK_SUBGROUP_SIZE;
    VkShaderStageFlags scalar_stages = 0;
    for (unsigned stage = 0; stage < MESA_SHADER_STAGES; stage++) {
       if (pdevice->compiler->scalar_stage[stage])
@@ -2511,11 +2514,11 @@ VkResult anv_CreateDevice(
    if (INTEL_DEBUG(DEBUG_BATCH)) {
       const unsigned decode_flags = INTEL_BATCH_DECODE_DEFAULT_FLAGS;
 
-      intel_batch_decode_ctx_init(&device->decoder_ctx,
-                                  &physical_device->compiler->isa,
-                                  &physical_device->info,
-                                  stderr, decode_flags, NULL,
-                                  decode_get_bo, NULL, device);
+      intel_batch_decode_ctx_init_elk(&device->decoder_ctx,
+                                      &physical_device->compiler->isa,
+                                      &physical_device->info,
+                                      stderr, decode_flags, NULL,
+                                      decode_get_bo, NULL, device);
 
       device->decoder_ctx.dynamic_base = DYNAMIC_STATE_POOL_MIN_ADDRESS;
       device->decoder_ctx.surface_base = SURFACE_STATE_POOL_MIN_ADDRESS;

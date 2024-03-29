@@ -109,6 +109,8 @@ static const struct vk_instance_extension_table instance_extensions = {
    .KHR_get_surface_capabilities2       = true,
    .KHR_surface                         = true,
    .KHR_surface_protected_capabilities  = true,
+   .EXT_surface_maintenance1            = true,
+   .EXT_swapchain_colorspace            = true,
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    .KHR_wayland_surface                 = true,
@@ -121,6 +123,9 @@ static const struct vk_instance_extension_table instance_extensions = {
 #endif
 #ifdef VK_USE_PLATFORM_XLIB_XRANDR_EXT
    .EXT_acquire_xlib_display            = true,
+#endif
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   .EXT_headless_surface                = true,
 #endif
    .EXT_debug_report                    = true,
    .EXT_debug_utils                     = true,
@@ -142,6 +147,7 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .KHR_driver_properties                = true,
       .KHR_descriptor_update_template       = true,
       .KHR_depth_stencil_resolve            = true,
+      .KHR_dynamic_rendering                = true,
       .KHR_external_fence                   = true,
       .KHR_external_fence_fd                = true,
       .KHR_external_memory                  = true,
@@ -152,6 +158,9 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .KHR_get_memory_requirements2         = true,
       .KHR_image_format_list                = true,
       .KHR_imageless_framebuffer            = true,
+      .KHR_index_type_uint8                 = true,
+      .KHR_line_rasterization               = true,
+      .KHR_load_store_op_none               = true,
       .KHR_performance_query                = device->caps.perfmon,
       .KHR_relaxed_block_layout             = true,
       .KHR_maintenance1                     = true,
@@ -180,6 +189,7 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .KHR_incremental_present              = true,
 #endif
       .KHR_variable_pointers                = true,
+      .KHR_vertex_attribute_divisor         = true,
       .KHR_vulkan_memory_model              = true,
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_4444_formats                     = true,
@@ -210,6 +220,9 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_shader_demote_to_helper_invocation = true,
       .EXT_shader_module_identifier         = true,
       .EXT_subgroup_size_control            = true,
+#ifdef V3DV_USE_WSI_PLATFORM
+      .EXT_swapchain_maintenance1           = true,
+#endif
       .EXT_texel_buffer_alignment           = true,
       .EXT_tooling_info                     = true,
       .EXT_vertex_attribute_divisor         = true,
@@ -387,7 +400,7 @@ get_features(const struct v3dv_physical_device *physical_device,
       /* VK_EXT_line_rasterization */
       .rectangularLines = true,
       .bresenhamLines = true,
-      .smoothLines = false,
+      .smoothLines = true,
       .stippledRectangularLines = false,
       .stippledBresenhamLines = false,
       .stippledSmoothLines = false,
@@ -459,6 +472,14 @@ get_features(const struct v3dv_physical_device *physical_device,
 
       /* VK_KHR_shader_expect_assume */
       .shaderExpectAssume = true,
+
+      /* VK_KHR_dynamic_rendering */
+      .dynamicRendering = true,
+
+#ifdef V3DV_USE_WSI_PLATFORM
+      /* VK_EXT_swapchain_maintenance1 */
+      .swapchainMaintenance1 = true,
+#endif
    };
 }
 
@@ -1787,7 +1808,7 @@ v3dv_CreateDevice(VkPhysicalDevice physicalDevice,
       perf_debug("Device created with Robust Image Access enabled.\n");
 
 
-#ifdef DEBUG
+#if MESA_DEBUG
    v3dv_X(device, device_check_prepacked_sizes)();
 #endif
    init_device_meta(device);
@@ -2704,6 +2725,105 @@ v3dv_DestroyFramebuffer(VkDevice _device,
       return;
 
    vk_object_free(&device->vk, pAllocator, fb);
+}
+
+void
+v3dv_setup_dynamic_framebuffer(struct v3dv_cmd_buffer *cmd_buffer,
+                               const VkRenderingInfoKHR *info)
+{
+   struct v3dv_device *device = cmd_buffer->device;
+
+   /* Max framebuffer attachments is max_color_RTs + D/S multiplied by two for
+    * MSAA resolves.
+    */
+   const uint32_t max_attachments =
+      2 * (V3D_MAX_RENDER_TARGETS(device->devinfo.ver) + 1);
+   const uint32_t attachments_alloc_size =
+      sizeof(struct v3dv_image_view *) * max_attachments;
+
+   /* Only allocate the dynamic framebuffer once and will stay valid
+    * for the duration of the command buffer.
+    */
+   struct v3dv_framebuffer *fb = cmd_buffer->state.dynamic_framebuffer;
+   if (!fb) {
+      uint32_t alloc_size = sizeof(struct v3dv_framebuffer) +
+                            attachments_alloc_size;
+      fb = vk_object_zalloc(&cmd_buffer->device->vk, NULL, alloc_size,
+                            VK_OBJECT_TYPE_FRAMEBUFFER);
+      if (fb == NULL) {
+         v3dv_flag_oom(cmd_buffer, NULL);
+         return;
+      }
+      cmd_buffer->state.dynamic_framebuffer = fb;
+   } else {
+      memset(fb->attachments, 0, attachments_alloc_size);
+   }
+
+   fb->width = info->renderArea.offset.x + info->renderArea.extent.width;
+   fb->height = info->renderArea.offset.y + info->renderArea.extent.height;
+
+   /* From the Vulkan spec for VkFramebufferCreateInfo:
+    *
+    *    "If the render pass uses multiview, then layers must be one (...)"
+    */
+   fb->layers = info->viewMask == 0 ? info->layerCount : 1;
+
+   struct v3dv_render_pass *pass = &cmd_buffer->state.dynamic_pass;
+   assert(pass->subpass_count == 1 && pass->subpasses);
+   assert(pass->subpasses[0].color_count == info->colorAttachmentCount);
+   fb->color_attachment_count = info->colorAttachmentCount;
+
+   uint32_t a = 0;
+   for (int i = 0; i < info->colorAttachmentCount; i++) {
+      if (info->pColorAttachments[i].imageView == VK_NULL_HANDLE)
+         continue;
+      fb->attachments[a++] =
+         v3dv_image_view_from_handle(info->pColorAttachments[i].imageView);
+      if (info->pColorAttachments[i].resolveMode != VK_RESOLVE_MODE_NONE) {
+         fb->attachments[a++] =
+            v3dv_image_view_from_handle(info->pColorAttachments[i].resolveImageView);
+      }
+   }
+
+   if ((info->pDepthAttachment && info->pDepthAttachment->imageView) ||
+       (info->pStencilAttachment && info->pStencilAttachment->imageView)) {
+      const struct VkRenderingAttachmentInfo *common_ds_info =
+         (info->pDepthAttachment &&
+          info->pDepthAttachment->imageView != VK_NULL_HANDLE) ?
+         info->pDepthAttachment :
+         info->pStencilAttachment;
+
+      fb->attachments[a++] =
+         v3dv_image_view_from_handle(common_ds_info->imageView);
+
+      if (common_ds_info->resolveMode != VK_RESOLVE_MODE_NONE) {
+         fb->attachments[a++] =
+            v3dv_image_view_from_handle(common_ds_info->resolveImageView);
+      }
+   }
+
+   assert(a == pass->attachment_count);
+   fb->attachment_count = a;
+
+   /* Dynamic rendering doesn't provide the size of the underlying framebuffer
+    * so we estimate its size from the render area. This means it is possible
+    * the underlying attachments are larger and thus we cannot assume we have
+    * edge padding.
+    */
+   fb->has_edge_padding = false;
+}
+
+void
+v3dv_destroy_dynamic_framebuffer(struct v3dv_cmd_buffer *cmd_buffer)
+{
+   if (!cmd_buffer->state.dynamic_framebuffer)
+      return;
+
+   VkDevice vk_device = v3dv_device_to_handle(cmd_buffer->device);
+   VkFramebuffer vk_dynamic_fb =
+      v3dv_framebuffer_to_handle(cmd_buffer->state.dynamic_framebuffer);
+   v3dv_DestroyFramebuffer(vk_device, vk_dynamic_fb, NULL);
+   cmd_buffer->state.dynamic_framebuffer = NULL;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

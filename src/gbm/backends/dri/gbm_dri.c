@@ -380,98 +380,24 @@ dri_screen_create_sw(struct gbm_dri_device *dri)
 }
 
 static const struct gbm_dri_visual gbm_dri_visuals_table[] = {
-   {
-     GBM_FORMAT_R8, __DRI_IMAGE_FORMAT_R8,
-     { 0, -1, -1, -1 },
-     { 8, 0, 0, 0 },
-   },
-   {
-     GBM_FORMAT_R16, __DRI_IMAGE_FORMAT_R16,
-     { 0, -1, -1, -1 },
-     { 16, 0, 0, 0 },
-   },
-   {
-     GBM_FORMAT_GR88, __DRI_IMAGE_FORMAT_GR88,
-     { 0, 8, -1, -1 },
-     { 8, 8, 0, 0 },
-   },
-   {
-     GBM_FORMAT_GR1616, __DRI_IMAGE_FORMAT_GR1616,
-     { 0, 16, -1, -1 },
-     { 16, 16, 0, 0 },
-   },
-   {
-     GBM_FORMAT_ARGB1555, __DRI_IMAGE_FORMAT_ARGB1555,
-     { 10, 5, 0, 11 },
-     { 5, 5, 5, 1 },
-   },
-   {
-     GBM_FORMAT_RGB565, __DRI_IMAGE_FORMAT_RGB565,
-     { 11, 5, 0, -1 },
-     { 5, 6, 5, 0 },
-   },
-   {
-     GBM_FORMAT_XRGB8888, __DRI_IMAGE_FORMAT_XRGB8888,
-     { 16, 8, 0, -1 },
-     { 8, 8, 8, 0 },
-   },
-   {
-     GBM_FORMAT_ARGB8888, __DRI_IMAGE_FORMAT_ARGB8888,
-     { 16, 8, 0, 24 },
-     { 8, 8, 8, 8 },
-   },
-   {
-     GBM_FORMAT_XBGR8888, __DRI_IMAGE_FORMAT_XBGR8888,
-     { 0, 8, 16, -1 },
-     { 8, 8, 8, 0 },
-   },
-   {
-     GBM_FORMAT_ABGR8888, __DRI_IMAGE_FORMAT_ABGR8888,
-     { 0, 8, 16, 24 },
-     { 8, 8, 8, 8 },
-   },
-   {
-     GBM_FORMAT_XRGB2101010, __DRI_IMAGE_FORMAT_XRGB2101010,
-     { 20, 10, 0, -1 },
-     { 10, 10, 10, 0 },
-   },
-   {
-     GBM_FORMAT_ARGB2101010, __DRI_IMAGE_FORMAT_ARGB2101010,
-     { 20, 10, 0, 30 },
-     { 10, 10, 10, 2 },
-   },
-   {
-     GBM_FORMAT_XBGR2101010, __DRI_IMAGE_FORMAT_XBGR2101010,
-     { 0, 10, 20, -1 },
-     { 10, 10, 10, 0 },
-   },
-   {
-     GBM_FORMAT_ABGR2101010, __DRI_IMAGE_FORMAT_ABGR2101010,
-     { 0, 10, 20, 30 },
-     { 10, 10, 10, 2 },
-   },
-   {
-     GBM_FORMAT_XBGR16161616, __DRI_IMAGE_FORMAT_XBGR16161616,
-     { 0, 16, 32, -1 },
-     { 16, 16, 16, 0 },
-   },
-   {
-     GBM_FORMAT_ABGR16161616, __DRI_IMAGE_FORMAT_ABGR16161616,
-     { 0, 16, 32, 48 },
-     { 16, 16, 16, 16 },
-   },
-   {
-     GBM_FORMAT_XBGR16161616F, __DRI_IMAGE_FORMAT_XBGR16161616F,
-     { 0, 16, 32, -1 },
-     { 16, 16, 16, 0 },
-     true,
-   },
-   {
-     GBM_FORMAT_ABGR16161616F, __DRI_IMAGE_FORMAT_ABGR16161616F,
-     { 0, 16, 32, 48 },
-     { 16, 16, 16, 16 },
-     true,
-   },
+   { GBM_FORMAT_R8, __DRI_IMAGE_FORMAT_R8 },
+   { GBM_FORMAT_R16, __DRI_IMAGE_FORMAT_R16 },
+   { GBM_FORMAT_GR88, __DRI_IMAGE_FORMAT_GR88 },
+   { GBM_FORMAT_GR1616, __DRI_IMAGE_FORMAT_GR1616 },
+   { GBM_FORMAT_ARGB1555, __DRI_IMAGE_FORMAT_ARGB1555 },
+   { GBM_FORMAT_RGB565, __DRI_IMAGE_FORMAT_RGB565 },
+   { GBM_FORMAT_XRGB8888, __DRI_IMAGE_FORMAT_XRGB8888 },
+   { GBM_FORMAT_ARGB8888, __DRI_IMAGE_FORMAT_ARGB8888 },
+   { GBM_FORMAT_XBGR8888, __DRI_IMAGE_FORMAT_XBGR8888 },
+   { GBM_FORMAT_ABGR8888, __DRI_IMAGE_FORMAT_ABGR8888 },
+   { GBM_FORMAT_XRGB2101010, __DRI_IMAGE_FORMAT_XRGB2101010 },
+   { GBM_FORMAT_ARGB2101010, __DRI_IMAGE_FORMAT_ARGB2101010 },
+   { GBM_FORMAT_XBGR2101010, __DRI_IMAGE_FORMAT_XBGR2101010 },
+   { GBM_FORMAT_ABGR2101010, __DRI_IMAGE_FORMAT_ABGR2101010 },
+   { GBM_FORMAT_XBGR16161616, __DRI_IMAGE_FORMAT_XBGR16161616 },
+   { GBM_FORMAT_ABGR16161616, __DRI_IMAGE_FORMAT_ABGR16161616 },
+   { GBM_FORMAT_XBGR16161616F, __DRI_IMAGE_FORMAT_XBGR16161616F },
+   { GBM_FORMAT_ABGR16161616F, __DRI_IMAGE_FORMAT_ABGR16161616F },
 };
 
 static int
@@ -481,17 +407,6 @@ gbm_format_to_dri_format(uint32_t gbm_format)
    for (size_t i = 0; i < ARRAY_SIZE(gbm_dri_visuals_table); i++) {
       if (gbm_dri_visuals_table[i].gbm_format == gbm_format)
          return gbm_dri_visuals_table[i].dri_image_format;
-   }
-
-   return 0;
-}
-
-static uint32_t
-gbm_dri_to_gbm_format(int dri_format)
-{
-   for (size_t i = 0; i < ARRAY_SIZE(gbm_dri_visuals_table); i++) {
-      if (gbm_dri_visuals_table[i].dri_image_format == dri_format)
-         return gbm_dri_visuals_table[i].gbm_format;
    }
 
    return 0;
@@ -840,7 +755,6 @@ gbm_dri_bo_import(struct gbm_device *gbm,
 
    case GBM_BO_IMPORT_EGL_IMAGE:
    {
-      int dri_format;
       if (dri->lookup_image == NULL) {
          errno = EINVAL;
          return NULL;
@@ -848,9 +762,8 @@ gbm_dri_bo_import(struct gbm_device *gbm,
 
       image = dri->lookup_image(dri->screen, buffer, dri->lookup_user_data);
       image = dri->image->dupImage(image, NULL);
-      dri->image->queryImage(image, __DRI_IMAGE_ATTRIB_FORMAT, &dri_format);
-      gbm_format = gbm_dri_to_gbm_format(dri_format);
-      if (gbm_format == 0) {
+      dri->image->queryImage(image, __DRI_IMAGE_ATTRIB_FOURCC, &gbm_format);
+      if (gbm_format == DRM_FORMAT_INVALID) {
          errno = EINVAL;
          dri->image->destroyImage(image);
          return NULL;

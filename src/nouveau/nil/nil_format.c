@@ -138,6 +138,8 @@ static const struct nil_format_info nil_format_infos[PIPE_FORMAT_COUNT] =
    SX(A, X32_S8X24_UINT,   G, R32_B24G8,  T),
 
    F3(A, B5G6R5_UNORM,     R5G6B5,     B, G, R, x, UNORM,   B5G6R5,     TD),
+   F3(A, R5G6B5_UNORM,     NONE,       R, G, B, x, UNORM,   B5G6R5,     T),
+   C4(A, R5G5B5A1_UNORM,   NONE,       R, G, B, A, UNORM,   A1B5G5R5,   T),
    C4(A, B5G5R5A1_UNORM,   A1R5G5B5,   B, G, R, A, UNORM,   A1B5G5R5,   TD),
    F3(A, B5G5R5X1_UNORM,   X1R5G5B5,   B, G, R, x, UNORM,   A1B5G5R5,   TD),
    C4(A, A4B4G4R4_UNORM,   NONE,       A, B, G, R, UNORM,   A4B4G4R4,   T),
@@ -187,7 +189,7 @@ static const struct nil_format_info nil_format_infos[PIPE_FORMAT_COUNT] =
    C4(A, I32_SINT,   RS32, R, R, R, R, SINT,    R32,  TR),
    C4(A, I32_UINT,   RU32, R, R, R, R, UINT,    R32,  TR),
 
-   A1(A, A8_UNORM,   A8,   x, x, x, R, UNORM,   R8,   TA),
+   A1(A, A8_UNORM,   A8,   x, x, x, R, UNORM,   R8,   IA),
    A1(A, A8_SNORM,   RN8,  x, x, x, R, SNORM,   R8,   T),
    A1(A, A8_SINT,    RS8,  x, x, x, R, SINT,    R8,   T),
    A1(A, A8_UINT,    RU8,  x, x, x, R, UINT,    R8,   T),

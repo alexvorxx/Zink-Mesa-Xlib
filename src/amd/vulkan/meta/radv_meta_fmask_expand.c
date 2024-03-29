@@ -22,6 +22,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "radv_formats.h"
 #include "radv_meta.h"
 #include "radv_private.h"
 #include "vk_format.h"

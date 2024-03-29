@@ -927,7 +927,7 @@ static void virgl_flush_frontbuffer(struct pipe_screen *screen,
                                     struct pipe_context *ctx,
                                       struct pipe_resource *res,
                                       unsigned level, unsigned layer,
-                                    void *winsys_drawable_handle, struct pipe_box *sub_box)
+                                    void *winsys_drawable_handle, unsigned nboxes, struct pipe_box *sub_box)
 {
    struct virgl_screen *vscreen = virgl_screen(screen);
    struct virgl_winsys *vws = vscreen->vws;
@@ -937,7 +937,7 @@ static void virgl_flush_frontbuffer(struct pipe_screen *screen,
    if (vws->flush_frontbuffer) {
       virgl_flush_eq(vctx, vctx, NULL);
       vws->flush_frontbuffer(vws, vctx->cbuf, vres->hw_res, level, layer, winsys_drawable_handle,
-                             sub_box);
+                             nboxes == 1 ? sub_box : NULL);
    }
 }
 

@@ -93,6 +93,7 @@ enum internal_build_type {
 struct build_config {
    enum internal_build_type internal_type;
    bool compact;
+   bool updateable;
 };
 
 struct acceleration_structure_layout {
@@ -143,6 +144,10 @@ build_config(uint32_t leaf_count, const VkAccelerationStructureBuildGeometryInfo
    if (build_info->mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR &&
        build_info->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
       config.internal_type = INTERNAL_BUILD_TYPE_UPDATE;
+
+   if ((build_info->flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR) &&
+       build_info->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
+      config.updateable = true;
 
    if (build_info->flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR)
       config.compact = true;
@@ -541,14 +546,16 @@ radv_device_init_accel_struct_build_state(struct radv_device *device)
    if (device->meta_state.accel_struct_build.radix_sort)
       goto exit;
 
-   if (device->instance->drirc.force_active_accel_struct_leaves)
-      result = create_build_pipeline_spv(device, leaf_always_active_spv, sizeof(leaf_always_active_spv),
-                                         sizeof(struct leaf_args), &device->meta_state.accel_struct_build.leaf_pipeline,
-                                         &device->meta_state.accel_struct_build.leaf_p_layout);
-   else
-      result = create_build_pipeline_spv(device, leaf_spv, sizeof(leaf_spv), sizeof(struct leaf_args),
-                                         &device->meta_state.accel_struct_build.leaf_pipeline,
-                                         &device->meta_state.accel_struct_build.leaf_p_layout);
+   result = create_build_pipeline_spv(device, leaf_always_active_spv, sizeof(leaf_always_active_spv),
+                                      sizeof(struct leaf_args),
+                                      &device->meta_state.accel_struct_build.leaf_updateable_pipeline,
+                                      &device->meta_state.accel_struct_build.leaf_p_layout);
+   if (result != VK_SUCCESS)
+      goto exit;
+
+   result = create_build_pipeline_spv(device, leaf_spv, sizeof(leaf_spv), sizeof(struct leaf_args),
+                                      &device->meta_state.accel_struct_build.leaf_pipeline,
+                                      &device->meta_state.accel_struct_build.leaf_p_layout);
    if (result != VK_SUCCESS)
       goto exit;
 
@@ -647,6 +654,8 @@ struct radv_bvh_batch_state {
    bool any_non_compact;
    bool any_ploc;
    bool any_lbvh;
+   bool any_updateable;
+   bool any_non_updateable;
    bool any_update;
 };
 
@@ -719,17 +728,21 @@ static void
 build_leaves(VkCommandBuffer commandBuffer, uint32_t infoCount,
              const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
              const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos, struct bvh_state *bvh_states,
-             enum radv_cmd_flush_bits flush_bits)
+             bool updateable)
 {
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
    radv_write_user_event_marker(cmd_buffer, UserEventPush, "leaves");
 
    cmd_buffer->device->vk.dispatch_table.CmdBindPipeline(
-      commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cmd_buffer->device->meta_state.accel_struct_build.leaf_pipeline);
+      commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+      updateable ? cmd_buffer->device->meta_state.accel_struct_build.leaf_updateable_pipeline
+                 : cmd_buffer->device->meta_state.accel_struct_build.leaf_pipeline);
 
    for (uint32_t i = 0; i < infoCount; ++i) {
       if (bvh_states[i].config.internal_type == INTERNAL_BUILD_TYPE_UPDATE)
+         continue;
+      if (bvh_states[i].config.updateable != updateable)
          continue;
 
       RADV_FROM_HANDLE(vk_acceleration_structure, accel_struct, pInfos[i].dstAccelerationStructure);
@@ -759,8 +772,6 @@ build_leaves(VkCommandBuffer commandBuffer, uint32_t infoCount,
    }
 
    radv_write_user_event_marker(cmd_buffer, UserEventPop, NULL);
-
-   cmd_buffer->state.flush_bits |= flush_bits;
 }
 
 static void
@@ -1382,6 +1393,11 @@ radv_CmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t i
       else
          batch_state.any_non_compact = true;
 
+      if (config.updateable)
+         batch_state.any_updateable = true;
+      else
+         batch_state.any_non_updateable = true;
+
       if (config.internal_type == INTERNAL_BUILD_TYPE_PLOC) {
          batch_state.any_ploc = true;
       } else if (config.internal_type == INTERNAL_BUILD_TYPE_LBVH) {
@@ -1431,28 +1447,36 @@ radv_CmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t i
 
    cmd_buffer->state.current_event_type = EventInternalUnknown;
 
-   build_leaves(commandBuffer, infoCount, pInfos, ppBuildRangeInfos, bvh_states, flush_bits);
+   if (batch_state.any_lbvh || batch_state.any_ploc) {
+      if (batch_state.any_non_updateable)
+         build_leaves(commandBuffer, infoCount, pInfos, ppBuildRangeInfos, bvh_states, false);
+      if (batch_state.any_updateable)
+         build_leaves(commandBuffer, infoCount, pInfos, ppBuildRangeInfos, bvh_states, true);
 
-   morton_generate(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
+      cmd_buffer->state.flush_bits |= flush_bits;
 
-   morton_sort(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
+      morton_generate(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
 
-   cmd_buffer->state.flush_bits |= flush_bits;
+      morton_sort(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
 
-   lbvh_build_internal(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
+      cmd_buffer->state.flush_bits |= flush_bits;
 
-   if (batch_state.any_ploc)
-      ploc_build_internal(commandBuffer, infoCount, pInfos, bvh_states);
+      if (batch_state.any_lbvh)
+         lbvh_build_internal(commandBuffer, infoCount, pInfos, bvh_states, flush_bits);
 
-   cmd_buffer->state.flush_bits |= flush_bits;
+      if (batch_state.any_ploc)
+         ploc_build_internal(commandBuffer, infoCount, pInfos, bvh_states);
 
-   if (batch_state.any_non_compact)
-      encode_nodes(commandBuffer, infoCount, pInfos, bvh_states, false);
+      cmd_buffer->state.flush_bits |= flush_bits;
 
-   if (batch_state.any_compact)
-      encode_nodes(commandBuffer, infoCount, pInfos, bvh_states, true);
+      if (batch_state.any_non_compact)
+         encode_nodes(commandBuffer, infoCount, pInfos, bvh_states, false);
 
-   cmd_buffer->state.flush_bits |= flush_bits;
+      if (batch_state.any_compact)
+         encode_nodes(commandBuffer, infoCount, pInfos, bvh_states, true);
+
+      cmd_buffer->state.flush_bits |= flush_bits;
+   }
 
    init_header(commandBuffer, infoCount, pInfos, bvh_states, &batch_state);
 

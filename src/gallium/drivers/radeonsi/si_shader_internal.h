@@ -45,7 +45,6 @@ struct si_shader_args {
    struct ac_arg gs_attr_address;
    /* API VS */
    struct ac_arg vb_descriptors[5];
-   struct ac_arg vertex_index0;
    /* VS state bits. See the VS_STATE_* and GS_STATE_* definitions. */
    struct ac_arg vs_state_bits;
    struct ac_arg vs_blit_inputs;
@@ -94,11 +93,6 @@ void si_add_arg_checked(struct ac_shader_args *args, enum ac_arg_regfile file, u
                         enum ac_arg_type type, struct ac_arg *arg, unsigned idx);
 void si_init_shader_args(struct si_shader *shader, struct si_shader_args *args);
 unsigned si_get_max_workgroup_size(const struct si_shader *shader);
-bool si_vs_needs_prolog(const struct si_shader_selector *sel,
-                        const struct si_vs_prolog_bits *prolog_key);
-void si_get_vs_prolog_key(const struct si_shader_info *info, unsigned num_input_sgprs,
-                          const struct si_vs_prolog_bits *prolog_key,
-                          struct si_shader *shader_out, union si_shader_part_key *key);
 struct nir_shader *si_get_nir_shader(struct si_shader *shader, struct si_shader_args *args,
                                      bool *free_nir, uint64_t tcs_vgpr_only_inputs,
                                      ac_nir_gs_output_info *output_info);
@@ -119,9 +113,6 @@ void si_get_tcs_epilog_args(enum amd_gfx_level gfx_level,
                             struct ac_arg *invocation_id,
                             struct ac_arg *tf_lds_offset,
                             struct ac_arg tess_factors[6]);
-void si_get_vs_prolog_args(enum amd_gfx_level gfx_level,
-                           struct si_shader_args *args,
-                           const union si_shader_part_key *key);
 void si_get_ps_prolog_args(struct si_shader_args *args,
                            const union si_shader_part_key *key);
 void si_get_ps_epilog_args(struct si_shader_args *args,

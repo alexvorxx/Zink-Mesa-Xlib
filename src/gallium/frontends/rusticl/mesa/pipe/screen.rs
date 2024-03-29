@@ -449,6 +449,14 @@ impl PipeScreen {
             );
         }
     }
+
+    pub fn query_memory_info(&self) -> Option<pipe_memory_info> {
+        let mut info = pipe_memory_info::default();
+        unsafe {
+            self.screen().query_memory_info?(self.screen.as_ptr(), &mut info);
+        }
+        Some(info)
+    }
 }
 
 impl Drop for PipeScreen {

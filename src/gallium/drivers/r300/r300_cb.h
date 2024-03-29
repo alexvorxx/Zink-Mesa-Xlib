@@ -65,7 +65,7 @@
  * Command buffer setup.
  */
 
-#ifdef DEBUG
+#if MESA_DEBUG
 
 #define CB_LOCALS \
     int cs_count = 0; \

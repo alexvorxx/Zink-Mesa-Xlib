@@ -80,6 +80,9 @@ bool
 dxil_spirv_nir_lower_bindless(nir_shader *nir, struct dxil_spirv_nir_lower_bindless_options *options);
 
 bool
+dxil_spirv_nir_lower_buffer_device_address(nir_shader *nir);
+
+bool
 dxil_spirv_nir_lower_yz_flip(nir_shader *shader,
                              const struct dxil_spirv_runtime_conf *rt_conf,
                              bool *reads_sysval_ubo);

@@ -11,10 +11,11 @@
 #include "nvk_physical_device.h"
 
 #include "nil_format.h"
-#include "vulkan/util/vk_format.h"
+#include "vk_format.h"
 
 #include "clb097.h"
 #include "clb197.h"
+#include "clc097.h"
 
 static VkFormatFeatureFlags2
 nvk_get_image_plane_format_features(struct nvk_physical_device *pdev,
@@ -173,7 +174,7 @@ nvk_image_max_dimension(const struct nv_device_info *info,
    switch (image_type) {
    case VK_IMAGE_TYPE_1D:
    case VK_IMAGE_TYPE_2D:
-      return info->chipset >= 0x130 ? 0x8000 : 0x4000;
+      return info->cls_eng3d >= PASCAL_A ? 0x8000 : 0x4000;
    case VK_IMAGE_TYPE_3D:
       return 0x4000;
    default:
@@ -227,6 +228,38 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
    if (ycbcr_info && pImageFormatInfo->type != VK_IMAGE_TYPE_2D)
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
+   /* From the Vulkan 1.3.279 spec:
+    *
+    *    VUID-VkImageCreateInfo-tiling-04121
+    *
+    *    "If tiling is VK_IMAGE_TILING_LINEAR, flags must not contain
+    *    VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT"
+    *
+    *    VUID-VkImageCreateInfo-imageType-00970
+    *
+    *    "If imageType is VK_IMAGE_TYPE_1D, flags must not contain
+    *    VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT"
+    */
+   if (pImageFormatInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT &&
+       (pImageFormatInfo->type == VK_IMAGE_TYPE_1D ||
+        pImageFormatInfo->tiling == VK_IMAGE_TILING_LINEAR))
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+   /* From the Vulkan 1.3.279 spec:
+    *
+    *    VUID-VkImageCreateInfo-flags-09403
+    *
+    *    "If flags contains VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT, flags
+    *    must not include VK_IMAGE_CREATE_SPARSE_ALIASED_BIT,
+    *    VK_IMAGE_CREATE_SPARSE_BINDING_BIT, or
+    *    VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT"
+    */
+   if ((pImageFormatInfo->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) &&
+       (pImageFormatInfo->flags & (VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
+                                   VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
+                                   VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)))
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
    const uint32_t max_dim =
       nvk_image_max_dimension(&pdev->info, VK_IMAGE_TYPE_1D);
    VkExtent3D maxExtent;
@@ -261,8 +294,7 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
        ycbcr_info == NULL &&
        (features & (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
                     VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
-       !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) &&
-       !(pImageFormatInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+       !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)) {
       sampleCounts = VK_SAMPLE_COUNT_1_BIT |
                      VK_SAMPLE_COUNT_2_BIT |
                      VK_SAMPLE_COUNT_4_BIT |
@@ -371,6 +403,11 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
        (pImageFormatInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT))
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
+   if (ycbcr_info &&
+       ((pImageFormatInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) ||
+       (pImageFormatInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)))
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
    pImageFormatProperties->imageFormatProperties = (VkImageFormatProperties) {
       .maxExtent = maxExtent,
       .maxMipLevels = maxMipLevels,
@@ -410,17 +447,6 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
    return VK_SUCCESS;
 }
 
-VKAPI_ATTR void VKAPI_CALL
-nvk_GetPhysicalDeviceSparseImageFormatProperties2(
-    VkPhysicalDevice physicalDevice,
-    const VkPhysicalDeviceSparseImageFormatInfo2* pFormatInfo,
-    uint32_t *pPropertyCount,
-    VkSparseImageFormatProperties2 *pProperties)
-{
-   /* Sparse images are not yet supported. */
-   *pPropertyCount = 0;
-}
-
 static enum nil_image_dim
 vk_image_type_to_nil_dim(VkImageType type)
 {
@@ -430,6 +456,88 @@ vk_image_type_to_nil_dim(VkImageType type)
    case VK_IMAGE_TYPE_3D:  return NIL_IMAGE_DIM_3D;
    default:
       unreachable("Invalid image type");
+   }
+}
+
+static VkSparseImageFormatProperties
+nvk_fill_sparse_image_fmt_props(VkImageAspectFlags aspects,
+                                const enum pipe_format format,
+                                const enum nil_image_dim dim,
+                                const enum nil_sample_layout sample_layout)
+{
+   struct nil_extent4d sparse_block_extent_px =
+      nil_sparse_block_extent_px(format, dim, sample_layout);
+
+   assert(sparse_block_extent_px.a == 1);
+
+   VkSparseImageFormatProperties sparse_format_props = {
+      .aspectMask = aspects,
+      .flags = VK_SPARSE_IMAGE_FORMAT_SINGLE_MIPTAIL_BIT,
+      .imageGranularity = {
+         .width = sparse_block_extent_px.w,
+         .height = sparse_block_extent_px.h,
+         .depth = sparse_block_extent_px.d,
+      },
+   };
+
+   return sparse_format_props;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+nvk_GetPhysicalDeviceSparseImageFormatProperties2(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceSparseImageFormatInfo2* pFormatInfo,
+    uint32_t *pPropertyCount,
+    VkSparseImageFormatProperties2 *pProperties)
+{
+   VkResult result;
+
+   /* Check if the given format info is valid first before returning sparse
+    * props.  The easiest way to do this is to just call
+    * nvk_GetPhysicalDeviceImageFormatProperties2()
+    */
+   const VkPhysicalDeviceImageFormatInfo2 img_fmt_info = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+      .format = pFormatInfo->format,
+      .type = pFormatInfo->type,
+      .tiling = pFormatInfo->tiling,
+      .usage = pFormatInfo->usage,
+      .flags = VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
+               VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT,
+   };
+
+   VkImageFormatProperties2 img_fmt_props2 = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+      .pNext = NULL,
+   };
+
+   result = nvk_GetPhysicalDeviceImageFormatProperties2(physicalDevice,
+                                                        &img_fmt_info,
+                                                        &img_fmt_props2);
+   if (result != VK_SUCCESS) {
+      *pPropertyCount = 0;
+      return;
+   }
+
+   const VkImageFormatProperties *props = &img_fmt_props2.imageFormatProperties;
+   if (!(pFormatInfo->samples & props->sampleCounts)) {
+      *pPropertyCount = 0;
+      return;
+   }
+
+   VK_OUTARRAY_MAKE_TYPED(VkSparseImageFormatProperties2, out,
+                          pProperties, pPropertyCount);
+
+   VkImageAspectFlags aspects = vk_format_aspects(pFormatInfo->format);
+   const enum pipe_format pipe_format =
+      vk_format_to_pipe_format(pFormatInfo->format);
+   const enum nil_image_dim dim = vk_image_type_to_nil_dim(pFormatInfo->type);
+   const enum nil_sample_layout sample_layout =
+      nil_choose_sample_layout(pFormatInfo->samples);
+
+   vk_outarray_append_typed(VkSparseImageFormatProperties2, &out, props) {
+      props->properties = nvk_fill_sparse_image_fmt_props(aspects, pipe_format,
+                                                          dim, sample_layout);
    }
 }
 
@@ -460,12 +568,6 @@ nvk_image_init(struct nvk_device *dev,
    if (pCreateInfo->flags & VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT)
       usage |= NIL_IMAGE_USAGE_2D_VIEW_BIT;
 
-   /* We treat 3D storage images as 2D arrays.  One day, we may wire up actual
-    * 3D storage image support but baseArrayLayer gets tricky.
-    */
-   if (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)
-      usage |= NIL_IMAGE_USAGE_2D_VIEW_BIT;
-
    /* In order to be able to clear 3D depth/stencil images, we need to bind
     * them as 2D arrays.  Fortunately, 3D depth/stencil shouldn't be common.
     */
@@ -477,6 +579,12 @@ nvk_image_init(struct nvk_device *dev,
    image->plane_count = vk_format_get_plane_count(pCreateInfo->format);
    image->disjoint = image->plane_count > 1 &&
                      (pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT);
+
+   if (image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) {
+      /* Sparse multiplane is not supported */
+      assert(image->plane_count == 1);
+      usage |= NIL_IMAGE_USAGE_SPARSE_RESIDENCY_BIT;
+   }
 
    const struct vk_format_ycbcr_info *ycbcr_info =
       vk_format_get_ycbcr_info(pCreateInfo->format);
@@ -590,14 +698,30 @@ nvk_image_finish(struct nvk_device *dev, struct nvk_image *image,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-nvk_CreateImage(VkDevice device,
+nvk_CreateImage(VkDevice _device,
                 const VkImageCreateInfo *pCreateInfo,
                 const VkAllocationCallbacks *pAllocator,
                 VkImage *pImage)
 {
-   VK_FROM_HANDLE(nvk_device, dev, device);
+   VK_FROM_HANDLE(nvk_device, dev, _device);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
    struct nvk_image *image;
    VkResult result;
+
+#ifdef NVK_USE_WSI_PLATFORM
+   /* Ignore swapchain creation info on Android. Since we don't have an
+    * implementation in Mesa, we're guaranteed to access an Android object
+    * incorrectly.
+    */
+   const VkImageSwapchainCreateInfoKHR *swapchain_info =
+      vk_find_struct_const(pCreateInfo->pNext, IMAGE_SWAPCHAIN_CREATE_INFO_KHR);
+   if (swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE) {
+      return wsi_common_create_swapchain_image(&pdev->wsi_device,
+                                               pCreateInfo,
+                                               swapchain_info->swapchain,
+                                               pImage);
+   }
+#endif
 
    image = vk_zalloc2(&dev->vk.alloc, pAllocator, sizeof(*image), 8,
                       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -668,7 +792,8 @@ nvk_get_image_memory_requirements(struct nvk_device *dev,
                                   VkImageAspectFlags aspects,
                                   VkMemoryRequirements2 *pMemoryRequirements)
 {
-   uint32_t memory_types = (1 << dev->pdev->mem_type_count) - 1;
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   uint32_t memory_types = (1 << pdev->mem_type_count) - 1;
 
    // TODO hope for the best?
 
@@ -721,7 +846,7 @@ nvk_GetImageMemoryRequirements2(VkDevice device,
                                      pMemoryRequirements);
 }
 
-VKAPI_ATTR void VKAPI_CALL 
+VKAPI_ATTR void VKAPI_CALL
 nvk_GetDeviceImageMemoryRequirements(VkDevice device,
                                      const VkDeviceImageMemoryRequirements *pInfo,
                                      VkMemoryRequirements2 *pMemoryRequirements)
@@ -742,24 +867,115 @@ nvk_GetDeviceImageMemoryRequirements(VkDevice device,
    nvk_image_finish(dev, &image, NULL);
 }
 
-VKAPI_ATTR void VKAPI_CALL
-nvk_GetImageSparseMemoryRequirements2(VkDevice device,
-                                      const VkImageSparseMemoryRequirementsInfo2* pInfo,
-                                      uint32_t* pSparseMemoryRequirementCount,
-                                      VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
+static VkSparseImageMemoryRequirements
+nvk_fill_sparse_image_memory_reqs(const struct nil_image *nil,
+                                  const struct nil_image *stencil_tmp,
+                                  VkImageAspectFlags aspects)
 {
-   /* We dont support sparse images yet, this is a stub to get KHR_get_memory_requirements2 */
-   *pSparseMemoryRequirementCount = 0;
+   VkSparseImageFormatProperties sparse_format_props =
+      nvk_fill_sparse_image_fmt_props(aspects, nil->format,
+                                      nil->dim, nil->sample_layout);
+
+   assert(nil->mip_tail_first_lod <= nil->num_levels);
+   VkSparseImageMemoryRequirements sparse_memory_reqs = {
+      .formatProperties = sparse_format_props,
+      .imageMipTailFirstLod = nil->mip_tail_first_lod,
+      .imageMipTailStride = 0,
+   };
+
+   if (nil->mip_tail_first_lod == 0) {
+      sparse_memory_reqs.imageMipTailSize = nil->size_B;
+      sparse_memory_reqs.imageMipTailOffset = 0;
+   } else if (nil->mip_tail_first_lod < nil->num_levels) {
+      sparse_memory_reqs.imageMipTailSize =
+         nil_image_mip_tail_size_B(nil) * nil->extent_px.a;
+      sparse_memory_reqs.imageMipTailOffset = NVK_MIP_TAIL_START_OFFSET;
+   } else {
+      sparse_memory_reqs.imageMipTailSize = 0;
+      sparse_memory_reqs.imageMipTailOffset = NVK_MIP_TAIL_START_OFFSET;
+   }
+
+   if (stencil_tmp != NULL)
+      sparse_memory_reqs.imageMipTailSize += stencil_tmp->size_B;
+
+   return sparse_memory_reqs;
+}
+
+static void
+nvk_get_image_sparse_memory_requirements(
+   struct nvk_device *dev,
+   struct nvk_image *image,
+   VkImageAspectFlags aspects,
+   uint32_t *pSparseMemoryRequirementCount,
+   VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
+{
+   VK_OUTARRAY_MAKE_TYPED(VkSparseImageMemoryRequirements2, out,
+                          pSparseMemoryRequirements,
+                          pSparseMemoryRequirementCount);
+
+   /* From the Vulkan 1.3.279 spec:
+    *
+    *    "The sparse image must have been created using the
+    *    VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT flag to retrieve valid sparse
+    *    image memory requirements."
+    */
+   if (!(image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT))
+      return;
+
+   /* We don't support multiplane sparse for now */
+   if (image->plane_count > 1)
+      return;
+
+   const struct nil_image *stencil_tmp = NULL;
+   if (image->stencil_copy_temp.nil.size_B > 0)
+      stencil_tmp = &image->stencil_copy_temp.nil;
+
+   vk_outarray_append_typed(VkSparseImageMemoryRequirements2, &out, reqs) {
+      reqs->memoryRequirements =
+         nvk_fill_sparse_image_memory_reqs(&image->planes[0].nil,
+                                           stencil_tmp, aspects);
+   };
 }
 
 VKAPI_ATTR void VKAPI_CALL
-nvk_GetDeviceImageSparseMemoryRequirements(VkDevice device,
-                                           const VkDeviceImageMemoryRequirements* pInfo,
-                                           uint32_t *pSparseMemoryRequirementCount,
-                                           VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
+nvk_GetImageSparseMemoryRequirements2(
+   VkDevice device,
+   const VkImageSparseMemoryRequirementsInfo2* pInfo,
+   uint32_t* pSparseMemoryRequirementCount,
+   VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
 {
-   /* Sparse images are not supported so this is just a stub for now. */
-   *pSparseMemoryRequirementCount = 0;
+   VK_FROM_HANDLE(nvk_device, dev, device);
+   VK_FROM_HANDLE(nvk_image, image, pInfo->image);
+
+   const VkImageAspectFlags aspects = image->vk.aspects;
+
+   nvk_get_image_sparse_memory_requirements(dev, image, aspects,
+                                            pSparseMemoryRequirementCount,
+                                            pSparseMemoryRequirements);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+nvk_GetDeviceImageSparseMemoryRequirements(
+   VkDevice device,
+   const VkDeviceImageMemoryRequirements* pInfo,
+   uint32_t *pSparseMemoryRequirementCount,
+   VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
+{
+   VK_FROM_HANDLE(nvk_device, dev, device);
+   ASSERTED VkResult result;
+   struct nvk_image image = {0};
+
+   result = nvk_image_init(dev, &image, pInfo->pCreateInfo);
+   assert(result == VK_SUCCESS);
+
+   const VkImageAspectFlags aspects =
+      image.disjoint ? pInfo->planeAspect : image.vk.aspects;
+
+   nvk_get_image_sparse_memory_requirements(dev, &image, aspects,
+                                            pSparseMemoryRequirementCount,
+                                            pSparseMemoryRequirements);
+
+   nvk_image_finish(dev, &image, NULL);
 }
 
 static void
@@ -853,6 +1069,28 @@ nvk_BindImageMemory2(VkDevice device,
    for (uint32_t i = 0; i < bindInfoCount; ++i) {
       VK_FROM_HANDLE(nvk_device_memory, mem, pBindInfos[i].memory);
       VK_FROM_HANDLE(nvk_image, image, pBindInfos[i].image);
+
+      /* Ignore this struct on Android, we cannot access swapchain structures there. */
+#ifdef NVK_USE_WSI_PLATFORM
+      const VkBindImageMemorySwapchainInfoKHR *swapchain_info =
+         vk_find_struct_const(pBindInfos[i].pNext, BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR);
+
+      if (swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE) {
+         VkImage _wsi_image = wsi_common_get_image(swapchain_info->swapchain,
+                                                   swapchain_info->imageIndex);
+         VK_FROM_HANDLE(nvk_image, wsi_img, _wsi_image);
+
+         assert(image->plane_count == 1);
+         assert(wsi_img->plane_count == 1);
+
+         struct nvk_image_plane *plane = &image->planes[0];
+         struct nvk_image_plane *swapchain_plane = &wsi_img->planes[0];
+
+         /* Copy memory binding information from swapchain image to the current image's plane. */
+         plane->addr = swapchain_plane->addr;
+         continue;
+      }
+#endif
 
       uint64_t offset_B = pBindInfos[i].memoryOffset;
       if (image->disjoint) {

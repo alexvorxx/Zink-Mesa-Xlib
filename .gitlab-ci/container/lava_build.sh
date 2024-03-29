@@ -276,6 +276,10 @@ DEQP_API=GL \
 DEQP_TARGET=surfaceless \
 . .gitlab-ci/container/build-deqp.sh
 
+DEQP_API=GLES \
+DEQP_TARGET=surfaceless \
+. .gitlab-ci/container/build-deqp.sh
+
 DEQP_API=VK \
 DEQP_TARGET=default \
 . .gitlab-ci/container/build-deqp.sh

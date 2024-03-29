@@ -140,8 +140,8 @@ retry_select_mode:
       bool uses_primitive_id = gs_sel->info.uses_primid;
       if (gs_stage == MESA_SHADER_VERTEX) {
          uses_instance_id |=
-            shader->key.ge.part.vs.prolog.instance_divisor_is_one ||
-            shader->key.ge.part.vs.prolog.instance_divisor_is_fetched;
+            shader->key.ge.mono.instance_divisor_is_one ||
+            shader->key.ge.mono.instance_divisor_is_fetched;
       } else {
          uses_primitive_id |= shader->key.ge.mono.u.vs_export_prim_id;
       }

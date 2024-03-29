@@ -636,7 +636,6 @@ tegra_set_shader_images(struct pipe_context *pcontext, enum pipe_shader_type sha
 static void
 tegra_set_vertex_buffers(struct pipe_context *pcontext,
                          unsigned num_buffers,
-                         bool take_ownership,
                          const struct pipe_vertex_buffer *buffers)
 {
    struct tegra_context *context = to_tegra_context(pcontext);
@@ -654,8 +653,7 @@ tegra_set_vertex_buffers(struct pipe_context *pcontext,
       buffers = buf;
    }
 
-   context->gpu->set_vertex_buffers(context->gpu, num_buffers,
-                                    take_ownership, buffers);
+   context->gpu->set_vertex_buffers(context->gpu, num_buffers, buffers);
 }
 
 static struct pipe_stream_output_target *

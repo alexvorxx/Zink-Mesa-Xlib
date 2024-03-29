@@ -455,6 +455,7 @@ impl ShaderProgramHeader {
 
     // TODO: This seems always set on fragment shaders, figure out what this is for.
     #[inline]
+    #[allow(dead_code)]
     pub fn set_unknown_bit611(&mut self, value: bool) {
         assert!(self.shader_type == ShaderType::Fragment);
         self.set_bit(611, value);

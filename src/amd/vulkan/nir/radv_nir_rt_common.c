@@ -269,11 +269,13 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_d
 
       nir_push_if(b, det_cond_front);
       {
-         t = nir_f2f32(b, nir_fdiv(b, t, det));
-         v = nir_f2f32(b, nir_fdiv(b, v, det));
-         w = nir_f2f32(b, nir_fdiv(b, w, det));
+         nir_def *det_abs = nir_fabs(b, det);
 
-         nir_def *indices[4] = {t, nir_imm_float(b, 1.0), v, w};
+         t = nir_f2f32(b, nir_fdiv(b, t, det_abs));
+         v = nir_f2f32(b, nir_fdiv(b, v, det_abs));
+         w = nir_f2f32(b, nir_fdiv(b, w, det_abs));
+
+         nir_def *indices[4] = {t, nir_f2f32(b, nir_fsign(b, det)), v, w};
          nir_store_var(b, result, nir_vec(b, indices, 4), 0xf);
       }
       nir_pop_if(b, NULL);
@@ -458,6 +460,20 @@ fetch_parent_node(nir_builder *b, nir_def *bvh, nir_def *node)
    return nir_build_load_global(b, 1, 32, nir_isub(b, bvh, nir_u2u64(b, offset)), .align_mul = 4);
 }
 
+static nir_def *
+radv_test_flag(nir_builder *b, const struct radv_ray_traversal_args *args, uint32_t flag, bool set)
+{
+   nir_def *result;
+   if (args->set_flags & flag)
+      result = nir_imm_true(b);
+   else if (args->unset_flags & flag)
+      result = nir_imm_false(b);
+   else
+      result = nir_test_mask(b, args->flags, flag);
+
+   return set ? result : nir_inot(b, result);
+}
+
 nir_def *
 radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struct radv_ray_traversal_args *args)
 {
@@ -468,15 +484,15 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
    nir_def *vec3ones = nir_imm_vec3(b, 1.0, 1.0, 1.0);
 
    struct radv_ray_flags ray_flags = {
-      .force_opaque = nir_test_mask(b, args->flags, SpvRayFlagsOpaqueKHRMask),
-      .force_not_opaque = nir_test_mask(b, args->flags, SpvRayFlagsNoOpaqueKHRMask),
-      .terminate_on_first_hit = nir_test_mask(b, args->flags, SpvRayFlagsTerminateOnFirstHitKHRMask),
-      .no_cull_front = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsCullFrontFacingTrianglesKHRMask), 0),
-      .no_cull_back = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsCullBackFacingTrianglesKHRMask), 0),
-      .no_cull_opaque = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsCullOpaqueKHRMask), 0),
-      .no_cull_no_opaque = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsCullNoOpaqueKHRMask), 0),
-      .no_skip_triangles = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsSkipTrianglesKHRMask), 0),
-      .no_skip_aabbs = nir_ieq_imm(b, nir_iand_imm(b, args->flags, SpvRayFlagsSkipAABBsKHRMask), 0),
+      .force_opaque = radv_test_flag(b, args, SpvRayFlagsOpaqueKHRMask, true),
+      .force_not_opaque = radv_test_flag(b, args, SpvRayFlagsNoOpaqueKHRMask, true),
+      .terminate_on_first_hit = radv_test_flag(b, args, SpvRayFlagsTerminateOnFirstHitKHRMask, true),
+      .no_cull_front = radv_test_flag(b, args, SpvRayFlagsCullFrontFacingTrianglesKHRMask, false),
+      .no_cull_back = radv_test_flag(b, args, SpvRayFlagsCullBackFacingTrianglesKHRMask, false),
+      .no_cull_opaque = radv_test_flag(b, args, SpvRayFlagsCullOpaqueKHRMask, false),
+      .no_cull_no_opaque = radv_test_flag(b, args, SpvRayFlagsCullNoOpaqueKHRMask, false),
+      .no_skip_triangles = radv_test_flag(b, args, SpvRayFlagsSkipTrianglesKHRMask, false),
+      .no_skip_aabbs = radv_test_flag(b, args, SpvRayFlagsSkipAABBsKHRMask, false),
    };
    nir_push_loop(b);
    {

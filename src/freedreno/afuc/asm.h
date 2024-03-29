@@ -37,6 +37,9 @@ struct asm_label {
 
 struct afuc_instr *next_instr(afuc_opc opc);
 void decl_label(const char *str);
+void decl_jumptbl(void);
+void align_instr(unsigned alignment);
+void next_section(void);
 
 static inline uint32_t
 parse_reg(const char *str)
@@ -91,15 +94,6 @@ parse_bit(const char *str)
 
 unsigned parse_control_reg(const char *name);
 unsigned parse_sqe_reg(const char *name);
-
-/* string trailing ':' off label: */
-static inline const char *
-parse_label_decl(const char *str)
-{
-   char *s = strdup(str);
-   s[strlen(s) - 1] = '\0';
-   return s;
-}
 
 void yyset_in(FILE *_in_str);
 

@@ -243,11 +243,22 @@
     - .radv-valve-rules
     - .test-radv
     - .b2c-test-vk
+  variables:
+    B2C_KERNEL_URL: https://fs.mupuf.org/linux-6.6-b2c-radv-ci # 6.6
 
 .deqp-test-valve:
   variables:
     B2C_JOB_SUCCESS_REGEX: '^\+ DEQP_EXITCODE=0\r$'
     HWCI_TEST_SCRIPT: ./install/deqp-runner.sh
+
+.tahiti-test-valve:
+  variables:
+    FDO_CI_CONCURRENT: 8
+    RUNNER_FARM_LOCATION: mupuf
+    B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=8g'
+  tags:
+    - farm:$RUNNER_FARM_LOCATION
+    - amdgpu:codename:TAHITI
 
 .kabini-test-valve:
   variables:
@@ -349,7 +360,6 @@
     RUNNER_FARM_LOCATION: keywords
     FDO_CI_CONCURRENT: 32
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
-    B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/boot2container/-/releases/v0.9.10/downloads/linux-x86_64'  # Linux 6.3
   tags:
     - farm:$RUNNER_FARM_LOCATION
     - amdgpu:codename:NAVI31

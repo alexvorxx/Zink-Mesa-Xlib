@@ -103,8 +103,8 @@ struct InstrHash {
       case Format::SMEM: return hash_murmur_32<SMEM_instruction>(instr);
       case Format::VINTRP: return hash_murmur_32<VINTRP_instruction>(instr);
       case Format::DS: return hash_murmur_32<DS_instruction>(instr);
-      case Format::SOPP: return hash_murmur_32<SOPP_instruction>(instr);
-      case Format::SOPK: return hash_murmur_32<SOPK_instruction>(instr);
+      case Format::SOPP: return hash_murmur_32<SALU_instruction>(instr);
+      case Format::SOPK: return hash_murmur_32<SALU_instruction>(instr);
       case Format::EXP: return hash_murmur_32<Export_instruction>(instr);
       case Format::MUBUF: return hash_murmur_32<MUBUF_instruction>(instr);
       case Format::MIMG: return hash_murmur_32<MIMG_instruction>(instr);
@@ -209,8 +209,8 @@ struct InstrPred {
       case Format::SOPK: {
          if (a->opcode == aco_opcode::s_getreg_b32)
             return false;
-         SOPK_instruction& aK = a->sopk();
-         SOPK_instruction& bK = b->sopk();
+         SALU_instruction& aK = a->salu();
+         SALU_instruction& bK = b->salu();
          return aK.imm == bK.imm;
       }
       case Format::SMEM: {

@@ -113,12 +113,15 @@ static void
 panfrost_batch_cleanup(struct panfrost_context *ctx,
                        struct panfrost_batch *batch)
 {
+   struct panfrost_screen *screen = pan_screen(ctx->base.screen);
    struct panfrost_device *dev = pan_device(ctx->base.screen);
 
    assert(batch->seqnum);
 
    if (ctx->batch == batch)
       ctx->batch = NULL;
+
+   screen->vtbl.cleanup_batch(batch);
 
    unsigned batch_idx = panfrost_batch_idx(batch);
 

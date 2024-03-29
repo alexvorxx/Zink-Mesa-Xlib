@@ -190,7 +190,7 @@ get_l3_list(const struct intel_device_info *devinfo)
 
    case 12:
       if (intel_device_info_is_dg2(devinfo) ||
-          intel_device_info_is_mtl(devinfo)) {
+          intel_device_info_is_mtl_or_arl(devinfo)) {
          /* XXX - Some MTL configs may need special-casing here, but
           *       we have no way to identify them right now.
           */

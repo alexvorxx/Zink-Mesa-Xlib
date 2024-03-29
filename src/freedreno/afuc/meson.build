@@ -74,9 +74,19 @@ if with_tests
     output: 'afuc_test.fw',
     command: [asm, '-g', '6', files('../.gitlab-ci/traces/afuc_test.asm'), '@OUTPUT@'],
   )
+  asm_fw_a7xx = custom_target('afuc_test_a7xx.fw',
+    output: 'afuc_test_a7xx.fw',
+    command: [asm, '-g', '7', files('../.gitlab-ci/traces/afuc_test_a7xx.asm'), '@OUTPUT@'],
+  )
   test('afuc-asm',
     diff,
     args: ['-u', files('../.gitlab-ci/reference/afuc_test.fw'), asm_fw],
+    suite: 'freedreno',
+    workdir: dir_source_root
+  )
+  test('afuc-asm-a7xx',
+    diff,
+    args: ['-u', files('../.gitlab-ci/reference/afuc_test_a7xx.fw'), asm_fw_a7xx],
     suite: 'freedreno',
     workdir: dir_source_root
   )
@@ -116,6 +126,7 @@ if cc.sizeof('size_t') > 4
     ],
     link_with: [
       libfreedreno_rnn,
+      libisaspec
     ],
     dependencies: [idep_mesautil, idep_isaspec_decode],
     build_by_default : with_tools.contains('freedreno'),
@@ -128,9 +139,20 @@ if cc.sizeof('size_t') > 4
       command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test.fw'), '-g', '630'],
       capture: true
     )
+    disasm_fw_a7xx = custom_target('afuc_test_a7xx.asm',
+      output: 'afuc_test_a7xx.asm',
+      command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test_a7xx.fw'), '-g', '730'],
+      capture: true
+    )
     test('afuc-disasm',
       diff,
       args: ['-u', files('../.gitlab-ci/reference/afuc_test.asm'), disasm_fw],
+      suite: 'freedreno',
+      workdir: dir_source_root
+    )
+    test('afuc-disasm-a7xx',
+      diff,
+      args: ['-u', files('../.gitlab-ci/reference/afuc_test_a7xx.asm'), disasm_fw_a7xx],
       suite: 'freedreno',
       workdir: dir_source_root
     )

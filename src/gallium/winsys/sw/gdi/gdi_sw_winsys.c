@@ -252,6 +252,7 @@ static void
 gdi_sw_displaytarget_display(struct sw_winsys *_winsys, 
                              struct sw_displaytarget *dt,
                              void *context_private,
+                             unsigned nboxes,
                              struct pipe_box *box)
 {
     struct gdi_sw_winsys *winsys = gdi_sw_winsys(_winsys);

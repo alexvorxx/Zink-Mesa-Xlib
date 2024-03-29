@@ -88,8 +88,15 @@ struct tu_physical_device
 
    uint32_t gmem_size;
    uint64_t gmem_base;
+
+   uint32_t usable_gmem_size_gmem;
    uint32_t ccu_offset_gmem;
    uint32_t ccu_offset_bypass;
+   uint32_t ccu_depth_offset_bypass;
+   uint32_t vpc_attr_buf_offset_gmem;
+   uint32_t vpc_attr_buf_size_gmem;
+   uint32_t vpc_attr_buf_offset_bypass;
+   uint32_t vpc_attr_buf_size_bypass;
 
    /* Amount of usable descriptor sets, this excludes any reserved set */
    uint32_t usable_sets;
@@ -159,6 +166,14 @@ struct tu_instance
     * core, this is enabled by default.
     */
    bool reserve_descriptor_set;
+
+   /* Allow out of bounds UBO access by disabling lowering of UBO loads for
+    * indirect access, which rely on the UBO bounds specified in the shader,
+    * rather than the bound UBO size which isn't known until draw time.
+    *
+    * See: https://github.com/doitsujin/dxvk/issues/3861
+    */
+   bool allow_oob_indirect_ubo_loads;
 };
 VK_DEFINE_HANDLE_CASTS(tu_instance, vk.base, VkInstance,
                        VK_OBJECT_TYPE_INSTANCE)
@@ -196,7 +211,7 @@ struct tu6_global
       uint32_t pad[7];
    } flush_base[4];
 
-   alignas(16) uint32_t cs_indirect_xyz[3];
+   alignas(16) uint32_t cs_indirect_xyz[12];
 
    volatile uint32_t vtx_stats_query_not_running;
 

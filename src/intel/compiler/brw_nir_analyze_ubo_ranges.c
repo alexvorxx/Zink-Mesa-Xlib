@@ -300,8 +300,7 @@ brw_nir_analyze_ubo_ranges(const struct brw_compiler *compiler,
     * unfortunately can't truncate it here, because we don't know what
     * the backend is planning to do with regular uniforms.
     */
-   const int max_ubos = (compiler->constant_buffer_0_is_relative ? 3 : 4) -
-                        state.uses_regular_uniforms;
+   const int max_ubos = 4 - state.uses_regular_uniforms;
    nr_entries = MIN2(nr_entries, max_ubos);
 
    for (int i = 0; i < nr_entries; i++) {

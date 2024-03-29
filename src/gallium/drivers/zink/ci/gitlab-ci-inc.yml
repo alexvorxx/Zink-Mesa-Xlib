@@ -94,6 +94,7 @@
   variables:
     MESA_LOADER_DRIVER_OVERRIDE: "zink"
     FLAKES_CHANNEL: "#zink-ci"
+    MESA_VK_ABORT_ON_DEVICE_LOSS: 0
 
 .zink-trace-test:
   extends:
@@ -121,7 +122,8 @@
 
 .zink-anv-test:
   extends:
-    - .anv-tgl-test
+    - .lava-acer-cp514-2h-1160g7-volteer:x86_64
+    - .anv-test
     - .zink-anv-rules
     - .zink-test
   variables:
@@ -137,6 +139,7 @@
   variables:
     DEQP_SUITE: zink-radv
     HWCI_TEST_SCRIPT: ./install/deqp-runner.sh
+    B2C_KERNEL_URL: https://fs.mupuf.org/linux-6.6-b2c-radv-ci # 6.6
     B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
     B2C_TIMEOUT_OVERALL_MINUTES: 20
 

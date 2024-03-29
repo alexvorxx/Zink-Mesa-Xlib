@@ -76,6 +76,8 @@ bool radv_nir_export_multiview(nir_shader *nir);
 
 void radv_nir_lower_io_to_scalar_early(nir_shader *nir, nir_variable_mode mask);
 
+unsigned radv_map_io_driver_location(unsigned semantic);
+
 void radv_nir_lower_io(struct radv_device *device, nir_shader *nir);
 
 bool radv_nir_lower_io_to_mem(struct radv_device *device, struct radv_shader_stage *stage);
@@ -83,6 +85,8 @@ bool radv_nir_lower_io_to_mem(struct radv_device *device, struct radv_shader_sta
 void radv_nir_lower_poly_line_smooth(nir_shader *nir, const struct radv_graphics_state_key *gfx_state);
 
 bool radv_nir_lower_cooperative_matrix(nir_shader *shader, unsigned wave_size);
+
+bool radv_nir_lower_draw_id_to_zero(nir_shader *shader);
 
 #ifdef __cplusplus
 }

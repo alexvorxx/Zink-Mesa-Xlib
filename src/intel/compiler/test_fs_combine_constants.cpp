@@ -56,7 +56,7 @@ struct FSCombineConstantsTest : public ::testing::Test {
          s->cfg->dump();
       }
 
-      bool ret = s->opt_combine_constants();
+      bool ret = brw_fs_opt_combine_constants(*s);
 
       if (print) {
          fprintf(stderr, "\n= After =\n");

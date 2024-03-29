@@ -250,15 +250,16 @@ pub trait SSABuilder: Builder {
         dst
     }
 
-    fn iadd(&mut self, x: Src, y: Src) -> SSARef {
+    fn iadd(&mut self, x: Src, y: Src, z: Src) -> SSARef {
         let dst = self.alloc_ssa(RegFile::GPR, 1);
         if self.sm() >= 70 {
             self.push_op(OpIAdd3 {
                 dst: dst.into(),
-                srcs: [Src::new_zero(), x, y],
+                srcs: [x, y, z],
                 overflow: [Dst::None; 2],
             });
         } else {
+            assert!(z.is_zero());
             self.push_op(OpIAdd2 {
                 dst: dst.into(),
                 srcs: [x, y],
@@ -269,24 +270,44 @@ pub trait SSABuilder: Builder {
         dst
     }
 
-    fn iadd64(&mut self, x: Src, y: Src) -> SSARef {
+    fn iadd64(&mut self, x: Src, y: Src, z: Src) -> SSARef {
         let x = x.as_ssa().unwrap();
         let y = y.as_ssa().unwrap();
         let dst = self.alloc_ssa(RegFile::GPR, 2);
         if self.sm() >= 70 {
-            let carry = self.alloc_ssa(RegFile::Pred, 1);
-            self.push_op(OpIAdd3 {
-                dst: dst[0].into(),
-                overflow: [carry.into(), Dst::None],
-                srcs: [x[0].into(), y[0].into(), 0.into()],
-            });
-            self.push_op(OpIAdd3X {
-                dst: dst[1].into(),
-                overflow: [Dst::None, Dst::None],
-                srcs: [x[1].into(), y[1].into(), 0.into()],
-                carry: [carry.into(), false.into()],
-            });
+            if let Some(z) = z.as_ssa() {
+                let carry = [
+                    self.alloc_ssa(RegFile::Pred, 1),
+                    self.alloc_ssa(RegFile::Pred, 1),
+                ];
+                self.push_op(OpIAdd3 {
+                    dst: dst[0].into(),
+                    overflow: [carry[0].into(), carry[1].into()],
+                    srcs: [x[0].into(), y[0].into(), z[0].into()],
+                });
+                self.push_op(OpIAdd3X {
+                    dst: dst[1].into(),
+                    overflow: [Dst::None, Dst::None],
+                    srcs: [x[1].into(), y[1].into(), z[1].into()],
+                    carry: [carry[0].into(), carry[1].into()],
+                });
+            } else {
+                assert!(z.is_zero());
+                let carry = self.alloc_ssa(RegFile::Pred, 1);
+                self.push_op(OpIAdd3 {
+                    dst: dst[0].into(),
+                    overflow: [carry.into(), Dst::None],
+                    srcs: [x[0].into(), y[0].into(), 0.into()],
+                });
+                self.push_op(OpIAdd3X {
+                    dst: dst[1].into(),
+                    overflow: [Dst::None, Dst::None],
+                    srcs: [x[1].into(), y[1].into(), 0.into()],
+                    carry: [carry.into(), false.into()],
+                });
+            }
         } else {
+            assert!(z.is_zero());
             let carry = self.alloc_ssa(RegFile::Carry, 1);
             self.push_op(OpIAdd2 {
                 dst: dst[0].into(),
@@ -443,6 +464,26 @@ pub trait SSABuilder: Builder {
             self.alloc_ssa(RegFile::GPR, 1)
         };
         self.lop2_to(dst.into(), op, x, y);
+        dst
+    }
+
+    fn brev(&mut self, x: Src) -> SSARef {
+        let dst = self.alloc_ssa(RegFile::GPR, 1);
+        if self.sm() >= 70 {
+            self.push_op(OpBRev {
+                dst: dst.into(),
+                src: x,
+            });
+        } else {
+            // No BREV in Maxwell
+            self.push_op(OpBfe {
+                dst: dst.into(),
+                base: x,
+                signed: false,
+                range: Src::new_imm_u32(0x2000),
+                reverse: true,
+            });
+        }
         dst
     }
 

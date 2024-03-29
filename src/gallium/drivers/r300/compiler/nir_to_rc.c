@@ -2380,7 +2380,6 @@ const void *nir_to_rc_options(struct nir_shader *s,
    struct ntr_compile *c;
    const void *tgsi_tokens;
    bool is_r500 = r300_screen(screen)->caps.is_r500;
-   nir_variable_mode no_indirects_mask = ntr_no_indirects_mask(s, screen);
 
    /* Lower array indexing on FS inputs.  Since we don't set
     * ureg->supports_any_inout_decl_range, the TGSI input decls will be split to
@@ -2402,35 +2401,9 @@ const void *nir_to_rc_options(struct nir_shader *s,
    nir_to_rc_lower_txp(s);
    NIR_PASS_V(s, nir_to_rc_lower_tex);
 
-   if (!s->options->lower_uniforms_to_ubo) {
-      NIR_PASS_V(s, nir_lower_uniforms_to_ubo,
-                 screen->get_param(screen, PIPE_CAP_PACKED_UNIFORMS),
-                 true);
-   }
-
-   if (!screen->get_param(screen, PIPE_CAP_LOAD_CONSTBUF))
-      NIR_PASS_V(s, nir_lower_ubo_vec4);
-
    bool progress;
+
    NIR_PASS_V(s, nir_opt_constant_folding);
-
-   /* Clean up after triginometric input normalization. */
-   NIR_PASS_V(s, nir_opt_vectorize, ntr_should_vectorize_instr, NULL);
-   do {
-      progress = false;
-      NIR_PASS(progress, s, nir_opt_shrink_vectors);
-   } while (progress);
-   NIR_PASS_V(s, nir_copy_prop);
-   NIR_PASS_V(s, nir_opt_cse);
-   NIR_PASS_V(s, nir_opt_dce);
-   NIR_PASS_V(s, nir_opt_shrink_stores, true);
-
-   NIR_PASS_V(s, nir_lower_indirect_derefs, no_indirects_mask, UINT32_MAX);
-
-   /* Lower demote_if to if (cond) { demote } because TGSI doesn't have a DEMOTE_IF. */
-   NIR_PASS_V(s, nir_lower_discard_if, nir_lower_demote_if_to_cf);
-
-   NIR_PASS_V(s, nir_lower_frexp);
 
    do {
       progress = false;

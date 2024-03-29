@@ -24,7 +24,9 @@
  */
 
 #include "panvk_mempool.h"
-#include "panvk_private.h"
+#include "panvk_priv_bo.h"
+
+#include "kmod/pan_kmod.h"
 
 void
 panvk_bo_pool_cleanup(struct panvk_bo_pool *bo_pool)

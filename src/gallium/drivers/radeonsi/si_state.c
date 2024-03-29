@@ -93,8 +93,9 @@ static void si_emit_cb_render_state(struct si_context *sctx, unsigned index)
          blend->dcc_msaa_corruption_4bit & cb_target_mask && sctx->framebuffer.nr_samples >= 2;
 
       if (sctx->gfx_level >= GFX11) {
-         cb_dcc_control = S_028424_SAMPLE_MASK_TRACKER_DISABLE(oc_disable) |
-                          S_028424_SAMPLE_MASK_TRACKER_WATERMARK(0);
+         cb_dcc_control =
+            S_028424_SAMPLE_MASK_TRACKER_DISABLE(oc_disable) |
+            S_028424_SAMPLE_MASK_TRACKER_WATERMARK(sctx->screen->info.has_dedicated_vram ? 0 : 15);
       } else {
          cb_dcc_control =
             S_028424_OVERWRITE_COMBINER_MRT_SHARING_DISABLE(sctx->gfx_level <= GFX9) |
@@ -3340,12 +3341,12 @@ static void si_emit_framebuffer_state(struct si_context *sctx, unsigned index)
 
       tex = (struct si_texture *)cb->base.texture;
       radeon_add_to_buffer_list(
-         sctx, &sctx->gfx_cs, &tex->buffer, RADEON_USAGE_READWRITE | RADEON_USAGE_NEEDS_IMPLICIT_SYNC |
+         sctx, &sctx->gfx_cs, &tex->buffer, RADEON_USAGE_READWRITE | RADEON_USAGE_CB_NEEDS_IMPLICIT_SYNC |
          (tex->buffer.b.b.nr_samples > 1 ? RADEON_PRIO_COLOR_BUFFER_MSAA : RADEON_PRIO_COLOR_BUFFER));
 
       if (tex->cmask_buffer && tex->cmask_buffer != &tex->buffer) {
          radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, tex->cmask_buffer,
-                                   RADEON_USAGE_READWRITE | RADEON_USAGE_NEEDS_IMPLICIT_SYNC |
+                                   RADEON_USAGE_READWRITE | RADEON_USAGE_CB_NEEDS_IMPLICIT_SYNC |
                                    RADEON_PRIO_SEPARATE_META);
       }
 
@@ -3798,12 +3799,12 @@ static void gfx11_dgpu_emit_framebuffer_state(struct si_context *sctx, unsigned 
 
       tex = (struct si_texture *)cb->base.texture;
       radeon_add_to_buffer_list(
-         sctx, &sctx->gfx_cs, &tex->buffer, RADEON_USAGE_READWRITE | RADEON_USAGE_NEEDS_IMPLICIT_SYNC |
+         sctx, &sctx->gfx_cs, &tex->buffer, RADEON_USAGE_READWRITE | RADEON_USAGE_CB_NEEDS_IMPLICIT_SYNC |
          (tex->buffer.b.b.nr_samples > 1 ? RADEON_PRIO_COLOR_BUFFER_MSAA : RADEON_PRIO_COLOR_BUFFER));
 
       if (tex->cmask_buffer && tex->cmask_buffer != &tex->buffer) {
          radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, tex->cmask_buffer,
-                                   RADEON_USAGE_READWRITE | RADEON_USAGE_NEEDS_IMPLICIT_SYNC |
+                                   RADEON_USAGE_READWRITE | RADEON_USAGE_CB_NEEDS_IMPLICIT_SYNC |
                                    RADEON_PRIO_SEPARATE_META);
       }
 
@@ -5544,7 +5545,7 @@ static void si_delete_vertex_element(struct pipe_context *ctx, void *state)
    FREE(state);
 }
 
-static void si_set_vertex_buffers(struct pipe_context *ctx, unsigned count, bool take_ownership,
+static void si_set_vertex_buffers(struct pipe_context *ctx, unsigned count,
                                   const struct pipe_vertex_buffer *buffers)
 {
    struct si_context *sctx = (struct si_context *)ctx;
@@ -5561,13 +5562,9 @@ static void si_set_vertex_buffers(struct pipe_context *ctx, unsigned count, bool
 
       dst->buffer_offset = src->buffer_offset;
 
-      /* Only unreference bound vertex buffers. (take_ownership) */
-      if (take_ownership) {
-         pipe_resource_reference(&dst->buffer.resource, NULL);
-         dst->buffer.resource = src->buffer.resource;
-      } else {
-         pipe_resource_reference(&dst->buffer.resource, src->buffer.resource);
-      }
+      /* Only unreference bound vertex buffers. */
+      pipe_resource_reference(&dst->buffer.resource, NULL);
+      dst->buffer.resource = src->buffer.resource;
 
       if (src->buffer_offset & 3)
          unaligned |= BITFIELD_BIT(i);
@@ -6222,16 +6219,32 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
       sctx->border_color_buffer ? sctx->border_color_buffer->gpu_address : 0;
    uint32_t compute_cu_en = S_00B858_SH0_CU_EN(sscreen->info.spi_cu_en) |
                             S_00B858_SH1_CU_EN(sscreen->info.spi_cu_en);
-   unsigned meta_write_policy, meta_read_policy;
-   unsigned no_alloc = sctx->gfx_level >= GFX11 ? V_02807C_CACHE_NOA_GFX11:
-                                                  V_02807C_CACHE_NOA_GFX10;
-   /* Enable CMASK/HTILE/DCC caching in L2 for small chips. */
-   if (sscreen->info.max_render_backends <= 4) {
-      meta_write_policy = V_02807C_CACHE_LRU_WR; /* cache writes */
-      meta_read_policy = V_02807C_CACHE_LRU_RD;  /* cache reads */
+   unsigned meta_write_policy, meta_read_policy, color_write_policy, color_read_policy;
+   unsigned zs_write_policy, zs_read_policy;
+   unsigned cache_no_alloc = sctx->gfx_level >= GFX11 ? V_02807C_CACHE_NOA_GFX11:
+                                                        V_02807C_CACHE_NOA_GFX10;
+
+   if (sscreen->options.cache_rb_gl2) {
+      color_write_policy = V_028410_CACHE_LRU_WR;
+      color_read_policy = V_028410_CACHE_LRU_RD;
+      zs_write_policy = V_02807C_CACHE_LRU_WR;
+      zs_read_policy = V_02807C_CACHE_LRU_RD;
+      meta_write_policy = V_02807C_CACHE_LRU_WR;
+      meta_read_policy = V_02807C_CACHE_LRU_RD;
    } else {
-      meta_write_policy = V_02807C_CACHE_STREAM; /* write combine */
-      meta_read_policy = no_alloc; /* don't cache reads that miss */
+      color_write_policy = V_028410_CACHE_STREAM;
+      color_read_policy = cache_no_alloc;
+      zs_write_policy = V_02807C_CACHE_STREAM;
+      zs_read_policy = cache_no_alloc;
+
+      /* Enable CMASK/HTILE/DCC caching in L2 for small chips. */
+      if (sscreen->info.max_render_backends <= 4) {
+         meta_write_policy = V_02807C_CACHE_LRU_WR; /* cache writes */
+         meta_read_policy = V_02807C_CACHE_LRU_RD;  /* cache reads */
+      } else {
+         meta_write_policy = V_02807C_CACHE_STREAM; /* write combine */
+         meta_read_policy = cache_no_alloc; /* don't cache reads that miss */
+      }
    }
 
    /* We need more space because the preamble is large. */
@@ -6261,11 +6274,10 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
 
    /* Compute registers. */
    si_pm4_set_reg(pm4, R_00B834_COMPUTE_PGM_HI, S_00B834_DATA(sscreen->info.address32_hi >> 8));
-   si_pm4_set_reg(pm4, R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE0, compute_cu_en);
-   si_pm4_set_reg(pm4, R_00B85C_COMPUTE_STATIC_THREAD_MGMT_SE1, compute_cu_en);
 
-   si_pm4_set_reg(pm4, R_00B864_COMPUTE_STATIC_THREAD_MGMT_SE2, compute_cu_en);
-   si_pm4_set_reg(pm4, R_00B868_COMPUTE_STATIC_THREAD_MGMT_SE3, compute_cu_en);
+   for (unsigned i = 0; i < 4; ++i)
+      si_pm4_set_reg(pm4, R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE0 + i * 4,
+                     i < sscreen->info.num_se ? compute_cu_en : 0x0);
 
    si_pm4_set_reg(pm4, R_00B890_COMPUTE_USER_ACCUM_0, 0);
    si_pm4_set_reg(pm4, R_00B894_COMPUTE_USER_ACCUM_1, 0);
@@ -6273,10 +6285,9 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
    si_pm4_set_reg(pm4, R_00B89C_COMPUTE_USER_ACCUM_3, 0);
 
    if (sctx->gfx_level >= GFX11) {
-      si_pm4_set_reg(pm4, R_00B8AC_COMPUTE_STATIC_THREAD_MGMT_SE4, compute_cu_en);
-      si_pm4_set_reg(pm4, R_00B8B0_COMPUTE_STATIC_THREAD_MGMT_SE5, compute_cu_en);
-      si_pm4_set_reg(pm4, R_00B8B4_COMPUTE_STATIC_THREAD_MGMT_SE6, compute_cu_en);
-      si_pm4_set_reg(pm4, R_00B8B8_COMPUTE_STATIC_THREAD_MGMT_SE7, compute_cu_en);
+      for (unsigned i = 4; i < 8; ++i)
+         si_pm4_set_reg(pm4, R_00B8AC_COMPUTE_STATIC_THREAD_MGMT_SE4 + (i - 4) * 4,
+                        i < sscreen->info.num_se ? compute_cu_en : 0x0);
 
       /* How many threads should go to 1 SE before moving onto the next. Think of GL1 cache hits.
        * Only these values are valid: 0 (disabled), 64, 128, 256, 512
@@ -6353,30 +6364,31 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
       si_pm4_set_reg(pm4, R_028038_DB_DFSM_CONTROL, S_028038_PUNCHOUT_MODE(V_028038_FORCE_OFF));
    }
    si_pm4_set_reg(pm4, R_02807C_DB_RMI_L2_CACHE_CONTROL,
-                  S_02807C_Z_WR_POLICY(V_02807C_CACHE_STREAM) |
-                  S_02807C_S_WR_POLICY(V_02807C_CACHE_STREAM) |
+                  S_02807C_Z_WR_POLICY(zs_write_policy) |
+                  S_02807C_S_WR_POLICY(zs_write_policy) |
                   S_02807C_HTILE_WR_POLICY(meta_write_policy) |
-                  S_02807C_ZPCPSD_WR_POLICY(V_02807C_CACHE_STREAM) |
-                  S_02807C_Z_RD_POLICY(no_alloc) |
-                  S_02807C_S_RD_POLICY(no_alloc) |
+                  S_02807C_ZPCPSD_WR_POLICY(V_02807C_CACHE_STREAM) | /* occlusion query writes */
+                  S_02807C_Z_RD_POLICY(zs_read_policy) |
+                  S_02807C_S_RD_POLICY(zs_read_policy) |
                   S_02807C_HTILE_RD_POLICY(meta_read_policy));
    si_pm4_set_reg(pm4, R_028080_TA_BC_BASE_ADDR, border_color_va >> 8);
    si_pm4_set_reg(pm4, R_028084_TA_BC_BASE_ADDR_HI, S_028084_ADDRESS(border_color_va >> 40));
 
    si_pm4_set_reg(pm4, R_028410_CB_RMI_GL2_CACHE_CONTROL,
                   (sctx->gfx_level >= GFX11 ?
+                      S_028410_COLOR_WR_POLICY_GFX11(color_write_policy) |
+                      S_028410_COLOR_RD_POLICY(color_read_policy) |
                       S_028410_DCC_WR_POLICY_GFX11(meta_write_policy) |
-                      S_028410_COLOR_WR_POLICY_GFX11(V_028410_CACHE_STREAM) |
-                      S_028410_COLOR_RD_POLICY(V_028410_CACHE_NOA_GFX11)
+                      S_028410_DCC_RD_POLICY(meta_read_policy)
                     :
+                      S_028410_COLOR_WR_POLICY_GFX10(color_write_policy) |
+                      S_028410_COLOR_RD_POLICY(color_read_policy)) |
+                      S_028410_FMASK_WR_POLICY(color_write_policy) |
+                      S_028410_FMASK_RD_POLICY(color_read_policy) |
                       S_028410_CMASK_WR_POLICY(meta_write_policy) |
-                      S_028410_FMASK_WR_POLICY(V_028410_CACHE_STREAM) |
-                      S_028410_DCC_WR_POLICY_GFX10(meta_write_policy) |
-                      S_028410_COLOR_WR_POLICY_GFX10(V_028410_CACHE_STREAM) |
                       S_028410_CMASK_RD_POLICY(meta_read_policy) |
-                      S_028410_FMASK_RD_POLICY(V_028410_CACHE_NOA_GFX10) |
-                      S_028410_COLOR_RD_POLICY(V_028410_CACHE_NOA_GFX10)) |
-                  S_028410_DCC_RD_POLICY(meta_read_policy));
+                      S_028410_DCC_WR_POLICY_GFX10(meta_write_policy) |
+                      S_028410_DCC_RD_POLICY(meta_read_policy));
    si_pm4_set_reg(pm4, R_028708_SPI_SHADER_IDX_FORMAT,
                   S_028708_IDX0_EXPORT_FORMAT(V_028708_SPI_SHADER_1COMP));
 
@@ -6420,8 +6432,10 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
                      S_028B50_DONUT_SPLIT_GFX9(24) |
                      S_028B50_TRAP_SPLIT(6));
 
+   /* GFX11+ shouldn't subtract 1 from pbb_max_alloc_count.  */
+   unsigned gfx10_one = sctx->gfx_level < GFX11;
    si_pm4_set_reg(pm4, R_028C48_PA_SC_BINNER_CNTL_1,
-                  S_028C48_MAX_ALLOC_COUNT(sscreen->info.pbb_max_alloc_count - 1) |
+                  S_028C48_MAX_ALLOC_COUNT(sscreen->info.pbb_max_alloc_count - gfx10_one) |
                   S_028C48_MAX_PRIM_PER_BATCH(1023));
 
    if (sctx->gfx_level >= GFX11_5)
@@ -6469,46 +6483,6 @@ static void gfx10_init_gfx_preamble_state(struct si_context *sctx)
                           PIXEL_PIPE_STATE_CNTL_STRIDE(2) |
                           PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_LO(rb_mask));
       si_pm4_cmd_add(pm4, PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_HI(rb_mask));
-
-      /* We must wait for idle using an EOP event before changing the attribute ring registers.
-       * Use the bottom-of-pipe EOP event, but increment the PWS counter instead of writing memory.
-       */
-      si_pm4_cmd_add(pm4, PKT3(PKT3_RELEASE_MEM, 6, 0));
-      si_pm4_cmd_add(pm4, S_490_EVENT_TYPE(V_028A90_BOTTOM_OF_PIPE_TS) |
-                          S_490_EVENT_INDEX(5) |
-                          S_490_PWS_ENABLE(1));
-      si_pm4_cmd_add(pm4, 0); /* DST_SEL, INT_SEL, DATA_SEL */
-      si_pm4_cmd_add(pm4, 0); /* ADDRESS_LO */
-      si_pm4_cmd_add(pm4, 0); /* ADDRESS_HI */
-      si_pm4_cmd_add(pm4, 0); /* DATA_LO */
-      si_pm4_cmd_add(pm4, 0); /* DATA_HI */
-      si_pm4_cmd_add(pm4, 0); /* INT_CTXID */
-
-      /* Wait for the PWS counter. */
-      si_pm4_cmd_add(pm4, PKT3(PKT3_ACQUIRE_MEM, 6, 0));
-      si_pm4_cmd_add(pm4, S_580_PWS_STAGE_SEL(V_580_CP_ME) |
-                          S_580_PWS_COUNTER_SEL(V_580_TS_SELECT) |
-                          S_580_PWS_ENA2(1) |
-                          S_580_PWS_COUNT(0));
-      si_pm4_cmd_add(pm4, 0xffffffff); /* GCR_SIZE */
-      si_pm4_cmd_add(pm4, 0x01ffffff); /* GCR_SIZE_HI */
-      si_pm4_cmd_add(pm4, 0); /* GCR_BASE_LO */
-      si_pm4_cmd_add(pm4, 0); /* GCR_BASE_HI */
-      si_pm4_cmd_add(pm4, S_585_PWS_ENA(1));
-      si_pm4_cmd_add(pm4, 0); /* GCR_CNTL */
-
-      si_pm4_set_reg(pm4, R_031110_SPI_GS_THROTTLE_CNTL1, 0x12355123);
-      si_pm4_set_reg(pm4, R_031114_SPI_GS_THROTTLE_CNTL2, 0x1544D);
-
-      assert((sscreen->attribute_ring->gpu_address >> 32) == sscreen->info.address32_hi);
-
-      /* The PS will read inputs from this address. */
-      si_pm4_set_reg(pm4, R_031118_SPI_ATTRIBUTE_RING_BASE,
-                     sscreen->attribute_ring->gpu_address >> 16);
-      si_pm4_set_reg(pm4, R_03111C_SPI_ATTRIBUTE_RING_SIZE,
-                     S_03111C_MEM_SIZE((sscreen->info.attribute_ring_size_per_se >> 16) - 1) |
-                     S_03111C_BIG_PAGE(sscreen->info.discardable_allows_big_page) |
-                     S_03111C_L1_POLICY(1));
    }
 
 done:

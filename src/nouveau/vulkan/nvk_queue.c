@@ -47,17 +47,20 @@ static void
 nvk_queue_state_dump_push(struct nvk_device *dev,
                           struct nvk_queue_state *qs, FILE *fp)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+
    struct nv_push push = {
       .start = (uint32_t *)qs->push.bo_map,
       .end = (uint32_t *)qs->push.bo_map + qs->push.dw_count,
    };
-   vk_push_print(fp, &push, &dev->pdev->info);
+   vk_push_print(fp, &push, &pdev->info);
 }
 
 VkResult
 nvk_queue_state_update(struct nvk_device *dev,
                        struct nvk_queue_state *qs)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
    struct nouveau_ws_bo *bo;
    uint32_t alloc_count, bytes_per_warp, bytes_per_tpc;
    bool dirty = false;
@@ -184,7 +187,7 @@ nvk_queue_state_update(struct nvk_device *dev,
       P_NVA0C0_SET_SHADER_LOCAL_MEMORY_NON_THROTTLED_B(p, slm_per_tpc);
       P_NVA0C0_SET_SHADER_LOCAL_MEMORY_NON_THROTTLED_C(p, 0xff);
 
-      if (dev->pdev->info.cls_compute < VOLTA_COMPUTE_A) {
+      if (pdev->info.cls_compute < VOLTA_COMPUTE_A) {
          P_MTHD(p, NVA0C0, SET_SHADER_LOCAL_MEMORY_THROTTLED_A);
          P_NVA0C0_SET_SHADER_LOCAL_MEMORY_THROTTLED_A(p, slm_per_tpc >> 32);
          P_NVA0C0_SET_SHADER_LOCAL_MEMORY_THROTTLED_B(p, slm_per_tpc);
@@ -203,7 +206,7 @@ nvk_queue_state_update(struct nvk_device *dev,
    /* We set memory windows unconditionally.  Otherwise, the memory window
     * might be in a random place and cause us to fault off into nowhere.
     */
-   if (dev->pdev->info.cls_compute >= VOLTA_COMPUTE_A) {
+   if (pdev->info.cls_compute >= VOLTA_COMPUTE_A) {
       uint64_t temp = 0xfeULL << 24;
       P_MTHD(p, NVC3C0, SET_SHADER_SHARED_MEMORY_WINDOW_A);
       P_NVC3C0_SET_SHADER_SHARED_MEMORY_WINDOW_A(p, temp >> 32);
@@ -304,7 +307,7 @@ nvk_queue_init_context_state(struct nvk_queue *queue,
        */
       P_MTHD(p, NV9039, SET_OBJECT);
       P_NV9039_SET_OBJECT(p, {
-         .class_id = dev->pdev->info.cls_m2mf,
+         .class_id = pdev->info.cls_m2mf,
          .engine_id = 0,
       });
    }
@@ -388,6 +391,7 @@ nvk_queue_submit_simple(struct nvk_queue *queue,
                         struct nouveau_ws_bo **extra_bos)
 {
    struct nvk_device *dev = nvk_queue_device(queue);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
    struct nouveau_ws_bo *push_bo;
    VkResult result;
 
@@ -415,7 +419,7 @@ nvk_queue_submit_simple(struct nvk_queue *queue,
          .start = (uint32_t *)dw,
          .end = (uint32_t *)dw + dw_count,
       };
-      vk_push_print(stderr, &push, &dev->pdev->info);
+      vk_push_print(stderr, &push, &pdev->info);
    }
 
    nouveau_ws_bo_unmap(push_bo, push_map);

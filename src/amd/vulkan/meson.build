@@ -32,11 +32,15 @@ radv_entrypoints_gen_command += [
   '--device-prefix', 'sqtt',
   '--device-prefix', 'rra',
   '--device-prefix', 'rmv',
+  '--device-prefix', 'ctx_roll',
 
   # Application layer entrypoints
   '--device-prefix', 'metro_exodus',
   '--device-prefix', 'rage2',
   '--device-prefix', 'quantic_dream',
+
+  # Command buffer annotation layer entrypoints
+  '--device-prefix', 'annotate',
 ]
 
 radv_entrypoints = custom_target(
@@ -49,6 +53,7 @@ radv_entrypoints = custom_target(
 
 libradv_files = files(
   'bvh/bvh.h',
+  'layers/radv_ctx_roll_layer.c',
   'layers/radv_metro_exodus.c',
   'layers/radv_rage2.c',
   'layers/radv_quantic_dream.c',
@@ -114,6 +119,7 @@ libradv_files = files(
   'radv_device_generated_commands.c',
   'radv_event.c',
   'radv_formats.c',
+  'radv_formats.h',
   'radv_image.c',
   'radv_image_view.c',
   'radv_instance.c',
@@ -145,7 +151,6 @@ libradv_files = files(
   'radv_video.c',
   'radv_wsi.c',
   'si_cmd_buffer.c',
-  'vk_format.h',
 )
 
 if not with_platform_windows
@@ -175,6 +180,8 @@ libradv_files += radix_sort_files
 
 subdir('bvh')
 
+subdir('layers')
+
 radv_deps = []
 radv_flags = cc.get_supported_arguments(['-Wimplicit-fallthrough', '-Wshadow'])
 
@@ -201,7 +208,7 @@ endif
 
 libvulkan_radeon = shared_library(
   'vulkan_radeon',
-  [libradv_files, radv_entrypoints, sha1_h, radix_sort_spv, bvh_spv],
+  [libradv_files, radv_entrypoints, sha1_h, radix_sort_spv, bvh_spv, radv_annotate_layer],
   vs_module_defs : vulkan_api_def,
   include_directories : [
     inc_include, inc_src, inc_amd, inc_amd_common, inc_amd_common_llvm, inc_util,
@@ -214,7 +221,6 @@ libvulkan_radeon = shared_library(
     dep_valgrind, radv_deps, idep_aco,
     idep_mesautil, idep_nir, idep_vulkan_util, idep_vulkan_wsi,
     idep_vulkan_runtime, idep_amdgfxregs_h, idep_xmlconfig,
-    idep_vulkan_common_entrypoints_h, idep_vulkan_wsi_entrypoints_h
   ],
   c_args : [no_override_init_args, radv_flags, c_msvc_compat_args],
   cpp_args : [radv_flags, cpp_msvc_compat_args],
@@ -244,7 +250,7 @@ endif
 icd_lib_path = join_paths(get_option('prefix'), get_option('libdir'))
 icd_file_name = 'libvulkan_radeon.so'
 if with_platform_windows
-  icd_lib_path = join_paths(get_option('prefix'), get_option('bindir'))
+  icd_lib_path = import('fs').relative_to(get_option('bindir'), with_vulkan_icd_dir)
   icd_file_name = 'vulkan_radeon.dll'
 endif
 
@@ -299,10 +305,6 @@ if with_tests
       include_directories : [
         inc_include,
         inc_src,
-        inc_mapi,
-        inc_mesa,
-        inc_gallium,
-        inc_gallium_aux,
         inc_amd,
         inc_amd_common,
         inc_compiler,

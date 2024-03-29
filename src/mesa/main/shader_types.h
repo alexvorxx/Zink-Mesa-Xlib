@@ -504,6 +504,8 @@ struct gl_program
    GLboolean _Used;        /**< Ever used for drawing? Used for debugging */
 
    struct nir_shader *nir;
+   void *base_serialized_nir;
+   size_t base_serialized_nir_size;
 
    /* Saved and restored with metadata. Freed with ralloc. */
    void *driver_cache_blob;

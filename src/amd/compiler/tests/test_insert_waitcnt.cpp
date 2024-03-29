@@ -53,3 +53,79 @@ BEGIN_TEST(insert_waitcnt.ds_ordered_count)
 
    finish_waitcnt_test();
 END_TEST
+
+BEGIN_TEST(insert_waitcnt.clause)
+   if (!setup_cs(NULL, GFX11))
+      return;
+
+   Definition def_v4(PhysReg(260), v1);
+   Definition def_v5(PhysReg(261), v1);
+   Definition def_v6(PhysReg(262), v1);
+   Definition def_v7(PhysReg(263), v1);
+   Operand op_v0(PhysReg(256), v1);
+   Operand op_v4(PhysReg(260), v1);
+   Operand op_v5(PhysReg(261), v1);
+   Operand op_v6(PhysReg(262), v1);
+   Operand op_v7(PhysReg(263), v1);
+   Operand desc0(PhysReg(0), s4);
+
+   //>> p_unit_test 0
+   bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
+
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[6] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[7] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v0, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v6, desc0, op_v0, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v7, desc0, op_v0, Operand::zero(), 0, false);
+   //! s_waitcnt vmcnt(0)
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[4], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[5], 0
+   //! v1: %0:v[6] = buffer_load_dword %0:s[0-3], %0:v[6], 0
+   //! v1: %0:v[7] = buffer_load_dword %0:s[0-3], %0:v[7], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v4, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v5, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v6, desc0, op_v6, Operand::zero(), 0, false);
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v7, desc0, op_v7, Operand::zero(), 0, false);
+   //! s_waitcnt vmcnt(0)
+   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[4]
+   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[5]
+   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[6]
+   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[7]
+   bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v4, 0, false);
+   bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v5, 0, false);
+   bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v6, 0, false);
+   bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v7, 0, false);
+
+   //>> p_unit_test 1
+   bld.reset(program->create_and_insert_block());
+   bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
+
+   //! s4: %0:s[4-7] = s_load_dwordx4 %0:s[0-1], 0
+   bld.smem(aco_opcode::s_load_dwordx4, Definition(PhysReg(4), s4), Operand(PhysReg(0), s2),
+            Operand::zero());
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
+   //! s_waitcnt vmcnt(0) lgkmcnt(0)
+   //! v1: %0:v[5] = buffer_load_dword %0:s[4-7], %0:v[4], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v5, Operand(PhysReg(4), s4), op_v4, Operand::zero(),
+             0, false);
+
+   //>> p_unit_test 2
+   bld.reset(program->create_and_insert_block());
+   bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
+
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
+   //! v_nop
+   bld.vop1(aco_opcode::v_nop);
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
+   //! s_waitcnt vmcnt(0)
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[4], 0
+   bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v4, Operand::zero(), 0, false);
+
+   finish_waitcnt_test();
+END_TEST

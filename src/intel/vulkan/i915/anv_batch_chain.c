@@ -413,6 +413,12 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
    if (result != VK_SUCCESS)
       return result;
 
+   if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
+      result = pin_state_pool(device, execbuf, &device->dynamic_state_db_pool);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
    result = pin_state_pool(device, execbuf, &device->general_state_pool);
    if (result != VK_SUCCESS)
       return result;
@@ -424,6 +430,18 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
    result = pin_state_pool(device, execbuf, &device->binding_table_pool);
    if (result != VK_SUCCESS)
       return result;
+
+   if (device->physical->va.aux_tt_pool.size > 0) {
+      result = pin_state_pool(device, execbuf, &device->aux_tt_pool);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   if (device->physical->va.push_descriptor_buffer_pool.size > 0) {
+      result = pin_state_pool(device, execbuf, &device->push_descriptor_buffer_pool);
+      if (result != VK_SUCCESS)
+         return result;
+   }
 
    /* Add the BOs for all user allocated memory objects because we can't
     * track after binding updates of VK_EXT_descriptor_indexing and due to how
@@ -918,12 +936,7 @@ i915_queue_exec_locked(struct anv_queue *queue,
                                                     waits);
    }
 
-   if (result == VK_SUCCESS && queue->sync) {
-      result = vk_sync_wait(&device->vk, queue->sync, 0,
-                            VK_SYNC_WAIT_COMPLETE, UINT64_MAX);
-      if (result != VK_SUCCESS)
-         result = vk_queue_set_lost(&queue->vk, "sync wait failed");
-   }
+   result = anv_queue_post_submit(queue, result);
 
  error:
    anv_execbuf_finish(&execbuf);

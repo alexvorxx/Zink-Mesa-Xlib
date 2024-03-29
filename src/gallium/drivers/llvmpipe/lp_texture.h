@@ -32,7 +32,7 @@
 #include "pipe/p_state.h"
 #include "util/u_debug.h"
 #include "lp_limits.h"
-#ifdef DEBUG
+#if MESA_DEBUG
 #include "util/list.h"
 #endif
 
@@ -103,7 +103,7 @@ struct llvmpipe_resource
    uint64_t backing_offset;
    bool backable;
    bool imported_memory;
-#ifdef DEBUG
+#if MESA_DEBUG
    struct list_head list;
 #endif
 };

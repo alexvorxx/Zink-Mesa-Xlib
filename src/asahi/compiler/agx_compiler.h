@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef __AGX_COMPILER_H
-#define __AGX_COMPILER_H
+#pragma once
 
 #include "compiler/nir/nir.h"
 #include "util/half_float.h"
@@ -25,6 +24,9 @@ extern "C" {
 
 /* u0-u255 inclusive, as pairs of 16-bits */
 #define AGX_NUM_UNIFORMS (512)
+
+/* Semi-arbitrary limit for spill slot allocation */
+#define AGX_NUM_MODELED_REGS (2048)
 
 enum agx_index_type {
    AGX_INDEX_NULL = 0,
@@ -70,6 +72,9 @@ typedef struct {
    /* src - float modifiers */
    bool abs : 1;
    bool neg : 1;
+
+   /* Register class */
+   bool memory : 1;
 
    unsigned channels_m1     : 3;
    enum agx_size size       : 2;
@@ -139,12 +144,22 @@ agx_register(uint32_t imm, enum agx_size size)
 }
 
 static inline agx_index
-agx_register_like(uint32_t imm, agx_index like)
+agx_memory_register(uint32_t imm, enum agx_size size)
 {
-   assert(imm < AGX_NUM_REGS);
-
    return (agx_index){
       .value = imm,
+      .memory = true,
+      .size = size,
+      .type = AGX_INDEX_REGISTER,
+   };
+}
+
+static inline agx_index
+agx_register_like(uint32_t imm, agx_index like)
+{
+   return (agx_index){
+      .value = imm,
+      .memory = like.memory,
       .channels_m1 = like.channels_m1,
       .size = like.size,
       .type = AGX_INDEX_REGISTER,
@@ -398,7 +413,7 @@ typedef struct agx_block {
    /* For visited blocks during register assignment and live-out registers, the
     * mapping of SSA names to registers at the end of the block.
     */
-   uint8_t *ssa_to_reg_out;
+   uint16_t *ssa_to_reg_out;
 
    /* Is this block a loop header? If not, all of its predecessors precede it in
     * source order.
@@ -416,6 +431,7 @@ typedef struct {
    nir_shader *nir;
    gl_shader_stage stage;
    bool is_preamble;
+   unsigned scratch_size;
 
    struct list_head blocks; /* list of agx_block */
    struct agx_shader_info *out;
@@ -426,6 +442,9 @@ typedef struct {
 
    /* For creating temporaries */
    unsigned alloc;
+
+   /* Does the shader statically use scratch memory? */
+   bool any_scratch;
 
    /* I don't really understand how writeout ops work yet */
    bool did_writeout;
@@ -459,6 +478,15 @@ typedef struct {
     * or NULL if it hasn't been preloaded
     */
    agx_index vertex_id, instance_id;
+
+   /* Beginning of our stack allocation used for spilling, below that is
+    * NIR-level scratch.
+    */
+   unsigned spill_base;
+
+   /* Beginning of stack allocation used for parallel copy lowering */
+   bool has_spill_pcopy_reserved;
+   unsigned spill_pcopy_base;
 
    /* Stats for shader-db */
    unsigned loop_count;
@@ -845,11 +873,13 @@ agx_builder_insert(agx_cursor *cursor, agx_instr *I)
 
 /* Routines defined for AIR */
 
+void agx_print_index(agx_index index, bool is_float, FILE *fp);
 void agx_print_instr(const agx_instr *I, FILE *fp);
 void agx_print_block(const agx_block *block, FILE *fp);
 void agx_print_shader(const agx_context *ctx, FILE *fp);
 void agx_optimizer(agx_context *ctx);
 void agx_lower_pseudo(agx_context *ctx);
+void agx_lower_spill(agx_context *ctx);
 void agx_lower_uniform_sources(agx_context *ctx);
 void agx_opt_cse(agx_context *ctx);
 void agx_dce(agx_context *ctx, bool partial);
@@ -879,6 +909,9 @@ struct agx_copy {
    /* Base register destination of the copy */
    unsigned dest;
 
+   /* Destination is memory */
+   bool dest_mem;
+
    /* Source of the copy */
    agx_index src;
 
@@ -892,8 +925,6 @@ void agx_emit_parallel_copies(agx_builder *b, struct agx_copy *copies,
 void agx_compute_liveness(agx_context *ctx);
 void agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I);
 
-bool agx_nir_lower_sample_mask(nir_shader *s, unsigned nr_samples);
-bool agx_nir_lower_texture(nir_shader *s);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
 bool agx_nir_lower_address(nir_shader *shader);
@@ -905,6 +936,4 @@ extern int agx_compiler_debug;
 
 #ifdef __cplusplus
 } /* extern C */
-#endif
-
 #endif

@@ -25,8 +25,8 @@
 
 #include "wsi_common.h"
 #include "util/perf/cpu_trace.h"
-#include "vulkan/runtime/vk_object.h"
-#include "vulkan/runtime/vk_sync.h"
+#include "vk_object.h"
+#include "vk_sync.h"
 
 #ifdef __cplusplus
 extern "C" {

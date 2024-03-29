@@ -109,12 +109,35 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
    bool is_r500 = r300_screen(screen)->caps.is_r500;
 
    bool progress;
+   if (s->info.stage == MESA_SHADER_FRAGMENT) {
+      if (is_r500) {
+         NIR_PASS_V(s, r300_transform_fs_trig_input);
+      }
+   } else {
+      if (r300_screen(screen)->caps.has_tcl) {
+         if (r300_screen(screen)->caps.is_r500) {
+            /* Only nine should set both NTT shader name and
+             * use_legacy_math_rules and D3D9 already mandates
+             * the proper range for the trigonometric inputs.
+             */
+            if (!s->info.use_legacy_math_rules || !(s->info.name && !strcmp("TTN", s->info.name))) {
+               NIR_PASS_V(s, r300_transform_vs_trig_input);
+            }
+         } else {
+            if (r300_screen(screen)->caps.is_r400) {
+               NIR_PASS_V(s, r300_transform_vs_trig_input);
+            }
+         }
+      }
+   }
+
    do {
       progress = false;
 
       NIR_PASS_V(s, nir_lower_vars_to_ssa);
 
       NIR_PASS(progress, s, nir_copy_prop);
+      NIR_PASS(progress, s, r300_nir_lower_flrp);
       NIR_PASS(progress, s, nir_opt_algebraic);
       if (s->info.stage == MESA_SHADER_VERTEX) {
          if (!is_r500)
@@ -149,7 +172,7 @@ r300_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       };
       NIR_PASS(progress, s, nir_opt_load_store_vectorize, &vectorize_opts);
       NIR_PASS(progress, s, nir_opt_shrink_stores, true);
-      NIR_PASS(progress, s, nir_opt_shrink_vectors);
+      NIR_PASS(progress, s, nir_opt_shrink_vectors, false);
       NIR_PASS(progress, s, nir_opt_loop);
       NIR_PASS(progress, s, nir_opt_vectorize, r300_should_vectorize_instr, NULL);
       NIR_PASS(progress, s, nir_opt_undef);

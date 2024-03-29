@@ -1000,6 +1000,49 @@ util_format_get_component_bits(enum pipe_format format,
    }
 }
 
+static inline unsigned
+util_format_get_component_shift(enum pipe_format format,
+                                enum util_format_colorspace colorspace,
+                                unsigned component)
+{
+   const struct util_format_description *desc = util_format_description(format);
+   enum util_format_colorspace desc_colorspace;
+
+   assert(format);
+   if (!format) {
+      return 0;
+   }
+
+   assert(component < 4);
+
+   /* Treat RGB and SRGB as equivalent. */
+   if (colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
+      colorspace = UTIL_FORMAT_COLORSPACE_RGB;
+   }
+   if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
+      desc_colorspace = UTIL_FORMAT_COLORSPACE_RGB;
+   } else {
+      desc_colorspace = desc->colorspace;
+   }
+
+   if (desc_colorspace != colorspace) {
+      return 0;
+   }
+
+   switch (desc->swizzle[component]) {
+   case PIPE_SWIZZLE_X:
+      return desc->channel[0].shift;
+   case PIPE_SWIZZLE_Y:
+      return desc->channel[1].shift;
+   case PIPE_SWIZZLE_Z:
+      return desc->channel[2].shift;
+   case PIPE_SWIZZLE_W:
+      return desc->channel[3].shift;
+   default:
+      return 0;
+   }
+}
+
 /**
  * Given a linear RGB colorspace format, return the corresponding SRGB
  * format, or PIPE_FORMAT_NONE if none.

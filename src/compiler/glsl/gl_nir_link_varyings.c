@@ -4509,6 +4509,9 @@ gl_nir_link_varyings(const struct gl_constants *consts,
             break;
          }
       }
+
+      /* Lower IO and thoroughly optimize and compact varyings. */
+      gl_nir_lower_optimize_varyings(consts, prog, false);
    }
 
    ralloc_free(mem_ctx);

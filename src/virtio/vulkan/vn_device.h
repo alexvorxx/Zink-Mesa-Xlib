@@ -46,7 +46,7 @@ struct vn_device {
     * - length matches queue_family_count
     * - order matches queue_families
     */
-   struct vn_feedback_cmd_pool *cmd_pools;
+   struct vn_feedback_cmd_pool *fb_cmd_pools;
 
    struct vn_queue *queues;
    uint32_t queue_count;

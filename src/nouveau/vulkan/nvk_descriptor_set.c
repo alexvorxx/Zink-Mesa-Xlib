@@ -49,33 +49,23 @@ write_desc(struct nvk_descriptor_set *set, uint32_t binding, uint32_t elem,
 }
 
 static void
-write_image_view_desc(struct nvk_descriptor_set *set,
-                      const VkDescriptorImageInfo *const info,
-                      uint32_t binding, uint32_t elem,
-                      VkDescriptorType descriptor_type)
+write_sampled_image_view_desc(struct nvk_descriptor_set *set,
+                              const VkDescriptorImageInfo *const info,
+                              uint32_t binding, uint32_t elem,
+                              VkDescriptorType descriptor_type)
 {
-   struct nvk_image_descriptor desc[3] = { };
+   struct nvk_sampled_image_descriptor desc[3] = { };
    uint8_t plane_count = 1;
 
    if (descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER &&
        info && info->imageView != VK_NULL_HANDLE) {
       VK_FROM_HANDLE(nvk_image_view, view, info->imageView);
+
       plane_count = view->plane_count;
-      if (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-         /* Storage images are always single plane */
-         assert(plane_count == 1);
-         uint8_t plane = 0;
-
-         assert(view->planes[plane].storage_desc_index > 0);
-         assert(view->planes[plane].storage_desc_index < (1 << 20));
-
-         desc[plane].image_index = view->planes[plane].storage_desc_index;
-      } else {
-         for (uint8_t plane = 0; plane < plane_count; plane++) {
-            assert(view->planes[plane].sampled_desc_index > 0);
-            assert(view->planes[plane].sampled_desc_index < (1 << 20));
-            desc[plane].image_index = view->planes[plane].sampled_desc_index;
-         }
+      for (uint8_t plane = 0; plane < plane_count; plane++) {
+         assert(view->planes[plane].sampled_desc_index > 0);
+         assert(view->planes[plane].sampled_desc_index < (1 << 20));
+         desc[plane].image_index = view->planes[plane].sampled_desc_index;
       }
    }
 
@@ -104,6 +94,34 @@ write_image_view_desc(struct nvk_descriptor_set *set,
       }
    }
    write_desc(set, binding, elem, desc, sizeof(desc[0]) * plane_count);
+}
+
+static void
+write_storage_image_view_desc(struct nvk_descriptor_set *set,
+                              const VkDescriptorImageInfo *const info,
+                              uint32_t binding, uint32_t elem)
+{
+   struct nvk_storage_image_descriptor desc = { };
+
+   if (info && info->imageView != VK_NULL_HANDLE) {
+      VK_FROM_HANDLE(nvk_image_view, view, info->imageView);
+
+      /* Storage images are always single plane */
+      assert(view->plane_count == 1);
+      uint8_t plane = 0;
+
+      assert(view->planes[plane].storage_desc_index > 0);
+      assert(view->planes[plane].storage_desc_index < (1 << 20));
+
+      desc.image_index = view->planes[plane].storage_desc_index;
+
+      const struct nil_extent4d px_extent_sa =
+         nil_px_extent_sa(view->planes[plane].sample_layout);
+      desc.sw_log2 = util_logbase2(px_extent_sa.w);
+      desc.sh_log2 = util_logbase2(px_extent_sa.h);
+   }
+
+   write_desc(set, binding, elem, &desc, sizeof(desc));
 }
 
 static void
@@ -150,7 +168,7 @@ write_buffer_view_desc(struct nvk_descriptor_set *set,
                        const VkBufferView bufferView,
                        uint32_t binding, uint32_t elem)
 {
-   struct nvk_image_descriptor desc = { };
+   struct nvk_buffer_view_descriptor desc = { };
    if (bufferView != VK_NULL_HANDLE) {
       VK_FROM_HANDLE(nvk_buffer_view, view, bufferView);
 
@@ -184,13 +202,20 @@ nvk_UpdateDescriptorSets(VkDevice device,
       case VK_DESCRIPTOR_TYPE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
          for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            write_image_view_desc(set, write->pImageInfo + j,
-                                  write->dstBinding,
-                                  write->dstArrayElement + j,
-                                  write->descriptorType);
+            write_sampled_image_view_desc(set, write->pImageInfo + j,
+                                          write->dstBinding,
+                                          write->dstArrayElement + j,
+                                          write->descriptorType);
+         }
+         break;
+
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+         for (uint32_t j = 0; j < write->descriptorCount; j++) {
+            write_storage_image_view_desc(set, write->pImageInfo + j,
+                                          write->dstBinding,
+                                          write->dstArrayElement + j);
          }
          break;
 
@@ -299,13 +324,20 @@ nvk_push_descriptor_set_update(struct nvk_push_descriptor_set *push_set,
       case VK_DESCRIPTOR_TYPE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
          for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            write_image_view_desc(&set, write->pImageInfo + j,
-                                  write->dstBinding,
-                                  write->dstArrayElement + j,
-                                  write->descriptorType);
+            write_sampled_image_view_desc(&set, write->pImageInfo + j,
+                                          write->dstBinding,
+                                          write->dstArrayElement + j,
+                                          write->descriptorType);
+         }
+         break;
+
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+         for (uint32_t j = 0; j < write->descriptorCount; j++) {
+            write_storage_image_view_desc(&set, write->pImageInfo + j,
+                                          write->dstBinding,
+                                          write->dstArrayElement + j);
          }
          break;
 
@@ -436,14 +468,11 @@ nvk_CreateDescriptorPool(VkDevice _device,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    if (bo_size) {
-      uint32_t flags = NOUVEAU_WS_BO_GART | NOUVEAU_WS_BO_MAP | NOUVEAU_WS_BO_NO_SHARE;
-      pool->bo = nouveau_ws_bo_new(dev->ws_dev, bo_size, 0, flags);
+      uint32_t flags = NOUVEAU_WS_BO_GART | NOUVEAU_WS_BO_NO_SHARE;
+      pool->bo = nouveau_ws_bo_new_mapped(dev->ws_dev, bo_size, 0, flags,
+                                          NOUVEAU_WS_BO_WR,
+                                          (void **)&pool->mapped_ptr);
       if (!pool->bo) {
-         nvk_destroy_descriptor_pool(dev, pAllocator, pool);
-         return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
-      }
-      pool->mapped_ptr = nouveau_ws_bo_map(pool->bo, NOUVEAU_WS_BO_WR);
-      if (!pool->mapped_ptr) {
          nvk_destroy_descriptor_pool(dev, pAllocator, pool);
          return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
       }
@@ -519,8 +548,10 @@ nvk_descriptor_set_create(struct nvk_device *dev,
           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
          array_size = variable_count;
 
-      for (uint32_t j = 0; j < array_size; j++)
-         write_image_view_desc(set, NULL, b, j, layout->binding[b].type);
+      for (uint32_t j = 0; j < array_size; j++) {
+         write_sampled_image_view_desc(set, NULL, b, j,
+                                       layout->binding[b].type);
+      }
    }
 
    *out_set = set;
@@ -635,16 +666,26 @@ nvk_descriptor_set_write_template(struct nvk_descriptor_set *set,
       case VK_DESCRIPTOR_TYPE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
          for (uint32_t j = 0; j < entry->array_count; j++) {
             const VkDescriptorImageInfo *info =
                data + entry->offset + j * entry->stride;
 
-            write_image_view_desc(set, info,
-                                  entry->binding,
-                                  entry->array_element + j,
-                                  entry->type);
+            write_sampled_image_view_desc(set, info,
+                                          entry->binding,
+                                          entry->array_element + j,
+                                          entry->type);
+         }
+         break;
+
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+         for (uint32_t j = 0; j < entry->array_count; j++) {
+            const VkDescriptorImageInfo *info =
+               data + entry->offset + j * entry->stride;
+
+            write_storage_image_view_desc(set, info,
+                                          entry->binding,
+                                          entry->array_element + j);
          }
          break;
 

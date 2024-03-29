@@ -59,7 +59,7 @@
 #endif
 
 
-#ifdef DEBUG
+#if MESA_DEBUG
 static struct llvmpipe_resource resource_list;
 static simple_mtx_t resource_list_mutex = SIMPLE_MTX_INITIALIZER;
 #endif
@@ -303,7 +303,7 @@ llvmpipe_resource_create_all(struct pipe_screen *_screen,
 
    lpr->id = id_counter++;
 
-#ifdef DEBUG
+#if MESA_DEBUG
    simple_mtx_lock(&resource_list_mutex);
    list_addtail(&lpr->list, &resource_list.list);
    simple_mtx_unlock(&resource_list_mutex);
@@ -437,7 +437,7 @@ llvmpipe_resource_from_memobj(struct pipe_screen *pscreen,
    lpr->id = id_counter++;
    lpr->imported_memory = true;
 
-#ifdef DEBUG
+#if MESA_DEBUG
    simple_mtx_lock(&resource_list_mutex);
    list_addtail(&lpr->list, &resource_list.list);
    simple_mtx_unlock(&resource_list_mutex);
@@ -474,7 +474,7 @@ llvmpipe_resource_destroy(struct pipe_screen *pscreen,
             align_free(lpr->data);
       }
    }
-#ifdef DEBUG
+#if MESA_DEBUG
    simple_mtx_lock(&resource_list_mutex);
    if (!list_is_empty(&lpr->list))
       list_del(&lpr->list);
@@ -611,7 +611,7 @@ llvmpipe_resource_from_handle(struct pipe_screen *_screen,
 
    lpr->id = id_counter++;
 
-#ifdef DEBUG
+#if MESA_DEBUG
    simple_mtx_lock(&resource_list_mutex);
    list_addtail(&lpr->list, &resource_list.list);
    simple_mtx_unlock(&resource_list_mutex);
@@ -670,7 +670,7 @@ llvmpipe_resource_from_user_memory(struct pipe_screen *_screen,
    } else
       lpr->data = user_memory;
    lpr->user_ptr = true;
-#ifdef DEBUG
+#if MESA_DEBUG
    simple_mtx_lock(&resource_list_mutex);
    list_addtail(&lpr->list, &resource_list.list);
    simple_mtx_unlock(&resource_list_mutex);
@@ -1060,7 +1060,7 @@ llvmpipe_unmap_memory(struct pipe_screen *screen,
 }
 
 
-#ifdef DEBUG
+#if MESA_DEBUG
 void
 llvmpipe_print_resources(void)
 {
@@ -1161,7 +1161,7 @@ llvmpipe_resource_get_param(struct pipe_screen *screen,
 void
 llvmpipe_init_screen_resource_funcs(struct pipe_screen *screen)
 {
-#ifdef DEBUG
+#if MESA_DEBUG
    /* init linked list for tracking resources */
    {
       static bool first_call = true;

@@ -534,7 +534,7 @@ static void
 tu_bo_set_kernel_name(struct tu_device *dev, struct tu_bo *bo, const char *name)
 {
    bool kernel_bo_names = dev->bo_sizes != NULL;
-#ifdef DEBUG
+#if MESA_DEBUG
    kernel_bo_names = true;
 #endif
    if (!kernel_bo_names)

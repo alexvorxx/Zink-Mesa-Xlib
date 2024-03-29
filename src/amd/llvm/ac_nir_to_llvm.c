@@ -1935,7 +1935,6 @@ static LLVMValueRef visit_load_buffer(struct ac_nir_context *ctx, nir_intrinsic_
    LLVMValueRef offset = get_src(ctx, instr->src[1]);
    LLVMValueRef rsrc = ctx->abi->load_ssbo ?
       ctx->abi->load_ssbo(ctx->abi, rsrc_base, false, false) : rsrc_base;
-   LLVMValueRef vindex = ctx->ac.i32_0;
 
    LLVMTypeRef def_type = get_def_type(ctx, &instr->def);
    LLVMTypeRef def_elem_type = num_components > 1 ? LLVMGetElementType(def_type) : def_type;
@@ -1964,7 +1963,7 @@ static LLVMValueRef visit_load_buffer(struct ac_nir_context *ctx, nir_intrinsic_
          int num_channels = util_next_power_of_two(load_bytes) / 4;
          bool can_speculate = access & ACCESS_CAN_REORDER;
 
-         ret = ac_build_buffer_load(&ctx->ac, rsrc, num_channels, vindex, voffset, ctx->ac.i32_0,
+         ret = ac_build_buffer_load(&ctx->ac, rsrc, num_channels, NULL, voffset, ctx->ac.i32_0,
                                     ctx->ac.f32, access, can_speculate, false);
       }
 
@@ -3646,27 +3645,17 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       LLVMSetMetadata(result, ctx->ac.invariant_load_md_kind, ctx->ac.empty_md);
       break;
    }
-   case nir_intrinsic_ordered_xfb_counter_add_amd: {
-      /* must be called in a single lane of a workgroup. */
-      LLVMTypeRef gdsptr = LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS);
-
+   case nir_intrinsic_ordered_xfb_counter_add_gfx11_amd: {
       /* Gfx11 GDS instructions only operate on the first active lane. All other lanes are
        * ignored. So are their EXEC bits. This uses the mutex feature of ds_ordered_count
        * to emulate a multi-dword atomic.
        *
        * This is the expected code:
        *    ds_ordered_count release=0 done=0   // lock mutex
-       *    if (gfx_level >= GFX11) {
-       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_0
-       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_1
-       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_2
-       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_3
-       *    } else {
-       *       ds_add_rtn_u32 dwords_written0
-       *       ds_add_rtn_u32 dwords_written1
-       *       ds_add_rtn_u32 dwords_written2
-       *       ds_add_rtn_u32 dwords_written3
-       *    }
+       *    ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_0
+       *    ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_1
+       *    ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_2
+       *    ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_3
        *    ds_ordered_count release=1 done=1   // unlock mutex
        *
        * GDS_STRMOUT_DWORDS_WRITTEN_n are just general-purpose global registers. We use them
@@ -3674,7 +3663,8 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
        * save and restore GDS memory.
        */
       LLVMValueRef args[8] = {
-         LLVMBuildIntToPtr(ctx->ac.builder, get_src(ctx, instr->src[0]), gdsptr, ""),
+         LLVMBuildIntToPtr(ctx->ac.builder, get_src(ctx, instr->src[0]),
+                           LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS), ""),
          ctx->ac.i32_0,                             /* value to add */
          ctx->ac.i32_0,                             /* ordering */
          ctx->ac.i32_0,                             /* scope */
@@ -3716,7 +3706,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = ac_build_gather_values(&ctx->ac, global_count, instr->num_components);
       break;
    }
-   case nir_intrinsic_xfb_counter_sub_amd: {
+   case nir_intrinsic_xfb_counter_sub_gfx11_amd: {
       /* must be called in a single lane of a workgroup. */
       LLVMValueRef sub_vec = get_src(ctx, instr->src[0]);
       unsigned write_mask = nir_intrinsic_write_mask(instr);
@@ -4368,6 +4358,7 @@ bool ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
 {
    struct ac_nir_context ctx = {0};
    struct nir_function *func;
+   bool ret;
 
    ctx.ac = *ac;
    ctx.abi = abi;
@@ -4397,10 +4388,8 @@ bool ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
    if (gl_shader_stage_is_compute(nir->info.stage))
       setup_shared(&ctx, nir);
 
-   if (!visit_cf_list(&ctx, &func->impl->body))
-      return false;
-
-   phi_post_pass(&ctx);
+   if ((ret = visit_cf_list(&ctx, &func->impl->body)))
+      phi_post_pass(&ctx);
 
    free(ctx.ssa_defs);
    ralloc_free(ctx.defs);
@@ -4408,7 +4397,7 @@ bool ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
    if (ctx.abi->kill_ps_if_inf_interp)
       ralloc_free(ctx.verified_interp);
 
-   return true;
+   return ret;
 }
 
 /* Fixup the HW not emitting the TCS regs if there are no HS threads. */

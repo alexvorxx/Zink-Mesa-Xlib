@@ -1533,6 +1533,7 @@ needs_resolve(struct pipe_surface *psurf)
 static uint32_t
 fd6_unknown_8c01(enum pipe_format format, unsigned buffers)
 {
+   buffers &= FD_BUFFER_DEPTH | FD_BUFFER_STENCIL;
    if (format == PIPE_FORMAT_Z24_UNORM_S8_UINT) {
       if (buffers == FD_BUFFER_DEPTH)
          return 0x08000041;
@@ -1770,7 +1771,7 @@ emit_sysmem_clears(struct fd_batch *batch, struct fd_batch_subpass *subpass)
       }
    }
 
-   fd6_emit_flushes(ctx, ring, FD6_FLUSH_CCU_COLOR);
+   fd6_emit_flushes(ctx, ring, FD6_FLUSH_CCU_COLOR | FD6_INVALIDATE_CCU_COLOR);
 
    trace_end_clears(&batch->trace, ring);
 }

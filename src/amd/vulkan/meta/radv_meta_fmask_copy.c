@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 #include "nir/nir_builder.h"
+#include "radv_formats.h"
 #include "radv_meta.h"
 
 static nir_shader *

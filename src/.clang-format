@@ -57,6 +57,7 @@ ForEachMacros:
 
   - hash_table_foreach
   - hash_table_foreach_remove
+  - hash_table_u64_foreach
 
   - rb_tree_foreach
   - rb_tree_foreach_rev
@@ -225,8 +226,10 @@ ForEachMacros:
   - foreach_sched_node
   - foreach_src
   - foreach_src_n
+  - foreach_src_if
   - foreach_dst
   - foreach_dst_n
+  - foreach_dst_if
   - ra_foreach_dst
   - ra_foreach_src
   - ra_foreach_src_rev
@@ -295,6 +298,7 @@ ForEachMacros:
   - bi_foreach_src
   - bi_foreach_ssa_src
   - bi_foreach_successor
+  - cs_emit
   - mir_foreach_block
   - mir_foreach_block_from
   - mir_foreach_bundle_in_block

@@ -390,7 +390,9 @@ st_prog_to_nir_postprocess(struct st_context *st, nir_shader *nir,
    st_finalize_nir_before_variants(nir);
 
    if (st->allow_st_finalize_nir_twice) {
-      char *msg = st_finalize_nir(st, prog, NULL, nir, true, true);
+      st_serialize_base_nir(prog, nir);
+
+      char *msg = st_finalize_nir(st, prog, NULL, nir, true, true, false);
       free(msg);
    }
 
@@ -560,6 +562,7 @@ st_translate_vertex_program(struct st_context *st,
       free(prog->serialized_nir);
       prog->serialized_nir = NULL;
    }
+   free(prog->base_serialized_nir);
 
    prog->state.type = PIPE_SHADER_IR_NIR;
    if (prog->arb.Instructions)
@@ -572,10 +575,62 @@ st_translate_vertex_program(struct st_context *st,
    return true;
 }
 
+static const struct nir_shader_compiler_options draw_nir_options = {
+   .lower_scmp = true,
+   .lower_flrp32 = true,
+   .lower_flrp64 = true,
+   .lower_fsat = true,
+   .lower_bitfield_insert = true,
+   .lower_bitfield_extract = true,
+   .lower_fdot = true,
+   .lower_fdph = true,
+   .lower_ffma16 = true,
+   .lower_ffma32 = true,
+   .lower_ffma64 = true,
+   .lower_flrp16 = true,
+   .lower_fmod = true,
+   .lower_hadd = true,
+   .lower_uadd_sat = true,
+   .lower_usub_sat = true,
+   .lower_iadd_sat = true,
+   .lower_ldexp = true,
+   .lower_pack_snorm_2x16 = true,
+   .lower_pack_snorm_4x8 = true,
+   .lower_pack_unorm_2x16 = true,
+   .lower_pack_unorm_4x8 = true,
+   .lower_pack_half_2x16 = true,
+   .lower_pack_split = true,
+   .lower_unpack_snorm_2x16 = true,
+   .lower_unpack_snorm_4x8 = true,
+   .lower_unpack_unorm_2x16 = true,
+   .lower_unpack_unorm_4x8 = true,
+   .lower_unpack_half_2x16 = true,
+   .lower_extract_byte = true,
+   .lower_extract_word = true,
+   .lower_insert_byte = true,
+   .lower_insert_word = true,
+   .lower_uadd_carry = true,
+   .lower_usub_borrow = true,
+   .lower_mul_2x32_64 = true,
+   .lower_ifind_msb = true,
+   .lower_int64_options = nir_lower_imul_2x32_64,
+   .lower_doubles_options = nir_lower_dround_even,
+   .max_unroll_iterations = 32,
+   .use_interpolated_input_intrinsics = true,
+   .lower_to_scalar = true,
+   .lower_uniforms_to_ubo = true,
+   .lower_vector_cmp = true,
+   .lower_device_index_to_zero = true,
+   .support_16bit_alu = true,
+   .lower_fisnormal = true,
+   .lower_fquantize2f16 = true,
+   .driver_functions = true,
+};
+
 static struct nir_shader *
-get_nir_shader(struct st_context *st, struct gl_program *prog)
+get_nir_shader(struct st_context *st, struct gl_program *prog, bool is_draw)
 {
-   if (prog->nir) {
+   if (!is_draw && prog->nir) {
       nir_shader *nir = prog->nir;
 
       /* The first shader variant takes ownership of NIR, so that there is
@@ -589,9 +644,15 @@ get_nir_shader(struct st_context *st, struct gl_program *prog)
 
    struct blob_reader blob_reader;
    const struct nir_shader_compiler_options *options =
-      st_get_nir_compiler_options(st, prog->info.stage);
+      is_draw ? &draw_nir_options : st_get_nir_compiler_options(st, prog->info.stage);
 
-   blob_reader_init(&blob_reader, prog->serialized_nir, prog->serialized_nir_size);
+   if (is_draw) {
+      assert(prog->base_serialized_nir);
+      blob_reader_init(&blob_reader, prog->base_serialized_nir, prog->base_serialized_nir_size);
+   } else {
+      assert(prog->serialized_nir);
+      blob_reader_init(&blob_reader, prog->serialized_nir, prog->serialized_nir_size);
+   }
    return nir_deserialize(NULL, options, &blob_reader);
 }
 
@@ -657,7 +718,7 @@ st_create_common_variant(struct st_context *st,
    bool finalize = false;
 
    state.type = PIPE_SHADER_IR_NIR;
-   state.ir.nir = get_nir_shader(st, prog);
+   state.ir.nir = get_nir_shader(st, prog, key->is_draw_shader);
    const nir_shader_compiler_options *options = ((nir_shader *)state.ir.nir)->options;
 
    if (key->clamp_color) {
@@ -693,9 +754,9 @@ st_create_common_variant(struct st_context *st,
       NIR_PASS(_, state.ir.nir, nir_lower_tex, &tex_opts);
    }
 
-   if (finalize || !st->allow_st_finalize_nir_twice) {
+   if (finalize || !st->allow_st_finalize_nir_twice || key->is_draw_shader) {
       char *msg = st_finalize_nir(st, prog, prog->shader_program, state.ir.nir,
-                                    true, false);
+                                    true, false, key->is_draw_shader);
       free(msg);
 
       /* Clip lowering and edgeflags may have introduced new varyings, so
@@ -876,7 +937,7 @@ st_create_fp_variant(struct st_context *st,
    /* Translate ATI_fs to NIR at variant time because that's when we have the
     * texture types.
     */
-   state.ir.nir = get_nir_shader(st, fp);
+   state.ir.nir = get_nir_shader(st, fp, false);
    state.type = PIPE_SHADER_IR_NIR;
 
    bool finalize = false;
@@ -1028,7 +1089,7 @@ st_create_fp_variant(struct st_context *st,
 
    if (finalize || !st->allow_st_finalize_nir_twice) {
       char *msg = st_finalize_nir(st, fp, fp->shader_program, state.ir.nir,
-                                    false, false);
+                                    false, false, false);
       free(msg);
    }
 
@@ -1221,11 +1282,11 @@ st_destroy_program_variants(struct st_context *st)
       return;
 
    /* ARB vert/frag program */
-   _mesa_HashWalk(st->ctx->Shared->Programs,
+   _mesa_HashWalk(&st->ctx->Shared->Programs,
                   destroy_program_variants_cb, st);
 
    /* GLSL vert/frag/geom shaders */
-   _mesa_HashWalk(st->ctx->Shared->ShaderObjects,
+   _mesa_HashWalk(&st->ctx->Shared->ShaderObjects,
                   destroy_shader_program_variants_cb, st);
 }
 
@@ -1302,6 +1363,20 @@ st_serialize_nir(struct gl_program *prog)
 }
 
 void
+st_serialize_base_nir(struct gl_program *prog, nir_shader *nir)
+{
+   if (!prog->base_serialized_nir && nir->info.stage == MESA_SHADER_VERTEX) {
+      struct blob blob;
+      size_t size;
+
+      blob_init(&blob);
+      nir_serialize(&blob, nir, false);
+      blob_finish_get_buffer(&blob, &prog->base_serialized_nir, &size);
+      prog->base_serialized_nir_size = size;
+   }
+}
+
+void
 st_finalize_program(struct st_context *st, struct gl_program *prog)
 {
    struct gl_context *ctx = st->ctx;
@@ -1338,6 +1413,7 @@ st_finalize_program(struct st_context *st, struct gl_program *prog)
        * is disabled. If the disk cache is enabled, GLSL programs are
        * serialized in write_nir_to_cache.
        */
+      st_serialize_base_nir(prog, prog->nir);
       st_serialize_nir(prog);
    }
 

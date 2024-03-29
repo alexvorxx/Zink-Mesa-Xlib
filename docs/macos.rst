@@ -20,5 +20,6 @@ hardware-accelerated system OpenGL framework, to provide hardware acceleration
 to X11 applications on macOS running via XQuartz.
 
 Mesa's software rasterizers also work on macOS. To build, set the build options
-``-Dosmesa=true -Dglx=xlib`` and select an appropriate Gallium software
-rasterizer.
+``-Dosmesa=true -Dglx=xlib``.
+
+Mesa's Gallium drivers can be used on macOS by using the ``-Dgallium-drivers=<drivers>`` build option. Do not use with the previous software rasterizers options, instead add `swrast` to the ``<drivers>`` list. Only software renderers and drivers that forward to other APIs can work, any linux hardware drivers will not work. For details on each driver's macOS support see their specific documentation.

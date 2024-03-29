@@ -341,6 +341,7 @@ compile_spirv(struct lvp_device *pdevice, const VkPipelineShaderStageCreateInfo 
          .descriptor_indexing = true,
          .runtime_descriptor_array = true,
          .shader_enqueue = true,
+         .ray_query = true,
       },
       .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
       .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
@@ -443,6 +444,8 @@ lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_
    NIR_PASS(_, nir, nir_lower_non_uniform_access, &options);
 
    lvp_lower_pipeline_layout(pdevice, layout, nir);
+
+   NIR_PASS(_, nir, lvp_nir_lower_ray_queries);
 
    if (nir->info.stage == MESA_SHADER_COMPUTE ||
        nir->info.stage == MESA_SHADER_TASK ||

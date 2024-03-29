@@ -113,7 +113,7 @@ export PYTHONPATH=$(python3 -c "import sys;print(\":\".join(sys.path))")
 if [ -n "$MESA_LOADER_DRIVER_OVERRIDE" ]; then
   rm /install/lib/dri/!($MESA_LOADER_DRIVER_OVERRIDE)_dri.so
 fi
-ls -l /install/lib/dri/*_dri.so
+ls -1 /install/lib/dri/*_dri.so
 
 if [ "$HWCI_FREQ_MAX" = "true" ]; then
   # Ensure initialization of the DRM device (needed by MSM)

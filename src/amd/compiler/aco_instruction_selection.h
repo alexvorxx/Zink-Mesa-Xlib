@@ -106,6 +106,8 @@ struct isel_context {
    /* WQM information */
    uint32_t wqm_block_idx;
    uint32_t wqm_instruction_idx;
+
+   BITSET_DECLARE(output_args, AC_MAX_ARGS);
 };
 
 inline Temp

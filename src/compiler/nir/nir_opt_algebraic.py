@@ -730,14 +730,6 @@ optimizations.extend([
    (('~bcsel', ('flt', a, b), b, a), ('fmax', a, b)),
    (('~bcsel', ('fge', a, b), b, a), ('fmin', a, b)),
    (('~bcsel', ('fge', b, a), b, a), ('fmax', a, b)),
-   (('bcsel', ('ult', b, a), b, a), ('umin', a, b)),
-   (('bcsel', ('ult', a, b), b, a), ('umax', a, b)),
-   (('bcsel', ('uge', a, b), b, a), ('umin', a, b)),
-   (('bcsel', ('uge', b, a), b, a), ('umax', a, b)),
-   (('bcsel', ('ilt', b, a), b, a), ('imin', a, b)),
-   (('bcsel', ('ilt', a, b), b, a), ('imax', a, b)),
-   (('bcsel', ('ige', a, b), b, a), ('imin', a, b)),
-   (('bcsel', ('ige', b, a), b, a), ('imax', a, b)),
    (('bcsel', ('inot', a), b, c), ('bcsel', a, c, b)),
    (('bcsel', a, ('bcsel', a, b, c), d), ('bcsel', a, b, d)),
    (('bcsel', a, b, ('bcsel', a, c, d)), ('bcsel', a, b, d)),
@@ -1096,13 +1088,34 @@ for op in ['iand', 'ior', 'ixor']:
 for s in [8, 16, 32, 64]:
     last_shift_bit = int(math.log2(s)) - 1
 
+    lower_umin = 'options->lower_umin'
+    lower_umax = 'options->lower_umax'
+    lower_imin = 'false'
+    lower_imax = 'false'
+    lower_ior = 'options->lower_bitops'
+    if s == 64:
+       lower_umin = '(options->lower_umin || (options->lower_int64_options & nir_lower_minmax64) != 0)'
+       lower_umax = '(options->lower_umax || (options->lower_int64_options & nir_lower_minmax64) != 0)'
+       lower_imin = '((options->lower_int64_options & nir_lower_minmax64) != 0)'
+       lower_imax = '((options->lower_int64_options & nir_lower_minmax64) != 0)'
+       lower_ior = '(options->lower_bitops || (options->lower_int64_options & nir_lower_logic64) != 0)'
+
     optimizations.extend([
-       (('iand', ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('ior', a, b), 0), 'options->lower_umax'),
-       (('ior',  ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('ior', a, b), 0), 'options->lower_umin'),
-       (('iand', ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('umax', a, b), 0), '!options->lower_umax'),
-       (('ior',  ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('umin', a, b), 0), '!options->lower_umin'),
-       (('iand', ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('umin', a, b), 0), '!options->lower_umin'),
-       (('ior',  ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('umax', a, b), 0), '!options->lower_umax'),
+       (('iand', ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('ior', a, b), 0), lower_umax + ' && !' + lower_ior),
+       (('ior',  ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('ior', a, b), 0), lower_umin + ' && !' + lower_ior),
+       (('iand', ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('umax', a, b), 0), '!'+lower_umax),
+       (('ior',  ('ieq', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('umin', a, b), 0), '!'+lower_umin),
+       (('iand', ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('umin', a, b), 0), '!'+lower_umin),
+       (('ior',  ('ine', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('umax', a, b), 0), '!'+lower_umax),
+
+       (('bcsel', ('ult', 'b@{}'.format(s), a), b, a), ('umin', a, b), '!'+lower_umin),
+       (('bcsel', ('ult', 'a@{}'.format(s), b), b, a), ('umax', a, b), '!'+lower_umax),
+       (('bcsel', ('uge', 'a@{}'.format(s), b), b, a), ('umin', a, b), '!'+lower_umin),
+       (('bcsel', ('uge', 'b@{}'.format(s), a), b, a), ('umax', a, b), '!'+lower_umax),
+       (('bcsel', ('ilt', 'b@{}'.format(s), a), b, a), ('imin', a, b), '!'+lower_imin),
+       (('bcsel', ('ilt', 'a@{}'.format(s), b), b, a), ('imax', a, b), '!'+lower_imax),
+       (('bcsel', ('ige', 'a@{}'.format(s), b), b, a), ('imin', a, b), '!'+lower_imin),
+       (('bcsel', ('ige', 'b@{}'.format(s), a), b, a), ('imax', a, b), '!'+lower_imax),
 
        # True/False are ~0 and 0 in NIR.  b2i of True is 1, and -1 is ~0 (True).
        (('ineg', ('b2i{}'.format(s), 'a@{}'.format(s))), a),
@@ -1797,6 +1810,19 @@ for op in ('extract_u8', 'extract_i8'):
    optimizations.extend([((op, ('ishl', 'a@16',      8),     1), (op, a, 0))])
    optimizations.extend([((op, ('ishl', 'a@32', 24 - 8 * i), 3), (op, a, i)) for i in range(2, -1, -1)])
    optimizations.extend([((op, ('ishl', 'a@64', 56 - 8 * i), 7), (op, a, i)) for i in range(6, -1, -1)])
+
+for op, repl in [('ieq', 'ieq'), ('ine', 'ine'),
+                 ('ult', 'ult'), ('ilt', 'ult'),
+                 ('uge', 'uge'), ('ige', 'uge')]:
+   optimizations.extend([
+      ((op, ('pack_64_2x32_split', a, 0), ('pack_64_2x32_split', b, 0)), (repl, a, b)),
+      ((op, ('pack_64_2x32_split', a, 0), '#b(is_upper_half_zero)'), (repl, a, ('unpack_64_2x32_split_x', b))),
+      ((op, '#a(is_upper_half_zero)', ('pack_64_2x32_split', b, 0)), (repl, ('unpack_64_2x32_split_x', a), b)),
+
+      ((op, ('pack_64_2x32_split', 0, a), ('pack_64_2x32_split', 0, b)), (op, a, b)),
+      ((op, ('pack_64_2x32_split', 0, a), '#b(is_lower_half_zero)'), (op, a, ('unpack_64_2x32_split_y', b))),
+      ((op, '#a(is_lower_half_zero)', ('pack_64_2x32_split', 0, b)), (op, ('unpack_64_2x32_split_y', a), b)),
+   ])
 
 optimizations.extend([
    # Subtracts
@@ -3241,13 +3267,6 @@ late_optimizations += [
    (('insert_u8', ('extract_u8', 'a', 0), b), ('insert_u8', a, b)),
    (('insert_u16', ('extract_u16', 'a', 0), b), ('insert_u16', a, b)),
 ]
-
-# Integer sizes
-for s in [8, 16, 32, 64]:
-    late_optimizations.extend([
-        (('iand', ('ine(is_used_once)', 'a@{}'.format(s), 0), ('ine', 'b@{}'.format(s), 0)), ('ine', ('umin', a, b), 0)),
-        (('ior',  ('ieq(is_used_once)', 'a@{}'.format(s), 0), ('ieq', 'b@{}'.format(s), 0)), ('ieq', ('umin', a, b), 0)),
-    ])
 
 # Float sizes
 for s in [16, 32, 64]:

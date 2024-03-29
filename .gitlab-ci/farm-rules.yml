@@ -237,6 +237,25 @@
       when: never
     - !reference [.freedreno-farm-rules, rules]
 
+.vmware-farm-rules:
+  rules:
+    - exists: [ .ci-farms-disabled/vmware ]
+      when: never
+    - changes: [ .ci-farms-disabled/vmware ]
+      if: '$CI_PIPELINE_SOURCE != "schedule"'
+      when: on_success
+    - changes: [ .ci-farms-disabled/* ]
+      if: '$CI_PIPELINE_SOURCE != "schedule"'
+      when: never
+
+.vmware-farm-manual-rules:
+  rules:
+    - exists: [ .ci-farms-disabled/vmware ]
+      when: never
+    - changes: [ .ci-farms-disabled/vmware ]
+      if: '$CI_PIPELINE_SOURCE != "schedule"'
+      when: never
+    - !reference [.vmware-farm-rules, rules]
 
 .ondracka-farm-rules:
   rules:

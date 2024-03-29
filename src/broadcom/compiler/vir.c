@@ -2170,7 +2170,7 @@ try_opt_ldunif(struct v3d_compile *c, uint32_t index, struct qreg *unif)
         struct qinst *prev_inst = NULL;
         assert(c->cur_block);
 
-#ifdef DEBUG
+#if MESA_DEBUG
         /* We can only reuse a uniform if it was emitted in the same block,
          * so callers must make sure the current instruction is being emitted
          * in the current block.

@@ -15,6 +15,10 @@ FORCE_UART = bool(getenv("LAVA_FORCE_UART", False))
 
 # How many times the r8152 error may happen to consider it a known issue.
 KNOWN_ISSUE_R8152_MAX_CONSECUTIVE_COUNTER: int = 10
+KNOWN_ISSUE_R8152_PATTERNS: tuple[str, ...] = (
+    r"r8152 \S+ eth0: Tx status -71",
+    r"nfs: server \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} not responding, still trying",
+)
 
 # This is considered noise, since LAVA produces this log after receiving a package of feedback
 # messages.

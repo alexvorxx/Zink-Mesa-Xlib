@@ -28,6 +28,7 @@ from os import path
 from xml.etree import ElementTree
 from zink_extensions import Extension,Layer,ExtensionRegistry,Version
 import sys
+import platform
 
 # constructor: Extension(name, conditions=[], nonstandard=False)
 # The attributes:
@@ -49,6 +50,11 @@ EXTENSIONS = [
               conditions=["!display_dev"]),
     Extension("VK_KHR_win32_surface"),
 ]
+
+if platform.system() == "Darwin":
+    EXTENSIONS += [
+        Extension("VK_KHR_portability_enumeration"),
+    ]
 
 # constructor: Layer(name, conditions=[])
 # - conditions: See documentation of EXTENSIONS.
@@ -72,10 +78,11 @@ header_code = """
 
 #include <vulkan/vulkan_core.h>
 
-#if defined(__APPLE__)
+#ifdef __APPLE__
+#include "MoltenVK/mvk_vulkan.h"
 // Source of MVK_VERSION
-#include "MoltenVK/vk_mvk_moltenvk.h"
-#endif
+#include "MoltenVK/mvk_config.h"
+#endif /* __APPLE__ */
 
 struct pipe_screen;
 struct zink_screen;
@@ -245,6 +252,9 @@ zink_create_instance(struct zink_screen *screen, bool display_dev)
 
    VkInstanceCreateInfo ici = {0};
    ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+#ifdef __APPLE__
+   ici.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
    ici.pApplicationInfo = &ai;
    ici.ppEnabledExtensionNames = extensions;
    ici.enabledExtensionCount = num_extensions;

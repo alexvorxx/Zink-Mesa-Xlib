@@ -109,7 +109,7 @@ unsigned
 zink_update_rendering_info(struct zink_context *ctx);
 void
 zink_flush_queue(struct zink_context *ctx);
-void
+bool
 zink_update_fbfetch(struct zink_context *ctx);
 bool
 zink_resource_access_is_write(VkAccessFlags flags);

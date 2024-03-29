@@ -145,32 +145,3 @@ driver_r300 = declare_dependency(
   compile_args : '-DGALLIUM_R300',
   link_with : [libr300, libradeonwinsys],
 )
-
-if with_tests
-  test(
-    'r300_compiler_test',
-    executable(
-      'r300_compiler_test',
-      files(
-        'compiler/tests/r300_compiler_tests.c',
-        'compiler/tests/radeon_compiler_optimize_tests.c',
-        'compiler/tests/radeon_compiler_regalloc_tests.c',
-        'compiler/tests/radeon_compiler_util_tests.c',
-        'compiler/tests/rc_test_helpers.c',
-        'compiler/tests/unit_test.c',
-      ),
-      c_args : [
-        '-DTEST_PATH="@0@"'.format(
-          join_paths(meson.current_source_dir(), 'compiler', 'tests')
-        )
-      ],
-      include_directories : [
-        inc_src, inc_include, inc_gallium, inc_gallium_aux,
-        include_directories('compiler'),
-      ],
-      link_with : [libr300, libgallium],
-      dependencies : [dep_m, dep_clock, dep_dl, dep_unwind, idep_mesautil],
-    ),
-    suite : ['r300'],
-  )
-endif

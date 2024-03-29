@@ -22,6 +22,14 @@
 #include "nvk_cl90b5.h"
 #include "nvk_clc1b5.h"
 
+static inline uint16_t
+nvk_cmd_buffer_copy_cls(struct nvk_cmd_buffer *cmd)
+{
+   struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   return pdev->info.cls_copy;
+}
+
 struct nouveau_copy_buffer {
    uint64_t base_addr;
    VkImageType image_type;
@@ -232,7 +240,12 @@ nouveau_copy_rect(struct nvk_cmd_buffer *cmd, struct nouveau_copy *copy)
                           GOB_HEIGHT_GOB_HEIGHT_FERMI_8 :
                           GOB_HEIGHT_GOB_HEIGHT_TESLA_4,
          });
-         P_NV90B5_SET_SRC_WIDTH(p, copy->src.extent_el.width * src_bw);
+         /* We use the stride for copies because the copy hardware has no
+          * concept of a tile width.  Instead, we just set the width to the
+          * stride divided by bpp.
+          */
+         uint32_t src_stride_el = copy->src.row_stride / copy->src.bpp;
+         P_NV90B5_SET_SRC_WIDTH(p, src_stride_el * src_bw);
          P_NV90B5_SET_SRC_HEIGHT(p, copy->src.extent_el.height);
          P_NV90B5_SET_SRC_DEPTH(p, copy->src.extent_el.depth);
          if (copy->src.image_type == VK_IMAGE_TYPE_3D)
@@ -240,7 +253,7 @@ nouveau_copy_rect(struct nvk_cmd_buffer *cmd, struct nouveau_copy *copy)
          else
             P_NV90B5_SET_SRC_LAYER(p, 0);
 
-         if (nvk_cmd_buffer_device(cmd)->pdev->info.cls_copy >= 0xc1b5) {
+         if (nvk_cmd_buffer_copy_cls(cmd) >= PASCAL_DMA_COPY_B) {
             P_MTHD(p, NVC1B5, SRC_ORIGIN_X);
             P_NVC1B5_SRC_ORIGIN_X(p, copy->src.offset_el.x * src_bw);
             P_NVC1B5_SRC_ORIGIN_Y(p, copy->src.offset_el.y);
@@ -268,7 +281,12 @@ nouveau_copy_rect(struct nvk_cmd_buffer *cmd, struct nouveau_copy *copy)
                           GOB_HEIGHT_GOB_HEIGHT_FERMI_8 :
                           GOB_HEIGHT_GOB_HEIGHT_TESLA_4,
          });
-         P_NV90B5_SET_DST_WIDTH(p, copy->dst.extent_el.width * dst_bw);
+         /* We use the stride for copies because the copy hardware has no
+          * concept of a tile width.  Instead, we just set the width to the
+          * stride divided by bpp.
+          */
+         uint32_t dst_stride_el = copy->dst.row_stride / copy->dst.bpp;
+         P_NV90B5_SET_DST_WIDTH(p, dst_stride_el * dst_bw);
          P_NV90B5_SET_DST_HEIGHT(p, copy->dst.extent_el.height);
          P_NV90B5_SET_DST_DEPTH(p, copy->dst.extent_el.depth);
          if (copy->dst.image_type == VK_IMAGE_TYPE_3D)
@@ -276,7 +294,7 @@ nouveau_copy_rect(struct nvk_cmd_buffer *cmd, struct nouveau_copy *copy)
          else
             P_NV90B5_SET_DST_LAYER(p, 0);
 
-         if (nvk_cmd_buffer_device(cmd)->pdev->info.cls_copy >= 0xc1b5) {
+         if (nvk_cmd_buffer_copy_cls(cmd) >= PASCAL_DMA_COPY_B) {
             P_MTHD(p, NVC1B5, DST_ORIGIN_X);
             P_NVC1B5_DST_ORIGIN_X(p, copy->dst.offset_el.x * dst_bw);
             P_NVC1B5_DST_ORIGIN_Y(p, copy->dst.offset_el.y);
@@ -365,8 +383,10 @@ nvk_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
 
       const VkExtent3D extent_px =
          vk_image_sanitize_extent(&dst->vk, region->imageExtent);
+      const uint32_t layer_count =
+         vk_image_subresource_layer_count(&dst->vk, &region->imageSubresource);
       const struct nil_extent4d extent4d_px =
-         vk_to_nil_extent(extent_px, region->imageSubresource.layerCount);
+         vk_to_nil_extent(extent_px, layer_count);
 
       const VkImageAspectFlagBits aspects = region->imageSubresource.aspectMask;
       uint8_t plane = nvk_image_aspects_to_plane(dst, aspects);
@@ -470,8 +490,10 @@ nvk_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
 
       const VkExtent3D extent_px =
          vk_image_sanitize_extent(&src->vk, region->imageExtent);
+      const uint32_t layer_count =
+         vk_image_subresource_layer_count(&src->vk, &region->imageSubresource);
       const struct nil_extent4d extent4d_px =
-         vk_to_nil_extent(extent_px, region->imageSubresource.layerCount);
+         vk_to_nil_extent(extent_px, layer_count);
 
       const VkImageAspectFlagBits aspects = region->imageSubresource.aspectMask;
       uint8_t plane = nvk_image_aspects_to_plane(src, aspects);
@@ -579,8 +601,10 @@ nvk_CmdCopyImage2(VkCommandBuffer commandBuffer,
        */
       const VkExtent3D extent_px =
          vk_image_sanitize_extent(&src->vk, region->extent);
+      const uint32_t layer_count =
+         vk_image_subresource_layer_count(&src->vk, &region->srcSubresource);
       const struct nil_extent4d extent4d_px =
-         vk_to_nil_extent(extent_px, region->srcSubresource.layerCount);
+         vk_to_nil_extent(extent_px, layer_count);
 
       const VkImageAspectFlagBits src_aspects =
          region->srcSubresource.aspectMask;

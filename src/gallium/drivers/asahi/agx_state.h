@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef AGX_STATE_H
-#define AGX_STATE_H
+#pragma once
 
 #include "asahi/compiler/agx_compile.h"
+#include "asahi/genxml/agx_pack.h"
 #include "asahi/layout/layout.h"
 #include "asahi/lib/agx_bo.h"
 #include "asahi/lib/agx_device.h"
 #include "asahi/lib/agx_nir_lower_vbo.h"
-#include "asahi/lib/agx_pack.h"
+#include "asahi/lib/agx_scratch.h"
 #include "asahi/lib/agx_tilebuffer.h"
 #include "asahi/lib/pool.h"
 #include "asahi/lib/shaders/geometry.h"
@@ -22,6 +22,7 @@
 #include "gallium/include/pipe/p_context.h"
 #include "gallium/include/pipe/p_screen.h"
 #include "gallium/include/pipe/p_state.h"
+#include "pipe/p_defines.h"
 #include "util/bitset.h"
 #include "util/disk_cache.h"
 #include "util/hash_table.h"
@@ -100,14 +101,28 @@ struct PACKED agx_draw_uniforms {
    /* Pointers to the system value tables themselves (for indirection) */
    uint64_t tables[AGX_NUM_SYSVAL_TABLES];
 
-   /* Vertex buffer object bases, if present */
-   uint64_t vbo_base[PIPE_MAX_ATTRIBS];
+   /* Vertex buffer object bases, if present. If vertex robustness is disabled,
+    * attrib_base maps VBOs directly and attrib_max_index is undefined. If
+    * vertex robustness is enabled, attrib_base maps attributes and
+    * attrib_clamp is an inclusive clamp on vertex/divided instance indices.
+    */
+   uint64_t attrib_base[PIPE_MAX_ATTRIBS];
+   uint32_t attrib_clamp[PIPE_MAX_ATTRIBS];
+
+   /* Addresses for the results of pipeline statistics queries */
+   uint64_t pipeline_statistics[PIPE_STAT_QUERY_MS_INVOCATIONS];
 
    /* Address of input assembly buffer if geom/tess is used, else 0 */
    uint64_t input_assembly;
 
+   /* Address of tessellation param buffer if tessellation is used, else 0 */
+   uint64_t tess_params;
+
    /* Address of geometry param buffer if geometry shaders are used, else 0 */
    uint64_t geometry_params;
+
+   /* Address of polygon stipple mask if used */
+   uint64_t polygon_stipple;
 
    /* Blend constant if any */
    float blend_constant[4];
@@ -134,6 +149,9 @@ struct PACKED agx_draw_uniforms {
 
    /* Nonzero for indexed draws, zero otherwise */
    uint16_t is_indexed_draw;
+
+   /* Zero for [0, 1] clipping, 0.5 for [-1, 1] clipping. */
+   uint16_t clip_z_coeff;
 };
 
 struct PACKED agx_stage_uniforms {
@@ -180,6 +198,9 @@ struct agx_push_range {
 };
 
 struct agx_compiled_shader {
+   /* Uncompiled shader that we belong to */
+   const struct agx_uncompiled_shader *so;
+
    /* Mapped executable memory */
    struct agx_bo *bo;
 
@@ -192,13 +213,19 @@ struct agx_compiled_shader {
 
    /* Auxiliary programs, or NULL if not used */
    struct agx_compiled_shader *gs_count, *pre_gs;
-   struct agx_uncompiled_shader *gs_copy;
+   struct agx_compiled_shader *gs_copy;
 
    /* Output primitive mode for geometry shaders */
    enum mesa_prim gs_output_mode;
 
    /* Number of words per primitive in the count buffer */
    unsigned gs_count_words;
+
+   /* Logical shader stage used for descriptor access. This may differ from the
+    * physical shader stage of the compiled shader, for example when executing a
+    * tessellation eval shader as a vertex shader.
+    */
+   enum pipe_shader_type stage;
 };
 
 struct agx_uncompiled_shader {
@@ -210,15 +237,31 @@ struct agx_uncompiled_shader {
    struct agx_uncompiled_shader_info info;
    struct hash_table *variants;
    struct agx_uncompiled_shader *passthrough_progs[MESA_PRIM_COUNT][3][2];
+   struct agx_uncompiled_shader *passthrough_tcs[32];
 
    uint32_t xfb_strides[4];
    bool has_xfb_info;
+   bool is_xfb_passthrough;
+
+   enum mesa_prim gs_mode;
 
    /* Whether the shader accesses indexed samplers via the bindless heap */
    bool uses_bindless_samplers;
 
    /* Set on VS, passed to FS for linkage */
    unsigned base_varying;
+
+   /* Tessellation info */
+   struct {
+      uint64_t per_vertex_outputs;
+      uint32_t output_stride;
+      enum gl_tess_spacing spacing;
+      enum tess_primitive_mode primitive;
+      uint8_t output_patch_size;
+      uint8_t nr_patch_outputs;
+      bool ccw;
+      bool point_mode;
+   } tess;
 };
 
 enum agx_stage_dirty {
@@ -236,6 +279,7 @@ struct agx_stage {
    uint32_t cb_mask;
 
    struct pipe_shader_buffer ssbo[PIPE_MAX_SHADER_BUFFERS];
+   uint32_t ssbo_writable_mask;
    uint32_t ssbo_mask;
 
    struct pipe_image_view images[PIPE_MAX_SHADER_IMAGES];
@@ -286,7 +330,6 @@ struct agx_batch {
 
    /* PIPE_CLEAR_* bitmask */
    uint32_t clear, draw, load, resolve;
-   bool any_draws;
    bool initialized;
 
    uint64_t uploaded_clear_color[PIPE_MAX_COLOR_BUFS];
@@ -305,6 +348,7 @@ struct agx_batch {
    uint32_t varyings;
 
    struct agx_draw_uniforms uniforms;
+   struct agx_stage_uniforms stage_uniforms[PIPE_SHADER_TYPES];
 
    /* Indirect buffer allocated for geometry shader */
    uint64_t geom_indirect;
@@ -314,7 +358,6 @@ struct agx_batch {
    uint64_t geometry_state;
 
    /* Uploaded descriptors */
-   uint64_t textures[PIPE_SHADER_TYPES];
    uint32_t texture_count[PIPE_SHADER_TYPES];
 
    uint64_t samplers[PIPE_SHADER_TYPES];
@@ -327,8 +370,13 @@ struct agx_batch {
     */
    struct {
       BITSET_WORD *set;
-      unsigned word_count;
+      unsigned bit_count;
    } bo_list;
+
+   /* If true, this batch contains a shader with a potentially incoherent write
+    * (e.g. image_write), needing a barrier later to access.
+    */
+   bool incoherent_writes;
 
    struct agx_pool pool, pipeline_pool;
 
@@ -341,15 +389,8 @@ struct agx_batch {
    /* Scissor and depth-bias descriptors, uploaded at GPU time */
    struct util_dynarray scissor, depth_bias;
 
-   /* Indexed occlusion queries within the occlusion buffer, and the occlusion
-    * buffer itself which is allocated at submit time.
-    */
-   struct util_dynarray occlusion_queries;
-   struct agx_ptr occlusion_buffer;
-
-   /* Non-occlusion queries */
-   struct util_dynarray nonocclusion_queries;
-   struct util_dynarray timestamp_queries;
+   /* Arrays of GPU pointers that should be written with the batch timestamps */
+   struct util_dynarray timestamps;
 
    /* Result buffer where the kernel places command execution information */
    union agx_batch_result *result;
@@ -357,6 +398,19 @@ struct agx_batch {
 
    /* Actual pointer in a uniform */
    struct agx_bo *geom_params_bo;
+
+   /* Whether each stage uses scratch */
+   bool vs_scratch;
+   bool fs_scratch;
+   bool cs_scratch;
+
+   /* Whether each stage has preambles using scratch, and if so which bucket.
+    * This just needs to be zero/nonzero for correctness, the magnitude in
+    * buckets is for statistics.
+    */
+   unsigned vs_preamble_scratch;
+   unsigned fs_preamble_scratch;
+   unsigned cs_preamble_scratch;
 };
 
 struct agx_zsa {
@@ -381,47 +435,90 @@ struct agx_blend {
    uint32_t store;
 };
 
+/* These parts of the vertex element affect the generated code */
+struct agx_velem_key {
+   uint32_t divisor;
+   uint16_t stride;
+   uint8_t format;
+   uint8_t pad;
+};
+
+enum asahi_vs_next_stage {
+   ASAHI_VS_FS,
+   ASAHI_VS_GS,
+   ASAHI_VS_TCS,
+};
+
 struct asahi_vs_shader_key {
-   struct agx_attribute attribs[AGX_MAX_VBUFS];
-   bool clip_halfz;
-   bool fixed_point_size;
-   uint64_t outputs_flat_shaded;
-   uint64_t outputs_linear_shaded;
+   struct agx_velem_key attribs[AGX_MAX_VBUFS];
+   enum asahi_vs_next_stage next_stage;
+
+   union {
+      struct {
+         uint8_t index_size_B;
+      } gs;
+
+      struct {
+         bool fixed_point_size;
+         uint64_t outputs_flat_shaded;
+         uint64_t outputs_linear_shaded;
+      } fs;
+   } next;
+};
+
+struct agx_vertex_elements {
+   unsigned num_attribs;
+   struct agx_velem_key key[PIPE_MAX_ATTRIBS];
+
+   /* These parts do not affect the generated code so are not in the key */
+   uint16_t src_offsets[PIPE_MAX_ATTRIBS];
+   uint16_t buffers[PIPE_MAX_ATTRIBS];
 };
 
 struct asahi_fs_shader_key {
    struct agx_blend_key blend;
 
+   /* Need to count FRAGMENT_SHADER_INVOCATIONS */
+   bool statistics;
+
    /* Set if glSampleMask() is used with a mask other than all-1s. If not, we
     * don't want to emit lowering code for it, since it would disable early-Z.
     */
    bool api_sample_mask;
+   bool polygon_stipple;
 
    uint8_t cull_distance_size;
-   uint8_t clip_plane_enable;
    uint8_t nr_samples;
    enum pipe_format rt_formats[PIPE_MAX_COLOR_BUFS];
 };
 
-struct asahi_gs_shader_key {
-   /* Input assembly key */
-   struct agx_ia_key ia;
+struct asahi_tcs_shader_key {
+   /* Input assembly key. Simplified because we know we're operating on patches.
+    */
+   uint8_t index_size_B;
 
    /* Vertex shader key */
-   struct agx_attribute attribs[AGX_MAX_VBUFS];
+   struct agx_velem_key attribs[AGX_MAX_VBUFS];
 
-   /* If true, this GS is run only for its side effects (including XFB) */
-   bool rasterizer_discard;
-
-   /* Geometry shaders must be linked with a vertex shader. In a monolithic
-    * pipeline, this is the vertex shader (or tessellation evaluation shader).
-    * With separate shaders, this needs to be an internal passthrough program.
-    */
+   /* Tessellation control shaders must be linked with a vertex shader. */
    uint8_t input_nir_sha1[20];
 };
 
+struct asahi_gs_shader_key {
+   /* Rasterizer shader key */
+   uint64_t outputs_flat_shaded;
+   uint64_t outputs_linear_shaded;
+   bool fixed_point_size;
+
+   /* If true, this GS is run only for its side effects (including XFB) */
+   bool rasterizer_discard;
+   bool padding[6];
+};
+static_assert(sizeof(struct asahi_gs_shader_key) == 24, "no holes");
+
 union asahi_shader_key {
    struct asahi_vs_shader_key vs;
+   struct asahi_tcs_shader_key tcs;
    struct asahi_gs_shader_key gs;
    struct asahi_fs_shader_key fs;
 };
@@ -449,6 +546,7 @@ enum agx_dirty {
    AGX_DIRTY_XFB = BITFIELD_BIT(14),
    AGX_DIRTY_SAMPLE_MASK = BITFIELD_BIT(15),
    AGX_DIRTY_BLEND_COLOR = BITFIELD_BIT(16),
+   AGX_DIRTY_POLY_STIPPLE = BITFIELD_BIT(17),
 };
 
 /* Maximum number of in-progress + under-construction GPU batches.
@@ -491,16 +589,22 @@ struct asahi_blitter {
    void *saved_cs;
 };
 
+struct agx_oq_heap;
+
 struct agx_context {
    struct pipe_context base;
-   struct agx_compiled_shader *vs, *fs, *gs;
+   struct agx_compiled_shader *vs, *fs, *gs, *tcs, *tes;
    uint32_t dirty;
 
    /* Heap for dynamic memory allocation for geometry/tessellation shaders */
    struct pipe_resource *heap;
 
+   /* Occlusion query heap */
+   struct agx_oq_heap *oq;
+
    /* Acts as a context-level shader key */
    bool support_lod_bias;
+   bool robust;
 
    /* Set of batches. When full, the LRU entry (the batch with the smallest
     * seqnum) is flushed to free a slot.
@@ -514,6 +618,12 @@ struct agx_context {
 
       /** Set of submitted batches for faster traversal */
       BITSET_DECLARE(submitted, AGX_MAX_BATCHES);
+
+      /* Monotonic counter for each batch incremented when resetting a batch to
+       * invalidate all associated queries. Compared to
+       * agx_query::writer_generation.
+       */
+      uint64_t generation[AGX_MAX_BATCHES];
    } batches;
 
    struct agx_batch *batch;
@@ -522,8 +632,12 @@ struct agx_context {
    struct pipe_vertex_buffer vertex_buffers[PIPE_MAX_ATTRIBS];
    uint32_t vb_mask;
 
+   unsigned patch_vertices;
+   float default_outer_level[4];
+   float default_inner_level[2];
+
    struct agx_stage stage[PIPE_SHADER_TYPES];
-   struct agx_attribute *attributes;
+   struct agx_vertex_elements *attributes;
    struct agx_rasterizer *rast;
    struct agx_zsa *zs;
    struct agx_blend *blend;
@@ -535,6 +649,8 @@ struct agx_context {
    uint16_t sample_mask;
    struct pipe_framebuffer_state framebuffer;
 
+   uint32_t poly_stipple[32];
+
    struct pipe_query *cond_query;
    bool cond_cond;
    enum pipe_render_cond_flag cond_mode;
@@ -544,11 +660,15 @@ struct agx_context {
    struct agx_query *tf_prims_generated[4];
    struct agx_query *tf_overflow[4];
    struct agx_query *tf_any_overflow;
+   struct agx_query *pipeline_statistics[PIPE_STAT_QUERY_TS_INVOCATIONS];
    struct agx_query *time_elapsed;
    bool active_queries;
+   bool active_draw_without_restart;
 
    struct util_debug_callback debug;
    bool is_noop;
+
+   bool in_tess;
 
    struct blitter_context *blitter;
    struct asahi_blitter compute_blitter;
@@ -561,16 +681,26 @@ struct agx_context {
    /* Bound CL global buffers */
    struct util_dynarray global_buffers;
 
-   struct agx_compiled_shader *gs_prefix_sums[16];
-   struct agx_compiled_shader *gs_setup_indirect[MESA_PRIM_MAX][2];
-   struct agx_compiled_shader *gs_unroll_restart[MESA_PRIM_MAX][3];
+   struct hash_table *generic_meta;
    struct agx_meta_cache meta;
+
+   bool any_faults;
 
    uint32_t syncobj;
    uint32_t dummy_syncobj;
    int in_sync_fd;
    uint32_t in_sync_obj;
+
+   struct agx_scratch scratch_vs;
+   struct agx_scratch scratch_fs;
+   struct agx_scratch scratch_cs;
 };
+
+static inline unsigned
+agx_batch_idx(struct agx_batch *batch)
+{
+   return batch - batch->ctx->batches.slots;
+}
 
 static void
 agx_writer_add(struct agx_context *ctx, uint8_t batch_index, unsigned handle)
@@ -675,30 +805,9 @@ struct agx_query {
    unsigned type;
    unsigned index;
 
-   /* Invariant for occlusion queries:
-    *
-    *    writer != NULL => writer->occlusion_queries[writer_index] == this, and
-    *    writer == NULL => no batch such that this in batch->occlusion_queries
-    */
-   struct agx_batch *writer;
-   unsigned writer_index;
-
-   /* For GPU queries other than occlusion queries, the value of the query as
-    * written by the `writer` if a writer is non-NULL, and irrelevant otherwise.
-    * When flushing the query, this value is read and added to agx_query::value.
-    */
+   uint64_t writer_generation[AGX_MAX_BATCHES];
+   struct agx_bo *bo;
    struct agx_ptr ptr;
-
-   /* Accumulator flushed to the CPU */
-   union {
-      uint64_t value;
-      uint64_t timestamp_end;
-   };
-
-   /* For time elapsed queries, end is in the above union for consistent
-    * handling witn timestamp queries.
-    */
-   uint64_t timestamp_begin;
 };
 
 struct agx_sampler_state {
@@ -848,12 +957,19 @@ agx_transfer(struct pipe_transfer *p)
 void agx_upload_vbos(struct agx_batch *batch);
 void agx_upload_uniforms(struct agx_batch *batch);
 
-uint64_t agx_upload_stage_uniforms(struct agx_batch *batch, uint64_t textures,
-                                   enum pipe_shader_type stage);
+void agx_set_sampler_uniforms(struct agx_batch *batch,
+                              enum pipe_shader_type stage);
+
+void agx_set_cbuf_uniforms(struct agx_batch *batch,
+                           enum pipe_shader_type stage);
+
+void agx_set_ssbo_uniforms(struct agx_batch *batch,
+                           enum pipe_shader_type stage);
 
 bool agx_nir_lower_point_size(nir_shader *nir, bool fixed_point_size);
 
-bool agx_nir_lower_sysvals(nir_shader *shader, bool lower_draw_params);
+bool agx_nir_lower_sysvals(nir_shader *shader, enum pipe_shader_type desc_stage,
+                           bool lower_draw_params);
 
 bool agx_nir_layout_uniforms(nir_shader *shader,
                              struct agx_compiled_shader *compiled,
@@ -867,16 +983,10 @@ bool agx_batch_is_submitted(struct agx_batch *batch);
 /* Add a BO to a batch. This needs to be amortized O(1) since it's called in
  * hot paths. To achieve this we model BO lists by bit sets */
 
-static unsigned
-agx_batch_bo_list_bits(struct agx_batch *batch)
-{
-   return batch->bo_list.word_count * sizeof(BITSET_WORD) * 8;
-}
-
 static bool
 agx_batch_uses_bo(struct agx_batch *batch, struct agx_bo *bo)
 {
-   if (bo->handle < agx_batch_bo_list_bits(batch))
+   if (bo->handle < batch->bo_list.bit_count)
       return BITSET_TEST(batch->bo_list.set, bo->handle);
    else
       return false;
@@ -886,35 +996,31 @@ static inline void
 agx_batch_add_bo(struct agx_batch *batch, struct agx_bo *bo)
 {
    /* Double the size of the BO list if we run out, this is amortized O(1) */
-   if (unlikely(bo->handle > agx_batch_bo_list_bits(batch))) {
-      unsigned word_count =
-         MAX2(batch->bo_list.word_count * 2,
-              util_next_power_of_two(BITSET_WORDS(bo->handle + 1)));
+   if (unlikely(bo->handle > batch->bo_list.bit_count)) {
+      const unsigned bits_per_word = sizeof(BITSET_WORD) * 8;
 
-      batch->bo_list.set =
-         rerzalloc(batch->ctx, batch->bo_list.set, BITSET_WORD,
-                   batch->bo_list.word_count, word_count);
-      batch->bo_list.word_count = word_count;
+      unsigned bit_count =
+         MAX2(batch->bo_list.bit_count * 2,
+              util_next_power_of_two(ALIGN_POT(bo->handle + 1, bits_per_word)));
+
+      batch->bo_list.set = rerzalloc(
+         batch->ctx, batch->bo_list.set, BITSET_WORD,
+         batch->bo_list.bit_count / bits_per_word, bit_count / bits_per_word);
+      batch->bo_list.bit_count = bit_count;
    }
+
+   if (BITSET_TEST(batch->bo_list.set, bo->handle))
+      return;
 
    /* The batch holds a single reference to each BO in the batch, released when
     * the batch finishes execution.
     */
-   if (!BITSET_TEST(batch->bo_list.set, bo->handle))
-      agx_bo_reference(bo);
-
+   agx_bo_reference(bo);
    BITSET_SET(batch->bo_list.set, bo->handle);
 }
 
-static unsigned
-agx_batch_num_bo(struct agx_batch *batch)
-{
-   return __bitset_count(batch->bo_list.set, batch->bo_list.word_count);
-}
-
 #define AGX_BATCH_FOREACH_BO_HANDLE(batch, handle)                             \
-   BITSET_FOREACH_SET(handle, (batch)->bo_list.set,                            \
-                      agx_batch_bo_list_bits(batch))
+   BITSET_FOREACH_SET(handle, (batch)->bo_list.set, batch->bo_list.bit_count)
 
 void agx_batch_submit(struct agx_context *ctx, struct agx_batch *batch,
                       uint32_t barriers, enum drm_asahi_cmd_type cmd_type,
@@ -937,11 +1043,14 @@ void agx_sync_batch(struct agx_context *ctx, struct agx_batch *batch);
 void agx_sync_all(struct agx_context *ctx, const char *reason);
 void agx_sync_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch,
                                const char *reason);
+void agx_memory_barrier(struct pipe_context *pctx, unsigned flags);
 
 /* Use these instead of batch_add_bo for proper resource tracking */
 void agx_batch_reads(struct agx_batch *batch, struct agx_resource *rsrc);
 void agx_batch_writes(struct agx_batch *batch, struct agx_resource *rsrc,
                       unsigned level);
+void agx_batch_writes_range(struct agx_batch *batch, struct agx_resource *rsrc,
+                            unsigned offset, unsigned size);
 void agx_batch_track_image(struct agx_batch *batch,
                            struct pipe_image_view *image);
 
@@ -970,6 +1079,9 @@ void agx_batch_add_timestamp_query(struct agx_batch *batch,
                                    struct agx_query *q);
 void agx_add_timestamp_end_query(struct agx_context *ctx, struct agx_query *q);
 
+void agx_query_increment_cpu(struct agx_context *ctx, struct agx_query *query,
+                             uint64_t increment);
+
 /* Blit shaders */
 void agx_blitter_save(struct agx_context *ctx, struct blitter_context *blitter,
                       bool render_cond);
@@ -996,6 +1108,7 @@ uint64_t agx_build_meta(struct agx_batch *batch, bool store,
 uint16_t agx_get_oq_index(struct agx_batch *batch, struct agx_query *query);
 uint64_t agx_get_query_address(struct agx_batch *batch,
                                struct agx_query *query);
+uint64_t agx_get_occlusion_heap(struct agx_batch *batch);
 
 void agx_finish_batch_queries(struct agx_batch *batch, uint64_t begin_ts,
                               uint64_t end_ts);
@@ -1025,4 +1138,8 @@ agx_texture_buffer_size_el(enum pipe_format format, uint32_t size)
    return MIN2(AGX_TEXTURE_BUFFER_MAX_SIZE, size / blocksize);
 }
 
-#endif
+typedef void (*meta_shader_builder_t)(struct nir_builder *b, const void *key);
+
+void agx_init_meta_shaders(struct agx_context *ctx);
+
+void agx_destroy_meta_shaders(struct agx_context *ctx);

@@ -384,13 +384,15 @@ struct pipe_screen {
     * displayed, eg copy fake frontbuffer.
     * \param winsys_drawable_handle  an opaque handle that the calling context
     *                                gets out-of-band
-    * \param subbox an optional sub region to flush
+    * \param nboxes the number of sub regions to flush
+    * \param subbox an array of optional sub regions to flush
     */
    void (*flush_frontbuffer)(struct pipe_screen *screen,
                              struct pipe_context *ctx,
                              struct pipe_resource *resource,
                              unsigned level, unsigned layer,
                              void *winsys_drawable_handle,
+                             unsigned nboxes,
                              struct pipe_box *subbox);
 
    /** Set ptr = fence, with reference counting */

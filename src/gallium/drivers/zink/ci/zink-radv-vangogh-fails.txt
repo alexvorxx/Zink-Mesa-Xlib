@@ -13,13 +13,8 @@ glx@extension string sanity,Fail
 # #6322
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
 
-spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index2,Fail
-spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-mixed-const-non-const-uniform-index,Fail
-spec@arb_arrays_of_arrays@execution@image_store@basic-imagestore-non-const-uniform-index,Fail
 spec@arb_bindless_texture@compiler@samplers@arith-bound-sampler-texture2d.frag,Crash
 
-spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query,Fail
-spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@MS8,Fail
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -76,7 +71,6 @@ spec@arb_sample_shading@interpolate-at-sample-position 8,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@fs-packhalf2x16,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,Fail
-spec@arb_tessellation_shader@arb_tessellation_shader-tes-gs-max-output -small -scan 1 50,Crash
 
 spec@egl 1.4@eglterminate then unbind context,Fail
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
@@ -240,7 +234,6 @@ spec@ext_texture_srgb@fbo-generatemipmap-formats@GL_SLUMINANCE8_ALPHA8,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats@GL_SLUMINANCE8_ALPHA8 NPOT,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats@GL_SLUMINANCE_ALPHA,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats@GL_SLUMINANCE_ALPHA NPOT,Fail
-spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
 
 # Introduced with the uprev of piglit (70ce1dcacc92 - "ci: Update piglit with s3 support")
 spec@egl 1.4@egl-ext_egl_image_storage,Fail
@@ -338,7 +331,4 @@ spec@!opengl 1.0@gl-1.0-polygon-line-aa,Fail
 
 # Regression noticed in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/891104
 spec@arb_viewport_array@display-list,Fail
-
-# uprev Piglit in Mesa
-spec@arb_tessellation_shader@execution@tesslevels-indirect,Crash
 

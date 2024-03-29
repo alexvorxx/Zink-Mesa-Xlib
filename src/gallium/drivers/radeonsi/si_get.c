@@ -164,6 +164,7 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_HAS_CONST_BW:
    case PIPE_CAP_FENCE_SIGNAL:
    case PIPE_CAP_NATIVE_FENCE_FD:
+   case PIPE_CAP_CL_GL_SHARING:
       return 1;
 
    case PIPE_CAP_TEXTURE_TRANSFER_MODES:
@@ -494,7 +495,7 @@ static int si_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_typ
    case PIPE_SHADER_CAP_FP16_DERIVATIVES:
    case PIPE_SHADER_CAP_GLSL_16BIT_CONSTS:
    case PIPE_SHADER_CAP_INT16:
-      return sscreen->info.gfx_level >= GFX8 && sscreen->options.fp16;
+      return sscreen->nir_options->lower_mediump_io != NULL;
 
    /* Unsupported boolean features. */
    case PIPE_SHADER_CAP_SUBROUTINES:
@@ -836,6 +837,18 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          }
          else
             return 0;
+      case PIPE_VIDEO_CAP_ENC_SURFACE_ALIGNMENT:
+           if (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
+               profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10) {
+            union pipe_enc_cap_surface_alignment attrib;
+            attrib.value = 0;
+
+            attrib.bits.log2_width_alignment = RADEON_ENC_HEVC_SURFACE_LOG2_WIDTH_ALIGNMENT;
+            attrib.bits.log2_height_alignment = RADEON_ENC_HEVC_SURFACE_LOG2_HEIGHT_ALIGNMENT;
+            return attrib.value;
+         }
+         else
+            return 0;
 
       default:
          return 0;
@@ -904,7 +917,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       return 1;
    case PIPE_VIDEO_CAP_MIN_WIDTH:
    case PIPE_VIDEO_CAP_MIN_HEIGHT:
-      return 64;
+      return (codec == PIPE_VIDEO_FORMAT_AV1) ? 16 : 64;
    case PIPE_VIDEO_CAP_MAX_WIDTH:
       if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
             return KERNEL_DEC_CAP(codec, max_width);
@@ -1338,6 +1351,137 @@ static int si_get_screen_fd(struct pipe_screen *screen)
    return ws->get_fd(ws);
 }
 
+static unsigned si_varying_expression_max_cost(nir_shader *producer, nir_shader *consumer)
+{
+   unsigned num_profiles = si_get_num_shader_profiles();
+
+   for (unsigned i = 0; i < num_profiles; i++) {
+      if (_mesa_printed_sha1_equal(consumer->info.source_sha1, si_shader_profiles[i].sha1)) {
+         if (si_shader_profiles[i].options & SI_PROFILE_NO_OPT_UNIFORM_VARYINGS)
+            return 0; /* only propagate constants */
+         break;
+      }
+   }
+
+   switch (consumer->info.stage) {
+   case MESA_SHADER_TESS_CTRL: /* VS->TCS */
+      /* Non-amplifying shaders can always have their variyng expressions
+       * moved into later shaders.
+       */
+      return UINT_MAX;
+
+   case MESA_SHADER_GEOMETRY: /* VS->GS, TES->GS */
+      return consumer->info.gs.vertices_in == 1 ? UINT_MAX :
+             consumer->info.gs.vertices_in == 2 ? 20 : 14;
+
+   case MESA_SHADER_TESS_EVAL: /* VS->TES, TCS->TES */
+   case MESA_SHADER_FRAGMENT:
+      /* Up to 3 uniforms and 5 ALUs. */
+      return 14;
+
+   default:
+      unreachable("unexpected shader stage");
+   }
+}
+
+static unsigned si_varying_estimate_instr_cost(nir_instr *instr)
+{
+   unsigned dst_bit_size, src_bit_size, num_dst_dwords;
+   nir_op alu_op;
+
+   /* This is a very loose approximation based on gfx10. */
+   switch (instr->type) {
+   case nir_instr_type_alu:
+      dst_bit_size = nir_instr_as_alu(instr)->def.bit_size;
+      src_bit_size = nir_instr_as_alu(instr)->src[0].src.ssa->bit_size;
+      alu_op = nir_instr_as_alu(instr)->op;
+      num_dst_dwords = DIV_ROUND_UP(dst_bit_size, 32);
+
+      switch (alu_op) {
+      case nir_op_mov:
+      case nir_op_vec2:
+      case nir_op_vec3:
+      case nir_op_vec4:
+      case nir_op_vec5:
+      case nir_op_vec8:
+      case nir_op_vec16:
+      case nir_op_fabs:
+      case nir_op_fneg:
+      case nir_op_fsat:
+         return 0;
+
+      case nir_op_imul:
+      case nir_op_umul_low:
+         return dst_bit_size <= 16 ? 1 : 4 * num_dst_dwords;
+
+      case nir_op_imul_high:
+      case nir_op_umul_high:
+      case nir_op_imul_2x32_64:
+      case nir_op_umul_2x32_64:
+         return 4;
+
+      case nir_op_fexp2:
+      case nir_op_flog2:
+      case nir_op_frcp:
+      case nir_op_frsq:
+      case nir_op_fsqrt:
+      case nir_op_fsin:
+      case nir_op_fcos:
+      case nir_op_fsin_amd:
+      case nir_op_fcos_amd:
+         return 4; /* FP16 & FP32. */
+
+      case nir_op_fpow:
+         return 4 + 1 + 4; /* log2 + mul + exp2 */
+
+      case nir_op_fsign:
+         return dst_bit_size == 64 ? 4 : 3; /* See ac_build_fsign. */
+
+      case nir_op_idiv:
+      case nir_op_udiv:
+      case nir_op_imod:
+      case nir_op_umod:
+      case nir_op_irem:
+         return dst_bit_size == 64 ? 80 : 40;
+
+      case nir_op_fdiv:
+         return dst_bit_size == 64 ? 80 : 5; /* FP16 & FP32: rcp + mul */
+
+      case nir_op_fmod:
+      case nir_op_frem:
+         return dst_bit_size == 64 ? 80 : 8;
+
+      default:
+         /* Double opcodes. Comparisons have always full performance. */
+         if ((dst_bit_size == 64 &&
+              nir_op_infos[alu_op].output_type & nir_type_float) ||
+             (dst_bit_size >= 8 && src_bit_size == 64 &&
+              nir_op_infos[alu_op].input_types[0] & nir_type_float))
+            return 16;
+
+         return DIV_ROUND_UP(MAX2(dst_bit_size, src_bit_size), 32);
+      }
+
+   case nir_instr_type_intrinsic:
+      dst_bit_size = nir_instr_as_intrinsic(instr)->def.bit_size;
+      num_dst_dwords = DIV_ROUND_UP(dst_bit_size, 32);
+
+      switch (nir_instr_as_intrinsic(instr)->intrinsic) {
+      case nir_intrinsic_load_deref:
+         /* Uniform or UBO load.
+          * Set a low cost to balance the number of scalar loads and ALUs.
+          */
+         return 3 * num_dst_dwords;
+
+      default:
+         unreachable("unexpected intrinsic");
+      }
+
+   default:
+      unreachable("unexpected instr type");
+   }
+}
+
 void si_init_screen_get_functions(struct si_screen *sscreen)
 {
    sscreen->b.get_name = si_get_name;
@@ -1421,7 +1565,10 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
     */
    options->force_f2f16_rtz = true;
    options->io_options = nir_io_has_flexible_input_interpolation_except_flat |
-                         nir_io_glsl_lower_derefs;
+                         nir_io_glsl_lower_derefs |
+                         (sscreen->options.optimize_io ? nir_io_glsl_opt_varyings : 0);
+   options->lower_mediump_io = sscreen->info.gfx_level >= GFX8 && sscreen->options.fp16 ?
+                                  si_lower_mediump_io : NULL;
    /* HW supports indirect indexing for: | Enabled in driver
     * -------------------------------------------------------
     * TCS inputs                         | Yes
@@ -1435,4 +1582,6 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
    options->support_indirect_inputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
                                       BITFIELD_BIT(MESA_SHADER_TESS_EVAL);
    options->support_indirect_outputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL);
+   options->varying_expression_max_cost = si_varying_expression_max_cost;
+   options->varying_estimate_instr_cost = si_varying_estimate_instr_cost;
 }

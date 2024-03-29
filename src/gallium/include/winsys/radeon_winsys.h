@@ -189,19 +189,20 @@ enum radeon_ctx_pstate
 #define RADEON_ALL_PRIORITIES (RADEON_USAGE_READ - 1)
 
 /* Upper bits of priorities are used by usage flags. */
-#define RADEON_USAGE_READ (1 << 28)
-#define RADEON_USAGE_WRITE (1 << 29)
+#define RADEON_USAGE_READ (1 << 27)
+#define RADEON_USAGE_WRITE (1 << 28)
 #define RADEON_USAGE_READWRITE (RADEON_USAGE_READ | RADEON_USAGE_WRITE)
 
 /* The winsys ensures that the CS submission will be scheduled after
  * previously flushed CSs referencing this BO in a conflicting way.
  */
-#define RADEON_USAGE_SYNCHRONIZED (1 << 30)
+#define RADEON_USAGE_SYNCHRONIZED (1 << 29)
 
 /* When used, an implicit sync is done to make sure a compute shader
  * will read the written values from a previous draw.
  */
-#define RADEON_USAGE_NEEDS_IMPLICIT_SYNC (1u << 31)
+#define RADEON_USAGE_CB_NEEDS_IMPLICIT_SYNC (1u << 30)
+#define RADEON_USAGE_DB_NEEDS_IMPLICIT_SYNC (1u << 31)
 
 struct winsys_handle;
 struct radeon_winsys_ctx;

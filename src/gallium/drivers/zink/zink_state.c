@@ -32,7 +32,7 @@
 #include "util/u_dual_blend.h"
 #include "util/u_memory.h"
 #include "util/u_helpers.h"
-#include "vulkan/util/vk_format.h"
+#include "vk_format.h"
 
 #include <math.h>
 

@@ -486,6 +486,9 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
                       .atomic_op = nir_atomic_op_iadd);
       break;
    }
+   case nir_intrinsic_load_debug_log_desc_amd:
+      replacement = si_nir_load_internal_binding(b, args, SI_RING_SHADER_LOG, 4);
+      break;
    case nir_intrinsic_load_ring_attr_amd:
       replacement = build_attr_ring_desc(b, shader, args);
       break;
@@ -697,6 +700,20 @@ static bool lower_intrinsic(nir_builder *b, nir_instr *instr, struct lower_abi_s
    case nir_intrinsic_load_ring_tess_offchip_amd:
       assert(s->tess_offchip_ring);
       replacement = s->tess_offchip_ring;
+      break;
+   case nir_intrinsic_load_tcs_tess_levels_to_tes_amd:
+      if (shader->is_monolithic) {
+         replacement = nir_imm_bool(b, key->ge.part.tcs.epilog.tes_reads_tess_factors);
+      } else {
+         unreachable("TODO");
+      }
+      break;
+   case nir_intrinsic_load_tcs_primitive_mode_amd:
+      if (shader->is_monolithic) {
+         replacement = nir_imm_int(b, key->ge.part.tcs.epilog.prim_mode);
+      } else {
+         unreachable("TODO");
+      }
       break;
    case nir_intrinsic_load_ring_gsvs_amd: {
       unsigned stream_id = nir_intrinsic_stream_id(intrin);

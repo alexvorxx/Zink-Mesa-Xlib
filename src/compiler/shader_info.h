@@ -95,6 +95,7 @@ struct spirv_supported_capabilities {
    bool physical_storage_buffer_address;
    bool post_depth_coverage;
    bool printf;
+   bool quad_control;
    bool ray_cull_mask;
    bool ray_query;
    bool ray_tracing;
@@ -348,6 +349,11 @@ typedef struct shader_info {
    bool uses_printf:1;
 
    /**
+    * VK_KHR_shader_maximal_reconvergence
+    */
+   bool maximally_reconverges:1;
+
+   /**
      * Set if this shader uses legacy (DX9 or ARB assembly) math rules.
      *
      * From the ARB_fragment_program specification:
@@ -382,6 +388,9 @@ typedef struct shader_info {
           * Valid values: SI_VS_BLIT_SGPRS_POS_*
           */
          uint8_t blit_sgprs_amd:4;
+
+         /* Software TES executing as HW VS */
+         bool tes_agx:1;
 
          /* True if the shader writes position in window space coordinates pre-transform */
          bool window_space_position:1;
@@ -424,6 +433,11 @@ typedef struct shader_info {
           * True if this fragment shader requires full quad invocations.
           */
          bool require_full_quads:1;
+
+         /**
+          * Whether the derivative group must be equivalent to the quad group.
+          */
+         bool quad_derivatives:1;
 
          /**
           * True if this fragment shader requires helper invocations.  This

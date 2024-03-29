@@ -469,25 +469,14 @@ pan_pack_blend(const struct pan_blend_equation equation)
    return out;
 }
 
-static uint32_t
-pan_blend_shader_key_hash(const void *key)
-{
-   return _mesa_hash_data(key, sizeof(struct pan_blend_shader_key));
-}
-
-static bool
-pan_blend_shader_key_equal(const void *a, const void *b)
-{
-   return !memcmp(a, b, sizeof(struct pan_blend_shader_key));
-}
+DERIVE_HASH_TABLE(pan_blend_shader_key);
 
 void
 pan_blend_shader_cache_init(struct pan_blend_shader_cache *cache,
                             unsigned gpu_id)
 {
    cache->gpu_id = gpu_id;
-   cache->shaders = _mesa_hash_table_create(NULL, pan_blend_shader_key_hash,
-                                            pan_blend_shader_key_equal);
+   cache->shaders = pan_blend_shader_key_table_create(NULL);
    pthread_mutex_init(&cache->lock, NULL);
 }
 

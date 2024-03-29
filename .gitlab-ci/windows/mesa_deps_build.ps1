@@ -12,7 +12,7 @@ $depsInstallPath="C:\mesa-deps"
 
 Get-Date
 Write-Host "Cloning DirectX-Headers"
-git clone -b v1.611.0 --depth=1 https://github.com/microsoft/DirectX-Headers deps/DirectX-Headers
+git clone -b v1.613.1 --depth=1 https://github.com/microsoft/DirectX-Headers deps/DirectX-Headers
 if (!$?) {
   Write-Host "Failed to clone DirectX-Headers repository"
   Exit 1
@@ -32,16 +32,17 @@ if (!$buildstatus) {
 
 Get-Date
 Write-Host "Cloning zlib"
-git clone -b v1.2.13 --depth=1 https://github.com/madler/zlib deps/zlib
+git clone -b v1.3.1 --depth=1 https://github.com/madler/zlib deps/zlib
 if (!$?) {
   Write-Host "Failed to clone zlib repository"
   Exit 1
 }
 Write-Host "Downloading zlib meson build files"
-Invoke-WebRequest -Uri "https://wrapdb.mesonbuild.com/v2/zlib_1.2.13-1/get_patch" -OutFile deps/zlib.zip
+Invoke-WebRequest -Uri "https://wrapdb.mesonbuild.com/v2/zlib_1.3.1-1/get_patch" -OutFile deps/zlib.zip
 Expand-Archive -Path deps/zlib.zip -Destination deps/zlib
 # Wrap archive puts build files in a version subdir
-Move-Item deps/zlib/zlib-1.2.13/* deps/zlib
+robocopy deps/zlib/zlib-1.3.1 deps/zlib /E
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path deps/zlib/zlib-1.3.1
 $zlib_build = New-Item -ItemType Directory -Path ".\deps\zlib" -Name "build"
 Push-Location -Path $zlib_build.FullName
 meson .. --backend=ninja -Dprefix="$depsInstallPath" --default-library=static --buildtype=release -Db_vscrt=mt && `

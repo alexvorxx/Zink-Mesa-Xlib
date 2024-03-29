@@ -208,7 +208,7 @@ radv_build_printf(nir_builder *b, nir_def *cond, const char *format_string, ...)
 }
 
 void
-radv_dump_printf_data(struct radv_device *device)
+radv_dump_printf_data(struct radv_device *device, FILE *out)
 {
    if (!device->printf.data)
       return;
@@ -239,7 +239,7 @@ radv_dump_printf_data(struct radv_device *device)
          size_t spec_pos = util_printf_next_spec_pos(format, 0);
 
          if (spec_pos == -1) {
-            printf("%s", format);
+            fprintf(out, "%s", format);
             continue;
          }
 
@@ -247,10 +247,8 @@ radv_dump_printf_data(struct radv_device *device)
          char *next_format = &format[spec_pos + 1];
 
          /* print the part before the format token */
-         if (token != format) {
-            fwrite(format, token - format, 1, stdout);
-            fflush(stdout);
-         }
+         if (token != format)
+            fwrite(format, token - format, 1, out);
 
          char *print_str = strndup(token, next_format - token);
          /* rebase spec_pos so we can use it with print_str */
@@ -265,24 +263,24 @@ radv_dump_printf_data(struct radv_device *device)
             case 1: {
                uint8_t v;
                memcpy(&v, &data[offset], element_size);
-               printf(print_str, v);
+               fprintf(out, print_str, v);
                break;
             }
             case 2: {
                uint16_t v;
                memcpy(&v, &data[offset], element_size);
-               printf(print_str, v);
+               fprintf(out, print_str, v);
                break;
             }
             case 4: {
                if (is_float) {
                   float v;
                   memcpy(&v, &data[offset], element_size);
-                  printf(print_str, v);
+                  fprintf(out, print_str, v);
                } else {
                   uint32_t v;
                   memcpy(&v, &data[offset], element_size);
-                  printf(print_str, v);
+                  fprintf(out, print_str, v);
                }
                break;
             }
@@ -290,11 +288,11 @@ radv_dump_printf_data(struct radv_device *device)
                if (is_float) {
                   double v;
                   memcpy(&v, &data[offset], element_size);
-                  printf(print_str, v);
+                  fprintf(out, print_str, v);
                } else {
                   uint64_t v;
                   memcpy(&v, &data[offset], element_size);
-                  printf(print_str, v);
+                  fprintf(out, print_str, v);
                }
                break;
             }
@@ -303,7 +301,7 @@ radv_dump_printf_data(struct radv_device *device)
             }
 
             if (lane != lane_count - 1)
-               printf(" ");
+               fprintf(out, " ");
 
             offset += element_size;
          }
@@ -313,6 +311,8 @@ radv_dump_printf_data(struct radv_device *device)
          free(print_str);
       }
    }
+
+   fflush(out);
 
    header->offset = sizeof(struct radv_printf_buffer_header);
 }

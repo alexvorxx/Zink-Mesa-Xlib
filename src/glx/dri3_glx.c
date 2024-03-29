@@ -800,6 +800,7 @@ dri3_create_screen(int screen, struct glx_display * priv)
    __GLXDRIscreen *psp;
    struct glx_config *configs = NULL, *visuals = NULL;
    char *driverName, *driverNameDisplayGPU, *tmp;
+   bool return_zink = false;
 
    psc = calloc(1, sizeof *psc);
    if (psc == NULL)
@@ -832,6 +833,11 @@ dri3_create_screen(int screen, struct glx_display * priv)
    driverName = loader_get_driver_for_fd(psc->fd_render_gpu);
    if (!driverName) {
       ErrorMessageF("No driver found\n");
+      goto handle_error;
+   }
+
+   if (!strcmp(driverName, "zink")) {
+      return_zink = true;
       goto handle_error;
    }
 
@@ -1009,7 +1015,8 @@ dri3_create_screen(int screen, struct glx_display * priv)
    return &psc->base;
 
 handle_error:
-   CriticalErrorMessageF("failed to load driver: %s\n", driverName ? driverName : "(null)");
+   if (!return_zink)
+      CriticalErrorMessageF("failed to load driver: %s\n", driverName ? driverName : "(null)");
 
    if (configs)
        glx_config_destroy_list(configs);
@@ -1032,7 +1039,7 @@ handle_error:
    glx_screen_cleanup(&psc->base);
    free(psc);
 
-   return NULL;
+   return return_zink ? GLX_LOADER_USE_ZINK : NULL;
 }
 
 /** dri_destroy_display

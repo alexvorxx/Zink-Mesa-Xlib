@@ -375,6 +375,7 @@ struct emit_memory_barrier {
       } else {
          bmb.srcAccessMask = res->obj->access;
       }
+      bmb.dstAccessMask = flags;
       VKCTX(CmdPipelineBarrier)(
           cmdbuf,
           stages,
@@ -515,10 +516,12 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
    if (!flags)
       flags = access_dst_flags(new_layout);
 
+   bool is_write = zink_resource_access_is_write(flags);
+   if (is_write && zink_is_swapchain(res))
+      zink_kopper_set_readback_needs_update(res);
    if (!res->obj->needs_zs_evaluate && !zink_resource_image_needs_barrier(res, new_layout, flags, pipeline) &&
        (res->queue == zink_screen(ctx->base.screen)->gfx_queue || res->queue == VK_QUEUE_FAMILY_IGNORED))
       return;
-   bool is_write = zink_resource_access_is_write(flags);
    enum zink_resource_access rw = is_write ? ZINK_RESOURCE_ACCESS_RW : ZINK_RESOURCE_ACCESS_WRITE;
    bool completed = zink_resource_usage_check_completion_fast(zink_screen(ctx->base.screen), res, rw);
    bool usage_matches = !completed && zink_resource_usage_matches(res, ctx->batch.state);
@@ -612,7 +615,8 @@ zink_resource_buffer_transfer_dst_barrier(struct zink_context *ctx, struct zink_
    if (res->obj->copies_need_reset)
       zink_resource_copies_reset(res);
    bool unordered = true;
-   struct pipe_box box = {(int)offset, 0, 0, (int)size, 0, 0};
+   struct pipe_box box;
+   u_box_3d((int)offset, 0, 0, (int)size, 0, 0, &box);
    bool can_unordered_write = unordered_res_exec(ctx, res, true);
    /* must barrier if something read the valid buffer range */
    bool valid_read = (res->obj->access || res->obj->unordered_access) &&

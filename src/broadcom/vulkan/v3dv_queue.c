@@ -1086,7 +1086,8 @@ handle_cl_job(struct v3dv_queue *queue,
    struct v3dv_bo *bcl_fist_bo =
       list_first_entry(&job->bcl.bo_list, struct v3dv_bo, list_link);
    submit.bcl_start = bcl_fist_bo->offset;
-   submit.bcl_end = job->bcl.bo->offset + v3dv_cl_offset(&job->bcl);
+   submit.bcl_end = job->suspending ? job->suspended_bcl_end :
+                                      job->bcl.bo->offset + v3dv_cl_offset(&job->bcl);
    submit.rcl_start = job->rcl.bo->offset;
    submit.rcl_end = job->rcl.bo->offset + v3dv_cl_offset(&job->rcl);
 
@@ -1431,16 +1432,48 @@ v3dv_queue_driver_submit(struct vk_queue *vk_queue,
          return result;
    }
 
+   /* FIXME: if suspend/resume chains are recorded into command buffers with
+    * usage flag VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, then this won't
+    * work and we would need to "clone" the jobs instead so we never patch a
+    * job that may still be executing.
+    */
+   struct v3dv_job *first_suspend_job = NULL;
+   struct v3dv_job *current_suspend_job = NULL;
    for (uint32_t i = 0; i < submit->command_buffer_count; i++) {
       struct v3dv_cmd_buffer *cmd_buffer =
          container_of(submit->command_buffers[i], struct v3dv_cmd_buffer, vk);
       list_for_each_entry_safe(struct v3dv_job, job,
                                &cmd_buffer->jobs, list_link) {
+         if (job->suspending && !job->resuming) {
+            assert(!first_suspend_job);
+            assert(!current_suspend_job);
+            first_suspend_job = job;
+         }
 
-         result = queue_handle_job(queue, job, submit->perf_pass_index,
-                                   &sync_info, false);
-         if (result != VK_SUCCESS)
-            return result;
+         if (job->resuming) {
+            assert(first_suspend_job);
+            assert(current_suspend_job);
+            v3dv_X(job->device, job_patch_resume_address)(first_suspend_job,
+                                                          current_suspend_job,
+                                                          job);
+            current_suspend_job = NULL;
+         }
+
+         if (job->suspending) {
+            current_suspend_job = job;
+         } else {
+            assert(!current_suspend_job);
+            struct v3dv_job *submit_job = first_suspend_job ?
+                                          first_suspend_job : job;
+            result =
+               queue_handle_job(queue, submit_job, submit->perf_pass_index,
+                                &sync_info, false);
+
+            if (result != VK_SUCCESS)
+               return result;
+
+            first_suspend_job = NULL;
+         }
       }
 
       /* If the command buffer ends with a barrier we need to consume it now.
@@ -1455,6 +1488,9 @@ v3dv_queue_driver_submit(struct vk_queue *vk_queue,
             return result;
       }
    }
+
+   assert(!first_suspend_job);
+   assert(!current_suspend_job);
 
    /* Handle signaling now */
    if (submit->signal_count > 0) {

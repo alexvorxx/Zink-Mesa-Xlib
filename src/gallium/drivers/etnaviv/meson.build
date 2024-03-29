@@ -22,7 +22,6 @@ files_etnaviv = files(
   'hw/cmdstream.xml.h',
   'hw/common.xml.h',
   'hw/common_3d.xml.h',
-  'hw/isa.xml.h',
   'hw/state_3d.xml.h',
   'hw/state_blt.xml.h',
   'hw/state.xml.h',
@@ -117,8 +116,8 @@ libetnaviv = static_library(
   include_directories : [
     inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_etnaviv,
   ],
-  link_with: [libetnaviv_drm, libetnaviv_decode],
-  dependencies : [dep_libdrm, idep_nir_headers, idep_mesautil],
+  link_with: [libetnaviv_drm, libetnaviv_encode],
+  dependencies : [dep_libdrm, idep_nir_headers, idep_mesautil, idep_libetnaviv_decode],
 )
 
 etnaviv_compiler = executable(

@@ -68,7 +68,7 @@ static const uint32_t genX(vk_to_intel_blend_op)[] = {
 static void
 genX(streamout_prologue)(struct anv_cmd_buffer *cmd_buffer)
 {
-#if GFX_VERx10 >= 120
+#if INTEL_WA_16013994831_GFX_VER
    /* Wa_16013994831 - Disable preemption during streamout, enable back
     * again if XFB not used by the current pipeline.
     *
@@ -93,11 +93,19 @@ genX(streamout_prologue)(struct anv_cmd_buffer *cmd_buffer)
 
 #if GFX_VER >= 12
 static uint32_t
-get_cps_state_offset(struct anv_device *device, bool cps_enabled,
+get_cps_state_offset(struct anv_cmd_buffer *cmd_buffer, bool cps_enabled,
                      const struct vk_fragment_shading_rate_state *fsr)
 {
-   if (!cps_enabled)
-      return device->cps_states.offset;
+   struct anv_device *device = cmd_buffer->device;
+
+   if (!cps_enabled) {
+      assert(cmd_buffer->state.current_db_mode !=
+             ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN);
+      return cmd_buffer->state.current_db_mode ==
+             ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER ?
+             device->cps_states_db.offset :
+             device->cps_states.offset;
+   }
 
    uint32_t offset;
    static const uint32_t size_index[] = {
@@ -122,7 +130,12 @@ get_cps_state_offset(struct anv_device *device, bool cps_enabled,
 
    offset *= MAX_VIEWPORTS * GENX(CPS_STATE_length) * 4;
 
-   return device->cps_states.offset + offset;
+   assert(cmd_buffer->state.current_db_mode !=
+          ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN);
+   return (cmd_buffer->state.current_db_mode ==
+           ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER ?
+           device->cps_states_db.offset :
+           device->cps_states.offset) + offset;
 }
 #endif /* GFX_VER >= 12 */
 
@@ -589,7 +602,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       SET(CPS, cps.MinCPSizeY, dyn->fsr.fragment_size.height);
 #elif GFX_VER >= 12
       SET(CPS, cps.CoarsePixelShadingStateArrayPointer,
-               get_cps_state_offset(device, cps_enable, &dyn->fsr));
+               get_cps_state_offset(cmd_buffer, cps_enable, &dyn->fsr));
 #endif
    }
 #endif /* GFX_VER >= 11 */
@@ -1210,12 +1223,12 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
        * number of viewport programmed previously was larger than what we need
        * now, no need to reemit we can just keep the old programmed values.
        */
-      if (BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_SF_CLIP) ||
+      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_SF_CLIP) ||
           hw_state->vp_sf_clip.count < dyn->vp.viewport_count) {
          hw_state->vp_sf_clip.count = dyn->vp.viewport_count;
          BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_SF_CLIP);
       }
-      if (BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC) ||
+      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC) ||
           hw_state->vp_cc.count < dyn->vp.viewport_count) {
          hw_state->vp_cc.count = dyn->vp.viewport_count;
          BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC);
@@ -1281,7 +1294,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
        * number of viewport programmed previously was larger than what we need
        * now, no need to reemit we can just keep the old programmed values.
        */
-      if (BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SCISSOR) ||
+      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_SCISSOR) ||
           hw_state->scissor.count < dyn->vp.scissor_count) {
          hw_state->scissor.count = dyn->vp.scissor_count;
          BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SCISSOR);
@@ -1471,7 +1484,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline,
                                     final.so_decl_list);
 
-#if GFX_VER >= 11
+#if GFX_VER >= 11 && GFX_VER < 20
       /* ICL PRMs, Volume 2a - Command Reference: Instructions,
        * 3DSTATE_SO_DECL_LIST:
        *
@@ -1594,7 +1607,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC)) {
-      struct anv_state cc_state =
+      hw_state->vp_cc.state =
          anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
                                             hw_state->vp_cc.count * 8, 32);
 
@@ -1603,12 +1616,19 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
             INIT(vp_cc.elem[i], MinimumDepth),
             INIT(vp_cc.elem[i], MaximumDepth),
          };
-         GENX(CC_VIEWPORT_pack)(NULL, cc_state.map + i * 8, &cc_viewport);
+         GENX(CC_VIEWPORT_pack)(NULL, hw_state->vp_cc.state.map + i * 8,
+                                &cc_viewport);
       }
 
+      /* Dirty the pointers to reemit 3DSTATE_VIEWPORT_STATE_POINTERS_CC below
+       */
+      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC_PTR);
+   }
+
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC_PTR)) {
       anv_batch_emit(&cmd_buffer->batch,
                      GENX(3DSTATE_VIEWPORT_STATE_POINTERS_CC), cc) {
-         cc.CCViewportPointer = cc_state.offset;
+         cc.CCViewportPointer = hw_state->vp_cc.state.offset;
       }
       cmd_buffer->state.gfx.viewport_set = true;
    }
@@ -1759,7 +1779,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CC_STATE)) {
-      struct anv_state cc_state =
+      hw_state->cc.state =
          anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
                                             GENX(COLOR_CALC_STATE_length) * 4,
                                             64);
@@ -1769,10 +1789,16 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
          INIT(cc, BlendConstantColorBlue),
          INIT(cc, BlendConstantColorAlpha),
       };
-      GENX(COLOR_CALC_STATE_pack)(NULL, cc_state.map, &cc);
+      GENX(COLOR_CALC_STATE_pack)(NULL, hw_state->cc.state.map, &cc);
 
+      /* Dirty the pointers to reemit 3DSTATE_CC_STATE_POINTERS below
+       */
+      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_CC_STATE_PTR);
+   }
+
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CC_STATE_PTR)) {
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_CC_STATE_POINTERS), ccp) {
-         ccp.ColorCalcStatePointer = cc_state.offset;
+         ccp.ColorCalcStatePointer = hw_state->cc.state.offset;
          ccp.ColorCalcStatePointerValid = true;
       }
    }
@@ -1906,19 +1932,19 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_BLEND_STATE)) {
       const uint32_t num_dwords = GENX(BLEND_STATE_length) +
          GENX(BLEND_STATE_ENTRY_length) * MAX_RTS;
-      struct anv_state blend_states =
+      hw_state->blend.state =
          anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
                                             num_dwords * 4,
                                             64);
 
-      uint32_t *dws = blend_states.map;
+      uint32_t *dws = hw_state->blend.state.map;
 
       struct GENX(BLEND_STATE) blend_state = {
          INIT(blend, AlphaToCoverageEnable),
          INIT(blend, AlphaToOneEnable),
          INIT(blend, IndependentAlphaBlendEnable),
       };
-      GENX(BLEND_STATE_pack)(NULL, blend_states.map, &blend_state);
+      GENX(BLEND_STATE_pack)(NULL, dws, &blend_state);
 
       /* Jump to blend entries. */
       dws += GENX(BLEND_STATE_length);
@@ -1946,14 +1972,13 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
          dws += GENX(BLEND_STATE_ENTRY_length);
       }
 
-      gfx->blend_states = blend_states;
       /* Dirty the pointers to reemit 3DSTATE_BLEND_STATE_POINTERS below */
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_BLEND_STATE_POINTERS);
+      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_BLEND_STATE_PTR);
    }
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_BLEND_STATE_POINTERS)) {
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_BLEND_STATE_PTR)) {
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_BLEND_STATE_POINTERS), bsp) {
-         bsp.BlendStatePointer      = gfx->blend_states.offset;
+         bsp.BlendStatePointer      = hw_state->blend.state.offset;
          bsp.BlendStatePointerValid = true;
       }
    }
@@ -2034,7 +2059,8 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
 
    /* Wa_18020335297 - Apply the WA when viewport ptr is reprogrammed. */
    if (intel_needs_workaround(device->info, 18020335297) &&
-       BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC) &&
+       (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC) ||
+        BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VIEWPORT_CC_PTR)) &&
        cmd_buffer->state.gfx.viewport_set) {
       /* For mesh, we implement the WA using CS stall. This is for
        * simplicity and takes care of possible interaction with Wa_16014390852.

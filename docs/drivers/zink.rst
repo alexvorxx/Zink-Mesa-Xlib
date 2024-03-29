@@ -332,6 +332,16 @@ be enabled by setting the environment variable :envvar:`VK_INSTANCE_LAYERS` to
 "VK_LAYER_KHRONOS_validation". You can read more about the Validation Layers
 in the link above.
 
+Apple macOS and MoltenVK
+------------------------
+
+Zink on macOS is experimental with very limited capabilities.
+The Vulkan SDK (1.3.250 or newer) is required to build Zink.
+Set the build option ``-Dmoltenvk-dir=<directory>`` to point at your Vulkan SDK install or MoltenVK build.
+Add Zink to the Gallium drivers build option ``-Dgallium-drivers=zink``.
+If installed using ``brew``, you can set ``-D moltenvk-dir=$(brew --prefix molten-vk)``.
+
+
 IRC
 ---
 

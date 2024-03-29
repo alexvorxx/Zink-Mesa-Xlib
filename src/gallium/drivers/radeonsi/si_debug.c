@@ -347,8 +347,18 @@ static void si_parse_current_ib(FILE *f, struct radeon_cmdbuf *cs, unsigned begi
       struct radeon_cmdbuf_chunk *chunk = &cs->prev[prev_idx];
 
       if (begin < chunk->cdw) {
-         ac_parse_ib_chunk(f, chunk->buf + begin, MIN2(end, chunk->cdw) - begin, last_trace_id,
-                           trace_id_count, gfx_level, family, AMD_IP_GFX, NULL, NULL);
+         struct ac_ib_parser ib_parser = {
+            .f = f,
+            .ib = chunk->buf + begin,
+            .num_dw = MIN2(end, chunk->cdw) - begin,
+            .trace_ids = last_trace_id,
+            .trace_id_count = trace_id_count,
+            .gfx_level = gfx_level,
+            .family = family,
+            .ip_type = AMD_IP_GFX,
+         };
+
+         ac_parse_ib_chunk(&ib_parser);
       }
 
       if (end <= chunk->cdw)
@@ -363,8 +373,18 @@ static void si_parse_current_ib(FILE *f, struct radeon_cmdbuf *cs, unsigned begi
 
    assert(end <= cs->current.cdw);
 
-   ac_parse_ib_chunk(f, cs->current.buf + begin, end - begin, last_trace_id, trace_id_count,
-                     gfx_level, family, AMD_IP_GFX, NULL, NULL);
+   struct ac_ib_parser ib_parser = {
+      .f = f,
+      .ib = cs->current.buf + begin,
+      .num_dw = end - begin,
+      .trace_ids = last_trace_id,
+      .trace_id_count = trace_id_count,
+      .gfx_level = gfx_level,
+      .family = family,
+      .ip_type = AMD_IP_GFX,
+   };
+
+   ac_parse_ib_chunk(&ib_parser);
 
    fprintf(f, "------------------- %s end (dw = %u) -------------------\n\n", name, orig_end);
 }
@@ -393,8 +413,18 @@ static void si_log_chunk_type_cs_print(void *data, FILE *f)
 
    if (chunk->gfx_end != chunk->gfx_begin) {
       if (scs->flushed) {
-         ac_parse_ib(f, scs->gfx.ib + chunk->gfx_begin, chunk->gfx_end - chunk->gfx_begin,
-                     &last_trace_id, map ? 1 : 0, "IB", ctx->gfx_level, ctx->family, AMD_IP_GFX, NULL, NULL);
+         struct ac_ib_parser ib_parser = {
+            .f = f,
+            .ib = scs->gfx.ib + chunk->gfx_begin,
+            .num_dw = chunk->gfx_end - chunk->gfx_begin,
+            .trace_ids = &last_trace_id,
+            .trace_id_count = map ? 1 : 0,
+            .gfx_level = ctx->gfx_level,
+            .family = ctx->family,
+            .ip_type = AMD_IP_GFX,
+         };
+
+         ac_parse_ib(&ib_parser, "IB");
       } else {
          si_parse_current_ib(f, &ctx->gfx_cs, chunk->gfx_begin, chunk->gfx_end, &last_trace_id,
                              map ? 1 : 0, "IB", ctx->gfx_level, ctx->family);
@@ -1095,7 +1125,7 @@ void si_gather_context_rolls(struct si_context *sctx)
    ib_dw_sizes[cs->num_prev] = cs->current.cdw;
 
    FILE *f = fopen(sctx->screen->context_roll_log_filename, "a");
-   ac_gather_context_rolls(f, ibs, ib_dw_sizes, cs->num_prev + 1, &sctx->screen->info);
+   ac_gather_context_rolls(f, ibs, ib_dw_sizes, cs->num_prev + 1, NULL, &sctx->screen->info);
    fclose(f);
 }
 

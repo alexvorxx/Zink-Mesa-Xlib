@@ -198,7 +198,7 @@ nvk_upload_queue_sync_locked(struct nvk_device *dev,
 
    int err = drmSyncobjTimelineWait(dev->ws_dev->fd, &queue->drm.syncobj,
                                     &queue->last_time_point, 1, INT64_MAX,
-                                    DRM_SYNCOBJ_WAIT_FLAGS_WAIT_AVAILABLE,
+                                    DRM_SYNCOBJ_WAIT_FLAGS_WAIT_FOR_SUBMIT,
                                     NULL);
    if (err != 0)
       return vk_device_set_lost(&dev->vk, "DRM_IOCTL_SYNCOBJ_WAIT failed: %m");

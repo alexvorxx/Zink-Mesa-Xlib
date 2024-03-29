@@ -396,9 +396,9 @@ def test_full_yaml_log(mock_proxy, frozen_time, lava_job_submitter):
         proxy.scheduler.jobs.logs.side_effect = load_lines()
 
     proxy.scheduler.jobs.submit = reset_logs
-    start_time = datetime.now()
     try:
         time_travel_to_test_time()
+        start_time = datetime.now()
         retriable_follow_job(proxy, "")
     finally:
         try:

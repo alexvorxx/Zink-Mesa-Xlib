@@ -35,6 +35,7 @@
 #include "i915/intel_device_info.h"
 #include "xe/intel_device_info.h"
 
+#include "common/intel_gem.h"
 #include "util/u_debug.h"
 #include "util/log.h"
 #include "util/macros.h"
@@ -72,6 +73,7 @@ static const struct {
    { "rpl", 0xa780 },
    { "dg2", 0x5690 },
    { "mtl", 0x7d60 },
+   { "arl", 0x7d67 },
 };
 
 /**
@@ -1020,39 +1022,33 @@ static const struct intel_device_info intel_device_info_rkl_gt1 = {
 static const struct intel_device_info intel_device_info_adl_gt05 = {
    GFX12_GT05_FEATURES,
    .platform = INTEL_PLATFORM_ADL,
-   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_adl_gt1 = {
    GFX12_GT_FEATURES(1),
    .platform = INTEL_PLATFORM_ADL,
-   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_adl_n = {
    GFX12_GT_FEATURES(1),
    .platform = INTEL_PLATFORM_ADL,
-   .display_ver = 13,
    .is_adl_n = true,
 };
 
 static const struct intel_device_info intel_device_info_adl_gt2 = {
    GFX12_GT_FEATURES(2),
    .platform = INTEL_PLATFORM_ADL,
-   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_rpl = {
    GFX12_FEATURES(1, 1, 4),
    .num_subslices = dual_subslices(2),
    .platform = INTEL_PLATFORM_RPL,
-   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_rpl_p = {
    GFX12_GT_FEATURES(2),
    .platform = INTEL_PLATFORM_RPL,
-   .display_ver = 13,
 };
 
 #define GFX12_DG1_SG1_FEATURES                           \
@@ -1128,7 +1124,6 @@ static const struct intel_device_info intel_device_info_sg1 = {
 #define DG2_FEATURES                                            \
    /* (Sub)slice info comes from the kernel topology info */    \
    XEHP_FEATURES(0, 1, 0),                                      \
-   .display_ver = 13,                                           \
    .revision = 4, /* For offline compiler */                    \
    .apply_hwconfig = true,                                      \
    .has_coarse_pixel_primitive_and_cb = true,                   \
@@ -1195,6 +1190,16 @@ static const struct intel_device_info intel_device_info_mtl_u = {
 static const struct intel_device_info intel_device_info_mtl_h = {
    MTL_FEATURES,
    .platform = INTEL_PLATFORM_MTL_H,
+};
+
+static const struct intel_device_info intel_device_info_arl_u = {
+   MTL_FEATURES,
+   .platform = INTEL_PLATFORM_ARL_U,
+};
+
+static const struct intel_device_info intel_device_info_arl_h = {
+   MTL_FEATURES,
+   .platform = INTEL_PLATFORM_ARL_H,
 };
 
 void
@@ -1405,9 +1410,6 @@ intel_device_info_init_common(int pci_id,
    if (devinfo->verx10 == 0)
       devinfo->verx10 = devinfo->ver * 10;
 
-   if (devinfo->display_ver == 0)
-      devinfo->display_ver = devinfo->ver;
-
    if (devinfo->has_mesh_shading) {
       /* Half of push constant space matches the size used in the simplest
        * primitive pipeline (VS + FS). Tweaking this affects performance.
@@ -1598,7 +1600,7 @@ intel_device_info_calc_engine_prefetch(const struct intel_device_info *devinfo,
       }
    }
 
-   if (intel_device_info_is_mtl(devinfo)) {
+   if (intel_device_info_is_mtl_or_arl(devinfo)) {
       switch (engine_class) {
       case INTEL_ENGINE_CLASS_RENDER:
          return 2048;
@@ -1620,6 +1622,21 @@ intel_device_info_calc_engine_prefetch(const struct intel_device_info *devinfo,
 bool
 intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo, int min_ver, int max_ver)
 {
+   if (NULL != getenv("INTEL_STUB_GPU_JSON")) {
+      /* This call will succeed when shim-drm has been initialized with a
+       * serialized intel_device_info structure.
+       */
+      struct drm_intel_stub_devinfo arg = {
+         .addr = (uintptr_t)devinfo,
+         .size = sizeof(*devinfo),
+      };
+      if (0 == intel_ioctl(fd, DRM_IOCTL_INTEL_STUB_DEVINFO, &arg)) {
+         intel_device_info_init_was(devinfo);
+         intel_device_info_apply_workarounds(devinfo);
+         return true;
+      }
+   }
+
    /* Get PCI info.
     *
     * Some callers may already have a valid drm device which holds values of
@@ -1654,11 +1671,6 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo, int min
    drmFreeDevice(&drmdev);
    devinfo->no_hw = debug_get_bool_option("INTEL_NO_HW", false);
 
-   if (devinfo->ver == 10) {
-      mesa_loge("Gfx10 support is redacted.");
-      return false;
-   }
-
    devinfo->kmd_type = intel_get_kmd_type(fd);
    if (devinfo->kmd_type == INTEL_KMD_TYPE_INVALID) {
       mesa_loge("Unknown kernel mode driver");
@@ -1681,6 +1693,8 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo, int min
       break;
    case INTEL_KMD_TYPE_XE:
       ret = intel_device_info_xe_get_info_from_fd(fd, devinfo);
+      if (devinfo->verx10 < 200)
+         mesa_logw("Support for this platform is experimental with Xe KMD, bug reports may be ignored.");
       break;
    default:
       ret = false;
@@ -1749,14 +1763,17 @@ intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo)
 enum intel_wa_steppings
 intel_device_info_wa_stepping(struct intel_device_info *devinfo)
 {
-   if (intel_device_info_is_mtl(devinfo)) {
-      if (devinfo->revision < 4)
-         return INTEL_STEPPING_A0;
-      return INTEL_STEPPING_B0;
-   } else if (devinfo->platform == INTEL_PLATFORM_TGL) {
+   /* When adding platforms to this function, check to see if
+    * stepping-specific workarounds impact the compiler.
+    *
+    * If a stepping specific compiler workaround is required on a released
+    * platform, intel_device_info->revision must be added as a
+    * 'compiler_field' in intel_device_info.py
+    */
+
+   if (devinfo->platform == INTEL_PLATFORM_TGL) {
+      /* TGL production steppings: B0 and C0 */
       switch (devinfo->revision) {
-      case 0:
-         return INTEL_STEPPING_A0;
       case 1:
          return INTEL_STEPPING_B0;
       case 3:
@@ -1769,3 +1786,4 @@ intel_device_info_wa_stepping(struct intel_device_info *devinfo)
    /* all other platforms support only released steppings */
    return INTEL_STEPPING_RELEASE;
 }
+

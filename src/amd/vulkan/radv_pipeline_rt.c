@@ -196,7 +196,8 @@ radv_rt_fill_group_info(struct radv_device *device, const struct radv_ray_tracin
          } else if (groups[idx].recursive_shader != VK_SHADER_UNUSED_KHR) {
             struct radv_shader *library_shader = stages[groups[idx].recursive_shader].shader;
             simple_mtx_lock(&library_shader->replay_mtx);
-            if (!library_shader->has_replay_alloc) {
+            /* If arena_va is 0, the pipeline is monolithic and the shader was inlined into raygen */
+            if (!library_shader->has_replay_alloc && handle->recursive_shader_alloc.arena_va) {
                union radv_shader_arena_block *new_block =
                   radv_replay_shader_arena_block(device, &handle->recursive_shader_alloc, library_shader);
                if (!new_block) {
@@ -273,6 +274,7 @@ radv_rt_fill_stage_info(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, st
 
             stages[idx].stage = library_pipeline->stages[j].stage;
             stages[idx].stack_size = library_pipeline->stages[j].stack_size;
+            stages[idx].info = library_pipeline->stages[j].info;
             memcpy(stages[idx].sha1, library_pipeline->stages[j].sha1, SHA1_DIGEST_LENGTH);
             idx++;
          }
@@ -364,6 +366,8 @@ static VkResult
 radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
                    const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, struct radv_ray_tracing_pipeline *pipeline,
                    bool monolithic, struct radv_shader_stage *stage, uint32_t *stack_size,
+                   struct radv_ray_tracing_stage_info *stage_info,
+                   const struct radv_ray_tracing_stage_info *traversal_stage_info,
                    struct radv_serialized_shader_arena_block *replay_block, struct radv_shader **out_shader)
 {
    struct radv_shader_binary *binary;
@@ -415,18 +419,24 @@ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
    for (uint32_t i = 0; i < num_resume_shaders; i++)
       shaders[i + 1] = resume_shaders[i];
 
+   if (stage_info)
+      memset(stage_info->unused_args, 0xFF, sizeof(stage_info->unused_args));
+
    /* Postprocess shader parts. */
    for (uint32_t i = 0; i < num_shaders; i++) {
       struct radv_shader_stage temp_stage = *stage;
       temp_stage.nir = shaders[i];
       radv_nir_lower_rt_abi(temp_stage.nir, pCreateInfo, &temp_stage.args, &stage->info, stack_size, i > 0, device,
-                            pipeline, monolithic);
+                            pipeline, monolithic, traversal_stage_info);
 
       /* Info might be out-of-date after inlining in radv_nir_lower_rt_abi(). */
       nir_shader_gather_info(temp_stage.nir, nir_shader_get_entrypoint(temp_stage.nir));
 
       radv_optimize_nir(temp_stage.nir, stage->key.optimisations_disabled);
       radv_postprocess_nir(device, NULL, &temp_stage);
+
+      if (stage_info)
+         radv_gather_unused_args(stage_info, shaders[i]);
 
       if (radv_can_dump_shader(device, temp_stage.nir, false))
          nir_print_shader(temp_stage.nir, stderr);
@@ -463,18 +473,52 @@ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
    free(binary);
 
    *out_shader = shader;
+
+   if (radv_can_dump_shader_stats(device, stage->nir))
+      radv_dump_shader_stats(device, &pipeline->base.base, shader, stage->nir->info.stage, stderr);
+
    return shader ? VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
-static bool
-radv_rt_can_inline_shader(nir_shader *nir)
+static void
+radv_update_const_info(enum radv_rt_const_arg_state *state, bool equal)
 {
-   if (nir->info.stage == MESA_SHADER_RAYGEN || nir->info.stage == MESA_SHADER_ANY_HIT ||
-       nir->info.stage == MESA_SHADER_INTERSECTION)
-      return true;
+   if (*state == RADV_RT_CONST_ARG_STATE_UNINITIALIZED)
+      *state = RADV_RT_CONST_ARG_STATE_VALID;
+   else if (*state == RADV_RT_CONST_ARG_STATE_VALID && !equal)
+      *state = RADV_RT_CONST_ARG_STATE_INVALID;
+}
 
-   if (nir->info.stage == MESA_SHADER_CALLABLE)
-      return false;
+static void
+radv_gather_trace_ray_src(struct radv_rt_const_arg_info *info, nir_src src)
+{
+   if (nir_src_is_const(src)) {
+      radv_update_const_info(&info->state, info->value == nir_src_as_uint(src));
+      info->value = nir_src_as_uint(src);
+   } else {
+      info->state = RADV_RT_CONST_ARG_STATE_INVALID;
+   }
+}
+
+static void
+radv_rt_const_arg_info_combine(struct radv_rt_const_arg_info *dst, const struct radv_rt_const_arg_info *src)
+{
+   if (src->state != RADV_RT_CONST_ARG_STATE_UNINITIALIZED) {
+      radv_update_const_info(&dst->state, dst->value == src->value);
+      if (src->state == RADV_RT_CONST_ARG_STATE_INVALID)
+         dst->state = RADV_RT_CONST_ARG_STATE_INVALID;
+      dst->value = src->value;
+   }
+}
+
+static struct radv_ray_tracing_stage_info
+radv_gather_ray_tracing_stage_info(nir_shader *nir)
+{
+   struct radv_ray_tracing_stage_info info = {
+      .can_inline = true,
+      .set_flags = 0xFFFFFFFF,
+      .unset_flags = 0xFFFFFFFF,
+   };
 
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_foreach_block (block, impl) {
@@ -482,12 +526,36 @@ radv_rt_can_inline_shader(nir_shader *nir)
          if (instr->type != nir_instr_type_intrinsic)
             continue;
 
-         if (nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_trace_ray)
-            return false;
+         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+         if (intr->intrinsic != nir_intrinsic_trace_ray)
+            continue;
+
+         info.can_inline = false;
+
+         radv_gather_trace_ray_src(&info.tmin, intr->src[7]);
+         radv_gather_trace_ray_src(&info.tmax, intr->src[9]);
+         radv_gather_trace_ray_src(&info.sbt_offset, intr->src[3]);
+         radv_gather_trace_ray_src(&info.sbt_stride, intr->src[4]);
+         radv_gather_trace_ray_src(&info.miss_index, intr->src[5]);
+
+         nir_src flags = intr->src[1];
+         if (nir_src_is_const(flags)) {
+            info.set_flags &= nir_src_as_uint(flags);
+            info.unset_flags &= ~nir_src_as_uint(flags);
+         } else {
+            info.set_flags = 0;
+            info.unset_flags = 0;
+         }
       }
    }
 
-   return true;
+   if (nir->info.stage == MESA_SHADER_RAYGEN || nir->info.stage == MESA_SHADER_ANY_HIT ||
+       nir->info.stage == MESA_SHADER_INTERSECTION)
+      info.can_inline = true;
+   else if (nir->info.stage == MESA_SHADER_CALLABLE)
+      info.can_inline = false;
+
+   return info;
 }
 
 static inline bool
@@ -533,7 +601,7 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
 
       NIR_PASS(_, stage->nir, radv_nir_lower_hit_attrib_derefs);
 
-      rt_stages[i].can_inline = radv_rt_can_inline_shader(stage->nir);
+      rt_stages[i].info = radv_gather_ray_tracing_stage_info(stage->nir);
 
       stage->feedback.duration = os_time_get_nano() - stage_start;
    }
@@ -543,9 +611,9 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
    bool raygen_imported = false;
    for (uint32_t i = 0; i < pipeline->stage_count; i++) {
       has_callable |= rt_stages[i].stage == MESA_SHADER_CALLABLE;
-      monolithic &= rt_stages[i].can_inline;
+      monolithic &= rt_stages[i].info.can_inline;
 
-      if (i > pCreateInfo->stageCount)
+      if (i >= pCreateInfo->stageCount)
          raygen_imported |= rt_stages[i].stage == MESA_SHADER_RAYGEN;
    }
 
@@ -598,7 +666,7 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
          bool monolithic_raygen = monolithic && stage->stage == MESA_SHADER_RAYGEN;
 
          result = radv_rt_nir_to_asm(device, cache, pCreateInfo, pipeline, monolithic_raygen, stage, &stack_size,
-                                     replay_block, &rt_stages[idx].shader);
+                                     &rt_stages[idx].info, NULL, replay_block, &rt_stages[idx].shader);
          if (result != VK_SUCCESS)
             goto cleanup;
 
@@ -620,10 +688,35 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
    if (!traversal_needed)
       return VK_SUCCESS;
 
+   struct radv_ray_tracing_stage_info traversal_info = {
+      .set_flags = 0xFFFFFFFF,
+      .unset_flags = 0xFFFFFFFF,
+   };
+
+   memset(traversal_info.unused_args, 0xFF, sizeof(traversal_info.unused_args));
+
+   for (uint32_t i = 0; i < pipeline->stage_count; i++) {
+      if (!pipeline->stages[i].shader)
+         continue;
+
+      struct radv_ray_tracing_stage_info *info = &pipeline->stages[i].info;
+
+      BITSET_AND(traversal_info.unused_args, traversal_info.unused_args, info->unused_args);
+
+      radv_rt_const_arg_info_combine(&traversal_info.tmin, &info->tmin);
+      radv_rt_const_arg_info_combine(&traversal_info.tmax, &info->tmax);
+      radv_rt_const_arg_info_combine(&traversal_info.sbt_offset, &info->sbt_offset);
+      radv_rt_const_arg_info_combine(&traversal_info.sbt_stride, &info->sbt_stride);
+      radv_rt_const_arg_info_combine(&traversal_info.miss_index, &info->miss_index);
+
+      traversal_info.set_flags &= info->set_flags;
+      traversal_info.unset_flags &= info->unset_flags;
+   }
+
    /* create traversal shader */
    struct vk_shader_module traversal_module = {
       .base.type = VK_OBJECT_TYPE_SHADER_MODULE,
-      .nir = radv_build_traversal_shader(device, pipeline, pCreateInfo),
+      .nir = radv_build_traversal_shader(device, pipeline, pCreateInfo, &traversal_info),
    };
    const VkPipelineShaderStageCreateInfo pStage = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -639,7 +732,7 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
    vk_pipeline_hash_shader_stage(&pStage, NULL, traversal_stage.shader_sha1);
    radv_shader_layout_init(pipeline_layout, MESA_SHADER_INTERSECTION, &traversal_stage.layout);
    result = radv_rt_nir_to_asm(device, cache, pCreateInfo, pipeline, false, &traversal_stage, NULL, NULL,
-                               &pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
+                               &traversal_info, NULL, &pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
    ralloc_free(traversal_module.nir);
 
 cleanup:
@@ -956,7 +1049,8 @@ radv_GetRayTracingCaptureReplayShaderGroupHandlesKHR(VkDevice device, VkPipeline
       uint32_t recursive_shader = rt_pipeline->groups[firstGroup + i].recursive_shader;
       if (recursive_shader != VK_SHADER_UNUSED_KHR) {
          struct radv_shader *shader = rt_pipeline->stages[recursive_shader].shader;
-         data[i].recursive_shader_alloc = radv_serialize_shader_arena_block(shader->alloc);
+         if (shader)
+            data[i].recursive_shader_alloc = radv_serialize_shader_arena_block(shader->alloc);
       }
       data[i].non_recursive_idx = rt_pipeline->groups[firstGroup + i].handle.any_hit_index;
    }

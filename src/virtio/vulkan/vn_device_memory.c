@@ -17,8 +17,9 @@
 #include "vn_buffer.h"
 #include "vn_device.h"
 #include "vn_image.h"
-#include "vn_instance.h"
 #include "vn_physical_device.h"
+#include "vn_renderer.h"
+#include "vn_renderer_util.h"
 
 /* device memory commands */
 
@@ -34,14 +35,14 @@ vn_device_memory_alloc_simple(struct vn_device *dev,
                                       alloc_info, NULL, &mem_handle);
    }
 
-   struct vn_ring_submit_command instance_submit;
+   struct vn_ring_submit_command ring_submit;
    vn_submit_vkAllocateMemory(dev->primary_ring, 0, dev_handle, alloc_info,
-                              NULL, &mem_handle, &instance_submit);
-   if (!instance_submit.ring_seqno_valid)
+                              NULL, &mem_handle, &ring_submit);
+   if (!ring_submit.ring_seqno_valid)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    mem->bo_ring_seqno_valid = true;
-   mem->bo_ring_seqno = instance_submit.ring_seqno;
+   mem->bo_ring_seqno = ring_submit.ring_seqno;
    return VK_SUCCESS;
 }
 
@@ -131,7 +132,7 @@ vn_device_memory_pool_grow_alloc(struct vn_device *dev,
       goto mem_free;
 
    result =
-      vn_instance_submit_roundtrip(dev->instance, &mem->bo_roundtrip_seqno);
+      vn_ring_submit_roundtrip(dev->primary_ring, &mem->bo_roundtrip_seqno);
    if (result != VK_SUCCESS)
       goto bo_unref;
 
@@ -171,7 +172,7 @@ vn_device_memory_pool_unref(struct vn_device *dev,
 
    /* wait on valid bo_roundtrip_seqno before vkFreeMemory */
    if (pool_mem->bo_roundtrip_seqno_valid)
-      vn_instance_wait_roundtrip(dev->instance, pool_mem->bo_roundtrip_seqno);
+      vn_ring_wait_roundtrip(dev->primary_ring, pool_mem->bo_roundtrip_seqno);
 
    vn_device_memory_free_simple(dev, pool_mem);
    vk_device_memory_destroy(&dev->base.base, NULL, &pool_mem->base.base);
@@ -320,7 +321,7 @@ vn_device_memory_import_dma_buf(struct vn_device *dev,
    if (result != VK_SUCCESS)
       return result;
 
-   vn_instance_roundtrip(dev->instance);
+   vn_ring_roundtrip(dev->primary_ring);
 
    const VkImportMemoryResourceInfoMESA import_memory_resource_info = {
       .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA,
@@ -384,7 +385,7 @@ vn_device_memory_alloc_guest_vram(struct vn_device *dev,
       .memoryTypeIndex = alloc_info->memoryTypeIndex,
    };
 
-   vn_instance_roundtrip(dev->instance);
+   vn_ring_roundtrip(dev->primary_ring);
 
    result = vn_device_memory_alloc_simple(dev, mem, &memory_allocate_info);
    if (result != VK_SUCCESS) {
@@ -411,7 +412,7 @@ vn_device_memory_alloc_export(struct vn_device *dev,
    }
 
    result =
-      vn_instance_submit_roundtrip(dev->instance, &mem->bo_roundtrip_seqno);
+      vn_ring_submit_roundtrip(dev->primary_ring, &mem->bo_roundtrip_seqno);
    if (result != VK_SUCCESS) {
       vn_renderer_bo_unref(dev->renderer, mem->base_bo);
       vn_device_memory_free_simple(dev, mem);
@@ -629,7 +630,7 @@ vn_FreeMemory(VkDevice device,
       vn_device_memory_bo_fini(dev, mem);
 
       if (mem->bo_roundtrip_seqno_valid)
-         vn_instance_wait_roundtrip(dev->instance, mem->bo_roundtrip_seqno);
+         vn_ring_wait_roundtrip(dev->primary_ring, mem->bo_roundtrip_seqno);
 
       vn_device_memory_free_simple(dev, mem);
    }
@@ -688,8 +689,8 @@ vn_MapMemory(VkDevice device,
    if (!ptr) {
       /* vn_renderer_bo_map implies a roundtrip on success, but not here. */
       if (need_bo) {
-         result = vn_instance_submit_roundtrip(dev->instance,
-                                               &mem->bo_roundtrip_seqno);
+         result = vn_ring_submit_roundtrip(dev->primary_ring,
+                                           &mem->bo_roundtrip_seqno);
          if (result != VK_SUCCESS)
             return vn_error(dev->instance, result);
 
@@ -805,7 +806,7 @@ vn_get_memory_dma_buf_properties(struct vn_device *dev,
    if (result != VK_SUCCESS)
       return result;
 
-   vn_instance_roundtrip(dev->instance);
+   vn_ring_roundtrip(dev->primary_ring);
 
    VkMemoryResourceAllocationSizePropertiesMESA alloc_size_props = {
       .sType =

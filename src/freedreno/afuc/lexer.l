@@ -48,8 +48,7 @@ extern YYSTYPE yylval;
 "b"[0-9][0-9]*                    yylval.num = parse_bit(yytext); return T_BIT;
 "@"[a-zA-Z_][a-zA-Z0-9_]*         yylval.num = parse_control_reg(yytext); return T_CONTROL_REG;
 "%"[a-zA-Z_][a-zA-Z0-9_]*         yylval.num = parse_sqe_reg(yytext); return T_SQE_REG;
-"#"[a-zA-Z_][a-zA-Z0-9_]*         yylval.str = strdup(yytext+1);  return T_LABEL_REF; /* label reference */
-[a-zA-Z_][a-zA-Z0-9_]*":"         yylval.str = parse_label_decl(yytext); return T_LABEL_DECL; /* label declaration */
+"#"[a-zA-Z_][a-zA-Z0-9_]*         yylval.str = strdup(yytext+1);  return T_LABEL_REF;
 "["[0-9a-fA-F][0-9a-fA-F]*"]"     yylval.num = parse_literal(yytext); return T_LITERAL;
 
                                   /* instructions: */
@@ -96,12 +95,20 @@ extern YYSTYPE yylval;
 "(rep)"                           return TOKEN(T_REP);
 "(xmov"[1-3]")"	                  yylval.num = yytext[5] - '0'; return T_XMOV;
 "(sds"[1-3]")"                    yylval.num = yytext[4] - '0'; return T_SDS;
+"(peek)"                          return TOKEN(T_PEEK);
+
+".align"                          return TOKEN(T_ALIGN);
+".jumptbl"                        return TOKEN(T_JUMPTBL);
+".section"                        return TOKEN(T_SECTION);
 
 ","                               return ',';
 "["                               return '[';
 "]"                               return ']';
 "+"                               return '+';
 "!"                               return '!';
+":"                               return ':';
+
+[a-zA-Z_][a-zA-Z0-9_]*            yylval.str = strdup(yytext); return T_IDENTIFIER;
 
 .                                 fprintf(stderr, "error at line %d: Unknown token: %s\n", yyget_lineno(), yytext); yyterminate();
 

@@ -191,6 +191,50 @@ vk_common_set_object_name_locked(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
+vk_common_DebugMarkerSetObjectNameEXT(
+   VkDevice _device,
+   const VkDebugMarkerObjectNameInfoEXT *pNameInfo)
+{
+   VK_FROM_HANDLE(vk_device, device, _device);
+
+   assert(pNameInfo->sType == VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT);
+
+   VkObjectType object_type;
+   switch (pNameInfo->objectType) {
+   case VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT:
+      object_type = VK_OBJECT_TYPE_SURFACE_KHR;
+      break;
+   case VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT:
+      object_type = VK_OBJECT_TYPE_SWAPCHAIN_KHR;
+      break;
+   case VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT:
+      object_type = VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT;
+      break;
+   case VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_KHR_EXT:
+      object_type = VK_OBJECT_TYPE_DISPLAY_KHR;
+      break;
+   case VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_MODE_KHR_EXT:
+      object_type = VK_OBJECT_TYPE_DISPLAY_MODE_KHR;
+      break;
+   case VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT_EXT:
+      object_type = VK_OBJECT_TYPE_VALIDATION_CACHE_EXT;
+      break;
+   default:
+      object_type = (VkObjectType)pNameInfo->objectType;
+      break;
+   }
+
+   VkDebugUtilsObjectNameInfoEXT name_info = {
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+      .objectType = object_type,
+      .objectHandle = pNameInfo->object,
+      .pObjectName = pNameInfo->pObjectName,
+   };
+
+   return device->dispatch_table.SetDebugUtilsObjectNameEXT(_device, &name_info);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
 vk_common_SetDebugUtilsObjectNameEXT(
    VkDevice _device,
    const VkDebugUtilsObjectNameInfoEXT *pNameInfo)

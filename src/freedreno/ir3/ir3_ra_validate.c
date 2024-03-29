@@ -86,7 +86,7 @@ struct file_state {
 };
 
 struct reaching_state {
-   struct file_state half, full, shared;
+   struct file_state half, full, shared, predicate;
 };
 
 struct ra_val_ctx {
@@ -107,7 +107,7 @@ struct ra_val_ctx {
     */
    struct hash_table *spill_reaching;
 
-   unsigned full_size, half_size;
+   unsigned full_size, half_size, predicate_size;
 
    bool merged_regs;
    bool shared_ra;
@@ -136,6 +136,8 @@ get_file_size(struct ra_val_ctx *ctx, struct ir3_register *reg)
 {
    if (reg->flags & IR3_REG_SHARED)
       return RA_SHARED_SIZE;
+   else if (reg->flags & IR3_REG_PREDICATE)
+      return ctx->predicate_size;
    else if (ctx->merged_regs || !(reg->flags & IR3_REG_HALF))
       return ctx->full_size;
    else
@@ -164,6 +166,18 @@ get_or_create_spill_state(struct ra_val_ctx *ctx, struct ir3_register *dst)
    return state;
 }
 
+static bool
+validate_reg_is_src(const struct ir3_register *reg)
+{
+   return ra_reg_is_src(reg) || ra_reg_is_predicate(reg);
+}
+
+static bool
+validate_reg_is_dst(const struct ir3_register *reg)
+{
+   return ra_reg_is_dst(reg) || ra_reg_is_predicate(reg);
+}
+
 /* Validate simple things, like the registers being in-bounds. This way we
  * don't have to worry about out-of-bounds accesses later.
  */
@@ -172,18 +186,20 @@ static void
 validate_simple(struct ra_val_ctx *ctx, struct ir3_instruction *instr)
 {
    ctx->current_instr = instr;
-   ra_foreach_dst (dst, instr) {
+   foreach_dst_if (dst, instr, validate_reg_is_dst) {
       if (ctx->shared_ra && !(dst->flags & IR3_REG_SHARED))
          continue;
+      validate_assert(ctx, dst->num != INVALID_REG);
       unsigned dst_max = ra_reg_get_physreg(dst) + reg_size(dst);
       validate_assert(ctx, dst_max <= get_file_size(ctx, dst));
       if (dst->tied)
          validate_assert(ctx, ra_reg_get_num(dst) == ra_reg_get_num(dst->tied));
    }
 
-   ra_foreach_src (src, instr) {
+   foreach_src_if (src, instr, validate_reg_is_src) {
       if (ctx->shared_ra && !(src->flags & IR3_REG_SHARED))
          continue;
+      validate_assert(ctx, src->num != INVALID_REG);
       unsigned src_max = ra_reg_get_physreg(src) + reg_size(src);
       validate_assert(ctx, src_max <= get_file_size(ctx, src));
    }
@@ -232,6 +248,8 @@ merge_state(struct ra_val_ctx *ctx, struct reaching_state *dst,
    bool progress = false;
    progress |= merge_file(&dst->full, &src->full, ctx->full_size);
    progress |= merge_file(&dst->half, &src->half, ctx->half_size);
+   progress |=
+      merge_file(&dst->predicate, &src->predicate, ctx->predicate_size);
    return progress;
 }
 
@@ -247,16 +265,33 @@ ra_val_get_file(struct ra_val_ctx *ctx, struct ir3_register *reg)
 {
    if (reg->flags & IR3_REG_SHARED)
       return &ctx->reaching.shared;
+   else if (reg->flags & IR3_REG_PREDICATE)
+      return &ctx->reaching.predicate;
    else if (ctx->merged_regs || !(reg->flags & IR3_REG_HALF))
       return &ctx->reaching.full;
    else
       return &ctx->reaching.half;
 }
 
+/* Predicate RA implements spilling by cloning the instruction that produces a
+ * def. In that case, we might end up two different defs legitimately reaching a
+ * source. To support validation, the RA will store the original def in the
+ * instruction's data field.
+ */
+static struct ir3_register *
+get_original_def(struct ir3_register *def)
+{
+   if (def == UNKNOWN || def == UNDEF || def == OVERDEF)
+      return def;
+   if (def->flags & IR3_REG_PREDICATE)
+      return def->instr->data;
+   return def;
+}
+
 static void
 propagate_normal_instr(struct ra_val_ctx *ctx, struct ir3_instruction *instr)
 {
-   ra_foreach_dst (dst, instr) {
+   foreach_dst_if (dst, instr, validate_reg_is_dst) {
       /* Process destinations from scalar ALU instructions that were demoted to
        * normal ALU instructions. For these we must treat the instruction as a
        * spill of itself and set the propagate state to itself. See
@@ -277,9 +312,10 @@ propagate_normal_instr(struct ra_val_ctx *ctx, struct ir3_instruction *instr)
 
       struct file_state *file = ra_val_get_file(ctx, dst);
       physreg_t physreg = ra_reg_get_physreg(dst);
+
       for (unsigned i = 0; i < reg_size(dst); i++) {
          file->regs[physreg + i] = (struct reg_state){
-            .def = dst,
+            .def = get_original_def(dst),
             .offset = i,
          };
       }
@@ -552,10 +588,16 @@ dump_reg_state(struct reg_state *state)
       /* The analysis should always remove UNKNOWN eventually. */
       assert(state->def != UNKNOWN);
 
-      fprintf(stderr, "ssa_%u:%u(%sr%u.%c) + %u", state->def->instr->serialno,
+      const char *prefix = "r";
+      unsigned num = state->def->num / 4;
+      if (state->def->flags & IR3_REG_PREDICATE) {
+         prefix = "p";
+         num = 0;
+      }
+
+      fprintf(stderr, "ssa_%u:%u(%s%s%u.%c) + %u", state->def->instr->serialno,
               state->def->name, (state->def->flags & IR3_REG_HALF) ? "h" : "",
-              state->def->num / 4, "xyzw"[state->def->num % 4],
-              state -> offset);
+              prefix, num, "xyzw"[state->def->num % 4], state -> offset);
    }
 }
 
@@ -569,7 +611,7 @@ check_reaching_src(struct ra_val_ctx *ctx, struct ir3_instruction *instr,
    physreg_t physreg = ra_reg_get_physreg(src);
    for (unsigned i = 0; i < reg_size(src); i++) {
       struct reg_state expected = (struct reg_state){
-         .def = src->def,
+         .def = get_original_def(src->def),
          .offset = i,
       };
       chase_definition(&expected);
@@ -602,7 +644,7 @@ check_reaching_instr(struct ra_val_ctx *ctx, struct ir3_instruction *instr)
       return;
    }
 
-   ra_foreach_src (src, instr) {
+   foreach_src_if (src, instr, validate_reg_is_src) {
       check_reaching_src(ctx, instr, src);
    }
 }
@@ -645,6 +687,8 @@ check_reaching_defs(struct ra_val_ctx *ctx, struct ir3 *ir)
       start->half.regs[i].def = UNDEF;
    for (unsigned i = 0; i < RA_SHARED_SIZE; i++)
       start->shared.regs[i].def = UNDEF;
+   for (unsigned i = 0; i < ctx->predicate_size; i++)
+      start->predicate.regs[i].def = UNDEF;
 
    bool progress;
    do {
@@ -682,6 +726,7 @@ ir3_ra_validate(struct ir3_shader_variant *v, unsigned full_size,
    ctx->merged_regs = v->mergedregs;
    ctx->full_size = full_size;
    ctx->half_size = half_size;
+   ctx->predicate_size = v->compiler->num_predicates * 2;
    ctx->block_count = block_count;
    ctx->shared_ra = shared_ra;
    if (ctx->shared_ra)

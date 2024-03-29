@@ -27,9 +27,9 @@
 
 #include "util/u_atomic.h"
 #include "util/u_debug.h"
-#include "vulkan/util/vk_format.h"
 #include "ac_drm_fourcc.h"
 #include "radv_debug.h"
+#include "radv_formats.h"
 #include "radv_private.h"
 #include "radv_radeon_winsys.h"
 #include "sid.h"
@@ -1163,10 +1163,8 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
 static void
 radv_destroy_image(struct radv_device *device, const VkAllocationCallbacks *pAllocator, struct radv_image *image)
 {
-   if ((image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) && image->bindings[0].bo) {
-      radv_rmv_log_bo_destroy(device, image->bindings[0].bo);
-      device->ws->buffer_destroy(device->ws, image->bindings[0].bo);
-   }
+   if ((image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) && image->bindings[0].bo)
+      radv_bo_destroy(device, image->bindings[0].bo);
 
    if (image->owned_memory != VK_NULL_HANDLE) {
       RADV_FROM_HANDLE(radv_device_memory, mem, image->owned_memory);
@@ -1317,13 +1315,12 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
       image->size = align64(image->size, image->alignment);
       image->bindings[0].offset = 0;
 
-      result = device->ws->buffer_create(device->ws, image->size, image->alignment, 0, RADEON_FLAG_VIRTUAL,
-                                         RADV_BO_PRIORITY_VIRTUAL, 0, &image->bindings[0].bo);
+      result = radv_bo_create(device, image->size, image->alignment, 0, RADEON_FLAG_VIRTUAL, RADV_BO_PRIORITY_VIRTUAL,
+                              0, true, &image->bindings[0].bo);
       if (result != VK_SUCCESS) {
          radv_destroy_image(device, alloc, image);
          return vk_error(device, result);
       }
-      radv_rmv_log_bo_allocate(device, image->bindings[0].bo, image->size, true);
    }
 
    if (device->instance->debug_flags & RADV_DEBUG_IMG) {

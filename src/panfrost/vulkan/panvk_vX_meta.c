@@ -27,7 +27,7 @@
 #include "pan_encoder.h"
 #include "pan_shader.h"
 
-#include "panvk_private.h"
+#include "panvk_device.h"
 
 #include "vk_format.h"
 

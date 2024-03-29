@@ -63,6 +63,22 @@ blit_type_to_reg_fmt(nir_alu_type in)
 }
 #endif
 
+/* On Valhall, the driver gives the hardware a table of resource tables.
+ * Resources are addressed as the index of the table together with the index of
+ * the resource within the table. For simplicity, we put one type of resource
+ * in each table and fix the numbering of the tables.
+ *
+ * This numbering is arbitrary.
+ */
+enum pan_blit_resource_table {
+   PAN_BLIT_TABLE_ATTRIBUTE = 0,
+   PAN_BLIT_TABLE_ATTRIBUTE_BUFFER,
+   PAN_BLIT_TABLE_SAMPLER,
+   PAN_BLIT_TABLE_TEXTURE,
+
+   PAN_BLIT_NUM_RESOURCE_TABLES
+};
+
 struct pan_blit_surface {
    gl_frag_result loc              : 4;
    nir_alu_type type               : 8;
@@ -402,6 +418,25 @@ lower_sampler_parameters(nir_builder *b, nir_intrinsic_instr *intr,
    return true;
 }
 
+static uint32_t
+sampler_hw_index(uint32_t index)
+{
+   return PAN_ARCH >= 9 ? pan_res_handle(PAN_BLIT_TABLE_SAMPLER, index) : index;
+}
+
+static uint32_t
+tex_hw_index(uint32_t index)
+{
+   return PAN_ARCH >= 9 ? pan_res_handle(PAN_BLIT_TABLE_TEXTURE, index) : index;
+}
+
+static uint32_t
+attr_hw_index(uint32_t index)
+{
+   return PAN_ARCH >= 9 ? pan_res_handle(PAN_BLIT_TABLE_ATTRIBUTE, index)
+                        : index;
+}
+
 static const struct pan_blit_shader_data *
 pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
                             const struct pan_blit_shader_key *key)
@@ -472,12 +507,13 @@ pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
    nir_builder b = nir_builder_init_simple_shader(
       MESA_SHADER_FRAGMENT, GENX(pan_shader_get_compiler_options)(),
       "pan_blit(%s)", sig);
-   nir_variable *coord_var = nir_variable_create(
-      b.shader, nir_var_shader_in,
-      glsl_vector_type(GLSL_TYPE_FLOAT, coord_comps), "coord");
-   coord_var->data.location = VARYING_SLOT_VAR0;
 
-   nir_def *coord = nir_load_var(&b, coord_var);
+   nir_def *barycentric = nir_load_barycentric(
+      &b, nir_intrinsic_load_barycentric_pixel, INTERP_MODE_SMOOTH);
+   nir_def *coord = nir_load_interpolated_input(
+      &b, coord_comps, 32, barycentric, nir_imm_int(&b, 0),
+      .base = attr_hw_index(0), .dest_type = nir_type_float32,
+      .io_semantics.location = VARYING_SLOT_VAR0, .io_semantics.num_slots = 1);
 
    unsigned active_count = 0;
    for (unsigned i = 0; i < ARRAY_SIZE(key->surfaces); i++) {
@@ -487,19 +523,6 @@ pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
       /* Resolve operations only work for N -> 1 samples. */
       assert(key->surfaces[i].dst_samples == 1 ||
              key->surfaces[i].src_samples == key->surfaces[i].dst_samples);
-
-      static const char *out_names[] = {
-         "out0", "out1", "out2", "out3", "out4", "out5", "out6", "out7",
-      };
-
-      unsigned ncomps = key->surfaces[i].loc >= FRAG_RESULT_DATA0 ? 4 : 1;
-      enum glsl_base_type type =
-         nir_get_glsl_base_type_for_nir_type(key->surfaces[i].type);
-      nir_variable *out = nir_variable_create(b.shader, nir_var_shader_out,
-                                              glsl_vector_type(type, ncomps),
-                                              out_names[active_count]);
-      out->data.location = key->surfaces[i].loc;
-      out->data.driver_location = active_count;
 
       bool resolve =
          key->surfaces[i].src_samples > key->surfaces[i].dst_samples;
@@ -540,7 +563,8 @@ pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
 
             tex->op = nir_texop_txf_ms;
             tex->dest_type = key->surfaces[i].type;
-            tex->texture_index = active_count;
+            tex->texture_index = tex_hw_index(active_count);
+            tex->sampler_index = sampler_hw_index(0);
             tex->is_array = key->surfaces[i].array;
             tex->sampler_dim = sampler_dim;
 
@@ -565,7 +589,8 @@ pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
          nir_tex_instr *tex = nir_tex_instr_create(b.shader, ms ? 3 : 1);
 
          tex->dest_type = key->surfaces[i].type;
-         tex->texture_index = active_count;
+         tex->texture_index = tex_hw_index(active_count);
+         tex->sampler_index = sampler_hw_index(0);
          tex->is_array = key->surfaces[i].array;
          tex->sampler_dim = sampler_dim;
 
@@ -596,10 +621,19 @@ pan_blitter_get_blit_shader(struct pan_blitter_cache *cache,
       assert(res);
 
       if (key->surfaces[i].loc >= FRAG_RESULT_DATA0) {
-         nir_store_var(&b, out, res, 0xFF);
+         nir_store_output(
+            &b, res, nir_imm_int(&b, 0), .base = active_count,
+            .src_type = key->surfaces[i].type,
+            .io_semantics.location = key->surfaces[i].loc,
+            .io_semantics.num_slots = 1,
+            .write_mask = nir_component_mask(res->num_components));
       } else {
          unsigned c = key->surfaces[i].loc == FRAG_RESULT_STENCIL ? 1 : 0;
-         nir_store_var(&b, out, nir_channel(&b, res, c), 0xFF);
+         nir_store_output(
+            &b, nir_channel(&b, res, c), nir_imm_int(&b, 0),
+            .base = active_count, .src_type = key->surfaces[i].type,
+            .io_semantics.location = key->surfaces[i].loc,
+            .io_semantics.num_slots = 1, .write_mask = nir_component_mask(1));
       }
       active_count++;
    }
@@ -756,10 +790,15 @@ pan_blitter_get_rsd(struct pan_blitter_cache *cache,
    rsd = rzalloc(cache->rsds.rsds, struct pan_blit_rsd_data);
    rsd->key = rsd_key;
 
+#if PAN_ARCH == 4
+   struct panfrost_ptr rsd_ptr =
+      pan_pool_alloc_desc(cache->rsds.pool, RENDERER_STATE);
+#else
    unsigned bd_count = PAN_ARCH >= 5 ? MAX2(views->rt_count, 1) : 0;
    struct panfrost_ptr rsd_ptr = pan_pool_alloc_desc_aggregate(
       cache->rsds.pool, PAN_DESC(RENDERER_STATE),
       PAN_DESC_ARRAY(bd_count, BLEND));
+#endif
 
    mali_ptr blend_shaders[8] = {0};
 
@@ -891,7 +930,7 @@ pan_blitter_emit_varying(struct pan_pool *pool)
 
 #if PAN_ARCH >= 9
       cfg.attribute_type = MALI_ATTRIBUTE_TYPE_1D;
-      cfg.table = PAN_TABLE_ATTRIBUTE_BUFFER;
+      cfg.table = PAN_BLIT_TABLE_ATTRIBUTE_BUFFER;
       cfg.frequency = MALI_ATTRIBUTE_FREQUENCY_VERTEX;
       cfg.stride = 4 * sizeof(float);
 #endif
@@ -1147,7 +1186,7 @@ pan_preload_emit_dcd(struct pan_blitter_cache *cache,
    }
 #else
    struct panfrost_ptr T;
-   unsigned nr_tables = 12;
+   unsigned nr_tables = PAN_BLIT_NUM_RESOURCE_TABLES;
 
    /* Although individual resources need only 16 byte alignment, the
     * resource table as a whole must be 64-byte aligned.
@@ -1155,11 +1194,11 @@ pan_preload_emit_dcd(struct pan_blitter_cache *cache,
    T = pan_pool_alloc_aligned(pool, nr_tables * pan_size(RESOURCE), 64);
    memset(T.cpu, 0, nr_tables * pan_size(RESOURCE));
 
-   panfrost_make_resource_table(T, PAN_TABLE_TEXTURE, textures, tex_count);
-   panfrost_make_resource_table(T, PAN_TABLE_SAMPLER, samplers, 1);
-   panfrost_make_resource_table(T, PAN_TABLE_ATTRIBUTE, varyings, 1);
-   panfrost_make_resource_table(T, PAN_TABLE_ATTRIBUTE_BUFFER, varying_buffers,
-                                1);
+   panfrost_make_resource_table(T, PAN_BLIT_TABLE_TEXTURE, textures, tex_count);
+   panfrost_make_resource_table(T, PAN_BLIT_TABLE_SAMPLER, samplers, 1);
+   panfrost_make_resource_table(T, PAN_BLIT_TABLE_ATTRIBUTE, varyings, 1);
+   panfrost_make_resource_table(T, PAN_BLIT_TABLE_ATTRIBUTE_BUFFER,
+                                varying_buffers, 1);
 
    struct pan_blit_shader_key key = pan_blitter_get_key(&views);
    const struct pan_blit_shader_data *blit_shader =
@@ -1608,41 +1647,9 @@ GENX(pan_blit)(struct pan_blit_context *ctx, struct pan_pool *pool,
 }
 #endif
 
-static uint32_t
-pan_blit_shader_key_hash(const void *key)
-{
-   return _mesa_hash_data(key, sizeof(struct pan_blit_shader_key));
-}
-
-static bool
-pan_blit_shader_key_equal(const void *a, const void *b)
-{
-   return !memcmp(a, b, sizeof(struct pan_blit_shader_key));
-}
-
-static uint32_t
-pan_blit_blend_shader_key_hash(const void *key)
-{
-   return _mesa_hash_data(key, sizeof(struct pan_blit_blend_shader_key));
-}
-
-static bool
-pan_blit_blend_shader_key_equal(const void *a, const void *b)
-{
-   return !memcmp(a, b, sizeof(struct pan_blit_blend_shader_key));
-}
-
-static uint32_t
-pan_blit_rsd_key_hash(const void *key)
-{
-   return _mesa_hash_data(key, sizeof(struct pan_blit_rsd_key));
-}
-
-static bool
-pan_blit_rsd_key_equal(const void *a, const void *b)
-{
-   return !memcmp(a, b, sizeof(struct pan_blit_rsd_key));
-}
+DERIVE_HASH_TABLE(pan_blit_shader_key);
+DERIVE_HASH_TABLE(pan_blit_blend_shader_key);
+DERIVE_HASH_TABLE(pan_blit_rsd_key);
 
 static void
 pan_blitter_prefill_blit_shader_cache(struct pan_blitter_cache *cache)
@@ -1692,17 +1699,14 @@ GENX(pan_blitter_cache_init)(struct pan_blitter_cache *cache,
                              struct pan_pool *desc_pool)
 {
    cache->gpu_id = gpu_id;
-   cache->shaders.blit = _mesa_hash_table_create(NULL, pan_blit_shader_key_hash,
-                                                 pan_blit_shader_key_equal);
-   cache->shaders.blend = _mesa_hash_table_create(
-      NULL, pan_blit_blend_shader_key_hash, pan_blit_blend_shader_key_equal);
+   cache->shaders.blit = pan_blit_shader_key_table_create(NULL);
+   cache->shaders.blend = pan_blit_blend_shader_key_table_create(NULL);
    cache->shaders.pool = bin_pool;
    pthread_mutex_init(&cache->shaders.lock, NULL);
    pan_blitter_prefill_blit_shader_cache(cache);
 
    cache->rsds.pool = desc_pool;
-   cache->rsds.rsds = _mesa_hash_table_create(NULL, pan_blit_rsd_key_hash,
-                                              pan_blit_rsd_key_equal);
+   cache->rsds.rsds = pan_blit_rsd_key_table_create(NULL);
    pthread_mutex_init(&cache->rsds.lock, NULL);
    cache->blend_shader_cache = blend_shader_cache;
 }

@@ -906,7 +906,6 @@ spec@arb_depth_texture@texwrap formats@GL_DEPTH_COMPONENT24- swizzled,Fail
 spec@arb_depth_texture@texwrap formats@GL_DEPTH_COMPONENT32,Fail
 spec@arb_depth_texture@texwrap formats@GL_DEPTH_COMPONENT32- NPOT,Fail
 spec@arb_depth_texture@texwrap formats@GL_DEPTH_COMPONENT32- swizzled,Fail
-spec@arb_draw_buffers@fbo-mrt-alphatest,Fail
 spec@arb_draw_elements_base_vertex@arb_draw_elements_base_vertex-negative-index,Crash
 spec@arb_draw_elements_base_vertex@arb_draw_elements_base_vertex-negative-index-user_varrays,Crash
 spec@arb_es2_compatibility@texwrap formats,Fail
@@ -1193,9 +1192,8 @@ spec@ext_framebuffer_multisample@unaligned-blit 4 stencil msaa,Fail
 # https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/817
 spec@intel_performance_query@intel_performance_query-issue_2235,Fail
 
-# New CTS failures in 1.3.6.3
-wayland-dEQP-EGL.functional.fence_sync.valid.egl_fence_persistent_buffer,Crash
-x11-dEQP-EGL.functional.fence_sync.valid.egl_fence_persistent_buffer,Crash
-
 # Bisected to 35ae5dce39c ("mesa: don't pass Infs to the shader via gl_Fog.scale")
 spec@glsl-1.10@execution@glsl-1.10-built-in-uniform-state,Fail
+
+# Couldn't reproduce locally
+spec@oes_packed_depth_stencil@depth_stencil texture gles2,Fail

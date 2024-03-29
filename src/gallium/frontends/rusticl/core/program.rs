@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::ptr;
+use std::ptr::addr_of;
 use std::slice;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -55,7 +56,7 @@ fn get_disk_cache() -> &'static Option<DiskCache> {
         DISK_CACHE_ONCE.call_once(|| {
             DISK_CACHE = DiskCache::new("rusticl", &func_ptrs, 0);
         });
-        &DISK_CACHE
+        &*addr_of!(DISK_CACHE)
     }
 }
 
@@ -355,18 +356,18 @@ impl Program {
             .collect()
     }
 
-    pub fn new(context: &Arc<Context>, devs: &[&'static Device], src: CString) -> Arc<Program> {
+    pub fn new(context: Arc<Context>, src: CString) -> Arc<Program> {
         Arc::new(Self {
-            base: CLObjectBase::new(),
-            context: context.clone(),
-            devs: devs.to_vec(),
-            src: ProgramSourceType::Src(src),
+            base: CLObjectBase::new(RusticlTypes::Program),
             build: Mutex::new(ProgramBuild {
-                builds: Self::create_default_builds(devs),
+                builds: Self::create_default_builds(&context.devs),
                 spec_constants: HashMap::new(),
                 kernels: Vec::new(),
                 kernel_info: HashMap::new(),
             }),
+            devs: context.devs.to_vec(),
+            context: context,
+            src: ProgramSourceType::Src(src),
         })
     }
 
@@ -438,7 +439,7 @@ impl Program {
         build.build_nirs(false);
 
         Arc::new(Self {
-            base: CLObjectBase::new(),
+            base: CLObjectBase::new(RusticlTypes::Program),
             context: context,
             devs: devs,
             src: ProgramSourceType::Binary,
@@ -449,7 +450,7 @@ impl Program {
     pub fn from_spirv(context: Arc<Context>, spirv: &[u8]) -> Arc<Program> {
         let builds = Self::create_default_builds(&context.devs);
         Arc::new(Self {
-            base: CLObjectBase::new(),
+            base: CLObjectBase::new(RusticlTypes::Program),
             devs: context.devs.clone(),
             context: context,
             src: ProgramSourceType::Il(SPIRVBin::from_bin(spirv)),
@@ -517,7 +518,12 @@ impl Program {
         for (i, d) in self.devs.iter().enumerate() {
             let mut ptr = ptrs[i];
             let info = lock.dev_build(d);
-            let spirv = info.spirv.as_ref().unwrap().to_bin();
+
+            // no spirv means nothing to write
+            let Some(spirv) = info.spirv.as_ref() else {
+                continue;
+            };
+            let spirv = spirv.to_bin();
 
             unsafe {
                 // 1. binary format version
@@ -751,7 +757,7 @@ impl Program {
         build.build_nirs(false);
 
         Arc::new(Self {
-            base: CLObjectBase::new(),
+            base: CLObjectBase::new(RusticlTypes::Program),
             context: context,
             devs: devs.to_owned(),
             src: ProgramSourceType::Linked,

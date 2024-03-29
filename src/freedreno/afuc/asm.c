@@ -45,7 +45,7 @@ struct encode_state {
 };
 
 static afuc_opc
-__instruction_case(struct encode_state *s, struct afuc_instr *instr)
+__instruction_case(struct encode_state *s, const struct afuc_instr *instr)
 {
    switch (instr->opc) {
 #define ALU(name) \
@@ -70,6 +70,7 @@ __instruction_case(struct encode_state *s, struct afuc_instr *instr)
    ALU(MIN)
    ALU(MAX)
    ALU(CMP)
+   ALU(BIC)
 #undef ALU
 
    default:
@@ -84,17 +85,23 @@ __instruction_case(struct encode_state *s, struct afuc_instr *instr)
 int gpuver;
 
 /* bit lame to hard-code max but fw sizes are small */
-static struct afuc_instr instructions[0x2000];
+static struct afuc_instr instructions[0x4000];
 static unsigned num_instructions;
+
+static unsigned instr_offset;
 
 static struct asm_label labels[0x512];
 static unsigned num_labels;
+
+static int outfd;
 
 struct afuc_instr *
 next_instr(afuc_opc opc)
 {
    struct afuc_instr *ai = &instructions[num_instructions++];
    assert(num_instructions < ARRAY_SIZE(instructions));
+   memset(ai, 0, sizeof(*ai));
+   instr_offset++;
    ai->opc = opc;
    return ai;
 }
@@ -106,8 +113,25 @@ decl_label(const char *str)
 
    assert(num_labels < ARRAY_SIZE(labels));
 
-   label->offset = num_instructions;
+   label->offset = instr_offset;
    label->label = str;
+}
+
+void
+decl_jumptbl(void)
+{
+   struct afuc_instr *ai = &instructions[num_instructions++];
+   assert(num_instructions < ARRAY_SIZE(instructions));
+   ai->opc = OPC_JUMPTBL;
+   instr_offset += 0x80;
+}
+
+void
+align_instr(unsigned alignment)
+{
+   while (instr_offset % (alignment / 4) != 0) {
+      next_instr(OPC_NOP);
+   }
 }
 
 static int
@@ -128,6 +152,30 @@ resolve_label(const char *str)
 }
 
 static void
+emit_jumptable(int outfd)
+{
+   uint32_t jmptable[0x80] = {0};
+   int i;
+
+   for (i = 0; i < num_labels; i++) {
+      struct asm_label *label = &labels[i];
+      int id = afuc_pm4_id(label->label);
+
+      /* if it doesn't match a known PM4 packet-id, try to match UNKN%d: */
+      if (id < 0) {
+         if (sscanf(label->label, "UNKN%d", &id) != 1) {
+            /* if still not found, must not belong in jump-table: */
+            continue;
+         }
+      }
+
+      jmptable[id] = label->offset;
+   }
+
+   write(outfd, jmptable, sizeof(jmptable));
+}
+
+static void
 emit_instructions(int outfd)
 {
    int i;
@@ -135,12 +183,6 @@ emit_instructions(int outfd)
    struct encode_state s = {
       .gen = gpuver,
    };
-
-   /* there is an extra 0x00000000 which kernel strips off.. we could
-    * perhaps use it for versioning.
-    */
-   i = 0;
-   write(outfd, &i, 4);
 
    /* Expand some meta opcodes, and resolve branch targets */
    for (i = 0; i < num_instructions; i++) {
@@ -184,16 +226,15 @@ emit_instructions(int outfd)
          break;
       }
 
-      /* special case, 2nd dword is patched up w/ # of instructions
-       * (ie. offset of jmptbl)
-       */
-      if (i == 1) {
-         assert(ai->opc == OPC_RAW_LITERAL);
-         ai->literal &= ~0xffff;
-         ai->literal |= num_instructions;
+      if (ai->opc == OPC_JUMPTBL) {
+         emit_jumptable(outfd);
+         continue;
       }
 
       if (ai->opc == OPC_RAW_LITERAL) {
+         if (ai->label) {
+            ai->literal = afuc_nop_literal(resolve_label(ai->label), gpuver);
+         }
          write(outfd, &ai->literal, 4);
          continue;
       }
@@ -202,6 +243,19 @@ emit_instructions(int outfd)
       write(outfd, &encoded, 4);
    }
 }
+
+void next_section(void)
+{
+   /* Sections must be aligned to 32 bytes */
+   align_instr(32);
+
+   emit_instructions(outfd);
+
+   num_instructions = 0;
+   instr_offset = 0;
+   num_labels = 0;
+}
+
 
 unsigned
 parse_control_reg(const char *name)
@@ -218,30 +272,6 @@ parse_sqe_reg(const char *name)
 }
 
 static void
-emit_jumptable(int outfd)
-{
-   uint32_t jmptable[0x80] = {0};
-   int i;
-
-   for (i = 0; i < num_labels; i++) {
-      struct asm_label *label = &labels[i];
-      int id = afuc_pm4_id(label->label);
-
-      /* if it doesn't match a known PM4 packet-id, try to match UNKN%d: */
-      if (id < 0) {
-         if (sscanf(label->label, "UNKN%d", &id) != 1) {
-            /* if still not found, must not belong in jump-table: */
-            continue;
-         }
-      }
-
-      jmptable[id] = label->offset;
-   }
-
-   write(outfd, jmptable, sizeof(jmptable));
-}
-
-static void
 usage(void)
 {
    fprintf(stderr, "Usage:\n"
@@ -255,7 +285,7 @@ main(int argc, char **argv)
 {
    FILE *in;
    char *file, *outfile;
-   int c, ret, outfd;
+   int c, ret;
 
    /* Argument parsing: */
    while ((c = getopt(argc, argv, "g:")) != -1) {
@@ -306,6 +336,12 @@ main(int argc, char **argv)
       usage();
    }
 
+   /* there is an extra 0x00000000 which kernel strips off.. we could
+    * perhaps use it for versioning.
+    */
+   uint32_t zero = 0;
+   write(outfd, &zero, 4);
+
    ret = yyparse();
    if (ret) {
       fprintf(stderr, "parse failed: %d\n", ret);
@@ -313,7 +349,6 @@ main(int argc, char **argv)
    }
 
    emit_instructions(outfd);
-   emit_jumptable(outfd);
 
    close(outfd);
 

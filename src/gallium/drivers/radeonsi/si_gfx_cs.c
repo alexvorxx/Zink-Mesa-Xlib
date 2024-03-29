@@ -14,6 +14,65 @@
 #include "ac_debug.h"
 #include "si_utrace.h"
 
+void si_reset_debug_log_buffer(struct si_context *sctx)
+{
+#if SHADER_DEBUG_LOG
+   /* Create and bind the debug log buffer. */
+   unsigned size = 256 * 16 + 4;
+   struct pipe_resource *buf = &si_aligned_buffer_create(sctx->b.screen, SI_RESOURCE_FLAG_CLEAR,
+                                                         PIPE_USAGE_STAGING, size, 256)->b.b;
+   si_set_internal_shader_buffer(sctx, SI_RING_SHADER_LOG,
+                                 &(struct pipe_shader_buffer){
+                                    .buffer = buf,
+                                    .buffer_size = size});
+   pipe_resource_reference(&buf, NULL);
+#endif
+}
+
+static void si_dump_debug_log(struct si_context *sctx, bool sync)
+{
+   struct pipe_resource *buf = sctx->internal_bindings.buffers[SI_RING_SHADER_LOG];
+   if (!buf)
+      return;
+
+   struct pipe_transfer *transfer = NULL;
+   unsigned size = sctx->descriptors[SI_DESCS_INTERNAL].list[SI_RING_SHADER_LOG * 4 + 2];
+   unsigned max_entries = (size - 4) / 16;
+
+   /* If not syncing (e.g. expecting a GPU hang), wait some time and then just print
+    * the log buffer.
+    */
+   if (!sync)
+      usleep(1000000);
+
+   fprintf(stderr, "Reading shader log...\n");
+
+   uint32_t *map = pipe_buffer_map(&sctx->b, buf,
+                                   PIPE_MAP_READ | (sync ? 0 : PIPE_MAP_UNSYNCHRONIZED),
+                                   &transfer);
+   unsigned num = map[0];
+   fprintf(stderr, "Shader log items: %u\n", num);
+
+   if (!num) {
+      pipe_buffer_unmap(&sctx->b, transfer);
+      return;
+   }
+
+
+   unsigned first = num > max_entries ? num - max_entries : 0;
+   map++;
+
+   for (unsigned i = first; i < num; i++) {
+      unsigned idx = i % max_entries;
+
+      fprintf(stderr, "   [%u(%u)] = {%u, %u, %u, %u}\n", i, idx,
+              map[idx * 4], map[idx * 4 + 1], map[idx * 4 + 2], map[idx * 4 + 3]);
+   }
+   pipe_buffer_unmap(&sctx->b, transfer);
+
+   si_reset_debug_log_buffer(sctx);
+}
+
 void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_handle **fence)
 {
    struct radeon_cmdbuf *cs = &ctx->gfx_cs;
@@ -92,7 +151,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    /* If we use s_sendmsg to set tess factors to all 0 or all 1 instead of writing to the tess
     * factor buffer, we need this at the end of command buffers:
     */
-   if ((ctx->gfx_level == GFX11 || ctx->gfx_level == GFX11_5) && ctx->tess_rings) {
+   if ((ctx->gfx_level == GFX11 || ctx->gfx_level == GFX11_5) && ctx->has_tessellation) {
       radeon_begin(cs);
       radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
       radeon_emit(EVENT_TYPE(V_028A90_SQ_NON_EVENT) | EVENT_INDEX(0));
@@ -167,6 +226,11 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
 
    si_begin_new_gfx_cs(ctx, false);
    ctx->gfx_flush_in_progress = false;
+
+#if SHADER_DEBUG_LOG
+   if (debug_get_bool_option("shaderlog", false))
+      si_dump_debug_log(ctx, false);
+#endif
 }
 
 static void si_begin_gfx_cs_debug(struct si_context *ctx)
@@ -411,6 +475,7 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       ctx->flags |= SI_CONTEXT_VGT_FLUSH;
 
    si_mark_atom_dirty(ctx, &ctx->atoms.s.cache_flush);
+   si_mark_atom_dirty(ctx, &ctx->atoms.s.spi_ge_ring_state);
 
    if (ctx->screen->attribute_ring) {
       radeon_add_to_buffer_list(ctx, &ctx->gfx_cs, ctx->screen->attribute_ring,
@@ -447,9 +512,10 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       return;
    }
 
-   if (ctx->tess_rings) {
+   if (ctx->has_tessellation) {
       radeon_add_to_buffer_list(ctx, &ctx->gfx_cs,
-                                unlikely(is_secure) ? si_resource(ctx->tess_rings_tmz) : si_resource(ctx->tess_rings),
+                                unlikely(is_secure) ? si_resource(ctx->screen->tess_rings_tmz)
+                                                    : si_resource(ctx->screen->tess_rings),
                                 RADEON_USAGE_READWRITE | RADEON_PRIO_SHADER_RINGS);
    }
 
@@ -579,10 +645,11 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
 
    /* All buffer references are removed on a flush, so si_check_needs_implicit_sync
     * cannot determine if si_make_CB_shader_coherent() needs to be called.
-    * ctx->force_cb_shader_coherent will be cleared by the first call to
+    * ctx->force_shader_coherency.with_cb will be cleared by the first call to
     * si_make_CB_shader_coherent.
     */
-   ctx->force_cb_shader_coherent = true;
+   ctx->force_shader_coherency.with_cb = true;
+   ctx->force_shader_coherency.with_db = true;
 }
 
 void si_trace_emit(struct si_context *sctx)

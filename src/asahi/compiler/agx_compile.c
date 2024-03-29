@@ -36,6 +36,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"nopreamble",AGX_DBG_NOPREAMBLE,"Do not use shader preambles"},
    {"demand",    AGX_DBG_DEMAND,    "Bound tightly to register demand"},
    {"nosched",   AGX_DBG_NOSCHED,   "Do not schedule the shader"},
+   {"spill",     AGX_DBG_SPILL,     "Spill (almost) everything"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -448,14 +449,18 @@ agx_emit_store_vary(agx_builder *b, nir_intrinsic_instr *instr)
 
    unsigned imm_index = b->shader->out->varyings.vs.slots[sem.location];
 
-   if (sem.location == VARYING_SLOT_LAYER) {
+   if (sem.location == VARYING_SLOT_LAYER ||
+       sem.location == VARYING_SLOT_CLIP_DIST0) {
       /* Separate slots used for the sysval vs the varying. The default slot
        * above is for the varying. Change for the sysval.
        */
       assert(sem.no_sysval_output || sem.no_varying);
 
-      if (sem.no_varying)
-         imm_index = b->shader->out->varyings.vs.layer_viewport_slot;
+      if (sem.no_varying) {
+         imm_index = sem.location == VARYING_SLOT_LAYER
+                        ? b->shader->out->varyings.vs.layer_viewport_slot
+                        : b->shader->out->varyings.vs.clip_dist_slot;
+      }
    }
 
    assert(imm_index < ~0);
@@ -818,6 +823,7 @@ agx_emit_load_scratch(agx_builder *b, agx_index dst, nir_intrinsic_instr *instr)
 
    agx_stack_load_to(b, dst, offset, format, mask);
    agx_emit_cached_split(b, dst, nr);
+   b->shader->any_scratch = true;
 }
 
 static void
@@ -829,6 +835,7 @@ agx_emit_store_scratch(agx_builder *b, nir_intrinsic_instr *instr)
    unsigned mask = BITFIELD_MASK(nir_src_num_components(instr->src[0]));
 
    agx_stack_store(b, value, offset, format, mask);
+   b->shader->any_scratch = true;
 }
 
 /*
@@ -1248,6 +1255,16 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
       return NULL;
    }
 
+   case nir_intrinsic_fence_helper_exit_agx: {
+      assert(b->shader->key->is_helper);
+      agx_memory_barrier(b);
+      agx_unknown_barrier_1(b);
+      agx_memory_barrier_2(b);
+      agx_unknown_barrier_2(b);
+      agx_memory_barrier_3(b);
+      return NULL;
+   }
+
    case nir_intrinsic_begin_invocation_interlock: {
       if (!b->shader->did_writeout &&
           !b->shader->key->fs.ignore_tib_dependencies)
@@ -1256,6 +1273,13 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
       b->shader->did_writeout = true;
       return NULL;
    }
+
+   case nir_intrinsic_load_subgroup_invocation:
+      return agx_get_sr_to(b, dst, AGX_SR_THREAD_INDEX_IN_SUBGROUP);
+
+   case nir_intrinsic_load_active_subgroup_invocation_agx:
+      return agx_get_sr_coverage_to(b, dst,
+                                    AGX_SR_ACTIVE_THREAD_INDEX_IN_SUBGROUP);
 
    case nir_intrinsic_reduce: {
       assert(nir_intrinsic_reduction_op(instr) == nir_op_iadd &&
@@ -1278,8 +1302,7 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
    }
 
    case nir_intrinsic_ballot: {
-      return agx_icmp_ballot_to(b, dst, agx_src_index(&instr->src[0]),
-                                agx_zero(), AGX_ICOND_UEQ, true /* invert */);
+      return agx_ballot_to(b, dst, agx_src_index(&instr->src[0]));
    }
 
    case nir_intrinsic_doorbell_agx: {
@@ -1302,6 +1325,21 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
    case nir_intrinsic_store_scratch:
       agx_emit_store_scratch(b, instr);
       return NULL;
+
+   case nir_intrinsic_load_core_id_agx:
+      return agx_get_sr_to(b, dst, AGX_SR_CORE_ID);
+
+   case nir_intrinsic_load_helper_op_id_agx:
+      assert(b->shader->key->is_helper);
+      return agx_get_sr_barrier_to(b, dst, AGX_SR_HELPER_OP);
+
+   case nir_intrinsic_load_helper_arg_lo_agx:
+      assert(b->shader->key->is_helper);
+      return agx_get_sr_barrier_to(b, dst, AGX_SR_HELPER_ARG_L);
+
+   case nir_intrinsic_load_helper_arg_hi_agx:
+      assert(b->shader->key->is_helper);
+      return agx_get_sr_barrier_to(b, dst, AGX_SR_HELPER_ARG_H);
 
    case nir_intrinsic_load_barycentric_sample:
    case nir_intrinsic_load_sample_id:
@@ -1548,24 +1586,6 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
 
    case nir_op_bcsel:
       return agx_icmpsel_to(b, dst, s0, i0, s2, s1, AGX_ICOND_UEQ);
-
-   case nir_op_b2i32:
-   case nir_op_b2i16:
-   case nir_op_b2i8:
-      return agx_icmpsel_to(b, dst, s0, i0, i0, i1, AGX_ICOND_UEQ);
-
-   case nir_op_b2b32:
-      return agx_icmpsel_to(b, dst, s0, i0, i0, agx_mov_imm(b, 32, 0xFFFFFFFF),
-                            AGX_ICOND_UEQ);
-
-   case nir_op_b2f16:
-   case nir_op_b2f32: {
-      /* At this point, boolean is just zero/nonzero, so compare with zero */
-      agx_index f1 = (sz == 16) ? agx_mov_imm(b, 16, _mesa_float_to_half(1.0))
-                                : agx_mov_imm(b, 32, fui(1.0));
-
-      return agx_fcmpsel_to(b, dst, s0, i0, i0, f1, AGX_FCOND_EQ);
-   }
 
    case nir_op_i2i32: {
       if (src_sz == 8) {
@@ -2376,7 +2396,7 @@ agx_optimize_loop_nir(nir_shader *nir)
       NIR_PASS(progress, nir, nir_opt_algebraic);
       NIR_PASS(progress, nir, nir_opt_constant_folding);
       NIR_PASS(progress, nir, nir_opt_undef);
-      NIR_PASS(progress, nir, nir_opt_shrink_vectors);
+      NIR_PASS(progress, nir, nir_opt_shrink_vectors, true);
       NIR_PASS(progress, nir, nir_opt_loop_unroll);
    } while (progress);
 }
@@ -2531,6 +2551,7 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
       if (loc == VARYING_SLOT_POS || loc == VARYING_SLOT_PSIZ)
          continue;
 
+      assert(loc < ARRAY_SIZE(varyings->slots));
       varyings->slots[loc] = base;
       base += 4;
       varyings->num_32_smooth += 4;
@@ -2542,6 +2563,7 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
       if (loc == VARYING_SLOT_POS || loc == VARYING_SLOT_PSIZ)
          continue;
 
+      assert(loc < ARRAY_SIZE(varyings->slots));
       varyings->slots[loc] = base;
       base += 4;
       varyings->num_32_flat += 4;
@@ -2553,6 +2575,7 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
       if (loc == VARYING_SLOT_POS || loc == VARYING_SLOT_PSIZ)
          continue;
 
+      assert(loc < ARRAY_SIZE(varyings->slots));
       varyings->slots[loc] = base;
       base += 4;
       varyings->num_32_linear += 4;
@@ -2572,6 +2595,12 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings,
    if (nir->info.outputs_written & (VARYING_BIT_LAYER | VARYING_BIT_VIEWPORT)) {
       varyings->layer_viewport_slot = base;
       base += 1;
+   }
+
+   if (nir->info.outputs_written & VARYING_BIT_CLIP_DIST0) {
+      varyings->clip_dist_slot = base;
+      varyings->nr_clip_dists = nir->info.clip_distance_array_size;
+      base += varyings->nr_clip_dists;
    }
 
    /* All varyings linked now */
@@ -2625,13 +2654,9 @@ struct interp_masks {
 };
 
 static bool
-agx_gather_interp(nir_builder *b, nir_instr *instr, void *data)
+agx_gather_interp(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    struct interp_masks *masks = data;
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
    if (intr->intrinsic == nir_intrinsic_load_input) {
       nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
@@ -2657,9 +2682,7 @@ agx_interp_masks(nir_shader *nir)
    assert(nir->info.stage == MESA_SHADER_FRAGMENT);
 
    struct interp_masks masks = {0};
-   nir_shader_instructions_pass(nir, agx_gather_interp, nir_metadata_all,
-                                &masks);
-
+   nir_shader_intrinsics_pass(nir, agx_gather_interp, nir_metadata_all, &masks);
    return masks;
 }
 
@@ -2773,18 +2796,12 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
    emit_cf_list(ctx, &impl->body);
    agx_emit_phis_deferred(ctx);
 
-   /* TODO: reenable when we have the helper program, and have fixed
-    * scratch_size on shaders that use libagx.
+   /* Only allocate scratch if it's statically used, regardless of if the NIR
+    * info claims otherwise.
     */
-   if (impl->function->is_entrypoint && nir->scratch_size > 0 && false) {
-      /* Apple always allocate 40 more bytes in the entrypoint and align to 4. */
-      uint64_t stack_size = ALIGN(DIV_ROUND_UP(nir->scratch_size, 4) + 10, 4);
-
-      assert(stack_size < INT16_MAX);
-
-      agx_block *start_block = agx_start_block(ctx);
-      agx_builder _b = agx_init_builder(ctx, agx_before_block(start_block));
-      agx_stack_adjust(&_b, stack_size);
+   if (ctx->any_scratch) {
+      assert(!ctx->is_preamble && "preambles don't use scratch");
+      ctx->scratch_size = ALIGN(nir->scratch_size, 16);
    }
 
    /* Stop the main shader or preamble shader after the exit block. For real
@@ -2838,6 +2855,22 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
    agx_validate(ctx, "RA");
    agx_lower_64bit_postra(ctx);
 
+   if (ctx->scratch_size > 0) {
+      /* Apple always allocate 40 more bytes in the entrypoint and align to 4. */
+      uint64_t stack_size = ALIGN(DIV_ROUND_UP(ctx->scratch_size, 4) + 10, 4);
+
+      assert(stack_size < INT16_MAX);
+
+      agx_block *start_block = agx_start_block(ctx);
+      agx_builder _b = agx_init_builder(ctx, agx_before_block(start_block));
+      agx_stack_adjust(&_b, stack_size);
+
+      if (ctx->is_preamble)
+         out->preamble_scratch_size = stack_size;
+      else
+         out->scratch_size = stack_size;
+   }
+
    if (ctx->stage == MESA_SHADER_VERTEX && !impl->function->is_preamble)
       agx_set_st_vary_final(ctx);
 
@@ -2863,8 +2896,11 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
 
    unsigned nr_gprs = ctx->max_reg + 1;
 
+   /* If the preamble uses scratch (due to spilling), we need to set maximal
+    * GPRs. Do it here so the driver doesn't have to worry about it.
+    */
    if (impl->function->is_preamble)
-      out->nr_preamble_gprs = nr_gprs;
+      out->nr_preamble_gprs = ctx->scratch_size ? 256 : nr_gprs;
    else
       out->nr_gprs = nr_gprs;
 
@@ -2897,6 +2933,11 @@ link_libagx(nir_shader *nir, const nir_shader *libagx)
    nir_link_shader_functions(nir, libagx);
    NIR_PASS(_, nir, nir_inline_functions);
    nir_remove_non_entrypoints(nir);
+   NIR_PASS(_, nir, nir_opt_deref);
+   NIR_PASS(_, nir, nir_lower_vars_to_ssa);
+   NIR_PASS(_, nir, nir_remove_dead_derefs);
+   NIR_PASS(_, nir, nir_remove_dead_variables,
+            nir_var_function_temp | nir_var_shader_temp, NULL);
    NIR_PASS(_, nir, nir_lower_vars_to_explicit_types,
             nir_var_shader_temp | nir_var_function_temp | nir_var_mem_shared |
                nir_var_mem_global,
@@ -2922,8 +2963,12 @@ void
 agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
                    bool allow_mediump, struct agx_uncompiled_shader_info *out)
 {
-   if (out)
+   if (out) {
       memset(out, 0, sizeof(*out));
+
+      out->nr_bindful_textures = BITSET_LAST_BIT(nir->info.textures_used);
+      out->nr_bindful_images = BITSET_LAST_BIT(nir->info.images_used);
+   }
 
    NIR_PASS(_, nir, nir_lower_vars_to_ssa);
 
@@ -2936,7 +2981,6 @@ agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
    NIR_PASS(_, nir, nir_lower_var_copies);
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
             glsl_type_size, nir_lower_io_lower_64bit_to_32);
-   NIR_PASS(_, nir, nir_lower_ssbo);
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       struct interp_masks masks = agx_interp_masks(nir);
 
@@ -2959,7 +3003,8 @@ agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
          out->inputs_flat_shaded = masks.flat;
          out->inputs_linear_shaded = masks.linear;
       }
-   } else if (nir->info.stage == MESA_SHADER_VERTEX) {
+   } else if (nir->info.stage == MESA_SHADER_VERTEX ||
+              nir->info.stage == MESA_SHADER_TESS_EVAL) {
       out->has_edgeflags = nir->info.outputs_written & VARYING_BIT_EDGE;
       out->cull_distance_size = nir->info.cull_distance_array_size;
 
@@ -2969,7 +3014,6 @@ agx_preprocess_nir(nir_shader *nir, const nir_shader *libagx,
 
    /* Clean up deref gunk after lowering I/O */
    NIR_PASS(_, nir, nir_opt_dce);
-   NIR_PASS(_, nir, agx_nir_lower_texture);
 
    link_libagx(nir, libagx);
 
@@ -3035,20 +3079,18 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
           "agx_preprocess_nir is called first, then the shader is specalized,"
           "then the specialized shader is compiled");
 
-   out->nr_bindful_textures = BITSET_LAST_BIT(nir->info.textures_used);
-   out->nr_bindful_images = BITSET_LAST_BIT(nir->info.images_used);
-
    /* If required, tag writes will be enabled by instruction selection */
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
       out->tag_write_disable = !nir->info.writes_memory;
 
-   bool needs_libagx = nir->info.stage == MESA_SHADER_GEOMETRY;
+   if (nir->info.stage == MESA_SHADER_VERTEX &&
+       (nir->info.outputs_written & VARYING_BIT_CLIP_DIST0))
+      NIR_PASS(_, nir, agx_nir_lower_clip_distance);
 
-   /* Late tilebuffer lowering creates multisampled image stores */
-   NIR_PASS(needs_libagx, nir, agx_nir_lower_multisampled_image_store);
+   bool needs_libagx = true /* TODO: Optimize */;
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
-      NIR_PASS(needs_libagx, nir, agx_nir_lower_interpolation);
+      NIR_PASS(_, nir, agx_nir_lower_interpolation);
 
    NIR_PASS(_, nir, nir_lower_vars_to_ssa);
 
@@ -3110,25 +3152,6 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
 
    out->push_count = key->reserved_preamble;
    agx_optimize_nir(nir, &out->push_count);
-
-   /* Create sample_mask instructions late, since NIR's scheduling is not aware
-    * of the ordering requirements between sample_mask and pixel stores.
-    *
-    * Note: when epilogs are used, special handling is required since the sample
-    * count is dynamic when the main fragment shader is compiled.
-    */
-   if (nir->info.stage == MESA_SHADER_FRAGMENT && key->fs.nr_samples) {
-      if (agx_nir_lower_sample_mask(nir, key->fs.nr_samples)) {
-         /* Clean up ixor(bcsel) patterns created from sample mask lowering.
-          * Also constant fold to get the benefit. We need to rescalarize after
-          * folding constants.
-          */
-         NIR_PASS(_, nir, agx_nir_opt_ixor_bcsel);
-         NIR_PASS(_, nir, nir_opt_constant_folding);
-         NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
-         NIR_PASS(_, nir, nir_opt_dce);
-      }
-   }
 
    /* Must be last since NIR passes can remap driver_location freely */
    if (nir->info.stage == MESA_SHADER_VERTEX)

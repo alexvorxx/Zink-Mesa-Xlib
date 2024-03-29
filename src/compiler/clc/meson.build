@@ -48,7 +48,14 @@ if not _shared_llvm
     command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_base_source'],
   )
 
-  _libmesaclc_sources += [opencl_c_base_h]
+  opencl_c_h = custom_target(
+    'opencl-c.h',
+    input : [files_xxd, join_paths(clang_resource_dir, 'opencl-c.h')],
+    output : 'opencl-c.h.h',
+    command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'opencl_c_source'],
+  )
+
+  _libmesaclc_sources += [opencl_c_base_h, opencl_c_h]
   _libmesaclc_cpp_args += ['-DUSE_STATIC_OPENCL_C_H=1']
 endif
 

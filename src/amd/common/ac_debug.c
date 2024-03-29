@@ -28,6 +28,9 @@ const struct si_reg *ac_find_register(enum amd_gfx_level gfx_level, enum radeon_
       table_size = ARRAY_SIZE(gfx11_reg_table);
       break;
    case GFX10_3:
+      table = gfx103_reg_table;
+      table_size = ARRAY_SIZE(gfx103_reg_table);
+      break;
    case GFX10:
       table = gfx10_reg_table;
       table_size = ARRAY_SIZE(gfx10_reg_table);

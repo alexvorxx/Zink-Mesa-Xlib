@@ -3282,25 +3282,28 @@ emit_load_local_invocation_index(struct v3d_compile *c)
 
 /* For the purposes of reduction operations (ballot, alleq, allfeq, bcastf) in
  * fragment shaders a lane is considered active if any sample flags are set
- * for *any* lane in the same quad. This is not what we want. To fix this we
- * can emit MSF to get the active lanes and produce a condition that we
- * can then use with these operations to limit execution only to lanes that
- * are really active in each quad. Further, we also need to disable lanes
- * that may be disabled because of non-uniform control flow.
+ * for *any* lane in the same quad, however, we still need to ensure that
+ * terminated lanes (OpTerminate) are not included. Further, we also need to
+ * disable lanes that may be disabled because of non-uniform control
+ * flow.
  */
 static enum v3d_qpu_cond
-setup_subgroup_reduction_condition(struct v3d_compile *c)
+setup_subgroup_control_flow_condition(struct v3d_compile *c)
 {
         assert(c->s->info.stage == MESA_SHADER_FRAGMENT ||
                c->s->info.stage == MESA_SHADER_COMPUTE);
 
         enum v3d_qpu_cond cond = V3D_QPU_COND_NONE;
 
-        /* Produce condition for 'lane is active' from current sample flags.
-         * Only required for fragment shaders.
+        /* We need to make sure that terminated lanes in fragment shaders are
+         * not included. We can identify these lanes by comparing the inital
+         * sample mask with the current. This fixes:
+         * dEQP-VK.spirv_assembly.instruction.terminate_invocation.terminate.subgroup_*
          */
-        if (c->s->info.stage == MESA_SHADER_FRAGMENT) {
-                vir_set_pf(c, vir_MOV_dest(c, vir_nop_reg(), vir_MSF(c)),
+        if (c->s->info.stage == MESA_SHADER_FRAGMENT && c->emitted_discard) {
+                vir_set_pf(c, vir_AND_dest(c, vir_nop_reg(), c->start_msf,
+                                           vir_NOT(c, vir_XOR(c, c->start_msf,
+                                                              vir_MSF(c)))),
                            V3D_QPU_PF_PUSHZ);
                 cond = V3D_QPU_COND_IFNA;
         }
@@ -3538,6 +3541,10 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
 
         case nir_intrinsic_load_tlb_color_v3d:
                 vir_emit_tlb_color_read(c, instr);
+                break;
+
+        case nir_intrinsic_load_fep_w_v3d:
+                ntq_store_def(c, &instr->def, 0, vir_MOV(c, c->payload_w));
                 break;
 
         case nir_intrinsic_load_input:
@@ -3883,7 +3890,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
         case nir_intrinsic_ballot: {
                 assert(c->devinfo->ver >= 71);
                 struct qreg value = ntq_get_src(c, instr->src[0], 0);
-                enum v3d_qpu_cond cond = setup_subgroup_reduction_condition(c);
+                enum v3d_qpu_cond cond = setup_subgroup_control_flow_condition(c);
                 struct qreg res = vir_get_temp(c);
                 vir_set_cond(vir_BALLOT_dest(c, res, value), cond);
                 ntq_store_def(c, &instr->def, 0, vir_MOV(c, res));
@@ -3902,7 +3909,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
         case nir_intrinsic_read_first_invocation: {
                 assert(c->devinfo->ver >= 71);
                 struct qreg value = ntq_get_src(c, instr->src[0], 0);
-                enum v3d_qpu_cond cond = setup_subgroup_reduction_condition(c);
+                enum v3d_qpu_cond cond = setup_subgroup_control_flow_condition(c);
                 struct qreg res = vir_get_temp(c);
                 vir_set_cond(vir_BCASTF_dest(c, res, value), cond);
                 ntq_store_def(c, &instr->def, 0, vir_MOV(c, res));
@@ -3922,7 +3929,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
         case nir_intrinsic_vote_ieq: {
                 assert(c->devinfo->ver >= 71);
                 struct qreg value = ntq_get_src(c, instr->src[0], 0);
-                enum v3d_qpu_cond cond = setup_subgroup_reduction_condition(c);
+                enum v3d_qpu_cond cond = setup_subgroup_control_flow_condition(c);
                 struct qreg res = vir_get_temp(c);
                 vir_set_cond(instr->intrinsic == nir_intrinsic_vote_ieq ?
                              vir_ALLEQ_dest(c, res, value) :
@@ -3940,7 +3947,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
         case nir_intrinsic_vote_all: {
                 assert(c->devinfo->ver >= 71);
                 struct qreg value = ntq_get_src(c, instr->src[0], 0);
-                enum v3d_qpu_cond cond = setup_subgroup_reduction_condition(c);
+                enum v3d_qpu_cond cond = setup_subgroup_control_flow_condition(c);
                 struct qreg res = vir_get_temp(c);
                 vir_set_cond(vir_ALLEQ_dest(c, res, value), cond);
 
@@ -3964,7 +3971,7 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
         case nir_intrinsic_vote_any: {
                 assert(c->devinfo->ver >= 71);
                 struct qreg value = ntq_get_src(c, instr->src[0], 0);
-                enum v3d_qpu_cond cond = setup_subgroup_reduction_condition(c);
+                enum v3d_qpu_cond cond = setup_subgroup_control_flow_condition(c);
                 struct qreg res = vir_get_temp(c);
                 vir_set_cond(vir_ALLEQ_dest(c, res, value), cond);
 
@@ -4544,6 +4551,7 @@ nir_to_vir(struct v3d_compile *c)
 {
         switch (c->s->info.stage) {
         case MESA_SHADER_FRAGMENT:
+                c->start_msf = vir_MSF(c);
                 if (c->devinfo->ver < 71)
                         c->payload_w = vir_MOV(c, vir_reg(QFILE_REG, 0));
                 else

@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef __AGX_TILEBUFFER_H
-#define __AGX_TILEBUFFER_H
+#pragma once
 
 #include <assert.h>
 #include <stdbool.h>
@@ -127,6 +126,4 @@ bool agx_tilebuffer_supports_mask(struct agx_tilebuffer_layout *tib,
 
 #ifdef __cplusplus
 } /* extern C */
-#endif
-
 #endif

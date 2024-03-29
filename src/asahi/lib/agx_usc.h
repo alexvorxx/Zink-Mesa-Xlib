@@ -3,10 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef AGX_USC_H
-#define AGX_USC_H
+#pragma once
 
-#include "asahi/lib/agx_pack.h"
+#include "asahi/genxml/agx_pack.h"
 #include "asahi/lib/pool.h"
 
 /* Opaque structure representing a USC program being constructed */
@@ -100,5 +99,3 @@ agx_usc_shared_none(struct agx_usc_builder *b)
       cfg.bytes_per_threadgroup = 65536;
    }
 }
-
-#endif

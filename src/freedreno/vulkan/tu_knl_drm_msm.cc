@@ -23,6 +23,7 @@
 #include "tu_device.h"
 #include "tu_dynamic_rendering.h"
 #include "tu_knl_drm.h"
+#include "tu_rmv.h"
 #include "redump.h"
 
 struct tu_queue_submit
@@ -472,6 +473,8 @@ tu_bo_init(struct tu_device *dev,
 
    mtx_unlock(&dev->bo_mutex);
 
+   TU_RMV(bo_allocate, dev, bo);
+
    return VK_SUCCESS;
 }
 
@@ -486,7 +489,7 @@ static void
 tu_bo_set_kernel_name(struct tu_device *dev, struct tu_bo *bo, const char *name)
 {
    bool kernel_bo_names = dev->bo_sizes != NULL;
-#ifdef DEBUG
+#if MESA_DEBUG
    kernel_bo_names = true;
 #endif
    if (!kernel_bo_names)
@@ -544,10 +547,14 @@ msm_bo_init(struct tu_device *dev,
    VkResult result =
       tu_bo_init(dev, bo, req.handle, size, client_iova, flags, name);
 
-   if (result != VK_SUCCESS)
-      memset(bo, 0, sizeof(*bo));
-   else
+   if (result == VK_SUCCESS) {
       *out_bo = bo;
+      if (flags & TU_BO_ALLOC_INTERNAL_RESOURCE) {
+         TU_RMV(internal_resource_create, dev, bo);
+         TU_RMV(resource_name, dev, bo, name);
+      }
+   } else
+      memset(bo, 0, sizeof(*bo));
 
    /* We don't use bo->name here because for the !TU_DEBUG=bo case bo->name is NULL. */
    tu_bo_set_kernel_name(dev, bo, name);
@@ -640,6 +647,8 @@ msm_bo_map(struct tu_device *dev, struct tu_bo *bo)
       return vk_error(dev, VK_ERROR_MEMORY_MAP_FAILED);
 
    bo->map = map;
+   TU_RMV(bo_map, dev, bo);
+
    return VK_SUCCESS;
 }
 
@@ -922,7 +931,7 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
          }
       }
 
-      fd_rd_output_write_section(rd_output, RD_CHIP_ID, &device->physical_device->dev_id.chip_id, 4);
+      fd_rd_output_write_section(rd_output, RD_CHIP_ID, &device->physical_device->dev_id.chip_id, 8);
       fd_rd_output_write_section(rd_output, RD_CMD, "tu-dump", 8);
 
       for (unsigned i = 0; i < device->bo_count; i++) {

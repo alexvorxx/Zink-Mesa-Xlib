@@ -1316,44 +1316,6 @@ emit_srv(struct ntd_context *ctx, nir_variable *var, unsigned count)
 }
 
 static bool
-emit_globals(struct ntd_context *ctx, unsigned size)
-{
-   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_ssbo)
-      size++;
-
-   if (!size)
-      return true;
-
-   const struct dxil_type *struct_type = dxil_module_get_res_type(&ctx->mod,
-      DXIL_RESOURCE_KIND_RAW_BUFFER, DXIL_COMP_TYPE_INVALID, 1, true /* readwrite */);
-   if (!struct_type)
-      return false;
-
-   const struct dxil_type *array_type =
-      dxil_module_get_array_type(&ctx->mod, struct_type, size);
-   if (!array_type)
-      return false;
-
-   resource_array_layout layout = {0, 0, size, 0};
-   const struct dxil_mdnode *uav_meta =
-      emit_uav_metadata(&ctx->mod, array_type,
-                                   "globals", &layout,
-                                   DXIL_COMP_TYPE_INVALID,
-                                   DXIL_RESOURCE_KIND_RAW_BUFFER, 0);
-   if (!uav_meta)
-      return false;
-
-   util_dynarray_append(&ctx->uav_metadata_nodes, const struct dxil_mdnode *, uav_meta);
-   if (ctx->mod.minor_validator < 6 &&
-       util_dynarray_num_elements(&ctx->uav_metadata_nodes, const struct dxil_mdnode *) > 8)
-      ctx->mod.feats.use_64uavs = 1;
-   /* Handles to UAVs used for kernel globals are created on-demand */
-   add_resource(ctx, DXIL_RES_UAV_RAW, DXIL_RESOURCE_KIND_RAW_BUFFER, &layout);
-   ctx->mod.raw_and_structured_buffers = true;
-   return true;
-}
-
-static bool
 emit_uav(struct ntd_context *ctx, unsigned binding, unsigned space, unsigned count,
          enum dxil_component_type comp_type, unsigned num_comps, enum dxil_resource_kind res_kind,
          enum gl_access_qualifier access, const char *name)
@@ -1380,6 +1342,21 @@ emit_uav(struct ntd_context *ctx, unsigned binding, unsigned space, unsigned cou
    if (ctx->mod.shader_kind != DXIL_PIXEL_SHADER &&
        ctx->mod.shader_kind != DXIL_COMPUTE_SHADER)
       ctx->mod.feats.uavs_at_every_stage = true;
+
+   return true;
+}
+
+static bool
+emit_globals(struct ntd_context *ctx, unsigned size)
+{
+   nir_foreach_variable_with_modes(var, ctx->shader, nir_var_mem_ssbo)
+      size++;
+
+   if (!size)
+      return true;
+
+   if (!emit_uav(ctx, 0, 0, size, DXIL_COMP_TYPE_INVALID, 1, DXIL_RESOURCE_KIND_RAW_BUFFER, 0, "globals"))
+      return false;
 
    return true;
 }
@@ -1814,6 +1791,25 @@ emit_threads(struct ntd_context *ctx)
    return dxil_get_metadata_node(&ctx->mod, threads_nodes, ARRAY_SIZE(threads_nodes));
 }
 
+static const struct dxil_mdnode *
+emit_wave_size(struct ntd_context *ctx)
+{
+   const nir_shader *s = ctx->shader;
+   const struct dxil_mdnode *wave_size_node = dxil_get_metadata_int32(&ctx->mod, s->info.subgroup_size);
+   return dxil_get_metadata_node(&ctx->mod, &wave_size_node, 1);
+}
+
+static const struct dxil_mdnode *
+emit_wave_size_range(struct ntd_context *ctx)
+{
+   const nir_shader *s = ctx->shader;
+   const struct dxil_mdnode *wave_size_nodes[3];
+   wave_size_nodes[0] = dxil_get_metadata_int32(&ctx->mod, s->info.subgroup_size);
+   wave_size_nodes[1] = wave_size_nodes[0];
+   wave_size_nodes[2] = wave_size_nodes[0];
+   return dxil_get_metadata_node(&ctx->mod, wave_size_nodes, ARRAY_SIZE(wave_size_nodes));
+}
+
 static int64_t
 get_module_flags(struct ntd_context *ctx)
 {
@@ -2039,10 +2035,15 @@ emit_metadata(struct ntd_context *ctx)
       if (!emit_tag(ctx, DXIL_SHADER_TAG_NUM_THREADS, emit_threads(ctx)))
          return false;
       if (ctx->mod.minor_version >= 6 &&
-          ctx->shader->info.subgroup_size >= SUBGROUP_SIZE_REQUIRE_8 &&
-          !emit_tag(ctx, DXIL_SHADER_TAG_WAVE_SIZE,
-                    dxil_get_metadata_int32(&ctx->mod, ctx->shader->info.subgroup_size)))
-          return false;
+          ctx->shader->info.subgroup_size >= SUBGROUP_SIZE_REQUIRE_8) {
+         if (ctx->mod.minor_version < 8) {
+            if (!emit_tag(ctx, DXIL_SHADER_TAG_WAVE_SIZE, emit_wave_size(ctx)))
+               return false;
+         } else {
+            if (!emit_tag(ctx, DXIL_SHADER_TAG_WAVE_SIZE_RANGE, emit_wave_size_range(ctx)))
+               return false;
+         }
+      }
    }
 
    uint64_t flags = get_module_flags(ctx);
@@ -3268,7 +3269,7 @@ emit_load_tess_coord(struct ntd_context *ctx,
    for (unsigned i = 0; i < num_coords; ++i) {
       unsigned component_idx = i;
 
-      const struct dxil_value *component = dxil_module_get_int32_const(&ctx->mod, component_idx);
+      const struct dxil_value *component = dxil_module_get_int8_const(&ctx->mod, component_idx);
       if (!component)
          return false;
 
@@ -3304,39 +3305,39 @@ get_resource_handle(struct ntd_context *ctx, nir_src *src, enum dxil_resource_cl
 {
    /* This source might be one of:
     * 1. Constant resource index - just look it up in precomputed handle arrays
-    *    If it's null in that array, create a handle, and store the result
+    *    If it's null in that array, create a handle
     * 2. A handle from load_vulkan_descriptor - just get the stored SSA value
     * 3. Dynamic resource index - create a handle for it here
     */
    assert(src->ssa->num_components == 1 && src->ssa->bit_size == 32);
    nir_const_value *const_block_index = nir_src_as_const_value(*src);
-   const struct dxil_value **handle_entry = NULL;
+   const struct dxil_value *handle_entry = NULL;
    if (const_block_index) {
       assert(ctx->opts->environment != DXIL_ENVIRONMENT_VULKAN);
       switch (kind) {
       case DXIL_RESOURCE_KIND_CBUFFER:
-         handle_entry = &ctx->cbv_handles[const_block_index->u32];
+         handle_entry = ctx->cbv_handles[const_block_index->u32];
          break;
       case DXIL_RESOURCE_KIND_RAW_BUFFER:
          if (class == DXIL_RESOURCE_CLASS_UAV)
-            handle_entry = &ctx->ssbo_handles[const_block_index->u32];
+            handle_entry = ctx->ssbo_handles[const_block_index->u32];
          else
-            handle_entry = &ctx->srv_handles[const_block_index->u32];
+            handle_entry = ctx->srv_handles[const_block_index->u32];
          break;
       case DXIL_RESOURCE_KIND_SAMPLER:
-         handle_entry = &ctx->sampler_handles[const_block_index->u32];
+         handle_entry = ctx->sampler_handles[const_block_index->u32];
          break;
       default:
          if (class == DXIL_RESOURCE_CLASS_UAV)
-            handle_entry = &ctx->image_handles[const_block_index->u32];
+            handle_entry = ctx->image_handles[const_block_index->u32];
          else
-            handle_entry = &ctx->srv_handles[const_block_index->u32];
+            handle_entry = ctx->srv_handles[const_block_index->u32];
          break;
       }
    }
 
-   if (handle_entry && *handle_entry)
-      return *handle_entry;
+   if (handle_entry)
+      return handle_entry;
 
    if (nir_src_as_deref(*src) ||
        ctx->opts->environment == DXIL_ENVIRONMENT_VULKAN) {
@@ -3356,7 +3357,7 @@ get_resource_handle(struct ntd_context *ctx, nir_src *src, enum dxil_resource_cl
     * up in this type of dynamic indexing are:
     * 1. GL UBOs
     * 2. GL SSBOs
-    * 2. CL SSBOs
+    * 3. CL SSBOs
     * In all cases except GL UBOs, the resources are a single zero-based array.
     * In that case, the base is 1, because uniforms use 0 and cannot by dynamically
     * indexed. All other cases should either fall into static indexing (first early return),
@@ -3371,8 +3372,6 @@ get_resource_handle(struct ntd_context *ctx, nir_src *src, enum dxil_resource_cl
    const struct dxil_value *value = get_src(ctx, src, 0, nir_type_uint);
    const struct dxil_value *handle = emit_createhandle_call_dynamic(ctx, class,
       space, base_binding, value, !const_block_index);
-   if (handle_entry)
-      *handle_entry = handle;
 
    return handle;
 }
@@ -6307,6 +6306,7 @@ optimize_nir(struct nir_shader *s, const struct nir_to_dxil_options *opts)
       NIR_PASS(progress, s, nir_lower_phis_to_scalar, true);
       NIR_PASS(progress, s, nir_opt_loop_unroll);
       NIR_PASS(progress, s, nir_lower_pack);
+      NIR_PASS(progress, s, dxil_nir_remove_oob_array_accesses);
       NIR_PASS_V(s, nir_lower_system_values);
    } while (progress);
 
@@ -6324,7 +6324,12 @@ void dxil_fill_validation_state(struct ntd_context *ctx,
       sizeof(struct dxil_resource_v1) : sizeof(struct dxil_resource_v0);
    state->num_resources = ctx->resources.size / resource_element_size;
    state->resources.v0 = (struct dxil_resource_v0*)ctx->resources.data;
-   state->state.psv1.psv0.max_expected_wave_lane_count = UINT_MAX;
+   if (ctx->shader->info.subgroup_size >= SUBGROUP_SIZE_REQUIRE_8) {
+      state->state.psv1.psv0.max_expected_wave_lane_count = ctx->shader->info.subgroup_size;
+      state->state.psv1.psv0.min_expected_wave_lane_count = ctx->shader->info.subgroup_size;
+   } else {
+      state->state.psv1.psv0.max_expected_wave_lane_count = UINT_MAX;
+   }
    state->state.psv1.shader_stage = (uint8_t)ctx->mod.shader_kind;
    state->state.psv1.uses_view_id = (uint8_t)ctx->mod.feats.view_id;
    state->state.psv1.sig_input_elements = (uint8_t)ctx->mod.num_sig_inputs;

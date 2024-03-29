@@ -328,13 +328,12 @@ panfrost_bind_sampler_states(struct pipe_context *pctx,
 
 static void
 panfrost_set_vertex_buffers(struct pipe_context *pctx, unsigned num_buffers,
-                            bool take_ownership,
                             const struct pipe_vertex_buffer *buffers)
 {
    struct panfrost_context *ctx = pan_context(pctx);
 
    util_set_vertex_buffers_mask(ctx->vertex_buffers, &ctx->vb_mask, buffers,
-                                num_buffers, take_ownership);
+                                num_buffers, true);
 
    ctx->dirty |= PAN_DIRTY_VERTEX;
 }
@@ -548,6 +547,8 @@ panfrost_destroy(struct pipe_context *pipe)
 {
    struct panfrost_context *panfrost = pan_context(pipe);
    struct panfrost_device *dev = pan_device(pipe->screen);
+
+   pan_screen(pipe->screen)->vtbl.context_cleanup(panfrost);
 
    _mesa_hash_table_destroy(panfrost->writers, NULL);
 
@@ -981,5 +982,14 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    ret = drmSyncobjCreate(panfrost_device_fd(dev), 0, &ctx->in_sync_obj);
    assert(!ret);
 
+   pan_screen(screen)->vtbl.context_init(ctx);
+
    return gallium;
+}
+
+void
+panfrost_context_reinit(struct panfrost_context *ctx)
+{
+   pan_screen(ctx->base.screen)->vtbl.context_cleanup(ctx);
+   pan_screen(ctx->base.screen)->vtbl.context_init(ctx);
 }

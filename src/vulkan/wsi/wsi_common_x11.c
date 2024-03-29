@@ -1375,21 +1375,23 @@ x11_present_to_x11_dri3(struct x11_swapchain *chain, uint32_t image_index,
          .serial = serial,
       };
 
-   xcb_present_pixmap(chain->conn,
-                      chain->window,
-                      image->pixmap,
-                      serial,
-                      0,                            /* valid */
-                      image->update_area,           /* update */
-                      0,                            /* x_off */
-                      0,                            /* y_off */
-                      XCB_NONE,                     /* target_crtc */
-                      XCB_NONE,
-                      image->sync_fence,
-                      options,
-                      target_msc,
-                      divisor,
-                      remainder, 0, NULL);
+   xcb_void_cookie_t cookie =
+      xcb_present_pixmap(chain->conn,
+                         chain->window,
+                         image->pixmap,
+                         serial,
+                         0,                            /* valid */
+                         image->update_area,           /* update */
+                         0,                            /* x_off */
+                         0,                            /* y_off */
+                         XCB_NONE,                     /* target_crtc */
+                         XCB_NONE,
+                         image->sync_fence,
+                         options,
+                         target_msc,
+                         divisor,
+                         remainder, 0, NULL);
+   xcb_discard_reply(chain->conn, cookie.sequence);
    xcb_flush(chain->conn);
    return x11_swapchain_result(chain, VK_SUCCESS);
 }
@@ -1420,7 +1422,7 @@ x11_present_to_x11_sw(struct x11_swapchain *chain, uint32_t image_index,
                              chain->gc,
                              image->base.row_pitches[0] / 4,
                              chain->extent.height,
-                             0,0,0,24,
+                             0,0,0,chain->depth,
                              image->base.row_pitches[0] * chain->extent.height,
                              image->base.cpu_map);
       xcb_discard_reply(chain->conn, cookie.sequence);
@@ -1435,7 +1437,7 @@ x11_present_to_x11_sw(struct x11_swapchain *chain, uint32_t image_index,
                                 chain->gc,
                                 image->base.row_pitches[0] / 4,
                                 this_lines,
-                                0,y_start,0,24,
+                                0,y_start,0,chain->depth,
                                 this_lines * stride_b,
                                 (const uint8_t *)myptr + (y_start * stride_b));
          xcb_discard_reply(chain->conn, cookie.sequence);
@@ -1448,7 +1450,7 @@ x11_present_to_x11_sw(struct x11_swapchain *chain, uint32_t image_index,
 
    /* We don't have queued present here.
     * Immediately let application acquire again, but query geometry first so
-    * we can report SUBOPTIMAL on resize. */
+    * we can report OUT_OF_DATE on resize. */
    xcb_generic_error_t *err;
 
    xcb_get_geometry_reply_t *geom = xcb_get_geometry_reply(chain->conn, geom_cookie, &err);
@@ -1456,7 +1458,7 @@ x11_present_to_x11_sw(struct x11_swapchain *chain, uint32_t image_index,
    if (geom) {
       if (chain->extent.width != geom->width ||
           chain->extent.height != geom->height)
-         result = VK_SUBOPTIMAL_KHR;
+         result = VK_ERROR_OUT_OF_DATE_KHR;
    } else {
       result = VK_ERROR_SURFACE_LOST_KHR;
    }
@@ -1510,15 +1512,18 @@ static VkResult x11_swapchain_read_status_atomic(struct x11_swapchain *chain)
 }
 
 /**
- * Decides if an early wait on buffer fences before buffer submission is required. That is for:
- *   - Mailbox mode, as otherwise the latest image in the queue might not be fully rendered at
- *     present time, which could lead to missing a frame.
- *   - Immediate mode under Xwayland, as it works practically the same as mailbox mode using the
- *     mailbox mechanism of Wayland. Sending a buffer with fences not yet signalled can make the
- *     compositor miss a frame when compositing the final image with this buffer.
+ * Decides if an early wait on buffer fences before buffer submission is required.
+ * That is for mailbox mode, as otherwise the latest image in the queue might not be fully rendered at
+ * present time, which could lead to missing a frame. This is an Xorg issue.
  *
- * Note though that early waits can be disabled in general on Xwayland by setting the
- * 'vk_xwayland_wait_ready' DRIConf option to false.
+ * On Wayland compositors, this used to be a problem as well, but not anymore,
+ * and this check assumes that Mesa is running on a reasonable compositor.
+ * The wait behavior can be forced by setting the 'vk_xwayland_wait_ready' DRIConf option to true.
+ * Some drivers, like e.g. Venus may still want to require wait_ready by default,
+ * so the option is kept around for now.
+ *
+ * On Wayland, we don't know at this point if tearing protocol is/can be used by Xwl,
+ * so we have to make the MAILBOX assumption.
  */
 static bool
 x11_needs_wait_for_fences(const struct wsi_device *wsi_device,
@@ -1537,6 +1542,53 @@ x11_needs_wait_for_fences(const struct wsi_device *wsi_device,
       default:
          return false;
    }
+}
+
+/* This matches Wayland. */
+#define X11_SWAPCHAIN_MAILBOX_IMAGES 4
+
+static bool
+x11_requires_mailbox_image_count(const struct wsi_device *device,
+                                 struct wsi_x11_connection *wsi_conn,
+                                 VkPresentModeKHR present_mode)
+{
+   /* If we're resorting to wait for fences, we're assuming a MAILBOX-like model,
+    * and we should allocate accordingly.
+    *
+    * One potential concern here is IMMEDIATE mode on Wayland.
+    * This situation could arise:
+    * - Fullscreen FLIP mode
+    * - Compositor does not support tearing protocol (we cannot know this here)
+    *
+    * With 3 images, during the window between latch and flip, there is only one image left to app,
+    * so peak FPS may not be reached if the window between latch and flip is large,
+    * but tests on contemporary compositors suggest this effect is minor.
+    * Frame rate in the thousands can easily be reached.
+    *
+    * There are pragmatic reasons to expose 3 images for IMMEDIATE on Xwl.
+    * - minImageCount is not intended as a tool to tune performance, its intent is to signal forward progress.
+    *   Our X11 and WL implementations do so for pragmatic reasons due to sync acquire interacting poorly with 2 images.
+    *   A jump from 3 to 4 is at best a minor improvement which only affects applications
+    *   running at extremely high frame rates, way beyond the monitor refresh rate.
+    *   On the other hand, lowering minImageCount to 2 would break the fundamental idea of MAILBOX
+    *   (and IMMEDIATE without tear), since FPS > refresh rate would not be possible.
+    *
+    * - Several games developed for other platforms and other Linux WSI implementations
+    *   do not expect that image counts arbitrarily change when changing present mode,
+    *   and will crash when Mesa does so.
+    *   There are several games using the strict_image_count drirc to work around this,
+    *   and it would be good to be friendlier in the first place, so we don't have to work around more games.
+    *   IMMEDIATE is a common presentation mode on those platforms, but MAILBOX is more Wayland-centric in nature,
+    *   so increasing image count for that mode is more reasonable.
+    *
+    * - IMMEDIATE expects tearing, and when tearing, 3 images are more than enough.
+    *
+    * - With EXT_swapchain_maintenance1, toggling between FIFO / IMMEDIATE (used extensively by D3D layering)
+    *   would require application to allocate >3 images which is unfortunate for memory usage,
+    *   and potentially disastrous for latency unless KHR_present_wait is used.
+    */
+   return x11_needs_wait_for_fences(device, wsi_conn, present_mode) ||
+          present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
 }
 
 /**
@@ -2309,10 +2361,11 @@ x11_get_min_image_count_for_present_mode(struct wsi_device *wsi_device,
                                          struct wsi_x11_connection *wsi_conn,
                                          VkPresentModeKHR present_mode)
 {
-   if (x11_needs_wait_for_fences(wsi_device, wsi_conn, present_mode))
-      return 5;
+   uint32_t min_image_count = x11_get_min_image_count(wsi_device, wsi_conn->is_xwayland);
+   if (x11_requires_mailbox_image_count(wsi_device, wsi_conn, present_mode))
+      return MAX2(min_image_count, X11_SWAPCHAIN_MAILBOX_IMAGES);
    else
-      return x11_get_min_image_count(wsi_device, wsi_conn->is_xwayland);
+      return min_image_count;
 }
 
 /**
@@ -2351,12 +2404,14 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
     * - presentation mode.
     */
    unsigned num_images = pCreateInfo->minImageCount;
-   if (wsi_device->x11.strict_imageCount)
-      num_images = pCreateInfo->minImageCount;
-   else if (x11_needs_wait_for_fences(wsi_device, wsi_conn, present_mode))
-      num_images = MAX2(num_images, 5);
-   else if (wsi_device->x11.ensure_minImageCount)
-      num_images = MAX2(num_images, x11_get_min_image_count(wsi_device, wsi_conn->is_xwayland));
+   if (!wsi_device->x11.strict_imageCount) {
+      if (x11_requires_mailbox_image_count(wsi_device, wsi_conn, present_mode) ||
+          wsi_device->x11.ensure_minImageCount) {
+         unsigned present_mode_images = x11_get_min_image_count_for_present_mode(
+               wsi_device, wsi_conn, pCreateInfo->presentMode);
+         num_images = MAX2(num_images, present_mode_images);
+      }
+   }
 
    /* Check that we have a window up-front. It is an error to not have one. */
    xcb_window_t window = x11_surface_get_window(icd_surface);

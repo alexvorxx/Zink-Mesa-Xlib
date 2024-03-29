@@ -350,12 +350,10 @@ impl<T> PerRegFile<T> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn values(&self) -> slice::Iter<T> {
         self.per_file.iter()
     }
 
-    #[allow(dead_code)]
     pub fn values_mut(&mut self) -> slice::IterMut<T> {
         self.per_file.iter_mut()
     }
@@ -420,7 +418,6 @@ impl SSAValue {
     }
 
     /// Returns true if this SSA value is equal to SSAValue::NONE
-    #[allow(dead_code)]
     pub fn is_none(&self) -> bool {
         self.packed == 0
     }
@@ -791,6 +788,7 @@ pub enum SrcRef {
 }
 
 impl SrcRef {
+    #[allow(dead_code)]
     pub fn is_alu(&self) -> bool {
         match self {
             SrcRef::Zero | SrcRef::Imm32(_) | SrcRef::CBuf(_) => true,
@@ -809,6 +807,7 @@ impl SrcRef {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_barrier(&self) -> bool {
         match self {
             SrcRef::SSA(ssa) => ssa.file() == RegFile::Bar,
@@ -1382,7 +1381,6 @@ macro_rules! impl_display_for_op {
     };
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum PredSetOp {
     And,
@@ -1681,7 +1679,6 @@ impl fmt::Display for FloatType {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum FRndMode {
     NearestEven,
@@ -1820,6 +1817,7 @@ impl fmt::Display for ImageDim {
     }
 }
 
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum IntType {
     U8,
     I8,
@@ -1981,7 +1979,6 @@ impl fmt::Display for MemOrder {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum MemScope {
     CTA,
@@ -2149,7 +2146,6 @@ impl fmt::Display for AtomOp {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum InterpFreq {
     Pass,
@@ -2158,7 +2154,6 @@ pub enum InterpFreq {
     State,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum InterpLoc {
     Default,
@@ -3010,7 +3005,6 @@ impl DisplayOp for OpLop3 {
 }
 impl_display_for_op!(OpLop3);
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum ShflOp {
     Idx,
@@ -3529,7 +3523,7 @@ impl_display_for_op!(OpPopC);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpTex {
     pub dsts: [Dst; 2],
-    pub resident: Dst,
+    pub fault: Dst,
 
     #[src_type(SSA)]
     pub srcs: [Src; 2],
@@ -3562,7 +3556,7 @@ impl_display_for_op!(OpTex);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpTld {
     pub dsts: [Dst; 2],
-    pub resident: Dst,
+    pub fault: Dst,
 
     #[src_type(SSA)]
     pub srcs: [Src; 2],
@@ -3595,7 +3589,7 @@ impl_display_for_op!(OpTld);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpTld4 {
     pub dsts: [Dst; 2],
-    pub resident: Dst,
+    pub fault: Dst,
 
     #[src_type(SSA)]
     pub srcs: [Src; 2],
@@ -3645,7 +3639,7 @@ impl_display_for_op!(OpTmml);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpTxd {
     pub dsts: [Dst; 2],
-    pub resident: Dst,
+    pub fault: Dst,
 
     #[src_type(SSA)]
     pub srcs: [Src; 2],
@@ -3689,7 +3683,7 @@ impl_display_for_op!(OpTxq);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpSuLd {
     pub dst: Dst,
-    pub resident: Dst,
+    pub fault: Dst,
 
     pub image_dim: ImageDim,
     pub mem_order: MemOrder,
@@ -3756,7 +3750,7 @@ impl_display_for_op!(OpSuSt);
 #[derive(SrcsAsSlice, DstsAsSlice)]
 pub struct OpSuAtom {
     pub dst: Dst,
-    pub resident: Dst,
+    pub fault: Dst,
 
     pub image_dim: ImageDim,
 
@@ -4332,7 +4326,7 @@ pub struct OpIsberd {
 
 impl DisplayOp for OpIsberd {
     fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "isberd {} [{}]", self.dst, self.idx)
+        write!(f, "isberd [{}]", self.idx)
     }
 }
 impl_display_for_op!(OpIsberd);
@@ -4850,6 +4844,26 @@ impl DisplayOp for OpOutFinal {
 }
 impl_display_for_op!(OpOutFinal);
 
+/// Describes an annotation on an instruction.
+#[repr(C)]
+#[derive(SrcsAsSlice, DstsAsSlice)]
+pub struct OpAnnotate {
+    /// The annotation
+    pub annotation: String,
+}
+
+impl DisplayOp for OpAnnotate {
+    fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "// {}", self.annotation)
+    }
+}
+
+impl fmt::Display for OpAnnotate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_op(f)
+    }
+}
+
 #[derive(DisplayOp, DstsAsSlice, SrcsAsSlice, FromVariants)]
 pub enum Op {
     FAdd(OpFAdd),
@@ -4944,6 +4958,7 @@ pub enum Op {
     FSOut(OpFSOut),
     Out(OpOut),
     OutFinal(OpOutFinal),
+    Annotate(OpAnnotate),
 }
 impl_display_for_op!(Op);
 
@@ -5035,6 +5050,13 @@ impl Pred {
 
     pub fn iter_ssa_mut(&mut self) -> slice::IterMut<'_, SSAValue> {
         self.pred_ref.iter_ssa_mut()
+    }
+
+    pub fn bnot(self) -> Self {
+        Pred {
+            pred_ref: self.pred_ref,
+            pred_inv: !self.pred_inv,
+        }
     }
 }
 
@@ -5277,7 +5299,8 @@ impl Instr {
             | Op::Bar(_)
             | Op::FSOut(_)
             | Op::Out(_)
-            | Op::OutFinal(_) => false,
+            | Op::OutFinal(_)
+            | Op::Annotate(_) => false,
             Op::BMov(op) => !op.clear,
             _ => true,
         }
@@ -5394,7 +5417,8 @@ impl Instr {
             | Op::Copy(_)
             | Op::Swap(_)
             | Op::ParCopy(_)
-            | Op::FSOut(_) => {
+            | Op::FSOut(_)
+            | Op::Annotate(_) => {
                 panic!("Not a hardware opcode")
             }
         }
@@ -5649,8 +5673,9 @@ impl fmt::Display for Function {
                 pred_width = max(pred_width, pred.len());
                 dsts_width = max(dsts_width, dsts.len());
                 op_width = max(op_width, op.len());
+                let is_annotation = matches!(i.op, Op::Annotate(_));
 
-                instrs.push((pred, dsts, op, deps));
+                instrs.push((pred, dsts, op, deps, is_annotation));
             }
             blocks.push(instrs);
         }
@@ -5665,9 +5690,11 @@ impl fmt::Display for Function {
             }
             write!(f, "] -> {{\n")?;
 
-            for (pred, dsts, op, deps) in b.drain(..) {
+            for (pred, dsts, op, deps, is_annotation) in b.drain(..) {
                 let eq_sym = if dsts.is_empty() { " " } else { "=" };
-                if deps.is_empty() {
+                if is_annotation {
+                    write!(f, "\n{}\n", op)?;
+                } else if deps.is_empty() {
                     write!(
                         f,
                         "{:<pred_width$} {:<dsts_width$} {} {}\n",
@@ -5896,6 +5923,17 @@ impl Shader {
         for f in &mut self.functions {
             f.map_instrs_priv(&mut map);
         }
+    }
+
+    /// Remove all annotations, presumably before encoding the shader.
+    pub fn remove_annotations(&mut self) {
+        self.map_instrs(|instr: Box<Instr>, _| -> MappedInstrs {
+            if matches!(instr.op, Op::Annotate(_)) {
+                MappedInstrs::None
+            } else {
+                MappedInstrs::One(instr)
+            }
+        })
     }
 
     pub fn lower_ineg(&mut self) {

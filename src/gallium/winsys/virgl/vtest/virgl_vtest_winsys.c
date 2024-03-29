@@ -661,7 +661,7 @@ static void virgl_vtest_flush_frontbuffer(struct virgl_winsys *vws,
                                      level, true);
 
    vtws->sws->displaytarget_display(vtws->sws, res->dt, winsys_drawable_handle,
-                                    sub_box);
+                                    !!sub_box, sub_box);
 }
 
 static void

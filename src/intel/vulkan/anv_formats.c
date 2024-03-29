@@ -1464,6 +1464,10 @@ anv_get_image_format_properties(
       }
    }
 
+   if ((info->usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) &&
+       !devinfo->has_coarse_pixel_primitive_and_cb)
+      goto unsupported;
+
    /* From the bspec section entitled "Surface Layout and Tiling",
     * Gfx9 has a 256 GB limitation and Gfx11+ has a 16 TB limitation.
     */
@@ -1591,6 +1595,7 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
    VkExternalImageFormatProperties *external_props = NULL;
    VkSamplerYcbcrConversionImageFormatProperties *ycbcr_props = NULL;
    UNUSED VkAndroidHardwareBufferUsageANDROID *android_usage = NULL;
+   VkTextureLODGatherFormatPropertiesAMD *texture_lod_gather_props = NULL;
    VkResult result;
    bool from_wsi = false;
 
@@ -1630,6 +1635,9 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
          break;
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID:
          android_usage = (void *) s;
+         break;
+      case VK_STRUCTURE_TYPE_TEXTURE_LOD_GATHER_FORMAT_PROPERTIES_AMD:
+         texture_lod_gather_props = (void *) s;
          break;
       default:
          anv_debug_ignored_stype(s->sType);
@@ -1790,6 +1798,11 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
       }
    }
 
+   if (texture_lod_gather_props) {
+      texture_lod_gather_props->supportsTextureGatherLODBiasAMD =
+         physical_device->info.ver >= 20;
+   }
+
    return VK_SUCCESS;
 
  fail:
@@ -1819,7 +1832,7 @@ void anv_GetPhysicalDeviceSparseImageFormatProperties2(
    VK_OUTARRAY_MAKE_TYPED(VkSparseImageFormatProperties2, props,
                           pProperties, pPropertyCount);
 
-   if (!physical_device->has_sparse) {
+   if (physical_device->sparse_type == ANV_SPARSE_TYPE_NOT_SUPPORTED) {
       if (INTEL_DEBUG(DEBUG_SPARSE))
          fprintf(stderr, "=== [%s:%d] [%s]\n", __FILE__, __LINE__, __func__);
       return;
@@ -1873,7 +1886,8 @@ void anv_GetPhysicalDeviceSparseImageFormatProperties2(
          VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;
 
       isl_surf_usage_flags_t isl_usage =
-         anv_image_choose_isl_surf_usage(vk_create_flags, pFormatInfo->usage,
+         anv_image_choose_isl_surf_usage(physical_device,
+                                         vk_create_flags, pFormatInfo->usage,
                                          0, aspect);
 
       const enum isl_surf_dim isl_surf_dim =

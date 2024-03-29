@@ -122,7 +122,7 @@ enum vn_perf {
    VN_PERF_NO_FENCE_FEEDBACK = 1ull << 4,
    VN_PERF_NO_MEMORY_SUBALLOC = 1ull << 5,
    VN_PERF_NO_CMD_BATCHING = 1ull << 6,
-   VN_PERF_NO_TIMELINE_SEM_FEEDBACK = 1ull << 7,
+   VN_PERF_NO_SEMAPHORE_FEEDBACK = 1ull << 7,
    VN_PERF_NO_QUERY_FEEDBACK = 1ull << 8,
    VN_PERF_NO_ASYNC_MEM_ALLOC = 1ull << 9,
    VN_PERF_NO_TILED_WSI_IMAGE = 1ull << 10,
@@ -182,9 +182,6 @@ struct vn_refcount {
 struct vn_env {
    uint64_t debug;
    uint64_t perf;
-   /* zero will be overridden to UINT32_MAX as no limit */
-   uint32_t draw_cmd_batch_limit;
-   uint32_t relax_base_sleep_us;
 };
 extern struct vn_env vn_env;
 
@@ -207,10 +204,46 @@ struct vn_watchdog {
    atomic_bool alive;
 };
 
+enum vn_relax_reason {
+   VN_RELAX_REASON_RING_SEQNO,
+   VN_RELAX_REASON_RING_SPACE,
+   VN_RELAX_REASON_FENCE,
+   VN_RELAX_REASON_SEMAPHORE,
+   VN_RELAX_REASON_QUERY,
+};
+
+/* vn_relax_profile defines the driver side polling behavior
+ *
+ * - base_sleep_us:
+ *   - the minimum polling interval after initial busy waits
+ *
+ * - busy_wait_order:
+ *   - initial 2 ^ busy_wait_order times thrd_yield()
+ *
+ * - warn_order:
+ *   - number of polls at order N:
+ *     - fn_cnt(N) = 2 ^ N
+ *   - interval of poll at order N:
+ *     - fn_step(N) = base_sleep_us * (2 ^ (N - busy_wait_order))
+ *   - warn occasionally if we have slept at least:
+ *     - for (i = busy_wait_order; i < warn_order; i++)
+ *          total_sleep += fn_cnt(i) * fn_step(i)
+ *
+ * - abort_order:
+ *   - similar to warn_order, but would abort() instead
+ */
+struct vn_relax_profile {
+   uint32_t base_sleep_us;
+   uint32_t busy_wait_order;
+   uint32_t warn_order;
+   uint32_t abort_order;
+};
+
 struct vn_relax_state {
    struct vn_instance *instance;
    uint32_t iter;
-   const char *reason;
+   const struct vn_relax_profile profile;
+   const char *reason_str;
 };
 
 /* TLS ring
@@ -236,6 +269,22 @@ struct vn_tls {
    bool async_pipeline_create;
    /* Track TLS rings owned across instances. */
    struct list_head tls_rings;
+};
+
+/* A cached storage for object internal usages with below constraints:
+ * - It belongs to the object and shares the lifetime.
+ * - The storage reuse is protected by external synchronization.
+ * - The returned storage is not zero-initialized.
+ * - It never shrinks unless being purged via fini.
+ *
+ * The current users are:
+ * - VkCommandPool
+ * - VkQueue
+ */
+struct vn_cached_storage {
+   const VkAllocationCallbacks *alloc;
+   size_t size;
+   void *data;
 };
 
 void
@@ -347,7 +396,7 @@ vn_watchdog_fini(struct vn_watchdog *watchdog)
 }
 
 struct vn_relax_state
-vn_relax_init(struct vn_instance *instance, const char *reason);
+vn_relax_init(struct vn_instance *instance, enum vn_relax_reason reason);
 
 void
 vn_relax(struct vn_relax_state *state);
@@ -546,6 +595,37 @@ static inline bool
 vn_cache_key_equal_function(const void *key1, const void *key2)
 {
    return memcmp(key1, key2, SHA1_DIGEST_LENGTH) == 0;
+}
+
+static inline void
+vn_cached_storage_init(struct vn_cached_storage *storage,
+                       const VkAllocationCallbacks *alloc)
+{
+   storage->alloc = alloc;
+   storage->size = 0;
+   storage->data = NULL;
+}
+
+static inline void *
+vn_cached_storage_get(struct vn_cached_storage *storage, size_t size)
+{
+   if (size > storage->size) {
+      void *data =
+         vk_realloc(storage->alloc, storage->data, size, VN_DEFAULT_ALIGN,
+                    VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      if (!data)
+         return NULL;
+
+      storage->size = size;
+      storage->data = data;
+   }
+   return storage->data;
+}
+
+static inline void
+vn_cached_storage_fini(struct vn_cached_storage *storage)
+{
+   vk_free(storage->alloc, storage->data);
 }
 
 #endif /* VN_COMMON_H */

@@ -30,31 +30,31 @@ template = """\
 namespace aco {
 
 <%
-opcode_names = sorted(opcodes.keys())
-can_use_input_modifiers = "".join([opcodes[name].input_mod for name in reversed(opcode_names)])
-can_use_output_modifiers = "".join([opcodes[name].output_mod for name in reversed(opcode_names)])
-is_atomic = "".join([opcodes[name].is_atomic for name in reversed(opcode_names)])
+opcode_names = sorted(instructions.keys())
+can_use_input_modifiers = "".join([instructions[name].input_mod for name in reversed(opcode_names)])
+can_use_output_modifiers = "".join([instructions[name].output_mod for name in reversed(opcode_names)])
+is_atomic = "".join([instructions[name].is_atomic for name in reversed(opcode_names)])
 %>
 
 extern const aco::Info instr_info = {
    {
       % for name in opcode_names:
-      ${opcodes[name].opcode_gfx7},
+      ${instructions[name].op.gfx7},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${opcodes[name].opcode_gfx9},
+      ${instructions[name].op.gfx9},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${opcodes[name].opcode_gfx10},
+      ${instructions[name].op.gfx10},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${opcodes[name].opcode_gfx11},
+      ${instructions[name].op.gfx11},
       % endfor
    },
    std::bitset<${len(opcode_names)}>("${can_use_input_modifiers}"),
@@ -67,27 +67,27 @@ extern const aco::Info instr_info = {
    },
    {
       % for name in opcode_names:
-      aco::Format::${str(opcodes[name].format.name)},
+      aco::Format::${str(instructions[name].format.name)},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${opcodes[name].operand_size},
+      ${instructions[name].operand_size},
       % endfor
    },
    {
       % for name in opcode_names:
-      instr_class::${opcodes[name].cls.value},
+      instr_class::${instructions[name].cls.value},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${hex(opcodes[name].definitions)},
+      ${hex(instructions[name].definitions)},
       % endfor
    },
    {
       % for name in opcode_names:
-      ${hex(opcodes[name].operands)},
+      ${hex(instructions[name].operands)},
       % endfor
    },
 };
@@ -95,7 +95,7 @@ extern const aco::Info instr_info = {
 }
 """
 
-from aco_opcodes import opcodes
+from aco_opcodes import instructions
 from mako.template import Template
 
-print(Template(template).render(opcodes=opcodes))
+print(Template(template).render(instructions=instructions))

@@ -22,6 +22,7 @@
  */
 
 #include "lvp_private.h"
+#include "vk_acceleration_structure.h"
 #include "vk_descriptors.h"
 #include "vk_util.h"
 #include "util/u_math.h"
@@ -617,7 +618,18 @@ VKAPI_ATTR void VKAPI_CALL lvp_UpdateDescriptorSets(
          }
          break;
 
+      case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+         for (uint32_t j = 0; j < write->descriptorCount; j++) {
+            const VkWriteDescriptorSetAccelerationStructureKHR *accel_structs =
+               vk_find_struct_const(write->pNext, WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+            VK_FROM_HANDLE(vk_acceleration_structure, accel_struct, accel_structs->pAccelerationStructures[j]);
+
+            desc[j].accel_struct = accel_struct ? vk_acceleration_structure_get_va(accel_struct) : 0;
+         }
+         break;
+
       default:
+         unreachable("Unsupported descriptor type");
          break;
       }
    }
@@ -802,6 +814,8 @@ lvp_descriptor_update_template_entry_size(VkDescriptorType type)
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
       return sizeof(VkBufferView);
+   case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+      return sizeof(VkAccelerationStructureKHR);
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
@@ -984,7 +998,15 @@ lvp_descriptor_set_update_with_template(VkDevice _device, VkDescriptorSet descri
             }
             break;
          }
+
+         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+            VK_FROM_HANDLE(vk_acceleration_structure, accel_struct, *(VkAccelerationStructureKHR *)pSrc);
+            desc[idx].accel_struct = accel_struct ? vk_acceleration_structure_get_va(accel_struct) : 0;
+            break;
+         }
+
          default:
+            unreachable("Unsupported descriptor type");
             break;
          }
 
@@ -1159,7 +1181,12 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetDescriptorEXT(
       }
       break;
    }
+   case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+      desc->accel_struct = pCreateInfo->data.accelerationStructure;
+      break;
+   }
    default:
+      unreachable("Unsupported descriptor type");
       break;
    }
 }

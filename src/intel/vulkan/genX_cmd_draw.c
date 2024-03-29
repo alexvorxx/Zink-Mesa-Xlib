@@ -33,7 +33,7 @@
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
-#include "common/intel_genX_state.h"
+#include "common/intel_genX_state_brw.h"
 
 #include "ds/intel_tracepoints.h"
 
@@ -190,14 +190,21 @@ get_push_range_address(struct anv_cmd_buffer *cmd_buffer,
       return anv_descriptor_set_address(set);
    }
 
+   case ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER: {
+      return anv_address_from_u64(
+         anv_cmd_buffer_descriptor_buffer_address(
+            cmd_buffer,
+            gfx_state->base.descriptor_buffers[range->index].buffer_index) +
+         gfx_state->base.descriptor_buffers[range->index].buffer_offset);
+   }
+
    case ANV_DESCRIPTOR_SET_PUSH_CONSTANTS: {
       if (gfx_state->base.push_constants_state.alloc_size == 0) {
          gfx_state->base.push_constants_state =
             anv_cmd_buffer_gfx_push_constants(cmd_buffer);
       }
-      return anv_state_pool_state_address(
-         &cmd_buffer->device->dynamic_state_pool,
-         gfx_state->base.push_constants_state);
+      return anv_cmd_buffer_temporary_state_address(
+         cmd_buffer, gfx_state->base.push_constants_state);
    }
 
    default: {
@@ -261,6 +268,10 @@ get_push_range_bound_size(struct anv_cmd_buffer *cmd_buffer,
       assert((range->start + range->length) * 32 <= state.alloc_size);
       return state.alloc_size;
    }
+
+   case ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER:
+      return gfx_state->base.pipeline->layout.set[
+         range->index].layout->descriptor_buffer_surface_size;
 
    case ANV_DESCRIPTOR_SET_PUSH_CONSTANTS:
       return (range->start + range->length) * 32;
@@ -661,6 +672,8 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
 
    genX(cmd_buffer_emit_hashing_mode)(cmd_buffer, UINT_MAX, UINT_MAX, 1);
 
+   genX(flush_descriptor_buffers)(cmd_buffer, &cmd_buffer->state.gfx.base);
+
    genX(flush_pipeline_select_3d)(cmd_buffer);
 
    /* Wa_14015814527
@@ -760,16 +773,10 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
    uint32_t descriptors_dirty = cmd_buffer->state.descriptors_dirty &
                                 pipeline->base.base.active_stages;
 
-   const uint32_t push_descriptor_dirty =
-      cmd_buffer->state.push_descriptors_dirty &
-      pipeline->base.base.use_push_descriptor;
-   if (push_descriptor_dirty) {
-      genX(cmd_buffer_flush_push_descriptor_set)(cmd_buffer,
-                                                 &cmd_buffer->state.gfx.base,
-                                                 &pipeline->base.base);
-      descriptors_dirty |= push_descriptor_dirty;
-      cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
-   }
+   descriptors_dirty |=
+      genX(cmd_buffer_flush_push_descriptors)(cmd_buffer,
+                                              &cmd_buffer->state.gfx.base,
+                                              &pipeline->base.base);
 
    /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive. */
    if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||

@@ -160,10 +160,23 @@ radeonsi-raven-va-full:x86_64:
     - farm:$RUNNER_FARM_LOCATION
     - amdgpu:codename:STONEY
 
+vkcts-tahiti-valve:
+  extends:
+    - .vkcts-test-valve
+    - .tahiti-test-valve
+    - .radv-valve-manual-rules  # Make sure this job is *always* run manually
+  timeout: 6h
+  variables:
+    GPU_VERSION: radv-tahiti-aco
+    B2C_TIMEOUT_BOOT_MINUTES: 350
+    B2C_TIMEOUT_OVERALL_MINUTES: 350
+    B2C_TIMEOUT_BOOT_RETRIES: 0
+    RADV_PERFTEST: shader_object
+
 vkcts-polaris10-valve:
   extends:
     - .vkcts-test-valve
-    - .polaris10-test-valve-mupuf
+    - .polaris10-test-valve-kws
     - .radv-valve-manual-rules
   timeout: 1h 15m
   variables:
@@ -182,6 +195,7 @@ vkcts-vega10-valve:
     GPU_VERSION: radv-vega10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
+    RADV_PERFTEST: shader_object
 
 vkcts-renoir-valve:
   extends:
@@ -193,6 +207,7 @@ vkcts-renoir-valve:
     GPU_VERSION: radv-renoir-aco
     B2C_TIMEOUT_BOOT_MINUTES: 130
     B2C_TIMEOUT_OVERALL_MINUTES: 130
+    RADV_PERFTEST: shader_object
 
 vkcts-navi10-valve:
   parallel: 2
@@ -202,6 +217,7 @@ vkcts-navi10-valve:
     - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-navi10-aco
+    RADV_PERFTEST: shader_object
 
 vkcts-navi21-valve:
   timeout: 35m
@@ -214,6 +230,7 @@ vkcts-navi21-valve:
     GPU_VERSION: radv-navi21-aco
     B2C_TIMEOUT_BOOT_MINUTES: 30
     B2C_TIMEOUT_OVERALL_MINUTES: 30
+    RADV_PERFTEST: shader_object
 
 # Disabled due to its extremelly-broken nature
 .vkcts-navi21-llvm-valve:
@@ -234,6 +251,7 @@ vkcts-vangogh-valve:
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-vangogh-aco
+    RADV_PERFTEST: shader_object
 
 glcts-vangogh-valve:
   extends:
@@ -254,6 +272,7 @@ vkcts-navi31-valve:
   variables:
     GPU_VERSION: radv-navi31-aco
     RADV_DEBUG: nomeshshader # Disable mesh shaders until task shaders stop hanging
+    RADV_PERFTEST: shader_object
 
 ############### Fossilize
 radv-fossils:
@@ -287,6 +306,16 @@ radv-fossils:
       ./install/fossilize-runner.sh
 
 ############### vkd3d-proton
+
+vkd3d-tahiti-valve:
+  extends:
+    - .vkd3d-test-valve
+    - .tahiti-test-valve
+    - .radv-valve-manual-rules
+  variables:
+    VKD3D_PROTON_RESULTS: radv-tahiti-vkd3d
+    # These vkd3d-proton tests are skipped because they trigger GPU hangs.
+    VKD3D_TEST_EXCLUDE: test_execute_indirect_state,test_execute_indirect_state_predication,test_undefined_descriptor_heap_mismatch_types
 
 vkd3d-polaris10-valve:
   extends:
@@ -327,7 +356,6 @@ vkd3d-navi21-valve:
     - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi21-vkd3d
-    VKD3D_CONFIG: dxr11
 
 vkd3d-vangogh-valve:
   extends:
@@ -344,4 +372,3 @@ vkd3d-navi31-valve:
     - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi31-vkd3d
-    VKD3D_CONFIG: dxr11
