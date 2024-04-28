@@ -879,6 +879,7 @@ disk_cache_write_item_to_disk(struct disk_cache_put_job *dc_job,
  *
  *   $MESA_SHADER_CACHE_DIR
  *   $XDG_CACHE_HOME/mesa_shader_cache
+ *   $HOME/.cache/mesa_shader_cache
  *   <pwd.pw_dir>/.cache/mesa_shader_cache
  */
 char *
@@ -919,6 +920,20 @@ disk_cache_generate_cache_dir(void *mem_ctx, const char *gpu_name,
             return NULL;
 
          path = concatenate_and_mkdir(mem_ctx, xdg_cache_home, cache_dir_name);
+         if (!path)
+            return NULL;
+      }
+   }
+
+   if (!path) {
+      char *home = getenv("HOME");
+
+      if (home) {
+         path = concatenate_and_mkdir(mem_ctx, home, ".cache");
+         if (!path)
+            return NULL;
+
+         path = concatenate_and_mkdir(mem_ctx, path, cache_dir_name);
          if (!path)
             return NULL;
       }

@@ -521,7 +521,7 @@ v3dv_write_uniforms_wg_offsets(struct v3dv_cmd_buffer *cmd_buffer,
 
       case QUNIFORM_VIEWPORT_Z_OFFSET: {
          float translate_z;
-         v3dv_cmd_buffer_state_get_viewport_z_xform(&cmd_buffer->state, 0,
+         v3dv_cmd_buffer_state_get_viewport_z_xform(cmd_buffer, 0,
                                                     &translate_z, NULL);
          cl_aligned_f(&uniforms, translate_z);
          break;
@@ -529,7 +529,7 @@ v3dv_write_uniforms_wg_offsets(struct v3dv_cmd_buffer *cmd_buffer,
 
       case QUNIFORM_VIEWPORT_Z_SCALE: {
          float scale_z;
-         v3dv_cmd_buffer_state_get_viewport_z_xform(&cmd_buffer->state, 0,
+         v3dv_cmd_buffer_state_get_viewport_z_xform(cmd_buffer, 0,
                                                     NULL, &scale_z);
          cl_aligned_f(&uniforms, scale_z);
          break;
@@ -662,7 +662,8 @@ v3dv_write_uniforms_wg_offsets(struct v3dv_cmd_buffer *cmd_buffer,
          break;
 
       case QUNIFORM_LINE_WIDTH:
-         cl_aligned_u32(&uniforms, job->cmd_buffer->state.dynamic.line_width);
+         cl_aligned_u32(&uniforms,
+                        job->cmd_buffer->vk.dynamic_graphics_state.rs.line.width);
          break;
 
       case QUNIFORM_AA_LINE_WIDTH:

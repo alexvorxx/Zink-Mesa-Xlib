@@ -11,6 +11,14 @@ lavapipe:
     - .deqp-test
     - .lavapipe-test
 
+lavapipe-full:
+  extends:
+    - lavapipe
+    - .lavapipe-manual-rules
+  timeout: 2h  # base runtime = 1h15m
+  variables:
+    DEQP_FRACTION: 1
+
 lavapipe-vk-asan:
   extends:
     - .deqp-test

@@ -1,25 +1,7 @@
 /*
  * Copyright © 2020 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 #include "helpers.h"
 
@@ -280,6 +262,26 @@ BEGIN_TEST(regalloc.branch_def_phis_at_branch_block)
    program->blocks[3].linear_preds.push_back(1);
    program->blocks[3].linear_preds.push_back(2);
    program->blocks[3].kind |= block_kind_top_level;
+
+   finish_ra_test(ra_test_policy());
+END_TEST
+
+BEGIN_TEST(regalloc.vintrp_fp16)
+   //>> v1: %in0:v[0], s1: %in1:s[0], v1: %in2:v[1] = p_startpgm
+   if (!setup_cs("v1 s1 v1", GFX10))
+      return;
+
+   //! s1: %npm:m0 = p_parallelcopy %in1:s[0]
+   //! v2b: %lo:v[2][0:16] = v_interp_p2_f16 %in0:v[0], %npm:m0, %in2:v[1] attr0.x
+   Temp lo = bld.vintrp(aco_opcode::v_interp_p2_f16, bld.def(v2b), inputs[0], bld.m0(inputs[1]),
+                        inputs[2], 0, 0, false);
+   //! v2b: %hi:v[2][16:32] = v_interp_p2_hi_f16 %in0:v[0], %npm:m0, %in2:v[1] attr0.x high
+   Temp hi = bld.vintrp(aco_opcode::v_interp_p2_f16, bld.def(v2b), inputs[0], bld.m0(inputs[1]),
+                        inputs[2], 0, 0, true);
+   //! v1: %res:v[2] = p_create_vector %lo:v[2][0:16], %hi:v[2][16:32]
+   Temp res = bld.pseudo(aco_opcode::p_create_vector, bld.def(v1), lo, hi);
+   //! p_unit_test %res:v[2]
+   bld.pseudo(aco_opcode::p_unit_test, res);
 
    finish_ra_test(ra_test_policy());
 END_TEST

@@ -113,8 +113,11 @@ merge_requests:
     paths:
         '^.gitlab/issue_templates/' : ['docs']
         '^.gitlab-ci' : ['CI']
-        '^.*/gitlab-ci.yml' : ['CI']
-        '^.*/ci/' : ['CI']
+        '^.*/gitlab-ci(-inc)?.yml' : ['CI']
+        '^.*/ci/deqp-.*\.toml' : ['CI']
+        '^.*/ci/.*-(fails|flakes|skips)\.txt' : ['CI']
+        '^.*/ci/(restricted-)?traces-.*\.yml' : ['CI']
+        '^.*/ci/.*-validation-settings\.txt' : ['CI']
         '^.gitlab-ci/windows/' : ['Windows']
         '^bin/__init__.py$' : ['maintainer-scripts']
         '^bin/gen_release_notes' : ['maintainer-scripts']

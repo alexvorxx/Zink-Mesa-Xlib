@@ -39,7 +39,7 @@
 #include "util/u_debug_describe.h"
 #include "util/u_debug_refcnt.h"
 #include "util/u_atomic.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "util/u_math.h"
 
 

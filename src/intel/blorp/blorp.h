@@ -135,9 +135,6 @@ enum blorp_batch_flags {
 
    /** Use the hardware blitter to perform any operations in this batch */
    BLORP_BATCH_USE_BLITTER           = BITFIELD_BIT(4),
-
-   /** Reuse dynamic states */
-   BLORP_BATCH_REUSE_DYNAMIC_STATES  = BITFIELD_BIT(5),
 };
 
 struct blorp_batch {

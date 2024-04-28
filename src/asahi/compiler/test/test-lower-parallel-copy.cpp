@@ -302,6 +302,7 @@ TEST_F(LowerParallelCopy, StackCopies)
       scratch_vec2.size = AGX_SIZE_16;
       temp1.size = AGX_SIZE_16;
       temp2.size = AGX_SIZE_16;
+      temp2.value = 1;
 
       agx_mov_to(b, scratch_vec2, spilled_gpr_vec2);
       agx_mov_to(b, temp1, agx_memory_register(807, AGX_SIZE_16));

@@ -214,7 +214,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
          return 0;
 
    case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
-      return 65536;
+      return PAN_MAX_TEXEL_BUFFER_ELEMENTS;
 
    /* Must be at least 64 for correct behaviour */
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
@@ -236,11 +236,11 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_MAX_TEXTURE_2D_SIZE:
-      return 1 << (MAX_MIP_LEVELS - 1);
+      return 1 << (PAN_MAX_MIP_LEVELS - 1);
 
    case PIPE_CAP_MAX_TEXTURE_3D_LEVELS:
    case PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS:
-      return MAX_MIP_LEVELS;
+      return PAN_MAX_MIP_LEVELS;
 
    case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER:
@@ -551,12 +551,6 @@ panfrost_is_format_supported(struct pipe_screen *screen,
 {
    struct panfrost_device *dev = pan_device(screen);
 
-   assert(target == PIPE_BUFFER || target == PIPE_TEXTURE_1D ||
-          target == PIPE_TEXTURE_1D_ARRAY || target == PIPE_TEXTURE_2D ||
-          target == PIPE_TEXTURE_2D_ARRAY || target == PIPE_TEXTURE_RECT ||
-          target == PIPE_TEXTURE_3D || target == PIPE_TEXTURE_CUBE ||
-          target == PIPE_TEXTURE_CUBE_ARRAY);
-
    /* MSAA 2x gets rounded up to 4x. MSAA 8x/16x only supported on v5+.
     * TODO: debug MSAA 8x/16x */
 
@@ -860,6 +854,13 @@ panfrost_create_screen(int fd, const struct pipe_screen_config *config,
    if (!screen->force_afbc_packing)
       screen->force_afbc_packing = driQueryOptionb(config->options,
                                                    "pan_force_afbc_packing");
+
+   screen->csf_tiler_heap.chunk_size = driQueryOptioni(config->options,
+                                                       "pan_csf_chunk_size");
+   screen->csf_tiler_heap.initial_chunks = driQueryOptioni(config->options,
+                                                           "pan_csf_initial_chunks");
+   screen->csf_tiler_heap.max_chunks = driQueryOptioni(config->options,
+                                                       "pan_csf_max_chunks");
 
    dev->ro = ro;
 

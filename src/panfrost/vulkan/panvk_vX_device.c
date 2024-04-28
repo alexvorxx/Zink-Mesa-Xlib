@@ -112,7 +112,8 @@ panvk_per_arch(create_device)(struct panvk_physical_device *physical_device,
       pan_kmod_dev_create(dup(physical_device->kmod.dev->fd),
                           PAN_KMOD_DEV_FLAG_OWNS_FD, &device->kmod.allocator);
 
-   if (instance->debug_flags & PANVK_DEBUG_TRACE)
+   if (instance->debug_flags &
+       (PANVK_DEBUG_TRACE | PANVK_DEBUG_SYNC | PANVK_DEBUG_DUMP))
       device->debug.decode_ctx = pandecode_create_context(false);
 
    /* 32bit address space, with the lower 32MB reserved. We clamp

@@ -74,7 +74,7 @@ sync_cache(VkDevice _device,
            uint32_t count,
            const VkMappedMemoryRange *ranges)
 {
-   TU_FROM_HANDLE(tu_device, device, _device);
+   VK_FROM_HANDLE(tu_device, device, _device);
 
    if (!device->physical_device->has_cached_non_coherent_memory) {
       tu_finishme(
@@ -83,7 +83,7 @@ sync_cache(VkDevice _device,
    }
 
    for (uint32_t i = 0; i < count; i++) {
-      TU_FROM_HANDLE(tu_device_memory, mem, ranges[i].memory);
+      VK_FROM_HANDLE(tu_device_memory, mem, ranges[i].memory);
       tu_sync_cache_bo(device, mem->bo, ranges[i].offset, ranges[i].size, op);
    }
 

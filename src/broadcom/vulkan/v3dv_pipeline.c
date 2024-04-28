@@ -1076,6 +1076,12 @@ static const enum mesa_prim vk_to_mesa_prim[] = {
    [VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY] = MESA_PRIM_TRIANGLE_STRIP_ADJACENCY,
 };
 
+uint32_t
+v3dv_pipeline_primitive(VkPrimitiveTopology vk_prim)
+{
+   return v3d_hw_prim_type(vk_to_mesa_prim[vk_prim]);
+}
+
 static const enum pipe_logicop vk_to_pipe_logicop[] = {
    [VK_LOGIC_OP_CLEAR] = PIPE_LOGICOP_CLEAR,
    [VK_LOGIC_OP_AND] = PIPE_LOGICOP_AND,
@@ -2645,150 +2651,11 @@ compute_vpm_config(struct v3dv_pipeline *pipeline)
    return VK_SUCCESS;
 }
 
-static unsigned
-v3dv_dynamic_state_mask(VkDynamicState state)
-{
-   switch(state) {
-   case VK_DYNAMIC_STATE_VIEWPORT:
-      return V3DV_DYNAMIC_VIEWPORT;
-   case VK_DYNAMIC_STATE_SCISSOR:
-      return V3DV_DYNAMIC_SCISSOR;
-   case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
-      return V3DV_DYNAMIC_STENCIL_COMPARE_MASK;
-   case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
-      return V3DV_DYNAMIC_STENCIL_WRITE_MASK;
-   case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
-      return V3DV_DYNAMIC_STENCIL_REFERENCE;
-   case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
-      return V3DV_DYNAMIC_BLEND_CONSTANTS;
-   case VK_DYNAMIC_STATE_DEPTH_BIAS:
-      return V3DV_DYNAMIC_DEPTH_BIAS;
-   case VK_DYNAMIC_STATE_LINE_WIDTH:
-      return V3DV_DYNAMIC_LINE_WIDTH;
-   case VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
-      return V3DV_DYNAMIC_COLOR_WRITE_ENABLE;
-   case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
-      return V3DV_DYNAMIC_DEPTH_BOUNDS;
-
-   default:
-      unreachable("Unhandled dynamic state");
-   }
-}
-
-static void
-pipeline_init_dynamic_state(
-   struct v3dv_pipeline *pipeline,
-   const VkPipelineDynamicStateCreateInfo *pDynamicState,
-   const VkPipelineViewportStateCreateInfo *pViewportState,
-   const VkPipelineDepthStencilStateCreateInfo *pDepthStencilState,
-   const VkPipelineColorBlendStateCreateInfo *pColorBlendState,
-   const VkPipelineRasterizationStateCreateInfo *pRasterizationState,
-   const VkPipelineColorWriteCreateInfoEXT *pColorWriteState)
-{
-   /* Initialize to default values */
-   const struct v3d_device_info *devinfo = &pipeline->device->devinfo;
-   struct v3dv_dynamic_state *dynamic = &pipeline->dynamic_state;
-   memset(dynamic, 0, sizeof(*dynamic));
-   dynamic->stencil_compare_mask.front = ~0;
-   dynamic->stencil_compare_mask.back = ~0;
-   dynamic->stencil_write_mask.front = ~0;
-   dynamic->stencil_write_mask.back = ~0;
-   dynamic->line_width = 1.0f;
-   dynamic->color_write_enable =
-      (1ull << (4 * V3D_MAX_RENDER_TARGETS(devinfo->ver))) - 1;
-   dynamic->depth_bounds.max = 1.0f;
-
-   /* Create a mask of enabled dynamic states */
-   uint32_t dynamic_states = 0;
-   if (pDynamicState) {
-      uint32_t count = pDynamicState->dynamicStateCount;
-      for (uint32_t s = 0; s < count; s++) {
-         dynamic_states |=
-            v3dv_dynamic_state_mask(pDynamicState->pDynamicStates[s]);
-      }
-   }
-
-   /* For any pipeline states that are not dynamic, set the dynamic state
-    * from the static pipeline state.
-    */
-   if (pViewportState) {
-      if (!(dynamic_states & V3DV_DYNAMIC_VIEWPORT)) {
-         dynamic->viewport.count = pViewportState->viewportCount;
-         typed_memcpy(dynamic->viewport.viewports, pViewportState->pViewports,
-                      pViewportState->viewportCount);
-
-         for (uint32_t i = 0; i < dynamic->viewport.count; i++) {
-            v3dv_X(pipeline->device, viewport_compute_xform)
-               (&dynamic->viewport.viewports[i],
-                dynamic->viewport.scale[i],
-                dynamic->viewport.translate[i]);
-         }
-      }
-
-      if (!(dynamic_states & V3DV_DYNAMIC_SCISSOR)) {
-         dynamic->scissor.count = pViewportState->scissorCount;
-         typed_memcpy(dynamic->scissor.scissors, pViewportState->pScissors,
-                      pViewportState->scissorCount);
-      }
-   }
-
-   if (pDepthStencilState) {
-      if (!(dynamic_states & V3DV_DYNAMIC_STENCIL_COMPARE_MASK)) {
-         dynamic->stencil_compare_mask.front =
-            pDepthStencilState->front.compareMask;
-         dynamic->stencil_compare_mask.back =
-            pDepthStencilState->back.compareMask;
-      }
-
-      if (!(dynamic_states & V3DV_DYNAMIC_STENCIL_WRITE_MASK)) {
-         dynamic->stencil_write_mask.front = pDepthStencilState->front.writeMask;
-         dynamic->stencil_write_mask.back = pDepthStencilState->back.writeMask;
-      }
-
-      if (!(dynamic_states & V3DV_DYNAMIC_STENCIL_REFERENCE)) {
-         dynamic->stencil_reference.front = pDepthStencilState->front.reference;
-         dynamic->stencil_reference.back = pDepthStencilState->back.reference;
-      }
-
-      if (!(dynamic_states & V3DV_DYNAMIC_DEPTH_BOUNDS)) {
-         dynamic->depth_bounds.min = pDepthStencilState->minDepthBounds;
-         dynamic->depth_bounds.max = pDepthStencilState->maxDepthBounds;
-      }
-   }
-
-   if (pColorBlendState && !(dynamic_states & V3DV_DYNAMIC_BLEND_CONSTANTS)) {
-      memcpy(dynamic->blend_constants, pColorBlendState->blendConstants,
-             sizeof(dynamic->blend_constants));
-   }
-
-   if (pRasterizationState) {
-      if (pRasterizationState->depthBiasEnable &&
-          !(dynamic_states & V3DV_DYNAMIC_DEPTH_BIAS)) {
-         dynamic->depth_bias.constant_factor =
-            pRasterizationState->depthBiasConstantFactor;
-         dynamic->depth_bias.depth_bias_clamp =
-            pRasterizationState->depthBiasClamp;
-         dynamic->depth_bias.slope_factor =
-            pRasterizationState->depthBiasSlopeFactor;
-      }
-      if (!(dynamic_states & V3DV_DYNAMIC_LINE_WIDTH))
-         dynamic->line_width = pRasterizationState->lineWidth;
-   }
-
-   if (pColorWriteState && !(dynamic_states & V3DV_DYNAMIC_COLOR_WRITE_ENABLE)) {
-      dynamic->color_write_enable = 0;
-      for (uint32_t i = 0; i < pColorWriteState->attachmentCount; i++)
-         dynamic->color_write_enable |= pColorWriteState->pColorWriteEnables[i] ? (0xfu << (i * 4)) : 0;
-   }
-
-   pipeline->dynamic_state.mask = dynamic_states;
-}
-
 static bool
-stencil_op_is_no_op(const VkStencilOpState *stencil)
+stencil_op_is_no_op(struct vk_stencil_test_face_state *stencil)
 {
-   return stencil->depthFailOp == VK_STENCIL_OP_KEEP &&
-          stencil->compareOp == VK_COMPARE_OP_ALWAYS;
+   return stencil->op.depth_fail == VK_STENCIL_OP_KEEP &&
+          stencil->op.compare == VK_COMPARE_OP_ALWAYS;
 }
 
 static void
@@ -2811,39 +2678,45 @@ enable_depth_bias(struct v3dv_pipeline *pipeline,
    pipeline->depth_bias.enabled = true;
 }
 
-static void
-pipeline_set_ez_state(struct v3dv_pipeline *pipeline,
-                      const VkPipelineDepthStencilStateCreateInfo *ds_info)
+/* Computes the ez_state based on a given vk_dynamic_graphics_state.  Note
+ * that the parameter dyn doesn't need to be pipeline->dynamic_graphics_state,
+ * as this method can be used by the cmd_buffer too.
+ */
+void
+v3dv_compute_ez_state(struct vk_dynamic_graphics_state *dyn,
+                      struct v3dv_pipeline *pipeline,
+                      enum v3dv_ez_state *ez_state,
+                      bool *incompatible_ez_test)
 {
-   if (!ds_info || !ds_info->depthTestEnable) {
-      pipeline->ez_state = V3D_EZ_DISABLED;
+   if (!dyn->ds.depth.test_enable)  {
+      *ez_state = V3D_EZ_DISABLED;
       return;
    }
 
-   switch (ds_info->depthCompareOp) {
+   switch (dyn->ds.depth.compare_op) {
    case VK_COMPARE_OP_LESS:
    case VK_COMPARE_OP_LESS_OR_EQUAL:
-      pipeline->ez_state = V3D_EZ_LT_LE;
+      *ez_state = V3D_EZ_LT_LE;
       break;
    case VK_COMPARE_OP_GREATER:
    case VK_COMPARE_OP_GREATER_OR_EQUAL:
-      pipeline->ez_state = V3D_EZ_GT_GE;
+      *ez_state = V3D_EZ_GT_GE;
       break;
    case VK_COMPARE_OP_NEVER:
    case VK_COMPARE_OP_EQUAL:
-      pipeline->ez_state = V3D_EZ_UNDECIDED;
+      *ez_state = V3D_EZ_UNDECIDED;
       break;
    default:
-      pipeline->ez_state = V3D_EZ_DISABLED;
-      pipeline->incompatible_ez_test = true;
+      *ez_state = V3D_EZ_DISABLED;
+      *incompatible_ez_test = true;
       break;
    }
 
    /* If stencil is enabled and is not a no-op, we need to disable EZ */
-   if (ds_info->stencilTestEnable &&
-       (!stencil_op_is_no_op(&ds_info->front) ||
-        !stencil_op_is_no_op(&ds_info->back))) {
-         pipeline->ez_state = V3D_EZ_DISABLED;
+   if (dyn->ds.stencil.test_enable &&
+       (!stencil_op_is_no_op(&dyn->ds.stencil.front) ||
+        !stencil_op_is_no_op(&dyn->ds.stencil.back))) {
+      *ez_state = V3D_EZ_DISABLED;
    }
 
    /* If the FS writes Z, then it may update against the chosen EZ direction */
@@ -2851,9 +2724,10 @@ pipeline_set_ez_state(struct v3dv_pipeline *pipeline,
       pipeline->shared_data->variants[BROADCOM_SHADER_FRAGMENT];
    if (fs_variant && fs_variant->prog_data.fs->writes_z &&
        !fs_variant->prog_data.fs->writes_z_from_fep) {
-      pipeline->ez_state = V3D_EZ_DISABLED;
+      *ez_state = V3D_EZ_DISABLED;
    }
 }
+
 
 static void
 pipeline_set_sample_mask(struct v3dv_pipeline *pipeline,
@@ -2966,6 +2840,49 @@ pipeline_setup_rendering_info(struct v3dv_device *device,
 }
 
 static VkResult
+pipeline_init_dynamic_state(struct v3dv_device *device,
+                            struct v3dv_pipeline *pipeline,
+                            struct vk_graphics_pipeline_state *pipeline_state,
+                            const VkGraphicsPipelineCreateInfo *pCreateInfo,
+                            const VkPipelineColorWriteCreateInfoEXT *cw_info)
+{
+   VkResult result = VK_SUCCESS;
+   struct vk_graphics_pipeline_all_state all;
+   result = vk_graphics_pipeline_state_fill(&pipeline->device->vk, pipeline_state,
+                                            pCreateInfo, &pipeline->rendering_info, 0,
+                                            &all, NULL, 0, NULL);
+   if (result != VK_SUCCESS)
+      return result;
+
+   vk_dynamic_graphics_state_fill(&pipeline->dynamic_graphics_state, pipeline_state);
+
+   struct v3dv_dynamic_state *v3dv_dyn = &pipeline->dynamic;
+   struct vk_dynamic_graphics_state *dyn = &pipeline->dynamic_graphics_state;
+
+   if (BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_VP_VIEWPORTS) ||
+       BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_VP_SCISSORS)) {
+      /* FIXME: right now we don't support multiViewport so viewporst[0] would
+       * work now, but would need to change if we allow multiple viewports.
+       */
+      v3dv_X(device, viewport_compute_xform)(&dyn->vp.viewports[0],
+                                             v3dv_dyn->viewport.scale[0],
+                                             v3dv_dyn->viewport.translate[0]);
+
+   }
+
+   v3dv_dyn->color_write_enable =
+      (1ull << (4 * V3D_MAX_RENDER_TARGETS(device->devinfo.ver))) - 1;
+   if (cw_info && BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
+      v3dv_dyn->color_write_enable = 0;
+      for (uint32_t i = 0; i < cw_info->attachmentCount; i++)
+         v3dv_dyn->color_write_enable |=
+            cw_info->pColorWriteEnables[i] ? (0xfu << (i * 4)) : 0;
+   }
+
+   return result;
+}
+
+static VkResult
 pipeline_init(struct v3dv_pipeline *pipeline,
               struct v3dv_device *device,
               struct v3dv_pipeline_cache *cache,
@@ -3001,6 +2918,8 @@ pipeline_init(struct v3dv_pipeline *pipeline,
       pCreateInfo->pRasterizationState &&
       !pCreateInfo->pRasterizationState->rasterizerDiscardEnable;
 
+   pipeline->rasterization_enabled = raster_enabled;
+
    const VkPipelineViewportStateCreateInfo *vp_info =
       raster_enabled ? pCreateInfo->pViewportState : NULL;
 
@@ -3033,6 +2952,17 @@ pipeline_init(struct v3dv_pipeline *pipeline,
                                      PIPELINE_COLOR_WRITE_CREATE_INFO_EXT) :
                 NULL;
 
+   struct vk_graphics_pipeline_state pipeline_state = { };
+   result = pipeline_init_dynamic_state(device, pipeline, &pipeline_state,
+                                        pCreateInfo, cw_info);
+
+   if (result != VK_SUCCESS) {
+      /* Caller would already destroy the pipeline, and we didn't allocate any
+       * extra info. We don't need to do anything else.
+       */
+      return result;
+   }
+
    const VkPipelineViewportDepthClipControlCreateInfoEXT *depth_clip_control =
       vp_info ? vk_find_struct_const(vp_info->pNext,
                                      PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT) :
@@ -3041,22 +2971,12 @@ pipeline_init(struct v3dv_pipeline *pipeline,
    if (depth_clip_control)
       pipeline->negative_one_to_one = depth_clip_control->negativeOneToOne;
 
-   pipeline_init_dynamic_state(pipeline,
-                               pCreateInfo->pDynamicState,
-                               vp_info, ds_info, cb_info, rs_info, cw_info);
-
-   /* V3D 4.2 doesn't support depth bounds testing so we don't advertise that
-    * feature and it shouldn't be used by any pipeline.
-    */
-   assert(device->devinfo.ver >= 71 ||
-          !ds_info || !ds_info->depthBoundsTestEnable);
-   pipeline->depth_bounds_test_enabled = ds_info && ds_info->depthBoundsTestEnable;
-
    enable_depth_bias(pipeline, rs_info);
 
    v3dv_X(device, pipeline_pack_state)(pipeline, cb_info, ds_info,
                                        rs_info, pv_info, ls_info,
-                                       ms_info);
+                                       ms_info,
+                                       &pipeline_state);
 
    pipeline_set_sample_mask(pipeline, ms_info);
    pipeline_set_sample_rate_shading(pipeline, ms_info);
@@ -3094,7 +3014,10 @@ pipeline_init(struct v3dv_pipeline *pipeline,
    }
 
    /* This must be done after the pipeline has been compiled */
-   pipeline_set_ez_state(pipeline, ds_info);
+   v3dv_compute_ez_state(&pipeline->dynamic_graphics_state,
+                         pipeline,
+                         &pipeline->ez_state,
+                         &pipeline->incompatible_ez_test);
 
    return result;
 }

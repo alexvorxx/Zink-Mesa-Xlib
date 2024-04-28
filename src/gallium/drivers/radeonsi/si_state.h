@@ -673,7 +673,6 @@ void si_ps_key_update_framebuffer_rasterizer_sample_shading(struct si_context *s
 void si_init_tess_factor_ring(struct si_context *sctx);
 bool si_update_gs_ring_buffers(struct si_context *sctx);
 bool si_update_spi_tmpring_size(struct si_context *sctx, unsigned bytes);
-unsigned si_get_shader_prefetch_size(struct si_shader *shader);
 bool si_set_tcs_to_fixed_func_shader(struct si_context *sctx);
 void si_update_tess_io_layout_state(struct si_context *sctx);
 

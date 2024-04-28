@@ -27,6 +27,7 @@ EPHEMERAL=(
     libvulkan-dev
     libwaffle-dev
     libx11-xcb-dev
+    libxcb-dri2-0-dev
     libxcb-ewmh-dev
     libxcb-keysyms1-dev
     libxkbcommon-dev

@@ -886,13 +886,12 @@ system_value("tess_level_inner_default", 2)
 system_value("patch_vertices_in", 1)
 system_value("local_invocation_id", 3)
 system_value("local_invocation_index", 1)
-# zero_base indicates it starts from 0 for the current dispatch
-# non-zero_base indicates the base is included
+# workgroup_id does not include the base_workgroup_id
 system_value("workgroup_id", 3)
-system_value("workgroup_id_zero_base", 3)
 # The workgroup_index is intended for situations when a 3 dimensional
 # workgroup_id is not available on the HW, but a 1 dimensional index is.
 system_value("workgroup_index", 1)
+# API specific base added to the workgroup_id, e.g. baseGroup* of vkCmdDispatchBase
 system_value("base_workgroup_id", 3, bit_sizes=[32, 64])
 system_value("user_clip_plane", 4, indices=[UCP_ID])
 system_value("num_workgroups", 3)
@@ -926,12 +925,11 @@ system_value("subgroup_lt_mask", 0, bit_sizes=[32, 64])
 system_value("num_subgroups", 1)
 system_value("subgroup_id", 1)
 system_value("workgroup_size", 3)
-# note: the definition of global_invocation_id_zero_base is based on
-# (workgroup_id * workgroup_size) + local_invocation_id.
-# it is *not* based on workgroup_id_zero_base, meaning the work group
-# base is already accounted for, and the global base is additive on top of that
+# note: the definition of global_invocation_id is based on
+# ((workgroup_id + base_workgroup_id) * workgroup_size) + local_invocation_id.
 system_value("global_invocation_id", 3, bit_sizes=[32, 64])
-system_value("global_invocation_id_zero_base", 3, bit_sizes=[32, 64])
+# API specific base added to the global_invocation_id
+# e.g. global_work_offset of clEnqueueNDRangeKernel
 system_value("base_global_invocation_id", 3, bit_sizes=[32, 64])
 system_value("global_invocation_index", 1, bit_sizes=[32, 64])
 system_value("work_dim", 1)
@@ -1012,7 +1010,7 @@ system_value("color0", 4)
 system_value("color1", 4)
 
 # System value for internal compute shaders in radeonsi.
-system_value("user_data_amd", 4)
+system_value("user_data_amd", 8)
 
 # In a fragment shader, the current sample mask. At the beginning of the shader,
 # this is the same as load_sample_mask_in, but as the shader is executed, it may
@@ -1312,14 +1310,6 @@ system_value("subgroup_id_shift_ir3", 1)
 intrinsic("load_frag_coord_unscaled_ir3", dest_comp=4,
           flags=[CAN_ELIMINATE, CAN_REORDER], bit_sizes=[32])
 
-# IR3-specific intrinsics for tessellation control shaders.  cond_end_ir3 end
-# the shader when src0 is false and is used to narrow down the TCS shader to
-# just thread 0 before writing out tessellation levels.
-intrinsic("cond_end_ir3", src_comp=[1])
-# end_patch_ir3 is used just before thread 0 exist the TCS and presumably
-# signals the TE that the patch is complete and can be tessellated.
-intrinsic("end_patch_ir3")
-
 # Per-view gl_FragSizeEXT and gl_FragCoord offset.
 intrinsic("load_frag_size_ir3", src_comp=[1], dest_comp=2, indices=[RANGE],
         flags=[CAN_ELIMINATE, CAN_REORDER], bit_sizes=[32])
@@ -1453,9 +1443,17 @@ store("tf_r600", [])
 # This barrier is a hint that prevents moving the instruction that computes
 # src after this barrier. It's a constraint for the instruction scheduler.
 # Otherwise it's identical to a move instruction.
-# On AMD, it also forces the src value to be stored in a VGPR.
+# The VGPR version forces the src value to be stored in a VGPR, while the SGPR
+# version enforces an SGPR.
 intrinsic("optimization_barrier_vgpr_amd", dest_comp=0, src_comp=[0],
           flags=[CAN_ELIMINATE])
+intrinsic("optimization_barrier_sgpr_amd", dest_comp=0, src_comp=[0],
+          flags=[CAN_ELIMINATE])
+
+# These are no-op intrinsics used as a simple source and user of SSA defs for testing.
+intrinsic("unit_test_amd", src_comp=[0], indices=[BASE])
+intrinsic("unit_test_uniform_amd", dest_comp=0, indices=[BASE])
+intrinsic("unit_test_divergent_amd", dest_comp=0, indices=[BASE])
 
 # Untyped buffer load/store instructions of arbitrary length.
 # src[] = { descriptor, vector byte offset, scalar byte offset, index offset }
@@ -1744,6 +1742,10 @@ intrinsic("cmat_muladd_amd", src_comp=[16, 16, 0], dest_comp=0, bit_sizes=src2,
 # Get the debug log buffer descriptor.
 intrinsic("load_debug_log_desc_amd", bit_sizes=[32], dest_comp=4, flags=[CAN_ELIMINATE, CAN_REORDER])
 
+system_value("ray_tracing_stack_base_lvp", 1)
+
+system_value("shader_call_data_offset_lvp", 1)
+
 # V3D-specific instrinc for tile buffer color reads.
 #
 # The hardware requires that we read the samples and components of a pixel
@@ -1803,16 +1805,22 @@ intrinsic("load_from_texture_handle_agx", [2], 1, [],
 # Load the coefficient register corresponding to a given fragment shader input.
 # Coefficient registers are vec3s that are dotted with <x, y, 1> to interpolate
 # the input, where x and y are relative to the 32x32 supertile.
-intrinsic("load_coefficients_agx",
+intrinsic("load_coefficients_agx", [1],
           bit_sizes = [32],
           dest_comp = 3,
           indices=[COMPONENT, IO_SEMANTICS, INTERP_MODE],
           flags=[CAN_ELIMINATE, CAN_REORDER])
 
-# In a fragment shader, boolean system value that is true if the last vertex
-# stage writes the layer ID. If false, layer IDs are defined to read back zero.
-# This system value facilitates that. 16-bit 0/~0 bool allows easy masking.
-system_value("layer_id_written_agx", 1, bit_sizes=[16])
+# src[] = { value, index }
+# Store a vertex shader output to the Unified Vertex Store (UVS). Indexed by UVS
+# index, which must be assigned by the driver based on the linked fragment
+# shader's interpolation qualifiers. This corresponds to the native instruction.
+store("uvs_agx", [1], [], [CAN_REORDER])
+
+# Driver intrinsic to map a location to a UVS index. This is generated when
+# lowering store_output to store_uvs_agx, and must be lowered by the driver.
+intrinsic("load_uvs_index_agx", dest_comp = 1, bit_sizes=[16],
+          indices=[IO_SEMANTICS], flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # Load/store a pixel in local memory. This operation is formatted, with
 # conversion between the specified format and the implied register format of the
@@ -1922,10 +1930,29 @@ intrinsic("load_polygon_stipple_agx", src_comp=[1], dest_comp=1, bit_sizes=[32],
 # The fixed-function sample mask specified in the API (e.g. glSampleMask)
 system_value("api_sample_mask_agx", 1, bit_sizes=[16])
 
+# Bit mask of samples currently being shaded. For API-level sample shading, this
+# will usually equal (1 << sample_id). Multiple bits can be set when sample
+# shading is only enabled due to framebuffer fetch, and the framebuffer has
+# multiple samples with the same value.
+#
+# Used as a loop variable with dynamic sample shading.
+system_value("active_samples_agx", 1, bit_sizes=[16])
+
 # Loads the sample position array as fixed point packed into a 32-bit word
 system_value("sample_positions_agx", 1, bit_sizes=[32])
 
-# Loads the fixed-function glPointSize() value
+# In a non-monolithic fragment shader part, returns whether this shader part is
+# responsible for Z/S testing after its final discard. ~0/0 boolean.
+system_value("shader_part_tests_zs_agx", 1, bit_sizes=[16])
+
+# In a fragment shader, returns the log2 of the number of samples in the
+# tilebuffer. This is the unprocessed value written in the corresponding USC
+# word. Used to determine whether sample mask writes have any effect when sample
+# count is dynamic.
+system_value("samples_log2_agx", 1, bit_sizes=[16])
+
+# Loads the fixed-function glPointSize() value, or zero if the
+# shader-supplied value should be used.
 system_value("fixed_point_size_agx", 1, bit_sizes=[32])
 
 # Bit mask of TEX locations that are replaced with point sprites
@@ -1946,6 +1973,17 @@ barrier("fence_pbe_to_tex_pixel_agx")
 
 # Unknown fence used in the helper program on exit.
 barrier("fence_helper_exit_agx")
+
+# Pointer to the buffer passing outputs VS->TCS, VS->GS, or TES->GS linkage.
+system_value("vs_output_buffer_agx", 1, bit_sizes=[64])
+
+# Indirect for the above, used for indirect draws.
+system_value("vs_output_buffer_ptr_agx", 1, bit_sizes=[64])
+
+# Mask of VS->TCS, VS->GS, or TES->GS outputs. This is modelled as a sysval
+# directly so it can be dynamic with shader objects or constant folded with
+# pipelines (including GPL)
+system_value("vs_outputs_agx", 1, bit_sizes=[64])
 
 # Address of state for AGX input assembly lowering for geometry/tessellation
 system_value("input_assembly_buffer_agx", 1, bit_sizes=[64])
@@ -1981,6 +2019,15 @@ load("helper_arg_lo_agx", [], [], [CAN_ELIMINATE])
 
 # dst[] = { Helper argument high 32 bits }.
 load("helper_arg_hi_agx", [], [], [CAN_ELIMINATE])
+
+# Export a vector. At the end of the shader part, the source is copied to the
+# indexed GPRs starting at BASE. Exports must not overlap within a shader part.
+# Must only appear in the last block of the shader part.
+intrinsic("export_agx", [0], indices=[BASE])
+
+# Load an exported vector at the beginning of the shader part from GPRs starting
+# at BASE. Must only appear in the first block of the shader part.
+load("exported_agx", [], [BASE], [CAN_ELIMINATE])
 
 # Intel-specific query for loading from the isl_image_param struct passed
 # into the shader as a uniform.  The variable is a deref to the image
@@ -2116,13 +2163,17 @@ system_value("leaf_procedural_intel", 1, bit_sizes=[1])
 system_value("btd_shader_type_intel", 1)
 system_value("ray_query_global_intel", 1, bit_sizes=[64])
 
-# Source 0: A matrix (type specified by SRC_TYPE)
-# Source 1: B matrix (type specified by SRC_TYPE)
-# Source 2: Accumulator matrix (type specified by DEST_TYPE)
+# Source 0: Accumulator matrix (type specified by DEST_TYPE)
+# Source 1: A matrix (type specified by SRC_TYPE)
+# Source 2: B matrix (type specified by SRC_TYPE)
 #
 # The matrix parameters are the slices owned by the invocation.
+#
+# The accumulator is source 0 because that is the source the intrinsic
+# infrastructure in NIR uses to determine the number of components in the
+# result.
 intrinsic("dpas_intel", dest_comp=0, src_comp=[0, 0, 0],
-          indices=[DEST_TYPE, SRC_TYPE, SATURATE, CMAT_SIGNED_MASK, SYSTOLIC_DEPTH, REPEAT_COUNT],
+          indices=[DEST_TYPE, SRC_TYPE, SATURATE, SYSTOLIC_DEPTH, REPEAT_COUNT],
           flags=[CAN_ELIMINATE])
 
 # NVIDIA-specific intrinsics

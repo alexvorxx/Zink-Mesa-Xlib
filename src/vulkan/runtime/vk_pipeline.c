@@ -511,6 +511,8 @@ vk_shader_unref(struct vk_device *device, struct vk_shader *shader)
    vk_pipeline_cache_object_unref(device, &shader->pipeline.cache_obj);
 }
 
+PRAGMA_DIAGNOSTIC_PUSH
+PRAGMA_DIAGNOSTIC_ERROR(-Wpadded)
 struct vk_pipeline_tess_info {
    unsigned tcs_vertices_out : 8;
    unsigned primitive_mode : 2; /* tess_primitive_mode */
@@ -519,6 +521,7 @@ struct vk_pipeline_tess_info {
    unsigned point_mode : 1;
    unsigned _pad : 18;
 };
+PRAGMA_DIAGNOSTIC_POP
 static_assert(sizeof(struct vk_pipeline_tess_info) == 4,
               "This struct has no holes");
 
@@ -1264,7 +1267,7 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
                all_cache_hits = false;
          }
 
-         if (all_cache_hits) {
+         if (all_cache_hits && cache != device->mem_cache) {
             /* The pipeline cache only really helps if we hit for everything
              * in the partition.  Otherwise, we have to go re-compile it all
              * anyway.
@@ -1795,6 +1798,10 @@ vk_common_CreateGraphicsPipelines(VkDevice _device,
    VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
    VkResult first_error_or_success = VK_SUCCESS;
 
+   /* Use implicit pipeline cache if there's no cache set */
+   if (!cache && device->mem_cache)
+      cache = device->mem_cache;
+
    /* From the Vulkan 1.3.274 spec:
     *
     *    "When attempting to create many pipelines in a single command, it is
@@ -2089,7 +2096,7 @@ vk_create_compute_pipeline(struct vk_device *device,
          .flags = VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT,
          .duration = pipeline_end - pipeline_start,
       };
-      if (cache_hit) {
+      if (cache_hit && cache != device->mem_cache) {
          pipeline_feedback.flags |=
             VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
       }
@@ -2124,6 +2131,10 @@ vk_common_CreateComputePipelines(VkDevice _device,
    VK_FROM_HANDLE(vk_device, device, _device);
    VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
    VkResult first_error_or_success = VK_SUCCESS;
+
+   /* Use implicit pipeline cache if there's no cache set */
+   if (!cache && device->mem_cache)
+      cache = device->mem_cache;
 
    /* From the Vulkan 1.3.274 spec:
     *

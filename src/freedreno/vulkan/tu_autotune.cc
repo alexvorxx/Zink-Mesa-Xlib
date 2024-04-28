@@ -667,8 +667,7 @@ tu_autotune_begin_renderpass(struct tu_cmd_buffer *cmd,
          &autotune_result->bo);
 
    tu_cs_emit_regs(cs, A6XX_RB_SAMPLE_COUNT_CONTROL(.copy = true));
-
-   if (CHIP >= A7XX) {
+   if (cmd->device->physical_device->info->a7xx.has_event_write_sample_count) {
       tu_cs_emit_pkt7(cs, CP_EVENT_WRITE7, 3);
       tu_cs_emit(cs, CP_EVENT_WRITE7_0(.event = ZPASS_DONE,
                                        .write_sample_count = true).value);
@@ -693,17 +692,19 @@ void tu_autotune_end_renderpass(struct tu_cmd_buffer *cmd,
    if (!autotune_result->bo.iova)
       return;
 
-   uint64_t result_iova = autotune_result->bo.iova +
-                          offsetof(struct tu_renderpass_samples, samples_end);
+   uint64_t result_iova = autotune_result->bo.iova;
 
    tu_cs_emit_regs(cs, A6XX_RB_SAMPLE_COUNT_CONTROL(.copy = true));
 
-   if (CHIP >= A7XX) {
+   if (cmd->device->physical_device->info->a7xx.has_event_write_sample_count) {
       tu_cs_emit_pkt7(cs, CP_EVENT_WRITE7, 3);
       tu_cs_emit(cs, CP_EVENT_WRITE7_0(.event = ZPASS_DONE,
-                                       .write_sample_count = true).value);
+                                       .write_sample_count = true,
+                                       .sample_count_end_offset = true).value);
       tu_cs_emit_qw(cs, result_iova);
    } else {
+      result_iova += offsetof(struct tu_renderpass_samples, samples_end);
+
       tu_cs_emit_regs(cs,
                         A6XX_RB_SAMPLE_COUNT_ADDR(.qword = result_iova));
       tu_cs_emit_pkt7(cs, CP_EVENT_WRITE, 1);

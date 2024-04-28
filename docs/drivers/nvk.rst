@@ -27,7 +27,8 @@ Debugging
 Here are a few environment variable debug environment variables
 specific to NVK:
 
-:envvar:`NAK_DEBUG`:
+.. envvar:: NAK_DEBUG
+
    a comma-separated list of named flags affecting the NVK back-end shader
    compiler:
 
@@ -42,7 +43,8 @@ specific to NVK:
       Adds extra annotation instructions to the IR to track information
       from various compile passes
 
-:envvar:`NVK_DEBUG`:
+.. envvar:: NVK_DEBUG
+
    a comma-separated list of named flags, which do various things:
 
    ``push``
@@ -57,7 +59,8 @@ specific to NVK:
    ``no_cbuf``
       Disables automatic promotion of UBOs to constant buffers
 
-:envvar:`NVK_I_WANT_A_BROKEN_VULKAN_DRIVER`
+.. envvar:: NVK_I_WANT_A_BROKEN_VULKAN_DRIVER
+
    If defined to ``1`` or ``true``, this will enable enumeration of all
    GPUs Kepler and later, including GPUs for which hardware support is
    poorly tested or completely broken.  This is intended for developer use

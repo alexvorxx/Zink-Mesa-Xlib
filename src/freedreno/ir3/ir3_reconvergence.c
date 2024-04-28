@@ -181,7 +181,13 @@ ir3_calc_reconvergence(struct ir3_shader_variant *so)
     * reconvergence point.
     */
    foreach_block (block, &so->ir->block_list) {
-      if (block->successors[0] && block->successors[1]) {
+      struct ir3_instruction *terminator = ir3_block_get_terminator(block);
+      if (!terminator)
+         continue;
+      if (terminator->opc == OPC_PREDT || terminator->opc == OPC_PREDF)
+         continue;
+      if (block->successors[0] && block->successors[1] &&
+          block->divergent_condition) {
          unsigned idx = block->successors[0]->index >
             block->successors[1]->index ? 0 : 1;
          block->successors[idx]->reconvergence_point = true;
@@ -297,7 +303,6 @@ ir3_calc_reconvergence(struct ir3_shader_variant *so)
          case OPC_READ_COND_MACRO:
          case OPC_ELECT_MACRO:
          case OPC_READ_FIRST_MACRO:
-         case OPC_SWZ_SHARED_MACRO:
             so->branchstack = MAX2(so->branchstack, rc_level + 1);
             break;
          default:

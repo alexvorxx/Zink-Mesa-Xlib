@@ -50,8 +50,8 @@ endif
 
 libdri_c_args = []
 if with_gallium_zink and not with_platform_android
-  if get_option('glvnd')
-    libdri_c_args += '-DKOPPER_LIB_NAMES="libEGL_@0@ and libGLX_@0@"'.format(get_option('glvnd-vendor-name'))
+  if with_glvnd
+    libdri_c_args += '-DKOPPER_LIB_NAMES="libEGL_@0@ and libGLX_@0@"'.format(glvnd_vendor_name)
   else
     libdri_c_args += '-DKOPPER_LIB_NAMES="libEGL and libGLX"'
   endif

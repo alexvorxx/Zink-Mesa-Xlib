@@ -125,6 +125,6 @@ TEST_F(FSCombineConstantsTest, DoContainingDo)
     * test is that the shader would be empty.
     */
    ASSERT_GE(shader->cfg->num_blocks, original_num_blocks);
-   shader->validate();
+   brw_fs_validate(*shader);
 }
 

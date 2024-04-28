@@ -4,24 +4,8 @@
  *
  * Based on u_format.h which is:
  * Copyright 2009-2010 VMware, Inc.
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef RADV_FORMATS_H
@@ -30,6 +14,8 @@
 #include <assert.h>
 #include <util/macros.h>
 #include <vulkan/vulkan.h>
+
+#include "amd_family.h"
 
 #include "vk_format.h"
 
@@ -152,5 +138,36 @@ vk_format_get_plane_height(VkFormat format, unsigned plane, unsigned height)
 {
    return util_format_get_plane_height(vk_format_to_pipe_format(format), plane, height);
 }
+
+struct radv_physical_device;
+
+uint32_t radv_translate_buffer_dataformat(const struct util_format_description *desc, int first_non_void);
+
+uint32_t radv_translate_buffer_numformat(const struct util_format_description *desc, int first_non_void);
+
+uint32_t radv_translate_tex_dataformat(VkFormat format, const struct util_format_description *desc, int first_non_void);
+
+uint32_t radv_translate_tex_numformat(VkFormat format, const struct util_format_description *desc, int first_non_void);
+
+bool radv_is_atomic_format_supported(VkFormat format);
+
+bool radv_is_storage_image_format_supported(const struct radv_physical_device *dev, VkFormat format);
+
+bool radv_is_buffer_format_supported(VkFormat format, bool *scaled);
+
+bool radv_is_colorbuffer_format_supported(const struct radv_physical_device *pdev, VkFormat format, bool *blendable);
+
+bool radv_is_format_emulated(const struct radv_physical_device *pdev, VkFormat format);
+
+uint32_t radv_colorformat_endian_swap(uint32_t colorformat);
+
+uint32_t radv_translate_dbformat(VkFormat format);
+
+unsigned radv_translate_colorswap(VkFormat format, bool do_endian_swap);
+
+bool radv_format_pack_clear_color(VkFormat format, uint32_t clear_vals[2], VkClearColorValue *value);
+
+bool radv_dcc_formats_compatible(enum amd_gfx_level gfx_level, VkFormat format1, VkFormat format2,
+                                 bool *sign_reinterpret);
 
 #endif /* RADV_FORMATS_H */

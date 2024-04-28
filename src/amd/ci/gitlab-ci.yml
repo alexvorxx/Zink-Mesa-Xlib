@@ -46,7 +46,6 @@ radeonsi-stoney-traces:x86_64:
   variables:
     EGL_PLATFORM: surfaceless
     PIGLIT_TRACES_FILE: traces-amd.yml
-    PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-amd.yml"
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
 
 radv-raven-vkcts:x86_64:
@@ -70,12 +69,28 @@ amd-raven-skqp:x86_64:
 
 radv-raven-traces:x86_64:
   extends:
-    - .radv-traces
+    - .lava-piglit-traces:x86_64
     - .radv-raven-test:x86_64
     - .lava-lenovo-TPad-C13-Yoga-zork:x86_64
   variables:
     HWCI_START_XORG: 1
+    PIGLIT_PLATFORM: mixed_glx_egl  # TODO, take wine/VK in account
     PIGLIT_REPLAY_DEVICE_NAME: "vk-${GPU_VERSION}"
+    PIGLIT_TRACES_FILE: traces-amd.yml
+
+radv-raven-traces-restricted:x86_64:
+  extends:
+    - .lava-piglit-traces:x86_64
+    - .radv-raven-test:x86_64
+    - .lava-lenovo-TPad-C13-Yoga-zork:x86_64
+    - .radv-collabora-rules-restricted
+  variables:
+    HWCI_START_WESTON: 1
+    PIGLIT_REPLAY_ANGLE_TAG: "2023-02-10-1"
+    PIGLIT_TRACES_FILE: restricted-traces-amd.yml
+    PIGLIT_REPLAY_DEVICE_NAME: "vk-${GPU_VERSION}"
+    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image --minio_bucket=mesa-tracie-private --jwt-file=${S3_JWT_FILE}
+    FDO_CI_CONCURRENT: 10
 
 radeonsi-raven-piglit-quick_gl:x86_64:
   extends:
@@ -171,7 +186,6 @@ vkcts-tahiti-valve:
     B2C_TIMEOUT_BOOT_MINUTES: 350
     B2C_TIMEOUT_OVERALL_MINUTES: 350
     B2C_TIMEOUT_BOOT_RETRIES: 0
-    RADV_PERFTEST: shader_object
 
 vkcts-polaris10-valve:
   extends:
@@ -183,7 +197,6 @@ vkcts-polaris10-valve:
     GPU_VERSION: radv-polaris10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
-    RADV_PERFTEST: shader_object
 
 vkcts-vega10-valve:
   extends:
@@ -195,7 +208,6 @@ vkcts-vega10-valve:
     GPU_VERSION: radv-vega10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
-    RADV_PERFTEST: shader_object
 
 vkcts-renoir-valve:
   extends:
@@ -207,7 +219,6 @@ vkcts-renoir-valve:
     GPU_VERSION: radv-renoir-aco
     B2C_TIMEOUT_BOOT_MINUTES: 130
     B2C_TIMEOUT_OVERALL_MINUTES: 130
-    RADV_PERFTEST: shader_object
 
 vkcts-navi10-valve:
   parallel: 2
@@ -217,11 +228,10 @@ vkcts-navi10-valve:
     - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-navi10-aco
-    RADV_PERFTEST: shader_object
 
 vkcts-navi21-valve:
   timeout: 35m
-  parallel: 4
+  parallel: 3
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve
@@ -230,7 +240,6 @@ vkcts-navi21-valve:
     GPU_VERSION: radv-navi21-aco
     B2C_TIMEOUT_BOOT_MINUTES: 30
     B2C_TIMEOUT_OVERALL_MINUTES: 30
-    RADV_PERFTEST: shader_object
 
 # Disabled due to its extremelly-broken nature
 .vkcts-navi21-llvm-valve:
@@ -251,12 +260,11 @@ vkcts-vangogh-valve:
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-vangogh-aco
-    RADV_PERFTEST: shader_object
 
 glcts-vangogh-valve:
   extends:
-    - .b2c-test-gl
-    - .deqp-test-valve
+    - .b2c-x86_64-test-gl
+    - .b2c-deqp-test
     - .vangogh-test-valve
     - .radeonsi-valve-manual-rules
   timeout: 40m
@@ -272,7 +280,6 @@ vkcts-navi31-valve:
   variables:
     GPU_VERSION: radv-navi31-aco
     RADV_DEBUG: nomeshshader # Disable mesh shaders until task shaders stop hanging
-    RADV_PERFTEST: shader_object
 
 ############### Fossilize
 radv-fossils:

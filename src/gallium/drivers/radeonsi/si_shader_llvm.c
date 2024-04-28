@@ -485,9 +485,6 @@ static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrin
    struct si_shader_context *ctx = si_shader_context_from_abi(abi);
 
    switch (intrin->intrinsic) {
-   case nir_intrinsic_load_tess_rel_patch_id_amd:
-      return si_get_rel_patch_id(ctx);
-
    case nir_intrinsic_load_lds_ngg_scratch_base_amd:
       return LLVMBuildPtrToInt(ctx->ac.builder, ctx->gs_ngg_scratch.value, ctx->ac.i32, "");
 
@@ -734,12 +731,9 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
       ctx->stage == MESA_SHADER_VERTEX && shader->key.ge.as_ls &&
       shader->key.ge.opt.same_patch_vertices;
 
-   bool tcs_need_output =
-      ctx->stage == MESA_SHADER_TESS_CTRL && info->tessfactors_are_def_in_all_invocs;
-
    bool ps_need_output = ctx->stage == MESA_SHADER_FRAGMENT;
 
-   if (ls_need_output || tcs_need_output || ps_need_output) {
+   if (ls_need_output || ps_need_output) {
       for (unsigned i = 0; i < info->num_outputs; i++) {
          LLVMTypeRef type = ctx->ac.f32;
 
@@ -899,11 +893,6 @@ bool si_llvm_build_shader_part(struct si_screen *sscreen, gl_shader_stage stage,
    bool exports_mrtz = false;
 
    switch (stage) {
-   case MESA_SHADER_TESS_CTRL:
-      assert(!prolog);
-      shader.key.ge.part.tcs.epilog = key->tcs_epilog.states;
-      wave32 = key->tcs_epilog.wave32;
-      break;
    case MESA_SHADER_FRAGMENT:
       if (prolog) {
          shader.key.ps.part.prolog = key->ps_prolog.states;
@@ -936,9 +925,6 @@ bool si_llvm_build_shader_part(struct si_screen *sscreen, gl_shader_stage stage,
    void (*build)(struct si_shader_context *, union si_shader_part_key *);
 
    switch (stage) {
-   case MESA_SHADER_TESS_CTRL:
-      build = si_llvm_build_tcs_epilog;
-      break;
    case MESA_SHADER_FRAGMENT:
       build = prolog ? si_llvm_build_ps_prolog : si_llvm_build_ps_epilog;
       break;

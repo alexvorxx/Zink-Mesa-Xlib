@@ -773,7 +773,6 @@ spec@!opengl 2.0@gl-2.0-edgeflag,Fail
 spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Fail
 spec@!opengl 2.0@gl-2.0-two-sided-stencil,Fail
 spec@!opengl 3.0@clearbuffer-depth-cs-probe,Fail
-spec@!opengl 3.0@gl_vertexid used with glmultidrawarrays,Fail
 spec@!opengl 3.0@sampler-cube-shadow,Fail
 spec@!opengl 3.2@pointsprite-origin,Fail
 spec@!opengl es 3.0@gles-3.0-transform-feedback-uniform-buffer-object,Fail
@@ -1071,8 +1070,6 @@ spec@arb_tessellation_shader@execution@barrier,Fail
 spec@arb_tessellation_shader@execution@barrier-patch,Fail
 spec@arb_tessellation_shader@execution@invocation-counting-even,Fail
 spec@arb_tessellation_shader@execution@invocation-counting-odd,Fail
-spec@arb_tessellation_shader@execution@tcs-input@tcs-input-ivec3_2,Fail
-spec@arb_tessellation_shader@execution@tcs-input@tcs-input-uvec3_2,Fail
 spec@arb_tessellation_shader@execution@tcs-primitiveid,Fail
 spec@arb_tessellation_shader@execution@tcs-tes-max-in-out-components,Fail
 spec@arb_tessellation_shader@execution@tcs-tes-max-in-out-patch-components,Fail
@@ -1569,7 +1566,6 @@ spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triang
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip other,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency ffs,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency other,Fail
-spec@glsl-1.50@execution@interface-vs-unnamed-to-fs-unnamed,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quad-strip,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quads,Fail
 spec@glsl-1.50@execution@variable-indexing@gs-output-array-vec4-index-wr,Fail
@@ -1726,3 +1722,26 @@ spec@nv_copy_image@nv_copy_image-formats --samples=8@Source: GL_RGB32I/Destinati
 spec@nv_copy_image@nv_copy_image-formats --samples=8@Source: GL_RGB32UI/Destination: GL_RGB32F,Fail
 spec@nv_copy_image@nv_copy_image-formats --samples=8@Source: GL_RGB32UI/Destination: GL_RGB32I,Fail
 spec@nv_copy_image@nv_copy_image-formats --samples=8@Source: GL_RGB32UI/Destination: GL_RGB32UI,Fail
+
+# uprev Piglit in Mesa
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32F/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32F/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32I/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32I/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32UI/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=2@Source: GL_RGB32UI/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32F/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32F/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32I/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32I/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32UI/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=4@Source: GL_RGB32UI/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32F/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32F/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32I/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32I/Destination: GL_RGB32UI,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32UI/Destination: GL_RGB32I,Fail
+spec@arb_copy_image@arb_copy_image-formats --samples=8@Source: GL_RGB32UI/Destination: GL_RGB32UI,Fail
+spec@egl_chromium_sync_control@conformance,Fail
+spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
+spec@glsl-1.30@execution@texelfetch fs sampler2darray 98x1x9-98x129x9,Timeout

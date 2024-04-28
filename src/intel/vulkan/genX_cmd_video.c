@@ -638,13 +638,15 @@ anv_h265_decode_video(struct anv_cmd_buffer *cmd_buffer,
       anv_device_map_bo(cmd_buffer->device,
                         src_buffer->address.bo,
                         src_buffer->address.offset,
-                        frame_info->srcBufferRange,
+                        frame_info->srcBufferRange + frame_info->srcBufferOffset,
                         NULL /* placed_addr */,
                         &slice_map);
    if (result != VK_SUCCESS) {
       anv_batch_set_error(&cmd_buffer->batch, result);
       return;
    }
+
+   slice_map += frame_info->srcBufferOffset;
 
    struct vk_video_h265_slice_params slice_params[h265_pic_info->sliceSegmentCount];
 

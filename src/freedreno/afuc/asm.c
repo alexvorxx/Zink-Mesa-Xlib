@@ -106,6 +106,21 @@ next_instr(afuc_opc opc)
    return ai;
 }
 
+static void usage(void);
+
+void
+parse_version(struct afuc_instr *instr)
+{
+   if (gpuver != 0)
+      return;
+
+   int ret = afuc_util_init(afuc_get_fwid(instr->literal), &gpuver, false);
+   if (ret < 0) {
+      usage();
+      exit(1);
+   }
+}
+
 void
 decl_label(const char *str)
 {
@@ -213,7 +228,8 @@ emit_instructions(int outfd)
          break;
 
       case OPC_CALL:
-      case OPC_PREEMPTLEAVE:
+      case OPC_BL:
+      case OPC_JUMPA:
          ai->literal = resolve_label(ai->label);
          break;
 
@@ -275,8 +291,7 @@ static void
 usage(void)
 {
    fprintf(stderr, "Usage:\n"
-                   "\tasm [-g GPUVER] filename.asm filename.fw\n"
-                   "\t\t-g - specify GPU version (5, etc)\n");
+                   "\tasm filename.asm filename.fw\n");
    exit(2);
 }
 
@@ -285,18 +300,7 @@ main(int argc, char **argv)
 {
    FILE *in;
    char *file, *outfile;
-   int c, ret;
-
-   /* Argument parsing: */
-   while ((c = getopt(argc, argv, "g:")) != -1) {
-      switch (c) {
-      case 'g':
-         gpuver = atoi(optarg);
-         break;
-      default:
-         usage();
-      }
-   }
+   int ret;
 
    if (optind >= (argc + 1)) {
       fprintf(stderr, "no file specified!\n");
@@ -319,22 +323,6 @@ main(int argc, char **argv)
    }
 
    yyset_in(in);
-
-   /* if gpu version not specified, infer from filename: */
-   if (!gpuver) {
-      if (strstr(file, "a5")) {
-         gpuver = 5;
-      } else if (strstr(file, "a6")) {
-         gpuver = 6;
-      } else if (strstr(file, "a7")) {
-         gpuver = 7;
-      }
-   }
-
-   ret = afuc_util_init(gpuver, false);
-   if (ret < 0) {
-      usage();
-   }
 
    /* there is an extra 0x00000000 which kernel strips off.. we could
     * perhaps use it for versioning.

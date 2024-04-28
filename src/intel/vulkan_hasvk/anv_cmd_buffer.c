@@ -84,6 +84,7 @@ anv_cmd_state_reset(struct anv_cmd_buffer *cmd_buffer)
 
 static VkResult
 anv_create_cmd_buffer(struct vk_command_pool *pool,
+                      VkCommandBufferLevel level,
                       struct vk_command_buffer **cmd_buffer_out)
 {
    struct anv_device *device =
@@ -97,7 +98,7 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
       return vk_error(pool, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    result = vk_command_buffer_init(pool, &cmd_buffer->vk,
-                                   &anv_cmd_buffer_ops, 0);
+                                   &anv_cmd_buffer_ops, level);
    if (result != VK_SUCCESS)
       goto fail_alloc;
 

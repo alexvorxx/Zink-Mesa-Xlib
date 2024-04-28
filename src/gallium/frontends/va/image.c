@@ -277,9 +277,10 @@ vlVaDeriveImage(VADriverContextP ctx, VASurfaceID surface, VAImage *image)
                                    PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE))
          return VA_STATUS_ERROR_OPERATION_FAILED;
    } else if (util_format_get_num_planes(surf->buffer->buffer_format) >= 2 &&
-              !screen->get_video_param(screen, PIPE_VIDEO_PROFILE_UNKNOWN,
+              (!screen->get_video_param(screen, PIPE_VIDEO_PROFILE_UNKNOWN,
                                        PIPE_VIDEO_ENTRYPOINT_BITSTREAM,
-                                       PIPE_VIDEO_CAP_SUPPORTS_CONTIGUOUS_PLANES_MAP)) {
+                                       PIPE_VIDEO_CAP_SUPPORTS_CONTIGUOUS_PLANES_MAP) ||
+               !surf->buffer->contiguous_planes)) {
       return VA_STATUS_ERROR_OPERATION_FAILED;
    }
 

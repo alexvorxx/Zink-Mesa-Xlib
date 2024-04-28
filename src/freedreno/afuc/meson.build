@@ -72,11 +72,11 @@ asm = executable(
 if with_tests
   asm_fw = custom_target('afuc_test.fw',
     output: 'afuc_test.fw',
-    command: [asm, '-g', '6', files('../.gitlab-ci/traces/afuc_test.asm'), '@OUTPUT@'],
+    command: [asm, files('../.gitlab-ci/traces/afuc_test.asm'), '@OUTPUT@'],
   )
   asm_fw_a7xx = custom_target('afuc_test_a7xx.fw',
     output: 'afuc_test_a7xx.fw',
-    command: [asm, '-g', '7', files('../.gitlab-ci/traces/afuc_test_a7xx.asm'), '@OUTPUT@'],
+    command: [asm, files('../.gitlab-ci/traces/afuc_test_a7xx.asm'), '@OUTPUT@'],
   )
   test('afuc-asm',
     diff,
@@ -136,12 +136,12 @@ if cc.sizeof('size_t') > 4
   if with_tests
     disasm_fw = custom_target('afuc_test.asm',
       output: 'afuc_test.asm',
-      command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test.fw'), '-g', '630'],
+      command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test.fw')],
       capture: true
     )
     disasm_fw_a7xx = custom_target('afuc_test_a7xx.asm',
       output: 'afuc_test_a7xx.asm',
-      command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test_a7xx.fw'), '-g', '730'],
+      command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test_a7xx.fw')],
       capture: true
     )
     test('afuc-disasm',

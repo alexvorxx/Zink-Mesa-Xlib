@@ -94,7 +94,7 @@ agx_nir_lower_cull_distance_fs(nir_shader *s, unsigned nr_distances)
        * partial derivatives and the value somewhere.
        */
       nir_def *cf = nir_load_coefficients_agx(
-         b, .component = i & 3,
+         b, nir_imm_int(b, 0), .component = i & 3,
          .io_semantics.location = VARYING_SLOT_CULL_PRIMITIVE + (i / 4),
          .io_semantics.num_slots = nr_distances / 4,
          .interp_mode = INTERP_MODE_NOPERSPECTIVE);

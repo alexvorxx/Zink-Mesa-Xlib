@@ -2054,17 +2054,17 @@ add_embedded_sampler_entry(struct apply_pipeline_layout_state *state,
       .binding = binding,
    };
 
-   assert(sizeof(sampler->sampler_state) ==
+   assert(sizeof(sampler->key.sampler) ==
           sizeof(bind_layout->immutable_samplers[0]->state_no_bc[0]));
-   memcpy(sampler->sampler_state,
+   memcpy(sampler->key.sampler,
           bind_layout->immutable_samplers[0]->state_no_bc[0],
-          sizeof(sampler->sampler_state));
+          sizeof(sampler->key.sampler));
 
-   assert(sizeof(sampler->border_color) ==
+   assert(sizeof(sampler->key.color) ==
           sizeof(bind_layout->immutable_samplers[0]->vk.border_color_value.uint32));
-   memcpy(sampler->border_color,
+   memcpy(sampler->key.color,
           bind_layout->immutable_samplers[0]->vk.border_color_value.uint32,
-          sizeof(sampler->border_color));
+          sizeof(sampler->key.color));
 }
 
 static bool

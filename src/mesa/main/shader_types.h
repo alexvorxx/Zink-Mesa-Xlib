@@ -422,20 +422,6 @@ struct gl_shader_program
 
    struct gl_program *last_vert_prog;
 
-   /** Post-link gl_FragDepth layout for ARB_conservative_depth. */
-   enum gl_frag_depth_layout FragDepthLayout;
-
-   /**
-    * Geometry shader state - copied into gl_program by
-    * _mesa_copy_linked_program_data().
-    */
-   struct {
-      GLint VerticesIn;
-
-      bool UsesEndPrimitive;
-      unsigned ActiveStreamMask;
-   } Geom;
-
    /** Data shared by gl_program and gl_shader_program */
    struct gl_shader_program_data *data;
 

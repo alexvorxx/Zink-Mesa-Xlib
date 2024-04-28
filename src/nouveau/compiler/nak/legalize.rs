@@ -48,6 +48,8 @@ fn copy_alu_src(b: &mut impl SSABuilder, src: &mut Src, src_type: SrcType) {
         SrcType::GPR
         | SrcType::ALU
         | SrcType::F32
+        | SrcType::F16
+        | SrcType::F16v2
         | SrcType::I32
         | SrcType::B32 => b.alloc_ssa(RegFile::GPR, 1),
         SrcType::F64 => b.alloc_ssa(RegFile::GPR, 2),
@@ -161,35 +163,54 @@ fn copy_alu_src_if_f20_overflow(
     }
 }
 
+fn copy_alu_src_and_lower_fmod(
+    b: &mut impl SSABuilder,
+    src: &mut Src,
+    src_type: SrcType,
+) {
+    match src_type {
+        SrcType::F16 | SrcType::F16v2 => {
+            let val = b.alloc_ssa(RegFile::GPR, 1);
+            b.push_op(OpHAdd2 {
+                dst: val.into(),
+                srcs: [Src::new_zero().fneg(), *src],
+                saturate: false,
+                ftz: false,
+                f32: false,
+            });
+            *src = val.into();
+        }
+        SrcType::F32 => {
+            let val = b.alloc_ssa(RegFile::GPR, 1);
+            b.push_op(OpFAdd {
+                dst: val.into(),
+                srcs: [Src::new_zero().fneg(), *src],
+                saturate: false,
+                rnd_mode: FRndMode::NearestEven,
+                ftz: false,
+            });
+            *src = val.into();
+        }
+        SrcType::F64 => {
+            let val = b.alloc_ssa(RegFile::GPR, 2);
+            b.push_op(OpDAdd {
+                dst: val.into(),
+                srcs: [Src::new_zero().fneg(), *src],
+                rnd_mode: FRndMode::NearestEven,
+            });
+            *src = val.into();
+        }
+        _ => panic!("Invalid ffabs srouce type"),
+    }
+}
+
 fn copy_alu_src_if_fabs(
     b: &mut impl SSABuilder,
     src: &mut Src,
     src_type: SrcType,
 ) {
     if src.src_mod.has_fabs() {
-        match src_type {
-            SrcType::F32 => {
-                let val = b.alloc_ssa(RegFile::GPR, 1);
-                b.push_op(OpFAdd {
-                    dst: val.into(),
-                    srcs: [Src::new_zero().fneg(), *src],
-                    saturate: false,
-                    rnd_mode: FRndMode::NearestEven,
-                    ftz: false,
-                });
-                *src = val.into();
-            }
-            SrcType::F64 => {
-                let val = b.alloc_ssa(RegFile::GPR, 2);
-                b.push_op(OpDAdd {
-                    dst: val.into(),
-                    srcs: [Src::new_zero().fneg(), *src],
-                    rnd_mode: FRndMode::NearestEven,
-                });
-                *src = val.into();
-            }
-            _ => panic!("Invalid ffabs srouce type"),
-        }
+        copy_alu_src_and_lower_fmod(b, src, src_type);
     }
 }
 
@@ -431,6 +452,8 @@ fn legalize_sm50_instr(
                         assert!(src_is_reg(src));
                     }
                     SrcType::ALU
+                    | SrcType::F16
+                    | SrcType::F16v2
                     | SrcType::F32
                     | SrcType::F64
                     | SrcType::I32
@@ -496,6 +519,49 @@ fn legalize_sm70_instr(
                 op.cmp_op = op.cmp_op.flip();
             }
             copy_alu_src_if_not_reg(b, src0, SrcType::F32);
+        }
+        Op::HAdd2(op) => {
+            let [ref mut src0, ref mut src1] = op.srcs;
+            swap_srcs_if_not_reg(src0, src1);
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
+        }
+        Op::HFma2(op) => {
+            let [ref mut src0, ref mut src1, ref mut src2] = op.srcs;
+            swap_srcs_if_not_reg(src0, src1);
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
+            copy_alu_src_if_not_reg(b, src1, SrcType::F16v2);
+            copy_alu_src_if_both_not_reg(b, src1, src2, SrcType::F16v2);
+
+            // HFMA2 doesn't have fabs or fneg on SRC2.
+            if !src2.src_mod.is_none() {
+                copy_alu_src_and_lower_fmod(b, src2, SrcType::F16v2);
+            }
+        }
+        Op::HMul2(op) => {
+            let [ref mut src0, ref mut src1] = op.srcs;
+            swap_srcs_if_not_reg(src0, src1);
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
+        }
+        Op::HSet2(op) => {
+            let [ref mut src0, ref mut src1] = op.srcs;
+            if !src_is_reg(src0) && src_is_reg(src1) {
+                std::mem::swap(src0, src1);
+                op.cmp_op = op.cmp_op.flip();
+            }
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
+        }
+        Op::HSetP2(op) => {
+            let [ref mut src0, ref mut src1] = op.srcs;
+            if !src_is_reg(src0) && src_is_reg(src1) {
+                std::mem::swap(src0, src1);
+                op.cmp_op = op.cmp_op.flip();
+            }
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
+        }
+        Op::HMnMx2(op) => {
+            let [ref mut src0, ref mut src1] = op.srcs;
+            swap_srcs_if_not_reg(src0, src1);
+            copy_alu_src_if_not_reg(b, src0, SrcType::F16v2);
         }
         Op::MuFu(_) => (), // Nothing to do
         Op::DAdd(op) => {
@@ -625,7 +691,12 @@ fn legalize_sm70_instr(
         Op::PopC(_) => (),
         Op::Shf(op) => {
             copy_alu_src_if_not_reg(b, &mut op.low, SrcType::ALU);
-            copy_alu_src_if_not_reg(b, &mut op.high, SrcType::ALU);
+            copy_alu_src_if_both_not_reg(
+                b,
+                &op.shift,
+                &mut op.high,
+                SrcType::ALU,
+            );
         }
         Op::F2F(_) | Op::F2I(_) | Op::I2F(_) | Op::Mov(_) | Op::FRnd(_) => (),
         Op::Prmt(op) => {
@@ -721,6 +792,8 @@ fn legalize_sm70_instr(
                         assert!(src_is_reg(src));
                     }
                     SrcType::ALU
+                    | SrcType::F16
+                    | SrcType::F16v2
                     | SrcType::F32
                     | SrcType::F64
                     | SrcType::I32
@@ -753,32 +826,7 @@ fn legalize_instr(
 
     let src_types = instr.src_types();
     for (i, src) in instr.srcs_mut().iter_mut().enumerate() {
-        if let SrcRef::Imm32(u) = &mut src.src_ref {
-            *u = match src_types[i] {
-                SrcType::F32 | SrcType::F64 => match src.src_mod {
-                    SrcMod::None => *u,
-                    SrcMod::FAbs => *u & !(1_u32 << 31),
-                    SrcMod::FNeg => *u ^ !(1_u32 << 31),
-                    SrcMod::FNegAbs => *u | !(1_u32 << 31),
-                    _ => panic!("Not a float source modifier"),
-                },
-                SrcType::I32 => match src.src_mod {
-                    SrcMod::None => *u,
-                    SrcMod::INeg => -(*u as i32) as u32,
-                    _ => panic!("Not an integer source modifier"),
-                },
-                SrcType::B32 => match src.src_mod {
-                    SrcMod::None => *u,
-                    SrcMod::BNot => !*u,
-                    _ => panic!("Not a bitwise source modifier"),
-                },
-                _ => {
-                    assert!(src.src_mod.is_none());
-                    *u
-                }
-            };
-            src.src_mod = SrcMod::None;
-        }
+        *src = src.fold_imm(src_types[i]);
     }
 
     let mut vec_src_map: HashMap<SSARef, SSARef> = HashMap::new();

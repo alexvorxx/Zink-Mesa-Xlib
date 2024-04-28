@@ -51,13 +51,14 @@
 #include "vk_util.h"
 
 static nir_def *
-load_sysval_from_ubo(nir_builder *b, nir_intrinsic_instr *intr, unsigned offset)
+load_sysval_from_push_const(nir_builder *b, nir_intrinsic_instr *intr,
+                            unsigned offset)
 {
-   return nir_load_ubo(b, intr->def.num_components, intr->def.bit_size,
-                       nir_imm_int(b, PANVK_SYSVAL_UBO_INDEX),
-                       nir_imm_int(b, offset),
-                       .align_mul = intr->def.bit_size / 8, .align_offset = 0,
-                       .range_base = offset, .range = intr->def.bit_size / 8);
+   return nir_load_push_constant(
+      b, intr->def.num_components, intr->def.bit_size, nir_imm_int(b, 0),
+      /* Push constants are placed first, and then come the sysvals. */
+      .base = offset + 256,
+      .range = intr->def.num_components * intr->def.bit_size / 8);
 }
 
 struct sysval_options {
@@ -78,28 +79,35 @@ panvk_lower_sysvals(nir_builder *b, nir_instr *instr, void *data)
    nir_def *val = NULL;
    b->cursor = nir_before_instr(instr);
 
-#define SYSVAL(name) offsetof(struct panvk_sysvals, name)
+#define SYSVAL(ptype, name) offsetof(struct panvk_ ## ptype ## _sysvals, name)
    switch (intr->intrinsic) {
    case nir_intrinsic_load_num_workgroups:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(num_work_groups));
+      val =
+         load_sysval_from_push_const(b, intr, SYSVAL(compute, num_work_groups));
       break;
    case nir_intrinsic_load_workgroup_size:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(local_group_size));
+      val = load_sysval_from_push_const(b, intr,
+                                        SYSVAL(compute, local_group_size));
       break;
    case nir_intrinsic_load_viewport_scale:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(viewport_scale));
+      val =
+         load_sysval_from_push_const(b, intr, SYSVAL(graphics, viewport.scale));
       break;
    case nir_intrinsic_load_viewport_offset:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(viewport_offset));
+      val = load_sysval_from_push_const(b, intr,
+                                        SYSVAL(graphics, viewport.offset));
       break;
    case nir_intrinsic_load_first_vertex:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(first_vertex));
+      val = load_sysval_from_push_const(b, intr,
+                                        SYSVAL(graphics, vs.first_vertex));
       break;
    case nir_intrinsic_load_base_vertex:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(base_vertex));
+      val =
+         load_sysval_from_push_const(b, intr, SYSVAL(graphics, vs.base_vertex));
       break;
    case nir_intrinsic_load_base_instance:
-      val = load_sysval_from_ubo(b, intr, SYSVAL(base_instance));
+      val = load_sysval_from_push_const(b, intr,
+                                        SYSVAL(graphics, vs.base_instance));
       break;
    case nir_intrinsic_load_blend_const_color_rgba:
       if (opts->static_blend_constants) {
@@ -112,9 +120,18 @@ panvk_lower_sysvals(nir_builder *b, nir_instr *instr, void *data)
 
          val = nir_build_imm(b, 4, 32, constants);
       } else {
-         val = load_sysval_from_ubo(b, intr, SYSVAL(blend_constants));
+         val = load_sysval_from_push_const(b, intr,
+                                           SYSVAL(graphics, blend.constants));
       }
       break;
+
+   case nir_intrinsic_load_layer_id:
+      /* We don't support layered rendering yet, so force the layer_id to
+       * zero for now.
+       */
+      val = nir_imm_int(b, 0);
+      break;
+
    default:
       return false;
    }
@@ -183,25 +200,6 @@ panvk_lower_blend(struct panvk_device *dev, nir_shader *nir,
    }
 }
 
-static bool
-panvk_lower_load_push_constant(nir_builder *b, nir_intrinsic_instr *intr,
-                               void *data)
-{
-   if (intr->intrinsic != nir_intrinsic_load_push_constant)
-      return false;
-
-   b->cursor = nir_before_instr(&intr->instr);
-   nir_def *ubo_load =
-      nir_load_ubo(b, intr->def.num_components, intr->def.bit_size,
-                   nir_imm_int(b, PANVK_PUSH_CONST_UBO_INDEX), intr->src[0].ssa,
-                   .align_mul = intr->def.bit_size / 8, .align_offset = 0,
-                   .range_base = nir_intrinsic_base(intr),
-                   .range = nir_intrinsic_range(intr));
-   nir_def_rewrite_uses(&intr->def, ubo_load);
-   nir_instr_remove(&intr->instr);
-   return true;
-}
-
 static void
 shared_type_info(const struct glsl_type *type, unsigned *size, unsigned *align)
 {
@@ -217,7 +215,6 @@ struct panvk_shader *
 panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
                               const VkPipelineShaderStageCreateInfo *stage_info,
                               const struct panvk_pipeline_layout *layout,
-                              unsigned sysval_ubo,
                               struct pan_blend_state *blend_state,
                               bool static_blend_constants,
                               const VkAllocationCallbacks *alloc)
@@ -274,6 +271,15 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
    NIR_PASS_V(nir, nir_opt_combine_stores, nir_var_all);
    NIR_PASS_V(nir, nir_opt_loop);
 
+   if (stage == MESA_SHADER_FRAGMENT) {
+      struct nir_input_attachment_options lower_input_attach_opts = {
+         .use_fragcoord_sysval = true,
+         .use_layer_id_sysval = true,
+      };
+
+      NIR_PASS_V(nir, nir_lower_input_attachments, &lower_input_attach_opts);
+   }
+
    /* Do texture lowering here.  Yes, it's a duplication of the texture
     * lowering in bifrost_compile.  However, we need to lower texture stuff
     * now, before we call panvk_per_arch(nir_lower_descriptors)() because some
@@ -326,12 +332,13 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
                  nir_address_format_32bit_offset);
    }
 
-   NIR_PASS_V(nir, nir_shader_intrinsics_pass, panvk_lower_load_push_constant,
-              nir_metadata_block_index | nir_metadata_dominance,
-              (void *)layout);
-
    NIR_PASS_V(nir, nir_lower_system_values);
-   NIR_PASS_V(nir, nir_lower_compute_system_values, NULL);
+
+   nir_lower_compute_system_values_options options = {
+      .has_base_workgroup_id = false,
+   };
+
+   NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
 
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_lower_var_copies);
@@ -383,13 +390,12 @@ panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
 
    /* Patch the descriptor count */
    shader->info.ubo_count =
-      PANVK_NUM_BUILTIN_UBOS + layout->num_ubos + layout->num_dyn_ubos;
+      panvk_per_arch(pipeline_layout_total_ubo_count)(layout);
    shader->info.sampler_count = layout->num_samplers;
    shader->info.texture_count = layout->num_textures;
    if (shader->has_img_access)
       shader->info.attribute_count += layout->num_imgs;
 
-   shader->sysval_ubo = sysval_ubo;
    shader->local_size.x = nir->info.workgroup_size[0];
    shader->local_size.y = nir->info.workgroup_size[1];
    shader->local_size.z = nir->info.workgroup_size[2];

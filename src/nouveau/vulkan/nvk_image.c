@@ -10,7 +10,7 @@
 #include "nvk_format.h"
 #include "nvk_physical_device.h"
 
-#include "nil_format.h"
+#include "vk_enum_to_str.h"
 #include "vk_format.h"
 
 #include "clb097.h"
@@ -372,8 +372,8 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
           *    VK_ERROR_FORMAT_NOT_SUPPORTED."
           */
          return vk_errorf(pdev, VK_ERROR_FORMAT_NOT_SUPPORTED,
-                          "unsupported VkExternalMemoryTypeFlagBits 0x%x",
-                          external_info->handleType);
+                          "unsupported VkExternalMemoryHandleTypeFlagBits: %s ",
+                           vk_ExternalMemoryHandleTypeFlagBits_to_str(external_info->handleType));
       }
    }
 
@@ -465,18 +465,18 @@ nvk_fill_sparse_image_fmt_props(VkImageAspectFlags aspects,
                                 const enum nil_image_dim dim,
                                 const enum nil_sample_layout sample_layout)
 {
-   struct nil_extent4d sparse_block_extent_px =
-      nil_sparse_block_extent_px(format, dim, sample_layout);
+   struct nil_Extent4D_Pixels sparse_block_extent_px =
+      nil_sparse_block_extent_px(nil_format(format), dim, sample_layout);
 
-   assert(sparse_block_extent_px.a == 1);
+   assert(sparse_block_extent_px.array_len == 1);
 
    VkSparseImageFormatProperties sparse_format_props = {
       .aspectMask = aspects,
       .flags = VK_SPARSE_IMAGE_FORMAT_SINGLE_MIPTAIL_BIT,
       .imageGranularity = {
-         .width = sparse_block_extent_px.w,
-         .height = sparse_block_extent_px.h,
-         .depth = sparse_block_extent_px.d,
+         .width = sparse_block_extent_px.width,
+         .height = sparse_block_extent_px.height,
+         .depth = sparse_block_extent_px.depth,
       },
    };
 
@@ -546,6 +546,8 @@ nvk_image_init(struct nvk_device *dev,
                struct nvk_image *image,
                const VkImageCreateInfo *pCreateInfo)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+
    vk_image_init(&dev->vk, &image->vk, pCreateInfo);
 
    if ((image->vk.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -560,7 +562,7 @@ nvk_image_init(struct nvk_device *dev,
    if (image->vk.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)
       image->vk.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-   enum nil_image_usage_flags usage = 0; /* TODO */
+   nil_image_usage_flags usage = 0;
    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR)
       usage |= NIL_IMAGE_USAGE_LINEAR_BIT;
    if (pCreateInfo->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT)
@@ -597,42 +599,38 @@ nvk_image_init(struct nvk_device *dev,
          ycbcr_info->planes[plane].denominator_scales[1] : 1;
       struct nil_image_init_info nil_info = {
          .dim = vk_image_type_to_nil_dim(pCreateInfo->imageType),
-         .format = vk_format_to_pipe_format(format),
+         .format = nil_format(vk_format_to_pipe_format(format)),
          .extent_px = {
-            .w = pCreateInfo->extent.width / width_scale,
-            .h = pCreateInfo->extent.height / height_scale,
-            .d = pCreateInfo->extent.depth,
-            .a = pCreateInfo->arrayLayers,
+            .width = pCreateInfo->extent.width / width_scale,
+            .height = pCreateInfo->extent.height / height_scale,
+            .depth = pCreateInfo->extent.depth,
+            .array_len = pCreateInfo->arrayLayers,
          },
          .levels = pCreateInfo->mipLevels,
          .samples = pCreateInfo->samples,
          .usage = usage,
       };
 
-      ASSERTED bool ok = nil_image_init(&nvk_device_physical(dev)->info,
-                                        &image->planes[plane].nil, &nil_info);
-      assert(ok);
+      image->planes[plane].nil = nil_image_new(&pdev->info, &nil_info);
    }
 
    if (image->vk.format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
       struct nil_image_init_info stencil_nil_info = {
          .dim = vk_image_type_to_nil_dim(pCreateInfo->imageType),
-         .format = PIPE_FORMAT_R32_UINT,
+         .format = nil_format(PIPE_FORMAT_R32_UINT),
          .extent_px = {
-            .w = pCreateInfo->extent.width,
-            .h = pCreateInfo->extent.height,
-            .d = pCreateInfo->extent.depth,
-            .a = pCreateInfo->arrayLayers,
+            .width = pCreateInfo->extent.width,
+            .height = pCreateInfo->extent.height,
+            .depth = pCreateInfo->extent.depth,
+            .array_len = pCreateInfo->arrayLayers,
          },
          .levels = pCreateInfo->mipLevels,
          .samples = pCreateInfo->samples,
          .usage = usage,
       };
 
-      ASSERTED bool ok = nil_image_init(&nvk_device_physical(dev)->info,
-                                        &image->stencil_copy_temp.nil,
-                                        &stencil_nil_info);
-      assert(ok);
+      image->stencil_copy_temp.nil =
+         nil_image_new(&pdev->info, &stencil_nil_info);
    }
 
    return VK_SUCCESS;
@@ -873,7 +871,7 @@ nvk_fill_sparse_image_memory_reqs(const struct nil_image *nil,
                                   VkImageAspectFlags aspects)
 {
    VkSparseImageFormatProperties sparse_format_props =
-      nvk_fill_sparse_image_fmt_props(aspects, nil->format,
+      nvk_fill_sparse_image_fmt_props(aspects, nil->format.p_format,
                                       nil->dim, nil->sample_layout);
 
    assert(nil->mip_tail_first_lod <= nil->num_levels);
@@ -888,7 +886,7 @@ nvk_fill_sparse_image_memory_reqs(const struct nil_image *nil,
       sparse_memory_reqs.imageMipTailOffset = 0;
    } else if (nil->mip_tail_first_lod < nil->num_levels) {
       sparse_memory_reqs.imageMipTailSize =
-         nil_image_mip_tail_size_B(nil) * nil->extent_px.a;
+         nil_image_mip_tail_size_B(nil) * nil->extent_px.array_len;
       sparse_memory_reqs.imageMipTailOffset = NVK_MIP_TAIL_START_OFFSET;
    } else {
       sparse_memory_reqs.imageMipTailSize = 0;
@@ -1106,6 +1104,11 @@ nvk_BindImageMemory2(VkDevice device,
 
       if (image->stencil_copy_temp.nil.size_B > 0)
          nvk_image_plane_bind(dev, &image->stencil_copy_temp, mem, &offset_B);
+
+      const VkBindMemoryStatusKHR *status =
+         vk_find_struct_const(pBindInfos[i].pNext, BIND_MEMORY_STATUS_KHR);
+      if (status != NULL && status->pResult != NULL)
+         *status->pResult = VK_SUCCESS;
    }
 
    return VK_SUCCESS;

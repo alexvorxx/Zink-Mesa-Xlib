@@ -56,4 +56,5 @@ libfreedreno_common = static_library(
 
 idep_libfreedreno_common = declare_dependency(
   link_with: [libfreedreno_common],
+  include_directories : [inc_freedreno, inc_include, inc_src],
 )

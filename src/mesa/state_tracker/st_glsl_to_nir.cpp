@@ -520,7 +520,7 @@ st_link_glsl_to_nir(struct gl_context *ctx,
          st->ctx->Const.ShaderCompilerOptions[shader->Stage].NirOptions;
       struct gl_program *prog = shader->Program;
 
-      _mesa_copy_linked_program_data(shader_program, shader);
+      shader->Program->info.separate_shader = shader_program->SeparateShader;
 
       assert(!prog->nir);
       prog->shader_program = shader_program;
@@ -542,12 +542,6 @@ st_link_glsl_to_nir(struct gl_context *ctx,
          }
 
          prog->nir = glsl_to_nir(&st->ctx->Const, shader_program, shader->Stage, options);
-
-         gl_nir_detect_recursion_linked(shader_program, prog->nir);
-         if (!shader_program->data->LinkStatus)
-            return GL_FALSE;
-
-         gl_nir_inline_functions(prog->nir);
       }
 
       memcpy(prog->nir->info.source_sha1, shader->linked_source_sha1,
@@ -574,8 +568,7 @@ st_link_glsl_to_nir(struct gl_context *ctx,
                              &opts))
          return GL_FALSE;
    } else {
-      if (!gl_nir_link_glsl(&ctx->Const, &ctx->Extensions, ctx->API,
-                            shader_program))
+      if (!gl_nir_link_glsl(ctx, shader_program))
          return GL_FALSE;
    }
 
@@ -634,8 +627,10 @@ st_link_glsl_to_nir(struct gl_context *ctx,
       NIR_PASS(_, nir, st_nir_lower_wpos_ytransform, shader->Program,
                st->screen);
 
+      /* needed to lower base_workgroup_id and base_global_invocation_id */
+      struct nir_lower_compute_system_values_options cs_options = {};
       NIR_PASS(_, nir, nir_lower_system_values);
-      NIR_PASS(_, nir, nir_lower_compute_system_values, NULL);
+      NIR_PASS(_, nir, nir_lower_compute_system_values, &cs_options);
 
       if (nir->info.io_lowered)
          continue; /* the rest is for non-lowered IO only */

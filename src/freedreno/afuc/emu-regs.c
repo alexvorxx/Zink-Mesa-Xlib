@@ -210,13 +210,33 @@ emu_get_fifo_reg(struct emu *emu, unsigned n, bool peek)
       /* $memdata */
       EMU_CONTROL_REG(MEM_READ_DWORDS);
       EMU_CONTROL_REG(MEM_READ_ADDR);
+      EMU_CONTROL_REG(MEM_READ_ADDR_HI_PRIVILEGED);
 
       unsigned  read_dwords = emu_get_reg32(emu, &MEM_READ_DWORDS);
       uintptr_t read_addr   = emu_get_reg64(emu, &MEM_READ_ADDR);
+      uintptr_t read_addr_hi = 0;
+      if (emu->fw_id == AFUC_A750)
+         read_addr_hi = emu_get_reg64(emu, &MEM_READ_ADDR_HI_PRIVILEGED);
+
+      /* We don't model privileged vs. non-privileged accesses here, so just
+       * use the right address.
+       *
+       * TODO: all uses of MEM_READ_ADDR_HI_PRIVILEGED set bit 31, is this the
+       * right bit or do we need to track writes to it?
+       */
+      if (read_addr_hi & (1u << 31)) {
+         read_addr = (read_addr & 0xffffffff) |
+            ((read_addr_hi & ~(1u << 31)) << 32);
+      }
 
       if (read_dwords > 0 && !peek) {
          emu_set_reg32(emu, &MEM_READ_DWORDS, read_dwords - 1);
-         emu_set_reg64(emu, &MEM_READ_ADDR,   read_addr + 4);
+         if (read_addr_hi & (1u << 31)) {
+            /* Privileged memory should all be in the same 4GB space. */
+            emu_set_reg32(emu, &MEM_READ_ADDR, read_addr + 4);
+         } else {
+            emu_set_reg64(emu, &MEM_READ_ADDR, read_addr + 4);
+         }
       }
 
       return emu_mem_read_dword(emu, read_addr);

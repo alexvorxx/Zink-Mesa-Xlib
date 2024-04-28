@@ -1,25 +1,7 @@
 #
 # Copyright (c) 2018 Valve Corporation
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice (including the next
-# paragraph) shall be included in all copies or substantial portions of the
-# Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-# IN THE SOFTWARE.
-#
+# SPDX-License-Identifier: MIT
 
 # Class that represents all the information we have about the opcode
 # NOTE: this must be kept in sync with aco_op_info
@@ -188,7 +170,8 @@ class Format(IntEnum):
                  ('sync_scope', 'exec_scope', 'scope_invocation')]
       elif self == Format.VINTRP:
          return [('unsigned', 'attribute', None),
-                 ('unsigned', 'component', None)]
+                 ('unsigned', 'component', None),
+                 ('bool', 'high_16bits', 'false')]
       elif self == Format.DPP16:
          return [('uint16_t', 'dpp_ctrl', None),
                  ('uint8_t', 'row_mask', '0xF'),
@@ -204,8 +187,8 @@ class Format(IntEnum):
       elif self == Format.VOPD:
          return [('aco_opcode', 'opy', None)]
       elif self == Format.VINTERP_INREG:
-         return [('unsigned', 'wait_exp', 7),
-                 ('uint8_t', 'opsel', 0)]
+         return [('uint8_t', 'opsel', 0),
+                 ('unsigned', 'wait_exp', 7)]
       elif self in [Format.FLAT, Format.GLOBAL, Format.SCRATCH]:
          return [('int16_t', 'offset', 0),
                  ('memory_sync_info', 'sync', 'memory_sync_info()'),
@@ -238,8 +221,10 @@ class Format(IntEnum):
       return res
 
 
-Opcode = namedtuple('Opcode', ['gfx6', 'gfx7', 'gfx8', 'gfx9', 'gfx10', 'gfx11'],
-                    defaults=[-1, -1, -1, -1, -1, -1])
+Opcode = namedtuple('Opcode', ['gfx6', 'gfx7', 'gfx8', 'gfx9', 'gfx10', 'gfx11'])
+# namedtuple 'defaults' keyword requires python 3.7+. Use an equivalent construct
+# to support older versions.
+Opcode.__new__.__defaults__=(-1, -1, -1, -1, -1, -1)
 
 class Instruction(object):
    """Class that represents all the information we have about the opcode
@@ -344,6 +329,7 @@ insn("p_startpgm")
 insn("p_return")
 insn("p_phi")
 insn("p_linear_phi")
+insn("p_boolean_phi")
 insn("p_as_uniform")
 insn("p_unit_test")
 
@@ -445,7 +431,7 @@ insn("p_init_scratch")
 insn("p_jump_to_epilog")
 
 # loads and interpolates a fragment shader input with a correct exec mask
-#dst0=result, src0=linear_vgpr, src1=attribute, src2=component, src3=coord1, src4=coord2, src5=m0
+#dst0=result, src0=linear_vgpr, src1=attribute, src2=component, src3=high_16bits, src4=coord1, src5=coord2, src6=m0
 #dst0=result, src0=linear_vgpr, src1=attribute, src2=component, src3=dpp_ctrl, src4=m0
 insn("p_interp_gfx11")
 
@@ -1185,7 +1171,7 @@ VOP3 = {
    ("v_qsad_pk_u16_u8",        False, False, dst(2), src(2, 1, 2), op(0x172, gfx8=0x1e5, gfx10=0x172, gfx11=0x23a)),
    ("v_mqsad_pk_u16_u8",       False, False, dst(2), src(2, 1, 2), op(0x173, gfx8=0x1e6, gfx10=0x173, gfx11=0x23b)),
    ("v_trig_preop_f64",        False, False, dst(2), src(2, 2), op(0x174, gfx8=0x292, gfx10=0x174, gfx11=0x32f), InstrClass.ValuDouble),
-   ("v_mqsad_u32_u8",          False, False, dst(4), src(2, 1, 4), op(gfx7=0x175, gfx8=0x1e7, gfx10=0x175, gfx11=0x23d)),
+   ("v_mqsad_u32_u8",          False, False, dst(4), src(2, 1, 4), op(gfx7=0x175, gfx8=0x1e7, gfx10=0x175, gfx11=0x23d), InstrClass.ValuQuarterRate32),
    ("v_mad_u64_u32",           False, False, dst(2, VCC), src(1, 1, 2), op(gfx7=0x176, gfx8=0x1e8, gfx10=0x176, gfx11=0x2fe), InstrClass.Valu64),
    ("v_mad_i64_i32",           False, False, dst(2, VCC), src(1, 1, 2), op(gfx7=0x177, gfx8=0x1e9, gfx10=0x177, gfx11=0x2ff), InstrClass.Valu64),
    ("v_mad_legacy_f16",        True, True, dst(1), src(1, 1, 1), op(gfx8=0x1ea, gfx10=-1)),
@@ -1222,6 +1208,7 @@ VOP3 = {
    ("v_interp_p1lv_f16",       True, True, dst(1), src(1, M0, 1), op(gfx8=0x275, gfx10=0x343, gfx11=-1)),
    ("v_interp_p2_legacy_f16",  True, True, dst(1), src(1, M0, 1), op(gfx8=0x276, gfx10=-1)),
    ("v_interp_p2_f16",         True, True, dst(1), src(1, M0, 1), op(gfx9=0x277, gfx10=0x35a, gfx11=-1)),
+   ("v_interp_p2_hi_f16",      True, True, dst(1), src(1, M0, 1), op(gfx9=0x277, gfx10=0x35a, gfx11=-1)),
    ("v_ldexp_f32",             False, True, dst(1), src(1, 1), op(0x12b, gfx8=0x288, gfx10=0x362, gfx11=0x31c)),
    ("v_readlane_b32_e64",      False, False, dst(1), src(1, 1), op(gfx8=0x289, gfx10=0x360)),
    ("v_writelane_b32_e64",     False, False, dst(1), src(1, 1, 1), op(gfx8=0x28a, gfx10=0x361)),
@@ -1878,6 +1865,9 @@ for ver in Opcode._fields:
                 continue
             # v_mac_legacy_f32 is replaced with v_fmac_legacy_f32 on GFX10.3
             if ver == 'gfx10' and names == set(['v_mac_legacy_f32', 'v_fmac_legacy_f32']):
+                continue
+            # These are the same opcodes, but hi uses opsel
+            if names == set(['v_interp_p2_f16', 'v_interp_p2_hi_f16']):
                 continue
 
             print('%s and %s share the same opcode number (%s)' % (op_to_name[key], inst.name, ver))

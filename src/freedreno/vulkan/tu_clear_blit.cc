@@ -1996,9 +1996,9 @@ tu_CmdBlitImage2(VkCommandBuffer commandBuffer,
                  const VkBlitImageInfo2 *pBlitImageInfo)
 
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, src_image, pBlitImageInfo->srcImage);
-   TU_FROM_HANDLE(tu_image, dst_image, pBlitImageInfo->dstImage);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, src_image, pBlitImageInfo->srcImage);
+   VK_FROM_HANDLE(tu_image, dst_image, pBlitImageInfo->dstImage);
 
    for (uint32_t i = 0; i < pBlitImageInfo->regionCount; ++i) {
       /* can't blit both depth and stencil at once with D32_S8
@@ -2128,9 +2128,9 @@ VKAPI_ATTR void VKAPI_CALL
 tu_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
                          const VkCopyBufferToImageInfo2 *pCopyBufferToImageInfo)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, dst_image, pCopyBufferToImageInfo->dstImage);
-   TU_FROM_HANDLE(tu_buffer, src_buffer, pCopyBufferToImageInfo->srcBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, dst_image, pCopyBufferToImageInfo->dstImage);
+   VK_FROM_HANDLE(tu_buffer, src_buffer, pCopyBufferToImageInfo->srcBuffer);
 
    for (unsigned i = 0; i < pCopyBufferToImageInfo->regionCount; ++i)
       tu_copy_buffer_to_image<CHIP>(cmd, src_buffer, dst_image,
@@ -2217,9 +2217,9 @@ VKAPI_ATTR void VKAPI_CALL
 tu_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
                          const VkCopyImageToBufferInfo2 *pCopyImageToBufferInfo)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, src_image, pCopyImageToBufferInfo->srcImage);
-   TU_FROM_HANDLE(tu_buffer, dst_buffer, pCopyImageToBufferInfo->dstBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, src_image, pCopyImageToBufferInfo->srcImage);
+   VK_FROM_HANDLE(tu_buffer, dst_buffer, pCopyImageToBufferInfo->dstBuffer);
 
    for (unsigned i = 0; i < pCopyImageToBufferInfo->regionCount; ++i)
       tu_copy_image_to_buffer<CHIP>(cmd, src_image, dst_buffer,
@@ -2461,9 +2461,9 @@ VKAPI_ATTR void VKAPI_CALL
 tu_CmdCopyImage2(VkCommandBuffer commandBuffer,
                  const VkCopyImageInfo2 *pCopyImageInfo)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, src_image, pCopyImageInfo->srcImage);
-   TU_FROM_HANDLE(tu_image, dst_image, pCopyImageInfo->dstImage);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, src_image, pCopyImageInfo->srcImage);
+   VK_FROM_HANDLE(tu_image, dst_image, pCopyImageInfo->dstImage);
 
    for (uint32_t i = 0; i < pCopyImageInfo->regionCount; ++i) {
       if (src_image->vk.format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
@@ -2525,9 +2525,9 @@ VKAPI_ATTR void VKAPI_CALL
 tu_CmdCopyBuffer2(VkCommandBuffer commandBuffer,
                   const VkCopyBufferInfo2 *pCopyBufferInfo)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_buffer, src_buffer, pCopyBufferInfo->srcBuffer);
-   TU_FROM_HANDLE(tu_buffer, dst_buffer, pCopyBufferInfo->dstBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, src_buffer, pCopyBufferInfo->srcBuffer);
+   VK_FROM_HANDLE(tu_buffer, dst_buffer, pCopyBufferInfo->dstBuffer);
 
    for (unsigned i = 0; i < pCopyBufferInfo->regionCount; ++i) {
       const VkBufferCopy2 *region = &pCopyBufferInfo->pRegions[i];
@@ -2547,8 +2547,8 @@ tu_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
                    VkDeviceSize dataSize,
                    const void *pData)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_buffer, buffer, dstBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, buffer, dstBuffer);
 
    struct tu_cs_memory tmp;
    VkResult result = tu_cs_alloc(&cmd->sub_cs, DIV_ROUND_UP(dataSize, 64), 64 / 4, &tmp);
@@ -2570,8 +2570,8 @@ tu_CmdFillBuffer(VkCommandBuffer commandBuffer,
                  VkDeviceSize fillSize,
                  uint32_t data)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_buffer, buffer, dstBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, buffer, dstBuffer);
    const struct blit_ops *ops = &r2d_ops<CHIP>;
    struct tu_cs *cs = &cmd->cs;
 
@@ -2609,9 +2609,9 @@ VKAPI_ATTR void VKAPI_CALL
 tu_CmdResolveImage2(VkCommandBuffer commandBuffer,
                     const VkResolveImageInfo2 *pResolveImageInfo)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, src_image, pResolveImageInfo->srcImage);
-   TU_FROM_HANDLE(tu_image, dst_image, pResolveImageInfo->dstImage);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, src_image, pResolveImageInfo->srcImage);
+   VK_FROM_HANDLE(tu_image, dst_image, pResolveImageInfo->dstImage);
    const struct blit_ops *ops = &r2d_ops<CHIP>;
    struct tu_cs *cs = &cmd->cs;
 
@@ -2811,8 +2811,8 @@ tu_CmdClearColorImage(VkCommandBuffer commandBuffer,
                       uint32_t rangeCount,
                       const VkImageSubresourceRange *pRanges)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, image, image_h);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, image, image_h);
 
    for (unsigned i = 0; i < rangeCount; i++)
       clear_image<CHIP>(cmd, image, (const VkClearValue*) pColor, pRanges + i, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -2828,8 +2828,8 @@ tu_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer,
                              uint32_t rangeCount,
                              const VkImageSubresourceRange *pRanges)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   TU_FROM_HANDLE(tu_image, image, image_h);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_image, image, image_h);
 
    for (unsigned i = 0; i < rangeCount; i++) {
       const VkImageSubresourceRange *range = &pRanges[i];
@@ -3234,7 +3234,7 @@ tu_CmdClearAttachments(VkCommandBuffer commandBuffer,
                        uint32_t rectCount,
                        const VkClearRect *pRects)
 {
-   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    struct tu_cs *cs = &cmd->draw_cs;
 
    /* sysmem path behaves like a draw, note we don't have a way of using different

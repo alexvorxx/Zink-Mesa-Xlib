@@ -175,6 +175,7 @@ struct st_context
    bool lower_flatshade;
    bool lower_alpha_test;
    bool lower_point_size;
+   bool add_point_size;
    bool lower_two_sided_color;
    bool lower_ucp;
    bool prefer_real_buffer_in_constbuf0;

@@ -227,7 +227,8 @@ i915_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
 }
 
 static VkResult
-i915_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit)
+i915_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit,
+             enum anv_vm_bind_flags flags)
 {
    return VK_SUCCESS;
 }

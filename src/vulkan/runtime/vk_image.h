@@ -61,6 +61,9 @@ struct vk_image {
    /* VK_KHR_external_memory */
    VkExternalMemoryHandleTypeFlags external_handle_types;
 
+   /* VK_EXT_image_compression_control */
+   VkImageCompressionFlagsEXT compr_flags;
+
    /* wsi_image_create_info::scanout */
    bool wsi_legacy_scanout;
 

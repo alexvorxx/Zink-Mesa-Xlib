@@ -456,7 +456,7 @@ brw_nir_create_raygen_trampoline(const struct brw_compiler *compiler,
    nir_def *raygen_bsr_addr =
       nir_if_phi(&b, raygen_indirect_bsr_addr, raygen_param_bsr_addr);
 
-   nir_def *global_id = nir_load_workgroup_id_zero_base(&b);
+   nir_def *global_id = nir_load_workgroup_id(&b);
    nir_def *simd_channel = nir_load_subgroup_invocation(&b);
    nir_def *local_x =
       nir_ubfe(&b, simd_channel, nir_imm_int(&b, 0),

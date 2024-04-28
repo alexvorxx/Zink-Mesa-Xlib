@@ -556,6 +556,7 @@ struct si_screen {
 
    struct radeon_info info;
    struct nir_shader_compiler_options *nir_options;
+   struct nir_lower_subgroups_options *nir_lower_subgroups_options;
    uint64_t debug_flags;
    char renderer_string[183];
 
@@ -672,7 +673,6 @@ struct si_screen {
    } barrier_flags;
 
    simple_mtx_t shader_parts_mutex;
-   struct si_shader_part *tcs_epilogs;
    struct si_shader_part *ps_prologs;
    struct si_shader_part *ps_epilogs;
 
@@ -803,6 +803,8 @@ struct si_framebuffer {
    bool DB_has_shader_readable_metadata;
    bool all_DCC_pipe_aligned;
    bool has_dcc_msaa;
+   bool disable_vrs_flat_shading;
+   bool has_stencil;
 };
 
 enum si_quant_mode
@@ -1160,7 +1162,7 @@ struct si_context {
    unsigned border_color_count;
    unsigned num_vs_blit_sgprs;
    uint32_t vs_blit_sh_data[MAX_SI_VS_BLIT_SGPRS];
-   uint32_t cs_user_data[4];
+   uint32_t cs_user_data[8];
 
    /* Vertex buffers. */
    bool vertex_buffers_dirty;
@@ -1206,7 +1208,7 @@ struct si_context {
    int last_primitive_restart_en;
    unsigned last_restart_index;
    unsigned last_prim;
-   unsigned current_vs_state; /* all VS bits including LS bits */
+   unsigned current_vs_state; /* all VS bits */
    unsigned current_gs_state; /* only GS and NGG bits */
    unsigned last_vs_state;
    unsigned last_gs_state;
@@ -1316,6 +1318,10 @@ struct si_context {
    /* Misc stats. */
    unsigned num_draw_calls;
    unsigned num_decompress_calls;
+   unsigned last_cb_flush_num_draw_calls;
+   unsigned last_db_flush_num_draw_calls;
+   unsigned last_cb_flush_num_decompress_calls;
+   unsigned last_db_flush_num_decompress_calls;
    unsigned num_compute_calls;
    unsigned num_cp_dma_calls;
    unsigned num_vs_flushes;
@@ -1384,10 +1390,10 @@ struct si_context {
    unsigned context_flags;
 
    /* Shaders. */
-   /* TODO: move other shaders here too */
+   void *cs_clear_image_dcc_single[2][3]; /* [is_msaa][wg_dim] */
    /* Only used for DCC MSAA clears with 4-8 fragments and 4-16 samples. */
    void *cs_clear_dcc_msaa[32][5][2][3][2]; /* [swizzle_mode][log2(bpe)][fragments == 8][log2(samples)-2][is_array] */
-   
+
    /* u_trace logging*/
    struct si_ds_device ds;
    /** Where tracepoints are recorded */
@@ -1419,6 +1425,10 @@ void si_resource_copy_region(struct pipe_context *ctx, struct pipe_resource *dst
                              unsigned dst_level, unsigned dstx, unsigned dsty, unsigned dstz,
                              struct pipe_resource *src, unsigned src_level,
                              const struct pipe_box *src_box);
+void si_gfx_copy_image(struct si_context *sctx, struct pipe_resource *dst,
+                       unsigned dst_level, unsigned dstx, unsigned dsty, unsigned dstz,
+                       struct pipe_resource *src, unsigned src_level,
+                       const struct pipe_box *src_box);
 void si_decompress_dcc(struct si_context *sctx, struct si_texture *tex);
 void si_flush_implicit_resources(struct si_context *sctx);
 bool si_msaa_resolve_blit_via_CB(struct pipe_context *ctx, const struct pipe_blit_info *info);
@@ -1461,6 +1471,9 @@ struct si_clear_info {
    uint32_t clear_value;
    uint32_t writemask;
    bool is_dcc_msaa; /* Clear it as a DCC MSAA image. */
+   uint8_t level;
+   enum pipe_format format;
+   union pipe_color_union color;
 };
 
 enum pipe_format si_simplify_cb_format(enum pipe_format format);
@@ -1471,7 +1484,15 @@ void si_init_buffer_clear(struct si_clear_info *info,
                           struct pipe_resource *resource, uint64_t offset,
                           uint32_t size, uint32_t clear_value);
 void si_execute_clears(struct si_context *sctx, struct si_clear_info *info,
-                       unsigned num_clears, unsigned types);
+                       unsigned num_clears, unsigned types, bool render_condition_enabled);
+bool si_compute_fast_clear_image(struct si_context *sctx, struct pipe_resource *tex,
+                                 enum pipe_format format, unsigned level, const struct pipe_box *box,
+                                 const union pipe_color_union *color, bool render_condition_enable,
+                                 bool fail_if_slow);
+void si_gfx_clear_render_target(struct pipe_context *ctx, struct pipe_surface *dst,
+                                const union pipe_color_union *color, unsigned dstx,
+                                unsigned dsty, unsigned width, unsigned height,
+                                bool render_condition_enabled);
 void si_init_clear_functions(struct si_context *sctx);
 
 /* si_compute.c */
@@ -1517,6 +1538,9 @@ bool si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, u
                            struct pipe_resource *src, unsigned src_level, unsigned dstx,
                            unsigned dsty, unsigned dstz, const struct pipe_box *src_box,
                            unsigned flags);
+void si_compute_clear_image_dcc_single(struct si_context *sctx, struct si_texture *tex,
+                                       unsigned level, enum pipe_format format,
+                                       const union pipe_color_union *color, unsigned flags);
 void si_compute_clear_render_target(struct pipe_context *ctx, struct pipe_surface *dstsurf,
                                     const union pipe_color_union *color, unsigned dstx,
                                     unsigned dsty, unsigned width, unsigned height,
@@ -1559,8 +1583,7 @@ void si_log_hw_flush(struct si_context *sctx);
 void si_log_draw_state(struct si_context *sctx, struct u_log_context *log);
 void si_log_compute_state(struct si_context *sctx, struct u_log_context *log);
 void si_init_debug_functions(struct si_context *sctx);
-void si_check_vm_faults(struct si_context *sctx, struct radeon_saved_cs *saved,
-                        enum amd_ip_type ring);
+void si_check_vm_faults(struct si_context *sctx, struct radeon_saved_cs *saved);
 bool si_replace_shader(unsigned num, struct si_shader_binary *binary);
 void si_print_current_ib(struct si_context *sctx, FILE *f);
 
@@ -1641,6 +1664,7 @@ void *si_create_copy_image_cs(struct si_context *sctx, unsigned wg_dim,
 void *si_create_dcc_retile_cs(struct si_context *sctx, struct radeon_surf *surf);
 void *gfx9_create_clear_dcc_msaa_cs(struct si_context *sctx, struct si_texture *tex);
 void *si_create_passthrough_tcs(struct si_context *sctx);
+void *si_clear_image_dcc_single_shader(struct si_context *sctx, bool is_msaa, unsigned wg_dim);
 
 union si_compute_blit_shader_key {
    struct {

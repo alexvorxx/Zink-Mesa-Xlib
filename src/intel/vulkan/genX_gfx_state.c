@@ -31,6 +31,7 @@
 
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
+#include "common/intel_genX_state_brw.h"
 #include "common/intel_guardband.h"
 #include "common/intel_tiled_render.h"
 #include "compiler/brw_prim.h"
@@ -315,6 +316,15 @@ genX(rasterization_mode)(VkPolygonMode raster_mode,
    }
 }
 
+static bool
+is_src1_blend_factor(enum GENX(3D_Color_Buffer_Blend_Factor) factor)
+{
+   return factor == BLENDFACTOR_SRC1_COLOR ||
+          factor == BLENDFACTOR_SRC1_ALPHA ||
+          factor == BLENDFACTOR_INV_SRC1_COLOR ||
+          factor == BLENDFACTOR_INV_SRC1_ALPHA;
+}
+
 #if GFX_VERx10 == 125
 /**
  * Return the dimensions of the current rendering area, defined as the
@@ -469,6 +479,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
    const struct vk_dynamic_graphics_state *dyn =
       &cmd_buffer->vk.dynamic_graphics_state;
    struct anv_gfx_dynamic_state *hw_state = &gfx->dyn_state;
+   const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
    struct anv_instance *instance = cmd_buffer->device->physical->instance;
 
 #define GET(field) hw_state->field
@@ -509,6 +520,139 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
    default:                                                            \
       unreachable("Invalid provoking vertex mode");                    \
    }                                                                   \
+
+   UNUSED bool fs_msaa_changed = false;
+   if ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_FSR)) {
+      enum intel_msaa_flags fs_msaa_flags = 0;
+
+      if (wm_prog_data) {
+         /* If we have any dynamic bits here, we might need to update the
+          * value in the push constant for the shader.
+          */
+         if (wm_prog_data->coarse_pixel_dispatch == BRW_SOMETIMES ||
+             wm_prog_data->persample_dispatch == BRW_SOMETIMES ||
+             wm_prog_data->alpha_to_coverage == BRW_SOMETIMES) {
+            fs_msaa_flags = INTEL_MSAA_FLAG_ENABLE_DYNAMIC;
+
+            if (dyn->ms.rasterization_samples > 1) {
+               fs_msaa_flags |= INTEL_MSAA_FLAG_MULTISAMPLE_FBO;
+
+               if (wm_prog_data->sample_shading) {
+                  assert(wm_prog_data->persample_dispatch != BRW_NEVER);
+                  fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH;
+               }
+               if ((pipeline->sample_shading_enable &&
+                    (pipeline->min_sample_shading * dyn->ms.rasterization_samples) > 1) ||
+                   wm_prog_data->sample_shading) {
+                  fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH |
+                                   INTEL_MSAA_FLAG_PERSAMPLE_INTERP;
+               }
+            }
+
+            if (wm_prog_data->coarse_pixel_dispatch == BRW_SOMETIMES &&
+                !(fs_msaa_flags & INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH)) {
+               fs_msaa_flags |= INTEL_MSAA_FLAG_COARSE_PI_MSG |
+                                INTEL_MSAA_FLAG_COARSE_RT_WRITES;
+            }
+
+            if (wm_prog_data->alpha_to_coverage == BRW_SOMETIMES &&
+                dyn->ms.alpha_to_coverage_enable)
+               fs_msaa_flags |= INTEL_MSAA_FLAG_ALPHA_TO_COVERAGE;
+
+            /* Check the last push constant value and update */
+
+            if (gfx->base.push_constants.gfx.fs_msaa_flags != fs_msaa_flags) {
+               gfx->base.push_constants.gfx.fs_msaa_flags = fs_msaa_flags;
+               cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_FRAGMENT_BIT;
+               gfx->base.push_constants_data_dirty = true;
+            }
+         }
+      }
+
+      if (fs_msaa_flags != gfx->fs_msaa_flags) {
+         gfx->fs_msaa_flags = fs_msaa_flags;
+         gfx->dirty |= ANV_CMD_DIRTY_FS_MSAA_FLAGS;
+      }
+   }
+
+   if ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
+       (gfx->dirty & ANV_CMD_DIRTY_FS_MSAA_FLAGS)) {
+      if (wm_prog_data) {
+         const struct anv_shader_bin *fs_bin =
+            pipeline->base.shaders[MESA_SHADER_FRAGMENT];
+
+         struct GENX(3DSTATE_PS) ps = {};
+         intel_set_ps_dispatch_state(&ps, device->info, wm_prog_data,
+                                     MAX2(dyn->ms.rasterization_samples, 1),
+                                     gfx->fs_msaa_flags);
+
+         SET(PS, ps.KernelStartPointer0,
+             fs_bin->kernel.offset +
+             brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0));
+         SET(PS, ps.KernelStartPointer1,
+             fs_bin->kernel.offset +
+             brw_wm_prog_data_prog_offset(wm_prog_data, ps, 1));
+#if GFX_VER < 20
+         SET(PS, ps.KernelStartPointer2,
+             fs_bin->kernel.offset +
+             brw_wm_prog_data_prog_offset(wm_prog_data, ps, 2));
+#endif
+
+         SET(PS, ps.DispatchGRFStartRegisterForConstantSetupData0,
+             brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 0));
+         SET(PS, ps.DispatchGRFStartRegisterForConstantSetupData1,
+             brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 1));
+#if GFX_VER < 20
+         SET(PS, ps.DispatchGRFStartRegisterForConstantSetupData2,
+             brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 2));
+#endif
+
+#if GFX_VER < 20
+         SET(PS, ps._8PixelDispatchEnable,  ps._8PixelDispatchEnable);
+         SET(PS, ps._16PixelDispatchEnable, ps._16PixelDispatchEnable);
+         SET(PS, ps._32PixelDispatchEnable, ps._32PixelDispatchEnable);
+#else
+         SET(PS, ps.Kernel0Enable,            ps.Kernel0Enable);
+         SET(PS, ps.Kernel1Enable,            ps.Kernel1Enable);
+         SET(PS, ps.Kernel0SIMDWidth,         ps.Kernel0SIMDWidth);
+         SET(PS, ps.Kernel1SIMDWidth,         ps.Kernel1SIMDWidth);
+         SET(PS, ps.Kernel0PolyPackingPolicy, ps.Kernel0PolyPackingPolicy);
+#endif
+
+         SET(PS, ps.PositionXYOffsetSelect,
+             !wm_prog_data->uses_pos_offset ? POSOFFSET_NONE :
+             brw_wm_prog_data_is_persample(wm_prog_data, gfx->fs_msaa_flags) ?
+             POSOFFSET_SAMPLE : POSOFFSET_CENTROID);
+
+         SET(PS_EXTRA, ps_extra.PixelShaderIsPerSample,
+             brw_wm_prog_data_is_persample(wm_prog_data, gfx->fs_msaa_flags));
+#if GFX_VER >= 11
+         SET(PS_EXTRA, ps_extra.PixelShaderIsPerCoarsePixel,
+             brw_wm_prog_data_is_coarse(wm_prog_data, gfx->fs_msaa_flags));
+#endif
+#if GFX_VERx10 >= 125
+         /* TODO: We should only require this when the last geometry shader
+          *       uses a fragment shading rate that is not constant.
+          */
+         SET(PS_EXTRA, ps_extra.EnablePSDependencyOnCPsizeChange,
+             brw_wm_prog_data_is_coarse(wm_prog_data, gfx->fs_msaa_flags));
+#endif
+         SET(WM, wm.BarycentricInterpolationMode,
+             wm_prog_data_barycentric_modes(wm_prog_data, gfx->fs_msaa_flags));
+      } else {
+#if GFX_VER < 20
+         SET(PS, ps._8PixelDispatchEnable,  false);
+         SET(PS, ps._16PixelDispatchEnable, false);
+         SET(PS, ps._32PixelDispatchEnable, false);
+#else
+         SET(PS, ps.Kernel0Enable, false);
+         SET(PS, ps.Kernel1Enable, false);
+#endif
+      }
+   }
 
    if ((gfx->dirty & (ANV_CMD_DIRTY_PIPELINE |
                       ANV_CMD_DIRTY_XFB_ENABLE |
@@ -590,11 +734,11 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
 
 #if GFX_VER >= 11
    if (cmd_buffer->device->vk.enabled_extensions.KHR_fragment_shading_rate &&
-       (gfx->dirty & ANV_CMD_DIRTY_PIPELINE ||
+       ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
+        (gfx->dirty & ANV_CMD_DIRTY_FS_MSAA_FLAGS) ||
         BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_FSR))) {
-      const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
       const bool cps_enable = wm_prog_data &&
-         brw_wm_prog_data_is_coarse(wm_prog_data, pipeline->fs_msaa_flags);
+         brw_wm_prog_data_is_coarse(wm_prog_data, gfx->fs_msaa_flags);
 #if GFX_VER == 11
       SET(CPS, cps.CoarsePixelShadingMode,
                cps_enable ? CPS_MODE_CONSTANT : CPS_MODE_NONE);
@@ -689,7 +833,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
 
       const VkLineRasterizationModeKHR line_mode =
          anv_line_rasterization_mode(dyn->rs.line.mode,
-                                     pipeline->rasterization_samples);
+                                     dyn->ms.rasterization_samples);
 
       const VkPolygonMode dynamic_raster_mode =
          genX(raster_polygon_mode)(pipeline,
@@ -742,6 +886,11 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       SET(RASTER, raster.ConservativeRasterizationEnable,
                   dyn->rs.conservative_mode !=
                   VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT);
+   }
+
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES)) {
+      SET(MULTISAMPLE, ms.NumberofMultisamples,
+          __builtin_ffs(MAX2(dyn->ms.rasterization_samples, 1)) - 1);
    }
 
    if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_SAMPLE_MASK)) {
@@ -886,8 +1035,6 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
 
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_ATTACHMENT_FEEDBACK_LOOP_ENABLE)) {
-      const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
-
       SET_STAGE(PS_EXTRA, ps_extra.PixelShaderKillsPixel,
                 wm_prog_data && (pipeline->rp_has_ds_self_dep ||
                                  has_ds_feedback_loop(dyn) ||
@@ -905,7 +1052,6 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_CB_BLEND_ENABLES) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS)) {
       const uint8_t color_writes = dyn->cb.color_write_enables;
-      const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
       bool has_writeable_rt =
          anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT) &&
          (color_writes & ((1u << gfx->color_att_count) - 1)) != 0;
@@ -1032,9 +1178,19 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
                dyn->cb.attachments[i].dst_alpha_blend_factor];
          }
 
+         /* Replace and Src1 value by 1.0 if dual source blending is not
+          * enabled.
+          */
+         if (wm_prog_data && !wm_prog_data->dual_src_blend) {
+            if (is_src1_blend_factor(SourceBlendFactor))
+               SourceBlendFactor = BLENDFACTOR_ONE;
+            if (is_src1_blend_factor(DestinationBlendFactor))
+               DestinationBlendFactor = BLENDFACTOR_ONE;
+         }
+
          if (instance->intel_enable_wa_14018912822 &&
              intel_needs_workaround(cmd_buffer->device->info, 14018912822) &&
-             pipeline->rasterization_samples > 1) {
+             dyn->ms.rasterization_samples > 1) {
             if (DestinationBlendFactor == BLENDFACTOR_ZERO) {
                DestinationBlendFactor = BLENDFACTOR_CONST_COLOR;
                color_blend_zero = true;
@@ -1062,7 +1218,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       SET(PS_BLEND, ps_blend.ColorBufferBlendEnable, GET(blend.rts[0].ColorBufferBlendEnable));
       SET(PS_BLEND, ps_blend.SourceAlphaBlendFactor, GET(blend.rts[0].SourceAlphaBlendFactor));
       SET(PS_BLEND, ps_blend.DestinationAlphaBlendFactor, gfx->alpha_blend_zero ?
-                                                          BLENDFACTOR_CONST_COLOR :
+                                                          BLENDFACTOR_CONST_ALPHA :
                                                           GET(blend.rts[0].DestinationAlphaBlendFactor));
       SET(PS_BLEND, ps_blend.SourceBlendFactor, GET(blend.rts[0].SourceBlendFactor));
       SET(PS_BLEND, ps_blend.DestinationBlendFactor, gfx->color_blend_zero ?
@@ -1331,6 +1487,21 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
    }
 #endif
 
+   struct anv_push_constants *push = &cmd_buffer->state.gfx.base.push_constants;
+
+   /* If the pipeline uses a dynamic value of patch_control_points and either
+    * the pipeline change or the dynamic value change, check the value and
+    * reemit if needed.
+    */
+   if (pipeline->dynamic_patch_control_points &&
+       ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
+        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS)) &&
+       push->gfx.tcs_input_vertices != dyn->ts.patch_control_points) {
+      push->gfx.tcs_input_vertices = dyn->ts.patch_control_points;
+      cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+      gfx->base.push_constants_data_dirty = true;
+   }
+
 #undef GET
 #undef SET
 #undef SET_STAGE
@@ -1435,9 +1606,6 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
              sizeof(struct intel_urb_config));
    }
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MULTISAMPLE))
-      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.ms);
-
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PRIMITIVE_REPLICATION))
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.primitive_replication);
 
@@ -1499,9 +1667,6 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 #endif
    }
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PS))
-      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.ps);
-
    if (device->vk.enabled_extensions.EXT_mesh_shader) {
       if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL))
          anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.mesh_control);
@@ -1544,9 +1709,42 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 
    /* Now the potentially dynamic instructions */
 
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PS)) {
+      anv_batch_emit_merge(&cmd_buffer->batch, GENX(3DSTATE_PS),
+                           pipeline, partial.ps, ps) {
+         SET(ps, ps, KernelStartPointer0);
+         SET(ps, ps, KernelStartPointer1);
+         SET(ps, ps, DispatchGRFStartRegisterForConstantSetupData0);
+         SET(ps, ps, DispatchGRFStartRegisterForConstantSetupData1);
+
+#if GFX_VER < 20
+         SET(ps, ps, KernelStartPointer2);
+         SET(ps, ps, DispatchGRFStartRegisterForConstantSetupData2);
+
+         SET(ps, ps, _8PixelDispatchEnable);
+         SET(ps, ps, _16PixelDispatchEnable);
+         SET(ps, ps, _32PixelDispatchEnable);
+#else
+         SET(ps, ps, Kernel0Enable);
+         SET(ps, ps, Kernel1Enable);
+         SET(ps, ps, Kernel0SIMDWidth);
+         SET(ps, ps, Kernel1SIMDWidth);
+         SET(ps, ps, Kernel0PolyPackingPolicy);
+#endif
+         SET(ps, ps, PositionXYOffsetSelect);
+      }
+   }
+
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PS_EXTRA)) {
       anv_batch_emit_merge(&cmd_buffer->batch, GENX(3DSTATE_PS_EXTRA),
                            pipeline, partial.ps_extra, pse) {
+         SET(pse, ps_extra, PixelShaderIsPerSample);
+#if GFX_VER >= 11
+         SET(pse, ps_extra, PixelShaderIsPerCoarsePixel);
+#endif
+#if GFX_VERx10 >= 125
+         SET(pse, ps_extra, EnablePSDependencyOnCPsizeChange);
+#endif
          SET(pse, ps_extra, PixelShaderKillsPixel);
       }
    }
@@ -1778,6 +1976,13 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       }
    }
 
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MULTISAMPLE)) {
+      anv_batch_emit_merge(&cmd_buffer->batch, GENX(3DSTATE_MULTISAMPLE),
+                           pipeline, partial.ms, ms) {
+         SET(ms, ms, NumberofMultisamples);
+      }
+   }
+
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CC_STATE)) {
       hw_state->cc.state =
          anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
@@ -1912,6 +2117,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
                            pipeline, partial.wm, wm) {
          SET(wm, wm, ForceThreadDispatchEnable);
          SET(wm, wm, LineStippleEnable);
+         SET(wm, wm, BarycentricInterpolationMode);
       }
    }
 

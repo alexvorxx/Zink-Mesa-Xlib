@@ -91,6 +91,12 @@ lower(agx_builder *b, agx_instr *I)
          return cmpsel_for_break_if(b, I);
    }
 
+   case AGX_OPCODE_EXPORT:
+      /* We already lowered exports during RA, we just need to remove them late
+       * after inserting waits.
+       */
+      return (void *)true;
+
    default:
       return NULL;
    }

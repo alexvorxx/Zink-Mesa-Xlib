@@ -6,24 +6,7 @@
  * Copyright 2008 Corbin Simpson <MostAwesomeDude@gmail.com>
  * Copyright 2010 Marek Olšák <maraeo@gmail.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef RADV_RADEON_WINSYS_H
@@ -237,7 +220,7 @@ enum radv_cs_dump_type {
 struct radeon_winsys {
    void (*destroy)(struct radeon_winsys *ws);
 
-   void (*query_info)(struct radeon_winsys *ws, struct radeon_info *info);
+   void (*query_info)(struct radeon_winsys *ws, struct radeon_info *gpu_info);
 
    uint64_t (*query_value)(struct radeon_winsys *ws, enum radeon_value_id value);
 
@@ -332,6 +315,13 @@ radeon_emit(struct radeon_cmdbuf *cs, uint32_t value)
 {
    assert(cs->cdw < cs->reserved_dw);
    cs->buf[cs->cdw++] = value;
+}
+
+static inline void
+radeon_emit_direct(struct radeon_cmdbuf *cs, uint32_t offset, uint32_t value)
+{
+   assert(offset < cs->reserved_dw);
+   cs->buf[offset] = value;
 }
 
 static inline void

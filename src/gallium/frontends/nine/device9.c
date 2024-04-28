@@ -220,7 +220,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
         This->may_swvp = true;
     }
     This->context.swvp = This->swvp;
-    /* TODO: check if swvp is resetted by device Resets */
+    /* TODO: check if swvp is reset by device Resets */
 
     if (This->may_swvp &&
         (This->screen->get_shader_param(This->screen, PIPE_SHADER_VERTEX,
@@ -1045,6 +1045,7 @@ NineDevice9_Reset( struct NineDevice9 *This,
     /* XXX: better use GetBackBuffer here ? */
 
     This->device_needs_reset = (hr != D3D_OK);
+    This->in_scene = FALSE; /* Not sure if should be done also for ResetEx */
     return hr;
 }
 
@@ -2637,7 +2638,7 @@ NineDevice9_GetClipStatus( struct NineDevice9 *This,
     /* Set/GetClipStatus is supposed to get the app some infos
      * about vertices being clipped if it is using the software
      * vertex rendering. It would be too complicated to implement.
-     * Probably the info is for developpers when working on their
+     * Probably the info is for developers when working on their
      * applications. Else it could be for apps to know if it is worth
      * drawing some elements. In that case it makes sense to send
      * 0 for ClipUnion and 0xFFFFFFFF for ClipIntersection (basically

@@ -31,6 +31,12 @@
 
 #include "drm-uapi/xe_drm.h"
 
+static inline bool
+has_gmd_ip_version(const struct intel_device_info *devinfo)
+{
+   return devinfo->verx10 >= 200;
+}
+
 static void *
 xe_query_alloc_fetch(int fd, uint32_t query_id, int32_t *len)
 {
@@ -68,7 +74,8 @@ xe_query_config(int fd, struct intel_device_info *devinfo)
    if (config->info[DRM_XE_QUERY_CONFIG_FLAGS] & DRM_XE_QUERY_CONFIG_FLAG_HAS_VRAM)
       devinfo->has_local_mem = true;
 
-   devinfo->revision = (config->info[DRM_XE_QUERY_CONFIG_REV_AND_DEVICE_ID] >> 16) & 0xFFFF;
+   if (!has_gmd_ip_version(devinfo))
+      devinfo->revision = (config->info[DRM_XE_QUERY_CONFIG_REV_AND_DEVICE_ID] >> 16) & 0xFFFF;
    devinfo->gtt_size = 1ull << config->info[DRM_XE_QUERY_CONFIG_VA_BITS];
    devinfo->mem_alignment = config->info[DRM_XE_QUERY_CONFIG_MIN_ALIGNMENT];
 
@@ -139,8 +146,16 @@ xe_query_gts(int fd, struct intel_device_info *devinfo)
       return false;
 
    for (uint32_t i = 0; i < gt_list->num_gt; i++) {
-      if (gt_list->gt_list[i].type == DRM_XE_QUERY_GT_TYPE_MAIN)
+      if (gt_list->gt_list[i].type == DRM_XE_QUERY_GT_TYPE_MAIN) {
          devinfo->timestamp_frequency = gt_list->gt_list[i].reference_clock;
+
+         if (has_gmd_ip_version(devinfo)) {
+            devinfo->gfx_ip_ver = GFX_IP_VER(gt_list->gt_list[i].ip_ver_major,
+                                             gt_list->gt_list[i].ip_ver_minor);
+            devinfo->revision = gt_list->gt_list[i].ip_ver_rev;
+         }
+         break;
+      }
    }
 
    free(gt_list);

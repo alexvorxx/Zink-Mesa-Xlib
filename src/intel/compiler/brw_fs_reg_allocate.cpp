@@ -586,7 +586,7 @@ fs_reg_alloc::discard_interference_graph()
 fs_reg
 fs_reg_alloc::build_single_offset(const fs_builder &bld, uint32_t spill_offset, int ip)
 {
-   fs_reg offset = retype(alloc_spill_reg(1, ip), BRW_REGISTER_TYPE_UD);
+   fs_reg offset = retype(alloc_spill_reg(1, ip), BRW_TYPE_UD);
    fs_inst *inst = bld.MOV(offset, brw_imm_ud(spill_offset));
    _mesa_set_add(spill_insts, inst);
    return offset;
@@ -601,14 +601,14 @@ fs_reg_alloc::build_lane_offsets(const fs_builder &bld, uint32_t spill_offset, i
    const fs_builder ubld = bld.exec_all();
    const unsigned reg_count = ubld.dispatch_width() / 8;
 
-   fs_reg offset = retype(alloc_spill_reg(reg_count, ip), BRW_REGISTER_TYPE_UD);
+   fs_reg offset = retype(alloc_spill_reg(reg_count, ip), BRW_TYPE_UD);
    fs_inst *inst;
 
    /* Build an offset per lane in SIMD8 */
-   inst = ubld.group(8, 0).MOV(retype(offset, BRW_REGISTER_TYPE_UW),
+   inst = ubld.group(8, 0).MOV(retype(offset, BRW_TYPE_UW),
                                brw_imm_uv(0x76543210));
    _mesa_set_add(spill_insts, inst);
-   inst = ubld.group(8, 0).MOV(offset, retype(offset, BRW_REGISTER_TYPE_UW));
+   inst = ubld.group(8, 0).MOV(offset, retype(offset, BRW_TYPE_UW));
    _mesa_set_add(spill_insts, inst);
 
    /* Build offsets in the upper 8 lanes of SIMD16 */
@@ -674,21 +674,18 @@ fs_reg_alloc::emit_unspill(const fs_builder &bld,
                                   srcs, ARRAY_SIZE(srcs));
          unspill_inst->sfid = GFX12_SFID_UGM;
          unspill_inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
-                                           unspill_inst->exec_size,
                                            LSC_ADDR_SURFTYPE_SS,
                                            LSC_ADDR_SIZE_A32,
-                                           1 /* num_coordinates */,
                                            LSC_DATA_SIZE_D32,
                                            use_transpose ? reg_size * 8 : 1 /* num_channels */,
                                            use_transpose,
-                                           LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                           true /* has_dest */);
+                                           LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
          unspill_inst->header_size = 0;
-         unspill_inst->mlen =
-            lsc_msg_desc_src0_len(devinfo, unspill_inst->desc);
+         unspill_inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32,
+                                               unspill_inst->exec_size);
          unspill_inst->ex_mlen = 0;
          unspill_inst->size_written =
-            lsc_msg_desc_dest_len(devinfo, unspill_inst->desc) * REG_SIZE;
+            lsc_msg_dest_len(devinfo, LSC_DATA_SIZE_D32, bld.dispatch_width()) * REG_SIZE;
          unspill_inst->send_has_side_effects = false;
          unspill_inst->send_is_volatile = true;
          unspill_inst->send_ex_desc_scratch = true;
@@ -756,17 +753,15 @@ fs_reg_alloc::emit_spill(const fs_builder &bld,
                                srcs, ARRAY_SIZE(srcs));
          spill_inst->sfid = GFX12_SFID_UGM;
          spill_inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE,
-                                         bld.dispatch_width(),
                                          LSC_ADDR_SURFTYPE_SS,
                                          LSC_ADDR_SIZE_A32,
-                                         1 /* num_coordinates */,
                                          LSC_DATA_SIZE_D32,
                                          1 /* num_channels */,
                                          false /* transpose */,
-                                         LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                         false /* has_dest */);
+                                         LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
          spill_inst->header_size = 0;
-         spill_inst->mlen = lsc_msg_desc_src0_len(devinfo, spill_inst->desc);
+         spill_inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32,
+                                             bld.dispatch_width());
          spill_inst->ex_mlen = reg_size;
          spill_inst->size_written = 0;
          spill_inst->send_has_side_effects = true;
@@ -915,7 +910,7 @@ fs_reg_alloc::alloc_scratch_header()
 
    setup_live_interference(scratch_header_node, 0, INT_MAX);
 
-   return fs_reg(VGRF, vgrf, BRW_REGISTER_TYPE_UD);
+   return fs_reg(VGRF, vgrf, BRW_TYPE_UD);
 }
 
 fs_reg
@@ -1066,7 +1061,8 @@ fs_reg_alloc::spill_reg(unsigned spill_reg)
           * instruction and set force_writemask_all on the spill.
           */
          const bool per_channel =
-            inst->dst.is_contiguous() && type_sz(inst->dst.type) == 4 &&
+            inst->dst.is_contiguous() &&
+            brw_type_size_bytes(inst->dst.type) == 4 &&
             inst->exec_size == width;
 
          /* Builder used to emit the scratch messages. */

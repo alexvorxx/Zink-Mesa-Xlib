@@ -3,8 +3,6 @@ dEQP-GLES2.functional.buffer.write.use.index_array.element_array,Fail
 dEQP-GLES2.functional.clipping.line.wide_line_clip_viewport_center,Fail
 dEQP-GLES2.functional.clipping.line.wide_line_clip_viewport_corner,Fail
 dEQP-GLES2.functional.clipping.triangle_vertex.clip_three.clip_pos_y_pos_z_and_neg_x_neg_y_pos_z_and_pos_x_pos_y_neg_z,Fail
-dEQP-GLES2.functional.depth_stencil_clear.depth_stencil,Fail
-dEQP-GLES2.functional.depth_stencil_clear.depth_stencil_masked,Fail
 dEQP-GLES2.functional.draw.draw_elements.triangle_fan.single_attribute,Fail
 dEQP-GLES2.functional.fbo.render.color_clear.rbo_rgba4_depth_component16,Fail
 dEQP-GLES2.functional.fbo.render.color_clear.rbo_rgba4,Fail
@@ -145,8 +143,6 @@ shaders@glsl-uniform-interstage-limits@subdivide 5- statechanges,Timeout
 shaders@glsl-uniform-interstage-limits@subdivide 5,Timeout
 shaders@glsl-vs-point-size,Fail
 
-# Expects DEPTH_COMPONENT_32F, which is given by ARB_depth_buffer_float.
-spec@arb_clear_texture@arb_clear_texture-depth,Fail
 # Expects that some format/internal_format combinations should be supported when they currently aren't.
 spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
 spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
@@ -186,8 +182,6 @@ spec@arb_framebuffer_object@same-attachment-glframebuffertexture2d-gl_depth_sten
 spec@arb_framebuffer_object@same-attachment-tex2d-depth_stencil,Fail
 
 spec@arb_internalformat_query2@all internalformat_<x>_type pname checks,Timeout
-spec@arb_internalformat_query2@max dimensions related pname checks,Fail
-spec@arb_internalformat_query2@max dimensions related pname checks@GL_MAX_LAYERS,Fail
 
 spec@arb_occlusion_query2@render,Fail
 spec@arb_occlusion_query@occlusion_query_conform,Fail
@@ -252,11 +246,6 @@ spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGBA- swizzled- border color only,Fail
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_RGB- swizzled- border color only,Fail
 
-spec@ati_texture_compression_3dc@texwrap formats bordercolor,Fail
-spec@ati_texture_compression_3dc@texwrap formats bordercolor-swizzled,Fail
-spec@ati_texture_compression_3dc@texwrap formats bordercolor-swizzled@GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI- swizzled- border color only,Fail
-spec@ati_texture_compression_3dc@texwrap formats bordercolor@GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI- border color only,Fail
-
 spec@arb_texture_cube_map@cubemap npot,Fail
 
 spec@arb_texture_rectangle@glsl-fs-shadow2drect-07,Fail
@@ -288,22 +277,6 @@ spec@ext_direct_state_access@textures@TextureParameterivEXT + display list GL_CO
 spec@ext_direct_state_access@textures,Crash
 
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples color depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples color depthstencil linear,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples color small depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples color small depthstencil linear,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples depth_draw depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples depth_draw small depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples depth_resolve depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples depth_resolve small depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples srgb depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples srgb depthstencil linear,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples srgb small depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples srgb small depthstencil linear,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_draw depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_draw small depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve small depthstencil,Fail
 
 spec@ext_framebuffer_object@fbo-blending-formats,Fail
 spec@ext_framebuffer_object@fbo-blending-formats@GL_RGB10,Fail
@@ -462,7 +435,6 @@ spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-064-elements,Fail
 spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-128-elements,Fail
 spec@glsl-1.20@execution@fs-vec4-const-array-indirect-access-256-elements,Fail
 spec@glsl-1.20@execution@out-parameter-indexing@fs-inout-index-two-level,Fail
-spec@glsl-1.20@execution@tex-miplevel-selection gl2:texture(bias) 3d,Fail
 spec@glsl-1.20@execution@vs-nan-builtin-max,Fail
 spec@glsl-1.20@execution@vs-nan-builtin-min,Fail
 spec@glsl-es-1.00@execution@glsl-no-vertex-attribs,Fail
@@ -1966,3 +1938,28 @@ spec@!opengl es 2.0@glsl-fs-pointcoord,Fail
 
 # Failure since 2024-01-30
 spec@arb_vertex_buffer_object@pos-array,Fail
+
+# tests that require multisample resolve parameters not supported in hardware
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-copypixels samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-copypixels samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-readpixels-24_8 samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-readpixels-24_8 samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-readpixels-float-and-ushort samples=2,Fail
+spec@!opengl 1.1@depthstencil-default_fb-readpixels-float-and-ushort samples=4,Fail
+
+spec@ext_texture_array@copyteximage 1d_array samples=2,Fail
+spec@ext_texture_array@copyteximage 1d_array samples=4,Fail
+spec@ext_texture_array@copyteximage 2d_array samples=2,Fail
+spec@ext_texture_array@copyteximage 2d_array samples=4,Fail
+
+spec@arb_texture_cube_map@copyteximage cube samples=2,Fail
+spec@arb_texture_cube_map@copyteximage cube samples=4,Fail
+
+spec@arb_texture_rectangle@copyteximage rect samples=2,Fail
+spec@arb_texture_rectangle@copyteximage rect samples=4,Fail

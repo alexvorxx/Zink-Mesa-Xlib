@@ -211,7 +211,6 @@ get_fast_clear_rect(const struct isl_device *dev,
    /* Only single sampled surfaces need to (and actually can) be resolved. */
    if (surf->samples == 1) {
       if (dev->info->verx10 >= 125) {
-         assert(surf->tiling == ISL_TILING_4);
          /* From Bspec 47709, "MCS/CCS Buffer for Render Target(s)":
           *
           *    SW must ensure that clearing rectangle dimensions cover the
@@ -223,8 +222,38 @@ get_fast_clear_rect(const struct isl_device *dev,
           * for both alignment and scaling down.
           */
          const uint32_t bs = isl_format_get_layout(surf->format)->bpb / 8;
-         x_align = x_scaledown = 1024 / bs;
-         y_align = y_scaledown = 16;
+
+         if (surf->tiling == ISL_TILING_4) {
+            x_align = x_scaledown = 1024 / bs;
+            y_align = y_scaledown = 16;
+         } else if (surf->tiling == ISL_TILING_64) {
+            switch (bs) {
+            case 1:
+               x_align = x_scaledown = 128;
+               y_align = y_scaledown = 128;
+               break;
+            case 2:
+               x_align = x_scaledown = 128;
+               y_align = y_scaledown = 64;
+               break;
+            case 4:
+               x_align = x_scaledown = 64;
+               y_align = y_scaledown = 64;
+               break;
+            case 8:
+               x_align = x_scaledown = 64;
+               y_align = y_scaledown = 32;
+               break;
+            case 16:
+               x_align = x_scaledown = 32;
+               y_align = y_scaledown = 32;
+               break;
+            default:
+               unreachable("unsupported bpp");
+            }
+         } else {
+            unreachable("Unsupported tiling format");
+         }
       } else {
          assert(aux_surf->usage == ISL_SURF_USAGE_CCS_BIT);
          /* From the Ivy Bridge PRM, Vol2 Part1 11.7 "MCS Buffer for Render

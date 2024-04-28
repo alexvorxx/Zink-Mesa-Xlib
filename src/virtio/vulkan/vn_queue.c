@@ -319,6 +319,8 @@ static void
 vn_fix_device_group_cmd_count(struct vn_queue_submission *submit,
                               uint32_t batch_index)
 {
+   struct vk_queue *queue_vk = vk_queue_from_handle(submit->queue_handle);
+   struct vn_device *dev = (void *)queue_vk->base.device;
    const VkSubmitInfo *src_batch = &submit->submit_batches[batch_index];
    struct vn_submit_info_pnext_fix *pnext_fix = submit->temp.pnexts;
    VkBaseOutStructure *dst =
@@ -343,9 +345,9 @@ vn_fix_device_group_cmd_count(struct vn_queue_submission *submit,
                    sizeof(uint32_t) * orig_cmd_count);
          }
 
-         /* Set feedback cmd device masks to 0 */
+         /* Set the group device mask. Unlike sync2, zero means skip. */
          for (uint32_t i = orig_cmd_count; i < new_cmd_count; i++) {
-            submit->temp.dev_masks[i] = 0;
+            submit->temp.dev_masks[i] = dev->device_mask;
          }
 
          pnext_fix->group.commandBufferCount = new_cmd_count;
@@ -929,6 +931,18 @@ vn_queue_submission_cleanup_semaphore_feedback(
       const uint32_t wait_count = vn_get_wait_semaphore_count(submit, i);
       for (uint32_t j = 0; j < wait_count; j++) {
          VkSemaphore sem_handle = vn_get_wait_semaphore(submit, i, j);
+         struct vn_semaphore *sem = vn_semaphore_from_handle(sem_handle);
+         if (!sem->feedback.slot)
+            continue;
+
+         /* sfb pending cmds are recycled when signaled counter is updated */
+         uint64_t counter = 0;
+         vn_GetSemaphoreCounterValue(dev_handle, sem_handle, &counter);
+      }
+
+      const uint32_t signal_count = vn_get_signal_semaphore_count(submit, i);
+      for (uint32_t j = 0; j < signal_count; j++) {
+         VkSemaphore sem_handle = vn_get_signal_semaphore(submit, i, j);
          struct vn_semaphore *sem = vn_semaphore_from_handle(sem_handle);
          if (!sem->feedback.slot)
             continue;
@@ -1580,11 +1594,7 @@ vn_ResetFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences)
    VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
 
-   /* TODO if the fence is shared-by-ref, this needs to be synchronous */
-   if (false)
-      vn_call_vkResetFences(dev->primary_ring, device, fenceCount, pFences);
-   else
-      vn_async_vkResetFences(dev->primary_ring, device, fenceCount, pFences);
+   vn_async_vkResetFences(dev->primary_ring, device, fenceCount, pFences);
 
    for (uint32_t i = 0; i < fenceCount; i++) {
       struct vn_fence *fence = vn_fence_from_handle(pFences[i]);
@@ -1705,21 +1715,12 @@ vn_WaitForFences(VkDevice device,
 {
    VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
-   const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
    const int64_t abs_timeout = os_time_get_absolute_timeout(timeout);
    VkResult result = VK_NOT_READY;
    if (fenceCount > 1 && waitAll) {
-      VkFence local_fences[8];
-      VkFence *fences = local_fences;
-      if (fenceCount > ARRAY_SIZE(local_fences)) {
-         fences =
-            vk_alloc(alloc, sizeof(*fences) * fenceCount, VN_DEFAULT_ALIGN,
-                     VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-         if (!fences)
-            return vn_error(dev->instance, VK_ERROR_OUT_OF_HOST_MEMORY);
-      }
-      memcpy(fences, pFences, sizeof(*fences) * fenceCount);
+      STACK_ARRAY(VkFence, fences, fenceCount);
+      typed_memcpy(fences, pFences, fenceCount);
 
       struct vn_relax_state relax_state =
          vn_relax_init(dev->instance, VN_RELAX_REASON_FENCE);
@@ -1730,8 +1731,7 @@ vn_WaitForFences(VkDevice device,
       }
       vn_relax_fini(&relax_state);
 
-      if (fences != local_fences)
-         vk_free(alloc, fences);
+      STACK_ARRAY_FINISH(fences);
    } else {
       struct vn_relax_state relax_state =
          vn_relax_init(dev->instance, VN_RELAX_REASON_FENCE);
@@ -2157,11 +2157,7 @@ vn_SignalSemaphore(VkDevice device, const VkSemaphoreSignalInfo *pSignalInfo)
    struct vn_semaphore *sem =
       vn_semaphore_from_handle(pSignalInfo->semaphore);
 
-   /* TODO if the semaphore is shared-by-ref, this needs to be synchronous */
-   if (false)
-      vn_call_vkSignalSemaphore(dev->primary_ring, device, pSignalInfo);
-   else
-      vn_async_vkSignalSemaphore(dev->primary_ring, device, pSignalInfo);
+   vn_async_vkSignalSemaphore(dev->primary_ring, device, pSignalInfo);
 
    if (sem->feedback.slot) {
       simple_mtx_lock(&sem->feedback.async_wait_mtx);
@@ -2222,29 +2218,16 @@ vn_WaitSemaphores(VkDevice device,
 {
    VN_TRACE_FUNC();
    struct vn_device *dev = vn_device_from_handle(device);
-   const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
    const int64_t abs_timeout = os_time_get_absolute_timeout(timeout);
    VkResult result = VK_NOT_READY;
    if (pWaitInfo->semaphoreCount > 1 &&
        !(pWaitInfo->flags & VK_SEMAPHORE_WAIT_ANY_BIT)) {
       uint32_t semaphore_count = pWaitInfo->semaphoreCount;
-      VkSemaphore local_semaphores[8];
-      uint64_t local_values[8];
-      VkSemaphore *semaphores = local_semaphores;
-      uint64_t *values = local_values;
-      if (semaphore_count > ARRAY_SIZE(local_semaphores)) {
-         semaphores = vk_alloc(
-            alloc, (sizeof(*semaphores) + sizeof(*values)) * semaphore_count,
-            VN_DEFAULT_ALIGN, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-         if (!semaphores)
-            return vn_error(dev->instance, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-         values = (uint64_t *)&semaphores[semaphore_count];
-      }
-      memcpy(semaphores, pWaitInfo->pSemaphores,
-             sizeof(*semaphores) * semaphore_count);
-      memcpy(values, pWaitInfo->pValues, sizeof(*values) * semaphore_count);
+      STACK_ARRAY(VkSemaphore, semaphores, semaphore_count);
+      STACK_ARRAY(uint64_t, values, semaphore_count);
+      typed_memcpy(semaphores, pWaitInfo->pSemaphores, semaphore_count);
+      typed_memcpy(values, pWaitInfo->pValues, semaphore_count);
 
       struct vn_relax_state relax_state =
          vn_relax_init(dev->instance, VN_RELAX_REASON_SEMAPHORE);
@@ -2256,8 +2239,8 @@ vn_WaitSemaphores(VkDevice device,
       }
       vn_relax_fini(&relax_state);
 
-      if (semaphores != local_semaphores)
-         vk_free(alloc, semaphores);
+      STACK_ARRAY_FINISH(semaphores);
+      STACK_ARRAY_FINISH(values);
    } else {
       struct vn_relax_state relax_state =
          vn_relax_init(dev->instance, VN_RELAX_REASON_SEMAPHORE);

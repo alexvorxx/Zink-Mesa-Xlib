@@ -85,9 +85,6 @@ struct agx_geometry_params {
    /* Address of associated indirect draw buffer */
    GLOBAL(uint) indirect_desc;
 
-   /* Address of vertex shader output buffer */
-   GLOBAL(uchar) vertex_buffer;
-
    /* Address of count buffer. For an indirect draw, this will be written by the
     * indirect setup kernel.
     */
@@ -112,9 +109,6 @@ struct agx_geometry_params {
     * program.
     */
    GLOBAL(uchar) xfb_base[MAX_SO_BUFFERS];
-
-   /* Bitfield of VS outputs. TODO: Optimize linked shaders. */
-   uint64_t vs_outputs;
 
    /* Location-indexed mask of flat outputs, used for lowering GL edge flags. */
    uint64_t flat_outputs;
@@ -157,7 +151,7 @@ struct agx_geometry_params {
     */
    uint32_t input_topology;
 } PACKED;
-AGX_STATIC_ASSERT(sizeof(struct agx_geometry_params) == 83 * 4);
+AGX_STATIC_ASSERT(sizeof(struct agx_geometry_params) == 79 * 4);
 
 struct agx_tess_params {
    /* Persistent (cross-draw) geometry state */

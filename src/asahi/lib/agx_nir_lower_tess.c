@@ -16,11 +16,6 @@
 #include "nir_intrinsics_indices.h"
 #include "shader_enums.h"
 
-struct tcs_state {
-   struct agx_lower_output_to_var_state vs_vars;
-   uint64_t vs_outputs_written;
-};
-
 static nir_def *
 tcs_patch_id(nir_builder *b)
 {
@@ -99,23 +94,18 @@ lower_tes_load(nir_builder *b, nir_intrinsic_instr *intr)
 }
 
 static nir_def *
-tcs_load_input(nir_builder *b, nir_intrinsic_instr *intr,
-               struct tcs_state *state)
+tcs_load_input(nir_builder *b, nir_intrinsic_instr *intr)
 {
-   nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
+   nir_def *base = nir_imul(
+      b, tcs_unrolled_id(b),
+      libagx_tcs_patch_vertices_in(b, nir_load_tess_param_buffer_agx(b)));
+   nir_def *vertex = nir_iadd(b, base, intr->src[0].ssa);
 
-   nir_def *off = libagx_tcs_in_offset(
-      b, intr->src[0].ssa, nir_iadd_imm(b, intr->src[1].ssa, sem.location),
-      nir_imm_int64(b, state->vs_outputs_written));
-
-   off = nir_iadd_imm(b, off, 4 * nir_intrinsic_component(intr));
-
-   return nir_load_shared(b, intr->def.num_components, 32, off);
+   return agx_load_per_vertex_input(b, intr, vertex);
 }
 
 static nir_def *
-lower_tcs_impl(nir_builder *b, nir_intrinsic_instr *intr,
-               struct tcs_state *state)
+lower_tcs_impl(nir_builder *b, nir_intrinsic_instr *intr)
 {
    switch (intr->intrinsic) {
    case nir_intrinsic_barrier:
@@ -132,7 +122,7 @@ lower_tcs_impl(nir_builder *b, nir_intrinsic_instr *intr,
       return nir_channel(b, nir_load_local_invocation_id(b), 0);
 
    case nir_intrinsic_load_per_vertex_input:
-      return tcs_load_input(b, intr, state);
+      return tcs_load_input(b, intr);
 
    case nir_intrinsic_load_patch_vertices_in:
       return libagx_tcs_patch_vertices_in(b, nir_load_tess_param_buffer_agx(b));
@@ -179,7 +169,7 @@ lower_tcs(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_def *repl = lower_tcs_impl(b, intr, data);
+   nir_def *repl = lower_tcs_impl(b, intr);
    if (!repl)
       return false;
 
@@ -208,102 +198,13 @@ link_libagx(nir_shader *nir, const nir_shader *libagx)
             nir_address_format_62bit_generic);
 }
 
-/*
- * Predicate the TCS so the merged shader works when input patch size > output
- * patch size.
- */
-static bool
-agx_nir_predicate_tcs(nir_shader *tcs)
-{
-   nir_function_impl *entry = nir_shader_get_entrypoint(tcs);
-   nir_cf_list list;
-   nir_cf_extract(&list, nir_before_impl(entry), nir_after_impl(entry));
-
-   nir_builder b = nir_builder_at(nir_after_block(nir_start_block(entry)));
-   nir_def *input_vtx_id = nir_load_invocation_id(&b);
-   unsigned verts = tcs->info.tess.tcs_vertices_out;
-
-   nir_push_if(&b, nir_ult_imm(&b, input_vtx_id, verts));
-   {
-      nir_cf_reinsert(&list, b.cursor);
-   }
-   nir_pop_if(&b, NULL);
-
-   nir_metadata_preserve(entry, nir_metadata_none);
-   return false;
-}
-
 bool
-agx_nir_lower_tcs(nir_shader *tcs, const nir_shader *vs,
-                  const struct nir_shader *libagx, uint8_t index_size_B)
+agx_nir_lower_tcs(nir_shader *tcs, const struct nir_shader *libagx)
 {
-   agx_nir_predicate_tcs(tcs);
+   nir_shader_intrinsics_pass(
+      tcs, lower_tcs, nir_metadata_block_index | nir_metadata_dominance, NULL);
 
-   nir_function_impl *tcs_entry = nir_shader_get_entrypoint(tcs);
-
-   /* Link the vertex shader with the TCS. This assumes that all functions have
-    * been inlined in the vertex shader.
-    */
-   nir_function_impl *vs_entry = nir_shader_get_entrypoint(vs);
-   nir_function *vs_function = nir_function_create(tcs, "vertex");
-   vs_function->impl = nir_function_impl_clone(tcs, vs_entry);
-   vs_function->impl->function = vs_function;
-
-   /* Vertex shader outputs are staged to temporaries */
-   struct tcs_state state = {
-      .vs_outputs_written = vs->info.outputs_written & tcs->info.inputs_read,
-   };
-
-   u_foreach_bit64(slot, vs->info.outputs_written) {
-      const char *slot_name =
-         gl_varying_slot_name_for_stage(slot, MESA_SHADER_VERTEX);
-
-      state.vs_vars.outputs[slot] = nir_variable_create(
-         tcs, nir_var_shader_temp, glsl_uvec4_type(), slot_name);
-   }
-
-   nir_function_instructions_pass(
-      vs_function->impl, agx_lower_output_to_var,
-      nir_metadata_block_index | nir_metadata_dominance, &state.vs_vars);
-
-   /* Invoke the VS first for each vertex in the input patch */
-   nir_builder b_ = nir_builder_at(nir_before_impl(tcs_entry));
-   nir_builder *b = &b_;
-
-   nir_def *input_vtx_id = nir_load_invocation_id(b);
-   nir_push_if(b, nir_ult(b, input_vtx_id, nir_load_patch_vertices_in(b)));
-   {
-      nir_inline_function_impl(b, vs_function->impl, NULL, NULL);
-
-      /* To handle cross-invocation VS output reads, dump everything in
-       * shared local memory.
-       *
-       * TODO: Optimize to registers.
-       */
-      u_foreach_bit64(slot, state.vs_outputs_written) {
-         nir_def *off =
-            libagx_tcs_in_offset(b, input_vtx_id, nir_imm_int(b, slot),
-                                 nir_imm_int64(b, state.vs_outputs_written));
-
-         nir_store_shared(b, nir_load_var(b, state.vs_vars.outputs[slot]), off,
-                          .write_mask = nir_component_mask(4));
-      }
-   }
-   nir_pop_if(b, NULL);
-
-   /* Clean up after inlining VS into TCS */
-   exec_node_remove(&vs_function->node);
-   nir_lower_global_vars_to_local(tcs);
-
-   /* Lower I/A. TODO: Indirect multidraws */
-   agx_nir_lower_index_buffer(tcs, index_size_B, true);
-
-   /* Lower TCS outputs */
-   nir_shader_intrinsics_pass(tcs, lower_tcs,
-                              nir_metadata_block_index | nir_metadata_dominance,
-                              &state);
    link_libagx(tcs, libagx);
-   nir_metadata_preserve(b->impl, nir_metadata_none);
    return true;
 }
 

@@ -91,13 +91,21 @@ static void
 clc_dump_llvm(const llvm::Module *mod, FILE *f);
 
 static void
+#if LLVM_VERSION_MAJOR >= 19
+llvm_log_handler(const ::llvm::DiagnosticInfo *di, void *data) {
+#else
 llvm_log_handler(const ::llvm::DiagnosticInfo &di, void *data) {
+#endif
    const clc_logger *logger = static_cast<clc_logger *>(data);
 
    std::string log;
    raw_string_ostream os { log };
    ::llvm::DiagnosticPrinterRawOStream printer { os };
+#if LLVM_VERSION_MAJOR >= 19
+   di->print(printer);
+#else
    di.print(printer);
+#endif
 
    clc_error(logger, "%s", log.c_str());
 }

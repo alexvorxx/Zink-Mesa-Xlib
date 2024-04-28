@@ -235,6 +235,22 @@ libagx_vertex_id_for_topology(enum mesa_prim mode, bool flatshade_first,
 }
 
 /*
+ * Return the ID of the first thread in the workgroup where cond is true, or
+ * 1024 if cond is false across the workgroup.
+ */
+static uint
+first_true_thread_in_workgroup(bool cond, local uint *scratch)
+{
+   barrier(CLK_LOCAL_MEM_FENCE);
+   scratch[get_sub_group_id()] = ballot(cond);
+   barrier(CLK_LOCAL_MEM_FENCE);
+
+   uint first_group = ctz(ballot(scratch[get_sub_group_local_id()]));
+   uint off = ctz(first_group < 32 ? scratch[first_group] : 0);
+   return (first_group * 32) + off;
+}
+
+/*
  * When unrolling the index buffer for a draw, we translate the old indirect
  * draws to new indirect draws. This routine allocates the new index buffer and
  * sets up most of the new draw descriptor.
@@ -255,25 +271,26 @@ setup_unroll_for_draw(global struct agx_ia_state *ia, constant uint *in_draw,
     * since multiple threads may be running to handle multidraw in parallel.
     */
    global struct agx_geometry_state *heap = ia->heap;
-   uint old_heap_bottom = atomic_fetch_add(
+   uint old_heap_bottom_B = atomic_fetch_add(
       (volatile atomic_uint *)(&heap->heap_bottom), align(alloc_size, 4));
 
    /* Regardless of the input stride, we use tightly packed output draws */
    global uint *out = &ia->out_draws[5 * draw];
 
    /* Setup most of the descriptor. Count will be determined after unroll. */
-   out[1] = in_draw[1];                     /* instance count */
-   out[2] = old_heap_bottom / index_size_B; /* index offset */
-   out[3] = in_draw[3];                     /* index bias */
-   out[4] = in_draw[4];                     /* base instance */
+   out[1] = in_draw[1];                       /* instance count */
+   out[2] = old_heap_bottom_B / index_size_B; /* index offset */
+   out[3] = in_draw[3];                       /* index bias */
+   out[4] = in_draw[4];                       /* base instance */
 
    /* Return the index buffer we allocated */
-   return (global uchar *)heap->heap + (old_heap_bottom * index_size_B);
+   return (global uchar *)heap->heap + old_heap_bottom_B;
 }
 
 #define UNROLL(INDEX, suffix)                                                  \
-   void libagx_unroll_restart_##suffix(global struct agx_ia_state *ia,         \
-                                       enum mesa_prim mode, uint draw)         \
+   kernel void libagx_unroll_restart_##suffix(global struct agx_ia_state *ia,  \
+                                              enum mesa_prim mode, uint draw,  \
+                                              uint tid)                        \
    {                                                                           \
       /* For an indirect multidraw, we are dispatched maxDraws times and       \
        * terminate trailing invocations.                                       \
@@ -285,11 +302,21 @@ setup_unroll_for_draw(global struct agx_ia_state *ia, constant uint *in_draw,
          (constant uint *)(ia->draws + (draw * ia->draw_stride));              \
                                                                                \
       uint count = in_draw[0];                                                 \
-      constant INDEX *in = (constant INDEX *)ia->index_buffer;                 \
-      in += in_draw[2];                                                        \
                                                                                \
-      global INDEX *out =                                                      \
-         setup_unroll_for_draw(ia, in_draw, draw, mode, sizeof(INDEX));        \
+      local uintptr_t out_ptr, in_ptr;                                         \
+      if (tid == 0) {                                                          \
+         out_ptr = (uintptr_t)setup_unroll_for_draw(ia, in_draw, draw, mode,   \
+                                                    sizeof(INDEX));            \
+                                                                               \
+         /* Accessed thru local mem because NIR deref is too aggressive */     \
+         in_ptr = (uintptr_t)(ia->index_buffer + sizeof(INDEX) * in_draw[2]);  \
+      }                                                                        \
+                                                                               \
+      barrier(CLK_LOCAL_MEM_FENCE);                                            \
+      global INDEX *out = (global INDEX *)out_ptr;                             \
+      constant INDEX *in = (constant INDEX *)in_ptr;                           \
+                                                                               \
+      local uint scratch[32];                                                  \
                                                                                \
       uint out_prims = 0;                                                      \
       INDEX restart_idx = ia->restart_index;                                   \
@@ -299,31 +326,41 @@ setup_unroll_for_draw(global struct agx_ia_state *ia, constant uint *in_draw,
       uint needle = 0;                                                         \
       uint per_prim = mesa_vertices_per_prim(mode);                            \
       while (needle < count) {                                                 \
-         /* Search for next restart or the end */                              \
+         /* Search for next restart or the end. Lanes load in parallel. */     \
          uint next_restart = needle;                                           \
-         while ((next_restart < count) && in[next_restart] != restart_idx)     \
-            ++next_restart;                                                    \
+         for (;;) {                                                            \
+            /* Relies on shortcircuiting */                                    \
+            uint idx = next_restart + tid;                                     \
+            bool restart = idx >= count || in[idx] == restart_idx;             \
                                                                                \
-         /* Emit up to the next restart */                                     \
+            uint next_offs = first_true_thread_in_workgroup(restart, scratch); \
+                                                                               \
+            next_restart += next_offs;                                         \
+            if (next_offs < 1024)                                              \
+               break;                                                          \
+         }                                                                     \
+                                                                               \
+         /* Emit up to the next restart. Lanes output in parallel */           \
          uint subcount = next_restart - needle;                                \
          uint subprims = u_decomposed_prims_for_vertices(mode, subcount);      \
-         for (uint i = 0; i < subprims; ++i) {                                 \
+         uint out_prims_base = out_prims;                                      \
+         for (uint i = tid; i < subprims; i += 1024) {                         \
             for (uint vtx = 0; vtx < per_prim; ++vtx) {                        \
                uint id = libagx_vertex_id_for_topology(mode, flatshade_first,  \
                                                        i, vtx, subprims);      \
                uint offset = needle + id;                                      \
                                                                                \
-               out[(out_prims * per_prim) + vtx] =                             \
+               out[((out_prims_base + i) * per_prim) + vtx] =                  \
                   offset < in_size_el ? in[offset] : 0;                        \
             }                                                                  \
-                                                                               \
-            out_prims++;                                                       \
          }                                                                     \
                                                                                \
+         out_prims += subprims;                                                \
          needle = next_restart + 1;                                            \
       }                                                                        \
                                                                                \
-      ia->out_draws[(5 * draw) + 0] = out_prims * per_prim;                    \
+      if (tid == 0)                                                            \
+         ia->out_draws[(5 * draw) + 0] = out_prims * per_prim;                 \
    }
 
 UNROLL(uchar, u8)
@@ -425,8 +462,9 @@ libagx_build_gs_draw(global struct agx_geometry_params *p, bool indexed,
 
 void
 libagx_gs_setup_indirect(global struct agx_geometry_params *p,
-                         global struct agx_ia_state *ia, enum mesa_prim mode,
-                         uint local_id)
+                         global struct agx_ia_state *ia,
+                         global uintptr_t *vertex_buffer, uint64_t vs_outputs,
+                         enum mesa_prim mode, uint local_id)
 {
    global uint *in_draw = (global uint *)ia->draws;
 
@@ -463,51 +501,85 @@ libagx_gs_setup_indirect(global struct agx_geometry_params *p,
    global struct agx_geometry_state *state = p->state;
 
    uint vertex_buffer_size =
-      libagx_tcs_in_size(vertex_count * instance_count, p->vs_outputs);
+      libagx_tcs_in_size(vertex_count * instance_count, vs_outputs);
 
    p->count_buffer = (global uint *)(state->heap + state->heap_bottom);
    state->heap_bottom +=
       align(p->input_primitives * p->count_buffer_stride, 16);
 
-   p->vertex_buffer = (global uint *)(state->heap + state->heap_bottom);
+   *vertex_buffer = (uintptr_t)(state->heap + state->heap_bottom);
    state->heap_bottom += align(vertex_buffer_size, 4);
 }
 
-void
-libagx_prefix_sum(global uint *buffer, uint len, uint words, uint2 local_id)
+/*
+ * Returns (work_group_scan_inclusive_add(x), work_group_sum(x)). Implemented
+ * manually with subgroup ops and local memory since Mesa doesn't do those
+ * lowerings yet.
+ */
+static uint2
+libagx_work_group_scan_inclusive_add(uint x, local uint *scratch)
 {
-   /* Main loop: complete subgroups processing 32 values at once
-    *
-    * TODO: Don't do a serial bottleneck! This is bad!
+   uint sg_id = get_sub_group_id();
+
+   /* Partial prefix sum of the subgroup */
+   uint sg = sub_group_scan_exclusive_add(x) + x;
+
+   /* Reduction (sum) for the subgroup */
+   uint sg_sum = sub_group_broadcast(sg, 31);
+
+   /* Write out all the subgroups sums */
+   barrier(CLK_LOCAL_MEM_FENCE);
+   scratch[sg_id] = sg_sum;
+   barrier(CLK_LOCAL_MEM_FENCE);
+
+   /* Read all the subgroup sums. Thread T in subgroup G reads the sum of all
+    * threads in subgroup T.
     */
+   uint other_sum = scratch[get_sub_group_local_id()];
+
+   /* Exclusive sum the subgroup sums to get the total before the current group,
+    * which can be added to the total for the current group.
+    */
+   uint other_sums = sub_group_scan_exclusive_add(other_sum);
+   uint base = sub_group_broadcast(other_sums, sg_id);
+   uint prefix = base + sg;
+
+   /* Reduce the workgroup using the prefix sum we already did */
+   uint reduction = sub_group_broadcast(other_sums, 31) + other_sum;
+
+   return (uint2)(prefix, reduction);
+}
+
+kernel void
+libagx_prefix_sum(global uint *buffer, uint len, uint words)
+{
+   local uint scratch[32];
+   uint tid = get_local_id(0);
+   uint word = get_group_id(0);
+
+   /* Main loop: complete workgroups processing 1024 values at once */
    uint i, count = 0;
-   uint len_remainder = len % 32;
+   uint len_remainder = len % 1024;
    uint len_rounded_down = len - len_remainder;
 
-   for (i = local_id.x; i < len_rounded_down; i += 32) {
-      global uint *ptr = &buffer[(i * words) + local_id.y];
+   for (i = tid; i < len_rounded_down; i += 1024) {
+      global uint *ptr = &buffer[(i * words) + word];
       uint value = *ptr;
+      uint2 sums = libagx_work_group_scan_inclusive_add(value, scratch);
 
-      /* TODO: use inclusive once that's wired up */
-      uint value_prefix_sum = sub_group_scan_exclusive_add(value) + value;
-      *ptr = count + value_prefix_sum;
-
-      /* Advance count by the reduction sum of all processed values. We already
-       * have that sum calculated in the last lane. We know that lane is active,
-       * since all control flow is uniform except in the last iteration.
-       */
-      count += sub_group_broadcast(value_prefix_sum, 31);
+      *ptr = count + sums[0];
+      count += sums[1];
    }
 
    /* The last iteration is special since we won't have a full subgroup unless
     * the length is divisible by the subgroup size, and we don't advance count.
     */
-   if (local_id.x < len_remainder) {
-      global uint *ptr = &buffer[(i * words) + local_id.y];
-      uint value = *ptr;
+   global uint *ptr = &buffer[(i * words) + word];
+   uint value = (tid < len_remainder) ? *ptr : 0;
+   uint scan = libagx_work_group_scan_inclusive_add(value, scratch)[0];
 
-      /* TODO: use inclusive once that's wired up */
-      *ptr = count + sub_group_scan_exclusive_add(value) + value;
+   if (tid < len_remainder) {
+      *ptr = count + scan;
    }
 }
 
@@ -518,9 +590,8 @@ libagx_is_provoking_last(global struct agx_ia_state *ia)
 }
 
 uintptr_t
-libagx_vertex_output_address(constant struct agx_geometry_params *p, uint vtx,
-                             gl_varying_slot location, uint64_t vs_outputs)
+libagx_vertex_output_address(uintptr_t buffer, uint64_t mask, uint vtx,
+                             gl_varying_slot location)
 {
-   return (uintptr_t)p->vertex_buffer +
-          libagx_tcs_in_offs(vtx, location, vs_outputs);
+   return buffer + libagx_tcs_in_offs(vtx, location, mask);
 }

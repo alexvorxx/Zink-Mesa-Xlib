@@ -12,6 +12,7 @@
 #include "nvk_mme.h"
 #include "nvk_physical_device.h"
 
+#include "vk_common_entrypoints.h"
 #include "vk_meta.h"
 #include "vk_pipeline.h"
 
@@ -980,8 +981,8 @@ nvk_meta_copy_query_pool_results(struct nvk_cmd_buffer *cmd,
                                           VK_PIPELINE_BIND_POINT_COMPUTE,
                                           pipeline);
 
-   nvk_CmdPushConstants(nvk_cmd_buffer_to_handle(cmd), layout,
-                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+   vk_common_CmdPushConstants(nvk_cmd_buffer_to_handle(cmd), layout,
+                              VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
 
    nvk_CmdDispatchBase(nvk_cmd_buffer_to_handle(cmd), 0, 0, 0, 1, 1, 1);
 

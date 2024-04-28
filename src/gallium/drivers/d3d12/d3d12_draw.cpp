@@ -60,9 +60,8 @@ fill_cbv_descriptors(struct d3d12_context *ctx,
    struct d3d12_descriptor_handle table_start;
    d2d12_descriptor_heap_get_next_handle(batch->view_heap, &table_start);
 
-   for (unsigned i = 0; i < shader->num_cb_bindings; i++) {
-      unsigned binding = shader->cb_bindings[i].binding;
-      struct pipe_constant_buffer *buffer = &ctx->cbufs[stage][binding];
+   for (unsigned i = shader->begin_ubo_binding; i < shader->end_ubo_binding; i++) {
+      struct pipe_constant_buffer *buffer = &ctx->cbufs[stage][i];
 
       D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = {};
       if (buffer && buffer->buffer) {
@@ -474,7 +473,7 @@ check_descriptors_left(struct d3d12_context *ctx, bool compute)
       if (!shader)
          continue;
 
-      needed_descs += shader->current->num_cb_bindings;
+      needed_descs += shader->current->end_ubo_binding;
       needed_descs += shader->current->end_srv_binding - shader->current->begin_srv_binding;
       needed_descs += shader->current->nir->info.num_ssbos;
       needed_descs += shader->current->nir->info.num_images;
@@ -514,7 +513,7 @@ update_shader_stage_root_parameters(struct d3d12_context *ctx,
    uint64_t dirty = ctx->shader_dirty[stage];
    assert(shader);
 
-   if (shader->num_cb_bindings > 0) {
+   if (shader->end_ubo_binding - shader->begin_ubo_binding > 0) {
       if (dirty & D3D12_SHADER_DIRTY_CONSTBUF) {
          assert(num_root_descriptors < MAX_DESCRIPTOR_TABLES);
          root_desc_tables[num_root_descriptors] = fill_cbv_descriptors(ctx, shader, stage);
@@ -1292,7 +1291,7 @@ update_dispatch_indirect_with_sysvals(struct d3d12_context *ctx,
        ctx->compute_state == nullptr)
       return false;
 
-   if (!BITSET_TEST(ctx->compute_state->current->nir->info.system_values_read, SYSTEM_VALUE_NUM_WORKGROUPS))
+   if (!BITSET_TEST(ctx->compute_state->initial->info.system_values_read, SYSTEM_VALUE_NUM_WORKGROUPS))
       return false;
 
    if (ctx->current_predication)

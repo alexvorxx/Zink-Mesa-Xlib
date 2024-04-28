@@ -195,6 +195,9 @@ struct vk_device {
    /* Set by vk_device_set_drm_fd() */
    int drm_fd;
 
+   /** Implicit pipeline cache, or NULL */
+   struct vk_pipeline_cache *mem_cache;
+
    /** An enum describing how timeline semaphores work */
    enum vk_device_timeline_mode {
       /** Timeline semaphores are not supported */

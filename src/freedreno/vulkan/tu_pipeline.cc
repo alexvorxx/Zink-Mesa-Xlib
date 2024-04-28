@@ -2014,7 +2014,7 @@ tu_pipeline_builder_parse_libraries(struct tu_pipeline_builder *builder,
       assert(library_info->libraryCount <= MAX_LIBRARIES);
       builder->num_libraries = library_info->libraryCount;
       for (unsigned i = 0; i < library_info->libraryCount; i++) {
-         TU_FROM_HANDLE(tu_pipeline, library, library_info->pLibraries[i]);
+         VK_FROM_HANDLE(tu_pipeline, library, library_info->pLibraries[i]);
          builder->libraries[i] = tu_pipeline_to_graphics_lib(library);
       }
    }
@@ -2073,7 +2073,7 @@ static void
 tu_pipeline_builder_parse_layout(struct tu_pipeline_builder *builder,
                                  struct tu_pipeline *pipeline)
 {
-   TU_FROM_HANDLE(tu_pipeline_layout, layout, builder->create_info->layout);
+   VK_FROM_HANDLE(tu_pipeline_layout, layout, builder->create_info->layout);
 
    if (layout) {
       /* Note: it's still valid to have a layout even if there are libraries.
@@ -4039,8 +4039,8 @@ tu_graphics_pipeline_create(VkDevice device,
                             const VkAllocationCallbacks *pAllocator,
                             VkPipeline *pPipeline)
 {
-   TU_FROM_HANDLE(tu_device, dev, device);
-   TU_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
+   VK_FROM_HANDLE(tu_device, dev, device);
+   VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
 
    cache = cache ? cache : dev->mem_cache;
 
@@ -4109,9 +4109,9 @@ tu_compute_pipeline_create(VkDevice device,
                            const VkAllocationCallbacks *pAllocator,
                            VkPipeline *pPipeline)
 {
-   TU_FROM_HANDLE(tu_device, dev, device);
-   TU_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
-   TU_FROM_HANDLE(tu_pipeline_layout, layout, pCreateInfo->layout);
+   VK_FROM_HANDLE(tu_device, dev, device);
+   VK_FROM_HANDLE(vk_pipeline_cache, cache, pipelineCache);
+   VK_FROM_HANDLE(tu_pipeline_layout, layout, pCreateInfo->layout);
    const VkPipelineShaderStageCreateInfo *stage_info = &pCreateInfo->stage;
    VkResult result;
    const struct ir3_shader_variant *v = NULL;
@@ -4299,8 +4299,8 @@ tu_DestroyPipeline(VkDevice _device,
                    VkPipeline _pipeline,
                    const VkAllocationCallbacks *pAllocator)
 {
-   TU_FROM_HANDLE(tu_device, dev, _device);
-   TU_FROM_HANDLE(tu_pipeline, pipeline, _pipeline);
+   VK_FROM_HANDLE(tu_device, dev, _device);
+   VK_FROM_HANDLE(tu_pipeline, pipeline, _pipeline);
 
    if (!_pipeline)
       return;
@@ -4333,8 +4333,8 @@ tu_GetPipelineExecutablePropertiesKHR(
       uint32_t* pExecutableCount,
       VkPipelineExecutablePropertiesKHR* pProperties)
 {
-   TU_FROM_HANDLE(tu_device, dev, _device);
-   TU_FROM_HANDLE(tu_pipeline, pipeline, pPipelineInfo->pipeline);
+   VK_FROM_HANDLE(tu_device, dev, _device);
+   VK_FROM_HANDLE(tu_pipeline, pipeline, pPipelineInfo->pipeline);
    VK_OUTARRAY_MAKE_TYPED(VkPipelineExecutablePropertiesKHR, out,
                           pProperties, pExecutableCount);
 
@@ -4365,7 +4365,7 @@ tu_GetPipelineExecutableStatisticsKHR(
       uint32_t* pStatisticCount,
       VkPipelineExecutableStatisticKHR* pStatistics)
 {
-   TU_FROM_HANDLE(tu_pipeline, pipeline, pExecutableInfo->pipeline);
+   VK_FROM_HANDLE(tu_pipeline, pipeline, pExecutableInfo->pipeline);
    VK_OUTARRAY_MAKE_TYPED(VkPipelineExecutableStatisticKHR, out,
                           pStatistics, pStatisticCount);
 
@@ -4552,7 +4552,7 @@ tu_GetPipelineExecutableInternalRepresentationsKHR(
     uint32_t* pInternalRepresentationCount,
     VkPipelineExecutableInternalRepresentationKHR* pInternalRepresentations)
 {
-   TU_FROM_HANDLE(tu_pipeline, pipeline, pExecutableInfo->pipeline);
+   VK_FROM_HANDLE(tu_pipeline, pipeline, pExecutableInfo->pipeline);
    VK_OUTARRAY_MAKE_TYPED(VkPipelineExecutableInternalRepresentationKHR, out,
                           pInternalRepresentations, pInternalRepresentationCount);
    bool incomplete_text = false;

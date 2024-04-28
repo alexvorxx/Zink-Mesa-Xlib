@@ -1,25 +1,7 @@
 /*
  * Copyright © 2018 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "aco_builder.h"
@@ -1403,7 +1385,7 @@ do_copy(lower_context* ctx, Builder& bld, const copy_operation& copy, bool* pres
                if (def.physReg().byte() == 1) {
                   bld.vop2(aco_opcode::v_mul_u32_u24, dst, Operand::c32((1 << bits) + 1u), op);
                } else if (def.physReg().byte() == 2) {
-                  bld.vop2(aco_opcode::v_cvt_pk_u16_u32, dst, Operand(lo_reg, v2b), op);
+                  bld.vop3(aco_opcode::v_cvt_pk_u16_u32, dst, Operand(lo_reg, v2b), op);
                } else if (def.physReg().byte() == 3) {
                   bld.sop1(aco_opcode::s_mov_b32, Definition(scratch_sgpr, s1),
                            Operand::c32((1 << bits) + 1u));
@@ -2701,9 +2683,22 @@ lower_to_hw_instr(Program* program)
                   }
                } else {
                   assert(dst.regClass() == v2b);
-                  bld.vop2_sdwa(aco_opcode::v_lshlrev_b32, dst, Operand::c32(offset), op)
-                     ->sdwa()
-                     .sel[1] = SubdwordSel::ubyte;
+                  if (!offset) {
+                     bld.vop1_sdwa(aco_opcode::v_mov_b32, dst, op)->sdwa().sel[0] =
+                        SubdwordSel::ubyte;
+                  } else if (program->gfx_level >= GFX9) {
+                     bld.vop2_sdwa(aco_opcode::v_lshlrev_b32, dst, Operand::c32(offset), op)
+                        ->sdwa()
+                        .sel[1] = SubdwordSel::ubyte;
+                  } else {
+                     assert(offset == 8);
+                     Definition dst_hi = Definition(dst.physReg().advance(1), v1b);
+                     bld.vop1_sdwa(aco_opcode::v_mov_b32, dst_hi, op)->sdwa().sel[0] =
+                        SubdwordSel::ubyte;
+                     uint32_t c = ~(BITFIELD_MASK(offset) << (dst.physReg().byte() * 8));
+                     bld.vop2(aco_opcode::v_and_b32, dst, Operand::c32(c),
+                              Operand(PhysReg(op.physReg().reg()), v1));
+                  }
                }
                break;
             }
@@ -2748,12 +2743,15 @@ lower_to_hw_instr(Program* program)
                unsigned attribute = instr->operands[1].constantValue();
                unsigned component = instr->operands[2].constantValue();
                uint16_t dpp_ctrl = 0;
+               bool high_16bits = false;
                Operand coord1, coord2;
-               if (instr->operands.size() == 6) {
-                  assert(instr->operands[3].regClass() == v1);
+               if (instr->operands.size() == 7) {
+                  assert(instr->operands[3].isConstant());
+                  high_16bits = instr->operands[3].constantValue();
                   assert(instr->operands[4].regClass() == v1);
-                  coord1 = instr->operands[3];
-                  coord2 = instr->operands[4];
+                  assert(instr->operands[5].regClass() == v1);
+                  coord1 = instr->operands[4];
+                  coord2 = instr->operands[5];
                } else {
                   assert(instr->operands[3].isConstant());
                   dpp_ctrl = instr->operands[3].constantValue();
@@ -2768,9 +2766,9 @@ lower_to_hw_instr(Program* program)
                   bld.vop1_dpp(aco_opcode::v_mov_b32, Definition(dst), p, dpp_ctrl);
                } else if (dst.regClass() == v2b) {
                   bld.vinterp_inreg(aco_opcode::v_interp_p10_f16_f32_inreg, Definition(dst), p,
-                                    coord1, p);
+                                    coord1, p, high_16bits ? 0x5 : 0);
                   bld.vinterp_inreg(aco_opcode::v_interp_p2_f16_f32_inreg, Definition(dst), p,
-                                    coord2, dst_op);
+                                    coord2, dst_op, high_16bits ? 0x1 : 0);
                } else {
                   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, Definition(dst), p, coord1,
                                     p);

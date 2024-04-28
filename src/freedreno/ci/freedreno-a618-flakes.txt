@@ -226,5 +226,9 @@ glx@glx-visuals-depth -pixmap
 glx@glx-visuals-stencil -pixmap
 
 
-# Updated by ci-collate, found in this job run: https://gitlab.freedesktop.org/mesa/mesa/-/jobs/56260499
+# Nightly run expectations update
+dEQP-VK.binding_model.shader_access.primary_cmd_buf.storage_buffer.tess_eval.multiple_contiguous_descriptors.offset_view_nonzero
 dEQP-VK.binding_model.shader_access.primary_cmd_buf.storage_image.tess_eval.multiple_descriptor_sets.multiple_discontiguous_descriptors.2d
+dEQP-VK.binding_model.shader_access.secondary_cmd_buf.storage_buffer_dynamic.tess_ctrl.multiple_descriptor_sets.descriptor_array.offset_view_zero_dynamic_zero
+dEQP-VK.spirv_assembly.instruction.graphics.indexing.input.struct.opinboundsaccesschain_u32_tesse
+

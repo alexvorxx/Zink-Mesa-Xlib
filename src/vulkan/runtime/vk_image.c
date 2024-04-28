@@ -112,6 +112,11 @@ vk_image_init(struct vk_device *device,
 
    image->ahb_format = vk_image_format_to_ahb_format(image->format);
 #endif
+
+   const VkImageCompressionControlEXT *compr_info =
+      vk_find_struct_const(pCreateInfo->pNext, IMAGE_COMPRESSION_CONTROL_EXT);
+   if (compr_info)
+      image->compr_flags = compr_info->flags;
 }
 
 void *

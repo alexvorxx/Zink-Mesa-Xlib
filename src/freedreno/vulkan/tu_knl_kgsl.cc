@@ -238,7 +238,7 @@ kgsl_sync_cache(VkDevice _device,
                 uint32_t count,
                 const VkMappedMemoryRange *ranges)
 {
-   TU_FROM_HANDLE(tu_device, device, _device);
+   VK_FROM_HANDLE(tu_device, device, _device);
 
    struct kgsl_gpuobj_sync_obj *sync_list =
       (struct kgsl_gpuobj_sync_obj *) vk_zalloc(
@@ -252,7 +252,7 @@ kgsl_sync_cache(VkDevice _device,
    };
 
    for (uint32_t i = 0; i < count; i++) {
-      TU_FROM_HANDLE(tu_device_memory, mem, ranges[i].memory);
+      VK_FROM_HANDLE(tu_device_memory, mem, ranges[i].memory);
 
       sync_list[i].op = op;
       sync_list[i].id = mem->bo->gem_handle;

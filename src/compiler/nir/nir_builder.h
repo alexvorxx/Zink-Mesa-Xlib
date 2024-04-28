@@ -44,6 +44,9 @@ typedef struct nir_builder {
     * and header phis are not updated). */
    bool update_divergence;
 
+   /* Float_controls2 bits. See nir_alu_instr for details. */
+   uint32_t fp_fast_math;
+
    nir_shader *shader;
    nir_function_impl *impl;
 } nir_builder;
@@ -413,28 +416,66 @@ nir_imm_ivec2(nir_builder *build, int x, int y)
 }
 
 static inline nir_def *
-nir_imm_ivec3(nir_builder *build, int x, int y, int z)
+nir_imm_ivec3_intN(nir_builder *build, int x, int y, int z, unsigned bit_size)
 {
    nir_const_value v[3] = {
-      nir_const_value_for_int(x, 32),
-      nir_const_value_for_int(y, 32),
-      nir_const_value_for_int(z, 32),
+      nir_const_value_for_int(x, bit_size),
+      nir_const_value_for_int(y, bit_size),
+      nir_const_value_for_int(z, bit_size),
    };
 
-   return nir_build_imm(build, 3, 32, v);
+   return nir_build_imm(build, 3, bit_size, v);
+}
+
+static inline nir_def *
+nir_imm_uvec2_intN(nir_builder *build, unsigned x, unsigned y,
+                   unsigned bit_size)
+{
+   nir_const_value v[2] = {
+      nir_const_value_for_uint(x, bit_size),
+      nir_const_value_for_uint(y, bit_size),
+   };
+
+   return nir_build_imm(build, 2, bit_size, v);
+}
+
+static inline nir_def *
+nir_imm_uvec3_intN(nir_builder *build, unsigned x, unsigned y, unsigned z,
+                   unsigned bit_size)
+{
+   nir_const_value v[3] = {
+      nir_const_value_for_uint(x, bit_size),
+      nir_const_value_for_uint(y, bit_size),
+      nir_const_value_for_uint(z, bit_size),
+   };
+
+   return nir_build_imm(build, 3, bit_size, v);
+}
+
+static inline nir_def *
+nir_imm_ivec3(nir_builder *build, int x, int y, int z)
+{
+   return nir_imm_ivec3_intN(build, x, y, z, 32);
+}
+
+static inline nir_def *
+nir_imm_ivec4_intN(nir_builder *build, int x, int y, int z, int w,
+                   unsigned bit_size)
+{
+   nir_const_value v[4] = {
+      nir_const_value_for_int(x, bit_size),
+      nir_const_value_for_int(y, bit_size),
+      nir_const_value_for_int(z, bit_size),
+      nir_const_value_for_int(w, bit_size),
+   };
+
+   return nir_build_imm(build, 4, bit_size, v);
 }
 
 static inline nir_def *
 nir_imm_ivec4(nir_builder *build, int x, int y, int z, int w)
 {
-   nir_const_value v[4] = {
-      nir_const_value_for_int(x, 32),
-      nir_const_value_for_int(y, 32),
-      nir_const_value_for_int(z, 32),
-      nir_const_value_for_int(w, 32),
-   };
-
-   return nir_build_imm(build, 4, 32, v);
+   return nir_imm_ivec4_intN(build, x, y, z, w, 32);
 }
 
 nir_def *
@@ -573,6 +614,7 @@ nir_mov_alu(nir_builder *build, nir_alu_src src, unsigned num_components)
    nir_def_init(&mov->instr, &mov->def, num_components,
                 nir_src_bit_size(src.src));
    mov->exact = build->exact;
+   mov->fp_fast_math = build->fp_fast_math;
    mov->src[0] = src;
    nir_builder_instr_insert(build, &mov->instr);
 
@@ -866,6 +908,18 @@ nir_isub_imm(nir_builder *build, uint64_t y, nir_def *x)
 }
 
 static inline nir_def *
+nir_imax_imm(nir_builder *build, nir_def *x, int64_t y)
+{
+   return nir_imax(build, x, nir_imm_intN_t(build, y, x->bit_size));
+}
+
+static inline nir_def *
+nir_imin_imm(nir_builder *build, nir_def *x, int64_t y)
+{
+   return nir_imin(build, x, nir_imm_intN_t(build, y, x->bit_size));
+}
+
+static inline nir_def *
 _nir_mul_imm(nir_builder *build, nir_def *x, uint64_t y, bool amul)
 {
    assert(x->bit_size <= 64);
@@ -920,6 +974,12 @@ static inline nir_def *
 nir_fdiv_imm(nir_builder *build, nir_def *x, double y)
 {
    return nir_fdiv(build, x, nir_imm_floatN_t(build, y, x->bit_size));
+}
+
+static inline nir_def *
+nir_fpow_imm(nir_builder *build, nir_def *x, double y)
+{
+   return nir_fpow(build, x, nir_imm_floatN_t(build, y, x->bit_size));
 }
 
 static inline nir_def *

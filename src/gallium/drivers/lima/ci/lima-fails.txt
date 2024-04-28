@@ -619,9 +619,6 @@ spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_srgb_s3tc_dxt
 # Expects that some format/internal_format combinations should be supported when they currently aren't.
 spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
 
-# Expects DEPTH_COMPONENT_32F, which is given by ARB_depth_buffer_float and isn't supported by Lima.
-spec@arb_clear_texture@arb_clear_texture-depth,Fail
-
 # Precision issue when lowering GL_RGB16 and GL_RGBA16
 spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
 

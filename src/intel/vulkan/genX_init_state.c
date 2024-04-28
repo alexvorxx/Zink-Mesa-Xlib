@@ -158,12 +158,15 @@ genX(emit_slice_hashing_state)(struct anv_device *device,
    }
 
    /* TODO: Figure out FCV support for other platforms
-    * Testing indicates that FCV is broken on MTL, but works fine on DG2.
-    * Let's disable FCV on MTL for now till we figure out what's wrong.
+    * Testing indicates that FCV is broken gfx125.
+    * Let's disable FCV for now till we figure out what's wrong.
     *
     * Alternatively, it can be toggled off via drirc option 'anv_disable_fcv'.
     *
     * Ref: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9987
+    * Ref: https://gitlab.freedesktop.org/mesa/mesa/-/issues/10318
+    * Ref: https://gitlab.freedesktop.org/mesa/mesa/-/issues/10795
+    * Ref: Internal issue 1480 about Unreal Engine 5.1
     */
    anv_batch_emit(batch, GENX(3DSTATE_3D_MODE), mode) {
       mode.SliceHashingTableEnable = true;
@@ -284,7 +287,8 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
             device->physical->va.bindless_surface_state_pool.addr,
          };
          sba.BindlessSurfaceStateSize =
-            anv_physical_device_bindless_heap_size(device->physical) / ANV_SURFACE_STATE_SIZE - 1;
+            anv_physical_device_bindless_heap_size(device->physical, false) /
+            ANV_SURFACE_STATE_SIZE - 1;
          sba.BindlessSurfaceStateMOCS = mocs;
          sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
       } else {
@@ -588,7 +592,9 @@ init_render_queue_state(struct anv_queue *queue, bool is_companion_rcs_batch)
 #endif
 
 #if GFX_VERx10 >= 125
-   anv_batch_emit(&batch, GENX(STATE_COMPUTE_MODE), zero);
+   anv_batch_emit(&batch, GENX(STATE_COMPUTE_MODE), cm) {
+      cm.Mask1 = 0xffff;
+   }
    anv_batch_emit(&batch, GENX(3DSTATE_MESH_CONTROL), zero);
    anv_batch_emit(&batch, GENX(3DSTATE_TASK_CONTROL), zero);
 
@@ -1153,8 +1159,24 @@ VkResult genX(CreateSampler)(
       memcpy(border_color_ptr, color.u32, sizeof(color));
 
       if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
-         sampler->custom_border_color_db =
-            anv_state_reserved_pool_alloc(&device->custom_border_colors_db);
+         if (pCreateInfo->flags & VK_SAMPLER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) {
+            const VkOpaqueCaptureDescriptorDataCreateInfoEXT *opaque_info =
+               vk_find_struct_const(pCreateInfo->pNext,
+                                    OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
+            if (opaque_info) {
+               uint32_t alloc_idx = *((const uint32_t *)opaque_info->opaqueCaptureDescriptorData);
+               sampler->custom_border_color_db =
+                  anv_state_reserved_array_pool_alloc_index(&device->custom_border_colors_db, alloc_idx);
+            } else {
+               sampler->custom_border_color_db =
+                  anv_state_reserved_array_pool_alloc(&device->custom_border_colors_db, true);
+            }
+         } else {
+            sampler->custom_border_color_db =
+               anv_state_reserved_array_pool_alloc(&device->custom_border_colors_db, false);
+         }
+         if (sampler->custom_border_color_db.alloc_size == 0)
+            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
          border_color_db_offset = sampler->custom_border_color_db.offset;
          memcpy(sampler->custom_border_color_db.map, color.u32, sizeof(color));
       }
@@ -1274,15 +1296,6 @@ VkResult genX(CreateSampler)(
       memcpy(sampler->bindless_state.map, sampler->state,
              sampler->n_planes * GENX(SAMPLER_STATE_length) * 4);
    }
-   if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
-      sampler->bindless_state_db =
-         anv_state_pool_alloc(&device->dynamic_state_db_pool,
-                              sampler->n_planes * 32, 32);
-      if (sampler->bindless_state_db.map) {
-         memcpy(sampler->bindless_state_db.map, sampler->db_state,
-                sampler->n_planes * GENX(SAMPLER_STATE_length) * 4);
-      }
-   }
 
    /* Hash the border color */
    _mesa_sha1_update(&ctx, border_color_ptr,
@@ -1300,12 +1313,15 @@ genX(emit_embedded_sampler)(struct anv_device *device,
                             struct anv_embedded_sampler *sampler,
                             struct anv_pipeline_embedded_sampler_binding *binding)
 {
+   sampler->ref_cnt = 1;
+   memcpy(&sampler->key, &binding->key, sizeof(binding->key));
+
    sampler->border_color_state =
       anv_state_pool_alloc(&device->dynamic_state_db_pool,
                            sizeof(struct gfx8_border_color), 64);
    memcpy(sampler->border_color_state.map,
-          binding->border_color,
-          sizeof(binding->border_color));
+          binding->key.color,
+          sizeof(binding->key.color));
 
    sampler->sampler_state =
       anv_state_pool_alloc(&device->dynamic_state_db_pool,
@@ -1319,7 +1335,7 @@ genX(emit_embedded_sampler)(struct anv_device *device,
 
    for (uint32_t i = 0; i < GENX(SAMPLER_STATE_length); i++) {
       ((uint32_t *)sampler->sampler_state.map)[i] =
-         dwords[i] | binding->sampler_state[i];
+         dwords[i] | binding->key.sampler[i];
    }
 }
 

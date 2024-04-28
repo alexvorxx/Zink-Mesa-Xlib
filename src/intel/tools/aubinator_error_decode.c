@@ -44,6 +44,7 @@
 #include "compiler/elk/elk_compiler.h"
 #include "decoder/intel_decoder.h"
 #include "dev/intel_debug.h"
+#include "error_decode_lib.h"
 #include "util/macros.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -56,7 +57,7 @@ static bool option_full_decode = true;
 static bool option_print_all_bb = false;
 static bool option_print_offsets = true;
 static bool option_dump_kernels = false;
-static enum { COLOR_AUTO, COLOR_ALWAYS, COLOR_NEVER } option_color;
+static enum decode_color option_color;
 static char *xml_path = NULL;
 
 static uint32_t
@@ -74,7 +75,7 @@ print_register(struct intel_spec *spec, const char *name, uint32_t reg)
 
    if (reg_spec) {
       intel_print_group(stdout, reg_spec, 0, &reg, 0,
-                        option_color == COLOR_ALWAYS);
+                        option_color == DECODE_COLOR_ALWAYS);
    }
 }
 
@@ -861,11 +862,11 @@ main(int argc, char *argv[])
       switch (c) {
       case 'c':
          if (optarg == NULL || strcmp(optarg, "always") == 0)
-            option_color = COLOR_ALWAYS;
+            option_color = DECODE_COLOR_ALWAYS;
          else if (strcmp(optarg, "never") == 0)
-            option_color = COLOR_NEVER;
+            option_color = DECODE_COLOR_NEVER;
          else if (strcmp(optarg, "auto") == 0)
-            option_color = COLOR_AUTO;
+            option_color = DECODE_COLOR_AUTO;
          else {
             fprintf(stderr, "invalid value for --color: %s", optarg);
             exit(EXIT_FAILURE);
@@ -924,13 +925,13 @@ main(int argc, char *argv[])
       }
    }
 
-   if (option_color == COLOR_AUTO)
-      option_color = isatty(1) ? COLOR_ALWAYS : COLOR_NEVER;
+   if (option_color == DECODE_COLOR_AUTO)
+      option_color = isatty(1) ? DECODE_COLOR_ALWAYS : DECODE_COLOR_NEVER;
 
    if (isatty(1) && pager)
       setup_pager();
 
-   if (option_color == COLOR_ALWAYS)
+   if (option_color == DECODE_COLOR_ALWAYS)
       batch_flags |= INTEL_BATCH_DECODE_IN_COLOR;
    if (option_full_decode)
       batch_flags |= INTEL_BATCH_DECODE_FULL;
@@ -941,7 +942,8 @@ main(int argc, char *argv[])
    getline(&line, &line_size, file);
    rewind(file);
    if (strncmp(line, XE_KMD_ERROR_DUMP_IDENTIFIER, strlen(XE_KMD_ERROR_DUMP_IDENTIFIER)) == 0)
-      read_xe_data_file(file, batch_flags, xml_path, option_dump_kernels, option_print_all_bb);
+      read_xe_data_file(file, batch_flags, xml_path, option_dump_kernels,
+                        option_print_all_bb, option_color);
    else
       read_i915_data_file(file, batch_flags);
    free(line);

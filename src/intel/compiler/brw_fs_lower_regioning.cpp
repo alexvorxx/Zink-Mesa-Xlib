@@ -38,12 +38,108 @@ namespace {
    bool
    is_byte_raw_mov(const fs_inst *inst)
    {
-      return type_sz(inst->dst.type) == 1 &&
+      return brw_type_size_bytes(inst->dst.type) == 1 &&
              inst->opcode == BRW_OPCODE_MOV &&
              inst->src[0].type == inst->dst.type &&
              !inst->saturate &&
              !inst->src[0].negate &&
              !inst->src[0].abs;
+   }
+
+   /*
+    * Return an acceptable byte stride for the specified source of an
+    * instruction affected by a regioning restriction.
+    */
+   unsigned
+   required_src_byte_stride(const intel_device_info *devinfo, const fs_inst *inst,
+                            unsigned i)
+   {
+      if (has_dst_aligned_region_restriction(devinfo, inst)) {
+         return MAX2(brw_type_size_bytes(inst->dst.type),
+                     byte_stride(inst->dst));
+
+      } else if (has_subdword_integer_region_restriction(devinfo, inst) &&
+                 brw_type_size_bytes(inst->src[i].type) < 4 &&
+                 byte_stride(inst->src[i]) >= 4) {
+         /* Use a stride of 32bits if possible, since that will guarantee that
+          * the copy emitted to lower this region won't be affected by the
+          * sub-dword integer region restrictions.  This may not be possible
+          * for the second source of an instruction if we're required to use
+          * packed data due to Wa_16012383669.
+          */
+         return (i == 1 ? brw_type_size_bytes(inst->src[i].type) : 4);
+
+      } else {
+         return byte_stride(inst->src[i]);
+      }
+   }
+
+   /*
+    * Return an acceptable byte sub-register offset for the specified source
+    * of an instruction affected by a regioning restriction.
+    */
+   unsigned
+   required_src_byte_offset(const intel_device_info *devinfo, const fs_inst *inst,
+                            unsigned i)
+   {
+      if (has_dst_aligned_region_restriction(devinfo, inst)) {
+         return reg_offset(inst->dst) % (reg_unit(devinfo) * REG_SIZE);
+
+      } else if (has_subdword_integer_region_restriction(devinfo, inst) &&
+                 brw_type_size_bytes(inst->src[i].type) < 4 &&
+                 byte_stride(inst->src[i]) >= 4) {
+         const unsigned dst_byte_stride =
+            MAX2(byte_stride(inst->dst), brw_type_size_bytes(inst->dst.type));
+         const unsigned src_byte_stride = required_src_byte_stride(devinfo, inst, i);
+         const unsigned dst_byte_offset =
+            reg_offset(inst->dst) % (reg_unit(devinfo) * REG_SIZE);
+         const unsigned src_byte_offset =
+            reg_offset(inst->src[i]) % (reg_unit(devinfo) * REG_SIZE);
+
+         if (src_byte_stride > brw_type_size_bytes(inst->src[i].type)) {
+            assert(src_byte_stride >= dst_byte_stride);
+            /* The source is affected by the Xe2+ sub-dword integer regioning
+             * restrictions.  For the case of source 0 BSpec#56640 specifies a
+             * number of equations relating the source and destination
+             * sub-register numbers in all cases where a source stride of
+             * 32bits is allowed.  These equations have the form:
+             *
+             *   k * Dst.SubReg % m = Src.SubReg / l
+             *
+             * For some constants k, l and m different for each combination of
+             * source and destination types and strides.  The expression in
+             * the return statement below computes a valid source offset by
+             * inverting the equation like:
+             *
+             *   Src.SubReg = l * k * (Dst.SubReg % m)
+             *
+             * and then scaling by the element type sizes in order to get an
+             * expression in terms of byte offsets instead of sub-register
+             * numbers.  It can be easily verified that in all cases listed on
+             * the hardware spec where the source has a well-defined uniform
+             * stride the product l*k is equal to the ratio between the source
+             * and destination strides.
+             */
+            const unsigned m = 64 * dst_byte_stride / src_byte_stride;
+            return dst_byte_offset % m * src_byte_stride / dst_byte_stride;
+         } else {
+            assert(src_byte_stride == brw_type_size_bytes(inst->src[i].type));
+            /* A packed source is required, likely due to the stricter
+             * requirements of the second source region.  The source being
+             * packed guarantees that the region of the original instruction
+             * will be valid, but the copy may break the regioning
+             * restrictions.  Do our best to try to prevent that from
+             * happening by making sure the offset of the temporary matches
+             * the original source based on the same equation above -- However
+             * that may not be sufficient if the source had a stride larger
+             * than 32bits, lowering the copy recursively may be necessary.
+             */
+            return src_byte_offset * src_byte_stride / byte_stride(inst->src[i]);
+         }
+
+      } else {
+         return reg_offset(inst->src[i]) % (reg_unit(devinfo) * REG_SIZE);
+      }
    }
 
    /*
@@ -66,8 +162,8 @@ namespace {
           * lowering pass will detect the mismatch in has_invalid_src_region
           * and fix the sources of the multiply instead of the destination.
           */
-         return inst->dst.hstride * type_sz(inst->dst.type);
-      } else if (type_sz(inst->dst.type) < get_exec_type_size(inst) &&
+         return inst->dst.hstride * brw_type_size_bytes(inst->dst.type);
+      } else if (brw_type_size_bytes(inst->dst.type) < get_exec_type_size(inst) &&
           !is_byte_raw_mov(inst)) {
          return get_exec_type_size(inst);
       } else {
@@ -75,13 +171,13 @@ namespace {
           * size across all source and destination operands we are required to
           * lower.
           */
-         unsigned max_stride = inst->dst.stride * type_sz(inst->dst.type);
-         unsigned min_size = type_sz(inst->dst.type);
-         unsigned max_size = type_sz(inst->dst.type);
+         unsigned max_stride = inst->dst.stride * brw_type_size_bytes(inst->dst.type);
+         unsigned min_size = brw_type_size_bytes(inst->dst.type);
+         unsigned max_size = brw_type_size_bytes(inst->dst.type);
 
          for (unsigned i = 0; i < inst->sources; i++) {
             if (!is_uniform(inst->src[i]) && !inst->is_control_source(i)) {
-               const unsigned size = type_sz(inst->src[i].type);
+               const unsigned size = brw_type_size_bytes(inst->src[i].type);
                max_stride = MAX2(max_stride, inst->src[i].stride * size);
                min_size = MIN2(min_size, size);
                max_size = MAX2(max_size, size);
@@ -127,7 +223,7 @@ namespace {
    required_exec_type(const intel_device_info *devinfo, const fs_inst *inst)
    {
       const brw_reg_type t = get_exec_type(inst);
-      const bool has_64bit = brw_reg_type_is_floating_point(t) ?
+      const bool has_64bit = brw_type_is_float(t) ?
          devinfo->has_64bit_float : devinfo->has_64bit_int;
 
       switch (inst->opcode) {
@@ -146,24 +242,23 @@ namespace {
           * don't support 64-bit types at all.
           */
          if ((!devinfo->has_64bit_int ||
-              devinfo->platform == INTEL_PLATFORM_CHV ||
-              intel_device_info_is_9lp(devinfo)) && type_sz(t) > 4)
-            return BRW_REGISTER_TYPE_UD;
+              intel_device_info_is_9lp(devinfo)) && brw_type_size_bytes(t) > 4)
+            return BRW_TYPE_UD;
          else if (has_dst_aligned_region_restriction(devinfo, inst))
-            return brw_int_type(type_sz(t), false);
+            return brw_int_type(brw_type_size_bytes(t), false);
          else
             return t;
 
       case SHADER_OPCODE_SEL_EXEC:
          if ((!has_64bit || devinfo->has_64bit_float_via_math_pipe) &&
-             type_sz(t) > 4)
-            return BRW_REGISTER_TYPE_UD;
+             brw_type_size_bytes(t) > 4)
+            return BRW_TYPE_UD;
          else
             return t;
 
       case SHADER_OPCODE_QUAD_SWIZZLE:
          if (has_dst_aligned_region_restriction(devinfo, inst))
-            return brw_int_type(type_sz(t), false);
+            return brw_int_type(brw_type_size_bytes(t), false);
          else
             return t;
 
@@ -184,60 +279,13 @@ namespace {
           * support 64-bit types at all.
           */
          if ((!has_64bit || devinfo->verx10 >= 125 ||
-              intel_device_info_is_9lp(devinfo)) && type_sz(t) > 4)
-            return BRW_REGISTER_TYPE_UD;
+              intel_device_info_is_9lp(devinfo)) && brw_type_size_bytes(t) > 4)
+            return BRW_TYPE_UD;
          else
-            return brw_int_type(type_sz(t), false);
-
-      case SHADER_OPCODE_BROADCAST:
-      case SHADER_OPCODE_MOV_INDIRECT:
-         if (((intel_device_info_is_9lp(devinfo) ||
-               devinfo->verx10 >= 125) && type_sz(inst->src[0].type) > 4) ||
-             (devinfo->verx10 >= 125 &&
-              brw_reg_type_is_floating_point(inst->src[0].type)))
-            return brw_int_type(type_sz(t), false);
-         else
-            return t;
+            return brw_int_type(brw_type_size_bytes(t), false);
 
       default:
          return t;
-      }
-   }
-
-   /*
-    * Return the stride between channels of the specified register in
-    * byte units, or ~0u if the region cannot be represented with a
-    * single one-dimensional stride.
-    */
-   unsigned
-   byte_stride(const fs_reg &reg)
-   {
-      switch (reg.file) {
-      case BAD_FILE:
-      case UNIFORM:
-      case IMM:
-      case VGRF:
-      case ATTR:
-         return reg.stride * type_sz(reg.type);
-      case ARF:
-      case FIXED_GRF:
-         if (reg.is_null()) {
-            return 0;
-         } else {
-            const unsigned hstride = reg.hstride ? 1 << (reg.hstride - 1) : 0;
-            const unsigned vstride = reg.vstride ? 1 << (reg.vstride - 1) : 0;
-            const unsigned width = 1 << reg.width;
-
-            if (width == 1) {
-               return vstride * type_sz(reg.type);
-            } else if (hstride * width == vstride) {
-               return hstride * type_sz(reg.type);
-            } else {
-               return ~0u;
-            }
-         }
-      default:
-         unreachable("Invalid register file");
       }
    }
 
@@ -249,6 +297,17 @@ namespace {
    has_invalid_src_region(const intel_device_info *devinfo, const fs_inst *inst,
                           unsigned i)
    {
+      /* Wa_22016140776:
+       *
+       *    Scalar broadcast on HF math (packed or unpacked) must not be used.
+       *    Compiler must use a mov instruction to expand the scalar value to
+       *    a vector before using in a HF (packed or unpacked) math operation.
+       */
+      if (inst->is_math() && intel_needs_workaround(devinfo, 22016140776) &&
+          is_uniform(inst->src[i]) && inst->src[i].type == BRW_TYPE_HF) {
+         return true;
+      }
+
       if (is_send(inst) || inst->is_math() || inst->is_control_source(i) ||
           inst->opcode == BRW_OPCODE_DPAS) {
          return false;
@@ -257,10 +316,13 @@ namespace {
       const unsigned dst_byte_offset = reg_offset(inst->dst) % (reg_unit(devinfo) * REG_SIZE);
       const unsigned src_byte_offset = reg_offset(inst->src[i]) % (reg_unit(devinfo) * REG_SIZE);
 
-      return has_dst_aligned_region_restriction(devinfo, inst) &&
-             !is_uniform(inst->src[i]) &&
-             (byte_stride(inst->src[i]) != byte_stride(inst->dst) ||
-              src_byte_offset != dst_byte_offset);
+      return (has_dst_aligned_region_restriction(devinfo, inst) &&
+              !is_uniform(inst->src[i]) &&
+              (byte_stride(inst->src[i]) != byte_stride(inst->dst) ||
+               src_byte_offset != dst_byte_offset)) ||
+             (has_subdword_integer_region_restriction(devinfo, inst) &&
+              (byte_stride(inst->src[i]) != required_src_byte_stride(devinfo, inst, i) ||
+               src_byte_offset != required_src_byte_offset(devinfo, inst, i)));
    }
 
    /*
@@ -277,7 +339,7 @@ namespace {
          const brw_reg_type exec_type = get_exec_type(inst);
          const unsigned dst_byte_offset = reg_offset(inst->dst) % (reg_unit(devinfo) * REG_SIZE);
          const bool is_narrowing_conversion = !is_byte_raw_mov(inst) &&
-            type_sz(inst->dst.type) < type_sz(exec_type);
+            brw_type_size_bytes(inst->dst.type) < brw_type_size_bytes(exec_type);
 
          return (has_dst_aligned_region_restriction(devinfo, inst) &&
                  (required_dst_byte_stride(inst) != byte_stride(inst->dst) ||
@@ -395,9 +457,9 @@ namespace brw {
       assert(inst->components_read(i) == 1);
       assert(v->devinfo->has_integer_dword_mul ||
              inst->opcode != BRW_OPCODE_MUL ||
-             brw_reg_type_is_floating_point(get_exec_type(inst)) ||
-             MIN2(type_sz(inst->src[0].type), type_sz(inst->src[1].type)) >= 4 ||
-             type_sz(inst->src[i].type) == get_exec_type_size(inst));
+             brw_type_is_float(get_exec_type(inst)) ||
+             MIN2(brw_type_size_bytes(inst->src[0].type), brw_type_size_bytes(inst->src[1].type)) >= 4 ||
+             brw_type_size_bytes(inst->src[i].type) == get_exec_type_size(inst));
 
       const fs_builder ibld(v, block, inst);
       const fs_reg tmp = ibld.vgrf(get_exec_type(inst));
@@ -429,8 +491,8 @@ namespace {
        * instructions into the program unnecessarily.
        */
       const unsigned stride =
-         type_sz(inst->dst.type) * inst->dst.stride <= type_sz(type) ? 1 :
-         type_sz(inst->dst.type) * inst->dst.stride / type_sz(type);
+         brw_type_size_bytes(inst->dst.type) * inst->dst.stride <= brw_type_size_bytes(type) ? 1 :
+         brw_type_size_bytes(inst->dst.type) * inst->dst.stride / brw_type_size_bytes(type);
       fs_reg tmp = ibld.vgrf(type, stride);
       ibld.UNDEF(tmp);
       tmp = horiz_stride(tmp, stride);
@@ -470,26 +532,46 @@ namespace {
    lower_src_region(fs_visitor *v, bblock_t *block, fs_inst *inst, unsigned i)
    {
       assert(inst->components_read(i) == 1);
+      const intel_device_info *devinfo = v->devinfo;
       const fs_builder ibld(v, block, inst);
-      const unsigned stride = type_sz(inst->dst.type) * inst->dst.stride /
-                              type_sz(inst->src[i].type);
+      const unsigned stride = required_src_byte_stride(devinfo, inst, i) /
+                              brw_type_size_bytes(inst->src[i].type);
       assert(stride > 0);
-      fs_reg tmp = ibld.vgrf(inst->src[i].type, stride);
+      /* Calculate the size of the temporary allocation manually instead of
+       * relying on the builder, since we may have to add some amount of
+       * padding mandated by the hardware for Xe2+ instructions with sub-dword
+       * integer regions.
+       */
+      const unsigned size =
+         DIV_ROUND_UP(required_src_byte_offset(v->devinfo, inst, i) +
+                      inst->exec_size * stride *
+                      brw_type_size_bytes(inst->src[i].type),
+                      reg_unit(devinfo) * REG_SIZE) * reg_unit(devinfo);
+      fs_reg tmp(VGRF, v->alloc.allocate(size), inst->src[i].type);
       ibld.UNDEF(tmp);
-      tmp = horiz_stride(tmp, stride);
+      tmp = byte_offset(horiz_stride(tmp, stride),
+                        required_src_byte_offset(devinfo, inst, i));
 
       /* Emit a series of 32-bit integer copies with any source modifiers
        * cleaned up (because their semantics are dependent on the type).
        */
-      const brw_reg_type raw_type = brw_int_type(MIN2(type_sz(tmp.type), 4),
+      const brw_reg_type raw_type = brw_int_type(MIN2(brw_type_size_bytes(tmp.type), 4),
                                                  false);
-      const unsigned n = type_sz(tmp.type) / type_sz(raw_type);
+      const unsigned n = brw_type_size_bytes(tmp.type) / brw_type_size_bytes(raw_type);
       fs_reg raw_src = inst->src[i];
       raw_src.negate = false;
       raw_src.abs = false;
 
-      for (unsigned j = 0; j < n; j++)
-         ibld.MOV(subscript(tmp, raw_type, j), subscript(raw_src, raw_type, j));
+      for (unsigned j = 0; j < n; j++) {
+	fs_inst *jnst = ibld.MOV(subscript(tmp, raw_type, j),
+				 subscript(raw_src, raw_type, j));
+	if (has_subdword_integer_region_restriction(devinfo, jnst)) {
+           /* The copy isn't guaranteed to comply with all subdword integer
+            * regioning restrictions in some cases.  Lower it recursively.
+            */
+	   lower_instruction(v, block, jnst);
+        }
+      }
 
       /* Point the original instruction at the temporary, making sure to keep
        * any source modifiers in the instruction.
@@ -517,11 +599,11 @@ namespace {
        * accumulator.
        */
       assert(inst->opcode != BRW_OPCODE_MUL || !inst->dst.is_accumulator() ||
-             brw_reg_type_is_floating_point(inst->dst.type));
+             brw_type_is_float(inst->dst.type));
 
       const fs_builder ibld(v, block, inst);
       const unsigned stride = required_dst_byte_stride(inst) /
-                              type_sz(inst->dst.type);
+                              brw_type_size_bytes(inst->dst.type);
       assert(stride > 0);
       fs_reg tmp = ibld.vgrf(inst->dst.type, stride);
       ibld.UNDEF(tmp);
@@ -530,9 +612,9 @@ namespace {
       /* Emit a series of 32-bit integer copies from the temporary into the
        * original destination.
        */
-      const brw_reg_type raw_type = brw_int_type(MIN2(type_sz(tmp.type), 4),
+      const brw_reg_type raw_type = brw_int_type(MIN2(brw_type_size_bytes(tmp.type), 4),
                                                  false);
-      const unsigned n = type_sz(tmp.type) / type_sz(raw_type);
+      const unsigned n = brw_type_size_bytes(tmp.type) / brw_type_size_bytes(raw_type);
 
       if (inst->predicate && inst->opcode != BRW_OPCODE_SEL) {
          /* Note that in general we cannot simply predicate the copies on the
@@ -549,6 +631,12 @@ namespace {
       for (unsigned j = 0; j < n; j++)
          ibld.at(block, inst->next).MOV(subscript(inst->dst, raw_type, j),
                                         subscript(tmp, raw_type, j));
+
+      /* If the destination was an accumulator, after lowering it will be a
+       * GRF. Clear writes_accumulator for the instruction.
+       */
+      if (inst->dst.is_accumulator())
+         inst->writes_accumulator = false;
 
       /* Point the original instruction at the temporary, making sure to keep
        * any destination modifiers in the instruction.
@@ -572,7 +660,7 @@ namespace {
       assert(inst->dst.type == get_exec_type(inst));
       const unsigned mask = has_invalid_exec_type(v->devinfo, inst);
       const brw_reg_type raw_type = required_exec_type(v->devinfo, inst);
-      const unsigned n = get_exec_type_size(inst) / type_sz(raw_type);
+      const unsigned n = get_exec_type_size(inst) / brw_type_size_bytes(raw_type);
       const fs_builder ibld(v, block, inst);
 
       fs_reg tmp = ibld.vgrf(inst->dst.type, inst->dst.stride);

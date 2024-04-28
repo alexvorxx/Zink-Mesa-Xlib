@@ -48,7 +48,7 @@ lower_urb_read_logical_send(const fs_builder &bld, fs_inst *inst)
       payload_sources[header_size++] = inst->src[URB_LOGICAL_SRC_PER_SLOT_OFFSETS];
 
    fs_reg payload = fs_reg(VGRF, bld.shader->alloc.allocate(header_size),
-                           BRW_REGISTER_TYPE_F);
+                           BRW_TYPE_F);
    bld.LOAD_PAYLOAD(payload, payload_sources, header_size, header_size);
 
    inst->opcode = SHADER_OPCODE_SEND;
@@ -89,7 +89,7 @@ lower_urb_read_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
    /* Calculate the total number of components of the payload. */
    const unsigned dst_comps = inst->size_written / (REG_SIZE * reg_unit(devinfo));
 
-   fs_reg payload = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg payload = bld.vgrf(BRW_TYPE_UD);
 
    bld.MOV(payload, handle);
 
@@ -110,18 +110,15 @@ lower_urb_read_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
 
    assert((dst_comps >= 1 && dst_comps <= 4) || dst_comps == 8);
 
-   inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD, inst->exec_size,
+   inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
                              LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A32,
-                             1 /* num_coordinates */,
                              LSC_DATA_SIZE_D32, dst_comps /* num_channels */,
                              false /* transpose */,
-                             LSC_CACHE(devinfo, STORE, L1UC_L3UC),
-                             false /* has_dest */);
-
+                             LSC_CACHE(devinfo, STORE, L1UC_L3UC));
 
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
-   inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+   inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size);
    inst->ex_mlen = 0;
    inst->header_size = 0;
    inst->send_has_side_effects = true;
@@ -152,7 +149,7 @@ lower_urb_write_logical_send(const fs_builder &bld, fs_inst *inst)
 
    fs_reg *payload_sources = new fs_reg[length];
    fs_reg payload = fs_reg(VGRF, bld.shader->alloc.allocate(length),
-                           BRW_REGISTER_TYPE_F);
+                           BRW_TYPE_F);
 
    unsigned header_size = 0;
    payload_sources[header_size++] = inst->src[URB_LOGICAL_SRC_HANDLE];
@@ -203,13 +200,13 @@ lower_urb_write_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
    const fs_reg handle = inst->src[URB_LOGICAL_SRC_HANDLE];
    const fs_reg src = inst->components_read(URB_LOGICAL_SRC_DATA) ?
       inst->src[URB_LOGICAL_SRC_DATA] : fs_reg(brw_imm_ud(0));
-   assert(type_sz(src.type) == 4);
+   assert(brw_type_size_bytes(src.type) == 4);
 
    /* Calculate the total number of components of the payload. */
    const unsigned src_comps = MAX2(1, inst->components_read(URB_LOGICAL_SRC_DATA));
-   const unsigned src_sz = type_sz(src.type);
+   const unsigned src_sz = brw_type_size_bytes(src.type);
 
-   fs_reg payload = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg payload = bld.vgrf(BRW_TYPE_UD);
 
    bld.MOV(payload, handle);
 
@@ -231,7 +228,7 @@ lower_urb_write_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
 
    if (cmask.file != BAD_FILE) {
       assert(cmask.file == IMM);
-      assert(cmask.type == BRW_REGISTER_TYPE_UD);
+      assert(cmask.type == BRW_TYPE_UD);
       mask = cmask.ud >> 16;
    }
 
@@ -241,18 +238,17 @@ lower_urb_write_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
    inst->sfid = BRW_SFID_URB;
 
    enum lsc_opcode op = mask ? LSC_OP_STORE_CMASK : LSC_OP_STORE;
-   inst->desc = lsc_msg_desc_wcmask(devinfo, op, inst->exec_size,
+   inst->desc = lsc_msg_desc_wcmask(devinfo, op,
                              LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A32,
-                             1 /* num_coordinates */,
                              LSC_DATA_SIZE_D32, src_comps /* num_channels */,
                              false /* transpose */,
                              LSC_CACHE(devinfo, STORE, L1UC_L3UC),
-                             false /* has_dest */, mask);
+                             mask);
 
 
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
-   inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+   inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size);
    inst->ex_mlen = ex_mlen;
    inst->header_size = 0;
    inst->send_has_side_effects = true;
@@ -272,8 +268,8 @@ setup_color_payload(const fs_builder &bld, const brw_wm_prog_key *key,
                     fs_reg *dst, fs_reg color, unsigned components)
 {
    if (key->clamp_fragment_color) {
-      fs_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_F, 4);
-      assert(color.type == BRW_REGISTER_TYPE_F);
+      fs_reg tmp = bld.vgrf(BRW_TYPE_F, 4);
+      assert(color.type == BRW_TYPE_F);
 
       for (unsigned i = 0; i < components; i++)
          set_saturate(true,
@@ -323,17 +319,17 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
        */
       const fs_builder ubld = bld.exec_all().group(8, 0);
 
-      fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2);
+      fs_reg header = ubld.vgrf(BRW_TYPE_UD, 2);
       if (bld.group() < 16) {
          /* The header starts off as g0 and g1 for the first half */
          ubld.group(16, 0).MOV(header, retype(brw_vec8_grf(0, 0),
-                                              BRW_REGISTER_TYPE_UD));
+                                              BRW_TYPE_UD));
       } else {
          /* The header starts off as g0 and g2 for the second half */
          assert(bld.group() < 32);
          const fs_reg header_sources[2] = {
-            retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD),
-            retype(brw_vec8_grf(2, 0), BRW_REGISTER_TYPE_UD),
+            retype(brw_vec8_grf(0, 0), BRW_TYPE_UD),
+            retype(brw_vec8_grf(2, 0), BRW_TYPE_UD),
          };
          ubld.LOAD_PAYLOAD(header, header_sources, 2, 0);
 
@@ -356,8 +352,7 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
       if (g00_bits) {
          /* OR extra bits into g0.0 */
          ubld.group(1, 0).OR(component(header, 0),
-                             retype(brw_vec1_grf(0, 0),
-                                    BRW_REGISTER_TYPE_UD),
+                             retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
                              brw_imm_ud(g00_bits));
       }
 
@@ -367,8 +362,7 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
       }
 
       if (prog_data->uses_kill) {
-         ubld.group(1, 0).MOV(retype(component(header, 15),
-                                     BRW_REGISTER_TYPE_UW),
+         ubld.group(1, 0).MOV(retype(component(header, 15), BRW_TYPE_UW),
                               brw_sample_mask_reg(bld));
       }
 
@@ -393,7 +387,7 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
       for (unsigned i = 0; i < bld.dispatch_width() / 8; i++) {
          const fs_builder &ubld = bld.exec_all().group(8, i)
                                     .annotate("FB write src0 alpha");
-         const fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_F);
+         const fs_reg tmp = ubld.vgrf(BRW_TYPE_F);
          ubld.MOV(tmp, horiz_offset(src0_alpha, i * 8));
          setup_color_payload(ubld, key, &sources[length], tmp, 1);
          length++;
@@ -402,7 +396,7 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
 
    if (sample_mask.file != BAD_FILE) {
       const fs_reg tmp(VGRF, bld.shader->alloc.allocate(reg_unit(devinfo)),
-                       BRW_REGISTER_TYPE_UD);
+                       BRW_TYPE_UD);
 
       /* Hand over gl_SampleMask.  Only the lower 16 bits of each channel are
        * relevant.  Since it's unsigned single words one vgrf is always
@@ -410,12 +404,13 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
        * hardware when doing a SIMD8 write depending on whether we have
        * selected the subspans for the first or second half respectively.
        */
-      assert(sample_mask.file != BAD_FILE && type_sz(sample_mask.type) == 4);
-      sample_mask.type = BRW_REGISTER_TYPE_UW;
+      assert(sample_mask.file != BAD_FILE &&
+             brw_type_size_bytes(sample_mask.type) == 4);
+      sample_mask.type = BRW_TYPE_UW;
       sample_mask.stride *= 2;
 
       bld.exec_all().annotate("FB write oMask")
-         .MOV(horiz_offset(retype(tmp, BRW_REGISTER_TYPE_UW),
+         .MOV(horiz_offset(retype(tmp, BRW_TYPE_UW),
                            inst->group % (16 * reg_unit(devinfo))),
               sample_mask);
 
@@ -452,15 +447,15 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
        */
       assert(length < 15 * reg_unit(devinfo));
 
-      sources[length] = bld.vgrf(BRW_REGISTER_TYPE_UD);
+      sources[length] = bld.vgrf(BRW_TYPE_UD);
       bld.exec_all().annotate("FB write OS")
-         .MOV(retype(sources[length], BRW_REGISTER_TYPE_UB),
-              subscript(src_stencil, BRW_REGISTER_TYPE_UB, 0));
+         .MOV(retype(sources[length], BRW_TYPE_UB),
+              subscript(src_stencil, BRW_TYPE_UB, 0));
       length++;
    }
 
    /* Send from the GRF */
-   fs_reg payload = fs_reg(VGRF, -1, BRW_REGISTER_TYPE_F);
+   fs_reg payload = fs_reg(VGRF, -1, BRW_TYPE_F);
    fs_inst *load = bld.LOAD_PAYLOAD(payload, sources, length, payload_header_size);
    payload.nr = bld.shader->alloc.allocate(regs_written(load));
    load->dst = payload;
@@ -479,7 +474,7 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
    } else if (prog_data->coarse_pixel_dispatch == BRW_SOMETIMES) {
       STATIC_ASSERT(INTEL_MSAA_FLAG_COARSE_RT_WRITES == (1 << 18));
       const fs_builder &ubld = bld.exec_all().group(8, 0);
-      desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      desc = ubld.vgrf(BRW_TYPE_UD);
       ubld.AND(desc, dynamic_msaa_flags(prog_data),
                brw_imm_ud(INTEL_MSAA_FLAG_COARSE_RT_WRITES));
       desc = component(desc, 0);
@@ -518,23 +513,24 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
 }
 
 static void
-lower_fb_read_logical_send(const fs_builder &bld, fs_inst *inst)
+lower_fb_read_logical_send(const fs_builder &bld, fs_inst *inst,
+                           const struct brw_wm_prog_data *wm_prog_data)
 {
    const intel_device_info *devinfo = bld.shader->devinfo;
    const fs_builder &ubld = bld.exec_all().group(8, 0);
    const unsigned length = 2;
-   const fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD, length);
+   const fs_reg header = ubld.vgrf(BRW_TYPE_UD, length);
 
    assert(devinfo->ver >= 9 && devinfo->ver < 20);
 
    if (bld.group() < 16) {
       ubld.group(16, 0).MOV(header, retype(brw_vec8_grf(0, 0),
-                                           BRW_REGISTER_TYPE_UD));
+                                           BRW_TYPE_UD));
    } else {
       assert(bld.group() < 32);
       const fs_reg header_sources[] = {
-         retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD),
-         retype(brw_vec8_grf(2, 0), BRW_REGISTER_TYPE_UD)
+         retype(brw_vec8_grf(0, 0), BRW_TYPE_UD),
+         retype(brw_vec8_grf(2, 0), BRW_TYPE_UD)
       };
       ubld.LOAD_PAYLOAD(header, header_sources, ARRAY_SIZE(header_sources), 0);
 
@@ -548,7 +544,7 @@ lower_fb_read_logical_send(const fs_builder &bld, fs_inst *inst)
           * r1.1 in order to fix things up.
           */
          ubld.group(1, 0).MOV(component(header, 9),
-                              retype(brw_vec1_grf(1, 1), BRW_REGISTER_TYPE_UD));
+                              retype(brw_vec1_grf(1, 1), BRW_TYPE_UD));
       }
    }
 
@@ -566,11 +562,21 @@ lower_fb_read_logical_send(const fs_builder &bld, fs_inst *inst)
                         component(header, 0),
                         brw_imm_ud(~INTEL_MASK(14, 11)));
 
-   inst->resize_sources(1);
-   inst->src[0] = header;
-   inst->opcode = FS_OPCODE_FB_READ;
+   inst->resize_sources(4);
+   inst->opcode = SHADER_OPCODE_SEND;
+   inst->src[0] = brw_imm_ud(0);
+   inst->src[1] = brw_imm_ud(0);
+   inst->src[2] = header;
+   inst->src[3] = fs_reg();
    inst->mlen = length;
    inst->header_size = length;
+   inst->sfid = GFX6_SFID_DATAPORT_RENDER_CACHE;
+   inst->check_tdr = true;
+   inst->desc =
+      (inst->group / 16) << 11 | /* rt slot group */
+      brw_fb_read_desc(devinfo, inst->target,
+                       0 /* msg_control */, inst->exec_size,
+                       wm_prog_data->persample_dispatch);
 }
 
 static bool
@@ -687,8 +693,7 @@ emit_load_payload_with_padding(const fs_builder &bld, const fs_reg &dst,
       unsigned src_sz =
          retype(dst, src[i].type).component_size(bld.dispatch_width());
       const enum brw_reg_type padding_payload_type =
-         brw_reg_type_from_bit_size(type_sz(src[i].type) * 8,
-                                    BRW_REGISTER_TYPE_UD);
+         brw_type_with_size(BRW_TYPE_UD, brw_type_size_bits(src[i].type));
 
       src_comps[length++] = src[i];
 
@@ -749,11 +754,11 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
    const brw_compiler *compiler = bld.shader->compiler;
    const intel_device_info *devinfo = bld.shader->devinfo;
    const enum brw_reg_type payload_type =
-      brw_reg_type_from_bit_size(payload_type_bit_size, BRW_REGISTER_TYPE_F);
+      brw_type_with_size(BRW_TYPE_F, payload_type_bit_size);
    const enum brw_reg_type payload_unsigned_type =
-      brw_reg_type_from_bit_size(payload_type_bit_size, BRW_REGISTER_TYPE_UD);
+      brw_type_with_size(BRW_TYPE_UD, payload_type_bit_size);
    const enum brw_reg_type payload_signed_type =
-      brw_reg_type_from_bit_size(payload_type_bit_size, BRW_REGISTER_TYPE_D);
+      brw_type_with_size(BRW_TYPE_D, payload_type_bit_size);
    unsigned reg_width = bld.dispatch_width() / 8;
    unsigned header_size = 0, length = 0;
    opcode op = inst->opcode;
@@ -777,7 +782,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
        * larger sampler numbers we need to offset the Sampler State Pointer in
        * the header.
        */
-      fs_reg header = retype(sources[0], BRW_REGISTER_TYPE_UD);
+      fs_reg header = retype(sources[0], BRW_TYPE_UD);
       for (header_size = 0; header_size < reg_unit(devinfo); header_size++)
          sources[length++] = byte_offset(header, REG_SIZE * header_size);
 
@@ -801,7 +806,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
       if (devinfo->ver >= 11)
          ubld.MOV(header, brw_imm_ud(0));
       else
-         ubld.MOV(header, retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));
+         ubld.MOV(header, retype(brw_vec8_grf(0, 0), BRW_TYPE_UD));
       if (inst->offset) {
          ubld1.MOV(component(header, 2), brw_imm_ud(inst->offset));
       } else if (devinfo->ver < 11 &&
@@ -836,15 +841,15 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
          }
       } else if (is_high_sampler(devinfo, sampler)) {
          fs_reg sampler_state_ptr =
-            retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD);
+            retype(brw_vec1_grf(0, 3), BRW_TYPE_UD);
 
          /* Gfx11+ sampler message headers include bits in 4:0 which conflict
           * with the ones included in g0.3 bits 4:0.  Mask them out.
           */
          if (devinfo->ver >= 11) {
-            sampler_state_ptr = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
+            sampler_state_ptr = ubld1.vgrf(BRW_TYPE_UD);
             ubld1.AND(sampler_state_ptr,
-                      retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD),
+                      retype(brw_vec1_grf(0, 3), BRW_TYPE_UD),
                       brw_imm_ud(INTEL_MASK(31, 5)));
          }
 
@@ -855,7 +860,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
             ubld1.ADD(component(header, 3), sampler_state_ptr,
                       brw_imm_ud(16 * (sampler.ud / 16) * sampler_state_size));
          } else {
-            fs_reg tmp = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
+            fs_reg tmp = ubld1.vgrf(BRW_TYPE_UD);
             ubld1.AND(tmp, sampler, brw_imm_ud(0x0f0));
             ubld1.SHL(tmp, tmp, brw_imm_ud(4));
             ubld1.ADD(component(header, 3), sampler_state_ptr, tmp);
@@ -865,7 +870,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
           * with the ones included in g0.3 bits 4:0.  Mask them out.
           */
          ubld1.AND(component(header, 3),
-                   retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD),
+                   retype(brw_vec1_grf(0, 3), BRW_TYPE_UD),
                    brw_imm_ud(INTEL_MASK(31, 5)));
       }
    }
@@ -1076,7 +1081,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
 
    const fs_reg src_payload =
       fs_reg(VGRF, bld.shader->alloc.allocate(length * reg_width),
-                                              BRW_REGISTER_TYPE_F);
+                                              BRW_TYPE_F);
    /* In case of 16-bit payload each component takes one full register in
     * both SIMD8H and SIMD16H modes. In both cases one reg can hold 16
     * elements. In SIMD8H case hardware simply expects the components to be
@@ -1136,7 +1141,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
          inst->src[0] = brw_imm_ud(0);
       } else {
          const fs_builder ubld = bld.group(1, 0).exec_all();
-         fs_reg desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         fs_reg desc = ubld.vgrf(BRW_TYPE_UD);
          ubld.SHL(desc, sampler, brw_imm_ud(8));
          inst->src[0] = component(desc, 0);
       }
@@ -1144,7 +1149,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
       /* We assume that the driver provided the handle in the top 20 bits so
        * we can use the surface handle directly as the extended descriptor.
        */
-      inst->src[1] = retype(surface_handle, BRW_REGISTER_TYPE_UD);
+      inst->src[1] = retype(surface_handle, BRW_TYPE_UD);
       inst->send_ex_bso = compiler->extended_bindless_surface_offset;
    } else {
       /* Immediate portion of the descriptor */
@@ -1155,7 +1160,7 @@ lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst,
                                     simd_mode,
                                     0 /* return_format unused on gfx7+ */);
       const fs_builder ubld = bld.group(1, 0).exec_all();
-      fs_reg desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      fs_reg desc = ubld.vgrf(BRW_TYPE_UD);
       if (surface.equals(sampler)) {
          /* This case is common in GL */
          ubld.MUL(desc, surface, brw_imm_ud(0x101));
@@ -1207,7 +1212,7 @@ get_sampler_msg_payload_type_bit_size(const intel_device_info *devinfo,
     */
    for (unsigned i = 0; i < TEX_LOGICAL_NUM_SRCS; i++) {
       if (src[i].file != BAD_FILE) {
-         src_type_size = brw_reg_type_to_size(src[i].type);
+         src_type_size = brw_type_size_bytes(src[i].type);
          break;
       }
    }
@@ -1223,7 +1228,7 @@ get_sampler_msg_payload_type_bit_size(const intel_device_info *devinfo,
    if (inst->opcode != SHADER_OPCODE_TXF_CMS_W_GFX12_LOGICAL) {
       for (unsigned i = 0; i < TEX_LOGICAL_NUM_SRCS; i++) {
          assert(src[i].file == BAD_FILE ||
-                brw_reg_type_to_size(src[i].type) == src_type_size);
+                brw_type_size_bytes(src[i].type) == src_type_size);
       }
    }
 #endif
@@ -1301,7 +1306,7 @@ emit_predicate_on_vector_mask(const fs_builder &bld, fs_inst *inst)
    const fs_builder ubld = bld.exec_all().group(1, 0);
 
    const fs_visitor &s = *bld.shader;
-   const fs_reg vector_mask = ubld.vgrf(BRW_REGISTER_TYPE_UW);
+   const fs_reg vector_mask = ubld.vgrf(BRW_TYPE_UW);
    ubld.UNDEF(vector_mask);
    ubld.emit(SHADER_OPCODE_READ_SR_REG, vector_mask, brw_imm_ud(3));
    const unsigned subreg = sample_mask_flag_subreg(s);
@@ -1345,12 +1350,12 @@ setup_surface_descriptors(const fs_builder &bld, fs_inst *inst, uint32_t desc,
       /* We assume that the driver provided the handle in the top 20 bits so
        * we can use the surface handle directly as the extended descriptor.
        */
-      inst->src[1] = retype(surface_handle, BRW_REGISTER_TYPE_UD);
+      inst->src[1] = retype(surface_handle, BRW_TYPE_UD);
       inst->send_ex_bso = compiler->extended_bindless_surface_offset;
    } else {
       inst->desc = desc;
       const fs_builder ubld = bld.exec_all().group(1, 0);
-      fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      fs_reg tmp = ubld.vgrf(BRW_TYPE_UD);
       ubld.AND(tmp, surface, brw_imm_ud(0xff));
       inst->src[0] = component(tmp, 0);
       inst->src[1] = brw_imm_ud(0); /* ex_desc */
@@ -1376,7 +1381,7 @@ setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
       /* We assume that the driver provided the handle in the top 20 bits so
        * we can use the surface handle directly as the extended descriptor.
        */
-      inst->src[1] = retype(surface, BRW_REGISTER_TYPE_UD);
+      inst->src[1] = retype(surface, BRW_TYPE_UD);
       break;
 
    case LSC_ADDR_SURFTYPE_BTI:
@@ -1385,7 +1390,7 @@ setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
          inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
       } else {
          const fs_builder ubld = bld.exec_all().group(1, 0);
-         fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         fs_reg tmp = ubld.vgrf(BRW_TYPE_UD);
          ubld.SHL(tmp, surface, brw_imm_ud(24));
          inst->src[1] = component(tmp, 0);
       }
@@ -1445,7 +1450,7 @@ lower_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    if (is_stateless) {
       assert(!is_surface_access);
       fs_builder ubld = bld.exec_all().group(8, 0);
-      header = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      header = ubld.vgrf(BRW_TYPE_UD);
       ubld.emit(SHADER_OPCODE_SCRATCH_HEADER, header);
    }
    const unsigned header_sz = header.file != BAD_FILE ? 1 : 0;
@@ -1469,7 +1474,7 @@ lower_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    } else {
       /* Allocate space for the payload. */
       const unsigned sz = header_sz + addr_sz + src_sz;
-      payload = bld.vgrf(BRW_REGISTER_TYPE_UD, sz);
+      payload = bld.vgrf(BRW_TYPE_UD, sz);
       fs_reg *const components = new fs_reg[sz];
       unsigned n = 0;
 
@@ -1660,10 +1665,18 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    /* Calculate the total number of components of the payload. */
    const unsigned addr_sz = inst->components_read(SURFACE_LOGICAL_SRC_ADDRESS);
    const unsigned src_comps = inst->components_read(SURFACE_LOGICAL_SRC_DATA);
-   const unsigned src_sz = type_sz(src.type);
-   const unsigned dst_sz = type_sz(inst->dst.type);
+   const unsigned src_sz = brw_type_size_bytes(src.type);
+   const unsigned dst_sz = brw_type_size_bytes(inst->dst.type);
 
    const bool has_side_effects = inst->has_side_effects();
+
+   const bool is_typed_access =
+      inst->opcode == SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL ||
+      inst->opcode == SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL ||
+      inst->opcode == SHADER_OPCODE_TYPED_ATOMIC_LOGICAL;
+
+   unsigned num_components = 0;
+   bool has_dest = false;
 
    unsigned ex_mlen = 0;
    fs_reg payload, payload2;
@@ -1681,6 +1694,8 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
 
    if (surface.file == IMM && surface.ud == GFX7_BTI_SLM)
       inst->sfid = GFX12_SFID_SLM;
+   else if (is_typed_access)
+      inst->sfid = GFX12_SFID_TGM;
    else
       inst->sfid = GFX12_SFID_UGM;
 
@@ -1716,24 +1731,27 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
       surf_type = LSC_ADDR_SURFTYPE_BTI;
 
    switch (inst->opcode) {
+   case SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK, inst->exec_size,
+      num_components = arg.ud;
+      has_dest = true;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK,
                                 surf_type, LSC_ADDR_SIZE_A32,
-                                dims.ud /* num_coordinates */,
-                                LSC_DATA_SIZE_D32, arg.ud /* num_channels */,
+                                LSC_DATA_SIZE_D32, num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                true /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
       break;
+   case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE_CMASK, inst->exec_size,
+      num_components = arg.ud;
+      has_dest = false;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE_CMASK,
                                 surf_type, LSC_ADDR_SIZE_A32,
-                                dims.ud /* num_coordinates */,
-                                LSC_DATA_SIZE_D32, arg.ud /* num_channels */,
+                                LSC_DATA_SIZE_D32, num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS),
-                                false /* has_dest */);
+                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS));
       break;
+   case SHADER_OPCODE_TYPED_ATOMIC_LOGICAL:
    case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL: {
       /* Bspec: Atomic instruction -> Cache section:
        *
@@ -1742,35 +1760,37 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
        */
       enum lsc_opcode opcode = (enum lsc_opcode) arg.ud;
 
-      inst->desc = lsc_msg_desc(devinfo, opcode, inst->exec_size,
+      num_components = 1;
+      has_dest = !inst->dst.is_null();
+      inst->desc = lsc_msg_desc(devinfo, opcode,
                                 surf_type, LSC_ADDR_SIZE_A32,
-                                dims.ud /* num_coordinates */,
                                 lsc_bits_to_data_size(dst_sz * 8),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1UC_L3WB),
-                                !inst->dst.is_null());
+                                LSC_CACHE(devinfo, STORE, L1UC_L3WB));
       break;
    }
    case SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD, inst->exec_size,
+   case SHADER_OPCODE_DWORD_SCATTERED_READ_LOGICAL:
+      num_components = 1;
+      has_dest = true;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
                                 surf_type, LSC_ADDR_SIZE_A32,
-                                dims.ud /* num_coordinates */,
                                 lsc_bits_to_data_size(arg.ud),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                true /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE, inst->exec_size,
+   case SHADER_OPCODE_DWORD_SCATTERED_WRITE_LOGICAL:
+      num_components = 1;
+      has_dest = false;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE,
                                 surf_type, LSC_ADDR_SIZE_A32,
-                                dims.ud /* num_coordinates */,
                                 lsc_bits_to_data_size(arg.ud),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS),
-                                false /* has_dest */);
+                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS));
       break;
    default:
       unreachable("Unknown surface logical instruction");
@@ -1778,14 +1798,16 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
 
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
-   inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+   inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size * dims.ud);
    inst->ex_mlen = ex_mlen;
    inst->header_size = 0;
    inst->send_has_side_effects = has_side_effects;
    inst->send_is_volatile = !has_side_effects;
    inst->send_ex_bso = surf_type == LSC_ADDR_SURFTYPE_BSS &&
                        compiler->extended_bindless_surface_offset;
-   inst->size_written = lsc_msg_desc_dest_len(devinfo, inst->desc) * REG_SIZE;
+   inst->size_written = !has_dest ? 0 :
+      lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
+                       inst->exec_size * num_components) * REG_SIZE;
 
    inst->resize_sources(4);
 
@@ -1831,16 +1853,16 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
    fs_builder ubld = bld.exec_all().group(1, 0);
    fs_reg stateless_ex_desc;
    if (is_stateless) {
-      stateless_ex_desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      stateless_ex_desc = ubld.vgrf(BRW_TYPE_UD);
       ubld.AND(stateless_ex_desc,
-               retype(brw_vec1_grf(0, 5), BRW_REGISTER_TYPE_UD),
+               retype(brw_vec1_grf(0, 5), BRW_TYPE_UD),
                brw_imm_ud(INTEL_MASK(31, 10)));
    }
 
    fs_reg data;
    if (write) {
       const unsigned src_sz = inst->components_read(SURFACE_LOGICAL_SRC_DATA);
-      data = retype(bld.move_to_vgrf(src, src_sz), BRW_REGISTER_TYPE_UD);
+      data = retype(bld.move_to_vgrf(src, src_sz), BRW_TYPE_UD);
    }
 
    inst->opcode = SHADER_OPCODE_SEND;
@@ -1855,18 +1877,16 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
       LSC_ADDR_SURFTYPE_BSS : LSC_ADDR_SURFTYPE_BTI;
    inst->desc = lsc_msg_desc(devinfo,
                              write ? LSC_OP_STORE : LSC_OP_LOAD,
-                             1 /* exec_size */,
                              surf_type,
                              LSC_ADDR_SIZE_A32,
-                             1 /* num_coordinates */,
                              LSC_DATA_SIZE_D32,
                              arg.ud /* num_channels */,
                              true /* transpose */,
-                             LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                             !write /* has_dest */);
+                             LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
 
-   inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
-   inst->size_written = lsc_msg_desc_dest_len(devinfo, inst->desc) * REG_SIZE;
+   inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, 1);
+   inst->size_written = write ? 0 :
+      lsc_msg_dest_len(devinfo, LSC_DATA_SIZE_D32, arg.ud) * REG_SIZE;
    inst->exec_size = 1;
    inst->ex_mlen = write ? DIV_ROUND_UP(arg.ud, 8) : 0;
    inst->header_size = 0;
@@ -1917,7 +1937,7 @@ lower_surface_block_logical_send(const fs_builder &bld, fs_inst *inst)
 
    /* The address is stored in the header.  See MH_A32_GO and MH_BTS_GO. */
    fs_builder ubld = bld.exec_all().group(8, 0);
-   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg header = ubld.vgrf(BRW_TYPE_UD);
 
    if (is_stateless)
       ubld.emit(SHADER_OPCODE_SCRATCH_HEADER, header);
@@ -1934,8 +1954,8 @@ lower_surface_block_logical_send(const fs_builder &bld, fs_inst *inst)
    unsigned ex_mlen = 0;
    if (write) {
       const unsigned src_sz = inst->components_read(SURFACE_LOGICAL_SRC_DATA);
-      data = retype(bld.move_to_vgrf(src, src_sz), BRW_REGISTER_TYPE_UD);
-      ex_mlen = src_sz * type_sz(src.type) * inst->exec_size / REG_SIZE;
+      data = retype(bld.move_to_vgrf(src, src_sz), BRW_TYPE_UD);
+      ex_mlen = src_sz * brw_type_size_bytes(src.type) * inst->exec_size / REG_SIZE;
    }
 
    inst->opcode = SHADER_OPCODE_SEND;
@@ -1962,22 +1982,22 @@ emit_a64_oword_block_header(const fs_builder &bld, const fs_reg &addr)
 {
    const fs_builder ubld = bld.exec_all().group(8, 0);
 
-   assert(type_sz(addr.type) == 8 && addr.stride == 0);
+   assert(brw_type_size_bytes(addr.type) == 8 && addr.stride == 0);
 
    fs_reg expanded_addr = addr;
    if (addr.file == UNIFORM) {
       /* We can't do stride 1 with the UNIFORM file, it requires stride 0 */
-      expanded_addr = ubld.vgrf(BRW_REGISTER_TYPE_UQ);
+      expanded_addr = ubld.vgrf(BRW_TYPE_UQ);
       expanded_addr.stride = 0;
-      ubld.MOV(expanded_addr, retype(addr, BRW_REGISTER_TYPE_UQ));
+      ubld.MOV(expanded_addr, retype(addr, BRW_TYPE_UQ));
    }
 
-   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg header = ubld.vgrf(BRW_TYPE_UD);
    ubld.MOV(header, brw_imm_ud(0));
 
    /* Use a 2-wide MOV to fill out the address */
    fs_reg addr_vec2 = expanded_addr;
-   addr_vec2.type = BRW_REGISTER_TYPE_UD;
+   addr_vec2.type = BRW_TYPE_UD;
    addr_vec2.stride = 1;
    ubld.group(2, 0).MOV(header, addr_vec2);
 
@@ -2012,57 +2032,58 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
    /* Get the logical send arguments. */
    const fs_reg addr = inst->src[A64_LOGICAL_ADDRESS];
    const fs_reg src = inst->src[A64_LOGICAL_SRC];
-   const unsigned src_sz = type_sz(src.type);
-   const unsigned dst_sz = type_sz(inst->dst.type);
+   const unsigned src_sz = brw_type_size_bytes(src.type);
+   const unsigned dst_sz = brw_type_size_bytes(inst->dst.type);
 
    const unsigned src_comps = inst->components_read(1);
    assert(inst->src[A64_LOGICAL_ARG].file == IMM);
    const unsigned arg = inst->src[A64_LOGICAL_ARG].ud;
    const bool has_side_effects = inst->has_side_effects();
 
-   fs_reg payload = retype(bld.move_to_vgrf(addr, 1), BRW_REGISTER_TYPE_UD);
-   fs_reg payload2 = retype(bld.move_to_vgrf(src, src_comps),
-                            BRW_REGISTER_TYPE_UD);
+   fs_reg payload = retype(bld.move_to_vgrf(addr, 1), BRW_TYPE_UD);
+   fs_reg payload2 = retype(bld.move_to_vgrf(src, src_comps), BRW_TYPE_UD);
    unsigned ex_mlen = src_comps * src_sz * inst->exec_size / REG_SIZE;
+   unsigned num_components = 0;
+   bool has_dest = false;
 
    switch (inst->opcode) {
    case SHADER_OPCODE_A64_UNTYPED_READ_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK, inst->exec_size,
+      num_components = arg;
+      has_dest = true;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
-                                LSC_DATA_SIZE_D32, arg /* num_channels */,
+                                LSC_DATA_SIZE_D32, num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                true /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_A64_UNTYPED_WRITE_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE_CMASK, inst->exec_size,
+      num_components = arg;
+      has_dest = false;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE_CMASK,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
-                                LSC_DATA_SIZE_D32, arg /* num_channels */,
+                                LSC_DATA_SIZE_D32, num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS),
-                                false /* has_dest */);
+                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_A64_BYTE_SCATTERED_READ_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD, inst->exec_size,
+      num_components = 1;
+      has_dest = true;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
                                 lsc_bits_to_data_size(arg),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                true /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_A64_BYTE_SCATTERED_WRITE_LOGICAL:
-      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE, inst->exec_size,
+      num_components = 1;
+      has_dest = false;
+      inst->desc = lsc_msg_desc(devinfo, LSC_OP_STORE,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
                                 lsc_bits_to_data_size(arg),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS),
-                                false /* has_dest */);
+                                LSC_CACHE(devinfo, STORE, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL: {
       /* Bspec: Atomic instruction -> Cache section:
@@ -2071,44 +2092,42 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
        *    cache.
        */
       enum lsc_opcode opcode = (enum lsc_opcode) arg;
-      inst->desc = lsc_msg_desc(devinfo, opcode, inst->exec_size,
+      num_components = 1;
+      has_dest = !inst->dst.is_null();
+      inst->desc = lsc_msg_desc(devinfo, opcode,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
                                 lsc_bits_to_data_size(dst_sz * 8),
-                                1 /* num_channels */,
+                                num_components,
                                 false /* transpose */,
-                                LSC_CACHE(devinfo, STORE, L1UC_L3WB),
-                                !inst->dst.is_null());
+                                LSC_CACHE(devinfo, STORE, L1UC_L3WB));
       break;
    }
    case SHADER_OPCODE_A64_OWORD_BLOCK_READ_LOGICAL:
    case SHADER_OPCODE_A64_UNALIGNED_OWORD_BLOCK_READ_LOGICAL:
+      num_components = arg;
+      has_dest = true;
       inst->exec_size = 1;
       inst->desc = lsc_msg_desc(devinfo,
                                 LSC_OP_LOAD,
-                                1 /* exec_size */,
                                 LSC_ADDR_SURFTYPE_FLAT,
                                 LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
                                 LSC_DATA_SIZE_D32,
-                                arg /* num_channels */,
+                                num_components,
                                 true /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                true /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
       break;
    case SHADER_OPCODE_A64_OWORD_BLOCK_WRITE_LOGICAL:
+      num_components = arg;
+      has_dest = false;
       inst->exec_size = 1;
       inst->desc = lsc_msg_desc(devinfo,
                                 LSC_OP_STORE,
-                                1 /* exec_size */,
                                 LSC_ADDR_SURFTYPE_FLAT,
                                 LSC_ADDR_SIZE_A64,
-                                1 /* num_coordinates */,
                                 LSC_DATA_SIZE_D32,
-                                arg /* num_channels */,
+                                num_components,
                                 true /* transpose */,
-                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                false /* has_dest */);
+                                LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
 
       break;
    default:
@@ -2120,12 +2139,15 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
 
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
-   inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+   inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A64, inst->exec_size);
    inst->ex_mlen = ex_mlen;
    inst->header_size = 0;
    inst->send_has_side_effects = has_side_effects;
    inst->send_is_volatile = !has_side_effects;
-   inst->size_written = lsc_msg_desc_dest_len(devinfo, inst->desc) * REG_SIZE;
+
+   inst->size_written = !has_dest ? 0 :
+      lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
+                       inst->exec_size * num_components) * REG_SIZE;
 
    /* Set up SFID and descriptors */
    inst->sfid = GFX12_SFID_UGM;
@@ -2160,17 +2182,15 @@ lower_a64_logical_send(const fs_builder &bld, fs_inst *inst)
       payload = emit_a64_oword_block_header(bld, addr);
 
       if (inst->opcode == SHADER_OPCODE_A64_OWORD_BLOCK_WRITE_LOGICAL) {
-         ex_mlen = src_comps * type_sz(src.type) * inst->exec_size / REG_SIZE;
-         payload2 = retype(bld.move_to_vgrf(src, src_comps),
-                           BRW_REGISTER_TYPE_UD);
+         ex_mlen = src_comps * brw_type_size_bytes(src.type) * inst->exec_size / REG_SIZE;
+         payload2 = retype(bld.move_to_vgrf(src, src_comps), BRW_TYPE_UD);
       }
    } else {
       /* On Skylake and above, we have SENDS */
       mlen = 2 * (inst->exec_size / 8);
-      ex_mlen = src_comps * type_sz(src.type) * inst->exec_size / REG_SIZE;
-      payload = retype(bld.move_to_vgrf(addr, 1), BRW_REGISTER_TYPE_UD);
-      payload2 = retype(bld.move_to_vgrf(src, src_comps),
-                        BRW_REGISTER_TYPE_UD);
+      ex_mlen = src_comps * brw_type_size_bytes(src.type) * inst->exec_size / REG_SIZE;
+      payload = retype(bld.move_to_vgrf(addr, 1), BRW_TYPE_UD);
+      payload2 = retype(bld.move_to_vgrf(src, src_comps), BRW_TYPE_UD);
    }
 
    uint32_t desc;
@@ -2224,12 +2244,12 @@ lower_a64_logical_send(const fs_builder &bld, fs_inst *inst)
       if (lsc_opcode_is_atomic_float((enum lsc_opcode) arg)) {
          desc =
             brw_dp_a64_untyped_atomic_float_desc(devinfo, inst->exec_size,
-                                                 type_sz(inst->dst.type) * 8,
+                                                 brw_type_size_bits(inst->dst.type),
                                                  lsc_op_to_legacy_atomic(arg),
                                                  !inst->dst.is_null());
       } else {
          desc = brw_dp_a64_untyped_atomic_desc(devinfo, inst->exec_size,
-                                               type_sz(inst->dst.type) * 8,
+                                               brw_type_size_bits(inst->dst.type),
                                                lsc_op_to_legacy_atomic(arg),
                                                !inst->dst.is_null());
       }
@@ -2298,30 +2318,26 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
 
    if (alignment >= 4) {
       inst->desc =
-         lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK, inst->exec_size,
+         lsc_msg_desc(devinfo, LSC_OP_LOAD_CMASK,
                       surf_type, LSC_ADDR_SIZE_A32,
-                      1 /* num_coordinates */,
                       LSC_DATA_SIZE_D32,
                       4 /* num_channels */,
                       false /* transpose */,
-                      LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                      true /* has_dest */);
-      inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+                      LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
+      inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size);
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
                                     surface : surface_handle);
    } else {
       inst->desc =
-         lsc_msg_desc(devinfo, LSC_OP_LOAD, inst->exec_size,
+         lsc_msg_desc(devinfo, LSC_OP_LOAD,
                       surf_type, LSC_ADDR_SIZE_A32,
-                      1 /* num_coordinates */,
                       LSC_DATA_SIZE_D32,
                       1 /* num_channels */,
                       false /* transpose */,
-                      LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                      true /* has_dest */);
-      inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+                      LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
+      inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size);
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
@@ -2342,7 +2358,7 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
          bld.emit(*inst);
 
          /* Offset the source */
-         inst->src[2] = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         inst->src[2] = bld.vgrf(BRW_TYPE_UD);
          bld.ADD(inst->src[2], ubo_offset, brw_imm_ud(c * 4));
 
          /* Offset the destination */
@@ -2365,7 +2381,7 @@ lower_varying_pull_constant_logical_send(const fs_builder &bld, fs_inst *inst)
     * send-from-grf instruction.  Since sends can't handle strides or
     * source modifiers, we have to make a copy of the offset source.
     */
-   fs_reg ubo_offset = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg ubo_offset = bld.vgrf(BRW_TYPE_UD);
    bld.MOV(ubo_offset, offset_B);
 
    assert(inst->src[PULL_VARYING_CONSTANT_SRC_ALIGNMENT].file == BRW_IMMEDIATE_VALUE);
@@ -2420,7 +2436,7 @@ lower_varying_pull_constant_logical_send(const fs_builder &bld, fs_inst *inst)
          bld.emit(*inst);
 
          /* Offset the source */
-         inst->src[2] = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         inst->src[2] = bld.vgrf(BRW_TYPE_UD);
          bld.ADD(inst->src[2], ubo_offset, brw_imm_ud(c * 4));
 
          /* Offset the destination */
@@ -2482,7 +2498,7 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
       STATIC_ASSERT(INTEL_MSAA_FLAG_COARSE_PI_MSG == (1 << 15));
       fs_reg orig_desc = desc;
       const fs_builder &ubld = bld.exec_all().group(8, 0);
-      desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      desc = ubld.vgrf(BRW_TYPE_UD);
       ubld.AND(desc, dynamic_msaa_flags(wm_prog_data),
                brw_imm_ud(INTEL_MSAA_FLAG_COARSE_PI_MSG));
 
@@ -2512,7 +2528,7 @@ lower_interpolator_logical_send(const fs_builder &bld, fs_inst *inst,
    if (dynamic_mode) {
       fs_reg orig_desc = desc;
       const fs_builder &ubld = bld.exec_all().group(8, 0);
-      desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      desc = ubld.vgrf(BRW_TYPE_UD);
 
       /* The predicate should have been built in brw_fs_nir.cpp when emitting
        * NIR code. This guarantees that we do not have incorrect interactions
@@ -2563,13 +2579,14 @@ lower_btd_logical_send(const fs_builder &bld, fs_inst *inst)
    const unsigned unit = reg_unit(devinfo);
    const unsigned mlen = 2 * unit;
    const fs_builder ubld = bld.exec_all();
-   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2 * unit);
+   fs_reg header = ubld.vgrf(BRW_TYPE_UD, 2 * unit);
 
    ubld.MOV(header, brw_imm_ud(0));
    switch (inst->opcode) {
    case SHADER_OPCODE_BTD_SPAWN_LOGICAL:
-      assert(type_sz(global_addr.type) == 8 && global_addr.stride == 0);
-      global_addr.type = BRW_REGISTER_TYPE_UD;
+      assert(brw_type_size_bytes(global_addr.type) == 8 &&
+             global_addr.stride == 0);
+      global_addr.type = BRW_TYPE_UD;
       global_addr.stride = 1;
       ubld.group(2, 0).MOV(header, global_addr);
       break;
@@ -2586,9 +2603,9 @@ lower_btd_logical_send(const fs_builder &bld, fs_inst *inst)
    /* Stack IDs are always in R1 regardless of whether we're coming from a
     * bindless shader or a regular compute shader.
     */
-   fs_reg stack_ids = retype(offset(header, bld, 1), BRW_REGISTER_TYPE_UW);
+   fs_reg stack_ids = retype(offset(header, bld, 1), BRW_TYPE_UW);
    bld.exec_all().MOV(stack_ids, retype(brw_vec8_grf(1 * unit, 0),
-                                        BRW_REGISTER_TYPE_UW));
+                                        BRW_TYPE_UW));
 
    unsigned ex_mlen = 0;
    fs_reg payload;
@@ -2634,7 +2651,7 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
     * so that the MOV operates on 2 components rather than twice the same
     * component.
     */
-   fs_reg globals_addr = retype(inst->src[RT_LOGICAL_SRC_GLOBALS], BRW_REGISTER_TYPE_UD);
+   fs_reg globals_addr = retype(inst->src[RT_LOGICAL_SRC_GLOBALS], BRW_TYPE_UD);
    globals_addr.stride = 1;
    const fs_reg bvh_level =
       inst->src[RT_LOGICAL_SRC_BVH_LEVEL].file == BRW_IMMEDIATE_VALUE ?
@@ -2653,14 +2670,14 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
    const unsigned unit = reg_unit(devinfo);
    const unsigned mlen = unit;
    const fs_builder ubld = bld.exec_all();
-   fs_reg header = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg header = ubld.vgrf(BRW_TYPE_UD);
    ubld.MOV(header, brw_imm_ud(0));
    ubld.group(2, 0).MOV(header, globals_addr);
    if (synchronous)
       ubld.group(1, 0).MOV(byte_offset(header, 16), brw_imm_ud(synchronous));
 
    const unsigned ex_mlen = inst->exec_size / 8;
-   fs_reg payload = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg payload = bld.vgrf(BRW_TYPE_UD);
    if (bvh_level.file == BRW_IMMEDIATE_VALUE &&
        trace_ray_control.file == BRW_IMMEDIATE_VALUE) {
       bld.MOV(payload, brw_imm_ud(SET_BITS(trace_ray_control.ud, 9, 8) |
@@ -2679,8 +2696,8 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
     * payload register.
     */
    if (!synchronous) {
-      bld.AND(subscript(payload, BRW_REGISTER_TYPE_UW, 1),
-              retype(brw_vec8_grf(1 * unit, 0), BRW_REGISTER_TYPE_UW),
+      bld.AND(subscript(payload, BRW_TYPE_UW, 1),
+              retype(brw_vec8_grf(1 * unit, 0), BRW_TYPE_UW),
               brw_imm_uw(0x7ff));
    }
 
@@ -2731,7 +2748,7 @@ lower_get_buffer_size(const fs_builder &bld, fs_inst *inst)
                                           BRW_SAMPLER_SIMD_MODE_SIMD8,
                                           return_format);
 
-   inst->dst = retype(inst->dst, BRW_REGISTER_TYPE_UW);
+   inst->dst = retype(inst->dst, BRW_TYPE_UW);
    inst->sfid = BRW_SFID_SAMPLER;
    setup_surface_descriptors(bld, inst, desc, surface, surface_handle);
 }
@@ -2755,7 +2772,7 @@ brw_fs_lower_logical_sends(fs_visitor &s)
          break;
 
       case FS_OPCODE_FB_READ_LOGICAL:
-         lower_fb_read_logical_send(ibld, inst);
+         lower_fb_read_logical_send(ibld, inst, brw_wm_prog_data(s.prog_data));
          break;
 
       case SHADER_OPCODE_TEX_LOGICAL:
@@ -2789,18 +2806,20 @@ brw_fs_lower_logical_sends(fs_visitor &s)
       case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL:
       case SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL:
       case SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL:
-         if (devinfo->has_lsc) {
-            lower_lsc_surface_logical_send(ibld, inst);
-            break;
-         }
-         FALLTHROUGH;
-
       case SHADER_OPCODE_DWORD_SCATTERED_READ_LOGICAL:
       case SHADER_OPCODE_DWORD_SCATTERED_WRITE_LOGICAL:
+         if (devinfo->has_lsc)
+            lower_lsc_surface_logical_send(ibld, inst);
+         else
+            lower_surface_logical_send(ibld, inst);
+         break;
+
       case SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL:
       case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
       case SHADER_OPCODE_TYPED_ATOMIC_LOGICAL:
-         lower_surface_logical_send(ibld, inst);
+         devinfo->ver >= 20 && devinfo->has_lsc ?
+            lower_lsc_surface_logical_send(ibld, inst) :
+            lower_surface_logical_send(ibld, inst);
          break;
 
       case SHADER_OPCODE_UNALIGNED_OWORD_BLOCK_READ_LOGICAL:
@@ -2917,26 +2936,23 @@ brw_fs_lower_uniform_pull_constant_loads(fs_visitor &s)
          const fs_builder ubld =
             fs_builder(&s, block, inst).group(8, 0).exec_all();
 
-         const fs_reg payload = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         const fs_reg payload = ubld.vgrf(BRW_TYPE_UD);
          ubld.MOV(payload, offset_B);
 
          inst->sfid = GFX12_SFID_UGM;
          inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
-                                   1 /* simd_size */,
                                    surface_handle.file == BAD_FILE ?
                                    LSC_ADDR_SURFTYPE_BTI :
                                    LSC_ADDR_SURFTYPE_BSS,
                                    LSC_ADDR_SIZE_A32,
-                                   1 /* num_coordinates */,
                                    LSC_DATA_SIZE_D32,
                                    inst->size_written / 4,
                                    true /* transpose */,
-                                   LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS),
-                                   true /* has_dest */);
+                                   LSC_CACHE(devinfo, LOAD, L1STATE_L3MOCS));
 
          /* Update the original instruction. */
          inst->opcode = SHADER_OPCODE_SEND;
-         inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+         inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, 1);
          inst->send_ex_bso = surface_handle.file != BAD_FILE &&
                              s.compiler->extended_bindless_surface_offset;
          inst->ex_mlen = 0;
@@ -2956,10 +2972,10 @@ brw_fs_lower_uniform_pull_constant_loads(fs_visitor &s)
          s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
       } else {
          const fs_builder ubld = fs_builder(&s, block, inst).exec_all();
-         fs_reg header = fs_builder(&s, 8).exec_all().vgrf(BRW_REGISTER_TYPE_UD);
+         fs_reg header = fs_builder(&s, 8).exec_all().vgrf(BRW_TYPE_UD);
 
          ubld.group(8, 0).MOV(header,
-                              retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));
+                              retype(brw_vec8_grf(0, 0), BRW_TYPE_UD));
          ubld.group(1, 0).MOV(component(header, 2),
                               brw_imm_ud(offset_B.ud / 16));
 

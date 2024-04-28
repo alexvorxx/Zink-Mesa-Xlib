@@ -206,7 +206,7 @@ brw_fs_opt_peephole_sel(fs_visitor &s)
 
             /* 64-bit immediates can't be placed in src1. */
             fs_reg src1(else_mov[i]->src[0]);
-            if (src1.file == IMM && type_sz(src1.type) == 8) {
+            if (src1.file == IMM && brw_type_size_bytes(src1.type) == 8) {
                src1 = ibld.vgrf(else_mov[i]->src[0].type);
                ibld.MOV(src1, else_mov[i]->src[0]);
             }

@@ -70,7 +70,7 @@ struct vk_command_buffer_ops {
     * set by `vk_common_AllocateCommandBuffers()` and the driver must not rely
     * on it until `vkBeginCommandBuffer()` time.
     */
-   VkResult (*create)(struct vk_command_pool *,
+   VkResult (*create)(struct vk_command_pool *, VkCommandBufferLevel,
                       struct vk_command_buffer **);
 
    /** Resets the command buffer

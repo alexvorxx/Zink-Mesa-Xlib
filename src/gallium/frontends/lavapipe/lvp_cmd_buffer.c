@@ -36,6 +36,7 @@ lvp_cmd_buffer_destroy(struct vk_command_buffer *cmd_buffer)
 
 static VkResult
 lvp_create_cmd_buffer(struct vk_command_pool *pool,
+                      VkCommandBufferLevel level,
                       struct vk_command_buffer **cmd_buffer_out)
 {
    struct lvp_device *device =
@@ -48,7 +49,7 @@ lvp_create_cmd_buffer(struct vk_command_pool *pool,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    VkResult result = vk_command_buffer_init(pool, &cmd_buffer->vk,
-                                            &lvp_cmd_buffer_ops, 0);
+                                            &lvp_cmd_buffer_ops, level);
    if (result != VK_SUCCESS) {
       vk_free(&pool->alloc, cmd_buffer);
       return result;

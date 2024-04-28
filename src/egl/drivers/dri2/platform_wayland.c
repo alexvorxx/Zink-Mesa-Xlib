@@ -179,8 +179,7 @@ dri2_wl_visual_idx_from_pipe_format(enum pipe_format pipe_format)
 }
 
 static int
-dri2_wl_visual_idx_from_config(struct dri2_egl_display *dri2_dpy,
-                               const __DRIconfig *config)
+dri2_wl_visual_idx_from_config(const __DRIconfig *config)
 {
    struct gl_config *gl_config = (struct gl_config *) config;
 
@@ -239,8 +238,7 @@ dri2_wl_is_format_supported(void *user_data, uint32_t format)
       return false;
 
    for (int i = 0; dri2_dpy->driver_configs[i]; i++)
-      if (j == dri2_wl_visual_idx_from_config(
-                  dri2_dpy, dri2_dpy->driver_configs[i]))
+      if (j == dri2_wl_visual_idx_from_config(dri2_dpy->driver_configs[i]))
          return true;
 
    return false;
@@ -662,7 +660,7 @@ dri2_wl_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    dri2_surf->base.Width = window->width;
    dri2_surf->base.Height = window->height;
 
-   visual_idx = dri2_wl_visual_idx_from_config(dri2_dpy, config);
+   visual_idx = dri2_wl_visual_idx_from_config(config);
    assert(visual_idx != -1);
    assert(dri2_wl_visuals[visual_idx].pipe_format != PIPE_FORMAT_NONE);
 
@@ -1939,8 +1937,7 @@ dri2_wl_add_configs_for_visuals(_EGLDisplay *disp)
    for (unsigned i = 0; dri2_dpy->driver_configs[i]; i++) {
       struct dri2_egl_config *dri2_conf;
       bool conversion = false;
-      int idx = dri2_wl_visual_idx_from_config(dri2_dpy,
-                                               dri2_dpy->driver_configs[i]);
+      int idx = dri2_wl_visual_idx_from_config(dri2_dpy->driver_configs[i]);
 
       /* Check if the server natively supports the colour buffer format */
       if (!server_supports_format(&dri2_dpy->formats, idx)) {

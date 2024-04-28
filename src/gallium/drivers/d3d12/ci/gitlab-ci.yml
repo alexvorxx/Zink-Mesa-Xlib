@@ -43,3 +43,9 @@ test-d3d12-quick_shader:
   variables:
     PIGLIT_SUITE: d3d12-quick_shader.toml
     PIGLIT_BASELINE: d3d12-quick_shader.txt
+
+test-d3d12-vainfo:
+  extends:
+    - .d3d12-test
+  script:
+    - . _install/vainfo_run.ps1

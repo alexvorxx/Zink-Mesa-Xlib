@@ -945,16 +945,14 @@ static void si_emit_vs_state(struct si_context *sctx, unsigned index_size)
       return;
    }
 
-   unsigned vs_state = sctx->current_vs_state; /* all VS bits including LS bits */
+   unsigned vs_state = sctx->current_vs_state; /* all VS bits */
    unsigned gs_state = sctx->current_gs_state; /* only GS and NGG bits; VS bits will be copied here */
 
    if (sctx->shader.vs.cso->info.uses_base_vertex && index_size)
       vs_state |= ENCODE_FIELD(VS_STATE_INDEXED, 1);
 
-   /* Copy all state bits from vs_state to gs_state except the LS bits. */
-   gs_state |= vs_state &
-               CLEAR_FIELD(VS_STATE_TCS_OUT_PATCH0_OFFSET) &
-               CLEAR_FIELD(VS_STATE_LS_OUT_VERTEX_SIZE);
+   /* Copy all state bits from vs_state to gs_state. */
+   gs_state |= vs_state;
 
    if (vs_state != sctx->last_vs_state ||
        ((HAS_GS || NGG) && gs_state != sctx->last_gs_state)) {
@@ -1989,7 +1987,7 @@ static void si_draw(struct pipe_context *ctx,
 
    if (u_trace_perfetto_active(&sctx->ds.trace_context))
       trace_si_begin_draw(&sctx->trace);
-   
+
    unsigned instance_count = info->instance_count;
 
    /* GFX6-GFX7 treat instance_count==0 as instance_count==1. There is

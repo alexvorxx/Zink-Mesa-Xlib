@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "util/compiler.h"
 #include "agx_compiler.h"
 #include "agx_debug.h"
 #include "agx_opcodes.h"
@@ -42,6 +43,7 @@ agx_validate_block_form(agx_block *block)
 
    agx_foreach_instr_in_block(block, I) {
       switch (I->op) {
+      case AGX_OPCODE_PRELOAD:
       case AGX_OPCODE_ELSE_ICMP:
       case AGX_OPCODE_ELSE_FCMP:
          agx_validate_assert(state == AGX_BLOCK_STATE_CF_ELSE);
@@ -52,6 +54,11 @@ agx_validate_block_form(agx_block *block)
                              state == AGX_BLOCK_STATE_PHI);
 
          state = AGX_BLOCK_STATE_PHI;
+         break;
+
+      case AGX_OPCODE_EXPORT:
+         agx_validate_assert(agx_num_successors(block) == 0);
+         state = AGX_BLOCK_STATE_CF;
          break;
 
       default:
@@ -101,6 +108,9 @@ agx_validate_sources(agx_instr *I)
          agx_validate_assert(src.value < (1 << (ldst ? 16 : 8)));
       } else if (I->op == AGX_OPCODE_COLLECT && !agx_is_null(src)) {
          agx_validate_assert(src.size == I->src[0].size);
+      } else if (I->op == AGX_OPCODE_PHI) {
+         agx_validate_assert(src.size == I->dest[0].size);
+         agx_validate_assert(!agx_is_null(src));
       }
 
       agx_validate_assert(!src.memory || is_stack_valid(I));
@@ -144,6 +154,7 @@ agx_write_registers(const agx_instr *I, unsigned d)
 
    switch (I->op) {
    case AGX_OPCODE_MOV:
+   case AGX_OPCODE_PHI:
       /* Tautological */
       return agx_index_size_16(I->dest[d]);
 
@@ -215,11 +226,24 @@ agx_read_registers(const agx_instr *I, unsigned s)
 
    switch (I->op) {
    case AGX_OPCODE_MOV:
+   case AGX_OPCODE_EXPORT:
       /* Tautological */
       return agx_index_size_16(I->src[0]);
 
+   case AGX_OPCODE_PHI:
+      if (I->src[s].type == AGX_INDEX_IMMEDIATE)
+         return size;
+      else
+         return agx_index_size_16(I->dest[0]);
+
    case AGX_OPCODE_SPLIT:
       return I->nr_dests * agx_size_align_16(agx_split_width(I));
+
+   case AGX_OPCODE_UNIFORM_STORE:
+      if (s == 0)
+         return util_bitcount(I->mask) * size;
+      else
+         return size;
 
    case AGX_OPCODE_DEVICE_STORE:
    case AGX_OPCODE_LOCAL_STORE:

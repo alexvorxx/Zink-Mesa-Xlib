@@ -275,7 +275,7 @@ check_unordered_exec(struct zink_context *ctx, struct zink_resource *res, bool i
 VkCommandBuffer
 zink_get_cmdbuf(struct zink_context *ctx, struct zink_resource *src, struct zink_resource *dst)
 {
-   bool unordered_exec = (zink_debug & ZINK_DEBUG_NOREORDER) == 0;
+   bool unordered_exec = !ctx->no_reorder;
 
    unordered_exec &= check_unordered_exec(ctx, src, false) &&
                      check_unordered_exec(ctx, dst, true);
@@ -739,7 +739,7 @@ zink_resource_buffer_barrier(struct zink_context *ctx, struct zink_resource *res
     * - there is no current-batch unordered access
     */
    bool can_skip_ordered = unordered ? false : (!res->obj->access && !unordered_usage_matches);
-   if (zink_debug & ZINK_DEBUG_NOREORDER)
+   if (ctx->no_reorder)
       can_skip_unordered = can_skip_ordered = false;
 
    if (!can_skip_unordered && !can_skip_ordered) {

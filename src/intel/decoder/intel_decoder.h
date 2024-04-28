@@ -202,6 +202,11 @@ void intel_field_iterator_init(struct intel_field_iterator *iter,
 
 bool intel_field_iterator_next(struct intel_field_iterator *iter);
 
+void intel_print_group_custom_spacing(FILE *outfile, struct intel_group *group,
+                                      uint64_t offset, const uint32_t *p,
+                                      int p_bit, bool color,
+                                      const char *spacing_reg,
+                                      const char *spacing_dword);
 void intel_print_group(FILE *out,
                        struct intel_group *group,
                        uint64_t offset, const uint32_t *p, int p_bit,

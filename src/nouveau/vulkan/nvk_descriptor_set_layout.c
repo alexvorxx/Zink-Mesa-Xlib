@@ -276,7 +276,17 @@ nvk_CreateDescriptorSetLayout(VkDevice device,
       BLAKE3_UPDATE_VALUE(layout->binding[b].offset);
       BLAKE3_UPDATE_VALUE(layout->binding[b].stride);
       BLAKE3_UPDATE_VALUE(layout->binding[b].dynamic_buffer_index);
-      /* Immutable samplers are ignored for now */
+
+      if (layout->binding[b].immutable_samplers != NULL) {
+         for (uint32_t i = 0; i < layout->binding[b].array_size; i++) {
+            const struct nvk_sampler *sampler =
+               layout->binding[b].immutable_samplers[i];
+
+            /* We zalloc the object, so it's safe to hash the whole thing */
+            if (sampler != NULL && sampler->vk.ycbcr_conversion != NULL)
+               BLAKE3_UPDATE_VALUE(sampler->vk.ycbcr_conversion->state);
+         }
+      }
    }
 #undef BLAKE3_UPDATE_VALUE
 

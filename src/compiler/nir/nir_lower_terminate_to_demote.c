@@ -7,46 +7,72 @@
 #include "nir_builder.h"
 
 static bool
-nir_lower_terminate_block(nir_builder *b, nir_block *block)
+nir_lower_terminate_cf_list(nir_builder *b, struct exec_list *cf_list)
 {
    bool progress = false;
 
-   nir_foreach_instr_safe(instr, block) {
-      if (instr->type != nir_instr_type_intrinsic)
-         continue;
+   foreach_list_typed_safe(nir_cf_node, node, node, cf_list) {
+      switch (node->type) {
+      case nir_cf_node_block: {
+         nir_block *block = nir_cf_node_as_block(node);
 
-      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-      switch (intrin->intrinsic) {
-      case nir_intrinsic_terminate: {
-         /* Everything after the terminate is dead */
-         nir_cf_list dead_cf;
-         nir_cf_extract(&dead_cf, nir_after_instr(&intrin->instr),
-                                  nir_after_block(block));
-         nir_cf_delete(&dead_cf);
+         nir_foreach_instr_safe(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
 
-         intrin->intrinsic = nir_intrinsic_demote;
-         b->cursor = nir_after_instr(&intrin->instr);
-         nir_jump(b, nir_jump_halt);
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            switch (intrin->intrinsic) {
+            case nir_intrinsic_terminate: {
+               /* Everything after the terminate is dead */
+               nir_cf_list dead_cf;
+               nir_cf_extract(&dead_cf, nir_after_instr(&intrin->instr),
+                                        nir_after_cf_list(cf_list));
+               nir_cf_delete(&dead_cf);
 
-         /* We just removed the remainder of this block.  It's not safe to
-          * continue iterating instructions.
-          */
-         return true;
+               intrin->intrinsic = nir_intrinsic_demote;
+               b->cursor = nir_after_instr(&intrin->instr);
+               nir_jump(b, nir_jump_halt);
+
+               /* We just removed the remainder of this list of CF nodes.
+                * It's not safe to continue iterating.
+                */
+               return true;
+            }
+
+            case nir_intrinsic_terminate_if:
+               b->cursor = nir_before_instr(&intrin->instr);
+               nir_push_if(b, intrin->src[0].ssa);
+               {
+                  nir_demote(b);
+                  nir_jump(b, nir_jump_halt);
+               }
+               nir_instr_remove(&intrin->instr);
+               progress = true;
+               break;
+
+            default:
+               break;
+            }
+         }
+         break;
       }
 
-      case nir_intrinsic_terminate_if:
-         b->cursor = nir_before_instr(&intrin->instr);
-         nir_push_if(b, intrin->src[0].ssa);
-         {
-            nir_demote(b);
-            nir_jump(b, nir_jump_halt);
-         }
-         nir_instr_remove(&intrin->instr);
-         progress = true;
+      case nir_cf_node_if: {
+         nir_if *nif = nir_cf_node_as_if(node);
+         progress |= nir_lower_terminate_cf_list(b, &nif->then_list);
+         progress |= nir_lower_terminate_cf_list(b, &nif->else_list);
          break;
+      }
+
+      case nir_cf_node_loop: {
+         nir_loop *loop = nir_cf_node_as_loop(node);
+         progress |= nir_lower_terminate_cf_list(b, &loop->body);
+         progress |= nir_lower_terminate_cf_list(b, &loop->continue_list);
+         break;
+      }
 
       default:
-         break;
+         unreachable("Unknown CF node type");
       }
    }
 
@@ -56,12 +82,8 @@ nir_lower_terminate_block(nir_builder *b, nir_block *block)
 static bool
 nir_lower_terminate_impl(nir_function_impl *impl)
 {
-   bool progress = false;
-
    nir_builder b = nir_builder_create(impl);
-
-   nir_foreach_block_safe(block, impl)
-      progress |= nir_lower_terminate_block(&b, block);
+   bool progress = nir_lower_terminate_cf_list(&b, &impl->body);
 
    if (progress) {
       nir_metadata_preserve(impl, nir_metadata_none);

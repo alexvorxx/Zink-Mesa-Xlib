@@ -72,7 +72,7 @@ variables:
           bash download-git-cache.sh
           rm download-git-cache.sh
           set +o xtrace
-  CI_JOB_JWT_FILE: /minio_jwt
+  S3_JWT_FILE: /s3_jwt
   S3_HOST: s3.freedesktop.org
   # per-pipeline artifact storage on MinIO
   PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
@@ -89,15 +89,20 @@ variables:
   PYTHONPATH: "$PYTHONPATH:$CI_PROJECT_DIR/install"
   # Drop once deqp-runner is upgraded to > 0.18.0
   MESA_VK_ABORT_ON_DEVICE_LOSS: 1
+  # Avoid the wall of "Unsupported SPIR-V capability" warnings in CI job log, hiding away useful output
+  MESA_SPIRV_LOG_LEVEL: error
 
 default:
+  id_tokens:
+    S3_JWT:
+      aud: https://s3.freedesktop.org
   before_script:
     - >
       export SCRIPTS_DIR=$(mktemp -d) &&
       curl -L -s --retry 4 -f --retry-all-errors --retry-delay 60 -O --output-dir "${SCRIPTS_DIR}" "${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/setup-test-env.sh" &&
       . ${SCRIPTS_DIR}/setup-test-env.sh &&
-      echo -n "${CI_JOB_JWT}" > "${CI_JOB_JWT_FILE}" &&
-      unset CI_JOB_JWT  # Unsetting vulnerable env variables
+      echo -n "${S3_JWT}" > "${S3_JWT_FILE}" &&
+      unset CI_JOB_JWT S3_JWT  # Unsetting vulnerable env variables
 
   after_script:
     # Work around https://gitlab.com/gitlab-org/gitlab/-/issues/20338
@@ -106,9 +111,9 @@ default:
     - >
       set +x
 
-      test -e "${CI_JOB_JWT_FILE}" &&
-      export CI_JOB_JWT="$(<${CI_JOB_JWT_FILE})" &&
-      rm "${CI_JOB_JWT_FILE}"
+      test -e "${S3_JWT_FILE}" &&
+      export S3_JWT="$(<${S3_JWT_FILE})" &&
+      rm "${S3_JWT_FILE}"
 
   # Retry when job fails. Failed jobs can be found in the Mesa CI Daily Reports:
   # https://gitlab.freedesktop.org/mesa/mesa/-/issues/?sort=created_date&state=opened&label_name%5B%5D=CI%20daily
@@ -261,8 +266,7 @@ make git archive:
     # compress the current folder
     - tar -cvzf ../$CI_PROJECT_NAME.tar.gz .
 
-    - ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" ../$CI_PROJECT_NAME.tar.gz https://$S3_HOST/git-cache/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME/$CI_PROJECT_NAME.tar.gz
-
+    - ci-fairy s3cp --token-file "${S3_JWT_FILE}" ../$CI_PROJECT_NAME.tar.gz https://$S3_HOST/git-cache/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME/$CI_PROJECT_NAME.tar.gz
 
 # Sanity checks of MR settings and commit logs
 sanity:

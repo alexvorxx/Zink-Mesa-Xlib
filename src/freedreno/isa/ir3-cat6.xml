@@ -1020,7 +1020,6 @@ SOFTWARE.
 
 <bitset name="#cat6-ldc-common" extends="#instruction-cat6-a6xx">
 	<pattern pos="0"           >x</pattern>
-	<pattern pos="11"          >x</pattern>        <!-- TYPED -->
 	<pattern low="14" high="19">011110</pattern>   <!-- OPC -->
 	<pattern low="20" high="22">1xx</pattern>
 	<field   pos="23"           name="SRC1_IM" type="bool"/>
@@ -1057,6 +1056,7 @@ SOFTWARE.
 		{SY}{JP}ldc.{LOAD_SIZE}.k.{MODE}{BASE} c[a1.x], {SRC1}, {SRC2}
 	</display>
 
+	<pattern pos="11">x</pattern>
 	<derived name="LOAD_SIZE" expr="#cat6-load-size" type="uint"/>
 
 	<field   low="32" high="39" name="LOAD_SIZE_MINUS_ONE" type="uint"/>
@@ -1077,13 +1077,15 @@ SOFTWARE.
 	meaning?  Maybe I don't have enough ldc examples from deqp-glesN
 	 -->
 	<display>
-		{SY}{JP}{NAME}.offset{OFFSET}.{TYPE_SIZE}.{MODE}{BASE} {DST}, {SRC1}, {SRC2}
+		{SY}{JP}{NAME}{U}.offset{OFFSET}.{TYPE_SIZE}.{MODE}{BASE} {DST}, {SRC1}, {SRC2}
 	</display>
+	<field   pos="11" name="U" type="bool" display=".u"/>
 	<field   low="9"  high="10" name="OFFSET" type="uint"/>   <!-- D_MINUS_ONE -->
 	<field   low="32" high="39" name="DST" type="#reg-gpr"/>
 	<pattern low="52" high="53">10</pattern>
 	<encode>
 		<map name="OFFSET">src->cat6.d</map>
+		<map name="U">!!(src->flags &amp; IR3_INSTR_U)</map>
 	</encode>
 </bitset>
 

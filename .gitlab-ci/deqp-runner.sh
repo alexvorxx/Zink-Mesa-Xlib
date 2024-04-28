@@ -18,7 +18,7 @@ INSTALL=$(realpath -s "$PWD"/install)
 # Set up the driver environment.
 export LD_LIBRARY_PATH="$INSTALL"/lib/:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
-export VK_ICD_FILENAMES="$PWD"/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-$(uname -m)}.json
+export VK_DRIVER_FILES="$PWD"/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-$(uname -m)}.json
 export OCL_ICD_VENDORS="$PWD"/install/etc/OpenCL/vendors/
 
 if [ -n "$USE_ANGLE" ]; then
@@ -59,7 +59,7 @@ if [ -z "$DEQP_SUITE" ]; then
 
     # Generate test case list file.
     if [ "$DEQP_VER" = "vk" ]; then
-       MUSTPASS=/deqp/mustpass/vk-master.txt
+       MUSTPASS=/deqp/mustpass/vk-main.txt
        DEQP=/deqp/external/vulkancts/modules/vulkan/deqp-vk
     elif [ "$DEQP_VER" = "gles2" ] || [ "$DEQP_VER" = "gles3" ] || [ "$DEQP_VER" = "gles31" ] || [ "$DEQP_VER" = "egl" ]; then
        MUSTPASS=/deqp/mustpass/$DEQP_VER-main.txt

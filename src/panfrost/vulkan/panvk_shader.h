@@ -20,48 +20,40 @@
 #include "panvk_macros.h"
 #include "panvk_pipeline_layout.h"
 
-#define PANVK_SYSVAL_UBO_INDEX     0
-#define PANVK_PUSH_CONST_UBO_INDEX 1
-#define PANVK_NUM_BUILTIN_UBOS     2
-
 struct nir_shader;
 struct pan_blend_state;
 struct panvk_device;
 
-union panvk_sysval_vec4 {
-   float f32[4];
-   uint32_t u32[4];
+struct panvk_graphics_sysvals {
+   struct {
+      struct {
+         float x, y, z;
+      } scale, offset;
+   } viewport;
+
+   struct {
+      float constants[4];
+   } blend;
+
+   struct {
+      uint32_t first_vertex;
+      uint32_t base_vertex;
+      uint32_t base_instance;
+   } vs;
 };
 
-struct panvk_sysvals {
-   union {
-      struct {
-         /* Only for graphics */
-         union panvk_sysval_vec4 viewport_scale;
-         union panvk_sysval_vec4 viewport_offset;
-         union panvk_sysval_vec4 blend_constants;
-
-         uint32_t first_vertex;
-         uint32_t base_vertex;
-         uint32_t base_instance;
-      };
-
-      struct {
-         /* Only for compute */
-         union panvk_sysval_vec4 num_work_groups;
-         union panvk_sysval_vec4 local_group_size;
-      };
-   };
-
-   /* The back-end compiler doesn't know about any sysvals after this point */
-
-   struct panvk_ssbo_addr dyn_ssbos[MAX_DYNAMIC_STORAGE_BUFFERS];
+struct panvk_compute_sysvals {
+   struct {
+      uint32_t x, y, z;
+   } num_work_groups;
+   struct {
+      uint32_t x, y, z;
+   } local_group_size;
 };
 
 struct panvk_shader {
    struct pan_shader_info info;
    struct util_dynarray binary;
-   unsigned sysval_ubo;
    struct pan_compute_dim local_size;
    bool has_img_access;
 };
@@ -73,7 +65,7 @@ bool panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,
 struct panvk_shader *panvk_per_arch(shader_create)(
    struct panvk_device *dev, gl_shader_stage stage,
    const VkPipelineShaderStageCreateInfo *stage_info,
-   const struct panvk_pipeline_layout *layout, unsigned sysval_ubo,
+   const struct panvk_pipeline_layout *layout,
    struct pan_blend_state *blend_state, bool static_blend_constants,
    const VkAllocationCallbacks *alloc);
 

@@ -1,30 +1,16 @@
 /*
  * Copyright © 2022 Friedrich Vock
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
+#include "radv_rra.h"
 #include "bvh/bvh.h"
 #include "util/half_float.h"
 #include "amd_family.h"
-#include "radv_private.h"
+#include "radv_device.h"
+#include "radv_entrypoints.h"
+#include "radv_physical_device.h"
 #include "vk_acceleration_structure.h"
 #include "vk_common_entrypoints.h"
 
@@ -181,26 +167,26 @@ amdgpu_vram_type_to_rra(uint32_t type)
 }
 
 static void
-rra_dump_asic_info(const struct radeon_info *rad_info, FILE *output)
+rra_dump_asic_info(const struct radeon_info *gpu_info, FILE *output)
 {
    struct rra_asic_info asic_info = {
       /* All frequencies are in Hz */
       .min_shader_clk_freq = 0,
-      .max_shader_clk_freq = rad_info->max_gpu_freq_mhz * 1000000,
+      .max_shader_clk_freq = gpu_info->max_gpu_freq_mhz * 1000000,
       .min_mem_clk_freq = 0,
-      .max_mem_clk_freq = rad_info->memory_freq_mhz * 1000000,
+      .max_mem_clk_freq = gpu_info->memory_freq_mhz * 1000000,
 
-      .vram_size = (uint64_t)rad_info->vram_size_kb * 1024,
+      .vram_size = (uint64_t)gpu_info->vram_size_kb * 1024,
 
-      .mem_type = amdgpu_vram_type_to_rra(rad_info->vram_type),
-      .mem_ops_per_clk = ac_memory_ops_per_clock(rad_info->vram_type),
-      .bus_width = rad_info->memory_bus_width,
+      .mem_type = amdgpu_vram_type_to_rra(gpu_info->vram_type),
+      .mem_ops_per_clk = ac_memory_ops_per_clock(gpu_info->vram_type),
+      .bus_width = gpu_info->memory_bus_width,
 
-      .device_id = rad_info->pci.dev,
-      .rev_id = rad_info->pci_rev_id,
+      .device_id = gpu_info->pci.dev,
+      .rev_id = gpu_info->pci_rev_id,
    };
 
-   strncpy(asic_info.device_name, rad_info->marketing_name ? rad_info->marketing_name : rad_info->name,
+   strncpy(asic_info.device_name, gpu_info->marketing_name ? gpu_info->marketing_name : gpu_info->name,
            RRA_FILE_DEVICE_NAME_MAX_SIZE - 1);
 
    fwrite(&asic_info, sizeof(struct rra_asic_info), 1, output);
@@ -898,15 +884,17 @@ exit:
 VkResult
 radv_rra_trace_init(struct radv_device *device)
 {
+   const struct radv_physical_device *pdev = radv_device_physical(device);
+
    device->rra_trace.validate_as = debug_get_bool_option("RADV_RRA_TRACE_VALIDATE", false);
    device->rra_trace.copy_after_build = debug_get_bool_option("RADV_RRA_TRACE_COPY_AFTER_BUILD", false);
    device->rra_trace.accel_structs = _mesa_pointer_hash_table_create(NULL);
    device->rra_trace.accel_struct_vas = _mesa_hash_table_u64_create(NULL);
    simple_mtx_init(&device->rra_trace.data_mtx, mtx_plain);
 
-   device->rra_trace.copy_memory_index = radv_find_memory_index(
-      device->physical_device,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+   device->rra_trace.copy_memory_index =
+      radv_find_memory_index(pdev, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                      VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
 
    util_dynarray_init(&device->rra_trace.ray_history, NULL);
 
@@ -939,9 +927,9 @@ radv_rra_trace_init(struct radv_device *device)
    VkMemoryAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .allocationSize = requirements.size,
-      .memoryTypeIndex = radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                                                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+      .memoryTypeIndex =
+         radv_find_memory_index(pdev, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
    };
 
    result = radv_AllocateMemory(_device, &alloc_info, NULL, &device->rra_trace.ray_history_memory);
@@ -1041,7 +1029,7 @@ struct rra_copy_context {
 static VkResult
 rra_copy_context_init(struct rra_copy_context *ctx)
 {
-   RADV_FROM_HANDLE(radv_device, device, ctx->device);
+   VK_FROM_HANDLE(radv_device, device, ctx->device);
    if (device->rra_trace.copy_after_build)
       return VK_SUCCESS;
 
@@ -1119,7 +1107,7 @@ fail_pool:
 static void
 rra_copy_context_finish(struct rra_copy_context *ctx)
 {
-   RADV_FROM_HANDLE(radv_device, device, ctx->device);
+   VK_FROM_HANDLE(radv_device, device, ctx->device);
    if (device->rra_trace.copy_after_build)
       return;
 
@@ -1314,8 +1302,9 @@ static_assert(sizeof(struct rra_ray_history_timestamp_token) == 8,
 VkResult
 radv_rra_dump_trace(VkQueue vk_queue, char *filename)
 {
-   RADV_FROM_HANDLE(radv_queue, queue, vk_queue);
-   struct radv_device *device = queue->device;
+   VK_FROM_HANDLE(radv_queue, queue, vk_queue);
+   struct radv_device *device = radv_queue_device(queue);
+   const struct radv_physical_device *pdev = radv_device_physical(device);
    VkDevice vk_device = radv_device_to_handle(device);
 
    VkResult result = vk_common_DeviceWaitIdle(vk_device);
@@ -1365,7 +1354,7 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
    fwrite(&api, sizeof(uint64_t), 1, file);
 
    uint64_t asic_info_offset = (uint64_t)ftell(file);
-   rra_dump_asic_info(&device->physical_device->rad_info, file);
+   rra_dump_asic_info(&pdev->info, file);
 
    uint64_t written_accel_struct_count = 0;
 

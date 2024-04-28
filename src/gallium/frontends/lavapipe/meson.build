@@ -32,6 +32,7 @@ liblvp_files = files(
     'lvp_pipeline.c',
     'lvp_pipeline_cache.c',
     'lvp_query.c',
+    'lvp_ray_tracing_pipeline.c',
     'lvp_wsi.c')
 
 lvp_deps = []

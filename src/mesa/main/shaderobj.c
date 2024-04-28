@@ -298,9 +298,6 @@ init_shader_program(struct gl_shader_program *prog)
    prog->FragDataBindings = string_to_uint_map_ctor();
    prog->FragDataIndexBindings = string_to_uint_map_ctor();
 
-   prog->Geom.UsesEndPrimitive = false;
-   prog->Geom.ActiveStreamMask = 0;
-
    prog->TransformFeedback.BufferMode = GL_INTERLEAVED_ATTRIBS;
 
    exec_list_make_empty(&prog->EmptyUniformLocations);

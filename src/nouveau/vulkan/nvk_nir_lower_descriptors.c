@@ -625,6 +625,9 @@ load_descriptor(nir_builder *b, unsigned num_components, unsigned bit_size,
          nir_iadd_imm(b, nir_imul_imm(b, index, binding_layout->stride),
                          binding_layout->offset + offset_B);
 
+      uint64_t max_desc_ubo_offset = binding_layout->offset +
+         binding_layout->array_size * binding_layout->stride;
+
       unsigned desc_align_mul = (1 << (ffs(binding_layout->stride) - 1));
       desc_align_mul = MIN2(desc_align_mul, 16);
       unsigned desc_align_offset = binding_layout->offset + offset_B;
@@ -637,7 +640,7 @@ load_descriptor(nir_builder *b, unsigned num_components, unsigned bit_size,
       int cbuf_idx = get_mapped_cbuf_idx(&cbuf_key, ctx);
 
       nir_def *desc;
-      if (cbuf_idx >= 0) {
+      if (cbuf_idx >= 0 && max_desc_ubo_offset <= NVK_MAX_CBUF_SIZE) {
          desc = nir_load_ubo(b, num_components, bit_size,
                              nir_imm_int(b, cbuf_idx),
                              desc_ubo_offset,
@@ -1120,10 +1123,6 @@ lower_ssbo_resource_index(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_def *addr;
    switch (ctx->ssbo_addr_format) {
-   case nir_address_format_64bit_global:
-      addr = nir_iadd(b, binding_addr, nir_u2u64(b, offset_in_binding));
-      break;
-
    case nir_address_format_64bit_global_32bit_offset:
    case nir_address_format_64bit_bounded_global:
       addr = nir_vec4(b, nir_unpack_64_2x32_split_x(b, binding_addr),
@@ -1157,10 +1156,6 @@ lower_ssbo_resource_reindex(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_def *addr_high32;
    switch (ctx->ssbo_addr_format) {
-   case nir_address_format_64bit_global:
-      addr_high32 = nir_unpack_64_2x32_split_y(b, addr);
-      break;
-
    case nir_address_format_64bit_global_32bit_offset:
    case nir_address_format_64bit_bounded_global:
       addr_high32 = nir_channel(b, addr, 1);
@@ -1195,14 +1190,6 @@ lower_load_ssbo_descriptor(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_def *desc;
    switch (ctx->ssbo_addr_format) {
-   case nir_address_format_64bit_global:
-      /* Mask off the binding stride */
-      addr = nir_iand_imm(b, addr, BITFIELD64_MASK(56));
-      desc = nir_build_load_global_constant(b, 1, 64, addr,
-                                            .align_mul = 16,
-                                            .align_offset = 0);
-      break;
-
    case nir_address_format_64bit_global_32bit_offset: {
       nir_def *base = nir_pack_64_2x32(b, nir_trim_vector(b, addr, 2));
       nir_def *offset = nir_channel(b, addr, 3);

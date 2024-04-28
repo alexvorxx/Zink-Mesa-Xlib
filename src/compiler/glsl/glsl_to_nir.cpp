@@ -443,6 +443,9 @@ nir_visitor::visit(ir_variable *ir)
    var->data.from_named_ifc_block = ir->data.from_named_ifc_block;
    var->data.compact = false;
    var->data.used = ir->data.used;
+   var->data.max_array_access = ir->data.max_array_access;
+   var->data.implicit_sized_array = ir->data.implicit_sized_array;
+   var->data.from_ssbo_unsized_array = ir->data.from_ssbo_unsized_array;
 
    switch(ir->data.mode) {
    case ir_var_auto:
@@ -583,6 +586,8 @@ nir_visitor::visit(ir_variable *ir)
    var->data.bindless = ir->data.bindless;
    var->data.offset = ir->data.offset;
    var->data.access = (gl_access_qualifier)mem_access;
+   var->data.has_initializer = ir->data.has_initializer;
+   var->data.is_implicit_initializer = ir->data.is_implicit_initializer;
 
    if (glsl_type_is_image(glsl_without_array(var->type))) {
       var->data.image.format = ir->data.image_format;
@@ -668,6 +673,14 @@ nir_visitor::create_function(ir_function_signature *ir)
       np++;
    }
    assert(np == func->num_params);
+
+   func->is_subroutine = ir->function()->is_subroutine;
+   func->num_subroutine_types = ir->function()->num_subroutine_types;
+   func->subroutine_index = ir->function()->subroutine_index;
+   func->subroutine_types =
+      ralloc_array(func, const struct glsl_type *, func->num_subroutine_types);
+   for (int i = 0; i < func->num_subroutine_types; i++)
+     func->subroutine_types[i] = ir->function()->subroutine_types[i];
 
    _mesa_hash_table_insert(this->overload_table, ir, func);
 }

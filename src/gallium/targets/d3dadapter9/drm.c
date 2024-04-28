@@ -225,7 +225,7 @@ drm_create_adapter( int fd,
         return D3DERR_DRIVERINTERNALERROR;
     }
 
-    ctx->base.hal = pipe_loader_create_screen(ctx->dev);
+    ctx->base.hal = pipe_loader_create_screen(ctx->dev, false);
     if (!ctx->base.hal) {
         ERR("Unable to load requested driver.\n");
         drm_destroy(&ctx->base);
@@ -285,7 +285,7 @@ drm_create_adapter( int fd,
     sw_rendering |= debug_get_bool_option("D3D_ALWAYS_SOFTWARE", false);
     /* wrap it to create a software screen that can share resources */
     if (sw_rendering && pipe_loader_sw_probe_wrapped(&ctx->swdev, ctx->base.hal))
-        ctx->base.ref = pipe_loader_create_screen(ctx->swdev);
+        ctx->base.ref = pipe_loader_create_screen(ctx->swdev, false);
     else {
         /* Use the hardware for sw rendering */
         ctx->swdev = ctx->dev;

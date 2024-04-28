@@ -17,7 +17,7 @@ brw_fs_optimize(fs_visitor &s)
    s.debug_optimizer(nir, "start", 0, 0);
 
    /* Start by validating the shader we currently have. */
-   s.validate();
+   brw_fs_validate(s);
 
    bool progress = false;
    int iteration = 0;
@@ -30,7 +30,7 @@ brw_fs_optimize(fs_visitor &s)
       if (this_progress)                                                \
          s.debug_optimizer(nir, #pass, iteration, pass_num);            \
                                                                         \
-      s.validate();                                                     \
+      brw_fs_validate(s);                                               \
                                                                         \
       progress = progress || this_progress;                             \
       this_progress;                                                    \
@@ -38,8 +38,6 @@ brw_fs_optimize(fs_visitor &s)
 
    s.assign_constant_locations();
    OPT(brw_fs_lower_constant_loads);
-
-   s.validate();
 
    if (s.compiler->lower_dpas)
       OPT(brw_fs_lower_dpas);
@@ -157,8 +155,6 @@ brw_fs_optimize(fs_visitor &s)
    OPT(brw_fs_lower_uniform_pull_constant_loads);
 
    OPT(brw_fs_lower_find_live_channel);
-
-   s.validate();
 }
 
 static unsigned
@@ -170,7 +166,7 @@ load_payload_sources_read_for_size(fs_inst *lp, unsigned size_read)
    unsigned i;
    unsigned size = lp->header_size * REG_SIZE;
    for (i = lp->header_size; size < size_read && i < lp->sources; i++)
-      size += lp->exec_size * type_sz(lp->src[i].type);
+      size += lp->exec_size * brw_type_size_bytes(lp->src[i].type);
 
    /* Size read must cover exactly a subset of sources. */
    assert(size == size_read);
@@ -229,7 +225,7 @@ brw_fs_opt_zero_samples(fs_visitor &s)
       for (unsigned i = params - 1; i > first_param_idx; i--) {
          if (lp->src[i].file != BAD_FILE && !lp->src[i].is_zero())
             break;
-         zero_size += lp->exec_size * type_sz(lp->src[i].type) * lp->dst.stride;
+         zero_size += lp->exec_size * brw_type_size_bytes(lp->src[i].type) * lp->dst.stride;
       }
 
       /* Round down to ensure to only consider full registers. */

@@ -764,7 +764,6 @@ spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)-
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right middle PV: FIRST,Fail
 spec@!opengl 1.1@clipflat@glDrawElements(GL_TRIANGLE_STRIP)- glFrontFace(GL_CW)- glPolygonMode(GL_LINE)- quadrant: right top PV: FIRST,Fail
 spec@arb_clear_texture@arb_clear_texture-3d,Fail
-spec@arb_clear_texture@arb_clear_texture-depth,Fail
 spec@arb_clear_texture@arb_clear_texture-sized-formats,Fail
 spec@arb_clear_texture@arb_clear_texture-supported-formats,Fail
 spec@glsl-1.10@execution@glsl-fs-inline-explosion,Crash
@@ -806,6 +805,11 @@ spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 vbo gl_triangle_fan,Fail
 
 spec@!opengl 1.1@draw-pixels,Fail
 spec@!opengl 1.1@line-flat-clip-color,Fail
+
+# Hardware do not support line/polygon stipple. In fact, this feature
+# was deprecated/removed in newer OpenGL spec versions. It could be
+# emulated using shaders
+spec@!opengl 1.1@line-smooth-stipple,Fail
 spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Baseline,Fail
 spec@!opengl 1.1@linestipple@Factor 2x,Fail
@@ -813,6 +817,9 @@ spec@!opengl 1.1@linestipple@Factor 3x,Fail
 spec@!opengl 1.1@linestipple@Line loop,Fail
 spec@!opengl 1.1@linestipple@Line strip,Fail
 spec@!opengl 1.1@linestipple@Restarting lines within a single Begin-End block,Fail
+spec@!opengl 2.1@pbo,Fail
+spec@!opengl 2.1@pbo@test_polygon_stip,Fail
+spec@!opengl 2.1@polygon-stipple-fs,Fail
 
 spec@!opengl 1.1@polygon-mode,Fail
 spec@!opengl 1.1@polygon-mode-offset,Fail
@@ -892,9 +899,6 @@ spec@!opengl 1.5@depth-tex-compare,Fail
 spec@!opengl 2.0@attrib-assignments,Fail
 spec@!opengl 2.0@gl-2.0-edgeflag,Fail
 spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Fail
-spec@!opengl 2.1@pbo,Fail
-spec@!opengl 2.1@pbo@test_polygon_stip,Fail
-spec@!opengl 2.1@polygon-stipple-fs,Fail
 spec@arb_depth_texture@depth-level-clamp,Fail
 spec@arb_depth_texture@texwrap formats,Fail
 spec@arb_depth_texture@texwrap formats@GL_DEPTH_COMPONENT16,Fail
@@ -1155,7 +1159,6 @@ spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth16,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
 
-spec@!opengl 1.1@line-smooth-stipple,Fail
 spec@glsl-1.10@execution@variable-indexing@vs-output-array-vec2-index-wr-no-unroll,Fail
 
 spec@ext_framebuffer_multisample@accuracy 2 depth_draw depthstencil,Fail

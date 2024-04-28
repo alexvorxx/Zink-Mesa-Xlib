@@ -181,6 +181,10 @@ enum iris_heap {
 
    /** Device-local memory (VRAM).  Cannot be placed in system memory! */
    IRIS_HEAP_DEVICE_LOCAL,
+   IRIS_HEAP_MAX_NO_VRAM = IRIS_HEAP_DEVICE_LOCAL,
+
+   /** Device-local memory that may be evicted to system memory if needed. */
+   IRIS_HEAP_DEVICE_LOCAL_PREFERRED,
 
    /**
     * Device-local memory (VRAM) + guarantee that is CPU visible.
@@ -189,9 +193,7 @@ enum iris_heap {
     * This will only be used when running in small PCIe bar systems.
     */
    IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR,
-
-   /** Device-local memory that may be evicted to system memory if needed. */
-   IRIS_HEAP_DEVICE_LOCAL_PREFERRED,
+   IRIS_HEAP_MAX_LARGE_BAR = IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR,
 
    IRIS_HEAP_MAX,
 };
@@ -348,17 +350,31 @@ struct iris_bo {
    };
 };
 
-#define BO_ALLOC_PLAIN       0
-#define BO_ALLOC_ZEROED      (1<<0)
-#define BO_ALLOC_COHERENT    (1<<1)
-#define BO_ALLOC_SMEM        (1<<2)
-#define BO_ALLOC_SCANOUT     (1<<3)
-#define BO_ALLOC_NO_SUBALLOC (1<<4)
-#define BO_ALLOC_LMEM        (1<<5)
-#define BO_ALLOC_PROTECTED   (1<<6)
-#define BO_ALLOC_SHARED      (1<<7)
-#define BO_ALLOC_CAPTURE     (1<<8)
-#define BO_ALLOC_CPU_VISIBLE (1<<9)
+/* No special attributes. */
+#define BO_ALLOC_PLAIN           0
+/* Content is set to 0, only done in cache and slabs code paths. */
+#define BO_ALLOC_ZEROED          (1<<0)
+/* Allocate a cached and coherent BO, this has a performance cost in
+ * integrated platforms without LLC.
+ * Should only be used in BOs that will be written and read from CPU often.
+ */
+#define BO_ALLOC_COHERENT        (1<<1)
+/* Place BO only on smem. */
+#define BO_ALLOC_SMEM            (1<<2)
+/* BO can be sent to display. */
+#define BO_ALLOC_SCANOUT         (1<<3)
+/* No sub-allocation(slabs). */
+#define BO_ALLOC_NO_SUBALLOC     (1<<4)
+/* Place BO only on lmem. */
+#define BO_ALLOC_LMEM            (1<<5)
+/* Content is protected, can't be mapped and needs special handling.  */
+#define BO_ALLOC_PROTECTED       (1<<6)
+/* BO can be exported to other applications. */
+#define BO_ALLOC_SHARED          (1<<7)
+/* BO will be captured in the KMD error dump. */
+#define BO_ALLOC_CAPTURE         (1<<8)
+/* Can be mapped. */
+#define BO_ALLOC_CPU_VISIBLE     (1<<9)
 
 /**
  * Allocate a buffer object.

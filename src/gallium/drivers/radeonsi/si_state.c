@@ -2515,14 +2515,14 @@ static bool si_is_format_supported(struct pipe_screen *screen, enum pipe_format 
 
       /* Chips with 1 RB don't increment occlusion queries at 16x MSAA sample rate,
        * so don't expose 16 samples there.
+       *
+       * EQAA also uses max 8 samples because our FMASK fetches only load 32 bits and
+       * would need to be changed to 64 bits for 16 samples.
        */
-      const unsigned max_eqaa_samples =
-         (sscreen->info.gfx_level >= GFX11 ||
-          util_bitcount64(sscreen->info.enabled_rb_mask) <= 1) ? 8 : 16;
       const unsigned max_samples = 8;
 
       /* MSAA support without framebuffer attachments. */
-      if (format == PIPE_FORMAT_NONE && sample_count <= max_eqaa_samples)
+      if (format == PIPE_FORMAT_NONE && sample_count <= max_samples)
          return true;
 
       if (!sscreen->info.has_eqaa_surface_allocator || util_format_is_depth_or_stencil(format)) {
@@ -2531,7 +2531,7 @@ static bool si_is_format_supported(struct pipe_screen *screen, enum pipe_format 
             return false;
       } else {
          /* Color with EQAA. */
-         if (sample_count > max_eqaa_samples || storage_sample_count > max_samples)
+         if (sample_count > max_samples || storage_sample_count > max_samples)
             return false;
       }
    }
@@ -3132,6 +3132,8 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
    sctx->framebuffer.all_DCC_pipe_aligned = true;
    sctx->framebuffer.has_dcc_msaa = false;
    sctx->framebuffer.min_bytes_per_pixel = 0;
+   sctx->framebuffer.disable_vrs_flat_shading = false;
+   sctx->framebuffer.has_stencil = false;
 
    for (i = 0; i < state->nr_cbufs; i++) {
       if (!state->cbufs[i])
@@ -3190,6 +3192,14 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
       if (!sctx->framebuffer.min_bytes_per_pixel ||
           tex->surface.bpe < sctx->framebuffer.min_bytes_per_pixel)
          sctx->framebuffer.min_bytes_per_pixel = tex->surface.bpe;
+
+      /* Disable VRS flat shading where it decreases performance.
+       * This gives the best results for slow clears for AMD_TEST=blitperf on Navi31.
+       */
+      if ((sctx->framebuffer.nr_samples == 8 && tex->surface.bpe != 2) ||
+          (tex->surface.thick_tiling && tex->surface.bpe == 4 &&
+           util_format_get_nr_components(surf->base.format) == 4))
+         sctx->framebuffer.disable_vrs_flat_shading = true;
    }
 
    struct si_texture *zstex = NULL;
@@ -3214,6 +3224,9 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
       if (sctx->queued.named.rasterizer->uses_poly_offset &&
           surf->db_format_index != old_db_format_index)
          (sctx)->dirty_atoms |= SI_STATE_BIT(rasterizer);
+
+      if (util_format_has_stencil(util_format_description(zstex->buffer.b.b.format)))
+         sctx->framebuffer.has_stencil = true;
    }
 
    si_update_ps_colorbuf0_slot(sctx);
@@ -3285,6 +3298,7 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
    si_ps_key_update_framebuffer_rasterizer_sample_shading(sctx);
    si_vs_ps_key_update_rast_prim_smooth_stipple(sctx);
    si_update_ps_inputs_read_or_disabled(sctx);
+   si_update_vrs_flat_shading(sctx);
    sctx->do_update_shaders = true;
 
    if (!sctx->decompression_enabled) {

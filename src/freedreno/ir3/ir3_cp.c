@@ -116,7 +116,7 @@ combine_flags(unsigned *dstflags, struct ir3_instruction *src)
    if (srcflags & IR3_REG_BNOT)
       *dstflags ^= IR3_REG_BNOT;
 
-   *dstflags &= ~IR3_REG_SSA;
+   *dstflags &= ~(IR3_REG_SSA | IR3_REG_SHARED);
    *dstflags |= srcflags & IR3_REG_SSA;
    *dstflags |= srcflags & IR3_REG_CONST;
    *dstflags |= srcflags & IR3_REG_IMMED;
@@ -280,7 +280,7 @@ try_swap_mad_two_srcs(struct ir3_instruction *instr, unsigned new_flags)
    /* If the reason we couldn't fold without swapping is something
     * other than const source, then swapping won't help:
     */
-   if (!(new_flags & IR3_REG_CONST))
+   if (!(new_flags & (IR3_REG_CONST | IR3_REG_SHARED)))
       return false;
 
    instr->cat3.swapped = true;
@@ -304,22 +304,6 @@ try_swap_mad_two_srcs(struct ir3_instruction *instr, unsigned new_flags)
    return valid_swap;
 }
 
-/* Values that are uniform inside a loop can become divergent outside
- * it if the loop has a divergent trip count. This means that we can't
- * propagate a copy of a shared to non-shared register if it would
- * make the shared reg's live range extend outside of its loop. Users
- * outside the loop would see the value for the thread(s) that last
- * exited the loop, rather than for their own thread.
- */
-static bool
-is_valid_shared_copy(struct ir3_instruction *dst_instr,
-                     struct ir3_instruction *src_instr,
-                     struct ir3_register *src_reg)
-{
-   return !(src_reg->flags & IR3_REG_SHARED) ||
-      dst_instr->block->loop_id == src_instr->block->loop_id;
-}
-
 /**
  * Handle cp for a given src register.  This additionally handles
  * the cases of collapsing immedate/const (which replace the src
@@ -338,9 +322,6 @@ reg_cp(struct ir3_cp_ctx *ctx, struct ir3_instruction *instr,
       struct ir3_register *src_reg = src->srcs[0];
       unsigned new_flags = reg->flags;
 
-      if (!is_valid_shared_copy(instr, src, src_reg))
-         return false;
-
       combine_flags(&new_flags, src);
 
       if (ir3_valid_flags(instr, n, new_flags)) {
@@ -358,6 +339,8 @@ reg_cp(struct ir3_cp_ctx *ctx, struct ir3_instruction *instr,
          reg->def->instr->use_count++;
 
          return true;
+      } else if (n == 1 && try_swap_mad_two_srcs(instr, new_flags)) {
+         return true;
       }
    } else if ((is_same_type_mov(src) || is_const_mov(src)) &&
               /* cannot collapse const/immed/etc into control flow: */
@@ -365,9 +348,6 @@ reg_cp(struct ir3_cp_ctx *ctx, struct ir3_instruction *instr,
       /* immed/const/etc cases, which require some special handling: */
       struct ir3_register *src_reg = src->srcs[0];
       unsigned new_flags = reg->flags;
-
-      if (!is_valid_shared_copy(instr, src, src_reg))
-         return false;
 
       if (src_reg->flags & IR3_REG_ARRAY)
          return false;

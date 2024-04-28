@@ -44,10 +44,8 @@ spill_fill(agx_builder *b, agx_instr *I, enum agx_size size, unsigned channels,
    /* Emit the spill/fill */
    if (I->dest[0].memory) {
       agx_stack_store(b, reg, agx_immediate(stack_offs_B), format, mask);
-      b->shader->spills++;
    } else {
       agx_stack_load_to(b, reg, agx_immediate(stack_offs_B), format, mask);
-      b->shader->fills++;
    }
 }
 

@@ -10,6 +10,13 @@
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 
+nir_def *lvp_mul_vec3_mat(nir_builder *b, nir_def *vec, nir_def *matrix[], bool translation);
+
+void lvp_load_wto_matrix(nir_builder *b, nir_def *instance_addr, nir_def **out);
+
+nir_def *lvp_load_vertex_position(nir_builder *b, nir_def *instance_addr,
+                                  nir_def *primitive_id, uint32_t index);
+
 struct lvp_ray_traversal_args;
 
 struct lvp_ray_flags {
@@ -32,7 +39,8 @@ struct lvp_leaf_intersection {
 };
 
 typedef void (*lvp_aabb_intersection_cb)(nir_builder *b, struct lvp_leaf_intersection *intersection,
-                                         const struct lvp_ray_traversal_args *args);
+                                         const struct lvp_ray_traversal_args *args,
+                                         const struct lvp_ray_flags *ray_flags);
 
 struct lvp_triangle_intersection {
    struct lvp_leaf_intersection base;
@@ -81,12 +89,6 @@ struct lvp_ray_traversal_args {
    nir_def *dir;
 
    struct lvp_ray_traversal_vars vars;
-
-   /* The increment/decrement used for radv_ray_traversal_vars::stack, and how many entries are
-    * available. stack_base is the base address of the stack. */
-   uint32_t stack_stride;
-   uint32_t stack_entries;
-   uint32_t stack_base;
 
    lvp_aabb_intersection_cb aabb_cb;
    lvp_triangle_intersection_cb triangle_cb;

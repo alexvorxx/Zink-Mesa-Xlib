@@ -206,6 +206,7 @@ v3dv_bo_init(struct v3dv_bo *bo,
    bo->private = private;
    bo->dumb_handle = -1;
    bo->is_import = false;
+   bo->cl_branch_offset = 0xffffffff;
    list_inithead(&bo->list_link);
 }
 

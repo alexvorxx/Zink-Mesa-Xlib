@@ -1131,7 +1131,7 @@ tx_src_param(struct shader_translator *tx, const struct sm1_src_param *param)
         src = ureg_imm1f(ureg, 0.0f);
         break;
     case D3DSPR_CONSTINT:
-        /* relative adressing only possible for float constants in vs */
+        /* relative addressing only possible for float constants in vs */
         if (!tx_lconsti(tx, &src, param->idx))
             src = nine_integer_constant_src(tx, param->idx);
         break;
@@ -1753,10 +1753,10 @@ DECL_SPECIAL(CND)
 
     /* the coissue flag was a tip for compilers to advise to
      * execute two operations at the same time, in cases
-     * the two executions had same dst with different channels.
+     * the two executions had the same dst with different channels.
      * It has no effect on current hw. However it seems CND
      * is affected. The handling of this very specific case
-     * handled below mimick wine behaviour */
+     * handled below mimic wine behaviour */
     if (tx->insn.coissue && tx->version.major == 1 && tx->version.minor < 4 && tx->insn.dst[0].mask != NINED3DSP_WRITEMASK_3) {
         ureg_MOV(tx->ureg,
                  dst, tx_src_param(tx, &tx->insn.src[1]));

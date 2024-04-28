@@ -1,24 +1,7 @@
 /*
  * Copyright © 2021 Google
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "nir/nir.h"
@@ -29,7 +12,8 @@
 #include "nir/radv_nir.h"
 #include "nir/radv_nir_rt_common.h"
 #include "ac_nir.h"
-#include "radv_private.h"
+#include "radv_pipeline_cache.h"
+#include "radv_pipeline_rt.h"
 #include "radv_shader.h"
 
 #include "vk_pipeline.h"
@@ -1524,6 +1508,7 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
                      const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, bool monolithic, nir_builder *b,
                      struct rt_variables *vars, bool ignore_cull_mask, struct radv_ray_tracing_stage_info *info)
 {
+   const struct radv_physical_device *pdev = radv_device_physical(device);
    nir_variable *barycentrics =
       nir_variable_create(b->shader, nir_var_ray_hit_attrib, glsl_vector_type(GLSL_TYPE_FLOAT, 2), "barycentrics");
    barycentrics->data.driver_location = 0;
@@ -1602,7 +1587,7 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
       .tmin = nir_load_var(b, vars->tmin),
       .dir = nir_load_var(b, vars->direction),
       .vars = trav_vars_args,
-      .stack_stride = device->physical_device->rt_wave_size * sizeof(uint32_t),
+      .stack_stride = pdev->rt_wave_size * sizeof(uint32_t),
       .stack_entries = MAX_STACK_ENTRY_COUNT,
       .stack_base = 0,
       .ignore_cull_mask = ignore_cull_mask,
@@ -1638,7 +1623,7 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
          hit_attribs[i] =
             nir_local_variable_create(nir_shader_get_entrypoint(b->shader), glsl_uint_type(), "ahit_attrib");
 
-      lower_hit_attribs(b->shader, hit_attribs, device->physical_device->rt_wave_size);
+      lower_hit_attribs(b->shader, hit_attribs, pdev->rt_wave_size);
    }
 
    /* Initialize follow-up shader. */
@@ -1702,6 +1687,7 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
                             const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                             struct radv_ray_tracing_stage_info *info)
 {
+   const struct radv_physical_device *pdev = radv_device_physical(device);
    const VkPipelineCreateFlagBits2KHR create_flags = vk_rt_pipeline_create_flags(pCreateInfo);
 
    /* Create the traversal shader as an intersection shader to prevent validation failures due to
@@ -1709,8 +1695,8 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
    nir_builder b = radv_meta_init_shader(device, MESA_SHADER_INTERSECTION, "rt_traversal");
    b.shader->info.internal = false;
    b.shader->info.workgroup_size[0] = 8;
-   b.shader->info.workgroup_size[1] = device->physical_device->rt_wave_size == 64 ? 8 : 4;
-   b.shader->info.shared_size = device->physical_device->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t);
+   b.shader->info.workgroup_size[1] = pdev->rt_wave_size == 64 ? 8 : 4;
+   b.shader->info.shared_size = pdev->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t);
    struct rt_variables vars = create_rt_variables(b.shader, device, create_flags, false);
 
    if (info->tmin.state == RADV_RT_CONST_ARG_STATE_VALID)
@@ -1773,6 +1759,7 @@ lower_rt_instruction_monolithic(nir_builder *b, nir_instr *instr, void *data)
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
    struct lower_rt_instruction_monolithic_state *state = data;
+   const struct radv_physical_device *pdev = radv_device_physical(state->device);
    struct rt_variables *vars = state->vars;
 
    switch (intr->intrinsic) {
@@ -1800,8 +1787,8 @@ lower_rt_instruction_monolithic(nir_builder *b, nir_instr *instr, void *data)
       nir_store_var(b, vars->stack_ptr, nir_iadd_imm(b, stack_ptr, b->shader->scratch_size), 0x1);
 
       radv_build_traversal(state->device, state->pipeline, state->pCreateInfo, true, b, vars, ignore_cull_mask, NULL);
-      b->shader->info.shared_size = MAX2(b->shader->info.shared_size, state->device->physical_device->rt_wave_size *
-                                                                         MAX_STACK_ENTRY_COUNT * sizeof(uint32_t));
+      b->shader->info.shared_size =
+         MAX2(b->shader->info.shared_size, pdev->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t));
 
       nir_store_var(b, vars->stack_ptr, stack_ptr, 0x1);
 

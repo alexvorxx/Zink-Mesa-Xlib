@@ -102,6 +102,7 @@ literal(uint32_t num)
 {
 	instr->literal = num;
 	instr->is_literal = true;
+        parse_version(instr);
 }
 
 static void
@@ -164,8 +165,10 @@ label(const char *str)
 %token <tok> T_OP_IRET
 %token <tok> T_OP_CALL
 %token <tok> T_OP_JUMP
+%token <tok> T_OP_JUMPA
+%token <tok> T_OP_SRET
 %token <tok> T_OP_WAITIN
-%token <tok> T_OP_PREEMPTLEAVE
+%token <tok> T_OP_BL
 %token <tok> T_OP_SETSECURE
 %token <tok> T_LSHIFT
 %token <tok> T_REP
@@ -294,11 +297,14 @@ branch_instr:      branch_op reg ',' T_BIT ',' T_LABEL_REF     { src1($2); bit($
 |                  branch_op reg ',' immediate ',' T_LABEL_REF { src1($2); immed($4); label($6); }
 
 other_instr:       T_OP_CALL T_LABEL_REF { new_instr(OPC_CALL); label($2); }
-|                  T_OP_PREEMPTLEAVE T_LABEL_REF { new_instr(OPC_PREEMPTLEAVE); label($2); }
+|                  T_OP_BL T_LABEL_REF   { new_instr(OPC_BL); label($2); }
 |                  T_OP_SETSECURE reg ',' T_LABEL_REF { new_instr(OPC_SETSECURE); src1($2); label($4); }
 |                  T_OP_RET              { new_instr(OPC_RET); }
 |                  T_OP_IRET             { new_instr(OPC_IRET); }
 |                  T_OP_JUMP T_LABEL_REF { new_instr(OPC_JUMP); label($2); }
+|                  T_OP_JUMPA T_LABEL_REF { new_instr(OPC_JUMPA); label($2); }
+|                  T_OP_JUMP reg         { new_instr(OPC_JUMPR); src1($2); }
+|                  T_OP_SRET             { new_instr(OPC_SRET); }
 |                  T_OP_WAITIN           { new_instr(OPC_WAITIN); }
 |                  T_OP_NOP              { new_instr(OPC_NOP); }
 |                  T_LITERAL             { new_instr(OPC_RAW_LITERAL); literal($1); }

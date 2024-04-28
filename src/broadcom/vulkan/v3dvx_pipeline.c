@@ -151,16 +151,6 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
       ms_info && ms_info->rasterizationSamples > VK_SAMPLE_COUNT_1_BIT;
 
    v3dvx_pack(pipeline->cfg_bits, CFG_BITS, config) {
-      config.enable_forward_facing_primitive =
-         rs_info ? !(rs_info->cullMode & VK_CULL_MODE_FRONT_BIT) : false;
-
-      config.enable_reverse_facing_primitive =
-         rs_info ? !(rs_info->cullMode & VK_CULL_MODE_BACK_BIT) : false;
-
-      /* Seems like the hardware is backwards regarding this setting... */
-      config.clockwise_primitives =
-         rs_info ? rs_info->frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE : false;
-
       /* Even if rs_info->depthBiasEnabled is true, we can decide to not
        * enable it, like if there isn't a depth/stencil attachment with the
        * pipeline.
@@ -209,23 +199,6 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
 
       config.blend_enable = pipeline->blend.enables != 0;
 
-      /* Disable depth/stencil if we don't have a D/S attachment */
-      const struct vk_render_pass_state *ri = &pipeline->rendering_info;
-      bool has_depth = ri->depth_attachment_format != VK_FORMAT_UNDEFINED;
-      bool has_stencil = ri->stencil_attachment_format != VK_FORMAT_UNDEFINED;
-
-      if (ds_info && ds_info->depthTestEnable && has_depth) {
-         config.z_updates_enable = ds_info->depthWriteEnable;
-         config.depth_test_function = ds_info->depthCompareOp;
-      } else {
-         config.depth_test_function = VK_COMPARE_OP_ALWAYS;
-      }
-
-      config.stencil_enable =
-         ds_info ? ds_info->stencilTestEnable && has_stencil: false;
-
-      pipeline->z_updates_enable = config.z_updates_enable;
-
 #if V3D_VERSION >= 71
       /* From the Vulkan spec:
        *
@@ -256,15 +229,12 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
       }
 
       config.z_clamp_mode = z_clamp_enable;
-
-      config.depth_bounds_test_enable =
-              ds_info && ds_info->depthBoundsTestEnable && has_depth;
 #endif
    };
 }
 
-static uint32_t
-translate_stencil_op(VkStencilOp op)
+uint32_t
+v3dX(translate_stencil_op)(VkStencilOp op)
 {
    switch (op) {
    case VK_STENCIL_OP_KEEP:
@@ -293,7 +263,8 @@ pack_single_stencil_cfg(struct v3dv_pipeline *pipeline,
                         uint8_t *stencil_cfg,
                         bool is_front,
                         bool is_back,
-                        const VkStencilOpState *stencil_state)
+                        const VkStencilOpState *stencil_state,
+                        const struct vk_graphics_pipeline_state *state)
 {
    /* From the Vulkan spec:
     *
@@ -305,61 +276,54 @@ pack_single_stencil_cfg(struct v3dv_pipeline *pipeline,
     *
     * In our case, 's' is always 8, so we clamp to that to prevent our packing
     * functions to assert in debug mode if they see larger values.
-    *
-    * If we have dynamic state we need to make sure we set the corresponding
-    * state bits to 0, since cl_emit_with_prepacked ORs the new value with
-    * the old.
     */
-   const uint8_t write_mask =
-      pipeline->dynamic_state.mask & V3DV_DYNAMIC_STENCIL_WRITE_MASK ?
-         0 : stencil_state->writeMask & 0xff;
-
-   const uint8_t compare_mask =
-      pipeline->dynamic_state.mask & V3DV_DYNAMIC_STENCIL_COMPARE_MASK ?
-         0 : stencil_state->compareMask & 0xff;
-
-   const uint8_t reference =
-      pipeline->dynamic_state.mask & V3DV_DYNAMIC_STENCIL_COMPARE_MASK ?
-         0 : stencil_state->reference & 0xff;
-
    v3dvx_pack(stencil_cfg, STENCIL_CFG, config) {
       config.front_config = is_front;
       config.back_config = is_back;
-      config.stencil_write_mask = write_mask;
-      config.stencil_test_mask = compare_mask;
+      config.stencil_write_mask = stencil_state->writeMask & 0xff;
+      config.stencil_test_mask = stencil_state->compareMask & 0xff;
       config.stencil_test_function = stencil_state->compareOp;
-      config.stencil_pass_op = translate_stencil_op(stencil_state->passOp);
-      config.depth_test_fail_op = translate_stencil_op(stencil_state->depthFailOp);
-      config.stencil_test_fail_op = translate_stencil_op(stencil_state->failOp);
-      config.stencil_ref_value = reference;
+      config.stencil_pass_op =
+         v3dX(translate_stencil_op)(stencil_state->passOp);
+      config.depth_test_fail_op =
+         v3dX(translate_stencil_op)(stencil_state->depthFailOp);
+      config.stencil_test_fail_op =
+         v3dX(translate_stencil_op)(stencil_state->failOp);
+      config.stencil_ref_value = stencil_state->reference & 0xff;
    }
 }
 
 static void
 pack_stencil_cfg(struct v3dv_pipeline *pipeline,
-                 const VkPipelineDepthStencilStateCreateInfo *ds_info)
+                 const VkPipelineDepthStencilStateCreateInfo *ds_info,
+                 const struct vk_graphics_pipeline_state *state)
 {
    assert(sizeof(pipeline->stencil_cfg) == 2 * cl_packet_length(STENCIL_CFG));
 
-   if (!ds_info || !ds_info->stencilTestEnable)
+   if ((!ds_info || !ds_info->stencilTestEnable) &&
+       (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE))) {
       return;
+   }
 
    const struct vk_render_pass_state *ri = &pipeline->rendering_info;
    if (ri->stencil_attachment_format == VK_FORMAT_UNDEFINED)
       return;
 
-   const uint32_t dynamic_stencil_states = V3DV_DYNAMIC_STENCIL_COMPARE_MASK |
-                                           V3DV_DYNAMIC_STENCIL_WRITE_MASK |
-                                           V3DV_DYNAMIC_STENCIL_REFERENCE;
-
+   const bool any_dynamic_stencil_states =
+      BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK) ||
+      BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK) ||
+      BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE) ||
+      BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE) ||
+      BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_OP);
 
    /* If front != back or we have dynamic stencil state we can't emit a single
     * packet for both faces.
     */
    bool needs_front_and_back = false;
-   if ((pipeline->dynamic_state.mask & dynamic_stencil_states) ||
-       memcmp(&ds_info->front, &ds_info->back, sizeof(ds_info->front)))
+   if ((any_dynamic_stencil_states) ||
+       memcmp(&ds_info->front, &ds_info->back, sizeof(ds_info->front))) {
       needs_front_and_back = true;
+   }
 
    /* If the front and back configurations are the same we can emit both with
     * a single packet.
@@ -367,16 +331,22 @@ pack_stencil_cfg(struct v3dv_pipeline *pipeline,
    pipeline->emit_stencil_cfg[0] = true;
    if (!needs_front_and_back) {
       pack_single_stencil_cfg(pipeline, pipeline->stencil_cfg[0],
-                              true, true, &ds_info->front);
+                              true, true, &ds_info->front, state);
    } else {
       pipeline->emit_stencil_cfg[1] = true;
       pack_single_stencil_cfg(pipeline, pipeline->stencil_cfg[0],
-                              true, false, &ds_info->front);
+                              true, false, &ds_info->front, state);
       pack_single_stencil_cfg(pipeline, pipeline->stencil_cfg[1],
-                              false, true, &ds_info->back);
+                              false, true, &ds_info->back, state);
    }
 }
 
+
+/* FIXME: Now that we are passing the vk_graphics_pipeline_state we could
+ * avoid passing all those parameters. But doing that we would need to change
+ * all the code that uses the VkXXX structures, and use instead the equivalent
+ * vk_xxx
+ */
 void
 v3dX(pipeline_pack_state)(struct v3dv_pipeline *pipeline,
                           const VkPipelineColorBlendStateCreateInfo *cb_info,
@@ -384,11 +354,12 @@ v3dX(pipeline_pack_state)(struct v3dv_pipeline *pipeline,
                           const VkPipelineRasterizationStateCreateInfo *rs_info,
                           const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT *pv_info,
                           const VkPipelineRasterizationLineStateCreateInfoEXT *ls_info,
-                          const VkPipelineMultisampleStateCreateInfo *ms_info)
+                          const VkPipelineMultisampleStateCreateInfo *ms_info,
+                          const struct vk_graphics_pipeline_state *state)
 {
    pack_blend(pipeline, cb_info);
    pack_cfg_bits(pipeline, ds_info, rs_info, pv_info, ls_info, ms_info);
-   pack_stencil_cfg(pipeline, ds_info);
+   pack_stencil_cfg(pipeline, ds_info, state);
 }
 
 static void
@@ -646,7 +617,6 @@ pack_shader_state_attribute_record(struct v3dv_pipeline *pipeline,
 
       attr.instance_divisor = MIN2(pipeline->vb[binding].instance_divisor,
                                    0xffff);
-      attr.stride = pipeline->vb[binding].stride;
       attr.type = get_attr_type(desc);
    }
 }

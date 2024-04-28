@@ -201,6 +201,7 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_depth_clip_enable                = device->devinfo.ver >= 71,
       .EXT_load_store_op_none               = true,
       .EXT_inline_uniform_block             = true,
+      .EXT_extended_dynamic_state           = true,
       .EXT_external_memory_dma_buf          = true,
       .EXT_host_query_reset                 = true,
       .EXT_image_drm_format_modifier        = true,
@@ -407,6 +408,9 @@ get_features(const struct v3dv_physical_device *physical_device,
 
       /* VK_EXT_color_write_enable */
       .colorWriteEnable = true,
+
+      /* VK_EXT_extended_dynamic_state */
+      .extendedDynamicState = true,
 
       /* VK_KHR_pipeline_executable_properties */
       .pipelineExecutableInfo = true,
@@ -694,7 +698,8 @@ device_has_expected_features(struct v3dv_physical_device *device)
 {
    return v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_TFU) &&
           v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_CSD) &&
-          v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_CACHE_FLUSH);
+          v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_CACHE_FLUSH) &&
+          device->caps.multisync;
 }
 
 
@@ -883,12 +888,6 @@ create_physical_device(struct v3dv_instance *instance,
       goto fail;
    }
 
-   if (!device_has_expected_features(device)) {
-      result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
-                         "Kernel driver doesn't have required features.");
-      goto fail;
-   }
-
    device->caps.cpu_queue =
       v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_CPU_QUEUE);
 
@@ -897,6 +896,12 @@ create_physical_device(struct v3dv_instance *instance,
 
    device->caps.perfmon =
       v3d_has_feature(device, DRM_V3D_PARAM_SUPPORTS_PERFMON);
+
+   if (!device_has_expected_features(device)) {
+      result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
+                         "Kernel driver doesn't have required features.");
+      goto fail;
+   }
 
    result = init_uuids(device);
    if (result != VK_SUCCESS)

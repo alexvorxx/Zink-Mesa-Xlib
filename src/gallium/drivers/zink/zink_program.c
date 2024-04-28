@@ -34,6 +34,7 @@
 #include "zink_state.h"
 #include "zink_inlines.h"
 
+#include "util/memstream.h"
 #include "util/u_debug.h"
 #include "util/u_memory.h"
 #include "util/u_prim.h"
@@ -834,6 +835,23 @@ zink_gfx_program_compile_queue(struct zink_context *ctx, struct zink_gfx_pipelin
    }
 }
 
+void
+zink_program_finish(struct zink_context *ctx, struct zink_program *pg)
+{
+   util_queue_fence_wait(&pg->cache_fence);
+   if (pg->is_compute)
+      return;
+   struct zink_gfx_program *prog = (struct zink_gfx_program*)pg;
+   for (int r = 0; r < ARRAY_SIZE(prog->pipelines); ++r) {
+      for (int i = 0; i < ARRAY_SIZE(prog->pipelines[0]); ++i) {
+         hash_table_foreach(&prog->pipelines[r][i], entry) {
+            struct zink_gfx_pipeline_cache_entry *pc_entry = entry->data;
+            util_queue_fence_wait(&pc_entry->fence);
+         }
+      }
+   }
+}
+
 static void
 update_cs_shader_module(struct zink_context *ctx, struct zink_compute_program *comp)
 {
@@ -1072,7 +1090,6 @@ zink_create_gfx_program(struct zink_context *ctx,
    if (!prog)
       goto fail;
 
-   prog->ctx = ctx;
    prog->gfx_hash = gfx_hash;
    prog->base.removed = true;
    prog->optimal_keys = screen->optimal_keys;
@@ -1167,9 +1184,9 @@ static void
 create_linked_separable_job(void *data, void *gdata, int thread_index)
 {
    struct zink_gfx_program *prog = data;
-   prog->full_prog = zink_create_gfx_program(prog->ctx, prog->shaders, 0, prog->gfx_hash);
+   prog->full_prog = zink_create_gfx_program(prog->base.ctx, prog->shaders, 0, prog->gfx_hash);
    /* add an ownership ref */
-   zink_gfx_program_reference(zink_screen(prog->ctx->base.screen), NULL, prog->full_prog);
+   zink_gfx_program_reference(zink_screen(prog->base.ctx->base.screen), NULL, prog->full_prog);
    precompile_job(prog->full_prog, gdata, thread_index);
 }
 
@@ -1199,7 +1216,6 @@ create_gfx_program_separable(struct zink_context *ctx, struct zink_shader **stag
    if (!prog)
       goto fail;
 
-   prog->ctx = ctx;
    prog->is_separable = true;
    prog->gfx_hash = ctx->gfx_hash;
    prog->base.uses_shobj = screen->info.have_EXT_shader_object;
@@ -2024,7 +2040,7 @@ print_exe_stages(VkShaderStageFlags stages)
 }
 
 static void
-print_pipeline_stats(struct zink_screen *screen, VkPipeline pipeline)
+print_pipeline_stats(struct zink_screen *screen, VkPipeline pipeline, struct util_debug_callback *debug)
 {
    VkPipelineInfoKHR pinfo = {
      VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR,
@@ -2039,7 +2055,6 @@ print_pipeline_stats(struct zink_screen *screen, VkPipeline pipeline)
    }
    VKSCR(GetPipelineExecutablePropertiesKHR)(screen->dev, &pinfo, &exe_count, NULL);
    VKSCR(GetPipelineExecutablePropertiesKHR)(screen->dev, &pinfo, &exe_count, props);
-   printf("PIPELINE STATISTICS:");
    for (unsigned e = 0; e < exe_count; e++) {
       VkPipelineExecutableInfoKHR info = {
          VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,
@@ -2048,7 +2063,18 @@ print_pipeline_stats(struct zink_screen *screen, VkPipeline pipeline)
          e
       };
       unsigned count = 0;
-      printf("\n\t%s (%s): ", print_exe_stages(props[e].stages), props[e].name);
+
+      struct u_memstream stream;
+      char *print_buf;
+      size_t print_buf_sz;
+
+      if (!u_memstream_open(&stream, &print_buf, &print_buf_sz)) {
+         mesa_loge("ZINK: failed to open memstream!");
+         return;
+      }
+
+      FILE *f = u_memstream_get(&stream);
+      fprintf(f, "type: %s", props[e].name);
       VkPipelineExecutableStatisticKHR *stats = NULL;
       VKSCR(GetPipelineExecutableStatisticsKHR)(screen->dev, &info, &count, NULL);
       stats = calloc(count, sizeof(VkPipelineExecutableStatisticKHR));
@@ -2062,27 +2088,32 @@ print_pipeline_stats(struct zink_screen *screen, VkPipeline pipeline)
       VKSCR(GetPipelineExecutableStatisticsKHR)(screen->dev, &info, &count, stats);
 
       for (unsigned i = 0; i < count; i++) {
-         if (i)
-            printf(", ");
+         fprintf(f, ", ");
          switch (stats[i].format) {
          case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:
-            printf("%s: %u", stats[i].name, stats[i].value.b32);
+            fprintf(f, "%s: %u", stats[i].name, stats[i].value.b32);
             break;
          case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:
-            printf("%s: %" PRIi64, stats[i].name, stats[i].value.i64);
+            fprintf(f, "%s: %" PRIi64, stats[i].name, stats[i].value.i64);
             break;
          case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:
-            printf("%s: %" PRIu64, stats[i].name, stats[i].value.u64);
+            fprintf(f, "%s: %" PRIu64, stats[i].name, stats[i].value.u64);
             break;
          case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:
-            printf("%s: %g", stats[i].name, stats[i].value.f64);
+            fprintf(f, "%s: %g", stats[i].name, stats[i].value.f64);
             break;
          default:
             unreachable("unknown statistic");
          }
       }
+
+      /* print_buf is only valid after flushing. */
+      fflush(f);
+      util_debug_message(debug, SHADER_INFO, "%s\n", print_buf);
+
+      u_memstream_close(&stream);
+      free(print_buf);
    }
-   printf("\n");
 }
 
 static void
@@ -2169,7 +2200,8 @@ zink_link_gfx_shader(struct pipe_context *pctx, void **shaders)
       VkPipeline pipeline = zink_create_gfx_pipeline(screen, prog, prog->objs, &ctx->gfx_pipeline_state,
                                                      ctx->gfx_pipeline_state.element_state->binding_map,
                                                      shaders[MESA_SHADER_TESS_EVAL] ? VK_PRIMITIVE_TOPOLOGY_PATCH_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, true, NULL);
-      print_pipeline_stats(screen, pipeline);
+      print_pipeline_stats(screen, pipeline, &ctx->dbg);
+      VKSCR(DestroyPipeline)(screen->dev, pipeline, NULL);
    } else {
       if (zink_screen(pctx->screen)->info.have_EXT_shader_object)
          prog->base.uses_shobj = !BITSET_TEST(zshaders[MESA_SHADER_FRAGMENT]->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN);
@@ -2203,16 +2235,18 @@ zink_create_gfx_shader_state(struct pipe_context *pctx, const struct pipe_shader
 
    void *ret = zink_shader_create(zink_screen(pctx->screen), nir);
 
-   if (nir->info.separate_shader && zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB &&
-       (screen->info.have_EXT_shader_object ||
-       (screen->info.have_EXT_graphics_pipeline_library && (nir->info.stage == MESA_SHADER_FRAGMENT || nir->info.stage == MESA_SHADER_VERTEX)))) {
-      struct zink_shader *zs = ret;
-      /* sample shading can't precompile */
-      if (nir->info.stage != MESA_SHADER_FRAGMENT || !nir->info.fs.uses_sample_shading) {
-         if (zink_debug & ZINK_DEBUG_NOBGC)
-            precompile_separate_shader_job(zs, screen, 0);
-         else
-            util_queue_add_job(&screen->cache_get_thread, zs, &zs->precompile.fence, precompile_separate_shader_job, NULL, 0);
+   if (!(zink_debug & ZINK_DEBUG_NOPC)) {
+      if (nir->info.separate_shader && zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB &&
+         (screen->info.have_EXT_shader_object ||
+         (screen->info.have_EXT_graphics_pipeline_library && (nir->info.stage == MESA_SHADER_FRAGMENT || nir->info.stage == MESA_SHADER_VERTEX)))) {
+         struct zink_shader *zs = ret;
+         /* sample shading can't precompile */
+         if (nir->info.stage != MESA_SHADER_FRAGMENT || !nir->info.fs.uses_sample_shading) {
+            if (zink_debug & ZINK_DEBUG_NOBGC)
+               precompile_separate_shader_job(zs, screen, 0);
+            else
+               util_queue_add_job(&screen->cache_get_thread, zs, &zs->precompile.fence, precompile_separate_shader_job, NULL, 0);
+         }
       }
    }
    ralloc_free(nir);
@@ -2282,6 +2316,10 @@ zink_program_init(struct zink_context *ctx)
                  offsetof(struct zink_gfx_input_key, element_state) - offsetof(struct zink_gfx_input_key, input));
 
    STATIC_ASSERT(sizeof(union zink_shader_key_optimal) == sizeof(uint32_t));
+
+   /* no precompile at all */
+   if (zink_debug & ZINK_DEBUG_NOPC)
+      return;
 
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    if (screen->info.have_EXT_graphics_pipeline_library || screen->info.have_EXT_shader_object || zink_debug & ZINK_DEBUG_SHADERDB)

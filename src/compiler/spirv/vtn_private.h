@@ -971,6 +971,8 @@ void vtn_handle_bitcast(struct vtn_builder *b, const uint32_t *w,
 
 void vtn_handle_no_contraction(struct vtn_builder *b, struct vtn_value *val);
 
+void vtn_handle_fp_fast_math(struct vtn_builder *b, struct vtn_value *val);
+
 void vtn_handle_subgroup(struct vtn_builder *b, SpvOp opcode,
                          const uint32_t *w, unsigned count);
 

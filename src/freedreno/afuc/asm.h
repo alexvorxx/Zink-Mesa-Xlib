@@ -40,6 +40,7 @@ void decl_label(const char *str);
 void decl_jumptbl(void);
 void align_instr(unsigned alignment);
 void next_section(void);
+void parse_version(struct afuc_instr *instr);
 
 static inline uint32_t
 parse_reg(const char *str)
@@ -59,6 +60,10 @@ parse_reg(const char *str)
       return REG_USRADDR;
    else if (!strcmp(str, "$data"))
       return 0x1f;
+   else if (!strcmp(str, "$sp"))
+      return REG_SP;
+   else if (!strcmp(str, "$lr"))
+      return REG_LR;
 
    ret = strtol(str + 1, &retstr, 16);
 

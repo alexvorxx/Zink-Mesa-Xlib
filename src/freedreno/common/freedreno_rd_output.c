@@ -57,7 +57,7 @@ fd_rd_dump_env_init(void)
 static void
 fd_rd_output_sanitize_name(char *name)
 {
-   /* The name string is null-terminated after being constructed via snprintf.
+   /* The name string is null-terminated after being constructed via asprintf.
     * Sanitize it by reducing to an underscore anything that's not a hyphen,
     * underscore, dot or alphanumeric character.
     */
@@ -71,7 +71,13 @@ fd_rd_output_sanitize_name(char *name)
 void
 fd_rd_output_init(struct fd_rd_output *output, char* output_name)
 {
-   snprintf(output->name, sizeof(output->name), "%s", output_name);
+   const char *test_name = os_get_option("FD_RD_DUMP_TESTNAME");
+   ASSERTED int name_len;
+   if (test_name)
+      name_len = asprintf(&output->name, "%s_%s", test_name, output_name);
+   else
+      name_len = asprintf(&output->name, "%s", output_name);
+   assert(name_len != -1);
    fd_rd_output_sanitize_name(output->name);
 
    output->combine = false;
@@ -82,14 +88,14 @@ fd_rd_output_init(struct fd_rd_output *output, char* output_name)
    if (FD_RD_DUMP(COMBINE)) {
       output->combine = true;
 
-      char file_path[256];
+      char file_path[PATH_MAX];
       snprintf(file_path, sizeof(file_path), "%s/%s_combined.rd",
                fd_rd_output_base_path, output->name);
       output->file = gzopen(file_path, "w");
    }
 
    if (FD_RD_DUMP(TRIGGER)) {
-      char file_path[256];
+      char file_path[PATH_MAX];
       snprintf(file_path, sizeof(file_path), "%s/%s_trigger",
                fd_rd_output_base_path, output->name);
       output->trigger_fd = open(file_path, O_RDWR | O_CREAT | O_TRUNC, 0600);
@@ -99,6 +105,9 @@ fd_rd_output_init(struct fd_rd_output *output, char* output_name)
 void
 fd_rd_output_fini(struct fd_rd_output *output)
 {
+   if (output->name != NULL)
+      free(output->name);
+
    if (output->file != NULL) {
       assert(output->combine);
       gzclose(output->file);
@@ -110,7 +119,7 @@ fd_rd_output_fini(struct fd_rd_output *output)
       /* Remove the trigger file. The filename is reconstructed here
        * instead of having to spend memory to store it in the struct.
        */
-      char file_path[256];
+      char file_path[PATH_MAX];
       snprintf(file_path, sizeof(file_path), "%s/%s_trigger",
                fd_rd_output_base_path, output->name);
       unlink(file_path);
@@ -200,7 +209,7 @@ fd_rd_output_begin(struct fd_rd_output *output, uint32_t submit_idx)
    if (output->combine)
       return true;
 
-   char file_path[256];
+   char file_path[PATH_MAX];
    snprintf(file_path, sizeof(file_path), "%s/%s_%.5d.rd",
             fd_rd_output_base_path, output->name, submit_idx);
    output->file = gzopen(file_path, "w");

@@ -6,6 +6,7 @@
 #include "elk_nir_options.h"
 
 #define COMMON_OPTIONS                                                        \
+   .compact_arrays = true,                                                    \
    .has_uclz = true,                                                          \
    .lower_fdiv = true,                                                        \
    .lower_scmp = true,                                                        \

@@ -140,7 +140,7 @@ anv_device_finish_blorp(struct anv_device *device)
       anv_state_pool_free(&device->dynamic_state_pool,
                           device->blorp.dynamic_states[i].state);
       if (device->vk.enabled_extensions.EXT_descriptor_buffer) {
-         anv_state_pool_free(&device->dynamic_state_pool,
+         anv_state_pool_free(&device->dynamic_state_db_pool,
                              device->blorp.dynamic_states[i].db_state);
       }
 

@@ -123,14 +123,26 @@ run_tests_after_last_discard(nir_builder *b)
          nir_intrinsic_instr *intr = last_discard_in_block(block);
 
          if (intr) {
-            /* Last discard is executed unconditionally, so fuse tests. */
+            /* Last discard is executed unconditionally, so fuse tests:
+             *
+             *    sample_mask (testing | killed), ~killed
+             *
+             * When testing, this is `sample_mask ~0, ~killed` which kills the
+             * kill set and triggers tests on the rest.
+             *
+             * When not testing, this is `sample_mask killed, ~killed` which is
+             * equivalent to `sample_mask killed, 0`, killing without testing.
+             */
             b->cursor = nir_before_instr(&intr->instr);
 
             nir_def *all_samples = nir_imm_intN_t(b, ALL_SAMPLES, 16);
             nir_def *killed = intr->src[0].ssa;
             nir_def *live = nir_ixor(b, killed, all_samples);
 
-            nir_sample_mask_agx(b, all_samples, live);
+            nir_def *testing = nir_load_shader_part_tests_zs_agx(b);
+            nir_def *affected = nir_ior(b, testing, killed);
+
+            nir_sample_mask_agx(b, affected, live);
             nir_instr_remove(&intr->instr);
             return;
          } else {
@@ -142,8 +154,11 @@ run_tests_after_last_discard(nir_builder *b)
       } else if (cf_node_contains_discard(node)) {
          /* Conditionally executed block contains the last discard. Test
           * depth/stencil for remaining samples in unconditional code after.
+          *
+          * If we're not testing, this turns into sample_mask(0, ~0) which is a
+          * no-op.
           */
-         nir_sample_mask_agx(b, nir_imm_intN_t(b, ALL_SAMPLES, 16),
+         nir_sample_mask_agx(b, nir_load_shader_part_tests_zs_agx(b),
                              nir_imm_intN_t(b, ALL_SAMPLES, 16));
          return;
       }
@@ -163,6 +178,8 @@ run_tests_at_start(nir_shader *shader)
 bool
 agx_nir_lower_sample_mask(nir_shader *shader)
 {
+   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+
    bool writes_zs =
       shader->info.outputs_written &
       (BITFIELD64_BIT(FRAG_RESULT_STENCIL) | BITFIELD64_BIT(FRAG_RESULT_DEPTH));
@@ -179,7 +196,6 @@ agx_nir_lower_sample_mask(nir_shader *shader)
        * we need to trigger tests explicitly. Allow sample_mask with zs_emit.
        */
       if (!writes_zs) {
-         nir_function_impl *impl = nir_shader_get_entrypoint(shader);
          nir_builder b = nir_builder_create(impl);
 
          /* run tests late */
@@ -187,8 +203,12 @@ agx_nir_lower_sample_mask(nir_shader *shader)
       }
    } else {
       /* regular shaders that don't use discard have nothing to lower */
+      nir_metadata_preserve(impl, nir_metadata_all);
       return false;
    }
+
+   nir_metadata_preserve(impl,
+                         nir_metadata_block_index | nir_metadata_dominance);
 
    nir_shader_intrinsics_pass(shader, lower_discard_to_sample_mask_0,
                               nir_metadata_block_index | nir_metadata_dominance,

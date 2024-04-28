@@ -55,35 +55,6 @@ if (!$buildstatus) {
   Exit 1
 }
 
-
-Get-Date
-Write-Host "Cloning libva"
-git clone https://github.com/intel/libva.git deps/libva
-if (!$?) {
-  Write-Host "Failed to clone libva repository"
-  Exit 1
-}
-
-Push-Location -Path ".\deps\libva"
-Write-Host "Checking out libva df3c584bb79d1a1e521372d62fa62e8b1c52ce6c"
-# libva-win32 is released with libva version 2.17 (see https://github.com/intel/libva/releases/tag/2.17.0)
-git checkout 2.17.0
-Pop-Location
-
-Write-Host "Building libva"
-# libva already has a build dir in their repo, use builddir instead
-$libva_build = New-Item -ItemType Directory -Path ".\deps\libva" -Name "builddir"
-Push-Location -Path $libva_build.FullName
-meson .. -Dprefix="$depsInstallPath"
-ninja -j32 install
-$buildstatus = $?
-Pop-Location
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $libva_build
-if (!$buildstatus) {
-  Write-Host "Failed to compile libva"
-  Exit 1
-}
-
 Get-Date
 Write-Host "Cloning LLVM release/15.x"
 git clone -b release/15.x --depth=1 https://github.com/llvm/llvm-project deps/llvm-project

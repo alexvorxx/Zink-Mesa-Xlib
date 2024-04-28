@@ -1,25 +1,7 @@
 /*
  * Copyright © 2020 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 #include "helpers.h"
 
@@ -373,6 +355,8 @@ BEGIN_TEST(to_hw_instr.swap_subdword)
       bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_b1, v1b), Definition(v0_b3, v1b),
                  Operand(v0_b3, v1b), Operand(v0_b1, v1b));
 
+      //~gfx11! s_nop
+      //~gfx11! s_sendmsg sendmsg(dealloc_vgprs)
       //~gfx(8|9|11)! s_endpgm
 
       finish_to_hw_instr_test();
@@ -534,6 +518,8 @@ BEGIN_TEST(to_hw_instr.subdword_constant)
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(17u));
       bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v1b), Operand::zero(1));
 
+      //~gfx11! s_nop
+      //~gfx11! s_sendmsg sendmsg(dealloc_vgprs)
       //! s_endpgm
 
       finish_to_hw_instr_test();
@@ -662,6 +648,8 @@ BEGIN_TEST(to_hw_instr.extract)
 
          finish_to_hw_instr_test();
 
+         //~gfx11_.*! s_nop
+         //~gfx11_.*! s_sendmsg sendmsg(dealloc_vgprs)
          //! s_endpgm
       }
    }
@@ -727,33 +715,58 @@ BEGIN_TEST(to_hw_instr.insert)
 
 #undef INS
 
-#define INS(idx, def_b)                                                                            \
-   bld.pseudo(aco_opcode::p_insert, Definition(v0_lo.advance(def_b), v2b), Operand(v1_lo, v2b),    \
-              Operand::c32(idx), Operand::c32(8u));
+#define INS(idx, def_b, op_b)                                                                      \
+   bld.pseudo(aco_opcode::p_insert, Definition(v0_lo.advance(def_b), v2b),                         \
+              Operand(v1_lo.advance(op_b), v2b), Operand::c32(idx), Operand::c32(8u));
 
       //>> p_unit_test 2
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2u));
       //~gfx7! v2b: %_:v[0][0:16] = v_bfe_u32 %_:v[1][0:16], 0, 8
-      //~gfx(8|9)! v2b: %0:v[0][0:16] = v_lshlrev_b32 0, %0:v[1][0:16] dst_sel:uword0 dst_preserve src0_sel:dword src1_sel:ubyte0
+      //~gfx(8|9)! v2b: %0:v[0][0:16] = v_mov_b32 %0:v[1][0:16] dst_sel:uword0 dst_preserve src0_sel:ubyte0
       //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0x7060c00
-      INS(0, 0)
-      //~gfx(8|9)! v2b: %0:v[0][16:32] = v_lshlrev_b32 0, %0:v[1][0:16] dst_sel:uword1 dst_preserve src0_sel:dword src1_sel:ubyte0
+      INS(0, 0, 0)
+      //~gfx(8|9)! v2b: %0:v[0][16:32] = v_mov_b32 %0:v[1][0:16] dst_sel:uword1 dst_preserve src0_sel:ubyte0
       //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0xc000504
       if (lvl != GFX7)
-         INS(0, 2)
+         INS(0, 2, 0)
+      //~gfx(8|9)! v2b: %0:v[0][0:16] = v_mov_b32 %0:v[1][16:32] dst_sel:uword0 dst_preserve src0_sel:ubyte2
+      //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0x7060c02
+      if (lvl != GFX7)
+         INS(0, 0, 2)
+      //~gfx(8|9)! v2b: %0:v[0][16:32] = v_mov_b32 %0:v[1][16:32] dst_sel:uword1 dst_preserve src0_sel:ubyte2
+      //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0xc020504
+      if (lvl != GFX7)
+         INS(0, 2, 2)
       //~gfx7! v2b: %_:v[0][0:16] = v_lshlrev_b32 8, %_:v[1][0:16]
-      //~gfx(8|9)! v2b: %0:v[0][0:16] = v_lshlrev_b32 8, %0:v[1][0:16] dst_sel:uword0 dst_preserve src0_sel:dword src1_sel:ubyte0
+      //~gfx8! v1b: %0:v[0][8:16] = v_mov_b32 %0:v[1][0:16] dst_sel:ubyte1 dst_preserve src0_sel:ubyte0
+      //~gfx8! v2b: %0:v[0][0:16] = v_and_b32 0xffffff00, %0:v[1]
+      //~gfx9! v2b: %0:v[0][0:16] = v_lshlrev_b32 8, %0:v[1][0:16] dst_sel:uword0 dst_preserve src0_sel:dword src1_sel:ubyte0
       //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0x706000c
-      INS(1, 0)
-      //~gfx(8|9)! v2b: %0:v[0][16:32] = v_lshlrev_b32 8, %0:v[1][0:16] dst_sel:uword1 dst_preserve src0_sel:dword src1_sel:ubyte0
+      INS(1, 0, 0)
+      //~gfx8! v1b: %0:v[0][24:32] = v_mov_b32 %0:v[1][0:16] dst_sel:ubyte3 dst_preserve src0_sel:ubyte0
+      //~gfx8! v2b: %0:v[0][16:32] = v_and_b32 0xff00ffff, %0:v[1]
+      //~gfx9! v2b: %0:v[0][16:32] = v_lshlrev_b32 8, %0:v[1][0:16] dst_sel:uword1 dst_preserve src0_sel:dword src1_sel:ubyte0
       //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0xc0504
       if (lvl != GFX7)
-         INS(1, 2)
-
+         INS(1, 2, 0)
+      //~gfx8! v1b: %0:v[0][8:16] = v_mov_b32 %0:v[1][16:32] dst_sel:ubyte1 dst_preserve src0_sel:ubyte2
+      //~gfx8! v2b: %0:v[0][0:16] = v_and_b32 0xffffff00, %0:v[1]
+      //~gfx9! v2b: %0:v[0][0:16] = v_lshlrev_b32 8, %0:v[1][16:32] dst_sel:uword0 dst_preserve src0_sel:dword src1_sel:ubyte2
+      //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0x706020c
+      if (lvl != GFX7)
+         INS(1, 0, 2)
+      //~gfx8! v1b: %0:v[0][24:32] = v_mov_b32 %0:v[1][16:32] dst_sel:ubyte3 dst_preserve src0_sel:ubyte2
+      //~gfx8! v2b: %0:v[0][16:32] = v_and_b32 0xff00ffff, %0:v[1]
+      //~gfx9! v2b: %0:v[0][16:32] = v_lshlrev_b32 8, %0:v[1][16:32] dst_sel:uword1 dst_preserve src0_sel:dword src1_sel:ubyte2
+      //~gfx11! v1: %0:v[0] = v_perm_b32 %0:v[0], %0:v[1], 0x20c0504
+      if (lvl != GFX7)
+         INS(1, 2, 2)
 #undef INS
 
       finish_to_hw_instr_test();
 
+      //~gfx11! s_nop
+      //~gfx11! s_sendmsg sendmsg(dealloc_vgprs)
       //! s_endpgm
    }
 END_TEST
@@ -904,6 +917,8 @@ BEGIN_TEST(to_hw_instr.pack2x16_constant)
       bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
                  Operand::zero(2), Operand(v1_lo, v2b));
 
+      //~gfx11! s_nop
+      //~gfx11! s_sendmsg sendmsg(dealloc_vgprs)
       //! s_endpgm
 
       finish_to_hw_instr_test();

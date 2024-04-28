@@ -9,7 +9,7 @@
 
 #include "vk_image.h"
 
-#include "nil_image.h"
+#include "nil.h"
 
 struct nvk_device;
 

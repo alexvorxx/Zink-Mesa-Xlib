@@ -1556,12 +1556,9 @@ util_format_get_first_non_void_channel(enum pipe_format format)
 
    for (i = 0; i < 4; i++)
       if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID)
-         break;
+         return i;
 
-   if (i == 4)
-       return -1;
-
-   return i;
+   return -1;
 }
 
 /**
@@ -1799,6 +1796,10 @@ enum pipe_format
 util_format_get_array(const enum util_format_type type, const unsigned bits,
                       const unsigned nr_components, const bool normalized,
                       const bool pure_integer);
+
+unsigned util_format_get_last_component(enum pipe_format format);
+int util_format_get_largest_non_void_channel(enum pipe_format format);
+unsigned util_format_get_max_channel_size(enum pipe_format format);
 
 #ifdef __cplusplus
 } // extern "C" {

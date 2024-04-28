@@ -1,25 +1,6 @@
-#
-# Copyright (C) 2019 Vasily Khoruzhick <anarsoul@gmail.com>
-# Copyright (C) 2021 Pavel Ondračka
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice (including the next
-# paragraph) shall be included in all copies or substantial portions of the
-# Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-# IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
+# Copyright 2019 Vasily Khoruzhick <anarsoul@gmail.com>
+# Copyright 2021 Pavel Ondračka
 
 import argparse
 import sys
@@ -124,7 +105,7 @@ r300_nir_lower_comparison_fs = [
 
 r300_nir_post_integer_lowering = [
         # If ffloor result is used only for indirect constant load, we can get rid of it
-        # completelly as ntt emits ARL by default which already does the flooring.
+        # completely as ntt emits ARL by default which already does the flooring.
         # This actually checks for the lowered ffloor(a) = a - ffract(a) patterns.
         (('fadd(is_only_used_by_load_ubo_vec4)', a, ('fneg', ('ffract', a))), a),
         # This is a D3D9 pattern from Wine when shader wants ffloor instead of fround on register load.

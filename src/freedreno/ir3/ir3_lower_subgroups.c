@@ -263,7 +263,6 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
    case OPC_ALL_MACRO:
    case OPC_ELECT_MACRO:
    case OPC_READ_COND_MACRO:
-   case OPC_SWZ_SHARED_MACRO:
    case OPC_SCAN_MACRO:
    case OPC_SCAN_CLUSTERS_MACRO:
       break;
@@ -411,16 +410,10 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
    } else {
       /* For ballot, the destination must be initialized to 0 before we do
        * the movmsk because the condition may be 0 and then the movmsk will
-       * be skipped. Because it's a shared register we have to wrap the
-       * initialization in a getone block.
+       * be skipped.
        */
       if (instr->opc == OPC_BALLOT_MACRO) {
-         struct ir3_block *then_block =
-            create_if(ir, before_block, after_block, OPC_GETONE, NULL);
-         mov_immed(instr->dsts[0], then_block, 0);
-         after_block->reconvergence_point = true;
-         before_block = after_block;
-         after_block = split_block(ir, before_block, instr);
+         mov_immed(instr->dsts[0], before_block, 0);
       }
 
       struct ir3_instruction *condition = NULL;
@@ -450,7 +443,6 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
          branch_opc = OPC_BALL;
          break;
       case OPC_ELECT_MACRO:
-      case OPC_SWZ_SHARED_MACRO:
          after_block->reconvergence_point = true;
          branch_opc = OPC_GETONE;
          break;
@@ -487,18 +479,7 @@ lower_instr(struct ir3 *ir, struct ir3_block **block, struct ir3_instruction *in
          mov->cat1.dst_type = TYPE_U32;
          mov->cat1.src_type =
             (new_src->flags & IR3_REG_HALF) ? TYPE_U16 : TYPE_U32;
-         break;
-      }
-
-      case OPC_SWZ_SHARED_MACRO: {
-         struct ir3_instruction *swz =
-            ir3_instr_create(then_block, OPC_SWZ, 2, 2);
-         ir3_dst_create(swz, instr->dsts[0]->num, instr->dsts[0]->flags);
-         ir3_dst_create(swz, instr->dsts[1]->num, instr->dsts[1]->flags);
-         ir3_src_create(swz, instr->srcs[0]->num, instr->srcs[0]->flags);
-         ir3_src_create(swz, instr->srcs[1]->num, instr->srcs[1]->flags);
-         swz->cat1.dst_type = swz->cat1.src_type = TYPE_U32;
-         swz->repeat = 1;
+         mov->flags |= IR3_INSTR_NEEDS_HELPERS;
          break;
       }
 

@@ -89,6 +89,7 @@ static const struct dxil_logger default_logger = { .priv = NULL, .log = default_
 
 static const nir_shader_compiler_options
 nir_options = {
+   .compact_arrays = true,
    .lower_ineg = true,
    .lower_fneg = true,
    .lower_ffma16 = true,
@@ -152,6 +153,7 @@ nir_options = {
       nir_lower_dfloor |
       nir_lower_dceil |
       nir_lower_dround_even,
+   .lower_uniforms_to_ubo = true,
    .max_unroll_iterations = 32, /* arbitrary */
    .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out),
    .lower_device_index_to_zero = true,
@@ -389,6 +391,9 @@ enum dxil_intr {
    DXIL_INTR_SAMPLE_CMP_LEVEL = 224,
    DXIL_INTR_SAMPLE_CMP_GRAD = 254,
    DXIL_INTR_SAMPLE_CMP_BIAS = 255,
+
+   DXIL_INTR_START_VERTEX_LOCATION = 256,
+   DXIL_INTR_START_INSTANCE_LOCATION = 257,
 };
 
 enum dxil_atomic_op {
@@ -589,7 +594,6 @@ struct ntd_context {
    const struct dxil_value **scratchvars;
    const struct dxil_value **consts;
 
-   nir_variable *ps_front_face;
    nir_variable *system_value[SYSTEM_VALUE_MAX];
 
    nir_function *tess_ctrl_patch_constant_func;
@@ -2486,6 +2490,7 @@ get_overload(nir_alu_type alu_type, unsigned bit_size)
    switch (nir_alu_type_get_base_type(alu_type)) {
    case nir_type_int:
    case nir_type_uint:
+   case nir_type_bool:
       switch (bit_size) {
       case 1: return DXIL_I1;
       case 16: return DXIL_I16;
@@ -3365,7 +3370,7 @@ get_resource_handle(struct ntd_context *ctx, nir_src *src, enum dxil_resource_cl
     * load_vulkan_descriptor handle creation.
     */
    unsigned base_binding = 0;
-   if (ctx->opts->environment == DXIL_ENVIRONMENT_GL &&
+   if (ctx->shader->info.first_ubo_is_default_ubo &&
        class == DXIL_RESOURCE_CLASS_CBV)
       base_binding = 1;
 
@@ -4781,14 +4786,12 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
    switch (intr->intrinsic) {
    case nir_intrinsic_load_global_invocation_id:
-   case nir_intrinsic_load_global_invocation_id_zero_base:
       return emit_load_global_invocation_id(ctx, intr);
    case nir_intrinsic_load_local_invocation_id:
       return emit_load_local_invocation_id(ctx, intr);
    case nir_intrinsic_load_local_invocation_index:
       return emit_load_local_invocation_index(ctx, intr);
    case nir_intrinsic_load_workgroup_id:
-   case nir_intrinsic_load_workgroup_id_zero_base:
       return emit_load_local_workgroup_id(ctx, intr);
    case nir_intrinsic_load_ssbo:
       return emit_load_ssbo(ctx, intr);
@@ -4937,6 +4940,15 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    case nir_intrinsic_reduce:
    case nir_intrinsic_exclusive_scan:
       return emit_reduce(ctx, intr);
+
+   case nir_intrinsic_load_first_vertex:
+      ctx->mod.feats.extended_command_info = true;
+      return emit_load_unary_external_function(ctx, intr, "dx.op.startVertexLocation",
+                                               DXIL_INTR_START_VERTEX_LOCATION, nir_type_int);
+   case nir_intrinsic_load_base_instance:
+      ctx->mod.feats.extended_command_info = true;
+      return emit_load_unary_external_function(ctx, intr, "dx.op.startInstanceLocation",
+                                               DXIL_INTR_START_INSTANCE_LOCATION, nir_type_int);
 
    case nir_intrinsic_load_num_workgroups:
    case nir_intrinsic_load_workgroup_size:
@@ -5877,16 +5889,17 @@ emit_cbvs(struct ntd_context *ctx)
    } else {
       if (ctx->shader->info.num_ubos) {
          const unsigned ubo_size = 16384 /*4096 vec4's*/;
-         bool has_ubo0 = !ctx->opts->no_ubo0;
+         uint array_base = ctx->shader->info.first_ubo_is_default_ubo ? 1 : 0;
+         bool has_ubo0 = ctx->shader->num_uniforms > 0 && ctx->shader->info.first_ubo_is_default_ubo;
          bool has_state_vars = ctx->opts->last_ubo_is_not_arrayed;
-         unsigned ubo1_array_size = ctx->shader->info.num_ubos -
-            (has_state_vars ? 2 : 1);
+         unsigned ubo1_array_size = ctx->shader->info.num_ubos - array_base -
+            (has_state_vars ? 1 : 0);
 
          if (has_ubo0 &&
              !emit_cbv(ctx, 0, 0, ubo_size, 1, "__ubo_uniforms"))
             return false;
          if (ubo1_array_size &&
-             !emit_cbv(ctx, 1, 0, ubo_size, ubo1_array_size, "__ubos"))
+             !emit_cbv(ctx, array_base, 0, ubo_size, ubo1_array_size, "__ubos"))
             return false;
          if (has_state_vars &&
              !emit_cbv(ctx, ctx->shader->info.num_ubos - 1, 0, ubo_size, 1, "__ubo_state_vars"))

@@ -702,7 +702,11 @@ class Parser(object):
         print('#define {} {}'.format (name + "_LENGTH", self.group.length))
         if self.group.align != None:
             print('#define {} {}'.format (name + "_ALIGN", self.group.align))
-        print('struct {}_packed {{ uint32_t opaque[{}]; }};'.format(name.lower(), self.group.length // 4))
+
+        # round up to handle 6 half-word USC structures
+        words = (self.group.length + 4 - 1) // 4
+        print('struct {}_packed {{ uint32_t opaque[{}];}};'.format(name.lower(),
+                                                                   words))
 
     def emit_unpack_function(self, name, group):
         print("static inline void")

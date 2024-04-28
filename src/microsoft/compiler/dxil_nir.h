@@ -59,15 +59,15 @@ bool dxil_nir_split_typed_samplers(nir_shader *shader);
 bool dxil_nir_lower_sysval_to_load_input(nir_shader *s, nir_variable **sysval_vars);
 bool dxil_nir_lower_vs_vertex_conversion(nir_shader *s, enum pipe_format target_formats[]);
 
-uint64_t
+void
 dxil_sort_by_driver_location(nir_shader* s, nir_variable_mode modes);
 
 void
 dxil_sort_ps_outputs(nir_shader* s);
 
-uint64_t
+void
 dxil_reassign_driver_locations(nir_shader* s, nir_variable_mode modes,
-   uint64_t other_stage_mask);
+   uint64_t other_stage_mask, const BITSET_WORD *other_stage_frac_mask);
 
 void dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func);
 bool dxil_nir_fixup_tess_level_for_domain(nir_shader *nir);
@@ -88,6 +88,11 @@ struct dxil_module;
 bool dxil_nir_analyze_io_dependencies(struct dxil_module *mod, nir_shader *s);
 bool dxil_nir_guess_image_formats(nir_shader *s);
 bool dxil_nir_lower_coherent_loads_and_stores(nir_shader *s);
+
+bool dxil_nir_kill_undefined_varyings(nir_shader *shader, uint64_t prev_stage_written_mask,
+                                      uint32_t prev_stage_patch_written_mask, const BITSET_WORD *prev_stage_frac_output_mask);
+bool dxil_nir_kill_unused_outputs(nir_shader *shader, uint64_t next_stage_read_mask,
+                                  uint32_t next_stage_patch_read_mask, const BITSET_WORD *next_stage_frac_input_mask);
 
 #ifdef __cplusplus
 }

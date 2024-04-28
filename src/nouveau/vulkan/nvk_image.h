@@ -9,7 +9,7 @@
 
 #include "vk_image.h"
 
-#include "nil_image.h"
+#include "nil.h"
 
 /* Because small images can end up with an array_stride_B that is less than
  * the sparse block size (in bytes), we have to set SINGLE_MIPTAIL_BIT when

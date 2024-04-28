@@ -5,24 +5,7 @@
  * based in part on anv driver which is:
  * Copyright © 2015 Intel Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 #ifndef RADV_ACO_SHADER_INFO_H
 #define RADV_ACO_SHADER_INFO_H
@@ -96,6 +79,7 @@ radv_aco_convert_ps_epilog_key(struct aco_ps_epilog_info *aco_info, const struct
    ASSIGN_FIELD(color_is_int10);
    ASSIGN_FIELD(mrt0_is_dual_src);
    ASSIGN_FIELD(alpha_to_coverage_via_mrtz);
+   ASSIGN_FIELD(alpha_to_one);
 
    memcpy(aco_info->colors, radv_args->colors, sizeof(aco_info->colors));
    aco_info->depth = radv_args->depth;
@@ -131,4 +115,4 @@ radv_aco_convert_opts(struct aco_compiler_options *aco_info, const struct radv_n
 #undef ASSIGN_FIELD
 #undef ASSIGN_FIELD_CP
 
-#endif
+#endif /* RADV_ACO_SHADER_INFO_H */

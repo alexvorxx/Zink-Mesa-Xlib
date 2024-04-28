@@ -194,7 +194,7 @@ NineVertexDeclaration9_ctor( struct NineVertexDeclaration9 *This,
         This->elems[i].vertex_buffer_index = This->decls[i].Stream;
         This->elems[i].src_format = decltype_format(This->decls[i].Type);
         This->elems[i].dual_slot = false;
-        /* XXX Remember Method (tesselation), Usage, UsageIndex */
+        /* XXX Remember Method (tessellation), Usage, UsageIndex */
 
         DBG("VERTEXELEMENT[%u]: Stream=%u Offset=%u Type=%s DeclUsage=%s%d\n", i,
             This->decls[i].Stream,

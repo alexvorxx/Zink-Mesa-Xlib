@@ -1,25 +1,7 @@
 /*
  * Copyright © 2020 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "aco_ir.h"
@@ -607,12 +589,13 @@ instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op)
 
    switch (op) {
    /* VOP3 */
-   case aco_opcode::v_mad_f16:
-   case aco_opcode::v_mad_u16:
-   case aco_opcode::v_mad_i16:
-   case aco_opcode::v_fma_f16:
-   case aco_opcode::v_div_fixup_f16:
+   case aco_opcode::v_mad_legacy_f16:
+   case aco_opcode::v_mad_legacy_u16:
+   case aco_opcode::v_mad_legacy_i16:
+   case aco_opcode::v_fma_legacy_f16:
+   case aco_opcode::v_div_fixup_legacy_f16: return false;
    case aco_opcode::v_interp_p2_f16:
+   case aco_opcode::v_interp_p2_hi_f16:
    case aco_opcode::v_fma_mixlo_f16:
    case aco_opcode::v_fma_mixhi_f16:
    /* VOP2 */
@@ -652,8 +635,8 @@ instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op)
    case aco_opcode::v_cvt_i16_f16:
    case aco_opcode::v_cvt_norm_i16_f16:
    case aco_opcode::v_cvt_norm_u16_f16: return gfx_level >= GFX10;
-   /* on GFX10, all opsel instructions preserve the high bits */
-   default: return gfx_level >= GFX10 && can_use_opsel(gfx_level, op, -1);
+   /* all non legacy opsel instructions preserve the high bits */
+   default: return can_use_opsel(gfx_level, op, -1);
    }
 }
 
@@ -1361,11 +1344,6 @@ dealloc_vgprs(Program* program)
    if (program->gfx_level < GFX11)
       return false;
 
-   /* skip if deallocating VGPRs won't increase occupancy */
-   uint16_t max_waves = max_suitable_waves(program, program->dev.max_waves_per_simd);
-   if (program->max_reg_demand.vgpr <= get_addr_vgpr_from_waves(program, max_waves))
-      return false;
-
    /* sendmsg(dealloc_vgprs) releases scratch, so this isn't safe if there is a in-progress scratch
     * store. */
    if (uses_scratch(program))
@@ -1392,7 +1370,7 @@ Instruction::isTrans() const noexcept
           instr_info.classes[(int)opcode] == instr_class::valu_double_transcendental;
 }
 
-static size_t
+size_t
 get_instr_data_size(Format format)
 {
    switch (format) {

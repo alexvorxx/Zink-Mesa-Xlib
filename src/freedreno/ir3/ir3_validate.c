@@ -26,6 +26,7 @@
 #include "util/ralloc.h"
 
 #include "ir3.h"
+#include "ir3_compiler.h"
 
 struct ir3_validate_ctx {
    struct ir3 *ir;
@@ -69,6 +70,15 @@ reg_class_flags(struct ir3_register *reg)
 }
 
 static void
+validate_reg(struct ir3_validate_ctx *ctx, struct ir3_register *reg)
+{
+   if ((reg->flags & IR3_REG_SHARED) && reg->num != INVALID_REG) {
+      validate_assert(ctx, reg->num >= SHARED_REG_START);
+      validate_assert(ctx, reg->num - SHARED_REG_START < SHARED_REG_SIZE);
+   }
+}
+
+static void
 validate_src(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
              struct ir3_register *reg)
 {
@@ -92,6 +102,8 @@ validate_src(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
 
    if (reg->tied) {
       validate_assert(ctx, reg->tied->tied == reg);
+      validate_assert(ctx, reg_class_flags(reg) == reg_class_flags(reg->tied));
+      validate_assert(ctx, !(reg->flags & (IR3_REG_CONST | IR3_REG_IMMED)));
       bool found = false;
       foreach_dst (dst, instr) {
          if (dst == reg->tied) {
@@ -102,6 +114,8 @@ validate_src(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
       validate_assert(ctx,
                       found && "tied register not in the same instruction");
    }
+
+   validate_reg(ctx, reg);
 }
 
 /* phi sources are logically read at the end of the predecessor basic block,
@@ -160,6 +174,8 @@ validate_dst(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr,
 
    if (reg->flags & IR3_REG_RELATIV)
       validate_assert(ctx, instr->address);
+
+   validate_reg(ctx, reg);
 }
 
 #define validate_reg_size(ctx, reg, type)                                      \
@@ -214,6 +230,10 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
                                  (reg->flags & IR3_REG_HALF));
       }
 
+      if (is_scalar_alu(instr, ctx->ir->compiler) && reg != instr->address)
+         validate_assert(ctx, reg->flags & (IR3_REG_SHARED | IR3_REG_IMMED |
+                                            IR3_REG_CONST));
+
       last_reg = reg;
    }
 
@@ -224,6 +244,12 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
    }
 
    _mesa_set_add(ctx->defs, instr);
+
+   if ((opc_cat(instr->opc) == 2 || opc_cat(instr->opc) == 3 ||
+        opc_cat(instr->opc) == 4)) {
+      validate_assert(ctx, !(instr->dsts[0]->flags & IR3_REG_SHARED) ||
+                      ctx->ir->compiler->has_scalar_alu);
+   }
 
    /* Check that src/dst types match the register types, and for
     * instructions that have different opcodes depending on type,
@@ -372,6 +398,14 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
          validate_reg_size(ctx, instr->srcs[0], instr->cat6.type);
          validate_assert(ctx, !(instr->srcs[1]->flags & IR3_REG_HALF));
          break;
+      case OPC_PUSH_CONSTS_LOAD_MACRO:
+         break;
+      case OPC_LDC:
+         validate_assert(ctx, !(instr->srcs[0]->flags & IR3_REG_HALF));
+         validate_assert(ctx, !(instr->srcs[1]->flags & IR3_REG_HALF));
+         validate_assert(ctx, !!(instr->dsts[0]->flags & IR3_REG_SHARED) ==
+                              !!(instr->flags & IR3_INSTR_U));
+         break;
       case OPC_LDC_K:
          validate_assert(ctx, !(instr->srcs[0]->flags & IR3_REG_HALF));
          validate_assert(ctx, !(instr->srcs[1]->flags & IR3_REG_HALF));
@@ -387,8 +421,14 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
 
    if (instr->opc == OPC_META_PARALLEL_COPY) {
       foreach_src_n (src, n, instr) {
-         validate_assert(ctx, reg_class_flags(src) ==
-                         reg_class_flags(instr->dsts[n]));
+         validate_assert(ctx, (src->flags & IR3_REG_HALF) ==
+                         (instr->dsts[n]->flags & IR3_REG_HALF));
+         if (instr->dsts[n]->flags & IR3_REG_SHARED) {
+            validate_assert(ctx, src->flags & (IR3_REG_SHARED | IR3_REG_CONST |
+                                               IR3_REG_IMMED));
+         } else {
+            validate_assert(ctx, !(src->flags & IR3_REG_SHARED));
+         }
       }
    }
 }

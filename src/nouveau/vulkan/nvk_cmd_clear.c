@@ -11,7 +11,6 @@
 #include "nvk_mme.h"
 #include "nvk_physical_device.h"
 
-#include "nil_format.h"
 #include "vk_format.h"
 
 #include "nvk_cl9097.h"

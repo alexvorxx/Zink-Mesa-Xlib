@@ -488,7 +488,15 @@ impl SM50Instr {
         self.set_reg_src(8..16, op.offset);
         self.set_field(20..36, cb.offset);
         self.set_field(36..41, cb_idx);
-        self.set_field(44..46, 0_u8); // TODO: subop
+        self.set_field(
+            44..46,
+            match op.mode {
+                LdcMode::Indexed => 0_u8,
+                LdcMode::IndexedLinear => 1_u8,
+                LdcMode::IndexedSegmented => 2_u8,
+                LdcMode::IndexedSegmentedLinear => 3_u8,
+            },
+        );
         self.set_mem_type(48..51, op.mem_type);
     }
 

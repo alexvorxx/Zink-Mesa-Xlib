@@ -123,6 +123,7 @@ SR = enum("sr", {
    8:  'dispatch_threads_per_threadgroup.x',
    9:  'dispatch_threads_per_threadgroup.y',
    10: 'dispatch_threads_per_threadgroup.z',
+   14: 'samples_log2',
    20: 'core_id',
    21: 'vm_slot',
    48: 'thread_position_in_threadgroup.x',
@@ -171,8 +172,8 @@ FUNOP = lambda x: (x << 28)
 FUNOP_MASK = FUNOP((1 << 14) - 1)
 
 def funop(name, opcode, schedule_class = "none"):
-   op(name, (0x0A | L | (opcode << 28),
-      0x3F | L | (((1 << 14) - 1) << 28), 6, _),
+   op(name, (0x0A | (opcode << 28),
+      0x3F | (((1 << 14) - 1) << 28), 4, 6),
       srcs = 1, is_float = True, schedule_class = schedule_class)
 
 def iunop(name, opcode):
@@ -322,7 +323,7 @@ op("local_store",
 # TODO: Consider permitting the short form
 op("uniform_store",
       encoding_32 = ((0b111 << 27) | 0b1000101 | (1 << 47), 0, 8, _),
-      dests = 0, srcs = 2, can_eliminate = False)
+      dests = 0, srcs = 2, imms = [MASK], can_eliminate = False)
 
 # sources are value, base, index
 op("atomic",
@@ -473,6 +474,13 @@ op("unit_test", _, dests = 0, srcs = 1, can_eliminate = False)
 # Like mov, but takes a register and can only appear at the start. Guaranteed
 # to be coalesced during RA, rather than lowered to a real move. 
 op("preload", _, srcs = 1, schedule_class = "preload")
+
+# Opposite of preload. Exports a scalar value to a particular register at the
+# end of the shader part. Must only appear after the logical end of the exit
+# block, this avoids special casing the source's liveness. Logically all exports
+# happen in parallel at the end of the shader part.
+op("export", _, dests = 0, srcs = 1, imms = [IMM], can_eliminate = False,
+   schedule_class = "invalid")
 
 # Pseudo-instructions to set the nesting counter. Lowers to r0l writes after RA.
 op("begin_cf", _, dests = 0, can_eliminate = False)

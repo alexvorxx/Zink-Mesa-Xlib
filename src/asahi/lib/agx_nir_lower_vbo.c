@@ -110,7 +110,7 @@ pass(struct nir_builder *b, nir_intrinsic_instr *intr, void *data)
       return false;
 
    struct agx_attribute *attribs = data;
-   b->cursor = nir_before_instr(&intr->instr);
+   b->cursor = nir_instr_remove(&intr->instr);
 
    nir_src *offset_src = nir_get_io_offset_src(intr);
    assert(nir_src_is_const(*offset_src) && "no attribute indirects");

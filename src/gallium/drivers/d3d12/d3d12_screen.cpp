@@ -55,6 +55,11 @@
 #include <directx/d3d12sdklayers.h>
 #endif
 
+#if defined(_WIN32) && defined(_WIN64) && !defined(_GAMING_XBOX)
+#include <filesystem>
+#include <shlobj.h>
+#endif
+
 #include <dxguids/dxguids.h>
 static GUID OpenGLOn12CreatorID = { 0x6bb3cd34, 0x0d19, 0x45ab, { 0x97, 0xed, 0xd7, 0x20, 0xba, 0x3d, 0xfc, 0x80 } };
 
@@ -69,6 +74,7 @@ d3d12_debug_options[] = {
    { "debuglayer",   D3D12_DEBUG_DEBUG_LAYER,   "Enable debug layer" },
    { "gpuvalidator", D3D12_DEBUG_GPU_VALIDATOR, "Enable GPU validator" },
    { "singleton",    D3D12_DEBUG_SINGLETON,     "Disallow use of device factory" },
+   { "pix",          D3D12_DEBUG_PIX,           "Load WinPixGpuCaptuerer.dll" },
    DEBUG_NAMED_VALUE_END
 };
 
@@ -231,9 +237,6 @@ d3d12_get_param_default(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FS_COORD_ORIGIN_UPPER_LEFT:
       return 1;
 
-   case PIPE_CAP_FS_FACE_IS_INTEGER_SYSVAL:
-      return 1;
-
    case PIPE_CAP_ACCELERATED:
       return screen->vendor_id != HW_VENDOR_MICROSOFT;
 
@@ -304,9 +307,6 @@ d3d12_get_param_default(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_VARYINGS:
       /* Subtract one so that implicit position can be added */
       return D3D12_PS_INPUT_REGISTER_COUNT - 1;
-
-   case PIPE_CAP_NIR_COMPACT_ARRAYS:
-      return 1;
 
    case PIPE_CAP_MAX_COMBINED_SHADER_OUTPUT_RESOURCES:
       if (screen->max_feature_level <= D3D_FEATURE_LEVEL_11_0)
@@ -1428,24 +1428,24 @@ try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
    uint32_t path_size = GetModuleFileNameA((HINSTANCE)&__ImageBase,
                                            path, path_arr_size);
    if (!path_arr_size || path_size == path_arr_size) {
-      debug_printf("Unable to get path to self");
+      debug_printf("Unable to get path to self\n");
       return nullptr;
    }
 
    auto last_slash = strrchr(path, '\\');
    if (!last_slash) {
-      debug_printf("Unable to get path to self");
+      debug_printf("Unable to get path to self\n");
       return nullptr;
    }
 
    *(last_slash + 1) = '\0';
    if (strcat_s(path, path_arr_size, "D3D12Core.dll") != 0) {
-      debug_printf("Unable to get path to D3D12Core.dll next to self");
+      debug_printf("Unable to get path to D3D12Core.dll next to self\n");
       return nullptr;
    }
 
    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
-      debug_printf("No D3D12Core.dll exists next to self");
+      debug_printf("No D3D12Core.dll exists next to self\n");
       return nullptr;
    }
 
@@ -1458,6 +1458,31 @@ try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
 static ID3D12DeviceFactory *
 try_create_device_factory(util_dl_library *d3d12_mod)
 {
+#if defined(_WIN32) && defined(_WIN64)
+   if (d3d12_debug & D3D12_DEBUG_PIX) {
+      if (GetModuleHandleW(L"WinPixGpuCapturer.dll") == nullptr) {
+         LPWSTR program_files_path = nullptr;
+         SHGetKnownFolderPath(FOLDERID_ProgramFiles, KF_FLAG_DEFAULT, NULL, &program_files_path);
+
+         auto pix_installation_path = std::filesystem::path(program_files_path) / "Microsoft PIX";
+         std::wstring newest_version;
+         for (auto const &directory : std::filesystem::directory_iterator(pix_installation_path)) {
+            if (directory.is_directory() &&
+                (newest_version.empty() || newest_version < directory.path().filename().c_str()))
+               newest_version = directory.path().filename().wstring();
+         }
+         if (newest_version.empty()) {
+            debug_printf("D3D12: Failed to find any PIX installations\n");
+         }
+         else if (!LoadLibraryW((pix_installation_path / newest_version / L"WinPixGpuCapturer.dll").c_str()) &&
+                  // Try the x64 subdirectory for x64-on-arm64
+                  !LoadLibraryW((pix_installation_path / newest_version / L"x64/WinPixGpuCapturer.dll").c_str())) {
+            debug_printf("D3D12: Failed to load WinPixGpuCapturer.dll from %S\n", newest_version.c_str());
+         }
+      }
+   }
+#endif
+
    if (d3d12_debug & D3D12_DEBUG_SINGLETON)
       return nullptr;
 

@@ -915,7 +915,7 @@ struct __DRIframebufferRec {
  * extension.  Version 1 is required by the X server, and version 3 is used.
  */
 #define __DRI_SWRAST "DRI_SWRast"
-#define __DRI_SWRAST_VERSION 5
+#define __DRI_SWRAST_VERSION 6
 
 struct __DRIswrastExtensionRec {
     __DRIextension base;
@@ -967,6 +967,18 @@ struct __DRIswrastExtensionRec {
    */
    int (*queryBufferAge)(__DRIdrawable *drawable);
 
+   /**
+    * createNewScreen() with the driver extensions passed in and implicit load flag.
+    *
+    * \since version 6
+    */
+   __DRIscreen *(*createNewScreen3)(int screen,
+                                    const __DRIextension **loader_extensions,
+                                    const __DRIextension **driver_extensions,
+                                    const __DRIconfig ***driver_configs,
+                                    bool implicit,
+                                    void *loaderPrivate);
+
 };
 
 /** Common DRI function definitions, shared among DRI2 and Image extensions
@@ -977,6 +989,13 @@ typedef __DRIscreen *
                              const __DRIextension **extensions,
                              const __DRIextension **driver_extensions,
                              const __DRIconfig ***driver_configs,
+                             void *loaderPrivate);
+typedef __DRIscreen *
+(*__DRIcreateNewScreen3Func)(int screen, int fd,
+                             const __DRIextension **extensions,
+                             const __DRIextension **driver_extensions,
+                             const __DRIconfig ***driver_configs,
+                             bool implicit,
                              void *loaderPrivate);
 
 typedef __DRIdrawable *
@@ -1113,7 +1132,7 @@ struct __DRIdri2LoaderExtensionRec {
  * constructors for DRI2.  The X server uses up to version 4.
  */
 #define __DRI_DRI2 "DRI_DRI2"
-#define __DRI_DRI2_VERSION 4
+#define __DRI_DRI2_VERSION 5
 
 #define __DRI_API_OPENGL	0	/**< OpenGL compatibility profile */
 #define __DRI_API_GLES		1	/**< OpenGL ES 1.x */
@@ -1232,6 +1251,13 @@ struct __DRIdri2ExtensionRec {
     * \since version 4
     */
    __DRIcreateNewScreen2Func            createNewScreen2;
+
+   /**
+    * createNewScreen with the driver's extension list passed in and implicit load flag.
+    *
+    * \since version 5
+    */
+   __DRIcreateNewScreen3Func            createNewScreen3;
 };
 
 
@@ -2045,7 +2071,7 @@ struct __DRIimageLoaderExtensionRec {
  */
 
 #define __DRI_IMAGE_DRIVER           "DRI_IMAGE_DRIVER"
-#define __DRI_IMAGE_DRIVER_VERSION   1
+#define __DRI_IMAGE_DRIVER_VERSION   2
 
 struct __DRIimageDriverExtensionRec {
    __DRIextension               base;
@@ -2055,6 +2081,7 @@ struct __DRIimageDriverExtensionRec {
    __DRIcreateNewDrawableFunc           createNewDrawable;
    __DRIcreateContextAttribsFunc        createContextAttribs;
    __DRIgetAPIMaskFunc                  getAPIMask;
+   __DRIcreateNewScreen3Func            createNewScreen3;
 };
 
 /**

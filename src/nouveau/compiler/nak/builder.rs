@@ -217,6 +217,31 @@ pub trait SSABuilder: Builder {
         dst
     }
 
+    fn hadd2(&mut self, x: Src, y: Src) -> SSARef {
+        let dst = self.alloc_ssa(RegFile::GPR, 1);
+        self.push_op(OpHAdd2 {
+            dst: dst.into(),
+            srcs: [x, y],
+            saturate: false,
+            ftz: false,
+            f32: false,
+        });
+        dst
+    }
+
+    fn hset2(&mut self, cmp_op: FloatCmpOp, x: Src, y: Src) -> SSARef {
+        let dst = self.alloc_ssa(RegFile::GPR, 1);
+        self.push_op(OpHSet2 {
+            dst: dst.into(),
+            set_op: PredSetOp::And,
+            cmp_op: cmp_op,
+            srcs: [x, y],
+            ftz: false,
+            accum: SrcRef::True.into(),
+        });
+        dst
+    }
+
     fn dsetp(&mut self, cmp_op: FloatCmpOp, x: Src, y: Src) -> SSARef {
         let dst = self.alloc_ssa(RegFile::Pred, 1);
         self.push_op(OpDSetP {
@@ -625,6 +650,12 @@ pub trait SSABuilder: Builder {
             });
             dst
         }
+    }
+
+    fn undef(&mut self) -> SSARef {
+        let dst = self.alloc_ssa(RegFile::GPR, 1);
+        self.push_op(OpUndef { dst: dst.into() });
+        dst
     }
 
     fn copy(&mut self, src: Src) -> SSARef {

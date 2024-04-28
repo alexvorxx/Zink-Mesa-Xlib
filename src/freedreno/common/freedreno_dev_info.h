@@ -172,11 +172,8 @@ struct fd_dev_info {
 
       bool broken_ds_ubwc_quirk;
 
-      /* Whether UBWC is supported on all IBOs. Prior to this, only readonly
-       * or writeonly IBOs could use UBWC and mixing reads and writes was not
-       * permitted.
-       */
-      bool supports_ibo_ubwc;
+      /* See ir3_compiler::has_scalar_alu. */
+      bool has_scalar_alu;
 
       struct {
          uint32_t PC_POWER_CNTL;
@@ -230,6 +227,12 @@ struct fd_dev_info {
       uint32_t sysmem_vpc_attr_buf_size;
       uint32_t gmem_vpc_attr_buf_size;
 
+      /* Whether UBWC is supported on all IBOs. Prior to this, only readonly
+       * or writeonly IBOs could use UBWC and mixing reads and writes was not
+       * permitted.
+       */
+      bool supports_ibo_ubwc;
+
       /* Whether the UBWC fast-clear values for snorn, unorm, and int formats
        * are the same. This is the case from a740 onwards. These formats were
        * already otherwise UBWC-compatible, so this means that they are now
@@ -268,6 +271,8 @@ const struct fd_dev_info *fd_dev_info_raw(const struct fd_dev_id *id);
 
 /* Final dev info with dbg options and everything else applied.  */
 const struct fd_dev_info fd_dev_info(const struct fd_dev_id *id);
+
+const struct fd_dev_info *fd_dev_info_raw_by_name(const char *name);
 
 static uint8_t
 fd_dev_gen(const struct fd_dev_id *id)

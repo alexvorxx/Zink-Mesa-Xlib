@@ -180,7 +180,7 @@ struct emu {
 
    uint32_t *instrs;
    unsigned sizedwords;
-   unsigned gpu_id;
+   unsigned fw_id;
 
    struct emu_control_regs control_regs;
    struct emu_sqe_regs     sqe_regs;

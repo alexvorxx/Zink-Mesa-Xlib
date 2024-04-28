@@ -76,7 +76,7 @@
 #define NINE_STATE_UNHANDLED   (1 << 29)
 
 /* These states affect the ff shader key,
- * which we recompute everytime. */
+ * which we recompute every time. */
 #define NINE_STATE_FF_SHADER    0
 
 #define NINE_STATE_COMMIT_DSA  (1 << 0)
@@ -681,7 +681,7 @@ nine_context_get_pipe_multithread( struct NineDevice9 *device );
 
 /* Get the pipe_context (should not be called from the worker thread).
  * All the work in the worker thread is paused before returning.
- * It is neccessary to release in order to restart the thread.
+ * It is necessary to release in order to restart the thread.
  * This is intended for use of the nine_context pipe_context that don't
  * need the worker thread to finish all queued job. */
 struct pipe_context *

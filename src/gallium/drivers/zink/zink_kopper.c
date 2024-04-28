@@ -574,6 +574,12 @@ kopper_acquire(struct zink_screen *screen, struct zink_resource *res, uint64_t t
             res->obj->new_dt = true;
             continue;
          }
+         if (ret == VK_NOT_READY || ret == VK_TIMEOUT) {
+            if (timeout > 1000000)
+               unreachable("kopper_acquire: updated timeout after failure has become unreasonable large");
+            timeout += 4000;
+            continue;
+         }
          VKSCR(DestroySemaphore)(screen->dev, acquire, NULL);
          return ret;
       }

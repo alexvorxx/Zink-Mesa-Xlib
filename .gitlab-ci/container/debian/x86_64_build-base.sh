@@ -70,6 +70,7 @@ DEPS=(
     python3-pil
     python3-pip
     python3-ply
+    python3-pycparser
     python3-requests
     python3-setuptools
     qemu-user

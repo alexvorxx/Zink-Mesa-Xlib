@@ -22,3 +22,9 @@ spec@!opengl 1.0@rasterpos@glsl_vs_tes_linke
 
 # Marked as flake because it passes with ESO but crashes with pipelines.
 spec@arb_tessellation_shader@arb_tessellation_shader-tes-gs-max-output -small -scan 1 50
+
+# Nightly run expectations update
+dEQP-GLES31.functional.copy_image.mixed.viewclass_64_bits_mixed.signed_r11_eac_rgba16ui.cubemap_to_texture3d
+KHR-GL46.packed_pixels.varied_rectangle.rgb10_a2ui
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec3-index-wr-before-barrier
+

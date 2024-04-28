@@ -11,6 +11,7 @@ struct nir_shader;
 
 bool agx_nir_lower_interpolation(struct nir_shader *s);
 bool agx_nir_lower_algebraic_late(struct nir_shader *shader);
+bool agx_nir_fuse_selects(struct nir_shader *shader);
 bool agx_nir_fuse_algebraic_late(struct nir_shader *shader);
 bool agx_nir_fence_images(struct nir_shader *shader);
 bool agx_nir_lower_layer(struct nir_shader *s);

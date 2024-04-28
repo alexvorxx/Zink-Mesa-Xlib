@@ -57,7 +57,7 @@ struct vn_cs_encoder_buffer {
 };
 
 struct vn_cs_encoder {
-   struct vn_instance *instance; /* TODO shmem cache */
+   struct vn_instance *instance;
    enum vn_cs_encoder_storage_type storage_type;
    size_t min_buffer_size;
 

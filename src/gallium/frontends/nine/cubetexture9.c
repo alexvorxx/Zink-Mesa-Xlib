@@ -123,7 +123,7 @@ NineCubeTexture9_ctor( struct NineCubeTexture9 *This,
     sfdesc.Pool = Pool;
     sfdesc.MultiSampleType = D3DMULTISAMPLE_NONE;
     sfdesc.MultiSampleQuality = 0;
-    /* We allocate the memory for the surfaces as continous blocks.
+    /* We allocate the memory for the surfaces as continuous blocks.
      * This is the expected behaviour, however we haven't tested for
      * cube textures in which order the faces/levels should be in memory
      */

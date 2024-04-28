@@ -1,6 +1,8 @@
 Rusticl
 =======
 
+Rusticl is an OpenCL implementation on top of Gallium drivers.
+
 Enabling
 --------
 

@@ -85,6 +85,8 @@ extern "C" {
 
 #endif
 
+#define GFX_IP_VER(major, minor) ((major << 16) | minor)
+
 static inline bool
 intel_device_info_slice_available(const struct intel_device_info *devinfo,
                                   int slice)

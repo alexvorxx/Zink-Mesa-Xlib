@@ -90,6 +90,13 @@ RUSTFLAGS='-L native=/usr/local/lib' cargo install \
   -j ${FDO_CI_CONCURRENT:-4} \
   --root /usr/local
 
+# install cbindgen
+RUSTFLAGS='-L native=/usr/local/lib' cargo install \
+  cbindgen --version 0.26.0 \
+  --locked \
+  -j ${FDO_CI_CONCURRENT:-4} \
+  --root /usr/local
+
 ############### Uninstall the build software
 
 apt-get purge -y "${EPHEMERAL[@]}"

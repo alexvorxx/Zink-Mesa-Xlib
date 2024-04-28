@@ -44,6 +44,12 @@ enum lp_texture_usage
    LP_TEX_USAGE_WRITE_ALL
 };
 
+enum llvmpipe_memory_fd_type
+{
+   LLVMPIPE_MEMORY_FD_TYPE_OPAQUE,
+   LLVMPIPE_MEMORY_FD_TYPE_DMA_BUF,
+};
+
 
 struct pipe_context;
 struct pipe_screen;
@@ -52,6 +58,13 @@ struct llvmpipe_screen;
 
 struct sw_displaytarget;
 
+struct llvmpipe_memory_fd_alloc {
+   void *data;
+   enum llvmpipe_memory_fd_type type;
+   int mem_fd;
+   int dmabuf_fd;
+   size_t size;
+};
 
 /**
  * llvmpipe subclass of pipe_resource.  A texture, drawing surface,
@@ -81,6 +94,7 @@ struct llvmpipe_resource
     * usage.
     */
    struct sw_displaytarget *dt;
+   enum pipe_format dt_format;
 
    /**
     * Malloc'ed data for regular textures, or a mapping to dt above.
@@ -101,8 +115,12 @@ struct llvmpipe_resource
 
    uint64_t size_required;
    uint64_t backing_offset;
+#ifdef HAVE_LIBDRM
+   struct llvmpipe_memory_fd_alloc *dmabuf_alloc;
+#endif
    bool backable;
    bool imported_memory;
+   bool dmabuf;
 #if MESA_DEBUG
    struct list_head list;
 #endif

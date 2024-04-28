@@ -601,6 +601,8 @@ public:
    void schedule_instructions();
    void run(instruction_scheduler_mode mode);
 
+   int grf_index(const fs_reg &reg);
+
    void *mem_ctx;
    linear_ctx *lin_ctx;
 
@@ -692,7 +694,7 @@ instruction_scheduler::instruction_scheduler(void *mem_ctx, const fs_visitor *s,
    this->grf_count = grf_count;
    this->post_reg_alloc = post_reg_alloc;
 
-   const unsigned grf_write_scale = 16;
+   const unsigned grf_write_scale = MAX_VGRF_SIZE(s->devinfo);
    this->last_grf_write = linear_zalloc_array(lin_ctx, schedule_node *, grf_count * grf_write_scale);
 
    this->nodes_len = s->cfg->last_block()->end_ip + 1;
@@ -1129,12 +1131,22 @@ instruction_scheduler::clear_last_grf_write()
 
          if (inst->dst.file == VGRF) {
             /* Don't bother being careful with regs_written(), quicker to just clear 2 cachelines. */
-            memset(&last_grf_write[inst->dst.nr * 16], 0, sizeof(*last_grf_write) * 16);
+            memset(&last_grf_write[inst->dst.nr * MAX_VGRF_SIZE(s->devinfo)], 0,
+                   sizeof(*last_grf_write) * MAX_VGRF_SIZE(s->devinfo));
          }
       }
    } else {
-      memset(last_grf_write, 0, sizeof(*last_grf_write) * grf_count * 16);
+      memset(last_grf_write, 0,
+             sizeof(*last_grf_write) * grf_count * MAX_VGRF_SIZE(s->devinfo));
    }
+}
+
+int
+instruction_scheduler::grf_index(const fs_reg &reg)
+{
+   if (post_reg_alloc)
+      return reg.nr;
+   return reg.nr * MAX_VGRF_SIZE(s->devinfo) + reg.offset / REG_SIZE;
 }
 
 void
@@ -1167,15 +1179,8 @@ instruction_scheduler::calculate_deps()
       /* read-after-write deps. */
       for (int i = 0; i < inst->sources; i++) {
          if (inst->src[i].file == VGRF) {
-            if (post_reg_alloc) {
-               for (unsigned r = 0; r < regs_read(inst, i); r++)
-                  add_dep(last_grf_write[inst->src[i].nr + r], n);
-            } else {
-               for (unsigned r = 0; r < regs_read(inst, i); r++) {
-                  add_dep(last_grf_write[inst->src[i].nr * 16 +
-                                         inst->src[i].offset / REG_SIZE + r], n);
-               }
-            }
+            for (unsigned r = 0; r < regs_read(inst, i); r++)
+               add_dep(last_grf_write[grf_index(inst->src[i]) + r], n);
          } else if (inst->src[i].file == FIXED_GRF) {
             if (post_reg_alloc) {
                for (unsigned r = 0; r < regs_read(inst, i); r++)
@@ -1206,18 +1211,10 @@ instruction_scheduler::calculate_deps()
 
       /* write-after-write deps. */
       if (inst->dst.file == VGRF) {
-         if (post_reg_alloc) {
-            for (unsigned r = 0; r < regs_written(inst); r++) {
-               add_dep(last_grf_write[inst->dst.nr + r], n);
-               last_grf_write[inst->dst.nr + r] = n;
-            }
-         } else {
-            for (unsigned r = 0; r < regs_written(inst); r++) {
-               add_dep(last_grf_write[inst->dst.nr * 16 +
-                                      inst->dst.offset / REG_SIZE + r], n);
-               last_grf_write[inst->dst.nr * 16 +
-                              inst->dst.offset / REG_SIZE + r] = n;
-            }
+         int grf_idx = grf_index(inst->dst);
+         for (unsigned r = 0; r < regs_written(inst); r++) {
+            add_dep(last_grf_write[grf_idx + r], n);
+            last_grf_write[grf_idx + r] = n;
          }
       } else if (inst->dst.file == FIXED_GRF) {
          if (post_reg_alloc) {
@@ -1267,15 +1264,8 @@ instruction_scheduler::calculate_deps()
       /* write-after-read deps. */
       for (int i = 0; i < inst->sources; i++) {
          if (inst->src[i].file == VGRF) {
-            if (post_reg_alloc) {
-               for (unsigned r = 0; r < regs_read(inst, i); r++)
-                  add_dep(n, last_grf_write[inst->src[i].nr + r], 0);
-            } else {
-               for (unsigned r = 0; r < regs_read(inst, i); r++) {
-                  add_dep(n, last_grf_write[inst->src[i].nr * 16 +
-                                            inst->src[i].offset / REG_SIZE + r], 0);
-               }
-            }
+            for (unsigned r = 0; r < regs_read(inst, i); r++)
+               add_dep(n, last_grf_write[grf_index(inst->src[i]) + r], 0);
          } else if (inst->src[i].file == FIXED_GRF) {
             if (post_reg_alloc) {
                for (unsigned r = 0; r < regs_read(inst, i); r++)
@@ -1307,15 +1297,8 @@ instruction_scheduler::calculate_deps()
        * can mark this as WAR dependency.
        */
       if (inst->dst.file == VGRF) {
-         if (post_reg_alloc) {
-            for (unsigned r = 0; r < regs_written(inst); r++)
-               last_grf_write[inst->dst.nr + r] = n;
-         } else {
-            for (unsigned r = 0; r < regs_written(inst); r++) {
-               last_grf_write[inst->dst.nr * 16 +
-                              inst->dst.offset / REG_SIZE + r] = n;
-            }
-         }
+         for (unsigned r = 0; r < regs_written(inst); r++)
+            last_grf_write[grf_index(inst->dst) + r] = n;
       } else if (inst->dst.file == FIXED_GRF) {
          if (post_reg_alloc) {
             for (unsigned r = 0; r < regs_written(inst); r++)

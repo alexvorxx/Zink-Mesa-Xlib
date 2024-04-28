@@ -15,7 +15,7 @@ from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
-from lava.exceptions import MesaCIException, MesaCIRetryError
+from lava.exceptions import MesaCIException, MesaCIRetryError, MesaCIFatalException
 from lava.lava_job_submitter import (
     DEVICE_HANGING_TIMEOUT_SEC,
     NUMBER_OF_RETRIES_TIMEOUT_DETECTION,
@@ -24,6 +24,7 @@ from lava.lava_job_submitter import (
     bootstrap_log_follower,
     follow_job_execution,
     retriable_follow_job,
+    wait_for_job_get_started,
 )
 from lava.utils import LogSectionType
 
@@ -83,7 +84,7 @@ def lava_job_submitter(
 def test_submit_and_follow_respects_exceptions(mock_sleep, mock_proxy, exception):
     with pytest.raises(MesaCIException):
         proxy = mock_proxy(side_effect=exception)
-        job = LAVAJob(proxy, '')
+        job = LAVAJob(proxy, "")
         log_follower = bootstrap_log_follower()
         follow_job_execution(job, log_follower)
 
@@ -165,21 +166,13 @@ PROXY_SCENARIOS = {
         mock_logs(result="pass"),
         does_not_raise(),
         "pass",
-        {
-            "testsuite_results": [
-                generate_testsuite_result(result="pass")
-            ]
-        },
+        {"testsuite_results": [generate_testsuite_result(result="pass")]},
     ),
     "no retries, but testsuite fails": (
         mock_logs(result="fail"),
         does_not_raise(),
         "fail",
-        {
-            "testsuite_results": [
-                generate_testsuite_result(result="fail")
-            ]
-        },
+        {"testsuite_results": [generate_testsuite_result(result="fail")]},
     ),
     "no retries, one testsuite fails": (
         generate_n_logs(n=1, tick_fn=0, result="fail"),
@@ -188,7 +181,7 @@ PROXY_SCENARIOS = {
         {
             "testsuite_results": [
                 generate_testsuite_result(result="fail"),
-                generate_testsuite_result(result="pass")
+                generate_testsuite_result(result="pass"),
             ]
         },
     ),
@@ -264,6 +257,27 @@ def test_simulate_a_long_wait_to_start_a_job(
     assert job.status == "pass"
     assert delta_time.total_seconds() >= wait_time
 
+
+LONG_LAVA_QUEUE_SCENARIOS = {
+    "no_time_to_run": (0, pytest.raises(MesaCIFatalException)),
+    "enough_time_to_run": (9999999999, does_not_raise()),
+}
+
+
+@pytest.mark.parametrize(
+    "job_timeout, expectation",
+    LONG_LAVA_QUEUE_SCENARIOS.values(),
+    ids=LONG_LAVA_QUEUE_SCENARIOS.keys(),
+)
+def test_wait_for_job_get_started_no_time_to_run(monkeypatch, job_timeout, expectation):
+    monkeypatch.setattr("lava.lava_job_submitter.CI_JOB_TIMEOUT_SEC", job_timeout)
+    job = MagicMock()
+    # Make it escape the loop
+    job.is_started.side_effect = (False, False, True)
+    with expectation as e:
+        wait_for_job_get_started(job, 1)
+    if e:
+        job.cancel.assert_called_with()
 
 
 CORRUPTED_LOG_SCENARIOS = {
@@ -438,9 +452,7 @@ def test_job_combined_status(
         "lava.lava_job_submitter.retriable_follow_job"
     ) as mock_retriable_follow_job, patch(
         "lava.lava_job_submitter.LAVAJobSubmitter._LAVAJobSubmitter__prepare_submission"
-    ) as mock_prepare_submission, patch(
-        "sys.exit"
-    ):
+    ) as mock_prepare_submission, patch("sys.exit"):
         from lava.lava_job_submitter import STRUCTURAL_LOG
 
         mock_retriable_follow_job.return_value = MagicMock(status=finished_job_status)

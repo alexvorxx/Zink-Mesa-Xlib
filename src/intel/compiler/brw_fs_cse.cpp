@@ -75,7 +75,6 @@ is_expression(const fs_visitor *v, const fs_inst *const inst)
    case FS_OPCODE_FB_READ_LOGICAL:
    case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD:
    case FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_LOGICAL:
-   case FS_OPCODE_LINTERP:
    case SHADER_OPCODE_FIND_LIVE_CHANNEL:
    case SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL:
    case SHADER_OPCODE_LOAD_LIVE_CHANNELS:
@@ -129,7 +128,7 @@ operands_match(const fs_inst *a, const fs_inst *b, bool *negate)
       return xs[0].equals(ys[0]) &&
              ((xs[1].equals(ys[1]) && xs[2].equals(ys[2])) ||
               (xs[2].equals(ys[1]) && xs[1].equals(ys[2])));
-   } else if (a->opcode == BRW_OPCODE_MUL && a->dst.type == BRW_REGISTER_TYPE_F) {
+   } else if (a->opcode == BRW_OPCODE_MUL && a->dst.type == BRW_TYPE_F) {
       bool xs0_negate = xs[0].negate;
       bool xs1_negate = xs[1].file == IMM ? xs[1].f < 0.0f
                                           : xs[1].negate;
@@ -279,7 +278,7 @@ brw_fs_opt_cse_local(fs_visitor &s, const fs_live_variables &live, bblock_t *blo
             if (inst->opcode != BRW_OPCODE_MOV ||
                 (inst->opcode == BRW_OPCODE_MOV &&
                  inst->src[0].file == IMM &&
-                 inst->src[0].type == BRW_REGISTER_TYPE_VF)) {
+                 inst->src[0].type == BRW_TYPE_VF)) {
                /* Our first sighting of this expression.  Create an entry. */
                aeb_entry *entry = ralloc(cse_ctx, aeb_entry);
                entry->tmp = reg_undef;

@@ -221,3 +221,20 @@ spec@ext_texture_compression_s3tc@compressedteximage gl_compressed_rgba_s3tc_dxt
 
 # Updated by ci-collate, found in this job run: https://gitlab.freedesktop.org/mesa/mesa/-/jobs/56260516
 spec@!opengl 1.4@copy-pixels
+
+# Nightly run expectations update
+dEQP-GLES2.functional.fbo.render.depth.tex2d_rgb_depth_component16
+dEQP-GLES2.functional.fbo.render.stencil_clear.rbo_rgb565_stencil_index8
+dEQP-GLES2.functional.shaders.random.all_features.fragment.4
+dEQP-GLES2.functional.shaders.random.texture.fragment.13
+dEQP-GLES2.functional.shaders.random.texture.fragment.138
+dEQP-GLES2.functional.texture.filtering.2d.linear_nearest_mirror_rgb888_pot
+dEQP-GLES2.functional.texture.filtering.2d.nearest_mipmap_nearest_nearest_mirror_rgba8888
+dEQP-GLES2.functional.uniform_api.random.48
+spec@arb_color_buffer_float@gl_rgba8-drawpixels
+spec@arb_point_sprite@arb_point_sprite-checkerboard
+spec@ati_texture_compression_3dc@texwrap formats
+spec@ati_texture_compression_3dc@texwrap formats@GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI
+spec@ati_texture_compression_3dc@texwrap formats@GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI- swizzled
+spec@glsl-1.10@execution@copy-propagation@glsl-fs-copy-propagation-texcoords-1
+

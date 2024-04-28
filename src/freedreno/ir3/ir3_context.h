@@ -107,7 +107,6 @@ struct ir3_context {
 
    unsigned num_arrays;
 
-   unsigned loop_id;
    unsigned loop_depth;
 
    /* a common pattern for indirect addressing is to request the
@@ -202,8 +201,17 @@ struct ir3_instruction **ir3_get_dst_ssa(struct ir3_context *ctx,
                                          nir_def *dst, unsigned n);
 struct ir3_instruction **ir3_get_def(struct ir3_context *ctx, nir_def *def,
                                      unsigned n);
-struct ir3_instruction *const *ir3_get_src(struct ir3_context *ctx,
-                                           nir_src *src);
+struct ir3_instruction *const *ir3_get_src_maybe_shared(struct ir3_context *ctx,
+                                                        nir_src *src);
+struct ir3_instruction *const *ir3_get_src_shared(struct ir3_context *ctx,
+                                                  nir_src *src, bool shared);
+
+static inline struct ir3_instruction *const *
+ir3_get_src(struct ir3_context *ctx, nir_src *src)
+{
+   return ir3_get_src_shared(ctx, src, false);
+}
+
 void ir3_put_def(struct ir3_context *ctx, nir_def *def);
 struct ir3_instruction *ir3_create_collect(struct ir3_block *block,
                                            struct ir3_instruction *const *arr,

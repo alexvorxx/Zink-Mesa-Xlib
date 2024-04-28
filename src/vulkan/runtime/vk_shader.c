@@ -167,6 +167,8 @@ vk_shader_compile_info_init(struct vk_shader_compile_info *info,
    };
 }
 
+PRAGMA_DIAGNOSTIC_PUSH
+PRAGMA_DIAGNOSTIC_ERROR(-Wpadded)
 struct vk_shader_bin_header {
    char mesavkshaderbin[16];
    VkDriverId driver_id;
@@ -176,6 +178,7 @@ struct vk_shader_bin_header {
    uint8_t sha1[SHA1_DIGEST_LENGTH];
    uint32_t _pad;
 };
+PRAGMA_DIAGNOSTIC_POP
 static_assert(sizeof(struct vk_shader_bin_header) == 72,
               "This struct has no holes");
 

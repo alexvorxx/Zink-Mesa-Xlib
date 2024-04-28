@@ -70,12 +70,6 @@ struct panvk_pipeline {
    /* shader stage bit is set of the stage accesses storage images */
    uint32_t img_access_mask;
 
-   unsigned num_ubos;
-
-   struct {
-      unsigned ubo_idx;
-   } sysvals[MESA_SHADER_STAGES];
-
    unsigned tls_size;
    unsigned wls_size;
 

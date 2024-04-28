@@ -60,6 +60,7 @@ d3d12_video_buffer_create_impl(struct pipe_context *pipe,
    pD3D12VideoBuffer->base.width         = tmpl->width;
    pD3D12VideoBuffer->base.height        = tmpl->height;
    pD3D12VideoBuffer->base.interlaced    = tmpl->interlaced;
+   pD3D12VideoBuffer->base.contiguous_planes = true;
    pD3D12VideoBuffer->base.associated_data = nullptr;
 
    pD3D12VideoBuffer->base.bind =  PIPE_BIND_CUSTOM;

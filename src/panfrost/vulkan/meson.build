@@ -52,7 +52,7 @@ panvk_deps = []
 panvk_flags = []
 panvk_per_arch_libs = []
 
-foreach arch : ['6', '7']
+foreach arch : [6, 7]
   panvk_per_arch_libs += static_library(
     'panvk_v@0@'.format(arch),
     [
@@ -171,4 +171,6 @@ _dev_icd = custom_target(
   build_by_default : true,
 )
 
+devenv.append('VK_DRIVER_FILES', _dev_icd.full_path())
+# Deprecated: replaced by VK_DRIVER_FILES above
 devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())

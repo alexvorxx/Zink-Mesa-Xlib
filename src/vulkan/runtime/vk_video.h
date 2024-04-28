@@ -145,6 +145,7 @@ struct vk_video_session_parameters {
          struct vk_video_h264_sps *h264_sps;
          uint32_t h264_pps_count;
          struct vk_video_h264_pps *h264_pps;
+         StdVideoH264ProfileIdc profile_idc;
       } h264_enc;
 
       struct {
@@ -321,7 +322,7 @@ vk_video_encode_h264_pps(const StdVideoH264PictureParameterSet *pps,
                          void *data_ptr);
 
 unsigned
-vk_video_get_h265_nal_unit(StdVideoH265PictureType pic_type, bool irap_pic_flag);
+vk_video_get_h265_nal_unit(const StdVideoEncodeH265PictureInfo *pic_info);
 
 void
 vk_video_encode_h265_vps(const StdVideoH265VideoParameterSet *vps,

@@ -314,6 +314,7 @@ struct fd_pipe_funcs {
     * the pipe implementation)
     */
    void (*flush)(struct fd_pipe *pipe, uint32_t fence);
+   void (*finish)(struct fd_pipe *pipe);
 
    int (*get_param)(struct fd_pipe *pipe, enum fd_param_id param,
                     uint64_t *value);

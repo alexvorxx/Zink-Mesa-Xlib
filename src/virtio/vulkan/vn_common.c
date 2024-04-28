@@ -167,6 +167,8 @@ vn_relax_reason_string(enum vn_relax_reason reason)
    switch (reason) {
    case VN_RELAX_REASON_RING_SEQNO:
       return "ring seqno";
+   case VN_RELAX_REASON_TLS_RING_SEQNO:
+      return "tls ring seqno";
    case VN_RELAX_REASON_RING_SPACE:
       return "ring space";
    case VN_RELAX_REASON_FENCE:
@@ -204,6 +206,7 @@ vn_relax_get_profile(enum vn_relax_reason reason)
          .warn_order = 12,
          .abort_order = 16,
       };
+   case VN_RELAX_REASON_TLS_RING_SEQNO:
    case VN_RELAX_REASON_RING_SPACE:
    case VN_RELAX_REASON_FENCE:
    case VN_RELAX_REASON_SEMAPHORE:

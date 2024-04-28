@@ -167,6 +167,22 @@ load_instance_id(nir_builder *b)
    return nir_channel(b, nir_load_global_invocation_id(b, 32), 1);
 }
 
+nir_def *
+agx_load_per_vertex_input(nir_builder *b, nir_intrinsic_instr *intr,
+                          nir_def *vertex)
+{
+   assert(intr->intrinsic == nir_intrinsic_load_per_vertex_input);
+   nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
+
+   nir_def *addr = libagx_vertex_output_address(
+      b, nir_load_vs_output_buffer_agx(b), nir_load_vs_outputs_agx(b), vertex,
+      nir_iadd_imm(b, intr->src[1].ssa, sem.location));
+
+   addr = nir_iadd_imm(b, addr, 4 * nir_intrinsic_component(intr));
+   return nir_load_global_constant(b, addr, 4, intr->def.num_components,
+                                   intr->def.bit_size);
+}
+
 static bool
 lower_gs_inputs(nir_builder *b, nir_intrinsic_instr *intr, void *_)
 {
@@ -174,9 +190,6 @@ lower_gs_inputs(nir_builder *b, nir_intrinsic_instr *intr, void *_)
       return false;
 
    b->cursor = nir_instr_remove(&intr->instr);
-   nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
-
-   nir_def *location = nir_iadd_imm(b, intr->src[1].ssa, sem.location);
 
    /* Calculate the vertex ID we're pulling, based on the topology class */
    nir_def *vert_in_prim = intr->src[0].ssa;
@@ -192,16 +205,7 @@ lower_gs_inputs(nir_builder *b, nir_intrinsic_instr *intr, void *_)
                         load_geometry_param(b, input_vertices)),
                vertex);
 
-   /* Calculate the address of the input given the unrolled vertex ID */
-   nir_def *addr = libagx_vertex_output_address(
-      b, nir_load_geometry_param_buffer_agx(b), unrolled, location,
-      load_geometry_param(b, vs_outputs));
-
-   assert(intr->def.bit_size == 32);
-   addr = nir_iadd_imm(b, addr, nir_intrinsic_component(intr) * 4);
-
-   nir_def *val = nir_load_global_constant(b, addr, 4, intr->def.num_components,
-                                           intr->def.bit_size);
+   nir_def *val = agx_load_per_vertex_input(b, intr, unrolled);
    nir_def_rewrite_uses(&intr->def, val);
    return true;
 }
@@ -306,7 +310,7 @@ lower_gs_count_instr(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 }
 
 static bool
-lower_id(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+lower_prolog_id(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    b->cursor = nir_before_instr(&intr->instr);
 
@@ -314,6 +318,34 @@ lower_id(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    if (intr->intrinsic == nir_intrinsic_load_primitive_id)
       id = load_primitive_id(b);
    else if (intr->intrinsic == nir_intrinsic_load_instance_id)
+      id = load_instance_id(b);
+   else
+      return false;
+
+   b->cursor = nir_instr_remove(&intr->instr);
+   nir_def_rewrite_uses(&intr->def, id);
+   return true;
+}
+
+bool
+agx_nir_lower_sw_vs_id(nir_shader *s)
+{
+   return nir_shader_intrinsics_pass(
+      s, lower_prolog_id, nir_metadata_dominance | nir_metadata_block_index,
+      NULL);
+}
+
+static bool
+lower_id(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   bool *lower_instance = data;
+   b->cursor = nir_before_instr(&intr->instr);
+
+   nir_def *id;
+   if (intr->intrinsic == nir_intrinsic_load_primitive_id)
+      id = load_primitive_id(b);
+   else if (intr->intrinsic == nir_intrinsic_load_instance_id &&
+            *lower_instance)
       id = load_instance_id(b);
    else if (intr->intrinsic == nir_intrinsic_load_num_vertices)
       id = nir_channel(b, nir_load_num_workgroups(b), 0);
@@ -356,13 +388,11 @@ agx_nir_create_geometry_count_shader(nir_shader *gs, const nir_shader *libagx,
    NIR_PASS(_, shader, nir_shader_intrinsics_pass, lower_gs_count_instr,
             nir_metadata_block_index | nir_metadata_dominance, state);
 
+   bool lower_instance = true;
    NIR_PASS(_, shader, nir_shader_intrinsics_pass, lower_id,
-            nir_metadata_block_index | nir_metadata_dominance, NULL);
+            nir_metadata_block_index | nir_metadata_dominance, &lower_instance);
 
-   /* Preprocess it */
-   UNUSED struct agx_uncompiled_shader_info info;
-   agx_preprocess_nir(shader, libagx, false, &info);
-
+   agx_preprocess_nir(shader, libagx);
    return shader;
 }
 
@@ -426,9 +456,11 @@ lower_to_gs_rast(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 
    case nir_intrinsic_load_flat_mask:
    case nir_intrinsic_load_provoking_last:
-   case nir_intrinsic_load_input_topology_agx:
+   case nir_intrinsic_load_input_topology_agx: {
       /* Lowering the same in both GS variants */
-      return lower_id(b, intr, data);
+      bool lower_instance = true;
+      return lower_id(b, intr, &lower_instance);
+   }
 
    case nir_intrinsic_end_primitive_with_counter:
    case nir_intrinsic_set_vertex_and_primitive_count:
@@ -549,10 +581,7 @@ agx_nir_create_gs_rast_shader(const nir_shader *gs, const nir_shader *libagx)
 
    nir_opt_idiv_const(shader, 16);
 
-   /* Preprocess it */
-   UNUSED struct agx_uncompiled_shader_info info;
-   agx_preprocess_nir(shader, libagx, false, &info);
-
+   agx_preprocess_nir(shader, libagx);
    return shader;
 }
 
@@ -988,10 +1017,7 @@ agx_nir_create_pre_gs(struct lower_gs_state *state, const nir_shader *libagx,
       nir_load_stat_query_address_agx(b, .base = PIPE_STAT_QUERY_C_INVOCATIONS),
       emitted_prims);
 
-   /* Preprocess it */
-   UNUSED struct agx_uncompiled_shader_info info;
-   agx_preprocess_nir(b->shader, libagx, false, &info);
-
+   agx_preprocess_nir(b->shader, libagx);
    return b->shader;
 }
 
@@ -1207,8 +1233,9 @@ agx_nir_lower_gs(nir_shader *gs, const nir_shader *libagx,
 
    *gs_copy = agx_nir_create_gs_rast_shader(gs, libagx);
 
+   bool lower_instance = true;
    NIR_PASS(_, gs, nir_shader_intrinsics_pass, lower_id,
-            nir_metadata_block_index | nir_metadata_dominance, NULL);
+            nir_metadata_block_index | nir_metadata_dominance, &lower_instance);
 
    link_libagx(gs, libagx);
 
@@ -1285,8 +1312,9 @@ agx_nir_lower_gs(nir_shader *gs, const nir_shader *libagx,
 
    NIR_PASS(_, gs, nir_opt_sink, ~0);
    NIR_PASS(_, gs, nir_opt_move, ~0);
+
    NIR_PASS(_, gs, nir_shader_intrinsics_pass, lower_id,
-            nir_metadata_block_index | nir_metadata_dominance, NULL);
+            nir_metadata_block_index | nir_metadata_dominance, &lower_instance);
 
    /* Create auxiliary programs */
    *pre_gs = agx_nir_create_pre_gs(
@@ -1321,9 +1349,13 @@ lower_vs_before_gs(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
    nir_def *location = nir_iadd_imm(b, intr->src[1].ssa, sem.location);
 
+   /* We inline the outputs_written because it's known at compile-time, even
+    * with shader objects. This lets us constant fold a bit of address math.
+    */
+   nir_def *mask = nir_imm_int64(b, b->shader->info.outputs_written);
+
    nir_def *addr = libagx_vertex_output_address(
-      b, nir_load_geometry_param_buffer_agx(b), calc_unrolled_id(b), location,
-      nir_imm_int64(b, b->shader->info.outputs_written));
+      b, nir_load_vs_output_buffer_agx(b), mask, calc_unrolled_id(b), location);
 
    assert(nir_src_bit_size(intr->src[0]) == 32);
    addr = nir_iadd_imm(b, addr, nir_intrinsic_component(intr) * 4);
@@ -1335,22 +1367,20 @@ lower_vs_before_gs(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 
 bool
 agx_nir_lower_vs_before_gs(struct nir_shader *vs,
-                           const struct nir_shader *libagx,
-                           unsigned index_size_B, uint64_t *outputs)
+                           const struct nir_shader *libagx, uint64_t *outputs)
 {
    bool progress = false;
-
-   /* Lower vertex ID to an index buffer pull without a topology applied */
-   progress |= agx_nir_lower_index_buffer(vs, index_size_B, false);
 
    /* Lower vertex stores to memory stores */
    progress |= nir_shader_intrinsics_pass(
       vs, lower_vs_before_gs, nir_metadata_block_index | nir_metadata_dominance,
-      &index_size_B);
+      NULL);
 
-   /* Lower instance ID and num vertices */
+   /* Lower num vertices */
+   bool lower_instance = false;
    progress |= nir_shader_intrinsics_pass(
-      vs, lower_id, nir_metadata_block_index | nir_metadata_dominance, NULL);
+      vs, lower_id, nir_metadata_block_index | nir_metadata_dominance,
+      &lower_instance);
 
    /* Link libagx, used in lower_vs_before_gs */
    if (progress)
@@ -1369,14 +1399,11 @@ agx_nir_prefix_sum_gs(nir_builder *b, const void *data)
 {
    const unsigned *words = data;
 
-   uint32_t subgroup_size = 32;
-   b->shader->info.workgroup_size[0] = subgroup_size;
-   b->shader->info.workgroup_size[1] = *words;
+   b->shader->info.workgroup_size[0] = 1024;
 
    libagx_prefix_sum(b, load_geometry_param(b, count_buffer),
                      load_geometry_param(b, input_primitives),
-                     nir_imm_int(b, *words),
-                     nir_trim_vector(b, nir_load_local_invocation_id(b), 2));
+                     nir_imm_int(b, *words));
 }
 
 void
@@ -1386,6 +1413,8 @@ agx_nir_gs_setup_indirect(nir_builder *b, const void *data)
 
    libagx_gs_setup_indirect(b, nir_load_geometry_param_buffer_agx(b),
                             nir_load_input_assembly_buffer_agx(b),
+                            nir_load_vs_output_buffer_ptr_agx(b),
+                            nir_load_vs_outputs_agx(b),
                             nir_imm_int(b, key->prim),
                             nir_channel(b, nir_load_local_invocation_id(b), 0));
 }
@@ -1393,17 +1422,20 @@ agx_nir_gs_setup_indirect(nir_builder *b, const void *data)
 void
 agx_nir_unroll_restart(nir_builder *b, const void *data)
 {
+   b->shader->info.workgroup_size[0] = 1024;
+
    const struct agx_unroll_restart_key *key = data;
    nir_def *ia = nir_load_input_assembly_buffer_agx(b);
    nir_def *draw = nir_channel(b, nir_load_workgroup_id(b), 0);
+   nir_def *lane = nir_channel(b, nir_load_local_invocation_id(b), 0);
    nir_def *mode = nir_imm_int(b, key->prim);
 
    if (key->index_size_B == 1)
-      libagx_unroll_restart_u8(b, ia, mode, draw);
+      libagx_unroll_restart_u8(b, ia, mode, draw, lane);
    else if (key->index_size_B == 2)
-      libagx_unroll_restart_u16(b, ia, mode, draw);
+      libagx_unroll_restart_u16(b, ia, mode, draw, lane);
    else if (key->index_size_B == 4)
-      libagx_unroll_restart_u32(b, ia, mode, draw);
+      libagx_unroll_restart_u32(b, ia, mode, draw, lane);
    else
       unreachable("invalid index size");
 }

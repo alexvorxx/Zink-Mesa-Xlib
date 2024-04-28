@@ -136,15 +136,15 @@ namespace {
          }
 
          /* Convert the execution size to GRF units. */
-         sx = DIV_ROUND_UP(inst->exec_size * type_sz(tx), REG_SIZE);
+         sx = DIV_ROUND_UP(inst->exec_size * brw_type_size_bytes(tx), REG_SIZE);
 
          /* 32x32 integer multiplication has half the usual ALU throughput.
           * Treat it as double-precision.
           */
          if ((inst->opcode == BRW_OPCODE_MUL || inst->opcode == BRW_OPCODE_MAD) &&
-             !brw_reg_type_is_floating_point(tx) && type_sz(tx) == 4 &&
-             type_sz(inst->src[0].type) == type_sz(inst->src[1].type))
-            tx = brw_int_type(8, tx == BRW_REGISTER_TYPE_D);
+             !brw_type_is_float(tx) && brw_type_size_bytes(tx) == 4 &&
+             brw_type_size_bytes(inst->src[0].type) == brw_type_size_bytes(inst->src[1].type))
+            tx = brw_int_type(8, tx == BRW_TYPE_D);
 
          rcount = inst->opcode == BRW_OPCODE_DPAS ? inst->rcount : 0;
       }
@@ -317,7 +317,7 @@ namespace {
             return calculate_desc(info, EU_UNIT_FPU, 0, 2, 0, 0, 2,
                                   0, 10, 6 /* XXX */, 14, 0, 0);
          } else {
-            if (type_sz(info.tx) > 4)
+            if (brw_type_size_bytes(info.tx) > 4)
                return calculate_desc(info, EU_UNIT_FPU, 0, 4, 0, 0, 4,
                                      0, 12, 8 /* XXX */, 16 /* XXX */, 0, 0);
             else
@@ -335,7 +335,7 @@ namespace {
             return calculate_desc(info, EU_UNIT_FPU, 0, 2, 0, 0, 2,
                                   0, 10, 6, 14, 0, 0);
          } else {
-            if (type_sz(info.tx) > 4)
+            if (brw_type_size_bytes(info.tx) > 4)
                return calculate_desc(info, EU_UNIT_FPU, 0, 4, 0, 0, 4,
                                      0, 12, 8 /* XXX */, 16 /* XXX */, 0, 0);
             else
@@ -358,7 +358,7 @@ namespace {
             return calculate_desc(info, EU_UNIT_FPU, 0, 2, 1, 0, 2,
                                   0, 10, 6 /* XXX */, 14 /* XXX */, 0, 0);
          } else {
-            if (type_sz(info.tx) > 4)
+            if (brw_type_size_bytes(info.tx) > 4)
                return calculate_desc(info, EU_UNIT_FPU, 0, 4, 1, 0, 4,
                                      0, 12, 8 /* XXX */, 16 /* XXX */, 0, 0);
             else
@@ -439,7 +439,7 @@ namespace {
          return calculate_desc(info, EU_UNIT_NULL, 8, 0, 0, 0, 0,
                                0, 0, 0, 0, 0, 0);
 
-      case FS_OPCODE_LINTERP:
+      case BRW_OPCODE_PLN:
          return calculate_desc(info, EU_UNIT_FPU, 0, 4, 0, 0, 4,
                                0, 12, 8 /* XXX */, 16 /* XXX */, 0, 0);
 
@@ -574,10 +574,6 @@ namespace {
          default:
             abort();
          }
-
-      case FS_OPCODE_FB_READ:
-         return calculate_desc(info, EU_UNIT_DP_RC, 2, 0, 0, 0, 450 /* XXX */,
-                               10 /* XXX */, 300 /* XXX */, 0, 0, 0, 0);
 
       case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD:
          return calculate_desc(info, EU_UNIT_DP_CC, 2, 0, 0, 0, 16 /* XXX */,
@@ -858,8 +854,8 @@ namespace {
    {
       assert(inst->reads_accumulator_implicitly() ||
              inst->writes_accumulator_implicitly(devinfo));
-      const unsigned offset = (inst->group + i) * type_sz(tx) *
-         (brw_reg_type_is_floating_point(tx) ? 1 : 2);
+      const unsigned offset = (inst->group + i) * brw_type_size_bytes(tx) *
+         (brw_type_is_float(tx) ? 1 : 2);
       return offset / (reg_unit(devinfo) * REG_SIZE) % 2;
    }
 

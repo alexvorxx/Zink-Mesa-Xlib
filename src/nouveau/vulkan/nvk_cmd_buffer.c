@@ -59,6 +59,7 @@ nvk_destroy_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer)
 
 static VkResult
 nvk_create_cmd_buffer(struct vk_command_pool *vk_pool,
+                      VkCommandBufferLevel level,
                       struct vk_command_buffer **cmd_buffer_out)
 {
    struct nvk_cmd_pool *pool = container_of(vk_pool, struct nvk_cmd_pool, vk);
@@ -72,7 +73,7 @@ nvk_create_cmd_buffer(struct vk_command_pool *vk_pool,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    result = vk_command_buffer_init(&pool->vk, &cmd->vk,
-                                   &nvk_cmd_buffer_ops, 0);
+                                   &nvk_cmd_buffer_ops, level);
    if (result != VK_SUCCESS) {
       vk_free(&pool->vk.alloc, cmd);
       return result;
@@ -596,20 +597,12 @@ nvk_cmd_bind_shaders(struct vk_command_buffer *vk_cmd,
    }
 }
 
-VKAPI_ATTR void VKAPI_CALL
-nvk_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
-                          VkPipelineBindPoint pipelineBindPoint,
-                          VkPipelineLayout layout,
-                          uint32_t firstSet,
-                          uint32_t descriptorSetCount,
-                          const VkDescriptorSet *pDescriptorSets,
-                          uint32_t dynamicOffsetCount,
-                          const uint32_t *pDynamicOffsets)
+static void
+nvk_bind_descriptor_sets(UNUSED struct nvk_cmd_buffer *cmd,
+                         struct nvk_descriptor_state *desc,
+                         const VkBindDescriptorSetsInfoKHR *info)
 {
-   VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
-   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout, layout);
-   struct nvk_descriptor_state *desc =
-      nvk_get_descriptors_state(cmd, pipelineBindPoint);
+   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout, info->layout);
 
    /* Fro the Vulkan 1.3.275 spec:
     *
@@ -628,12 +621,13 @@ nvk_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
     * range and it's only our responsibility to adjust all
     * set_dynamic_buffer_start[p] for p > s as needed.
     */
-   uint8_t dyn_buffer_start = desc->root.set_dynamic_buffer_start[firstSet];
+   uint8_t dyn_buffer_start =
+      desc->root.set_dynamic_buffer_start[info->firstSet];
 
    uint32_t next_dyn_offset = 0;
-   for (uint32_t i = 0; i < descriptorSetCount; ++i) {
-      unsigned s = i + firstSet;
-      VK_FROM_HANDLE(nvk_descriptor_set, set, pDescriptorSets[i]);
+   for (uint32_t i = 0; i < info->descriptorSetCount; ++i) {
+      unsigned s = i + info->firstSet;
+      VK_FROM_HANDLE(nvk_descriptor_set, set, info->pDescriptorSets[i]);
 
       if (desc->sets[s] != set) {
          if (set != NULL) {
@@ -659,7 +653,7 @@ nvk_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
          if (set != NULL && set_layout->dynamic_buffer_count > 0) {
             for (uint32_t j = 0; j < set_layout->dynamic_buffer_count; j++) {
                struct nvk_buffer_address addr = set->dynamic_buffers[j];
-               addr.base_addr += pDynamicOffsets[next_dyn_offset + j];
+               addr.base_addr += info->pDynamicOffsets[next_dyn_offset + j];
                desc->root.dynamic_buffers[dyn_buffer_start + j] = addr;
             }
             next_dyn_offset += set->layout->dynamic_buffer_count;
@@ -671,45 +665,57 @@ nvk_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
       }
    }
    assert(dyn_buffer_start <= NVK_MAX_DYNAMIC_BUFFERS);
-   assert(next_dyn_offset <= dynamicOffsetCount);
+   assert(next_dyn_offset <= info->dynamicOffsetCount);
 
-   for (uint32_t s = firstSet + descriptorSetCount; s < NVK_MAX_SETS; s++)
+   for (uint32_t s = info->firstSet + info->descriptorSetCount;
+        s < NVK_MAX_SETS; s++)
       desc->root.set_dynamic_buffer_start[s] = dyn_buffer_start;
 }
 
 VKAPI_ATTR void VKAPI_CALL
-nvk_CmdPushConstants(VkCommandBuffer commandBuffer,
-                     VkPipelineLayout layout,
-                     VkShaderStageFlags stageFlags,
-                     uint32_t offset,
-                     uint32_t size,
-                     const void *pValues)
+nvk_CmdBindDescriptorSets2KHR(VkCommandBuffer commandBuffer,
+                              const VkBindDescriptorSetsInfoKHR *pBindDescriptorSetsInfo)
 {
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
 
-   if (stageFlags & VK_SHADER_STAGE_ALL_GRAPHICS) {
-      struct nvk_descriptor_state *desc =
-         nvk_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-
-      memcpy(desc->root.push + offset, pValues, size);
+   if (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_ALL_GRAPHICS) {
+      nvk_bind_descriptor_sets(cmd, &cmd->state.gfx.descriptors,
+                               pBindDescriptorSetsInfo);
    }
 
-   if (stageFlags & VK_SHADER_STAGE_COMPUTE_BIT) {
-      struct nvk_descriptor_state *desc =
-         nvk_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_COMPUTE);
-
-      memcpy(desc->root.push + offset, pValues, size);
+   if (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT) {
+      nvk_bind_descriptor_sets(cmd, &cmd->state.cs.descriptors,
+                               pBindDescriptorSetsInfo);
    }
+}
+
+static void
+nvk_push_constants(UNUSED struct nvk_cmd_buffer *cmd,
+                   struct nvk_descriptor_state *desc,
+                   const VkPushConstantsInfoKHR *info)
+{
+   memcpy(desc->root.push + info->offset, info->pValues, info->size);
+}
+
+
+VKAPI_ATTR void VKAPI_CALL
+nvk_CmdPushConstants2KHR(VkCommandBuffer commandBuffer,
+                         const VkPushConstantsInfoKHR *pPushConstantsInfo)
+{
+   VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
+
+   if (pPushConstantsInfo->stageFlags & VK_SHADER_STAGE_ALL_GRAPHICS)
+      nvk_push_constants(cmd, &cmd->state.gfx.descriptors, pPushConstantsInfo);
+
+   if (pPushConstantsInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+      nvk_push_constants(cmd, &cmd->state.cs.descriptors, pPushConstantsInfo);
 }
 
 static struct nvk_push_descriptor_set *
 nvk_cmd_push_descriptors(struct nvk_cmd_buffer *cmd,
-                         VkPipelineBindPoint bind_point,
+                         struct nvk_descriptor_state *desc,
                          uint32_t set)
 {
-   struct nvk_descriptor_state *desc =
-      nvk_get_descriptors_state(cmd, bind_point);
-
    assert(set < NVK_MAX_SETS);
    if (unlikely(desc->push[set] == NULL)) {
       desc->push[set] = vk_zalloc(&cmd->vk.pool->alloc,
@@ -728,27 +734,41 @@ nvk_cmd_push_descriptors(struct nvk_cmd_buffer *cmd,
    return desc->push[set];
 }
 
-VKAPI_ATTR void VKAPI_CALL
-nvk_CmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
-                            VkPipelineBindPoint pipelineBindPoint,
-                            VkPipelineLayout layout,
-                            uint32_t set,
-                            uint32_t descriptorWriteCount,
-                            const VkWriteDescriptorSet *pDescriptorWrites)
+static void
+nvk_push_descriptor_set(struct nvk_cmd_buffer *cmd,
+                        struct nvk_descriptor_state *desc,
+                        const VkPushDescriptorSetInfoKHR *info)
 {
-   VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
-   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout, layout);
+   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout, info->layout);
 
    struct nvk_push_descriptor_set *push_set =
-      nvk_cmd_push_descriptors(cmd, pipelineBindPoint, set);
+      nvk_cmd_push_descriptors(cmd, desc, info->set);
    if (unlikely(push_set == NULL))
       return;
 
    struct nvk_descriptor_set_layout *set_layout =
-      vk_to_nvk_descriptor_set_layout(pipeline_layout->set_layouts[set]);
+      vk_to_nvk_descriptor_set_layout(pipeline_layout->set_layouts[info->set]);
 
    nvk_push_descriptor_set_update(push_set, set_layout,
-                                  descriptorWriteCount, pDescriptorWrites);
+                                  info->descriptorWriteCount,
+                                  info->pDescriptorWrites);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+nvk_CmdPushDescriptorSet2KHR(VkCommandBuffer commandBuffer,
+                             const VkPushDescriptorSetInfoKHR *pPushDescriptorSetInfo)
+{
+   VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
+
+   if (pPushDescriptorSetInfo->stageFlags & VK_SHADER_STAGE_ALL_GRAPHICS) {
+      nvk_push_descriptor_set(cmd, &cmd->state.gfx.descriptors,
+                              pPushDescriptorSetInfo);
+   }
+
+   if (pPushDescriptorSetInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT) {
+      nvk_push_descriptor_set(cmd, &cmd->state.cs.descriptors,
+                              pPushDescriptorSetInfo);
+   }
 }
 
 void
@@ -869,24 +889,26 @@ nvk_cmd_buffer_dump(struct nvk_cmd_buffer *cmd, FILE *fp)
 }
 
 VKAPI_ATTR void VKAPI_CALL
-nvk_CmdPushDescriptorSetWithTemplateKHR(VkCommandBuffer commandBuffer,
-                                        VkDescriptorUpdateTemplate _template,
-                                        VkPipelineLayout _layout,
-                                        uint32_t set,
-                                        const void *pData)
+nvk_CmdPushDescriptorSetWithTemplate2KHR(
+   VkCommandBuffer commandBuffer,
+   const VkPushDescriptorSetWithTemplateInfoKHR *pPushDescriptorSetWithTemplateInfo)
 {
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
-   VK_FROM_HANDLE(vk_descriptor_update_template, template, _template);
-   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout, _layout);
+   VK_FROM_HANDLE(vk_descriptor_update_template, template,
+                  pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate);
+   VK_FROM_HANDLE(vk_pipeline_layout, pipeline_layout,
+                  pPushDescriptorSetWithTemplateInfo->layout);
 
+   struct nvk_descriptor_state *desc =
+      nvk_get_descriptors_state(cmd, template->bind_point);
    struct nvk_push_descriptor_set *push_set =
-      nvk_cmd_push_descriptors(cmd, template->bind_point, set);
+      nvk_cmd_push_descriptors(cmd, desc, pPushDescriptorSetWithTemplateInfo->set);
    if (unlikely(push_set == NULL))
       return;
 
    struct nvk_descriptor_set_layout *set_layout =
-      vk_to_nvk_descriptor_set_layout(pipeline_layout->set_layouts[set]);
+      vk_to_nvk_descriptor_set_layout(pipeline_layout->set_layouts[pPushDescriptorSetWithTemplateInfo->set]);
 
    nvk_push_descriptor_set_update_template(push_set, set_layout, template,
-                                           pData);
+                                           pPushDescriptorSetWithTemplateInfo->pData);
 }

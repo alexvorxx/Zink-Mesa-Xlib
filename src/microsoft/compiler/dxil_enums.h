@@ -382,6 +382,7 @@ enum glsl_sampler_dim;
 enum dxil_component_type dxil_get_comp_type(const struct glsl_type *type);
 
 enum dxil_prog_sig_comp_type dxil_get_prog_sig_comp_type(const struct glsl_type *type);
+enum dxil_component_type dxil_get_comp_type_from_prog_sig_type(enum dxil_prog_sig_comp_type type);
 
 enum dxil_resource_kind dxil_sampler_dim_to_resource_kind(enum glsl_sampler_dim dim, bool is_array);
 enum dxil_resource_kind dxil_get_resource_kind(const struct glsl_type *type);

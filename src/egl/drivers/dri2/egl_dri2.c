@@ -601,8 +601,8 @@ const __DRIimageLookupExtension image_lookup_extension = {
 
 static const struct dri_extension_match dri3_driver_extensions[] = {
    {__DRI_CORE, 1, offsetof(struct dri2_egl_display, core), false},
-   {__DRI_MESA, 1, offsetof(struct dri2_egl_display, mesa), false},
-   {__DRI_IMAGE_DRIVER, 1, offsetof(struct dri2_egl_display, image_driver),
+   {__DRI_MESA, 2, offsetof(struct dri2_egl_display, mesa), false},
+   {__DRI_IMAGE_DRIVER, 2, offsetof(struct dri2_egl_display, image_driver),
     false},
    {__DRI_CONFIG_OPTIONS, 2, offsetof(struct dri2_egl_display, configOptions),
     true},
@@ -610,8 +610,8 @@ static const struct dri_extension_match dri3_driver_extensions[] = {
 
 static const struct dri_extension_match dri2_driver_extensions[] = {
    {__DRI_CORE, 1, offsetof(struct dri2_egl_display, core), false},
-   {__DRI_MESA, 1, offsetof(struct dri2_egl_display, mesa), false},
-   {__DRI_DRI2, 4, offsetof(struct dri2_egl_display, dri2), false},
+   {__DRI_MESA, 2, offsetof(struct dri2_egl_display, mesa), false},
+   {__DRI_DRI2, 5, offsetof(struct dri2_egl_display, dri2), false},
    {__DRI_CONFIG_OPTIONS, 2, offsetof(struct dri2_egl_display, configOptions),
     true},
 };
@@ -624,8 +624,8 @@ static const struct dri_extension_match dri2_core_extensions[] = {
 
 static const struct dri_extension_match swrast_driver_extensions[] = {
    {__DRI_CORE, 1, offsetof(struct dri2_egl_display, core), false},
-   {__DRI_MESA, 1, offsetof(struct dri2_egl_display, mesa), false},
-   {__DRI_SWRAST, 4, offsetof(struct dri2_egl_display, swrast), false},
+   {__DRI_MESA, 2, offsetof(struct dri2_egl_display, mesa), false},
+   {__DRI_SWRAST, 5, offsetof(struct dri2_egl_display, swrast), false},
    {__DRI_CONFIG_OPTIONS, 2, offsetof(struct dri2_egl_display, configOptions),
     true},
 };
@@ -915,18 +915,18 @@ dri2_create_screen(_EGLDisplay *disp)
           * will not crash.
           */
          if (strcmp(dri2_dpy->driver_name, driver_name_display_gpu) == 0) {
-            dri2_dpy->dri_screen_display_gpu = dri2_dpy->mesa->createNewScreen(
+            dri2_dpy->dri_screen_display_gpu = dri2_dpy->mesa->createNewScreen3(
                0, dri2_dpy->fd_display_gpu, dri2_dpy->loader_extensions,
-               dri2_dpy->driver_extensions, &dri2_dpy->driver_configs, disp);
+               dri2_dpy->driver_extensions, &dri2_dpy->driver_configs, false, disp);
          }
          free(driver_name_display_gpu);
       }
    }
 
    int screen_fd = dri2_dpy->swrast ? -1 : dri2_dpy->fd_render_gpu;
-   dri2_dpy->dri_screen_render_gpu = dri2_dpy->mesa->createNewScreen(
+   dri2_dpy->dri_screen_render_gpu = dri2_dpy->mesa->createNewScreen3(
       0, screen_fd, dri2_dpy->loader_extensions, dri2_dpy->driver_extensions,
-      &dri2_dpy->driver_configs, disp);
+      &dri2_dpy->driver_configs, false, disp);
 
    if (dri2_dpy->dri_screen_render_gpu == NULL) {
       _eglLog(_EGL_WARNING, "egl: failed to create dri2 screen");
@@ -948,7 +948,7 @@ dri2_setup_extensions(_EGLDisplay *disp)
 
    extensions = dri2_dpy->core->getExtensions(dri2_dpy->dri_screen_render_gpu);
 
-   if (dri2_dpy->image_driver || dri2_dpy->dri2 || disp->Options.Zink) {
+   if (dri2_dpy->image_driver || dri2_dpy->dri2) {
       if (!loader_bind_extensions(dri2_dpy, dri2_core_extensions,
                                   ARRAY_SIZE(dri2_core_extensions), extensions))
          return EGL_FALSE;
@@ -968,17 +968,15 @@ dri2_setup_extensions(_EGLDisplay *disp)
        (dri2_dpy->present_major_version == 1 &&
         dri2_dpy->present_minor_version >= 2)) &&
       (dri2_dpy->image && dri2_dpy->image->base.version >= 15);
-#endif
    if (disp->Options.Zink && !disp->Options.ForceSoftware &&
-#ifdef HAVE_DRI3_MODIFIERS
        dri2_dpy->dri3_major_version != -1 &&
        !dri2_dpy->multibuffers_available &&
-#endif
        /* this is enum _egl_platform_type */
        (disp->Platform == _EGL_PLATFORM_X11 ||
         disp->Platform == _EGL_PLATFORM_XCB) &&
        !debug_get_bool_option("LIBGL_KOPPER_DRI2", false))
       return EGL_FALSE;
+#endif
 
    loader_bind_extensions(dri2_dpy, optional_core_extensions,
                           ARRAY_SIZE(optional_core_extensions), extensions);

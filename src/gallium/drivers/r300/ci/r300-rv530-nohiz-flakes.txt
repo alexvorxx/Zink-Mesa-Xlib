@@ -1,4 +1,4 @@
-# Unfortunatelly it looks like all tex-miplevel selection
+# Unfortunately it looks like all tex-miplevel selection
 # tests are very flaky.
 spec@arb_shader_texture_lod@execution@tex-miplevel-selection*
 spec@arb_texture_rectangle@tex-miplevel-selection*
@@ -20,3 +20,7 @@ shaders@glsl-lod-bias
 spec@!opengl 1.1@texgen
 spec@!opengl 1.2@tex3d
 spec@ati_fragment_shader@ati_fragment_shader-render-textargets
+
+# Nightly run expectations update
+spec@ati_fragment_shader@ati_fragment_shader-render-notexture
+

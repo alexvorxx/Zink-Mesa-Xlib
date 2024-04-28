@@ -1,24 +1,6 @@
 /*
  * Copyright © 2014-2015 Broadcom
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  */
 
 #include "compiler/nir/nir.h"
@@ -70,9 +52,11 @@ struct ntr_reg_interval {
 struct ntr_compile {
    nir_shader *s;
    nir_function_impl *impl;
-   const struct nir_to_rc_options *options;
    struct pipe_screen *screen;
    struct ureg_program *ureg;
+
+   /* Options */
+   bool lower_fabs;
 
    bool addr_declared[3];
    struct ureg_dst addr_reg[3];
@@ -1009,11 +993,11 @@ ntr_get_alu_src(struct ntr_compile *c, nir_alu_instr *instr, int i)
     * officially supported by TGSI is 32-bit integer negates, but even those are
     * broken on virglrenderer, so skip lowering all integer and f64 float mods.
     *
-    * The options->lower_fabs requests that we not have native source modifiers
+    * The lower_fabs requests that we not have native source modifiers
     * for fabs, and instead emit MAX(a,-a) for nir_op_fabs.
     */
    nir_legacy_alu_src src =
-      nir_legacy_chase_alu_src(&instr->src[i], !c->options->lower_fabs);
+      nir_legacy_chase_alu_src(&instr->src[i], !c->lower_fabs);
    struct ureg_src usrc = ntr_get_chased_src(c, &src.src);
 
    usrc = ureg_swizzle(usrc,
@@ -1049,7 +1033,7 @@ static struct ureg_dst
 ntr_get_ssa_def_decl(struct ntr_compile *c, nir_def *ssa)
 {
    uint32_t writemask;
-   /* Fix writemask for nir_intrinsic_load_ubo_vec4 accoring to uses. */
+   /* Fix writemask for nir_intrinsic_load_ubo_vec4 according to uses. */
    if (ssa->parent_instr->type == nir_instr_type_intrinsic &&
        nir_instr_as_intrinsic(ssa->parent_instr)->intrinsic == nir_intrinsic_load_ubo_vec4)
       writemask = nir_def_components_read(ssa);
@@ -1235,10 +1219,10 @@ ntr_emit_alu(struct ntr_compile *c, nir_alu_instr *instr)
       switch (instr->op) {
       case nir_op_fabs:
          /* Try to eliminate */
-         if (!c->options->lower_fabs && nir_legacy_float_mod_folds(instr))
+         if (!c->lower_fabs && nir_legacy_float_mod_folds(instr))
             break;
 
-         if (c->options->lower_fabs)
+         if (c->lower_fabs)
             ntr_MAX(c, dst, src[0], ureg_negate(src[0]));
          else
             ntr_MOV(c, dst, ureg_abs(src[0]));
@@ -1301,30 +1285,15 @@ ntr_emit_alu(struct ntr_compile *c, nir_alu_instr *instr)
          break;
 
       case nir_op_fcsel:
-         /* If CMP isn't supported, then the flags that enable NIR to generate
-          * this opcode should also not be set.
-          */
-         assert(!c->options->lower_cmp);
-
          /* Implement this as CMP(-abs(src0), src1, src2). */
          ntr_CMP(c, dst, ureg_negate(ureg_abs(src[0])), src[1], src[2]);
          break;
 
       case nir_op_fcsel_gt:
-         /* If CMP isn't supported, then the flags that enable NIR to generate
-          * these opcodes should also not be set.
-          */
-         assert(!c->options->lower_cmp);
-
          ntr_CMP(c, dst, ureg_negate(src[0]), src[1], src[2]);
          break;
 
       case nir_op_fcsel_ge:
-         /* If CMP isn't supported, then the flags that enable NIR to generate
-          * these opcodes should also not be set.
-          */
-         assert(!c->options->lower_cmp);
-
          /* Implement this as if !(src0 < 0.0) was identical to src0 >= 0.0. */
          ntr_CMP(c, dst, src[0], src[2], src[1]);
          break;
@@ -1404,7 +1373,7 @@ ntr_emit_load_ubo(struct ntr_compile *c, nir_intrinsic_instr *instr)
       src = ureg_src_dimension(src, ntr_src_as_uint(c, instr->src[0]));
    } else {
       /* virglrenderer requires that indirect UBO references have the UBO
-       * array's base index in the Index field, not added to the indrect
+       * array's base index in the Index field, not added to the indirect
        * address.
        *
        * Many nir intrinsics have a base address const value for the start of
@@ -2148,10 +2117,7 @@ ntr_emit_impl(struct ntr_compile *c, nir_function_impl *impl)
    /* Emit the ntr insns */
    ntr_emit_cf_list(c, &impl->body);
 
-   /* Don't do optimized RA if the driver requests it, unless the number of
-    * temps is too large to be covered by the 16 bit signed int that TGSI
-    * allocates for the register index */
-   if (!c->options->unoptimized_ra || c->num_temps > 0x7fff)
+   if (c->s->info.stage == MESA_SHADER_FRAGMENT)
       ntr_allocate_regs(c, impl);
    else
       ntr_allocate_regs_unoptimized(c, impl);
@@ -2190,7 +2156,7 @@ ntr_should_vectorize_io(unsigned align, unsigned bit_size,
    if (bit_size != 32)
       return false;
 
-   /* Our offset alignment should aways be at least 4 bytes */
+   /* Our offset alignment should always be at least 4 bytes */
    if (align < 4)
       return false;
 
@@ -2358,14 +2324,6 @@ nir_to_rc_lower_txp(nir_shader *s)
    NIR_PASS_V(s, nir_lower_tex, &lower_tex_options);
 }
 
-const void *
-nir_to_rc(struct nir_shader *s,
-            struct pipe_screen *screen)
-{
-   static const struct nir_to_rc_options default_ntr_options = {0};
-   return nir_to_rc_options(s, screen, &default_ntr_options);
-}
-
 /**
  * Translates the NIR shader to TGSI.
  *
@@ -2373,13 +2331,15 @@ nir_to_rc(struct nir_shader *s,
  * We take ownership of the NIR shader passed, returning a reference to the new
  * TGSI tokens instead.  If you need to keep the NIR, then pass us a clone.
  */
-const void *nir_to_rc_options(struct nir_shader *s,
-                                struct pipe_screen *screen,
-                                const struct nir_to_rc_options *options)
+const void *nir_to_rc(struct nir_shader *s,
+                      struct pipe_screen *screen)
 {
    struct ntr_compile *c;
    const void *tgsi_tokens;
    bool is_r500 = r300_screen(screen)->caps.is_r500;
+   c = rzalloc(NULL, struct ntr_compile);
+   c->screen = screen;
+   c->lower_fabs = !is_r500 && s->info.stage == MESA_SHADER_VERTEX;
 
    /* Lower array indexing on FS inputs.  Since we don't set
     * ureg->supports_any_inout_decl_range, the TGSI input decls will be split to
@@ -2423,7 +2383,7 @@ const void *nir_to_rc_options(struct nir_shader *s,
    NIR_PASS_V(s, nir_copy_prop);
    NIR_PASS_V(s, r300_nir_post_integer_lowering);
    NIR_PASS_V(s, nir_lower_bool_to_float,
-              !options->lower_cmp && !options->lower_fabs);
+              is_r500 || s->info.stage == MESA_SHADER_FRAGMENT);
    /* bool_to_float generates MOVs for b2f32 that we want to clean up. */
    NIR_PASS_V(s, nir_copy_prop);
    /* CSE cleanup after late ftrunc lowering. */
@@ -2465,16 +2425,12 @@ const void *nir_to_rc_options(struct nir_shader *s,
    NIR_PASS_V(s, nir_opt_dce);
 
    /* See comment in ntr_get_alu_src for supported modifiers */
-   NIR_PASS_V(s, nir_legacy_trivialize, !options->lower_fabs);
+   NIR_PASS_V(s, nir_legacy_trivialize, !c->lower_fabs);
 
    if (NIR_DEBUG(TGSI)) {
       fprintf(stderr, "NIR before translation to TGSI:\n");
       nir_print_shader(s, stderr);
    }
-
-   c = rzalloc(NULL, struct ntr_compile);
-   c->screen = screen;
-   c->options = options;
 
    c->s = s;
    c->ureg = ureg_create(pipe_shader_type_from_mesa(s->info.stage));

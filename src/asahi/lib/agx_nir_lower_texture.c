@@ -162,6 +162,8 @@ lower_buffer_texture(nir_builder *b, nir_tex_instr *tex)
    nir_instr_remove(&tex->instr);
    nir_builder_instr_insert(b, &tex->instr);
    nir_tex_instr_add_src(tex, nir_tex_src_backend1, coord2d);
+   nir_steal_tex_src(tex, nir_tex_src_sampler_handle);
+   nir_steal_tex_src(tex, nir_tex_src_sampler_offset);
    nir_block *else_block = nir_cursor_current_block(b->cursor);
    nir_pop_if(b, nif);
 
@@ -290,6 +292,20 @@ lower_regular_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
       }
 
       nir_tex_instr_add_src(tex, nir_tex_src_backend2, packed);
+   }
+
+   /* We reserve bound sampler #0, so we offset bound samplers by 1 and
+    * otherwise map bound samplers as-is.
+    */
+   nir_def *sampler = nir_steal_tex_src(tex, nir_tex_src_sampler_offset);
+   if (!sampler)
+      sampler = nir_imm_intN_t(b, tex->sampler_index, 16);
+
+   if (!is_txf &&
+       nir_tex_instr_src_index(tex, nir_tex_src_sampler_handle) < 0) {
+
+      nir_tex_instr_add_src(tex, nir_tex_src_sampler_handle,
+                            nir_iadd_imm(b, nir_u2u16(b, sampler), 1));
    }
 
    return true;

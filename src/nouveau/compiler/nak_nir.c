@@ -55,6 +55,39 @@ nak_nir_workgroup_has_one_subgroup(const nir_shader *nir)
    }
 }
 
+static uint8_t
+vectorize_filter_cb(const nir_instr *instr, const void *_data)
+{
+   if (instr->type != nir_instr_type_alu)
+      return 0;
+
+   const nir_alu_instr *alu = nir_instr_as_alu(instr);
+
+   const unsigned bit_size = nir_alu_instr_is_comparison(alu)
+                             ? alu->src[0].src.ssa->bit_size
+                             : alu->def.bit_size;
+
+   switch (alu->op) {
+   case nir_op_fadd:
+   case nir_op_fsub:
+   case nir_op_fabs:
+   case nir_op_fneg:
+   case nir_op_feq:
+   case nir_op_fge:
+   case nir_op_flt:
+   case nir_op_fneu:
+   case nir_op_fmul:
+   case nir_op_ffma:
+   case nir_op_fsign:
+   case nir_op_fsat:
+   case nir_op_fmax:
+   case nir_op_fmin:
+      return bit_size == 16 ? 2 : 1;
+   default:
+      return 1;
+   }
+}
+
 static void
 optimize_nir(nir_shader *nir, const struct nak_compiler *nak, bool allow_copies)
 {
@@ -95,7 +128,8 @@ optimize_nir(nir_shader *nir, const struct nak_compiler *nak, bool allow_copies)
       OPT(nir, nir_opt_dead_write_vars);
       OPT(nir, nir_opt_combine_stores, nir_var_all);
 
-      OPT(nir, nir_lower_alu_to_scalar, NULL, NULL);
+      OPT(nir, nir_lower_alu_width, vectorize_filter_cb, NULL);
+      OPT(nir, nir_opt_vectorize, vectorize_filter_cb, NULL);
       OPT(nir, nir_lower_phis_to_scalar, false);
       OPT(nir, nir_lower_frexp);
       OPT(nir, nir_copy_prop);
@@ -146,13 +180,19 @@ nak_optimize_nir(nir_shader *nir, const struct nak_compiler *nak)
 }
 
 static unsigned
-lower_bit_size_cb(const nir_instr *instr, void *_data)
+lower_bit_size_cb(const nir_instr *instr, void *data)
 {
+   const struct nak_compiler *nak = data;
+
    switch (instr->type) {
    case nir_instr_type_alu: {
       nir_alu_instr *alu = nir_instr_as_alu(instr);
       if (nir_op_infos[alu->op].is_conversion)
          return 0;
+
+      const unsigned bit_size = nir_alu_instr_is_comparison(alu)
+                                ? alu->src[0].src.ssa->bit_size
+                                : alu->def.bit_size;
 
       switch (alu->op) {
       case nir_op_bit_count:
@@ -164,17 +204,40 @@ lower_bit_size_cb(const nir_instr *instr, void *_data)
           * source.
           */
          return alu->src[0].src.ssa->bit_size == 32 ? 0 : 32;
+
+      case nir_op_fabs:
+      case nir_op_fadd:
+      case nir_op_fneg:
+      case nir_op_feq:
+      case nir_op_fge:
+      case nir_op_flt:
+      case nir_op_fneu:
+      case nir_op_fmul:
+      case nir_op_ffma:
+      case nir_op_ffmaz:
+      case nir_op_fsign:
+      case nir_op_fsat:
+      case nir_op_fceil:
+      case nir_op_ffloor:
+      case nir_op_fround_even:
+      case nir_op_ftrunc:
+         if (bit_size == 16  && nak->sm >= 70)
+            return 0;
+         break;
+
+      case nir_op_fmax:
+      case nir_op_fmin:
+         if (bit_size == 16 && nak->sm >= 80)
+            return 0;
+         break;
+
       default:
          break;
       }
 
-      const unsigned bit_size = nir_alu_instr_is_comparison(alu)
-                                ? alu->src[0].src.ssa->bit_size
-                                : alu->def.bit_size;
       if (bit_size >= 32)
          return 0;
 
-      /* TODO: Some hardware has native 16-bit support */
       if (bit_size & (8 | 16))
          return 32;
 
@@ -475,11 +538,8 @@ nak_nir_lower_system_value_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
    case nir_intrinsic_load_helper_invocation:
    case nir_intrinsic_load_invocation_id:
    case nir_intrinsic_load_local_invocation_id:
-   case nir_intrinsic_load_workgroup_id:
-   case nir_intrinsic_load_workgroup_id_zero_base: {
+   case nir_intrinsic_load_workgroup_id: {
       const gl_system_value sysval =
-         intrin->intrinsic == nir_intrinsic_load_workgroup_id_zero_base ?
-         SYSTEM_VALUE_WORKGROUP_ID :
          nir_system_value_from_intrinsic(intrin->intrinsic);
       const uint32_t idx = nak_sysval_sysval_idx(sysval);
       nir_def *comps[3];
@@ -846,6 +906,7 @@ nak_postprocess_nir(nir_shader *nir,
       .lower_read_first_invocation = true,
       .lower_elect = true,
       .lower_inverse_ballot = true,
+      .lower_rotate_to_shuffle = true
    };
    OPT(nir, nir_lower_subgroups, &subgroups_options);
    OPT(nir, nak_nir_lower_scan_reduce);

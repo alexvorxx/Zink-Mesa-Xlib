@@ -260,24 +260,25 @@ fn create_kernel(
         return Err(CL_INVALID_VALUE);
     }
 
+    let build = p.build_info();
     // CL_INVALID_PROGRAM_EXECUTABLE if there is no successfully built executable for program.
-    if p.kernels().is_empty() {
+    if build.kernels().is_empty() {
         return Err(CL_INVALID_PROGRAM_EXECUTABLE);
     }
 
     // CL_INVALID_KERNEL_NAME if kernel_name is not found in program.
-    if !p.kernels().contains(&name) {
+    if !build.kernels().contains(&name) {
         return Err(CL_INVALID_KERNEL_NAME);
     }
 
     // CL_INVALID_KERNEL_DEFINITION if the function definition for __kernel function given by
     // kernel_name such as the number of arguments, the argument types are not the same for all
     // devices for which the program executable has been built.
-    if p.kernel_signatures(&name).len() != 1 {
+    if !p.has_unique_kernel_signatures(&name) {
         return Err(CL_INVALID_KERNEL_DEFINITION);
     }
 
-    Ok(Kernel::new(name, p).into_cl())
+    Ok(Kernel::new(name, Arc::clone(&p), &build).into_cl())
 }
 
 #[cl_entrypoint]
@@ -298,25 +299,26 @@ fn create_kernels_in_program(
     num_kernels_ret: *mut cl_uint,
 ) -> CLResult<()> {
     let p = Program::arc_from_raw(program)?;
+    let build = p.build_info();
 
     // CL_INVALID_PROGRAM_EXECUTABLE if there is no successfully built executable for any device in
     // program.
-    if p.kernels().is_empty() {
+    if build.kernels().is_empty() {
         return Err(CL_INVALID_PROGRAM_EXECUTABLE);
     }
 
     // CL_INVALID_VALUE if kernels is not NULL and num_kernels is less than the number of kernels
     // in program.
-    if !kernels.is_null() && p.kernels().len() > num_kernels as usize {
+    if !kernels.is_null() && build.kernels().len() > num_kernels as usize {
         return Err(CL_INVALID_VALUE);
     }
 
     let mut num_kernels = 0;
-    for name in p.kernels() {
+    for name in build.kernels() {
         // Kernel objects are not created for any __kernel functions in program that do not have the
         // same function definition across all devices for which a program executable has been
         // successfully built.
-        if p.kernel_signatures(&name).len() != 1 {
+        if !p.has_unique_kernel_signatures(name) {
             continue;
         }
 
@@ -325,7 +327,7 @@ fn create_kernels_in_program(
             unsafe {
                 kernels
                     .add(num_kernels as usize)
-                    .write(Kernel::new(name, p.clone()).into_cl());
+                    .write(Kernel::new(name.clone(), p.clone(), &build).into_cl());
             }
         }
         num_kernels += 1;

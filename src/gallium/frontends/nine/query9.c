@@ -212,7 +212,7 @@ NineQuery9_GetData( struct NineQuery9 *This,
         wait_query_result = true;
     }
 
-    /* The documention mentions no special case for D3DQUERYTYPE_TIMESTAMP.
+    /* The documentation mentions no special case for D3DQUERYTYPE_TIMESTAMP.
      * However Windows tests show that the query always succeeds when
      * D3DGETDATA_FLUSH is specified. */
     if (This->type == D3DQUERYTYPE_TIMESTAMP &&

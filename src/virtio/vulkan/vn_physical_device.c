@@ -1115,18 +1115,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_image_robustness = true,
       .EXT_inline_uniform_block = true,
       .EXT_pipeline_creation_cache_control = true,
-      /* TODO(VK_EXT_pipeline_creation_feedback): The native implementation
-       * invalidates all feedback. Teach the venus protocol to receive valid
-       * feedback from renderer.
-       *
-       * Even though we implement this natively, we still require host driver
-       * support to avoid invalid usage in the renderer, because we (the guest
-       * driver) do not scrub the extension bits from the
-       * VkGraphicsPipelineCreateInfo pNext chain.  The host driver still
-       * writes feedback into VkPipelineCreationFeedback, which is harmless,
-       * but the renderer does not send the returned feedback to us due to
-       * protocol deficiencies.
-       */
+      /* hide behind renderer support to allow structs passing through */
       .EXT_pipeline_creation_feedback = true,
       .EXT_shader_demote_to_helper_invocation = true,
       .EXT_subgroup_size_control = true,
@@ -1168,23 +1157,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_non_seamless_cube_map = true,
       .EXT_primitive_topology_list_restart = true,
       .EXT_primitives_generated_query = true,
-      /* TODO(VK_EXT_private_data): Support natively.
-       *
-       * We support this extension with a hybrid native/passthrough model
-       * until we teach venus how to do deep surgery on pNext
-       * chains to (a) remove VkDevicePrivateDataCreateInfo, (b) remove Vk
-       * VkPhysicalDevicePrivateDataFeatures, and (c) modify its bits in
-       * VkPhysicalDeviceVulkan13Features.
-       *
-       * For now, we implement the extension functions natively by using
-       * Mesa's common implementation. We passthrough
-       * VkDevicePrivateDataCreateInfo to the renderer, which is harmless.
-       * We passthrough the extension enablement and feature bits to the
-       * renderer because otherwise VkDevicePrivateDataCreateInfo would
-       * cause invalid usage in the renderer. Therefore, even though we
-       * implement the extension natively, we expose the extension only if the
-       * renderer supports it too.
-       */
+      /* hide behind renderer support to allow structs passing through */
       .EXT_private_data = true,
       .EXT_provoking_vertex = true,
       .EXT_queue_family_foreign = true,
@@ -1567,7 +1540,6 @@ enumerate_physical_devices(struct vn_instance *instance,
    const VkAllocationCallbacks *alloc = &instance->base.base.alloc;
    struct vn_ring *ring = instance->ring.ring;
    struct vn_physical_device *physical_devs = NULL;
-   VkPhysicalDevice *handles = NULL;
    VkResult result;
 
    uint32_t count = 0;
@@ -1582,12 +1554,7 @@ enumerate_physical_devices(struct vn_instance *instance,
    if (!physical_devs)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-   handles = vk_alloc(alloc, sizeof(*handles) * count, VN_DEFAULT_ALIGN,
-                      VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-   if (!handles) {
-      vk_free(alloc, physical_devs);
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-   }
+   STACK_ARRAY(VkPhysicalDevice, handles, count);
 
    for (uint32_t i = 0; i < count; i++) {
       struct vn_physical_device *physical_dev = &physical_devs[i];
@@ -1614,7 +1581,7 @@ enumerate_physical_devices(struct vn_instance *instance,
    if (result != VK_SUCCESS)
       goto fail;
 
-   vk_free(alloc, handles);
+   STACK_ARRAY_FINISH(handles);
    *out_physical_devs = physical_devs;
    *out_count = count;
 
@@ -1624,7 +1591,7 @@ fail:
    for (uint32_t i = 0; i < count; i++)
       vn_physical_device_base_fini(&physical_devs[i].base);
    vk_free(alloc, physical_devs);
-   vk_free(alloc, handles);
+   STACK_ARRAY_FINISH(handles);
    return result;
 }
 

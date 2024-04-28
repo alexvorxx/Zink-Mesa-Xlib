@@ -328,8 +328,8 @@ Another useful tool for debugging is the `Vulkan Validation Layers
 
 The validation layers effectively insert extra checking between Zink and the
 Vulkan driver, pointing out incorrect usage of the Vulkan API. The layers can
-be enabled by setting the environment variable :envvar:`VK_INSTANCE_LAYERS` to
-"VK_LAYER_KHRONOS_validation". You can read more about the Validation Layers
+be enabled by setting the environment variable :envvar:`VK_LOADER_LAYERS_ENABLE` to
+``VK_LAYER_KHRONOS_validation``. You can read more about the Validation Layers
 in the link above.
 
 Apple macOS and MoltenVK

@@ -244,7 +244,6 @@ spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec2-vec
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec3-vec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dvec4-vec4,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2-mat2,Fail
-spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat2x4-mat2x4,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat3-mat3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dmat3x2-mat3x2,Fail
@@ -259,15 +258,12 @@ spec@arb_gpu_shader_fp64@execution@conversion@geom-conversion-explicit-dvec4-vec
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat2x4-mat2x4,Fail
-spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat3-mat3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat3x2-mat3x2,Fail
-spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat3x4-mat3x4,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat4-mat4,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat4x2-mat4x2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-double-float,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec2-vec2,Fail
-spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec3-vec3,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@vert-conversion-explicit-dvec4-vec4,Fail
 
 spec@arb_occlusion_query@occlusion_query_conform,Fail
@@ -440,13 +436,9 @@ spec@arb_transform_feedback_overflow_query@arb_transform_feedback_overflow_query
 
 spec@egl 1.4@eglterminate then unbind context,Fail
 
-# https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/650
-spec@egl_ext_protected_content@conformance,Fail
-
 spec@egl_khr_gl_image@egl_khr_gl_renderbuffer_image-clear-shared-image gl_depth_component24,Fail
 spec@egl_khr_surfaceless_context@viewport,Fail
 spec@egl_mesa_configless_context@basic,Fail
-spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
 spec@ext_framebuffer_multisample@alpha-blending-after-rendering 2,Fail
 spec@ext_framebuffer_multisample@blit-mismatched-formats,Fail
 spec@ext_framebuffer_multisample@clip-and-scissor-blit 2 msaa,Fail
@@ -601,41 +593,32 @@ spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x4-mat2x4,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat3-mat3,Fail
-spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat3x2-mat3x2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat3x4-mat3x4,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat4-mat4,Fail
-spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat4x2-mat4x2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-double-float,Fail
-spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec3-vec3,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dvec4-vec4,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2x3-mat2x3,Fail
-spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat2x4-mat2x4,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat3-mat3,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat3x2-mat3x2,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat3x4-mat3x4,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat4-mat4,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat4x2-mat4x2,Fail
-spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-double-float,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec2-vec2,Fail
-spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec3-vec3,Fail
 spec@glsl-4.00@execution@conversion@geom-conversion-explicit-dvec4-vec4,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat2x3-mat2x3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat2x4-mat2x4,Fail
-spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat3-mat3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat3x2-mat3x2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat3x4-mat3x4,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4-mat4,Fail
-spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4x2-mat4x2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dmat4x3-mat4x3,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-double-float,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec2-vec2,Fail
 spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec3-vec3,Fail
-spec@glsl-4.00@execution@conversion@vert-conversion-explicit-dvec4-vec4,Fail
 
 spec@khr_texture_compression_astc@miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@miptree-gl srgb-fp@sRGB decode full precision,Fail

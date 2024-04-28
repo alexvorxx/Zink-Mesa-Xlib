@@ -314,10 +314,6 @@ struct gl_shader_compiler_options
    /** Driver-selectable options: */
    GLboolean EmitNoCont;                  /**< Emit CONT opcode? */
    GLboolean EmitNoMainReturn;            /**< Emit CONT/RET opcodes? */
-   GLboolean LowerCombinedClipCullDistance; /** Lower gl_ClipDistance and
-                                              * gl_CullDistance together from
-                                              * float[8] to vec4[2]
-                                              **/
    GLbitfield LowerBuiltinVariablesXfb;   /**< Which builtin variables should
                                            * be lowered for transform feedback
                                            **/

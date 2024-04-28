@@ -12,6 +12,7 @@
 #include "util/u_math.h"
 #include "util/format/u_format.h"
 #include "util/u_dump.h"
+#include "nir.h"
 
 #include "pipe/p_screen.h"
 
@@ -39,7 +40,8 @@ NineAdapter9_ctor( struct NineAdapter9 *This,
     This->ctx = pCTX;
     if (!hal->get_param(hal, PIPE_CAP_CLIP_HALFZ)) {
         WARN_ONCE("Driver doesn't natively support d3d9 coordinates\n");
-        if(!hal->get_param(hal, PIPE_CAP_NIR_COMPACT_ARRAYS)){
+        const nir_shader_compiler_options *options = hal->get_compiler_options(hal, PIPE_SHADER_IR_NIR, PIPE_SHADER_VERTEX);
+        if(!options->compact_arrays){
             ERR("Driver doesn't support emulating d3d9 coordinates\n");
             return D3DERR_DRIVERINTERNALERROR;
         }

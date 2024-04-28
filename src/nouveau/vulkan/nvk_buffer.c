@@ -251,6 +251,11 @@ nvk_BindBufferMemory2(VkDevice device,
       } else {
          buffer->addr = mem->bo->offset + pBindInfos[i].memoryOffset;
       }
+
+      const VkBindMemoryStatusKHR *status =
+         vk_find_struct_const(pBindInfos[i].pNext, BIND_MEMORY_STATUS_KHR);
+      if (status != NULL && status->pResult != NULL)
+         *status->pResult = VK_SUCCESS;
    }
    return VK_SUCCESS;
 }

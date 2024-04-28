@@ -87,27 +87,21 @@ exec_error:
 #define TYPE_SIGNAL true
 #define TYPE_WAIT false
 
-static void
-xe_exec_fill_sync(struct drm_xe_sync *xe_sync, struct vk_sync *vk_sync,
-                  uint64_t value, bool signal)
+struct drm_xe_sync
+vk_sync_to_drm_xe_sync(struct vk_sync *vk_sync, uint64_t value, bool signal)
 {
-   if (unlikely(!vk_sync_type_is_drm_syncobj(vk_sync->type))) {
-      unreachable("Unsupported sync type");
-      return;
-   }
-
    const struct vk_drm_syncobj *syncobj = vk_sync_as_drm_syncobj(vk_sync);
-   xe_sync->handle = syncobj->syncobj;
+   assert(syncobj);
 
-   if (value) {
-      xe_sync->type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ;
-      xe_sync->timeline_value = value;
-   } else {
-      xe_sync->type = DRM_XE_SYNC_TYPE_SYNCOBJ;
-   }
+   struct drm_xe_sync drm_sync = {
+      .type = value ? DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ :
+                      DRM_XE_SYNC_TYPE_SYNCOBJ,
+      .flags = signal ? DRM_XE_SYNC_FLAG_SIGNAL : 0,
+      .handle = syncobj->syncobj,
+      .timeline_value = value,
+   };
 
-   if (signal)
-      xe_sync->flags = DRM_XE_SYNC_FLAG_SIGNAL;
+   return drm_sync;
 }
 
 static VkResult
@@ -132,48 +126,41 @@ xe_exec_process_syncs(struct anv_queue *queue,
    struct drm_xe_sync *xe_syncs = vk_zalloc(&device->vk.alloc,
                                             sizeof(*xe_syncs) * num_syncs, 8,
                                             VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   struct drm_xe_sync *xe_sync;
-
    if (!xe_syncs)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    uint32_t count = 0;
 
    if (has_utrace_sync) {
-      xe_sync = &xe_syncs[count++];
-      xe_exec_fill_sync(xe_sync, utrace_submit->sync, 0, TYPE_SIGNAL);
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(utrace_submit->sync, 0,
+                                                 TYPE_SIGNAL);
    }
 
    for (uint32_t i = 0; i < wait_count; i++) {
-      const struct vk_sync_wait *vk_wait = &waits[i];
-
-      xe_sync = &xe_syncs[count++];
-      xe_exec_fill_sync(xe_sync, vk_wait->sync, vk_wait->wait_value,
-                        TYPE_WAIT);
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(waits[i].sync,
+                                                 waits[i].wait_value,
+                                                 TYPE_WAIT);
    }
 
    for (uint32_t i = 0; i < signal_count; i++) {
-      const struct vk_sync_signal *vk_signal = &signals[i];
-
-      xe_sync = &xe_syncs[count++];
-      xe_exec_fill_sync(xe_sync, vk_signal->sync, vk_signal->signal_value,
-                        TYPE_SIGNAL);
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(signals[i].sync,
+                                                 signals[i].signal_value,
+                                                 TYPE_SIGNAL);
    }
 
    for (uint32_t i = 0; i < extra_sync_count; i++)
       xe_syncs[count++] = extra_syncs[i];
 
-   if (queue->sync && !is_companion_rcs_queue) {
-      xe_sync = &xe_syncs[count++];
-      xe_exec_fill_sync(xe_sync, queue->sync, 0,
-                        TYPE_SIGNAL);
-   }
+   if (queue->sync && !is_companion_rcs_queue)
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(queue->sync, 0, TYPE_SIGNAL);
 
    /* vm bind sync */
-   xe_sync = &xe_syncs[count++];
-   xe_sync->handle = intel_bind_timeline_get_syncobj(&device->bind_timeline);
-   xe_sync->type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ;
-   xe_sync->timeline_value = intel_bind_timeline_get_last_point(&device->bind_timeline);
+   xe_syncs[count++] = (struct drm_xe_sync) {
+      .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
+      .flags = 0 /* TYPE_WAIT */,
+      .handle = intel_bind_timeline_get_syncobj(&device->bind_timeline),
+      .timeline_value = intel_bind_timeline_get_last_point(&device->bind_timeline),
+   };
 
    assert(count == num_syncs);
    *ret = xe_syncs;
@@ -201,7 +188,7 @@ xe_execute_trtt_batch(struct anv_sparse_submission *submit,
    struct anv_queue *queue = submit->queue;
    struct anv_device *device = queue->device;
    struct anv_trtt *trtt = &device->trtt;
-   VkResult result;
+   VkResult result = VK_SUCCESS;
 
    struct drm_xe_sync extra_sync = {
       .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
@@ -230,18 +217,20 @@ xe_execute_trtt_batch(struct anv_sparse_submission *submit,
    };
 
    if (!device->info->no_hw) {
-      if (intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC, &exec))
-         return vk_device_set_lost(&device->vk, "XE_EXEC failed: %m");
+      if (intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC, &exec)) {
+         result = vk_device_set_lost(&device->vk, "XE_EXEC failed: %m");
+         goto out;
+      }
    }
 
    if (queue->sync) {
       result = vk_sync_wait(&device->vk, queue->sync, 0,
                             VK_SYNC_WAIT_COMPLETE, UINT64_MAX);
-      if (result != VK_SUCCESS)
-         return vk_queue_set_lost(&queue->vk, "trtt sync wait failed");
    }
 
-   return VK_SUCCESS;
+out:
+   vk_free(&device->vk.alloc, xe_syncs);
+   return result;
 }
 
 VkResult
@@ -251,7 +240,7 @@ xe_queue_exec_utrace_locked(struct anv_queue *queue,
    struct anv_device *device = queue->device;
    struct drm_xe_sync xe_syncs[2] = {};
 
-   xe_exec_fill_sync(&xe_syncs[0], utrace_submit->sync, 0, TYPE_SIGNAL);
+   xe_syncs[0] = vk_sync_to_drm_xe_sync(utrace_submit->sync, 0, TYPE_SIGNAL);
 
    xe_syncs[1].type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ;
    xe_syncs[1].handle = intel_bind_timeline_get_syncobj(&device->bind_timeline);

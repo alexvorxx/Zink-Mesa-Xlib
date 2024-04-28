@@ -447,6 +447,7 @@ vn_device_init(struct vn_device *dev,
 
    dev->instance = instance;
    dev->physical_device = physical_dev;
+   dev->device_mask = 1;
    dev->renderer = instance->renderer;
    dev->primary_ring = instance->ring.ring;
 
@@ -454,6 +455,11 @@ vn_device_init(struct vn_device *dev,
       vn_device_fix_create_info(dev, create_info, alloc, &local_create_info);
    if (!create_info)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   const VkDeviceGroupDeviceCreateInfo *group = vk_find_struct_const(
+      create_info->pNext, DEVICE_GROUP_DEVICE_CREATE_INFO);
+   if (group && group->physicalDeviceCount)
+      dev->device_mask = (1 << group->physicalDeviceCount) - 1;
 
    result = vn_call_vkCreateDevice(dev->primary_ring, physical_dev_handle,
                                    create_info, NULL, &dev_handle);

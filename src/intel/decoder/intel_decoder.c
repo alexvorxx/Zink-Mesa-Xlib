@@ -1402,10 +1402,11 @@ intel_field_iterator_next(struct intel_field_iterator *iter)
 static void
 print_dword_header(FILE *outfile,
                    struct intel_field_iterator *iter,
-                   uint64_t offset, uint32_t dword)
+                   uint64_t offset, uint32_t dword,
+                   const char *spacing)
 {
-   fprintf(outfile, "0x%08"PRIx64":  0x%08x : Dword %d\n",
-           offset + 4 * dword, iter->p[dword], dword);
+   fprintf(outfile, "%s0x%08"PRIx64":  0x%08x : Dword %d\n",
+           spacing, offset + 4 * dword, iter->p[dword], dword);
 }
 
 bool
@@ -1425,8 +1426,9 @@ intel_field_is_header(struct intel_field *field)
 }
 
 void
-intel_print_group(FILE *outfile, struct intel_group *group, uint64_t offset,
-                  const uint32_t *p, int p_bit, bool color)
+intel_print_group_custom_spacing(FILE *outfile, struct intel_group *group, uint64_t offset,
+                                 const uint32_t *p, int p_bit, bool color,
+                                 const char *spacing_reg, const char *spacing_dword)
 {
    struct intel_field_iterator iter;
    int last_dword = -1;
@@ -1436,11 +1438,11 @@ intel_print_group(FILE *outfile, struct intel_group *group, uint64_t offset,
       int iter_dword = iter.end_bit / 32;
       if (last_dword != iter_dword) {
          for (int i = last_dword + 1; i <= iter_dword; i++)
-            print_dword_header(outfile, &iter, offset, i);
+            print_dword_header(outfile, &iter, offset, i, spacing_dword);
          last_dword = iter_dword;
       }
       if (!intel_field_is_header(iter.field)) {
-         fprintf(outfile, "    %s: %s\n", iter.name, iter.value);
+         fprintf(outfile, "%s%s: %s\n", spacing_reg, iter.name, iter.value);
          if (iter.struct_desc) {
             int struct_dword = iter.start_bit / 32;
             uint64_t struct_offset = offset + 4 * struct_dword;
@@ -1449,4 +1451,15 @@ intel_print_group(FILE *outfile, struct intel_group *group, uint64_t offset,
          }
       }
    }
+}
+
+void
+intel_print_group(FILE *outfile, struct intel_group *group, uint64_t offset,
+                  const uint32_t *p, int p_bit, bool color)
+{
+   const char *spacing_reg = "    ";
+   const char *spacing_dword = "";
+
+   intel_print_group_custom_spacing(outfile, group, offset, p, p_bit, color,
+                                    spacing_reg, spacing_dword);
 }

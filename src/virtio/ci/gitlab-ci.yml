@@ -6,7 +6,6 @@
     - changes: &venus_file_list
       - src/virtio/**/*
       when: on_success
-    - when: never
 
 
 .venus-lavapipe-test:

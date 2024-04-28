@@ -1,25 +1,7 @@
 /*
  * Copyright © 2018 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "aco_ir.h"
@@ -213,7 +195,8 @@ validate_ir(Program* program)
             if (instr->opcode == aco_opcode::v_interp_p1ll_f16 ||
                 instr->opcode == aco_opcode::v_interp_p1lv_f16 ||
                 instr->opcode == aco_opcode::v_interp_p2_legacy_f16 ||
-                instr->opcode == aco_opcode::v_interp_p2_f16) {
+                instr->opcode == aco_opcode::v_interp_p2_f16 ||
+                instr->opcode == aco_opcode::v_interp_p2_hi_f16) {
                /* v_interp_*_fp16 are considered VINTRP by the compiler but
                 * they are emitted as VOP3.
                 */
@@ -1085,6 +1068,7 @@ validate_subdword_definition(amd_gfx_level gfx_level, const aco_ptr<Instruction>
       return true;
 
    switch (instr->opcode) {
+   case aco_opcode::v_interp_p2_hi_f16:
    case aco_opcode::v_fma_mixhi_f16:
    case aco_opcode::buffer_load_ubyte_d16_hi:
    case aco_opcode::buffer_load_sbyte_d16_hi:
@@ -1112,7 +1096,7 @@ get_subdword_bytes_written(Program* program, const aco_ptr<Instruction>& instr, 
 
    if (instr->isPseudo())
       return gfx_level >= GFX8 ? def.bytes() : def.size() * 4u;
-   if (instr->isVALU()) {
+   if (instr->isVALU() || instr->isVINTRP()) {
       assert(def.bytes() <= 2);
       if (instr->isSDWA())
          return instr->sdwa().dst_sel.size();

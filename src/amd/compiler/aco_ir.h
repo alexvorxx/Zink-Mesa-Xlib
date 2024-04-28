@@ -1,25 +1,7 @@
 /*
  * Copyright © 2018 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef ACO_IR_H
@@ -1421,7 +1403,8 @@ static_assert(sizeof(SDWA_instruction) == sizeof(VALU_instruction) + 4, "Unexpec
 struct VINTRP_instruction : public Instruction {
    uint8_t attribute;
    uint8_t component;
-   uint16_t padding;
+   bool high_16bits;
+   uint8_t padding;
 };
 static_assert(sizeof(VINTRP_instruction) == sizeof(Instruction) + 4, "Unexpected padding");
 
@@ -1667,6 +1650,8 @@ struct instr_deleter_functor {
 };
 
 template <typename T> using aco_ptr = std::unique_ptr<T, instr_deleter_functor>;
+
+size_t get_instr_data_size(Format format);
 
 Instruction* create_instruction(aco_opcode opcode, Format format, uint32_t num_operands,
                                 uint32_t num_definitions);
@@ -2122,10 +2107,6 @@ void select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo,
 void select_ps_epilog(Program* program, void* pinfo, ac_shader_config* config,
                       const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* args);
-
-void select_tcs_epilog(Program* program, void* pinfo, ac_shader_config* config,
-                       const struct aco_compiler_options* options,
-                       const struct aco_shader_info* info, const struct ac_shader_args* args);
 
 void select_ps_prolog(Program* program, void* pinfo, ac_shader_config* config,
                       const struct aco_compiler_options* options,

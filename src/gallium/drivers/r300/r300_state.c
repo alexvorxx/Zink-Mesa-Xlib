@@ -1,25 +1,8 @@
 /*
  * Copyright 2008 Corbin Simpson <MostAwesomeDude@gmail.com>
  * Copyright 2009 Marek Olšák <maraeo@gmail.com>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * on the rights to use, copy, modify, merge, publish, distribute, sub
- * license, and/or sell copies of the Software, and to permit persons to whom
- * the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
- * USE OR OTHER DEALINGS IN THE SOFTWARE. */
+ * SPDX-License-Identifier: MIT
+ */
 
 #include "draw/draw_context.h"
 
@@ -1938,29 +1921,7 @@ static void* r300_create_vs_state(struct pipe_context* pipe,
     vs->state = *shader;
 
     if (vs->state.type == PIPE_SHADER_IR_NIR) {
-       static const struct nir_to_rc_options swtcl_options = {0};
-       static const struct nir_to_rc_options hwtcl_r300_options = {
-           .lower_cmp = true,
-           .lower_fabs = true,
-           .ubo_vec4_max = 0x00ff,
-           .unoptimized_ra = true,
-       };
-       static const struct nir_to_rc_options hwtcl_r500_options = {
-           .ubo_vec4_max = 0x00ff,
-           .unoptimized_ra = true,
-       };
-       const struct nir_to_rc_options *ntr_options;
-       if (r300->screen->caps.has_tcl) {
-           if (r300->screen->caps.is_r500) {
-               ntr_options = &hwtcl_r500_options;
-           } else {
-               ntr_options = &hwtcl_r300_options;
-           }
-       } else {
-           ntr_options = &swtcl_options;
-       }
-       vs->state.tokens = nir_to_rc_options(shader->ir.nir, pipe->screen,
-                                              ntr_options);
+       vs->state.tokens = nir_to_rc(shader->ir.nir, pipe->screen);
     } else {
        assert(vs->state.type == PIPE_SHADER_IR_TGSI);
        /* we need to keep a local copy of the tokens */

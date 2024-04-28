@@ -73,4 +73,8 @@ spec@nv_copy_image@nv_copy_image.*
 
 # uprev Piglit in Mesa
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-modifiers.*
+spec@egl_khr_gl_colorspace@srgb
+spec@egl_khr_gl_colorspace@linear
 
+# Timeout
+dEQP-VK.memory.mapping.suballocation.full.variable.implicit_unmap

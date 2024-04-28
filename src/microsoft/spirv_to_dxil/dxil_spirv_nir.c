@@ -213,6 +213,8 @@ lower_shader_system_values(struct nir_builder *builder, nir_instr *instr,
          offsetof(struct dxil_spirv_compute_runtime_data, base_group_x);
       break;
    case nir_intrinsic_load_first_vertex:
+      if (conf->first_vertex_and_base_instance_mode == DXIL_SPIRV_SYSVAL_TYPE_NATIVE)
+         return false;
       offset = offsetof(struct dxil_spirv_vertex_runtime_data, first_vertex);
       break;
    case nir_intrinsic_load_is_indexed_draw:
@@ -220,6 +222,8 @@ lower_shader_system_values(struct nir_builder *builder, nir_instr *instr,
          offsetof(struct dxil_spirv_vertex_runtime_data, is_indexed_draw);
       break;
    case nir_intrinsic_load_base_instance:
+      if (conf->first_vertex_and_base_instance_mode == DXIL_SPIRV_SYSVAL_TYPE_NATIVE)
+         return false;
       offset = offsetof(struct dxil_spirv_vertex_runtime_data, base_instance);
       break;
    case nir_intrinsic_load_draw_id:
@@ -551,143 +555,6 @@ dxil_spirv_nir_discard_point_size_var(nir_shader *shader)
    return true;
 }
 
-static bool
-kill_undefined_varyings(struct nir_builder *b,
-                        nir_instr *instr,
-                        void *data)
-{
-   const nir_shader *prev_stage_nir = data;
-
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-
-   if (intr->intrinsic != nir_intrinsic_load_deref)
-      return false;
-
-   nir_variable *var = nir_intrinsic_get_var(intr, 0);
-   if (!var || var->data.mode != nir_var_shader_in)
-      return false;
-
-   /* Ignore most builtins for now, some of them get default values
-    * when not written from previous stages.
-    */
-   if (var->data.location < VARYING_SLOT_VAR0 &&
-       var->data.location != VARYING_SLOT_POS)
-      return false;
-
-   uint32_t loc = var->data.patch ?
-                  var->data.location - VARYING_SLOT_PATCH0 : var->data.location;
-   uint64_t written = var->data.patch ?
-                      prev_stage_nir->info.patch_outputs_written :
-                      prev_stage_nir->info.outputs_written;
-   if (BITFIELD64_RANGE(loc, glsl_varying_count(var->type)) & written)
-      return false;
-
-   b->cursor = nir_after_instr(instr);
-   /* Note: zero is used instead of undef, because optimization is not run here, but is
-    * run later on. If we load an undef here, and that undef ends up being used to store
-    * to position later on, that can cause some or all of the components in that position
-    * write to be removed, which is problematic especially in the case of all components,
-    * since that would remove the store instruction, and would make it tricky to satisfy
-    * the DXIL requirements of writing all position components.
-    */
-   nir_def *zero = nir_imm_zero(b, intr->def.num_components,
-                                       intr->def.bit_size);
-   nir_def_rewrite_uses(&intr->def, zero);
-   nir_instr_remove(instr);
-   return true;
-}
-
-static bool
-dxil_spirv_nir_kill_undefined_varyings(nir_shader *shader,
-                                       const nir_shader *prev_stage_shader)
-{
-   if (!nir_shader_instructions_pass(shader,
-                                     kill_undefined_varyings,
-                                     nir_metadata_dominance |
-                                     nir_metadata_block_index |
-                                     nir_metadata_loop_analysis,
-                                     (void *)prev_stage_shader))
-      return false;
-
-   nir_remove_dead_derefs(shader);
-   nir_remove_dead_variables(shader, nir_var_shader_in, NULL);
-   return true;
-}
-
-static bool
-kill_unused_outputs(struct nir_builder *b,
-                    nir_instr *instr,
-                    void *data)
-{
-   uint64_t kill_mask = *((uint64_t *)data);
-
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-
-   if (intr->intrinsic != nir_intrinsic_store_deref)
-      return false;
-
-   nir_variable *var = nir_intrinsic_get_var(intr, 0);
-   if (!var || var->data.mode != nir_var_shader_out)
-      return false;
-
-   unsigned loc = var->data.patch ?
-                  var->data.location - VARYING_SLOT_PATCH0 :
-                  var->data.location;
-   if (!(BITFIELD64_RANGE(loc, glsl_varying_count(var->type)) & kill_mask))
-      return false;
-
-   nir_instr_remove(instr);
-   return true;
-}
-
-static bool
-dxil_spirv_nir_kill_unused_outputs(nir_shader *shader,
-                                   nir_shader *next_stage_shader)
-{
-   uint64_t kill_var_mask =
-      shader->info.outputs_written & ~next_stage_shader->info.inputs_read;
-   bool progress = false;
-
-   /* Don't kill buitin vars */
-   kill_var_mask &= BITFIELD64_MASK(MAX_VARYING) << VARYING_SLOT_VAR0;
-
-   if (nir_shader_instructions_pass(shader,
-                                    kill_unused_outputs,
-                                    nir_metadata_dominance |
-                                    nir_metadata_block_index |
-                                    nir_metadata_loop_analysis,
-                                    (void *)&kill_var_mask))
-      progress = true;
-
-   if (shader->info.stage == MESA_SHADER_TESS_CTRL) {
-      kill_var_mask =
-         (shader->info.patch_outputs_written |
-          shader->info.patch_outputs_read) &
-         ~next_stage_shader->info.patch_inputs_read;
-      if (nir_shader_instructions_pass(shader,
-                                       kill_unused_outputs,
-                                       nir_metadata_dominance |
-                                       nir_metadata_block_index |
-                                       nir_metadata_loop_analysis,
-                                       (void *)&kill_var_mask))
-         progress = true;
-   }
-
-   if (progress) {
-      nir_opt_dce(shader);
-      nir_remove_dead_derefs(shader);
-      nir_remove_dead_variables(shader, nir_var_shader_out, NULL);
-   }
-
-   return progress;
-}
-
 struct lower_pntc_data {
    const struct dxil_spirv_runtime_conf *conf;
    nir_variable *pntc;
@@ -890,11 +757,11 @@ lower_view_index_to_rt_layer(nir_shader *nir)
 void
 dxil_spirv_nir_link(nir_shader *nir, nir_shader *prev_stage_nir,
                     const struct dxil_spirv_runtime_conf *conf,
-                    bool *requires_runtime_data)
+                    struct dxil_spirv_metadata *metadata)
 {
    glsl_type_singleton_init_or_ref();
 
-   *requires_runtime_data = false;
+   metadata->requires_runtime_data = false;
    if (prev_stage_nir) {
       if (nir->info.stage == MESA_SHADER_FRAGMENT) {
          nir->info.clip_distance_array_size = prev_stage_nir->info.clip_distance_array_size;
@@ -902,20 +769,15 @@ dxil_spirv_nir_link(nir_shader *nir, nir_shader *prev_stage_nir,
          if (nir->info.inputs_read & VARYING_BIT_PNTC) {
             NIR_PASS_V(prev_stage_nir, dxil_spirv_write_pntc, conf);
             NIR_PASS_V(nir, dxil_spirv_compute_pntc);
-            *requires_runtime_data = true;
+            metadata->requires_runtime_data = true;
          }
       }
 
-      NIR_PASS_V(nir, dxil_spirv_nir_kill_undefined_varyings, prev_stage_nir);
-      NIR_PASS_V(prev_stage_nir, dxil_spirv_nir_kill_unused_outputs, nir);
+      NIR_PASS_V(nir, dxil_nir_kill_undefined_varyings, prev_stage_nir->info.outputs_written, prev_stage_nir->info.patch_outputs_written, NULL);
+      NIR_PASS_V(prev_stage_nir, dxil_nir_kill_unused_outputs, nir->info.inputs_read, nir->info.patch_inputs_read, NULL);
 
-      nir->info.inputs_read =
-         dxil_reassign_driver_locations(nir, nir_var_shader_in,
-                                        prev_stage_nir->info.outputs_written);
-
-      prev_stage_nir->info.outputs_written =
-         dxil_reassign_driver_locations(prev_stage_nir, nir_var_shader_out,
-                                        nir->info.inputs_read);
+      dxil_reassign_driver_locations(nir, nir_var_shader_in, prev_stage_nir->info.outputs_written, NULL);
+      dxil_reassign_driver_locations(prev_stage_nir, nir_var_shader_out, nir->info.inputs_read, NULL);
 
       if (nir->info.stage == MESA_SHADER_TESS_EVAL) {
          assert(prev_stage_nir->info.stage == MESA_SHADER_TESS_CTRL);
@@ -1009,7 +871,7 @@ merge_ubos_and_ssbos(nir_shader *nir)
 void
 dxil_spirv_nir_passes(nir_shader *nir,
                       const struct dxil_spirv_runtime_conf *conf,
-                      bool *requires_runtime_data)
+                      struct dxil_spirv_metadata *metadata)
 {
    glsl_type_singleton_init_or_ref();
 
@@ -1022,13 +884,14 @@ dxil_spirv_nir_passes(nir_shader *nir,
    const struct nir_lower_sysvals_to_varyings_options sysvals_to_varyings = {
       .frag_coord = true,
       .point_coord = true,
+      .front_face = true,
    };
    NIR_PASS_V(nir, nir_lower_sysvals_to_varyings, &sysvals_to_varyings);
 
    NIR_PASS_V(nir, nir_lower_system_values);
 
    nir_lower_compute_system_values_options compute_options = {
-      .has_base_workgroup_id = !conf->zero_based_compute_workgroup_id,
+      .has_base_workgroup_id = conf->workgroup_id_mode != DXIL_SPIRV_SYSVAL_TYPE_ZERO,
    };
    NIR_PASS_V(nir, nir_lower_compute_system_values, &compute_options);
    NIR_PASS_V(nir, dxil_nir_lower_subgroup_id);
@@ -1058,7 +921,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
       nir->info.fs.uses_sample_shading = true;
    }
 
-   if (conf->zero_based_vertex_instance_id) {
+   if (conf->first_vertex_and_base_instance_mode == DXIL_SPIRV_SYSVAL_TYPE_ZERO) {
       // vertex_id and instance_id should have already been transformed to
       // base zero before spirv_to_dxil was called. Therefore, we can zero out
       // base/firstVertex/Instance.
@@ -1072,8 +935,11 @@ dxil_spirv_nir_passes(nir_shader *nir,
    if (conf->lower_view_index_to_rt_layer)
       NIR_PASS_V(nir, lower_view_index_to_rt_layer);
 
-   *requires_runtime_data = false;
-   NIR_PASS(*requires_runtime_data, nir,
+   nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
+   metadata->needs_draw_sysvals = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FIRST_VERTEX) ||
+                                  BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE);
+
+   NIR_PASS(metadata->requires_runtime_data, nir,
             dxil_spirv_nir_lower_shader_system_values,
             conf);
 
@@ -1159,10 +1025,10 @@ dxil_spirv_nir_passes(nir_shader *nir,
              nir->info.stage == MESA_SHADER_TESS_EVAL);
       NIR_PASS_V(nir,
                  dxil_spirv_nir_lower_yz_flip,
-                 conf, requires_runtime_data);
+                 conf, &metadata->requires_runtime_data);
    }
 
-   if (*requires_runtime_data) {
+   if (metadata->requires_runtime_data) {
       add_runtime_data_var(nir, conf->runtime_data_cbv.register_space,
                            conf->runtime_data_cbv.base_shader_register);
    }
@@ -1240,8 +1106,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
        * assigned even if there's just a single vertex shader in the
        * pipeline. The real linking happens in dxil_spirv_nir_link().
        */
-      nir->info.outputs_written =
-         dxil_reassign_driver_locations(nir, nir_var_shader_out, 0);
+      dxil_reassign_driver_locations(nir, nir_var_shader_out, 0, NULL);
    }
 
    if (nir->info.stage == MESA_SHADER_VERTEX) {
@@ -1251,11 +1116,9 @@ dxil_spirv_nir_passes(nir_shader *nir,
          var->data.driver_location = var->data.location - VERT_ATTRIB_GENERIC0;
       }
 
-      nir->info.inputs_read =
-         dxil_sort_by_driver_location(nir, nir_var_shader_in);
+      dxil_sort_by_driver_location(nir, nir_var_shader_in);
    } else {
-      nir->info.inputs_read =
-         dxil_reassign_driver_locations(nir, nir_var_shader_in, 0);
+      dxil_reassign_driver_locations(nir, nir_var_shader_in, 0, NULL);
    }
 
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));

@@ -1312,6 +1312,9 @@ vlVaCreateSurfaces2(VADriverContextP ctx, unsigned int format,
          goto destroy_surf;
       }
    }
+
+   if (memory_type != VA_SURFACE_ATTRIB_MEM_TYPE_VA)
+      drv->has_external_handles = true;
    mtx_unlock(&drv->mutex);
 
    return VA_STATUS_SUCCESS;
@@ -1643,8 +1646,11 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
 #else
    VADRMPRIMESurfaceDescriptor *desc = descriptor;
    desc->fourcc = PipeFormatToVaFourcc(surf->buffer->buffer_format);
-   desc->width  = surf->templat.width;
+   desc->width = surf->templat.width;
    desc->height = surf->templat.height;
+   desc->num_objects = 0;
+
+   bool supports_contiguous_planes = screen->resource_get_info && surf->buffer->contiguous_planes;
 
    for (p = 0; p < ARRAY_SIZE(desc->objects); p++) {
       struct winsys_handle whandle;
@@ -1662,36 +1668,51 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
          goto fail;
       }
 
-      memset(&whandle, 0, sizeof(whandle));
-      whandle.type = WINSYS_HANDLE_TYPE_FD;
+      /* If the driver stores all planes contiguously in memory, only one
+       * handle needs to be exported. resource_get_info is used to obtain
+       * pitch and offset for each layer. */
+      if (!desc->num_objects || !supports_contiguous_planes) {
+         memset(&whandle, 0, sizeof(whandle));
+         whandle.type = WINSYS_HANDLE_TYPE_FD;
 
-      if (!screen->resource_get_handle(screen, drv->pipe, resource,
-                                       &whandle, usage)) {
-         ret = VA_STATUS_ERROR_INVALID_SURFACE;
-         goto fail;
+         if (!screen->resource_get_handle(screen, drv->pipe, resource,
+                                          &whandle, usage)) {
+            ret = VA_STATUS_ERROR_INVALID_SURFACE;
+            goto fail;
+         }
+
+         desc->objects[desc->num_objects].fd = (int) whandle.handle;
+         /* As per VADRMPRIMESurfaceDescriptor documentation, size must be the
+         * "Total size of this object (may include regions which are not part
+         * of the surface)."" */
+         desc->objects[desc->num_objects].size = (uint32_t) whandle.size;
+         desc->objects[desc->num_objects].drm_format_modifier = whandle.modifier;
+
+         desc->num_objects++;
       }
 
-      desc->objects[p].fd   = (int)whandle.handle;
-      /* As per VADRMPRIMESurfaceDescriptor documentation, size must be the
-       * "Total size of this object (may include regions which are not part
-       * of the surface)."" */
-      desc->objects[p].size = (uint32_t) whandle.size;
-      desc->objects[p].drm_format_modifier = whandle.modifier;
-
       if (flags & VA_EXPORT_SURFACE_COMPOSED_LAYERS) {
-         desc->layers[0].object_index[p] = p;
-         desc->layers[0].offset[p]       = whandle.offset;
-         desc->layers[0].pitch[p]        = whandle.stride;
+         desc->layers[0].object_index[p] = desc->num_objects - 1;
+
+         if (supports_contiguous_planes) {
+            screen->resource_get_info(screen, resource, &desc->layers[0].pitch[p], &desc->layers[0].offset[p]);
+         } else {
+            desc->layers[0].pitch[p] = whandle.stride;
+            desc->layers[0].offset[p] = whandle.offset;
+         }
       } else {
          desc->layers[p].drm_format      = drm_format;
          desc->layers[p].num_planes      = 1;
-         desc->layers[p].object_index[0] = p;
-         desc->layers[p].offset[0]       = whandle.offset;
-         desc->layers[p].pitch[0]        = whandle.stride;
+         desc->layers[p].object_index[0] = desc->num_objects - 1;
+
+         if (supports_contiguous_planes) {
+            screen->resource_get_info(screen, resource, &desc->layers[p].pitch[0], &desc->layers[p].offset[0]);
+         } else {
+            desc->layers[p].pitch[0] = whandle.stride;
+            desc->layers[p].offset[0] = whandle.offset;
+         }
       }
    }
-
-   desc->num_objects = p;
 
    if (flags & VA_EXPORT_SURFACE_COMPOSED_LAYERS) {
       uint32_t drm_format = pipe_format_to_drm_format(surf->buffer->buffer_format);
@@ -1708,13 +1729,14 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
    }
 #endif
 
+   drv->has_external_handles = true;
    mtx_unlock(&drv->mutex);
 
    return VA_STATUS_SUCCESS;
 
 fail:
 #ifndef _WIN32
-   for (i = 0; i < p; i++)
+   for (i = 0; i < desc->num_objects; i++)
       close(desc->objects[i].fd);
 #else
    if(whandle.handle)

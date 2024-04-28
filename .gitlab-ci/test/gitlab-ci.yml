@@ -43,7 +43,7 @@ rustfmt:
     - rustfmt --verbose src/**/lib.rs
     - rustfmt --verbose src/**/main.rs
 
-.test-check:
+python-test:
   # Cancel job if a newer commit is pushed to the same branch
   interruptible: true
   stage: code-validation
@@ -52,10 +52,6 @@ rustfmt:
   variables:
     GIT_STRATEGY: fetch
   timeout: 10m
-
-python-test:
-  extends:
-    - .test-check
   script:
     - cd bin/ci
     - pip install --break-system-packages -r test/requirements.txt
@@ -63,8 +59,18 @@ python-test:
   rules:
     - !reference [.disable-farm-mr-rules, rules]
     - !reference [.never-post-merge-rules, rules]
-    - changes:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: on_success
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_PROJECT_NAMESPACE == "mesa" && $GITLAB_USER_LOGIN != "marge-bot"
+      when: on_success
+    - if: $GITLAB_USER_LOGIN == "marge-bot"
+      changes: &bin_ci_files
+        - .gitlab-ci.yml
+        - .gitlab-ci/**/*
         - bin/ci/**/*
+      when: on_success
+    - changes: *bin_ci_files
+      when: manual
 
 .test-gl:
   extends:
@@ -152,7 +158,7 @@ python-test:
     exclude:
       - results/*.shader_cache
   variables:
-    PIGLIT_REPLAY_EXTRA_ARGS: --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-public --jwt-file=${CI_JOB_JWT_FILE}
+    PIGLIT_REPLAY_EXTRA_ARGS: --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-public --jwt-file=${S3_JWT_FILE}
     # until we overcome Infrastructure issues, give traces extra 5 min before timeout
     DEVICE_HANGING_TIMEOUT_SEC: 600
   script:
@@ -401,7 +407,7 @@ python-test:
     reports:
       junit: results/**/junit.xml
 
-.b2c-test-vk:
+.b2c-x86_64-test-vk:
   extends:
     - .use-debian/x86_64_test-vk
     - .b2c-test
@@ -410,7 +416,7 @@ python-test:
     - debian-testing
     - !reference [.required-for-hardware-jobs, needs]
 
-.b2c-test-gl:
+.b2c-x86_64-test-gl:
   extends:
     - .use-debian/x86_64_test-gl
     - .b2c-test

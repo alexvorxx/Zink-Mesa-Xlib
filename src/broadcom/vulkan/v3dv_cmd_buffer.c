@@ -31,7 +31,7 @@ float
 v3dv_get_aa_line_width(struct v3dv_pipeline *pipeline,
                        struct v3dv_cmd_buffer *buffer)
 {
-   float width = buffer->state.dynamic.line_width;
+   float width = buffer->vk.dynamic_graphics_state.rs.line.width;
 
    /* If line smoothing is enabled then we want to add some extra pixels to
     * the width in order to have some semi-transparent edges.
@@ -91,7 +91,7 @@ cmd_buffer_init(struct v3dv_cmd_buffer *cmd_buffer,
 }
 
 static VkResult
-cmd_buffer_create(struct vk_command_pool *pool,
+cmd_buffer_create(struct vk_command_pool *pool, VkCommandBufferLevel level,
                   struct vk_command_buffer **cmd_buffer_out)
 {
    struct v3dv_device *device =
@@ -111,7 +111,7 @@ cmd_buffer_create(struct vk_command_pool *pool,
     */
    VkResult result;
    result = vk_command_buffer_init(pool, &cmd_buffer->vk,
-                                   &v3dv_cmd_buffer_ops, 0 /* level */);
+                                   &v3dv_cmd_buffer_ops, level);
    if (result != VK_SUCCESS) {
       vk_free(&pool->alloc, cmd_buffer);
       return result;
@@ -149,9 +149,21 @@ job_destroy_cloned_gpu_cl_resources(struct v3dv_job *job)
 {
    assert(job->type == V3DV_JOB_TYPE_GPU_CL);
 
-   list_for_each_entry_safe(struct v3dv_bo, bo, &job->bcl.bo_list, list_link) {
-      list_del(&bo->list_link);
-      vk_free(&job->device->vk.alloc, bo);
+   struct v3dv_cmd_buffer *cmd_buffer = job->cmd_buffer;
+   if (job->clone_owns_bcl) {
+      /* For suspending jobs in command buffers with the simultaneous use flag
+       * we allocate a real copy of the BCL.
+       */
+      assert(job->suspending &&
+             cmd_buffer &&
+             (cmd_buffer->usage_flags &
+              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT));
+      v3dv_cl_destroy(&job->bcl);
+   } else {
+      list_for_each_entry_safe(struct v3dv_bo, bo, &job->bcl.bo_list, list_link) {
+         list_del(&bo->list_link);
+         vk_free(&job->device->vk.alloc, bo);
+      }
    }
 
    list_for_each_entry_safe(struct v3dv_bo, bo, &job->rcl.bo_list, list_link) {
@@ -821,6 +833,7 @@ v3dv_job_init(struct v3dv_job *job,
        */
       cmd_buffer->state.dirty = ~0;
       cmd_buffer->state.dirty_descriptor_stages = ~0;
+      vk_dynamic_graphics_state_dirty_all(&cmd_buffer->vk.dynamic_graphics_state);
 
       /* Honor inheritance of occlusion queries in secondaries if requested */
       if (cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY &&
@@ -1349,8 +1362,11 @@ cmd_buffer_ensure_render_pass_attachment_state(struct v3dv_cmd_buffer *cmd_buffe
  * to emit a new clip window to constraint it to the render area.
  */
 static void
-constraint_clip_window_to_render_area(struct v3dv_cmd_buffer_state *state)
+constraint_clip_window_to_render_area(struct v3dv_cmd_buffer *cmd_buffer)
 {
+   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
+   struct vk_dynamic_graphics_state *dyn = &cmd_buffer->vk.dynamic_graphics_state;
+
    uint32_t min_render_x = state->render_area.offset.x;
    uint32_t min_render_y = state->render_area.offset.y;
    uint32_t max_render_x = min_render_x + state->render_area.extent.width - 1;
@@ -1361,7 +1377,7 @@ constraint_clip_window_to_render_area(struct v3dv_cmd_buffer_state *state)
    uint32_t max_clip_y = min_clip_y + state->clip_window.extent.height - 1;
    if (min_render_x > min_clip_x || min_render_y > min_clip_y ||
        max_render_x < max_clip_x || max_render_y < max_clip_y) {
-      state->dirty |= V3DV_CMD_DIRTY_SCISSOR;
+      BITSET_SET(dyn->dirty, MESA_VK_DYNAMIC_VP_SCISSORS);
    }
 }
 
@@ -1384,7 +1400,7 @@ v3dv_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
    cmd_buffer_init_render_pass_attachment_state(cmd_buffer, pRenderPassBegin);
 
    state->render_area = pRenderPassBegin->renderArea;
-   constraint_clip_window_to_render_area(state);
+   constraint_clip_window_to_render_area(cmd_buffer);
 
    /* Setup for first subpass */
    v3dv_cmd_buffer_subpass_start(cmd_buffer, 0);
@@ -1900,26 +1916,73 @@ v3dv_EndCommandBuffer(VkCommandBuffer commandBuffer)
    return VK_SUCCESS;
 }
 
-static void
-clone_bo_list(struct v3dv_cmd_buffer *cmd_buffer,
+static bool
+clone_bo_list(struct v3dv_device *device,
               struct list_head *dst,
               struct list_head *src)
 {
-   assert(cmd_buffer);
+   assert(device);
 
    list_inithead(dst);
    list_for_each_entry(struct v3dv_bo, bo, src, list_link) {
       struct v3dv_bo *clone_bo =
-         vk_alloc(&cmd_buffer->device->vk.alloc, sizeof(struct v3dv_bo), 8,
+         vk_alloc(&device->vk.alloc, sizeof(struct v3dv_bo), 8,
                   VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-      if (!clone_bo) {
-         v3dv_flag_oom(cmd_buffer, NULL);
-         return;
-      }
+      if (!clone_bo)
+         return false;
 
       *clone_bo = *bo;
       list_addtail(&clone_bo->list_link, dst);
    }
+
+   return true;
+}
+
+struct v3dv_job *
+v3dv_job_clone(struct v3dv_job *job, bool skip_bcl)
+{
+   struct v3dv_job *clone = vk_alloc(&job->device->vk.alloc,
+                                     sizeof(struct v3dv_job), 8,
+                                     VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (!clone)
+      return NULL;
+
+   /* Cloned jobs don't duplicate resources, they share their CLs with the
+    * oringinal job, since they are typically read-only. The exception to this
+    * is dynamic rendering suspension paired with
+    * VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, since in that case we need
+    * to patch the BCL with the resume address and for that we need to create a
+    * copy of the job so we avoid rewriting the resume address for another copy
+    * of the same job that may be running in the GPU. When we create a job for
+    * this use case skip_bcl is set to True and the caller will be responsible
+    * for creating the BCL.
+    */
+   *clone = *job;
+   clone->is_clone = true;
+   clone->cmd_buffer = NULL;
+
+   /* We need to regen the BO lists so that they point to the BO list in the
+    * cloned job. Otherwise functions like list_length() will loop forever.
+    */
+   if (job->type == V3DV_JOB_TYPE_GPU_CL) {
+      assert(job->cmd_buffer);
+      struct v3dv_device *device = job->cmd_buffer->device;
+
+      clone->bcl.job = clone;
+      clone->rcl.job = clone;
+      clone->indirect.job = clone;
+
+      if (!skip_bcl &&
+          !clone_bo_list(device, &clone->bcl.bo_list, &job->bcl.bo_list)) {
+         return NULL;
+      }
+      if (!clone_bo_list(device, &clone->rcl.bo_list, &job->rcl.bo_list))
+         return NULL;
+      if (!clone_bo_list(device, &clone->indirect.bo_list, &job->indirect.bo_list))
+         return NULL;
+   }
+
+   return clone;
 }
 
 /* Clones a job for inclusion in the given command buffer. Note that this
@@ -1932,31 +1995,15 @@ struct v3dv_job *
 v3dv_job_clone_in_cmd_buffer(struct v3dv_job *job,
                              struct v3dv_cmd_buffer *cmd_buffer)
 {
-   struct v3dv_job *clone_job = vk_alloc(&job->device->vk.alloc,
-                                         sizeof(struct v3dv_job), 8,
-                                         VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-   if (!clone_job) {
+   struct v3dv_job *clone = v3dv_job_clone(job, false);
+   if (!clone) {
       v3dv_flag_oom(cmd_buffer, NULL);
       return NULL;
    }
 
-   /* Cloned jobs don't duplicate resources! */
-   *clone_job = *job;
-   clone_job->is_clone = true;
-   clone_job->cmd_buffer = cmd_buffer;
-   list_addtail(&clone_job->list_link, &cmd_buffer->jobs);
-
-   /* We need to regen the BO lists so that they point to the BO list in the
-    * cloned job. Otherwise functions like list_length() will loop forever.
-    */
-   if (job->type == V3DV_JOB_TYPE_GPU_CL) {
-      clone_bo_list(cmd_buffer, &clone_job->bcl.bo_list, &job->bcl.bo_list);
-      clone_bo_list(cmd_buffer, &clone_job->rcl.bo_list, &job->rcl.bo_list);
-      clone_bo_list(cmd_buffer, &clone_job->indirect.bo_list,
-                    &job->indirect.bo_list);
-   }
-
-   return clone_job;
+   clone->cmd_buffer = cmd_buffer;
+   list_addtail(&clone->list_link, &cmd_buffer->jobs);
+   return clone;
 }
 
 void
@@ -2053,108 +2100,36 @@ v3dv_CmdExecuteCommands(VkCommandBuffer commandBuffer,
    }
 }
 
-/* This goes though the list of possible dynamic states in the pipeline and,
- * for those that are not configured as dynamic, copies relevant state into
- * the command buffer.
+static void
+cmd_buffer_copy_private_dynamic_state(struct v3dv_dynamic_state *dst,
+                                      struct v3dv_dynamic_state *src,
+                                      struct vk_dynamic_graphics_state *src_dyn)
+{
+   if (BITSET_TEST(src_dyn->set, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
+         typed_memcpy(dst->viewport.scale, src->viewport.scale,
+                      MAX_VIEWPORTS);
+         typed_memcpy(dst->viewport.translate, src->viewport.translate,
+                      MAX_VIEWPORTS);
+   }
+   if (BITSET_TEST(src_dyn->set, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES))
+      dst->color_write_enable = src->color_write_enable;
+}
+
+/* This function copies relevant static state from the pipeline to the command
+ * buffer state.
+ *
+ * Notice the Vulkan runtime uses the term 'dynamic' to refer to all state
+ * that *could* be dynamic, even if it is not dynamic for a particular
+ * pipeline, so the terminology used in the runtime may be a bit misleading.
  */
 static void
 cmd_buffer_bind_pipeline_static_state(struct v3dv_cmd_buffer *cmd_buffer,
-                                      const struct v3dv_dynamic_state *src)
+                                      struct v3dv_pipeline *pipeline)
 {
-   struct v3dv_dynamic_state *dest = &cmd_buffer->state.dynamic;
-   uint32_t dynamic_mask = src->mask;
-   uint32_t dirty = 0;
+   vk_cmd_set_dynamic_graphics_state(&cmd_buffer->vk, &pipeline->dynamic_graphics_state);
+   cmd_buffer_copy_private_dynamic_state(&cmd_buffer->state.dynamic, &pipeline->dynamic,
+                                         &pipeline->dynamic_graphics_state);
 
-   if (!(dynamic_mask & V3DV_DYNAMIC_VIEWPORT)) {
-      dest->viewport.count = src->viewport.count;
-      if (memcmp(&dest->viewport.viewports, &src->viewport.viewports,
-                 src->viewport.count * sizeof(VkViewport))) {
-         typed_memcpy(dest->viewport.viewports,
-                      src->viewport.viewports,
-                      src->viewport.count);
-         typed_memcpy(dest->viewport.scale, src->viewport.scale,
-                      src->viewport.count);
-         typed_memcpy(dest->viewport.translate, src->viewport.translate,
-                      src->viewport.count);
-         dirty |= V3DV_CMD_DIRTY_VIEWPORT;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_SCISSOR)) {
-      dest->scissor.count = src->scissor.count;
-      if (memcmp(&dest->scissor.scissors, &src->scissor.scissors,
-                 src->scissor.count * sizeof(VkRect2D))) {
-         typed_memcpy(dest->scissor.scissors,
-                      src->scissor.scissors, src->scissor.count);
-         dirty |= V3DV_CMD_DIRTY_SCISSOR;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_STENCIL_COMPARE_MASK)) {
-      if (memcmp(&dest->stencil_compare_mask, &src->stencil_compare_mask,
-                 sizeof(src->stencil_compare_mask))) {
-         dest->stencil_compare_mask = src->stencil_compare_mask;
-         dirty |= V3DV_CMD_DIRTY_STENCIL_COMPARE_MASK;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_STENCIL_WRITE_MASK)) {
-      if (memcmp(&dest->stencil_write_mask, &src->stencil_write_mask,
-                 sizeof(src->stencil_write_mask))) {
-         dest->stencil_write_mask = src->stencil_write_mask;
-         dirty |= V3DV_CMD_DIRTY_STENCIL_WRITE_MASK;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_STENCIL_REFERENCE)) {
-      if (memcmp(&dest->stencil_reference, &src->stencil_reference,
-                 sizeof(src->stencil_reference))) {
-         dest->stencil_reference = src->stencil_reference;
-         dirty |= V3DV_CMD_DIRTY_STENCIL_REFERENCE;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_BLEND_CONSTANTS)) {
-      if (memcmp(dest->blend_constants, src->blend_constants,
-                 sizeof(src->blend_constants))) {
-         memcpy(dest->blend_constants, src->blend_constants,
-                sizeof(src->blend_constants));
-         dirty |= V3DV_CMD_DIRTY_BLEND_CONSTANTS;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_DEPTH_BIAS)) {
-      if (memcmp(&dest->depth_bias, &src->depth_bias,
-                 sizeof(src->depth_bias))) {
-         memcpy(&dest->depth_bias, &src->depth_bias, sizeof(src->depth_bias));
-         dirty |= V3DV_CMD_DIRTY_DEPTH_BIAS;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_DEPTH_BOUNDS)) {
-      if (memcmp(&dest->depth_bounds, &src->depth_bounds,
-                 sizeof(src->depth_bounds))) {
-         memcpy(&dest->depth_bounds, &src->depth_bounds, sizeof(src->depth_bounds));
-         dirty |= V3DV_CMD_DIRTY_DEPTH_BOUNDS;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_LINE_WIDTH)) {
-      if (dest->line_width != src->line_width) {
-         dest->line_width = src->line_width;
-         dirty |= V3DV_CMD_DIRTY_LINE_WIDTH;
-      }
-   }
-
-   if (!(dynamic_mask & V3DV_DYNAMIC_COLOR_WRITE_ENABLE)) {
-      if (dest->color_write_enable != src->color_write_enable) {
-         dest->color_write_enable = src->color_write_enable;
-         dirty |= V3DV_CMD_DIRTY_COLOR_WRITE_ENABLE;
-      }
-   }
-
-   cmd_buffer->state.dynamic.mask = dynamic_mask;
-   cmd_buffer->state.dirty |= dirty;
 }
 
 static void
@@ -2162,13 +2137,17 @@ bind_graphics_pipeline(struct v3dv_cmd_buffer *cmd_buffer,
                        struct v3dv_pipeline *pipeline)
 {
    assert(pipeline && !(pipeline->active_stages & VK_SHADER_STAGE_COMPUTE_BIT));
+
+   /* We need to unconditionally bind the pipeline static state, as the state
+    * could have changed (through calls to vkCmdSetXXX) between bindings of
+    * the same pipeline.
+    */
+   cmd_buffer_bind_pipeline_static_state(cmd_buffer, pipeline);
+
    if (cmd_buffer->state.gfx.pipeline == pipeline)
       return;
 
    cmd_buffer->state.gfx.pipeline = pipeline;
-
-   cmd_buffer_bind_pipeline_static_state(cmd_buffer, &pipeline->dynamic_state);
-
    cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_PIPELINE;
 }
 
@@ -2213,18 +2192,19 @@ v3dv_CmdBindPipeline(VkCommandBuffer commandBuffer,
  * and scale parameters.
  */
 void
-v3dv_cmd_buffer_state_get_viewport_z_xform(struct v3dv_cmd_buffer_state *state,
+v3dv_cmd_buffer_state_get_viewport_z_xform(struct v3dv_cmd_buffer *cmd_buffer,
                                            uint32_t vp_idx,
                                            float *translate_z, float *scale_z)
 {
-   const struct v3dv_viewport_state *vp_state = &state->dynamic.viewport;
+   const struct v3dv_viewport_state *vp_state = &cmd_buffer->state.dynamic.viewport;
+   const struct vk_viewport_state *vk_vp_state = &cmd_buffer->vk.dynamic_graphics_state.vp;
 
    float t = vp_state->translate[vp_idx][2];
    float s = vp_state->scale[vp_idx][2];
 
-   assert(state->gfx.pipeline);
-   if (state->gfx.pipeline->negative_one_to_one) {
-      t = (t + vp_state->viewports[vp_idx].maxDepth) * 0.5f;
+   assert(cmd_buffer->state.gfx.pipeline);
+   if (cmd_buffer->state.gfx.pipeline->negative_one_to_one) {
+      t = (t + vk_vp_state->viewports[vp_idx].maxDepth) * 0.5f;
       s *= 0.5f;
    }
 
@@ -2236,70 +2216,93 @@ v3dv_cmd_buffer_state_get_viewport_z_xform(struct v3dv_cmd_buffer_state *state,
 }
 
 VKAPI_ATTR void VKAPI_CALL
+v3dv_CmdSetColorWriteEnableEXT(VkCommandBuffer commandBuffer,
+                               uint32_t attachmentCount,
+                               const VkBool32 *pColorWriteEnables)
+{
+   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
+   struct v3dv_dynamic_state *v3dv_dyn = &cmd_buffer->state.dynamic;
+   struct vk_dynamic_graphics_state *dyn = &cmd_buffer->vk.dynamic_graphics_state;
+   uint32_t color_write_enable = 0;
+
+   /* Vulkan runtime computes color_write_enable as an 8-bit bitset, setting a
+    * bit per attachment. But when emitting, it is combined with the
+    * color_write_mask, that is stored as a 32-bit mask (one bit per channel,
+    * per attachment). So we store the color_write_enable as a 32-bit mask
+    * ourselves.
+    */
+   for (uint32_t i = 0; i < attachmentCount; i++)
+      color_write_enable |= pColorWriteEnables[i] ? (0xfu << (i * 4)) : 0;
+
+   if (v3dv_dyn->color_write_enable == color_write_enable)
+      return;
+
+   v3dv_dyn->color_write_enable = color_write_enable;
+   BITSET_SET(dyn->set, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES);
+   BITSET_SET(dyn->dirty, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES);
+}
+
+/* We keep a custom CmdSetViewport because we want to cache the outcome of
+ * viewport_compute_xform, and because we need to set the viewport count. This
+ * is specially relevant to our case because we are pushing/popping the
+ * dynamic state as part of the meta operations.
+ */
+VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdSetViewport(VkCommandBuffer commandBuffer,
                     uint32_t firstViewport,
                     uint32_t viewportCount,
                     const VkViewport *pViewports)
 {
    V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
-   const uint32_t total_count = firstViewport + viewportCount;
+   struct v3dv_dynamic_state *v3dv_dyn = &cmd_buffer->state.dynamic;
+   struct vk_dynamic_graphics_state *dyn = &cmd_buffer->vk.dynamic_graphics_state;
 
+   const uint32_t total_count = firstViewport + viewportCount;
    assert(firstViewport < MAX_VIEWPORTS);
    assert(total_count >= 1 && total_count <= MAX_VIEWPORTS);
 
-   if (state->dynamic.viewport.count < total_count)
-      state->dynamic.viewport.count = total_count;
-
-   if (!memcmp(state->dynamic.viewport.viewports + firstViewport,
-               pViewports, viewportCount * sizeof(*pViewports))) {
-      return;
-   }
-
-   memcpy(state->dynamic.viewport.viewports + firstViewport, pViewports,
-          viewportCount * sizeof(*pViewports));
+   vk_common_CmdSetViewportWithCount(commandBuffer,
+                                     total_count,
+                                     pViewports);
 
    for (uint32_t i = firstViewport; i < total_count; i++) {
       v3dv_X(cmd_buffer->device, viewport_compute_xform)
-         (&state->dynamic.viewport.viewports[i],
-          state->dynamic.viewport.scale[i],
-          state->dynamic.viewport.translate[i]);
+         (&dyn->vp.viewports[i], v3dv_dyn->viewport.scale[i],
+          v3dv_dyn->viewport.translate[i]);
    }
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_VIEWPORT;
 }
 
+VKAPI_ATTR void VKAPI_CALL
+v3dv_CmdSetViewportWithCount(VkCommandBuffer commandBuffer,
+                             uint32_t viewportCount,
+                             const VkViewport *pViewports)
+{
+   v3dv_CmdSetViewport(commandBuffer, 0, viewportCount, pViewports);
+}
+
+/* We keep a custom CmdSetScissor because we need to set the scissor
+ * count. This is specially relevant to our case because we are
+ * pushing/popping the dynamic state as part of the meta operations.
+ */
 VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdSetScissor(VkCommandBuffer commandBuffer,
                    uint32_t firstScissor,
                    uint32_t scissorCount,
                    const VkRect2D *pScissors)
 {
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
-
    assert(firstScissor < MAX_SCISSORS);
    assert(firstScissor + scissorCount >= 1 &&
           firstScissor + scissorCount <= MAX_SCISSORS);
 
-   if (state->dynamic.scissor.count < firstScissor + scissorCount)
-      state->dynamic.scissor.count = firstScissor + scissorCount;
-
-   if (!memcmp(state->dynamic.scissor.scissors + firstScissor,
-               pScissors, scissorCount * sizeof(*pScissors))) {
-      return;
-   }
-
-   memcpy(state->dynamic.scissor.scissors + firstScissor, pScissors,
-          scissorCount * sizeof(*pScissors));
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_SCISSOR;
+   vk_common_CmdSetScissorWithCount(commandBuffer,
+                                    firstScissor + scissorCount,
+                                    pScissors);
 }
 
 static void
 emit_scissor(struct v3dv_cmd_buffer *cmd_buffer)
 {
-   if (cmd_buffer->state.dynamic.viewport.count == 0)
+   if (cmd_buffer->vk.dynamic_graphics_state.vp.viewport_count == 0)
       return;
 
    struct v3dv_dynamic_state *dynamic = &cmd_buffer->state.dynamic;
@@ -2350,8 +2353,10 @@ emit_scissor(struct v3dv_cmd_buffer *cmd_buffer)
     * FIXME: right now we only allow one scissor. Below would need to be
     * updated if we support more
     */
-   if (dynamic->scissor.count > 0) {
-      VkRect2D *scissor = &dynamic->scissor.scissors[0];
+   struct vk_dynamic_graphics_state *vk_dyn =
+      &cmd_buffer->vk.dynamic_graphics_state;
+   if (vk_dyn->vp.scissor_count > 0) {
+      VkRect2D *scissor = &vk_dyn->vp.scissors[0];
       minx = MAX2(minx, scissor->offset.x);
       miny = MAX2(miny, scissor->offset.y);
       maxx = MIN2(maxx, scissor->offset.x + scissor->extent.width);
@@ -2374,12 +2379,11 @@ emit_scissor(struct v3dv_cmd_buffer *cmd_buffer)
    v3dv_X(cmd_buffer->device, job_emit_clip_window)
       (cmd_buffer->state.job, &cmd_buffer->state.clip_window);
 
-   cmd_buffer->state.dirty &= ~V3DV_CMD_DIRTY_SCISSOR;
+   BITSET_CLEAR(vk_dyn->dirty, MESA_VK_DYNAMIC_VP_SCISSORS);
 }
 
-static void
-update_gfx_uniform_state(struct v3dv_cmd_buffer *cmd_buffer,
-                         uint32_t dirty_uniform_state)
+static bool
+update_gfx_uniform_state(struct v3dv_cmd_buffer *cmd_buffer)
 {
    /* We need to update uniform streams if any piece of state that is passed
     * to the shader as a uniform may have changed.
@@ -2387,16 +2391,29 @@ update_gfx_uniform_state(struct v3dv_cmd_buffer *cmd_buffer,
     * If only descriptor sets are dirty then we can safely ignore updates
     * for shader stages that don't access descriptors.
     */
-
    struct v3dv_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    assert(pipeline);
+   uint32_t dirty = cmd_buffer->state.dirty;
+   struct vk_dynamic_graphics_state *dyn =
+      &cmd_buffer->vk.dynamic_graphics_state;
 
-   const bool has_new_pipeline = dirty_uniform_state & V3DV_CMD_DIRTY_PIPELINE;
-   const bool has_new_viewport = dirty_uniform_state & V3DV_CMD_DIRTY_VIEWPORT;
-   const bool has_new_push_constants = dirty_uniform_state & V3DV_CMD_DIRTY_PUSH_CONSTANTS;
-   const bool has_new_descriptors = dirty_uniform_state & V3DV_CMD_DIRTY_DESCRIPTOR_SETS;
-   const bool has_new_view_index = dirty_uniform_state & V3DV_CMD_DIRTY_VIEW_INDEX;
-   const bool has_new_draw_id = dirty_uniform_state & V3DV_CMD_DIRTY_DRAW_ID;
+   const bool dirty_uniform_state =
+      (dirty & (V3DV_CMD_DIRTY_PIPELINE |
+                V3DV_CMD_DIRTY_PUSH_CONSTANTS |
+                V3DV_CMD_DIRTY_DESCRIPTOR_SETS |
+                V3DV_CMD_DIRTY_VIEW_INDEX |
+                V3DV_CMD_DIRTY_DRAW_ID)) ||
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS);
+
+   if (!dirty_uniform_state)
+      return false;
+
+   const bool has_new_pipeline = dirty & V3DV_CMD_DIRTY_PIPELINE;
+   const bool has_new_viewport = BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS);
+   const bool has_new_push_constants = dirty & V3DV_CMD_DIRTY_PUSH_CONSTANTS;
+   const bool has_new_descriptors = dirty & V3DV_CMD_DIRTY_DESCRIPTOR_SETS;
+   const bool has_new_view_index = dirty & V3DV_CMD_DIRTY_VIEW_INDEX;
+   const bool has_new_draw_id = dirty & V3DV_CMD_DIRTY_DRAW_ID;
 
    /* VK_SHADER_STAGE_FRAGMENT_BIT */
    const bool has_new_descriptors_fs =
@@ -2485,6 +2502,8 @@ update_gfx_uniform_state(struct v3dv_cmd_buffer *cmd_buffer,
 
    cmd_buffer->state.dirty &= ~V3DV_CMD_DIRTY_VIEW_INDEX;
    cmd_buffer->state.dirty &= ~V3DV_CMD_DIRTY_DRAW_ID;
+
+   return true;
 }
 
 /* This stores command buffer state that we might be about to stomp for
@@ -2541,6 +2560,8 @@ v3dv_cmd_buffer_meta_state_push(struct v3dv_cmd_buffer *cmd_buffer,
     * account the graphics pipeline, and the graphics state
     */
    state->meta.gfx.pipeline = state->gfx.pipeline;
+   vk_dynamic_graphics_state_copy(&state->meta.dynamic_graphics_state,
+                                  &cmd_buffer->vk.dynamic_graphics_state);
    memcpy(&state->meta.dynamic, &state->dynamic, sizeof(state->dynamic));
 
    struct v3dv_descriptor_state *gfx_descriptor_state =
@@ -2611,6 +2632,8 @@ v3dv_cmd_buffer_meta_state_pop(struct v3dv_cmd_buffer *cmd_buffer,
    }
 
    /* Restore dynamic state */
+   vk_dynamic_graphics_state_copy(&cmd_buffer->vk.dynamic_graphics_state,
+                                  &state->meta.dynamic_graphics_state);
    memcpy(&state->dynamic, &state->meta.dynamic, sizeof(state->dynamic));
    state->dirty = ~0;
 
@@ -2970,66 +2993,74 @@ v3dv_cmd_buffer_emit_pre_draw(struct v3dv_cmd_buffer *cmd_buffer,
     * that will require that we new uniform state for QUNIFORM_VIEWPORT_*.
     */
    uint32_t *dirty = &cmd_buffer->state.dirty;
+   struct vk_dynamic_graphics_state *dyn = &cmd_buffer->vk.dynamic_graphics_state;
 
-   const uint32_t dirty_uniform_state =
-      *dirty & (V3DV_CMD_DIRTY_PIPELINE |
-                V3DV_CMD_DIRTY_PUSH_CONSTANTS |
-                V3DV_CMD_DIRTY_DESCRIPTOR_SETS |
-                V3DV_CMD_DIRTY_VIEWPORT |
-                V3DV_CMD_DIRTY_VIEW_INDEX |
-                V3DV_CMD_DIRTY_DRAW_ID);
-
-   if (dirty_uniform_state)
-      update_gfx_uniform_state(cmd_buffer, dirty_uniform_state);
+   const bool dirty_uniform_state =
+      update_gfx_uniform_state(cmd_buffer);
 
    struct v3dv_device *device = cmd_buffer->device;
 
    if (dirty_uniform_state || (*dirty & V3DV_CMD_DIRTY_VERTEX_BUFFER))
       v3dv_X(device, cmd_buffer_emit_gl_shader_state)(cmd_buffer);
 
-   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE)) {
+   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_CULL_MODE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_FRONT_FACE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_BOUNDS_TEST_ENABLE)) {
       v3dv_X(device, cmd_buffer_emit_configuration_bits)(cmd_buffer);
+   }
+
+   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE)) {
       v3dv_X(device, cmd_buffer_emit_varyings_state)(cmd_buffer);
    }
 
-   if (*dirty & (V3DV_CMD_DIRTY_VIEWPORT | V3DV_CMD_DIRTY_SCISSOR)) {
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_SCISSORS) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
       emit_scissor(cmd_buffer);
    }
 
-   if (*dirty & V3DV_CMD_DIRTY_VIEWPORT) {
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS))
       v3dv_X(device, cmd_buffer_emit_viewport)(cmd_buffer);
-   }
 
    if (*dirty & V3DV_CMD_DIRTY_INDEX_BUFFER)
       v3dv_X(device, cmd_buffer_emit_index_buffer)(cmd_buffer);
 
-   const uint32_t dynamic_stencil_dirty_flags =
-      V3DV_CMD_DIRTY_STENCIL_COMPARE_MASK |
-      V3DV_CMD_DIRTY_STENCIL_WRITE_MASK |
-      V3DV_CMD_DIRTY_STENCIL_REFERENCE;
-   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | dynamic_stencil_dirty_flags))
+   bool any_dynamic_stencil_dirty =
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK) ||
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK) ||
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE) ||
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_STENCIL_OP);
+
+   if (*dirty & V3DV_CMD_DIRTY_PIPELINE || any_dynamic_stencil_dirty)
       v3dv_X(device, cmd_buffer_emit_stencil)(cmd_buffer);
 
-   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | V3DV_CMD_DIRTY_DEPTH_BIAS))
+   if (*dirty & V3DV_CMD_DIRTY_PIPELINE ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS)) {
       v3dv_X(device, cmd_buffer_emit_depth_bias)(cmd_buffer);
+   }
 
-   if (*dirty & V3DV_CMD_DIRTY_DEPTH_BOUNDS)
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_BOUNDS_TEST_BOUNDS))
       v3dv_X(device, cmd_buffer_emit_depth_bounds)(cmd_buffer);
 
-   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | V3DV_CMD_DIRTY_BLEND_CONSTANTS))
+   if (*dirty & V3DV_CMD_DIRTY_PIPELINE ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS)) {
       v3dv_X(device, cmd_buffer_emit_blend)(cmd_buffer);
+   }
 
    if (*dirty & V3DV_CMD_DIRTY_OCCLUSION_QUERY)
       v3dv_X(device, cmd_buffer_emit_occlusion_query)(cmd_buffer);
 
-   if (*dirty & V3DV_CMD_DIRTY_LINE_WIDTH)
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_RS_LINE_WIDTH))
       v3dv_X(device, cmd_buffer_emit_line_width)(cmd_buffer);
 
    if (*dirty & V3DV_CMD_DIRTY_PIPELINE)
       v3dv_X(device, cmd_buffer_emit_sample_state)(cmd_buffer);
 
-   if (*dirty & (V3DV_CMD_DIRTY_PIPELINE | V3DV_CMD_DIRTY_COLOR_WRITE_ENABLE))
+   if (*dirty & V3DV_CMD_DIRTY_PIPELINE ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
       v3dv_X(device, cmd_buffer_emit_color_write_mask)(cmd_buffer);
+   }
 
    /* We disable double-buffer mode if indirect draws are used because in that
     * case we don't know the vertex count.
@@ -3406,21 +3437,28 @@ v3dv_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdBindVertexBuffers(VkCommandBuffer commandBuffer,
-                          uint32_t firstBinding,
-                          uint32_t bindingCount,
-                          const VkBuffer *pBuffers,
-                          const VkDeviceSize *pOffsets)
+v3dv_CmdBindVertexBuffers2(VkCommandBuffer commandBuffer,
+                           uint32_t firstBinding,
+                           uint32_t bindingCount,
+                           const VkBuffer *pBuffers,
+                           const VkDeviceSize *pOffsets,
+                           const VkDeviceSize *pSizes,
+                           const VkDeviceSize *pStrides)
 {
    V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
    struct v3dv_vertex_binding *vb = cmd_buffer->state.vertex_bindings;
 
-   /* We have to defer setting up vertex buffer since we need the buffer
-    * stride from the pipeline.
-    */
-
    assert(firstBinding + bindingCount <= MAX_VBS);
    bool vb_state_changed = false;
+   if (pStrides) {
+      vk_cmd_set_vertex_binding_strides(&cmd_buffer->vk,
+                                        firstBinding, bindingCount,
+                                        pStrides);
+      struct vk_dynamic_graphics_state *dyn = &cmd_buffer->vk.dynamic_graphics_state;
+      if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VI_BINDING_STRIDES))
+         vb_state_changed = true;
+   }
+   /* FIXME: at this moment we don't do any thing with pSizes. */
    for (uint32_t i = 0; i < bindingCount; i++) {
       if (vb[firstBinding + i].buffer != v3dv_buffer_from_handle(pBuffers[i])) {
          vb[firstBinding + i].buffer = v3dv_buffer_from_handle(pBuffers[i]);
@@ -3458,92 +3496,11 @@ v3dv_CmdBindIndexBuffer(VkCommandBuffer commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetStencilCompareMask(VkCommandBuffer commandBuffer,
-                              VkStencilFaceFlags faceMask,
-                              uint32_t compareMask)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      cmd_buffer->state.dynamic.stencil_compare_mask.front = compareMask & 0xff;
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      cmd_buffer->state.dynamic.stencil_compare_mask.back = compareMask & 0xff;
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_STENCIL_COMPARE_MASK;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetStencilWriteMask(VkCommandBuffer commandBuffer,
-                            VkStencilFaceFlags faceMask,
-                            uint32_t writeMask)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      cmd_buffer->state.dynamic.stencil_write_mask.front = writeMask & 0xff;
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      cmd_buffer->state.dynamic.stencil_write_mask.back = writeMask & 0xff;
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_STENCIL_WRITE_MASK;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetStencilReference(VkCommandBuffer commandBuffer,
-                            VkStencilFaceFlags faceMask,
-                            uint32_t reference)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      cmd_buffer->state.dynamic.stencil_reference.front = reference & 0xff;
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      cmd_buffer->state.dynamic.stencil_reference.back = reference & 0xff;
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_STENCIL_REFERENCE;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetDepthBias(VkCommandBuffer commandBuffer,
-                     float depthBiasConstantFactor,
-                     float depthBiasClamp,
-                     float depthBiasSlopeFactor)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   cmd_buffer->state.dynamic.depth_bias.constant_factor = depthBiasConstantFactor;
-   cmd_buffer->state.dynamic.depth_bias.depth_bias_clamp = depthBiasClamp;
-   cmd_buffer->state.dynamic.depth_bias.slope_factor = depthBiasSlopeFactor;
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_DEPTH_BIAS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetDepthBounds(VkCommandBuffer commandBuffer,
-                       float minDepthBounds,
-                       float maxDepthBounds)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   cmd_buffer->state.dynamic.depth_bounds.min = minDepthBounds;
-   cmd_buffer->state.dynamic.depth_bounds.max = maxDepthBounds;
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_DEPTH_BOUNDS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdSetLineStippleEXT(VkCommandBuffer commandBuffer,
                           uint32_t lineStippleFactor,
                           uint16_t lineStipplePattern)
 {
    /* We do not support stippled line rasterization so we just ignore this. */
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetLineWidth(VkCommandBuffer commandBuffer,
-                     float lineWidth)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   cmd_buffer->state.dynamic.line_width = lineWidth;
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_LINE_WIDTH;
 }
 
 /**
@@ -3933,44 +3890,6 @@ v3dv_CmdPushConstants(VkCommandBuffer commandBuffer,
    cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_PUSH_CONSTANTS |
                               V3DV_CMD_DIRTY_PUSH_CONSTANTS_UBO;
    cmd_buffer->state.dirty_push_constants_stages |= stageFlags;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetBlendConstants(VkCommandBuffer commandBuffer,
-                          const float blendConstants[4])
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
-
-   if (!memcmp(state->dynamic.blend_constants, blendConstants,
-               sizeof(state->dynamic.blend_constants))) {
-      return;
-   }
-
-   memcpy(state->dynamic.blend_constants, blendConstants,
-          sizeof(state->dynamic.blend_constants));
-
-   cmd_buffer->state.dirty |= V3DV_CMD_DIRTY_BLEND_CONSTANTS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetColorWriteEnableEXT(VkCommandBuffer commandBuffer,
-                               uint32_t attachmentCount,
-                               const VkBool32 *pColorWriteEnables)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
-   uint32_t color_write_enable = 0;
-
-   for (uint32_t i = 0; i < attachmentCount; i++)
-      color_write_enable |= pColorWriteEnables[i] ? (0xfu << (i * 4)) : 0;
-
-   if (state->dynamic.color_write_enable == color_write_enable)
-      return;
-
-   state->dynamic.color_write_enable = color_write_enable;
-
-   state->dirty |= V3DV_CMD_DIRTY_COLOR_WRITE_ENABLE;
 }
 
 void
@@ -4610,8 +4529,7 @@ v3dv_CmdBeginRenderingKHR(VkCommandBuffer commandBuffer,
       vk_free(&cmd_buffer->vk.pool->alloc, clear_values);
 
    state->render_area = info->renderArea;
-   constraint_clip_window_to_render_area(state);
-
+   constraint_clip_window_to_render_area(cmd_buffer);
    v3dv_cmd_buffer_subpass_start(cmd_buffer, 0);
 }
 

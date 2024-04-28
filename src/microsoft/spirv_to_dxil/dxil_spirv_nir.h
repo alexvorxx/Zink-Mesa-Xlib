@@ -41,12 +41,12 @@ dxil_spirv_nir_prep(nir_shader *nir);
 void
 dxil_spirv_nir_link(nir_shader *nir, nir_shader *prev_stage_nir,
                     const struct dxil_spirv_runtime_conf *conf,
-                    bool *requires_runtime_data);
+                    struct dxil_spirv_metadata *metadata);
 
 void
 dxil_spirv_nir_passes(nir_shader *nir,
                       const struct dxil_spirv_runtime_conf *conf,
-                      bool *requires_runtime_data);
+                      struct dxil_spirv_metadata *metadata);
 
 struct dxil_spirv_binding_remapping {
    /* If ~0, don't lower to bindless */

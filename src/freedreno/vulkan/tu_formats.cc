@@ -402,7 +402,7 @@ tu_GetPhysicalDeviceFormatProperties2(
    VkFormat format,
    VkFormatProperties2 *pFormatProperties)
 {
-   TU_FROM_HANDLE(tu_physical_device, physical_device, physicalDevice);
+   VK_FROM_HANDLE(tu_physical_device, physical_device, physicalDevice);
 
    VkFormatProperties3 local_props3;
    VkFormatProperties3 *props3 =
@@ -713,7 +713,7 @@ tu_GetPhysicalDeviceImageFormatProperties2(
    const VkPhysicalDeviceImageFormatInfo2 *base_info,
    VkImageFormatProperties2 *base_props)
 {
-   TU_FROM_HANDLE(tu_physical_device, physical_device, physicalDevice);
+   VK_FROM_HANDLE(tu_physical_device, physical_device, physicalDevice);
    const VkPhysicalDeviceExternalImageFormatInfo *external_info = NULL;
    const VkPhysicalDeviceImageViewImageFormatInfoEXT *image_view_info = NULL;
    VkExternalImageFormatProperties *external_props = NULL;

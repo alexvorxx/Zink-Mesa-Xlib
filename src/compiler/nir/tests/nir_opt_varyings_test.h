@@ -52,6 +52,7 @@ protected:
 
       memset(&options, 0, sizeof(options));
       options.varying_expression_max_cost = varying_expression_max_cost;
+      options.io_options = nir_io_16bit_input_output_support;
    }
 
    virtual ~nir_opt_varyings_test()

@@ -484,7 +484,7 @@ usage(void)
                    "\tdisasm [-g GPUVER] [-v] [-c] [-r] filename.asm\n"
                    "\t\t-c - use colors\n"
                    "\t\t-e - emulator mode\n"
-                   "\t\t-g - specify GPU version (5, etc)\n"
+                   "\t\t-g - override GPU firmware id\n"
                    "\t\t-r - raw disasm, don't try to find jumptable\n"
                    "\t\t-v - verbose output\n"
            );
@@ -497,11 +497,11 @@ main(int argc, char **argv)
    uint32_t *buf;
    char *file;
    bool colors = false;
-   uint32_t gpu_id = 0;
    size_t sz;
    int c, ret;
    bool unit_test = false;
    bool raw = false;
+   enum afuc_fwid fw_id = 0;
 
    /* Argument parsing: */
    while ((c = getopt(argc, argv, "ceg:rvu")) != -1) {
@@ -514,7 +514,7 @@ main(int argc, char **argv)
          verbose  = true;
          break;
       case 'g':
-         gpu_id = atoi(optarg);
+         fw_id = strtol(optarg, NULL, 16);
          break;
       case 'r':
          raw = true;
@@ -540,23 +540,15 @@ main(int argc, char **argv)
 
    file = argv[optind];
 
-   /* if gpu version not specified, infer from filename: */
-   if (!gpu_id) {
-      char *str = strstr(file, "a5");
-      if (!str)
-         str = strstr(file, "a6");
-      if (!str)
-         str = strstr(file, "a7");
-      if (str)
-         gpu_id = atoi(str + 1);
-   }
+   buf = (uint32_t *)os_read_file(file, &sz);
 
-   if (gpu_id < 500) {
-      printf("invalid gpu_id: %d\n", gpu_id);
-      return -1;
-   }
+   if (!fw_id)
+      fw_id = afuc_get_fwid(buf[1]);
 
-   gpuver = gpu_id / 100;
+   ret = afuc_util_init(fw_id, &gpuver, colors);
+   if (ret < 0) {
+      usage();
+   }
 
    /* a6xx is *mostly* a superset of a5xx, but some opcodes shuffle
     * around, and behavior of special regs is a bit different.  Right
@@ -567,14 +559,7 @@ main(int argc, char **argv)
       return 1;
    }
 
-   ret = afuc_util_init(gpuver, colors);
-   if (ret < 0) {
-      usage();
-   }
-
    printf("; a%dxx microcode\n", gpuver);
-
-   buf = (uint32_t *)os_read_file(file, &sz);
 
    if (!unit_test)
       printf("; Disassembling microcode: %s\n", file);
@@ -588,7 +573,7 @@ main(int argc, char **argv)
       struct emu emu = {
             .instrs = &buf[1],
             .sizedwords = sz / 4 - 1,
-            .gpu_id = gpu_id,
+            .fw_id = fw_id,
       };
 
       disasm(&emu);

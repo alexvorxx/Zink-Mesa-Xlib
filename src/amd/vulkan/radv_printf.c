@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "radv_private.h"
+#include "radv_printf.h"
+#include "radv_device.h"
+#include "radv_physical_device.h"
 
 #include "util/hash_table.h"
 #include "util/strndup.h"
@@ -18,6 +20,8 @@ static struct hash_table *device_ht = NULL;
 VkResult
 radv_printf_data_init(struct radv_device *device)
 {
+   const struct radv_physical_device *pdev = radv_device_physical(device);
+
    util_dynarray_init(&device->printf.formats, NULL);
 
    device->printf.buffer_size = debug_get_num_option("RADV_PRINTF_BUFFER_SIZE", 0);
@@ -45,9 +49,9 @@ radv_printf_data_init(struct radv_device *device)
    VkMemoryAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .allocationSize = requirements.size,
-      .memoryTypeIndex = radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                                                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+      .memoryTypeIndex =
+         radv_find_memory_index(pdev, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
    };
 
    result = device->vk.dispatch_table.AllocateMemory(_device, &alloc_info, NULL, &device->printf.memory);

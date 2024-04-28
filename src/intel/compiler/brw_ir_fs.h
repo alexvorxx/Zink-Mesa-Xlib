@@ -152,7 +152,7 @@ horiz_offset(const fs_reg &reg, unsigned delta)
       return reg;
    case VGRF:
    case ATTR:
-      return byte_offset(reg, delta * reg.stride * type_sz(reg.type));
+      return byte_offset(reg, delta * reg.stride * brw_type_size_bytes(reg.type));
    case ARF:
    case FIXED_GRF:
       if (reg.is_null()) {
@@ -163,10 +163,10 @@ horiz_offset(const fs_reg &reg, unsigned delta)
          const unsigned width = 1 << reg.width;
 
          if (delta % width == 0) {
-            return byte_offset(reg, delta / width * vstride * type_sz(reg.type));
+            return byte_offset(reg, delta / width * vstride * brw_type_size_bytes(reg.type));
          } else {
             assert(vstride == hstride * width);
-            return byte_offset(reg, delta * hstride * type_sz(reg.type));
+            return byte_offset(reg, delta * hstride * brw_type_size_bytes(reg.type));
          }
       }
    }
@@ -245,7 +245,7 @@ reg_padding(const fs_reg &r)
    const unsigned stride = ((r.file != ARF && r.file != FIXED_GRF) ? r.stride :
                             r.hstride == 0 ? 0 :
                             1 << (r.hstride - 1));
-   return (MAX2(1, stride) - 1) * type_sz(r.type);
+   return (MAX2(1, stride) - 1) * brw_type_size_bytes(r.type);
 }
 
 /**
@@ -293,9 +293,9 @@ is_periodic(const fs_reg &reg, unsigned n)
       return true;
 
    } else if (reg.file == IMM) {
-      const unsigned period = (reg.type == BRW_REGISTER_TYPE_UV ||
-                               reg.type == BRW_REGISTER_TYPE_V ? 8 :
-                               reg.type == BRW_REGISTER_TYPE_VF ? 4 :
+      const unsigned period = (reg.type == BRW_TYPE_UV ||
+                               reg.type == BRW_TYPE_V ? 8 :
+                               reg.type == BRW_TYPE_VF ? 4 :
                                1);
       return n % period == 0;
 
@@ -333,29 +333,29 @@ quarter(const fs_reg &reg, unsigned idx)
 static inline fs_reg
 subscript(fs_reg reg, brw_reg_type type, unsigned i)
 {
-   assert((i + 1) * type_sz(type) <= type_sz(reg.type));
+   assert((i + 1) * brw_type_size_bytes(type) <= brw_type_size_bytes(reg.type));
 
    if (reg.file == ARF || reg.file == FIXED_GRF) {
       /* The stride is encoded inconsistently for fixed GRF and ARF registers
        * as the log2 of the actual vertical and horizontal strides.
        */
-      const int delta = util_logbase2(type_sz(reg.type)) -
-                        util_logbase2(type_sz(type));
+      const int delta = util_logbase2(brw_type_size_bytes(reg.type)) -
+                        util_logbase2(brw_type_size_bytes(type));
       reg.hstride += (reg.hstride ? delta : 0);
       reg.vstride += (reg.vstride ? delta : 0);
 
    } else if (reg.file == IMM) {
-      unsigned bit_size = type_sz(type) * 8;
+      unsigned bit_size = brw_type_size_bits(type);
       reg.u64 >>= i * bit_size;
       reg.u64 &= BITFIELD64_MASK(bit_size);
       if (bit_size <= 16)
          reg.u64 |= reg.u64 << 16;
       return retype(reg, type);
    } else {
-      reg.stride *= type_sz(reg.type) / type_sz(type);
+      reg.stride *= brw_type_size_bytes(reg.type) / brw_type_size_bytes(type);
    }
 
-   return byte_offset(retype(reg, type), i * type_sz(type));
+   return byte_offset(retype(reg, type), i * brw_type_size_bytes(type));
 }
 
 static inline fs_reg
@@ -472,6 +472,8 @@ public:
    const char *annotation;
    /** @} */
 
+   uint8_t sources; /**< Number of fs_reg sources. */
+
    /**
     * Execution size of the instruction.  This is used by the generator to
     * generate the correct binary for the given instruction.  Current valid
@@ -488,74 +490,83 @@ public:
     */
    uint8_t group;
 
-   uint32_t offset; /**< spill/unspill offset or texture offset bitfield */
    uint8_t mlen; /**< SEND message length */
    uint8_t ex_mlen; /**< SENDS extended message length */
-   uint8_t target; /**< MRT target. */
    uint8_t sfid; /**< SFID for SEND instructions */
+   /** The number of hardware registers used for a message header. */
+   uint8_t header_size;
+   uint8_t target; /**< MRT target. */
    uint32_t desc; /**< SEND[S] message descriptor immediate */
    uint32_t ex_desc; /**< SEND[S] extended message descriptor immediate */
+
+   uint32_t offset; /**< spill/unspill offset or texture offset bitfield */
    unsigned size_written; /**< Data written to the destination register in bytes. */
 
    enum opcode opcode; /* BRW_OPCODE_* or FS_OPCODE_* */
    enum brw_conditional_mod conditional_mod; /**< BRW_CONDITIONAL_* */
    enum brw_predicate predicate;
-   bool predicate_inverse:1;
-   bool writes_accumulator:1; /**< instruction implicitly writes accumulator */
-   bool force_writemask_all:1;
-   bool no_dd_clear:1;
-   bool no_dd_check:1;
-   bool saturate:1;
-   bool shadow_compare:1;
-   bool check_tdr:1; /**< Only valid for SEND; turns it into a SENDC */
-   bool send_has_side_effects:1; /**< Only valid for SHADER_OPCODE_SEND */
-   bool send_is_volatile:1; /**< Only valid for SHADER_OPCODE_SEND */
-   bool send_ex_desc_scratch:1; /**< Only valid for SHADER_OPCODE_SEND, use
-                                 *   the scratch surface offset to build
-                                 *   extended descriptor
-                                 */
-   bool send_ex_bso:1; /**< Only for SHADER_OPCODE_SEND, use extended bindless
-                        *   surface offset (26bits instead of 20bits)
-                        */
-   bool predicate_trivial:1; /**< The predication mask applied to this
-                              *   instruction is guaranteed to be uniform and
-                              *   a superset of the execution mask of the
-                              *   present block, no currently enabled channels
-                              *   will be disabled by the predicate.
-                              */
-   bool eot:1;
-
-   /* Chooses which flag subregister (f0.0 to f3.1) is used for conditional
-    * mod and predication.
-    */
-   unsigned flag_subreg:3;
-
-   /**
-    * Systolic depth used by DPAS instruction.
-    */
-   unsigned sdepth:4;
-
-   /**
-    * Repeat count used by DPAS instruction.
-    */
-   unsigned rcount:4;
-
-   /** The number of hardware registers used for a message header. */
-   uint8_t header_size;
-
-   fs_reg dst;
-   fs_reg *src;
-
-   uint8_t sources; /**< Number of fs_reg sources. */
-
-   bool last_rt:1;
-   bool pi_noperspective:1;   /**< Pixel interpolator noperspective flag */
-   bool keep_payload_trailing_zeros;
 
    tgl_swsb sched; /**< Scheduling info. */
 
-   /* Hint that this instruction has combined LOD/LOD bias with array index */
-   bool has_packed_lod_ai_src;
+   union {
+      struct {
+         /* Chooses which flag subregister (f0.0 to f3.1) is used for
+          * conditional mod and predication.
+          */
+         unsigned flag_subreg:3;
+
+         /**
+          * Systolic depth used by DPAS instruction.
+          */
+         unsigned sdepth:4;
+
+         /**
+          * Repeat count used by DPAS instruction.
+          */
+         unsigned rcount:4;
+
+         unsigned pad:3;
+
+         bool predicate_inverse:1;
+         bool writes_accumulator:1; /**< instruction implicitly writes accumulator */
+         bool force_writemask_all:1;
+         bool no_dd_clear:1;
+         bool no_dd_check:1;
+         bool saturate:1;
+         bool shadow_compare:1;
+         bool check_tdr:1; /**< Only valid for SEND; turns it into a SENDC */
+         bool send_has_side_effects:1; /**< Only valid for SHADER_OPCODE_SEND */
+         bool send_is_volatile:1; /**< Only valid for SHADER_OPCODE_SEND */
+         bool send_ex_desc_scratch:1; /**< Only valid for SHADER_OPCODE_SEND, use
+                                       *   the scratch surface offset to build
+                                       *   extended descriptor
+                                       */
+         bool send_ex_bso:1; /**< Only for SHADER_OPCODE_SEND, use extended
+                              *   bindless surface offset (26bits instead of
+                              *   20bits)
+                              */
+         /**
+          * The predication mask applied to this instruction is guaranteed to
+          * be uniform and a superset of the execution mask of the present block.
+          * No currently enabled channel will be disabled by the predicate.
+          */
+         bool predicate_trivial:1;
+         bool eot:1;
+         bool last_rt:1;
+         bool pi_noperspective:1;   /**< Pixel interpolator noperspective flag */
+         bool keep_payload_trailing_zeros:1;
+
+         /**
+          * Hint that this instruction has combined LOD/LOD bias with array index
+          */
+         bool has_packed_lod_ai_src:1;
+      };
+      uint32_t bits;
+   };
+
+   fs_reg dst;
+   fs_reg *src;
+   fs_reg builtin_src[4];
 };
 
 /**
@@ -640,24 +651,24 @@ regs_read(const fs_inst *inst, unsigned i)
 static inline enum brw_reg_type
 get_exec_type(const fs_inst *inst)
 {
-   brw_reg_type exec_type = BRW_REGISTER_TYPE_B;
+   brw_reg_type exec_type = BRW_TYPE_B;
 
    for (int i = 0; i < inst->sources; i++) {
       if (inst->src[i].file != BAD_FILE &&
           !inst->is_control_source(i)) {
          const brw_reg_type t = get_exec_type(inst->src[i].type);
-         if (type_sz(t) > type_sz(exec_type))
+         if (brw_type_size_bytes(t) > brw_type_size_bytes(exec_type))
             exec_type = t;
-         else if (type_sz(t) == type_sz(exec_type) &&
-                  brw_reg_type_is_floating_point(t))
+         else if (brw_type_size_bytes(t) == brw_type_size_bytes(exec_type) &&
+                  brw_type_is_float(t))
             exec_type = t;
       }
    }
 
-   if (exec_type == BRW_REGISTER_TYPE_B)
+   if (exec_type == BRW_TYPE_B)
       exec_type = inst->dst.type;
 
-   assert(exec_type != BRW_REGISTER_TYPE_B);
+   assert(exec_type != BRW_TYPE_B);
 
    /* Promotion of the execution type to 32-bit for conversions from or to
     * half-float seems to be consistent with the following text from the
@@ -672,12 +683,12 @@ get_exec_type(const fs_inst *inst)
     * "Conversion between Integer and HF (Half Float) must be DWord aligned
     *  and strided by a DWord on the destination."
     */
-   if (type_sz(exec_type) == 2 &&
+   if (brw_type_size_bytes(exec_type) == 2 &&
        inst->dst.type != exec_type) {
-      if (exec_type == BRW_REGISTER_TYPE_HF)
-         exec_type = BRW_REGISTER_TYPE_F;
-      else if (inst->dst.type == BRW_REGISTER_TYPE_HF)
-         exec_type = BRW_REGISTER_TYPE_D;
+      if (exec_type == BRW_TYPE_HF)
+         exec_type = BRW_TYPE_F;
+      else if (inst->dst.type == BRW_TYPE_HF)
+         exec_type = BRW_TYPE_D;
    }
 
    return exec_type;
@@ -686,7 +697,7 @@ get_exec_type(const fs_inst *inst)
 static inline unsigned
 get_exec_type_size(const fs_inst *inst)
 {
-   return type_sz(get_exec_type(inst));
+   return brw_type_size_bytes(get_exec_type(inst));
 }
 
 static inline bool
@@ -705,8 +716,45 @@ is_unordered(const intel_device_info *devinfo, const fs_inst *inst)
    return is_send(inst) || (devinfo->ver < 20 && inst->is_math()) ||
           inst->opcode == BRW_OPCODE_DPAS ||
           (devinfo->has_64bit_float_via_math_pipe &&
-           (get_exec_type(inst) == BRW_REGISTER_TYPE_DF ||
-            inst->dst.type == BRW_REGISTER_TYPE_DF));
+           (get_exec_type(inst) == BRW_TYPE_DF ||
+            inst->dst.type == BRW_TYPE_DF));
+}
+
+/*
+ * Return the stride between channels of the specified register in
+ * byte units, or ~0u if the region cannot be represented with a
+ * single one-dimensional stride.
+ */
+static inline unsigned
+byte_stride(const fs_reg &reg)
+{
+   switch (reg.file) {
+   case BAD_FILE:
+   case UNIFORM:
+   case IMM:
+   case VGRF:
+   case ATTR:
+      return reg.stride * brw_type_size_bytes(reg.type);
+   case ARF:
+   case FIXED_GRF:
+      if (reg.is_null()) {
+         return 0;
+      } else {
+         const unsigned hstride = reg.hstride ? 1 << (reg.hstride - 1) : 0;
+         const unsigned vstride = reg.vstride ? 1 << (reg.vstride - 1) : 0;
+         const unsigned width = 1 << reg.width;
+
+         if (width == 1) {
+            return vstride * brw_type_size_bytes(reg.type);
+         } else if (hstride * width == vstride) {
+            return hstride * brw_type_size_bytes(reg.type);
+         } else {
+            return ~0u;
+         }
+      }
+   default:
+      unreachable("Invalid register file");
+   }
 }
 
 /**
@@ -733,19 +781,17 @@ has_dst_aligned_region_restriction(const intel_device_info *devinfo,
     * simulator suggest that only 32x32-bit integer multiplication is
     * restricted.
     */
-   const bool is_dword_multiply = !brw_reg_type_is_floating_point(exec_type) &&
+   const bool is_dword_multiply = !brw_type_is_float(exec_type) &&
       ((inst->opcode == BRW_OPCODE_MUL &&
-        MIN2(type_sz(inst->src[0].type), type_sz(inst->src[1].type)) >= 4) ||
+        MIN2(brw_type_size_bytes(inst->src[0].type), brw_type_size_bytes(inst->src[1].type)) >= 4) ||
        (inst->opcode == BRW_OPCODE_MAD &&
-        MIN2(type_sz(inst->src[1].type), type_sz(inst->src[2].type)) >= 4));
+        MIN2(brw_type_size_bytes(inst->src[1].type), brw_type_size_bytes(inst->src[2].type)) >= 4));
 
-   if (type_sz(dst_type) > 4 || type_sz(exec_type) > 4 ||
-       (type_sz(exec_type) == 4 && is_dword_multiply))
-      return devinfo->platform == INTEL_PLATFORM_CHV ||
-             intel_device_info_is_9lp(devinfo) ||
-             devinfo->verx10 >= 125;
+   if (brw_type_size_bytes(dst_type) > 4 || brw_type_size_bytes(exec_type) > 4 ||
+       (brw_type_size_bytes(exec_type) == 4 && is_dword_multiply))
+      return intel_device_info_is_9lp(devinfo) || devinfo->verx10 >= 125;
 
-   else if (brw_reg_type_is_floating_point(dst_type))
+   else if (brw_type_is_float(dst_type))
       return devinfo->verx10 >= 125;
 
    else
@@ -757,6 +803,40 @@ has_dst_aligned_region_restriction(const intel_device_info *devinfo,
                                    const fs_inst *inst)
 {
    return has_dst_aligned_region_restriction(devinfo, inst, inst->dst.type);
+}
+
+/**
+ * Return true if the instruction can be potentially affected by the Xe2+
+ * regioning restrictions that apply to integer types smaller than a dword.
+ * The restriction isn't quoted here due to its length, see BSpec #56640 for
+ * details.
+ */
+static inline bool
+has_subdword_integer_region_restriction(const intel_device_info *devinfo,
+                                        const fs_inst *inst,
+                                        const fs_reg *srcs, unsigned num_srcs)
+{
+   if (devinfo->ver >= 20 &&
+       brw_type_is_int(inst->dst.type) &&
+       MAX2(byte_stride(inst->dst),
+            brw_type_size_bytes(inst->dst.type)) < 4) {
+      for (unsigned i = 0; i < num_srcs; i++) {
+         if (brw_type_is_int(srcs[i].type) &&
+             brw_type_size_bytes(srcs[i].type) < 4 &&
+             byte_stride(srcs[i]) >= 4)
+            return true;
+      }
+   }
+
+   return false;
+}
+
+static inline bool
+has_subdword_integer_region_restriction(const intel_device_info *devinfo,
+                                        const fs_inst *inst)
+{
+   return has_subdword_integer_region_restriction(devinfo, inst,
+                                                  inst->src, inst->sources);
 }
 
 /**

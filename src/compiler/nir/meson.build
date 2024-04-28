@@ -258,6 +258,7 @@ files_libnir = files(
   'nir_opt_memcpy.c',
   'nir_opt_move.c',
   'nir_opt_move_discards_to_top.c',
+  'nir_opt_mqsad.c',
   'nir_opt_non_uniform_access.c',
   'nir_opt_offsets.c',
   'nir_opt_peephole_select.c',

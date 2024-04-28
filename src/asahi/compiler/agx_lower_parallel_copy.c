@@ -120,7 +120,8 @@ do_swap(agx_builder *b, const struct agx_copy *copy)
    assert(x.memory == y.memory);
    if (x.memory) {
       agx_index temp1 = agx_register(0, copy->src.size);
-      agx_index temp2 = agx_register(2, copy->src.size);
+      agx_index temp2 =
+         agx_register(agx_size_align_16(copy->src.size), copy->src.size);
 
       agx_index scratch_reg2 = agx_register(0, copy->src.size);
       agx_index scratch_mem2 = scratch_slot(b->shader, copy->src.size);

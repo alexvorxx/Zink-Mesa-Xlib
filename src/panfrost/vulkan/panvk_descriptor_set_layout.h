@@ -48,6 +48,7 @@ struct panvk_descriptor_set_binding_layout {
 
 struct panvk_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
+   VkDescriptorSetLayoutCreateFlags flags;
 
    /* Shader stages affected by this descriptor set */
    uint16_t shader_stages;

@@ -170,9 +170,9 @@ image_binding_grow(const struct anv_device *device,
 
    *out_range = (struct anv_image_memory_range) {
       .binding = binding,
-      .offset = offset,
-      .size = size,
       .alignment = alignment,
+      .size = size,
+      .offset = offset,
    };
 
    return VK_SUCCESS;
@@ -207,7 +207,8 @@ anv_image_choose_isl_surf_usage(struct anv_physical_device *device,
                                 VkImageCreateFlags vk_create_flags,
                                 VkImageUsageFlags vk_usage,
                                 isl_surf_usage_flags_t isl_extra_usage,
-                                VkImageAspectFlagBits aspect)
+                                VkImageAspectFlagBits aspect,
+                                VkImageCompressionFlagsEXT comp_flags)
 {
    isl_surf_usage_flags_t isl_usage = isl_extra_usage;
 
@@ -282,6 +283,9 @@ anv_image_choose_isl_surf_usage(struct anv_physical_device *device,
        * formats differently. */
       isl_usage |= ISL_SURF_USAGE_RENDER_TARGET_BIT;
    }
+
+   if (comp_flags & VK_IMAGE_COMPRESSION_DISABLED_EXT)
+      isl_usage |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
 
    return isl_usage;
 }
@@ -781,7 +785,8 @@ add_aux_surface_if_supported(struct anv_device *device,
          return VK_SUCCESS;
       }
 
-      if (image->vk.mip_levels > 1) {
+      /* TODO: Adjust blorp for multi-LOD HiZ surface on Gen8 - Gen9*/
+      if (image->vk.mip_levels > 1 && device->info->ver <= 9) {
          anv_perf_warn(VK_LOG_OBJS(&image->vk.base), "Enable multi-LOD HiZ");
          return VK_SUCCESS;
       }
@@ -1044,9 +1049,9 @@ memory_ranges_equal(struct anv_image_memory_range a,
                     struct anv_image_memory_range b)
 {
    return a.binding == b.binding &&
-          a.offset == b.offset &&
+          a.alignment == b.alignment &&
           a.size == b.size &&
-          a.alignment == b.alignment;
+          a.offset == b.offset;
 }
 #endif
 
@@ -1324,7 +1329,8 @@ add_all_surfaces_implicit_layout(
       isl_surf_usage_flags_t isl_usage =
          anv_image_choose_isl_surf_usage(device->physical,
                                          image->vk.create_flags, vk_usage,
-                                         isl_extra_usage_flags, aspect);
+                                         isl_extra_usage_flags, aspect,
+                                         image->vk.compr_flags);
 
       result = add_primary_surface(device, image, plane, plane_format,
                                    ANV_OFFSET_IMPLICIT, plane_stride,
@@ -1562,13 +1568,26 @@ anv_image_finish_sparse_bindings(struct anv_image *image)
 }
 
 static VkResult MUST_CHECK
-anv_image_init_sparse_bindings(struct anv_image *image)
+anv_image_init_sparse_bindings(struct anv_image *image,
+                               const struct anv_image_create_info *create_info)
 {
    struct anv_device *device =
       container_of(image->vk.base.device, struct anv_device, vk);
    VkResult result;
 
    assert(anv_image_is_sparse(image));
+
+   enum anv_bo_alloc_flags alloc_flags = 0;
+   uint64_t explicit_address = 0;
+   if (image->vk.create_flags & VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) {
+      alloc_flags |= ANV_BO_ALLOC_FIXED_ADDRESS;
+
+      const VkOpaqueCaptureDescriptorDataCreateInfoEXT *opaque_info =
+         vk_find_struct_const(create_info->vk_info->pNext,
+                              OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
+      if (opaque_info)
+         explicit_address = *((const uint64_t *)opaque_info->opaqueCaptureDescriptorData);
+   }
 
    for (int i = 0; i < ANV_IMAGE_MEMORY_BINDING_END; i++) {
       struct anv_image_binding *b = &image->bindings[i];
@@ -1587,7 +1606,9 @@ anv_image_init_sparse_bindings(struct anv_image *image)
 
          result = anv_init_sparse_bindings(device,
                                            b->memory_range.size,
-                                           &b->sparse_data, 0, 0,
+                                           &b->sparse_data,
+                                           alloc_flags,
+                                           explicit_address,
                                            &b->address);
          if (result != VK_SUCCESS) {
             anv_image_finish_sparse_bindings(image);
@@ -1722,7 +1743,8 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
 
       isl_surf_usage_flags_t isl_usage = anv_image_choose_isl_surf_usage(
          device->physical, image->vk.create_flags, image->vk.usage,
-         isl_extra_usage_flags, VK_IMAGE_ASPECT_COLOR_BIT);
+         isl_extra_usage_flags, VK_IMAGE_ASPECT_COLOR_BIT,
+         image->vk.compr_flags);
 
       r = add_primary_surface(device, image, plane, plane_format,
                               ANV_OFFSET_IMPLICIT, 0,
@@ -1761,7 +1783,7 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
    }
 
    if (anv_image_is_sparse(image)) {
-      r = anv_image_init_sparse_bindings(image);
+      r = anv_image_init_sparse_bindings(image, create_info);
       if (r != VK_SUCCESS)
          goto fail;
    }
@@ -2233,11 +2255,13 @@ void anv_GetDeviceImageSparseMemoryRequirements(
     * without having to actually create the image, maybe by reworking ISL to
     * separate creation from parameter computing.
     */
-
-   ASSERTED VkResult result =
+   VkResult result =
       anv_image_init_from_create_info(device, &image, pInfo->pCreateInfo,
                                       true /* no_private_binding_alloc */);
-   assert(result == VK_SUCCESS);
+   if (result != VK_SUCCESS) {
+      *pSparseMemoryRequirementCount = 0;
+      return;
+   }
 
    /* The spec says:
     *  "planeAspect is a VkImageAspectFlagBits value specifying the aspect
@@ -2646,26 +2670,20 @@ anv_get_image_subresource_layout(const struct anv_image *image,
    } else {
       layout->subresourceLayout.size = mem_range->size;
    }
-}
 
-void anv_GetImageSubresourceLayout(
-    VkDevice                                    device,
-    VkImage                                     _image,
-    const VkImageSubresource*                   pSubresource,
-    VkSubresourceLayout*                        pLayout)
-{
-   ANV_FROM_HANDLE(anv_image, image, _image);
-
-   VkImageSubresource2KHR subresource = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2_KHR,
-      .imageSubresource = *pSubresource,
-   };
-   VkSubresourceLayout2KHR layout = {
-      .sType = VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2_KHR
-   };
-   anv_get_image_subresource_layout(image, &subresource, &layout);
-
-   *pLayout = layout.subresourceLayout;
+   VkImageCompressionPropertiesEXT *comp_props =
+      vk_find_struct(layout->pNext, IMAGE_COMPRESSION_PROPERTIES_EXT);
+   if (comp_props) {
+      comp_props->imageCompressionFixedRateFlags =
+         VK_IMAGE_COMPRESSION_FIXED_RATE_NONE_EXT;
+      comp_props->imageCompressionFlags = VK_IMAGE_COMPRESSION_DISABLED_EXT;
+      for (uint32_t p = 0; p < image->n_planes; p++) {
+         if (image->planes[p].aux_usage != ISL_AUX_USAGE_NONE) {
+            comp_props->imageCompressionFlags = VK_IMAGE_COMPRESSION_DEFAULT_EXT;
+            break;
+         }
+      }
+   }
 }
 
 void anv_GetDeviceImageSubresourceLayoutKHR(

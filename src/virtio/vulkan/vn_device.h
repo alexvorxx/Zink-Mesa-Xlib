@@ -28,6 +28,7 @@ struct vn_device {
 
    struct vn_instance *instance;
    struct vn_physical_device *physical_device;
+   uint32_t device_mask;
    struct vn_renderer *renderer;
    struct vn_ring *primary_ring;
 

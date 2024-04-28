@@ -120,7 +120,14 @@ ir3_context_init(struct ir3_compiler *compiler, struct ir3_shader *shader,
    if ((so->type == MESA_SHADER_FRAGMENT) && compiler->has_fs_tex_prefetch)
       NIR_PASS_V(ctx->s, ir3_nir_lower_tex_prefetch);
 
+   NIR_PASS(progress, ctx->s, nir_convert_to_lcssa, true, true);
+
    NIR_PASS(progress, ctx->s, nir_lower_phis_to_scalar, true);
+
+   /* This has to go at the absolute end to make sure that all SSA defs are
+    * correctly marked.
+    */
+   NIR_PASS_V(ctx->s, nir_divergence_analysis);
 
    /* Super crude heuristic to limit # of tex prefetch in small
     * shaders.  This completely ignores loops.. but that's really
@@ -220,7 +227,7 @@ ir3_get_def(struct ir3_context *ctx, nir_def *def, unsigned n)
 }
 
 struct ir3_instruction *const *
-ir3_get_src(struct ir3_context *ctx, nir_src *src)
+ir3_get_src_maybe_shared(struct ir3_context *ctx, nir_src *src)
 {
    struct hash_entry *entry;
    entry = _mesa_hash_table_search(ctx->def_ht, src->ssa);
@@ -228,22 +235,48 @@ ir3_get_src(struct ir3_context *ctx, nir_src *src)
    return entry->data;
 }
 
+static struct ir3_instruction *
+get_shared(struct ir3_block *block, struct ir3_instruction *src, bool shared)
+{
+   if (!!(src->dsts[0]->flags & IR3_REG_SHARED) != shared) {
+      struct ir3_instruction *mov =
+         ir3_MOV(block, src, (src->dsts[0]->flags & IR3_REG_HALF) ? TYPE_U16 : TYPE_U32);
+      mov->dsts[0]->flags &= ~IR3_REG_SHARED;
+      mov->dsts[0]->flags |= COND(shared, IR3_REG_SHARED);
+      return mov;
+   }
+
+   return src;
+}
+
+struct ir3_instruction *const *
+ir3_get_src_shared(struct ir3_context *ctx, nir_src *src, bool shared)
+{
+   unsigned num_components = nir_src_num_components(*src);
+   struct ir3_instruction *const *value = ir3_get_src_maybe_shared(ctx, src);
+   bool mismatch = false;
+   for (unsigned i = 0; i < nir_src_num_components(*src); i++) {
+      if (!!(value[i]->dsts[0]->flags & IR3_REG_SHARED) != shared) {
+         mismatch = true;
+         break;
+      }
+   }
+
+   if (!mismatch)
+      return value;
+
+   struct ir3_instruction **new_value =
+      ralloc_array(ctx, struct ir3_instruction *, num_components);
+   for (unsigned i = 0; i < num_components; i++)
+      new_value[i] = get_shared(ctx->block, value[i], shared);
+
+   return new_value;
+}
+
 void
 ir3_put_def(struct ir3_context *ctx, nir_def *def)
 {
    unsigned bit_size = ir3_bitsize(ctx, def->bit_size);
-
-   /* add extra mov if dst value is shared reg.. in some cases not all
-    * instructions can read from shared regs, in cases where they can
-    * ir3_cp will clean up the extra mov:
-    */
-   for (unsigned i = 0; i < ctx->last_dst_n; i++) {
-      if (!ctx->last_dst[i])
-         continue;
-      if (ctx->last_dst[i]->dsts[0]->flags & IR3_REG_SHARED) {
-         ctx->last_dst[i] = ir3_MOV(ctx->block, ctx->last_dst[i], TYPE_U32);
-      }
-   }
 
    if (bit_size <= 16) {
       for (unsigned i = 0; i < ctx->last_dst_n; i++) {
@@ -276,6 +309,9 @@ ir3_create_collect(struct ir3_block *block, struct ir3_instruction *const *arr,
 
    if (arrsz == 0)
       return NULL;
+
+   if (arrsz == 1)
+      return arr[0];
 
    unsigned flags = dest_flags(arr[0]);
 
@@ -387,6 +423,7 @@ create_addr0(struct ir3_block *block, struct ir3_instruction *src, int align)
    struct ir3_instruction *instr, *immed;
 
    instr = ir3_COV(block, src, TYPE_U32, TYPE_S16);
+   bool shared = (src->dsts[0]->flags & IR3_REG_SHARED);
 
    switch (align) {
    case 1:
@@ -394,17 +431,17 @@ create_addr0(struct ir3_block *block, struct ir3_instruction *src, int align)
       break;
    case 2:
       /* src *= 2	=> src <<= 1: */
-      immed = create_immed_typed(block, 1, TYPE_S16);
+      immed = create_immed_typed_shared(block, 1, TYPE_S16, shared);
       instr = ir3_SHL_B(block, instr, 0, immed, 0);
       break;
    case 3:
       /* src *= 3: */
-      immed = create_immed_typed(block, 3, TYPE_S16);
+      immed = create_immed_typed_shared(block, 3, TYPE_S16, shared);
       instr = ir3_MULL_U(block, instr, 0, immed, 0);
       break;
    case 4:
       /* src *= 4 => src <<= 2: */
-      immed = create_immed_typed(block, 2, TYPE_S16);
+      immed = create_immed_typed_shared(block, 2, TYPE_S16, shared);
       instr = ir3_SHL_B(block, instr, 0, immed, 0);
       break;
    default:
@@ -416,6 +453,7 @@ create_addr0(struct ir3_block *block, struct ir3_instruction *src, int align)
 
    instr = ir3_MOV(block, instr, TYPE_S16);
    instr->dsts[0]->num = regid(REG_A0, 0);
+   instr->dsts[0]->flags &= ~IR3_REG_SHARED;
 
    return instr;
 }
@@ -492,12 +530,14 @@ ir3_get_predicate(struct ir3_context *ctx, struct ir3_instruction *src)
 
    /* NOTE: we use cpms.s.ne x, 0 to move x into a predicate register */
    struct ir3_instruction *zero =
-         create_immed_typed(b, 0, is_half(src) ? TYPE_U16 : TYPE_U32);
+         create_immed_typed_shared(b, 0, is_half(src) ? TYPE_U16 : TYPE_U32,
+                                   src->dsts[0]->flags & IR3_REG_SHARED);
    cond = ir3_CMPS_S(b, src, 0, zero, 0);
    cond->cat2.condition = IR3_COND_NE;
 
    /* condition always goes in predicate register: */
    cond->dsts[0]->flags |= IR3_REG_PREDICATE;
+   cond->dsts[0]->flags &= ~IR3_REG_SHARED;
 
    /* phi's should stay first in a block */
    if (src->opc == OPC_META_PHI)
@@ -609,14 +649,15 @@ ir3_create_array_store(struct ir3_context *ctx, struct ir3_array *arr, int n,
    mov->barrier_class = IR3_BARRIER_ARRAY_W;
    mov->barrier_conflict = IR3_BARRIER_ARRAY_R | IR3_BARRIER_ARRAY_W;
    dst = ir3_dst_create(
-      mov, 0,
+      mov, INVALID_REG,
       IR3_REG_SSA | IR3_REG_ARRAY | flags | COND(address, IR3_REG_RELATIV));
    dst->instr = mov;
    dst->size = arr->length;
    dst->array.id = arr->id;
    dst->array.offset = n;
    dst->array.base = INVALID_REG;
-   ir3_src_create(mov, 0, IR3_REG_SSA | flags)->def = src->dsts[0];
+   ir3_src_create(mov, INVALID_REG, IR3_REG_SSA | flags |
+                  (src->dsts[0]->flags & IR3_REG_SHARED))->def = src->dsts[0];
 
    if (arr->last_write && arr->last_write->instr->block == block)
       ir3_reg_set_last_array(mov, dst, arr->last_write);

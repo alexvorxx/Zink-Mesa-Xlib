@@ -210,12 +210,12 @@ d3d12_destroy_batch(struct d3d12_context *ctx, struct d3d12_batch *batch)
 {
    d3d12_reset_batch(ctx, batch, OS_TIMEOUT_INFINITE);
    batch->cmdalloc->Release();
+   _mesa_hash_table_destroy(batch->bos, NULL);
 
 #ifdef HAVE_GALLIUM_D3D12_GRAPHICS
    if (d3d12_screen(ctx->base.screen)->max_feature_level >= D3D_FEATURE_LEVEL_11_0) {
       d3d12_descriptor_heap_free(batch->sampler_heap);
       d3d12_descriptor_heap_free(batch->view_heap);
-      _mesa_hash_table_destroy(batch->bos, NULL);
       _mesa_hash_table_destroy(batch->sampler_tables, NULL);
       _mesa_set_destroy(batch->sampler_views, NULL);
       _mesa_set_destroy(batch->queries, NULL);

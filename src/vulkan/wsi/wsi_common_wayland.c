@@ -37,12 +37,14 @@
 #include "drm-uapi/drm_fourcc.h"
 
 #include "vk_instance.h"
+#include "vk_device.h"
 #include "vk_physical_device.h"
 #include "vk_util.h"
 #include "wsi_common_entrypoints.h"
 #include "wsi_common_private.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
+#include "linux-drm-syncobj-v1-client-protocol.h"
 #include "tearing-control-v1-client-protocol.h"
 
 #include <util/compiler.h>
@@ -104,6 +106,7 @@ struct wsi_wl_display {
    struct zwp_linux_dmabuf_v1 *wl_dmabuf;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct wp_tearing_control_manager_v1 *tearing_control_manager;
+   struct wp_linux_drm_syncobj_manager_v1 *wl_syncobj;
 
    struct dmabuf_feedback_format_table format_table;
 
@@ -137,6 +140,8 @@ struct wsi_wl_image {
    int shm_fd;
    void *shm_ptr;
    unsigned shm_size;
+
+   struct wp_linux_drm_syncobj_timeline_v1 *wl_syncobj_timeline[WSI_ES_COUNT];
 };
 
 enum wsi_wl_buffer_type {
@@ -156,6 +161,8 @@ struct wsi_wl_surface {
 
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback dmabuf_feedback, pending_dmabuf_feedback;
+
+   struct wp_linux_drm_syncobj_surface_v1 *wl_syncobj_surface;
 };
 
 struct wsi_wl_swapchain {
@@ -197,6 +204,13 @@ struct wsi_wl_swapchain {
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_wl_swapchain, base.base, VkSwapchainKHR,
                                VK_OBJECT_TYPE_SWAPCHAIN_KHR)
+
+static bool
+wsi_wl_use_explicit_sync(struct wsi_wl_display *display, struct wsi_device *device)
+{
+   return wsi_device_supports_explicit_sync(device) &&
+          display->wl_syncobj != NULL;
+}
 
 enum wsi_wl_fmt_flag {
    WSI_WL_FMT_ALPHA = 1 << 0,
@@ -799,6 +813,9 @@ registry_handle_global(void *data, struct wl_registry *registry,
                              MIN2(version, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION));
          zwp_linux_dmabuf_v1_add_listener(display->wl_dmabuf,
                                           &dmabuf_listener, display);
+      } else if (strcmp(interface, wp_linux_drm_syncobj_manager_v1_interface.name) == 0) {
+         display->wl_syncobj =
+            wl_registry_bind(registry, name, &wp_linux_drm_syncobj_manager_v1_interface, 1);
       }
    }
 
@@ -830,6 +847,8 @@ wsi_wl_display_finish(struct wsi_wl_display *display)
    u_vector_finish(&display->formats);
    if (display->wl_shm)
       wl_shm_destroy(display->wl_shm);
+   if (display->wl_syncobj)
+      wp_linux_drm_syncobj_manager_v1_destroy(display->wl_syncobj);
    if (display->wl_dmabuf)
       zwp_linux_dmabuf_v1_destroy(display->wl_dmabuf);
    if (display->wp_presentation_notwrapped)
@@ -1046,28 +1065,6 @@ wsi_wl_surface_get_min_image_count(const VkSurfacePresentModeEXT *present_mode)
        */
       return 4;
    }
-}
-
-static uint32_t
-wsi_wl_surface_get_min_image_count_for_mode_group(const VkSwapchainPresentModesCreateInfoEXT *modes)
-{
-   /* If we don't provide the PresentModeCreateInfo struct, we must be backwards compatible,
-    * and assume that minImageCount is the default one, i.e. 4, which supports both FIFO and MAILBOX. */
-   if (!modes) {
-      return wsi_wl_surface_get_min_image_count(NULL);
-   }
-
-   uint32_t max_required = 0;
-   for (uint32_t i = 0; i < modes->presentModeCount; i++) {
-      const VkSurfacePresentModeEXT mode = {
-         VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT,
-         NULL,
-         modes->pPresentModes[i]
-      };
-      max_required = MAX2(max_required, wsi_wl_surface_get_min_image_count(&mode));
-   }
-
-   return max_required;
 }
 
 static VkResult
@@ -1337,6 +1334,9 @@ wsi_wl_surface_destroy(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
    struct wsi_wl_surface *wsi_wl_surface =
       wl_container_of((VkIcdSurfaceWayland *)icd_surface, wsi_wl_surface, base);
 
+   if (wsi_wl_surface->wl_syncobj_surface)
+      wp_linux_drm_syncobj_surface_v1_destroy(wsi_wl_surface->wl_syncobj_surface);
+
    if (wsi_wl_surface->wl_dmabuf_feedback) {
       zwp_linux_dmabuf_feedback_v1_destroy(wsi_wl_surface->wl_dmabuf_feedback);
       dmabuf_feedback_fini(&wsi_wl_surface->dmabuf_feedback);
@@ -1598,6 +1598,15 @@ static VkResult wsi_wl_surface_init(struct wsi_wl_surface *wsi_wl_surface,
                                  wsi_wl_surface->display->queue);
    }
 
+   if (wsi_wl_use_explicit_sync(wsi_wl_surface->display, wsi_device)) {
+      wsi_wl_surface->wl_syncobj_surface =
+         wp_linux_drm_syncobj_manager_v1_get_surface(wsi_wl_surface->display->wl_syncobj,
+                                                     wsi_wl_surface->surface);
+
+      if (!wsi_wl_surface->wl_syncobj_surface)
+         goto fail;
+   }
+
    return VK_SUCCESS;
 
 fail:
@@ -1666,7 +1675,6 @@ wsi_wl_swapchain_release_images(struct wsi_swapchain *wsi_chain,
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
    for (uint32_t i = 0; i < count; i++) {
       uint32_t index = indices[i];
-      assert(chain->images[index].busy);
       chain->images[index].busy = false;
    }
    return VK_SUCCESS;
@@ -1813,9 +1821,34 @@ wsi_wl_swapchain_wait_for_present(struct wsi_swapchain *wsi_chain,
 }
 
 static VkResult
-wsi_wl_swapchain_acquire_next_image(struct wsi_swapchain *wsi_chain,
-                                    const VkAcquireNextImageInfoKHR *info,
-                                    uint32_t *image_index)
+wsi_wl_swapchain_acquire_next_image_explicit(struct wsi_swapchain *wsi_chain,
+                                             const VkAcquireNextImageInfoKHR *info,
+                                             uint32_t *image_index)
+{
+   struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
+
+   /* See comments in queue_present() */
+   if (chain->retired)
+      return VK_ERROR_OUT_OF_DATE_KHR;
+
+   STACK_ARRAY(struct wsi_image*, images, wsi_chain->image_count);
+   for (uint32_t i = 0; i < chain->base.image_count; i++)
+      images[i] = &chain->images[i].base;
+
+   VkResult result = wsi_drm_wait_for_explicit_sync_release(wsi_chain,
+                                                            wsi_chain->image_count,
+                                                            images,
+                                                            info->timeout,
+                                                            image_index);
+   STACK_ARRAY_FINISH(images);
+
+   return result;
+}
+
+static VkResult
+wsi_wl_swapchain_acquire_next_image_implicit(struct wsi_swapchain *wsi_chain,
+                                             const VkAcquireNextImageInfoKHR *info,
+                                             uint32_t *image_index)
 {
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
    struct timespec start_time, end_time;
@@ -1874,8 +1907,8 @@ wsi_wl_presentation_update_present_id(struct wsi_wl_present_id *id)
       id->chain->present_ids.max_completed = id->present_id;
 
    wl_list_remove(&id->link);
-   vk_free(id->alloc, id);
    pthread_mutex_unlock(&id->chain->present_ids.lock);
+   vk_free(id->alloc, id);
 }
 
 static void
@@ -1941,6 +1974,7 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
                                const VkPresentRegionKHR *damage)
 {
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
+   bool queue_dispatched = false;
 
    /* While the specification suggests we can keep presenting already acquired
     * images on a retired swapchain, there is no requirement to support that.
@@ -1970,6 +2004,23 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
                                           wsi_wl_surface->display->queue);
       if (ret < 0)
          return VK_ERROR_OUT_OF_DATE_KHR;
+
+      queue_dispatched = true;
+   }
+
+   if (chain->base.image_info.explicit_sync) {
+      struct wsi_wl_image *image = &chain->images[image_index];
+      /* Incremented by signal in base queue_present. */
+      uint64_t acquire_point = image->base.explicit_sync[WSI_ES_ACQUIRE].timeline;
+      uint64_t release_point = image->base.explicit_sync[WSI_ES_RELEASE].timeline;
+      wp_linux_drm_syncobj_surface_v1_set_acquire_point(wsi_wl_surface->wl_syncobj_surface,
+                                                        image->wl_syncobj_timeline[WSI_ES_ACQUIRE],
+                                                        (uint32_t)(acquire_point >> 32),
+                                                        (uint32_t)(acquire_point & 0xffffffff));
+      wp_linux_drm_syncobj_surface_v1_set_release_point(wsi_wl_surface->wl_syncobj_surface,
+                                                        image->wl_syncobj_timeline[WSI_ES_RELEASE],
+                                                        (uint32_t)(release_point >> 32),
+                                                        (uint32_t)(release_point & 0xffffffff));
    }
 
    assert(image_index < chain->base.image_count);
@@ -2025,6 +2076,11 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
    chain->images[image_index].busy = true;
    wl_surface_commit(wsi_wl_surface->surface);
    wl_display_flush(wsi_wl_surface->display->wl_display);
+
+   if (!queue_dispatched && wsi_chain->image_info.explicit_sync) {
+      wl_display_dispatch_queue_pending(wsi_wl_surface->display->wl_display,
+                                        wsi_wl_surface->display->queue);
+   }
 
    return VK_SUCCESS;
 }
@@ -2127,6 +2183,17 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
                                                  chain->drm_format,
                                                  0);
       zwp_linux_buffer_params_v1_destroy(params);
+
+      if (chain->base.image_info.explicit_sync) {
+         for (uint32_t i = 0; i < WSI_ES_COUNT; i++) {
+            image->wl_syncobj_timeline[i] =
+               wp_linux_drm_syncobj_manager_v1_import_timeline(display->wl_syncobj,
+                                                               image->base.explicit_sync[i].fd);
+            if (!image->wl_syncobj_timeline[i])
+               goto fail_image;
+         }
+      }
+
       break;
    }
 
@@ -2137,11 +2204,17 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
    if (!image->buffer)
       goto fail_image;
 
-   wl_buffer_add_listener(image->buffer, &buffer_listener, image);
+   /* No need to listen for release if we are explicit sync. */
+   if (!chain->base.image_info.explicit_sync)
+      wl_buffer_add_listener(image->buffer, &buffer_listener, image);
 
    return VK_SUCCESS;
 
 fail_image:
+   for (uint32_t i = 0; i < WSI_ES_COUNT; i++) {
+      if (image->wl_syncobj_timeline[i])
+         wp_linux_drm_syncobj_timeline_v1_destroy(image->wl_syncobj_timeline[i]);
+   }
    wsi_destroy_image(&chain->base, &image->base);
 
    return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -2151,6 +2224,10 @@ static void
 wsi_wl_swapchain_images_free(struct wsi_wl_swapchain *chain)
 {
    for (uint32_t i = 0; i < chain->base.image_count; i++) {
+      for (uint32_t j = 0; j < WSI_ES_COUNT; j++) {
+         if (chain->images[i].wl_syncobj_timeline[j])
+            wp_linux_drm_syncobj_timeline_v1_destroy(chain->images[i].wl_syncobj_timeline[j]);
+      }
       if (chain->images[i].buffer) {
          wl_buffer_destroy(chain->images[i].buffer);
          wsi_destroy_image(&chain->base, &chain->images[i].base);
@@ -2324,6 +2401,7 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
       drm_image_params = (struct wsi_drm_image_params) {
          .base.image_type = WSI_IMAGE_TYPE_DRM,
          .same_gpu = wsi_wl_surface->display->same_gpu,
+         .explicit_sync = wsi_wl_use_explicit_sync(wsi_wl_surface->display, wsi_device),
       };
       /* Use explicit DRM format modifiers when both the server and the driver
        * support them.
@@ -2364,7 +2442,9 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
 
    chain->base.destroy = wsi_wl_swapchain_destroy;
    chain->base.get_wsi_image = wsi_wl_swapchain_get_wsi_image;
-   chain->base.acquire_next_image = wsi_wl_swapchain_acquire_next_image;
+   chain->base.acquire_next_image = chain->base.image_info.explicit_sync
+                                  ? wsi_wl_swapchain_acquire_next_image_explicit
+                                  : wsi_wl_swapchain_acquire_next_image_implicit;
    chain->base.queue_present = wsi_wl_swapchain_queue_present;
    chain->base.release_images = wsi_wl_swapchain_release_images;
    chain->base.set_present_mode = wsi_wl_swapchain_set_present_mode;

@@ -177,6 +177,7 @@ anv_shader_stage_to_nir(struct anv_device *device,
          .quad_control = true,
          .runtime_descriptor_array = true,
          .float_controls = true,
+         .float_controls2 = true,
          .ray_cull_mask = rt_enabled,
          .ray_query = rt_enabled,
          .ray_tracing = rt_enabled,
@@ -654,14 +655,20 @@ populate_wm_prog_key(struct anv_pipeline_stage *stage,
        *
        * It's also required for the fragment output interface.
        */
-      key->alpha_to_coverage =
-         ms && ms->alpha_to_coverage_enable ? BRW_ALWAYS : BRW_NEVER;
       key->multisample_fbo =
-         ms && ms->rasterization_samples > 1 ? BRW_ALWAYS : BRW_NEVER;
+         BITSET_TEST(dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ?
+         BRW_SOMETIMES :
+         ms->rasterization_samples > 1 ? BRW_ALWAYS : BRW_NEVER;
       key->persample_interp =
-      (ms->sample_shading_enable &&
-       (ms->min_sample_shading * ms->rasterization_samples) > 1) ?
-      BRW_ALWAYS : BRW_NEVER;
+         BITSET_TEST(dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ?
+         BRW_SOMETIMES :
+         (ms->sample_shading_enable &&
+          (ms->min_sample_shading * ms->rasterization_samples) > 1) ?
+         BRW_ALWAYS : BRW_NEVER;
+      key->alpha_to_coverage =
+         BITSET_TEST(dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) ?
+         BRW_SOMETIMES :
+         (ms->alpha_to_coverage_enable ? BRW_ALWAYS : BRW_NEVER);
 
       /* TODO: We should make this dynamic */
       if (device->physical->instance->sample_mask_out_opengl_behaviour)
@@ -684,14 +691,6 @@ populate_wm_prog_key(struct anv_pipeline_stage *stage,
   key->coarse_pixel =
      device->vk.enabled_extensions.KHR_fragment_shading_rate &&
      pipeline_has_coarse_pixel(dynamic, ms, fsr);
-}
-
-static bool
-wm_prog_data_dynamic(const struct brw_wm_prog_data *prog_data)
-{
-   return prog_data->alpha_to_coverage == BRW_SOMETIMES ||
-          prog_data->coarse_pixel_dispatch == BRW_SOMETIMES ||
-          prog_data->persample_dispatch == BRW_SOMETIMES;
 }
 
 static void
@@ -2909,11 +2908,6 @@ anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
       /* TODO(mesh): Mesh vs. Multiview with Instancing. */
    }
 
-   /* Store line mode and rasterization samples, these are used
-    * for dynamic primitive topology.
-    */
-   pipeline->rasterization_samples =
-      state->ms != NULL ? state->ms->rasterization_samples : 1;
 
    pipeline->dynamic_patch_control_points =
       anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL) &&
@@ -2921,43 +2915,9 @@ anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
       (pipeline->base.shaders[MESA_SHADER_TESS_CTRL]->dynamic_push_values &
        ANV_DYNAMIC_PUSH_INPUT_VERTICES);
 
-   if (pipeline->base.shaders[MESA_SHADER_FRAGMENT]) {
-      const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
-
-      if (wm_prog_data_dynamic(wm_prog_data)) {
-         pipeline->fs_msaa_flags = INTEL_MSAA_FLAG_ENABLE_DYNAMIC;
-
-         assert(wm_prog_data->persample_dispatch == BRW_SOMETIMES);
-         if (state->ms && state->ms->rasterization_samples > 1) {
-            pipeline->fs_msaa_flags |= INTEL_MSAA_FLAG_MULTISAMPLE_FBO;
-
-            if (wm_prog_data->sample_shading) {
-               assert(wm_prog_data->persample_dispatch != BRW_NEVER);
-               pipeline->fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH;
-            }
-
-            if (state->ms->sample_shading_enable &&
-                (state->ms->min_sample_shading * state->ms->rasterization_samples) > 1) {
-               pipeline->fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH |
-                                          INTEL_MSAA_FLAG_PERSAMPLE_INTERP;
-            }
-         }
-
-         if (state->ms && state->ms->alpha_to_coverage_enable)
-            pipeline->fs_msaa_flags |= INTEL_MSAA_FLAG_ALPHA_TO_COVERAGE;
-
-         assert(wm_prog_data->coarse_pixel_dispatch != BRW_ALWAYS);
-         if (wm_prog_data->coarse_pixel_dispatch == BRW_SOMETIMES &&
-             !(pipeline->fs_msaa_flags & INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH) &&
-             (!state->ms || !state->ms->sample_shading_enable)) {
-            pipeline->fs_msaa_flags |= INTEL_MSAA_FLAG_COARSE_PI_MSG |
-                                       INTEL_MSAA_FLAG_COARSE_RT_WRITES;
-         }
-      } else {
-         assert(wm_prog_data->alpha_to_coverage != BRW_SOMETIMES);
-         assert(wm_prog_data->coarse_pixel_dispatch != BRW_SOMETIMES);
-         assert(wm_prog_data->persample_dispatch != BRW_SOMETIMES);
-      }
+   if (pipeline->base.shaders[MESA_SHADER_FRAGMENT] && state->ms) {
+      pipeline->sample_shading_enable = state->ms->sample_shading_enable;
+      pipeline->min_sample_shading = state->ms->min_sample_shading;
    }
 
    const struct anv_device *device = pipeline->base.base.device;

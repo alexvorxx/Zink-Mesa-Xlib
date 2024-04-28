@@ -237,7 +237,6 @@ public:
    void init();
    ~fs_visitor();
 
-   fs_reg vgrf(const glsl_type *const type);
    void import_uniforms(fs_visitor *v);
 
    void VARYING_PULL_CONSTANT_LOAD(const brw::fs_builder &bld,
@@ -275,12 +274,6 @@ public:
    bool get_pull_locs(const fs_reg &src, unsigned *out_surf_index,
                       unsigned *out_pull_index);
    void invalidate_analysis(brw::analysis_dependency_class c);
-
-#ifndef NDEBUG
-   void validate();
-#else
-   void validate() {}
-#endif
 
    instruction_scheduler *prepare_scheduler(void *mem_ctx);
    void schedule_instructions_pre_ra(instruction_scheduler *sched,
@@ -500,11 +493,7 @@ private:
                       struct brw_reg ex_desc,
                       struct brw_reg payload,
                       struct brw_reg payload2);
-   void generate_fb_read(fs_inst *inst, struct brw_reg dst,
-                         struct brw_reg payload);
    void generate_barrier(fs_inst *inst, struct brw_reg src);
-   bool generate_linterp(fs_inst *inst, struct brw_reg dst,
-			 struct brw_reg *src);
    void generate_ddx(const fs_inst *inst,
                      struct brw_reg dst, struct brw_reg src);
    void generate_ddy(const fs_inst *inst,
@@ -549,7 +538,7 @@ private:
 namespace brw {
    fs_reg
    fetch_payload_reg(const brw::fs_builder &bld, uint8_t regs[2],
-                     brw_reg_type type = BRW_REGISTER_TYPE_F,
+                     brw_reg_type type = BRW_TYPE_F,
                      unsigned n = 1);
 
    fs_reg
@@ -558,8 +547,7 @@ namespace brw {
    inline fs_reg
    dynamic_msaa_flags(const struct brw_wm_prog_data *wm_prog_data)
    {
-      return fs_reg(UNIFORM, wm_prog_data->msaa_flags_param,
-                    BRW_REGISTER_TYPE_UD);
+      return fs_reg(UNIFORM, wm_prog_data->msaa_flags_param, BRW_TYPE_UD);
    }
 
    void
@@ -577,7 +565,8 @@ void shuffle_from_32bit_read(const brw::fs_builder &bld,
                              uint32_t first_component,
                              uint32_t components);
 
-enum brw_barycentric_mode brw_barycentric_mode(nir_intrinsic_instr *intr);
+enum brw_barycentric_mode brw_barycentric_mode(const struct brw_wm_prog_key *key,
+                                               nir_intrinsic_instr *intr);
 
 uint32_t brw_fb_write_msg_control(const fs_inst *inst,
                                   const struct brw_wm_prog_data *prog_data);
@@ -593,6 +582,12 @@ int brw_get_subgroup_id_param_index(const intel_device_info *devinfo,
                                     const brw_stage_prog_data *prog_data);
 
 void nir_to_brw(fs_visitor *s);
+
+#ifndef NDEBUG
+void brw_fs_validate(const fs_visitor &s);
+#else
+static inline void brw_fs_validate(const fs_visitor &s) {}
+#endif
 
 void brw_fs_optimize(fs_visitor &s);
 
@@ -613,6 +608,7 @@ bool brw_fs_lower_sends_overlapping_payload(fs_visitor &s);
 bool brw_fs_lower_simd_width(fs_visitor &s);
 bool brw_fs_lower_sub_sat(fs_visitor &s);
 bool brw_fs_lower_uniform_pull_constant_loads(fs_visitor &s);
+void brw_fs_lower_vgrfs_to_fixed_grfs(fs_visitor &s);
 
 bool brw_fs_opt_algebraic(fs_visitor &s);
 bool brw_fs_opt_bank_conflicts(fs_visitor &s);

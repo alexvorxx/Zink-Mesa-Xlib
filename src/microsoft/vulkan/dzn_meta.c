@@ -100,9 +100,9 @@ dzn_meta_compile_shader(struct dzn_device *device, nir_shader *nir,
 #define DZN_META_INDIRECT_DRAW_MAX_PARAM_COUNT 5
 
 static void
-dzn_meta_indirect_draw_finish(struct dzn_device *device, enum dzn_indirect_draw_type type)
+dzn_meta_indirect_draw_finish(struct dzn_device *device, struct dzn_indirect_draw_type type)
 {
-   struct dzn_meta_indirect_draw *meta = &device->indirect_draws[type];
+   struct dzn_meta_indirect_draw *meta = &device->indirect_draws[type.value];
 
    if (meta->root_sig)
       ID3D12RootSignature_Release(meta->root_sig);
@@ -113,9 +113,9 @@ dzn_meta_indirect_draw_finish(struct dzn_device *device, enum dzn_indirect_draw_
 
 static VkResult
 dzn_meta_indirect_draw_init(struct dzn_device *device,
-                            enum dzn_indirect_draw_type type)
+                            struct dzn_indirect_draw_type type)
 {
-   struct dzn_meta_indirect_draw *meta = &device->indirect_draws[type];
+   struct dzn_meta_indirect_draw *meta = &device->indirect_draws[type.value];
    struct dzn_instance *instance =
       container_of(device->vk.physical->instance, struct dzn_instance, vk);
    VkResult ret = VK_SUCCESS;
@@ -123,23 +123,10 @@ dzn_meta_indirect_draw_init(struct dzn_device *device,
    glsl_type_singleton_init_or_ref();
 
    nir_shader *nir = dzn_nir_indirect_draw_shader(type);
-   bool triangle_fan = type == DZN_INDIRECT_DRAW_TRIANGLE_FAN ||
-                       type == DZN_INDIRECT_DRAW_COUNT_TRIANGLE_FAN ||
-                       type == DZN_INDIRECT_INDEXED_DRAW_TRIANGLE_FAN ||
-                       type == DZN_INDIRECT_INDEXED_DRAW_COUNT_TRIANGLE_FAN ||
-                       type == DZN_INDIRECT_INDEXED_DRAW_TRIANGLE_FAN_PRIM_RESTART ||
-                       type == DZN_INDIRECT_INDEXED_DRAW_COUNT_TRIANGLE_FAN_PRIM_RESTART;
-   bool indirect_count = type == DZN_INDIRECT_DRAW_COUNT ||
-                         type == DZN_INDIRECT_INDEXED_DRAW_COUNT ||
-                         type == DZN_INDIRECT_DRAW_COUNT_TRIANGLE_FAN ||
-                         type == DZN_INDIRECT_INDEXED_DRAW_COUNT_TRIANGLE_FAN ||
-                         type == DZN_INDIRECT_INDEXED_DRAW_COUNT_TRIANGLE_FAN_PRIM_RESTART;
-   bool prim_restart = type == DZN_INDIRECT_INDEXED_DRAW_TRIANGLE_FAN_PRIM_RESTART ||
-                       type == DZN_INDIRECT_INDEXED_DRAW_COUNT_TRIANGLE_FAN_PRIM_RESTART;
    uint32_t shader_params_size =
-      triangle_fan && prim_restart ?
+      type.triangle_fan_primitive_restart ?
       sizeof(struct dzn_indirect_draw_triangle_fan_prim_restart_rewrite_params) :
-      triangle_fan ?
+      type.triangle_fan ?
       sizeof(struct dzn_indirect_draw_triangle_fan_rewrite_params) :
       sizeof(struct dzn_indirect_draw_rewrite_params);
 
@@ -176,7 +163,7 @@ dzn_meta_indirect_draw_init(struct dzn_device *device,
       .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
    };
 
-   if (indirect_count) {
+   if (type.indirect_count) {
       root_params[root_param_count++] = (D3D12_ROOT_PARAMETER1) {
          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV,
          .Descriptor = {
@@ -189,7 +176,7 @@ dzn_meta_indirect_draw_init(struct dzn_device *device,
    }
 
 
-   if (triangle_fan) {
+   if (type.triangle_fan) {
       root_params[root_param_count++] = (D3D12_ROOT_PARAMETER1) {
          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV,
          .Descriptor = {
@@ -817,7 +804,7 @@ dzn_meta_finish(struct dzn_device *device)
       dzn_meta_triangle_fan_rewrite_index_finish(device, i);
 
    for (uint32_t i = 0; i < ARRAY_SIZE(device->indirect_draws); i++)
-      dzn_meta_indirect_draw_finish(device, i);
+      dzn_meta_indirect_draw_finish(device, (struct dzn_indirect_draw_type) { .value = i });
 
    dzn_meta_blits_finish(device);
 }
@@ -825,22 +812,34 @@ dzn_meta_finish(struct dzn_device *device)
 VkResult
 dzn_meta_init(struct dzn_device *device)
 {
+   struct dzn_physical_device *pdev = container_of(device->vk.physical, struct dzn_physical_device, vk);
    VkResult result = dzn_meta_blits_init(device);
    if (result != VK_SUCCESS)
       goto out;
 
    for (uint32_t i = 0; i < ARRAY_SIZE(device->indirect_draws); i++) {
+      struct dzn_indirect_draw_type type = { .value = i };
+      if (type.triangle_fan_primitive_restart && !type.triangle_fan)
+         continue;
+      if (type.triangle_fan && pdev->options15.TriangleFanSupported)
+         continue;
+      if (type.draw_params && pdev->options21.ExtendedCommandInfoSupported)
+         continue;
+      if (type.draw_id && pdev->options21.ExecuteIndirectTier >= D3D12_EXECUTE_INDIRECT_TIER_1_1)
+         continue;
       VkResult result =
-         dzn_meta_indirect_draw_init(device, i);
+         dzn_meta_indirect_draw_init(device, type);
       if (result != VK_SUCCESS)
          goto out;
    }
 
-   for (uint32_t i = 0; i < ARRAY_SIZE(device->triangle_fan); i++) {
-      VkResult result =
-         dzn_meta_triangle_fan_rewrite_index_init(device, i);
-      if (result != VK_SUCCESS)
-         goto out;
+   if (!pdev->options15.TriangleFanSupported) {
+      for (uint32_t i = 0; i < ARRAY_SIZE(device->triangle_fan); i++) {
+         VkResult result =
+            dzn_meta_triangle_fan_rewrite_index_init(device, i);
+         if (result != VK_SUCCESS)
+            goto out;
+      }
    }
 
 out:

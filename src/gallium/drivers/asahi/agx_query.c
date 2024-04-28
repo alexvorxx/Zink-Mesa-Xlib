@@ -9,12 +9,17 @@
 #include "util/bitset.h"
 #include "util/macros.h"
 #include "util/ralloc.h"
+#include "util/u_dump.h"
 #include "util/u_inlines.h"
 #include "util/u_prim.h"
 #include "agx_bo.h"
 #include "agx_device.h"
 #include "agx_state.h"
+#include "nir.h"
+#include "nir_builder.h"
+#include "nir_builder_opcodes.h"
 #include "pool.h"
+#include "shader_enums.h"
 
 static bool
 is_occlusion(struct agx_query *query)
@@ -174,13 +179,23 @@ agx_create_query(struct pipe_context *ctx, unsigned query_type, unsigned index)
 }
 
 static void
-sync_query_writers(struct agx_context *ctx, struct agx_query *query,
-                   const char *reason)
+flush_query_writers(struct agx_context *ctx, struct agx_query *query,
+                    const char *reason)
 {
    STATIC_ASSERT(ARRAY_SIZE(ctx->batches.generation) == AGX_MAX_BATCHES);
    STATIC_ASSERT(ARRAY_SIZE(ctx->batches.slots) == AGX_MAX_BATCHES);
    STATIC_ASSERT(ARRAY_SIZE(query->writer_generation) == AGX_MAX_BATCHES);
 
+   for (unsigned i = 0; i < AGX_MAX_BATCHES; ++i) {
+      if (query->writer_generation[i] == ctx->batches.generation[i])
+         agx_flush_batch_for_reason(ctx, &ctx->batches.slots[i], reason);
+   }
+}
+
+static void
+sync_query_writers(struct agx_context *ctx, struct agx_query *query,
+                   const char *reason)
+{
    for (unsigned i = 0; i < AGX_MAX_BATCHES; ++i) {
       if (query->writer_generation[i] == ctx->batches.generation[i])
          agx_sync_batch_for_reason(ctx, &ctx->batches.slots[i], reason);
@@ -333,6 +348,37 @@ agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
    }
 }
 
+enum query_copy_type {
+   QUERY_COPY_NORMAL,
+   QUERY_COPY_BOOL32,
+   QUERY_COPY_BOOL64,
+   QUERY_COPY_TIMESTAMP,
+   QUERY_COPY_TIME_ELAPSED,
+};
+
+static enum query_copy_type
+classify_query_type(enum pipe_query_type type)
+{
+   switch (type) {
+   case PIPE_QUERY_OCCLUSION_PREDICATE:
+   case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
+      return QUERY_COPY_BOOL32;
+
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      return QUERY_COPY_BOOL64;
+
+   case PIPE_QUERY_TIMESTAMP:
+      return QUERY_COPY_TIMESTAMP;
+
+   case PIPE_QUERY_TIME_ELAPSED:
+      return QUERY_COPY_TIME_ELAPSED;
+
+   default:
+      return QUERY_COPY_NORMAL;
+   }
+}
+
 static bool
 agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
                      bool wait, union pipe_query_result *vresult)
@@ -347,29 +393,24 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
    uint64_t *ptr = query->ptr.cpu;
    uint64_t value = *ptr;
 
-   switch (query->type) {
-   case PIPE_QUERY_OCCLUSION_PREDICATE:
-   case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
+   switch (classify_query_type(query->type)) {
+   case QUERY_COPY_BOOL32:
       vresult->b = value;
       return true;
 
-   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
-   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+   case QUERY_COPY_BOOL64:
       vresult->b = value > 0;
       return true;
 
-   case PIPE_QUERY_OCCLUSION_COUNTER:
-   case PIPE_QUERY_PRIMITIVES_GENERATED:
-   case PIPE_QUERY_PRIMITIVES_EMITTED:
-   case PIPE_QUERY_PIPELINE_STATISTICS_SINGLE:
+   case QUERY_COPY_NORMAL:
       vresult->u64 = value;
       return true;
 
-   case PIPE_QUERY_TIMESTAMP:
+   case QUERY_COPY_TIMESTAMP:
       vresult->u64 = agx_gpu_time_to_ns(dev, value);
       return true;
 
-   case PIPE_QUERY_TIME_ELAPSED:
+   case QUERY_COPY_TIME_ELAPSED:
       /* end - begin */
       vresult->u64 = agx_gpu_time_to_ns(dev, ptr[0] - ptr[1]);
       return true;
@@ -379,30 +420,33 @@ agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
    }
 }
 
-static void
-agx_get_query_result_resource(struct pipe_context *pipe, struct pipe_query *q,
-                              enum pipe_query_flags flags,
-                              enum pipe_query_value_type result_type, int index,
-                              struct pipe_resource *resource, unsigned offset)
+static unsigned
+result_type_size(enum pipe_query_value_type result_type)
 {
-   struct agx_query *query = (struct agx_query *)q;
+   return (result_type <= PIPE_QUERY_TYPE_U32) ? 4 : 8;
+}
 
-   /* TODO: Don't cheat XXX */
-   struct agx_context *ctx = agx_context(pipe);
-
+static void
+agx_get_query_result_resource_cpu(struct agx_context *ctx,
+                                  struct agx_query *query,
+                                  enum pipe_query_flags flags,
+                                  enum pipe_query_value_type result_type,
+                                  int index, struct pipe_resource *resource,
+                                  unsigned offset)
+{
    union pipe_query_result result;
    if (index < 0) {
       /* availability */
       result.u64 = !is_query_busy(ctx, query);
    } else {
-      bool ready = agx_get_query_result(pipe, q, true, &result);
+      bool ready =
+         agx_get_query_result(&ctx->base, (void *)query, true, &result);
+
       assert(ready);
 
-      switch (query->type) {
-      case PIPE_QUERY_OCCLUSION_PREDICATE:
-      case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
-      case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
-      case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      switch (classify_query_type(query->type)) {
+      case QUERY_COPY_BOOL32:
+      case QUERY_COPY_BOOL64:
          result.u64 = result.b;
          break;
       default:
@@ -419,10 +463,124 @@ agx_get_query_result_resource(struct pipe_context *pipe, struct pipe_query *q,
       result.u32 = x;
    }
 
-   if (result_type <= PIPE_QUERY_TYPE_U32)
-      pipe_buffer_write(pipe, resource, offset, 4, &result.u32);
-   else
-      pipe_buffer_write(pipe, resource, offset, 8, &result.u64);
+   pipe_buffer_write(&ctx->base, resource, offset,
+                     result_type_size(result_type), &result.u64);
+}
+
+struct query_copy_key {
+   enum pipe_query_value_type result;
+   enum query_copy_type query;
+};
+
+static void
+agx_nir_query_copy(nir_builder *b, const void *key_)
+{
+   const struct query_copy_key *key = key_;
+   b->shader->info.num_ubos = 1;
+
+   nir_def *params =
+      nir_load_ubo(b, 2, 64, nir_imm_int(b, 0), nir_imm_int(b, 0),
+                   .align_mul = 8, .range = 8);
+
+   nir_def *value =
+      nir_load_global_constant(b, nir_channel(b, params, 0), 8, 1, 64);
+
+   if (key->query == QUERY_COPY_BOOL32 || key->query == QUERY_COPY_BOOL64) {
+      if (key->query == QUERY_COPY_BOOL32)
+         value = nir_u2u32(b, value);
+
+      value = nir_u2u64(b, nir_ine_imm(b, value, 0));
+   }
+
+   if (key->result == PIPE_QUERY_TYPE_U32) {
+      value =
+         nir_u2u32(b, nir_umin(b, value, nir_imm_int64(b, u_uintN_max(32))));
+   } else if (key->result == PIPE_QUERY_TYPE_I32) {
+      value =
+         nir_u2u32(b, nir_iclamp(b, value, nir_imm_int64(b, u_intN_min(32)),
+                                 nir_imm_int64(b, u_intN_max(32))));
+   }
+
+   nir_store_global(b, nir_channel(b, params, 1), result_type_size(key->result),
+                    value, nir_component_mask(1));
+}
+
+static bool
+agx_get_query_result_resource_gpu(struct agx_context *ctx,
+                                  struct agx_query *query,
+                                  enum pipe_query_flags flags,
+                                  enum pipe_query_value_type result_type,
+                                  int index, struct pipe_resource *prsrc,
+                                  unsigned offset)
+{
+   /* Handle availability queries on CPU */
+   if (index < 0)
+      return false;
+
+   /* TODO: timer queries on GPU */
+   if (query->type == PIPE_QUERY_TIMESTAMP ||
+       query->type == PIPE_QUERY_TIME_ELAPSED)
+      return false;
+
+   flush_query_writers(ctx, query, util_str_query_type(query->type, true));
+
+   struct agx_resource *rsrc = agx_resource(prsrc);
+
+   struct query_copy_key key = {
+      .result = result_type,
+      .query = classify_query_type(query->type),
+   };
+
+   struct agx_compiled_shader *cs =
+      agx_build_meta_shader(ctx, agx_nir_query_copy, &key, sizeof(key));
+
+   struct agx_batch *batch = agx_get_compute_batch(ctx);
+   agx_batch_init_state(batch);
+   agx_dirty_all(ctx);
+
+   /* Save cb */
+   struct agx_stage *stage = &ctx->stage[PIPE_SHADER_COMPUTE];
+   struct pipe_constant_buffer saved_cb = {NULL};
+   pipe_resource_reference(&saved_cb.buffer, stage->cb[0].buffer);
+   memcpy(&saved_cb, &stage->cb[0], sizeof(struct pipe_constant_buffer));
+
+   /* Set params */
+   uint64_t params[2] = {query->ptr.gpu, rsrc->bo->ptr.gpu + offset};
+   agx_batch_writes_range(batch, rsrc, offset, result_type_size(result_type));
+
+   struct pipe_constant_buffer cb = {
+      .buffer_size = sizeof(params),
+      .user_buffer = &params,
+   };
+   ctx->base.set_constant_buffer(&ctx->base, PIPE_SHADER_COMPUTE, 0, false,
+                                 &cb);
+
+   struct pipe_grid_info grid = {.block = {1, 1, 1}, .grid = {1, 1, 1}};
+   agx_launch(batch, &grid, cs, NULL, PIPE_SHADER_COMPUTE);
+
+   /* take_ownership=true so do not unreference */
+   ctx->base.set_constant_buffer(&ctx->base, PIPE_SHADER_COMPUTE, 0, true,
+                                 &saved_cb);
+   return true;
+}
+
+static void
+agx_get_query_result_resource(struct pipe_context *pipe, struct pipe_query *q,
+                              enum pipe_query_flags flags,
+                              enum pipe_query_value_type result_type, int index,
+                              struct pipe_resource *resource, unsigned offset)
+{
+   struct agx_query *query = (struct agx_query *)q;
+   struct agx_context *ctx = agx_context(pipe);
+
+   /* Try to copy on the GPU */
+   if (!agx_get_query_result_resource_gpu(ctx, query, flags, result_type, index,
+                                          resource, offset)) {
+
+      /* Else, fallback to CPU */
+      agx_get_query_result_resource_cpu(ctx, query, flags, result_type, index,
+                                        resource, offset);
+   }
 }
 
 static void

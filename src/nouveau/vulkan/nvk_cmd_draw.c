@@ -13,7 +13,6 @@
 #include "nvk_physical_device.h"
 #include "nvk_shader.h"
 
-#include "nil_format.h"
 #include "util/bitpack_helpers.h"
 #include "vk_format.h"
 #include "vk_render_pass.h"
@@ -50,13 +49,6 @@ nvk_mme_set_priv_reg(struct mme_builder *b)
    mme_emit(b, mme_zero());
    mme_emit(b, mme_load(b));
    mme_emit(b, mme_load(b));
-
-   /* Not sure if this has to strictly go before SET_FALCON04, but it might.
-    * We also don't really know what that value indicates and when and how it's
-    * set.
-    */
-   struct mme_value s26 = mme_state(b, NV9097_SET_MME_SHADOW_SCRATCH(26));
-   s26 = mme_merge(b, mme_zero(), s26, 0, 8, 0);
 
    mme_mthd(b, NV9097_SET_FALCON04);
    mme_emit(b, mme_load(b));
@@ -106,13 +98,17 @@ nvk_push_draw_state_init(struct nvk_device *dev, struct nv_push *p)
    if (pdev->info.cls_eng3d >= TURING_A)
       P_IMMD(p, NVC597, SET_MME_DATA_FIFO_CONFIG, FIFO_SIZE_SIZE_4KB);
 
-   /* Enable FP hepler invocation memory loads
+   /* Enable FP helper invocation memory loads
     *
     * For generations with firmware support for our `SET_PRIV_REG` mme method
     * we simply use that. On older generations we'll let the kernel do it.
     * Starting with GSP we have to do it via the firmware anyway.
     *
     * This clears bit 3 of gr_gpcs_tpcs_sm_disp_ctrl
+    * 
+    * Without it,
+    * dEQP-VK.subgroups.vote.frag_helper.subgroupallequal_bvec2_fragment will
+    * occasionally fail.
     */
    if (pdev->info.cls_eng3d >= MAXWELL_B) {
       unsigned reg = pdev->info.cls_eng3d >= VOLTA_A ? 0x419ba4 : 0x419f78;
@@ -674,7 +670,7 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
          const struct nil_image *nil_image = &image->planes[ip].nil;
          const struct nil_image_level *level =
             &nil_image->levels[iview->vk.base_mip_level];
-         struct nil_extent4d level_extent_sa =
+         struct nil_Extent4D_Samples level_extent_sa =
             nil_image_level_extent_sa(nil_image, iview->vk.base_mip_level);
 
          assert(sample_layout == NIL_SAMPLE_LAYOUT_INVALID ||
@@ -708,7 +704,7 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
             const uint32_t row_stride_el =
                level->row_stride_B / util_format_get_blocksize(p_format);
             P_NV9097_SET_COLOR_TARGET_WIDTH(p, i, row_stride_el);
-            P_NV9097_SET_COLOR_TARGET_HEIGHT(p, i, level_extent_sa.h);
+            P_NV9097_SET_COLOR_TARGET_HEIGHT(p, i, level_extent_sa.height);
             const uint8_t ct_format = nil_format_to_color_target(p_format);
             P_NV9097_SET_COLOR_TARGET_FORMAT(p, i, ct_format);
 
@@ -741,7 +737,7 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
              * takes row pitch
              */
             P_NV9097_SET_COLOR_TARGET_WIDTH(p, i, pitch);
-            P_NV9097_SET_COLOR_TARGET_HEIGHT(p, i, level_extent_sa.h);
+            P_NV9097_SET_COLOR_TARGET_HEIGHT(p, i, level_extent_sa.height);
 
             const uint8_t ct_format = nil_format_to_color_target(p_format);
             P_NV9097_SET_COLOR_TARGET_FORMAT(p, i, ct_format);
@@ -801,8 +797,8 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
 
       if (nil_image.dim == NIL_IMAGE_DIM_3D) {
          uint64_t level_offset_B;
-         nil_image_3d_level_as_2d_array(&nil_image, mip_level,
-                                        &nil_image, &level_offset_B);
+         nil_image = nil_image_3d_level_as_2d_array(&nil_image, mip_level,
+                                                    &level_offset_B);
          addr += level_offset_B;
          mip_level = 0;
          base_array_layer = 0;
@@ -834,7 +830,7 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
 
       P_IMMD(p, NV9097, SET_ZT_SELECT, 1 /* target_count */);
 
-      struct nil_extent4d level_extent_sa =
+      struct nil_Extent4D_Samples level_extent_sa =
          nil_image_level_extent_sa(&nil_image, mip_level);
 
       /* We use the stride for depth/stencil targets because the Z/S hardware
@@ -846,7 +842,7 @@ nvk_CmdBeginRendering(VkCommandBuffer commandBuffer,
 
       P_MTHD(p, NV9097, SET_ZT_SIZE_A);
       P_NV9097_SET_ZT_SIZE_A(p, row_stride_el);
-      P_NV9097_SET_ZT_SIZE_B(p, level_extent_sa.h);
+      P_NV9097_SET_ZT_SIZE_B(p, level_extent_sa.height);
       P_NV9097_SET_ZT_SIZE_C(p, {
          .third_dimension  = base_array_layer + layer_count,
          .control          = CONTROL_THIRD_DIMENSION_DEFINES_ARRAY_SIZE,

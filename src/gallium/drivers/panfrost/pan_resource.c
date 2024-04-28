@@ -175,18 +175,13 @@ panfrost_resource_get_handle(struct pipe_screen *pscreen,
    struct panfrost_device *dev = pan_device(pscreen);
    struct panfrost_resource *rsrc;
    struct renderonly_scanout *scanout;
-   struct pipe_resource *cur = pt;
+   struct pipe_resource *plane_res =
+      util_resource_at_index(pt, handle->plane);
 
-   /* Even though panfrost doesn't support multi-planar formats, we
-    * can get here through GBM, which does. Walk the list of planes
-    * to find the right one.
-    */
-   for (int i = 0; i < handle->plane; i++) {
-      cur = cur->next;
-      if (!cur)
-         return false;
-   }
-   rsrc = pan_resource(cur);
+   if (!plane_res)
+      return false;
+
+   rsrc = pan_resource(plane_res);
    scanout = rsrc->scanout;
 
    handle->modifier = rsrc->image.layout.modifier;
@@ -221,8 +216,8 @@ panfrost_resource_get_param(struct pipe_screen *pscreen,
                             enum pipe_resource_param param, unsigned usage,
                             uint64_t *value)
 {
-   struct panfrost_resource *rsrc =
-      (struct panfrost_resource *)util_resource_at_index(prsc, plane);
+   struct pipe_resource *plane_res = util_resource_at_index(prsc, plane);
+   struct panfrost_resource *rsrc = pan_resource(plane_res);
 
    switch (param) {
    case PIPE_RESOURCE_PARAM_STRIDE:
@@ -730,13 +725,14 @@ panfrost_resource_create_with_modifier(struct pipe_screen *screen,
       }
       assert(handle.type == WINSYS_HANDLE_TYPE_FD);
       so->bo = panfrost_bo_import(dev, handle.handle);
-      so->image.data.base = so->bo->ptr.gpu;
       close(handle.handle);
 
       if (!so->bo) {
          free(so);
          return NULL;
       }
+
+      so->image.data.base = so->bo->ptr.gpu;
    } else {
       /* We create a BO immediately but don't bother mapping, since we don't
        * care to map e.g. FBOs which the CPU probably won't touch */
@@ -1185,7 +1181,7 @@ panfrost_ptr_map(struct pipe_context *pctx, struct pipe_resource *resource,
    bool create_new_bo = usage & PIPE_MAP_DISCARD_WHOLE_RESOURCE;
    bool copy_resource = false;
 
-   if (!create_new_bo && !(usage & PIPE_MAP_UNSYNCHRONIZED) &&
+   if (!(usage & PIPE_MAP_UNSYNCHRONIZED) &&
        !(resource->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
        (usage & PIPE_MAP_WRITE) && panfrost_any_batch_reads_rsrc(ctx, rsrc)) {
       /* When a resource to be modified is already being used by a
@@ -1406,7 +1402,7 @@ pan_legalize_afbc_format(struct panfrost_context *ctx,
 }
 
 static bool
-panfrost_should_linear_convert(struct panfrost_device *dev,
+panfrost_should_linear_convert(struct panfrost_context *ctx,
                                struct panfrost_resource *prsrc,
                                struct pipe_transfer *transfer)
 {
@@ -1434,7 +1430,7 @@ panfrost_should_linear_convert(struct panfrost_device *dev,
       ++prsrc->modifier_updates;
 
    if (prsrc->modifier_updates >= LAYOUT_CONVERT_THRESHOLD) {
-      perf_debug(dev, "Transitioning to linear due to streaming usage");
+      perf_debug(ctx, "Transitioning to linear due to streaming usage");
       return true;
    } else {
       return false;
@@ -1554,7 +1550,7 @@ panfrost_pack_afbc(struct panfrost_context *ctx,
    if (ratio > screen->max_afbc_packing_ratio)
       return;
 
-   perf_debug(dev, "%i%%: %i KB -> %i KB\n", ratio, old_size / 1024,
+   perf_debug(ctx, "%i%%: %i KB -> %i KB\n", ratio, old_size / 1024,
               new_size / 1024);
 
    struct panfrost_bo *dst =
@@ -1599,7 +1595,7 @@ panfrost_ptr_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
 
    if (trans->staging.rsrc) {
       if (transfer->usage & PIPE_MAP_WRITE) {
-         if (panfrost_should_linear_convert(dev, prsrc, transfer)) {
+         if (panfrost_should_linear_convert(ctx, prsrc, transfer)) {
 
             panfrost_bo_unreference(prsrc->bo);
 
@@ -1638,7 +1634,7 @@ panfrost_ptr_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
 
          if (prsrc->image.layout.modifier ==
              DRM_FORMAT_MOD_ARM_16X16_BLOCK_U_INTERLEAVED) {
-            if (panfrost_should_linear_convert(dev, prsrc, transfer)) {
+            if (panfrost_should_linear_convert(ctx, prsrc, transfer)) {
                panfrost_resource_setup(dev, prsrc, DRM_FORMAT_MOD_LINEAR,
                                        prsrc->image.layout.format);
                if (prsrc->image.layout.data_size > panfrost_bo_size(bo)) {
@@ -1742,7 +1738,7 @@ panfrost_generate_mipmap(struct pipe_context *pctx, struct pipe_resource *prsrc,
 {
    struct panfrost_resource *rsrc = pan_resource(prsrc);
 
-   perf_debug_ctx(pan_context(pctx), "Unoptimized mipmap generation");
+   perf_debug(pan_context(pctx), "Unoptimized mipmap generation");
 
    /* Generating a mipmap invalidates the written levels, so make that
     * explicit so we don't try to wallpaper them back and end up with

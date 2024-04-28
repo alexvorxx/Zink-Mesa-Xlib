@@ -1,7 +1,7 @@
 ; a6xx microcode
-; Version: 01000001
+; Version: 016ee001
 
-[01000001]
+[016ee001]
 [#jumptbl]
 mov $01, 0x830	; CP_SQE_INSTR_BASE
 mov $02, 0x2
@@ -72,6 +72,8 @@ mov $01, $data
 CP_SET_SECURE_MODE:
 mov $02, $data
 setsecure $02, #l61
+
+fxn59:
 l59:
 jump #l59
 nop
@@ -149,7 +151,7 @@ IN_PREEMPT:
 cread $02, [$00 + 0x101]
 brne $02, 0x1, #l125
 nop
-preemptleave #l59
+bl #fxn59
 nop
 nop
 nop
@@ -162,7 +164,6 @@ nop
 CP_BLIT:
 CP_BOOTSTRAP_UCODE:
 CP_COND_EXEC:
-CP_COND_INDIRECT_BUFFER_PFE:
 CP_COND_REG_EXEC:
 CP_COND_WRITE5:
 CP_CONTEXT_REG_BUNCH:
@@ -268,6 +269,7 @@ UNKN32:
 UNKN45:
 UNKN48:
 UNKN5:
+UNKN58:
 UNKN6:
 UNKN7:
 UNKN73:

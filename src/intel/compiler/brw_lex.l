@@ -303,7 +303,6 @@ switch       	{ return SWITCH; }
 :?DF 	{ return TYPE_DF; }
 :?F 	{ return TYPE_F; }
 :?HF 	{ return TYPE_HF; }
-:?NF 	{ return TYPE_NF; }
 :?Q 	{ return TYPE_Q; }
 :?UB 	{ return TYPE_UB; }
 :?UD 	{ return TYPE_UD; }

@@ -35,7 +35,7 @@ void
 fd_rd_dump_env_init(void);
 
 struct fd_rd_output {
-   char name[128];
+   char *name;
    bool combine;
    gzFile file;
 

@@ -314,11 +314,9 @@ clc_lower_64bit_semantics(nir_shader *nir)
                nir_intrinsic_instr *intrinsic = nir_instr_as_intrinsic(instr);
                switch (intrinsic->intrinsic) {
                case nir_intrinsic_load_global_invocation_id:
-               case nir_intrinsic_load_global_invocation_id_zero_base:
                case nir_intrinsic_load_base_global_invocation_id:
                case nir_intrinsic_load_local_invocation_id:
                case nir_intrinsic_load_workgroup_id:
-               case nir_intrinsic_load_workgroup_id_zero_base:
                case nir_intrinsic_load_base_workgroup_id:
                case nir_intrinsic_load_num_workgroups:
                   break;

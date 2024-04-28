@@ -84,4 +84,6 @@ Copy-Item ".\.gitlab-ci\windows\spirv2dxil_run.ps1" -Destination $installdir
 
 Copy-Item ".\.gitlab-ci\windows\deqp_runner_run.ps1" -Destination $installdir
 
+Copy-Item ".\.gitlab-ci\windows\vainfo_run.ps1" -Destination $installdir
+
 Get-ChildItem -Recurse -Filter "ci" | Get-ChildItem -Include "*.txt","*.toml" | Copy-Item -Destination $installdir

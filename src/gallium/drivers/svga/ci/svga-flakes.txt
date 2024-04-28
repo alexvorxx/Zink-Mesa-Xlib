@@ -42,3 +42,10 @@ spec@oes_texture_view@rendering-formats@sample GL_RGB8 as GL_RGB8_SNORM
 spec@oes_texture_view@rendering-formats@sample GL_RGB8I as GL_RGB8
 spec@oes_texture_view@rendering-formats@sample GL_RGB8UI as GL_RGB8
 spec@oes_texture_view@rendering-formats@sample GL_RGB8_SNORM as GL_RGB8
+
+# uprev Piglit in Mesa
+spec@arb_tessellation_shader@execution@tcs-input@tcs-input-mat2x3
+spec@arb_tessellation_shader@execution@tcs-input@tcs-input-uvec3_2
+spec@egl_chromium_sync_control@conformance
+spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test
+spec@egl_khr_gl_colorspace@linear

@@ -77,7 +77,7 @@ struct pipe_vertex_element;
  * would require more book-keeping in the driver than seems necessary
  * at this point.
  *
- * Does GL_MAP_INVALDIATE_BUFFER_BIT do this?  Not really -- we don't
+ * Does GL_MAP_INVALIDATE_BUFFER_BIT do this?  Not really -- we don't
  * want to provoke the driver to throw away the old storage, we will
  * respect the contents of already referenced data.
  */

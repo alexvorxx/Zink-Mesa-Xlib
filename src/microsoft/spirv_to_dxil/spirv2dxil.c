@@ -115,8 +115,8 @@ compile_shader(const char *filename, gl_shader_stage shader_stage, struct shader
 
    dxil_spirv_nir_prep(shader->nir);
 
-   bool requires_runtime_data;
-   dxil_spirv_nir_passes(shader->nir, conf, &requires_runtime_data);
+   struct dxil_spirv_metadata metadata = { 0 };
+   dxil_spirv_nir_passes(shader->nir, conf, &metadata);
 
    if (debug)
       nir_print_shader(shader->nir, stderr);
@@ -182,7 +182,7 @@ main(int argc, char **argv)
    conf.runtime_data_cbv.register_space = 31;
    conf.push_constant_cbv.base_shader_register = 0;
    conf.push_constant_cbv.register_space = 30;
-   conf.zero_based_vertex_instance_id = true;
+   conf.first_vertex_and_base_instance_mode = DXIL_SPIRV_SYSVAL_TYPE_ZERO;
    conf.declared_read_only_images_as_srvs = true;
    conf.shader_model_max = SHADER_MODEL_6_2;
 
@@ -218,6 +218,8 @@ main(int argc, char **argv)
          break;
       case 'm':
          conf.shader_model_max = SHADER_MODEL_6_0 + atoi(optarg);
+         conf.first_vertex_and_base_instance_mode = conf.shader_model_max >= SHADER_MODEL_6_8 ?
+            DXIL_SPIRV_SYSVAL_TYPE_NATIVE : DXIL_SPIRV_SYSVAL_TYPE_ZERO;
          break;
       case 'x':
          val_ver = DXIL_VALIDATOR_1_0 + atoi(optarg);
@@ -245,8 +247,8 @@ main(int argc, char **argv)
       for (int32_t prev = cur - 1; prev >= MESA_SHADER_VERTEX; --prev) {
          if (!shaders[prev].nir)
             continue;
-         bool requires_runtime_data;
-         dxil_spirv_nir_link(shaders[cur].nir, shaders[prev].nir, &conf, &requires_runtime_data);
+         struct dxil_spirv_metadata metadata = { 0 };
+         dxil_spirv_nir_link(shaders[cur].nir, shaders[prev].nir, &conf, &metadata);
          break;
       }
    }

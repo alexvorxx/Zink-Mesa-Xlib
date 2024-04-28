@@ -1037,6 +1037,10 @@ vk_queue_wait_before_present(struct vk_queue *queue,
       return VK_SUCCESS;
 
    const uint32_t wait_count = pPresentInfo->waitSemaphoreCount;
+
+   if (wait_count == 0)
+      return VK_SUCCESS;
+
    STACK_ARRAY(struct vk_sync_wait, waits, wait_count);
 
    for (uint32_t i = 0; i < wait_count; i++) {

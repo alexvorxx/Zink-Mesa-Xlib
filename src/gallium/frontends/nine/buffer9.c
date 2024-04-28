@@ -16,7 +16,7 @@
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
 #include "util/format/u_formats.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "util/u_inlines.h"
 
 #define DBG_CHANNEL (DBG_INDEXBUFFER|DBG_VERTEXBUFFER)
@@ -250,7 +250,7 @@ NineBuffer9_Lock( struct NineBuffer9 *This,
     /* Write out of bound seems to have to be taken into account for these.
      * TODO: Do more tests (is it only at buffer first lock ? etc).
      * Since these buffers are supposed to be locked once and never
-     * writen again (MANAGED or DYNAMIC is used for the other uses cases),
+     * written again (MANAGED or DYNAMIC is used for the other uses cases),
      * performance should be unaffected. */
     if (!(This->base.usage & D3DUSAGE_DYNAMIC) && This->base.pool == D3DPOOL_DEFAULT)
         SizeToLock = This->size - OffsetToLock;
@@ -603,7 +603,7 @@ NineBuffer9_Upload( struct NineBuffer9 *This )
             upload_flags |= PIPE_MAP_UNSYNCHRONIZED;
         } else {
             /* We cannot use PIPE_MAP_UNSYNCHRONIZED. We must choose between no flag and DISCARD.
-             * Criterias to discard:
+             * Criteria to discard:
              * . Most of the resource was filled (but some apps do allocate a big buffer
              * to only use a small part in a round fashion)
              * . The region to upload is very small compared to the filled region and
@@ -621,7 +621,7 @@ NineBuffer9_Upload( struct NineBuffer9 *This )
                 /* Avoid DISCARDING too much by discarding only if most of the buffer
                  * has been used */
                 DBG_FLAG(DBG_INDEXBUFFER|DBG_VERTEXBUFFER,
-             "Uploading %p DISCARD: valid %d %d, filled %d %d, required %d %d, box_upload %d %d, required already_valid %d %d, conficting %d %d\n",
+             "Uploading %p DISCARD: valid %d %d, filled %d %d, required %d %d, box_upload %d %d, required already_valid %d %d, conflicting %d %d\n",
              This, valid_region->x, valid_region->width, filled_region->x, filled_region->width,
              required_valid_region->x, required_valid_region->width, box_upload.x, box_upload.width,
              region_already_valid.x, region_already_valid.width, conflicting_region.x, conflicting_region.width

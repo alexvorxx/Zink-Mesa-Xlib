@@ -2707,6 +2707,8 @@ get_type_name_for_precision_qualifier(const glsl_type *type)
    default:
       unreachable("Unsupported type");
    } /* base type */
+
+   return NULL;
 }
 
 static unsigned
@@ -6077,7 +6079,7 @@ ast_parameter_declarator::hir(exec_list *instructions,
     */
    if ((var->data.mode == ir_var_function_inout || var->data.mode == ir_var_function_out)
        && glsl_type_is_array(type)
-       && !state->check_version(120, 100, &loc,
+       && !state->check_version(state->allow_glsl_120_subset_in_110 ? 110 : 120, 100, &loc,
                                 "arrays cannot be out or inout parameters")) {
       type = &glsl_type_builtin_error;
    }
@@ -9214,7 +9216,8 @@ remove_per_vertex_blocks(exec_list *instructions,
    foreach_in_list_safe(ir_instruction, node, instructions) {
       ir_variable *const var = node->as_variable();
       if (var != NULL && var->get_interface_type() == per_vertex &&
-          var->data.mode == mode) {
+          var->data.mode == mode &&
+          var->data.how_declared == ir_var_declared_implicitly) {
          state->symbols->disable_variable(var->name);
          var->remove();
       }

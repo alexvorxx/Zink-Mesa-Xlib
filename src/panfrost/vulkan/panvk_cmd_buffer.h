@@ -91,16 +91,21 @@ enum panvk_dynamic_state_bits {
 struct panvk_descriptor_state {
    uint32_t dirty;
    const struct panvk_descriptor_set *sets[MAX_SETS];
-   struct panvk_sysvals sysvals;
+   struct panvk_push_descriptor_set *push_sets[MAX_SETS];
+   union {
+      struct panvk_graphics_sysvals gfx;
+      struct panvk_compute_sysvals compute;
+   } sysvals;
+
    struct {
-      struct panvk_buffer_desc ubos[MAX_DYNAMIC_UNIFORM_BUFFERS];
-      struct panvk_buffer_desc ssbos[MAX_DYNAMIC_STORAGE_BUFFERS];
+      struct mali_uniform_buffer_packed ubos[MAX_DYNAMIC_UNIFORM_BUFFERS];
+      struct panvk_ssbo_addr ssbos[MAX_DYNAMIC_STORAGE_BUFFERS];
    } dyn;
-   mali_ptr sysvals_ptr;
    mali_ptr ubos;
    mali_ptr textures;
    mali_ptr samplers;
-   mali_ptr push_constants;
+   mali_ptr dyn_desc_ubo;
+   mali_ptr push_uniforms;
    mali_ptr vs_attribs;
    mali_ptr vs_attrib_bufs;
    mali_ptr non_vs_attribs;

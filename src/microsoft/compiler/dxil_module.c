@@ -60,6 +60,7 @@ void
 dxil_module_release(struct dxil_module *m)
 {
    dxil_buffer_finish(&m->buf);
+   free(m->serialized_dependency_table);
 }
 
 static bool

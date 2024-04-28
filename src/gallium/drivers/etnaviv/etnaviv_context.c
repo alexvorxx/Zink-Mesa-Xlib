@@ -61,8 +61,6 @@
 #include "util/u_surface.h"
 #include "util/u_transfer.h"
 
-#include "hw/common.xml.h"
-
 static inline void
 etna_emit_nop_with_data(struct etna_cmd_stream *stream, uint32_t value)
 {
@@ -384,7 +382,7 @@ etna_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
    /* First, sync state, then emit DRAW_PRIMITIVES or DRAW_INDEXED_PRIMITIVES */
    etna_emit_state(ctx);
 
-   if (!VIV_FEATURE(screen, chipMinorFeatures6, NEW_GPIPE)) {
+   if (!VIV_FEATURE(screen, ETNA_FEATURE_NEW_GPIPE)) {
       switch (draw_mode) {
       case PRIMITIVE_TYPE_LINE_LOOP:
       case PRIMITIVE_TYPE_LINE_STRIP:
@@ -483,7 +481,7 @@ etna_reset_gpu_state(struct etna_context *ctx)
       etna_set_state(stream, VIVS_GL_UNK03854, 0x00000000);
    }
 
-   if (VIV_FEATURE(screen, chipMinorFeatures4, BUG_FIXES18))
+   if (VIV_FEATURE(screen, ETNA_FEATURE_BUG_FIXES18))
       etna_set_state(stream, VIVS_GL_BUG_FIXES, 0x6);
 
    if (!screen->specs.use_blt) {
@@ -620,6 +618,8 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    struct etna_context *ctx = CALLOC_STRUCT(etna_context);
    struct etna_screen *screen;
    struct pipe_context *pctx;
+   struct etna_pipe *pipe;
+   bool compute_only = flags & PIPE_CONTEXT_COMPUTE_ONLY;
 
    if (ctx == NULL)
       return NULL;
@@ -633,7 +633,8 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    pctx->const_uploader = pctx->stream_uploader;
 
    screen = etna_screen(pscreen);
-   ctx->stream = etna_cmd_stream_new(screen->pipe, 0x2000,
+   pipe = (compute_only && screen->pipe_nn) ? screen->pipe_nn : screen->pipe;
+   ctx->stream = etna_cmd_stream_new(pipe, 0x2000,
                                      &etna_context_force_flush, pctx);
    if (ctx->stream == NULL)
       goto fail;
@@ -657,7 +658,7 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    /* need some sane default in case gallium frontends don't set some state: */
    ctx->sample_mask = 0xffff;
 
-   ctx->compute_only = flags & PIPE_CONTEXT_COMPUTE_ONLY;
+   ctx->compute_only = compute_only;
 
    /*  Set sensible defaults for state */
    etna_reset_gpu_state(ctx);
@@ -692,9 +693,11 @@ etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    etna_texture_init(pctx);
    etna_transfer_init(pctx);
 
-   ctx->blitter = util_blitter_create(pctx);
-   if (!ctx->blitter)
-      goto fail;
+   if (!ctx->compute_only) {
+      ctx->blitter = util_blitter_create(pctx);
+      if (!ctx->blitter)
+         goto fail;
+   }
 
    slab_create_child(&ctx->transfer_pool, &screen->transfer_pool);
    list_inithead(&ctx->active_acc_queries);

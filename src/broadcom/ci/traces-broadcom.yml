@@ -68,7 +68,7 @@ traces:
 
   gputest/plot3d-v2.trace:
     broadcom-rpi4:
-      checksum: f8a9a5cd78646c89efe0df320755a3b2
+      checksum: 1ef33ad22679107a256501c79bfd9e7c
 
   gputest/tessmark-v2.trace:
     broadcom-rpi4:

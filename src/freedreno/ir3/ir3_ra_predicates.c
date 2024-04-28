@@ -49,11 +49,11 @@ struct ra_predicates_ctx {
    struct ir3_liveness *liveness;
    struct block_liveness *blocks_liveness;
 
-   /* True once we spilled a register. This allows us to postpone the
-    * calculation of SSA uses and instruction counting until the first time we
-    * need to spill. This is useful since spilling is rare in general.
+   /* Number of precolored defs that have not been processed yet. When this
+    * drops to zero, we can stop trying to avoid allocating p0.x (the only
+    * register currently used for precoloring).
     */
-   bool spilled;
+   unsigned outstanding_precolored_defs;
 };
 
 static bool
@@ -67,9 +67,33 @@ has_free_regs(struct ra_predicates_ctx *ctx, struct block_liveness *live)
    return false;
 }
 
+static bool
+try_avoid_comp(struct ra_predicates_ctx *ctx, struct block_liveness *live,
+               unsigned comp)
+{
+   /* Currently, only p0.x is ever used for a precolored register so just try to
+    * avoid that one if we have any precolored defs.
+    */
+   return comp == 0 && ctx->outstanding_precolored_defs > 0;
+}
+
+static bool
+reg_is_free(struct ra_predicates_ctx *ctx, struct block_liveness *live,
+            unsigned comp)
+{
+   assert(comp < ctx->num_regs);
+
+   return live->live_defs[comp].def == NULL;
+}
+
 static unsigned
 alloc_reg_comp(struct ra_predicates_ctx *ctx, struct block_liveness *live)
 {
+   for (unsigned i = 0; i < ctx->num_regs; ++i) {
+      if (live->live_defs[i].def == NULL && !try_avoid_comp(ctx, live, i))
+         return i;
+   }
+
    for (unsigned i = 0; i < ctx->num_regs; ++i) {
       if (live->live_defs[i].def == NULL)
          return i;
@@ -102,6 +126,19 @@ static struct live_def *
 alloc_reg(struct ra_predicates_ctx *ctx, struct block_liveness *live,
           struct ir3_register *def, struct ir3_register *reloaded_def)
 {
+   /* Try to assign the precolored register if it's free. If not, use normal
+    * allocation and reload whenever a precolored source needs it.
+    * NOTE: this means we currently only support precolored sources, not dests.
+    */
+   if (def->num != INVALID_REG) {
+      assert(ctx->outstanding_precolored_defs > 0);
+      ctx->outstanding_precolored_defs--;
+      unsigned comp = reg_comp(def);
+
+      if (reg_is_free(ctx, live, comp))
+         return assign_reg(ctx, live, def, reloaded_def, comp);
+   }
+
    unsigned comp = alloc_reg_comp(ctx, live);
    return assign_reg(ctx, live, def, reloaded_def, comp);
 }
@@ -142,20 +179,11 @@ first_non_allocated_use_after(struct ir3_register *def,
        */
       if (use->ip < after->ip)
          continue;
+      if (use->ip >= first_ip)
+         continue;
 
-      foreach_ssa_src_n (src, n, use) {
-         if (__is_false_dep(use, n))
-            continue;
-
-         struct ir3_register *src_reg = use->srcs[n];
-         if (!ra_reg_is_predicate(src_reg) || src_reg->def != def)
-            continue;
-         if (use->ip >= first_ip)
-            continue;
-
-         first_ip = use->ip;
-         first = use;
-      }
+      first_ip = use->ip;
+      first = use;
    }
 
    return first;
@@ -177,12 +205,6 @@ static void
 spill(struct ra_predicates_ctx *ctx, struct block_liveness *live,
       struct ir3_instruction *spill_location)
 {
-   if (!ctx->spilled) {
-      ir3_count_instructions_ra(ctx->ir);
-      ir3_find_ssa_uses_for(ctx->ir, ctx, is_predicate_use);
-      ctx->spilled = true;
-   }
-
    unsigned furthest_first_use = 0;
    unsigned spill_reg = ~0;
 
@@ -292,12 +314,28 @@ ra_block(struct ra_predicates_ctx *ctx, struct ir3_block *block)
             continue;
 
          struct live_def *live_def = find_live_def(ctx, live, src->def);
-         if (live_def == NULL)
+         if (src->num != INVALID_REG &&
+             (!live_def || get_def(live_def)->num != src->num)) {
+            /* If src is precolored and its def is either not live or is live in
+             * the wrong register, reload it into the correct one.
+             */
+            unsigned comp = reg_comp(src);
+
+            if (!reg_is_free(ctx, live, comp))
+               free_reg(ctx, live, get_def(&live->live_defs[comp]));
+            if (live_def)
+               free_reg(ctx, live, get_def(live_def));
+
+            live_def = reload_into(ctx, live, src->def, instr, comp);
+         } else if (!live_def) {
             live_def = reload(ctx, live, src->def, instr);
+         }
 
          assert(live_def != NULL);
 
          struct ir3_register *def = get_def(live_def);
+
+         assert((src->num == INVALID_REG) || (src->num == def->num));
          src->num = def->num;
          src->def = def;
 
@@ -446,6 +484,37 @@ init_block_liveness(struct ra_predicates_ctx *ctx, struct ir3_block *block)
           sizeof(struct live_def) * ctx->num_regs);
 }
 
+static void
+precolor_def(struct ra_predicates_ctx *ctx, struct ir3_register *def)
+{
+   foreach_ssa_use (use, def->instr) {
+      foreach_src (src, use) {
+         if (src->def != def)
+            continue;
+         if (src->num == INVALID_REG)
+            continue;
+
+         def->num = src->num;
+         ctx->outstanding_precolored_defs++;
+
+         /* We can only precolor a def once. */
+         return;
+      }
+   }
+}
+
+/* Precolor the defs of precolored sources so that we can try to assign the
+ * correct register immediately.
+ */
+static void
+precolor_defs(struct ra_predicates_ctx *ctx)
+{
+   for (unsigned i = 1; i < ctx->liveness->definitions_count; ++i) {
+      struct ir3_register *def = ctx->liveness->definitions[i];
+      precolor_def(ctx, def);
+   }
+}
+
 void
 ir3_ra_predicates(struct ir3_shader_variant *v)
 {
@@ -456,6 +525,9 @@ ir3_ra_predicates(struct ir3_shader_variant *v)
                                          ra_reg_is_predicate);
    ctx->blocks_liveness =
       rzalloc_array(ctx, struct block_liveness, ctx->liveness->block_count);
+   ir3_count_instructions_ra(ctx->ir);
+   ir3_find_ssa_uses_for(ctx->ir, ctx, is_predicate_use);
+   precolor_defs(ctx);
 
    foreach_block (block, &v->ir->block_list) {
       init_block_liveness(ctx, block);

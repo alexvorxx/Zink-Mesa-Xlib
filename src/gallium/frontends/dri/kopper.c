@@ -26,7 +26,7 @@
 #include "util/format/u_format.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "util/log.h"
 #include "pipe/p_context.h"
 #include "pipe-loader/pipe_loader.h"
@@ -111,7 +111,7 @@ static const __DRIextension *drivk_sw_screen_extensions[] = {
 };
 
 static const __DRIconfig **
-kopper_init_screen(struct dri_screen *screen)
+kopper_init_screen(struct dri_screen *screen, bool implicit)
 {
    const __DRIconfig **configs;
    struct pipe_screen *pscreen = NULL;
@@ -130,13 +130,13 @@ kopper_init_screen(struct dri_screen *screen)
    if (screen->fd != -1)
       success = pipe_loader_drm_probe_fd(&screen->dev, screen->fd, false);
    else
-      success = pipe_loader_vk_probe_dri(&screen->dev, NULL);
+      success = pipe_loader_vk_probe_dri(&screen->dev);
 #else
-   success = pipe_loader_vk_probe_dri(&screen->dev, NULL);
+   success = pipe_loader_vk_probe_dri(&screen->dev);
 #endif
 
    if (success)
-      pscreen = pipe_loader_create_screen(screen->dev);
+      pscreen = pipe_loader_create_screen(screen->dev, implicit);
 
    if (!pscreen)
       goto fail;
@@ -940,11 +940,12 @@ const __DRIkopperExtension driKopperExtension = {
 };
 
 static const struct __DRImesaCoreExtensionRec mesaCoreExtension = {
-   .base = { __DRI_MESA, 1 },
+   .base = { __DRI_MESA, 2 },
    .version_string = MESA_INTERFACE_VERSION_STRING,
    .createNewScreen = driCreateNewScreen2,
    .createContext = driCreateContextAttribs,
    .initScreen = kopper_init_screen,
+   .createNewScreen3 = driCreateNewScreen3,
 };
 
 const __DRIextension *galliumvk_driver_extensions[] = {

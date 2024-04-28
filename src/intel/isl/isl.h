@@ -58,7 +58,7 @@ struct intel_device_info;
  * Get the hardware generation of isl_device.
  *
  * You can define this as a compile-time constant in the CFLAGS. For example,
- * `gcc -DISL_GFX_VER(dev)=9 ...`.
+ * ``gcc -DISL_GFX_VER(dev)=9 ...``.
  */
 #define ISL_GFX_VER(__dev) ((__dev)->info->ver)
 #define ISL_GFX_VERX10(__dev) ((__dev)->info->verx10)
@@ -78,7 +78,7 @@ struct intel_device_info;
  * @brief Get the hardware generation of isl_device.
  *
  * You can define this as a compile-time constant in the CFLAGS. For example,
- * `gcc -DISL_GFX_VER(dev)=9 ...`.
+ * ``gcc -DISL_GFX_VER(dev)=9 ...``.
  */
 #define ISL_DEV_IS_HASWELL(__dev) ((__dev)->info->platform == INTEL_PLATFORM_HSW)
 #endif
@@ -90,7 +90,7 @@ struct intel_device_info;
 #ifndef ISL_DEV_USE_SEPARATE_STENCIL
 /**
  * You can define this as a compile-time constant in the CFLAGS. For example,
- * `gcc -DISL_DEV_USE_SEPARATE_STENCIL(dev)=1 ...`.
+ * ``gcc -DISL_DEV_USE_SEPARATE_STENCIL(dev)=1 ...``.
  */
 #define ISL_DEV_USE_SEPARATE_STENCIL(__dev) ((__dev)->use_separate_stencil)
 #define ISL_DEV_USE_SEPARATE_STENCIL_SANITIZE(__dev)
@@ -783,14 +783,14 @@ enum isl_aux_usage {
     * main surface which says how the corresponding pair of cache lines in the
     * main surface are to be interpreted.  Valid CCS values include:
     *
-    *  - `0x0`: Indicates that the corresponding pair of cache lines in the
+    *  - ``0x0``: Indicates that the corresponding pair of cache lines in the
     *    main surface contain valid color data
     *
-    *  - `0x1`: Indicates that the corresponding pair of cache lines in the
+    *  - ``0x1``: Indicates that the corresponding pair of cache lines in the
     *    main surface contain compressed color data.  Typically, the
     *    compressed data fits in one of the two cache lines.
     *
-    *  - `0x3`: Indicates that the corresponding pair of cache lines in the
+    *  - ``0x3``: Indicates that the corresponding pair of cache lines in the
     *    main surface should be ignored.  Those cache lines should be
     *    considered to contain the clear color.
     *
@@ -1243,8 +1243,8 @@ enum isl_msaa_layout {
     * Suppose the multisample surface's logical extent is (w, h) and its
     * sample count is N. Then surface's physical extent is the same as
     * a singlesample 2D surface whose logical extent is (w, h) and array
-    * length is N.  Array slice `i` contains the pixel values for sample
-    * index `i`.
+    * length is N.  Array slice ``i`` contains the pixel values for sample
+    * index ``i``.
     *
     * The Ivybridge docs refer to surfaces in this format as UMS
     * (Uncompressed Multsample Layout) and CMS (Compressed Multisample
@@ -1706,7 +1706,7 @@ struct isl_view {
     * specified in terms of 2-D layers and must be a multiple of 6.
     *
     * 3-D textures are effectively treated as 2-D arrays when used as a
-    * storage image or render target.  If `usage` contains
+    * storage image or render target.  If ``usage`` contains
     * ISL_SURF_USAGE_RENDER_TARGET_BIT or ISL_SURF_USAGE_STORAGE_BIT then
     * base_array_layer and array_len are applied.  If the surface is only used
     * for texturing, they are ignored.

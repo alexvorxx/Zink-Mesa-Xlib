@@ -11,7 +11,7 @@
 #include "util/macros.h"
 #include <gtest/gtest.h>
 
-#define CASE(expected_spills, expected_fills, instr, expected)                 \
+#define CASE(instr, expected)                                                  \
    do {                                                                        \
       agx_builder *A = agx_test_builder(mem_ctx);                              \
       agx_builder *B = agx_test_builder(mem_ctx);                              \
@@ -25,8 +25,6 @@
       }                                                                        \
       agx_lower_spill(A->shader);                                              \
       ASSERT_SHADER_EQUAL(A->shader, B->shader);                               \
-      ASSERT_EQ(A->shader->spills, expected_spills);                           \
-      ASSERT_EQ(A->shader->fills, expected_fills);                             \
    } while (0)
 
 class LowerSpill : public testing::Test {
@@ -68,44 +66,43 @@ class LowerSpill : public testing::Test {
 
 TEST_F(LowerSpill, ScalarSpills)
 {
-   CASE(1, 0, agx_mov_to(b, agx_memory_register(11, AGX_SIZE_16), hy),
+   CASE(agx_mov_to(b, agx_memory_register(11, AGX_SIZE_16), hy),
         agx_stack_store(b, hy, agx_immediate(22), i16, scalar));
 
-   CASE(1, 0, agx_mov_to(b, agx_memory_register(18, AGX_SIZE_32), wx),
+   CASE(agx_mov_to(b, agx_memory_register(18, AGX_SIZE_32), wx),
         agx_stack_store(b, wx, agx_immediate(36), i32, scalar));
 }
 
 TEST_F(LowerSpill, ScalarFills)
 {
-   CASE(0, 1, agx_mov_to(b, hy, agx_memory_register(11, AGX_SIZE_16)),
+   CASE(agx_mov_to(b, hy, agx_memory_register(11, AGX_SIZE_16)),
         agx_stack_load_to(b, hy, agx_immediate(22), i16, scalar));
 
-   CASE(0, 1, agx_mov_to(b, wx, agx_memory_register(18, AGX_SIZE_32)),
+   CASE(agx_mov_to(b, wx, agx_memory_register(18, AGX_SIZE_32)),
         agx_stack_load_to(b, wx, agx_immediate(36), i32, scalar));
 }
 
 TEST_F(LowerSpill, VectorSpills)
 {
-   CASE(1, 0, agx_mov_to(b, mh4, hy4),
+   CASE(agx_mov_to(b, mh4, hy4),
         agx_stack_store(b, hy4, agx_immediate(0), i16, vec4));
 
-   CASE(1, 0, agx_mov_to(b, mw4, wx4),
+   CASE(agx_mov_to(b, mw4, wx4),
         agx_stack_store(b, wx4, agx_immediate(0), i32, vec4));
 }
 
 TEST_F(LowerSpill, VectorFills)
 {
-   CASE(0, 1, agx_mov_to(b, hy4, mh4),
+   CASE(agx_mov_to(b, hy4, mh4),
         agx_stack_load_to(b, hy4, agx_immediate(0), i16, vec4));
 
-   CASE(0, 1, agx_mov_to(b, wx4, mw4),
+   CASE(agx_mov_to(b, wx4, mw4),
         agx_stack_load_to(b, wx4, agx_immediate(0), i32, vec4));
 }
 
 TEST_F(LowerSpill, ScalarSpill64)
 {
-   CASE(1, 0,
-        agx_mov_to(b, agx_memory_register(16, AGX_SIZE_64),
+   CASE(agx_mov_to(b, agx_memory_register(16, AGX_SIZE_64),
                    agx_register(8, AGX_SIZE_64)),
         agx_stack_store(b, agx_register(8, AGX_SIZE_64), agx_immediate(32), i32,
                         BITFIELD_MASK(2)));
@@ -113,8 +110,7 @@ TEST_F(LowerSpill, ScalarSpill64)
 
 TEST_F(LowerSpill, ScalarFill64)
 {
-   CASE(0, 1,
-        agx_mov_to(b, agx_register(16, AGX_SIZE_64),
+   CASE(agx_mov_to(b, agx_register(16, AGX_SIZE_64),
                    agx_memory_register(8, AGX_SIZE_64)),
         agx_stack_load_to(b, agx_register(16, AGX_SIZE_64), agx_immediate(16),
                           i32, BITFIELD_MASK(2)));
@@ -123,7 +119,6 @@ TEST_F(LowerSpill, ScalarFill64)
 TEST_F(LowerSpill, Vec6Spill)
 {
    CASE(
-      2, 0,
       {
          agx_index mvec6 = agx_memory_register(16, AGX_SIZE_32);
          agx_index vec6 = agx_register(8, AGX_SIZE_32);
@@ -147,7 +142,6 @@ TEST_F(LowerSpill, Vec6Spill)
 TEST_F(LowerSpill, Vec6Fill)
 {
    CASE(
-      0, 2,
       {
          agx_index mvec6 = agx_memory_register(16, AGX_SIZE_32);
          agx_index vec6 = agx_register(8, AGX_SIZE_32);

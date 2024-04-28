@@ -119,37 +119,28 @@ build_res_index(nir_builder *b, uint32_t set, uint32_t binding,
       return nir_vec2(b, nir_imm_int(b, packed), array_index);
    }
 
-   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: {
-      assert(addr_format == nir_address_format_64bit_bounded_global ||
-             addr_format == nir_address_format_64bit_global_32bit_offset);
-
-      const unsigned set_ubo_idx =
-         panvk_per_arch(pipeline_layout_ubo_start)(ctx->layout, set, false) +
-         set_layout->desc_ubo_index;
-
-      const uint32_t packed =
-         (bind_layout->desc_ubo_stride << 16) | set_ubo_idx;
-
-      return nir_vec4(b, nir_imm_int(b, packed),
-                      nir_imm_int(b, bind_layout->desc_ubo_offset),
-                      nir_imm_int(b, array_size - 1), array_index);
-   }
-
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
       assert(addr_format == nir_address_format_64bit_bounded_global ||
              addr_format == nir_address_format_64bit_global_32bit_offset);
 
-      const unsigned dyn_ssbo_idx =
-         ctx->layout->sets[set].dyn_ssbo_offset + bind_layout->dyn_ssbo_idx;
+      const bool is_dynamic =
+         bind_layout->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+      const unsigned desc_ubo_idx =
+         is_dynamic
+            ? panvk_per_arch(pipeline_layout_dyn_desc_ubo_index)(ctx->layout)
+            : panvk_per_arch(pipeline_layout_ubo_start)(ctx->layout, set,
+                                                        false) +
+                 set_layout->desc_ubo_index;
+      const unsigned desc_ubo_offset =
+         bind_layout->desc_ubo_offset +
+         (is_dynamic ? ctx->layout->sets[set].dyn_desc_ubo_offset : 0);
 
-      const unsigned ubo_idx = PANVK_SYSVAL_UBO_INDEX;
-      const unsigned desc_stride = sizeof(struct panvk_ssbo_addr);
-      const uint32_t ubo_offset =
-         offsetof(struct panvk_sysvals, dyn_ssbos) + dyn_ssbo_idx * desc_stride;
+      const uint32_t packed =
+         (bind_layout->desc_ubo_stride << 16) | desc_ubo_idx;
 
-      const uint32_t packed = (desc_stride << 16) | ubo_idx;
-
-      return nir_vec4(b, nir_imm_int(b, packed), nir_imm_int(b, ubo_offset),
+      return nir_vec4(b, nir_imm_int(b, packed),
+                      nir_imm_int(b, desc_ubo_offset),
                       nir_imm_int(b, array_size - 1), array_index);
    }
 
@@ -292,7 +283,7 @@ get_resource_deref_binding(nir_deref_instr *deref, uint32_t *set,
    *index_ssa = NULL;
 
    if (deref->deref_type == nir_deref_type_array) {
-      if (index_imm != NULL && nir_src_is_const(deref->arr.index))
+      if (nir_src_is_const(deref->arr.index))
          *index_imm = nir_src_as_uint(deref->arr.index);
       else
          *index_ssa = deref->arr.index.ssa;

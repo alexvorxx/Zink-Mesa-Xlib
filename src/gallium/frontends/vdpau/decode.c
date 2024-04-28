@@ -895,12 +895,14 @@ vlVdpDecoderRenderAV1(struct pipe_av1_picture_desc *picture,
    picture->picture_parameter.cdef_damping_minus_3 =
       picture_info->cdef_damping_minus_3;
    picture->picture_parameter.cdef_bits = picture_info->cdef_bits;
-   memcpy(picture->picture_parameter.cdef_y_strengths,
-          picture_info->cdef_y_strength,
-          sizeof(picture->picture_parameter.cdef_y_strengths));
-   memcpy(picture->picture_parameter.cdef_uv_strengths,
-          picture_info->cdef_uv_strength,
-          sizeof(picture->picture_parameter.cdef_uv_strengths));
+   for (i = 0; i < ARRAY_SIZE(picture->picture_parameter.cdef_y_strengths); ++i) {
+      picture->picture_parameter.cdef_y_strengths[i] =
+         ((picture_info->cdef_y_strength[i] & 0xf) << 2) +
+         (picture_info->cdef_y_strength[i] >> 4);
+      picture->picture_parameter.cdef_uv_strengths[i] =
+         ((picture_info->cdef_uv_strength[i] & 0xf) << 2) +
+         (picture_info->cdef_uv_strength[i] >> 4);
+   }
 
    // Loop Restoration
    picture->picture_parameter.loop_restoration_fields.yframe_restoration_type =
@@ -910,7 +912,7 @@ vlVdpDecoderRenderAV1(struct pipe_av1_picture_desc *picture,
    picture->picture_parameter.loop_restoration_fields.crframe_restoration_type =
       picture_info->lr_type[2];
    picture->picture_parameter.loop_restoration_fields.lr_unit_shift =
-      1 - picture_info->lr_unit_size[0];
+      picture_info->lr_unit_size[0] - 1;
    picture->picture_parameter.loop_restoration_fields.lr_uv_shift =
       picture_info->lr_unit_size[0] - picture_info->lr_unit_size[1];
 

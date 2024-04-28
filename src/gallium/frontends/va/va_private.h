@@ -297,6 +297,8 @@ typedef struct {
    vl_csc_matrix csc;
    mtx_t mutex;
    char vendor_string[256];
+
+   bool has_external_handles;
 } vlVaDriver;
 
 typedef struct {

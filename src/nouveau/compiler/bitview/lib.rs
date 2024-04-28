@@ -287,8 +287,15 @@ impl<T: SetFieldU64> SetField<u8> for T {
 
 impl<T: SetFieldU64> SetField<bool> for T {
     fn set_field(&mut self, range: Range<usize>, val: bool) {
-        assert!(range.end == range.start + 1);
+        assert!(range.len() == 1);
         self.set_field(range, u64::from(val));
+    }
+}
+
+impl<T: SetFieldU64> SetField<f32> for T {
+    fn set_field(&mut self, range: Range<usize>, val: f32) {
+        assert!(range.len() == 32);
+        self.set_field(range, val.to_bits());
     }
 }
 

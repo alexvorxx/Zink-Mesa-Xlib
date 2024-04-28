@@ -1,25 +1,7 @@
 /*
  * Copyright © 2018 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "aco_builder.h"
@@ -387,7 +369,8 @@ emit_vintrp_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instructio
    if (instr->opcode == aco_opcode::v_interp_p1ll_f16 ||
        instr->opcode == aco_opcode::v_interp_p1lv_f16 ||
        instr->opcode == aco_opcode::v_interp_p2_legacy_f16 ||
-       instr->opcode == aco_opcode::v_interp_p2_f16) {
+       instr->opcode == aco_opcode::v_interp_p2_f16 ||
+       instr->opcode == aco_opcode::v_interp_p2_hi_f16) {
       if (ctx.gfx_level == GFX8 || ctx.gfx_level == GFX9) {
          encoding = (0b110100 << 26);
       } else if (ctx.gfx_level >= GFX10) {
@@ -396,15 +379,20 @@ emit_vintrp_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instructio
          unreachable("Unknown gfx_level.");
       }
 
+      unsigned opsel = instr->opcode == aco_opcode::v_interp_p2_hi_f16 ? 0x8 : 0;
+
       encoding |= opcode << 16;
+      encoding |= opsel << 11;
       encoding |= reg(ctx, instr->definitions[0], 8);
       out.push_back(encoding);
 
       encoding = 0;
       encoding |= interp.attribute;
       encoding |= interp.component << 6;
+      encoding |= interp.high_16bits << 8;
       encoding |= reg(ctx, instr->operands[0]) << 9;
       if (instr->opcode == aco_opcode::v_interp_p2_f16 ||
+          instr->opcode == aco_opcode::v_interp_p2_hi_f16 ||
           instr->opcode == aco_opcode::v_interp_p2_legacy_f16 ||
           instr->opcode == aco_opcode::v_interp_p1lv_f16) {
          encoding |= reg(ctx, instr->operands[2]) << 18;

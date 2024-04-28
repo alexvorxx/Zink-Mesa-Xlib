@@ -196,6 +196,7 @@ ForEachMacros:
   - agx_foreach_block_from_rev
   - agx_foreach_block_rev
   - agx_foreach_dest
+  - agx_foreach_dest_rev
   - agx_foreach_instr_global
   - agx_foreach_instr_global_rev
   - agx_foreach_instr_global_safe
@@ -208,11 +209,16 @@ ForEachMacros:
   - agx_foreach_instr_in_block_safe_rev
   - agx_foreach_non_phi_in_block_rev
   - agx_foreach_phi_in_block
+  - agx_foreach_phi_in_block_safe
   - agx_foreach_predecessor
   - agx_foreach_src
+  - agx_foreach_src_rev
   - agx_foreach_ssa_dest
+  - agx_foreach_ssa_dest_rev
   - agx_foreach_ssa_src
+  - agx_foreach_ssa_src_rev
   - agx_foreach_successor
+  - foreach_next_use
 
 # radv
   - PHASE

@@ -42,7 +42,7 @@ static const struct debug_control panvk_debug_options[] = {
 VKAPI_ATTR VkResult VKAPI_CALL
 panvk_EnumerateInstanceVersion(uint32_t *pApiVersion)
 {
-   *pApiVersion = VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION);
+   *pApiVersion = panvk_get_vk_version();
    return VK_SUCCESS;
 }
 

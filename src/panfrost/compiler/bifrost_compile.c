@@ -954,6 +954,16 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
       bi_index color = bi_src_color_vec4(b, &instr->src[0], T);
       bi_index color2 = dual ? bi_src_color_vec4(b, &instr->src[4], T2) : bi_null();
 
+      if (instr->intrinsic == nir_intrinsic_store_output &&
+          loc >= FRAG_RESULT_DATA0 && loc <= FRAG_RESULT_DATA7) {
+         assert(nir_src_is_const(instr->src[1]) && "no indirect outputs");
+
+         unsigned rt_offs = nir_src_as_uint(instr->src[1]);
+
+         assert(rt + rt_offs < 8 && "RT not in the [0-7] range");
+         rt += rt_offs;
+      }
+
       /* Explicit copy since BLEND inputs are precoloured to R0-R3,
        * TODO: maybe schedule around this or implement in RA as a
        * spill */
@@ -1804,7 +1814,6 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       break;
 
    case nir_intrinsic_load_global_invocation_id:
-   case nir_intrinsic_load_global_invocation_id_zero_base:
       bi_collect_v3i32_to(b, dst, bi_preload(b, 60), bi_preload(b, 61),
                           bi_preload(b, 62));
       break;
@@ -2972,6 +2981,8 @@ bifrost_tex_format(enum glsl_sampler_dim dim)
    case GLSL_SAMPLER_DIM_MS:
    case GLSL_SAMPLER_DIM_EXTERNAL:
    case GLSL_SAMPLER_DIM_RECT:
+   case GLSL_SAMPLER_DIM_SUBPASS:
+   case GLSL_SAMPLER_DIM_SUBPASS_MS:
       return 2;
 
    case GLSL_SAMPLER_DIM_3D:
@@ -3448,7 +3459,8 @@ bi_emit_texc(bi_builder *b, nir_tex_instr *instr)
    bool direct_samp = bi_is_null(dregs[BIFROST_TEX_DREG_SAMPLER]);
    bool direct = direct_tex && direct_samp;
 
-   desc.immediate_indices = direct && (instr->sampler_index < 16);
+   desc.immediate_indices =
+      direct && (instr->sampler_index < 16 && instr->texture_index < 128);
 
    if (desc.immediate_indices) {
       desc.sampler_index_or_mode = instr->sampler_index;
@@ -3456,24 +3468,43 @@ bi_emit_texc(bi_builder *b, nir_tex_instr *instr)
    } else {
       unsigned mode = 0;
 
-      if (direct && instr->sampler_index == instr->texture_index) {
+      if (direct && instr->sampler_index == instr->texture_index &&
+          instr->sampler_index < 128) {
          mode = BIFROST_INDEX_IMMEDIATE_SHARED;
          desc.index = instr->texture_index;
-      } else if (direct) {
+      } else if (direct && instr->sampler_index < 128) {
          mode = BIFROST_INDEX_IMMEDIATE_SAMPLER;
          desc.index = instr->sampler_index;
          dregs[BIFROST_TEX_DREG_TEXTURE] =
             bi_mov_i32(b, bi_imm_u32(instr->texture_index));
-      } else if (direct_tex) {
-         assert(!direct_samp);
+      } else if (direct_tex && instr->texture_index < 128) {
          mode = BIFROST_INDEX_IMMEDIATE_TEXTURE;
          desc.index = instr->texture_index;
-      } else if (direct_samp) {
-         assert(!direct_tex);
+
+         if (direct_samp) {
+            dregs[BIFROST_TEX_DREG_SAMPLER] =
+               bi_mov_i32(b, bi_imm_u32(instr->sampler_index));
+         }
+      } else if (direct_samp && instr->sampler_index < 128) {
          mode = BIFROST_INDEX_IMMEDIATE_SAMPLER;
          desc.index = instr->sampler_index;
+
+         if (direct_tex) {
+            dregs[BIFROST_TEX_DREG_TEXTURE] =
+               bi_mov_i32(b, bi_imm_u32(instr->texture_index));
+         }
       } else {
          mode = BIFROST_INDEX_REGISTER;
+
+         if (direct_tex) {
+            dregs[BIFROST_TEX_DREG_TEXTURE] =
+               bi_mov_i32(b, bi_imm_u32(instr->texture_index));
+         }
+
+         if (direct_samp) {
+            dregs[BIFROST_TEX_DREG_SAMPLER] =
+               bi_mov_i32(b, bi_imm_u32(instr->sampler_index));
+         }
       }
 
       mode |= (BIFROST_TEXTURE_OPERATION_SINGLE << 2);
@@ -3542,10 +3573,11 @@ bi_emit_tex_valhall(bi_builder *b, nir_tex_instr *instr)
    for (unsigned i = 0; i < instr->num_srcs; ++i) {
       bi_index index = bi_src_index(&instr->src[i].src);
       unsigned sz = nir_src_bit_size(instr->src[i].src);
-      unsigned components = nir_src_num_components(instr->src[i].src);
 
       switch (instr->src[i].src_type) {
-      case nir_tex_src_coord:
+      case nir_tex_src_coord: {
+         unsigned components = nir_src_num_components(instr->src[i].src) - instr->is_array;
+
          if (instr->sampler_dim == GLSL_SAMPLER_DIM_CUBE) {
             sregs[VALHALL_TEX_SREG_X_COORD] = bi_emit_texc_cube_coord(
                b, index, &sregs[VALHALL_TEX_SREG_Y_COORD]);
@@ -3558,17 +3590,17 @@ bi_emit_tex_valhall(bi_builder *b, nir_tex_instr *instr)
             if (components >= 2)
                sregs[VALHALL_TEX_SREG_Y_COORD] = bi_extract(b, index, 1);
 
-            if (components == 3 && !instr->is_array) {
+            if (components == 3)
                sregs[VALHALL_TEX_SREG_Z_COORD] = bi_extract(b, index, 2);
-            }
          }
 
          if (instr->is_array) {
             sregs[VALHALL_TEX_SREG_ARRAY] =
-               bi_extract(b, index, components - 1);
+               bi_extract(b, index, components);
          }
 
          break;
+      }
 
       case nir_tex_src_lod:
          if (nir_src_is_const(instr->src[i].src) &&

@@ -169,7 +169,10 @@ jm_submit_jc(struct panfrost_batch *batch, mali_ptr first_job_desc,
    /* Trace the job if we're doing that */
    if (dev->debug & (PAN_DBG_TRACE | PAN_DBG_SYNC)) {
       /* Wait so we can get errors reported back */
-      drmSyncobjWait(panfrost_device_fd(dev), &out_sync, 1, INT64_MAX, 0, NULL);
+      ret = drmSyncobjWait(panfrost_device_fd(dev), &out_sync, 1, INT64_MAX,
+                           0, NULL);
+      if (ret)
+         return errno;
 
       if (dev->debug & PAN_DBG_TRACE)
          pandecode_jc(dev->decode_ctx, submit.jc, panfrost_device_gpu_id(dev));

@@ -138,6 +138,7 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
        * so flag push constants as dirty if we change the pipeline.
        */
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
+      comp_state->base.push_constants_data_dirty = true;
    }
 
    cmd_buffer->state.descriptors_dirty |=
@@ -179,8 +180,13 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (cmd_buffer->state.push_constants_dirty & VK_SHADER_STAGE_COMPUTE_BIT) {
-      comp_state->push_data =
-         anv_cmd_buffer_cs_push_constants(cmd_buffer);
+
+      if (comp_state->push_data.alloc_size == 0 ||
+          comp_state->base.push_constants_data_dirty) {
+         comp_state->push_data =
+            anv_cmd_buffer_cs_push_constants(cmd_buffer);
+         comp_state->base.push_constants_data_dirty = false;
+      }
 
 #if GFX_VERx10 < 125
       if (comp_state->push_data.alloc_size) {
@@ -218,6 +224,7 @@ anv_cmd_buffer_push_base_group_id(struct anv_cmd_buffer *cmd_buffer,
       push->cs.base_work_group_id[2] = baseGroupZ;
 
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
+      cmd_buffer->state.compute.base.push_constants_data_dirty = true;
    }
 }
 

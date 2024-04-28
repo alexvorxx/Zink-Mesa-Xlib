@@ -464,33 +464,38 @@ impl<'a> ShaderFromNir<'a> {
                     let s = usize::from(alu_src.swizzle[0]);
                     srcs.push(ssa[s].into());
                 }
-                8 => {
-                    assert!(comps <= 4);
-                    let s = alu_src.swizzle[0];
-                    let dw = ssa[usize::from(s / 4)];
+                8 | 16 => {
+                    let num_bytes = usize::from(comps * (bit_size / 8));
+                    assert!(num_bytes <= 4);
 
-                    let mut prmt = [4_u8; 4];
-                    for c in 0..comps {
-                        let cs = alu_src.swizzle[usize::from(c)];
-                        assert!(s / 4 == cs / 4);
-                        prmt[usize::from(c)] = cs;
+                    let mut bytes = [0_u8; 4];
+                    for c in 0..usize::from(comps) {
+                        let cs = alu_src.swizzle[c];
+                        if bit_size == 8 {
+                            bytes[c] = cs;
+                        } else {
+                            bytes[c * 2 + 0] = cs * 2 + 0;
+                            bytes[c * 2 + 1] = cs * 2 + 1;
+                        }
                     }
-                    srcs.push(b.prmt(dw.into(), 0.into(), prmt).into());
-                }
-                16 => {
-                    assert!(comps <= 2);
-                    let s = alu_src.swizzle[0];
-                    let dw = ssa[usize::from(s / 2)];
 
+                    let mut prmt_srcs = [Src::new_zero(); 4];
                     let mut prmt = [0_u8; 4];
-                    for c in 0..comps {
-                        let cs = alu_src.swizzle[usize::from(c)];
-                        assert!(s / 2 == cs / 2);
-                        prmt[usize::from(c) * 2 + 0] = cs * 2 + 0;
-                        prmt[usize::from(c) * 2 + 1] = cs * 2 + 1;
+                    for b in 0..num_bytes {
+                        for (ds, s) in prmt_srcs.iter_mut().enumerate() {
+                            let dw = ssa[usize::from(bytes[b] / 4)];
+                            if s.is_zero() {
+                                *s = dw.into();
+                            } else if *s != Src::from(dw) {
+                                continue;
+                            }
+                            prmt[usize::from(b)] =
+                                (ds as u8) * 4 + (bytes[b] % 4);
+                            break;
+                        }
                     }
-                    // TODO: Some ops can handle swizzles
-                    srcs.push(b.prmt(dw.into(), 0.into(), prmt).into());
+
+                    srcs.push(b.prmt4(prmt_srcs, prmt).into());
                 }
                 32 => {
                     assert!(comps == 1);
@@ -506,6 +511,16 @@ impl<'a> ShaderFromNir<'a> {
             }
         }
 
+        // Restricts an F16v2 source to just x if the ALU op is single-component. This
+        // must only be called for per-component sources (see nir_op_info::output_sizes
+        // for more details).
+        let restrict_f16v2_src = |mut src: Src| {
+            if alu.def.num_components == 1 {
+                src.src_swizzle = SrcSwizzle::Xx;
+            }
+            src
+        };
+
         let dst: SSARef = match alu.op {
             nir_op_b2b1 => {
                 assert!(alu.get_src(0).bit_size() == 32);
@@ -519,6 +534,7 @@ impl<'a> ShaderFromNir<'a> {
                 let hi = b.copy(0.into());
                 [lo[0], hi[0]].into()
             }
+            nir_op_b2f16 => b.sel(srcs[0].bnot(), 0.into(), 0x3c00.into()),
             nir_op_b2f32 => {
                 b.sel(srcs[0].bnot(), 0.0_f32.into(), 1.0_f32.into())
             }
@@ -683,7 +699,7 @@ impl<'a> ShaderFromNir<'a> {
             }
             nir_op_fabs | nir_op_fadd | nir_op_fneg => {
                 let (x, y) = match alu.op {
-                    nir_op_fabs => (srcs[0].fabs(), 0.0_f32.into()),
+                    nir_op_fabs => (srcs[0].fabs(), 0.into()),
                     nir_op_fadd => (srcs[0], srcs[1]),
                     nir_op_fneg => (Src::new_zero().fneg(), srcs[0].fneg()),
                     _ => panic!("Unhandled case"),
@@ -706,6 +722,19 @@ impl<'a> ShaderFromNir<'a> {
                         rnd_mode: self.float_ctl[ftype].rnd_mode,
                         ftz: self.float_ctl[ftype].ftz,
                     });
+                } else if alu.def.bit_size() == 16 {
+                    assert!(
+                        self.float_ctl[ftype].rnd_mode == FRndMode::NearestEven
+                    );
+
+                    dst = b.alloc_ssa(RegFile::GPR, 1);
+                    b.push_op(OpHAdd2 {
+                        dst: dst.into(),
+                        srcs: [restrict_f16v2_src(x), restrict_f16v2_src(y)],
+                        saturate: self.try_saturate_alu_dst(&alu.def),
+                        ftz: self.float_ctl[ftype].ftz,
+                        f32: false,
+                    });
                 } else {
                     panic!("Unsupported float type: f{}", alu.def.bit_size());
                 }
@@ -713,7 +742,6 @@ impl<'a> ShaderFromNir<'a> {
             }
             nir_op_fceil | nir_op_ffloor | nir_op_fround_even
             | nir_op_ftrunc => {
-                assert!(alu.def.bit_size() == 32);
                 let dst = b.alloc_ssa(RegFile::GPR, 1);
                 let ty = FloatType::from_bits(alu.def.bit_size().into());
                 let rnd_mode = match alu.op {
@@ -725,6 +753,9 @@ impl<'a> ShaderFromNir<'a> {
                 };
                 let ftz = self.float_ctl[ty].ftz;
                 if b.sm() >= 70 {
+                    assert!(
+                        alu.def.bit_size() == 32 || alu.def.bit_size() == 16
+                    );
                     b.push_op(OpFRnd {
                         dst: dst.into(),
                         src: srcs[0],
@@ -734,6 +765,7 @@ impl<'a> ShaderFromNir<'a> {
                         ftz,
                     });
                 } else {
+                    assert!(alu.def.bit_size() == 32);
                     b.push_op(OpF2F {
                         dst: dst.into(),
                         src: srcs[0],
@@ -759,8 +791,9 @@ impl<'a> ShaderFromNir<'a> {
                     _ => panic!("Usupported float comparison"),
                 };
 
-                let dst = b.alloc_ssa(RegFile::Pred, 1);
+                let dst = b.alloc_ssa(RegFile::Pred, alu.def.num_components);
                 if alu.get_src(0).bit_size() == 64 {
+                    assert!(alu.def.num_components == 1);
                     b.push_op(OpDSetP {
                         dst: dst.into(),
                         set_op: PredSetOp::And,
@@ -769,6 +802,7 @@ impl<'a> ShaderFromNir<'a> {
                         accum: SrcRef::True.into(),
                     });
                 } else if alu.get_src(0).bit_size() == 32 {
+                    assert!(alu.def.num_components == 1);
                     b.push_op(OpFSetP {
                         dst: dst.into(),
                         set_op: PredSetOp::And,
@@ -776,6 +810,30 @@ impl<'a> ShaderFromNir<'a> {
                         srcs: [srcs[0], srcs[1]],
                         accum: SrcRef::True.into(),
                         ftz: self.float_ctl[src_type].ftz,
+                    });
+                } else if alu.get_src(0).bit_size() == 16 {
+                    assert!(
+                        alu.def.num_components == 1
+                            || alu.def.num_components == 2
+                    );
+
+                    let dsts = if alu.def.num_components == 2 {
+                        [dst[0].into(), dst[1].into()]
+                    } else {
+                        [dst[0].into(), Dst::None]
+                    };
+
+                    b.push_op(OpHSetP2 {
+                        dsts,
+                        set_op: PredSetOp::And,
+                        cmp_op: cmp_op,
+                        srcs: [
+                            restrict_f16v2_src(srcs[0]),
+                            restrict_f16v2_src(srcs[1]),
+                        ],
+                        accum: SrcRef::True.into(),
+                        ftz: self.float_ctl[src_type].ftz,
+                        horizontal: false,
                     });
                 } else {
                     panic!(
@@ -808,6 +866,24 @@ impl<'a> ShaderFromNir<'a> {
                         // anyway so only set one of the two bits.
                         ftz: self.float_ctl[ftype].ftz,
                         dnz: false,
+                    });
+                } else if alu.def.bit_size() == 16 {
+                    assert!(
+                        self.float_ctl[ftype].rnd_mode == FRndMode::NearestEven
+                    );
+
+                    dst = b.alloc_ssa(RegFile::GPR, 1);
+                    b.push_op(OpHFma2 {
+                        dst: dst.into(),
+                        srcs: [
+                            restrict_f16v2_src(srcs[0]),
+                            restrict_f16v2_src(srcs[1]),
+                            restrict_f16v2_src(srcs[2]),
+                        ],
+                        saturate: self.try_saturate_alu_dst(&alu.def),
+                        ftz: self.float_ctl[ftype].ftz,
+                        dnz: false,
+                        f32: false,
                     });
                 } else {
                     panic!("Unsupported float type: f{}", alu.def.bit_size());
@@ -852,6 +928,17 @@ impl<'a> ShaderFromNir<'a> {
                         min: (alu.op == nir_op_fmin).into(),
                         ftz: self.float_ctl.fp32.ftz,
                     });
+                } else if alu.def.bit_size() == 16 {
+                    dst = b.alloc_ssa(RegFile::GPR, 1);
+                    b.push_op(OpHMnMx2 {
+                        dst: dst.into(),
+                        srcs: [
+                            restrict_f16v2_src(srcs[0]),
+                            restrict_f16v2_src(srcs[1]),
+                        ],
+                        min: (alu.op == nir_op_fmin).into(),
+                        ftz: self.float_ctl.fp16.ftz,
+                    });
                 } else {
                     panic!("Unsupported float type: f{}", alu.def.bit_size());
                 }
@@ -875,6 +962,22 @@ impl<'a> ShaderFromNir<'a> {
                         srcs: [srcs[0], srcs[1]],
                         saturate: self.try_saturate_alu_dst(&alu.def),
                         rnd_mode: self.float_ctl[ftype].rnd_mode,
+                        ftz: self.float_ctl[ftype].ftz,
+                        dnz: false,
+                    });
+                } else if alu.def.bit_size() == 16 {
+                    assert!(
+                        self.float_ctl[ftype].rnd_mode == FRndMode::NearestEven
+                    );
+
+                    dst = b.alloc_ssa(RegFile::GPR, 1);
+                    b.push_op(OpHMul2 {
+                        dst: dst.into(),
+                        srcs: [
+                            restrict_f16v2_src(srcs[0]),
+                            restrict_f16v2_src(srcs[1]),
+                        ],
+                        saturate: self.try_saturate_alu_dst(&alu.def),
                         ftz: self.float_ctl[ftype].ftz,
                         dnz: false,
                     });
@@ -935,11 +1038,11 @@ impl<'a> ShaderFromNir<'a> {
                 b.mufu(MuFuOp::Rsq, srcs[0])
             }
             nir_op_fsat => {
-                assert!(alu.def.bit_size() == 32);
+                let ftype = FloatType::from_bits(alu.def.bit_size().into());
+
                 if self.alu_src_is_saturated(&alu.srcs_as_slice()[0]) {
                     b.copy(srcs[0])
-                } else {
-                    let ftype = FloatType::from_bits(alu.def.bit_size().into());
+                } else if alu.def.bit_size() == 32 {
                     let dst = b.alloc_ssa(RegFile::GPR, 1);
                     b.push_op(OpFAdd {
                         dst: dst.into(),
@@ -949,6 +1052,22 @@ impl<'a> ShaderFromNir<'a> {
                         ftz: self.float_ctl[ftype].ftz,
                     });
                     dst
+                } else if alu.def.bit_size() == 16 {
+                    assert!(
+                        self.float_ctl[ftype].rnd_mode == FRndMode::NearestEven
+                    );
+
+                    let dst = b.alloc_ssa(RegFile::GPR, 1);
+                    b.push_op(OpHAdd2 {
+                        dst: dst.into(),
+                        srcs: [restrict_f16v2_src(srcs[0]), 0.into()],
+                        saturate: true,
+                        ftz: self.float_ctl[ftype].ftz,
+                        f32: false,
+                    });
+                    dst
+                } else {
+                    panic!("Unsupported float type: f{}", alu.def.bit_size());
                 }
             }
             nir_op_fsign => {
@@ -963,6 +1082,17 @@ impl<'a> ShaderFromNir<'a> {
                     let lz = b.fset(FloatCmpOp::OrdLt, srcs[0], 0.into());
                     let gz = b.fset(FloatCmpOp::OrdGt, srcs[0], 0.into());
                     b.fadd(gz.into(), Src::from(lz).fneg())
+                } else if alu.def.bit_size() == 16 {
+                    let x = restrict_f16v2_src(srcs[0]);
+
+                    let lz = restrict_f16v2_src(
+                        b.hset2(FloatCmpOp::OrdLt, x, 0.into()).into(),
+                    );
+                    let gz = restrict_f16v2_src(
+                        b.hset2(FloatCmpOp::OrdGt, x, 0.into()).into(),
+                    );
+
+                    b.hadd2(gz, lz.fneg())
                 } else {
                     panic!("Unsupported float type: f{}", alu.def.bit_size());
                 }
@@ -2102,9 +2232,8 @@ impl<'a> ShaderFromNir<'a> {
                 };
 
                 for i in 0..32 {
-                    // Assume that colors have to come a vec4 at a time
                     if !self.fs_out_regs[i].is_none() {
-                        info.writes_color |= 0xf << (i & !3)
+                        info.writes_color |= 1 << i;
                     }
                 }
                 let mask_idx = (NAK_FS_OUT_SAMPLE_MASK / 4) as usize;
@@ -2113,12 +2242,17 @@ impl<'a> ShaderFromNir<'a> {
                 info.writes_depth = !self.fs_out_regs[depth_idx].is_none();
 
                 let mut srcs = Vec::new();
-                for i in 0..32 {
-                    if info.writes_color & (1 << i) != 0 {
-                        if self.fs_out_regs[i].is_none() {
-                            srcs.push(0.into());
-                        } else {
-                            srcs.push(self.fs_out_regs[i].into());
+                for i in 0..8 {
+                    // Even though the mask is per-component, the actual output
+                    // space is per-output vec4s.
+                    if info.writes_color & (0xf << (i * 4)) != 0 {
+                        for c in 0..4 {
+                            let reg = self.fs_out_regs[i * 4 + c];
+                            if reg.is_none() {
+                                srcs.push(b.undef().into());
+                            } else {
+                                srcs.push(reg.into());
+                            }
                         }
                     }
                 }
@@ -2128,7 +2262,7 @@ impl<'a> ShaderFromNir<'a> {
                     if info.writes_sample_mask {
                         srcs.push(self.fs_out_regs[mask_idx].into());
                     } else {
-                        srcs.push(0.into());
+                        srcs.push(b.undef().into());
                     }
                     if info.writes_depth {
                         // Saturate depth writes.
@@ -2303,7 +2437,7 @@ impl<'a> ShaderFromNir<'a> {
                     eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                 };
-                let (addr, offset) = self.get_io_addr_offset(&srcs[0], 32);
+                let (addr, offset) = self.get_io_addr_offset(&srcs[0], 24);
                 let dst = b.alloc_ssa(RegFile::GPR, size_B.div_ceil(4));
 
                 b.push_op(OpLd {
@@ -2474,7 +2608,7 @@ impl<'a> ShaderFromNir<'a> {
             nir_intrinsic_load_ubo => {
                 let size_B =
                     (intrin.def.bit_size() / 8) * intrin.def.num_components();
-                let idx = srcs[0];
+                let idx = &srcs[0];
 
                 let (off, off_imm) = self.get_io_addr_offset(&srcs[1], 16);
                 let (off, off_imm) =
@@ -2502,11 +2636,32 @@ impl<'a> ShaderFromNir<'a> {
                             dst: dst.into(),
                             cb: cb.into(),
                             offset: off,
+                            mode: LdcMode::Indexed,
                             mem_type: MemType::from_size(size_B, false),
                         });
                     }
                 } else {
-                    panic!("Indirect UBO indices not yet supported");
+                    // In the IndexedSegmented mode, the hardware computes the
+                    // actual index and offset as follows:
+                    //
+                    //    idx = imm_idx + reg[31:16]
+                    //    offset = imm_offset + reg[15:0]
+                    //    ldc c[idx][offset]
+                    //
+                    // So pack the index and offset accordingly
+                    let idx = self.get_src(idx);
+                    let off_idx = b.prmt(off, idx, [0, 1, 4, 5]);
+                    let cb = CBufRef {
+                        buf: CBuf::Binding(0),
+                        offset: off_imm,
+                    };
+                    b.push_op(OpLdc {
+                        dst: dst.into(),
+                        cb: cb.into(),
+                        offset: off_idx.into(),
+                        mode: LdcMode::IndexedSegmented,
+                        mem_type: MemType::from_size(size_B, false),
+                    });
                 }
                 self.set_dst(&intrin.def, dst);
             }
@@ -2680,7 +2835,7 @@ impl<'a> ShaderFromNir<'a> {
                     eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                 };
-                let (addr, offset) = self.get_io_addr_offset(&srcs[1], 32);
+                let (addr, offset) = self.get_io_addr_offset(&srcs[1], 24);
 
                 b.push_op(OpSt {
                     addr: addr,

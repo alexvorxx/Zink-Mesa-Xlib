@@ -1342,7 +1342,7 @@ panvk_meta_copy_img2buf_shader(struct panvk_device *dev,
                      nir_imul(&b, nir_channel(&b, coord, 1), buflinestride));
    offset = nir_iadd(&b, offset,
                      nir_imul(&b, nir_channel(&b, coord, 2), bufsurfstride));
-   bufptr = nir_iadd(&b, bufptr, nir_u2u64(&b, offset));
+   bufptr = nir_iadd(&b, bufptr, nir_i2i64(&b, offset));
 
    unsigned imgcompsz =
       imgtexelsz <= 4 ? 1 : MIN2(1 << (ffs(imgtexelsz) - 1), 4);
@@ -1470,6 +1470,7 @@ panvk_meta_copy_img2buf(struct panvk_cmd_buffer *cmdbuf,
                         const VkBufferImageCopy2 *region)
 {
    struct panvk_device *dev = to_panvk_device(cmdbuf->vk.base.device);
+   unsigned blksz = util_format_get_blocksize(img->pimage.layout.format);
    struct panvk_meta_copy_format_info key = {
       .imgfmt = panvk_meta_copy_img2buf_format(img->pimage.layout.format),
       .mask = panvk_meta_copy_img_mask(img->pimage.layout.format,
@@ -1483,7 +1484,8 @@ panvk_meta_copy_img2buf(struct panvk_cmd_buffer *cmdbuf,
    mali_ptr rsd = dev->meta.copy.img2buf[texdimidx][fmtidx].rsd;
 
    struct panvk_meta_copy_img2buf_info info = {
-      .buf.ptr = panvk_buffer_gpu_ptr(buf, region->bufferOffset),
+      .buf.ptr = panvk_buffer_gpu_ptr(buf, region->bufferOffset) -
+                 (region->imageOffset.x & 15) * blksz,
       .buf.stride.line =
          (region->bufferRowLength ?: region->imageExtent.width) * buftexelsz,
       .img.offset.x = MAX2(region->imageOffset.x & ~15, 0),

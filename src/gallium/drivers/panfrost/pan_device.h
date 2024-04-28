@@ -56,6 +56,14 @@ extern "C" {
 /* Driver limits */
 #define PAN_MAX_CONST_BUFFERS 16
 
+/* Mali hardware can texture up to 65536 x 65536 x 65536 and render up to 16384
+ * x 16384, but 8192 x 8192 should be enough for anyone.  The OpenGL game
+ * "Cathedral" requires a texture of width 8192 to start.
+ */
+#define PAN_MAX_MIP_LEVELS 14
+
+#define PAN_MAX_TEXEL_BUFFER_ELEMENTS 65536
+
 /* How many power-of-two levels in the BO cache do we want? 2^12
  * minimum chosen as it is the page size that all allocations are
  * rounded to */

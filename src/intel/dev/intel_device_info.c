@@ -1410,6 +1410,15 @@ intel_device_info_init_common(int pci_id,
    if (devinfo->verx10 == 0)
       devinfo->verx10 = devinfo->ver * 10;
 
+   uint16_t major = devinfo->ver;
+   uint16_t minor = (devinfo->verx10 - (devinfo->ver * 10)) * 10;
+   /* When supported gfx_ip_ver will be overwritten by values read from KMD.
+    * This is a approximation for platforms that do not support GMD ID or
+    * when running offline tools.
+    * verx10 125 becomes GFX_IP_VER(12, 50) for example.
+    */
+   devinfo->gfx_ip_ver = GFX_IP_VER(major, minor);
+
    if (devinfo->has_mesh_shading) {
       /* Half of push constant space matches the size used in the simplest
        * primitive pipeline (VS + FS). Tweaking this affects performance.

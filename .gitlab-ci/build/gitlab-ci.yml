@@ -70,6 +70,7 @@ debian-testing:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
+      -D glvnd=disabled
       -D platforms=x11,wayland
     GALLIUM_ST: >
       -D dri3=enabled
@@ -162,6 +163,7 @@ debian-build-testing:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
+      -D glvnd=disabled
       -D platforms=x11,wayland
     GALLIUM_ST: >
       -D dri3=enabled
@@ -224,6 +226,7 @@ debian-release:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
+      -D glvnd=disabled
       -D platforms=x11,wayland
     GALLIUM_ST: >
       -D dri3=enabled
@@ -265,7 +268,7 @@ alpine-build-testing:
       -D glx=disabled
       -D gbm=enabled
       -D egl=enabled
-      -D glvnd=false
+      -D glvnd=disabled
       -D platforms=wayland
     LLVM_VERSION: "16"
     GALLIUM_DRIVERS: "crocus,etnaviv,freedreno,iris,kmsro,lima,nouveau,panfrost,r300,r600,radeonsi,svga,swrast,tegra,v3d,vc4,virgl,zink"
@@ -305,7 +308,7 @@ fedora-release:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
-      -D glvnd=true
+      -D glvnd=enabled
       -D platforms=x11,wayland
     EXTRA_OPTION: >
       -D b_lto=true
@@ -358,6 +361,7 @@ debian-android:
       -D glx=disabled
       -D gbm=disabled
       -D egl=enabled
+      -D glvnd=disabled
       -D platforms=android
     EXTRA_OPTION: >
       -D android-stub=true
@@ -438,6 +442,8 @@ debian-arm32:
     - .ci-deqp-artifacts
   variables:
     CROSS: armhf
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -D llvm=disabled
       -D valgrind=disabled
@@ -453,6 +459,8 @@ debian-arm32-asan:
   extends:
     - debian-arm32
   variables:
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -D llvm=disabled
       -D b_sanitize=address
@@ -471,6 +479,8 @@ debian-arm64:
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
     VULKAN_DRIVERS: "freedreno,broadcom,panfrost,imagination-experimental"
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -D llvm=disabled
       -D valgrind=disabled
@@ -487,6 +497,8 @@ debian-arm64-asan:
   extends:
     - debian-arm64
   variables:
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -D llvm=disabled
       -D b_sanitize=address
@@ -502,6 +514,8 @@ debian-arm64-build-test:
     - .ci-deqp-artifacts
   variables:
     VULKAN_DRIVERS: "amd"
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -Dtools=panfrost,imagination
 
@@ -540,7 +554,7 @@ debian-clang:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
-      -D glvnd=true
+      -D glvnd=enabled
       -D platforms=x11,wayland
     GALLIUM_ST: >
       -D dri3=enabled
@@ -622,6 +636,7 @@ debian-vulkan:
       -D opengl=false
       -D gles1=disabled
       -D gles2=disabled
+      -D glvnd=disabled
       -D platforms=x11,wayland
       -D osmesa=false
     GALLIUM_ST: >
@@ -653,6 +668,8 @@ debian-x86_32:
     VULKAN_DRIVERS: intel,amd,swrast,virtio
     GALLIUM_DRIVERS: "iris,nouveau,r300,r600,radeonsi,swrast,virgl,zink,crocus,d3d12"
     LLVM_VERSION: 15
+    DRI_LOADERS:
+      -D glvnd=disabled
     EXTRA_OPTION: >
       -D vulkan-layers=device-select,overlay
       -D intel-clc=system
@@ -680,6 +697,8 @@ debian-s390x:
     GALLIUM_DRIVERS: "swrast,zink"
     LLVM_VERSION: 15
     VULKAN_DRIVERS: "swrast"
+    DRI_LOADERS:
+      -D glvnd=disabled
 
 debian-ppc64el:
   extends:
@@ -691,3 +710,5 @@ debian-ppc64el:
     CROSS: ppc64el
     GALLIUM_DRIVERS: "nouveau,radeonsi,swrast,virgl,zink"
     VULKAN_DRIVERS: "amd,swrast"
+    DRI_LOADERS:
+      -D glvnd=disabled

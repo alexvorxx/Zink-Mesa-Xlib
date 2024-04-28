@@ -15,7 +15,7 @@
 #include "pipe/p_defines.h"
 #include "pipe/p_state.h"
 #include "util/list.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "util/u_upload_mgr.h"
 
 struct pipe_screen;

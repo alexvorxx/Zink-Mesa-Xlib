@@ -792,6 +792,33 @@ ir3_instr_set_address(struct ir3_instruction *instr,
    }
 }
 
+/* Does this instruction use the scalar ALU?
+ */
+bool
+is_scalar_alu(struct ir3_instruction *instr,
+              const struct ir3_compiler *compiler)
+{
+   /* MOVMSK seems to always need (ss) even with other scalar ALU instructions
+    */
+   return instr->opc != OPC_MOVMSK &&
+      instr->opc != OPC_SCAN_CLUSTERS_MACRO &&
+      instr->opc != OPC_SCAN_MACRO &&
+      is_alu(instr) && (instr->dsts[0]->flags & IR3_REG_SHARED) &&
+      /* scalar->scalar mov instructions (but NOT cov) were supported before the
+       * scalar ALU was supported, but they still required (ss) whereas on GPUs
+       * that have a scalar ALU they are executed on it and do not require (ss).
+       * We have to be careful to return false for these if scalar ALU isn't
+       * supported, so that we treat them like vector->scalar mov instructions
+       * (such as requiring (ss)).
+       */
+      compiler->has_scalar_alu &&
+      /* moves from normal to shared seem to use a separate ALU as before and
+       * require a (ss) on dependent instructions.
+       */
+      ((instr->opc != OPC_MOV && !is_subgroup_cond_mov_macro(instr)) ||
+       (instr->srcs[0]->flags & (IR3_REG_SHARED | IR3_REG_IMMED | IR3_REG_CONST)));
+}
+
 void
 ir3_block_clear_mark(struct ir3_block *block)
 {
@@ -1039,9 +1066,6 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
    struct ir3_compiler *compiler = instr->block->shader->compiler;
    unsigned valid_flags;
 
-   if ((flags & IR3_REG_SHARED) && opc_cat(instr->opc) > 3)
-      return false;
-
    flags = cp_flags(flags);
 
    /* If destination is indirect, then source cannot be.. at least
@@ -1078,7 +1102,10 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
       if (flags & ~(IR3_REG_IMMED | IR3_REG_CONST | IR3_REG_SHARED))
          return false;
 
-      if ((flags & IR3_REG_SHARED) && !(instr->dsts[0]->flags & IR3_REG_SHARED))
+      /* Except for immed/const sources, source and dest shared-ness must match.
+       */
+      if (!(flags & (IR3_REG_IMMED | IR3_REG_CONST)) &&
+          (flags & IR3_REG_SHARED) != (instr->dsts[0]->flags & IR3_REG_SHARED))
          return false;
 
       return true;
@@ -1096,11 +1123,41 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
          valid_flags = IR3_REG_SHARED;
          break;
       case OPC_SCAN_MACRO:
-         return flags == 0;
+         if (n == 0)
+            return flags == 0;
+         else
+            return flags == IR3_REG_SHARED;
          break;
-      default:
+      case OPC_SCAN_CLUSTERS_MACRO:
+         if (n == 0)
+            return flags == IR3_REG_SHARED;
+         else
+            return flags == 0;
+         break;
+      default: {
          valid_flags =
             IR3_REG_IMMED | IR3_REG_CONST | IR3_REG_RELATIV | IR3_REG_SHARED;
+
+         /* floating-point conversions when moving from non-shared to shared
+          * seem not to work. We only use floating-point types in ir3 for
+          * conversions, so don't bother specially handling the case where the
+          * types are equal.
+          */
+         if ((instr->dsts[0]->flags & IR3_REG_SHARED) &&
+             !(flags & (IR3_REG_SHARED | IR3_REG_IMMED | IR3_REG_CONST)) &&
+             (full_type(instr->cat1.src_type) == TYPE_F32 ||
+              full_type(instr->cat1.dst_type) == TYPE_F32))
+            return false;
+
+         /* Conversions seem not to work in shared->shared copies before scalar
+          * ALU is supported.
+          */
+         if (!compiler->has_scalar_alu &&
+             (flags & IR3_REG_SHARED) &&
+             (instr->dsts[0]->flags & IR3_REG_SHARED) &&
+             instr->cat1.src_type != instr->cat1.dst_type)
+            return false;
+      }
       }
       if (flags & ~valid_flags)
          return false;
@@ -1117,6 +1174,12 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
           n == 1 && flags == IR3_REG_IMMED)
          return true;
 
+      /* cat2/cat3 scalar ALU instructions must not have regular sources. */
+      if (instr->dsts[0]->flags & IR3_REG_SHARED) {
+         if (!(flags & (IR3_REG_SHARED | IR3_REG_IMMED | IR3_REG_CONST)))
+            return false;
+      }
+
       if (flags & (IR3_REG_CONST | IR3_REG_IMMED | IR3_REG_SHARED)) {
          unsigned m = n ^ 1;
          /* cannot deal w/ const or shared in both srcs:
@@ -1124,9 +1187,14 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
           */
          if (m < instr->srcs_count) {
             struct ir3_register *reg = instr->srcs[m];
-            if ((flags & (IR3_REG_CONST | IR3_REG_SHARED)) &&
-                (reg->flags & (IR3_REG_CONST | IR3_REG_SHARED)))
-               return false;
+            if (instr->dsts[0]->flags & IR3_REG_SHARED) {
+               if ((flags & IR3_REG_CONST) && (reg->flags & IR3_REG_CONST))
+                  return false;
+            } else {
+               if ((flags & (IR3_REG_CONST | IR3_REG_SHARED)) &&
+                   (reg->flags & (IR3_REG_CONST | IR3_REG_SHARED)))
+                  return false;
+            }
             if ((flags & IR3_REG_IMMED) && reg->flags & (IR3_REG_IMMED))
                return false;
          }
@@ -1165,14 +1233,23 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
       if (flags & ~valid_flags)
          return false;
 
-      if (flags & (IR3_REG_CONST | IR3_REG_SHARED | IR3_REG_RELATIV)) {
+      if (flags & (IR3_REG_CONST | IR3_REG_RELATIV) ||
+          (!(instr->dsts[0]->flags & IR3_REG_SHARED) &&
+           (flags & IR3_REG_SHARED))) {
          /* cannot deal w/ const/shared/relativ in 2nd src: */
          if (n == 1)
             return false;
       }
 
+      if (instr->dsts[0]->flags & IR3_REG_SHARED) {
+         if (!(flags & (IR3_REG_SHARED | IR3_REG_IMMED | IR3_REG_CONST)))
+            return false;
+      }
+
       break;
    case 4:
+      if ((instr->dsts[0]->flags & IR3_REG_SHARED) != (flags & IR3_REG_SHARED))
+         return false;
       /* seems like blob compiler avoids const as src.. */
       /* TODO double check if this is still the case on a4xx */
       if (flags & (IR3_REG_CONST | IR3_REG_IMMED))
@@ -1187,6 +1264,10 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
       break;
    case 6:
       valid_flags = IR3_REG_IMMED;
+
+      if (instr->opc == OPC_STC && n == 1)
+         valid_flags |= IR3_REG_SHARED;
+
       if (flags & ~valid_flags)
          return false;
 
@@ -1239,6 +1320,9 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
             return false;
 
          if (instr->opc == OPC_LDG_A && (n < 2))
+            return false;
+
+         if (instr->opc == OPC_STC && n != 0)
             return false;
 
          /* as with atomics, these cat6 instrs can only have an immediate

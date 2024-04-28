@@ -129,8 +129,8 @@ struct etna_nn_params {
 
    /* 18 */
    FIELD(out_image_circular_buf_size, 26) /* >> 6 */
-   FIELD(unused7, 5)
    FIELD(per_channel_post_mul, 1)
+   FIELD(unused7, 5)
 
    /* 19 */
    FIELD(out_image_circular_buf_end_addr_plus_1, 26) /* >> 6 */
@@ -149,7 +149,8 @@ struct etna_nn_params {
    FIELD(out_zero_point, 8)
    FIELD(kernel_direct_stream_from_VIP_sram, 1)
    FIELD(depthwise, 1)
-   FIELD(unused11, 14)
+   FIELD(post_multiplier_15_to_22, 8)
+   FIELD(unused11, 6)
 
    /* 23, from here they aren't set on  */
    FIELD(unused12, 32)
@@ -517,7 +518,8 @@ static unsigned
 calc_superblocks(struct etna_context *ctx, const struct etna_operation *operation, unsigned tile_y, unsigned interleave_mode)
 {
    unsigned nn_core_count = ctx->screen->specs.nn_core_count;
-   unsigned kernels_per_core = DIV_ROUND_UP(operation->output_channels, nn_core_count);
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned kernels_per_core = DIV_ROUND_UP(output_channels, nn_core_count);
    unsigned foo = (ACCUM_BUFFER_DEPTH * interleave_mode) / tile_y;
 
    if (operation->weight_width == 1)
@@ -526,15 +528,9 @@ calc_superblocks(struct etna_context *ctx, const struct etna_operation *operatio
    foo = MIN2(foo, kernels_per_core);
    foo = MIN2(foo, 127);
 
-   kernels_per_core = DIV_ROUND_UP(operation->output_channels, nn_core_count * foo);
-   unsigned num_kernels = DIV_ROUND_UP(operation->output_channels, kernels_per_core * nn_core_count);
-   unsigned superblocks = DIV_ROUND_UP(DIV_ROUND_UP(operation->output_channels, nn_core_count), num_kernels);
-
-   /* TODO: Remove this once we support superblocks that don't divide output_channels in the compressed buffer */
-   while(operation->output_channels % superblocks)
-      superblocks++;
-
-   ML_DBG("superblocks %d\n", superblocks);
+   kernels_per_core = DIV_ROUND_UP(output_channels, nn_core_count * foo);
+   unsigned num_kernels = DIV_ROUND_UP(output_channels, kernels_per_core * nn_core_count);
+   unsigned superblocks = DIV_ROUND_UP(DIV_ROUND_UP(output_channels, nn_core_count), num_kernels);
 
    return superblocks;
 }
@@ -619,16 +615,14 @@ calculate_tiling(struct etna_context *ctx, const struct etna_operation *operatio
    interleave_mode = calc_interleave_mode(tile_width, operation->weight_height);
 
    tile_height = INPUT_BUFFER_DEPTH * interleave_mode - operation->weight_height + 1;
-   ML_DBG("INPUT_BUFFER_DEPTH %d interleave_mode %d operation->weight_height %d tile_height %d input_width %d output_width %d\n", INPUT_BUFFER_DEPTH, interleave_mode, operation->weight_height, tile_height, operation->input_width, output_width);
    tile_height = MIN2(tile_height, interleave_mode * ACCUM_BUFFER_DEPTH);
-   //tile_height = MIN2(tile_height, operation->input_width);
    tile_height = MIN2(tile_height, output_height);
 
    if (operation->stride > 1 && tile_height % 2 > 0)
       tile_height -= 1;
 
+   tile_height = MAX2(tile_height, 1);
    superblocks = calc_superblocks(ctx, operation, tile_height, interleave_mode);
-   ML_DBG("tiling x %d y %d sb %d\n", tile_width, tile_height, superblocks);
 
    if (tile_width_out)
       *tile_width_out = tile_width;
@@ -640,11 +634,12 @@ calculate_tiling(struct etna_context *ctx, const struct etna_operation *operatio
 }
 
 static struct etna_bo *
-create_nn_config(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation, struct etna_bo *coefficients, unsigned coefficients_size)
+create_nn_config(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation, struct etna_bo *coefficients, unsigned coef_cache_size)
 {
    struct pipe_context *context = subgraph->base.context;
    struct etna_context *ctx = etna_context(context);
    unsigned nn_core_count = ctx->screen->specs.nn_core_count;
+   unsigned nn_core_version = ctx->screen->specs.nn_core_version;
    unsigned oc_sram_size = ctx->screen->specs.on_chip_sram_size;
    struct etna_bo *bo = etna_bo_new(ctx->screen->dev,
                                     sizeof(struct etna_nn_params),
@@ -664,8 +659,6 @@ create_nn_config(struct etna_ml_subgraph *subgraph, const struct etna_operation 
    if (operation->addition)
       calc_addition_sizes(&input_width, &input_height, &input_channels,
                           &output_width, &output_height, &output_channels);
-
-   unsigned input_size = input_width * input_height * input_channels;
 
    etna_bo_cpu_prep(bo, DRM_ETNA_PREP_WRITE);
 
@@ -789,35 +782,30 @@ create_nn_config(struct etna_ml_subgraph *subgraph, const struct etna_operation 
 
    map->kernels_per_core = DIV_ROUND_UP(DIV_ROUND_UP(output_channels, nn_core_count), superblocks);
 
-   /* Should be max accumBufferDepth (64) / zdpNum (3) */
-   //assert(map->kernels_per_core <= (64 / 3));
-
-   /* The header doesn't get cached */
-   coefficients_size -= 64;
-
-   map->kernel_cache_start_address = 0x800;
-   map->kernel_cache_end_address = MAX2(MIN2(map->kernel_cache_start_address + coefficients_size, oc_sram_size), 0x1a00);
-
-   if (output_channels <= 128 || map->kernel_cache_end_address == oc_sram_size) {
-      map->image_caching_mode = SRAM_CACHE_MODE_NO_CACHE;
-      map->image_cache_start_address = 0x0;
-      map->image_cache_end_address = 0x800;
+   unsigned image_cache_size;
+   if (superblocks == 1) {
+      /* No point in caching the input image if there is only one iteration */
+      image_cache_size = 0;
    } else {
-      map->image_caching_mode = SRAM_CACHE_MODE_FULL_CACHE;
-      map->image_cache_start_address = map->kernel_cache_end_address;
-      map->image_cache_end_address = MIN2(map->image_cache_start_address + input_size + 1024, oc_sram_size);
+      unsigned in_image_tile_x_size = map->out_image_tile_x_size + weight_width - 1;
+      unsigned in_image_tile_y_size = map->out_image_tile_y_size + weight_width - 1;
+      image_cache_size = in_image_tile_x_size * in_image_tile_y_size;
+      image_cache_size = ALIGN(image_cache_size, 16);
+      image_cache_size *= input_channels;
+      image_cache_size = ALIGN(image_cache_size, 128);
    }
 
-   /* TODO: Look at re-enabling the image cache again */
-   map->image_caching_mode = SRAM_CACHE_MODE_NO_CACHE;
-   map->image_cache_start_address = 0x0;
-   map->image_cache_end_address = 0x800;
+   ML_DBG("coefficients_size 0x%x (%d) image_size 0x%x (%d)\n", coef_cache_size, coef_cache_size, image_cache_size, image_cache_size);
 
-   if (etna_bo_size(coefficients) <= 0x80000 - 0x800) {
+   map->kernel_cache_start_address = 0x800;
+
+   /* Get all the image tiles in the cache, then use the rest for the kernels */
+   if (map->kernel_cache_start_address + coef_cache_size + image_cache_size < oc_sram_size) {
       map->kernel_caching_mode = SRAM_CACHE_MODE_FULL_CACHE;
       map->kernel_pattern_msb = 0x0;
       map->kernel_pattern_low = 0x0;
       map->kernel_pattern_high = 0x0;
+      map->kernel_cache_end_address = MAX2(MIN2(ALIGN(map->kernel_cache_start_address + coef_cache_size, 128), oc_sram_size), 0xa00);
    } else {
       /* Doesn't fit in the 512KB we have of on-chip SRAM */
       map->kernel_caching_mode = SRAM_CACHE_MODE_PARTIAL_CACHE;
@@ -842,21 +830,55 @@ create_nn_config(struct etna_ml_subgraph *subgraph, const struct etna_operation 
          map->kernel_pattern_low = 0xfffffffe;
          map->kernel_pattern_high = 0xffffffff;
       }
+      if (map->kernel_cache_start_address + coef_cache_size >= oc_sram_size) {
+         map->kernel_cache_end_address = oc_sram_size;
+         image_cache_size = 0;
+      } else if (image_cache_size > oc_sram_size) {
+         image_cache_size = 0;
+      } else
+         map->kernel_cache_end_address = oc_sram_size - image_cache_size;
+   }
+
+   if (image_cache_size == 0) {
+      map->image_caching_mode = SRAM_CACHE_MODE_NO_CACHE;
+      map->image_cache_start_address = 0x0;
+      map->image_cache_end_address = 0x800;
+   } else {
+      map->image_caching_mode = SRAM_CACHE_MODE_FULL_CACHE;
+      if (image_cache_size >= map->kernel_cache_start_address) {
+         map->image_cache_start_address = map->kernel_cache_end_address;
+         map->image_cache_end_address = MIN2(map->image_cache_start_address + image_cache_size, oc_sram_size);
+         ML_DBG("image_cache_end_address %d image_cache_start_address %d image_cache_size %d oc_sram_size %d\n", map->image_cache_end_address, map->image_cache_start_address, image_cache_size, oc_sram_size);
+      } else {
+         map->image_cache_start_address = 0x0;
+         map->image_cache_end_address = 0x800;
+      }
    }
 
    float conv_scale = (operation->input_scale * operation->weight_scale) / operation->output_scale;
    uint32_t scale_bits = fui(conv_scale);
    /* Taken from https://github.com/pytorch/QNNPACK/blob/master/src/qnnpack/requantization.h#L130 */
-   unsigned shift = 127 + 31 - 32 - (scale_bits >> 23) + 16;
+   unsigned shift = 127 + 31 - 32 - (scale_bits >> 23);
+   if (nn_core_version == 8)
+      shift += 1;
+   else
+      shift += 16;
 
    /* Divides by 2 * (post_shift - 18), rounding to nearest integer. If result doesn't fit in 8 bits, it is clamped to 255. galcore sets to 15 if INT8, to 0 if UINT8. */
    map->post_shift = shift & 0x1f;
    map->post_shift_bit_5_6 = (shift >> 5) & 0x3;
 
    /* Multiplies by (multiplier * 2^15) */
-   map->post_multiplier = (scale_bits >> 8) & 0x1;
-   map->post_multiplier_1_to_6 = (scale_bits >> 9) & 0x3f;
-   map->post_multiplier_7_to_14 = (scale_bits >> 15) & 0xff;
+   if (nn_core_version == 8) {
+      map->post_multiplier = scale_bits & 0x1;
+      map->post_multiplier_1_to_6 = (scale_bits >> 1) & 0x3f;
+      map->post_multiplier_7_to_14 = (scale_bits >> 7) & 0xff;
+      map->post_multiplier_15_to_22 = (scale_bits >> 15) & 0xff;
+   } else {
+      map->post_multiplier = (scale_bits >> 8) & 0x1;
+      map->post_multiplier_1_to_6 = (scale_bits >> 9) & 0x3f;
+      map->post_multiplier_7_to_14 = (scale_bits >> 15) & 0xff;
+   }
 
    map->per_channel_post_mul = 0x0;
 
@@ -876,91 +898,191 @@ static uint32_t calculate_bias_correction(uint8_t *weights, const struct etna_op
    return correction;
 }
 
+
 static void
-write_6_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map, unsigned kernels_per_core, unsigned core, const struct etna_operation *operation)
+append_bits(uint32_t value, size_t size, unsigned *bits_in_buffer, uint64_t *buffer, uint32_t **dest, bool do_write)
+{
+   *buffer |= (uint64_t)value << *bits_in_buffer;
+   *bits_in_buffer += size;
+   if (*bits_in_buffer >= 32) {
+      if (do_write)
+         **dest = *buffer & 0xffffffff;
+      *dest += 1;
+      *buffer >>= 32;
+      *bits_in_buffer -= 32;
+   }
+}
+
+struct wb_stream {
+   unsigned zero_point;
+   unsigned zrl_bits;
+   unsigned *bits_in_buffer;
+   uint64_t *buffer;
+   uint32_t **map;
+   bool do_write;
+
+   unsigned accum_zeroes;
+};
+
+static void
+wb_stream_flush_zeroes(struct wb_stream *wb_stream)
+{
+   if (wb_stream->accum_zeroes == 0)
+      return;
+
+   append_bits(wb_stream->accum_zeroes - 1, wb_stream->zrl_bits, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+   wb_stream->accum_zeroes = 0;
+   append_bits(wb_stream->zero_point, 8, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+}
+
+static void
+wb_stream_write(struct wb_stream *wb_stream, unsigned value)
+{
+   unsigned max_zeroes = (1 << wb_stream->zrl_bits) - 1;
+
+   if (wb_stream->zrl_bits == 0) {
+      append_bits(value, 8, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+      return;
+   }
+
+   if (wb_stream->accum_zeroes == max_zeroes) {
+      append_bits(max_zeroes, wb_stream->zrl_bits, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+      wb_stream->accum_zeroes = 0;
+      append_bits(value, 8, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+      return;
+   }
+
+   if (value == wb_stream->zero_point) {
+      wb_stream->accum_zeroes++;
+      return;
+   }
+
+   append_bits(wb_stream->accum_zeroes, wb_stream->zrl_bits, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+   wb_stream->accum_zeroes = 0;
+   append_bits(value, 8, wb_stream->bits_in_buffer, wb_stream->buffer, wb_stream->map, wb_stream->do_write);
+}
+
+static unsigned
+write_core_6(struct etna_ml_subgraph *subgraph, uint32_t *map, unsigned core, const struct etna_operation *operation, unsigned zrl_bits)
 {
    struct pipe_context *pctx = subgraph->base.context;
    unsigned nn_core_count = etna_context(pctx)->screen->specs.nn_core_count;
-   unsigned cores_used = MIN2(operation->output_channels, nn_core_count);
+   unsigned input_channels = operation->addition ? 1 : operation->input_channels;
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned cores_used = MIN2(output_channels, nn_core_count);
+   unsigned kernels_per_core = DIV_ROUND_UP(output_channels, cores_used);
    uint8_t *input = map_resource(operation->weight_tensor);
    uint32_t *biases = map_resource(operation->bias_tensor);
    unsigned out_values_per_channel = operation->output_width * operation->output_height;
-   unsigned stride = MIN2(operation->input_channels, 6);
+   unsigned stride = MIN2(input_channels, 6);
    unsigned superblocks = calculate_tiling(etna_context(pctx), operation, NULL, NULL);
    uint8_t *weights_maps[DIV_ROUND_UP(kernels_per_core, superblocks)];
+   uint32_t *initial_ptr = map;
+   bool do_write = initial_ptr != NULL;
+   uint64_t buffer = 0;
+   unsigned bits_in_buffer = 0;
+   struct wb_stream wb_stream = {
+      .zero_point = operation->weight_zero_point,
+      .zrl_bits = zrl_bits,
+      .bits_in_buffer = &bits_in_buffer,
+      .buffer = &buffer,
+      .map = &map,
+      .do_write = do_write,
+   };
 
-   ML_DBG("%s\n", __func__);
+   ML_DBG("%s core %d zrl_bits %d\n", __func__, core, zrl_bits);
+
+   append_bits(zrl_bits, 8, &bits_in_buffer, &buffer, &map, do_write);
+   append_bits(kernels_per_core, 16, &bits_in_buffer, &buffer, &map, do_write);
 
    for (unsigned superblock = 0; superblock < superblocks; superblock++) {
 
       unsigned kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks);
       if (superblock == superblocks - 1)
-         kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks) - kernels_per_core % superblocks;
+         kernels_in_superblock = kernels_per_core - kernels_in_superblock * (superblocks - 1);
 
       for (unsigned kernel = 0; kernel < kernels_in_superblock; kernel++) {
-         unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(DIV_ROUND_UP(operation->output_channels, cores_used), superblocks) * cores_used;
-         weights_maps[kernel] = input + out_channel * operation->weight_width * operation->weight_height * operation->input_channels;
+         unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(kernels_per_core, superblocks) * cores_used;
+         weights_maps[kernel] = input + out_channel * operation->weight_width * operation->weight_height * input_channels;
       }
 
-      for (unsigned block = 0; block < DIV_ROUND_UP(operation->input_channels, stride); block++) {
+      for (unsigned block = 0; block < DIV_ROUND_UP(input_channels, stride); block++) {
          for (unsigned kernel = 0; kernel < kernels_in_superblock; kernel++) {
-            unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(DIV_ROUND_UP(operation->output_channels, cores_used), superblocks) * cores_used;
+            unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(kernels_per_core, superblocks) * cores_used;
 
             if (block == 0) {
-               *map++ = weights_maps[kernel][0];
+               wb_stream_write(&wb_stream, weights_maps[kernel][0]);
 
                uint32_t corr = calculate_bias_correction(weights_maps[kernel], operation);
-               //fprintf(stderr, "core %d sb %d b %d kernel %d out_channel %d bias %x first %02x\n", core, superblock, block, kernel, out_channel, biases[out_channel] - corr, weights_maps[kernel][0]);
-               *((uint32_t *)map) = biases[out_channel] - corr;
-               map += sizeof(uint32_t);
+               wb_stream_flush_zeroes(&wb_stream);
+               append_bits(biases[out_channel] - corr, 32, &bits_in_buffer, &buffer, &map, do_write);
 
                for (int i = 1; i < stride; i++) {
-                  *map++ = weights_maps[kernel][i];
+                  wb_stream_write(&wb_stream, weights_maps[kernel][i]);
                }
             } else {
                for (int i = 0; i < stride; i++) {
-                  if (i + block * stride < operation->input_channels)
-                     *map++ = weights_maps[kernel][i + block * stride];
+                  if (i + block * stride < input_channels)
+                     wb_stream_write(&wb_stream, weights_maps[kernel][i + block * stride]);
                }
             }
-            if (block == DIV_ROUND_UP(operation->input_channels, stride) - 1) {
-               *((uint32_t*)map) = out_values_per_channel * out_channel;
-               map += sizeof(uint32_t);
+            if (block == DIV_ROUND_UP(input_channels, stride) - 1) {
+               wb_stream_flush_zeroes(&wb_stream);
+               append_bits(out_values_per_channel * out_channel, 32, &bits_in_buffer, &buffer, &map, do_write);
             }
          }
       }
    }
+
+   wb_stream_flush_zeroes(&wb_stream);
+
+   if (bits_in_buffer > 0)
+      append_bits(0, 32 - bits_in_buffer, &bits_in_buffer, &buffer, &map, do_write);
+
+   return (uint8_t *)map - (uint8_t *)initial_ptr - 1;
 }
 
-static void
-write_interleaved_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map, unsigned kernels_per_core, unsigned core, const struct etna_operation *operation)
+static unsigned
+write_core_interleaved(struct etna_ml_subgraph *subgraph, uint32_t *map, unsigned core, const struct etna_operation *operation, unsigned zrl_bits)
 {
    struct pipe_context *pctx = subgraph->base.context;
    unsigned nn_core_count = etna_context(pctx)->screen->specs.nn_core_count;
-   unsigned cores_used = MIN2(operation->output_channels, nn_core_count);
+   unsigned input_channels = operation->addition ? 1 : operation->input_channels;
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned cores_used = MIN2(output_channels, nn_core_count);
+   unsigned kernels_per_core = DIV_ROUND_UP(output_channels, cores_used);
    uint8_t *input = map_resource(operation->weight_tensor);
    uint32_t *biases = map_resource(operation->bias_tensor);
    unsigned out_values_per_channel = operation->output_width * operation->output_height;
    unsigned superblocks = calculate_tiling(etna_context(pctx), operation, NULL, NULL);
-   uint8_t (*weights_map)[operation->input_channels][operation->weight_width][operation->weight_height] = (void *)input;
+   uint8_t (*weights_map)[input_channels][operation->weight_width][operation->weight_height] = (void *)input;
+   uint32_t *initial_ptr = map;
+   bool do_write = initial_ptr != NULL;
+   uint64_t buffer = 0;
+   unsigned bits_in_buffer = 0;
+   struct wb_stream wb_stream = {
+      .zero_point = operation->weight_zero_point,
+      .zrl_bits = zrl_bits,
+      .bits_in_buffer = &bits_in_buffer,
+      .buffer = &buffer,
+      .map = &map,
+      .do_write = do_write,
+   };
 
-   ML_DBG("%s core %d\n", __func__, core);
+   ML_DBG("%s core %d zrl_bits %d map %p\n", __func__, core, zrl_bits, map);
+
+   append_bits(zrl_bits, 8, &bits_in_buffer, &buffer, &map, do_write);
+   append_bits(kernels_per_core, 16, &bits_in_buffer, &buffer, &map, do_write);
 
    for (unsigned superblock = 0; superblock < superblocks; superblock++) {
 
       unsigned kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks);
       if (superblock == superblocks - 1)
-         kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks) - kernels_per_core % superblocks;
+         kernels_in_superblock = kernels_per_core - kernels_in_superblock * (superblocks - 1);
 
-      for (unsigned z = 0; z < operation->input_channels; z++) {
+      for (unsigned z = 0; z < input_channels; z++) {
          for (unsigned kernel = 0; kernel < kernels_in_superblock; kernel++) {
-            unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(DIV_ROUND_UP(operation->output_channels, cores_used), superblocks) * cores_used;
-
-#if 0
-            if (z == 0)
-               fprintf(stderr, "core %d DIV_ROUND_UP(kernels_per_core, superblocks) %d kernel %d superblock * (operation->output_channels / superblocks) %u out_channel %d\n",
-                       core, DIV_ROUND_UP(kernels_per_core, superblocks), kernel, superblock * (operation->output_channels / superblocks + 4), out_channel);
-#endif
+            unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(kernels_per_core, superblocks) * cores_used;
 
             for (unsigned block = 0; block < DIV_ROUND_UP(operation->weight_width, 2); block++) {
                unsigned stride = operation->weight_height;
@@ -970,13 +1092,11 @@ write_interleaved_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map,
                   if (x >= operation->weight_width)
                      break;
                   for (unsigned y = 0; y < stride; y++) {
-                     //fprintf(stderr, "oc %d x %d y %d z %d: %02x\n", out_channel, x, y, z, weights_map[out_channel][z][x][y]);
-                     *map++ = weights_map[out_channel][z][x][y];
+                     wb_stream_write(&wb_stream, weights_map[out_channel][z][x][y]);
                      if (x == 0 && y == 0 && z == 0) {
                         uint32_t corr = calculate_bias_correction((uint8_t *)weights_map[out_channel], operation);
-                        //fprintf(stderr, "core %d sb %d ic %d out_channel %d kernel %d bias %x first %02x\n", core, superblock, z, out_channel, kernel, biases[out_channel] - corr, weights_map[out_channel][z][x][y]);
-                        *((uint32_t *)map) = biases[out_channel] - corr;
-                        map += sizeof(uint32_t);
+                        wb_stream_flush_zeroes(&wb_stream);
+                        append_bits(biases[out_channel] - corr, 32, &bits_in_buffer, &buffer, &map, do_write);
                      }
                   }
                }
@@ -985,43 +1105,68 @@ write_interleaved_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map,
                      if (x >= operation->weight_width)
                         break;
                      for (unsigned y = stride; y < operation->weight_width; y++) {
-                        //fprintf(stderr, "x %d y %d: %02x\n", x, y, weights_map[out_channel][z][x][y]);
-                        *map++ = weights_map[out_channel][z][x][y];
+                        wb_stream_write(&wb_stream, weights_map[out_channel][z][x][y]);
                      }
                   }
                }
             }
 
-            if (z == operation->input_channels - 1) {
-               *((uint32_t*)map) = out_values_per_channel * out_channel;
-               map += sizeof(uint32_t);
+            if (z == input_channels - 1) {
+               wb_stream_flush_zeroes(&wb_stream);
+               append_bits(out_values_per_channel * out_channel, 32, &bits_in_buffer, &buffer, &map, do_write);
             }
          }
+         if (superblock == superblocks - 1)
+            wb_stream_flush_zeroes(&wb_stream);
       }
    }
+
+   wb_stream_flush_zeroes(&wb_stream);
+
+   if (bits_in_buffer > 0)
+      append_bits(0, 32 - bits_in_buffer, &bits_in_buffer, &buffer, &map, do_write);
+
+   return (uint8_t *)map - (uint8_t *)initial_ptr;
 }
 
-static void
-write_sequential_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map, unsigned kernels_per_core, unsigned core, const struct etna_operation *operation)
+static unsigned
+write_core_sequential(struct etna_ml_subgraph *subgraph, uint32_t *map, unsigned core, const struct etna_operation *operation, unsigned zrl_bits)
 {
    struct pipe_context *pctx = subgraph->base.context;
    unsigned nn_core_count = etna_context(pctx)->screen->specs.nn_core_count;
-   unsigned cores_used = MIN2(operation->output_channels, nn_core_count);
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned cores_used = MIN2(output_channels, nn_core_count);
+   unsigned kernels_per_core = DIV_ROUND_UP(output_channels, cores_used);
    uint8_t *input = map_resource(operation->weight_tensor);
    uint32_t *biases = map_resource(operation->bias_tensor);
    unsigned out_values_per_channel = operation->output_width * operation->output_height;
    unsigned superblocks = calculate_tiling(etna_context(pctx), operation, NULL, NULL);
+   uint32_t *initial_ptr = map;
+   bool do_write = initial_ptr != NULL;
+   uint64_t buffer = 0;
+   unsigned bits_in_buffer = 0;
+   struct wb_stream wb_stream = {
+      .zero_point = operation->weight_zero_point,
+      .zrl_bits = zrl_bits,
+      .bits_in_buffer = &bits_in_buffer,
+      .buffer = &buffer,
+      .map = &map,
+      .do_write = do_write,
+   };
 
-   ML_DBG("%s: superblocks %d channels %d\n", __func__, superblocks, operation->output_channels);
+   ML_DBG("%s core %d zrl_bits %d superblocks %d\n", __func__, core, zrl_bits, superblocks);
+
+   append_bits(zrl_bits, 8, &bits_in_buffer, &buffer, &map, do_write);
+   append_bits(kernels_per_core, 16, &bits_in_buffer, &buffer, &map, do_write);
 
    for (unsigned superblock = 0; superblock < superblocks; superblock++) {
 
       unsigned kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks);
       if (superblock == superblocks - 1)
-         kernels_in_superblock = DIV_ROUND_UP(kernels_per_core, superblocks) - kernels_per_core % superblocks;
+         kernels_in_superblock = kernels_per_core - kernels_in_superblock * (superblocks - 1);
 
       for (unsigned kernel = 0; kernel < kernels_in_superblock; kernel++) {
-         unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(DIV_ROUND_UP(operation->output_channels, cores_used), superblocks) * cores_used;
+         unsigned out_channel = core * kernels_in_superblock + kernel + superblock * DIV_ROUND_UP(kernels_per_core, superblocks) * cores_used;
 
          uint8_t (*weights_map)[operation->weight_height] = (void*) input + out_channel * operation->weight_width * operation->weight_height;
 
@@ -1034,13 +1179,12 @@ write_sequential_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map, 
                if (x >= operation->weight_width)
                   break;
                for (unsigned y = 0; y < stride; y++) {
-                  //fprintf(stderr, "x %d y %d: %02x\n", x, y, weights_map[x][y]);
 
-                  *map++ = weights_map[x][y];
+                  wb_stream_write(&wb_stream, weights_map[x][y]);
                   if (x == 0 && y == 0) {
                      uint32_t corr = calculate_bias_correction((uint8_t *)weights_map, operation);
-                     *((uint32_t *)map) = biases[out_channel] - corr;
-                     map += sizeof(uint32_t);
+                     wb_stream_flush_zeroes(&wb_stream);
+                     append_bits(biases[out_channel] - corr, 32, &bits_in_buffer, &buffer, &map, do_write);
                   }
                }
             }
@@ -1050,85 +1194,154 @@ write_sequential_weight_format(struct etna_ml_subgraph *subgraph, uint8_t *map, 
                   if (x >= operation->weight_width)
                      break;
                   for (unsigned y = stride; y < operation->weight_width; y++) {
-                     //fprintf(stderr, "x %d y %d: %02x\n", x, y, weights_map[x][y]);
-                     *map++ = weights_map[x][y];
+                     wb_stream_write(&wb_stream, weights_map[x][y]);
                   }
                }
             }
          }
-         if (operation->addition) {
-            *((uint32_t*)map) = operation->addition_offset;
-         } else
-            *((uint32_t*)map) = out_values_per_channel * out_channel;
-         map += sizeof(uint32_t);
+         wb_stream_flush_zeroes(&wb_stream);
+         if (operation->addition)
+            append_bits(operation->addition_offset, 32, &bits_in_buffer, &buffer, &map, do_write);
+         else
+            append_bits(out_values_per_channel * out_channel, 32, &bits_in_buffer, &buffer, &map, do_write);
       }
    }
+
+   wb_stream_flush_zeroes(&wb_stream);
+
+   if (bits_in_buffer > 0)
+      append_bits(0, 32 - bits_in_buffer, &bits_in_buffer, &buffer, &map, do_write);
+
+   return (uint8_t *)map - (uint8_t *)initial_ptr - 1;
 }
 
-static struct etna_bo *
-create_coefficients_bo(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation, unsigned *size)
+static unsigned
+calculate_weight_bo_size(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation)
 {
-   /* TODO: Implement zero-length encoding of weights and biases for bandwidth savings */
    struct pipe_context *context = subgraph->base.context;
    struct etna_context *ctx = etna_context(context);
    unsigned nn_core_count = ctx->screen->specs.nn_core_count;
    unsigned header_size = ALIGN(nn_core_count * 4, 64);
-   unsigned weight_item_size = 1; /* TODO: Support types other than (u)int8 */
-   unsigned input_channels;
+   unsigned input_channels = operation->addition ? 1 : operation->input_channels;
    unsigned output_channels = operation->addition ? 1 : operation->output_channels;
    unsigned cores_used = MIN2(output_channels, nn_core_count);
    unsigned kernels_per_core = DIV_ROUND_UP(output_channels, cores_used);
-   uint8_t zero_length_encoding = false;
    unsigned weights_size;
    unsigned core_size;
    unsigned core_size_aligned;
+   unsigned compressed_size_aligned;
 
-   input_channels = operation->addition ? 1 : operation->input_channels;
-   weights_size = operation->weight_width * operation->weight_height * input_channels * weight_item_size;
-   core_size = 3 + (weights_size + 4 + 4) * kernels_per_core;
+   weights_size = operation->weight_width * operation->weight_height * input_channels;
+   core_size = 1 + 2 + (weights_size + 4 + 4) * kernels_per_core;
    core_size_aligned = ALIGN(core_size, 64);
-   *size = header_size + core_size_aligned * cores_used;
+   compressed_size_aligned = header_size + core_size_aligned * cores_used;
+
+   return compressed_size_aligned;
+}
+
+static unsigned
+calculate_zrl_bits(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation)
+{
+   struct pipe_context *context = subgraph->base.context;
+   struct etna_context *ctx = etna_context(context);
+   unsigned nn_core_count = ctx->screen->specs.nn_core_count;
+   unsigned max_zrl_bits = ctx->screen->specs.nn_zrl_bits;
+   unsigned header_size = ALIGN(nn_core_count * 4, 64);
+   unsigned input_channels = operation->addition ? 1 : operation->input_channels;
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned cores_used = MIN2(output_channels, nn_core_count);
+   unsigned best_compressed_size;
+   unsigned best_zrl_bits;
+
+   /* These are very unlikely to have enough zeroes for compression to be useful. */
+   if (operation->addition ||
+       operation->pointwise) {
+
+      return 0;
+   }
+
+   /* This calculation can be really slow. Start from max_zrl_bits as big
+    * buffers will benefit the most from high zero compression.
+    */
+   best_compressed_size = UINT_MAX;
+   best_zrl_bits = 0;
+   for (int zrl_bits = max_zrl_bits; zrl_bits >= 0; zrl_bits--) {
+
+      unsigned compressed_size = header_size;
+      for (unsigned core = 0; core < cores_used; core++) {
+
+         unsigned actual_size;
+         if (operation->pointwise && output_channels > 8)
+            actual_size = write_core_6(subgraph, NULL, core, operation, zrl_bits);
+         else if (input_channels > 1)
+            actual_size = write_core_interleaved(subgraph, NULL, core, operation, zrl_bits);
+         else
+            actual_size = write_core_sequential(subgraph, NULL, core, operation, zrl_bits);
+
+         compressed_size += actual_size;
+      }
+
+      /* If more bits don't compress further, then stop */
+      if (compressed_size <= best_compressed_size) {
+         best_compressed_size = compressed_size;
+         best_zrl_bits = zrl_bits;
+      } else
+         break;
+   }
+
+   return best_zrl_bits;
+}
+
+static struct etna_bo *
+create_coefficients_bo(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation, unsigned *cache_size)
+{
+   struct pipe_context *context = subgraph->base.context;
+   struct etna_context *ctx = etna_context(context);
+   unsigned nn_core_count = ctx->screen->specs.nn_core_count;
+   unsigned header_size = ALIGN(nn_core_count * 4, 64);
+   unsigned input_channels = operation->addition ? 1 : operation->input_channels;
+   unsigned output_channels = operation->addition ? 1 : operation->output_channels;
+   unsigned cores_used = MIN2(output_channels, nn_core_count);
+   unsigned zrl_bits;
+   unsigned max_core_size = 0;
+   unsigned bo_size;
+
+   bo_size = calculate_weight_bo_size(subgraph, operation);
+   zrl_bits = calculate_zrl_bits(subgraph, operation);
 
    struct etna_bo *compressed = etna_bo_new(ctx->screen->dev,
-                                            *size,
+                                            bo_size,
                                             DRM_ETNA_GEM_CACHE_WC);
 
    etna_bo_cpu_prep(compressed, DRM_ETNA_PREP_WRITE);
 
-   uint8_t *map = etna_bo_map(compressed);
-   uint32_t *header = (uint32_t *)map;
+   uint32_t *map = etna_bo_map(compressed);
+   memset(map, 0, bo_size);
 
-   memset(map, 0, *size);
-
-   for (unsigned core = 0; core < cores_used; core++)
-      header[core] = core_size_aligned;
-
-   map += header_size;
-
-#if 0
-   uint8_t *input = map_resource(operation->weight_tensor);
-   for (int i = 0; i < operation->output_channels * operation->input_channels * operation->weight_width * operation->weight_height; i++)
-      fprintf(stderr, "i %d: %02x\n", i, input[i]);
-#endif
+   uint32_t *header = map;
+   map += header_size / 4;
 
    for (unsigned core = 0; core < cores_used; core++) {
 
-      *map++ = zero_length_encoding;
-
-      *((uint16_t *)map) = kernels_per_core;
-      map += sizeof(uint16_t);
-
-      if (operation->pointwise && input_channels >= 1 && output_channels > 8)
-         write_6_weight_format(subgraph, map, kernels_per_core, core, operation);
+      unsigned actual_size;
+      if (operation->pointwise && output_channels > 8)
+         actual_size = write_core_6(subgraph, map, core, operation, zrl_bits);
       else if (input_channels > 1)
-         write_interleaved_weight_format(subgraph, map, kernels_per_core, core, operation);
+         actual_size = write_core_interleaved(subgraph, map, core, operation, zrl_bits);
       else
-         write_sequential_weight_format(subgraph, map, kernels_per_core, core, operation);
+         actual_size = write_core_sequential(subgraph, map, core, operation, zrl_bits);
 
-      map += core_size_aligned - 3;
+      actual_size = ALIGN(actual_size, 64);
+      max_core_size = MAX2(actual_size, max_core_size);
+
+      header[core] = actual_size;
+
+      map += actual_size / 4;
    }
 
    etna_bo_cpu_fini(compressed);
+
+   *cache_size = max_core_size * cores_used;
 
    return compressed;
 }
@@ -1137,10 +1350,10 @@ void
 etna_ml_compile_operation_nn(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation,
                              struct etna_vip_instruction *instruction)
 {
-   unsigned coefficients_size;
+   unsigned coef_cache_size;
 
    instruction->type = ETNA_JOB_TYPE_NN;
-   instruction->coefficients = create_coefficients_bo(subgraph, operation, &coefficients_size);
+   instruction->coefficients = create_coefficients_bo(subgraph, operation, &coef_cache_size);
 
    struct pipe_resource *input = etna_ml_get_tensor(subgraph, operation->input_tensor);
    assert(input);
@@ -1150,7 +1363,7 @@ etna_ml_compile_operation_nn(struct etna_ml_subgraph *subgraph, const struct etn
    assert(output);
    pipe_resource_reference(&instruction->output, output);
 
-   instruction->configs[0] = create_nn_config(subgraph, operation, instruction->coefficients, coefficients_size);
+   instruction->configs[0] = create_nn_config(subgraph, operation, instruction->coefficients, coef_cache_size);
 }
 
 void
@@ -1164,7 +1377,7 @@ etna_ml_emit_operation_nn(struct etna_ml_subgraph *subgraph,
    unsigned offset = idx + 1;
    unsigned nn_config = VIVS_GL_NN_CONFIG_NN_CORE_COUNT(0x0); /* This disables power control of NN cores and enables all of them */
 
-   if (DBG_ENABLED(ETNA_DBG_NPU_NO_PARALLEL)) {
+   if (!DBG_ENABLED(ETNA_DBG_NPU_PARALLEL)) {
       nn_config |= VIVS_GL_NN_CONFIG_SMALL_BATCH;
       offset = 0;
    }

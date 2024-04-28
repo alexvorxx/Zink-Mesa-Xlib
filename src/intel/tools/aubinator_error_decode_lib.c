@@ -68,22 +68,3 @@ dump_shader_binary(void *user_data, const char *short_name,
    fwrite(data, data_length, 1, f);
    fclose(f);
 }
-
-const char *
-ascii85_decode_char(const char *in, uint32_t *v)
-{
-   *v = 0;
-
-   if (*in == 'z') {
-      in++;
-   } else {
-      *v += in[0] - 33; *v *= 85;
-      *v += in[1] - 33; *v *= 85;
-      *v += in[2] - 33; *v *= 85;
-      *v += in[3] - 33; *v *= 85;
-      *v += in[4] - 33;
-      in += 5;
-   }
-
-   return in;
-}

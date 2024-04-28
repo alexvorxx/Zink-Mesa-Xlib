@@ -97,7 +97,7 @@ anv_cmd_buffer_ensure_rcs_companion(struct anv_cmd_buffer *cmd_buffer)
    assert(pool != NULL);
 
    struct vk_command_buffer *tmp_cmd_buffer = NULL;
-   result = pool->command_buffer_ops->create(pool, &tmp_cmd_buffer);
+   result = pool->command_buffer_ops->create(pool, cmd_buffer->vk.level, &tmp_cmd_buffer);
 
    if (result != VK_SUCCESS)
       goto unlock_and_return;
@@ -114,6 +114,7 @@ unlock_and_return:
 
 static VkResult
 anv_create_cmd_buffer(struct vk_command_pool *pool,
+                      VkCommandBufferLevel level,
                       struct vk_command_buffer **cmd_buffer_out)
 {
    struct anv_device *device =
@@ -127,7 +128,7 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
       return vk_error(pool, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    result = vk_command_buffer_init(pool, &cmd_buffer->vk,
-                                   &anv_cmd_buffer_ops, 0);
+                                   &anv_cmd_buffer_ops, level);
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
@@ -465,7 +466,7 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
          struct anv_bo *new_bo;
          VkResult result = anv_device_alloc_bo(device, "RT queries shadow",
                                                ray_shadow_size,
-                                               0, /* alloc_flags */
+                                               ANV_BO_ALLOC_INTERNAL, /* alloc_flags */
                                                0, /* explicit_address */
                                                &new_bo);
          if (result != VK_SUCCESS) {
@@ -497,6 +498,7 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
    pipeline_state->push_constants.ray_query_globals =
       anv_address_physical(ray_query_globals_addr);
    cmd_buffer->state.push_constants_dirty |= stages;
+   pipeline_state->push_constants_data_dirty = true;
 }
 
 /**
@@ -560,20 +562,20 @@ anv_cmd_buffer_flush_pipeline_state(struct anv_cmd_buffer *cmd_buffer,
       diff_fix_state(PRIMITIVE_REPLICATION, final.primitive_replication);
    diff_fix_state(SBE,                      final.sbe);
    diff_fix_state(SBE_SWIZ,                 final.sbe_swiz);
-   diff_fix_state(MULTISAMPLE,              final.ms);
    diff_fix_state(VS,                       final.vs);
    diff_fix_state(HS,                       final.hs);
    diff_fix_state(DS,                       final.ds);
-   diff_fix_state(PS,                       final.ps);
 
    diff_fix_state(CLIP,                     partial.clip);
    diff_fix_state(SF,                       partial.sf);
    diff_fix_state(RASTER,                   partial.raster);
+   diff_fix_state(MULTISAMPLE,              partial.ms);
    diff_fix_state(WM,                       partial.wm);
    diff_fix_state(STREAMOUT,                partial.so);
    diff_fix_state(GS,                       partial.gs);
    diff_fix_state(TE,                       partial.te);
    diff_fix_state(VFG,                      partial.vfg);
+   diff_fix_state(PS,                       partial.ps);
    diff_fix_state(PS_EXTRA,                 partial.ps_extra);
 
    if (cmd_buffer->device->vk.enabled_extensions.EXT_mesh_shader) {
@@ -696,18 +698,10 @@ void anv_CmdBindPipeline(
                modified = true;
             }
          }
-         if (modified)
+         if (modified) {
             cmd_buffer->state.push_constants_dirty |= stages;
-      }
-
-      if ((new_pipeline->fs_msaa_flags & INTEL_MSAA_FLAG_ENABLE_DYNAMIC) &&
-          push->gfx.fs_msaa_flags != new_pipeline->fs_msaa_flags) {
-         push->gfx.fs_msaa_flags = new_pipeline->fs_msaa_flags;
-         cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_FRAGMENT_BIT;
-      }
-      if (new_pipeline->dynamic_patch_control_points) {
-         cmd_buffer->state.push_constants_dirty |=
-            VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+            state->push_constants_data_dirty = true;
+         }
       }
 
       anv_cmd_buffer_flush_pipeline_state(cmd_buffer, old_pipeline, new_pipeline);
@@ -926,6 +920,7 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
    else
       cmd_buffer->state.descriptors_dirty |= dirty_stages;
    cmd_buffer->state.push_constants_dirty |= dirty_stages;
+   pipe_state->push_constants_data_dirty = true;
 }
 
 #define ANV_GRAPHICS_STAGE_BITS \
@@ -1310,6 +1305,7 @@ void anv_CmdPushConstants2KHR(
 
       memcpy(pipe_state->push_constants.client_data + pInfo->offset,
              pInfo->pValues, pInfo->size);
+      pipe_state->push_constants_data_dirty = true;
    }
    if (pInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT) {
       struct anv_cmd_pipeline_state *pipe_state =
@@ -1317,6 +1313,7 @@ void anv_CmdPushConstants2KHR(
 
       memcpy(pipe_state->push_constants.client_data + pInfo->offset,
              pInfo->pValues, pInfo->size);
+      pipe_state->push_constants_data_dirty = true;
    }
    if (pInfo->stageFlags & ANV_RT_STAGE_BITS) {
       struct anv_cmd_pipeline_state *pipe_state =
@@ -1324,6 +1321,7 @@ void anv_CmdPushConstants2KHR(
 
       memcpy(pipe_state->push_constants.client_data + pInfo->offset,
              pInfo->pValues, pInfo->size);
+      pipe_state->push_constants_data_dirty = true;
    }
 
    cmd_buffer->state.push_constants_dirty |= pInfo->stageFlags;
@@ -1453,7 +1451,7 @@ void anv_CmdSetRayTracingPipelineStackSizeKHR(
       struct anv_bo *new_bo;
       VkResult result = anv_device_alloc_bo(device, "RT scratch",
                                             rt->scratch.layout.total_size,
-                                            0, /* alloc_flags */
+                                            ANV_BO_ALLOC_INTERNAL, /* alloc_flags */
                                             0, /* explicit_address */
                                             &new_bo);
       if (result != VK_SUCCESS) {

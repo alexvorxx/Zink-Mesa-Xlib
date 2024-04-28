@@ -56,6 +56,7 @@ struct spirv_supported_capabilities {
    bool device_group;
    bool draw_parameters;
    bool float_controls;
+   bool float_controls2;
    bool float16_atomic_add;
    bool float16_atomic_min_max;
    bool float16;
@@ -532,7 +533,7 @@ typedef struct shader_info {
       struct {
          uint16_t workgroup_size_hint[3];
 
-         uint8_t user_data_components_amd:3;
+         uint8_t user_data_components_amd:4;
 
          /*
           * Arrangement of invocations used to calculate derivatives in a compute

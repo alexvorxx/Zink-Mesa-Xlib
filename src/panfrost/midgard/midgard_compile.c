@@ -1382,7 +1382,6 @@ compute_builtin_arg(nir_intrinsic_op op)
    case nir_intrinsic_load_local_invocation_id:
       return REGISTER_LDST_LOCAL_THREAD_ID;
    case nir_intrinsic_load_global_invocation_id:
-   case nir_intrinsic_load_global_invocation_id_zero_base:
       return REGISTER_LDST_GLOBAL_THREAD_ID;
    default:
       unreachable("Invalid compute paramater loaded");
@@ -1870,7 +1869,6 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_workgroup_id:
    case nir_intrinsic_load_local_invocation_id:
    case nir_intrinsic_load_global_invocation_id:
-   case nir_intrinsic_load_global_invocation_id_zero_base:
       emit_compute_builtin(ctx, instr);
       break;
 

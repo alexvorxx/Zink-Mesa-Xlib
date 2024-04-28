@@ -38,9 +38,9 @@ vk_object_base_init(struct vk_device *device,
 {
    base->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
    base->type = obj_type;
+   base->client_visible = false;
    base->device = device;
    base->instance = NULL;
-   base->client_visible = false;
    base->object_name = NULL;
    util_sparse_array_init(&base->private_data, sizeof(uint64_t), 8);
 }
@@ -51,9 +51,9 @@ void vk_object_base_instance_init(struct vk_instance *instance,
 {
    base->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
    base->type = obj_type;
+   base->client_visible = false;
    base->device = NULL;
    base->instance = instance;
-   base->client_visible = false;
    base->object_name = NULL;
    util_sparse_array_init(&base->private_data, sizeof(uint64_t), 8);
 }

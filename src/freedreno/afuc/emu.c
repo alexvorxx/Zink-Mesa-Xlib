@@ -349,7 +349,20 @@ emu_instr(struct emu *emu, struct afuc_instr *instr)
       emu->waitin = true;
       break;
    }
-   /* OPC_PREEMPTLEAVE6 */
+   case OPC_BL: {
+      emu_set_gpr_reg(emu, REG_LR, emu->gpr_regs.pc + 2);
+      emu->branch_target = instr->literal;
+      break;
+   }
+   case OPC_JUMPR: {
+      emu->branch_target = emu_get_gpr_reg(emu, instr->src1);
+      break;
+   }
+   case OPC_SRET: {
+      emu->branch_target = emu_get_gpr_reg(emu, REG_LR);
+      /* TODO: read $sp and check for stack overflow? */
+      break;
+   }
    case OPC_SETSECURE: {
       // TODO this acts like a conditional branch, but in which case
       // does it branch?
@@ -554,12 +567,15 @@ emu_init(struct emu *emu)
       break;
    }
 
-   if (emu->gpu_id == 730 || emu->gpu_id == 740) {
+   if (emu->fw_id == AFUC_A750) {
+      emu_set_control_reg(emu, 0, 7 << 28);
+      emu_set_control_reg(emu, 2, 0x40 << 8);
+   } else if (emu->fw_id == AFUC_A730 || emu->fw_id == AFUC_A740) {
       emu_set_control_reg(emu, 0xef, 1 << 21);
       emu_set_control_reg(emu, 0, 7 << 28);
-   } else if (emu->gpu_id == 660) {
+   } else if (emu->fw_id == AFUC_A660) {
       emu_set_control_reg(emu, 0, 3 << 28);
-   } else if (emu->gpu_id == 650) {
+   } else if (emu->fw_id == AFUC_A650) {
       emu_set_control_reg(emu, 0, 1 << 28);
    }
 }
@@ -569,12 +585,12 @@ emu_fini(struct emu *emu)
 {
    uint32_t *instrs = emu->instrs;
    unsigned sizedwords = emu->sizedwords;
-   unsigned gpu_id = emu->gpu_id;
+   unsigned fw_id = emu->fw_id;
 
    munmap(emu->gpumem, EMU_MEMORY_SIZE);
    memset(emu, 0, sizeof(*emu));
 
    emu->instrs = instrs;
    emu->sizedwords = sizedwords;
-   emu->gpu_id = gpu_id;
+   emu->fw_id = fw_id;
 }

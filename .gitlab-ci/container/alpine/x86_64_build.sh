@@ -41,6 +41,7 @@ DEPS=(
     libpciaccess-dev
     zlib-dev
     python3-dev
+    py3-cparser
     py3-mako
     py3-ply
     vulkan-headers

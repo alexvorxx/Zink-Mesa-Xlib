@@ -361,3 +361,7 @@ concepts used in PowerVR GPUs appear in AGX.
    Pixel BackEnd
       Hardware unit which writes to color attachements and images. Also the
       name for a descriptor passed to :term:`PBE` instructions.
+
+   UVS
+   Unified Vertex Store
+      Hardware unit which buffers the outputs of the vertex shader (varyings).

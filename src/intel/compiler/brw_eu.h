@@ -41,6 +41,7 @@
 #include "brw_isa_info.h"
 #include "brw_reg.h"
 
+#include "intel_wa.h"
 #include "util/bitset.h"
 
 #ifdef __cplusplus
@@ -119,12 +120,6 @@ struct brw_codegen {
     * encountered.
     */
    int *loop_stack;
-   /**
-    * pre-gfx6, the BREAK and CONT instructions had to tell how many IF/ENDIF
-    * blocks they were popping out of, to fix up the mask stack.  This tracks
-    * the IF/ENDIF nesting in each current nested loop level.
-    */
-   int *if_depth_in_loop;
    int loop_stack_depth;
    int loop_stack_array_size;
 
@@ -1148,23 +1143,14 @@ lsc_vect_size(unsigned vect_size)
 }
 
 static inline uint32_t
-lsc_msg_desc_wcmask(UNUSED const struct intel_device_info *devinfo,
-             enum lsc_opcode opcode, unsigned simd_size,
+lsc_msg_desc_wcmask(const struct intel_device_info *devinfo,
+             enum lsc_opcode opcode,
              enum lsc_addr_surface_type addr_type,
-             enum lsc_addr_size addr_sz, unsigned num_coordinates,
+             enum lsc_addr_size addr_sz,
              enum lsc_data_size data_sz, unsigned num_channels,
-             bool transpose, unsigned cache_ctrl, bool has_dest, unsigned cmask)
+             bool transpose, unsigned cache_ctrl, unsigned cmask)
 {
    assert(devinfo->has_lsc);
-
-   unsigned dest_length = !has_dest ? 0 :
-      DIV_ROUND_UP(lsc_data_size_bytes(data_sz) * num_channels * simd_size,
-                   reg_unit(devinfo) * REG_SIZE);
-
-   unsigned src0_length =
-      DIV_ROUND_UP(lsc_addr_size_bytes(addr_sz) * num_coordinates * simd_size,
-                   reg_unit(devinfo) * REG_SIZE);
-
    assert(!transpose || lsc_opcode_has_transpose(opcode));
 
    unsigned msg_desc =
@@ -1174,8 +1160,6 @@ lsc_msg_desc_wcmask(UNUSED const struct intel_device_info *devinfo,
       SET_BITS(transpose, 15, 15) |
       (devinfo->ver >= 20 ? SET_BITS(cache_ctrl, 19, 16) :
                             SET_BITS(cache_ctrl, 19, 17)) |
-      SET_BITS(dest_length, 24, 20) |
-      SET_BITS(src0_length, 28, 25) |
       SET_BITS(addr_type, 30, 29);
 
    if (lsc_opcode_has_cmask(opcode))
@@ -1188,15 +1172,14 @@ lsc_msg_desc_wcmask(UNUSED const struct intel_device_info *devinfo,
 
 static inline uint32_t
 lsc_msg_desc(UNUSED const struct intel_device_info *devinfo,
-             enum lsc_opcode opcode, unsigned simd_size,
+             enum lsc_opcode opcode,
              enum lsc_addr_surface_type addr_type,
-             enum lsc_addr_size addr_sz, unsigned num_coordinates,
+             enum lsc_addr_size addr_sz,
              enum lsc_data_size data_sz, unsigned num_channels,
-             bool transpose, unsigned cache_ctrl, bool has_dest)
+             bool transpose, unsigned cache_ctrl)
 {
-   return lsc_msg_desc_wcmask(devinfo, opcode, simd_size, addr_type, addr_sz,
-         num_coordinates, data_sz, num_channels, transpose, cache_ctrl,
-         has_dest, 0);
+   return lsc_msg_desc_wcmask(devinfo, opcode, addr_type, addr_sz,
+                              data_sz, num_channels, transpose, cache_ctrl, 0);
 }
 
 static inline enum lsc_opcode
@@ -1258,19 +1241,19 @@ lsc_msg_desc_cache_ctrl(UNUSED const struct intel_device_info *devinfo,
 }
 
 static inline unsigned
-lsc_msg_desc_dest_len(const struct intel_device_info *devinfo,
-                      uint32_t desc)
+lsc_msg_dest_len(const struct intel_device_info *devinfo,
+                 enum lsc_data_size data_sz, unsigned n)
 {
-   assert(devinfo->has_lsc);
-   return GET_BITS(desc, 24, 20) * reg_unit(devinfo);
+   return DIV_ROUND_UP(lsc_data_size_bytes(data_sz) * n,
+                       reg_unit(devinfo) * REG_SIZE) * reg_unit(devinfo);
 }
 
 static inline unsigned
-lsc_msg_desc_src0_len(const struct intel_device_info *devinfo,
-                      uint32_t desc)
+lsc_msg_addr_len(const struct intel_device_info *devinfo,
+                 enum lsc_addr_size addr_sz, unsigned n)
 {
-   assert(devinfo->has_lsc);
-   return GET_BITS(desc, 28, 25) * reg_unit(devinfo);
+   return DIV_ROUND_UP(lsc_addr_size_bytes(addr_sz) * n,
+                       reg_unit(devinfo) * REG_SIZE) * reg_unit(devinfo);
 }
 
 static inline enum lsc_addr_surface_type
@@ -1288,6 +1271,11 @@ lsc_fence_msg_desc(UNUSED const struct intel_device_info *devinfo,
                    bool route_to_lsc)
 {
    assert(devinfo->has_lsc);
+
+#if INTEL_NEEDS_WA_22017182272
+   assert(flush_type != LSC_FLUSH_TYPE_DISCARD);
+#endif
+
    return SET_BITS(LSC_OP_FENCE, 5, 0) |
           SET_BITS(LSC_ADDR_SIZE_A32, 8, 7) |
           SET_BITS(scope, 11, 9) |
@@ -1478,21 +1466,6 @@ brw_send_indirect_split_message(struct brw_codegen *p,
                                 bool ex_desc_scratch,
                                 bool ex_bso,
                                 bool eot);
-
-void brw_svb_write(struct brw_codegen *p,
-                   struct brw_reg dest,
-                   unsigned msg_reg_nr,
-                   struct brw_reg src0,
-                   unsigned binding_table_index,
-                   bool   send_commit_msg);
-
-brw_inst *gfx9_fb_READ(struct brw_codegen *p,
-                       struct brw_reg dst,
-                       struct brw_reg payload,
-                       unsigned binding_table_index,
-                       unsigned msg_length,
-                       unsigned response_length,
-                       bool per_sample);
 
 void gfx6_math(struct brw_codegen *p,
 	       struct brw_reg dest,

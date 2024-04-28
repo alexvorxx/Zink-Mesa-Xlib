@@ -312,6 +312,7 @@ pub extern "C" fn nak_compile_shader(
 
     let info = nak_shader_info {
         stage: nir.info.stage(),
+        sm: s.info.sm,
         num_gprs: if s.info.sm >= 70 {
             max(4, s.info.num_gprs + 2)
         } else {

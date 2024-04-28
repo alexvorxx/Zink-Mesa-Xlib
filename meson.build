@@ -543,20 +543,21 @@ if with_glx != 'disabled'
   endif
 endif
 
-with_glvnd = get_option('glvnd')
-glvnd_vendor_name = get_option('glvnd-vendor-name')
+_glvnd = get_option('glvnd') \
+  .require(not with_platform_windows,
+           error_message: 'glvnd cannot be used on Windows') \
+  .require(with_glx != 'xlib',
+           error_message: 'Cannot build glvnd support for GLX that is not DRI based.') \
+  .require(with_glx != 'disabled' or with_egl,
+           error_message: 'glvnd requires DRI based GLX and/or EGL') \
+  .require(get_option('egl-lib-suffix') == '',
+           error_message: '''EGL lib suffix can't be used with libglvnd''')
+dep_glvnd = dependency('libglvnd', version : '>= 1.3.2', required : _glvnd)
+with_glvnd = dep_glvnd.found()
 if with_glvnd
-  if with_platform_windows
-    error('glvnd cannot be used on Windows')
-  elif with_glx == 'xlib'
-    error('Cannot build glvnd support for GLX that is not DRI based.')
-  elif with_glx == 'disabled' and not with_egl
-    error('glvnd requires DRI based GLX and/or EGL')
-  endif
-  if get_option('egl-lib-suffix') != ''
-    error('''EGL lib suffix can't be used with libglvnd''')
-  endif
+  pre_args += '-DUSE_LIBGLVND=1'
 endif
+glvnd_vendor_name = get_option('glvnd-vendor-name')
 
 if with_vulkan_icd_dir == ''
   with_vulkan_icd_dir = join_paths(get_option('datadir'), 'vulkan/icd.d')
@@ -959,6 +960,22 @@ endif
 # Define MESA_DEBUG to 1 for debug builds only (debugoptimized is not included on this one);
 # otherwise define MESA_DEBUG to 0
 pre_args += '-DMESA_DEBUG=' + (with_mesa_debug ? '1' : '0')
+
+with_split_debug = get_option('split-debug') \
+  .disable_if(not cc.compiles('''#include<stdio.h>
+                                 int main() {
+                                 printf("\n");
+                                 };''',
+                    args : '-gsplit-dwarf',
+                    name : 'split-dwarf support'),
+    error_message : 'split-debug requires compiler -gsplit-dwarf support') \
+  .disable_if(not cc.has_link_argument('-Wl,--gdb-index'),
+    error_message : 'split-debug requires the linker argument -Wl,--gdb-index')
+
+if with_split_debug.allowed() and get_option('debug')
+  add_project_arguments('-gsplit-dwarf', langauge : ['c', 'cpp'])
+  add_project_link_arguments('-Wl,--gdb-index', language : ['c', 'cpp'])
+endif
 
 with_shader_cache = get_option('shader-cache') \
   .require(host_machine.system() != 'windows', error_message : 'Shader Cache does not currently work on Windows') \
@@ -1372,7 +1389,7 @@ if not ['linux'].contains(host_machine.system())
 endif
 
 foreach h : ['xlocale.h', 'linux/futex.h', 'endian.h', 'dlfcn.h', 'sys/shm.h',
-             'cet.h', 'pthread_np.h', 'renderdoc_app.h', 'sys/inotify.h']
+             'cet.h', 'pthread_np.h', 'renderdoc_app.h', 'sys/inotify.h', 'linux/udmabuf.h']
   if cc.check_header(h)
     pre_args += '-DHAVE_@0@'.format(h.to_upper().underscorify())
   endif
@@ -1894,12 +1911,6 @@ elif with_gallium_radeonsi
   error('Gallium driver radeonsi requires libelf')
 endif
 
-dep_glvnd = null_dep
-if with_glvnd
-  dep_glvnd = dependency('libglvnd', version : '>= 1.3.2')
-  pre_args += '-DUSE_LIBGLVND=1'
-endif
-
 dep_valgrind = dependency('valgrind', required : get_option('valgrind'))
 if dep_valgrind.found()
   pre_args += '-DHAVE_VALGRIND'
@@ -1912,6 +1923,23 @@ if ['address', 'address,undefined'].contains(get_option('b_sanitize'))
   asan_c_args = ['-DBUILT_WITH_ASAN=1']
 else
   asan_c_args = ['-DBUILT_WITH_ASAN=0']
+endif
+
+# ThreadSanitizer can't deal with futexes, and reports races for cases we don't care about
+# so add a define to work silence these issues.
+if get_option('b_sanitize') == 'thread'
+  pre_args += '-DTHREAD_SANITIZER=1'
+  # meson versions prior to 1.4 will warn "Consider using the built-in option for sanitizers ..." 
+  # later on because it only checks whether the option starts with "-fsanitize",
+  # but there is no built-in option for adding a blacklist
+  tsan_blacklist = '-fsanitize-blacklist=@0@'.format(join_paths(meson.project_source_root(), 'tsan-blacklist.txt'))
+  if cc.has_argument(tsan_blacklist)
+    pre_args += tsan_blacklist
+  else
+    warning('Compiler does not support "-fsanitize-blacklist", expected race conditions will not be surpressed')
+  endif
+else
+  pre_args += '-DTHREAD_SANITIZER=0'
 endif
 
 yacc_is_bison = true
@@ -2001,7 +2029,7 @@ if with_platform_wayland
   else
     wl_scanner_arg = 'code'
   endif
-  dep_wl_protocols = dependency('wayland-protocols', version : '>= 1.30')
+  dep_wl_protocols = dependency('wayland-protocols', version : '>= 1.34')
   dep_wayland_client = dependency('wayland-client', version : '>=1.18')
   dep_wayland_server = dependency('wayland-server', version : '>=1.18')
   if with_egl
@@ -2054,6 +2082,7 @@ if host_machine.cpu_family() == 'x86_64' and cc.get_id() == 'gcc'
 endif
 
 with_dri3_modifiers = false
+with_dri3_explicit_sync = false
 with_xcb_keysyms = false
 if with_platform_x11
   if with_glx == 'xlib'
@@ -2097,6 +2126,10 @@ if with_platform_x11
           dep_xcb_present.version().version_compare('>= 1.13'))
         with_dri3_modifiers = true
       endif
+      if (dep_xcb_dri3.version().version_compare('>= 1.17') and
+          dep_xcb_present.version().version_compare('>= 1.17'))
+        with_dri3_explicit_sync = true
+      endif
       dep_xcb_shm = dependency('xcb-shm')
       dep_xcb_sync = dependency('xcb-sync')
       dep_xshmfence = dependency('xshmfence', version : '>= 1.1')
@@ -2138,6 +2171,9 @@ if with_dri3
 endif
 if with_dri3_modifiers
   pre_args += '-DHAVE_DRI3_MODIFIERS'
+endif
+if with_dri3_explicit_sync
+  pre_args += '-DHAVE_DRI3_EXPLICIT_SYNC'
 endif
 if with_gallium_drisw_kms
   pre_args += '-DHAVE_DRISW_KMS'

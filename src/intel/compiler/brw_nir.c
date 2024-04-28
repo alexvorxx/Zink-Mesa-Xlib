@@ -1812,7 +1812,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
     */
    NIR_PASS(_, nir, nir_convert_to_lcssa, true, true);
    NIR_PASS_V(nir, nir_divergence_analysis);
-   OPT(nir_opt_remove_phis);
 
    OPT(nir_convert_from_ssa, true);
 
@@ -1820,8 +1819,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    if (OPT(nir_opt_rematerialize_compares))
       OPT(nir_opt_dce);
-
-   OPT(nir_opt_dce);
 
    /* The mesh stages require this pass to be called at the last minute,
     * but if anything is done by it, it will also constant fold, and that
@@ -2046,36 +2043,36 @@ brw_type_for_nir_type(const struct intel_device_info *devinfo,
    switch (type) {
    case nir_type_uint:
    case nir_type_uint32:
-      return BRW_REGISTER_TYPE_UD;
+      return BRW_TYPE_UD;
    case nir_type_bool:
    case nir_type_int:
    case nir_type_bool32:
    case nir_type_int32:
-      return BRW_REGISTER_TYPE_D;
+      return BRW_TYPE_D;
    case nir_type_float:
    case nir_type_float32:
-      return BRW_REGISTER_TYPE_F;
+      return BRW_TYPE_F;
    case nir_type_float16:
-      return BRW_REGISTER_TYPE_HF;
+      return BRW_TYPE_HF;
    case nir_type_float64:
-      return BRW_REGISTER_TYPE_DF;
+      return BRW_TYPE_DF;
    case nir_type_int64:
-      return BRW_REGISTER_TYPE_Q;
+      return BRW_TYPE_Q;
    case nir_type_uint64:
-      return BRW_REGISTER_TYPE_UQ;
+      return BRW_TYPE_UQ;
    case nir_type_int16:
-      return BRW_REGISTER_TYPE_W;
+      return BRW_TYPE_W;
    case nir_type_uint16:
-      return BRW_REGISTER_TYPE_UW;
+      return BRW_TYPE_UW;
    case nir_type_int8:
-      return BRW_REGISTER_TYPE_B;
+      return BRW_TYPE_B;
    case nir_type_uint8:
-      return BRW_REGISTER_TYPE_UB;
+      return BRW_TYPE_UB;
    default:
       unreachable("unknown type");
    }
 
-   return BRW_REGISTER_TYPE_F;
+   return BRW_TYPE_F;
 }
 
 nir_shader *

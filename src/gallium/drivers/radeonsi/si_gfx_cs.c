@@ -211,7 +211,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
        */
       ctx->ws->fence_wait(ctx->ws, ctx->last_gfx_fence, 800 * 1000 * 1000);
 
-      si_check_vm_faults(ctx, &ctx->current_saved_cs->gfx, AMD_IP_GFX);
+      si_check_vm_faults(ctx, &ctx->current_saved_cs->gfx);
    }
 
    if (unlikely(ctx->sqtt && (flags & PIPE_FLUSH_END_OF_FRAME))) {
@@ -741,6 +741,30 @@ static struct si_resource *si_get_wait_mem_scratch_bo(struct si_context *ctx,
    }
 }
 
+static void prepare_cb_db_flushes(struct si_context *ctx, unsigned *flags)
+{
+   /* Don't flush CB and DB if there have been no draw calls. */
+   if (ctx->num_draw_calls == ctx->last_cb_flush_num_draw_calls &&
+       ctx->num_decompress_calls == ctx->last_cb_flush_num_decompress_calls)
+      *flags &= ~SI_CONTEXT_FLUSH_AND_INV_CB;
+
+   if (ctx->num_draw_calls == ctx->last_db_flush_num_draw_calls &&
+       ctx->num_decompress_calls == ctx->last_db_flush_num_decompress_calls)
+      *flags &= ~SI_CONTEXT_FLUSH_AND_INV_DB;
+
+   /* Track the last flush. */
+   if (*flags & SI_CONTEXT_FLUSH_AND_INV_CB) {
+      ctx->num_cb_cache_flushes++;
+      ctx->last_cb_flush_num_draw_calls = ctx->num_draw_calls;
+      ctx->last_cb_flush_num_decompress_calls = ctx->num_decompress_calls;
+   }
+   if (*flags & SI_CONTEXT_FLUSH_AND_INV_DB) {
+      ctx->num_db_cache_flushes++;
+      ctx->last_db_flush_num_draw_calls = ctx->num_draw_calls;
+      ctx->last_db_flush_num_decompress_calls = ctx->num_decompress_calls;
+   }
+}
+
 void gfx10_emit_cache_flush(struct si_context *ctx, struct radeon_cmdbuf *cs)
 {
    uint32_t gcr_cntl = 0;
@@ -760,17 +784,14 @@ void gfx10_emit_cache_flush(struct si_context *ctx, struct radeon_cmdbuf *cs)
    /* We don't need these. */
    assert(!(flags & (SI_CONTEXT_VGT_STREAMOUT_SYNC | SI_CONTEXT_FLUSH_AND_INV_DB_META)));
 
+   prepare_cb_db_flushes(ctx, &flags);
+
    radeon_begin(cs);
 
    if (flags & SI_CONTEXT_VGT_FLUSH) {
       radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
       radeon_emit(EVENT_TYPE(V_028A90_VGT_FLUSH) | EVENT_INDEX(0));
    }
-
-   if (flags & SI_CONTEXT_FLUSH_AND_INV_CB)
-      ctx->num_cb_cache_flushes++;
-   if (flags & SI_CONTEXT_FLUSH_AND_INV_DB)
-      ctx->num_db_cache_flushes++;
 
    if (flags & SI_CONTEXT_INV_ICACHE)
       gcr_cntl |= S_586_GLI_INV(V_586_GLI_ALL);
@@ -1022,10 +1043,7 @@ void gfx6_emit_cache_flush(struct si_context *sctx, struct radeon_cmdbuf *cs)
 
    assert(sctx->gfx_level <= GFX9);
 
-   if (flags & SI_CONTEXT_FLUSH_AND_INV_CB)
-      sctx->num_cb_cache_flushes++;
-   if (flags & SI_CONTEXT_FLUSH_AND_INV_DB)
-      sctx->num_db_cache_flushes++;
+   prepare_cb_db_flushes(sctx, &flags);
 
    /* GFX6 has a bug that it always flushes ICACHE and KCACHE if either
     * bit is set. An alternative way is to write SQC_CACHES, but that

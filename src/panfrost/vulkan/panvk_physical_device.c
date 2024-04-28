@@ -12,6 +12,7 @@
 #include <sys/sysinfo.h>
 
 #include "util/disk_cache.h"
+#include "git_sha1.h"
 
 #include "vk_device.h"
 #include "vk_drm_syncobj.h"
@@ -30,8 +31,14 @@
 
 #include "genxml/gen_macros.h"
 
+#define ARM_VENDOR_ID        0x13b5
 #define MAX_VIEWPORTS        1
 #define MAX_PUSH_DESCRIPTORS 32
+/* We reserve one ubo for push constant, one for sysvals and one per-set for the
+ * descriptor metadata  */
+#define RESERVED_UBO_COUNT                   6
+#define MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS 32 - RESERVED_UBO_COUNT
+#define MAX_INLINE_UNIFORM_BLOCK_SIZE        (1 << 16)
 
 static int
 get_cache_uuid(uint16_t family, void *uuid)
@@ -71,6 +78,8 @@ get_device_extensions(const struct panvk_physical_device *device,
       .KHR_shader_expect_assume = true,
       .KHR_storage_buffer_storage_class = true,
       .KHR_descriptor_update_template = true,
+      .KHR_driver_properties = true,
+      .KHR_push_descriptor = true,
 #ifdef PANVK_USE_WSI_PLATFORM
       .KHR_swapchain = true,
 #endif
@@ -86,6 +95,8 @@ static void
 get_features(const struct panvk_physical_device *device,
              struct vk_features *features)
 {
+   unsigned arch = pan_arch(device->kmod.props.gpu_prod_id);
+
    *features = (struct vk_features){
       /* Vulkan 1.0 */
       .robustBufferAccess = true,
@@ -199,11 +210,375 @@ get_features(const struct panvk_physical_device *device,
 
       /* VK_EXT_custom_border_color */
       .customBorderColors = true,
-      .customBorderColorWithoutFormat = true,
+
+      /* v7 doesn't support AFBC(BGR). We need to tweak the texture swizzle to
+       * make it work, which forces us to apply the same swizzle on the border
+       * color, meaning we need to know the format when preparing the border
+       * color.
+       */
+      .customBorderColorWithoutFormat = arch != 7,
 
       /* VK_KHR_shader_expect_assume */
       .shaderExpectAssume = true,
    };
+}
+
+static void
+get_device_properties(const struct panvk_physical_device *device,
+                      struct vk_properties *properties)
+{
+   /* HW supports MSAA 4, 8 and 16, but we limit ourselves to MSAA 4 for now. */
+   VkSampleCountFlags sample_counts =
+      VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
+
+   uint64_t os_page_size = 4096;
+   os_get_page_size(&os_page_size);
+
+   *properties = (struct vk_properties){
+      .apiVersion = panvk_get_vk_version(),
+      .driverVersion = vk_get_driver_version(),
+      .vendorID = ARM_VENDOR_ID,
+
+      /* Collect arch_major, arch_minor, arch_rev and product_major,
+       * as done by the Arm driver.
+       */
+      .deviceID = device->kmod.props.gpu_prod_id << 16,
+      .deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+
+      /* Vulkan 1.0 limits */
+      /* Maximum texture dimension is 2^16. */
+      .maxImageDimension1D = (1 << 16),
+      .maxImageDimension2D = (1 << 16),
+      .maxImageDimension3D = (1 << 16),
+      .maxImageDimensionCube = (1 << 16),
+      .maxImageArrayLayers = (1 << 16),
+      /* Currently limited by the 1D texture size, which is 2^16.
+       * TODO: If we expose buffer views as 2D textures, we can increase the
+       * limit.
+       */
+      .maxTexelBufferElements = (1 << 16),
+      /* Each uniform entry is 16-byte and the number of entries is encoded in a
+       * 12-bit field, with the minus(1) modifier, which gives 2^20.
+       */
+      .maxUniformBufferRange = 1 << 20,
+      /* Storage buffer access is lowered to globals, so there's no limit here,
+       * except for the SW-descriptor we use to encode storage buffer
+       * descriptors, where the size is a 32-bit field.
+       */
+      .maxStorageBufferRange = UINT32_MAX,
+      /* 128 bytes of push constants, so we're aligned with the minimum Vulkan
+       * requirements.
+       */
+      .maxPushConstantsSize = 128,
+      /* There's no HW limit here. Should we advertize something smaller? */
+      .maxMemoryAllocationCount = UINT32_MAX,
+      /* Again, no hardware limit, but most drivers seem to advertive 64k. */
+      .maxSamplerAllocationCount = 64 * 1024,
+      /* A cache line. */
+      .bufferImageGranularity = 64,
+      /* Sparse binding not supported yet. */
+      .sparseAddressSpaceSize = 0,
+      /* Software limit. Pick the minimum required by Vulkan, because Bifrost
+       * GPUs don't have unified descriptor tables, which forces us to
+       * agregatte all descriptors from all sets and dispatch them to per-type
+       * descriptor tables emitted at draw/dispatch time.
+       * The more sets we support the more copies we are likely to have to do
+       * at draw time.
+       */
+      .maxBoundDescriptorSets = 4,
+      /* MALI_RENDERER_STATE::sampler_count is 16-bit. */
+      .maxPerStageDescriptorSamplers = UINT16_MAX,
+      .maxDescriptorSetSamplers = UINT16_MAX,
+      /* MALI_RENDERER_STATE::uniform_buffer_count is 8-bit. We reserve 32 slots
+       * for our internal UBOs.
+       */
+      .maxPerStageDescriptorUniformBuffers = UINT8_MAX - 32,
+      .maxDescriptorSetUniformBuffers = UINT8_MAX - 32,
+      /* SSBOs are limited by the size of a uniform buffer which contains our
+       * panvk_ssbo_desc objects.
+       * panvk_ssbo_desc is 16-byte, and each uniform entry in the Mali UBO is
+       * 16-byte too. The number of entries is encoded in a 12-bit field, with
+       * a minus(1) modifier, which gives a maximum of 2^12 SSBO
+       * descriptors.
+       */
+      .maxPerStageDescriptorStorageBuffers = 1 << 12,
+      .maxDescriptorSetStorageBuffers = 1 << 12,
+      /* MALI_RENDERER_STATE::sampler_count is 16-bit. */
+      .maxPerStageDescriptorSampledImages = UINT16_MAX,
+      .maxDescriptorSetSampledImages = UINT16_MAX,
+      /* MALI_ATTRIBUTE::buffer_index is 9-bit, and each image takes two
+       * MALI_ATTRIBUTE_BUFFER slots, which gives a maximum of (1 << 8) images.
+       */
+      .maxPerStageDescriptorStorageImages = 1 << 8,
+      .maxDescriptorSetStorageImages = 1 << 8,
+      /* A maximum of 8 color render targets, and one depth-stencil render
+       * target.
+       */
+      .maxPerStageDescriptorInputAttachments = 9,
+      .maxDescriptorSetInputAttachments = 9,
+      /* Could be the sum of all maxPerStageXxx values, but we limit ourselves
+       * to 2^16 to make things simpler.
+       */
+      .maxPerStageResources = 1 << 16,
+      /* Software limits to keep VkCommandBuffer tracking sane. */
+      .maxDescriptorSetUniformBuffersDynamic = 16,
+      .maxDescriptorSetStorageBuffersDynamic = 8,
+      /* Software limit to keep VkCommandBuffer tracking sane. The HW supports
+       * up to 2^9 vertex attributes.
+       */
+      .maxVertexInputAttributes = 16,
+      .maxVertexInputBindings = 16,
+      /* MALI_ATTRIBUTE::offset is 32-bit. */
+      .maxVertexInputAttributeOffset = UINT32_MAX,
+      /* MALI_ATTRIBUTE_BUFFER::stride is 32-bit. */
+      .maxVertexInputBindingStride = UINT32_MAX,
+      /* 32 vec4 varyings. */
+      .maxVertexOutputComponents = 128,
+      /* Tesselation shaders not supported. */
+      .maxTessellationGenerationLevel = 0,
+      .maxTessellationPatchSize = 0,
+      .maxTessellationControlPerVertexInputComponents = 0,
+      .maxTessellationControlPerVertexOutputComponents = 0,
+      .maxTessellationControlPerPatchOutputComponents = 0,
+      .maxTessellationControlTotalOutputComponents = 0,
+      .maxTessellationEvaluationInputComponents = 0,
+      .maxTessellationEvaluationOutputComponents = 0,
+      /* Geometry shaders not supported. */
+      .maxGeometryShaderInvocations = 0,
+      .maxGeometryInputComponents = 0,
+      .maxGeometryOutputComponents = 0,
+      .maxGeometryOutputVertices = 0,
+      .maxGeometryTotalOutputComponents = 0,
+      /* 32 vec4 varyings. */
+      .maxFragmentInputComponents = 128,
+      /* 8 render targets. */
+      .maxFragmentOutputAttachments = 8,
+      /* We don't support dual source blending yet. */
+      .maxFragmentDualSrcAttachments = 0,
+      /* 8 render targets, 2^12 storage buffers and 2^8 storage images (see
+       * above).
+       */
+      .maxFragmentCombinedOutputResources = 8 + (1 << 12) + (1 << 8),
+      /* MALI_LOCAL_STORAGE::wls_size_{base,scale} allows us to have up to
+       * (7 << 30) bytes of shared memory, but we cap it to 32K as it doesn't
+       * really make sense to expose this amount of memory, especially since
+       * it's backed by global memory anyway.
+       */
+      .maxComputeSharedMemorySize = 32768,
+      /* Software limit to meet Vulkan 1.0 requirements. We split the
+       * dispatch in several jobs if it's too big.
+       */
+      .maxComputeWorkGroupCount = {65535, 65535, 65535},
+      /* We have 10 bits to encode the local-size, and there's a minus(1)
+       * modifier, so, a size of 1 takes no bit.
+       */
+      .maxComputeWorkGroupInvocations = 1 << 10,
+      .maxComputeWorkGroupSize = {1 << 10, 1 << 10, 1 << 10},
+      /* 8-bit subpixel precision. */
+      .subPixelPrecisionBits = 8,
+      .subTexelPrecisionBits = 8,
+      .mipmapPrecisionBits = 8,
+      /* Software limit. */
+      .maxDrawIndexedIndexValue = UINT32_MAX,
+      /* Make it one for now. */
+      .maxDrawIndirectCount = 1,
+      .maxSamplerLodBias = 255,
+      .maxSamplerAnisotropy = 16,
+      .maxViewports = 1,
+      /* Same as the framebuffer limit. */
+      .maxViewportDimensions = {(1 << 14), (1 << 14)},
+      /* Encoded in a 16-bit signed integer. */
+      .viewportBoundsRange = {INT16_MIN, INT16_MAX},
+      .viewportSubPixelBits = 0,
+      /* Align on a page. */
+      .minMemoryMapAlignment = os_page_size,
+      /* Some compressed texture formats require 128-byte alignment. */
+      .minTexelBufferOffsetAlignment = 64,
+      /* Always aligned on a uniform slot (vec4). */
+      .minUniformBufferOffsetAlignment = 16,
+      /* Lowered to global accesses, which happen at the 32-bit granularity. */
+      .minStorageBufferOffsetAlignment = 4,
+      /* Signed 4-bit value. */
+      .minTexelOffset = -8,
+      .maxTexelOffset = 7,
+      .minTexelGatherOffset = -8,
+      .maxTexelGatherOffset = 7,
+      .minInterpolationOffset = -0.5,
+      .maxInterpolationOffset = 0.5,
+      .subPixelInterpolationOffsetBits = 8,
+      .maxFramebufferWidth = (1 << 14),
+      .maxFramebufferHeight = (1 << 14),
+      .maxFramebufferLayers = 256,
+      .framebufferColorSampleCounts = sample_counts,
+      .framebufferDepthSampleCounts = sample_counts,
+      .framebufferStencilSampleCounts = sample_counts,
+      .framebufferNoAttachmentsSampleCounts = sample_counts,
+      .maxColorAttachments = 8,
+      .sampledImageColorSampleCounts = sample_counts,
+      .sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT,
+      .sampledImageDepthSampleCounts = sample_counts,
+      .sampledImageStencilSampleCounts = sample_counts,
+      .storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT,
+      .maxSampleMaskWords = 1,
+      .timestampComputeAndGraphics = false,
+      .timestampPeriod = 0,
+      .maxClipDistances = 0,
+      .maxCullDistances = 0,
+      .maxCombinedClipAndCullDistances = 0,
+      .discreteQueuePriorities = 1,
+      .pointSizeRange = {0.125, 4095.9375},
+      .lineWidthRange = {0.0, 7.9921875},
+      .pointSizeGranularity = (1.0 / 16.0),
+      .lineWidthGranularity = (1.0 / 128.0),
+      .strictLines = false,
+      .standardSampleLocations = true,
+      .optimalBufferCopyOffsetAlignment = 64,
+      .optimalBufferCopyRowPitchAlignment = 64,
+      .nonCoherentAtomSize = 64,
+
+      /* Vulkan 1.0 sparse properties */
+      .sparseResidencyNonResidentStrict = false,
+      .sparseResidencyAlignedMipSize = false,
+      .sparseResidencyStandard2DBlockShape = false,
+      .sparseResidencyStandard2DMultisampleBlockShape = false,
+      .sparseResidencyStandard3DBlockShape = false,
+
+      /* Vulkan 1.1 properties */
+      /* XXX: 1.1 support */
+      .subgroupSize = 8,
+      .subgroupSupportedStages = VK_SHADER_STAGE_ALL,
+      .subgroupSupportedOperations =
+         VK_SUBGROUP_FEATURE_ARITHMETIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT |
+         VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_CLUSTERED_BIT |
+         VK_SUBGROUP_FEATURE_QUAD_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
+         VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT |
+         VK_SUBGROUP_FEATURE_VOTE_BIT,
+      .subgroupQuadOperationsInAllStages = false,
+      .pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES,
+      .maxMultiviewViewCount = 0,
+      .maxMultiviewInstanceIndex = 0,
+      .protectedNoFault = false,
+      /* Make sure everything is addressable by a signed 32-bit int, and
+       * our largest descriptors are 96 bytes. */
+      .maxPerSetDescriptors = (1ull << 31) / 96,
+      /* Our buffer size fields allow only this much */
+      .maxMemoryAllocationSize = UINT32_MAX,
+
+      /* Vulkan 1.2 properties */
+      /* XXX: 1.2 support */
+      /* XXX: VK_KHR_depth_stencil_resolve */
+      .supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
+      .supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
+      .independentResolveNone = true,
+      .independentResolve = true,
+      /* VK_KHR_driver_properties */
+      .driverID = VK_DRIVER_ID_MESA_PANVK,
+      .conformanceVersion = (VkConformanceVersion){0, 0, 0, 0},
+      /* XXX: VK_KHR_shader_float_controls */
+      .denormBehaviorIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL,
+      .roundingModeIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL,
+      .shaderSignedZeroInfNanPreserveFloat16 = true,
+      .shaderSignedZeroInfNanPreserveFloat32 = true,
+      .shaderSignedZeroInfNanPreserveFloat64 = false,
+      .shaderDenormPreserveFloat16 = true,
+      .shaderDenormPreserveFloat32 = true,
+      .shaderDenormPreserveFloat64 = false,
+      .shaderDenormFlushToZeroFloat16 = true,
+      .shaderDenormFlushToZeroFloat32 = true,
+      .shaderDenormFlushToZeroFloat64 = false,
+      .shaderRoundingModeRTEFloat16 = true,
+      .shaderRoundingModeRTEFloat32 = true,
+      .shaderRoundingModeRTEFloat64 = false,
+      .shaderRoundingModeRTZFloat16 = true,
+      .shaderRoundingModeRTZFloat32 = true,
+      .shaderRoundingModeRTZFloat64 = false,
+      /* XXX: VK_EXT_descriptor_indexing */
+      .maxUpdateAfterBindDescriptorsInAllPools = 0,
+      .shaderUniformBufferArrayNonUniformIndexingNative = false,
+      .shaderSampledImageArrayNonUniformIndexingNative = false,
+      .shaderStorageBufferArrayNonUniformIndexingNative = false,
+      .shaderStorageImageArrayNonUniformIndexingNative = false,
+      .shaderInputAttachmentArrayNonUniformIndexingNative = false,
+      .robustBufferAccessUpdateAfterBind = false,
+      .quadDivergentImplicitLod = false,
+      .maxPerStageDescriptorUpdateAfterBindSamplers = 0,
+      .maxPerStageDescriptorUpdateAfterBindUniformBuffers = 0,
+      .maxPerStageDescriptorUpdateAfterBindStorageBuffers = 0,
+      .maxPerStageDescriptorUpdateAfterBindSampledImages = 0,
+      .maxPerStageDescriptorUpdateAfterBindStorageImages = 0,
+      .maxPerStageDescriptorUpdateAfterBindInputAttachments = 0,
+      .maxPerStageDescriptorUpdateAfterBindInputAttachments = 0,
+      .maxPerStageUpdateAfterBindResources = 0,
+      .maxDescriptorSetUpdateAfterBindSamplers = 0,
+      .maxDescriptorSetUpdateAfterBindUniformBuffers = 0,
+      .maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 0,
+      .maxDescriptorSetUpdateAfterBindStorageBuffers = 0,
+      .maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 0,
+      .maxDescriptorSetUpdateAfterBindSampledImages = 0,
+      .maxDescriptorSetUpdateAfterBindStorageImages = 0,
+      .maxDescriptorSetUpdateAfterBindInputAttachments = 0,
+      /* XXX: VK_EXT_sampler_filter_minmax */
+      .filterMinmaxSingleComponentFormats = false,
+      .filterMinmaxImageComponentMapping = false,
+      /* XXX: VK_KHR_timeline_semaphore */
+      .maxTimelineSemaphoreValueDifference = INT64_MAX,
+      .framebufferIntegerColorSampleCounts = sample_counts,
+
+      /* Vulkan 1.3 properties */
+      /* XXX: 1.3 support */
+      /* XXX: VK_EXT_subgroup_size_control */
+      .minSubgroupSize = 8,
+      .maxSubgroupSize = 8,
+      .maxComputeWorkgroupSubgroups = 48,
+      .requiredSubgroupSizeStages = VK_SHADER_STAGE_ALL,
+      /* XXX: VK_EXT_inline_uniform_block */
+      .maxInlineUniformBlockSize = MAX_INLINE_UNIFORM_BLOCK_SIZE,
+      .maxPerStageDescriptorInlineUniformBlocks =
+         MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS,
+      .maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks =
+         MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS,
+      .maxDescriptorSetInlineUniformBlocks =
+         MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS,
+      .maxDescriptorSetUpdateAfterBindInlineUniformBlocks =
+         MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS,
+      .maxInlineUniformTotalSize =
+         MAX_INLINE_UNIFORM_BLOCK_DESCRIPTORS * MAX_INLINE_UNIFORM_BLOCK_SIZE,
+      /* XXX: VK_KHR_shader_integer_dot_product */
+      .integerDotProduct8BitUnsignedAccelerated = true,
+      .integerDotProduct8BitSignedAccelerated = true,
+      .integerDotProduct4x8BitPackedUnsignedAccelerated = true,
+      .integerDotProduct4x8BitPackedSignedAccelerated = true,
+      /* XXX: VK_EXT_texel_buffer_alignment */
+      .storageTexelBufferOffsetAlignmentBytes = 64,
+      .storageTexelBufferOffsetSingleTexelAlignment = false,
+      .uniformTexelBufferOffsetAlignmentBytes = 4,
+      .uniformTexelBufferOffsetSingleTexelAlignment = true,
+      /* XXX: VK_KHR_maintenance4 */
+      .maxBufferSize = 1 << 30,
+
+      /* VK_EXT_custom_border_color */
+      .maxCustomBorderColorSamplers = 32768,
+
+      /* VK_KHR_vertex_attribute_divisor */
+      /* We will have to restrict this a bit for multiview */
+      .maxVertexAttribDivisor = UINT32_MAX,
+      .supportsNonZeroFirstInstance = false,
+
+      /* VK_KHR_push_descriptor */
+      .maxPushDescriptors = MAX_PUSH_DESCRIPTORS,
+   };
+
+   snprintf(properties->deviceName, sizeof(properties->deviceName), "%s",
+            device->name);
+
+   memcpy(properties->pipelineCacheUUID, device->cache_uuid, VK_UUID_SIZE);
+
+   memcpy(properties->driverUUID, device->driver_uuid, VK_UUID_SIZE);
+   memcpy(properties->deviceUUID, device->device_uuid, VK_UUID_SIZE);
+
+   snprintf(properties->driverName, VK_MAX_DRIVER_NAME_SIZE, "panvk");
+   snprintf(properties->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+            "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
 }
 
 void
@@ -263,24 +638,15 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    if (instance->debug_flags & PANVK_DEBUG_STARTUP)
       vk_logi(VK_LOG_NO_OBJS(instance), "Found compatible device '%s'.", path);
 
-   struct vk_device_extension_table supported_extensions;
-   get_device_extensions(device, &supported_extensions);
+   device->kmod.dev = pan_kmod_dev_create(fd, PAN_KMOD_DEV_FLAG_OWNS_FD,
+                                          &instance->kmod.allocator);
+   pan_kmod_dev_query_props(device->kmod.dev, &device->kmod.props);
 
-   struct vk_features supported_features;
-   get_features(device, &supported_features);
+   unsigned arch = pan_arch(device->kmod.props.gpu_prod_id);
 
-   struct vk_physical_device_dispatch_table dispatch_table;
-   vk_physical_device_dispatch_table_from_entrypoints(
-      &dispatch_table, &panvk_physical_device_entrypoints, true);
-   vk_physical_device_dispatch_table_from_entrypoints(
-      &dispatch_table, &wsi_physical_device_entrypoints, false);
-
-   result =
-      vk_physical_device_init(&device->vk, &instance->vk, &supported_extensions,
-                              &supported_features, NULL, &dispatch_table);
-
-   if (result != VK_SUCCESS) {
-      vk_error(instance, result);
+   if (arch <= 5 || arch >= 8) {
+      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                         "%s not supported", device->model->name);
       goto fail;
    }
 
@@ -293,22 +659,10 @@ panvk_physical_device_init(struct panvk_physical_device *device,
 
    device->master_fd = master_fd;
 
-   device->kmod.dev = pan_kmod_dev_create(fd, PAN_KMOD_DEV_FLAG_OWNS_FD,
-                                          &instance->kmod.allocator);
-   pan_kmod_dev_query_props(device->kmod.dev, &device->kmod.props);
-
-   unsigned arch = pan_arch(device->kmod.props.gpu_prod_id);
-
    device->model = panfrost_get_model(device->kmod.props.gpu_prod_id,
                                       device->kmod.props.gpu_variant);
    device->formats.all = panfrost_format_table(arch);
    device->formats.blendable = panfrost_blendable_format_table(arch);
-
-   if (arch <= 5 || arch >= 8) {
-      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
-                         "%s not supported", device->model->name);
-      goto fail;
-   }
 
    memset(device->name, 0, sizeof(device->name));
    sprintf(device->name, "%s", device->model->name);
@@ -316,12 +670,12 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    if (get_cache_uuid(device->kmod.props.gpu_prod_id, device->cache_uuid)) {
       result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
                          "cannot generate UUID");
-      goto fail_close_device;
+      goto fail;
    }
 
    vk_warn_non_conformant_implementation("panvk");
 
-   get_driver_uuid(&device->device_uuid);
+   get_driver_uuid(&device->driver_uuid);
    get_device_uuid(&device->device_uuid);
 
    device->drm_syncobj_type = vk_drm_syncobj_get_type(device->kmod.dev->fd);
@@ -331,6 +685,30 @@ panvk_physical_device_init(struct panvk_physical_device *device,
     */
    device->drm_syncobj_type.features &= ~VK_SYNC_FEATURE_TIMELINE;
 
+   struct vk_device_extension_table supported_extensions;
+   get_device_extensions(device, &supported_extensions);
+
+   struct vk_features supported_features;
+   get_features(device, &supported_features);
+
+   struct vk_properties properties;
+   get_device_properties(device, &properties);
+
+   struct vk_physical_device_dispatch_table dispatch_table;
+   vk_physical_device_dispatch_table_from_entrypoints(
+      &dispatch_table, &panvk_physical_device_entrypoints, true);
+   vk_physical_device_dispatch_table_from_entrypoints(
+      &dispatch_table, &wsi_physical_device_entrypoints, false);
+
+   result = vk_physical_device_init(&device->vk, &instance->vk,
+                                    &supported_extensions, &supported_features,
+                                    &properties, &dispatch_table);
+
+   if (result != VK_SUCCESS) {
+      vk_error(instance, result);
+      goto fail;
+   }
+
    device->sync_types[0] = &device->drm_syncobj_type;
    device->sync_types[1] = NULL;
    device->vk.supported_sync_types = device->sync_types;
@@ -338,335 +716,23 @@ panvk_physical_device_init(struct panvk_physical_device *device,
    result = panvk_wsi_init(device);
    if (result != VK_SUCCESS) {
       vk_error(instance, result);
-      goto fail_close_device;
+      goto fail;
    }
 
    return VK_SUCCESS;
 
-fail_close_device:
-   pan_kmod_dev_destroy(device->kmod.dev);
 fail:
+   if (device->vk.instance)
+      vk_physical_device_finish(&device->vk);
+
+   if (device->kmod.dev)
+      pan_kmod_dev_destroy(device->kmod.dev);
+
    if (fd != -1)
       close(fd);
    if (master_fd != -1)
       close(master_fd);
    return result;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-panvk_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
-                                   VkPhysicalDeviceProperties2 *pProperties)
-{
-   VK_FROM_HANDLE(panvk_physical_device, pdevice, physicalDevice);
-
-   /* HW supports MSAA 4, 8 and 16, but we limit ourselves to MSAA 4 for now. */
-   VkSampleCountFlags sample_counts =
-      VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
-
-   const VkPhysicalDeviceLimits limits = {
-      /* Maximum texture dimension is 2^16. */
-      .maxImageDimension1D = (1 << 16),
-      .maxImageDimension2D = (1 << 16),
-      .maxImageDimension3D = (1 << 16),
-      .maxImageDimensionCube = (1 << 16),
-      .maxImageArrayLayers = (1 << 16),
-
-      /* Currently limited by the 1D texture size, which is 2^16.
-       * TODO: If we expose buffer views as 2D textures, we can increase the
-       * limit.
-       */
-      .maxTexelBufferElements = (1 << 16),
-
-      /* Each uniform entry is 16-byte and the number of entries is encoded in a
-       * 12-bit field, with the minus(1) modifier, which gives 2^20.
-       */
-      .maxUniformBufferRange = 1 << 20,
-
-      /* Storage buffer access is lowered to globals, so there's no limit here,
-       * except for the SW-descriptor we use to encode storage buffer
-       * descriptors, where the size is a 32-bit field.
-       */
-      .maxStorageBufferRange = UINT32_MAX,
-
-      /* 128 bytes of push constants, so we're aligned with the minimum Vulkan
-       * requirements.
-       */
-      .maxPushConstantsSize = 128,
-
-      /* There's no HW limit here. Should we advertize something smaller? */
-      .maxMemoryAllocationCount = UINT32_MAX,
-
-      /* Again, no hardware limit, but most drivers seem to advertive 64k. */
-      .maxSamplerAllocationCount = 64 * 1024,
-
-      /* A cache line. */
-      .bufferImageGranularity = 64,
-
-      /* Sparse binding not supported yet. */
-      .sparseAddressSpaceSize = 0,
-
-      /* Software limit. Pick the minimum required by Vulkan, because Bifrost
-       * GPUs don't have unified descriptor tables, which forces us to
-       * agregatte all descriptors from all sets and dispatch them to per-type
-       * descriptor tables emitted at draw/dispatch time.
-       * The more sets we support the more copies we are likely to have to do
-       * at draw time.
-       */
-      .maxBoundDescriptorSets = 4,
-
-      /* MALI_RENDERER_STATE::sampler_count is 16-bit. */
-      .maxPerStageDescriptorSamplers = UINT16_MAX,
-      .maxDescriptorSetSamplers = UINT16_MAX,
-
-      /* MALI_RENDERER_STATE::uniform_buffer_count is 8-bit. We reserve 32 slots
-       * for our internal UBOs.
-       */
-      .maxPerStageDescriptorUniformBuffers = UINT8_MAX - 32,
-      .maxDescriptorSetUniformBuffers = UINT8_MAX - 32,
-
-      /* SSBOs are limited by the size of a uniform buffer which contains our
-       * panvk_ssbo_desc objects.
-       * panvk_ssbo_desc is 16-byte, and each uniform entry in the Mali UBO is
-       * 16-byte too. The number of entries is encoded in a 12-bit field, with
-       * a minus(1) modifier, which gives a maximum of 2^12 SSBO
-       * descriptors.
-       */
-      .maxPerStageDescriptorStorageBuffers = 1 << 12,
-      .maxDescriptorSetStorageBuffers = 1 << 12,
-
-      /* MALI_RENDERER_STATE::sampler_count is 16-bit. */
-      .maxPerStageDescriptorSampledImages = UINT16_MAX,
-      .maxDescriptorSetSampledImages = UINT16_MAX,
-
-      /* MALI_ATTRIBUTE::buffer_index is 9-bit, and each image takes two
-       * MALI_ATTRIBUTE_BUFFER slots, which gives a maximum of (1 << 8) images.
-       */
-      .maxPerStageDescriptorStorageImages = 1 << 8,
-      .maxDescriptorSetStorageImages = 1 << 8,
-
-      /* A maximum of 8 color render targets, and one depth-stencil render
-       * target.
-       */
-      .maxPerStageDescriptorInputAttachments = 9,
-      .maxDescriptorSetInputAttachments = 9,
-
-      /* Could be the sum of all maxPerStageXxx values, but we limit ourselves
-       * to 2^16 to make things simpler.
-       */
-      .maxPerStageResources = 1 << 16,
-
-      /* Software limits to keep VkCommandBuffer tracking sane. */
-      .maxDescriptorSetUniformBuffersDynamic = 16,
-      .maxDescriptorSetStorageBuffersDynamic = 8,
-
-      /* Software limit to keep VkCommandBuffer tracking sane. The HW supports
-       * up to 2^9 vertex attributes.
-       */
-      .maxVertexInputAttributes = 16,
-      .maxVertexInputBindings = 16,
-
-      /* MALI_ATTRIBUTE::offset is 32-bit. */
-      .maxVertexInputAttributeOffset = UINT32_MAX,
-
-      /* MALI_ATTRIBUTE_BUFFER::stride is 32-bit. */
-      .maxVertexInputBindingStride = UINT32_MAX,
-
-      /* 32 vec4 varyings. */
-      .maxVertexOutputComponents = 128,
-
-      /* Tesselation shaders not supported. */
-      .maxTessellationGenerationLevel = 0,
-      .maxTessellationPatchSize = 0,
-      .maxTessellationControlPerVertexInputComponents = 0,
-      .maxTessellationControlPerVertexOutputComponents = 0,
-      .maxTessellationControlPerPatchOutputComponents = 0,
-      .maxTessellationControlTotalOutputComponents = 0,
-      .maxTessellationEvaluationInputComponents = 0,
-      .maxTessellationEvaluationOutputComponents = 0,
-
-      /* Geometry shaders not supported. */
-      .maxGeometryShaderInvocations = 0,
-      .maxGeometryInputComponents = 0,
-      .maxGeometryOutputComponents = 0,
-      .maxGeometryOutputVertices = 0,
-      .maxGeometryTotalOutputComponents = 0,
-
-      /* 32 vec4 varyings. */
-      .maxFragmentInputComponents = 128,
-
-      /* 8 render targets. */
-      .maxFragmentOutputAttachments = 8,
-
-      /* We don't support dual source blending yet. */
-      .maxFragmentDualSrcAttachments = 0,
-
-      /* 8 render targets, 2^12 storage buffers and 2^8 storage images (see
-       * above).
-       */
-      .maxFragmentCombinedOutputResources = 8 + (1 << 12) + (1 << 8),
-
-      /* MALI_LOCAL_STORAGE::wls_size_{base,scale} allows us to have up to
-       * (7 << 30) bytes of shared memory, but we cap it to 32K as it doesn't
-       * really make sense to expose this amount of memory, especially since
-       * it's backed by global memory anyway.
-       */
-      .maxComputeSharedMemorySize = 32768,
-
-      /* Software limit to meet Vulkan 1.0 requirements. We split the
-       * dispatch in several jobs if it's too big.
-       */
-      .maxComputeWorkGroupCount = {65535, 65535, 65535},
-
-      /* We have 10 bits to encode the local-size, and there's a minus(1)
-       * modifier, so, a size of 1 takes no bit.
-       */
-      .maxComputeWorkGroupInvocations = 1 << 10,
-      .maxComputeWorkGroupSize = {1 << 10, 1 << 10, 1 << 10},
-
-      /* 8-bit subpixel precision. */
-      .subPixelPrecisionBits = 8,
-      .subTexelPrecisionBits = 8,
-      .mipmapPrecisionBits = 8,
-
-      /* Software limit. */
-      .maxDrawIndexedIndexValue = UINT32_MAX,
-
-      /* Make it one for now. */
-      .maxDrawIndirectCount = 1,
-
-      .maxSamplerLodBias = 255,
-      .maxSamplerAnisotropy = 16,
-      .maxViewports = 1,
-
-      /* Same as the framebuffer limit. */
-      .maxViewportDimensions = {(1 << 14), (1 << 14)},
-
-      /* Encoded in a 16-bit signed integer. */
-      .viewportBoundsRange = {INT16_MIN, INT16_MAX},
-      .viewportSubPixelBits = 0,
-
-      /* Align on a page. */
-      .minMemoryMapAlignment = 4096,
-
-      /* Some compressed texture formats require 128-byte alignment. */
-      .minTexelBufferOffsetAlignment = 64,
-
-      /* Always aligned on a uniform slot (vec4). */
-      .minUniformBufferOffsetAlignment = 16,
-
-      /* Lowered to global accesses, which happen at the 32-bit granularity. */
-      .minStorageBufferOffsetAlignment = 4,
-
-      /* Signed 4-bit value. */
-      .minTexelOffset = -8,
-      .maxTexelOffset = 7,
-      .minTexelGatherOffset = -8,
-      .maxTexelGatherOffset = 7,
-      .minInterpolationOffset = -0.5,
-      .maxInterpolationOffset = 0.5,
-      .subPixelInterpolationOffsetBits = 8,
-
-      .maxFramebufferWidth = (1 << 14),
-      .maxFramebufferHeight = (1 << 14),
-      .maxFramebufferLayers = 256,
-      .framebufferColorSampleCounts = sample_counts,
-      .framebufferDepthSampleCounts = sample_counts,
-      .framebufferStencilSampleCounts = sample_counts,
-      .framebufferNoAttachmentsSampleCounts = sample_counts,
-      .maxColorAttachments = 8,
-      .sampledImageColorSampleCounts = sample_counts,
-      .sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT,
-      .sampledImageDepthSampleCounts = sample_counts,
-      .sampledImageStencilSampleCounts = sample_counts,
-      .storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT,
-      .maxSampleMaskWords = 1,
-      .timestampComputeAndGraphics = false,
-      .timestampPeriod = 0,
-      .maxClipDistances = 0,
-      .maxCullDistances = 0,
-      .maxCombinedClipAndCullDistances = 0,
-      .discreteQueuePriorities = 1,
-      .pointSizeRange = {0.125, 4095.9375},
-      .lineWidthRange = {0.0, 7.9921875},
-      .pointSizeGranularity = (1.0 / 16.0),
-      .lineWidthGranularity = (1.0 / 128.0),
-      .strictLines = false,
-      .standardSampleLocations = true,
-      .optimalBufferCopyOffsetAlignment = 64,
-      .optimalBufferCopyRowPitchAlignment = 64,
-      .nonCoherentAtomSize = 64,
-   };
-
-   pProperties->properties = (VkPhysicalDeviceProperties){
-      .apiVersion = VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION),
-      .driverVersion = vk_get_driver_version(),
-
-      /* Arm vendor ID. */
-      .vendorID = 0x13b5,
-
-      /* Collect arch_major, arch_minor, arch_rev and product_major,
-       * as done by the Arm driver.
-       */
-      .deviceID = pdevice->kmod.props.gpu_prod_id << 16,
-      .deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
-      .limits = limits,
-      .sparseProperties = {0},
-   };
-
-   strcpy(pProperties->properties.deviceName, pdevice->name);
-   memcpy(pProperties->properties.pipelineCacheUUID, pdevice->cache_uuid,
-          VK_UUID_SIZE);
-
-   VkPhysicalDeviceVulkan11Properties core_1_1 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES,
-      .deviceLUIDValid = false,
-      .pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES,
-      .maxMultiviewViewCount = 0,
-      .maxMultiviewInstanceIndex = 0,
-      .protectedNoFault = false,
-      /* Make sure everything is addressable by a signed 32-bit int, and
-       * our largest descriptors are 96 bytes. */
-      .maxPerSetDescriptors = (1ull << 31) / 96,
-      /* Our buffer size fields allow only this much */
-      .maxMemoryAllocationSize = 0xFFFFFFFFull,
-   };
-   memcpy(core_1_1.driverUUID, pdevice->driver_uuid, VK_UUID_SIZE);
-   memcpy(core_1_1.deviceUUID, pdevice->device_uuid, VK_UUID_SIZE);
-
-   const VkPhysicalDeviceVulkan12Properties core_1_2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
-   };
-
-   const VkPhysicalDeviceVulkan13Properties core_1_3 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
-   };
-
-   vk_foreach_struct(ext, pProperties->pNext) {
-      if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1))
-         continue;
-      if (vk_get_physical_device_core_1_2_property_ext(ext, &core_1_2))
-         continue;
-      if (vk_get_physical_device_core_1_3_property_ext(ext, &core_1_3))
-         continue;
-
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR: {
-         VkPhysicalDevicePushDescriptorPropertiesKHR *properties =
-            (VkPhysicalDevicePushDescriptorPropertiesKHR *)ext;
-         properties->maxPushDescriptors = 0;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT: {
-         VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *properties =
-            (VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *)ext;
-         /* We will have to restrict this a bit for multiview */
-         properties->maxVertexAttribDivisor = UINT32_MAX;
-         break;
-      }
-      default:
-         break;
-      }
-   }
 }
 
 static const VkQueueFamilyProperties panvk_queue_family_properties = {
@@ -828,7 +894,10 @@ get_format_properties(struct panvk_physical_device *physical_device,
    buffer |=
       VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
 
-   if (fmt.bind & PAN_BIND_VERTEX_BUFFER)
+   /* Reject sRGB formats (see
+    * https://github.com/KhronosGroup/Vulkan-Docs/issues/2214).
+    */
+   if ((fmt.bind & PAN_BIND_VERTEX_BUFFER) && !util_format_is_srgb(pfmt))
       buffer |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
 
    if (fmt.bind & PAN_BIND_SAMPLER_VIEW) {
@@ -1181,6 +1250,13 @@ panvk_GetPhysicalDeviceImageFormatProperties2(
     *    present and VkExternalImageFormatProperties will be ignored.
     */
    if (external_info && external_info->handleType != 0) {
+      VkExternalImageFormatProperties fallback_external_props;
+
+      if (!external_props) {
+         memset(&fallback_external_props, 0, sizeof(fallback_external_props));
+         external_props = &fallback_external_props;
+      }
+
       result = panvk_get_external_image_format_properties(
          physical_device, base_info, external_info->handleType,
          &external_props->externalMemoryProperties);

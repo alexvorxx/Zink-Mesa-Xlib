@@ -21,7 +21,7 @@ impl PipeLoaderDevice {
     }
 
     fn load_screen(self) -> Option<PipeScreen> {
-        let s = unsafe { pipe_loader_create_screen(self.ldev.as_ptr()) };
+        let s = unsafe { pipe_loader_create_screen(self.ldev.as_ptr(), false) };
         PipeScreen::new(self, s)
     }
 

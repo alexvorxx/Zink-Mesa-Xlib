@@ -843,7 +843,7 @@ vl_dri3_screen_create(Display *display, int screen)
    free(geom_reply);
 
    if (pipe_loader_drm_probe_fd(&scrn->base.dev, fd, false))
-      scrn->base.pscreen = pipe_loader_create_screen(scrn->base.dev);
+      scrn->base.pscreen = pipe_loader_create_screen(scrn->base.dev, false);
 
    if (!scrn->base.pscreen)
       goto release_pipe;

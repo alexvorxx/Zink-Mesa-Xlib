@@ -667,7 +667,8 @@ struct pipe_screen {
     */
    struct pipe_memory_allocation *(*allocate_memory_fd)(struct pipe_screen *screen,
                                                         uint64_t size,
-                                                        int *fd);
+                                                        int *fd,
+                                                        bool dmabuf);
 
    /**
     * Import memory from an fd-handle.
@@ -675,7 +676,8 @@ struct pipe_screen {
    bool (*import_memory_fd)(struct pipe_screen *screen,
                             int fd,
                             struct pipe_memory_allocation **pmem,
-                            uint64_t *size);
+                            uint64_t *size,
+                            bool dmabuf);
 
    /**
     * Free previously allocated fd-based memory.
@@ -808,6 +810,7 @@ struct pipe_screen {
  * Global configuration options for screen creation.
  */
 struct pipe_screen_config {
+   bool implicit_driver_load;
    struct driOptionCache *options;
    const struct driOptionCache *options_info;
 };

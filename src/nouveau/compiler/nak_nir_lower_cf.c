@@ -97,7 +97,6 @@ jump_target_scope_type(nir_jump_type jump_type)
    switch (jump_type) {
    case nir_jump_break:    return SCOPE_TYPE_LOOP_BREAK;
    case nir_jump_continue: return SCOPE_TYPE_LOOP_CONT;
-   case nir_jump_halt:     return SCOPE_TYPE_SHADER;
    default:
       unreachable("Unknown jump type");
    }
@@ -268,8 +267,18 @@ lower_cf_list(nir_builder *b, nir_def *esc_reg, struct scope *parent_scope,
          nir_cf_extract(&instrs, start, end);
          b->cursor = nir_cf_reinsert(&instrs, b->cursor);
 
-         if (jump != NULL)
-            break_scopes(b, esc_reg, parent_scope, jump->type);
+         if (jump != NULL) {
+            if (jump->type == nir_jump_halt) {
+               /* Halt instructions map to OpExit on NVIDIA hardware and
+                * exited lanes never block a bsync.
+                */
+               nir_instr_remove(&jump->instr);
+               nir_builder_instr_insert(b, &jump->instr);
+            } else {
+               /* Everything else needs a break cascade */
+               break_scopes(b, esc_reg, parent_scope, jump->type);
+            }
+         }
          break;
       }
 

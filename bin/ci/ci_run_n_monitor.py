@@ -289,7 +289,8 @@ def parse_args() -> None:
     parser.add_argument(
         "--target",
         metavar="target-job",
-        help="Target job regex. For multiple targets, separate with pipe | character",
+        help="Target job regex. For multiple targets, pass multiple values, "
+             "eg. `--target foo bar`.",
         required=True,
         nargs=argparse.ONE_OR_MORE,
     )

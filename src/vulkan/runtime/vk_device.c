@@ -150,6 +150,7 @@ vk_device_init(struct vk_device *device,
    list_inithead(&device->queues);
 
    device->drm_fd = -1;
+   device->mem_cache = NULL;
 
    device->timeline_mode = get_timeline_mode(physical_device);
 

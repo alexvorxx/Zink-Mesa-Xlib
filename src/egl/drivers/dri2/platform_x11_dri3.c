@@ -635,7 +635,8 @@ dri3_x11_connect(struct dri2_egl_display *dri2_dpy)
    if (!dri2_dpy->driver_name)
       dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
 
-   if (!strcmp(dri2_dpy->driver_name, "zink")) {
+   if (!strcmp(dri2_dpy->driver_name, "zink") &&
+       !debug_get_bool_option("LIBGL_KOPPER_DISABLE", false)) {
       close(dri2_dpy->fd_render_gpu);
       return DRI2_EGL_DRIVER_PREFER_ZINK;
    }

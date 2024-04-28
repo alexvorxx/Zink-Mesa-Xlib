@@ -264,48 +264,6 @@ si_aco_build_shader_part_binary(void** priv_ptr, uint32_t num_sgprs, uint32_t nu
 }
 
 static bool
-si_aco_build_tcs_epilog(struct si_screen *screen,
-                        struct aco_compiler_options *options,
-                        struct si_shader_part *result)
-{
-   const union si_shader_part_key *key = &result->key;
-
-   struct si_shader_args args;
-   struct ac_arg rel_patch_id;
-   struct ac_arg invocation_id;
-   struct ac_arg tcs_out_current_patch_data_offset;
-   struct ac_arg tess_factors[6];
-   si_get_tcs_epilog_args(screen->info.gfx_level, &args, &rel_patch_id, &invocation_id,
-                          &tcs_out_current_patch_data_offset, tess_factors);
-
-   struct aco_tcs_epilog_info einfo = {
-      .pass_tessfactors_by_reg = key->tcs_epilog.states.invoc0_tess_factors_are_def,
-      .tcs_out_patch_fits_subgroup = key->tcs_epilog.noop_s_barrier,
-      .primitive_mode = key->tcs_epilog.states.prim_mode,
-      .tess_offchip_ring_size = screen->hs.tess_offchip_ring_size,
-      .tes_reads_tessfactors = key->tcs_epilog.states.tes_reads_tess_factors,
-
-      .rel_patch_id = rel_patch_id,
-      .invocation_id = invocation_id,
-      .tcs_out_current_patch_data_offset = tcs_out_current_patch_data_offset,
-      .tcs_out_lds_layout = args.tes_offchip_addr,
-      .tcs_offchip_layout = args.tcs_offchip_layout,
-   };
-   memcpy(einfo.tess_lvl_out, tess_factors, sizeof(einfo.tess_lvl_out));
-   memcpy(einfo.tess_lvl_in, tess_factors + 4, sizeof(einfo.tess_lvl_in));
-
-   struct aco_shader_info info = {0};
-   info.hw_stage = AC_HW_HULL_SHADER;
-   info.wave_size = key->tcs_epilog.wave32 ? 32 : 64;
-   /* Set to >wave_size to keep p_barrier work. GFX6 has single wave for HS. */
-   info.workgroup_size = screen->info.gfx_level >= GFX7 ? 128 : info.wave_size;
-
-   aco_compile_tcs_epilog(options, &info, &einfo, &args.ac,
-                          si_aco_build_shader_part_binary, (void **)result);
-   return true;
-}
-
-static bool
 si_aco_build_ps_prolog(struct aco_compiler_options *options,
                        struct si_shader_part *result)
 {
@@ -390,9 +348,6 @@ si_aco_build_shader_part(struct si_screen *screen, gl_shader_stage stage, bool p
    si_fill_aco_options(screen, stage, &options, debug);
 
    switch (stage) {
-   case MESA_SHADER_TESS_CTRL:
-      return si_aco_build_tcs_epilog(screen, &options, result);
-      break;
    case MESA_SHADER_FRAGMENT:
       if (prolog)
          return si_aco_build_ps_prolog(&options, result);

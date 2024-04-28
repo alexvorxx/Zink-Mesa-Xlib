@@ -10,276 +10,10 @@
 #include <string.h>
 
 #include "aubinator_error_decode_lib.h"
+#include "error_decode_lib.h"
+#include "error_decode_xe_lib.h"
 #include "intel/compiler/brw_isa_info.h"
 #include "intel/dev/intel_device_info.h"
-
-enum xe_vm_topic_type {
-   XE_VM_TOPIC_TYPE_UNKNOWN = 0,
-   XE_VM_TOPIC_TYPE_LENGTH,
-   XE_VM_TOPIC_TYPE_DATA,
-   XE_VM_TOPIC_TYPE_ERROR,
-};
-
-struct xe_vm_entry {
-   uint64_t address;
-   uint32_t length;
-   const uint32_t *data;
-};
-
-struct xe_vm {
-   /* TODO: entries could be appended sorted or a hash could be used to
-    * optimize performance
-    */
-   struct xe_vm_entry *entries;
-   uint32_t entries_len;
-
-   struct xe_vm_entry hw_context;
-};
-
-static const char *
-read_parameter_helper(const char *line, const char *parameter)
-{
-   if (!strstr(line, parameter))
-      return NULL;
-
-   while (*line != ':')
-      line++;
-   /* skip ':' and ' ' */
-   line += 2;
-
-   return line;
-}
-
-/* parse lines like 'batch_addr[0]: 0x0000effeffff5000 */
-static bool
-read_u64_hexacimal_parameter(const char *line, const char *parameter, uint64_t *value)
-{
-   line = read_parameter_helper(line, parameter);
-   if (!line)
-      return false;
-
-   *value = (uint64_t)strtoull(line, NULL, 0);
-   return true;
-}
-
-/* parse lines like 'PCI ID: 0x9a49' */
-static bool
-read_hexacimal_parameter(const char *line, const char *parameter, int *value)
-{
-   line = read_parameter_helper(line, parameter);
-   if (!line)
-      return false;
-
-   *value = (int)strtol(line, NULL, 0);
-   return true;
-}
-
-/* parse lines like 'rcs0 (physical), logical instance=0' */
-static bool
-read_xe_engine_name(const char *line, char *ring_name)
-{
-   int i;
-
-   if (!strstr(line, " (physical), logical instance="))
-      return false;
-
-   i = 0;
-   for (i = 0; *line != ' '; i++, line++)
-      ring_name[i] = *line;
-
-   ring_name[i] = 0;
-   return true;
-}
-
-/* return type of VM topic lines like '[200000].data: x...' and points
- * value_ptr to first char of data of topic type
- */
-static enum xe_vm_topic_type
-read_xe_vm_line(const char *line, uint64_t *address, const char **value_ptr)
-{
-   enum xe_vm_topic_type type;
-   char text_addr[64];
-   int i;
-
-   if (*line != '[')
-      return XE_VM_TOPIC_TYPE_UNKNOWN;
-
-   for (i = 0, line++; *line != ']'; i++, line++)
-      text_addr[i] = *line;
-
-   text_addr[i] = 0;
-   *address = (uint64_t)strtoull(text_addr, NULL, 16);
-
-   /* at this point line points to last address digit so +3 to point to type */
-   line += 2;
-   switch (*line) {
-   case 'd':
-      type = XE_VM_TOPIC_TYPE_DATA;
-      break;
-   case 'l':
-      type = XE_VM_TOPIC_TYPE_LENGTH;
-      break;
-   case 'e':
-      type = XE_VM_TOPIC_TYPE_ERROR;
-      break;
-   default:
-      printf("type char: %c\n", *line);
-      return XE_VM_TOPIC_TYPE_UNKNOWN;
-   }
-
-   for (; *line != ':'; line++);
-
-   *value_ptr = line + 2;
-   return type;
-}
-
-/*
- * similar to read_xe_vm_line() but it parses '[HWCTX].data: ...'
- */
-static enum xe_vm_topic_type
-read_xe_hw_sp_or_ctx_line(const char *line, const char **value_ptr, bool *is_hw_ctx)
-{
-   enum xe_vm_topic_type type;
-   char text_addr[64];
-   bool is_hw_sp;
-   int i;
-
-   if (*line != '\t')
-      return XE_VM_TOPIC_TYPE_UNKNOWN;
-
-   line++;
-   if (*line != '[')
-      return XE_VM_TOPIC_TYPE_UNKNOWN;
-
-   for (i = 0, line++; *line != ']'; i++, line++)
-      text_addr[i] = *line;
-
-   text_addr[i] = 0;
-   *is_hw_ctx = strncmp(text_addr, "HWCTX", strlen("HWCTX")) == 0;
-   is_hw_sp =  strncmp(text_addr, "HWSP", strlen("HWSP")) == 0;
-   if (*is_hw_ctx == false && is_hw_sp == false)
-         return XE_VM_TOPIC_TYPE_UNKNOWN;
-
-   /* at this point line points to last address digit so +3 to point to type */
-   line += 2;
-   switch (*line) {
-   case 'd':
-      type = XE_VM_TOPIC_TYPE_DATA;
-      break;
-   case 'l':
-      type = XE_VM_TOPIC_TYPE_LENGTH;
-      break;
-   case 'e':
-      type = XE_VM_TOPIC_TYPE_ERROR;
-      break;
-   default:
-      printf("type char: %c\n", *line);
-      return XE_VM_TOPIC_TYPE_UNKNOWN;
-   }
-
-   for (; *line != ':'; line++);
-
-   *value_ptr = line + 2;
-   return type;
-}
-
-static void xe_vm_init(struct xe_vm *xe_vm)
-{
-   xe_vm->entries = NULL;
-   xe_vm->entries_len = 0;
-   memset(&xe_vm->hw_context, 0, sizeof(xe_vm->hw_context));
-}
-
-static void xe_vm_fini(struct xe_vm *xe_vm)
-{
-   uint32_t i;
-
-   for (i = 0; i < xe_vm->entries_len; i++)
-      free((uint32_t *)xe_vm->entries[i].data);
-
-   free((uint32_t *)xe_vm->hw_context.data);
-   free(xe_vm->entries);
-}
-
-static void
-xe_vm_entry_set(struct xe_vm_entry *entry, const uint64_t address,
-                const uint32_t length, const uint32_t *data)
-{
-   entry->address = address;
-   entry->length = length;
-   entry->data = data;
-}
-
-static void
-xe_vm_hw_ctx_set(struct xe_vm *xe_vm, const uint32_t length,
-                 const uint32_t *data)
-{
-   xe_vm_entry_set(&xe_vm->hw_context, 0, length, data);
-}
-
-/*
- * xe_vm_fini() will take care to free data
- */
-static bool
-xe_vm_append(struct xe_vm *xe_vm, const uint64_t address, const uint32_t length, const uint32_t *data)
-{
-   size_t len = sizeof(*xe_vm->entries) * (xe_vm->entries_len + 1);
-
-   xe_vm->entries = realloc(xe_vm->entries, len);
-   if (!xe_vm->entries)
-      return false;
-
-   xe_vm_entry_set(&xe_vm->entries[xe_vm->entries_len], address, length, data);
-   xe_vm->entries_len++;
-   return true;
-}
-
-static const struct xe_vm_entry *
-xe_vm_entry_get(struct xe_vm *xe_vm, const uint64_t address)
-{
-   uint32_t i;
-
-   for (i = 0; i < xe_vm->entries_len; i++) {
-      struct xe_vm_entry *entry = &xe_vm->entries[i];
-
-      if (entry->address == address)
-         return entry;
-
-      if (address > entry->address &&
-          address < (entry->address + entry->length))
-         return entry;
-   }
-
-   return NULL;
-}
-
-static uint32_t *
-xe_vm_entry_address_get_data(const struct xe_vm_entry *entry, const uint64_t address)
-{
-   uint32_t offset = (address - entry->address) / sizeof(uint32_t);
-   return (uint32_t *)&entry->data[offset];
-}
-
-static uint32_t
-xe_vm_entry_address_get_len(const struct xe_vm_entry *entry, const uint64_t address)
-{
-   return entry->length - (address - entry->address);
-}
-
-static bool
-ascii85_decode_allocated(const char *in, uint32_t *out, uint32_t vm_entry_bytes_len)
-{
-   const uint32_t dword_len = vm_entry_bytes_len / sizeof(uint32_t);
-   uint32_t i;
-
-   for (i = 0; (*in >= '!') && (*in <= 'z') && (i < dword_len); i++)
-      in = ascii85_decode_char(in, &out[i]);
-
-   if (dword_len != i)
-      printf("mismatch dword_len=%u i=%u\n", dword_len, i);
-
-   return dword_len == i && (*in < '!' || *in > 'z');
-}
 
 static struct intel_batch_decode_bo
 get_bo(void *user_data, bool ppgtt, uint64_t bo_addr)
@@ -291,13 +25,13 @@ get_bo(void *user_data, bool ppgtt, uint64_t bo_addr)
    if (!ppgtt)
       return ret;
 
-   vm_entry = xe_vm_entry_get(xe_vm, bo_addr);
+   vm_entry = error_decode_xe_vm_entry_get(xe_vm, bo_addr);
    if (!vm_entry)
       return ret;
 
    ret.addr = bo_addr;
-   ret.map = xe_vm_entry_address_get_data(vm_entry, bo_addr);
-   ret.size = xe_vm_entry_address_get_len(vm_entry, bo_addr);
+   ret.map = error_decode_xe_vm_entry_address_get_data(vm_entry, bo_addr);
+   ret.size = error_decode_xe_vm_entry_address_get_len(vm_entry, bo_addr);
 
    return ret;
 }
@@ -330,12 +64,30 @@ print_batch(struct intel_batch_decode_ctx *batch_ctx, const uint32_t *bb_data,
    }
 }
 
+static void
+print_register(struct intel_spec *spec, enum decode_color option_color,
+               const char *name, uint32_t reg)
+{
+   struct intel_group *reg_spec =
+      name ? intel_spec_find_register_by_name(spec, name) : NULL;
+
+   if (reg_spec) {
+      const char *spacing_reg = "\t\t";
+      const char *spacing_dword = "\t";
+
+      intel_print_group_custom_spacing(stdout, reg_spec, 0, &reg, 0,
+                                       option_color == DECODE_COLOR_ALWAYS,
+                                       spacing_reg, spacing_dword);
+   }
+}
+
 void
 read_xe_data_file(FILE *file,
                   enum intel_batch_decode_flags batch_flags,
                   const char *spec_xml_path,
                   bool option_dump_kernels,
-                  bool option_print_all_bb)
+                  bool option_print_all_bb,
+                  enum decode_color option_color)
 {
    struct intel_batch_decode_ctx batch_ctx;
    struct intel_device_info devinfo;
@@ -353,49 +105,28 @@ read_xe_data_file(FILE *file,
    struct xe_vm xe_vm;
    char *line = NULL;
    size_t line_size;
-   enum  {
-      TOPIC_DEVICE = 0,
-      TOPIC_GUC_CT,
-      TOPIC_JOB,
-      TOPIC_HW_ENGINES,
-      TOPIC_VM,
-      TOPIC_INVALID,
-   } xe_topic = TOPIC_INVALID;
+   enum xe_topic xe_topic = XE_TOPIC_INVALID;
 
-   xe_vm_init(&xe_vm);
+   error_decode_xe_vm_init(&xe_vm);
 
    while (getline(&line, &line_size, file) > 0) {
-      static const char *xe_topic_strings[] = {
-         "**** Xe Device Coredump ****",
-         "**** GuC CT ****",
-         "**** Job ****",
-         "**** HW Engines ****",
-         "**** VM state ****",
-      };
       bool topic_changed = false;
       bool print_line = true;
 
-      /* handle Xe dump topics */
-      for (int i = 0; i < ARRAY_SIZE(xe_topic_strings); i++) {
-         if (strncmp(xe_topic_strings[i], line, strlen(xe_topic_strings[i])) == 0) {
-            topic_changed = true;
-            xe_topic = i;
-            print_line = (xe_topic != TOPIC_VM);
-            break;
-         }
-      }
+      topic_changed = error_decode_xe_decode_topic(line, &xe_topic);
       if (topic_changed) {
+         print_line = (xe_topic != XE_TOPIC_VM);
          if (print_line)
             fputs(line, stdout);
          continue;
       }
 
       switch (xe_topic) {
-      case TOPIC_DEVICE: {
-         int int_value;
+      case XE_TOPIC_DEVICE: {
+         uint32_t value;
 
-         if (read_hexacimal_parameter(line, "PCI ID", &int_value)) {
-            if (intel_get_device_info_from_pci_id(int_value, &devinfo)) {
+         if (error_decode_xe_read_hexacimal_parameter(line, "PCI ID", &value)) {
+            if (intel_get_device_info_from_pci_id(value, &devinfo)) {
                printf("Detected GFX ver %i\n", devinfo.verx10);
                brw_init_isa_info(&isa, &devinfo);
 
@@ -404,29 +135,83 @@ read_xe_data_file(FILE *file,
                else
                   spec = intel_spec_load_from_path(&devinfo, spec_xml_path);
             } else {
-               printf("Unable to identify devid: 0x%x\n", int_value);
+               printf("Unable to identify devid: 0x%x\n", value);
             }
          }
 
          break;
       }
-      case TOPIC_HW_ENGINES: {
+      case XE_TOPIC_HW_ENGINES: {
          char engine_name[64];
          uint64_t u64_reg;
+         uint32_t reg;
 
-         if (read_xe_engine_name(line, engine_name))
+         if (error_decode_xe_read_engine_name(line, engine_name)) {
             ring_name_to_class(engine_name, &engine_class);
+            break;
+         }
 
-         if (read_u64_hexacimal_parameter(line, "ACTHD", &u64_reg))
+         if (error_decode_xe_read_u64_hexacimal_parameter(line, "ACTHD", &u64_reg)) {
             acthd = u64_reg;
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "RING_INSTDONE", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "INSTDONE_1", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "SC_INSTDONE", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "SC_INSTDONE", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "SC_INSTDONE_EXTRA", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "SC_INSTDONE_EXTRA", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "SC_INSTDONE_EXTRA2", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "SC_INSTDONE_EXTRA2", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "SAMPLER_INSTDONE", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "SAMPLER_INSTDONE", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "ROW_INSTDONE", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "ROW_INSTDONE", reg);
+            break;
+         }
+
+         if (error_decode_xe_read_hexacimal_parameter(line, "INSTDONE_GEOM_SVGUNIT", &reg)) {
+            print_line = false;
+            fputs(line, stdout);
+            print_register(spec, option_color, "INSTDONE_GEOM", reg);
+            break;
+         }
 
          /* TODO: parse other engine registers */
          break;
       }
-      case TOPIC_JOB: {
+      case XE_TOPIC_JOB: {
          uint64_t u64_value;
 
-         if (read_u64_hexacimal_parameter(line, "batch_addr[", &u64_value)) {
+         if (error_decode_xe_read_u64_hexacimal_parameter(line, "batch_addr[", &u64_value)) {
             batch_buffers.addrs = realloc(batch_buffers.addrs, sizeof(uint64_t) * (batch_buffers.len + 1));
             batch_buffers.addrs[batch_buffers.len] = u64_value;
             batch_buffers.len++;
@@ -434,13 +219,13 @@ read_xe_data_file(FILE *file,
 
          break;
       }
-      case TOPIC_GUC_CT: {
+      case XE_TOPIC_GUC_CT: {
          enum xe_vm_topic_type type;
          const char *value_ptr;
          bool is_hw_ctx;
 
          /* TODO: what to do with HWSP? */
-         type = read_xe_hw_sp_or_ctx_line(line, &value_ptr, &is_hw_ctx);
+         type = error_decode_xe_read_hw_sp_or_ctx_line(line, &value_ptr, &is_hw_ctx);
          if (type != XE_VM_TOPIC_TYPE_UNKNOWN) {
             print_line = false;
 
@@ -449,7 +234,7 @@ read_xe_data_file(FILE *file,
 
             switch (type) {
             case XE_VM_TOPIC_TYPE_DATA:
-               if (!ascii85_decode_allocated(value_ptr, vm_entry_data, vm_entry_len))
+               if (!error_decode_xe_ascii85_decode_allocated(value_ptr, vm_entry_data, vm_entry_len))
                   printf("Failed to parse HWCTX data\n");
                break;
             case XE_VM_TOPIC_TYPE_LENGTH: {
@@ -461,7 +246,7 @@ read_xe_data_file(FILE *file,
                }
 
                if (is_hw_ctx)
-                  xe_vm_hw_ctx_set(&xe_vm, vm_entry_len, vm_entry_data);
+                  error_decode_xe_vm_hw_ctx_set(&xe_vm, vm_entry_len, vm_entry_data);
                break;
             }
             case XE_VM_TOPIC_TYPE_ERROR:
@@ -474,16 +259,16 @@ read_xe_data_file(FILE *file,
 
          break;
       }
-      case TOPIC_VM: {
+      case XE_TOPIC_VM: {
          enum xe_vm_topic_type type;
          const char *value_ptr;
          uint64_t address;
 
          print_line = false;
-         type = read_xe_vm_line(line, &address, &value_ptr);
+         type = error_decode_xe_read_vm_line(line, &address, &value_ptr);
          switch (type) {
          case XE_VM_TOPIC_TYPE_DATA: {
-            if (!ascii85_decode_allocated(value_ptr, vm_entry_data, vm_entry_len))
+            if (!error_decode_xe_ascii85_decode_allocated(value_ptr, vm_entry_data, vm_entry_len))
                printf("Failed to parse VMA 0x%" PRIx64 " data\n", address);
             break;
          }
@@ -494,7 +279,7 @@ read_xe_data_file(FILE *file,
                printf("Out of memory to allocate a buffer to store content of VMA 0x%" PRIx64 "\n", address);
                break;
             }
-            if (!xe_vm_append(&xe_vm, address, vm_entry_len, vm_entry_data)) {
+            if (!error_decode_xe_vm_append(&xe_vm, address, vm_entry_len, vm_entry_data)) {
                printf("xe_vm_append() failed for VMA 0x%" PRIx64 "\n", address);
                break;
             }
@@ -527,7 +312,7 @@ read_xe_data_file(FILE *file,
 
    for (int i = 0; i < batch_buffers.len; i++) {
       const uint64_t bb_addr = batch_buffers.addrs[i];
-      const struct xe_vm_entry *vm_entry = xe_vm_entry_get(&xe_vm, bb_addr);
+      const struct xe_vm_entry *vm_entry = error_decode_xe_vm_entry_get(&xe_vm, bb_addr);
       const char *engine_name = intel_engines_class_to_string(engine_class);
       const char *buffer_name = "batch buffer";
       const uint32_t *bb_data;
@@ -536,8 +321,8 @@ read_xe_data_file(FILE *file,
       if (!vm_entry)
          continue;
 
-      bb_data = xe_vm_entry_address_get_data(vm_entry, bb_addr);
-      bb_len = xe_vm_entry_address_get_len(vm_entry, bb_addr);
+      bb_data = error_decode_xe_vm_entry_address_get_data(vm_entry, bb_addr);
+      bb_len = error_decode_xe_vm_entry_address_get_len(vm_entry, bb_addr);
       print_batch(&batch_ctx, bb_data, bb_addr, bb_len, buffer_name,
                   engine_name, engine_class, batch_flags, option_print_all_bb,
                   ring_wraps);
@@ -562,5 +347,5 @@ read_xe_data_file(FILE *file,
    intel_spec_destroy(spec);
    free(batch_buffers.addrs);
    free(line);
-   xe_vm_fini(&xe_vm);
+   error_decode_xe_vm_fini(&xe_vm);
 }

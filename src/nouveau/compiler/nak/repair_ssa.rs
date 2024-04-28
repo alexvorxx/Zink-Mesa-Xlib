@@ -3,6 +3,7 @@
 
 use crate::bitset::BitSet;
 use crate::ir::*;
+use crate::union_find::UnionFind;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -233,7 +234,7 @@ impl Function {
 
         // For loop back-edges, we inserted a phi whether we need one or not.
         // We want to eliminate any redundant phis.
-        let mut ssa_map = HashMap::new();
+        let mut ssa_map = UnionFind::new();
         if cfg.has_loop() {
             let mut to_do = true;
             while to_do {
@@ -245,9 +246,7 @@ impl Function {
                         for (_, p_ssa) in phi.srcs.iter_mut() {
                             // Apply the remap to the phi sources so that we
                             // pick up any remaps from previous loop iterations.
-                            while let Some(new_ssa) = ssa_map.get(p_ssa) {
-                                *p_ssa = *new_ssa;
-                            }
+                            *p_ssa = ssa_map.find(*p_ssa);
 
                             if *p_ssa == phi.dst {
                                 continue;
@@ -261,7 +260,10 @@ impl Function {
                         // All sources are identical or the phi destination so
                         // we can delete this phi and add it to the remap
                         let ssa = ssa.expect("Circular SSA def");
-                        ssa_map.insert(phi.dst, ssa);
+                        // union(a, b) ensures that the representative is the representative
+                        // for a.  This means union(ssa, phi.dst) ensures that phi.dst gets
+                        // mapped to ssa, not the other way around.
+                        ssa_map.union(ssa, phi.dst);
                         to_do = true;
                         false
                     });
@@ -300,9 +302,7 @@ impl Function {
             if !ssa_map.is_empty() {
                 for instr in &mut bb.instrs {
                     instr.for_each_ssa_use_mut(|ssa| {
-                        while let Some(new_ssa) = ssa_map.get(ssa) {
-                            *ssa = *new_ssa;
-                        }
+                        *ssa = ssa_map.find(*ssa);
                     });
                 }
             }
@@ -312,11 +312,9 @@ impl Function {
                 if !s_phis.is_empty() {
                     let phi_src = get_or_insert_phi_srcs(bb);
                     for phi in s_phis.iter() {
-                        let mut ssa = phi.srcs.get(&b_idx).unwrap();
-                        while let Some(new_ssa) = ssa_map.get(ssa) {
-                            ssa = new_ssa;
-                        }
-                        phi_src.srcs.push(phi.idx, (*ssa).into());
+                        let mut ssa = *phi.srcs.get(&b_idx).unwrap();
+                        ssa = ssa_map.find(ssa);
+                        phi_src.srcs.push(phi.idx, ssa.into());
                     }
                 }
             }

@@ -27,8 +27,6 @@
 
 #include "etnaviv_state.h"
 
-#include "hw/common.xml.h"
-
 #include "etnaviv_blend.h"
 #include "etnaviv_clear_blit.h"
 #include "etnaviv_context.h"
@@ -153,7 +151,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
       uint32_t fmt = translate_pe_format(cbuf->base.format);
 
       assert((res->layout & ETNA_LAYOUT_BIT_TILE) ||
-             VIV_FEATURE(screen, chipMinorFeatures2, LINEAR_PE));
+             VIV_FEATURE(screen, ETNA_FEATURE_LINEAR_PE));
       etna_update_render_surface(pctx, cbuf);
 
       if (res->layout == ETNA_LAYOUT_LINEAR)
@@ -176,7 +174,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
       if (nr_samples_color <= 1)
          cs->PE_COLOR_FORMAT |= VIVS_PE_COLOR_FORMAT_OVERWRITE;
 
-      if (VIV_FEATURE(screen, chipMinorFeatures6, CACHE128B256BPERLINE))
+      if (VIV_FEATURE(screen, ETNA_FEATURE_CACHE128B256BPERLINE))
          cs->PE_COLOR_FORMAT |= COND(color_supertiled, VIVS_PE_COLOR_FORMAT_SUPER_TILED_NEW);
       /* VIVS_PE_COLOR_FORMAT_COMPONENTS() and
        * VIVS_PE_COLOR_FORMAT_OVERWRITE comes from blend_state
@@ -193,7 +191,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
              cbuf->offset, cbuf->level->stride * 4);
       }
 
-      if (screen->specs.halti >= 0 && screen->model != 0x880) {
+      if (screen->specs.halti >= 0 && screen->info->model != 0x880) {
          /* Rendertargets on GPUs with more than a single pixel pipe must always
           * be multi-tiled, or single-buffer mode must be supported */
          assert(screen->specs.pixel_pipes == 1 ||
@@ -276,7 +274,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
       /* VIVS_PE_DEPTH_CONFIG_ONLY_DEPTH */
       /* merged with depth_stencil_alpha */
 
-      if (screen->specs.halti >= 0 && screen->model != 0x880) {
+      if (screen->specs.halti >= 0 && screen->info->model != 0x880) {
          for (int i = 0; i < screen->specs.pixel_pipes; i++) {
             cs->PE_PIPE_DEPTH_ADDR[i] = zsbuf->reloc[i];
             cs->PE_PIPE_DEPTH_ADDR[i].flags = ETNA_RELOC_READ | ETNA_RELOC_WRITE;
@@ -366,7 +364,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
       cs->RA_CENTROID_TABLE[9] = 0x886688a2;
       cs->RA_CENTROID_TABLE[10] = 0x888866aa;
       cs->RA_CENTROID_TABLE[11] = 0x668888a6;
-      if (VIV_FEATURE(screen, chipMinorFeatures4, SMALL_MSAA))
+      if (VIV_FEATURE(screen, ETNA_FEATURE_SMALL_MSAA))
          pe_logic_op |= VIVS_PE_LOGIC_OP_UNK24(0x5);
       break;
    }
@@ -718,7 +716,7 @@ etna_update_zsa(struct etna_context *ctx)
    struct etna_zsa_state *zsa = etna_zsa_state(zsa_state);
    struct etna_screen *screen = ctx->screen;
    uint32_t new_pe_depth, new_ra_depth;
-   bool early_z_allowed = !VIV_FEATURE(screen, chipFeatures, NO_EARLY_Z);
+   bool early_z_allowed = !VIV_FEATURE(screen, ETNA_FEATURE_NO_EARLY_Z);
    bool late_zs = false, early_zs = false,
         late_z_test = false, early_z_test = false;
 
@@ -736,7 +734,7 @@ etna_update_zsa(struct etna_context *ctx)
    }
 
    if (zsa->z_write_enabled || zsa->stencil_enabled) {
-      if (VIV_FEATURE(screen, chipMinorFeatures5, RA_WRITE_DEPTH) &&
+      if (VIV_FEATURE(screen, ETNA_FEATURE_RA_WRITE_DEPTH) &&
           early_z_allowed &&
           !zsa_state->alpha_enabled &&
           !shader_state->writes_z &&
@@ -768,7 +766,7 @@ etna_update_zsa(struct etna_context *ctx)
    new_ra_depth = 0x0000030 |
                   COND(early_z_test, VIVS_RA_EARLY_DEPTH_TEST_ENABLE);
 
-   if (VIV_FEATURE(screen, chipMinorFeatures5, RA_WRITE_DEPTH)) {
+   if (VIV_FEATURE(screen, ETNA_FEATURE_RA_WRITE_DEPTH)) {
       if (!early_zs)
          new_ra_depth |= VIVS_RA_EARLY_DEPTH_WRITE_DISABLE;
       /* The new early hierarchical test seems to only work properly if depth

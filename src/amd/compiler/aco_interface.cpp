@@ -1,25 +1,7 @@
 /*
  * Copyright © 2018 Google
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 #include "aco_interface.h"
@@ -397,16 +379,6 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
                       void** binary)
 {
    aco_compile_shader_part(options, info, args, select_ps_epilog, (void*)pinfo, build_epilog,
-                           binary);
-}
-
-void
-aco_compile_tcs_epilog(const struct aco_compiler_options* options,
-                       const struct aco_shader_info* info, const struct aco_tcs_epilog_info* pinfo,
-                       const struct ac_shader_args* args, aco_shader_part_callback* build_epilog,
-                       void** binary)
-{
-   aco_compile_shader_part(options, info, args, select_tcs_epilog, (void*)pinfo, build_epilog,
                            binary);
 }
 

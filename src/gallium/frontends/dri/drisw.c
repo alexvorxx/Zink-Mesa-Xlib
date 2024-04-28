@@ -31,7 +31,7 @@
 #include "util/format/u_format.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "pipe/p_context.h"
 #include "pipe-loader/pipe_loader.h"
 #include "frontend/drisw_api.h"
@@ -42,6 +42,10 @@
 #include "dri_drawable.h"
 #include "dri_helpers.h"
 #include "dri_query_renderer.h"
+
+#ifdef HAVE_LIBDRM
+#include <xf86drm.h>
+#endif
 
 DEBUG_GET_ONCE_BOOL_OPTION(swrast_no_present, "SWRAST_NO_PRESENT", false);
 
@@ -507,6 +511,8 @@ static __DRIimageExtension driSWImageExtension = {
     .destroyImage = dri2_destroy_image,
 };
 
+extern const __DRIimageExtension driVkImageExtension;
+
 static const __DRIrobustnessExtension dri2Robustness = {
    .base = { __DRI2_ROBUSTNESS, 1 }
 };
@@ -516,22 +522,22 @@ static const __DRIrobustnessExtension dri2Robustness = {
  */
 
 static const __DRIextension *drisw_screen_extensions[] = {
+   &driSWImageExtension.base,
    &driTexBufferExtension.base,
    &dri2RendererQueryExtension.base,
    &dri2ConfigQueryExtension.base,
    &dri2FenceExtension.base,
-   &driSWImageExtension.base,
    &dri2FlushControlExtension.base,
    NULL
 };
 
 static const __DRIextension *drisw_robust_screen_extensions[] = {
+   &driSWImageExtension.base,
    &driTexBufferExtension.base,
    &dri2RendererQueryExtension.base,
    &dri2ConfigQueryExtension.base,
    &dri2FenceExtension.base,
    &dri2Robustness.base,
-   &driSWImageExtension.base,
    &dri2FlushControlExtension.base,
    NULL
 };
@@ -569,7 +575,7 @@ drisw_create_drawable(struct dri_screen *screen, const struct gl_config * visual
 }
 
 static const __DRIconfig **
-drisw_init_screen(struct dri_screen *screen)
+drisw_init_screen(struct dri_screen *screen, bool implicit)
 {
    const __DRIswrastLoaderExtension *loader = screen->swrast_loader;
    const __DRIconfig **configs;
@@ -592,7 +598,7 @@ drisw_init_screen(struct dri_screen *screen)
       success = pipe_loader_sw_probe_dri(&screen->dev, lf);
 
    if (success)
-      pscreen = pipe_loader_create_screen(screen->dev);
+      pscreen = pipe_loader_create_screen(screen->dev, implicit);
 
    if (!pscreen)
       goto fail;
@@ -608,6 +614,10 @@ drisw_init_screen(struct dri_screen *screen)
    }
    else
       screen->extensions = drisw_screen_extensions;
+#ifdef HAVE_LIBDRM
+   if (pscreen->resource_create_with_modifiers && (pscreen->get_param(pscreen, PIPE_CAP_DMABUF) & DRM_PRIME_CAP_EXPORT))
+      screen->extensions[0] = &driVkImageExtension.base;
+#endif
    screen->lookup_egl_image = dri2_lookup_egl_image;
 
    const __DRIimageLookupExtension *image = screen->dri2.image;
@@ -646,11 +656,12 @@ const __DRIcopySubBufferExtension driSWCopySubBufferExtension = {
 };
 
 static const struct __DRImesaCoreExtensionRec mesaCoreExtension = {
-   .base = { __DRI_MESA, 1 },
+   .base = { __DRI_MESA, 2 },
    .version_string = MESA_INTERFACE_VERSION_STRING,
    .createNewScreen = driCreateNewScreen2,
    .createContext = driCreateContextAttribs,
    .initScreen = drisw_init_screen,
+   .createNewScreen3 = driCreateNewScreen3,
 };
 
 /* This is the table of extensions that the loader will dlsym() for. */

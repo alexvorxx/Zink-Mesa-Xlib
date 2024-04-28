@@ -25,7 +25,7 @@
 #include "util/u_atomic.h"
 #include "util/u_upload_mgr.h"
 #include "util/u_math.h"
-#include "util/u_box.h"
+#include "util/box.h"
 #include "util/u_simple_shaders.h"
 #include "util/u_gen_mipmap.h"
 
@@ -744,7 +744,7 @@ update_framebuffer(struct NineDevice9 *device, bool is_clear)
 
     /* Special case: D3DFMT_NULL is used to bound no real render target,
      * but render to depth buffer. We have to not take into account the render
-     * target info. TODO: know what should happen when there are several render targers
+     * target info. TODO: know what should happen when there are several render targets
      * and the first one is D3DFMT_NULL */
     if (rt0->desc.Format == D3DFMT_NULL && context->ds) {
         w = context->ds->desc.Width;

@@ -143,6 +143,11 @@ agx_batch_init(struct agx_context *ctx,
    batch->fs_preamble_scratch = 0;
    batch->cs_preamble_scratch = 0;
 
+   /* May get read before write, need to initialize to 0 to avoid GPU-side UAF
+    * conditions.
+    */
+   batch->uniforms.tables[AGX_SYSVAL_TABLE_PARAMS] = 0;
+
    /* We need to emit prim state at the start. Max collides with all. */
    batch->reduced_prim = MESA_PRIM_COUNT;
 

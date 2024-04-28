@@ -42,11 +42,8 @@ __gen_combine_address(__attribute__((unused)) void *data,
 #if GFX_VERx10 >= 125
 static const uint8_t isl_encode_tiling[] = {
    [ISL_TILING_4]  = TILE4,
-#if GFX_VER >= 20
-   [ISL_TILING_64_XE2] = TILE64,
-#else
    [ISL_TILING_64] = TILE64,
-#endif
+   [ISL_TILING_64_XE2] = TILE64,
 };
 #endif
 

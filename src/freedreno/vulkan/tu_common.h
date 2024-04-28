@@ -131,9 +131,6 @@
 #define MAX_FDM_TEXEL_SIZE_LOG2 10
 #define MAX_FDM_TEXEL_SIZE (1u << MAX_FDM_TEXEL_SIZE_LOG2)
 
-#define TU_FROM_HANDLE(__tu_type, __name, __handle)                          \
-   VK_FROM_HANDLE(__tu_type, __name, __handle)
-
 #define TU_GPU_GENS A6XX, A7XX
 #define TU_GENX(FUNC_NAME)                                                   \
    template <chip... CHIPs> constexpr auto FUNC_NAME##instantiate()          \

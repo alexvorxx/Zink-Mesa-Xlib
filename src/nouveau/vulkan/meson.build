@@ -148,6 +148,8 @@ custom_target(
   build_by_default : true,
 )
 
+devenv.append('VK_DRIVER_FILES', meson.current_build_dir() / _dev_icdname)
+# Deprecated: replaced by VK_DRIVER_FILES above
 devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
 
 if with_tests and not with_platform_android

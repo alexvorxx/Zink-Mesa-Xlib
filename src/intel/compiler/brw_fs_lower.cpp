@@ -37,7 +37,7 @@ brw_fs_lower_constant_loads(fs_visitor &s)
 
          const unsigned block_sz = 64; /* Fetch one cacheline at a time. */
          const fs_builder ubld = ibld.exec_all().group(block_sz / 4, 0);
-         const fs_reg dst = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         const fs_reg dst = ubld.vgrf(BRW_TYPE_UD);
          const unsigned base = pull_index * 4;
 
          fs_reg srcs[PULL_UNIFORM_CONSTANT_SRCS];
@@ -105,8 +105,8 @@ brw_fs_lower_load_payload(fs_visitor &s)
             2 : 1;
 
          if (inst->src[i].file != BAD_FILE)
-            ubld.group(8 * n, 0).MOV(retype(dst, BRW_REGISTER_TYPE_UD),
-                                     retype(inst->src[i], BRW_REGISTER_TYPE_UD));
+            ubld.group(8 * n, 0).MOV(retype(dst, BRW_TYPE_UD),
+                                     retype(inst->src[i], BRW_TYPE_UD));
 
          dst = byte_offset(dst, n * REG_SIZE);
          i += n;
@@ -167,8 +167,8 @@ brw_fs_lower_sub_sat(fs_visitor &s)
           * same situations as #1 above.  It is further limited by only
           * allowing UD sources.
           */
-         if (inst->exec_size == 8 && inst->src[0].type != BRW_REGISTER_TYPE_Q &&
-             inst->src[0].type != BRW_REGISTER_TYPE_UQ) {
+         if (inst->exec_size == 8 && inst->src[0].type != BRW_TYPE_Q &&
+             inst->src[0].type != BRW_TYPE_UQ) {
             fs_reg acc = retype(brw_acc_reg(inst->exec_size),
                                 inst->src[1].type);
 
@@ -254,18 +254,18 @@ brw_fs_lower_barycentrics(fs_visitor &s)
       const fs_builder ubld = ibld.exec_all().group(8, 0);
 
       switch (inst->opcode) {
-      case FS_OPCODE_LINTERP : {
+      case BRW_OPCODE_PLN: {
          assert(inst->exec_size == 16);
-         const fs_reg tmp = ibld.vgrf(inst->src[0].type, 2);
+         const fs_reg tmp = ibld.vgrf(inst->src[1].type, 2);
          fs_reg srcs[4];
 
          for (unsigned i = 0; i < ARRAY_SIZE(srcs); i++)
-            srcs[i] = horiz_offset(offset(inst->src[0], ibld, i % 2),
+            srcs[i] = horiz_offset(offset(inst->src[1], ibld, i % 2),
                                    8 * (i / 2));
 
          ubld.LOAD_PAYLOAD(tmp, srcs, ARRAY_SIZE(srcs), ARRAY_SIZE(srcs));
 
-         inst->src[0] = tmp;
+         inst->src[1] = tmp;
          progress = true;
          break;
       }
@@ -387,7 +387,7 @@ brw_fs_lower_find_live_channel(fs_visitor &s)
        * instruction has execution masking disabled, so it's kind of
        * useless there.
        */
-      fs_reg exec_mask(retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD));
+      fs_reg exec_mask(retype(brw_mask_reg(0), BRW_TYPE_UD));
 
       const fs_builder ibld(&s, block, inst);
       if (!inst->is_partial_write())
@@ -403,7 +403,7 @@ brw_fs_lower_find_live_channel(fs_visitor &s)
        * will appear at the front of the mask.
        */
       if (!(first && packed_dispatch)) {
-         fs_reg mask = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         fs_reg mask = ubld.vgrf(BRW_TYPE_UD);
          ubld.UNDEF(mask);
          ubld.emit(SHADER_OPCODE_READ_SR_REG, mask, brw_imm_ud(vmask ? 3 : 2));
 
@@ -424,7 +424,7 @@ brw_fs_lower_find_live_channel(fs_visitor &s)
          break;
 
       case SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL: {
-         fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 1);
+         fs_reg tmp = ubld.vgrf(BRW_TYPE_UD);
          ubld.UNDEF(tmp);
          ubld.LZD(tmp, exec_mask);
          ubld.ADD(inst->dst, negate(tmp), brw_imm_uw(31));
@@ -472,12 +472,12 @@ brw_fs_lower_sends_overlapping_payload(fs_visitor &s)
          const unsigned len = MIN2(inst->mlen, inst->ex_mlen);
 
          fs_reg tmp = fs_reg(VGRF, s.alloc.allocate(len),
-                             BRW_REGISTER_TYPE_UD);
+                             BRW_TYPE_UD);
          /* Sadly, we've lost all notion of channels and bit sizes at this
           * point.  Just WE_all it.
           */
          const fs_builder ibld = fs_builder(&s, block, inst).exec_all().group(16, 0);
-         fs_reg copy_src = retype(inst->src[arg], BRW_REGISTER_TYPE_UD);
+         fs_reg copy_src = retype(inst->src[arg], BRW_TYPE_UD);
          fs_reg copy_dst = tmp;
          for (unsigned i = 0; i < len; i += 2) {
             if (len == i + 1) {
@@ -528,9 +528,9 @@ static bool
 unsupported_64bit_type(const intel_device_info *devinfo,
                        enum brw_reg_type type)
 {
-   return (!devinfo->has_64bit_float && type == BRW_REGISTER_TYPE_DF) ||
-          (!devinfo->has_64bit_int && (type == BRW_REGISTER_TYPE_UQ ||
-                                       type == BRW_REGISTER_TYPE_Q));
+   return (!devinfo->has_64bit_float && type == BRW_TYPE_DF) ||
+          (!devinfo->has_64bit_int && (type == BRW_TYPE_UQ ||
+                                       type == BRW_TYPE_Q));
 }
 
 /**
@@ -555,8 +555,7 @@ brw_fs_lower_alu_restrictions(fs_visitor &s)
             assert(!inst->src[0].negate);
             const brw::fs_builder ibld(&s, block, inst);
 
-            enum brw_reg_type type =
-               brw_reg_type_from_bit_size(32, inst->dst.type);
+            enum brw_reg_type type = brw_type_with_size(inst->dst.type, 32);
 
             if (!inst->is_partial_write())
                ibld.emit_undef_for_dst(inst);
@@ -580,8 +579,7 @@ brw_fs_lower_alu_restrictions(fs_visitor &s)
             assert(inst->conditional_mod == BRW_CONDITIONAL_NONE);
             const brw::fs_builder ibld(&s, block, inst);
 
-            enum brw_reg_type type =
-               brw_reg_type_from_bit_size(32, inst->dst.type);
+            enum brw_reg_type type = brw_type_with_size(inst->dst.type, 32);
 
             if (!inst->is_partial_write())
                ibld.emit_undef_for_dst(inst);
@@ -612,3 +610,96 @@ brw_fs_lower_alu_restrictions(fs_visitor &s)
 
    return progress;
 }
+
+static void
+brw_fs_lower_vgrf_to_fixed_grf(const struct intel_device_info *devinfo, fs_inst *inst,
+                               fs_reg *reg, bool compressed)
+{
+   if (reg->file != VGRF)
+      return;
+
+   struct brw_reg new_reg;
+
+   if (reg->stride == 0) {
+      new_reg = brw_vec1_grf(reg->nr, 0);
+   } else if (reg->stride > 4) {
+      assert(reg != &inst->dst);
+      assert(reg->stride * brw_type_size_bytes(reg->type) <= REG_SIZE);
+      new_reg = brw_vecn_grf(1, reg->nr, 0);
+      new_reg = stride(new_reg, reg->stride, 1, 0);
+   } else {
+      /* From the Haswell PRM:
+       *
+       *  "VertStride must be used to cross GRF register boundaries. This
+       *   rule implies that elements within a 'Width' cannot cross GRF
+       *   boundaries."
+       *
+       * The maximum width value that could satisfy this restriction is:
+       */
+      const unsigned reg_width =
+         REG_SIZE / (reg->stride * brw_type_size_bytes(reg->type));
+
+      /* Because the hardware can only split source regions at a whole
+       * multiple of width during decompression (i.e. vertically), clamp
+       * the value obtained above to the physical execution size of a
+       * single decompressed chunk of the instruction:
+       */
+      const bool compressed = inst->dst.component_size(inst->exec_size) > REG_SIZE;
+      const unsigned phys_width = compressed ? inst->exec_size / 2 :
+                                  inst->exec_size;
+
+      /* XXX - The equation above is strictly speaking not correct on
+       *       hardware that supports unbalanced GRF writes -- On Gfx9+
+       *       each decompressed chunk of the instruction may have a
+       *       different execution size when the number of components
+       *       written to each destination GRF is not the same.
+       */
+
+      const unsigned max_hw_width = 16;
+
+      const unsigned width = MIN3(reg_width, phys_width, max_hw_width);
+      new_reg = brw_vecn_grf(width, reg->nr, 0);
+      new_reg = stride(new_reg, width * reg->stride, width, reg->stride);
+   }
+
+   new_reg = retype(new_reg, reg->type);
+   new_reg = byte_offset(new_reg, reg->offset);
+   new_reg.abs = reg->abs;
+   new_reg.negate = reg->negate;
+
+   *reg = new_reg;
+}
+
+void
+brw_fs_lower_vgrfs_to_fixed_grfs(fs_visitor &s)
+{
+   assert(s.grf_used || !"Must be called after register allocation");
+
+   foreach_block_and_inst(block, fs_inst, inst, s.cfg) {
+      /* If the instruction writes to more than one register, it needs to be
+       * explicitly marked as compressed on Gen <= 5.  On Gen >= 6 the
+       * hardware figures out by itself what the right compression mode is,
+       * but we still need to know whether the instruction is compressed to
+       * set up the source register regions appropriately.
+       *
+       * XXX - This is wrong for instructions that write a single register but
+       *       read more than one which should strictly speaking be treated as
+       *       compressed.  For instructions that don't write any registers it
+       *       relies on the destination being a null register of the correct
+       *       type and regioning so the instruction is considered compressed
+       *       or not accordingly.
+       */
+
+      const bool compressed =
+           inst->dst.component_size(inst->exec_size) > REG_SIZE;
+
+      brw_fs_lower_vgrf_to_fixed_grf(s.devinfo, inst, &inst->dst, compressed);
+      for (int i = 0; i < inst->sources; i++) {
+         brw_fs_lower_vgrf_to_fixed_grf(s.devinfo, inst, &inst->src[i], compressed);
+      }
+   }
+
+   s.invalidate_analysis(DEPENDENCY_INSTRUCTION_DATA_FLOW |
+                         DEPENDENCY_VARIABLES);
+}
+

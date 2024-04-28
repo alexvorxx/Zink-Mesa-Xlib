@@ -34,6 +34,7 @@
 #include "util/u_helpers.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
+#include "util/u_process.h"
 #include "util/u_resource.h"
 #include "util/u_screen.h"
 #include "util/u_upload_mgr.h"
@@ -78,7 +79,6 @@ static const struct debug_named_value agx_debug_options[] = {
    {"feedback",  AGX_DBG_FEEDBACK, "Debug feedback loops"},
    {"nomsaa",    AGX_DBG_NOMSAA,   "Force disable MSAA"},
    {"noshadow",  AGX_DBG_NOSHADOW, "Force disable resource shadowing"},
-   {"varyings",  AGX_DBG_VARYINGS,  "Validate varying linkage"},
    {"scratch",   AGX_DBG_SCRATCH,  "Debug scratch memory usage"},
    DEBUG_NAMED_VALUE_END
 };
@@ -1551,7 +1551,6 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SHADER_PACK_HALF_FLOAT:
    case PIPE_CAP_FS_FINE_DERIVATIVE:
    case PIPE_CAP_CULL_DISTANCE_NOCOMBINE:
-   case PIPE_CAP_NIR_COMPACT_ARRAYS:
    case PIPE_CAP_GLSL_TESS_LEVELS_AS_INPUTS:
    case PIPE_CAP_DOUBLES:
       return 1;
@@ -1869,17 +1868,13 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
    case PIPE_SHADER_CAP_CONT_SUPPORTED:
       return 1;
 
-   case PIPE_SHADER_CAP_INDIRECT_INPUT_ADDR:
-      return shader == PIPE_SHADER_TESS_CTRL || shader == PIPE_SHADER_TESS_EVAL;
-
-   case PIPE_SHADER_CAP_INDIRECT_OUTPUT_ADDR:
-      return shader == PIPE_SHADER_TESS_CTRL;
-
-   case PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR:
    case PIPE_SHADER_CAP_SUBROUTINES:
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
       return 0;
 
+   case PIPE_SHADER_CAP_INDIRECT_INPUT_ADDR:
+   case PIPE_SHADER_CAP_INDIRECT_OUTPUT_ADDR:
+   case PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR:
    case PIPE_SHADER_CAP_INDIRECT_CONST_ADDR:
    case PIPE_SHADER_CAP_INTEGERS:
       return true;
@@ -1901,7 +1896,15 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
       return 0;
 
    case PIPE_SHADER_CAP_MAX_TEXTURE_SAMPLERS:
-      return 16;
+      /* TODO: Enable when fully baked */
+      if (strcmp(util_get_process_name(), "blender") == 0)
+         return PIPE_MAX_SAMPLERS;
+      else if (strcmp(util_get_process_name(), "run") == 0)
+         return PIPE_MAX_SAMPLERS;
+      else if (strcasestr(util_get_process_name(), "ryujinx") != NULL)
+         return PIPE_MAX_SAMPLERS;
+      else
+         return 16;
 
    case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
       return PIPE_MAX_SHADER_SAMPLER_VIEWS;

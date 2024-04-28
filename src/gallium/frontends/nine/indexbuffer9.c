@@ -14,7 +14,7 @@
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
 #include "util/format/u_formats.h"
-#include "util/u_box.h"
+#include "util/box.h"
 
 #define DBG_CHANNEL DBG_INDEXBUFFER
 

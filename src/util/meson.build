@@ -39,6 +39,7 @@ files_mesa_util = files(
   'blend.h',
   'blob.c',
   'blob.h',
+  'box.h',
   'build_id.c',
   'build_id.h',
   'cnd_monotonic.h',

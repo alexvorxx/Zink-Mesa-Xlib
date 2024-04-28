@@ -57,7 +57,7 @@ is_nop_mov(const fs_inst *inst)
          }
          dst.offset += (i < inst->header_size ? REG_SIZE :
                         inst->exec_size * dst.stride *
-                        type_sz(inst->src[i].type));
+                        brw_type_size_bytes(inst->src[i].type));
       }
       return true;
    } else if (inst->opcode == BRW_OPCODE_MOV) {

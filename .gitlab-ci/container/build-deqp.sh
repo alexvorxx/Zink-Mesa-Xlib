@@ -16,7 +16,7 @@ set -ex -o pipefail
 # - the GL release produces `glcts`, and
 # - the GLES release produces `deqp-gles*` and `deqp-egl`
 
-DEQP_VK_VERSION=1.3.7.0
+DEQP_VK_VERSION=1.3.8.2
 DEQP_GL_VERSION=4.6.4.0
 DEQP_GLES_VERSION=3.2.10.0
 
@@ -28,28 +28,15 @@ DEQP_GLES_VERSION=3.2.10.0
 
 # shellcheck disable=SC2034
 vk_cts_commits_to_backport=(
-    # Take multiview into account for task shader inv. stats
-    22aa3f4c59f6e1d4daebd5a8c9c05bce6cd3b63b
+    # Fix more ASAN errors due to missing virtual destructors
+    dd40bcfef1b4035ea55480b6fd4d884447120768
 
-    # Remove illegal mesh shader query tests
-    2a87f7b25dc27188be0f0a003b2d7aef69d9002e
-
-    # Relax fragment shader invocations result verifications
-    0d8bf6a2715f95907e9cf86a86876ff1f26c66fe
-
-    # Fix several issues in dynamic rendering basic tests
-    c5453824b498c981c6ba42017d119f5de02a3e34
-
-    # Add setVisible for VulkanWindowDirectDrm
-    a8466bf6ea98f6cd6733849ad8081775318a3e3e
+    # Remove "unused shader stages" tests
+    7dac86c6bbd15dec91d7d9a98cd6dd57c11092a7
 )
 
 # shellcheck disable=SC2034
 vk_cts_patch_files=(
-  # Derivate subgroup fix
-  # https://github.com/KhronosGroup/VK-GL-CTS/pull/442
-  build-deqp-vk_Use-subgroups-helper-in-derivate-tests.patch
-  build-deqp-vk_Add-missing-subgroup-support-checks-for-linear-derivate-tests.patch
 )
 
 if [ "${DEQP_TARGET}" = 'android' ]; then
@@ -218,7 +205,7 @@ if [ "${DEQP_TARGET}" != 'android' ]; then
     if [ "${DEQP_API}" = 'VK' ]; then
         for mustpass in $(< /VK-GL-CTS/external/vulkancts/mustpass/main/vk-default.txt) ; do
             cat /VK-GL-CTS/external/vulkancts/mustpass/main/$mustpass \
-                >> /deqp/mustpass/vk-master.txt
+                >> /deqp/mustpass/vk-main.txt
         done
     fi
 
@@ -253,7 +240,7 @@ fi
 
 # Remove other mustpass files, since we saved off the ones we wanted to conventient locations above.
 rm -rf /deqp/external/**/mustpass/
-rm -rf /deqp/external/vulkancts/modules/vulkan/vk-master*
+rm -rf /deqp/external/vulkancts/modules/vulkan/vk-main*
 rm -rf /deqp/external/vulkancts/modules/vulkan/vk-default
 
 rm -rf /deqp/external/openglcts/modules/cts-runner

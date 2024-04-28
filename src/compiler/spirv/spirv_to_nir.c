@@ -63,7 +63,7 @@ vtn_default_log_level(void)
    const char *str = getenv("MESA_SPIRV_LOG_LEVEL");
 
    if (str == NULL)
-      return NIR_SPIRV_DEBUG_LEVEL_WARNING;
+      return level;
 
    for (int i = 0; i < ARRAY_SIZE(vtn_log_level_strings); i++) {
       if (strcasecmp(str, vtn_log_level_strings[i]) == 0) {
@@ -4902,6 +4902,10 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
          spv_check_supported(float_controls, cap);
          break;
 
+      case SpvCapabilityFloatControls2:
+         spv_check_supported(float_controls2, cap);
+         break;
+
       case SpvCapabilityPhysicalStorageBufferAddresses:
          spv_check_supported(physical_storage_buffer_address, cap);
          break;
@@ -5532,6 +5536,7 @@ vtn_handle_execution_mode(struct vtn_builder *b, struct vtn_value *entry_point,
    case SpvExecutionModeLocalSizeId:
    case SpvExecutionModeLocalSizeHintId:
    case SpvExecutionModeSubgroupsPerWorkgroupId:
+   case SpvExecutionModeFPFastMathDefault:
    case SpvExecutionModeMaxNodeRecursionAMDX:
    case SpvExecutionModeStaticNumWorkgroupsAMDX:
    case SpvExecutionModeMaxNumWorkgroupsAMDX:
@@ -5645,6 +5650,44 @@ vtn_handle_execution_mode_id(struct vtn_builder *b, struct vtn_value *entry_poin
       vtn_assert(b->shader->info.stage == MESA_SHADER_KERNEL);
       b->shader->info.num_subgroups = vtn_constant_uint(b, mode->operands[0]);
       break;
+
+   case SpvExecutionModeFPFastMathDefault: {
+      struct vtn_type *type = vtn_get_type(b, mode->operands[0]);
+      SpvFPFastMathModeMask flags = vtn_constant_uint(b, mode->operands[1]);
+
+      SpvFPFastMathModeMask can_fast_math =
+         SpvFPFastMathModeAllowRecipMask |
+         SpvFPFastMathModeAllowContractMask |
+         SpvFPFastMathModeAllowReassocMask |
+         SpvFPFastMathModeAllowTransformMask;
+      if ((flags & can_fast_math) != can_fast_math)
+         b->exact = true;
+
+      unsigned execution_mode = 0;
+      if (!(flags & SpvFPFastMathModeNotNaNMask)) {
+         switch (glsl_get_bit_size(type->type)) {
+         case 16: execution_mode |= FLOAT_CONTROLS_NAN_PRESERVE_FP16; break;
+         case 32: execution_mode |= FLOAT_CONTROLS_NAN_PRESERVE_FP32; break;
+         case 64: execution_mode |= FLOAT_CONTROLS_NAN_PRESERVE_FP64; break;
+         }
+      }
+      if (!(flags & SpvFPFastMathModeNotInfMask)) {
+         switch (glsl_get_bit_size(type->type)) {
+         case 16: execution_mode |= FLOAT_CONTROLS_INF_PRESERVE_FP16; break;
+         case 32: execution_mode |= FLOAT_CONTROLS_INF_PRESERVE_FP32; break;
+         case 64: execution_mode |= FLOAT_CONTROLS_INF_PRESERVE_FP64; break;
+         }
+      }
+      if (!(flags & SpvFPFastMathModeNSZMask)) {
+         switch (glsl_get_bit_size(type->type)) {
+         case 16: execution_mode |= FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP16; break;
+         case 32: execution_mode |= FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP32; break;
+         case 64: execution_mode |= FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP64; break;
+         }
+      }
+      b->shader->info.float_controls_execution_mode |= execution_mode;
+      break;
+   }
 
    case SpvExecutionModeMaxNodeRecursionAMDX:
       vtn_assert(b->shader->info.stage == MESA_SHADER_COMPUTE);

@@ -176,7 +176,7 @@ NineTexture9_ctor( struct NineTexture9 *This,
         sfdesc.Width = u_minify(Width, l);
         sfdesc.Height = u_minify(Height, l);
         /* Some apps expect the memory to be allocated in
-         * continous blocks */
+         * continuous blocks */
         user_buffer_for_level = user_buffer ?
             nine_suballocate(pParams->device->allocator, user_buffer, level_offsets[l]) : NULL;
 
@@ -191,7 +191,7 @@ NineTexture9_ctor( struct NineTexture9 *This,
     /* Textures start initially dirty */
     This->dirty_rect.width = Width;
     This->dirty_rect.height = Height;
-    This->dirty_rect.depth = 1; /* widht == 0 means empty, depth stays 1 */
+    This->dirty_rect.depth = 1; /* width == 0 means empty, depth stays 1 */
 
     if (pSharedHandle && !*pSharedHandle) {/* Pool == D3DPOOL_SYSTEMMEM */
         *pSharedHandle = This->surfaces[0]->data;

@@ -380,6 +380,15 @@ v3d_uncompiled_shader_create(struct pipe_context *pctx,
 
         NIR_PASS(_, s, nir_lower_var_copies);
 
+        /* Get rid of base CS sys vals */
+        if (s->info.stage == MESA_SHADER_COMPUTE) {
+                struct nir_lower_compute_system_values_options cs_options = {
+                        .has_base_global_invocation_id = false,
+                        .has_base_workgroup_id = false,
+                };
+                NIR_PASS(_, s, nir_lower_compute_system_values, &cs_options);
+        }
+
         /* Get rid of split copies */
         v3d_optimize_nir(NULL, s);
 

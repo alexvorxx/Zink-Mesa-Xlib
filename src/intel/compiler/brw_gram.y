@@ -366,7 +366,7 @@ add_label(struct brw_codegen *p, const char* label_name, enum instr_label_type t
 %token <integer> TYPE_Q TYPE_UQ
 %token <integer> TYPE_V TYPE_UV
 %token <integer> TYPE_F TYPE_HF
-%token <integer> TYPE_DF TYPE_NF
+%token <integer> TYPE_DF
 %token <integer> TYPE_VF
 
 /* label */
@@ -948,7 +948,7 @@ sendinstruction:
 		brw_inst_set_bits(brw_last_inst, 127, 96, $6);
 		brw_inst_set_src1_file_type(p->devinfo, brw_last_inst,
 				            BRW_IMMEDIATE_VALUE,
-					    BRW_REGISTER_TYPE_UD);
+					    BRW_TYPE_UD);
 		brw_inst_set_sfid(p->devinfo, brw_last_inst, $7);
 		brw_inst_set_eot(p->devinfo, brw_last_inst, $9.end_of_thread);
 		// TODO: set instruction group instead of qtr and nib ctrl
@@ -1133,7 +1133,7 @@ branchinstruction:
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $2);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
-			     BRW_REGISTER_TYPE_D));
+			     BRW_TYPE_D));
 		if (p->devinfo->ver < 12)
 			brw_set_src0(p, brw_last_inst, brw_imm_d(0));
 	}
@@ -1148,7 +1148,7 @@ branchinstruction:
 
 		brw_set_dest(p, brw_last_inst,
 			     vec1(retype(brw_null_reg(),
-			     BRW_REGISTER_TYPE_D)));
+			     BRW_TYPE_D)));
 		if (p->devinfo->ver < 12)
 			brw_set_src0(p, brw_last_inst, brw_imm_d(0x0));
 
@@ -1168,7 +1168,7 @@ breakinstruction:
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
-			     BRW_REGISTER_TYPE_D));
+			     BRW_TYPE_D));
 		brw_set_src0(p, brw_last_inst, brw_imm_d(0x0));
 
 		brw_pop_insn_state(p);
@@ -1183,7 +1183,7 @@ breakinstruction:
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
-			     BRW_REGISTER_TYPE_D));
+			     BRW_TYPE_D));
 
 		if (p->devinfo->ver < 12) {
 			brw_set_src0(p, brw_last_inst, brw_imm_d(0x0));
@@ -1219,7 +1219,7 @@ loopinstruction:
 
 		brw_set_dest(p, brw_last_inst,
 					retype(brw_null_reg(),
-					BRW_REGISTER_TYPE_D));
+					BRW_TYPE_D));
 		if (p->devinfo->ver < 12)
 			brw_set_src0(p, brw_last_inst, brw_imm_d(0x0));
 
@@ -1318,7 +1318,7 @@ dstoperand:
 		$$.type = $4;
 		$$.writemask = $3;
 		$$.swizzle = BRW_SWIZZLE_NOOP;
-		$$.subnr = $$.subnr * brw_reg_type_to_size($4);
+		$$.subnr = $$.subnr * brw_type_size_bytes($4);
 	}
 	;
 
@@ -1329,7 +1329,7 @@ dstoperandex:
 		$$.hstride = $2;
 		$$.type = $4;
 		$$.writemask = $3;
-		$$.subnr = $$.subnr * brw_reg_type_to_size($4);
+		$$.subnr = $$.subnr * brw_type_size_bytes($4);
 	}
 	/* BSpec says "When the conditional modifier is present, updates
 	 * to the selected flag register also occur. In this case, the
@@ -1348,7 +1348,7 @@ dstoperandex:
 	{
 		$$ = $1;
 		$$.hstride = 1;
-		$$.type = BRW_REGISTER_TYPE_UW;
+		$$.type = BRW_TYPE_UW;
 	}
 	;
 
@@ -1388,44 +1388,44 @@ immreg:
 	immval imm_type
 	{
 		switch ($2) {
-		case BRW_REGISTER_TYPE_UD:
+		case BRW_TYPE_UD:
 			$$ = brw_imm_ud($1);
 			break;
-		case BRW_REGISTER_TYPE_D:
+		case BRW_TYPE_D:
 			$$ = brw_imm_d($1);
 			break;
-		case BRW_REGISTER_TYPE_UW:
+		case BRW_TYPE_UW:
 			$$ = brw_imm_uw($1 | ($1 << 16));
 			break;
-		case BRW_REGISTER_TYPE_W:
+		case BRW_TYPE_W:
 			$$ = brw_imm_w($1);
 			break;
-		case BRW_REGISTER_TYPE_F:
-			$$ = brw_imm_reg(BRW_REGISTER_TYPE_F);
+		case BRW_TYPE_F:
+			$$ = brw_imm_reg(BRW_TYPE_F);
 			/* Set u64 instead of ud since DIM uses a 64-bit F-typed imm */
 			$$.u64 = $1;
 			break;
-		case BRW_REGISTER_TYPE_V:
+		case BRW_TYPE_V:
 			$$ = brw_imm_v($1);
 			break;
-		case BRW_REGISTER_TYPE_UV:
+		case BRW_TYPE_UV:
 			$$ = brw_imm_uv($1);
 			break;
-		case BRW_REGISTER_TYPE_VF:
+		case BRW_TYPE_VF:
 			$$ = brw_imm_vf($1);
 			break;
-		case BRW_REGISTER_TYPE_Q:
+		case BRW_TYPE_Q:
 			$$ = brw_imm_q($1);
 			break;
-		case BRW_REGISTER_TYPE_UQ:
+		case BRW_TYPE_UQ:
 			$$ = brw_imm_uq($1);
 			break;
-		case BRW_REGISTER_TYPE_DF:
-			$$ = brw_imm_reg(BRW_REGISTER_TYPE_DF);
+		case BRW_TYPE_DF:
+			$$ = brw_imm_reg(BRW_TYPE_DF);
 			$$.d64 = $1;
 			break;
-		case BRW_REGISTER_TYPE_HF:
-			$$ = brw_imm_reg(BRW_REGISTER_TYPE_HF);
+		case BRW_TYPE_HF:
+			$$ = brw_imm_reg(BRW_TYPE_HF);
 			$$.ud = $1 | ($1 << 16);
 			break;
 		default:
@@ -1500,7 +1500,7 @@ srcarcoperandex:
 	}
 	| threadcontrolreg
 	{
-		$$ = set_direct_src_operand(&$1, BRW_REGISTER_TYPE_UW);
+		$$ = set_direct_src_operand(&$1, BRW_TYPE_UW);
 	}
 	;
 
@@ -1864,25 +1864,24 @@ region_wh:
 	;
 
 reg_type:
-	  TYPE_F 	{ $$ = BRW_REGISTER_TYPE_F;  }
-	| TYPE_UD 	{ $$ = BRW_REGISTER_TYPE_UD; }
-	| TYPE_D 	{ $$ = BRW_REGISTER_TYPE_D;  }
-	| TYPE_UW 	{ $$ = BRW_REGISTER_TYPE_UW; }
-	| TYPE_W 	{ $$ = BRW_REGISTER_TYPE_W;  }
-	| TYPE_UB 	{ $$ = BRW_REGISTER_TYPE_UB; }
-	| TYPE_B 	{ $$ = BRW_REGISTER_TYPE_B;  }
-	| TYPE_DF 	{ $$ = BRW_REGISTER_TYPE_DF; }
-	| TYPE_UQ 	{ $$ = BRW_REGISTER_TYPE_UQ; }
-	| TYPE_Q 	{ $$ = BRW_REGISTER_TYPE_Q;  }
-	| TYPE_HF 	{ $$ = BRW_REGISTER_TYPE_HF; }
-	| TYPE_NF 	{ $$ = BRW_REGISTER_TYPE_NF; }
+	  TYPE_F 	{ $$ = BRW_TYPE_F;  }
+	| TYPE_UD 	{ $$ = BRW_TYPE_UD; }
+	| TYPE_D 	{ $$ = BRW_TYPE_D;  }
+	| TYPE_UW 	{ $$ = BRW_TYPE_UW; }
+	| TYPE_W 	{ $$ = BRW_TYPE_W;  }
+	| TYPE_UB 	{ $$ = BRW_TYPE_UB; }
+	| TYPE_B 	{ $$ = BRW_TYPE_B;  }
+	| TYPE_DF 	{ $$ = BRW_TYPE_DF; }
+	| TYPE_UQ 	{ $$ = BRW_TYPE_UQ; }
+	| TYPE_Q 	{ $$ = BRW_TYPE_Q;  }
+	| TYPE_HF 	{ $$ = BRW_TYPE_HF; }
 	;
 
 imm_type:
 	reg_type 	{ $$ = $1; }
-	| TYPE_V 	{ $$ = BRW_REGISTER_TYPE_V;  }
-	| TYPE_VF 	{ $$ = BRW_REGISTER_TYPE_VF; }
-	| TYPE_UV 	{ $$ = BRW_REGISTER_TYPE_UV; }
+	| TYPE_V 	{ $$ = BRW_TYPE_V;  }
+	| TYPE_VF 	{ $$ = BRW_TYPE_VF; }
+	| TYPE_UV 	{ $$ = BRW_TYPE_UV; }
 	;
 
 writemask:

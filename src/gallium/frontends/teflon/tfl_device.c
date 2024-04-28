@@ -368,15 +368,7 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
 
       switch(registration->builtin_code) {
          case kTfLiteBuiltinConv2d:
-         case kTfLiteBuiltinDepthwiseConv2d: {
-            TfLiteTensor bias_tensor = context->tensors[node->inputs->data[2]];
-            /* Skip out channel numbers that the HW doesn't support */
-            if (bias_tensor.dims->data[0] > 8 && bias_tensor.dims->data[0] % 8 != 0)
-               supported = false;
-            else
-               supported = true;
-            break;
-         }
+         case kTfLiteBuiltinDepthwiseConv2d:
          case kTfLiteBuiltinAdd:
             supported = true;
             break;
@@ -468,7 +460,7 @@ __attribute__((visibility("default"))) TfLiteDelegate *tflite_plugin_create_dele
 
    teflon_debug("Teflon delegate: loaded %s driver\n", delegate->dev->driver_name);
 
-   screen = pipe_loader_create_screen(delegate->dev);
+   screen = pipe_loader_create_screen(delegate->dev, false);
    delegate->context = screen->context_create(screen, NULL, PIPE_CONTEXT_COMPUTE_ONLY);
 
    return &delegate->base;

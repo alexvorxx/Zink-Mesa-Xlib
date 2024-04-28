@@ -78,8 +78,8 @@ static const struct test {
    INSTR_6XX(00804040_00000003, "braa p0.x, p0.y, #3"),
    INSTR_6XX(07820000_00000000, "prede"),
    INSTR_6XX(00800063_0000001e, "brac.3 #30"),
-   INSTR_6XX(06820000_00000000, "predt p0.x"),
-   INSTR_6XX(07020000_00000000, "predf p0.x"),
+   INSTR_6XX(06820000_00000000, "predt"),
+   INSTR_6XX(07020000_00000000, "predf"),
    INSTR_6XX(07820000_00000000, "prede"),
 
    /* cat1 */
@@ -379,6 +379,9 @@ static const struct test {
    INSTR_6XX(c0260000_00478200, "ldc.offset1.1.imm r0.x, r0.x, 0"), /* ldc.1.mode0.base0 r0.x, r0.x, 0 */
    INSTR_6XX(c0260000_00478400, "ldc.offset2.1.imm r0.x, r0.x, 0"), /* ldc.1.mode0.base0 r0.x, r0.x, 0 */
    INSTR_6XX(c0260000_00478600, "ldc.offset3.1.imm r0.x, r0.x, 0"), /* ldc.1.mode0.base0 r0.x, r0.x, 0 */
+
+   /* dEQP-VK.glsl.arrays.length.float_fragment */
+   INSTR_6XX(c02600c1_00c7a900, "ldc.u.offset0.3.imm.base0 r48.y, 0, 0"), /* ldc.u.3.mode4.base0 sr48.y, 0, 0 */
 
    /* dEQP-VK.glsl.conditionals.if.if_else_vertex */
    INSTR_6XX(c0360000_00c78100, "ldc.1.k.imm.base0 c[a1.x], 0, 0"), /* ldc.1.k.mode4.base0 c[a1.x], 0, 0 */

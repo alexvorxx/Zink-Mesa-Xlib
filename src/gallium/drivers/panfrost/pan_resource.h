@@ -66,7 +66,7 @@ struct panfrost_resource {
       bool crc;
 
       /* Has anything been written to this slice? */
-      BITSET_DECLARE(data, MAX_MIP_LEVELS);
+      BITSET_DECLARE(data, PAN_MAX_MIP_LEVELS);
    } valid;
 
    /* Whether the modifier can be changed */

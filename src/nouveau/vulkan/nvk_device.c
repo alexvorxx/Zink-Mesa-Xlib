@@ -249,8 +249,8 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    struct vk_pipeline_cache_create_info cache_info = {
       .weak_ref = true,
    };
-   dev->mem_cache = vk_pipeline_cache_create(&dev->vk, &cache_info, NULL);
-   if (dev->mem_cache == NULL) {
+   dev->vk.mem_cache = vk_pipeline_cache_create(&dev->vk, &cache_info, NULL);
+   if (dev->vk.mem_cache == NULL) {
       result = VK_ERROR_OUT_OF_HOST_MEMORY;
       goto fail_queue;
    }
@@ -264,7 +264,7 @@ nvk_CreateDevice(VkPhysicalDevice physicalDevice,
    return VK_SUCCESS;
 
 fail_mem_cache:
-   vk_pipeline_cache_destroy(dev->mem_cache, NULL);
+   vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
 fail_queue:
    nvk_queue_finish(dev, &dev->queue);
 fail_vab_memory:
@@ -302,7 +302,7 @@ nvk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    nvk_device_finish_meta(dev);
 
-   vk_pipeline_cache_destroy(dev->mem_cache, NULL);
+   vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
    nvk_queue_finish(dev, &dev->queue);
    if (dev->vab_memory)
       nouveau_ws_bo_destroy(dev->vab_memory);

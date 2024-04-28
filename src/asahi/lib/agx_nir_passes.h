@@ -6,6 +6,9 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include "agx_pack.h"
+#include "shader_enums.h"
 
 struct nir_shader;
 struct nir_instr;

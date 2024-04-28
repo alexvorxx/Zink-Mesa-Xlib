@@ -38,6 +38,22 @@ LibGL environment variables
 
    disable DRI3 if set to ``true``.
 
+.. envvar:: LIBGL_KOPPER_DISABLE
+
+   disable vulkan swapchains with zink if set to ``true``.
+   In general, this should not be used unless you know what you are
+   doing. Some examples of "knowing what you are doing" include:
+   - using a VK driver which has no WSI implementation for your display server
+   - profiling the DRI frontend against your VK driver's WSI implementation
+
+.. envvar:: LIBGL_KOPPER_DRI2
+
+   disable DRI3 with zink if set to ``true``.
+   In general, this should not be used unless you know what you are
+   doing. Some examples of "knowing what you are doing" include:
+   - running xrdp
+   - using a VK driver which doesn't support modifiers
+
 Core Mesa environment variables
 -------------------------------
 
@@ -222,7 +238,7 @@ Core Mesa environment variables
    referencing both the cache DB and its index file. E.g.
    ``MESA_DISK_CACHE_SINGLE_FILE=filename1`` refers to ``filename1.foz``
    and ``filename1_idx.foz``. A limit of 8 DBs can be loaded and this limit
-   is shared with :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST.`
+   is shared with :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST`.
 
 .. envvar:: MESA_DISK_CACHE_DATABASE
 
@@ -1263,6 +1279,8 @@ RADV driver environment variables
       disable Delta Color Compression (DCC) on displayable images
    ``nodynamicbounds``
       do not check OOB access for dynamic descriptors
+   ``noeso``
+      disable VK_EXT_shader_object
    ``nofastclears``
       disable fast color/depthstencil clears
    ``nofmask``
@@ -1362,8 +1380,6 @@ RADV driver environment variables
       enable wave64 for ray tracing shaders (GFX10-10.3)
    ``sam``
       enable optimizations to move more driver internal objects to VRAM.
-   ``shader_object``
-      enable experimental implementation of VK_EXT_shader_object
    ``transfer_queue``
       enable experimental transfer queue support (GFX9+, not yet spec compliant)
    ``video_decode``
@@ -1787,7 +1803,7 @@ PowerVR driver environment variables
 
 .. envvar:: PVR_DEBUG
 
-   A comma-separated list of debug options. Use `PVR_DEBUG=help` to
+   A comma-separated list of debug options. Use ``PVR_DEBUG=help`` to
    print a list of available options.
 
 .. envvar:: ROGUE_DEBUG
@@ -1842,3 +1858,40 @@ Freedreno driver environment variables
 
 Other Gallium drivers have their own environment variables. These may
 change frequently so the source code should be consulted for details.
+
+
+Vulkan loader environment variables
+-----------------------------------
+
+These variable are handled by `Khronos' Vulkan loader
+<https://github.com/KhronosGroup/Vulkan-Loader>`__, *not by Mesa*, but they
+are documented here as we reference them in other places in our docs.
+
+.. envvar:: VK_DRIVER_FILES
+
+   Force the loader to use the specific driver JSON files. The value contains
+   a list of delimited full path listings to driver JSON Manifest files
+   and/or paths to folders containing driver JSON files.
+
+   See `Vulkan loader docs on environment variables`_.
+
+.. envvar:: VK_LOADER_LAYERS_ENABLE
+
+    A comma-delimited list of globs to search for in known layers and used to
+    select only the layers whose layer name matches one or more of the
+    provided globs.
+    Known layers are those which are found by the loader taking into account
+    default search paths and other environment variables (like VK_LAYER_PATH).
+
+   See `Vulkan loader docs on environment variables`_.
+
+.. envvar:: VK_ICD_FILENAMES
+
+   `Deprecated`_, replaced by :envvar:`VK_DRIVER_FILES`.
+
+.. envvar:: VK_INSTANCE_LAYERS
+
+   `Deprecated`_, replaced by :envvar:`VK_LOADER_LAYERS_ENABLE`.
+
+.. _Vulkan loader docs on environment variables: https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderInterfaceArchitecture.md#table-of-debug-environment-variables
+.. _Deprecated: https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderInterfaceArchitecture.md#deprecated-environment-variables

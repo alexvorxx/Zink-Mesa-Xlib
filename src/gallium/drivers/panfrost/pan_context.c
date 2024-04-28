@@ -78,7 +78,7 @@ panfrost_clear(struct pipe_context *pipe, unsigned buffers,
    /* Once there is content, clear with a fullscreen quad */
    panfrost_blitter_save(ctx, PAN_RENDER_CLEAR);
 
-   perf_debug_ctx(ctx, "Clearing with quad");
+   perf_debug(ctx, "Clearing with quad");
    util_blitter_clear(
       ctx->blitter, ctx->pipe_framebuffer.width, ctx->pipe_framebuffer.height,
       util_framebuffer_get_num_layers(&ctx->pipe_framebuffer), buffers, color,
@@ -734,7 +734,7 @@ panfrost_render_condition_check(struct panfrost_context *ctx)
    if (!ctx->cond_query)
       return true;
 
-   perf_debug_ctx(ctx, "Implementing conditional rendering on the CPU");
+   perf_debug(ctx, "Implementing conditional rendering on the CPU");
 
    union pipe_query_result res = {0};
    bool wait = ctx->cond_mode != PIPE_RENDER_COND_NO_WAIT &&

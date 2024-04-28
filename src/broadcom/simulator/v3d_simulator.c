@@ -854,7 +854,7 @@ v3d_write_performance_query_result(int fd,
 {
 	struct v3d_simulator_file *file = v3d_get_simulator_file_for_fd(fd);
 	struct v3d_simulator_perfmon *perfmon;
-	uint64_t counter_values[V3D_PERFCNT_NUM];
+	uint64_t counter_values[sim_state.perfcnt_total];
 
 	for (uint32_t i = 0; i < copy->nperfmons; i++) {
 		mtx_lock(&sim_state.submit_lock);

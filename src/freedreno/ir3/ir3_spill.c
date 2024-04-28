@@ -450,6 +450,8 @@ interval_add(struct ir3_reg_ctx *_ctx, struct ir3_reg_interval *_interval)
    unsigned size = reg_size(interval->interval.reg);
    if (interval->interval.reg->flags & IR3_REG_SHARED) {
       ctx->cur_pressure.shared += size;
+      if (interval->interval.reg->flags & IR3_REG_HALF)
+         ctx->cur_pressure.shared_half += size;
    } else {
       if (interval->interval.reg->flags & IR3_REG_HALF) {
          ctx->cur_pressure.half += size;
@@ -477,6 +479,8 @@ interval_delete(struct ir3_reg_ctx *_ctx, struct ir3_reg_interval *_interval)
    unsigned size = reg_size(interval->interval.reg);
    if (interval->interval.reg->flags & IR3_REG_SHARED) {
       ctx->cur_pressure.shared -= size;
+      if (interval->interval.reg->flags & IR3_REG_HALF)
+         ctx->cur_pressure.shared_half -= size;
    } else {
       if (interval->interval.reg->flags & IR3_REG_HALF) {
          ctx->cur_pressure.half -= size;
@@ -574,12 +578,17 @@ insert_dst(struct ra_spill_ctx *ctx, struct ir3_register *dst)
       physreg_t physreg = ra_reg_get_physreg(dst);
       physreg_t max = physreg + reg_size(dst);
 
-      if (interval->interval.reg->flags & IR3_REG_SHARED)
+      if (interval->interval.reg->flags & IR3_REG_SHARED) {
          ctx->max_pressure.shared = MAX2(ctx->max_pressure.shared, max);
-      else if (interval->interval.reg->flags & IR3_REG_HALF)
+         if (interval->interval.reg->flags & IR3_REG_HALF) {
+            ctx->max_pressure.shared_half = MAX2(ctx->max_pressure.shared_half,
+                                                 max);
+         }
+      } else if (interval->interval.reg->flags & IR3_REG_HALF) {
          ctx->max_pressure.half = MAX2(ctx->max_pressure.half, max);
-      else
+      } else {
          ctx->max_pressure.full = MAX2(ctx->max_pressure.full, max);
+      }
    }
 }
 
@@ -1024,6 +1033,7 @@ update_max_pressure(struct ra_spill_ctx *ctx)
    d("\tfull: %u", ctx->cur_pressure.full);
    d("\thalf: %u", ctx->cur_pressure.half);
    d("\tshared: %u", ctx->cur_pressure.shared);
+   d("\tshared half: %u", ctx->cur_pressure.shared_half);
 
    ctx->max_pressure.full =
       MAX2(ctx->max_pressure.full, ctx->cur_pressure.full);
@@ -1031,6 +1041,8 @@ update_max_pressure(struct ra_spill_ctx *ctx)
       MAX2(ctx->max_pressure.half, ctx->cur_pressure.half);
    ctx->max_pressure.shared =
       MAX2(ctx->max_pressure.shared, ctx->cur_pressure.shared);
+   ctx->max_pressure.shared_half =
+      MAX2(ctx->max_pressure.shared_half, ctx->cur_pressure.shared_half);
 }
 
 static void
@@ -1822,7 +1834,8 @@ handle_block(struct ra_spill_ctx *ctx, struct ir3_block *block)
    }
 
    if (ctx->spilling) {
-      if (block->predecessors_count == 1) {
+      if (block->predecessors_count == 1 &&
+          block->predecessors[0]->successors[1]) {
          spill_single_pred_live_in(ctx, block);
       } else {
          spill_live_ins(ctx, block);
@@ -2103,6 +2116,7 @@ ir3_calc_pressure(struct ir3_shader_variant *v, struct ir3_liveness *live,
    assert(ctx->cur_pressure.full == 0);
    assert(ctx->cur_pressure.half == 0);
    assert(ctx->cur_pressure.shared == 0);
+   assert(ctx->cur_pressure.shared_half == 0);
 
    *max_pressure = ctx->max_pressure;
    ralloc_free(ctx);

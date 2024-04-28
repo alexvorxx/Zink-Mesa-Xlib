@@ -389,6 +389,7 @@ a6xx_gen3 = A6XXProps(
         enable_lrz_fast_clear = True,
         lrz_track_quirk = True,
         has_per_view_viewport = True,
+        has_scalar_alu = True,
     )
 
 a6xx_gen4 = A6XXProps(
@@ -412,6 +413,7 @@ a6xx_gen4 = A6XXProps(
         enable_lrz_fast_clear = True,
         has_lrz_dir_tracking = True,
         has_per_view_viewport = True,
+        has_scalar_alu = True,
     )
 
 a6xx_a690_quirk = A6XXProps(
@@ -788,21 +790,25 @@ a7xx_base = A6XXProps(
         enable_lrz_fast_clear = True,
         has_lrz_dir_tracking = True,
         has_per_view_viewport = True,
-        supports_ibo_ubwc = True,
         line_width_min = 1.0,
         line_width_max = 127.5,
+        has_scalar_alu = True,
     )
 
 a7xx_725 = A7XXProps(
         cmdbuf_start_a725_quirk = True,
+        supports_ibo_ubwc = True,
     )
 
-a7xx_730 = A7XXProps()
+a7xx_730 = A7XXProps(
+        supports_ibo_ubwc = True,
+    )
 
 a7xx_740 = A7XXProps(
         stsc_duplication_quirk = True,
         has_event_write_sample_count = True,
         ubwc_unorm_snorm_int_compatible = True,
+        supports_ibo_ubwc = True,
     )
 
 a7xx_750 = A7XXProps(
@@ -813,6 +819,11 @@ a7xx_750 = A7XXProps(
         sysmem_vpc_attr_buf_size = 0x20000,
         gmem_vpc_attr_buf_size = 0xc000,
         ubwc_unorm_snorm_int_compatible = True,
+        # a750 has a bug where writing and then reading a UBWC-compressed IBO
+        # requires flushing UCHE. This is reproducible in many CTS tests, for
+        # example dEQP-VK.image.load_store.with_format.2d.*. Disable this for
+        # now.
+        #supports_ibo_ubwc = True,
     )
 
 a730_magic_regs = dict(
@@ -833,7 +844,7 @@ a730_magic_regs = dict(
 
 a730_raw_magic_regs = [
         [A6XXRegs.REG_A6XX_UCHE_CACHE_WAYS, 0x00840004],
-        [A6XXRegs.REG_A6XX_TPL1_UNKNOWN_B602, 0x00000724],
+        [A6XXRegs.REG_A6XX_TPL1_DBG_ECO_CNTL1, 0x00000724],
 
         [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE08, 0x00002400],
         [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE09, 0x00000000],
@@ -949,7 +960,7 @@ add_gpus([
         ),
         raw_magic_regs = [
             [A6XXRegs.REG_A6XX_UCHE_CACHE_WAYS, 0x00040004],
-            [A6XXRegs.REG_A6XX_TPL1_UNKNOWN_B602, 0x00000724],
+            [A6XXRegs.REG_A6XX_TPL1_DBG_ECO_CNTL1, 0x00000724],
 
             [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE08, 0x00000400],
             [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE09, 0x00430800],

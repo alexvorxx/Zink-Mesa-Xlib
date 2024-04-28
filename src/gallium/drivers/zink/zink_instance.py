@@ -163,12 +163,14 @@ zink_create_instance(struct zink_screen *screen, bool display_dev)
    // Build up the extensions from the reported ones but only for the unnamed layer
    uint32_t extension_count = 0;
    if (vk_EnumerateInstanceExtensionProperties(NULL, &extension_count, NULL) != VK_SUCCESS) {
-       mesa_loge("ZINK: vkEnumerateInstanceExtensionProperties failed");
+       if (!screen->implicitly_loaded)
+           mesa_loge("ZINK: vkEnumerateInstanceExtensionProperties failed");
    } else {
        VkExtensionProperties *extension_props = malloc(extension_count * sizeof(VkExtensionProperties));
        if (extension_props) {
            if (vk_EnumerateInstanceExtensionProperties(NULL, &extension_count, extension_props) != VK_SUCCESS) {
-              mesa_loge("ZINK: vkEnumerateInstanceExtensionProperties failed");
+               if (!screen->implicitly_loaded)
+                   mesa_loge("ZINK: vkEnumerateInstanceExtensionProperties failed");
            } else {
               for (uint32_t i = 0; i < extension_count; i++) {
         %for ext in extensions:
@@ -186,12 +188,14 @@ zink_create_instance(struct zink_screen *screen, bool display_dev)
     uint32_t layer_count = 0;
 
     if (vk_EnumerateInstanceLayerProperties(&layer_count, NULL) != VK_SUCCESS) {
-        mesa_loge("ZINK: vkEnumerateInstanceLayerProperties failed");
+        if (!screen->implicitly_loaded)
+           mesa_loge("ZINK: vkEnumerateInstanceLayerProperties failed");
     } else {
         VkLayerProperties *layer_props = malloc(layer_count * sizeof(VkLayerProperties));
         if (layer_props) {
             if (vk_EnumerateInstanceLayerProperties(&layer_count, layer_props) != VK_SUCCESS) {
-                mesa_loge("ZINK: vkEnumerateInstanceLayerProperties failed");
+                if (!screen->implicitly_loaded)
+                    mesa_loge("ZINK: vkEnumerateInstanceLayerProperties failed");
             } else {
                for (uint32_t i = 0; i < layer_count; i++) {
 %for layer in layers:
@@ -266,7 +270,8 @@ zink_create_instance(struct zink_screen *screen, bool display_dev)
 
    VkResult err = vk_CreateInstance(&ici, NULL, &screen->instance);
    if (err != VK_SUCCESS) {
-      mesa_loge("ZINK: vkCreateInstance failed (%s)", vk_Result_to_str(err));
+      if (!screen->implicitly_loaded)
+          mesa_loge("ZINK: vkCreateInstance failed (%s)", vk_Result_to_str(err));
       return false;
    }
 

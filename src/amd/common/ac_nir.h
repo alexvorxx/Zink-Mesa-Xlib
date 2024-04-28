@@ -104,6 +104,13 @@ ac_nir_calc_io_offset(nir_builder *b,
                       unsigned component_stride,
                       ac_nir_map_io_driver_location map_io);
 
+nir_def *
+ac_nir_calc_io_offset_mapped(nir_builder *b,
+                             nir_intrinsic_instr *intrin,
+                             nir_def *base_stride,
+                             unsigned component_stride,
+                             unsigned mapped_location);
+
 bool ac_nir_optimize_outputs(nir_shader *nir, bool sprite_tex_disallowed,
                              int8_t slot_remap[NUM_TOTAL_VARYING_SLOTS],
                              uint8_t param_export_index[NUM_TOTAL_VARYING_SLOTS]);
@@ -124,14 +131,10 @@ ac_nir_lower_hs_outputs_to_mem(nir_shader *shader,
                                ac_nir_map_io_driver_location map,
                                enum amd_gfx_level gfx_level,
                                uint64_t tes_inputs_read,
-                               uint64_t tes_patch_inputs_read,
-                               unsigned num_reserved_tcs_outputs,
-                               unsigned num_reserved_tcs_patch_outputs,
+                               uint32_t tes_patch_inputs_read,
                                unsigned wave_size,
                                bool no_inputs_in_lds,
-                               bool pass_tessfactors_by_reg,
-                               bool emit_tess_factor_write,
-                               bool emit_tess_factor_output);
+                               bool pass_tessfactors_by_reg);
 
 void
 ac_nir_lower_tes_inputs_to_mem(nir_shader *shader,
@@ -354,6 +357,38 @@ ac_nir_lower_tex(nir_shader *nir, const ac_nir_lower_tex_options *options);
 
 void
 ac_nir_store_debug_log_amd(nir_builder *b, nir_def *uvec4);
+
+bool
+ac_nir_opt_pack_half(nir_shader *shader, enum amd_gfx_level gfx_level);
+
+#define AC_NIR_STORE_IO(b, store_val, const_offset, write_mask, hi_16bit, func, ...) \
+   do { \
+      if ((store_val)->bit_size >= 32) { \
+         const unsigned store_write_mask = (write_mask); \
+         const unsigned store_const_offset = (const_offset); \
+         func((b), (store_val), __VA_ARGS__); \
+      } else { \
+         u_foreach_bit(c, (write_mask)) { \
+            const unsigned store_write_mask = 1; \
+            const unsigned store_const_offset = (const_offset) + c * 4 + ((hi_16bit) ? 2 : 0); \
+            nir_def *store_component = nir_channel(b, (store_val), c); \
+            func((b), store_component, __VA_ARGS__); \
+         } \
+      } \
+   } while (0)
+
+#define AC_NIR_LOAD_IO(load, b, num_components, bit_size, hi_16bit, func, ...) \
+   do { \
+      const unsigned load_bit_size = MAX2(32, (bit_size)); \
+      (load) = func((b), (num_components), load_bit_size, __VA_ARGS__); \
+      if ((bit_size) < load_bit_size) { \
+         if ((hi_16bit)) { \
+            (load) = nir_unpack_32_2x16_split_y(b, load); \
+         } else { \
+            (load) = nir_unpack_32_2x16_split_x(b, load); \
+         } \
+      } \
+   } while (0)
 
 #ifdef __cplusplus
 }

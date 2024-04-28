@@ -36,6 +36,7 @@ if with_platform_wayland
   files_vulkan_wsi += wp_files['presentation-time']
   files_vulkan_wsi += wp_files['tearing-control-v1']
   links_vulkan_wsi += libloader_wayland_helper
+  files_vulkan_wsi += wp_files['linux-drm-syncobj-v1']
 endif
 
 if with_platform_windows

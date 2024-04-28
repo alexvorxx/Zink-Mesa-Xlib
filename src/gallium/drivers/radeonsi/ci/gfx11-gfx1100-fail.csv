@@ -256,3 +256,7 @@ dEQP-GLES31.functional.program_interface_query.uniform_block.referenced_by.verte
 # These are GLCTS bugs. See: https://gitlab.freedesktop.org/mesa/mesa/-/issues/10361
 GTF-GL46.gtf31.GL3Tests.uniform_buffer_object.uniform_buffer_object_accessing_info_for_block_with_an_instance_array,Fail
 GTF-GL46.gtf31.GL3Tests.uniform_buffer_object.uniform_buffer_object_getactiveuniformblockiv,Fail
+
+# Probably caused by nir_opt_varyings, worked around by radeonsi_optimize_io=false
+KHR-GL46.shaders.uniform_block.random.all_shared_buffer.3,Fail
+KHR-GLES3.shaders.uniform_block.random.all_shared_buffer.3,Fail

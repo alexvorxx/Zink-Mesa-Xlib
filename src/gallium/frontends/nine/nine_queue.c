@@ -28,7 +28,7 @@
  *
  * nine_queue_flush does block, while nine_queue_alloc doesn't block.
  *
- * nine_queue_alloc returns NULL on insufficent space.
+ * nine_queue_alloc returns NULL on insufficient space.
  *
  * Consumer:
  * Calls nine_queue_wait_flush to wait for a cmdbuf.
@@ -189,7 +189,7 @@ nine_queue_alloc(struct nine_queue_pool* ctx, unsigned space)
 
 /* Returns the current queue flush state.
  * TRUE nothing flushed
- * FALSE one ore more instructions queued flushed. */
+ * FALSE one or more instructions queued flushed. */
 bool
 nine_queue_no_flushed_work(struct nine_queue_pool* ctx)
 {
@@ -198,7 +198,7 @@ nine_queue_no_flushed_work(struct nine_queue_pool* ctx)
 
 /* Returns the current queue empty state.
  * TRUE no instructions queued.
- * FALSE one ore more instructions queued. */
+ * FALSE one or more instructions queued. */
 bool
 nine_queue_isempty(struct nine_queue_pool* ctx)
 {

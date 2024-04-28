@@ -17,6 +17,12 @@
 #include "vl/vl_video_buffer.h"
 #include <sys/utsname.h>
 
+#if LLVM_AVAILABLE
+#include <llvm/Config/llvm-config.h> /* for LLVM_VERSION_MAJOR */
+#else
+#define LLVM_VERSION_MAJOR 0
+#endif
+
 /* The capabilities reported by the kernel has priority
    over the existing logic in si_get_video_param */
 #define QUERYABLE_KERNEL   (sscreen->info.is_amdgpu && \
@@ -174,7 +180,7 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return !(sscreen->debug_flags & DBG(NO_FAST_DISPLAY_LIST));
 
    case PIPE_CAP_SHADER_SAMPLES_IDENTICAL:
-      return sscreen->info.gfx_level < GFX11;
+      return sscreen->info.gfx_level < GFX11 && !(sscreen->debug_flags & DBG(NO_FMASK));
 
    case PIPE_CAP_GLSL_ZERO_INIT:
       return 2;
@@ -1584,4 +1590,23 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
    options->support_indirect_outputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL);
    options->varying_expression_max_cost = si_varying_expression_max_cost;
    options->varying_estimate_instr_cost = si_varying_estimate_instr_cost;
+
+   nir_lower_subgroups_options *lower_subgroups_options = sscreen->nir_lower_subgroups_options;
+   lower_subgroups_options->subgroup_size = 64;
+   lower_subgroups_options->ballot_bit_size = 64;
+   lower_subgroups_options->ballot_components = 1;
+   lower_subgroups_options->lower_to_scalar = true;
+   lower_subgroups_options->lower_subgroup_masks = true;
+   lower_subgroups_options->lower_relative_shuffle = true;
+   lower_subgroups_options->lower_rotate_to_shuffle = !sscreen->use_aco;
+   lower_subgroups_options->lower_shuffle_to_32bit = true;
+   lower_subgroups_options->lower_vote_eq = true;
+   lower_subgroups_options->lower_vote_bool_eq = true;
+   lower_subgroups_options->lower_quad_broadcast_dynamic = true;
+   lower_subgroups_options->lower_quad_broadcast_dynamic_to_const = sscreen->info.gfx_level <= GFX7;
+   lower_subgroups_options->lower_shuffle_to_swizzle_amd = true;
+   lower_subgroups_options->lower_ballot_bit_count_to_mbcnt_amd = true;
+   lower_subgroups_options->lower_inverse_ballot = !sscreen->use_aco && LLVM_VERSION_MAJOR < 17;
+   lower_subgroups_options->lower_boolean_reduce = true;
+   lower_subgroups_options->lower_boolean_shuffle = true;
 }

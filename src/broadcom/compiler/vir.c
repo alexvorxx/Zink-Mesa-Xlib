@@ -1095,7 +1095,7 @@ v3d_nir_lower_gs_late(struct v3d_compile *c)
 {
         if (c->key->ucp_enables) {
                 NIR_PASS(_, c->s, nir_lower_clip_gs, c->key->ucp_enables,
-                         false, NULL);
+                         true, NULL);
         }
 
         /* Note: GS output scalarizing must happen after nir_lower_clip_gs. */
@@ -1107,7 +1107,7 @@ v3d_nir_lower_vs_late(struct v3d_compile *c)
 {
         if (c->key->ucp_enables) {
                 NIR_PASS(_, c->s, nir_lower_clip_vs, c->key->ucp_enables,
-                         false, false, NULL);
+                         false, true, NULL);
                 NIR_PASS_V(c->s, nir_lower_io_to_scalar,
                            nir_var_shader_out, NULL, NULL);
         }

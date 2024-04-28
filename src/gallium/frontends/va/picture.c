@@ -1302,6 +1302,10 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
       context->desc.base.fence = &surf->fence;
    }
 
+   /* when there are external handles, we can't set PIPE_FLUSH_ASYNC */
+   if (context->desc.base.fence)
+      context->desc.base.flush_flags = drv->has_external_handles ? 0 : PIPE_FLUSH_ASYNC;
+
    context->decoder->end_frame(context->decoder, context->target, &context->desc.base);
 
    if (drv->pipe->screen->get_video_param(drv->pipe->screen,

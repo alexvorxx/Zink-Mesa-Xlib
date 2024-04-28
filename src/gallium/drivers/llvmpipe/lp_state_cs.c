@@ -444,6 +444,11 @@ generate_compute(struct llvmpipe_context *lp,
    lp_build_nir_prepasses(nir);
    struct hash_table *fns = _mesa_pointer_hash_table_create(NULL);
 
+   sampler = lp_llvm_sampler_soa_create(lp_cs_variant_key_samplers(key),
+                                        MAX2(key->nr_samplers,
+                                             key->nr_sampler_views));
+   image = lp_bld_llvm_image_soa_create(lp_cs_variant_key_images(key), key->nr_images);
+
    if (exec_list_length(&nir->functions) > 1) {
       LLVMTypeRef call_context_type = lp_build_cs_func_call_context(gallivm, cs_type.length,
                                                                     variant->jit_cs_context_type,
@@ -531,9 +536,15 @@ generate_compute(struct llvmpipe_context *lp,
          params.consts_ptr = lp_jit_resources_constants(gallivm,
                                                         variant->jit_resources_type,
                                                         params.resources_ptr);
+         params.sampler = sampler;
          params.ssbo_ptr = lp_jit_resources_ssbos(gallivm,
                                                   variant->jit_resources_type,
                                                   params.resources_ptr);
+         params.image = image;
+         params.aniso_filter_table = lp_jit_resources_aniso_filter_table(gallivm,
+                                                                         variant->jit_resources_type,
+                                                                         params.resources_ptr);
+
          lp_build_nir_soa_func(gallivm, shader->base.ir.nir,
                                func->impl,
                                &params,
@@ -550,10 +561,6 @@ generate_compute(struct llvmpipe_context *lp,
    builder = gallivm->builder;
    assert(builder);
    LLVMPositionBuilderAtEnd(builder, block);
-   sampler = lp_llvm_sampler_soa_create(lp_cs_variant_key_samplers(key),
-                                        MAX2(key->nr_samplers,
-                                             key->nr_sampler_views));
-   image = lp_bld_llvm_image_soa_create(lp_cs_variant_key_images(key), key->nr_images);
 
    if (is_mesh) {
       LLVMTypeRef output_type = create_mesh_jit_output_type_deref(gallivm);

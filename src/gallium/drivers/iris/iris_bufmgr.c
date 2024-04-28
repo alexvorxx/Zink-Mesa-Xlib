@@ -206,7 +206,7 @@ struct iris_bufmgr {
    simple_mtx_t bo_deps_lock;
 
    /** Array of lists of cached gem objects of power-of-two sizes */
-   struct iris_bucket_cache bucket_cache[IRIS_HEAP_MAX];
+   struct iris_bucket_cache *bucket_cache;
 
    time_t time;
 
@@ -1147,8 +1147,8 @@ iris_heap_to_string[IRIS_HEAP_MAX] = {
    [IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT] = "system-cached-coherent",
    [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED] = "system-uncached",
    [IRIS_HEAP_DEVICE_LOCAL] = "local",
-   [IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR] = "local-cpu-visible-small-bar",
    [IRIS_HEAP_DEVICE_LOCAL_PREFERRED] = "local-preferred",
+   [IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR] = "local-cpu-visible-small-bar",
 };
 
 static enum iris_mmap_mode
@@ -1536,6 +1536,17 @@ bo_free(struct iris_bo *bo)
    }
 }
 
+static enum iris_heap
+iris_get_heap_max(struct iris_bufmgr *bufmgr)
+{
+   if (bufmgr->vram.size) {
+      return intel_vram_all_mappable(&bufmgr->devinfo) ?
+             IRIS_HEAP_MAX_LARGE_BAR : IRIS_HEAP_MAX;
+   }
+
+   return IRIS_HEAP_MAX_NO_VRAM;
+}
+
 /** Frees all cached buffers significantly older than @time. */
 static void
 cleanup_bo_cache(struct iris_bufmgr *bufmgr, time_t time)
@@ -1545,7 +1556,7 @@ cleanup_bo_cache(struct iris_bufmgr *bufmgr, time_t time)
    if (bufmgr->time == time)
       return;
 
-   for (int h = 0; h < IRIS_HEAP_MAX; h++) {
+   for (int h = 0; h < iris_get_heap_max(bufmgr); h++) {
       struct iris_bucket_cache *cache = &bufmgr->bucket_cache[h];
 
       for (int i = 0; i < cache->num_buckets; i++) {
@@ -1808,7 +1819,7 @@ iris_bufmgr_destroy(struct iris_bufmgr *bufmgr)
    simple_mtx_lock(&bufmgr->lock);
 
    /* Free any cached buffer objects we were going to reuse */
-   for (int h = 0; h < IRIS_HEAP_MAX; h++) {
+   for (int h = 0; h < iris_get_heap_max(bufmgr); h++) {
       struct iris_bucket_cache *cache = &bufmgr->bucket_cache[h];
 
       for (int i = 0; i < cache->num_buckets; i++) {
@@ -1821,6 +1832,7 @@ iris_bufmgr_destroy(struct iris_bufmgr *bufmgr)
          }
       }
    }
+   free(bufmgr->bucket_cache);
 
    /* Close any buffer objects on the dead list. */
    list_for_each_entry_safe(struct iris_bo, bo, &bufmgr->zombie_list, head) {
@@ -2388,7 +2400,11 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
       }
    }
 
-   for (int h = 0; h < IRIS_HEAP_MAX; h++)
+   bufmgr->bucket_cache = calloc(iris_get_heap_max(bufmgr),
+                                 sizeof(*bufmgr->bucket_cache));
+   if (!bufmgr->bucket_cache)
+      goto error_bucket_cache;
+   for (int h = 0; h < iris_get_heap_max(bufmgr); h++)
       init_cache_buckets(bufmgr, h);
 
    unsigned min_slab_order = 8;  /* 256 bytes */
@@ -2403,7 +2419,7 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
          MIN2(min_order + num_slab_orders_per_allocator, max_slab_order);
 
       if (!pb_slabs_init(&bufmgr->bo_slabs[i], min_order, max_order,
-                         IRIS_HEAP_MAX, true, bufmgr,
+                         iris_get_heap_max(bufmgr), true, bufmgr,
                          iris_can_reclaim_slab,
                          iris_slab_alloc,
                          (void *) iris_slab_free)) {
@@ -2434,6 +2450,10 @@ error_slabs_init:
 
       pb_slabs_deinit(&bufmgr->bo_slabs[i]);
    }
+   free(bufmgr->bucket_cache);
+error_bucket_cache:
+   for (unsigned i = 0; i < IRIS_MEMZONE_COUNT; i++)
+      util_vma_heap_finish(&bufmgr->vma_allocator[i]);
    iris_bufmgr_destroy_global_vm(bufmgr);
 error_init_vm:
    close(bufmgr->fd);

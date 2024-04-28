@@ -118,8 +118,11 @@ typedef enum {
    OPC_IRET,          /* return from preemption interrupt handler */
    OPC_CALL,          /* "function" call */
    OPC_WAITIN,        /* wait for input (ie. wait for WPTR to advance) */
-   OPC_PREEMPTLEAVE,  /* try to leave preemption */
+   OPC_BL,            /* Branch and Link (same as the MIPS/ARM instruction) */
    OPC_SETSECURE,     /* switch secure mode on/off */
+   OPC_JUMPR,         /* indirect jump with a register offset */
+   OPC_SRET,          /* Return instruction to use with "bl" */
+   OPC_JUMPA,         /* Absolute jump instruction */
 
    /* pseudo-opcodes without an actual encoding */
    OPC_BREQ,
@@ -134,6 +137,10 @@ typedef enum {
  *
  * Notes:  (applicable to a6xx, double check a5xx)
  *
+ *   0x1a:
+ *      $sp
+ *   0x1b:
+ *      $lr:      written by bl
  *   0x1d:
  *      $addr:    writes configure GPU reg address to read/write
  *                (does not respect CP_PROTECT)
@@ -150,6 +157,8 @@ typedef enum {
  *                or $usraddr
  */
 typedef enum {
+   REG_SP      = 0x1a,
+   REG_LR      = 0x1b,
    REG_REM     = 0x1c,
    REG_MEMDATA = 0x1d,  /* when used as src */
    REG_ADDR    = 0x1d,  /* when used as dst */

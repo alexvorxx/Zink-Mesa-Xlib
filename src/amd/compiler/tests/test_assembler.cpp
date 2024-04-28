@@ -1,25 +1,7 @@
 /*
  * Copyright © 2020 Valve Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 #include <llvm/Config/llvm-config.h>
 
@@ -814,43 +796,43 @@ BEGIN_TEST(assembler.gfx11.vinterp)
    bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2);
 
    //! v_interp_p10_f32 v42, v10, v20, v30 wait_exp:6              ; cd00062a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 6);
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 0, 6);
 
    //; if llvm_ver >= 18:
    //;    insert_pattern('v_interp_p2_f32 v42, v10, v20, v30 wait_exp:0               ; cd01002a 047a290a')
    //; else:
    //;    insert_pattern('v_interp_p2_f32 v42, v10, v20, v30                          ; cd01002a 047a290a')
-   bld.vinterp_inreg(aco_opcode::v_interp_p2_f32_inreg, dst, op0, op1, op2, 0);
+   bld.vinterp_inreg(aco_opcode::v_interp_p2_f32_inreg, dst, op0, op1, op2, 0, 0);
 
    //! v_interp_p10_f32 v42, -v10, v20, v30 wait_exp:6             ; cd00062a 247a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 6)
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 0, 6)
       ->vinterp_inreg()
       .neg[0] = true;
 
    //! v_interp_p10_f32 v42, v10, -v20, v30 wait_exp:6             ; cd00062a 447a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 6)
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 0, 6)
       ->vinterp_inreg()
       .neg[1] = true;
 
    //! v_interp_p10_f32 v42, v10, v20, -v30 wait_exp:6             ; cd00062a 847a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 6)
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 0, 6)
       ->vinterp_inreg()
       .neg[2] = true;
 
    //! v_interp_p10_f16_f32 v42, v10, v20, v30 op_sel:[1,0,0,0] wait_exp:6 ; cd020e2a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f16_f32_inreg, dst, op0, op1, op2, 6, 0x1);
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f16_f32_inreg, dst, op0, op1, op2, 0x1, 6);
 
    //! v_interp_p2_f16_f32 v42, v10, v20, v30 op_sel:[0,1,0,0] wait_exp:6 ; cd03162a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p2_f16_f32_inreg, dst, op0, op1, op2, 6, 0x2);
+   bld.vinterp_inreg(aco_opcode::v_interp_p2_f16_f32_inreg, dst, op0, op1, op2, 0x2, 6);
 
    //! v_interp_p10_rtz_f16_f32 v42, v10, v20, v30 op_sel:[0,0,1,0] wait_exp:6 ; cd04262a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_rtz_f16_f32_inreg, dst, op0, op1, op2, 6, 0x4);
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_rtz_f16_f32_inreg, dst, op0, op1, op2, 0x4, 6);
 
    //! v_interp_p2_rtz_f16_f32 v42, v10, v20, v30 op_sel:[0,0,0,1] wait_exp:6 ; cd05462a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p2_rtz_f16_f32_inreg, dst, op0, op1, op2, 6, 0x8);
+   bld.vinterp_inreg(aco_opcode::v_interp_p2_rtz_f16_f32_inreg, dst, op0, op1, op2, 0x8, 6);
 
    //! v_interp_p10_f32 v42, v10, v20, v30 clamp wait_exp:6        ; cd00862a 047a290a
-   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 6)
+   bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, dst, op0, op1, op2, 0, 6)
       ->vinterp_inreg()
       .clamp = true;
 
@@ -1114,4 +1096,47 @@ BEGIN_TEST(assembler.vopd)
             op_vcc, aco_opcode::v_dual_cndmask_b32);
 
    finish_assembler_test();
+END_TEST
+
+BEGIN_TEST(assembler.vintrp_high_16bits)
+   for (unsigned i = GFX8; i <= GFX10; i++) {
+      if (!setup_cs(NULL, (amd_gfx_level)i))
+         continue;
+
+      Definition dst_v0 = bld.def(v1);
+      dst_v0.setFixed(PhysReg(256));
+
+      Definition dst_v1 = bld.def(v1);
+      dst_v1.setFixed(PhysReg(256 + 1));
+
+      Operand op_v0(bld.tmp(v1));
+      op_v0.setFixed(PhysReg(256 + 0));
+
+      Operand op_v1(bld.tmp(v1));
+      op_v1.setFixed(PhysReg(256 + 1));
+
+      Operand op_v2(bld.tmp(v1));
+      op_v2.setFixed(PhysReg(256 + 2));
+
+      Operand op_m0(bld.tmp(s1));
+      op_m0.setFixed(m0);
+
+      aco_opcode interp_p2_op = aco_opcode::v_interp_p2_f16;
+
+      if (bld.program->gfx_level == GFX8)
+         interp_p2_op = aco_opcode::v_interp_p2_legacy_f16;
+
+      //! BB0:
+      //~gfx8! v_interp_p1ll_f16 v0, v1, attr4.y high                      ; d2740000 00020344
+      //~gfx9! v_interp_p1ll_f16 v0, v1, attr4.y high                      ; d2740000 00020344
+      //~gfx10! v_interp_p1ll_f16 v0, v1, attr4.y high                      ; d7420000 00020344
+      bld.vintrp(aco_opcode::v_interp_p1ll_f16, dst_v0, op_v1, op_m0, 4, 1, true);
+
+      //~gfx8! v_interp_p2_f16 v1, v2, attr4.y, v0 high                    ; d2760001 04020544
+      //~gfx9! v_interp_p2_f16 v1, v2, attr4.y, v0 high                    ; d2770001 04020544
+      //~gfx10! v_interp_p2_f16 v1, v2, attr4.y, v0 high                    ; d75a0001 04020544
+      bld.vintrp(interp_p2_op, dst_v1, op_v2, op_m0, op_v0, 4, 1, true);
+
+      finish_assembler_test();
+   }
 END_TEST

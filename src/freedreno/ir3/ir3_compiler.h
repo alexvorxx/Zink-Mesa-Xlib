@@ -226,6 +226,9 @@ struct ir3_compiler {
    /* True if braa/brao are available. */
    bool has_branch_and_or;
 
+   /* True if predt/predf/prede are supported. */
+   bool has_predication;
+
    /* MAX_COMPUTE_VARIABLE_GROUP_INVOCATIONS_ARB */
    uint32_t max_variable_workgroup_size;
 
@@ -264,6 +267,15 @@ struct ir3_compiler {
 
    bool load_shader_consts_via_preamble;
    bool load_inline_uniforms_via_preamble_ldgk;
+
+   /* True if there is a scalar ALU capable of executing a subset of
+    * cat2-cat4 instructions with a shared register destination. This also
+    * implies expanded MOV/COV capability when writing to shared registers,
+    * as MOV/COV is now executed on the scalar ALU except when reading from a
+    * normal register, as well as the ability for ldc to write to a shared
+    * register.
+    */
+   bool has_scalar_alu;
 };
 
 void ir3_compiler_destroy(struct ir3_compiler *compiler);

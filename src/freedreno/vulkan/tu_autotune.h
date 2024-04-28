@@ -90,13 +90,16 @@ struct tu_autotune {
  * Note that we do the math on the CPU to avoid a WFI.  But pre-emption
  * may force us to revisit that.
  */
-struct tu_renderpass_samples {
+struct PACKED tu_renderpass_samples {
    uint64_t samples_start;
    /* hw requires the sample start/stop locations to be 128b aligned. */
    uint64_t __pad0;
    uint64_t samples_end;
    uint64_t __pad1;
 };
+
+/* Necessary when writing sample counts using CP_EVENT_WRITE7::ZPASS_DONE. */
+static_assert(offsetof(struct tu_renderpass_samples, samples_end) == 16);
 
 /**
  * Tracks the results from an individual renderpass. Initially created

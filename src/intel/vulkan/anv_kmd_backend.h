@@ -58,6 +58,20 @@ struct anv_vm_bind {
    enum anv_vm_bind_op op;
 };
 
+/* These flags apply only to the vm_bind() ioctl backend operations, not to
+ * the higher-level concept of resource address binding. In other words: they
+ * don't apply to TR-TT, which also uses other structs with "vm_bind" in their
+ * names.
+ */
+enum anv_vm_bind_flags {
+   ANV_VM_BIND_FLAG_NONE = 0,
+   /* The most recent bind_timeline wait point is waited for during every
+    * command submission. This flag allows the vm_bind operation to create a
+    * new timeline point and signal it upon completion.
+    */
+   ANV_VM_BIND_FLAG_SIGNAL_BIND_TIMELINE = 1 << 0,
+};
+
 struct anv_kmd_backend {
    /*
     * Create a gem buffer.
@@ -76,11 +90,12 @@ struct anv_kmd_backend {
 
    /*
     * Bind things however you want.
-    * This is intended for sparse resources, so it does not use the
-    * bind_timeline interface: synchronization is up to the callers.
+    * This is intended for sparse resources, so it's a little lower level and
+    * the _bo variants.
     */
    VkResult (*vm_bind)(struct anv_device *device,
-                       struct anv_sparse_submission *submit);
+                       struct anv_sparse_submission *submit,
+                       enum anv_vm_bind_flags flags);
 
    /*
     * Fully bind or unbind a BO.

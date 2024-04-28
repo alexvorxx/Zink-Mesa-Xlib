@@ -153,7 +153,8 @@ anv_gem_import_bo_alloc_flags_to_bo_flags(struct anv_device *device,
 }
 
 static VkResult
-stub_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit)
+stub_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit,
+             enum anv_vm_bind_flags flags)
 {
    return VK_SUCCESS;
 }

@@ -100,17 +100,13 @@ void ac_dump_reg(FILE *file, enum amd_gfx_level gfx_level, enum radeon_family fa
 
    if (reg) {
       const char *reg_name = sid_strings + reg->name_offset;
-      bool first_field = true;
 
       print_spaces(file, INDENT_PKT);
       fprintf(file, "%s%s%s <- ",
               O_COLOR_YELLOW, reg_name,
               O_COLOR_RESET);
 
-      if (!reg->num_fields) {
-         print_value(file, value, 32);
-         return;
-      }
+      print_value(file, value, 32);
 
       for (unsigned f = 0; f < reg->num_fields; f++) {
          const struct si_field *field = sid_fields_table + reg->fields_offset + f;
@@ -121,8 +117,7 @@ void ac_dump_reg(FILE *file, enum amd_gfx_level gfx_level, enum radeon_family fa
             continue;
 
          /* Indent the field. */
-         if (!first_field)
-            print_spaces(file, INDENT_PKT + strlen(reg_name) + 4);
+         print_spaces(file, INDENT_PKT + strlen(reg_name) + 4);
 
          /* Print the field. */
          fprintf(file, "%s = ", sid_strings + field->name_offset);
@@ -131,8 +126,6 @@ void ac_dump_reg(FILE *file, enum amd_gfx_level gfx_level, enum radeon_family fa
             fprintf(file, "%s\n", sid_strings + values_offsets[val]);
          else
             print_value(file, val, util_bitcount(field->mask));
-
-         first_field = false;
       }
       return;
    }
@@ -973,20 +966,6 @@ void ac_parse_ib_chunk(struct ac_ib_parser *ib)
    }
 }
 
-static const char *ip_name(const enum amd_ip_type ip)
-{
-   switch (ip) {
-   case AMD_IP_GFX:
-      return "GFX";
-   case AMD_IP_COMPUTE:
-      return "COMPUTE";
-   case AMD_IP_SDMA:
-      return "SDMA";
-   default:
-      return "Unknown";
-   }
-}
-
 /**
  * Parse and print an IB into a file.
  *
@@ -1005,9 +984,11 @@ static const char *ip_name(const enum amd_ip_type ip)
  */
 void ac_parse_ib(struct ac_ib_parser *ib, const char *name)
 {
-   fprintf(ib->f, "------------------ %s begin - %s ------------------\n", name, ip_name(ib->ip_type));
+   fprintf(ib->f, "------------------ %s begin - %s ------------------\n", name,
+           ac_get_ip_type_string(NULL, ib->ip_type));
 
    ac_parse_ib_chunk(ib);
 
-   fprintf(ib->f, "------------------- %s end - %s -------------------\n\n", name, ip_name(ib->ip_type));
+   fprintf(ib->f, "------------------- %s end - %s -------------------\n\n", name,
+           ac_get_ip_type_string(NULL, ib->ip_type));
 }

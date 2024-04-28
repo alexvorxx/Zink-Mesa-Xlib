@@ -375,7 +375,7 @@ d3d9_to_pipe_format_checked(struct pipe_screen *screen,
 /* The quality levels are vendor dependent, so we set our own.
  * Every quality level has its own sample count and sample
  * position matrix.
- * The exact mapping might differ from system to system but thats OK,
+ * The exact mapping might differ from system to system but that's OK,
  * as there's no way to gather more information about quality levels
  * in D3D9.
  * In case of NONMASKABLE multisample map every quality-level

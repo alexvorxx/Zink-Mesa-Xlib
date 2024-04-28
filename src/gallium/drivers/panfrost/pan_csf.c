@@ -974,14 +974,9 @@ GENX(csf_init_context)(struct panfrost_context *ctx)
    /* Get tiler heap */
    struct drm_panthor_tiler_heap_create thc = {
       .vm_id = pan_kmod_vm_handle(dev->kmod.vm),
-      /* 2M chunks. */
-      .chunk_size = 2 * 1024 * 1024,
-      .initial_chunk_count = 5,
-
-      /* 64 x 2M = 128M, which matches the tiler_heap BO allocated in
-       * panfrost_open_device() for pre-v10 HW.
-       */
-      .max_chunks = 64,
+      .chunk_size = pan_screen(ctx->base.screen)->csf_tiler_heap.chunk_size,
+      .initial_chunk_count = pan_screen(ctx->base.screen)->csf_tiler_heap.initial_chunks,
+      .max_chunks = pan_screen(ctx->base.screen)->csf_tiler_heap.max_chunks,
       .target_in_flight = 65535,
    };
    ret = drmIoctl(panfrost_device_fd(dev), DRM_IOCTL_PANTHOR_TILER_HEAP_CREATE,
@@ -994,7 +989,7 @@ GENX(csf_init_context)(struct panfrost_context *ctx)
    ctx->csf.heap.desc_bo =
       panfrost_bo_create(dev, pan_size(TILER_HEAP), 0, "Tiler Heap");
    pan_pack(ctx->csf.heap.desc_bo->ptr.cpu, TILER_HEAP, heap) {
-      heap.size = 2 * 1024 * 1024;
+      heap.size = pan_screen(ctx->base.screen)->csf_tiler_heap.chunk_size;
       heap.base = thc.first_heap_chunk_gpu_va;
       heap.bottom = heap.base + 64;
       heap.top = heap.base + heap.size;
@@ -1045,8 +1040,10 @@ GENX(csf_init_context)(struct panfrost_context *ctx)
    assert(!ret);
 
    /* Wait before freeing the buffer. */
-   drmSyncobjWait(panfrost_device_fd(dev), &ctx->syncobj, 1, INT64_MAX, 0,
-                  NULL);
+   ret = drmSyncobjWait(panfrost_device_fd(dev), &ctx->syncobj, 1, INT64_MAX,
+                        0, NULL);
+   assert(!ret);
+
    panfrost_bo_unreference(cs_bo);
 }
 

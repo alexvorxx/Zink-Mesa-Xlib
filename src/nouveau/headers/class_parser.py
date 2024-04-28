@@ -222,6 +222,14 @@ P_DUMP_${nvcl}_MTHD_DATA(FILE *fp, uint16_t idx, uint32_t data,
 }
 """)
 
+TEMPLATE_RS = Template("""\
+// parsed class ${nvcl}
+
+% if version is not None:
+pub const ${version[0]}: u16 = ${version[1]};
+% endif
+""")
+
 def glob_match(glob, name):
     if glob.endswith('*'):
         return name.startswith(glob[:-1])
@@ -252,6 +260,7 @@ def parse_header(nvcl, f):
     # state 2 looking for enums for a fields in a method
     # blank lines reset the state machine to 0
 
+    version = None
     state = 0
     mthddict = {}
     curmthd = {}
@@ -271,6 +280,9 @@ def parse_header(nvcl, f):
                 continue
 
             if not list[1].startswith(nvcl):
+                if len(list) > 2 and list[2].startswith("0x"):
+                    assert version is None
+                    version = (list[1], list[2])
                 continue
 
             if list[1].endswith("TYPEDEF"):
@@ -331,13 +343,14 @@ def parse_header(nvcl, f):
                 curmthd = x
                 state = 1
 
-    return mthddict
+    return (version, mthddict)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--out_h', required=True, help='Output C header.')
-    parser.add_argument('--out_c', required=True, help='Output C file.')
-    parser.add_argument('--in_h',
+    parser.add_argument('--out-h', required=False, help='Output C header.')
+    parser.add_argument('--out-c', required=False, help='Output C file.')
+    parser.add_argument('--out-rs', required=False, help='Output C file.')
+    parser.add_argument('--in-h',
                         help='Input class header file.',
                         required=True)
     args = parser.parse_args()
@@ -350,21 +363,27 @@ def main():
     nvcl = "NV" + nvcl
 
     with open(args.in_h, 'r', encoding='utf-8') as f:
-        mthddict = parse_header(nvcl, f)
+        (version, mthddict) = parse_header(nvcl, f)
 
     environment = {
         'clheader': clheader,
-        'header': os.path.basename(args.out_h),
         'nvcl': nvcl,
+        'version': version,
         'mthddict': mthddict,
         'bs': '\\'
     }
 
     try:
-        with open(args.out_h, 'w', encoding='utf-8') as f:
-            f.write(TEMPLATE_H.render(**environment))
-        with open(args.out_c, 'w', encoding='utf-8') as f:
-            f.write(TEMPLATE_C.render(**environment))
+        if args.out_h is not None:
+            environment['header'] = os.path.basename(args.out_h)
+            with open(args.out_h, 'w', encoding='utf-8') as f:
+                f.write(TEMPLATE_H.render(**environment))
+        if args.out_c is not None:
+            with open(args.out_c, 'w', encoding='utf-8') as f:
+                f.write(TEMPLATE_C.render(**environment))
+        if args.out_rs is not None:
+            with open(args.out_rs, 'w', encoding='utf-8') as f:
+                f.write(TEMPLATE_RS.render(**environment))
 
     except Exception:
         # In the event there's an error, this imports some helpers from mako

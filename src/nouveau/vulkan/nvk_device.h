@@ -47,8 +47,6 @@ struct nvk_device {
 
    struct nvk_queue queue;
 
-   struct vk_pipeline_cache *mem_cache;
-
    struct vk_meta_device meta;
 };
 

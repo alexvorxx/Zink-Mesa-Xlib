@@ -31,6 +31,12 @@ dep_syn = dependency('syn',
   required : true,
 )
 
+dep_paste = dependency('paste',
+  version : '>= 1.0.14',
+  fallback : ['paste', 'dep_paste'],
+  required : true,
+)
+
 libnak_c_files = files(
   'nak.h',
   'nak_nir.c',
@@ -49,6 +55,10 @@ _libbitview_rs = static_library(
   gnu_symbol_visibility : 'hidden',
   rust_abi : 'rust',
   rust_args : nak_rust_args,
+)
+
+idep_bitview_rs = declare_dependency(
+  link_with : _libbitview_rs,
 )
 
 libnak_deps = [
@@ -112,8 +122,16 @@ _libnak_rs = static_library(
   gnu_symbol_visibility : 'hidden',
   rust_abi : 'c',
   rust_args : nak_rust_args,
+  dependencies : [
+    dep_paste,
+    idep_nvidia_headers_rs,
+  ],
   link_with: [_libbitview_rs, libnak_bindings_gen, _libnak_ir_proc_rs],
 )
+
+if with_tests
+  rust.test('nak', _libnak_rs, suite : ['nouveau'])
+endif
 
 nak_nir_algebraic_c = custom_target(
   'nak_nir_algebraic.c',
