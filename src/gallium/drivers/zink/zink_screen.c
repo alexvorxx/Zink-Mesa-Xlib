@@ -3309,7 +3309,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
       return NULL;
    }
 
-   screen->implicitly_loaded = config->implicit_driver_load;
+   //screen->implicitly_loaded = config->implicit_driver_load;
    screen->drm_fd = -1;
 
    glsl_type_singleton_init_or_ref();
