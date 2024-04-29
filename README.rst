@@ -3,7 +3,7 @@
 
 ======================================================
 
-Tips for improving stability
+Tips
 ---------------
 
 How to improve stability with Turnip + Zink in Exagear? 
@@ -28,7 +28,7 @@ https://wiki.winehq.org/Useful_Registry_Keys
 
 https://4pda.to/forum/index.php?showtopic=992239&view=findpost&p=119392856
 
-Build dependencies
+Build deps
 ---------------
 
 It's recommended to use Ubuntu 18.04.
@@ -59,7 +59,7 @@ After that, you need to build from source and install the following libraries.
 
 For details, see README of the respective repositories.
 
-Build Mesa Turnip
+Build Turnip
 ---------------
 
 Build Mesa Turnip using Mesa repository (https://gitlab.freedesktop.org/mesa/mesa).
