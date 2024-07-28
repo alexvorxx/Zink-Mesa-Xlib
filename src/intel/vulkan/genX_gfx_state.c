@@ -99,14 +99,8 @@ get_cps_state_offset(struct anv_cmd_buffer *cmd_buffer, bool cps_enabled,
 {
    struct anv_device *device = cmd_buffer->device;
 
-   if (!cps_enabled) {
-      assert(cmd_buffer->state.current_db_mode !=
-             ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN);
-      return cmd_buffer->state.current_db_mode ==
-             ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER ?
-             device->cps_states_db.offset :
-             device->cps_states.offset;
-   }
+   if (!cps_enabled)
+      return device->cps_states.offset;
 
    uint32_t offset;
    static const uint32_t size_index[] = {
@@ -131,12 +125,7 @@ get_cps_state_offset(struct anv_cmd_buffer *cmd_buffer, bool cps_enabled,
 
    offset *= MAX_VIEWPORTS * GENX(CPS_STATE_length) * 4;
 
-   assert(cmd_buffer->state.current_db_mode !=
-          ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN);
-   return (cmd_buffer->state.current_db_mode ==
-           ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER ?
-           device->cps_states_db.offset :
-           device->cps_states.offset) + offset;
+   return device->cps_states.offset + offset;
 }
 #endif /* GFX_VER >= 12 */
 
@@ -372,7 +361,10 @@ calculate_tile_dimensions(struct anv_cmd_buffer *cmd_buffer,
 {
    const struct anv_device *device = cmd_buffer->device;
    struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
-   const unsigned aux_scale = 256;
+
+   assert(GFX_VER == 12);
+   const unsigned aux_scale = ISL_MAIN_TO_CCS_SIZE_RATIO_XE;
+
    unsigned pixel_size = 0;
 
    /* Perform a rough calculation of the tile cache footprint of the
@@ -396,10 +388,6 @@ calculate_tile_dimensions(struct anv_cmd_buffer *cmd_buffer,
             pixel_size += intel_calculate_surface_pixel_size(
                &plane->aux_surface.isl);
 
-         /* XXX - Use proper implicit CCS surface metadata tracking
-          *       instead of inferring pixel size from primary
-          *       surface.
-          */
          if (isl_aux_usage_has_ccs(att->aux_usage))
             pixel_size += DIV_ROUND_UP(intel_calculate_surface_pixel_size(
                                           &plane->primary_surface.isl),
@@ -422,10 +410,6 @@ calculate_tile_dimensions(struct anv_cmd_buffer *cmd_buffer,
          pixel_size += intel_calculate_surface_pixel_size(
             &plane->aux_surface.isl);
 
-      /* XXX - Use proper implicit CCS surface metadata tracking
-       *       instead of inferring pixel size from primary
-       *       surface.
-       */
       if (isl_aux_usage_has_ccs(image->planes[p].aux_usage))
          pixel_size += DIV_ROUND_UP(intel_calculate_surface_pixel_size(
                                        &plane->primary_surface.isl),
@@ -968,16 +952,24 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       SET(PMA_FIX, pma_fix, pma);
 #endif
 
-#if GFX_VERx10 >= 125
+#if INTEL_WA_18019816803_GFX_VER
       if (intel_needs_workaround(cmd_buffer->device->info, 18019816803)) {
          bool ds_write_state = opt_ds.depth.write_enable || opt_ds.stencil.write_enable;
-         if (gfx->ds_write_state != ds_write_state) {
-            gfx->ds_write_state = ds_write_state;
-            BITSET_SET(hw_state->dirty, ANV_GFX_STATE_WA_18019816803);
-         }
+         SET(WA_18019816803, ds_write_state, ds_write_state);
       }
 #endif
    }
+
+#if INTEL_WA_14018283232_GFX_VER
+   if (intel_needs_workaround(cmd_buffer->device->info, 14018283232) &&
+       ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
+        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_BOUNDS_TEST_ENABLE))) {
+      SET(WA_14018283232, wa_14018283232_toggle,
+          dyn->ds.depth.bounds_test.enable &&
+          wm_prog_data &&
+          wm_prog_data->uses_kill);
+   }
+#endif
 
 #if GFX_VER >= 12
    if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_BOUNDS_TEST_ENABLE) ||
@@ -1060,6 +1052,8 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
                        dyn->ms.alpha_to_coverage_enable);
       SET(BLEND_STATE, blend.AlphaToOneEnable,
                        dyn->ms.alpha_to_one_enable);
+      SET(BLEND_STATE, blend.ColorDitherEnable,
+          cmd_buffer->state.gfx.rendering_flags & VK_RENDERING_ENABLE_LEGACY_DITHERING_BIT_EXT);
 
       bool independent_alpha_blend = false;
       /* Wa_14018912822, check if we set these during RT setup. */
@@ -1583,6 +1577,21 @@ emit_wa_18020335297_dummy_draw(struct anv_cmd_buffer *cmd_buffer)
       }
    }
 }
+
+#if INTEL_WA_14018283232_GFX_VER
+void
+genX(batch_emit_wa_14018283232)(struct anv_batch *batch)
+{
+   anv_batch_emit(batch, GENX(RESOURCE_BARRIER), barrier) {
+      barrier.ResourceBarrierBody = (struct GENX(RESOURCE_BARRIER_BODY)) {
+         .BarrierType = RESOURCE_BARRIER_TYPE_IMMEDIATE,
+         .SignalStage = RESOURCE_BARRIER_STAGE_COLOR,
+            .WaitStage = RESOURCE_BARRIER_STAGE_PIXEL,
+      };
+   }
+}
+#endif
+
 /**
  * This function handles dirty state emission to the batch buffer.
  */
@@ -1596,6 +1605,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    const struct vk_dynamic_graphics_state *dyn =
       &cmd_buffer->vk.dynamic_graphics_state;
    struct anv_gfx_dynamic_state *hw_state = &gfx->dyn_state;
+   const bool protected = cmd_buffer->vk.pool->flags &
+                          VK_COMMAND_POOL_CREATE_PROTECTED_BIT;
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_URB)) {
       genX(urb_workaround)(cmd_buffer, &pipeline->urb_cfg);
@@ -1620,14 +1631,20 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.vf_sgvs_2);
 #endif
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VS))
-      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.vs);
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VS)) {
+      anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
+                                              final.vs, protected);
+   }
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_HS))
-      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.hs);
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_HS)) {
+      anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
+                                              final.hs, protected);
+   }
 
-   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_DS))
-      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.ds);
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_DS)) {
+      anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
+                                              final.ds, protected);
+   }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VF_STATISTICS))
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.vf_statistics);
@@ -1668,8 +1685,10 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (device->vk.enabled_extensions.EXT_mesh_shader) {
-      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL))
-         anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.mesh_control);
+      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL)) {
+         anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
+                                                 final.mesh_control, protected);
+      }
 
       if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MESH_SHADER))
          anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.mesh_shader);
@@ -1677,8 +1696,10 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_MESH_DISTRIB))
          anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.mesh_distrib);
 
-      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_TASK_CONTROL))
-         anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.task_control);
+      if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_TASK_CONTROL)) {
+         anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
+                                                 final.task_control, protected);
+      }
 
       if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_TASK_SHADER))
          anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.task_shader);
@@ -1710,8 +1731,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    /* Now the potentially dynamic instructions */
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_PS)) {
-      anv_batch_emit_merge(&cmd_buffer->batch, GENX(3DSTATE_PS),
-                           pipeline, partial.ps, ps) {
+      anv_batch_emit_merge_protected(&cmd_buffer->batch, GENX(3DSTATE_PS),
+                                     pipeline, partial.ps, ps, protected) {
          SET(ps, ps, KernelStartPointer0);
          SET(ps, ps, KernelStartPointer1);
          SET(ps, ps, DispatchGRFStartRegisterForConstantSetupData0);
@@ -1874,8 +1895,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 
       if (p) {
          if (ve_count == 0) {
-            memcpy(p + 1, cmd_buffer->device->empty_vs_input,
-                   sizeof(cmd_buffer->device->empty_vs_input));
+            memcpy(p + 1, cmd_buffer->device->physical->empty_vs_input,
+                   sizeof(cmd_buffer->device->physical->empty_vs_input));
          } else if (ve_count == pipeline->vertex_input_elems) {
             /* MESA_VK_DYNAMIC_VI is not dynamic for this pipeline, so
              * everything is in pipeline->vertex_input_data and we can just
@@ -1905,8 +1926,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_GS)) {
-      anv_batch_emit_merge(&cmd_buffer->batch, GENX(3DSTATE_GS),
-                           pipeline, partial.gs, gs) {
+      anv_batch_emit_merge_protected(&cmd_buffer->batch, GENX(3DSTATE_GS),
+                                     pipeline, partial.gs, gs, protected) {
          SET(gs, gs, ReorderMode);
       }
    }
@@ -2149,6 +2170,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
          INIT(blend, AlphaToCoverageEnable),
          INIT(blend, AlphaToOneEnable),
          INIT(blend, IndependentAlphaBlendEnable),
+         INIT(blend, ColorDitherEnable),
       };
       GENX(BLEND_STATE_pack)(NULL, dws, &blend_state);
 
@@ -2189,12 +2211,17 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       }
    }
 
-#if GFX_VERx10 >= 125
+#if INTEL_WA_18019816803_GFX_VER
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_WA_18019816803)) {
       genx_batch_emit_pipe_control(&cmd_buffer->batch, cmd_buffer->device->info,
                                    cmd_buffer->state.current_pipeline,
                                    ANV_PIPE_PSS_STALL_SYNC_BIT);
    }
+#endif
+
+#if INTEL_WA_14018283232_GFX_VER
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_WA_14018283232))
+      genX(batch_emit_wa_14018283232)(&cmd_buffer->batch);
 #endif
 
 #if GFX_VER == 9

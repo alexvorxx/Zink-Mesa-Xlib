@@ -24,16 +24,16 @@ f16_using_mac(const fs_builder &bld, fs_inst *inst)
    const brw_reg_type src1_type = BRW_TYPE_HF;
    const brw_reg_type src2_type = BRW_TYPE_HF;
 
-   const fs_reg dest = inst->dst;
-   fs_reg src0 = inst->src[0];
-   const fs_reg src1 = retype(inst->src[1], src1_type);
-   const fs_reg src2 = retype(inst->src[2], src2_type);
+   const brw_reg dest = inst->dst;
+   brw_reg src0 = inst->src[0];
+   const brw_reg src1 = retype(inst->src[1], src1_type);
+   const brw_reg src2 = retype(inst->src[2], src2_type);
 
    const unsigned dest_stride =
       dest.type == BRW_TYPE_HF ? REG_SIZE / 2 : REG_SIZE;
 
    for (unsigned r = 0; r < inst->rcount; r++) {
-      fs_reg temp = bld.vgrf(BRW_TYPE_HF);
+      brw_reg temp = bld.vgrf(BRW_TYPE_HF);
 
       for (unsigned subword = 0; subword < 2; subword++) {
          for (unsigned s = 0; s < inst->sdepth; s++) {
@@ -50,7 +50,7 @@ f16_using_mac(const fs_builder &bld, fs_inst *inst)
              */
             if (s == 0 && subword == 0) {
                const unsigned acc_width = 8;
-               fs_reg acc = suboffset(retype(brw_acc_reg(inst->exec_size), BRW_TYPE_UD),
+               brw_reg acc = suboffset(retype(brw_acc_reg(inst->exec_size), BRW_TYPE_UD),
                                       inst->group % acc_width);
 
                if (bld.shader->devinfo->verx10 >= 125) {
@@ -69,7 +69,7 @@ f16_using_mac(const fs_builder &bld, fs_inst *inst)
                   ->writes_accumulator = true;
 
             } else {
-               fs_reg result;
+               brw_reg result;
 
                /* As mentioned above, the MAC had an optional, explicit
                 * destination register. Various optimization passes are not
@@ -96,7 +96,7 @@ f16_using_mac(const fs_builder &bld, fs_inst *inst)
 
       if (!src0.is_null()) {
          if (src0_type != BRW_TYPE_HF) {
-            fs_reg temp2 = bld.vgrf(src0_type);
+            brw_reg temp2 = bld.vgrf(src0_type);
 
             bld.MOV(temp2, temp);
 
@@ -134,12 +134,12 @@ int8_using_dp4a(const fs_builder &bld, fs_inst *inst)
    const brw_reg_type src2_type = inst->src[2].type == BRW_TYPE_UB
       ? BRW_TYPE_UD : BRW_TYPE_D;
 
-   fs_reg dest = inst->dst;
-   fs_reg src0 = inst->src[0];
-   const fs_reg src1 = retype(inst->src[1], src1_type);
-   const fs_reg src2 = retype(inst->src[2], src2_type);
+   brw_reg dest = inst->dst;
+   brw_reg src0 = inst->src[0];
+   const brw_reg src1 = retype(inst->src[1], src1_type);
+   const brw_reg src2 = retype(inst->src[2], src2_type);
 
-   const unsigned dest_stride = REG_SIZE;
+   const unsigned dest_stride = reg_unit(bld.shader->devinfo) * REG_SIZE;
 
    for (unsigned r = 0; r < inst->rcount; r++) {
       if (!src0.is_null()) {
@@ -152,8 +152,8 @@ int8_using_dp4a(const fs_builder &bld, fs_inst *inst)
       for (unsigned s = 0; s < inst->sdepth; s++) {
          bld.DP4A(dest,
                   dest,
-                  byte_offset(src1, s * REG_SIZE),
-                  component(byte_offset(src2, r * REG_SIZE), s))
+                  byte_offset(src1, s * inst->exec_size * 4),
+                  component(byte_offset(src2, r * inst->sdepth * 4), s))
             ->saturate = inst->saturate;
       }
 
@@ -183,10 +183,10 @@ int8_using_mul_add(const fs_builder &bld, fs_inst *inst)
    const brw_reg_type src2_type = inst->src[2].type == BRW_TYPE_UB
       ? BRW_TYPE_UD : BRW_TYPE_D;
 
-   fs_reg dest = inst->dst;
-   fs_reg src0 = inst->src[0];
-   const fs_reg src1 = retype(inst->src[1], src1_type);
-   const fs_reg src2 = retype(inst->src[2], src2_type);
+   brw_reg dest = inst->dst;
+   brw_reg src0 = inst->src[0];
+   const brw_reg src1 = retype(inst->src[1], src1_type);
+   const brw_reg src2 = retype(inst->src[2], src2_type);
 
    const unsigned dest_stride = REG_SIZE;
 
@@ -199,9 +199,9 @@ int8_using_mul_add(const fs_builder &bld, fs_inst *inst)
       }
 
       for (unsigned s = 0; s < inst->sdepth; s++) {
-         fs_reg temp1 = bld.vgrf(BRW_TYPE_UD);
-         fs_reg temp2 = bld.vgrf(BRW_TYPE_UD);
-         fs_reg temp3 = bld.vgrf(BRW_TYPE_UD, 2);
+         brw_reg temp1 = bld.vgrf(BRW_TYPE_UD);
+         brw_reg temp2 = bld.vgrf(BRW_TYPE_UD);
+         brw_reg temp3 = bld.vgrf(BRW_TYPE_UD, 2);
          const brw_reg_type temp_type =
             (inst->src[1].type == BRW_TYPE_B ||
              inst->src[2].type == BRW_TYPE_B)
@@ -279,7 +279,8 @@ brw_fs_lower_dpas(fs_visitor &v)
       if (inst->opcode != BRW_OPCODE_DPAS)
          continue;
 
-      const fs_builder bld = fs_builder(&v, block, inst).group(8, 0).exec_all();
+      const unsigned exec_size = v.devinfo->ver >= 20 ? 16 : 8;
+      const fs_builder bld = fs_builder(&v, block, inst).group(exec_size, 0).exec_all();
 
       if (brw_type_is_float(inst->dst.type)) {
          f16_using_mac(bld, inst);

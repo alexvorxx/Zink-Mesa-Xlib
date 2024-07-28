@@ -171,6 +171,10 @@ ail_initialize_twiddled(struct ail_layout *layout)
       poth_el = u_minify(poth_el, 1);
    }
 
+   /* Add the end offset so we can easily recover the size of a level */
+   assert(layout->levels < ARRAY_SIZE(layout->level_offsets_B));
+   layout->level_offsets_B[layout->levels] = offset_B;
+
    /* Align layer size if we have mipmaps and one miptree is larger than one
     * page */
    layout->page_aligned_layers = layout->levels != 1 && offset_B > AIL_PAGESIZE;

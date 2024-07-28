@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-/** @file brw_fs_combine_constants.cpp
+/** @file
  *
  * This file contains the opt_combine_constants() pass that runs after the
  * regular optimization loop. It passes over the instruction list and promotes
@@ -999,6 +999,10 @@ supports_src_as_imm(const struct intel_device_info *devinfo, const fs_inst *inst
       /* ADD3 only exists on Gfx12.5+. */
       return true;
 
+   case BRW_OPCODE_CSEL:
+      /* While MAD can mix F and HF sources on some platforms, CSEL cannot. */
+      return inst->src[0].type != BRW_TYPE_F;
+
    case BRW_OPCODE_MAD:
       /* Integer types can always mix sizes. Floating point types can mix
        * sizes on Gfx12. On Gfx12.5, floating point sources must all be HF or
@@ -1146,7 +1150,7 @@ struct register_allocation {
    uint16_t avail;
 };
 
-static fs_reg
+static brw_reg
 allocate_slots(struct register_allocation *regs, unsigned num_regs,
                unsigned bytes, unsigned align_bytes,
                brw::simple_allocator &alloc)
@@ -1168,7 +1172,7 @@ allocate_slots(struct register_allocation *regs, unsigned num_regs,
 
             regs[i].avail &= ~(mask << j);
 
-            fs_reg reg(VGRF, regs[i].nr);
+            brw_reg reg = brw_vgrf(regs[i].nr, BRW_TYPE_F);
             reg.offset = j * 2;
 
             return reg;
@@ -1239,7 +1243,7 @@ parcel_out_registers(struct imm *imm, unsigned len, const bblock_t *cur_block,
              */
             const unsigned width = ver == 8 && imm[i].is_half_float ? 2 : 1;
 
-            const fs_reg reg = allocate_slots(regs, num_regs,
+            const brw_reg reg = allocate_slots(regs, num_regs,
                                               imm[i].size * width,
                                               get_alignment_for_imm(&imm[i]),
                                               alloc);
@@ -1301,7 +1305,15 @@ brw_fs_opt_combine_constants(fs_visitor &s)
          }
          break;
 
+      /* FINISHME: CSEL handling could be better. For some cases, src[0] and
+       * src[1] can be commutative (e.g., any integer comparison). In those
+       * cases when src[1] is IMM, the sources could be exchanged. In
+       * addition, when both sources are IMM that could be represented as
+       * 16-bits, it would be better to add both sources with
+       * allow_one_constant=true as is done for SEL.
+       */
       case BRW_OPCODE_ADD3:
+      case BRW_OPCODE_CSEL:
       case BRW_OPCODE_MAD: {
          for (int i = 0; i < inst->sources; i++) {
             if (inst->src[i].file != IMM)
@@ -1557,7 +1569,7 @@ brw_fs_opt_combine_constants(fs_visitor &s)
       const uint32_t width = 1;
       const fs_builder ibld = fs_builder(&s, width).at(insert_block, n).exec_all();
 
-      fs_reg reg(VGRF, imm->nr);
+      brw_reg reg = brw_vgrf(imm->nr, BRW_TYPE_F);
       reg.offset = imm->subreg_offset;
       reg.stride = 0;
 
@@ -1579,7 +1591,7 @@ brw_fs_opt_combine_constants(fs_visitor &s)
    /* Rewrite the immediate sources to refer to the new GRFs. */
    for (int i = 0; i < table.len; i++) {
       foreach_list_typed(reg_link, link, link, table.imm[i].uses) {
-         fs_reg *reg = &link->inst->src[link->src];
+         brw_reg *reg = &link->inst->src[link->src];
 
          if (link->inst->opcode == BRW_OPCODE_SEL) {
             if (link->type == either_type) {
@@ -1697,7 +1709,7 @@ brw_fs_opt_combine_constants(fs_visitor &s)
              inst->conditional_mod == BRW_CONDITIONAL_GE ||
              inst->conditional_mod == BRW_CONDITIONAL_L);
 
-      fs_reg temp = inst->src[0];
+      brw_reg temp = inst->src[0];
       inst->src[0] = inst->src[1];
       inst->src[1] = temp;
 
@@ -1738,7 +1750,7 @@ brw_fs_opt_combine_constants(fs_visitor &s)
 
       delete s.cfg;
       s.cfg = NULL;
-      s.calculate_cfg();
+      brw_calculate_cfg(s);
    }
 
    ralloc_free(const_ctx);

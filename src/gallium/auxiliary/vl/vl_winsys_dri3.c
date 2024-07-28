@@ -34,6 +34,7 @@
 #include <xcb/xfixes.h>
 
 #include "loader.h"
+#include "loader_dri3_helper.h"
 
 #include "pipe/p_screen.h"
 #include "pipe/p_state.h"
@@ -761,15 +762,10 @@ struct vl_screen *
 vl_dri3_screen_create(Display *display, int screen)
 {
    struct vl_dri3_screen *scrn;
-   const xcb_query_extension_reply_t *extension;
-   xcb_dri3_open_cookie_t open_cookie;
-   xcb_dri3_open_reply_t *open_reply;
    xcb_get_geometry_cookie_t geom_cookie;
    xcb_get_geometry_reply_t *geom_reply;
-   xcb_xfixes_query_version_cookie_t xfixes_cookie;
-   xcb_xfixes_query_version_reply_t *xfixes_reply;
-   xcb_generic_error_t *error;
    int fd;
+   bool err = false;
 
    assert(display);
 
@@ -781,45 +777,10 @@ vl_dri3_screen_create(Display *display, int screen)
    if (!scrn->conn)
       goto free_screen;
 
-   xcb_prefetch_extension_data(scrn->conn , &xcb_dri3_id);
-   xcb_prefetch_extension_data(scrn->conn, &xcb_present_id);
-   xcb_prefetch_extension_data (scrn->conn, &xcb_xfixes_id);
-   extension = xcb_get_extension_data(scrn->conn, &xcb_dri3_id);
-   if (!(extension && extension->present))
-      goto free_screen;
-   extension = xcb_get_extension_data(scrn->conn, &xcb_present_id);
-   if (!(extension && extension->present))
-      goto free_screen;
-   extension = xcb_get_extension_data(scrn->conn, &xcb_xfixes_id);
-   if (!(extension && extension->present))
-      goto free_screen;
-
-   xfixes_cookie = xcb_xfixes_query_version(scrn->conn, XCB_XFIXES_MAJOR_VERSION,
-                                            XCB_XFIXES_MINOR_VERSION);
-   xfixes_reply = xcb_xfixes_query_version_reply(scrn->conn, xfixes_cookie, &error);
-   if (!xfixes_reply || error || xfixes_reply->major_version < 2) {
-      free(error);
-      free(xfixes_reply);
+   fd = loader_dri3_open(scrn->conn, RootWindow(display, screen), 0);
+   if (fd < 0 || !loader_dri3_check_multibuffer(scrn->conn, &err) || err) {
       goto free_screen;
    }
-   free(xfixes_reply);
-
-   open_cookie = xcb_dri3_open(scrn->conn, RootWindow(display, screen), None);
-   open_reply = xcb_dri3_open_reply(scrn->conn, open_cookie, NULL);
-   if (!open_reply)
-      goto free_screen;
-   if (open_reply->nfd != 1) {
-      free(open_reply);
-      goto free_screen;
-   }
-
-   fd = xcb_dri3_open_reply_fds(scrn->conn, open_reply)[0];
-   if (fd < 0) {
-      free(open_reply);
-      goto free_screen;
-   }
-   fcntl(fd, F_SETFD, FD_CLOEXEC);
-   free(open_reply);
 
    scrn->is_different_gpu = loader_get_user_preferred_fd(&fd, NULL);
 

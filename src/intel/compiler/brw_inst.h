@@ -22,7 +22,7 @@
  */
 
 /**
- * @file brw_inst.h
+ * @file
  *
  * A representation of i965 EU assembly instructions, with helper methods to
  * get and set various fields.  This is the actual hardware format.

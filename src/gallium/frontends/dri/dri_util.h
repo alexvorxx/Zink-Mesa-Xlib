@@ -35,7 +35,7 @@
 #define _DRI_UTIL_H_
 
 #include <GL/gl.h>
-#include <GL/internal/dri_interface.h>
+#include "mesa_interface.h"
 #include "kopper_interface.h"
 #include "main/formats.h"
 #include "main/glconfig.h"
@@ -107,7 +107,7 @@ __DRIscreen *
 driCreateNewScreen3(int scrn, int fd,
                     const __DRIextension **loader_extensions,
                     const __DRIextension **driver_extensions,
-                    const __DRIconfig ***driver_configs, bool implicit, void *data);
+                    const __DRIconfig ***driver_configs, bool driver_name_is_inferred, void *data);
 __DRIscreen *
 driCreateNewScreen2(int scrn, int fd,
                     const __DRIextension **loader_extensions,
@@ -123,13 +123,7 @@ driCreateContextAttribs(__DRIscreen *psp, int api,
                         void *data);
 
 extern uint32_t
-driGLFormatToImageFormat(mesa_format format);
-
-extern uint32_t
-driGLFormatToSizedInternalGLFormat(mesa_format format);
-
-extern mesa_format
-driImageFormatToGLFormat(uint32_t image_format);
+driImageFormatToSizedInternalGLFormat(uint32_t image_format);
 
 extern const __DRIimageDriverExtension driImageDriverExtension;
 

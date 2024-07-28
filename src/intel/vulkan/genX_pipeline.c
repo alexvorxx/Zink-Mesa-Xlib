@@ -27,6 +27,7 @@
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
 
+#include "common/intel_compute_slm.h"
 #include "common/intel_genX_state_brw.h"
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
@@ -52,6 +53,16 @@ anv_gfx_pipeline_add(struct anv_graphics_pipeline *pipeline,
    return batch;
 }
 
+#define anv_pipeline_emit_tmp(pipeline, field, cmd, name)               \
+   for (struct cmd name = { __anv_cmd_header(cmd) },                    \
+           *_dst = (void *) field;                                      \
+        __builtin_expect(_dst != NULL, 1);                              \
+        ({ __anv_cmd_pack(cmd)(&(pipeline)->base.base.batch,            \
+                               _dst, &name);                            \
+           VG(VALGRIND_CHECK_MEM_IS_DEFINED(_dst, __anv_cmd_length(cmd) * 4)); \
+           _dst = NULL;                                                 \
+        }))
+
 #define anv_pipeline_emit(pipeline, state, cmd, name)                   \
    for (struct cmd name = { __anv_cmd_header(cmd) },                    \
            *_dst = anv_batch_emit_dwords(                               \
@@ -65,6 +76,25 @@ anv_gfx_pipeline_add(struct anv_graphics_pipeline *pipeline,
            VG(VALGRIND_CHECK_MEM_IS_DEFINED(_dst, __anv_cmd_length(cmd) * 4)); \
            _dst = NULL;                                                 \
         }))
+
+#define anv_pipeline_emit_merge(pipeline, state, dwords, cmd, name) \
+   for (struct cmd name = { 0 },                                        \
+           *_dst = anv_batch_emit_dwords(                               \
+              anv_gfx_pipeline_add(pipeline,                            \
+                                   &(pipeline)->state,                  \
+                                   __anv_cmd_length(cmd)),              \
+              __anv_cmd_length(cmd));                                   \
+        __builtin_expect(_dst != NULL, 1);                              \
+        ({ uint32_t _partial[__anv_cmd_length(cmd)];                    \
+           assert((pipeline)->state.len == __anv_cmd_length(cmd));      \
+           __anv_cmd_pack(cmd)(&(pipeline)->base.base.batch,            \
+                               _partial, &name);                        \
+           for (uint32_t i = 0; i < __anv_cmd_length(cmd); i++) {       \
+              ((uint32_t *)_dst)[i] = _partial[i] | dwords[i];          \
+           }                                                            \
+           VG(VALGRIND_CHECK_MEM_IS_DEFINED(_dst, __anv_cmd_length(cmd) * 4)); \
+           _dst = NULL;                                                 \
+         }))
 
 #define anv_pipeline_emitn(pipeline, state, n, cmd, ...) ({             \
    void *__dst = anv_batch_emit_dwords(                                 \
@@ -81,6 +111,8 @@ anv_gfx_pipeline_add(struct anv_graphics_pipeline *pipeline,
    __dst;                                                               \
    })
 
+#define pipeline_needs_protected(pipeline) \
+   ((pipeline)->device->vk.enabled_features.protectedMemory)
 
 static uint32_t
 vertex_element_comp_control(enum isl_format format, unsigned comp)
@@ -1178,19 +1210,21 @@ get_scratch_space(const struct anv_shader_bin *bin)
 static UNUSED uint32_t
 get_scratch_surf(struct anv_pipeline *pipeline,
                  gl_shader_stage stage,
-                 const struct anv_shader_bin *bin)
+                 const struct anv_shader_bin *bin,
+                 bool protected)
 {
    if (bin->prog_data->total_scratch == 0)
       return 0;
 
+   struct anv_scratch_pool *pool = protected ?
+      &pipeline->device->protected_scratch_pool :
+      &pipeline->device->scratch_pool;
    struct anv_bo *bo =
-      anv_scratch_pool_alloc(pipeline->device,
-                             &pipeline->device->scratch_pool,
+      anv_scratch_pool_alloc(pipeline->device, pool,
                              stage, bin->prog_data->total_scratch);
    anv_reloc_list_add_bo(pipeline->batch.relocs, bo);
-   return anv_scratch_pool_get_surf(pipeline->device,
-                                    &pipeline->device->scratch_pool,
-                                    bin->prog_data->total_scratch) >> 4;
+   return anv_scratch_pool_get_surf(pipeline->device, pool,
+                                    bin->prog_data->total_scratch) >> ANV_SCRATCH_SPACE_SHIFT(GFX_VER);
 }
 
 static void
@@ -1203,7 +1237,8 @@ emit_3dstate_vs(struct anv_graphics_pipeline *pipeline)
 
    assert(anv_pipeline_has_stage(pipeline, MESA_SHADER_VERTEX));
 
-   anv_pipeline_emit(pipeline, final.vs, GENX(3DSTATE_VS), vs) {
+   uint32_t vs_dwords[GENX(3DSTATE_VS_length)];
+   anv_pipeline_emit_tmp(pipeline, vs_dwords, GENX(3DSTATE_VS), vs) {
       vs.Enable               = true;
       vs.StatisticsEnable     = true;
       vs.KernelStartPointer   = vs_bin->kernel.offset;
@@ -1261,14 +1296,29 @@ emit_3dstate_vs(struct anv_graphics_pipeline *pipeline)
       vs.UserClipDistanceCullTestEnableBitmask =
          vs_prog_data->base.cull_distance_mask;
 
-#if GFX_VERx10 >= 125
-      vs.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_VERTEX, vs_bin);
-#else
+#if GFX_VERx10 < 125
       vs.PerThreadScratchSpace   = get_scratch_space(vs_bin);
       vs.ScratchSpaceBasePointer =
          get_scratch_address(&pipeline->base.base, MESA_SHADER_VERTEX, vs_bin);
 #endif
+   }
+
+   anv_pipeline_emit_merge(pipeline, final.vs, vs_dwords, GENX(3DSTATE_VS), vs) {
+#if GFX_VERx10 >= 125
+      vs.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                               MESA_SHADER_VERTEX,
+                                               vs_bin, false);
+#endif
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, final.vs_protected,
+                              vs_dwords, GENX(3DSTATE_VS), vs) {
+#if GFX_VERx10 >= 125
+         vs.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                                  MESA_SHADER_VERTEX,
+                                                  vs_bin, true);
+#endif
+      }
    }
 }
 
@@ -1278,7 +1328,9 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
 {
    if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
       anv_pipeline_emit(pipeline, final.hs, GENX(3DSTATE_HS), hs);
+      anv_pipeline_emit(pipeline, final.hs_protected, GENX(3DSTATE_HS), hs);
       anv_pipeline_emit(pipeline, final.ds, GENX(3DSTATE_DS), ds);
+      anv_pipeline_emit(pipeline, final.ds_protected, GENX(3DSTATE_DS), ds);
       return;
    }
 
@@ -1291,7 +1343,8 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
    const struct brw_tcs_prog_data *tcs_prog_data = get_tcs_prog_data(pipeline);
    const struct brw_tes_prog_data *tes_prog_data = get_tes_prog_data(pipeline);
 
-   anv_pipeline_emit(pipeline, final.hs, GENX(3DSTATE_HS), hs) {
+   uint32_t hs_dwords[GENX(3DSTATE_HS_length)];
+   anv_pipeline_emit_tmp(pipeline, hs_dwords, GENX(3DSTATE_HS), hs) {
       hs.Enable = true;
       hs.StatisticsEnable = true;
       hs.KernelStartPointer = tcs_bin->kernel.offset;
@@ -1322,10 +1375,7 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
          tcs_prog_data->base.base.dispatch_grf_start_reg >> 5;
 #endif
 
-#if GFX_VERx10 >= 125
-      hs.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_TESS_CTRL, tcs_bin);
-#else
+#if GFX_VERx10 < 125
       hs.PerThreadScratchSpace = get_scratch_space(tcs_bin);
       hs.ScratchSpaceBasePointer =
          get_scratch_address(&pipeline->base.base, MESA_SHADER_TESS_CTRL, tcs_bin);
@@ -1344,7 +1394,8 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
       hs.IncludePrimitiveID = tcs_prog_data->include_primitive_id;
    };
 
-   anv_pipeline_emit(pipeline, final.ds, GENX(3DSTATE_DS), ds) {
+   uint32_t ds_dwords[GENX(3DSTATE_DS_length)];
+   anv_pipeline_emit_tmp(pipeline, ds_dwords, GENX(3DSTATE_DS), ds) {
       ds.Enable = true;
       ds.StatisticsEnable = true;
       ds.KernelStartPointer = tes_bin->kernel.offset;
@@ -1379,14 +1430,44 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
 #if GFX_VER >= 12
       ds.PrimitiveIDNotRequired = !tes_prog_data->include_primitive_id;
 #endif
-#if GFX_VERx10 >= 125
-      ds.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_TESS_EVAL, tes_bin);
-#else
+#if GFX_VERx10 < 125
       ds.PerThreadScratchSpace = get_scratch_space(tes_bin);
       ds.ScratchSpaceBasePointer =
          get_scratch_address(&pipeline->base.base, MESA_SHADER_TESS_EVAL, tes_bin);
 #endif
+   }
+
+   anv_pipeline_emit_merge(pipeline, final.hs, hs_dwords, GENX(3DSTATE_HS), hs) {
+#if GFX_VERx10 >= 125
+      hs.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                               MESA_SHADER_TESS_CTRL,
+                                               tcs_bin, false);
+#endif
+   }
+   anv_pipeline_emit_merge(pipeline, final.ds, ds_dwords, GENX(3DSTATE_DS), ds) {
+#if GFX_VERx10 >= 125
+      ds.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                               MESA_SHADER_TESS_EVAL,
+                                               tes_bin, false);
+#endif
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, final.hs_protected,
+                              hs_dwords, GENX(3DSTATE_HS), hs) {
+#if GFX_VERx10 >= 125
+         hs.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                                  MESA_SHADER_TESS_CTRL,
+                                                  tcs_bin, true);
+#endif
+      }
+      anv_pipeline_emit_merge(pipeline, final.ds_protected,
+                              ds_dwords, GENX(3DSTATE_DS), ds) {
+#if GFX_VERx10 >= 125
+         ds.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                                  MESA_SHADER_TESS_EVAL,
+                                                  tes_bin, true);
+#endif
+      }
    }
 }
 
@@ -1450,6 +1531,10 @@ emit_3dstate_te(struct anv_graphics_pipeline *pipeline)
          /* 1K_TRIANGLES */
          te.LocalBOPAccumulatorThreshold = 1;
 #endif
+
+#if GFX_VER >= 20
+         te.NumberOfRegionsPerPatch = 2;
+#endif
       }
    }
 }
@@ -1459,6 +1544,7 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
 {
    if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY)) {
       anv_pipeline_emit(pipeline, partial.gs, GENX(3DSTATE_GS), gs);
+      anv_pipeline_emit(pipeline, partial.gs_protected, GENX(3DSTATE_GS), gs);
       return;
    }
 
@@ -1467,7 +1553,8 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
       pipeline->base.shaders[MESA_SHADER_GEOMETRY];
    const struct brw_gs_prog_data *gs_prog_data = get_gs_prog_data(pipeline);
 
-   anv_pipeline_emit(pipeline, partial.gs, GENX(3DSTATE_GS), gs) {
+   uint32_t gs_dwords[GENX(3DSTATE_GS_length)];
+   anv_pipeline_emit_tmp(pipeline, gs_dwords, GENX(3DSTATE_GS), gs) {
       gs.Enable                  = true;
       gs.StatisticsEnable        = true;
       gs.KernelStartPointer      = gs_bin->kernel.offset;
@@ -1506,14 +1593,28 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
       gs.UserClipDistanceCullTestEnableBitmask =
          gs_prog_data->base.cull_distance_mask;
 
-#if GFX_VERx10 >= 125
-      gs.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_GEOMETRY, gs_bin);
-#else
+#if GFX_VERx10 < 125
       gs.PerThreadScratchSpace   = get_scratch_space(gs_bin);
       gs.ScratchSpaceBasePointer =
          get_scratch_address(&pipeline->base.base, MESA_SHADER_GEOMETRY, gs_bin);
 #endif
+   }
+
+   anv_pipeline_emit_merge(pipeline, partial.gs, gs_dwords, GENX(3DSTATE_GS), gs) {
+#if GFX_VERx10 >= 125
+      gs.ScratchSpaceBuffer =
+         get_scratch_surf(&pipeline->base.base, MESA_SHADER_GEOMETRY, gs_bin, false);
+#endif
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, partial.gs_protected,
+                              gs_dwords, GENX(3DSTATE_GS), gs) {
+#if GFX_VERx10 >= 125
+         gs.ScratchSpaceBuffer = get_scratch_surf(&pipeline->base.base,
+                                                  MESA_SHADER_GEOMETRY,
+                                                  gs_bin, true);
+#endif
+      }
    }
 }
 
@@ -1577,12 +1678,14 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
 
    if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT)) {
       anv_pipeline_emit(pipeline, partial.ps, GENX(3DSTATE_PS), ps);
+      anv_pipeline_emit(pipeline, partial.ps_protected, GENX(3DSTATE_PS), ps);
       return;
    }
 
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
 
-   anv_pipeline_emit(pipeline, partial.ps, GENX(3DSTATE_PS), ps) {
+   uint32_t ps_dwords[GENX(3DSTATE_PS_length)];
+   anv_pipeline_emit_tmp(pipeline, ps_dwords, GENX(3DSTATE_PS), ps) {
 #if GFX_VER == 12
       assert(wm_prog_data->dispatch_multi == 0 ||
              (wm_prog_data->dispatch_multi == 16 && wm_prog_data->max_polygons == 2));
@@ -1601,20 +1704,34 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
       ps.SamplerCount               = GFX_VER == 11 ? 0 : get_sampler_count(fs_bin);
       ps.BindingTableEntryCount     = fs_bin->bind_map.surface_count;
 #if GFX_VER < 20
-      ps.PushConstantEnable         = wm_prog_data->base.nr_params > 0 ||
-                                      wm_prog_data->base.ubo_ranges[0].length;
+      ps.PushConstantEnable         =
+         devinfo->needs_null_push_constant_tbimr_workaround ||
+         wm_prog_data->base.nr_params > 0 ||
+         wm_prog_data->base.ubo_ranges[0].length;
 #endif
 
       ps.MaximumNumberofThreadsPerPSD = devinfo->max_threads_per_psd - 1;
 
-#if GFX_VERx10 >= 125
-      ps.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_FRAGMENT, fs_bin);
-#else
+#if GFX_VERx10 < 125
       ps.PerThreadScratchSpace   = get_scratch_space(fs_bin);
       ps.ScratchSpaceBasePointer =
          get_scratch_address(&pipeline->base.base, MESA_SHADER_FRAGMENT, fs_bin);
 #endif
+   }
+   anv_pipeline_emit_merge(pipeline, partial.ps, ps_dwords, GENX(3DSTATE_PS), ps) {
+#if GFX_VERx10 >= 125
+      ps.ScratchSpaceBuffer =
+         get_scratch_surf(&pipeline->base.base, MESA_SHADER_FRAGMENT, fs_bin, false);
+#endif
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, partial.ps_protected,
+                              ps_dwords, GENX(3DSTATE_PS), ps) {
+#if GFX_VERx10 >= 125
+         ps.ScratchSpaceBuffer =
+            get_scratch_surf(&pipeline->base.base, MESA_SHADER_FRAGMENT, fs_bin, true);
+#endif
+      }
    }
 }
 
@@ -1659,6 +1776,12 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
          ps.InputCoverageMaskState = ICMS_NORMAL;
 
 #if GFX_VER >= 11
+      ps.PixelShaderRequiresSubpixelSampleOffsets =
+         wm_prog_data->uses_sample_offsets;
+      ps.PixelShaderRequiresNonPerspectiveBaryPlaneCoefficients =
+         wm_prog_data->uses_npc_bary_coefficients;
+      ps.PixelShaderRequiresPerspectiveBaryPlaneCoefficients =
+         wm_prog_data->uses_pc_bary_coefficients;
       ps.PixelShaderRequiresSourceDepthandorWPlaneCoefficients =
          wm_prog_data->uses_depth_w_coefficients;
 #endif
@@ -1757,6 +1880,8 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
    if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_TASK)) {
       anv_pipeline_emit(pipeline, final.task_control,
                         GENX(3DSTATE_TASK_CONTROL), zero);
+      anv_pipeline_emit(pipeline, final.task_control_protected,
+                        GENX(3DSTATE_TASK_CONTROL), zero);
       anv_pipeline_emit(pipeline, final.task_shader,
                         GENX(3DSTATE_TASK_SHADER), zero);
       anv_pipeline_emit(pipeline, final.task_redistrib,
@@ -1767,12 +1892,24 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
    const struct anv_shader_bin *task_bin =
       pipeline->base.shaders[MESA_SHADER_TASK];
 
-   anv_pipeline_emit(pipeline, final.task_control,
-                     GENX(3DSTATE_TASK_CONTROL), tc) {
+   uint32_t task_control_dwords[GENX(3DSTATE_TASK_CONTROL_length)];
+   anv_pipeline_emit_tmp(pipeline, task_control_dwords, GENX(3DSTATE_TASK_CONTROL), tc) {
       tc.TaskShaderEnable = true;
-      tc.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_TASK, task_bin);
+      tc.StatisticsEnable = true;
       tc.MaximumNumberofThreadGroups = 511;
+   }
+
+   anv_pipeline_emit_merge(pipeline, final.task_control,
+                           task_control_dwords, GENX(3DSTATE_TASK_CONTROL), tc) {
+      tc.ScratchSpaceBuffer =
+         get_scratch_surf(&pipeline->base.base, MESA_SHADER_TASK, task_bin, false);
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, final.task_control_protected,
+                              task_control_dwords, GENX(3DSTATE_TASK_CONTROL), tc) {
+         tc.ScratchSpaceBuffer =
+            get_scratch_surf(&pipeline->base.base, MESA_SHADER_TASK, task_bin, true);
+      }
    }
 
    const struct intel_device_info *devinfo = pipeline->base.base.device->info;
@@ -1792,9 +1929,12 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
 
       task.NumberofBarriers                  = task_prog_data->base.uses_barrier;
       task.SharedLocalMemorySize             =
-         encode_slm_size(GFX_VER, task_prog_data->base.base.total_shared);
+         intel_compute_slm_encode_size(GFX_VER, task_prog_data->base.base.total_shared);
       task.PreferredSLMAllocationSize        =
-         preferred_slm_allocation_size(devinfo);
+         intel_compute_preferred_slm_calc_encode_size(devinfo,
+                                                      task_prog_data->base.base.total_shared,
+                                                      task_dispatch.group_size,
+                                                      task_dispatch.simd_size);
 
       /*
        * 3DSTATE_TASK_SHADER_DATA.InlineData[0:1] will be used for an address
@@ -1823,17 +1963,32 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
    assert(anv_pipeline_is_mesh(pipeline));
 
    const struct anv_shader_bin *mesh_bin = pipeline->base.shaders[MESA_SHADER_MESH];
+   const struct brw_mesh_prog_data *mesh_prog_data = get_mesh_prog_data(pipeline);
 
-   anv_pipeline_emit(pipeline, final.mesh_control,
-                     GENX(3DSTATE_MESH_CONTROL), mc) {
+   uint32_t mesh_control_dwords[GENX(3DSTATE_MESH_CONTROL_length)];
+   anv_pipeline_emit_tmp(pipeline, mesh_control_dwords, GENX(3DSTATE_MESH_CONTROL), mc) {
       mc.MeshShaderEnable = true;
-      mc.ScratchSpaceBuffer =
-         get_scratch_surf(&pipeline->base.base, MESA_SHADER_MESH, mesh_bin);
+      mc.StatisticsEnable = true;
       mc.MaximumNumberofThreadGroups = 511;
+#if GFX_VER >= 20
+      mc.VPandRTAIndexAutostripEnable = mesh_prog_data->autostrip_enable;
+#endif
+   }
+
+   anv_pipeline_emit_merge(pipeline, final.mesh_control,
+                           mesh_control_dwords, GENX(3DSTATE_MESH_CONTROL), mc) {
+      mc.ScratchSpaceBuffer =
+         get_scratch_surf(&pipeline->base.base, MESA_SHADER_MESH, mesh_bin, false);
+   }
+   if (pipeline_needs_protected(&pipeline->base.base)) {
+      anv_pipeline_emit_merge(pipeline, final.mesh_control_protected,
+                           mesh_control_dwords, GENX(3DSTATE_MESH_CONTROL), mc) {
+         mc.ScratchSpaceBuffer =
+            get_scratch_surf(&pipeline->base.base, MESA_SHADER_MESH, mesh_bin, true);
+      }
    }
 
    const struct intel_device_info *devinfo = pipeline->base.base.device->info;
-   const struct brw_mesh_prog_data *mesh_prog_data = get_mesh_prog_data(pipeline);
    const struct intel_cs_dispatch_info mesh_dispatch =
       brw_cs_get_dispatch_info(devinfo, &mesh_prog_data->base, NULL);
 
@@ -1873,9 +2028,12 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
 
       mesh.NumberofBarriers                  = mesh_prog_data->base.uses_barrier;
       mesh.SharedLocalMemorySize             =
-         encode_slm_size(GFX_VER, mesh_prog_data->base.base.total_shared);
+         intel_compute_slm_encode_size(GFX_VER, mesh_prog_data->base.base.total_shared);
       mesh.PreferredSLMAllocationSize        =
-         preferred_slm_allocation_size(devinfo);
+         intel_compute_preferred_slm_calc_encode_size(devinfo,
+                                                      mesh_prog_data->base.base.total_shared,
+                                                      mesh_dispatch.group_size,
+                                                      mesh_dispatch.simd_size);
 
       /*
        * 3DSTATE_MESH_SHADER_DATA.InlineData[0:1] will be used for an address
@@ -1967,6 +2125,8 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
       if (device->vk.enabled_extensions.EXT_mesh_shader) {
          anv_pipeline_emit(pipeline, final.mesh_control,
                            GENX(3DSTATE_MESH_CONTROL), zero);
+         anv_pipeline_emit(pipeline, final.mesh_control_protected,
+                           GENX(3DSTATE_MESH_CONTROL), zero);
          anv_pipeline_emit(pipeline, final.mesh_shader,
                            GENX(3DSTATE_MESH_SHADER), zero);
          anv_pipeline_emit(pipeline, final.mesh_distrib,
@@ -1976,6 +2136,8 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
          anv_pipeline_emit(pipeline, final.sbe_mesh,
                            GENX(3DSTATE_SBE_MESH), zero);
          anv_pipeline_emit(pipeline, final.task_control,
+                           GENX(3DSTATE_TASK_CONTROL), zero);
+         anv_pipeline_emit(pipeline, final.task_control_protected,
                            GENX(3DSTATE_TASK_CONTROL), zero);
          anv_pipeline_emit(pipeline, final.task_shader,
                            GENX(3DSTATE_TASK_SHADER), zero);
@@ -1995,6 +2157,11 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
       anv_pipeline_emit(pipeline, final.ds, GENX(3DSTATE_DS), ds);
       anv_pipeline_emit(pipeline, partial.te, GENX(3DSTATE_TE), te);
       anv_pipeline_emit(pipeline, partial.gs, GENX(3DSTATE_GS), gs);
+
+      anv_pipeline_emit(pipeline, final.vs_protected, GENX(3DSTATE_VS), vs);
+      anv_pipeline_emit(pipeline, final.hs_protected, GENX(3DSTATE_HS), hs);
+      anv_pipeline_emit(pipeline, final.ds_protected, GENX(3DSTATE_DS), ds);
+      anv_pipeline_emit(pipeline, partial.gs_protected, GENX(3DSTATE_GS), gs);
 
       /* BSpec 46303 forbids both 3DSTATE_MESH_CONTROL.MeshShaderEnable
        * and 3DSTATE_STREAMOUT.SOFunctionEnable to be 1.
@@ -2080,7 +2247,7 @@ genX(compute_pipeline_emit)(struct anv_compute_pipeline *pipeline)
          0 : 1 + MIN2(pipeline->cs->bind_map.surface_count, 30),
       .BarrierEnable          = cs_prog_data->uses_barrier,
       .SharedLocalMemorySize  =
-         encode_slm_size(GFX_VER, cs_prog_data->base.total_shared),
+         intel_compute_slm_encode_size(GFX_VER, cs_prog_data->base.total_shared),
 
       .ConstantURBEntryReadOffset = 0,
       .ConstantURBEntryReadLength = cs_prog_data->push.per_thread.regs,

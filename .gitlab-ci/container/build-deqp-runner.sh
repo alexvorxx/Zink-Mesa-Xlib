@@ -3,14 +3,14 @@
 
 # When changing this file, you need to bump the following
 # .gitlab-ci/image-tags.yml tags:
-# DEBIAN_X86_64_TEST_ANDROID_TAG
-# DEBIAN_X86_64_TEST_GL_TAG
-# DEBIAN_X86_64_TEST_VK_TAG
+# DEBIAN_TEST_ANDROID_TAG
+# DEBIAN_TEST_GL_TAG
+# DEBIAN_TEST_VK_TAG
 # KERNEL_ROOTFS_TAG
 
 set -ex
 
-DEQP_RUNNER_VERSION=0.18.0
+DEQP_RUNNER_VERSION=0.20.0
 
 DEQP_RUNNER_GIT_URL="${DEQP_RUNNER_GIT_URL:-https://gitlab.freedesktop.org/mesa/deqp-runner.git}"
 
@@ -34,6 +34,12 @@ else
 fi
 
 if [[ "$RUST_TARGET" != *-android ]]; then
+    # When CC (/usr/lib/ccache/gcc) variable is set, the rust compiler uses
+    # this variable when cross-compiling arm32 and build fails for zsys-sys.
+    # So unset the CC variable when cross-compiling for arm32.
+    if [ "$RUST_TARGET" = "armv7-unknown-linux-gnueabihf" ]; then
+        unset CC
+    fi
     cargo install --locked  \
         -j ${FDO_CI_CONCURRENT:-4} \
         --root /usr/local \

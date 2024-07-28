@@ -77,15 +77,17 @@ hash_alu_src(uint32_t hash, const nir_alu_src *src, unsigned num_components)
 static uint32_t
 hash_alu(uint32_t hash, const nir_alu_instr *instr)
 {
-   hash = HASH(hash, instr->op);
-
    /* We explicitly don't hash instr->exact. */
    uint8_t flags = instr->no_signed_wrap |
                    instr->no_unsigned_wrap << 1;
-   hash = HASH(hash, flags);
-
-   hash = HASH(hash, instr->def.num_components);
-   hash = HASH(hash, instr->def.bit_size);
+   uint8_t v[8];
+   v[0] = flags;
+   v[1] = instr->def.num_components;
+   v[2] = instr->def.bit_size;
+   v[3] = 0;
+   uint32_t op = instr->op;
+   memcpy(v + 4, &op, sizeof(op));
+   hash = XXH32(v, sizeof(v), hash);
 
    if (nir_op_infos[instr->op].algebraic_properties & NIR_OP_IS_2SRC_COMMUTATIVE) {
       assert(nir_op_infos[instr->op].num_inputs >= 2);
@@ -119,9 +121,12 @@ hash_alu(uint32_t hash, const nir_alu_instr *instr)
 static uint32_t
 hash_deref(uint32_t hash, const nir_deref_instr *instr)
 {
-   hash = HASH(hash, instr->deref_type);
-   hash = HASH(hash, instr->modes);
-   hash = HASH(hash, instr->type);
+   uint32_t v[4];
+   v[0] = instr->deref_type;
+   v[1] = instr->modes;
+   uint64_t type = (uintptr_t)instr->type;
+   memcpy(v + 2, &type, sizeof(type));
+   hash = XXH32(v, sizeof(v), hash);
 
    if (instr->deref_type == nir_deref_type_var)
       return HASH(hash, instr->var);
@@ -188,20 +193,9 @@ hash_phi(uint32_t hash, const nir_phi_instr *instr)
 {
    hash = HASH(hash, instr->instr.block);
 
-   /* sort sources by predecessor, since the order shouldn't matter */
-   unsigned num_preds = instr->instr.block->predecessors->entries;
-   NIR_VLA(nir_phi_src *, srcs, num_preds);
-   unsigned i = 0;
-   nir_foreach_phi_src(src, instr) {
-      srcs[i++] = src;
-   }
-
-   qsort(srcs, num_preds, sizeof(nir_phi_src *), cmp_phi_src);
-
-   for (i = 0; i < num_preds; i++) {
-      hash = hash_src(hash, &srcs[i]->src);
-      hash = HASH(hash, srcs[i]->pred);
-   }
+   /* Similar to hash_alu(), combine the hashes commutatively. */
+   nir_foreach_phi_src(src, instr)
+      hash *= HASH(hash_src(0, &src->src), src->pred);
 
    return hash;
 }
@@ -213,8 +207,8 @@ hash_intrinsic(uint32_t hash, const nir_intrinsic_instr *instr)
    hash = HASH(hash, instr->intrinsic);
 
    if (info->has_dest) {
-      hash = HASH(hash, instr->def.num_components);
-      hash = HASH(hash, instr->def.bit_size);
+      uint8_t v[4] = { instr->def.num_components, instr->def.bit_size, 0, 0 };
+      hash = XXH32(v, sizeof(v), hash);
    }
 
    hash = XXH32(instr->const_index, info->num_indices * sizeof(instr->const_index[0]), hash);
@@ -228,30 +222,26 @@ hash_intrinsic(uint32_t hash, const nir_intrinsic_instr *instr)
 static uint32_t
 hash_tex(uint32_t hash, const nir_tex_instr *instr)
 {
-   hash = HASH(hash, instr->op);
-   hash = HASH(hash, instr->num_srcs);
+   uint8_t v[24];
+   v[0] = instr->op;
+   v[1] = instr->num_srcs;
+   v[2] = instr->coord_components | (instr->sampler_dim << 4);
+   uint8_t flags = instr->is_array | (instr->is_shadow << 1) | (instr->is_new_style_shadow << 2) |
+                   (instr->is_sparse << 3) | (instr->component << 4) | (instr->texture_non_uniform << 6) |
+                   (instr->sampler_non_uniform << 7);
+   v[3] = flags;
+   STATIC_ASSERT(sizeof(instr->tg4_offsets) == 8);
+   memcpy(v + 4, instr->tg4_offsets, 8);
+   uint32_t texture_index = instr->texture_index;
+   uint32_t sampler_index = instr->sampler_index;
+   uint32_t backend_flags = instr->backend_flags;
+   memcpy(v + 12, &texture_index, 4);
+   memcpy(v + 16, &sampler_index, 4);
+   memcpy(v + 20, &backend_flags, 4);
+   hash = XXH32(v, sizeof(v), hash);
 
-   for (unsigned i = 0; i < instr->num_srcs; i++) {
-      hash = HASH(hash, instr->src[i].src_type);
-      hash = hash_src(hash, &instr->src[i].src);
-   }
-
-   hash = HASH(hash, instr->coord_components);
-   hash = HASH(hash, instr->sampler_dim);
-   hash = HASH(hash, instr->is_array);
-   hash = HASH(hash, instr->is_shadow);
-   hash = HASH(hash, instr->is_new_style_shadow);
-   hash = HASH(hash, instr->is_sparse);
-   unsigned component = instr->component;
-   hash = HASH(hash, component);
-   for (unsigned i = 0; i < 4; ++i)
-      for (unsigned j = 0; j < 2; ++j)
-         hash = HASH(hash, instr->tg4_offsets[i][j]);
-   hash = HASH(hash, instr->texture_index);
-   hash = HASH(hash, instr->sampler_index);
-   hash = HASH(hash, instr->texture_non_uniform);
-   hash = HASH(hash, instr->sampler_non_uniform);
-   hash = HASH(hash, instr->backend_flags);
+   for (unsigned i = 0; i < instr->num_srcs; i++)
+      hash *= hash_src(0, &instr->src[i].src);
 
    return hash;
 }
@@ -748,18 +738,18 @@ nir_instr_set_destroy(struct set *instr_set)
    _mesa_set_destroy(instr_set, NULL);
 }
 
-bool
+nir_instr *
 nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
                              bool (*cond_function)(const nir_instr *a,
                                                    const nir_instr *b))
 {
    if (!instr_can_rewrite(instr))
-      return false;
+      return NULL;
 
    struct set_entry *e = _mesa_set_search_or_add(instr_set, instr, NULL);
    nir_instr *match = (nir_instr *)e->key;
    if (match == instr)
-      return false;
+      return NULL;
 
    if (!cond_function || cond_function(match, instr)) {
       /* rewrite instruction if condition is matched */
@@ -778,13 +768,11 @@ nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
 
       nir_def_rewrite_uses(def, new_def);
 
-      nir_instr_remove(instr);
-
-      return true;
+      return match;
    } else {
       /* otherwise, replace hashed instruction */
       e->key = instr;
-      return false;
+      return NULL;
    }
 }
 

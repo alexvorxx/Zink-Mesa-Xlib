@@ -8,7 +8,7 @@
 #include "bvh/bvh.h"
 #include "radv_debug.h"
 
-#if LLVM_AVAILABLE
+#if AMD_LLVM_AVAILABLE
 #include <llvm/Config/llvm-config.h>
 #endif
 
@@ -560,12 +560,11 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
                                         nir_load_deref(b, args->vars.dir), nir_load_deref(b, args->vars.inv_dir));
       }
 
-      nir_def *node_type = nir_iand_imm(b, bvh_node, 7);
-      nir_push_if(b, nir_uge_imm(b, node_type, radv_bvh_node_box16));
+      nir_push_if(b, nir_test_mask(b, bvh_node, BITFIELD64_BIT(ffs(radv_bvh_node_box16) - 1)));
       {
-         nir_push_if(b, nir_uge_imm(b, node_type, radv_bvh_node_instance));
+         nir_push_if(b, nir_test_mask(b, bvh_node, BITFIELD64_BIT(ffs(radv_bvh_node_instance) - 1)));
          {
-            nir_push_if(b, nir_ieq_imm(b, node_type, radv_bvh_node_aabb));
+            nir_push_if(b, nir_test_mask(b, bvh_node, BITFIELD64_BIT(ffs(radv_bvh_node_aabb) - 1)));
             {
                insert_traversal_aabb_case(device, b, args, &ray_flags, global_bvh_node);
             }

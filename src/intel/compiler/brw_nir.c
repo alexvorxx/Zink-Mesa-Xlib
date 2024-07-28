@@ -275,6 +275,7 @@ static bool
 is_input(nir_intrinsic_instr *intrin)
 {
    return intrin->intrinsic == nir_intrinsic_load_input ||
+          intrin->intrinsic == nir_intrinsic_load_per_primitive_input ||
           intrin->intrinsic == nir_intrinsic_load_per_vertex_input ||
           intrin->intrinsic == nir_intrinsic_load_interpolated_input;
 }
@@ -433,9 +434,7 @@ brw_nir_lower_vs_inputs(nir_shader *nir)
                nir_def_init(&load->instr, &load->def, 1, 32);
                nir_builder_instr_insert(&b, &load->instr);
 
-               nir_def_rewrite_uses(&intrin->def,
-                                        &load->def);
-               nir_instr_remove(&intrin->instr);
+               nir_def_replace(&intrin->def, &load->def);
                break;
             }
 
@@ -546,8 +545,7 @@ lower_barycentric_per_sample(nir_builder *b,
    nir_def *centroid =
       nir_load_barycentric(b, nir_intrinsic_load_barycentric_sample,
                            nir_intrinsic_interp_mode(intrin));
-   nir_def_rewrite_uses(&intrin->def, centroid);
-   nir_instr_remove(&intrin->instr);
+   nir_def_replace(&intrin->def, centroid);
    return true;
 }
 
@@ -617,15 +615,14 @@ brw_nir_lower_fs_inputs(nir_shader *nir,
       nir_lower_single_sampled(nir);
    } else if (key->persample_interp == BRW_ALWAYS) {
       nir_shader_intrinsics_pass(nir, lower_barycentric_per_sample,
-                                   nir_metadata_block_index |
-                                   nir_metadata_dominance,
+                                   nir_metadata_control_flow,
                                    NULL);
    }
 
-   nir_shader_intrinsics_pass(nir, lower_barycentric_at_offset,
-                                nir_metadata_block_index |
-                                nir_metadata_dominance,
-                                NULL);
+   if (devinfo->ver < 20)
+      nir_shader_intrinsics_pass(nir, lower_barycentric_at_offset,
+                                 nir_metadata_control_flow,
+                                 NULL);
 
    /* This pass needs actual constants */
    nir_opt_constant_folding(nir);
@@ -1123,7 +1120,7 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
     * messages.
     */
    OPT(nir_lower_array_deref_of_vec,
-       nir_var_mem_ubo | nir_var_mem_ssbo,
+       nir_var_mem_ubo | nir_var_mem_ssbo, NULL,
        nir_lower_direct_array_deref_of_vec_load);
 
    /* Clamp load_per_vertex_input of the TCS stage so that we do not generate
@@ -1162,9 +1159,7 @@ brw_nir_zero_inputs_instr(struct nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_def *zero = nir_imm_zero(b, 1, 32);
 
-   nir_def_rewrite_uses(&intrin->def, zero);
-
-   nir_instr_remove(&intrin->instr);
+   nir_def_replace(&intrin->def, zero);
 
    return true;
 }
@@ -1173,7 +1168,7 @@ static bool
 brw_nir_zero_inputs(nir_shader *shader, uint64_t *zero_inputs)
 {
    return nir_shader_intrinsics_pass(shader, brw_nir_zero_inputs_instr,
-                                     nir_metadata_block_index | nir_metadata_dominance,
+                                     nir_metadata_control_flow,
                                      zero_inputs);
 }
 
@@ -1647,6 +1642,8 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    OPT(nir_opt_combine_barriers, combine_all_memory_barriers, NULL);
 
+   OPT(intel_nir_lower_printf);
+
    do {
       progress = false;
       OPT(nir_opt_algebraic_before_ffma);
@@ -1675,6 +1672,12 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
    }
 
    brw_vectorize_lower_mem_access(nir, compiler, robust_flags);
+
+   /* Potentially perform this optimization pass twice because it can create
+    * additional opportunities for itself.
+    */
+   if (OPT(nir_opt_algebraic_before_lower_int64))
+      OPT(nir_opt_algebraic_before_lower_int64);
 
    if (OPT(nir_lower_int64))
       brw_nir_optimize(nir, devinfo);
@@ -1711,7 +1714,11 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    do {
       progress = false;
-      if (OPT(nir_opt_algebraic_late)) {
+
+      OPT(nir_opt_algebraic_late);
+      OPT(brw_nir_lower_fsign);
+
+      if (progress) {
          OPT(nir_opt_constant_folding);
          OPT(nir_copy_prop);
          OPT(nir_opt_dce);
@@ -1755,6 +1762,8 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    if (OPT(nir_opt_uniform_atomics)) {
       OPT(nir_lower_subgroups, &subgroups_options);
+
+      OPT(nir_opt_algebraic_before_lower_int64);
 
       if (OPT(nir_lower_int64))
          brw_nir_optimize(nir, devinfo);
@@ -2167,4 +2176,3 @@ brw_nir_get_var_type(const struct nir_shader *nir, nir_variable *var)
 
    return type;
 }
-

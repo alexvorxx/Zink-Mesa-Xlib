@@ -309,6 +309,12 @@ err_free_bo:
 static void
 panthor_kmod_bo_free(struct pan_kmod_bo *bo)
 {
+   struct panthor_kmod_bo *panthor_bo =
+      container_of(bo, struct panthor_kmod_bo, base);
+
+   if (!bo->exclusive_vm)
+      drmSyncobjDestroy(bo->dev->fd, panthor_bo->sync.handle);
+
    drmCloseBufferHandle(bo->dev->fd, bo->handle);
    pan_kmod_dev_free(bo->dev, bo);
 }
@@ -971,12 +977,12 @@ panthor_kmod_vm_bind(struct pan_kmod_vm *vm, enum pan_kmod_vm_op_mode mode,
       simple_mtx_unlock(&panthor_vm->auto_va.lock);
    }
 
+out_update_vas:
    if (track_activity) {
       panthor_kmod_vm_sync_unlock(vm,
                                   ret ? vm_orig_sync_point : vm_new_sync_point);
    }
 
-out_update_vas:
    for (uint32_t i = 0; i < op_count; i++) {
       if (ops[i].type == PAN_KMOD_VM_OP_TYPE_MAP &&
           ops[i].va.start == PAN_KMOD_VM_MAP_AUTO_VA) {

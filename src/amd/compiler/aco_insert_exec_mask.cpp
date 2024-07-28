@@ -166,8 +166,9 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
       bld.insert(std::move(startpgm));
 
       unsigned count = 1;
-      if (block->instructions[1]->opcode == aco_opcode::p_init_scratch) {
-         bld.insert(std::move(block->instructions[1]));
+      while (block->instructions[count]->opcode == aco_opcode::p_init_scratch ||
+             block->instructions[count]->opcode == aco_opcode::s_setprio) {
+         bld.insert(std::move(block->instructions[count]));
          count++;
       }
 
@@ -270,6 +271,7 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
          for (unsigned i = 1; i < phi->operands.size(); i++)
             phi->operands[i] =
                get_exec_op(ctx.info[header_preds[i]].exec[info.num_exec_masks - 1].first);
+         restore_exec = true;
       }
 
       if (info.has_divergent_break) {

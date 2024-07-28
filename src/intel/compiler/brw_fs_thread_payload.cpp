@@ -386,7 +386,7 @@ cs_thread_payload::cs_thread_payload(const fs_visitor &v)
 
 void
 cs_thread_payload::load_subgroup_id(const fs_builder &bld,
-                                    fs_reg &dest) const
+                                    brw_reg &dest) const
 {
    auto devinfo = bld.shader->devinfo;
    dest = retype(dest, BRW_TYPE_UD);
@@ -399,7 +399,7 @@ cs_thread_payload::load_subgroup_id(const fs_builder &bld,
       assert(gl_shader_stage_is_compute(bld.shader->stage));
       int index = brw_get_subgroup_id_param_index(devinfo,
                                                   bld.shader->prog_data);
-      bld.MOV(dest, fs_reg(UNIFORM, index, BRW_TYPE_UD));
+      bld.MOV(dest, brw_uniform_reg(index, BRW_TYPE_UD));
    }
 }
 
@@ -483,9 +483,9 @@ bs_thread_payload::bs_thread_payload(const fs_visitor &v)
 }
 
 void
-bs_thread_payload::load_shader_type(const fs_builder &bld, fs_reg &dest) const
+bs_thread_payload::load_shader_type(const fs_builder &bld, brw_reg &dest) const
 {
-   fs_reg ud_dest = retype(dest, BRW_TYPE_UD);
+   brw_reg ud_dest = retype(dest, BRW_TYPE_UD);
    bld.MOV(ud_dest, retype(brw_vec1_grf(0, 3), ud_dest.type));
    bld.AND(ud_dest, ud_dest, brw_imm_ud(0xf));
 }

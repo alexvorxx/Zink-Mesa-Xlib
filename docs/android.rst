@@ -30,12 +30,12 @@ Then, create your Meson cross file to use it, something like this
     # Android doesn't come with a pkg-config, but we need one for Meson to be happy not
     # finding all the optional deps it looks for.  Use system pkg-config pointing at a
     # directory we get to populate with any .pc files we want to add for Android
-    pkgconfig = ['env', 'PKG_CONFIG_LIBDIR=NDKDIR/pkgconfig', '/usr/bin/pkg-config']
+    pkg-config = ['env', 'PKG_CONFIG_LIBDIR=NDKDIR/pkgconfig', '/usr/bin/pkg-config']
 
     [host_machine]
     system = 'android'
-    cpu_family = 'arm'
-    cpu = 'aarch64'
+    cpu_family = 'aarch64'
+    cpu = 'armv8'
     endian = 'little'
 
 Now, use that cross file for your Android build directory (as in this

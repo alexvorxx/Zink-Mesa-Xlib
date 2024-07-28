@@ -301,8 +301,6 @@ namespace {
       case BRW_OPCODE_ROR:
       case BRW_OPCODE_ROL:
       case BRW_OPCODE_SUBB:
-      case BRW_OPCODE_SAD2:
-      case BRW_OPCODE_SADA2:
       case BRW_OPCODE_LINE:
       case BRW_OPCODE_NOP:
       case SHADER_OPCODE_CLUSTER_BROADCAST:
@@ -312,7 +310,6 @@ namespace {
       case FS_OPCODE_DDY_COARSE:
       case FS_OPCODE_PIXEL_X:
       case FS_OPCODE_PIXEL_Y:
-      case SHADER_OPCODE_READ_SR_REG:
          if (devinfo->ver >= 11) {
             return calculate_desc(info, EU_UNIT_FPU, 0, 2, 0, 0, 2,
                                   0, 10, 6 /* XXX */, 14, 0, 0);
@@ -456,6 +453,15 @@ namespace {
             return calculate_desc(info, EU_UNIT_FPU, 16, 6, 0, 0, 6,
                                   0, 8 /* XXX */, 4 /* XXX */,
                                   12 /* XXX */, 0, 0);
+
+      case SHADER_OPCODE_READ_ARCH_REG:
+         if (devinfo->ver >= 12) {
+            return calculate_desc(info, EU_UNIT_FPU, 20, 6, 0, 0, 6,
+                                  0, 10, 6 /* XXX */, 14, 0, 0);
+         } else {
+            return calculate_desc(info, EU_UNIT_FPU, 0, 2, 0, 0, 2,
+                                  0, 8, 4, 12, 0, 0);
+         }
 
       case SHADER_OPCODE_MOV_INDIRECT:
          if (devinfo->ver >= 11)
@@ -772,7 +778,7 @@ namespace {
     * Return the dependency ID of a backend_reg, offset by \p delta GRFs.
     */
    enum intel_eu_dependency_id
-   reg_dependency_id(const intel_device_info *devinfo, const fs_reg &r,
+   reg_dependency_id(const intel_device_info *devinfo, const brw_reg &r,
                      const int delta)
    {
       if (r.file == VGRF) {

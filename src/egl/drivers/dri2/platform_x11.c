@@ -37,6 +37,7 @@
 #include <unistd.h>
 /* clang-format off */
 #include <xcb/xcb.h>
+#include <xcb/shm.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_xcb.h>
 /* clang-format on */
@@ -46,12 +47,14 @@
 #include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_debug.h"
+#include "util/log.h"
 #include <sys/stat.h>
 #include <sys/types.h>
 
 #include "kopper_interface.h"
 #include "loader.h"
 #include "platform_x11.h"
+#include "drm-uapi/drm_fourcc.h"
 
 #ifdef HAVE_DRI3
 #include "platform_x11_dri3.h"
@@ -150,14 +153,14 @@ swrastGetDrawableInfo(__DRIdrawable *draw, int *x, int *y, int *w, int *h,
 }
 
 static void
-swrastPutImage(__DRIdrawable *draw, int op, int x, int y, int w, int h,
-               char *data, void *loaderPrivate)
+swrastPutImage2(__DRIdrawable *draw, int op, int x, int y, int w, int h,
+                int stride, char *data, void *loaderPrivate)
 {
    struct dri2_egl_surface *dri2_surf = loaderPrivate;
    struct dri2_egl_display *dri2_dpy =
       dri2_egl_display(dri2_surf->base.Resource.Display);
-   size_t hdr_len = sizeof(xcb_put_image_request_t);
    int stride_b = dri2_surf->bytes_per_pixel * w;
+   size_t hdr_len = sizeof(xcb_put_image_request_t);
    size_t size = (hdr_len + stride_b * h) >> 2;
    uint64_t max_req_len = xcb_get_maximum_request_length(dri2_dpy->conn);
 
@@ -174,7 +177,23 @@ swrastPutImage(__DRIdrawable *draw, int op, int x, int y, int w, int h,
       return;
    }
 
-   if (size < max_req_len) {
+   /* clamp to drawable size */
+   if (y + h > dri2_surf->base.Height)
+      h = dri2_surf->base.Height - y;
+
+   /* If stride of pixels to copy is different from the surface stride
+    * then we need to copy lines one by one.
+    */
+   if (stride_b != stride) {
+      for (unsigned i = 0; i < h; i++) {
+         cookie = xcb_put_image(
+            dri2_dpy->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, dri2_surf->drawable, gc, w,
+            1, x, y+i, 0, dri2_surf->depth, stride_b, (uint8_t*)data);
+         xcb_discard_reply(dri2_dpy->conn, cookie.sequence);
+
+         data += stride;
+      }
+   } else if (size < max_req_len) {
       cookie = xcb_put_image(
          dri2_dpy->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, dri2_surf->drawable, gc, w,
          h, x, y, 0, dri2_surf->depth, h * stride_b, (const uint8_t *)data);
@@ -195,11 +214,22 @@ swrastPutImage(__DRIdrawable *draw, int op, int x, int y, int w, int h,
          y_todo -= this_lines;
       }
    }
+   xcb_flush(dri2_dpy->conn);
 }
 
 static void
-swrastGetImage(__DRIdrawable *read, int x, int y, int w, int h, char *data,
-               void *loaderPrivate)
+swrastPutImage(__DRIdrawable *draw, int op, int x, int y, int w, int h,
+               char *data, void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   int stride_b = dri2_surf->bytes_per_pixel * w;
+   swrastPutImage2(draw, op, x, y, w, h, stride_b, data, loaderPrivate);
+}
+
+static void
+swrastGetImage2(__DRIdrawable * read,
+                int x, int y, int w, int h, int stride,
+                char *data, void *loaderPrivate)
 {
    struct dri2_egl_surface *dri2_surf = loaderPrivate;
    struct dri2_egl_display *dri2_dpy =
@@ -221,9 +251,118 @@ swrastGetImage(__DRIdrawable *read, int x, int y, int w, int h, char *data,
    } else {
       uint32_t bytes = xcb_get_image_data_length(reply);
       uint8_t *idata = xcb_get_image_data(reply);
-      memcpy(data, idata, bytes);
+      int stride_b = w * dri2_surf->bytes_per_pixel;
+      /* Only copy line by line if we have a different stride */
+      if (stride != stride_b) {
+         for (int i = 0; i < h; i++) {
+            memcpy(data, idata, stride_b);
+            data += stride;
+            idata += stride_b;
+         }
+      } else {
+         memcpy(data, idata, bytes);
+      }
    }
    free(reply);
+}
+
+static void
+swrastGetImage(__DRIdrawable *read, int x, int y, int w, int h, char *data,
+               void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   int stride_b = w * dri2_surf->bytes_per_pixel;
+   swrastGetImage2(read, x, y, w, h, stride_b, data, loaderPrivate);
+}
+
+static void
+swrastPutImageShm(__DRIdrawable * draw, int op,
+                  int x, int y, int w, int h, int stride,
+                  int shmid, char *shmaddr, unsigned offset,
+                  void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   struct dri2_egl_display *dri2_dpy =
+      dri2_egl_display(dri2_surf->base.Resource.Display);
+   xcb_generic_error_t *error = NULL;
+
+   xcb_shm_seg_t shm_seg = xcb_generate_id(dri2_dpy->conn);
+   error = xcb_request_check(dri2_dpy->conn,
+                             xcb_shm_attach_checked(dri2_dpy->conn,
+                                                    shm_seg, shmid, 0));
+   if (error) {
+      mesa_loge("Failed to attach to x11 shm");
+      _eglError(EGL_BAD_SURFACE, "xcb_shm_attach_checked");
+      free(error);
+      return;
+   }
+
+   xcb_gcontext_t gc;
+   xcb_void_cookie_t cookie;
+   switch (op) {
+   case __DRI_SWRAST_IMAGE_OP_DRAW:
+      gc = dri2_surf->gc;
+      break;
+   case __DRI_SWRAST_IMAGE_OP_SWAP:
+      gc = dri2_surf->swapgc;
+      break;
+   default:
+      return;
+   }
+
+   cookie = xcb_shm_put_image(dri2_dpy->conn,
+         dri2_surf->drawable,
+         gc,
+         stride / dri2_surf->bytes_per_pixel, h,
+         x, 0,
+         w, h,
+         x, y,
+         dri2_surf->depth,
+         XCB_IMAGE_FORMAT_Z_PIXMAP,
+         0, shm_seg, stride * y);
+   xcb_discard_reply(dri2_dpy->conn, cookie.sequence);
+
+   xcb_flush(dri2_dpy->conn);
+   xcb_shm_detach(dri2_dpy->conn, shm_seg);
+}
+
+static void
+swrastGetImageShm(__DRIdrawable * read,
+                  int x, int y, int w, int h,
+                  int shmid, void *loaderPrivate)
+{
+   struct dri2_egl_surface *dri2_surf = loaderPrivate;
+   struct dri2_egl_display *dri2_dpy =
+      dri2_egl_display(dri2_surf->base.Resource.Display);
+   xcb_generic_error_t *error = NULL;
+
+   xcb_shm_seg_t shm_seg = xcb_generate_id(dri2_dpy->conn);
+   error = xcb_request_check(dri2_dpy->conn,
+                             xcb_shm_attach_checked(dri2_dpy->conn,
+                                                    shm_seg, shmid, 0));
+   if (error) {
+      mesa_loge("Failed to attach to x11 shm");
+      _eglError(EGL_BAD_SURFACE, "xcb_shm_attach_checked");
+      free(error);
+      return;
+   }
+
+   xcb_shm_get_image_cookie_t cookie;
+   xcb_shm_get_image_reply_t *reply;
+
+   cookie = xcb_shm_get_image(dri2_dpy->conn,
+         dri2_surf->drawable,
+         x, y,
+         w, h,
+         ~0, XCB_IMAGE_FORMAT_Z_PIXMAP,
+         shm_seg, 0);
+   reply = xcb_shm_get_image_reply(dri2_dpy->conn, cookie, NULL);
+   if (reply == NULL)
+      _eglLog(_EGL_WARNING, "error in xcb_shm_get_image");
+   else
+      free(reply);
+
+   xcb_shm_detach(dri2_dpy->conn, shm_seg);
 }
 
 static xcb_screen_t *
@@ -338,6 +477,7 @@ dri2_x11_create_surface(_EGLDisplay *disp, EGLint type, _EGLConfig *conf,
    if (!dri2_create_drawable(dri2_dpy, config, dri2_surf, dri2_surf))
       goto cleanup_pixmap;
 
+#ifdef HAVE_X11_DRI2
    if (dri2_dpy->dri2) {
       xcb_void_cookie_t cookie;
       int conn_error;
@@ -359,7 +499,9 @@ dri2_x11_create_surface(_EGLDisplay *disp, EGLint type, _EGLConfig *conf,
          free(error);
          goto cleanup_dri_drawable;
       }
-   } else {
+   } else
+#endif
+   {
       if (type == EGL_PBUFFER_BIT) {
          dri2_surf->depth = conf->BufferSize;
       }
@@ -432,7 +574,9 @@ dri2_x11_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
    dri2_dpy->core->destroyDrawable(dri2_surf->dri_drawable);
 
    if (dri2_dpy->dri2) {
+#ifdef HAVE_X11_DRI2
       xcb_dri2_destroy_drawable(dri2_dpy->conn, dri2_surf->drawable);
+#endif
    } else {
       assert(dri2_dpy->swrast);
       swrastDestroyDrawable(dri2_dpy, dri2_surf);
@@ -482,6 +626,7 @@ dri2_query_surface(_EGLDisplay *disp, _EGLSurface *surf, EGLint attribute,
    return _eglQuerySurface(disp, surf, attribute, value);
 }
 
+#ifdef HAVE_X11_DRI2
 /**
  * Process list of buffer received from the server
  *
@@ -772,6 +917,7 @@ dri2_x11_authenticate(_EGLDisplay *disp, uint32_t id)
 
    return dri2_x11_do_authenticate(dri2_dpy, id);
 }
+#endif
 
 static void
 dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
@@ -821,6 +967,16 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
             EGL_NONE,
          };
 
+         const EGLint config_attrs_2nd_group[] = {
+            EGL_NATIVE_VISUAL_ID,
+            visuals[i].visual_id,
+            EGL_NATIVE_VISUAL_TYPE,
+            visuals[i]._class,
+            EGL_CONFIG_SELECT_GROUP_EXT,
+            1,
+            EGL_NONE,
+         };
+
          for (int j = 0; dri2_dpy->driver_configs[j]; j++) {
             const __DRIconfig *config = dri2_dpy->driver_configs[j];
             int shifts[4];
@@ -833,8 +989,7 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
                continue;
             }
 
-            /* Allow a 24-bit RGB visual to match a 32-bit RGBA EGLConfig.
-             * Ditto for 30-bit RGB visuals to match a 32-bit RGBA EGLConfig.
+            /* Allows RGB visuals to match a 32-bit RGBA EGLConfig.
              * Otherwise it will only match a 32-bit RGBA visual.  On a
              * composited window manager on X11, this will make all of the
              * EGLConfigs with destination alpha get blended by the
@@ -842,9 +997,6 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
              * wants... especially on drivers that only have 32-bit RGBA
              * EGLConfigs! */
             if (sizes[3] != 0) {
-               if (d.data->depth != 24 && d.data->depth != 30)
-                  continue;
-
                unsigned int rgba_mask =
                   ~(visuals[i].red_mask | visuals[i].green_mask |
                     visuals[i].blue_mask);
@@ -854,7 +1006,12 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
                   continue;
             }
 
-            dri2_add_config(disp, config, surface_type, config_attrs);
+            unsigned int bit_per_pixel = sizes[0] + sizes[1] + sizes[2] + sizes[3];
+            if (sizes[3] != 0 && d.data->depth == bit_per_pixel) {
+               dri2_add_config(disp, config, surface_type, config_attrs_2nd_group);
+            } else {
+               dri2_add_config(disp, config, surface_type, config_attrs);
+            }
          }
       }
 
@@ -862,6 +1019,7 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
    }
 }
 
+#ifdef HAVE_X11_DRI2
 static EGLBoolean
 dri2_copy_region(_EGLDisplay *disp, _EGLSurface *draw,
                  xcb_xfixes_region_t region)
@@ -940,6 +1098,7 @@ dri2_x11_swap_buffers_msc(_EGLDisplay *disp, _EGLSurface *draw, int64_t msc,
 
    return swap_count;
 }
+#endif
 
 static EGLBoolean
 dri2_x11_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
@@ -962,13 +1121,16 @@ dri2_x11_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
       return EGL_TRUE;
    }
 
+#ifdef HAVE_X11_DRI2
    if (dri2_x11_swap_buffers_msc(disp, draw, 0, 0, 0) == -1) {
       /* Swap failed with a window drawable. */
       return _eglError(EGL_BAD_NATIVE_WINDOW, __func__);
    }
+#endif
    return EGL_TRUE;
 }
 
+#ifdef HAVE_X11_DRI2
 static EGLBoolean
 dri2_x11_swap_buffers_region(_EGLDisplay *disp, _EGLSurface *draw,
                              EGLint numRects, const EGLint *rects)
@@ -1009,6 +1171,10 @@ dri2_x11_post_sub_buffer(_EGLDisplay *disp, _EGLSurface *draw, EGLint x,
 
    return dri2_x11_swap_buffers_region(disp, draw, 1, rect);
 }
+#else
+#define dri2_x11_swap_buffers_region NULL
+#define dri2_x11_post_sub_buffer NULL
+#endif
 
 static EGLBoolean
 dri2_x11_kopper_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
@@ -1033,6 +1199,19 @@ dri2_x11_kopper_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
 }
 
 static EGLBoolean
+dri2_x11_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
+                                  const EGLint *rects, EGLint numRects)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
+   if (numRects)
+      dri2_dpy->core->swapBuffersWithDamage(dri2_surf->dri_drawable, numRects, rects);
+   else
+      dri2_dpy->core->swapBuffers(dri2_surf->dri_drawable);
+   return EGL_TRUE;
+}
+
+static EGLBoolean
 dri2_x11_swap_interval(_EGLDisplay *disp, _EGLSurface *surf, EGLint interval)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
@@ -1043,8 +1222,10 @@ dri2_x11_swap_interval(_EGLDisplay *disp, _EGLSurface *surf, EGLint interval)
       return EGL_TRUE;
    }
 
+#ifdef HAVE_X11_DRI2
    if (dri2_dpy->swap_available)
       xcb_dri2_swap_interval(dri2_dpy->conn, dri2_surf->drawable, interval);
+#endif
 
    return EGL_TRUE;
 }
@@ -1083,26 +1264,27 @@ dri2_x11_copy_buffers(_EGLDisplay *disp, _EGLSurface *surf,
 }
 
 uint32_t
-dri2_format_for_depth(struct dri2_egl_display *dri2_dpy, uint32_t depth)
+dri2_fourcc_for_depth(struct dri2_egl_display *dri2_dpy, uint32_t depth)
 {
    switch (depth) {
    case 16:
-      return __DRI_IMAGE_FORMAT_RGB565;
+      return DRM_FORMAT_RGB565;
    case 24:
-      return __DRI_IMAGE_FORMAT_XRGB8888;
+      return DRM_FORMAT_XRGB8888;
    case 30:
       /* Different preferred formats for different hw */
       if (dri2_x11_get_red_mask_for_depth(dri2_dpy, 30) == 0x3ff)
-         return __DRI_IMAGE_FORMAT_XBGR2101010;
+         return DRM_FORMAT_XBGR2101010;
       else
-         return __DRI_IMAGE_FORMAT_XRGB2101010;
+         return DRM_FORMAT_XRGB2101010;
    case 32:
-      return __DRI_IMAGE_FORMAT_ARGB8888;
+      return DRM_FORMAT_ARGB8888;
    default:
-      return __DRI_IMAGE_FORMAT_NONE;
+      return DRM_FORMAT_INVALID;
    }
 }
 
+#ifdef HAVE_X11_DRI2
 static _EGLImage *
 dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
                              EGLClientBuffer buffer, const EGLint *attr_list)
@@ -1117,7 +1299,7 @@ dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
    xcb_get_geometry_cookie_t geometry_cookie;
    xcb_get_geometry_reply_t *geometry_reply;
    xcb_generic_error_t *error;
-   int stride, format;
+   int fourcc;
 
    (void)ctx;
 
@@ -1148,8 +1330,8 @@ dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
       return NULL;
    }
 
-   format = dri2_format_for_depth(dri2_dpy, geometry_reply->depth);
-   if (format == __DRI_IMAGE_FORMAT_NONE) {
+   fourcc = dri2_fourcc_for_depth(dri2_dpy, geometry_reply->depth);
+   if (fourcc == DRM_FORMAT_INVALID) {
       _eglError(EGL_BAD_PARAMETER,
                 "dri2_create_image_khr: unsupported pixmap depth");
       free(buffers_reply);
@@ -1167,10 +1349,10 @@ dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
 
    _eglInitImage(&dri2_img->base, disp);
 
-   stride = buffers[0].pitch / buffers[0].cpp;
-   dri2_img->dri_image = dri2_dpy->image->createImageFromName(
+   dri2_img->dri_image = dri2_dpy->image->createImageFromNames(
       dri2_dpy->dri_screen_render_gpu, buffers_reply->width,
-      buffers_reply->height, format, buffers[0].name, stride, dri2_img);
+      buffers_reply->height, fourcc, (int *) &buffers[0].name, 1,
+      (int *) &buffers[0].pitch, 0, dri2_img);
 
    free(buffers_reply);
    free(geometry_reply);
@@ -1213,6 +1395,7 @@ dri2_x11_get_sync_values(_EGLDisplay *display, _EGLSurface *surface,
 
    return EGL_TRUE;
 }
+#endif
 
 static int
 box_intersection_area(int16_t a_x, int16_t a_y, int16_t a_width,
@@ -1368,6 +1551,7 @@ static const struct dri2_egl_display_vtbl dri2_x11_swrast_display_vtbl = {
    .create_image = dri2_create_image_khr,
    .swap_buffers = dri2_x11_swap_buffers,
    .swap_buffers_region = dri2_x11_swap_buffers_region,
+   .swap_buffers_with_damage = dri2_x11_swap_buffers_with_damage,
    .post_sub_buffer = dri2_x11_post_sub_buffer,
    .copy_buffers = dri2_x11_copy_buffers,
    .query_buffer_age = dri2_swrast_query_buffer_age,
@@ -1397,6 +1581,7 @@ static const struct dri2_egl_display_vtbl dri2_x11_kopper_display_vtbl = {
    .get_dri_drawable = dri2_surface_get_dri_drawable,
 };
 
+#ifdef HAVE_X11_DRI2
 static const struct dri2_egl_display_vtbl dri2_x11_display_vtbl = {
    .authenticate = dri2_x11_authenticate,
    .create_window_surface = dri2_x11_create_window_surface,
@@ -1414,13 +1599,27 @@ static const struct dri2_egl_display_vtbl dri2_x11_display_vtbl = {
    .get_msc_rate = dri2_x11_get_msc_rate,
    .get_dri_drawable = dri2_surface_get_dri_drawable,
 };
+#endif
 
 static const __DRIswrastLoaderExtension swrast_loader_extension = {
    .base = {__DRI_SWRAST_LOADER, 1},
 
    .getDrawableInfo = swrastGetDrawableInfo,
    .putImage = swrastPutImage,
+   .putImage2 = swrastPutImage2,
    .getImage = swrastGetImage,
+};
+
+static const __DRIswrastLoaderExtension swrast_loader_shm_extension = {
+   .base = {__DRI_SWRAST_LOADER, 4},
+
+   .getDrawableInfo = swrastGetDrawableInfo,
+   .putImage = swrastPutImage,
+   .putImage2 = swrastPutImage2,
+   .putImageShm = swrastPutImageShm,
+   .getImage = swrastGetImage,
+   .getImage2 = swrastGetImage2,
+   .getImageShm = swrastGetImageShm,
 };
 
 static_assert(sizeof(struct kopper_vk_surface_create_storage) >=
@@ -1443,6 +1642,7 @@ kopperSetSurfaceCreateInfo(void *_draw, struct kopper_loader_info *ci)
    xcb->connection = dri2_dpy->conn;
    xcb->window = dri2_surf->drawable;
    ci->has_alpha = dri2_surf->depth == 32;
+   ci->present_opaque = dri2_surf->base.PresentOpaque;
 }
 
 static const __DRIkopperLoaderExtension kopper_loader_extension = {
@@ -1453,6 +1653,13 @@ static const __DRIkopperLoaderExtension kopper_loader_extension = {
 
 static const __DRIextension *swrast_loader_extensions[] = {
    &swrast_loader_extension.base,
+   &image_lookup_extension.base,
+   &kopper_loader_extension.base,
+   NULL,
+};
+
+static const __DRIextension *swrast_loader_shm_extensions[] = {
+   &swrast_loader_shm_extension.base,
    &image_lookup_extension.base,
    &kopper_loader_extension.base,
    NULL,
@@ -1542,6 +1749,38 @@ dri2_x11_setup_swap_interval(_EGLDisplay *disp)
    dri2_setup_swap_interval(disp, arbitrary_max_interval);
 }
 
+static bool
+check_xshm(struct dri2_egl_display *dri2_dpy)
+{
+   xcb_void_cookie_t cookie;
+   xcb_generic_error_t *error;
+   int ret = true;
+   xcb_query_extension_cookie_t shm_cookie;
+   xcb_query_extension_reply_t *shm_reply;
+   bool has_mit_shm;
+
+   shm_cookie = xcb_query_extension(dri2_dpy->conn, 7, "MIT-SHM");
+   shm_reply = xcb_query_extension_reply(dri2_dpy->conn, shm_cookie, NULL);
+
+   has_mit_shm = shm_reply->present;
+   free(shm_reply);
+   if (!has_mit_shm)
+      return false;
+
+   cookie = xcb_shm_detach_checked(dri2_dpy->conn, 0);
+   if ((error = xcb_request_check(dri2_dpy->conn, cookie))) {
+      /* BadRequest means we're a remote client. If we were local we'd
+       * expect BadValue since 'info' has an invalid segment name.
+       */
+      if (error->error_code == BadRequest)
+         ret = false;
+      free(error);
+   }
+
+   return ret;
+}
+
+
 static EGLBoolean
 dri2_initialize_x11_swrast(_EGLDisplay *disp)
 {
@@ -1559,13 +1798,18 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
    dri2_dpy->driver_name = strdup(disp->Options.Zink ? "zink" : "swrast");
 #ifdef HAVE_DRI3
    if (disp->Options.Zink &&
-       !debug_get_bool_option("LIBGL_DRI3_DISABLE", false))
-      dri3_x11_connect(dri2_dpy);
+       !debug_get_bool_option("LIBGL_DRI3_DISABLE", false) &&
+       !debug_get_bool_option("LIBGL_KOPPER_DRI2", false))
+      dri3_x11_connect(dri2_dpy, disp->Options.ForceSoftware);
 #endif
    if (!dri2_load_driver_swrast(disp))
       goto cleanup;
 
-   dri2_dpy->loader_extensions = swrast_loader_extensions;
+   if (check_xshm(dri2_dpy)) {
+      dri2_dpy->loader_extensions = swrast_loader_shm_extensions;
+   } else {
+      dri2_dpy->loader_extensions = swrast_loader_extensions;
+   }
 
    if (!dri2_create_screen(disp))
       goto cleanup;
@@ -1591,13 +1835,14 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
          disp->Extensions.KHR_image_pixmap = EGL_TRUE;
       disp->Extensions.NOK_texture_from_pixmap = EGL_TRUE;
       disp->Extensions.CHROMIUM_sync_control = EGL_TRUE;
-      /* FIXME: if mesa vk wsi ever checks VkPresentRegionKHR in sw mode */
-      disp->Extensions.EXT_swap_buffers_with_damage = !disp->Options.ForceSoftware && dri2_dpy->kopper;
+      disp->Extensions.EXT_swap_buffers_with_damage = !!dri2_dpy->kopper;
 
 #ifdef HAVE_DRI3
       if (dri2_dpy->multibuffers_available)
          dri2_set_WL_bind_wayland_display(disp);
 #endif
+   } else {
+      disp->Extensions.EXT_swap_buffers_with_damage = EGL_TRUE;
    }
    disp->Extensions.EXT_buffer_age = EGL_TRUE;
    disp->Extensions.ANGLE_sync_control_rate = EGL_TRUE;
@@ -1640,7 +1885,7 @@ dri2_initialize_x11_dri3(_EGLDisplay *disp)
    if (!dri2_get_xcb_connection(disp, dri2_dpy))
       goto cleanup;
 
-   status = dri3_x11_connect(dri2_dpy);
+   status = dri3_x11_connect(dri2_dpy, disp->Options.ForceSoftware);
    if (status != DRI2_EGL_DRIVER_LOADED)
       goto cleanup;
 
@@ -1700,10 +1945,13 @@ dri2_initialize_x11_dri3(_EGLDisplay *disp)
 
 cleanup:
    dri2_display_destroy(disp);
-   return status;
+   return status == DRI2_EGL_DRIVER_PREFER_ZINK ?
+          DRI2_EGL_DRIVER_PREFER_ZINK :
+          DRI2_EGL_DRIVER_FAILED;
 }
 #endif
 
+#ifdef HAVE_X11_DRI2
 static const __DRIdri2LoaderExtension dri2_loader_extension_old = {
    .base = {__DRI_DRI2_LOADER, 2},
 
@@ -1798,6 +2046,7 @@ cleanup:
    dri2_display_destroy(disp);
    return EGL_FALSE;
 }
+#endif
 
 EGLBoolean
 dri2_initialize_x11(_EGLDisplay *disp)
@@ -1815,10 +2064,12 @@ dri2_initialize_x11(_EGLDisplay *disp)
    }
 #endif
 
+#ifdef HAVE_X11_DRI2
    if (!debug_get_bool_option("LIBGL_DRI2_DISABLE", false) &&
        status != DRI2_EGL_DRIVER_PREFER_ZINK)
       if (dri2_initialize_x11_dri2(disp))
          return EGL_TRUE;
+#endif
 
    return EGL_FALSE;
 }

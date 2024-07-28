@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "vk_meta_object_list.h"
 #include "vk_meta_private.h"
 
 #include "vk_command_buffer.h"
@@ -74,36 +75,6 @@ cache_key_equal(const void *_a, const void *_b)
    return memcmp(a->key_data, b->key_data, a->key_size) == 0;
 }
 
-static void
-destroy_object(struct vk_device *device, struct vk_object_base *obj)
-{
-   const struct vk_device_dispatch_table *disp = &device->dispatch_table;
-   VkDevice _device = vk_device_to_handle(device);
-
-   switch (obj->type) {
-   case VK_OBJECT_TYPE_BUFFER:
-      disp->DestroyBuffer(_device, (VkBuffer)(uintptr_t)obj, NULL);
-      break;
-   case VK_OBJECT_TYPE_IMAGE_VIEW:
-      disp->DestroyImageView(_device, (VkImageView)(uintptr_t)obj, NULL);
-      break;
-   case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT:
-      disp->DestroyDescriptorSetLayout(_device, (VkDescriptorSetLayout)(uintptr_t)obj, NULL);
-      break;
-   case VK_OBJECT_TYPE_PIPELINE_LAYOUT:
-      disp->DestroyPipelineLayout(_device, (VkPipelineLayout)(uintptr_t)obj, NULL);
-      break;
-   case VK_OBJECT_TYPE_PIPELINE:
-      disp->DestroyPipeline(_device, (VkPipeline)(uintptr_t)obj, NULL);
-      break;
-   case VK_OBJECT_TYPE_SAMPLER:
-      disp->DestroySampler(_device, (VkSampler)(uintptr_t)obj, NULL);
-      break;
-   default:
-      unreachable("Unsupported object type");
-   }
-}
-
 VkResult
 vk_meta_device_init(struct vk_device *device,
                     struct vk_meta_device *meta)
@@ -126,7 +97,7 @@ vk_meta_device_finish(struct vk_device *device,
 {
    hash_table_foreach(meta->cache, entry) {
       free((void *)entry->key);
-      destroy_object(device, entry->data);
+      vk_meta_destroy_object(device, entry->data);
    }
    _mesa_hash_table_destroy(meta->cache, NULL);
    simple_mtx_destroy(&meta->cache_mtx);
@@ -190,7 +161,7 @@ vk_meta_cache_object(struct vk_device *device,
    if (entry != NULL) {
       /* We raced and found that object already in the cache */
       free(key);
-      destroy_object(device, obj);
+      vk_meta_destroy_object(device, obj);
       return (uint64_t)(uintptr_t)entry->data;
    } else {
       /* Return the newly inserted object */
@@ -527,30 +498,6 @@ vk_meta_create_compute_pipeline(struct vk_device *device,
    return VK_SUCCESS;
 }
 
-void
-vk_meta_object_list_init(struct vk_meta_object_list *mol)
-{
-   util_dynarray_init(&mol->arr, NULL);
-}
-
-void
-vk_meta_object_list_reset(struct vk_device *device,
-                          struct vk_meta_object_list *mol)
-{
-   util_dynarray_foreach(&mol->arr, struct vk_object_base *, obj)
-      destroy_object(device, *obj);
-
-   util_dynarray_clear(&mol->arr);
-}
-
-void
-vk_meta_object_list_finish(struct vk_device *device,
-                           struct vk_meta_object_list *mol)
-{
-   vk_meta_object_list_reset(device, mol);
-   util_dynarray_fini(&mol->arr);
-}
-
 VkResult
 vk_meta_create_buffer(struct vk_command_buffer *cmd,
                       struct vk_meta_device *meta,
@@ -588,5 +535,25 @@ vk_meta_create_image_view(struct vk_command_buffer *cmd,
    vk_meta_object_list_add_handle(&cmd->meta_objects,
                                   VK_OBJECT_TYPE_IMAGE_VIEW,
                                   (uint64_t)*image_view_out);
+   return VK_SUCCESS;
+}
+
+VkResult
+vk_meta_create_buffer_view(struct vk_command_buffer *cmd,
+                           struct vk_meta_device *meta,
+                           const VkBufferViewCreateInfo *info,
+                           VkBufferView *buffer_view_out)
+{
+   struct vk_device *device = cmd->base.device;
+   const struct vk_device_dispatch_table *disp = &device->dispatch_table;
+   VkDevice _device = vk_device_to_handle(device);
+
+   VkResult result = disp->CreateBufferView(_device, info, NULL, buffer_view_out);
+   if (unlikely(result != VK_SUCCESS))
+      return result;
+
+   vk_meta_object_list_add_handle(&cmd->meta_objects,
+                                  VK_OBJECT_TYPE_BUFFER_VIEW,
+                                  (uint64_t)*buffer_view_out);
    return VK_SUCCESS;
 }

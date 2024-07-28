@@ -176,9 +176,8 @@ genX(cmd_buffer_get_draw_id_addr)(struct anv_cmd_buffer *cmd_buffer,
       return ANV_NULL_ADDRESS;
 
    struct anv_state draw_id_state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, 4 * draw_id_count, 4);
-   return anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
-                                       draw_id_state);
+      anv_cmd_buffer_alloc_temporary_state(cmd_buffer, 4 * draw_id_count, 4);
+   return anv_cmd_buffer_temporary_state_address(cmd_buffer, draw_id_state);
 #endif
 }
 
@@ -581,10 +580,14 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
       const uint32_t mocs = anv_mocs_for_address(cmd_buffer->device,
                                                  &draw_base_addr);
       mi_builder_set_mocs(&b, mocs);
+      mi_builder_set_write_check(&b, true);
 
       mi_store(&b, mi_mem32(draw_base_addr),
                    mi_iadd(&b, mi_mem32(draw_base_addr),
                                mi_imm(ring_count)));
+
+      /* Make sure the MI writes are globally observable */
+      mi_ensure_write_fence(&b);
 
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT,
@@ -604,6 +607,9 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
 
       /* Reset the draw_base field in case we ever replay the command buffer. */
       mi_store(&b, mi_mem32(draw_base_addr), mi_imm(0));
+
+      /* Make sure the MI writes are globally observable */
+      mi_ensure_write_fence(&b);
 
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT,

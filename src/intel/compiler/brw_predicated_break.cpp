@@ -25,7 +25,7 @@
 
 using namespace brw;
 
-/** @file brw_predicated_break.cpp
+/** @file
  *
  * Loops are often structured as
  *

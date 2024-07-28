@@ -293,6 +293,8 @@ ir3_collect_info(struct ir3_shader_variant *v)
    info->size = MAX2(v->instrlen * compiler->instr_align, instr_count + 4) * 8;
    info->sizedwords = info->size / 4;
 
+   info->early_preamble = v->early_preamble;
+
    bool in_preamble = false;
    bool has_eq = false;
 
@@ -483,18 +485,26 @@ reg_create(struct ir3 *shader, int num, int flags)
 }
 
 static void
-insert_instr(struct ir3_block *block, struct ir3_instruction *instr,
-             bool at_end)
+insert_instr(struct ir3_cursor cursor, struct ir3_instruction *instr)
 {
-   struct ir3 *shader = block->shader;
+   struct ir3 *shader = instr->block->shader;
 
    instr->serialno = ++shader->instr_count;
 
-   struct ir3_instruction *terminator = ir3_block_get_terminator(block);
-   list_addtail(&instr->node, &block->instr_list);
-
-   if (!at_end && terminator)
-      ir3_instr_move_before(instr, terminator);
+   switch (cursor.option) {
+   case IR3_CURSOR_BEFORE_BLOCK:
+      list_add(&instr->node, &cursor.block->instr_list);
+      break;
+   case IR3_CURSOR_AFTER_BLOCK:
+      list_addtail(&instr->node, &cursor.block->instr_list);
+      break;
+   case IR3_CURSOR_BEFORE_INSTR:
+      list_addtail(&instr->node, &cursor.instr->node);
+      break;
+   case IR3_CURSOR_AFTER_INSTR:
+      list_add(&instr->node, &cursor.instr->node);
+      break;
+   }
 
    if (is_input(instr))
       array_insert(shader, shader->baryfs, instr);
@@ -641,17 +651,6 @@ instr_create(struct ir3_block *block, opc_t opc, int ndst, int nsrc)
    return instr;
 }
 
-static struct ir3_instruction *
-instr_create_impl(struct ir3_block *block, opc_t opc, int ndst, int nsrc,
-                  bool at_end)
-{
-   struct ir3_instruction *instr = instr_create(block, opc, ndst, nsrc);
-   instr->block = block;
-   instr->opc = opc;
-   insert_instr(block, instr, at_end);
-   return instr;
-}
-
 static void
 add_to_address_users(struct ir3_instruction *instr)
 {
@@ -669,16 +668,51 @@ add_to_address_users(struct ir3_instruction *instr)
    }
 }
 
+static struct ir3_block *
+get_block(struct ir3_cursor cursor)
+{
+   switch (cursor.option) {
+   case IR3_CURSOR_BEFORE_BLOCK:
+   case IR3_CURSOR_AFTER_BLOCK:
+      return cursor.block;
+   case IR3_CURSOR_BEFORE_INSTR:
+   case IR3_CURSOR_AFTER_INSTR:
+      return cursor.instr->block;
+   }
+
+   unreachable("illegal cursor option");
+}
+
+struct ir3_instruction *
+ir3_instr_create_at(struct ir3_cursor cursor, opc_t opc, int ndst, int nsrc)
+{
+   struct ir3_block *block = get_block(cursor);
+   struct ir3_instruction *instr = instr_create(block, opc, ndst, nsrc);
+   instr->block = block;
+   instr->opc = opc;
+   insert_instr(cursor, instr);
+   return instr;
+}
+
+struct ir3_instruction *
+ir3_build_instr(struct ir3_builder *builder, opc_t opc, int ndst, int nsrc)
+{
+   struct ir3_instruction *instr =
+      ir3_instr_create_at(builder->cursor, opc, ndst, nsrc);
+   builder->cursor = ir3_after_instr(instr);
+   return instr;
+}
+
 struct ir3_instruction *
 ir3_instr_create(struct ir3_block *block, opc_t opc, int ndst, int nsrc)
 {
-   return instr_create_impl(block, opc, ndst, nsrc, false);
+   return ir3_instr_create_at(ir3_before_terminator(block), opc, ndst, nsrc);
 }
 
 struct ir3_instruction *
 ir3_instr_create_at_end(struct ir3_block *block, opc_t opc, int ndst, int nsrc)
 {
-   return instr_create_impl(block, opc, ndst, nsrc, true);
+   return ir3_instr_create_at(ir3_after_block(block), opc, ndst, nsrc);
 }
 
 struct ir3_instruction *
@@ -694,7 +728,7 @@ ir3_instr_clone(struct ir3_instruction *instr)
    new_instr->dsts = dsts;
    new_instr->srcs = srcs;
 
-   insert_instr(instr->block, new_instr, false);
+   insert_instr(ir3_before_terminator(instr->block), new_instr);
 
    /* clone registers: */
    new_instr->dsts_count = 0;
@@ -1141,12 +1175,14 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
          /* floating-point conversions when moving from non-shared to shared
           * seem not to work. We only use floating-point types in ir3 for
           * conversions, so don't bother specially handling the case where the
-          * types are equal.
+          * types are equal. Same goes for 8-bit sign extension.
           */
          if ((instr->dsts[0]->flags & IR3_REG_SHARED) &&
              !(flags & (IR3_REG_SHARED | IR3_REG_IMMED | IR3_REG_CONST)) &&
-             (full_type(instr->cat1.src_type) == TYPE_F32 ||
-              full_type(instr->cat1.dst_type) == TYPE_F32))
+             ((full_type(instr->cat1.src_type) == TYPE_F32 ||
+               full_type(instr->cat1.dst_type) == TYPE_F32) ||
+              (instr->cat1.src_type == TYPE_U8 &&
+               full_type(instr->cat1.dst_type) == TYPE_S32)))
             return false;
 
          /* Conversions seem not to work in shared->shared copies before scalar
@@ -1258,6 +1294,12 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
          return false;
       break;
    case 5:
+      if (instr->opc == OPC_ISAM && (instr->flags & IR3_INSTR_V)) {
+         if (((instr->flags & IR3_INSTR_S2EN) && n == 2) ||
+             (!(instr->flags & IR3_INSTR_S2EN) && n == 1)) {
+            return flags == IR3_REG_IMMED;
+         }
+      }
       /* no flags allowed */
       if (flags)
          return false;
@@ -1331,6 +1373,9 @@ ir3_valid_flags(struct ir3_instruction *instr, unsigned n, unsigned flags)
          switch (instr->opc) {
          case OPC_LDIB:
          case OPC_STIB:
+            if (n != 0 && n != 2)
+               return false;
+            break;
          case OPC_RESINFO:
             if (n != 0)
                return false;

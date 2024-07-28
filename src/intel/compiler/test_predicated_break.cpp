@@ -140,9 +140,9 @@ TEST_F(PredicatedBreakTest, TopBreakWithoutContinue)
    fs_builder a = make_builder(shader_a);
    fs_builder b = make_builder(shader_b);
 
-   fs_reg r1 = brw_vec8_grf(1, 0);
-   fs_reg r2 = brw_vec8_grf(2, 0);
-   fs_reg r3 = brw_vec8_grf(3, 0);
+   brw_reg r1 = brw_vec8_grf(1, 0);
+   brw_reg r2 = brw_vec8_grf(2, 0);
+   brw_reg r3 = brw_vec8_grf(3, 0);
 
    a.DO();
    a.CMP(r1, r2, r3, BRW_CONDITIONAL_NZ);
@@ -152,7 +152,7 @@ TEST_F(PredicatedBreakTest, TopBreakWithoutContinue)
    a.ADD(r1, r2, r3);
    a.WHILE();
    a.NOP();  /* There's always going to be something after a WHILE. */
-   shader_a->calculate_cfg();
+   brw_calculate_cfg(*shader_a);
 
    /* The IF/ENDIF around the BREAK is expected to be removed. */
    bool progress = opt_predicated_break(shader_a);
@@ -164,7 +164,7 @@ TEST_F(PredicatedBreakTest, TopBreakWithoutContinue)
    b.ADD(r1, r2, r3);
    b.WHILE();
    b.NOP();
-   shader_b->calculate_cfg();
+   brw_calculate_cfg(*shader_b);
 
    ASSERT_SHADERS_MATCH(shader_a, shader_b);
 }
@@ -174,9 +174,9 @@ TEST_F(PredicatedBreakTest, TopBreakWithContinue)
    fs_builder a = make_builder(shader_a);
    fs_builder b = make_builder(shader_b);
 
-   fs_reg r1 = brw_vec8_grf(1, 0);
-   fs_reg r2 = brw_vec8_grf(2, 0);
-   fs_reg r3 = brw_vec8_grf(3, 0);
+   brw_reg r1 = brw_vec8_grf(1, 0);
+   brw_reg r2 = brw_vec8_grf(2, 0);
+   brw_reg r3 = brw_vec8_grf(3, 0);
 
    a.DO();
    a.CMP(r1, r2, r3, BRW_CONDITIONAL_NZ);
@@ -191,7 +191,7 @@ TEST_F(PredicatedBreakTest, TopBreakWithContinue)
    a.MUL(r1, r2, r3);
    a.WHILE();
    a.NOP();  /* There's always going to be something after a WHILE. */
-   shader_a->calculate_cfg();
+   brw_calculate_cfg(*shader_a);
 
    /* The IF/ENDIF around the BREAK and the CONTINUE are expected to be
     * removed.
@@ -208,7 +208,7 @@ TEST_F(PredicatedBreakTest, TopBreakWithContinue)
    b.MUL(r1, r2, r3);
    b.WHILE();
    b.NOP();
-   shader_b->calculate_cfg();
+   brw_calculate_cfg(*shader_b);
 
    ASSERT_SHADERS_MATCH(shader_a, shader_b);
 }
@@ -218,9 +218,9 @@ TEST_F(PredicatedBreakTest, DISABLED_BottomBreakWithoutContinue)
    fs_builder a = make_builder(shader_a);
    fs_builder b = make_builder(shader_b);
 
-   fs_reg r1 = brw_vec8_grf(1, 0);
-   fs_reg r2 = brw_vec8_grf(2, 0);
-   fs_reg r3 = brw_vec8_grf(3, 0);
+   brw_reg r1 = brw_vec8_grf(1, 0);
+   brw_reg r2 = brw_vec8_grf(2, 0);
+   brw_reg r3 = brw_vec8_grf(3, 0);
 
    a.DO();
    a.ADD(r1, r2, r3);
@@ -230,7 +230,7 @@ TEST_F(PredicatedBreakTest, DISABLED_BottomBreakWithoutContinue)
    a.ENDIF();
    a.WHILE();
    a.NOP();  /* There's always going to be something after a WHILE. */
-   shader_a->calculate_cfg();
+   brw_calculate_cfg(*shader_a);
 
    /* BREAK is the only way to exit the loop, so expect to remove the
     * IF/BREAK/ENDIF and add a predicate to WHILE.
@@ -245,7 +245,7 @@ TEST_F(PredicatedBreakTest, DISABLED_BottomBreakWithoutContinue)
    w->predicate = BRW_PREDICATE_NORMAL;
    w->predicate_inverse = true;
    b.NOP();
-   shader_b->calculate_cfg();
+   brw_calculate_cfg(*shader_b);
 
    ASSERT_SHADERS_MATCH(shader_a, shader_b);
 }
@@ -256,9 +256,9 @@ TEST_F(PredicatedBreakTest, BottomBreakWithContinue)
    fs_builder a = make_builder(shader_a);
    fs_builder b = make_builder(shader_b);
 
-   fs_reg r1 = brw_vec8_grf(1, 0);
-   fs_reg r2 = brw_vec8_grf(2, 0);
-   fs_reg r3 = brw_vec8_grf(3, 0);
+   brw_reg r1 = brw_vec8_grf(1, 0);
+   brw_reg r2 = brw_vec8_grf(2, 0);
+   brw_reg r3 = brw_vec8_grf(3, 0);
 
    a.DO();
    a.ADD(r1, r2, r3);
@@ -273,7 +273,7 @@ TEST_F(PredicatedBreakTest, BottomBreakWithContinue)
    a.ENDIF();
    a.WHILE();
    a.NOP();  /* There's always going to be something after a WHILE. */
-   shader_a->calculate_cfg();
+   brw_calculate_cfg(*shader_a);
 
    /* With a CONTINUE, the BREAK can't be removed, but still remove the
     * IF/ENDIF around both of them.
@@ -290,7 +290,7 @@ TEST_F(PredicatedBreakTest, BottomBreakWithContinue)
    b.BREAK()->predicate = BRW_PREDICATE_NORMAL;
    b.WHILE();
    b.NOP();
-   shader_b->calculate_cfg();
+   brw_calculate_cfg(*shader_b);
 
    ASSERT_SHADERS_MATCH(shader_a, shader_b);
 }
@@ -300,9 +300,9 @@ TEST_F(PredicatedBreakTest, TwoBreaks)
    fs_builder a = make_builder(shader_a);
    fs_builder b = make_builder(shader_b);
 
-   fs_reg r1 = brw_vec8_grf(1, 0);
-   fs_reg r2 = brw_vec8_grf(2, 0);
-   fs_reg r3 = brw_vec8_grf(3, 0);
+   brw_reg r1 = brw_vec8_grf(1, 0);
+   brw_reg r2 = brw_vec8_grf(2, 0);
+   brw_reg r3 = brw_vec8_grf(3, 0);
 
    a.DO();
    a.ADD(r1, r2, r3);
@@ -318,7 +318,7 @@ TEST_F(PredicatedBreakTest, TwoBreaks)
    a.AND(r1, r2, r3);
    a.WHILE();
    a.NOP();  /* There's always going to be something after a WHILE. */
-   shader_a->calculate_cfg();
+   brw_calculate_cfg(*shader_a);
 
    /* The IF/ENDIF around the breaks are expected to be removed. */
    bool progress = opt_predicated_break(shader_a);
@@ -334,7 +334,7 @@ TEST_F(PredicatedBreakTest, TwoBreaks)
    b.AND(r1, r2, r3);
    b.WHILE();
    b.NOP();  /* There's always going to be something after a WHILE. */
-   shader_b->calculate_cfg();
+   brw_calculate_cfg(*shader_b);
 
    ASSERT_SHADERS_MATCH(shader_a, shader_b);
 }

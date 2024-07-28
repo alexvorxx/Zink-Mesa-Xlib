@@ -38,7 +38,7 @@
 
 #ifdef GLX_DIRECT_RENDERING
 
-#include <GL/internal/dri_interface.h>
+#include "mesa_interface.h"
 #include <stdbool.h>
 #include "loader.h"
 #include "util/macros.h" /* for PRINTFLIKE */
@@ -64,7 +64,7 @@ extern void
 driReleaseDrawables(struct glx_context *gc);
 
 extern const __DRIextension **driOpenDriver(const char *driverName,
-                                            void **out_driver_handle);
+                                            bool driver_name_is_inferred);
 
 struct dri_ctx_attribs {
    unsigned major_ver;
@@ -89,6 +89,9 @@ dri_common_create_context(struct glx_screen *base,
                           struct glx_config *config_base,
                           struct glx_context *shareList,
                           int renderType);
+
+extern const __DRIbackgroundCallableExtension driBackgroundCallable;
+extern const __DRIuseInvalidateExtension dri2UseInvalidate;
 
 #endif /* GLX_DIRECT_RENDERING */
 

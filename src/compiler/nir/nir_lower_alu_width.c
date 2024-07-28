@@ -241,23 +241,14 @@ lower_alu_instr_width(nir_builder *b, nir_instr *instr, void *_data)
        */
       return NULL;
 
-   case nir_op_unpack_half_2x16_flush_to_zero:
    case nir_op_unpack_half_2x16: {
       if (!b->shader->options->lower_unpack_half_2x16)
          return NULL;
 
       nir_def *packed = nir_ssa_for_alu_src(b, alu, 0);
-      if (alu->op == nir_op_unpack_half_2x16_flush_to_zero) {
-         return nir_vec2(b,
-                         nir_unpack_half_2x16_split_x_flush_to_zero(b,
-                                                                    packed),
-                         nir_unpack_half_2x16_split_y_flush_to_zero(b,
-                                                                    packed));
-      } else {
-         return nir_vec2(b,
-                         nir_unpack_half_2x16_split_x(b, packed),
-                         nir_unpack_half_2x16_split_y(b, packed));
-      }
+      return nir_vec2(b,
+                      nir_unpack_half_2x16_split_x(b, packed),
+                      nir_unpack_half_2x16_split_y(b, packed));
    }
 
    case nir_op_pack_uvec2_to_uint: {
@@ -273,6 +264,9 @@ lower_alu_instr_width(nir_builder *b, nir_instr *instr, void *_data)
    case nir_op_pack_uvec4_to_uint: {
       assert(b->shader->options->lower_pack_snorm_4x8 ||
              b->shader->options->lower_pack_unorm_4x8);
+
+      if (b->shader->options->has_pack_32_4x8)
+         return nir_pack_32_4x8(b, nir_u2u8(b, nir_ssa_for_alu_src(b, alu, 0)));
 
       nir_def *byte = nir_extract_u8(b, nir_ssa_for_alu_src(b, alu, 0),
                                      nir_imm_int(b, 0));
@@ -499,6 +493,6 @@ bool
 nir_lower_alu_vec8_16_srcs(nir_shader *shader)
 {
    return nir_shader_instructions_pass(shader, lower_alu_vec8_16_src,
-      nir_metadata_block_index | nir_metadata_dominance,
+      nir_metadata_control_flow,
       NULL);
 }

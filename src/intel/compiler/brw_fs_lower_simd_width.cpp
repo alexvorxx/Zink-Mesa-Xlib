@@ -179,15 +179,37 @@ get_sampler_lowered_simd_width(const struct intel_device_info *devinfo,
    /* Calculate the total number of argument components that need to be passed
     * to the sampler unit.
     */
-   const unsigned num_payload_components =
-      inst->components_read(TEX_LOGICAL_SRC_COORDINATE) +
+   assert(inst->src[TEX_LOGICAL_SRC_GRAD_COMPONENTS].file == IMM);
+   const unsigned grad_components =
+      inst->src[TEX_LOGICAL_SRC_GRAD_COMPONENTS].ud;
+   assert(inst->src[TEX_LOGICAL_SRC_COORD_COMPONENTS].file == IMM);
+   const unsigned coord_components =
+      inst->src[TEX_LOGICAL_SRC_COORD_COMPONENTS].ud;
+
+   unsigned num_payload_components =
+      coord_components +
       inst->components_read(TEX_LOGICAL_SRC_SHADOW_C) +
       (implicit_lod ? 0 : inst->components_read(TEX_LOGICAL_SRC_LOD)) +
       inst->components_read(TEX_LOGICAL_SRC_LOD2) +
       inst->components_read(TEX_LOGICAL_SRC_SAMPLE_INDEX) +
       (inst->opcode == SHADER_OPCODE_TG4_OFFSET_LOGICAL ?
        inst->components_read(TEX_LOGICAL_SRC_TG4_OFFSET) : 0) +
-      inst->components_read(TEX_LOGICAL_SRC_MCS);
+      inst->components_read(TEX_LOGICAL_SRC_MCS) +
+      inst->components_read(TEX_LOGICAL_SRC_MIN_LOD);
+
+
+   if (inst->opcode == FS_OPCODE_TXB_LOGICAL && devinfo->ver >= 20) {
+      num_payload_components += 3 - coord_components;
+   } else if (inst->opcode == SHADER_OPCODE_TXD_LOGICAL &&
+            devinfo->verx10 >= 125 && devinfo->ver < 20) {
+      num_payload_components +=
+         3 - coord_components + (2 - grad_components) * 2;
+   } else {
+      num_payload_components += 4 - coord_components;
+      if (inst->opcode == SHADER_OPCODE_TXD_LOGICAL)
+         num_payload_components += (3 - grad_components) * 2;
+   }
+
 
    const unsigned simd_limit = reg_unit(devinfo) *
       (num_payload_components > MAX_SAMPLER_MESSAGE_SIZE / 2 ? 8 : 16);
@@ -254,7 +276,6 @@ brw_fs_get_lowered_simd_width(const fs_visitor *shader, const fs_inst *inst)
    case BRW_OPCODE_FBH:
    case BRW_OPCODE_FBL:
    case BRW_OPCODE_CBIT:
-   case BRW_OPCODE_SAD2:
    case BRW_OPCODE_MAD:
    case BRW_OPCODE_LRP:
    case BRW_OPCODE_ADD3:
@@ -371,7 +392,7 @@ brw_fs_get_lowered_simd_width(const fs_visitor *shader, const fs_inst *inst)
    case SHADER_OPCODE_TYPED_ATOMIC_LOGICAL:
    case SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL:
    case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
-      return 8;
+      return devinfo->ver < 20 ? 8 : inst->exec_size;
 
    case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL:
@@ -461,6 +482,12 @@ brw_fs_get_lowered_simd_width(const fs_visitor *shader, const fs_inst *inst)
 static inline bool
 needs_src_copy(const fs_builder &lbld, const fs_inst *inst, unsigned i)
 {
+   /* The indirectly indexed register stays the same even if we split the
+    * instruction.
+    */
+   if (inst->opcode == SHADER_OPCODE_MOV_INDIRECT && i == 0)
+      return false;
+
    return !(is_periodic(inst->src[i], lbld.dispatch_width()) ||
             (inst->components_read(i) == 1 &&
              lbld.dispatch_width() <= inst->exec_size)) ||
@@ -473,25 +500,31 @@ needs_src_copy(const fs_builder &lbld, const fs_inst *inst, unsigned i)
  * lbld.group() from the i-th source region of instruction \p inst and return
  * it as result in packed form.
  */
-static fs_reg
+static brw_reg
 emit_unzip(const fs_builder &lbld, fs_inst *inst, unsigned i)
 {
    assert(lbld.group() >= inst->group);
 
    /* Specified channel group from the source region. */
-   const fs_reg src = horiz_offset(inst->src[i], lbld.group() - inst->group);
+   const brw_reg src = horiz_offset(inst->src[i], lbld.group() - inst->group);
 
    if (needs_src_copy(lbld, inst, i)) {
-      const fs_reg tmp = lbld.vgrf(inst->src[i].type, inst->components_read(i));
+      const unsigned num_components = inst->components_read(i);
+      const brw_reg tmp = lbld.vgrf(inst->src[i].type, num_components);
 
-      for (unsigned k = 0; k < inst->components_read(i); ++k)
-         lbld.MOV(offset(tmp, lbld, k), offset(src, inst->exec_size, k));
+      brw_reg comps[num_components];
+      for (unsigned k = 0; k < num_components; ++k)
+         comps[k] = offset(src, inst->exec_size, k);
+      lbld.VEC(tmp, comps, num_components);
 
       return tmp;
-
-   } else if (is_periodic(inst->src[i], lbld.dispatch_width())) {
+   } else if (is_periodic(inst->src[i], lbld.dispatch_width()) ||
+              (inst->opcode == SHADER_OPCODE_MOV_INDIRECT && i == 0)) {
       /* The source is invariant for all dispatch_width-wide groups of the
        * original region.
+       *
+       * The src[0] of MOV_INDIRECT is invariant regardless of the execution
+       * size.
        */
       return inst->src[i];
 
@@ -552,7 +585,7 @@ needs_dst_copy(const fs_builder &lbld, const fs_inst *inst)
  * inserted using \p lbld_before and any copy instructions required for
  * zipping up the destination of \p inst will be inserted using \p lbld_after.
  */
-static fs_reg
+static brw_reg
 emit_zip(const fs_builder &lbld_before, const fs_builder &lbld_after,
          fs_inst *inst)
 {
@@ -563,7 +596,7 @@ emit_zip(const fs_builder &lbld_before, const fs_builder &lbld_after,
    const struct intel_device_info *devinfo = lbld_before.shader->devinfo;
 
    /* Specified channel group from the destination region. */
-   const fs_reg dst = horiz_offset(inst->dst, lbld_after.group() - inst->group);
+   const brw_reg dst = horiz_offset(inst->dst, lbld_after.group() - inst->group);
 
    if (!needs_dst_copy(lbld_after, inst)) {
       /* No need to allocate a temporary for the lowered instruction, just
@@ -578,7 +611,7 @@ emit_zip(const fs_builder &lbld_before, const fs_builder &lbld_after,
    const unsigned dst_size = (inst->size_written - residency_size) /
       inst->dst.component_size(inst->exec_size);
 
-   const fs_reg tmp = lbld_after.vgrf(inst->dst.type,
+   const brw_reg tmp = lbld_after.vgrf(inst->dst.type,
                                       dst_size + inst->has_sampler_residency());
 
    if (inst->predicate) {
@@ -606,9 +639,9 @@ emit_zip(const fs_builder &lbld_before, const fs_builder &lbld_after,
        * SIMD16 16 bit values.
        */
       const fs_builder rbld = lbld_after.exec_all().group(1, 0);
-      fs_reg local_res_reg = component(
+      brw_reg local_res_reg = component(
          retype(offset(tmp, lbld_before, dst_size), BRW_TYPE_UW), 0);
-      fs_reg final_res_reg =
+      brw_reg final_res_reg =
          retype(byte_offset(inst->dst,
                             inst->size_written - residency_size +
                             lbld_after.group() / 8), BRW_TYPE_UW);

@@ -412,7 +412,7 @@ struct pipe_h264_picture_desc
    struct
    {
       bool slice_info_present;
-      uint32_t slice_count;
+      uint8_t slice_type[128];
       uint32_t slice_data_size[128];
       uint32_t slice_data_offset[128];
       enum pipe_slice_buffer_placement_type slice_data_flag[128];
@@ -552,6 +552,20 @@ struct h265_slice_descriptor
    uint32_t    num_ctu_in_slice;
    /** slice type. */
    enum pipe_h265_slice_type slice_type;
+};
+
+struct pipe_enc_hdr_cll {
+   uint16_t max_cll;
+   uint16_t max_fall;
+};
+
+struct pipe_enc_hdr_mdcv {
+   uint16_t primary_chromaticity_x[3];
+   uint16_t primary_chromaticity_y[3];
+   uint16_t white_point_chromaticity_x;
+   uint16_t white_point_chromaticity_y;
+   uint32_t luminance_max;
+   uint32_t luminance_min;
 };
 
 typedef struct pipe_h264_enc_hrd_params
@@ -1002,11 +1016,11 @@ struct pipe_av1_enc_picture_desc
       uint32_t reduced_tx_set:1;
       uint32_t skip_mode_present:1;
       uint32_t long_term_reference:1;
+      uint32_t uniform_tile_spacing:1;
    };
    struct pipe_enc_quality_modes quality_modes;
    struct pipe_enc_intra_refresh intra_refresh;
    struct pipe_enc_roi roi;
-   uint32_t num_tiles_in_pic; /* [1, 32], */
    uint32_t tile_rows;
    uint32_t tile_cols;
    unsigned num_tile_groups;
@@ -1090,7 +1104,19 @@ struct pipe_av1_enc_picture_desc
       uint8_t temporal_id;
       uint8_t spatial_id;
    } tg_obu_header;
+
    enum pipe_video_feedback_metadata_type requested_metadata;
+
+   union {
+      struct {
+         uint32_t hdr_cll:1;
+         uint32_t hdr_mdcv:1;
+      };
+      uint32_t value;
+   } metadata_flags;
+
+   struct pipe_enc_hdr_cll metadata_hdr_cll;
+   struct pipe_enc_hdr_mdcv metadata_hdr_mdcv;
 };
 
 struct pipe_h265_sps

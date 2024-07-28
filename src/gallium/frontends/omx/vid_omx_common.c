@@ -77,8 +77,10 @@ struct vl_screen *omx_get_screen(void)
             goto error;
 
          omx_screen = vl_dri3_screen_create(omx_display, 0);
+#ifdef HAVE_X11_DRI2
          if (!omx_screen)
             omx_screen = vl_dri2_screen_create(omx_display, 0);
+#endif
          if (!omx_screen) {
             XCloseDisplay(omx_display);
             goto error;

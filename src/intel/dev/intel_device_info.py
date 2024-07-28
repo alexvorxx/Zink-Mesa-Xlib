@@ -132,7 +132,8 @@ Enum("intel_platform",
       EnumValue("INTEL_PLATFORM_MTL_H", group_end="MTL"),
       EnumValue("INTEL_PLATFORM_ARL_U", group_begin="ARL"),
       EnumValue("INTEL_PLATFORM_ARL_H", group_end="ARL"),
-      "INTEL_PLATFORM_LNL"
+      "INTEL_PLATFORM_LNL",
+      "INTEL_PLATFORM_BMG",
       ])
 
 Struct("intel_memory_class_instance",
@@ -142,21 +143,20 @@ Struct("intel_memory_class_instance",
 
 Enum("intel_device_info_mmap_mode",
       [EnumValue("INTEL_DEVICE_INFO_MMAP_MODE_UC", value=0),
-       "INTEL_DEVICE_INFO_MMAP_MODE_WC",
-       "INTEL_DEVICE_INFO_MMAP_MODE_WB"
+       EnumValue("INTEL_DEVICE_INFO_MMAP_MODE_WC"),
+       EnumValue("INTEL_DEVICE_INFO_MMAP_MODE_WB"),
+       EnumValue("INTEL_DEVICE_INFO_MMAP_MODE_XD",
+                 comment=dedent("""\
+                 Xe2+ only. Only supported in GPU side and used for displayable
+                 buffers."""))
        ])
-
-Enum("intel_device_info_coherency_mode",
-     [EnumValue("INTEL_DEVICE_INFO_COHERENCY_MODE_NONE", value=0),
-      EnumValue("INTEL_DEVICE_INFO_COHERENCY_MODE_1WAY", comment="CPU caches are snooped by GPU"),
-      EnumValue("INTEL_DEVICE_INFO_COHERENCY_MODE_2WAY",
-                comment="Fully coherent between GPU and CPU")
-      ])
 
 Struct("intel_device_info_pat_entry",
        [Member("uint8_t", "index"),
-        Member("intel_device_info_mmap_mode", "mmap"),
-        Member("intel_device_info_coherency_mode", "coherency")])
+        Member("intel_device_info_mmap_mode", "mmap",
+               comment=dedent("""\
+               This tells KMD what caching mode the CPU mapping should use.
+               It has nothing to do with any PAT cache modes."""))])
 
 Enum("intel_cmat_scope",
      [EnumValue("INTEL_CMAT_SCOPE_NONE", value=0),
@@ -227,6 +227,9 @@ Struct("intel_device_info_pat_desc",
 
         Member("intel_device_info_pat_entry", "scanout",
                comment="scanout and external BOs"),
+
+        Member("intel_device_info_pat_entry", "compressed",
+               comment="Only supported in Xe2, compressed + WC"),
 
         Member("intel_device_info_pat_entry", "writeback_incoherent",
                comment=("BOs without special needs, can be WB not coherent "
@@ -319,6 +322,13 @@ Struct("intel_device_info",
                non-centroid interpolation for unlit pixels, at the expense of two extra
                fragment shader instructions.""")),
 
+        Member("bool", "needs_null_push_constant_tbimr_workaround",
+               comment=dedent("""\
+               Whether the platform needs an undocumented workaround for a hardware bug
+               that affects draw calls with a pixel shader that has 0 push constant cycles
+               when TBIMR is enabled, which has been seen to lead to hangs.  To avoid the
+               issue we simply pad the push constant payload to be at least 1 register.""")),
+
         Member("bool", "is_adl_n", comment="We need this for ADL-N specific Wa_14014966230."),
 
         Member("unsigned", "num_slices",
@@ -368,6 +378,9 @@ Struct("intel_device_info",
 
         Member("unsigned", "num_thread_per_eu", compiler_field=True,
                comment="Number of threads per eu, varies between 4 and 8 between generations."),
+
+        Member("uint8_t", "grf_size",
+               comment="Size of a register from the EU GRF file in bytes."),
 
         Member("uint8_t", "slice_masks",
                comment="A bit mask of the slices available."),
@@ -454,10 +467,13 @@ Struct("intel_device_info",
                implementation details, the range of scratch ids may be larger than the
                number of subslices.""")),
 
+        Member("uint32_t", "max_scratch_size_per_thread", compiler_field=True),
+
         Member("intel_device_info_urb_desc", "urb"),
         Member("unsigned", "max_constant_urb_size_kb"),
         Member("unsigned", "mesh_max_constant_urb_size_kb"),
-        Member("unsigned", "engine_class_prefetch", array="INTEL_ENGINE_CLASS_COMPUTE + 1"),
+        Member("unsigned", "engine_class_prefetch", array="INTEL_ENGINE_CLASS_INVALID"),
+        Member("unsigned", "engine_class_supported_count", array="INTEL_ENGINE_CLASS_INVALID"),
         Member("unsigned", "mem_alignment"),
         Member("uint64_t", "timestamp_frequency"),
         Member("uint64_t", "aperture_bytes"),
@@ -465,7 +481,6 @@ Struct("intel_device_info",
         Member("int", "simulator_id"),
         Member("char", "name", array="INTEL_DEVICE_MAX_NAME_SIZE"),
         Member("bool", "no_hw"),
-        Member("bool", "apply_hwconfig"),
         Member("intel_device_info_mem_desc", "mem"),
         Member("intel_device_info_pat_desc", "pat"),
         Member("intel_cooperative_matrix_configuration",

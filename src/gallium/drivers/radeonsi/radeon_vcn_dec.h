@@ -21,6 +21,7 @@ struct rvcn_dec_dynamic_dpb_t2 {
    struct list_head list;
    uint8_t index;
    struct rvid_buffer dpb;
+   struct pipe_video_buffer *vbuf;
 };
 
 struct jpeg_registers {
@@ -121,6 +122,7 @@ struct radeon_decoder {
       } bts;
       uint8_t index;
       unsigned ref_size;
+      unsigned num_refs;
       uint8_t ref_list[16];
    } ref_codec;
 
@@ -136,6 +138,8 @@ struct radeon_decoder {
    unsigned njctx;
    struct pipe_fence_handle *prev_fence;
    struct pipe_fence_handle *destroy_fence;
+   bool dpb_use_surf;
+   uint64_t dpb_modifier;
 };
 
 void send_cmd_dec(struct radeon_decoder *dec, struct pipe_video_buffer *target,

@@ -65,8 +65,10 @@ struct ir3_compiler_options {
    int bindless_fb_read_descriptor;
    int bindless_fb_read_slot;
 
-   /* True if 16-bit descriptors are used for both 16-bit and 32-bit access. */
+   /* True if 16-bit descriptors are available. */
    bool storage_16bit;
+   /* True if 8-bit descriptors are available. */
+   bool storage_8bit;
 
   /* If base_vertex should be lowered in nir */
   bool lower_base_vertex;
@@ -208,8 +210,11 @@ struct ir3_compiler {
    /* Whether SSBOs have descriptors for sampling with ISAM */
    bool has_isam_ssbo;
 
-   /* True if 16-bit descriptors are used for both 16-bit and 32-bit access. */
-   bool storage_16bit;
+   /* Whether isam.v is supported to sample multiple components from SSBOs */
+   bool has_isam_v;
+
+   /* Whether isam/stib/ldib have immediate offsets. */
+   bool has_ssbo_imm_offsets;
 
    /* True if getfiberid, getlast.w8, brcst.active, and quad_shuffle
     * instructions are supported which are necessary to support
@@ -276,6 +281,15 @@ struct ir3_compiler {
     * register.
     */
    bool has_scalar_alu;
+
+   bool fs_must_have_non_zero_constlen_quirk;
+
+   /* On all generations that support scalar ALU, there is also a copy of the
+    * scalar ALU and some other HW units in HLSQ that can execute preambles
+    * before work is dispatched to the SPs, called "early preamble". We detect
+    * whether the shader can use early preamble in ir3.
+    */
+   bool has_early_preamble;
 };
 
 void ir3_compiler_destroy(struct ir3_compiler *compiler);
@@ -328,6 +342,8 @@ enum ir3_shader_debug {
    IR3_DBG_SHADER_INTERNAL = BITFIELD_BIT(14),
    IR3_DBG_FULLSYNC = BITFIELD_BIT(15),
    IR3_DBG_FULLNOP = BITFIELD_BIT(16),
+   IR3_DBG_NOEARLYPREAMBLE = BITFIELD_BIT(17),
+   IR3_DBG_NODESCPREFETCH = BITFIELD_BIT(18),
 
    /* MESA_DEBUG-only options: */
    IR3_DBG_SCHEDMSGS = BITFIELD_BIT(20),

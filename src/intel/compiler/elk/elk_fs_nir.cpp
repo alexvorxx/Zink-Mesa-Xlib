@@ -478,6 +478,9 @@ optimize_extract_to_float(nir_to_elk_state &ntb, nir_alu_instr *instr,
    const intel_device_info *devinfo = ntb.devinfo;
    const fs_builder &bld = ntb.bld;
 
+   /* No fast path for f16 or f64. */
+   assert(instr->op == nir_op_i2f32 || instr->op == nir_op_u2f32);
+
    if (!instr->src[0].src.ssa->parent_instr)
       return false;
 
@@ -487,16 +490,46 @@ optimize_extract_to_float(nir_to_elk_state &ntb, nir_alu_instr *instr,
    nir_alu_instr *src0 =
       nir_instr_as_alu(instr->src[0].src.ssa->parent_instr);
 
-   if (src0->op != nir_op_extract_u8 && src0->op != nir_op_extract_u16 &&
-       src0->op != nir_op_extract_i8 && src0->op != nir_op_extract_i16)
+   unsigned bytes;
+   bool is_signed;
+
+   switch (src0->op) {
+   case nir_op_extract_u8:
+   case nir_op_extract_u16:
+      bytes = src0->op == nir_op_extract_u8 ? 1 : 2;
+
+      /* i2f(extract_u8(a, b)) and u2f(extract_u8(a, b)) produce the same
+       * result. Ditto for extract_u16.
+       */
+      is_signed = false;
+      break;
+
+   case nir_op_extract_i8:
+   case nir_op_extract_i16:
+      bytes = src0->op == nir_op_extract_i8 ? 1 : 2;
+
+      /* The fast path can't handle u2f(extract_i8(a, b)) because the implicit
+       * sign extension of the extract_i8 is lost. For example,
+       * u2f(extract_i8(0x0000ff00, 1)) should produce 4294967295.0, but a
+       * fast path could either give 255.0 (by implementing the fast path as
+       * u2f(extract_u8(x))) or -1.0 (by implementing the fast path as
+       * i2f(extract_i8(x))). At one point in time, we incorrectly implemented
+       * the former.
+       */
+      if (instr->op != nir_op_i2f32)
+         return false;
+
+      is_signed = true;
+      break;
+
+   default:
       return false;
+   }
 
    unsigned element = nir_src_as_uint(src0->src[1].src);
 
    /* Element type to extract.*/
-   const elk_reg_type type = elk_int_type(
-      src0->op == nir_op_extract_u16 || src0->op == nir_op_extract_i16 ? 2 : 1,
-      src0->op == nir_op_extract_i16 || src0->op == nir_op_extract_i8);
+   const elk_reg_type type = elk_int_type(bytes, is_signed);
 
    elk_fs_reg op0 = get_nir_src(ntb, src0->src[0].src);
    op0.type = elk_type_for_nir_type(devinfo,
@@ -748,7 +781,6 @@ static void
 emit_fsign(nir_to_elk_state &ntb, const fs_builder &bld, const nir_alu_instr *instr,
            elk_fs_reg result, elk_fs_reg *op, unsigned fsign_src)
 {
-   elk_fs_visitor &s = ntb.s;
    const intel_device_info *devinfo = ntb.devinfo;
 
    elk_fs_inst *inst;
@@ -830,46 +862,7 @@ emit_fsign(nir_to_elk_state &ntb, const fs_builder &bld, const nir_alu_instr *in
 
       inst->predicate = ELK_PREDICATE_NORMAL;
    } else {
-      /* For doubles we do the same but we need to consider:
-       *
-       * - 2-src instructions can't operate with 64-bit immediates
-       * - The sign is encoded in the high 32-bit of each DF
-       * - We need to produce a DF result.
-       */
-
-      elk_fs_reg zero = s.vgrf(glsl_double_type());
-      bld.MOV(zero, elk_setup_imm_df(bld, 0.0));
-      bld.CMP(bld.null_reg_df(), op[0], zero, ELK_CONDITIONAL_NZ);
-
-      bld.MOV(result, zero);
-
-      elk_fs_reg r = subscript(result, ELK_REGISTER_TYPE_UD, 1);
-      bld.AND(r, subscript(op[0], ELK_REGISTER_TYPE_UD, 1),
-              elk_imm_ud(0x80000000u));
-
-      if (instr->op == nir_op_fsign) {
-         set_predicate(ELK_PREDICATE_NORMAL,
-                       bld.OR(r, r, elk_imm_ud(0x3ff00000u)));
-      } else {
-         if (devinfo->has_64bit_int) {
-            /* This could be done better in some cases.  If the scale is an
-             * immediate with the low 32-bits all 0, emitting a separate XOR and
-             * OR would allow an algebraic optimization to remove the OR.  There
-             * are currently zero instances of fsign(double(x))*IMM in shader-db
-             * or any test suite, so it is hard to care at this time.
-             */
-            elk_fs_reg result_int64 = retype(result, ELK_REGISTER_TYPE_UQ);
-            inst = bld.XOR(result_int64, result_int64,
-                           retype(op[1], ELK_REGISTER_TYPE_UQ));
-         } else {
-            elk_fs_reg result_int64 = retype(result, ELK_REGISTER_TYPE_UQ);
-            bld.MOV(subscript(result_int64, ELK_REGISTER_TYPE_UD, 0),
-                    subscript(op[1], ELK_REGISTER_TYPE_UD, 0));
-            bld.XOR(subscript(result_int64, ELK_REGISTER_TYPE_UD, 1),
-                    subscript(result_int64, ELK_REGISTER_TYPE_UD, 1),
-                    subscript(op[1], ELK_REGISTER_TYPE_UD, 1));
-         }
-      }
+      unreachable("Should have been lowered by nir_opt_algebraic.");
    }
 }
 
@@ -1617,16 +1610,10 @@ fs_nir_emit_alu(nir_to_elk_state &ntb, nir_alu_instr *instr,
    case nir_op_pack_half_2x16:
       unreachable("not reached: should be handled by lower_packing_builtins");
 
-   case nir_op_unpack_half_2x16_split_x_flush_to_zero:
-      assert(FLOAT_CONTROLS_DENORM_FLUSH_TO_ZERO_FP16 & execution_mode);
-      FALLTHROUGH;
    case nir_op_unpack_half_2x16_split_x:
       inst = bld.F16TO32(result, subscript(op[0], ELK_REGISTER_TYPE_HF, 0));
       break;
 
-   case nir_op_unpack_half_2x16_split_y_flush_to_zero:
-      assert(FLOAT_CONTROLS_DENORM_FLUSH_TO_ZERO_FP16 & execution_mode);
-      FALLTHROUGH;
    case nir_op_unpack_half_2x16_split_y:
       inst = bld.F16TO32(result, subscript(op[0], ELK_REGISTER_TYPE_HF, 1));
       break;
@@ -3761,10 +3748,8 @@ fs_nir_emit_fs_intrinsic(nir_to_elk_state &ntb,
    }
 
    case nir_intrinsic_demote:
-   case nir_intrinsic_discard:
    case nir_intrinsic_terminate:
    case nir_intrinsic_demote_if:
-   case nir_intrinsic_discard_if:
    case nir_intrinsic_terminate_if: {
       /* We track our discarded pixels in f0.1/f1.0.  By predicating on it, we
        * can update just the flag bits that aren't yet discarded.  If there's
@@ -3773,7 +3758,6 @@ fs_nir_emit_fs_intrinsic(nir_to_elk_state &ntb,
        */
       elk_fs_inst *cmp = NULL;
       if (instr->intrinsic == nir_intrinsic_demote_if ||
-          instr->intrinsic == nir_intrinsic_discard_if ||
           instr->intrinsic == nir_intrinsic_terminate_if) {
          nir_alu_instr *alu = nir_src_as_alu_instr(instr->src[0]);
 
@@ -3850,7 +3834,8 @@ fs_nir_emit_fs_intrinsic(nir_to_elk_state &ntb,
       break;
    }
 
-   case nir_intrinsic_load_input: {
+   case nir_intrinsic_load_input:
+   case nir_intrinsic_load_per_primitive_input: {
       /* In Fragment Shaders load_input is used either for flat inputs or
        * per-primitive inputs.
        */

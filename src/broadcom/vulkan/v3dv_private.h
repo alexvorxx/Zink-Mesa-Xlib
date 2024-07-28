@@ -67,11 +67,6 @@
 
 #include "util/detect_os.h"
 
-#if DETECT_OS_ANDROID
-#include <vndk/hardware_buffer.h>
-#include "util/u_gralloc/u_gralloc.h"
-#endif
-
 #include "v3dv_limits.h"
 
 #include "common/v3d_device_info.h"
@@ -120,12 +115,6 @@
 
 struct v3dv_instance;
 
-#ifdef USE_V3D_SIMULATOR
-#define using_v3d_simulator true
-#else
-#define using_v3d_simulator false
-#endif
-
 struct v3d_simulator_file;
 
 /* Minimum required by the Vulkan 1.1 spec */
@@ -150,7 +139,7 @@ struct v3dv_physical_device {
    dev_t primary_devid;
    dev_t render_devid;
 
-#if using_v3d_simulator
+#if USE_V3D_SIMULATOR
    uint32_t device_id;
 #endif
 
@@ -173,7 +162,9 @@ struct v3dv_physical_device {
 
    struct v3d_device_info devinfo;
 
+#if USE_V3D_SIMULATOR
    struct v3d_simulator_file *sim_file;
+#endif
 
    const struct v3d_compiler *compiler;
    uint32_t next_program_id;
@@ -240,6 +231,7 @@ struct v3dv_instance {
 
    bool pipeline_cache_enabled;
    bool default_pipeline_cache_enabled;
+   bool meta_cache_enabled;
 };
 
 /* FIXME: In addition to tracking the last job submitted by GPU queue (cl, csd,
@@ -599,10 +591,6 @@ struct v3dv_device {
 
    void *device_address_mem_ctx;
    struct util_dynarray device_address_bo_list; /* Array of struct v3dv_bo * */
-
-#if DETECT_OS_ANDROID
-   struct u_gralloc *gralloc;
-#endif
 };
 
 struct v3dv_device_memory {
@@ -740,15 +728,6 @@ struct v3dv_image {
     * This holds a tiled copy of the image we can use for that purpose.
     */
    struct v3dv_image *shadow;
-
-#if DETECT_OS_ANDROID
-   /* Image is backed by VK_ANDROID_native_buffer, */
-   bool is_native_buffer_memory;
-   /* Image is backed by VK_ANDROID_external_memory_android_hardware_buffer */
-   bool is_ahb;
-   VkImageDrmFormatModifierExplicitCreateInfoEXT *android_explicit_layout;
-   VkSubresourceLayout *android_plane_layouts;
-#endif
 };
 
 VkResult
@@ -837,7 +816,7 @@ struct v3dv_buffer {
    struct vk_object_base base;
 
    VkDeviceSize size;
-   VkBufferUsageFlags usage;
+   VkBufferUsageFlagBits2KHR usage;
    uint32_t alignment;
 
    struct v3dv_device_memory *mem;
@@ -1303,6 +1282,9 @@ struct v3dv_job {
    /* If this is a CL job, whether we should sync before binning */
    bool needs_bcl_sync;
 
+   /* If we have emitted a (default) point size packet in this job */
+   bool emitted_default_point_size;
+
    /* Job specs for CPU jobs */
    union {
       struct v3dv_reset_query_cpu_job_info          query_reset;
@@ -1403,6 +1385,7 @@ struct v3dv_draw_info {
 struct v3dv_vertex_binding {
    struct v3dv_buffer *buffer;
    VkDeviceSize offset;
+   VkDeviceSize size;
 };
 
 struct v3dv_descriptor_state {
@@ -1512,6 +1495,7 @@ struct v3dv_cmd_buffer_state {
    struct {
       VkBuffer buffer;
       VkDeviceSize offset;
+      VkDeviceSize size;
       uint8_t index_size;
    } index_buffer;
 
@@ -1616,7 +1600,6 @@ struct v3dv_cmd_buffer_state {
     * so we need to keep track of it in the cmd_buffer state
     */
    bool incompatible_ez_test;
-
 };
 
 void
@@ -1950,6 +1933,7 @@ struct v3dv_pipeline_stage {
    const struct vk_shader_module *module;
    const char *entrypoint;
    const VkSpecializationInfo *spec_info;
+   const VkShaderModuleCreateInfo *module_info;
 
    nir_shader *nir;
 
@@ -2075,11 +2059,11 @@ struct v3dv_descriptor_set_layout {
    /* Shader stages affected by this descriptor set */
    uint16_t shader_stages;
 
-   /* Number of descriptors in this descriptor set */
-   uint32_t descriptor_count;
-
    /* Number of dynamic offsets used by this descriptor set */
    uint16_t dynamic_offset_count;
+
+   /* Number of descriptors in this descriptor set */
+   uint32_t descriptor_count;
 
    /* Descriptor set layouts can be destroyed even if they are still being
     * used.
@@ -2247,7 +2231,7 @@ struct v3dv_pipeline {
    struct v3dv_device *device;
 
    VkShaderStageFlags active_stages;
-   VkPipelineCreateFlags flags;
+   VkPipelineCreateFlagBits2KHR flags;
 
    struct v3dv_render_pass *pass;
    struct v3dv_subpass *subpass;
@@ -2286,14 +2270,10 @@ struct v3dv_pipeline {
    bool sample_rate_shading;
    uint32_t sample_mask;
 
-   bool primitive_restart;
    bool negative_one_to_one;
 
-   /* Accessed by binding. So vb[binding]->stride is the stride of the vertex
-    * array with such binding
-    */
+   /* Indexed by vertex binding. */
    struct v3dv_pipeline_vertex_binding {
-      uint32_t stride;
       uint32_t instance_divisor;
    } vb[MAX_VBS];
    uint32_t vb_count;
@@ -2349,12 +2329,6 @@ struct v3dv_pipeline {
       uint32_t color_write_masks;
    } blend;
 
-   /* Depth bias */
-   struct {
-      bool enabled;
-      bool is_z16;
-   } depth_bias;
-
    struct {
       void *mem_ctx;
       struct util_dynarray data; /* Array of v3dv_pipeline_executable_data */
@@ -2396,13 +2370,10 @@ v3dv_cmd_buffer_get_descriptor_state(struct v3dv_cmd_buffer *cmd_buffer,
       return &cmd_buffer->state.gfx.descriptor_state;
 }
 
-const nir_shader_compiler_options *v3dv_pipeline_get_nir_options(void);
+const nir_shader_compiler_options *v3dv_pipeline_get_nir_options(const struct v3d_device_info *devinfo);
 
-uint32_t v3dv_physical_device_vendor_id(struct v3dv_physical_device *dev);
-uint32_t v3dv_physical_device_device_id(struct v3dv_physical_device *dev);
-
-#define v3dv_debug_ignored_stype(sType) \
-   mesa_logd("%s: ignored VkStructureType %u:%s\n\n", __func__, (sType), vk_StructureType_to_str(sType))
+uint32_t v3dv_physical_device_vendor_id(const struct v3dv_physical_device *dev);
+uint32_t v3dv_physical_device_device_id(const struct v3dv_physical_device *dev);
 
 const uint8_t *v3dv_get_format_swizzle(struct v3dv_device *device, VkFormat f,
                                        uint8_t plane);
@@ -2593,7 +2564,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_sampler, base, VkSampler,
 static inline int
 v3dv_ioctl(int fd, unsigned long request, void *arg)
 {
-   if (using_v3d_simulator)
+   if (USE_V3D_SIMULATOR)
       return v3d_simulator_ioctl(fd, request, arg);
    else
       return drmIoctl(fd, request, arg);
@@ -2652,24 +2623,6 @@ u64_compare(const void *key1, const void *key2)
    v3d_X_thing;                                       \
 })
 
-/* Helper to get hw-specific macro values */
-#define V3DV_X(device, thing) ({                                \
-   __typeof(V3D42_##thing) V3D_X_THING;                         \
-   switch (device->devinfo.ver) {                               \
-   case 42:                                                     \
-      V3D_X_THING = V3D42_##thing;                              \
-      break;                                                    \
-   case 71:                                                     \
-      V3D_X_THING = V3D71_##thing;                              \
-      break;                                                    \
-   default:                                                     \
-      unreachable("Unsupported hardware generation");           \
-   }                                                            \
-   V3D_X_THING;                                                 \
-})
-
-
-
 /* v3d_macros from common requires v3dX and V3DX definitions. Below we need to
  * define v3dX for each version supported, because when we compile code that
  * is not version-specific, all version-specific macros need to be already
@@ -2706,20 +2659,5 @@ v3dv_compute_ez_state(struct vk_dynamic_graphics_state *dyn,
                       bool *incompatible_ez_test);
 
 uint32_t v3dv_pipeline_primitive(VkPrimitiveTopology vk_prim);
-
-#if DETECT_OS_ANDROID
-VkResult
-v3dv_gralloc_to_drm_explicit_layout(struct u_gralloc *gralloc,
-                                    struct u_gralloc_buffer_handle *in_hnd,
-                                    VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
-                                    VkSubresourceLayout *out_layouts,
-                                    int max_planes);
-
-VkResult
-v3dv_import_native_buffer_fd(VkDevice device_h,
-                             int dma_buf,
-                             const VkAllocationCallbacks *alloc,
-                             VkImage image_h);
-#endif /* DETECT_OS_ANDROID */
 
 #endif /* V3DV_PRIVATE_H */

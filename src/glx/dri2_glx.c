@@ -799,41 +799,12 @@ dri2GetSwapInterval(__GLXDRIdrawable *pdraw)
   return priv->swap_interval;
 }
 
-static void
-driSetBackgroundContext(void *loaderPrivate)
-{
-   __glXSetCurrentContext(loaderPrivate);
-}
-
-static GLboolean
-driIsThreadSafe(void *loaderPrivate)
-{
-   struct glx_context *pcp = (struct glx_context *) loaderPrivate;
-   /* Check Xlib is running in thread safe mode
-    *
-    * 'lock_fns' is the XLockDisplay function pointer of the X11 display 'dpy'.
-    * It will be NULL if XInitThreads wasn't called.
-    */
-   return pcp->psc->dpy->lock_fns != NULL;
-}
-
 static const __DRIdri2LoaderExtension dri2LoaderExtension = {
    .base = { __DRI_DRI2_LOADER, 3 },
 
    .getBuffers              = dri2GetBuffers,
    .flushFrontBuffer        = dri2FlushFrontBuffer,
    .getBuffersWithFormat    = dri2GetBuffersWithFormat,
-};
-
-const __DRIuseInvalidateExtension dri2UseInvalidate = {
-   .base = { __DRI_USE_INVALIDATE, 1 }
-};
-
-const __DRIbackgroundCallableExtension driBackgroundCallable = {
-   .base = { __DRI_BACKGROUND_CALLABLE, 2 },
-
-   .setBackgroundContext    = driSetBackgroundContext,
-   .isThreadSafe            = driIsThreadSafe,
 };
 
 _X_HIDDEN void
@@ -1001,7 +972,7 @@ static const struct glx_screen_vtable dri2_screen_vtable = {
 };
 
 static struct glx_screen *
-dri2CreateScreen(int screen, struct glx_display * priv, bool implicit)
+dri2CreateScreen(int screen, struct glx_display * priv, bool driver_name_is_inferred)
 {
    const __DRIconfig **driver_configs;
    const __DRIextension **extensions;
@@ -1058,7 +1029,7 @@ dri2CreateScreen(int screen, struct glx_display * priv, bool implicit)
    }
    psc->driverName = driverName;
 
-   extensions = driOpenDriver(driverName, &psc->driver);
+   extensions = driOpenDriver(driverName, driver_name_is_inferred);
    if (extensions == NULL)
       goto handle_error;
 
@@ -1074,7 +1045,7 @@ dri2CreateScreen(int screen, struct glx_display * priv, bool implicit)
        psc->dri2->createNewScreen3(screen, psc->fd,
                                    (const __DRIextension **)&pdp->loader_extensions[0],
                                    extensions,
-                                   &driver_configs, implicit, psc);
+                                   &driver_configs, driver_name_is_inferred, psc);
 
    if (psc->driScreen == NULL) {
       ErrorMessageF("glx: failed to create dri2 screen\n");
@@ -1178,8 +1149,6 @@ handle_error:
    psc->driScreen = NULL;
    if (psc->fd >= 0)
       close(psc->fd);
-   if (psc->driver)
-      dlclose(psc->driver);
 
    free(deviceName);
    glx_screen_cleanup(&psc->base);

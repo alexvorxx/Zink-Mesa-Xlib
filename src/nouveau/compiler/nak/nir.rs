@@ -33,6 +33,7 @@ macro_rules! offset_of {
 pub struct ExecListIter<'a, T> {
     n: &'a exec_node,
     offset: usize,
+    rev: bool,
     _marker: PhantomData<T>,
 }
 
@@ -41,14 +42,26 @@ impl<'a, T> ExecListIter<'a, T> {
         Self {
             n: &l.head_sentinel,
             offset: offset,
+            rev: false,
             _marker: PhantomData,
         }
     }
 
-    fn at(n: &'a exec_node, offset: usize) -> Self {
+    #[allow(dead_code)]
+    fn new_rev(l: &'a exec_list, offset: usize) -> Self {
+        Self {
+            n: &l.tail_sentinel,
+            offset: offset,
+            rev: true,
+            _marker: PhantomData,
+        }
+    }
+
+    fn at(n: &'a exec_node, offset: usize, rev: bool) -> Self {
         Self {
             n,
             offset: offset,
+            rev: rev,
             _marker: PhantomData,
         }
     }
@@ -58,7 +71,12 @@ impl<'a, T: 'a> Iterator for ExecListIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.n = unsafe { &*self.n.next };
+        if self.rev {
+            self.n = unsafe { &*self.n.prev };
+        } else {
+            self.n = unsafe { &*self.n.next };
+        }
+
         if self.n.next.is_null() {
             None
         } else {
@@ -240,6 +258,21 @@ pub trait NirAluInfo {
 impl NirAluInfo for nir_op_info {
     fn name(&self) -> &'static str {
         unsafe { CStr::from_ptr(self.name).to_str().expect("Invalid UTF-8") }
+    }
+}
+
+pub trait NirAluSrc {
+    fn comp_as_int(&self, comp: u8) -> Option<i64>;
+    fn comp_as_uint(&self, comp: u8) -> Option<u64>;
+}
+
+impl NirAluSrc for nir_alu_src {
+    fn comp_as_int(&self, comp: u8) -> Option<i64> {
+        self.src.comp_as_int(self.swizzle[usize::from(comp)])
+    }
+
+    fn comp_as_uint(&self, comp: u8) -> Option<u64> {
+        self.src.comp_as_uint(self.swizzle[usize::from(comp)])
     }
 }
 
@@ -452,6 +485,7 @@ pub trait NirInstr {
     fn as_load_const(&self) -> Option<&nir_load_const_instr>;
     fn as_undef(&self) -> Option<&nir_undef_instr>;
     fn as_phi(&self) -> Option<&nir_phi_instr>;
+    fn def(&self) -> Option<&nir_def>;
 }
 
 impl NirInstr for nir_instr {
@@ -517,12 +551,20 @@ impl NirInstr for nir_instr {
             None
         }
     }
+
+    fn def(&self) -> Option<&nir_def> {
+        unsafe {
+            let def = nir_instr_def(self as *const _ as *mut _);
+            NonNull::new(def).map(|d| d.as_ref())
+        }
+    }
 }
 
 pub trait NirBlock {
     fn iter_instr_list(&self) -> ExecListIter<nir_instr>;
     fn successors(&self) -> [Option<&nir_block>; 2];
     fn following_if(&self) -> Option<&nir_if>;
+    fn following_loop(&self) -> Option<&nir_loop>;
 }
 
 impl NirBlock for nir_block {
@@ -541,6 +583,11 @@ impl NirBlock for nir_block {
         let self_ptr = self as *const _ as *mut _;
         unsafe { nir_block_get_following_if(self_ptr).as_ref() }
     }
+
+    fn following_loop(&self) -> Option<&nir_loop> {
+        let self_ptr = self as *const _ as *mut _;
+        unsafe { nir_block_get_following_loop(self_ptr).as_ref() }
+    }
 }
 
 pub trait NirIf {
@@ -548,6 +595,7 @@ pub trait NirIf {
     fn first_else_block(&self) -> &nir_block;
     fn iter_then_list(&self) -> ExecListIter<nir_cf_node>;
     fn iter_else_list(&self) -> ExecListIter<nir_cf_node>;
+    fn following_block(&self) -> &nir_block;
 }
 
 impl NirIf for nir_if {
@@ -563,15 +611,23 @@ impl NirIf for nir_if {
     fn iter_else_list(&self) -> ExecListIter<nir_cf_node> {
         ExecListIter::new(&self.else_list, offset_of!(nir_cf_node, node))
     }
+    fn following_block(&self) -> &nir_block {
+        self.cf_node.next().unwrap().as_block().unwrap()
+    }
 }
 
 pub trait NirLoop {
     fn iter_body(&self) -> ExecListIter<nir_cf_node>;
+    fn following_block(&self) -> &nir_block;
 }
 
 impl NirLoop for nir_loop {
     fn iter_body(&self) -> ExecListIter<nir_cf_node> {
         ExecListIter::new(&self.body, offset_of!(nir_cf_node, node))
+    }
+
+    fn following_block(&self) -> &nir_block {
+        self.cf_node.next().unwrap().as_block().unwrap()
     }
 }
 
@@ -580,6 +636,7 @@ pub trait NirCfNode {
     fn as_if(&self) -> Option<&nir_if>;
     fn as_loop(&self) -> Option<&nir_loop>;
     fn next(&self) -> Option<&nir_cf_node>;
+    fn prev(&self) -> Option<&nir_cf_node>;
 }
 
 impl NirCfNode for nir_cf_node {
@@ -609,7 +666,13 @@ impl NirCfNode for nir_cf_node {
 
     fn next(&self) -> Option<&nir_cf_node> {
         let mut iter: ExecListIter<nir_cf_node> =
-            ExecListIter::at(&self.node, offset_of!(nir_cf_node, node));
+            ExecListIter::at(&self.node, offset_of!(nir_cf_node, node), false);
+        iter.next()
+    }
+
+    fn prev(&self) -> Option<&nir_cf_node> {
+        let mut iter: ExecListIter<nir_cf_node> =
+            ExecListIter::at(&self.node, offset_of!(nir_cf_node, node), true);
         iter.next()
     }
 }

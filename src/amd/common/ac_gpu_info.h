@@ -85,6 +85,8 @@ struct radeon_info {
    bool has_clear_state;
    bool has_distributed_tess;
    bool has_dcc_constant_encode;
+   bool has_tc_compatible_htile;
+   bool has_etc_support;
    bool has_rbplus;     /* if RB+ registers exist */
    bool rbplus_allowed; /* if RB+ is allowed */
    bool has_load_ctx_reg_pkt;
@@ -118,8 +120,14 @@ struct radeon_info {
    bool has_taskmesh_indirect0_bug;
    bool sdma_supports_sparse;      /* Whether SDMA can safely access sparse resources. */
    bool sdma_supports_compression; /* Whether SDMA supports DCC and HTILE. */
+   bool has_set_context_pairs;
    bool has_set_context_pairs_packed;
+   bool has_set_sh_pairs;
    bool has_set_sh_pairs_packed;
+   bool has_set_uconfig_pairs;
+   bool needs_llvm_wait_wa; /* True if the chip needs to workarounds based on s_waitcnt_deptr but
+                             * the LLVM version doesn't work with multiparts shaders.
+                             */
 
    /* conformant_trunc_coord is equal to TA_CNTL2.TRUNCATE_COORD_MODE, which exists since gfx11.
     *
@@ -167,6 +175,7 @@ struct radeon_info {
    uint32_t max_tcc_blocks;
    uint32_t tcc_cache_line_size;
    bool tcc_rb_non_coherent; /* whether L2 inv is needed for render->texture transitions */
+   bool cp_sdma_ge_use_system_memory_scope;
    unsigned pc_lines;
    uint32_t lds_size_per_workgroup;
    uint32_t lds_alloc_granularity;
@@ -174,6 +183,7 @@ struct radeon_info {
 
    /* CP info. */
    bool gfx_ib_pad_with_type2;
+   bool has_cp_dma;
    uint32_t me_fw_version;
    uint32_t me_fw_feature;
    uint32_t mec_fw_version;
@@ -209,7 +219,9 @@ struct radeon_info {
    uint32_t max_submitted_ibs[AMD_NUM_IP_TYPES];
    bool is_amdgpu;
    bool has_userptr;
+   bool has_syncobj;
    bool has_timeline_syncobj;
+   bool has_fence_to_handle;
    bool has_local_buffers;
    bool has_bo_metadata;
    bool has_eqaa_surface_allocator;
@@ -258,7 +270,15 @@ struct radeon_info {
    uint32_t max_vgpr_alloc;
    uint32_t wave64_vgpr_alloc_granularity;
    uint32_t max_scratch_waves;
-   uint32_t attribute_ring_size_per_se;
+   bool has_scratch_base_registers;
+
+   /* Pos, prim, and attribute rings. */
+   uint32_t attribute_ring_size_per_se;   /* GFX11+ */
+   uint32_t pos_ring_size_per_se;         /* GFX12+ */
+   uint32_t prim_ring_size_per_se;        /* GFX12+ */
+   uint32_t pos_ring_offset;              /* GFX12+ */
+   uint32_t prim_ring_offset;             /* GFX12+ */
+   uint32_t total_attribute_pos_prim_ring_size; /* GFX11+ */
 
    /* Render backends (color + depth blocks). */
    uint32_t r300_num_gb_pipes;

@@ -163,6 +163,10 @@ struct _egl_driver {
                                       struct wl_resource *buffer,
                                       EGLint attribute, EGLint *value);
 
+   /* for EGL_WL_create_wayland_buffer_from_image */
+   struct wl_buffer *(*CreateWaylandBufferFromImageWL)(_EGLDisplay *disp,
+                                                       _EGLImage *img);
+
    /* for EGL_EXT_swap_buffers_with_damage */
    EGLBoolean (*SwapBuffersWithDamageEXT)(_EGLDisplay *disp,
                                           _EGLSurface *surface,
@@ -220,6 +224,14 @@ struct _egl_driver {
    void (*SetBlobCacheFuncsANDROID)(_EGLDisplay *disp,
                                     EGLSetBlobFuncANDROID set,
                                     EGLGetBlobFuncANDROID get);
+
+   /* for EGL_EXT_surface_compression */
+   EGLBoolean (*QuerySupportedCompressionRatesEXT)(_EGLDisplay *disp,
+                                                   _EGLConfig *config,
+                                                   const EGLAttrib *attr_list,
+                                                   EGLint *rates,
+                                                   EGLint rate_size,
+                                                   EGLint *num_rates);
 };
 
 #ifdef __cplusplus

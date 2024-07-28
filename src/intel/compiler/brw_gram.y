@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include "brw_asm.h"
+#include "brw_asm_internal.h"
 
 #undef yyerror
 #ifdef YYBYACC
@@ -93,17 +93,17 @@ isPowerofTwo(unsigned int x)
 static struct brw_reg
 set_direct_src_operand(struct brw_reg *reg, int type)
 {
-	return brw_reg(reg->file,
-		       reg->nr,
-		       reg->subnr,
-		       0,		// negate
-		       0,		// abs
-		       type,
-		       0,		// vstride
-		       0,		// width
-		       0,		// hstride
-		       BRW_SWIZZLE_NOOP,
-		       WRITEMASK_XYZW);
+	return brw_make_reg(reg->file,
+                            reg->nr,
+                            reg->subnr,
+                            0,		// negate
+                            0,		// abs
+                            type,
+                            0,		// vstride
+                            0,		// width
+                            0,		// hstride
+                            BRW_SWIZZLE_NOOP,
+                            WRITEMASK_XYZW);
 }
 
 static void
@@ -195,12 +195,6 @@ i965_asm_binary_instruction(int opcode,
 		break;
 	case BRW_OPCODE_ROR:
 		brw_ROR(p, dest, src0, src1);
-		break;
-	case BRW_OPCODE_SAD2:
-		fprintf(stderr, "Opcode BRW_OPCODE_SAD2 unhandled\n");
-		break;
-	case BRW_OPCODE_SADA2:
-		fprintf(stderr, "Opcode BRW_OPCODE_SADA2 unhandled\n");
 		break;
 	case BRW_OPCODE_SUBB:
 		brw_SUBB(p, dest, src0, src1);
@@ -302,8 +296,10 @@ i965_asm_set_instruction_options(struct brw_codegen *p,
 	}
 	brw_inst_set_debug_control(p->devinfo, brw_last_inst,
 			           options.debug_control);
-	brw_inst_set_acc_wr_control(p->devinfo, brw_last_inst,
-				    options.acc_wr_control);
+	if (p->devinfo->ver < 20) {
+		brw_inst_set_acc_wr_control(p->devinfo, brw_last_inst,
+					    options.acc_wr_control);
+	}
 	brw_inst_set_cmpt_control(p->devinfo, brw_last_inst,
 				  options.compaction);
 }
@@ -389,7 +385,7 @@ add_label(struct brw_codegen *p, const char* label_name, enum instr_label_type t
 %token <integer> OR
 %token <integer> PLN POP PUSH
 %token <integer> RET RNDD RNDE RNDU RNDZ ROL ROR
-%token <integer> SAD2 SADA2 SEL SENDS SENDSC SHL SHR SMOV SUBB SYNC
+%token <integer> SEL SENDS SENDSC SHL SHR SMOV SUBB SYNC
 %token <integer> SEND_GFX4 SENDC_GFX4 SEND_GFX12 SENDC_GFX12
 %token <integer> WAIT WHILE
 %token <integer> XOR
@@ -563,6 +559,10 @@ add_instruction_option(struct options *options, struct instoption opt)
 		}
 		return;
 	}
+	if (opt.type == INSTOPTION_CHAN_OFFSET) {
+		options->chan_offset = opt.uint_value;
+		return;
+	}
 	switch (opt.uint_value) {
 	case ALIGN1:
 		options->access_mode = BRW_ALIGN_1;
@@ -599,46 +599,6 @@ add_instruction_option(struct options *options, struct instoption opt)
 		break;
 	case EOT:
 		options->end_of_thread = true;
-		break;
-	/* TODO : Figure out how to set instruction group and get rid of
-	 * code below
-	 */
-	case QTR_2Q:
-		options->qtr_ctrl = BRW_COMPRESSION_2NDHALF;
-		break;
-	case QTR_3Q:
-		options->qtr_ctrl = BRW_COMPRESSION_COMPRESSED;
-		break;
-	case QTR_4Q:
-		options->qtr_ctrl = 3;
-		break;
-	case QTR_2H:
-		options->qtr_ctrl = BRW_COMPRESSION_COMPRESSED;
-		break;
-	case QTR_2N:
-		options->qtr_ctrl = BRW_COMPRESSION_NONE;
-		options->nib_ctrl = true;
-		break;
-	case QTR_3N:
-		options->qtr_ctrl = BRW_COMPRESSION_2NDHALF;
-		break;
-	case QTR_4N:
-		options->qtr_ctrl = BRW_COMPRESSION_2NDHALF;
-		options->nib_ctrl = true;
-		break;
-	case QTR_5N:
-		options->qtr_ctrl = BRW_COMPRESSION_COMPRESSED;
-		break;
-	case QTR_6N:
-		options->qtr_ctrl = BRW_COMPRESSION_COMPRESSED;
-		options->nib_ctrl = true;
-		break;
-	case QTR_7N:
-		options->qtr_ctrl = 3;
-		break;
-	case QTR_8N:
-		options->qtr_ctrl = 3;
-		options->nib_ctrl = true;
 		break;
 	}
 }
@@ -714,12 +674,7 @@ unaryinstruction:
 		}
 		brw_inst_set_saturate(p->devinfo, brw_last_inst, $3);
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $5);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $8.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $8.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $8.chan_offset);
 	}
 	;
 
@@ -758,12 +713,7 @@ binaryinstruction:
 
 		brw_inst_set_saturate(p->devinfo, brw_last_inst, $3);
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $5);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $9.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $9.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $9.chan_offset);
 
 		brw_pop_insn_state(p);
 	}
@@ -783,8 +733,6 @@ binaryopcodes:
 	| PLN
 	| ROL
 	| ROR
-	| SAD2
-	| SADA2
 	| SUBB
 	;
 
@@ -810,12 +758,7 @@ binaryaccinstruction:
 
 		brw_inst_set_saturate(p->devinfo, brw_last_inst, $3);
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $5);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $9.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $9.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $9.chan_offset);
 	}
 	;
 
@@ -842,13 +785,7 @@ mathinstruction:
 		i965_asm_set_instruction_options(p, $9);
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $5);
 		brw_inst_set_saturate(p->devinfo, brw_last_inst, $3);
-		// TODO: set instruction group instead
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $9.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $9.nib_ctrl);
-
+		brw_inst_set_group(p->devinfo, brw_last_inst, $9.chan_offset);
 		brw_pop_insn_state(p);
 	}
 	;
@@ -899,12 +836,7 @@ ternaryinstruction:
 
 		brw_inst_set_saturate(p->devinfo, brw_last_inst, $3);
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $5);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $10.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $10.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $10.chan_offset);
 	}
 	;
 
@@ -951,12 +883,7 @@ sendinstruction:
 					    BRW_TYPE_UD);
 		brw_inst_set_sfid(p->devinfo, brw_last_inst, $7);
 		brw_inst_set_eot(p->devinfo, brw_last_inst, $9.end_of_thread);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $9.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $9.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $9.chan_offset);
 
 		brw_pop_insn_state(p);
 	}
@@ -971,12 +898,7 @@ sendinstruction:
 		brw_inst_set_bits(brw_last_inst, 127, 96, $7);
 		brw_inst_set_sfid(p->devinfo, brw_last_inst, $8);
 		brw_inst_set_eot(p->devinfo, brw_last_inst, $10.end_of_thread);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $10.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-				         $10.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $10.chan_offset);
 
 		brw_pop_insn_state(p);
 	}
@@ -1005,12 +927,7 @@ sendinstruction:
 
 		brw_inst_set_sfid(p->devinfo, brw_last_inst, $9);
 		brw_inst_set_eot(p->devinfo, brw_last_inst, $11.end_of_thread);
-		// TODO: set instruction group instead of qtr and nib ctrl
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst,
-				         $11.qtr_ctrl);
-
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst,
-					 $11.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $11.chan_offset);
 
 		if (p->devinfo->verx10 >= 125 && $10.ex_bso) {
 			brw_inst_set_send_ex_bso(p->devinfo, brw_last_inst, 1);
@@ -1251,8 +1168,7 @@ syncinstruction:
 		brw_inst_set_exec_size(p->devinfo, brw_last_inst, $4);
 		brw_set_src0(p, brw_last_inst, $5);
 		brw_inst_set_eot(p->devinfo, brw_last_inst, $6.end_of_thread);
-		brw_inst_set_qtr_control(p->devinfo, brw_last_inst, $6.qtr_ctrl);
-		brw_inst_set_nib_control(p->devinfo, brw_last_inst, $6.nib_ctrl);
+		brw_inst_set_group(p->devinfo, brw_last_inst, $6.chan_offset);
 
 		brw_pop_insn_state(p);
 	}
@@ -1479,17 +1395,17 @@ directsrcaccoperand:
 srcarcoperandex:
 	srcarcoperandex_typed region reg_type
 	{
-		$$ = brw_reg($1.file,
-			     $1.nr,
-			     $1.subnr,
-			     0,
-			     0,
-			     $3,
-			     $2.vstride,
-			     $2.width,
-			     $2.hstride,
-			     BRW_SWIZZLE_NOOP,
-			     WRITEMASK_XYZW);
+		$$ = brw_make_reg($1.file,
+			          $1.nr,
+			          $1.subnr,
+			          0,
+			          0,
+			          $3,
+			          $2.vstride,
+			          $2.width,
+			          $2.hstride,
+			          BRW_SWIZZLE_NOOP,
+			          WRITEMASK_XYZW);
 	}
 	| nullreg region reg_type
 	{
@@ -1516,17 +1432,17 @@ srcarcoperandex_typed:
 indirectsrcoperand:
 	negate abs indirectgenreg indirectregion swizzle reg_type
 	{
-		$$ = brw_reg($3.file,
-			     0,
-			     $3.subnr,
-			     $1,  // negate
-			     $2,  // abs
-			     $6,
-			     $4.vstride,
-			     $4.width,
-			     $4.hstride,
-			     $5,
-			     WRITEMASK_X);
+		$$ = brw_make_reg($3.file,
+			          0,
+			          $3.subnr,
+			          $1,  // negate
+			          $2,  // abs
+			          $6,
+			          $4.vstride,
+			          $4.width,
+			          $4.hstride,
+			          $5,
+			          WRITEMASK_X);
 
 		$$.address_mode = BRW_ADDRESS_REGISTER_INDIRECT_REGISTER;
 		// brw_reg set indirect_offset to 0 so set it to valid value
@@ -1544,17 +1460,17 @@ directgenreg_list:
 directsrcoperand:
 	negate abs directgenreg_list region swizzle reg_type
 	{
-		$$ = brw_reg($3.file,
-			     $3.nr,
-			     $3.subnr,
-			     $1,
-			     $2,
-			     $6,
-			     $4.vstride,
-			     $4.width,
-			     $4.hstride,
-			     $5,
-			     WRITEMASK_X);
+		$$ = brw_make_reg($3.file,
+			          $3.nr,
+			          $3.subnr,
+			          $1,
+			          $2,
+			          $6,
+			          $4.vstride,
+			          $4.width,
+			          $4.hstride,
+			          $5,
+			          WRITEMASK_X);
 	}
 	| srcarcoperandex
 	;
@@ -1586,7 +1502,7 @@ directgenreg:
 	{
 		memset(&$$, '\0', sizeof($$));
 		$$.file = BRW_GENERAL_REGISTER_FILE;
-		$$.nr = $1;
+		$$.nr = $1 * reg_unit(p->devinfo);
 		$$.subnr = $2;
 	}
 	;
@@ -2152,7 +2068,13 @@ depinfo:
 instoption:
 	ALIGN1 	        { $$.type = INSTOPTION_FLAG; $$.uint_value = ALIGN1;}
 	| ALIGN16 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = ALIGN16; }
-	| ACCWREN 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = ACCWREN; }
+	| ACCWREN
+	{
+		if (p->devinfo->ver >= 20)
+			error(&@1, "AccWrEnable not supported in Xe2+\n");
+		$$.type = INSTOPTION_FLAG;
+		$$.uint_value = ACCWREN;
+	}
 	| BREAKPOINT 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = BREAKPOINT; }
 	| NODDCLR 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = NODDCLR; }
 	| NODDCHK 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = NODDCHK; }
@@ -2162,17 +2084,38 @@ instoption:
 	| ATOMIC 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = ATOMIC; }
 	| CMPTCTRL 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = CMPTCTRL; }
 	| WECTRL 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = WECTRL; }
-	| QTR_2Q 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_2Q; }
-	| QTR_3Q 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_3Q; }
-	| QTR_4Q 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_4Q; }
-	| QTR_2H 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_2H; }
-	| QTR_2N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_2N; }
-	| QTR_3N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_3N; }
-	| QTR_4N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_4N; }
-	| QTR_5N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_5N; }
-	| QTR_6N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_6N; }
-	| QTR_7N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_7N; }
-	| QTR_8N 	{ $$.type = INSTOPTION_FLAG; $$.uint_value = QTR_8N; }
+	| QTR_2Q 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 8; }
+	| QTR_3Q 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 16; }
+	| QTR_4Q 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 24; }
+	| QTR_2H 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 16; }
+	| QTR_2N
+        {
+		if (p->devinfo->ver >= 20)
+			error(&@1, "Channel offset must be multiple of 8 in Xe2+\n");
+		$$.type = INSTOPTION_CHAN_OFFSET;
+		$$.uint_value = 4;
+	}
+	| QTR_3N 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 8; }
+	| QTR_4N
+	{
+		if (p->devinfo->ver >= 20)
+			error(&@1, "Channel offset must be multiple of 8 in Xe2+\n");
+		$$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 12;
+	}
+	| QTR_5N 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 16; }
+	| QTR_6N
+	{
+		if (p->devinfo->ver >= 20)
+			error(&@1, "Channel offset must be multiple of 8 in Xe2+\n");
+		$$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 20;
+	}
+	| QTR_7N 	{ $$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 24; }
+	| QTR_8N
+	{
+		if (p->devinfo->ver >= 20)
+			error(&@1, "Channel offset must be multiple of 8 in Xe2+\n");
+		$$.type = INSTOPTION_CHAN_OFFSET; $$.uint_value = 28;
+	}
 	| depinfo	{ $$.type = INSTOPTION_DEP_INFO; $$.depinfo_value = $1; }
 	;
 

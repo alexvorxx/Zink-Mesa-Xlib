@@ -554,6 +554,7 @@ static bool do_winsys_init(struct radeon_drm_winsys *ws)
    ws->info.gfx_ib_pad_with_type2 = ws->info.gfx_level <= GFX6 ||
                                     (ws->info.family == CHIP_HAWAII &&
                                      ws->accel_working2 < 3);
+   ws->info.has_cp_dma = true;
    ws->info.tcc_cache_line_size = 64; /* TC L2 line size on GCN */
    ws->info.has_bo_metadata = false;
    ws->info.has_eqaa_surface_allocator = false;
@@ -580,6 +581,9 @@ static bool do_winsys_init(struct radeon_drm_winsys *ws)
    ws->info.min_wave64_vgpr_alloc = 4;
    ws->info.max_vgpr_alloc = 256;
    ws->info.wave64_vgpr_alloc_granularity = 4;
+   ws->info.lds_size_per_workgroup = ws->info.gfx_level == GFX7 ? 64 * 1024 : 32 * 1024;
+   ws->info.lds_encode_granularity = ws->info.gfx_level == GFX7 ? 128 * 4 : 64 * 4;
+   ws->info.lds_alloc_granularity = ws->info.lds_encode_granularity;
 
    for (unsigned se = 0; se < ws->info.max_se; se++) {
       for (unsigned sa = 0; sa < ws->info.max_sa_per_se; sa++)

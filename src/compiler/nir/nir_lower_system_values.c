@@ -147,6 +147,7 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
    }
 
    case nir_intrinsic_load_input:
+   case nir_intrinsic_load_per_primitive_input:
       if (b->shader->options->lower_layer_fs_input_to_sysval &&
           b->shader->info.stage == MESA_SHADER_FRAGMENT &&
           nir_intrinsic_io_semantics(intrin).location == VARYING_SLOT_LAYER)

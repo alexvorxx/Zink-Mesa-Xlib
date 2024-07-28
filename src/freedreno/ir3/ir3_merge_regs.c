@@ -80,6 +80,12 @@ index_instrs(struct ir3_block *block, unsigned index)
    return index;
 }
 
+void
+ir3_index_instrs_for_merge_sets(struct ir3 *ir)
+{
+   index_instrs(ir3_start_block(ir), 0);
+}
+
 /* Definitions within a merge set are ordered by instr->ip as set above: */
 
 static bool
@@ -537,12 +543,15 @@ dump_merge_sets(struct ir3 *ir)
             if (!merge_set || _mesa_set_search(merge_sets, merge_set))
                continue;
 
-            d("merge set, size %u, align %u:", merge_set->size,
-              merge_set->alignment);
+            d("merge set, size %u, align %u, interval start %u:",
+              merge_set->size, merge_set->alignment, merge_set->interval_start);
             for (unsigned j = 0; j < merge_set->regs_count; j++) {
                struct ir3_register *reg = merge_set->regs[j];
-               d("\t" SYN_SSA("ssa_%u") ":%u, offset %u",
-                 reg->instr->serialno, reg->name, reg->merge_set_offset);
+               const char *s = (reg->flags & IR3_REG_SHARED) ? "s" : "";
+               const char *h = (reg->flags & IR3_REG_HALF) ? "h" : "";
+               d("\t%s%s" SYN_SSA("ssa_%u") ":%u, offset %u, interval: %u-%u",
+                 s, h, reg->instr->serialno, reg->name, reg->merge_set_offset,
+                 reg->interval_start, reg->interval_end);
             }
 
             _mesa_set_add(merge_sets, merge_set);
@@ -556,8 +565,6 @@ dump_merge_sets(struct ir3 *ir)
 void
 ir3_merge_regs(struct ir3_liveness *live, struct ir3 *ir)
 {
-   index_instrs(ir3_start_block(ir), 0);
-
    /* First pass: coalesce phis, which must be together. */
    foreach_block (block, &ir->block_list) {
       foreach_instr (instr, &block->instr_list) {

@@ -75,6 +75,7 @@ struct ir3_info {
    uint8_t subgroup_size;
    bool double_threadsize;
    bool multi_dword_ldp_stp;
+   bool early_preamble;
 
    /* number of sync bits: */
    uint16_t ss, sy;
@@ -357,6 +358,17 @@ typedef enum ir3_instruction_flags {
     * (eq) calculations.
     */
    IR3_INSTR_NEEDS_HELPERS = BIT(18),
+
+   /* isam.v */
+   IR3_INSTR_V = BIT(19),
+
+   /* isam.1d. Note that .1d is an active-low bit. */
+   IR3_INSTR_INV_1D = BIT(20),
+
+   /* isam.v/ldib.b/stib.b can optionally use an immediate offset with one of
+    * their sources.
+    */
+   IR3_INSTR_IMM_OFFSET = BIT(21),
 } ir3_instruction_flags;
 
 struct ir3_instruction {
@@ -661,6 +673,8 @@ struct ir3_block {
 
    bool reconvergence_point;
 
+   bool in_early_preamble;
+
    /* Track instructions which do not write a register but other-
     * wise must not be discarded (such as kill, stg, etc)
     */
@@ -684,6 +698,25 @@ struct ir3_block {
 #if MESA_DEBUG
    uint32_t serialno;
 #endif
+};
+
+enum ir3_cursor_option {
+   IR3_CURSOR_BEFORE_BLOCK,
+   IR3_CURSOR_AFTER_BLOCK,
+   IR3_CURSOR_BEFORE_INSTR,
+   IR3_CURSOR_AFTER_INSTR,
+};
+
+struct ir3_cursor {
+   enum ir3_cursor_option option;
+   union {
+      struct ir3_block *block;
+      struct ir3_instruction *instr;
+   };
+};
+
+struct ir3_builder {
+   struct ir3_cursor cursor;
 };
 
 static inline uint32_t
@@ -762,6 +795,10 @@ bool ir3_should_double_threadsize(struct ir3_shader_variant *v,
 
 struct ir3_block *ir3_block_create(struct ir3 *shader);
 
+struct ir3_instruction *ir3_build_instr(struct ir3_builder *builder, opc_t opc,
+                                        int ndst, int nsrc);
+struct ir3_instruction *ir3_instr_create_at(struct ir3_cursor cursor, opc_t opc,
+                                            int ndst, int nsrc);
 struct ir3_instruction *ir3_instr_create(struct ir3_block *block, opc_t opc,
                                          int ndst, int nsrc);
 struct ir3_instruction *ir3_instr_create_at_end(struct ir3_block *block,
@@ -1114,10 +1151,11 @@ is_load(struct ir3_instruction *instr)
    case OPC_LDP:
    case OPC_L2G:
    case OPC_LDLW:
-   case OPC_LDC:
    case OPC_LDLV:
       /* probably some others too.. */
       return true;
+   case OPC_LDC:
+      return instr->dsts_count > 0;
    default:
       return false;
    }
@@ -1148,7 +1186,6 @@ uses_helpers(struct ir3_instruction *instr)
 {
    switch (instr->opc) {
    /* These require helper invocations to be present */
-   case OPC_SAM:
    case OPC_SAMB:
    case OPC_GETLOD:
    case OPC_DSX:
@@ -1164,21 +1201,28 @@ uses_helpers(struct ir3_instruction *instr)
    case OPC_META_TEX_PREFETCH:
       return true;
 
+   /* sam requires helper invocations except for dummy prefetch instructions */
+   case OPC_SAM:
+      return instr->dsts_count != 0;
+
    /* Subgroup operations don't require helper invocations to be present, but
     * will use helper invocations if they are present.
     */
    case OPC_BALLOT_MACRO:
    case OPC_ANY_MACRO:
    case OPC_ALL_MACRO:
-   case OPC_ELECT_MACRO:
    case OPC_READ_FIRST_MACRO:
    case OPC_READ_COND_MACRO:
    case OPC_MOVMSK:
    case OPC_BRCST_ACTIVE:
       return true;
 
-   /* Catch lowered READ_FIRST/READ_COND. */
+   /* Catch lowered READ_FIRST/READ_COND. For elect, don't include the getone
+    * in the preamble because it doesn't actually matter which fiber is
+    * selected.
+    */
    case OPC_MOV:
+   case OPC_ELECT_MACRO:
       return instr->flags & IR3_INSTR_NEEDS_HELPERS;
 
    default:
@@ -1329,6 +1373,9 @@ is_reg_gpr(const struct ir3_register *reg)
 {
    if ((reg_num(reg) == REG_A0) || (reg->flags & IR3_REG_PREDICATE))
       return false;
+   if (!(reg->flags & (IR3_REG_SSA | IR3_REG_RELATIV)) &&
+       reg->num == INVALID_REG)
+      return false;
    return true;
 }
 
@@ -1451,6 +1498,14 @@ reg_gpr(struct ir3_register *r)
    return true;
 }
 
+static inline bool
+reg_is_addr1(struct ir3_register *r)
+{
+   if (r->flags & (IR3_REG_CONST | IR3_REG_IMMED))
+      return false;
+   return r->num == regid(REG_A0, 1);
+}
+
 static inline type_t
 half_type(type_t type)
 {
@@ -1458,6 +1513,7 @@ half_type(type_t type)
    case TYPE_F32:
       return TYPE_F16;
    case TYPE_U32:
+   case TYPE_U8_32:
       return TYPE_U16;
    case TYPE_S32:
       return TYPE_S16;
@@ -1466,7 +1522,6 @@ half_type(type_t type)
    case TYPE_S16:
       return type;
    case TYPE_U8:
-   case TYPE_S8:
       return type;
    default:
       assert(0);
@@ -1481,9 +1536,9 @@ full_type(type_t type)
    case TYPE_F16:
       return TYPE_F32;
    case TYPE_U8:
+   case TYPE_U8_32:
    case TYPE_U16:
       return TYPE_U32;
-   case TYPE_S8:
    case TYPE_S16:
       return TYPE_S32;
    case TYPE_F32:
@@ -1947,6 +2002,9 @@ is_ss_producer(struct ir3_instruction *instr)
          return true;
    }
 
+   if (instr->block->in_early_preamble && writes_addr1(instr))
+      return true;
+
    return is_sfu(instr) || is_local_mem_load(instr);
 }
 
@@ -2139,6 +2197,78 @@ ir3_instr_move_after_phis(struct ir3_instruction *instr,
       ir3_instr_move_after(instr, last_phi);
    else
       ir3_instr_move_before_block(instr, block);
+}
+
+static inline struct ir3_cursor
+ir3_before_block(struct ir3_block *block)
+{
+   assert(block);
+   struct ir3_cursor cursor;
+   cursor.option = IR3_CURSOR_BEFORE_BLOCK;
+   cursor.block = block;
+   return cursor;
+}
+
+static inline struct ir3_cursor
+ir3_after_block(struct ir3_block *block)
+{
+   assert(block);
+   struct ir3_cursor cursor;
+   cursor.option = IR3_CURSOR_AFTER_BLOCK;
+   cursor.block = block;
+   return cursor;
+}
+
+static inline struct ir3_cursor
+ir3_before_instr(struct ir3_instruction *instr)
+{
+   assert(instr);
+   struct ir3_cursor cursor;
+   cursor.option = IR3_CURSOR_BEFORE_INSTR;
+   cursor.instr = instr;
+   return cursor;
+}
+
+static inline struct ir3_cursor
+ir3_after_instr(struct ir3_instruction *instr)
+{
+   assert(instr);
+   struct ir3_cursor cursor;
+   cursor.option = IR3_CURSOR_AFTER_INSTR;
+   cursor.instr = instr;
+   return cursor;
+}
+
+static inline struct ir3_cursor
+ir3_before_terminator(struct ir3_block *block)
+{
+   assert(block);
+   struct ir3_instruction *terminator = ir3_block_get_terminator(block);
+
+   if (terminator)
+      return ir3_before_instr(terminator);
+   return ir3_after_block(block);
+}
+
+static inline struct ir3_cursor
+ir3_after_phis(struct ir3_block *block)
+{
+   assert(block);
+
+   foreach_instr (instr, &block->instr_list) {
+      if (instr->opc != OPC_META_PHI)
+         return ir3_before_instr(instr);
+   }
+
+   return ir3_after_block(block);
+}
+
+static inline struct ir3_builder
+ir3_builder_at(struct ir3_cursor cursor)
+{
+   struct ir3_builder builder;
+   builder.cursor = cursor;
+   return builder;
 }
 
 
@@ -2615,7 +2745,7 @@ ir3_SAM(struct ir3_block *block, opc_t opc, type_t type, unsigned wrmask,
    if (flags & IR3_INSTR_S2EN) {
       nreg++;
    }
-   if (src0) {
+   if (src0 || opc == OPC_SAM) {
       nreg++;
    }
    if (src1) {
@@ -2630,6 +2760,12 @@ ir3_SAM(struct ir3_block *block, opc_t opc, type_t type, unsigned wrmask,
    }
    if (src0) {
       __ssa_src(sam, src0, 0);
+   } else if (opc == OPC_SAM) {
+      /* Create a dummy shared source for the coordinate, for the prefetch
+       * case. It needs to be shared so that we don't accidentally disable early
+       * preamble, and this is what the blob does.
+       */
+      ir3_src_create(sam, regid(48, 0), IR3_REG_SHARED);
    }
    if (src1) {
       __ssa_src(sam, src1, 0);
@@ -2693,8 +2829,8 @@ INSTR2NODST(STC)
 INSTR2NODST(STSC)
 #ifndef GPU
 #elif GPU >= 600
-INSTR3NODST(STIB);
-INSTR2(LDIB);
+INSTR4NODST(STIB);
+INSTR3(LDIB);
 INSTR5(LDG_A);
 INSTR6NODST(STG_A);
 INSTR2(ATOMIC_G_ADD)

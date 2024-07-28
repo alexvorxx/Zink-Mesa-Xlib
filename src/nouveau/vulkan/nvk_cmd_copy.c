@@ -10,17 +10,15 @@
 #include "nvk_entrypoints.h"
 #include "nvk_format.h"
 #include "nvk_image.h"
+#include "nvk_image_view.h"
 #include "nvk_physical_device.h"
 
 #include "vk_format.h"
 
-#include "nouveau_bo.h"
-#include "nouveau_context.h"
-
 #include "nvtypes.h"
-#include "nvk_cl902d.h"
-#include "nvk_cl90b5.h"
-#include "nvk_clc1b5.h"
+#include "nv_push_cl902d.h"
+#include "nv_push_cl90b5.h"
+#include "nv_push_clc1b5.h"
 
 static inline uint16_t
 nvk_cmd_buffer_copy_cls(struct nvk_cmd_buffer *cmd)
@@ -88,8 +86,8 @@ vk_to_nil_extent(VkExtent3D extent, uint32_t array_layers)
 }
 
 static struct nouveau_copy_buffer
-nouveau_copy_rect_image(struct nvk_image *img,
-                        struct nvk_image_plane *plane,
+nouveau_copy_rect_image(const struct nvk_image *img,
+                        const struct nvk_image_plane *plane,
                         VkOffset3D offset_px,
                         const VkImageSubresourceLayers *sub_res)
 {
@@ -471,7 +469,7 @@ nvk_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
       vk_foreach_struct_const(ext, region->pNext) {
          switch (ext->sType) {
          default:
-            nvk_debug_ignored_stype(ext->sType);
+            vk_debug_ignored_stype(ext->sType);
             break;
          }
       }
@@ -480,7 +478,7 @@ nvk_CmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
    vk_foreach_struct_const(ext, pCopyBufferToImageInfo->pNext) {
       switch (ext->sType) {
       default:
-         nvk_debug_ignored_stype(ext->sType);
+         vk_debug_ignored_stype(ext->sType);
          break;
       }
    }
@@ -578,7 +576,7 @@ nvk_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
       vk_foreach_struct_const(ext, region->pNext) {
          switch (ext->sType) {
          default:
-            nvk_debug_ignored_stype(ext->sType);
+            vk_debug_ignored_stype(ext->sType);
             break;
          }
       }
@@ -587,10 +585,58 @@ nvk_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
    vk_foreach_struct_const(ext, pCopyImageToBufferInfo->pNext) {
       switch (ext->sType) {
       default:
-         nvk_debug_ignored_stype(ext->sType);
+         vk_debug_ignored_stype(ext->sType);
          break;
       }
    }
+}
+
+void
+nvk_linear_render_copy(struct nvk_cmd_buffer *cmd,
+                       const struct nvk_image_view *iview,
+                       VkRect2D copy_rect,
+                       bool copy_to_tiled_shadow)
+{
+   const struct nvk_image *image = (struct nvk_image *)iview->vk.image;
+
+   const uint8_t ip = iview->planes[0].image_plane;
+   const struct nvk_image_plane *src_plane = NULL, *dst_plane = NULL;
+   if (copy_to_tiled_shadow) {
+      src_plane = &image->planes[ip];
+      dst_plane = &image->linear_tiled_shadow;
+   } else {
+      src_plane = &image->linear_tiled_shadow;
+      dst_plane = &image->planes[ip];
+   }
+
+   const struct VkImageSubresourceLayers subres = {
+      .aspectMask = iview->vk.aspects,
+      .baseArrayLayer = iview->vk.base_array_layer,
+      .layerCount = iview->vk.layer_count,
+      .mipLevel = iview->vk.base_mip_level,
+   };
+
+   const VkOffset3D offset_px = {
+      .x = copy_rect.offset.x,
+      .y = copy_rect.offset.y,
+      .z = 0,
+   };
+   const struct nil_Extent4D_Pixels extent4d_px = {
+      .width = copy_rect.extent.width,
+      .height = copy_rect.extent.height,
+      .depth = 1,
+      .array_len = 1,
+   };
+
+   struct nouveau_copy copy = {
+      .src = nouveau_copy_rect_image(image, src_plane, offset_px, &subres),
+      .dst = nouveau_copy_rect_image(image, dst_plane, offset_px, &subres),
+      .extent_el = nil_extent4d_px_to_el(extent4d_px, src_plane->nil.format,
+                                         src_plane->nil.sample_layout),
+   };
+
+   copy.remap = nouveau_copy_remap_format(image->vk.format);
+   nouveau_copy_rect(cmd, &copy);
 }
 
 VKAPI_ATTR void VKAPI_CALL

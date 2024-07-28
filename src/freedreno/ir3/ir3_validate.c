@@ -354,7 +354,8 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
       switch (instr->opc) {
       case OPC_RESINFO:
       case OPC_RESFMT:
-         validate_reg_size(ctx, instr->dsts[0], instr->cat6.type);
+         if (instr->dsts_count > 0)
+            validate_reg_size(ctx, instr->dsts[0], instr->cat6.type);
          validate_reg_size(ctx, instr->srcs[0], instr->cat6.type);
          break;
       case OPC_L2G:
@@ -386,7 +387,7 @@ validate_instr(struct ir3_validate_ctx *ctx, struct ir3_instruction *instr)
       case OPC_STIB:
          validate_assert(ctx, !(instr->srcs[0]->flags & IR3_REG_HALF));
          validate_assert(ctx, !(instr->srcs[1]->flags & IR3_REG_HALF));
-         validate_reg_size(ctx, instr->srcs[2], instr->cat6.type);
+         validate_reg_size(ctx, instr->srcs[3], instr->cat6.type);
          break;
       case OPC_GETFIBERID:
       case OPC_GETSPID:
@@ -472,8 +473,8 @@ ir3_validate(struct ir3 *ir)
 
       struct ir3_instruction *prev = NULL;
       foreach_instr (instr, &block->instr_list) {
-         validate_assert(ctx, instr->block == block);
          ctx->current_instr = instr;
+         validate_assert(ctx, instr->block == block);
          if (instr->opc == OPC_META_PHI) {
             /* phis must be the first in the block */
             validate_assert(ctx, prev == NULL || prev->opc == OPC_META_PHI);

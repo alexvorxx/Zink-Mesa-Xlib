@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-/** @file brw_eu_compact.c
+/** @file
  *
  * Instruction compaction is a feature of G45 and newer hardware that allows
  * for a smaller instruction encoding.
@@ -2237,11 +2237,17 @@ update_uip_jip(const struct brw_isa_info *isa, brw_inst *insn,
    /* JIP and UIP are in units of bytes on Gfx8+. */
    int shift = 3;
 
+   /* Even though the values are signed, we don't need the rounding behavior
+    * of integer division. The shifts are safe.
+    */
+   assert(brw_inst_jip(devinfo, insn) % 8 == 0 &&
+          brw_inst_uip(devinfo, insn) % 8 == 0);
+
    int32_t jip_compacted = brw_inst_jip(devinfo, insn) >> shift;
    jip_compacted -= compacted_between(this_old_ip,
                                       this_old_ip + (jip_compacted / 2),
                                       compacted_counts);
-   brw_inst_set_jip(devinfo, insn, jip_compacted << shift);
+   brw_inst_set_jip(devinfo, insn, (uint32_t)jip_compacted << shift);
 
    if (brw_inst_opcode(isa, insn) == BRW_OPCODE_ENDIF ||
        brw_inst_opcode(isa, insn) == BRW_OPCODE_WHILE)
@@ -2251,7 +2257,7 @@ update_uip_jip(const struct brw_isa_info *isa, brw_inst *insn,
    uip_compacted -= compacted_between(this_old_ip,
                                       this_old_ip + (uip_compacted / 2),
                                       compacted_counts);
-   brw_inst_set_uip(devinfo, insn, uip_compacted << shift);
+   brw_inst_set_uip(devinfo, insn, (uint32_t)uip_compacted << shift);
 }
 
 static void

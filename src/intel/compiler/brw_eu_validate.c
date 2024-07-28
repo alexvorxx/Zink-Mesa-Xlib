@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-/** @file brw_eu_validate.c
+/** @file
  *
  * This file implements a pass that validates shader assembly.
  *
@@ -337,7 +337,6 @@ inst_uses_src_acc(const struct brw_isa_info *isa,
    switch (brw_inst_opcode(isa, inst)) {
    case BRW_OPCODE_MAC:
    case BRW_OPCODE_MACH:
-   case BRW_OPCODE_SADA2:
       return true;
    default:
       break;
@@ -2104,8 +2103,10 @@ instruction_restrictions(const struct brw_isa_info *isa,
          ERROR_IF(dst_type != BRW_TYPE_F &&
                   dst_type != BRW_TYPE_HF &&
                   dst_type != BRW_TYPE_D &&
-                  dst_type != BRW_TYPE_W,
-                  "CSEL destination type must be F, HF, D, or W");
+                  dst_type != BRW_TYPE_W &&
+                  dst_type != BRW_TYPE_UD &&
+                  dst_type != BRW_TYPE_UW,
+                  "CSEL destination type must be F, HF, *D, or *W");
       }
 
       for (unsigned s = 0; s < 3; s++) {
@@ -2122,8 +2123,22 @@ instruction_restrictions(const struct brw_isa_info *isa,
             src_type = brw_inst_3src_a16_src_type(devinfo, inst);
          }
 
-         ERROR_IF(src_type != dst_type,
-                  "CSEL source type must match destination type");
+         if (devinfo->ver == 9) {
+            ERROR_IF(src_type != BRW_TYPE_F,
+                     "CSEL source type must be F");
+         } else {
+            ERROR_IF(src_type != BRW_TYPE_F && src_type != BRW_TYPE_HF &&
+                     src_type != BRW_TYPE_D && src_type != BRW_TYPE_UD &&
+                     src_type != BRW_TYPE_W && src_type != BRW_TYPE_UW,
+                     "CSEL source type must be F, HF, *D, or *W");
+
+            ERROR_IF(brw_type_is_float(src_type) != brw_type_is_float(dst_type),
+                     "CSEL cannot mix float and integer types.");
+
+            ERROR_IF(brw_type_size_bytes(src_type) !=
+                     brw_type_size_bytes(dst_type),
+                     "CSEL cannot mix different type sizes.");
+         }
       }
    }
 

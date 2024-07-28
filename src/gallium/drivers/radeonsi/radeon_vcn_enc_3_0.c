@@ -17,7 +17,7 @@
 #include "radeon_vcn_enc.h"
 
 #define RENCODE_FW_INTERFACE_MAJOR_VERSION   1
-#define RENCODE_FW_INTERFACE_MINOR_VERSION   20
+#define RENCODE_FW_INTERFACE_MINOR_VERSION   30
 
 static void radeon_enc_session_info(struct radeon_encoder *enc)
 {
@@ -98,7 +98,9 @@ static void radeon_enc_encode_params_h264(struct radeon_encoder *enc)
 
 static void radeon_enc_quality_params(struct radeon_encoder *enc)
 {
-   enc->enc_pic.quality_params.vbaq_mode = enc->enc_pic.quality_modes.vbaq_mode;
+   enc->enc_pic.quality_params.vbaq_mode =
+      enc->enc_pic.rc_session_init.rate_control_method != RENCODE_RATE_CONTROL_METHOD_NONE ?
+      enc->enc_pic.quality_modes.vbaq_mode : 0;
    enc->enc_pic.quality_params.scene_change_sensitivity = 0;
    enc->enc_pic.quality_params.scene_change_min_idr_interval = 0;
    enc->enc_pic.quality_params.two_pass_search_center_map_mode =
@@ -112,6 +114,28 @@ static void radeon_enc_quality_params(struct radeon_encoder *enc)
    RADEON_ENC_CS(enc->enc_pic.quality_params.scene_change_min_idr_interval);
    RADEON_ENC_CS(enc->enc_pic.quality_params.two_pass_search_center_map_mode);
    RADEON_ENC_CS(enc->enc_pic.quality_params.vbaq_strength);
+   RADEON_ENC_END();
+}
+
+static void radeon_enc_rc_per_pic_ex(struct radeon_encoder *enc)
+{
+   RADEON_ENC_BEGIN(enc->cmd.rc_per_pic);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.qp_i);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.qp_p);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.qp_b);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.min_qp_i);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_qp_i);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.min_qp_p);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_qp_p);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.min_qp_b);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_qp_b);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_au_size_i);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_au_size_p);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.max_au_size_b);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.enabled_filler_data);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.skip_frame_enable);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.enforce_hrd);
+   RADEON_ENC_CS(enc->enc_pic.rc_per_pic.qvbr_quality_level);
    RADEON_ENC_END();
 }
 
@@ -538,6 +562,8 @@ void radeon_enc_3_0_init(struct radeon_encoder *enc)
    enc->session_init = radeon_enc_session_init;
    enc->ctx = radeon_enc_ctx;
    enc->quality_params = radeon_enc_quality_params;
+   if (enc->enc_pic.use_rc_per_pic_ex)
+      enc->rc_per_pic = radeon_enc_rc_per_pic_ex;
 
    if (u_reduce_video_profile(enc->base.profile) == PIPE_VIDEO_FORMAT_MPEG4_AVC) {
       enc->spec_misc = radeon_enc_spec_misc;

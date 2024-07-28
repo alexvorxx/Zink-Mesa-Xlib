@@ -23,30 +23,6 @@
 #include "vk_util.h"
 
 void
-radv_hash_shaders(const struct radv_device *device, unsigned char *hash, const struct radv_shader_stage *stages,
-                  uint32_t stage_count, const struct radv_pipeline_layout *layout,
-                  const struct radv_graphics_state_key *gfx_state)
-{
-   struct mesa_sha1 ctx;
-
-   _mesa_sha1_init(&ctx);
-
-   radv_pipeline_hash(device, layout, &ctx);
-
-   if (gfx_state)
-      _mesa_sha1_update(&ctx, gfx_state, sizeof(*gfx_state));
-
-   for (unsigned s = 0; s < stage_count; s++) {
-      if (!stages[s].entrypoint)
-         continue;
-
-      _mesa_sha1_update(&ctx, stages[s].shader_sha1, sizeof(stages[s].shader_sha1));
-      _mesa_sha1_update(&ctx, &stages[s].key, sizeof(stages[s].key));
-   }
-   _mesa_sha1_final(&ctx, hash);
-}
-
-void
 radv_hash_graphics_spirv_to_nir(blake3_hash hash, const struct radv_shader_stage *stage,
                                 const struct radv_spirv_to_nir_options *options)
 {

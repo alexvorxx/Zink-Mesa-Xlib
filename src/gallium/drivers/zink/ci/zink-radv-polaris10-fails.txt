@@ -1,11 +1,6 @@
 # kopper
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_ust_test,Fail
 
-# #6115
-spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-float-index-rd,Crash
-spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec2-index-rd,Crash
-spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec3-index-rd,Crash
-spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec4-index-rd,Crash
 
 
 glx@extension string sanity,Fail
@@ -191,9 +186,6 @@ spec@ext_framebuffer_multisample@interpolation 8 centroid-deriv-disabled,Fail
 spec@ext_framebuffer_multisample@interpolation 8 centroid-disabled,Fail
 spec@ext_framebuffer_multisample@interpolation 8 non-centroid-deriv-disabled,Fail
 spec@ext_framebuffer_multisample@interpolation 8 non-centroid-disabled,Fail
-
-# Polygon smoothing isn't supported in Vulkan.
-spec@!opengl 1.0@gl-1.0-polygon-line-aa,Fail
 
 # Regression noticed in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/891104
 spec@arb_viewport_array@display-list,Fail

@@ -1,6 +1,8 @@
 KHR-GLES31.core.shader_image_load_store.basic-glsl-earlyFragTests
 dEQP-GLES31.functional.ssbo.layout.instance_array_basic_type.std430.ivec4
 
+glx@glx-visuals-depth
+glx@glx-visuals-stencil
 glx@glx_arb_sync_control@waitformsc
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=2
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-24_8 samples=4
@@ -9,7 +11,14 @@ spec@!opengl 1.1@depthstencil-default_fb-drawpixels-32f_24_8_rev samples=4
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=2
 spec@!opengl 1.1@depthstencil-default_fb-drawpixels-float-and-ushort samples=4
 spec@!opengl 1.1@masked-clear
+spec@amd_performance_monitor@api
+spec@amd_performance_monitor@vc4
+spec@amd_performance_monitor@vc4@test_counter_string_normal_buffer
+spec@amd_performance_monitor@vc4@test_counter_string_single_character_buffer
+spec@amd_performance_monitor@vc4@test_counter_string_small_buffer
 spec@arb_occlusion_query@occlusion_query_order
+spec@arb_texture_buffer_object@formats \(vs- arb\)@GL_ALPHA16F_ARB
+spec@arb_texture_buffer_object@formats \(vs- arb\)@GL_ALPHA32F_ARB
 spec@arb_texture_multisample@large-float-texture
 spec@egl_chromium_sync_control@conformance
 spec@ext_packed_depth_stencil@depthstencil-render-miplevels 585 ds=z24_s8

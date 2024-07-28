@@ -82,14 +82,14 @@ tu_suballoc_bo_alloc(struct tu_suballoc_bo *suballoc_bo,
 
    /* Allocate the new BO if we didn't have one cached. */
    if (!suballoc->bo) {
-      VkResult result = tu_bo_init_new(suballoc->dev, &suballoc->bo,
-                                       alloc_size,
+      VkResult result = tu_bo_init_new(suballoc->dev, NULL,
+                                       &suballoc->bo, alloc_size,
                                        suballoc->flags, suballoc->name);
       if (result != VK_SUCCESS)
          return result;
    }
 
-   VkResult result = tu_bo_map(suballoc->dev, suballoc->bo);
+   VkResult result = tu_bo_map(suballoc->dev, suballoc->bo, NULL);
    if (result != VK_SUCCESS) {
       tu_bo_finish(suballoc->dev, suballoc->bo);
       return VK_ERROR_OUT_OF_HOST_MEMORY;

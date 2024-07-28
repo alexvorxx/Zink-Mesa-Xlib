@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-/** @file brw_dead_control_flow.cpp
+/** @file
  *
  * This file implements the dead control flow elimination optimization pass.
  */
@@ -110,6 +110,13 @@ brw_fs_opt_dead_control_flow_eliminate(fs_visitor &s)
          if_inst->predicate_inverse = !if_inst->predicate_inverse;
          else_inst->remove(else_block);
 
+         progress = true;
+      } else if (inst->opcode == BRW_OPCODE_NOP &&
+                 prev_block->can_combine_with(block) &&
+                 exec_list_is_singular(&block->parents) &&
+                 exec_list_is_singular(&prev_block->children)) {
+         prev_block->combine_with(block);
+         inst->remove(prev_block);
          progress = true;
       }
    }

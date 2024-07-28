@@ -25,7 +25,7 @@
 #include "brw_cfg.h"
 #include "brw_eu.h"
 
-/** @file brw_fs_cmod_propagation.cpp
+/** @file
  *
  * Implements a pass that propagates the conditional modifier from a CMP x 0.0
  * instruction into the instruction that generated x. For instance, in this

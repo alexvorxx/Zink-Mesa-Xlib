@@ -47,10 +47,10 @@ fn count_type(ty: &Type, search_type: &str) -> usize {
     }
 }
 
-fn get_src_type(field: &Field) -> Option<String> {
+fn get_type_attr(field: &Field, ty_attr: &str) -> Option<String> {
     for attr in &field.attrs {
         if let Meta::List(ml) = &attr.meta {
-            if ml.path.is_ident("src_type") {
+            if ml.path.is_ident(ty_attr) {
                 return Some(format!("{}", ml.tokens));
             }
         }
@@ -71,9 +71,13 @@ fn derive_as_slice(
     let trait_name = Ident::new(trait_name, Span::call_site());
     let elem_type = Ident::new(search_type, Span::call_site());
     let as_slice =
-        Ident::new(&format!("{}_as_slice", func_prefix), Span::call_site());
+        Ident::new(&format!("{func_prefix}s_as_slice"), Span::call_site());
     let as_mut_slice =
-        Ident::new(&format!("{}_as_mut_slice", func_prefix), Span::call_site());
+        Ident::new(&format!("{func_prefix}s_as_mut_slice"), Span::call_site());
+    let types_fn =
+        Ident::new(&format!("{func_prefix}_types"), Span::call_site());
+    let ty_attr = format!("{func_prefix}_type");
+    let ty_type = Ident::new(&format!("{search_type}Type"), Span::call_site());
 
     match data {
         Data::Struct(s) => {
@@ -95,41 +99,36 @@ fn derive_as_slice(
             let mut first = None;
             let mut count = 0_usize;
             let mut found_last = false;
-            let mut src_types = TokenStream2::new();
+            let mut types = TokenStream2::new();
 
             if let Fields::Named(named) = s.fields {
                 for f in named.named {
                     let ty_count = count_type(&f.ty, search_type);
-
-                    if search_type == "Src" {
-                        let src_type = get_src_type(&f);
-                        if ty_count == 0 && !src_type.is_none() {
-                            panic!(
-                                "src_type attribute is only allowed on sources"
-                            );
-                        }
-
-                        let src_type = if let Some(s) = src_type {
-                            let s = syn::parse_str::<Ident>(&s).unwrap();
-                            quote! { SrcType::#s, }
-                        } else {
-                            quote! { SrcType::DEFAULT, }
-                        };
-
-                        for _ in 0..ty_count {
-                            src_types.extend(src_type.clone());
-                        }
-                    }
+                    let ty = get_type_attr(&f, &ty_attr);
 
                     if ty_count > 0 {
                         assert!(
                             !found_last,
-                            "All fields of type {} must be consecutive",
-                            search_type
+                            "All fields of type {search_type} must be consecutive",
                         );
+
+                        let ty = if let Some(s) = ty {
+                            let s = syn::parse_str::<Ident>(&s).unwrap();
+                            quote! { #ty_type::#s, }
+                        } else {
+                            quote! { #ty_type::DEFAULT, }
+                        };
+
                         first.get_or_insert(f.ident);
+                        for _ in 0..ty_count {
+                            types.extend(ty.clone());
+                        }
                         count += ty_count;
                     } else {
+                        assert!(
+                            ty.is_none(),
+                            "{ty_attr} attribute is only allowed on {search_type}"
+                        );
                         if !first.is_none() {
                             found_last = true;
                         }
@@ -138,17 +137,6 @@ fn derive_as_slice(
             } else {
                 panic!("Fields are not named");
             }
-
-            let src_type_func = if search_type == "Src" {
-                quote! {
-                    fn src_types(&self) -> SrcTypeList {
-                        static SRC_TYPES: [SrcType; #count]  = [#src_types];
-                        SrcTypeList::Array(&SRC_TYPES)
-                    }
-                }
-            } else {
-                TokenStream2::new()
-            };
 
             if let Some(name) = first {
                 quote! {
@@ -167,7 +155,10 @@ fn derive_as_slice(
                             }
                         }
 
-                        #src_type_func
+                        fn #types_fn(&self) -> TypeList<#ty_type> {
+                            static TYPES: [#ty_type; #count] = [#types];
+                            TypeList::Array(&TYPES)
+                        }
                     }
                 }
             } else {
@@ -181,7 +172,9 @@ fn derive_as_slice(
                             &mut []
                         }
 
-                        #src_type_func
+                        fn #types_fn(&self) -> TypeList<#ty_type> {
+                            TypeList::Uniform(#ty_type::DEFAULT)
+                        }
                     }
                 }
             }
@@ -190,7 +183,8 @@ fn derive_as_slice(
         Data::Enum(e) => {
             let mut as_slice_cases = TokenStream2::new();
             let mut as_mut_slice_cases = TokenStream2::new();
-            let mut src_types_cases = TokenStream2::new();
+            let mut types_cases = TokenStream2::new();
+            let mut is_uniform_cases = TokenStream2::new();
             for v in e.variants {
                 let case = v.ident;
                 as_slice_cases.extend(quote! {
@@ -199,17 +193,20 @@ fn derive_as_slice(
                 as_mut_slice_cases.extend(quote! {
                     #ident::#case(x) => x.#as_mut_slice(),
                 });
-                if search_type == "Src" {
-                    src_types_cases.extend(quote! {
-                        #ident::#case(x) => x.src_types(),
+                types_cases.extend(quote! {
+                    #ident::#case(x) => x.#types_fn(),
+                });
+                if search_type == "Dst" {
+                    is_uniform_cases.extend(quote! {
+                        #ident::#case(x) => x.is_uniform(),
                     });
                 }
             }
-            let src_type_func = if search_type == "Src" {
+            let is_uniform_func = if search_type == "Dst" {
                 quote! {
-                    fn src_types(&self) -> SrcTypeList {
+                    fn is_uniform(&self) -> bool {
                         match self {
-                            #src_types_cases
+                            #is_uniform_cases
                         }
                     }
                 }
@@ -230,7 +227,12 @@ fn derive_as_slice(
                         }
                     }
 
-                    #src_type_func
+                    fn #types_fn(&self) -> TypeList<#ty_type> {
+                        match self {
+                            #types_cases
+                        }
+                    }
+                    #is_uniform_func
                 }
             }
             .into()
@@ -241,12 +243,12 @@ fn derive_as_slice(
 
 #[proc_macro_derive(SrcsAsSlice, attributes(src_type))]
 pub fn derive_srcs_as_slice(input: TokenStream) -> TokenStream {
-    derive_as_slice(input, "SrcsAsSlice", "srcs", "Src")
+    derive_as_slice(input, "SrcsAsSlice", "src", "Src")
 }
 
-#[proc_macro_derive(DstsAsSlice)]
+#[proc_macro_derive(DstsAsSlice, attributes(dst_type))]
 pub fn derive_dsts_as_slice(input: TokenStream) -> TokenStream {
-    derive_as_slice(input, "DstsAsSlice", "dsts", "Dst")
+    derive_as_slice(input, "DstsAsSlice", "dst", "Dst")
 }
 
 #[proc_macro_derive(DisplayOp)]

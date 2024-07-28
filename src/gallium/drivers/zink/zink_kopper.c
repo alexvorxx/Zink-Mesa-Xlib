@@ -283,7 +283,9 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
       cswap->scci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
       cswap->scci.queueFamilyIndexCount = 0;
       cswap->scci.pQueueFamilyIndices = NULL;
-      cswap->scci.compositeAlpha = has_alpha ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+      cswap->scci.compositeAlpha = has_alpha && !cdt->info.present_opaque
+                                   ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
+                                   : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
       cswap->scci.clipped = VK_TRUE;
    }
    cswap->scci.presentMode = cdt->present_mode;
@@ -301,8 +303,18 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
        * Due to above restrictions, it is only possible to create a new swapchain on this
        * platform with imageExtent being equal to the current size of the window.
        */
-      cswap->scci.imageExtent.width = cdt->caps.currentExtent.width;
-      cswap->scci.imageExtent.height = cdt->caps.currentExtent.height;
+      if (cdt->caps.currentExtent.width == 0xFFFFFFFF && cdt->caps.currentExtent.height == 0xFFFFFFFF) {
+         /*
+            currentExtent is the current width and height of the surface, or the special value (0xFFFFFFFF,
+            0xFFFFFFFF) indicating that the surface size will be determined by the extent of a swapchain
+            targeting the surface.
+          */
+         cswap->scci.imageExtent.width = w;
+         cswap->scci.imageExtent.height = h;
+      } else {
+         cswap->scci.imageExtent.width = cdt->caps.currentExtent.width;
+         cswap->scci.imageExtent.height = cdt->caps.currentExtent.height;
+      }
       break;
    case KOPPER_WAYLAND:
       /* On Wayland, currentExtent is the special value (0xFFFFFFFF, 0xFFFFFFFF), indicating that the
@@ -612,7 +624,7 @@ kill_swapchain(struct zink_context *ctx, struct zink_resource *res)
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    /* dead swapchain */
    mesa_loge("zink: swapchain killed %p\n", res);
-   zink_batch_reference_resource(&ctx->batch, res);
+   zink_batch_reference_resource(ctx, res);
    struct pipe_resource *pres = screen->base.resource_create(&screen->base, &res->base.b);
    zink_resource_object_reference(screen, &res->obj, zink_resource(pres)->obj);
    res->layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -655,7 +667,7 @@ zink_kopper_acquire(struct zink_context *ctx, struct zink_resource *res, uint64_
       kill_swapchain(ctx, res);
    }
    bool is_kill = is_swapchain_kill(ret);
-   zink_batch_usage_set(&cdt->swapchain->batch_uses, ctx->batch.state);
+   zink_batch_usage_set(&cdt->swapchain->batch_uses, ctx->bs);
    return !is_kill;
 }
 
@@ -789,7 +801,7 @@ out:
       struct pipe_resource *pres = &cpi->res->base.b;
       pipe_resource_reference(&pres, NULL);
    }
-   slab_free_st(&screen->present_mempool, cpi);
+   free(cpi);
 }
 
 void
@@ -804,7 +816,7 @@ zink_kopper_present_queue(struct zink_screen *screen, struct zink_resource *res,
    if (cdt->swapchain->last_present != UINT32_MAX)
       prune_old_swapchains(screen, cdt, false);
 
-   struct zink_kopper_present_info *cpi = slab_alloc_st(&screen->present_mempool);
+   struct zink_kopper_present_info *cpi = malloc(sizeof(struct zink_kopper_present_info));
    if (!cpi) {
       mesa_loge("ZINK: failed to allocate cpi!");
       return;
@@ -944,8 +956,21 @@ zink_kopper_acquire_readback(struct zink_context *ctx, struct zink_resource *res
    }
    while (res->obj->dt_idx != last_dt_idx) {
       cdt->age_locked = true;
-      if (res->obj->dt_idx != UINT32_MAX && !zink_kopper_present_readback(ctx, res))
-         break;
+      if (res->obj->dt_idx != UINT32_MAX) {
+         if (!zink_kopper_present_readback(ctx, res))
+            break;
+      } else if (util_queue_is_initialized(&screen->flush_queue)) {
+         /* AcquireNextImageKHR and QueuePresentKHR both access the swapchain, and
+          * if res->obj->dt_idx == UINT32_MAX then zink_kopper_present_readback is
+          * not called and we don't wait for the cdt->swapchain->present_fence.
+          * Still, a kopper_present might have been called in another thread, like
+          * e.g. with spec@!opengl 1.1@read-front, so we have to wait until the
+          * last call to QueuePresentKHR is finished to avoid an
+          *    UNASSIGNED-Threading-MultipleThreads-Write
+          * validation error that indicats a race condition when accessing the swapchain.
+          */
+         util_queue_fence_wait(&cdt->swapchain->present_fence);
+      }
       cdt->age_locked = true;
       do {
          ret = kopper_acquire(screen, res, 0);
@@ -962,7 +987,7 @@ zink_kopper_acquire_readback(struct zink_context *ctx, struct zink_resource *res
       res->base.b.width0 = ctx->swapchain_size.width;
       res->base.b.height0 = ctx->swapchain_size.height;
    }
-   zink_batch_usage_set(&cdt->swapchain->batch_uses, ctx->batch.state);
+   zink_batch_usage_set(&cdt->swapchain->batch_uses, ctx->bs);
    *readback = res;
    return true;
 }
@@ -1051,6 +1076,18 @@ zink_kopper_update(struct pipe_screen *pscreen, struct pipe_resource *pres, int 
       cdt->is_kill = true;
       return false;
    }
+
+   if (cdt->caps.currentExtent.width == 0xFFFFFFFF && cdt->caps.currentExtent.height == 0xFFFFFFFF) {
+      /*
+         currentExtent is the current width and height of the surface, or the special value (0xFFFFFFFF,
+         0xFFFFFFFF) indicating that the surface size will be determined by the extent of a swapchain
+         targeting the surface.
+       */
+      *w = res->base.b.width0;
+      *h = res->base.b.height0;
+      return true;
+   }
+
    *w = cdt->caps.currentExtent.width;
    *h = cdt->caps.currentExtent.height;
    return true;
@@ -1121,8 +1158,13 @@ zink_kopper_set_swap_interval(struct pipe_screen *pscreen, struct pipe_resource 
 
    zink_kopper_set_present_mode_for_interval(cdt, interval);
 
-   if (old_present_mode != cdt->present_mode)
-      update_swapchain(screen, cdt, cdt->caps.currentExtent.width, cdt->caps.currentExtent.height);
+   if (old_present_mode == cdt->present_mode)
+      return;
+   VkResult ret = update_swapchain(screen, cdt, cdt->caps.currentExtent.width, cdt->caps.currentExtent.height);
+   if (ret == VK_SUCCESS)
+      return;
+   cdt->present_mode = old_present_mode;
+   mesa_loge("zink: failed to set swap interval!");
 }
 
 int

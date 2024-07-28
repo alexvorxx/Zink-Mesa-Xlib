@@ -1134,6 +1134,17 @@ enum gl_access_qualifier
     * if MMU faults are suppressed for the load.
     */
    ACCESS_CAN_SPECULATE = (1 << 12),
+
+   /**
+    * Whether coherency with CP (command processor) or GE (geometry engine)
+    * is required.
+    */
+   ACCESS_CP_GE_COHERENT_AMD = (1 << 13),
+
+   /* Guarantee that an image_load is in bounds so we can skip robustness code
+    * on AGX, used for some internal shaders.
+    */
+   ACCESS_IN_BOUNDS_AGX = (1 << 14),
 };
 
 /**
@@ -1459,6 +1470,21 @@ enum float_controls
    FLOAT_CONTROLS_SIGNED_ZERO_INF_NAN_PRESERVE_FP64 =
       FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP64 |
       FLOAT_CONTROLS_INF_PRESERVE_FP64 |
+      FLOAT_CONTROLS_NAN_PRESERVE_FP64,
+   
+   FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE =
+      FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP16 |
+      FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP32 |
+      FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE_FP64,
+
+   FLOAT_CONTROLS_INF_PRESERVE =
+      FLOAT_CONTROLS_INF_PRESERVE_FP16 |
+      FLOAT_CONTROLS_INF_PRESERVE_FP32 |
+      FLOAT_CONTROLS_INF_PRESERVE_FP64,
+
+   FLOAT_CONTROLS_NAN_PRESERVE =
+      FLOAT_CONTROLS_NAN_PRESERVE_FP16 |
+      FLOAT_CONTROLS_NAN_PRESERVE_FP32 |
       FLOAT_CONTROLS_NAN_PRESERVE_FP64,
 };
 

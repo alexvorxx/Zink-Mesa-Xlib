@@ -84,8 +84,7 @@ nir_dedup_inline_samplers(nir_shader *nir)
    exec_list_make_empty(&inline_samplers);
 
    nir_shader_instructions_pass(nir, nir_dedup_inline_samplers_instr,
-                                nir_metadata_block_index |
-                                   nir_metadata_dominance,
+                                nir_metadata_control_flow,
                                 &inline_samplers);
 
    /* If we found any inline samplers in the instructions pass, they'll now be
@@ -161,6 +160,7 @@ nir_lower_cl_images(nir_shader *shader, bool lower_image_derefs, bool lower_samp
          assert(var->data.location > last_loc);
          last_loc = var->data.location;
          var->data.driver_location = num_samplers++;
+         var->data.binding = var->data.driver_location;
       } else {
          /* CL shouldn't have any sampled images */
          assert(!glsl_type_is_sampler(var->type));
@@ -286,8 +286,7 @@ nir_lower_cl_images(nir_shader *shader, bool lower_image_derefs, bool lower_samp
    }
 
    if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_block_index |
-                                     nir_metadata_dominance);
+      nir_metadata_preserve(impl, nir_metadata_control_flow);
    } else {
       nir_metadata_preserve(impl, nir_metadata_all);
    }

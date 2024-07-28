@@ -255,6 +255,10 @@ struct ir3_instruction *ir3_create_array_load(struct ir3_context *ctx,
 void ir3_create_array_store(struct ir3_context *ctx, struct ir3_array *arr,
                             int n, struct ir3_instruction *src,
                             struct ir3_instruction *address);
+void ir3_lower_imm_offset(struct ir3_context *ctx, nir_intrinsic_instr *intr,
+                          nir_src *offset_src, unsigned imm_offset_bits,
+                          struct ir3_instruction **offset,
+                          unsigned *imm_offset);
 
 static inline type_t
 utype_for_size(unsigned bit_size)

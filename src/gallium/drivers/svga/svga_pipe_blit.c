@@ -1,27 +1,9 @@
-/**********************************************************
- * Copyright 2008-2017 VMware, Inc.  All rights reserved.
- *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use, copy,
- * modify, merge, publish, distribute, sublicense, and/or sell copies
- * of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- **********************************************************/
+/*
+ * Copyright (c) 2008-2024 Broadcom. All Rights Reserved.
+ * The term “Broadcom” refers to Broadcom Inc.
+ * and/or its subsidiaries.
+ * SPDX-License-Identifier: MIT
+ */
 
 #include "svga_context.h"
 #include "svga_debug.h"
@@ -30,6 +12,7 @@
 #include "svga_resource_buffer.h"
 #include "svga_resource_texture.h"
 #include "svga_surface.h"
+#include "svga_resource_buffer_upload.h"
 
 //#include "util/u_blit_sw.h"
 #include "util/format/u_format.h"
@@ -708,7 +691,7 @@ try_blit(struct svga_context *svga, const struct pipe_blit_info *blit_info)
 
    svga_toggle_render_condition(svga, blit.render_condition_enable, false);
 
-   util_blitter_blit(svga->blitter, &blit);
+   util_blitter_blit(svga->blitter, &blit, NULL);
 
    svga_toggle_render_condition(svga, blit.render_condition_enable, true);
 
@@ -824,6 +807,13 @@ is_texture_valid_to_copy(struct svga_context *svga,
    if (resource->target == PIPE_BUFFER) {
       struct svga_buffer *buf = svga_buffer(resource);
       struct svga_buffer_surface *bufsurf = buf->bufsurf;
+
+      if (!bufsurf) {
+         if (svga_buffer_validate_host_surface(svga, buf, buf->bind_flags)
+               != PIPE_OK)
+            return false;
+         bufsurf = buf->bufsurf;
+      }
 
       return (bufsurf &&
 	      bufsurf->surface_state >= SVGA_SURFACE_STATE_UPDATED);

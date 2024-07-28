@@ -2254,6 +2254,8 @@ brw_disassemble_inst(FILE *file, const struct brw_isa_info *isa,
                case LSC_OP_LOAD:
                   format(file, ",");
                   err |= control(file, "cache_load",
+                                 devinfo->ver >= 20 ?
+                                 xe2_lsc_cache_load :
                                  lsc_cache_load,
                                  lsc_msg_desc_cache_ctrl(devinfo, imm_desc),
                                  &space);
@@ -2261,6 +2263,8 @@ brw_disassemble_inst(FILE *file, const struct brw_isa_info *isa,
                default:
                   format(file, ",");
                   err |= control(file, "cache_store",
+                                 devinfo->ver >= 20 ?
+                                 xe2_lsc_cache_store :
                                  lsc_cache_store,
                                  lsc_msg_desc_cache_ctrl(devinfo, imm_desc),
                                  &space);

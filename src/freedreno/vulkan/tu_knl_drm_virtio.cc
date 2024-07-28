@@ -29,7 +29,6 @@
 #include "tu_dynamic_rendering.h"
 #include "tu_knl_drm.h"
 
-#define VIRGL_RENDERER_UNSTABLE_APIS 1
 #include "virglrenderer_hw.h"
 #include "msm_proto.h"
 
@@ -45,7 +44,7 @@ struct tu_userspace_fence_cmds {
    struct tu_userspace_fence_cmd cmds[64];
 };
 
-struct tu_queue_submit {
+struct tu_virtio_queue_submit {
    struct vk_queue_submit *vk_submit;
    struct tu_u_trace_submission_data *u_trace_submission_data;
 
@@ -412,14 +411,16 @@ tu_free_zombie_vma_locked(struct tu_device *dev, bool wait)
          last_signaled_fence = vma->fence;
       }
 
-      set_iova(dev, vma->res_id, 0);
-
       u_vector_remove(&dev->zombie_vmas);
 
-      struct tu_zombie_vma *vma2 = (struct tu_zombie_vma *)
-            u_vector_add(&vdev->zombie_vmas_stage_2);
+      if (vma->gem_handle) {
+         set_iova(dev, vma->res_id, 0);
 
-      *vma2 = *vma;
+         struct tu_zombie_vma *vma2 =
+            (struct tu_zombie_vma *) u_vector_add(&vdev->zombie_vmas_stage_2);
+
+         *vma2 = *vma;
+      }
    }
 
    /* And _then_ close the GEM handles: */
@@ -434,18 +435,43 @@ tu_free_zombie_vma_locked(struct tu_device *dev, bool wait)
    return VK_SUCCESS;
 }
 
+static bool
+tu_restore_from_zombie_vma_locked(struct tu_device *dev,
+                                  uint32_t gem_handle,
+                                  uint64_t *iova)
+{
+   struct tu_zombie_vma *vma;
+   u_vector_foreach (vma, &dev->zombie_vmas) {
+      if (vma->gem_handle == gem_handle) {
+         *iova = vma->iova;
+
+         /* mark to skip later vdrm bo and iova cleanup */
+         vma->gem_handle = 0;
+         return true;
+      }
+   }
+
+   return false;
+}
+
 static VkResult
-virtio_allocate_userspace_iova(struct tu_device *dev,
-                               uint64_t size,
-                               uint64_t client_iova,
-                               enum tu_bo_alloc_flags flags,
-                               uint64_t *iova)
+virtio_allocate_userspace_iova_locked(struct tu_device *dev,
+                                      uint32_t gem_handle,
+                                      uint64_t size,
+                                      uint64_t client_iova,
+                                      enum tu_bo_alloc_flags flags,
+                                      uint64_t *iova)
 {
    VkResult result;
 
-   mtx_lock(&dev->vma_mutex);
-
    *iova = 0;
+
+   if (flags & TU_BO_ALLOC_DMABUF) {
+      assert(gem_handle);
+
+      if (tu_restore_from_zombie_vma_locked(dev, gem_handle, iova))
+         return VK_SUCCESS;
+   }
 
    tu_free_zombie_vma_locked(dev, false);
 
@@ -460,13 +486,12 @@ virtio_allocate_userspace_iova(struct tu_device *dev,
       result = tu_allocate_userspace_iova(dev, size, client_iova, flags, iova);
    }
 
-   mtx_unlock(&dev->vma_mutex);
-
    return result;
 }
 
 static VkResult
 tu_bo_init(struct tu_device *dev,
+           struct vk_object_base *base,
            struct tu_bo *bo,
            uint32_t gem_handle,
            uint64_t size,
@@ -516,6 +541,7 @@ tu_bo_init(struct tu_device *dev,
       .name = name,
       .refcnt = 1,
       .bo_list_idx = idx,
+      .base = base,
    };
 
    mtx_unlock(&dev->bo_mutex);
@@ -558,12 +584,13 @@ tu_bo_set_kernel_name(struct tu_device *dev, struct tu_bo *bo, const char *name)
 
 static VkResult
 virtio_bo_init(struct tu_device *dev,
-            struct tu_bo **out_bo,
-            uint64_t size,
-            uint64_t client_iova,
-            VkMemoryPropertyFlags mem_property,
-            enum tu_bo_alloc_flags flags,
-            const char *name)
+               struct vk_object_base *base,
+               struct tu_bo **out_bo,
+               uint64_t size,
+               uint64_t client_iova,
+               VkMemoryPropertyFlags mem_property,
+               enum tu_bo_alloc_flags flags,
+               const char *name)
 {
    struct tu_virtio_device *vdev = dev->vdev;
    struct msm_ccmd_gem_new_req req = {
@@ -571,12 +598,8 @@ virtio_bo_init(struct tu_device *dev,
          .size = size,
    };
    VkResult result;
-
-   result = virtio_allocate_userspace_iova(dev, size, client_iova,
-                                           flags, &req.iova);
-   if (result != VK_SUCCESS) {
-      return result;
-   }
+   uint32_t res_id;
+   struct tu_bo *bo;
 
    if (mem_property & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
       if (mem_property & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
@@ -601,6 +624,16 @@ virtio_bo_init(struct tu_device *dev,
    if (flags & TU_BO_ALLOC_GPU_READ_ONLY)
       req.flags |= MSM_BO_GPU_READONLY;
 
+   assert(!(flags & TU_BO_ALLOC_DMABUF));
+
+   mtx_lock(&dev->vma_mutex);
+   result = virtio_allocate_userspace_iova_locked(dev, 0, size, client_iova,
+                                                  flags, &req.iova);
+   mtx_unlock(&dev->vma_mutex);
+
+   if (result != VK_SUCCESS)
+      return result;
+
    /* tunneled cmds are processed separately on host side,
     * before the renderer->get_blob() callback.. the blob_id
     * is used to link the created bo to the get_blob() call
@@ -611,29 +644,30 @@ virtio_bo_init(struct tu_device *dev,
       vdrm_bo_create(vdev->vdrm, size, blob_flags, req.blob_id, &req.hdr);
 
    if (!handle) {
-      util_vma_heap_free(&dev->vma, req.iova, size);
-      return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+      result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+      goto fail;
    }
 
-   uint32_t res_id = vdrm_handle_to_res_id(vdev->vdrm, handle);
-   struct tu_bo* bo = tu_device_lookup_bo(dev, res_id);
+   res_id = vdrm_handle_to_res_id(vdev->vdrm, handle);
+   bo = tu_device_lookup_bo(dev, res_id);
    assert(bo && bo->gem_handle == 0);
 
    bo->res_id = res_id;
 
-   result = tu_bo_init(dev, bo, handle, size, req.iova, flags, name);
-   if (result != VK_SUCCESS)
+   result = tu_bo_init(dev, base, bo, handle, size, req.iova, flags, name);
+   if (result != VK_SUCCESS) {
       memset(bo, 0, sizeof(*bo));
-   else
-      *out_bo = bo;
+      goto fail;
+   }
+
+   *out_bo = bo;
 
    /* We don't use bo->name here because for the !TU_DEBUG=bo case bo->name is NULL. */
    tu_bo_set_kernel_name(dev, bo, name);
 
-   if (result == VK_SUCCESS &&
-       (mem_property & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
+   if ((mem_property & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
        !(mem_property & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      tu_bo_map(dev, bo);
+      tu_bo_map(dev, bo, NULL);
 
       /* Cached non-coherent memory may already have dirty cache lines,
        * we should clean the cache lines before GPU got the chance to
@@ -641,9 +675,15 @@ virtio_bo_init(struct tu_device *dev,
        *
        * MSM already does this automatically for uncached (MSM_BO_WC) memory.
        */
-      tu_sync_cache_bo(dev, bo, 0, VK_WHOLE_SIZE, TU_MEM_SYNC_CACHE_TO_GPU);
+      tu_bo_sync_cache(dev, bo, 0, VK_WHOLE_SIZE, TU_MEM_SYNC_CACHE_TO_GPU);
    }
 
+   return VK_SUCCESS;
+
+fail:
+   mtx_lock(&dev->vma_mutex);
+   util_vma_heap_free(&dev->vma, req.iova, size);
+   mtx_unlock(&dev->vma_mutex);
    return result;
 }
 
@@ -666,11 +706,6 @@ virtio_bo_init_dmabuf(struct tu_device *dev,
    /* iova allocation needs to consider the object's *real* size: */
    size = real_size;
 
-   uint64_t iova;
-   result = virtio_allocate_userspace_iova(dev, size, 0, TU_BO_ALLOC_NO_FLAGS, &iova);
-   if (result != VK_SUCCESS)
-      return result;
-
    /* Importing the same dmabuf several times would yield the same
     * gem_handle. Thus there could be a race when destroying
     * BO and importing the same dmabuf from different threads.
@@ -678,8 +713,10 @@ virtio_bo_init_dmabuf(struct tu_device *dev,
     * to happen in parallel.
     */
    u_rwlock_wrlock(&dev->dma_bo_lock);
+   mtx_lock(&dev->vma_mutex);
 
    uint32_t handle, res_id;
+   uint64_t iova;
 
    handle = vdrm_dmabuf_to_handle(vdrm, prime_fd);
    if (!handle) {
@@ -689,6 +726,7 @@ virtio_bo_init_dmabuf(struct tu_device *dev,
 
    res_id = vdrm_handle_to_res_id(vdrm, handle);
    if (!res_id) {
+      /* XXX gem_handle potentially leaked here since no refcnt */
       result = vk_error(dev, VK_ERROR_INVALID_EXTERNAL_HANDLE);
       goto out_unlock;
    }
@@ -705,31 +743,32 @@ virtio_bo_init_dmabuf(struct tu_device *dev,
 
    bo->res_id = res_id;
 
-   result = tu_bo_init(dev, bo, handle, size, iova,
-                       TU_BO_ALLOC_NO_FLAGS, "dmabuf");
-   if (result != VK_SUCCESS)
-      memset(bo, 0, sizeof(*bo));
-   else
-      *out_bo = bo;
-
-out_unlock:
-   u_rwlock_wrunlock(&dev->dma_bo_lock);
+   result = virtio_allocate_userspace_iova_locked(dev, handle, size, 0,
+                                                  TU_BO_ALLOC_DMABUF, &iova);
    if (result != VK_SUCCESS) {
-      mtx_lock(&dev->vma_mutex);
-      util_vma_heap_free(&dev->vma, iova, size);
-      mtx_unlock(&dev->vma_mutex);
+      vdrm_bo_close(dev->vdev->vdrm, handle);
+      goto out_unlock;
    }
 
+   result =
+      tu_bo_init(dev, NULL, bo, handle, size, iova, TU_BO_ALLOC_NO_FLAGS, "dmabuf");
+   if (result != VK_SUCCESS) {
+      util_vma_heap_free(&dev->vma, iova, size);
+      memset(bo, 0, sizeof(*bo));
+   } else {
+      *out_bo = bo;
+   }
+
+out_unlock:
+   mtx_unlock(&dev->vma_mutex);
+   u_rwlock_wrunlock(&dev->dma_bo_lock);
    return result;
 }
 
 static VkResult
-virtio_bo_map(struct tu_device *dev, struct tu_bo *bo)
+virtio_bo_map(struct tu_device *dev, struct tu_bo *bo, void *placed_addr)
 {
-   if (bo->map)
-      return VK_SUCCESS;
-
-   bo->map = vdrm_bo_map(dev->vdev->vdrm, bo->gem_handle, bo->size);
+   bo->map = vdrm_bo_map(dev->vdev->vdrm, bo->gem_handle, bo->size, placed_addr);
    if (bo->map == MAP_FAILED)
       return vk_error(dev, VK_ERROR_MEMORY_MAP_FAILED);
 
@@ -750,7 +789,7 @@ tu_queue_submit_create_locked(struct tu_queue *queue,
                               const uint32_t nr_in_syncobjs,
                               const uint32_t nr_out_syncobjs,
                               uint32_t perf_pass_index,
-                              struct tu_queue_submit *new_submit)
+                              struct tu_virtio_queue_submit *new_submit)
 {
    VkResult result;
 
@@ -759,7 +798,7 @@ tu_queue_submit_create_locked(struct tu_queue *queue,
 
    struct vk_command_buffer **vk_cmd_buffers = vk_submit->command_buffers;
 
-   memset(new_submit, 0, sizeof(struct tu_queue_submit));
+   memset(new_submit, 0, sizeof(struct tu_virtio_queue_submit));
 
    new_submit->cmd_buffers = (struct tu_cmd_buffer **) vk_cmd_buffers;
    new_submit->nr_cmd_buffers = vk_submit->command_buffer_count;
@@ -855,7 +894,7 @@ fail_cmds:
 }
 
 static void
-tu_queue_submit_finish(struct tu_queue *queue, struct tu_queue_submit *submit)
+tu_queue_submit_finish(struct tu_queue *queue, struct tu_virtio_queue_submit *submit)
 {
    vk_free(&queue->device->vk.alloc, submit->cmds);
    vk_free(&queue->device->vk.alloc, submit->in_syncobjs);
@@ -880,7 +919,7 @@ tu_fill_msm_gem_submit(struct tu_device *dev,
 
 static void
 tu_queue_build_msm_gem_submit_cmds(struct tu_queue *queue,
-                                   struct tu_queue_submit *submit,
+                                   struct tu_virtio_queue_submit *submit,
                                    struct tu_cs *autotune_cs)
 {
    struct tu_device *dev = queue->device;
@@ -950,14 +989,14 @@ setup_fence_cmds(struct tu_device *dev)
    struct tu_virtio_device *vdev = dev->vdev;
    VkResult result;
 
-   result = tu_bo_init_new(dev, &vdev->fence_cmds_mem, sizeof(*vdev->fence_cmds),
-                           (enum tu_bo_alloc_flags)
+   result = tu_bo_init_new(dev, NULL, &vdev->fence_cmds_mem,
+                           sizeof(*vdev->fence_cmds), (enum tu_bo_alloc_flags)
                               (TU_BO_ALLOC_ALLOW_DUMP | TU_BO_ALLOC_GPU_READ_ONLY),
                            "fence_cmds");
    if (result != VK_SUCCESS)
       return result;
 
-   result = tu_bo_map(dev, vdev->fence_cmds_mem);
+   result = tu_bo_map(dev, vdev->fence_cmds_mem, NULL);
    if (result != VK_SUCCESS)
       return result;
 
@@ -979,7 +1018,7 @@ setup_fence_cmds(struct tu_device *dev)
 }
 
 static VkResult
-tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
+tu_queue_submit_locked(struct tu_queue *queue, struct tu_virtio_queue_submit *submit)
 {
    struct tu_virtio_device *vdev = queue->device->vdev;
 
@@ -1098,7 +1137,8 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
          bool free_data = i == submission_data->last_buffer_with_tracepoints;
          if (submission_data->cmd_trace_data[i].trace)
             u_trace_flush(submission_data->cmd_trace_data[i].trace,
-                          submission_data, free_data);
+                          submission_data, queue->device->vk.current_frame,
+                          free_data);
 
          if (!submission_data->cmd_trace_data[i].timestamp_copy_cs) {
             /* u_trace is owned by cmd_buffer */
@@ -1153,7 +1193,7 @@ virtio_queue_submit(struct tu_queue *queue, struct vk_queue_submit *submit)
    MESA_TRACE_FUNC();
    uint32_t perf_pass_index = queue->device->perfcntrs_pass_cs ?
                               submit->perf_pass_index : ~0;
-   struct tu_queue_submit submit_req;
+   struct tu_virtio_queue_submit submit_req;
 
    if (TU_DEBUG(LOG_SKIP_GMEM_OPS)) {
       tu_dbg_log_gmem_load_store_skips(queue->device);
@@ -1204,7 +1244,7 @@ virtio_queue_submit(struct tu_queue *queue, struct vk_queue_submit *submit)
    if (ret != VK_SUCCESS)
        return ret;
 
-   u_trace_context_process(&queue->device->trace_context, true);
+   u_trace_context_process(&queue->device->trace_context, false);
 
    return VK_SUCCESS;
 }

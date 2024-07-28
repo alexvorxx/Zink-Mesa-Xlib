@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-/** @file brw_fs_scoreboard.cpp
+/** @file
  *
  * Gfx12+ hardware lacks the register scoreboard logic that used to guarantee
  * data coherency between register reads and writes in previous generations.
@@ -659,7 +659,7 @@ namespace {
        * Look up the most current data dependency for register \p r.
        */
       dependency
-      get(const fs_reg &r) const
+      get(const brw_reg &r) const
       {
          if (const dependency *p = const_cast<scoreboard *>(this)->dep(r))
             return *p;
@@ -671,7 +671,7 @@ namespace {
        * Specify the most current data dependency for register \p r.
        */
       void
-      set(const fs_reg &r, const dependency &d)
+      set(const brw_reg &r, const dependency &d)
       {
          if (dependency *p = dep(r))
             *p = d;
@@ -761,7 +761,7 @@ namespace {
       dependency accum_dep;
 
       dependency *
-      dep(const fs_reg &r)
+      dep(const brw_reg &r)
       {
          const unsigned reg = (r.file == VGRF ? r.nr + r.offset / REG_SIZE :
                                reg_offset(r) / REG_SIZE);
@@ -1038,7 +1038,7 @@ namespace {
             dependency::done;
 
          for (unsigned j = 0; j < regs_read(inst, i); j++) {
-            const fs_reg r = byte_offset(inst->src[i], REG_SIZE * j);
+            const brw_reg r = byte_offset(inst->src[i], REG_SIZE * j);
             sb.set(r, shadow(sb.get(r), rd_dep));
          }
       }

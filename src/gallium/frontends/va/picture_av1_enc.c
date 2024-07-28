@@ -45,7 +45,12 @@
 #define FRAME_TYPE_SWITCH        (3)
 #define OBU_TYPE_SEQUENCE_HEADER (1)
 #define OBU_TYPE_FRAME_HEADER    (3)
+#define OBU_TYPE_META            (5)
 #define OBU_TYPE_FRAME           (6)
+#define METADATA_TYPE_HDR_CLL    (1)
+#define METADATA_TYPE_HDR_MDCV   (2)
+#define METADATA_TYPE_ITU_T35    (4)
+#define METADATA_TYPE_TIMECODE   (5)
 #define AV1_MIN_QP_DEFAULT (1)
 #define AV1_MAX_QP_DEFAULT (255)
 
@@ -144,7 +149,6 @@ VAStatus vlVaHandleVAEncPictureParameterBufferTypeAV1(vlVaDriver *drv, vlVaConte
    context->desc.av1enc.allow_high_precision_mv = av1->picture_flags.bits.allow_high_precision_mv;
    context->desc.av1enc.palette_mode_enable = av1->picture_flags.bits.palette_mode_enable;
    context->desc.av1enc.long_term_reference = av1->picture_flags.bits.long_term_reference;
-   context->desc.av1enc.num_tiles_in_pic = av1->tile_cols * av1->tile_rows;
    context->desc.av1enc.tile_rows = av1->tile_rows;
    context->desc.av1enc.tile_cols = av1->tile_cols;
    context->desc.av1enc.context_update_tile_id = av1->context_update_tile_id;
@@ -734,12 +738,56 @@ static void av1_frame_header(vlVaContext *context, struct vl_vlc *vlc)
          av1->use_ref_frame_mvs = 0;
       else
          av1->use_ref_frame_mvs = av1_f(vlc, 1);
-
-      if (av1->disable_cdf_update)
-         av1->disable_frame_end_update_cdf = 1;
-      else
-         av1->disable_frame_end_update_cdf = av1_f(vlc, 1);
    }
+
+   if (av1->disable_cdf_update)
+      av1->disable_frame_end_update_cdf = 1;
+   else
+      av1->disable_frame_end_update_cdf = av1_f(vlc, 1);
+
+   /* tile_info()
+    * trying to keep uniform_tile_spacing_flag
+    * if the tile rows and columns are not within the range
+    * of HW capability, it will need to redo the tiling
+    * according to the limixation.
+    */
+
+   av1->uniform_tile_spacing = av1_f(vlc, 1);
+}
+
+static void av1_metatype_hdr_cll(vlVaContext *context, struct vl_vlc *vlc)
+{
+   struct pipe_av1_enc_picture_desc *av1 = &context->desc.av1enc;
+
+   av1->metadata_flags.hdr_cll = 1;
+   av1->metadata_hdr_cll.max_cll = av1_f(vlc, 16);
+   av1->metadata_hdr_cll.max_fall = av1_f(vlc, 16);
+}
+
+static void av1_metatype_hdr_mdcv(vlVaContext *context, struct vl_vlc *vlc)
+{
+   struct pipe_av1_enc_picture_desc *av1 = &context->desc.av1enc;
+
+   av1->metadata_flags.hdr_mdcv = 1;
+
+   for (int32_t i = 0; i < 3; i++) {
+      av1->metadata_hdr_mdcv.primary_chromaticity_x[i] = av1_f(vlc, 16);
+      av1->metadata_hdr_mdcv.primary_chromaticity_y[i] = av1_f(vlc, 16);
+   }
+   av1->metadata_hdr_mdcv.white_point_chromaticity_x = av1_f(vlc, 16);
+   av1->metadata_hdr_mdcv.white_point_chromaticity_y = av1_f(vlc, 16);
+   av1->metadata_hdr_mdcv.luminance_max = av1_f(vlc, 32);
+   av1->metadata_hdr_mdcv.luminance_min = av1_f(vlc, 32);
+}
+
+static void av1_meta_obu(vlVaContext *context, struct vl_vlc *vlc)
+{
+   unsigned meta_type = av1_uleb128(vlc);
+
+   if (meta_type == METADATA_TYPE_HDR_CLL)
+      av1_metatype_hdr_cll(context, vlc);
+   else if (meta_type == METADATA_TYPE_HDR_MDCV)
+      av1_metatype_hdr_mdcv(context, vlc);
 }
 
 VAStatus
@@ -750,12 +798,13 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeAV1(vlVaContext *context, vlVaBuffer *b
 
    while (vl_vlc_bits_left(&vlc) > 0) {
       unsigned obu_type = 0;
-      /* search sequece header in the first 8 bytes */
+      /* search sequence header in the first 8 bytes */
       for (int i = 0; i < 8 && vl_vlc_bits_left(&vlc) >= 8; ++i) {
          /* then start decoding , first 5 bits has to be 0000 1xxx for sequence header */
          obu_type = vl_vlc_peekbits(&vlc, 5);
          if (obu_type == OBU_TYPE_SEQUENCE_HEADER
             || obu_type == OBU_TYPE_FRAME_HEADER
+            || obu_type == OBU_TYPE_META
             || obu_type == OBU_TYPE_FRAME)
             break;
          vl_vlc_eatbits(&vlc, 8);
@@ -779,6 +828,8 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeAV1(vlVaContext *context, vlVaBuffer *b
          av1_sequence_header(context, &vlc);
       else if (obu_type == OBU_TYPE_FRAME_HEADER || obu_type == OBU_TYPE_FRAME)
          av1_frame_header(context, &vlc);
+      else if (obu_type == OBU_TYPE_META)
+         av1_meta_obu(context, &vlc);
       else
          assert(0);
 
@@ -791,15 +842,24 @@ vlVaHandleVAEncPackedHeaderDataBufferTypeAV1(vlVaContext *context, vlVaBuffer *b
 VAStatus
 vlVaHandleVAEncMiscParameterTypeFrameRateAV1(vlVaContext *context, VAEncMiscParameterBuffer *misc)
 {
+   unsigned temporal_id;
    VAEncMiscParameterFrameRate *fr = (VAEncMiscParameterFrameRate *)misc->data;
-   for (int i = 0; i < ARRAY_SIZE(context->desc.av1enc.rc); i++) {
-      if (fr->framerate & 0xffff0000) {
-         context->desc.av1enc.rc[i].frame_rate_num = fr->framerate       & 0xffff;
-         context->desc.av1enc.rc[i].frame_rate_den = fr->framerate >> 16 & 0xffff;
-      } else {
-         context->desc.av1enc.rc[i].frame_rate_num = fr->framerate;
-         context->desc.av1enc.rc[i].frame_rate_den = 1;
-      }
+
+   temporal_id = context->desc.av1enc.rc[0].rate_ctrl_method !=
+                 PIPE_H2645_ENC_RATE_CONTROL_METHOD_DISABLE ?
+                 fr->framerate_flags.bits.temporal_id :
+                 0;
+
+   if (context->desc.av1enc.seq.num_temporal_layers > 0 &&
+       temporal_id >= context->desc.av1enc.seq.num_temporal_layers)
+      return VA_STATUS_ERROR_INVALID_PARAMETER;
+
+   if (fr->framerate & 0xffff0000) {
+      context->desc.av1enc.rc[temporal_id].frame_rate_num = fr->framerate       & 0xffff;
+      context->desc.av1enc.rc[temporal_id].frame_rate_den = fr->framerate >> 16 & 0xffff;
+   } else {
+      context->desc.av1enc.rc[temporal_id].frame_rate_num = fr->framerate;
+      context->desc.av1enc.rc[temporal_id].frame_rate_den = 1;
    }
 
    return VA_STATUS_SUCCESS;

@@ -6,11 +6,10 @@ use crate::core::platform::*;
 use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::context::PipeContext;
-use mesa_rust::pipe::resource::PipeResource;
-use mesa_rust::pipe::screen::ResourceType;
 use mesa_rust_util::properties::*;
 use rusticl_opencl_gen::*;
 
+use std::cmp;
 use std::mem;
 use std::ops::Deref;
 use std::sync::mpsc;
@@ -25,7 +24,7 @@ use std::thread::JoinHandle;
 /// Used for tracking bound GPU state to lower CPU overhead and centralize state tracking
 pub struct QueueContext {
     ctx: PipeContext,
-    cb0: Option<PipeResource>,
+    use_stream: bool,
 }
 
 impl QueueContext {
@@ -34,34 +33,25 @@ impl QueueContext {
             .screen()
             .create_context()
             .ok_or(CL_OUT_OF_HOST_MEMORY)?;
-        let size = device.param_max_size() as u32;
-        let cb0 = if device.prefers_real_buffer_in_cb0() {
-            device
-                .screen()
-                .resource_create_buffer(size, ResourceType::Cb0, 0)
-        } else {
-            None
-        };
 
-        if let Some(cb0) = &cb0 {
-            ctx.bind_constant_buffer(0, cb0);
-        }
-
-        Ok(Self { ctx: ctx, cb0: cb0 })
+        Ok(Self {
+            ctx: ctx,
+            use_stream: device.prefers_real_buffer_in_cb0(),
+        })
     }
 
-    pub fn update_cb0(&self, data: &[u8]) {
+    pub fn update_cb0(&self, data: &[u8]) -> CLResult<()> {
         // only update if we actually bind data
         if !data.is_empty() {
-            // if we have a real buffer, update that, otherwise just set the data directly
-            if let Some(cb) = &self.cb0 {
-                debug_assert!(data.len() <= cb.width() as usize);
-                self.ctx
-                    .buffer_subdata(cb, 0, data.as_ptr().cast(), data.len() as u32);
+            if self.use_stream {
+                if !self.ctx.set_constant_buffer_stream(0, data) {
+                    return Err(CL_OUT_OF_RESOURCES);
+                }
             } else {
                 self.ctx.set_constant_buffer(0, data);
             }
         }
+        Ok(())
     }
 }
 
@@ -131,55 +121,81 @@ impl Queue {
             }),
             _thrd: thread::Builder::new()
                 .name("rusticl queue thread".into())
-                .spawn(move || loop {
-                    let r = rx_t.recv();
-                    if r.is_err() {
-                        break;
+                .spawn(move || {
+                    // Track the error of all executed events. This is only needed for in-order
+                    // queues, so for out of order we'll need to update this.
+                    // Also, the OpenCL specification gives us enough freedom to do whatever we want
+                    // in case of any event running into an error while executing:
+                    //
+                    //   Unsuccessful completion results in abnormal termination of the command
+                    //   which is indicated by setting the event status to a negative value. In this
+                    //   case, the command-queue associated with the abnormally terminated command
+                    //   and all other command-queues in the same context may no longer be available
+                    //   and their behavior is implementation-defined.
+                    //
+                    // TODO: use pipe_context::set_device_reset_callback to get notified about gone
+                    //       GPU contexts
+                    let mut last_err = CL_SUCCESS as cl_int;
+                    loop {
+                        let r = rx_t.recv();
+                        if r.is_err() {
+                            break;
+                        }
+
+                        let new_events = r.unwrap();
+                        let mut flushed = Vec::new();
+
+                        for e in new_events {
+                            // If we hit any deps from another queue, flush so we don't risk a dead
+                            // lock.
+                            if e.deps.iter().any(|ev| ev.queue != e.queue) {
+                                flush_events(&mut flushed, &ctx);
+                            }
+
+                            // check if any dependency has an error
+                            for dep in &e.deps {
+                                // We have to wait on user events or events from other queues.
+                                let dep_err = if dep.is_user() || dep.queue != e.queue {
+                                    dep.wait()
+                                } else {
+                                    dep.status()
+                                };
+
+                                last_err = cmp::min(last_err, dep_err);
+                            }
+
+                            if last_err < 0 {
+                                // If a dependency failed, fail this event as well.
+                                e.set_user_status(last_err);
+                                continue;
+                            }
+
+                            // if there is an execution error don't bother signaling it as the  context
+                            // might be in a broken state. How queues behave after any event hit an
+                            // error is entirely implementation defined.
+                            last_err = e.call(&ctx);
+                            if last_err < 0 {
+                                continue;
+                            }
+
+                            if e.is_user() {
+                                // On each user event we flush our events as application might
+                                // wait on them before signaling user events.
+                                flush_events(&mut flushed, &ctx);
+
+                                // Wait on user events as they are synchronization points in the
+                                // application's control.
+                                e.wait();
+                            } else if Platform::dbg().sync_every_event {
+                                flushed.push(e);
+                                flush_events(&mut flushed, &ctx);
+                            } else {
+                                flushed.push(e);
+                            }
+                        }
+
+                        flush_events(&mut flushed, &ctx);
                     }
-
-                    let new_events = r.unwrap();
-                    let mut flushed = Vec::new();
-
-                    for e in new_events {
-                        // If we hit any deps from another queue, flush so we don't risk a dead
-                        // lock.
-                        if e.deps.iter().any(|ev| ev.queue != e.queue) {
-                            flush_events(&mut flushed, &ctx);
-                        }
-
-                        // We have to wait on user events or events from other queues.
-                        let err = e
-                            .deps
-                            .iter()
-                            .filter(|ev| ev.is_user() || ev.queue != e.queue)
-                            .map(|e| e.wait())
-                            .find(|s| *s < 0);
-
-                        if let Some(err) = err {
-                            // If a dependency failed, fail this event as well.
-                            e.set_user_status(err);
-                            continue;
-                        }
-
-                        e.call(&ctx);
-
-                        if e.is_user() {
-                            // On each user event we flush our events as application might
-                            // wait on them before signaling user events.
-                            flush_events(&mut flushed, &ctx);
-
-                            // Wait on user events as they are synchronization points in the
-                            // application's control.
-                            e.wait();
-                        } else if Platform::dbg().sync_every_event {
-                            flushed.push(e);
-                            flush_events(&mut flushed, &ctx);
-                        } else {
-                            flushed.push(e);
-                        }
-                    }
-
-                    flush_events(&mut flushed, &ctx);
                 })
                 .unwrap(),
         }))

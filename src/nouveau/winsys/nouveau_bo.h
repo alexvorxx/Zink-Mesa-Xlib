@@ -20,10 +20,10 @@ extern "C" {
 
 enum nouveau_ws_bo_flags {
    /* vram or gart depending on GPU */
-   NOUVEAU_WS_BO_LOCAL = 0 << 0,
-   NOUVEAU_WS_BO_GART  = 1 << 0,
-   NOUVEAU_WS_BO_MAP   = 1 << 1,
-   NOUVEAU_WS_BO_NO_SHARE = 1 << 2,
+   NOUVEAU_WS_BO_VRAM  = 1 << 0,
+   NOUVEAU_WS_BO_GART  = 1 << 1,
+   NOUVEAU_WS_BO_MAP   = 1 << 2,
+   NOUVEAU_WS_BO_NO_SHARE = 1 << 3,
 };
 
 enum nouveau_ws_bo_map_flags {
@@ -33,23 +33,13 @@ enum nouveau_ws_bo_map_flags {
 };
 
 struct nouveau_ws_bo {
-   uint64_t size;
-   uint64_t offset;
-   uint64_t align;
-   uint64_t map_handle;
    struct nouveau_ws_device *dev;
+   uint64_t size;
+   uint64_t map_handle;
    uint32_t handle;
    enum nouveau_ws_bo_flags flags;
    atomic_uint_fast32_t refcnt;
 };
-
-uint64_t nouveau_ws_alloc_vma(struct nouveau_ws_device *dev,
-                              uint64_t addr, uint64_t size, uint64_t align,
-                              bool bda, bool sparse);
-
-void nouveau_ws_free_vma(struct nouveau_ws_device *dev,
-                         uint64_t offset, uint64_t size,
-                         bool bda, bool sparse);
 
 void nouveau_ws_bo_bind_vma(struct nouveau_ws_device *dev,
                             struct nouveau_ws_bo *bo,
@@ -68,12 +58,17 @@ struct nouveau_ws_bo *nouveau_ws_bo_new_mapped(struct nouveau_ws_device *,
                                                enum nouveau_ws_bo_flags,
                                                enum nouveau_ws_bo_map_flags map_flags,
                                                void **map_out);
+struct nouveau_ws_bo *nouveau_ws_bo_new_tiled(struct nouveau_ws_device *,
+                                              uint64_t size, uint64_t align,
+                                              uint8_t pte_kind,
+                                              uint16_t tile_mode,
+                                              enum nouveau_ws_bo_flags);
 struct nouveau_ws_bo *nouveau_ws_bo_from_dma_buf(struct nouveau_ws_device *,
                                                  int fd);
 void nouveau_ws_bo_destroy(struct nouveau_ws_bo *);
 void *nouveau_ws_bo_map(struct nouveau_ws_bo *,
-                        enum nouveau_ws_bo_map_flags,
-                        void *fixed_addr);
+                        enum nouveau_ws_bo_map_flags);
+void nouveau_ws_bo_unmap(struct nouveau_ws_bo *bo, void *ptr);
 bool nouveau_ws_bo_wait(struct nouveau_ws_bo *, enum nouveau_ws_bo_map_flags flags);
 int nouveau_ws_bo_dma_buf(struct nouveau_ws_bo *, int *fd);
 
@@ -81,20 +76,6 @@ static inline void
 nouveau_ws_bo_ref(struct nouveau_ws_bo *bo)
 {
    bo->refcnt++;
-}
-
-static inline void
-nouveau_ws_bo_unmap(struct nouveau_ws_bo *bo, void *ptr)
-{
-   munmap(ptr, bo->size);
-}
-
-static inline int
-nouveau_ws_bo_overmap(struct nouveau_ws_bo *bo, void *ptr)
-{
-   void *map = mmap(ptr, bo->size, PROT_NONE,
-                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-   return map == MAP_FAILED ? -1 : 0;
 }
 
 #ifdef __cplusplus

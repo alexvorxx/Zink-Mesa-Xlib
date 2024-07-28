@@ -120,10 +120,10 @@ saturate_propagation(fs_visitor *v)
 
 TEST_F(saturate_propagation_test, basic)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
 
@@ -137,7 +137,7 @@ TEST_F(saturate_propagation_test, basic)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -154,11 +154,11 @@ TEST_F(saturate_propagation_test, basic)
 
 TEST_F(saturate_propagation_test, other_non_saturated_use)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
    bld.ADD(dst2, dst0, src0);
@@ -173,7 +173,7 @@ TEST_F(saturate_propagation_test, other_non_saturated_use)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -191,10 +191,10 @@ TEST_F(saturate_propagation_test, other_non_saturated_use)
 
 TEST_F(saturate_propagation_test, predicated_instruction)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1)
       ->predicate = BRW_PREDICATE_NORMAL;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -208,7 +208,7 @@ TEST_F(saturate_propagation_test, predicated_instruction)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -225,9 +225,9 @@ TEST_F(saturate_propagation_test, predicated_instruction)
 
 TEST_F(saturate_propagation_test, neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
    bld.RNDU(dst0, src0);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -241,7 +241,7 @@ TEST_F(saturate_propagation_test, neg_mov_sat)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -258,10 +258,10 @@ TEST_F(saturate_propagation_test, neg_mov_sat)
 
 TEST_F(saturate_propagation_test, add_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -276,7 +276,7 @@ TEST_F(saturate_propagation_test, add_neg_mov_sat)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -295,10 +295,10 @@ TEST_F(saturate_propagation_test, add_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, add_imm_float_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = brw_imm_f(1.0f);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = brw_imm_f(1.0f);
    bld.ADD(dst0, src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -313,7 +313,7 @@ TEST_F(saturate_propagation_test, add_imm_float_neg_mov_sat)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -332,10 +332,10 @@ TEST_F(saturate_propagation_test, add_imm_float_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.MUL(dst0, src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -350,7 +350,7 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -369,11 +369,11 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, mad_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src2 = bld.vgrf(BRW_TYPE_F);
    bld.MAD(dst0, src0, src1, src2);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -388,7 +388,7 @@ TEST_F(saturate_propagation_test, mad_neg_mov_sat)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -409,11 +409,11 @@ TEST_F(saturate_propagation_test, mad_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, mad_imm_float_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = brw_imm_f(1.0f);
-   fs_reg src1 = brw_imm_f(-2.0f);
-   fs_reg src2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = brw_imm_f(1.0f);
+   brw_reg src1 = brw_imm_f(-2.0f);
+   brw_reg src2 = bld.vgrf(BRW_TYPE_F);
    /* The builder for MAD tries to be helpful and not put immediates as direct
     * sources. We want to test specifically that case.
     */
@@ -433,7 +433,7 @@ TEST_F(saturate_propagation_test, mad_imm_float_neg_mov_sat)
     * 1: mov(16)       dst1  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -453,11 +453,11 @@ TEST_F(saturate_propagation_test, mad_imm_float_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.MUL(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
    dst0.negate = true;
@@ -473,7 +473,7 @@ TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -494,11 +494,11 @@ TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.MUL(dst0, src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -514,7 +514,7 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -536,10 +536,10 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
 
 TEST_F(saturate_propagation_test, abs_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    dst0.abs = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -553,7 +553,7 @@ TEST_F(saturate_propagation_test, abs_mov_sat)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -570,11 +570,11 @@ TEST_F(saturate_propagation_test, abs_mov_sat)
 
 TEST_F(saturate_propagation_test, producer_saturates)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    set_saturate(true, bld.ADD(dst0, src0, src1));
    set_saturate(true, bld.MOV(dst1, dst0));
    bld.MOV(dst2, dst0);
@@ -591,7 +591,7 @@ TEST_F(saturate_propagation_test, producer_saturates)
     * 2: mov(16)       dst2  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -608,11 +608,11 @@ TEST_F(saturate_propagation_test, producer_saturates)
 
 TEST_F(saturate_propagation_test, intervening_saturating_copy)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
    set_saturate(true, bld.MOV(dst2, dst0));
@@ -629,7 +629,7 @@ TEST_F(saturate_propagation_test, intervening_saturating_copy)
     * 2: mov(16)       dst2  dst0
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -648,13 +648,13 @@ TEST_F(saturate_propagation_test, intervening_saturating_copy)
 
 TEST_F(saturate_propagation_test, intervening_dest_write)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F, 4);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src2 = bld.vgrf(BRW_TYPE_F, 2);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F, 4);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src2 = bld.vgrf(BRW_TYPE_F, 2);
 
-   fs_reg tex_srcs[TEX_LOGICAL_NUM_SRCS];
+   brw_reg tex_srcs[TEX_LOGICAL_NUM_SRCS];
    tex_srcs[TEX_LOGICAL_SRC_COORDINATE] = src2;
    tex_srcs[TEX_LOGICAL_SRC_SURFACE] = brw_imm_ud(0);
    tex_srcs[TEX_LOGICAL_SRC_COORD_COMPONENTS] = brw_imm_ud(2);
@@ -676,7 +676,7 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -695,11 +695,11 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.MUL(dst0, src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -716,7 +716,7 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -737,10 +737,10 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
 
 TEST_F(saturate_propagation_test, smaller_exec_size_consumer)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.ADD(dst0, src0, src1);
    set_saturate(true, bld.group(8, 0).MOV(dst1, dst0));
 
@@ -753,7 +753,7 @@ TEST_F(saturate_propagation_test, smaller_exec_size_consumer)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -770,10 +770,10 @@ TEST_F(saturate_propagation_test, smaller_exec_size_consumer)
 
 TEST_F(saturate_propagation_test, larger_exec_size_consumer)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.group(8, 0).ADD(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
 
@@ -786,7 +786,7 @@ TEST_F(saturate_propagation_test, larger_exec_size_consumer)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
@@ -803,11 +803,11 @@ TEST_F(saturate_propagation_test, larger_exec_size_consumer)
 
 TEST_F(saturate_propagation_test, offset_source_barrier)
 {
-   fs_reg dst0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   fs_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src0 = bld.vgrf(BRW_TYPE_F);
-   fs_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
    bld.group(16, 0).ADD(dst0, src0, src1);
    bld.group(1, 0).ADD(dst1, component(dst0, 8), brw_imm_f(1.0f));
    set_saturate(true, bld.group(16, 0).MOV(dst2, dst0));
@@ -822,7 +822,7 @@ TEST_F(saturate_propagation_test, offset_source_barrier)
     * (no changes)
     */
 
-   v->calculate_cfg();
+   brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);

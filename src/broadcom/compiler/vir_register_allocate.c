@@ -48,6 +48,13 @@ get_phys_index(const struct v3d_device_info *devinfo)
 #define CLASS_BITS_ACC    (1 << 1)
 #define CLASS_BITS_R5     (1 << 4)
 
+static inline bool
+stage_has_payload(struct v3d_compile *c)
+{
+        return c->s->info.stage == MESA_SHADER_FRAGMENT ||
+               c->s->info.stage == MESA_SHADER_COMPUTE;
+}
+
 static uint8_t
 get_class_bit_any(const struct v3d_device_info *devinfo)
 {
@@ -264,6 +271,7 @@ v3d_choose_spill_node(struct v3d_compile *c)
         float block_scale = 1.0;
         float spill_costs[c->num_temps];
         bool in_tmu_operation = false;
+        bool rtop_hazard = false;
         bool started_last_seg = false;
 
         for (unsigned i = 0; i < c->num_temps; i++)
@@ -272,6 +280,20 @@ v3d_choose_spill_node(struct v3d_compile *c)
         /* XXX: Scale the cost up when inside of a loop. */
         vir_for_each_block(block, c) {
                 vir_for_each_inst(inst, block) {
+                        /* RTOP is not preserved across thread switches, so
+                         * we can't spill in the middle of multop + umul24.
+                         */
+                        bool is_multop = false;
+                        bool is_umul24 = false;
+                        if (inst->qpu.type == V3D_QPU_INSTR_TYPE_ALU) {
+                                if (inst->qpu.alu.mul.op == V3D_QPU_M_MULTOP) {
+                                    is_multop = true;
+                                    rtop_hazard = true;
+                                } else if (inst->qpu.alu.mul.op == V3D_QPU_M_UMUL24) {
+                                    is_umul24 = true;
+                                }
+                        }
+
                         /* We can't insert new thread switches after
                          * starting output writes.
                          */
@@ -290,7 +312,7 @@ v3d_choose_spill_node(struct v3d_compile *c)
 
                                 if (spill_type != SPILL_TYPE_TMU) {
                                         spill_costs[temp] += block_scale;
-                                } else if (!no_spilling) {
+                                } else if (!no_spilling && (!rtop_hazard || is_multop)) {
                                         float tmu_op_scale = in_tmu_operation ?
                                                 3.0 : 1.0;
                                         spill_costs[temp] += (block_scale *
@@ -308,7 +330,7 @@ v3d_choose_spill_node(struct v3d_compile *c)
 
                                 if (spill_type != SPILL_TYPE_TMU) {
                                         /* We just rematerialize it later */
-                                } else if (!no_spilling) {
+                                } else if (!no_spilling && (!rtop_hazard || is_umul24)) {
                                         spill_costs[temp] += (block_scale *
                                                               tmu_scale);
                                 } else {
@@ -337,6 +359,9 @@ v3d_choose_spill_node(struct v3d_compile *c)
 
                         if (qinst_writes_tmu(c->devinfo, inst))
                                 in_tmu_operation = true;
+
+                        if (is_umul24)
+                                rtop_hazard = false;
                 }
         }
 
@@ -372,7 +397,7 @@ ensure_nodes(struct v3d_compile *c)
 /* Creates the interference node for a new temp. We use this to keep the node
  * list updated during the spilling process, which generates new temps/nodes.
  */
-static void
+static int
 add_node(struct v3d_compile *c, uint32_t temp, uint8_t class_bits)
 {
         ensure_nodes(c);
@@ -387,6 +412,9 @@ add_node(struct v3d_compile *c, uint32_t temp, uint8_t class_bits)
         c->nodes.info[node].is_ldunif_dst = false;
         c->nodes.info[node].is_program_end = false;
         c->nodes.info[node].unused = false;
+        c->nodes.info[node].payload_conflict = false;
+
+        return node;
 }
 
 /* The spill offset for this thread takes a bit of setup, so do it once at
@@ -438,7 +466,9 @@ v3d_setup_spill_base(struct v3d_compile *c)
                             i != c->spill_base.index) {
                                 temp_class |= CLASS_BITS_ACC;
                         }
-                        add_node(c, i, temp_class);
+                        int node = add_node(c, i, temp_class);
+                        c->nodes.info[node].payload_conflict =
+                                stage_has_payload(c);
                 }
         }
 
@@ -480,14 +510,19 @@ v3d_emit_spill_tmua(struct v3d_compile *c,
         add_node(c, offset.index, get_class_bit_any(c->devinfo));
 
         /* We always enable per-quad on spills/fills to ensure we spill
-         * any channels involved with helper invocations.
+         * any channels involved with helper invocations, but only if
+         * the spill is not conditional, since otherwise we may be spilling
+         * invalida lanes and overwriting valid data from a previous spill
+         * to the same address.
          */
         struct qreg tmua = vir_reg(QFILE_MAGIC, V3D_QPU_WADDR_TMUAU);
         struct qinst *inst = vir_ADD_dest(c, tmua, c->spill_base, offset);
         inst->qpu.flags.ac = cond;
         inst->ldtmu_count = 1;
-        inst->uniform = vir_get_uniform_index(c, QUNIFORM_CONSTANT,
-                                              0xffffff7f); /* per-quad */
+        inst->uniform =
+                vir_get_uniform_index(c, QUNIFORM_CONSTANT,
+                                      cond != V3D_QPU_COND_NONE ?
+                                              0xffffffff : 0xffffff7f /* per-quad*/);
 
         vir_emit_thrsw(c);
 
@@ -940,10 +975,12 @@ v3d_ra_select_rf(struct v3d_ra_select_callback_data *v3d_ra,
         /* The last 3 instructions in a shader can't use some specific registers
          * (usually early rf registers, depends on v3d version) so try to
          * avoid allocating these to registers used by the last instructions
-         * in the shader.
+         * in the shader. Do the same for spilling setup instructions that
+         * may conflict with payload registers.
          */
         const uint32_t safe_rf_start = v3d_ra->devinfo->ver == 42 ? 3 : 4;
-        if (v3d_ra->nodes->info[node].is_program_end &&
+        if ((v3d_ra->nodes->info[node].is_program_end ||
+             v3d_ra->nodes->info[node].payload_conflict) &&
             v3d_ra->next_phys < safe_rf_start) {
                 v3d_ra->next_phys = safe_rf_start;
         }
@@ -1060,11 +1097,52 @@ tmu_spilling_allowed(struct v3d_compile *c)
         return c->spills + c->fills < c->max_tmu_spills;
 }
 
+static bool
+reg_is_payload(struct v3d_compile *c, struct qreg reg)
+{
+   if (reg.file != QFILE_REG)
+      return false;
+
+   if (c->devinfo->ver >= 71) {
+           if (c->s->info.stage == MESA_SHADER_FRAGMENT)
+                   return reg.index >= 1 && reg.index <= 3;
+           if (c->s->info.stage == MESA_SHADER_COMPUTE)
+                   return reg.index == 2 || reg.index == 3;
+           return false;
+   }
+
+   assert(c->devinfo->ver == 42);
+   if (c->s->info.stage == MESA_SHADER_FRAGMENT)
+           return reg.index <= 2;
+   if (c->s->info.stage == MESA_SHADER_COMPUTE)
+           return reg.index == 0 || reg.index == 2;
+   return false;
+}
+
+static bool
+inst_reads_payload(struct v3d_compile *c, struct qinst *inst)
+{
+        if (inst->qpu.type != V3D_QPU_INSTR_TYPE_ALU)
+                return false;
+
+        if (reg_is_payload(c, inst->dst))
+                return true;
+
+        if (reg_is_payload(c, inst->src[0]))
+                return true;
+
+        if (vir_get_nsrc(inst) > 1 && reg_is_payload(c, inst->src[1]))
+                return true;
+
+        return false;
+}
+
 static void
 update_graph_and_reg_classes_for_inst(struct v3d_compile *c,
                                       int *acc_nodes,
                                       int *implicit_rf_nodes,
                                       int last_ldvary_ip,
+                                      bool has_payload,
                                       struct qinst *inst)
 {
         int32_t ip = inst->ip;
@@ -1176,6 +1254,33 @@ update_graph_and_reg_classes_for_inst(struct v3d_compile *c,
                                         ra_add_node_interference(c->g,
                                                                  temp_to_node(c, i),
                                                                  implicit_rf_nodes[0]);
+                        }
+                }
+        }
+
+        /* Spill setup instructions are the only ones that we emit before
+         * reading payload registers so we want to flag their temps so we
+         * don't assign them to payload registers and stomp them before we
+         * can read them. For the case where we may have emitted spill setup
+         * before RA (i.e. for scratch), we need to do this now.
+         */
+        if (c->spill_size > 0 && has_payload && inst_reads_payload(c, inst)) {
+                struct qblock *first_block = vir_entry_block(c);
+                list_for_each_entry_from_rev(struct qinst, _i, inst->link.prev,
+                                             &first_block->instructions, link) {
+                        if (_i->qpu.type != V3D_QPU_INSTR_TYPE_ALU)
+                                continue;
+                        if (_i->dst.file == QFILE_TEMP) {
+                                int node = temp_to_node(c, _i->dst.index);
+                                c->nodes.info[node].payload_conflict = true;
+                        }
+                        if (_i->src[0].file == QFILE_TEMP) {
+                                int node = temp_to_node(c, _i->src[0].index);
+                                c->nodes.info[node].payload_conflict = true;
+                        }
+                        if (vir_get_nsrc(_i) > 1 && _i->src[1].file == QFILE_TEMP) {
+                                int node = temp_to_node(c, _i->src[1].index);
+                                c->nodes.info[node].payload_conflict = true;
                         }
                 }
         }
@@ -1333,6 +1438,7 @@ v3d_register_allocate(struct v3d_compile *c)
                 c->nodes.info[i].unused = false;
                 c->nodes.info[i].priority = 0;
                 c->nodes.info[i].class_bits = 0;
+                c->nodes.info[i].payload_conflict = false;
                 if (c->devinfo->has_accumulators && i < ACC_COUNT) {
                         acc_nodes[i] = i;
                         ra_set_node_reg(c->g, acc_nodes[i], ACC_INDEX + i);
@@ -1354,6 +1460,7 @@ v3d_register_allocate(struct v3d_compile *c)
          */
         int ip = 0;
         int last_ldvary_ip = -1;
+        bool has_payload = stage_has_payload(c);
         vir_for_each_inst_inorder(inst, c) {
                 inst->ip = ip++;
 
@@ -1373,7 +1480,9 @@ v3d_register_allocate(struct v3d_compile *c)
 
                 update_graph_and_reg_classes_for_inst(c, acc_nodes,
                                                       implicit_rf_nodes,
-                                                      last_ldvary_ip, inst);
+                                                      last_ldvary_ip,
+                                                      has_payload,
+                                                      inst);
         }
 
         /* Flag the nodes that are used in the last instructions of the program

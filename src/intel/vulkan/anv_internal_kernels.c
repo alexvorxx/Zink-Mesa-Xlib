@@ -123,7 +123,7 @@ compile_shader(struct anv_device *device,
       };
       NIR_PASS_V(nir, nir_lower_compute_system_values, &options);
       NIR_PASS_V(nir, nir_shader_intrinsics_pass, lower_base_workgroup_id,
-                 nir_metadata_block_index | nir_metadata_dominance, NULL);
+                 nir_metadata_control_flow, NULL);
    }
 
    /* Reset sizes before gathering information */
@@ -197,7 +197,9 @@ compile_shader(struct anv_device *device,
       if (prog_data.wm.dispatch_32) {
          assert(stats[stat_idx].spills == 0);
          assert(stats[stat_idx].fills == 0);
-         assert(stats[stat_idx].sends == sends_count_expectation * 2);
+         assert(stats[stat_idx].sends ==
+                sends_count_expectation *
+                (device->info->ver < 20 ? 2 : 1));
          stat_idx++;
       }
    } else {
@@ -221,6 +223,10 @@ compile_shader(struct anv_device *device,
    }
 
    assert(prog_data.base.total_scratch == 0);
+   assert(program != NULL);
+   struct anv_shader_bin *kernel = NULL;
+   if (program == NULL)
+      goto exit;
 
    struct anv_pipeline_bind_map empty_bind_map = {};
    struct anv_push_descriptor_info empty_push_desc_info = {};
@@ -236,9 +242,9 @@ compile_shader(struct anv_device *device,
       .push_desc_info      = &empty_push_desc_info,
    };
 
-   struct anv_shader_bin *kernel =
-      anv_device_upload_kernel(device, device->internal_cache, &upload_params);
+   kernel = anv_device_upload_kernel(device, device->internal_cache, &upload_params);
 
+exit:
    ralloc_free(temp_ctx);
    ralloc_free(nir);
 

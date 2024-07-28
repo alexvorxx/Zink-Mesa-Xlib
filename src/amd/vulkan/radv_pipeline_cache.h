@@ -30,10 +30,6 @@ struct radv_shader_binary;
 struct radv_shader_stage;
 struct radv_spirv_to_nir_options;
 
-void radv_hash_shaders(const struct radv_device *device, unsigned char *hash, const struct radv_shader_stage *stages,
-                       uint32_t stage_count, const struct radv_pipeline_layout *layout,
-                       const struct radv_graphics_state_key *gfx_state);
-
 void radv_hash_graphics_spirv_to_nir(blake3_hash hash, const struct radv_shader_stage *stage,
                                      const struct radv_spirv_to_nir_options *options);
 

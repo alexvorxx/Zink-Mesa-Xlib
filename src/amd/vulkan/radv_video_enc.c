@@ -141,15 +141,15 @@ radv_probe_video_encode(struct radv_physical_device *pdev)
 void
 radv_init_physical_device_encoder(struct radv_physical_device *pdev)
 {
-   if (pdev->info.family >= CHIP_NAVI31) {
+   if (pdev->info.vcn_ip_version >= VCN_4_0_0) {
       pdev->enc_hw_ver = RADV_VIDEO_ENC_HW_4;
       pdev->encoder_interface_version = ((RENCODE_V4_FW_INTERFACE_MAJOR_VERSION << RENCODE_IF_MAJOR_VERSION_SHIFT) |
                                          (RENCODE_V4_FW_INTERFACE_MINOR_VERSION << RENCODE_IF_MINOR_VERSION_SHIFT));
-   } else if (pdev->info.family >= CHIP_NAVI21) {
+   } else if (pdev->info.vcn_ip_version >= VCN_3_0_0) {
       pdev->enc_hw_ver = RADV_VIDEO_ENC_HW_3;
       pdev->encoder_interface_version = ((RENCODE_V3_FW_INTERFACE_MAJOR_VERSION << RENCODE_IF_MAJOR_VERSION_SHIFT) |
                                          (RENCODE_V3_FW_INTERFACE_MINOR_VERSION << RENCODE_IF_MINOR_VERSION_SHIFT));
-   } else if (pdev->info.family >= CHIP_RENOIR) {
+   } else if (pdev->info.vcn_ip_version >= VCN_2_0_0) {
       pdev->enc_hw_ver = RADV_VIDEO_ENC_HW_2;
       pdev->encoder_interface_version = ((RENCODE_V2_FW_INTERFACE_MAJOR_VERSION << RENCODE_IF_MAJOR_VERSION_SHIFT) |
                                          (RENCODE_V2_FW_INTERFACE_MINOR_VERSION << RENCODE_IF_MINOR_VERSION_SHIFT));
@@ -159,7 +159,7 @@ radv_init_physical_device_encoder(struct radv_physical_device *pdev)
                                          (RENCODE_FW_INTERFACE_MINOR_VERSION << RENCODE_IF_MINOR_VERSION_SHIFT));
    }
 
-   if (pdev->info.family >= CHIP_RENOIR) {
+   if (pdev->info.vcn_ip_version >= VCN_2_0_0) {
       pdev->vcn_enc_cmds.session_info = RENCODE_V2_IB_PARAM_SESSION_INFO;
       pdev->vcn_enc_cmds.task_info = RENCODE_V2_IB_PARAM_TASK_INFO;
       pdev->vcn_enc_cmds.session_init = RENCODE_V2_IB_PARAM_SESSION_INIT;
@@ -701,7 +701,7 @@ radv_enc_quality_params(struct radv_cmd_buffer *cmd_buffer)
    radeon_emit(cs, 0);
    radeon_emit(cs, 0);
    radeon_emit(cs, 0);
-   if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_3)
+   if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_2)
       radeon_emit(cs, 0);
    ENC_END;
 }

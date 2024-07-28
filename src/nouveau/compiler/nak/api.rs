@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 use crate::from_nir::*;
-use crate::ir::{ShaderIoInfo, ShaderStageInfo};
+use crate::ir::{ShaderInfo, ShaderIoInfo, ShaderModel, ShaderStageInfo};
+use crate::sm50::ShaderModel50;
+use crate::sm70::ShaderModel70;
 use crate::sph;
 
 use nak_bindings::*;
@@ -20,6 +22,7 @@ enum DebugFlags {
     Serial,
     Spill,
     Annotate,
+    NoUgpr,
 }
 
 pub struct Debug {
@@ -43,6 +46,7 @@ impl Debug {
                 "serial" => flags |= 1 << DebugFlags::Serial as u8,
                 "spill" => flags |= 1 << DebugFlags::Spill as u8,
                 "annotate" => flags |= 1 << DebugFlags::Annotate as u8,
+                "nougpr" => flags |= 1 << DebugFlags::NoUgpr as u8,
                 unk => eprintln!("Unknown NAK_DEBUG flag \"{}\"", unk),
             }
         }
@@ -68,13 +72,17 @@ pub trait GetDebugFlags {
     fn annotate(&self) -> bool {
         self.debug_flags() & (1 << DebugFlags::Annotate as u8) != 0
     }
+
+    fn no_ugpr(&self) -> bool {
+        self.debug_flags() & (1 << DebugFlags::NoUgpr as u8) != 0
+    }
 }
 
 pub static DEBUG: OnceLock<Debug> = OnceLock::new();
 
 impl GetDebugFlags for OnceLock<Debug> {
     fn debug_flags(&self) -> u32 {
-        self.get().unwrap().flags
+        self.get_or_init(Debug::new).flags
     }
 }
 
@@ -93,6 +101,7 @@ fn nir_options(dev: &nv_device_info) -> nir_shader_compiler_options {
     op.lower_flrp16 = true;
     op.lower_flrp32 = true;
     op.lower_flrp64 = true;
+    op.lower_fsqrt = dev.sm < 52;
     op.lower_bitfield_extract = dev.sm >= 70;
     op.lower_bitfield_insert = true;
     op.lower_pack_half_2x16 = true;
@@ -140,6 +149,7 @@ fn nir_options(dev: &nv_device_info) -> nir_shader_compiler_options {
     op.lower_uadd_carry = true;
     op.lower_usub_borrow = true;
     op.has_iadd3 = dev.sm >= 70;
+    op.has_imad32 = dev.sm >= 70;
     op.has_sdot_4x8 = dev.sm >= 70;
     op.has_udot_4x8 = dev.sm >= 70;
     op.has_sudot_4x8 = dev.sm >= 70;
@@ -149,6 +159,7 @@ fn nir_options(dev: &nv_device_info) -> nir_shader_compiler_options {
     op.has_find_msb_rev = true;
     op.has_pack_half_2x16_rtz = true;
     op.has_bfm = dev.sm >= 70;
+    op.discard_is_demote = true;
 
     op.max_unroll_iterations = 32;
 
@@ -161,8 +172,6 @@ pub extern "C" fn nak_compiler_create(
 ) -> *mut nak_compiler {
     assert!(!dev.is_null());
     let dev = unsafe { &*dev };
-
-    DEBUG.get_or_init(Debug::new);
 
     let nak = Box::new(nak_compiler {
         sm: dev.sm,
@@ -193,18 +202,123 @@ pub extern "C" fn nak_nir_options(
 }
 
 #[repr(C)]
-struct ShaderBin {
+pub struct ShaderBin {
     bin: nak_shader_bin,
     code: Vec<u32>,
     asm: CString,
 }
 
 impl ShaderBin {
-    pub fn new(info: nak_shader_info, code: Vec<u32>, asm: &str) -> ShaderBin {
+    pub fn new(
+        sm: &dyn ShaderModel,
+        info: &ShaderInfo,
+        fs_key: Option<&nak_fs_key>,
+        code: Vec<u32>,
+        asm: &str,
+    ) -> ShaderBin {
         let asm = CString::new(asm)
             .expect("NAK assembly has unexpected null characters");
+
+        let c_info = nak_shader_info {
+            stage: match info.stage {
+                ShaderStageInfo::Compute(_) => MESA_SHADER_COMPUTE,
+                ShaderStageInfo::Vertex => MESA_SHADER_VERTEX,
+                ShaderStageInfo::Fragment(_) => MESA_SHADER_FRAGMENT,
+                ShaderStageInfo::Geometry(_) => MESA_SHADER_GEOMETRY,
+                ShaderStageInfo::TessellationInit(_) => MESA_SHADER_TESS_CTRL,
+                ShaderStageInfo::Tessellation(_) => MESA_SHADER_TESS_EVAL,
+            },
+            sm: sm.sm(),
+            num_gprs: if sm.sm() >= 70 {
+                max(4, info.num_gprs + 2)
+            } else {
+                max(4, info.num_gprs)
+            },
+            num_control_barriers: info.num_control_barriers,
+            _pad0: Default::default(),
+            num_instrs: info.num_instrs,
+            slm_size: info.slm_size,
+            __bindgen_anon_1: match &info.stage {
+                ShaderStageInfo::Compute(cs_info) => {
+                    nak_shader_info__bindgen_ty_1 {
+                        cs: nak_shader_info__bindgen_ty_1__bindgen_ty_1 {
+                            local_size: [
+                                cs_info.local_size[0],
+                                cs_info.local_size[1],
+                                cs_info.local_size[2],
+                            ],
+                            smem_size: cs_info.smem_size,
+                            _pad: Default::default(),
+                        },
+                    }
+                }
+                ShaderStageInfo::Fragment(fs_info) => {
+                    let fs_io_info = match &info.io {
+                        ShaderIoInfo::Fragment(io) => io,
+                        _ => unreachable!(),
+                    };
+                    nak_shader_info__bindgen_ty_1 {
+                        fs: nak_shader_info__bindgen_ty_1__bindgen_ty_2 {
+                            writes_depth: fs_io_info.writes_depth,
+                            reads_sample_mask: fs_io_info.reads_sample_mask,
+                            post_depth_coverage: fs_info.post_depth_coverage,
+                            uses_sample_shading: fs_info.uses_sample_shading,
+                            early_fragment_tests: fs_info.early_fragment_tests,
+                            _pad: Default::default(),
+                        },
+                    }
+                }
+                ShaderStageInfo::Tessellation(ts_info) => {
+                    nak_shader_info__bindgen_ty_1 {
+                        ts: nak_shader_info__bindgen_ty_1__bindgen_ty_3 {
+                            domain: ts_info.domain as u8,
+                            spacing: ts_info.spacing as u8,
+                            prims: ts_info.primitives as u8,
+                            _pad: Default::default(),
+                        },
+                    }
+                }
+                _ => nak_shader_info__bindgen_ty_1 {
+                    _pad: Default::default(),
+                },
+            },
+            vtg: match &info.io {
+                ShaderIoInfo::Vtg(io) => nak_shader_info__bindgen_ty_2 {
+                    writes_layer: io.attr_written(NAK_ATTR_RT_ARRAY_INDEX),
+                    writes_point_size: io.attr_written(NAK_ATTR_POINT_SIZE),
+                    clip_enable: io.clip_enable.try_into().unwrap(),
+                    cull_enable: io.cull_enable.try_into().unwrap(),
+                    xfb: if let Some(xfb) = &io.xfb {
+                        **xfb
+                    } else {
+                        unsafe { std::mem::zeroed() }
+                    },
+                },
+                _ => unsafe { std::mem::zeroed() },
+            },
+            hdr: sph::encode_header(sm, &info, fs_key),
+        };
+
+        if DEBUG.print() {
+            let stage_name = unsafe {
+                let c_name = _mesa_shader_stage_to_string(c_info.stage as u32);
+                CStr::from_ptr(c_name).to_str().expect("Invalid UTF-8")
+            };
+
+            eprintln!("Stage: {}", stage_name);
+            eprintln!("Instruction count: {}", c_info.num_instrs);
+            eprintln!("Num GPRs: {}", c_info.num_gprs);
+            eprintln!("SLM size: {}", c_info.slm_size);
+
+            if c_info.stage != MESA_SHADER_COMPUTE {
+                eprint_hex("Header", &c_info.hdr);
+            }
+
+            eprint_hex("Encoded shader", &code);
+        }
+
         let bin = nak_shader_bin {
-            info: info,
+            info: c_info,
             code_size: (code.len() * 4).try_into().unwrap(),
             code: code.as_ptr() as *const c_void,
             asm_str: if asm.is_empty() {
@@ -218,6 +332,14 @@ impl ShaderBin {
             code: code,
             asm: asm,
         }
+    }
+}
+
+impl std::ops::Deref for ShaderBin {
+    type Target = nak_shader_bin;
+
+    fn deref(&self) -> &nak_shader_bin {
+        &self.bin
     }
 }
 
@@ -240,6 +362,15 @@ fn eprint_hex(label: &str, data: &[u32]) {
     eprintln!("");
 }
 
+macro_rules! pass {
+    ($s: expr, $pass: ident) => {
+        $s.$pass();
+        if DEBUG.print() {
+            eprintln!("NAK IR after {}:\n{}", stringify!($pass), $s);
+        }
+    };
+}
+
 #[no_mangle]
 pub extern "C" fn nak_compile_shader(
     nir: *mut nir_shader,
@@ -257,169 +388,38 @@ pub extern "C" fn nak_compile_shader(
         Some(unsafe { &*fs_key })
     };
 
-    let mut s = nak_shader_from_nir(nir, nak.sm);
-
-    if DEBUG.print() {
-        eprintln!("NAK IR:\n{}", &s);
-    }
-
-    s.opt_bar_prop();
-    if DEBUG.print() {
-        eprintln!("NAK IR after opt_bar_prop:\n{}", &s);
-    }
-
-    s.opt_copy_prop();
-    if DEBUG.print() {
-        eprintln!("NAK IR after opt_copy_prop:\n{}", &s);
-    }
-
-    s.opt_lop();
-    if DEBUG.print() {
-        eprintln!("NAK IR after opt_lop:\n{}", &s);
-    }
-
-    s.opt_dce();
-    if DEBUG.print() {
-        eprintln!("NAK IR after dce:\n{}", &s);
-    }
-
-    s.opt_out();
-    if DEBUG.print() {
-        eprintln!("NAK IR after opt_out:\n{}", &s);
-    }
-
-    s.legalize();
-    if DEBUG.print() {
-        eprintln!("NAK IR after legalize:\n{}", &s);
-    }
-
-    s.assign_regs();
-    if DEBUG.print() {
-        eprintln!("NAK IR after assign_regs:\n{}", &s);
-    }
-
-    s.lower_ineg();
-    s.lower_par_copies();
-    s.lower_copy_swap();
-    s.opt_jump_thread();
-    s.calc_instr_deps();
-
-    if DEBUG.print() {
-        eprintln!("NAK IR:\n{}", &s);
-    }
-
-    s.gather_global_mem_usage();
-
-    let info = nak_shader_info {
-        stage: nir.info.stage(),
-        sm: s.info.sm,
-        num_gprs: if s.info.sm >= 70 {
-            max(4, s.info.num_gprs + 2)
-        } else {
-            max(4, s.info.num_gprs)
-        },
-        num_barriers: s.info.num_barriers,
-        _pad0: Default::default(),
-        slm_size: s.info.slm_size,
-        __bindgen_anon_1: match &s.info.stage {
-            ShaderStageInfo::Compute(cs_info) => {
-                nak_shader_info__bindgen_ty_1 {
-                    cs: nak_shader_info__bindgen_ty_1__bindgen_ty_1 {
-                        local_size: [
-                            cs_info.local_size[0],
-                            cs_info.local_size[1],
-                            cs_info.local_size[2],
-                        ],
-                        smem_size: cs_info.smem_size,
-                        _pad: Default::default(),
-                    },
-                }
-            }
-            ShaderStageInfo::Fragment => {
-                let fs_info = match &s.info.io {
-                    ShaderIoInfo::Fragment(io) => io,
-                    _ => unreachable!(),
-                };
-
-                let nir_fs_info = unsafe { &nir.info.__bindgen_anon_1.fs };
-                nak_shader_info__bindgen_ty_1 {
-                    fs: nak_shader_info__bindgen_ty_1__bindgen_ty_2 {
-                        writes_depth: fs_info.writes_depth,
-                        reads_sample_mask: fs_info.reads_sample_mask,
-                        post_depth_coverage: nir_fs_info.post_depth_coverage(),
-                        uses_sample_shading: nir_fs_info.uses_sample_shading(),
-                        early_fragment_tests: nir_fs_info
-                            .early_fragment_tests(),
-                        _pad: Default::default(),
-                    },
-                }
-            }
-            ShaderStageInfo::Tessellation => {
-                let nir_ts_info = unsafe { &nir.info.__bindgen_anon_1.tess };
-                nak_shader_info__bindgen_ty_1 {
-                    ts: nak_shader_info__bindgen_ty_1__bindgen_ty_3 {
-                        domain: match nir_ts_info._primitive_mode {
-                            TESS_PRIMITIVE_TRIANGLES => NAK_TS_DOMAIN_TRIANGLE,
-                            TESS_PRIMITIVE_QUADS => NAK_TS_DOMAIN_QUAD,
-                            TESS_PRIMITIVE_ISOLINES => NAK_TS_DOMAIN_ISOLINE,
-                            _ => panic!("Invalid tess_primitive_mode"),
-                        },
-
-                        spacing: match nir_ts_info.spacing() {
-                            TESS_SPACING_EQUAL => NAK_TS_SPACING_INTEGER,
-                            TESS_SPACING_FRACTIONAL_ODD => {
-                                NAK_TS_SPACING_FRACT_ODD
-                            }
-                            TESS_SPACING_FRACTIONAL_EVEN => {
-                                NAK_TS_SPACING_FRACT_EVEN
-                            }
-                            _ => panic!("Invalid gl_tess_spacing"),
-                        },
-
-                        prims: if nir_ts_info.point_mode() {
-                            NAK_TS_PRIMS_POINTS
-                        } else if nir_ts_info._primitive_mode
-                            == TESS_PRIMITIVE_ISOLINES
-                        {
-                            NAK_TS_PRIMS_LINES
-                        } else if nir_ts_info.ccw() {
-                            NAK_TS_PRIMS_TRIANGLES_CCW
-                        } else {
-                            NAK_TS_PRIMS_TRIANGLES_CW
-                        },
-
-                        _pad: Default::default(),
-                    },
-                }
-            }
-            _ => nak_shader_info__bindgen_ty_1 {
-                _pad: Default::default(),
-            },
-        },
-        vtg: match &s.info.stage {
-            ShaderStageInfo::Geometry(_)
-            | ShaderStageInfo::Tessellation
-            | ShaderStageInfo::Vertex => {
-                let writes_layer =
-                    nir.info.outputs_written & (1 << VARYING_SLOT_LAYER) != 0;
-                let writes_point_size =
-                    nir.info.outputs_written & (1 << VARYING_SLOT_PSIZ) != 0;
-                let num_clip = nir.info.clip_distance_array_size();
-                let num_cull = nir.info.cull_distance_array_size();
-                let clip_enable = (1_u32 << num_clip) - 1;
-                let cull_enable = ((1_u32 << num_cull) - 1) << num_clip;
-                nak_shader_info__bindgen_ty_2 {
-                    writes_layer,
-                    writes_point_size,
-                    clip_enable: clip_enable.try_into().unwrap(),
-                    cull_enable: cull_enable.try_into().unwrap(),
-                    xfb: unsafe { nak_xfb_from_nir(nir.xfb_info) },
-                }
-            }
-            _ => unsafe { std::mem::zeroed() },
-        },
-        hdr: sph::encode_header(&s.info, fs_key),
+    let sm: Box<dyn ShaderModel> = if nak.sm >= 70 {
+        Box::new(ShaderModel70::new(nak.sm))
+    } else if nak.sm >= 50 {
+        Box::new(ShaderModel50::new(nak.sm))
+    } else {
+        panic!("Unsupported shader model");
     };
+
+    let mut s = nak_shader_from_nir(nir, sm.as_ref());
+
+    if DEBUG.print() {
+        eprintln!("NAK IR:\n{}", &s);
+    }
+
+    pass!(s, opt_bar_prop);
+    pass!(s, opt_uniform_instrs);
+    pass!(s, opt_copy_prop);
+    pass!(s, opt_prmt);
+    pass!(s, opt_lop);
+    pass!(s, opt_copy_prop);
+    pass!(s, opt_dce);
+    pass!(s, opt_out);
+    pass!(s, legalize);
+    pass!(s, assign_regs);
+    pass!(s, lower_par_copies);
+    pass!(s, lower_copy_swap);
+    if nak.sm >= 70 {
+        pass!(s, opt_jump_thread);
+    }
+    pass!(s, calc_instr_deps);
+
+    s.gather_info();
 
     let mut asm = String::new();
     if dump_asm {
@@ -428,39 +428,8 @@ pub extern "C" fn nak_compile_shader(
 
     s.remove_annotations();
 
-    let code = if nak.sm >= 70 {
-        s.encode_sm70()
-    } else if nak.sm >= 50 {
-        s.encode_sm50()
-    } else {
-        panic!("Unsupported shader model");
-    };
-
-    if DEBUG.print() {
-        let stage_name = unsafe {
-            let c_name = _mesa_shader_stage_to_string(info.stage as u32);
-            CStr::from_ptr(c_name).to_str().expect("Invalid UTF-8")
-        };
-        let instruction_count = if nak.sm >= 70 {
-            code.len() / 4
-        } else if nak.sm >= 50 {
-            (code.len() / 8) * 3
-        } else {
-            unreachable!()
-        };
-
-        eprintln!("Stage: {}", stage_name);
-        eprintln!("Instruction count: {}", instruction_count);
-        eprintln!("Num GPRs: {}", info.num_gprs);
-        eprintln!("SLM size: {}", info.slm_size);
-
-        if info.stage != MESA_SHADER_COMPUTE {
-            eprint_hex("Header", &info.hdr);
-        }
-
-        eprint_hex("Encoded shader", &code);
-    }
-
-    let bin = Box::new(ShaderBin::new(info, code, &asm));
+    let code = sm.encode_shader(&s);
+    let bin =
+        Box::new(ShaderBin::new(sm.as_ref(), &s.info, fs_key, code, &asm));
     Box::into_raw(bin) as *mut nak_shader_bin
 }

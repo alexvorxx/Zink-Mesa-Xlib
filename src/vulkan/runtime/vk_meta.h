@@ -27,7 +27,6 @@
 #include "vk_object.h"
 
 #include "util/simple_mtx.h"
-#include "util/u_dynarray.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +34,7 @@ extern "C" {
 
 struct hash_table;
 struct vk_command_buffer;
+struct vk_buffer;
 struct vk_device;
 struct vk_image;
 
@@ -45,6 +45,7 @@ struct vk_meta_rect {
 };
 
 #define VK_PRIMITIVE_TOPOLOGY_META_RECT_LIST_MESA (VkPrimitiveTopology)11
+#define VK_IMAGE_VIEW_CREATE_INTERNAL_MESA (VkImageViewCreateFlagBits)0x40000000
 
 struct vk_meta_device {
    struct hash_table *cache;
@@ -181,36 +182,15 @@ vk_meta_create_sampler(struct vk_device *device,
                        const void *key_data, size_t key_size,
                        VkSampler *sampler_out);
 
-struct vk_meta_object_list {
-   struct util_dynarray arr;
-};
-
-void vk_meta_object_list_init(struct vk_meta_object_list *mol);
-void vk_meta_object_list_reset(struct vk_device *device,
-                               struct vk_meta_object_list *mol);
-void vk_meta_object_list_finish(struct vk_device *device,
-                                struct vk_meta_object_list *mol);
-
-static inline void
-vk_meta_object_list_add_obj(struct vk_meta_object_list *mol,
-                            struct vk_object_base *obj)
-{
-   util_dynarray_append(&mol->arr, struct vk_object_base *, obj);
-}
-
-static inline void
-vk_meta_object_list_add_handle(struct vk_meta_object_list *mol,
-                               VkObjectType obj_type,
-                               uint64_t handle)
-{
-   vk_meta_object_list_add_obj(mol,
-      vk_object_base_from_u64_handle(handle, obj_type));
-}
-
 VkResult vk_meta_create_buffer(struct vk_command_buffer *cmd,
                                struct vk_meta_device *meta,
                                const VkBufferCreateInfo *info,
                                VkBuffer *buffer_out);
+
+VkResult vk_meta_create_buffer_view(struct vk_command_buffer *cmd,
+                                    struct vk_meta_device *meta,
+                                    const VkBufferViewCreateInfo *info,
+                                    VkBufferView *buffer_view_out);
 VkResult vk_meta_create_image_view(struct vk_command_buffer *cmd,
                                    struct vk_meta_device *meta,
                                    const VkImageViewCreateInfo *info,

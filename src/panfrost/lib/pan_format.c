@@ -396,6 +396,7 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
    FMT(R16G16_SNORM,            RG16_SNORM,      RG01, L, VTR_),
    FMT(R8G8B8_SNORM,            RGB8_SNORM,      RGB1, L, VTR_),
    FMT(R8G8B8A8_SNORM,          RGBA8_SNORM,     RGBA, L, VTR_),
+   FMT(B8G8R8A8_SNORM,          RGBA8_SNORM,     BGRA, L, VTR_),
    FMT(R16G16B16A16_SNORM,      RGBA16_SNORM,    RGBA, L, VTR_),
 #else
    /* So far we haven't needed SNORM rendering on Midgard */
@@ -405,6 +406,7 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
    FMT(R16G16_SNORM,            RG16_SNORM,      RG01, L, VT__),
    FMT(R8G8B8_SNORM,            RGB8_SNORM,      RGB1, L, VT__),
    FMT(R8G8B8A8_SNORM,          RGBA8_SNORM,     RGBA, L, VT__),
+   FMT(B8G8R8A8_SNORM,          RGBA8_SNORM,     BGRA, L, VT__),
    FMT(R16G16B16A16_SNORM,      RGBA16_SNORM,    RGBA, L, VT__),
 #endif
    FMT(I8_SINT,                 R8I,             RRRR, L, VTR_),
@@ -599,7 +601,7 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
 };
 /* clang-format on */
 
-#if PAN_ARCH == 7
+#if PAN_ARCH == 7 || PAN_ARCH >= 10
 /*
  * Decompose a component ordering swizzle into a component ordering (applied
  * first) and a swizzle (applied second). The output ordering "pre" is allowed

@@ -40,7 +40,7 @@ brw_fs_lower_pack(fs_visitor &s)
 
       assert(inst->dst.file == VGRF);
       assert(inst->saturate == false);
-      fs_reg dst = inst->dst;
+      brw_reg dst = inst->dst;
 
       const fs_builder ibld(&s, block, inst);
       /* The lowering generates 2 instructions for what was previously 1. This

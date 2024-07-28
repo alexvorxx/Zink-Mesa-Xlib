@@ -349,8 +349,6 @@ nir_schedule_intrinsic_deps(nir_deps_state *state,
    case nir_intrinsic_load_front_face:
       break;
 
-   case nir_intrinsic_discard:
-   case nir_intrinsic_discard_if:
    case nir_intrinsic_demote:
    case nir_intrinsic_demote_if:
    case nir_intrinsic_terminate:
@@ -382,6 +380,7 @@ nir_schedule_intrinsic_deps(nir_deps_state *state,
       break;
 
    case nir_intrinsic_load_input:
+   case nir_intrinsic_load_per_primitive_input:
    case nir_intrinsic_load_per_vertex_input:
       add_read_dep(state, state->load_input, n);
       break;
@@ -394,6 +393,8 @@ nir_schedule_intrinsic_deps(nir_deps_state *state,
       add_read_dep(state, state->store_shared, n);
       break;
 
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
    case nir_intrinsic_store_shared:
    case nir_intrinsic_store_shared2_amd:
       add_write_dep(state, &state->store_shared, n);

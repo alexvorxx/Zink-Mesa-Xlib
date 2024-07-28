@@ -177,7 +177,7 @@ create_cov(struct ir3_context *ctx, struct ir3_instruction *src,
          src_type = TYPE_S16;
          break;
       case 8:
-         src_type = TYPE_S8;
+         src_type = TYPE_U8;
          break;
       default:
          ir3_context_error(ctx, "invalid src bit size: %u", src_bitsize);
@@ -248,7 +248,7 @@ create_cov(struct ir3_context *ctx, struct ir3_instruction *src,
    case nir_op_f2i8:
    case nir_op_i2i8:
    case nir_op_b2i8:
-      dst_type = TYPE_S8;
+      dst_type = TYPE_U8;
       break;
 
    case nir_op_f2u32:
@@ -273,17 +273,66 @@ create_cov(struct ir3_context *ctx, struct ir3_instruction *src,
    if (src_type == dst_type)
       return src;
 
+   /* Zero-extension of 8-bit values doesn't work with `cov`, so simple masking
+    * is used to achieve the result.
+    */
+   if (src_type == TYPE_U8 && full_type(dst_type) == TYPE_U32) {
+      struct ir3_instruction *mask = create_immed_typed(ctx->block, 0xff, TYPE_U8);
+      struct ir3_instruction *cov = ir3_AND_B(ctx->block, src, 0, mask, 0);
+      cov->dsts[0]->flags |= type_flags(dst_type);
+      return cov;
+   }
+
+   /* Conversion of 8-bit values into floating-point values doesn't work with
+    * a simple `cov`, instead the 8-bit values first have to be converted into
+    * corresponding 16-bit values and converted from there.
+    */
+   if (src_type == TYPE_U8 && full_type(dst_type) == TYPE_F32) {
+      assert(op == nir_op_u2f16 || op == nir_op_i2f16 ||
+             op == nir_op_u2f32 || op == nir_op_i2f32);
+
+      struct ir3_instruction *cov;
+      if (op == nir_op_u2f16 || op == nir_op_u2f32) {
+         struct ir3_instruction *mask = create_immed_typed(ctx->block, 0xff, TYPE_U8);
+         cov = ir3_AND_B(ctx->block, src, 0, mask, 0);
+         cov->dsts[0]->flags |= IR3_REG_HALF;
+         cov = ir3_COV(ctx->block, cov, TYPE_U16, dst_type);
+      } else {
+         cov = ir3_COV(ctx->block, src, TYPE_U8, TYPE_S16);
+         cov = ir3_COV(ctx->block, cov, TYPE_S16, dst_type);
+      }
+      return cov;
+   }
+
+   /* Conversion of floating-point values to 8-bit values also doesn't work
+    * through a single `cov`, instead the conversion has to go through the
+    * corresponding 16-bit type that's then truncated.
+    */
+   if (full_type(src_type) == TYPE_F32 && dst_type == TYPE_U8) {
+      assert(op == nir_op_f2u8 || op == nir_op_f2i8);
+
+      type_t intermediate_type = op == nir_op_f2u8 ? TYPE_U16 : TYPE_S16;
+      struct ir3_instruction *cov = ir3_COV(ctx->block, src, src_type, intermediate_type);
+      cov = ir3_COV(ctx->block, cov, intermediate_type, TYPE_U8);
+      return cov;
+   }
+
    struct ir3_instruction *cov = ir3_COV(ctx->block, src, src_type, dst_type);
 
    if (op == nir_op_f2f16_rtne) {
       cov->cat1.round = ROUND_EVEN;
-   } else if (op == nir_op_f2f16) {
+   } else if (op == nir_op_f2f16_rtz) {
+      cov->cat1.round = ROUND_ZERO;
+   } else if (dst_type == TYPE_F16 || dst_type == TYPE_F32) {
       unsigned execution_mode = ctx->s->info.float_controls_execution_mode;
+      nir_alu_type type =
+         dst_type == TYPE_F16 ? nir_type_float16 : nir_type_float32;
       nir_rounding_mode rounding_mode =
-         nir_get_rounding_mode_from_float_controls(execution_mode,
-                                                   nir_type_float16);
+         nir_get_rounding_mode_from_float_controls(execution_mode, type);
       if (rounding_mode == nir_rounding_mode_rtne)
          cov->cat1.round = ROUND_EVEN;
+      else if (rounding_mode == nir_rounding_mode_rtz)
+         cov->cat1.round = ROUND_ZERO;
    }
 
    return cov;
@@ -946,6 +995,12 @@ emit_intrinsic_copy_ubo_to_uniform(struct ir3_context *ctx,
 
    ir3_instr_set_address(ldc, addr1);
 
+   /* The assembler isn't aware of what value a1.x has, so make sure that
+    * constlen includes the ldc.k here.
+    */
+   ctx->so->constlen =
+      MAX2(ctx->so->constlen, DIV_ROUND_UP(base + size * 4, 4));
+
    array_insert(b, b->keeps, ldc);
 }
 
@@ -978,6 +1033,12 @@ emit_intrinsic_copy_global_to_uniform(struct ir3_context *ctx,
       ir3_instr_set_address(ldg, a1);
       ldg->flags |= IR3_INSTR_A1EN;
    }
+
+   /* The assembler isn't aware of what value a1.x has, so make sure that
+    * constlen includes the ldg.k here.
+    */
+   ctx->so->constlen =
+      MAX2(ctx->so->constlen, DIV_ROUND_UP(dst + size * 4, 4));
 
    array_insert(b, b->keeps, ldg);
 }
@@ -1586,29 +1647,151 @@ emit_intrinsic_image_size_tex(struct ir3_context *ctx,
    }
 }
 
+static struct tex_src_info
+get_bindless_samp_src(struct ir3_context *ctx, nir_src *tex,
+                      nir_src *samp)
+{
+   struct ir3_block *b = ctx->block;
+   struct tex_src_info info = {0};
+
+   info.flags |= IR3_INSTR_B;
+
+   /* Gather information required to determine which encoding to
+    * choose as well as for prefetch.
+    */
+   nir_intrinsic_instr *bindless_tex = NULL;
+   bool tex_const;
+   if (tex) {
+      ctx->so->bindless_tex = true;
+      bindless_tex = ir3_bindless_resource(*tex);
+      assert(bindless_tex);
+      info.tex_base = nir_intrinsic_desc_set(bindless_tex);
+      tex_const = nir_src_is_const(bindless_tex->src[0]);
+      if (tex_const)
+         info.tex_idx = nir_src_as_uint(bindless_tex->src[0]);
+   } else {
+      /* To simplify some of the logic below, assume the index is
+       * constant 0 when it's not enabled.
+       */
+      tex_const = true;
+      info.tex_idx = 0;
+   }
+   nir_intrinsic_instr *bindless_samp = NULL;
+   bool samp_const;
+   if (samp) {
+      ctx->so->bindless_samp = true;
+      bindless_samp = ir3_bindless_resource(*samp);
+      assert(bindless_samp);
+      info.samp_base = nir_intrinsic_desc_set(bindless_samp);
+      samp_const = nir_src_is_const(bindless_samp->src[0]);
+      if (samp_const)
+         info.samp_idx = nir_src_as_uint(bindless_samp->src[0]);
+   } else {
+      samp_const = true;
+      info.samp_idx = 0;
+   }
+
+   /* Choose encoding. */
+   if (tex_const && samp_const && info.tex_idx < 256 &&
+       info.samp_idx < 256) {
+      if (info.tex_idx < 16 && info.samp_idx < 16 &&
+          (!bindless_tex || !bindless_samp ||
+           info.tex_base == info.samp_base)) {
+         /* Everything fits within the instruction */
+         info.base = info.tex_base;
+      } else {
+         info.base = info.tex_base;
+         if (ctx->compiler->gen <= 6) {
+            info.a1_val = info.tex_idx << 3 | info.samp_base;
+         } else {
+            info.a1_val = info.samp_idx << 3 | info.samp_base;
+         }
+
+         info.flags |= IR3_INSTR_A1EN;
+      }
+      info.samp_tex = NULL;
+   } else {
+      info.flags |= IR3_INSTR_S2EN;
+      /* In the indirect case, we only use a1.x to store the sampler
+       * base if it differs from the texture base.
+       */
+      if (!bindless_tex || !bindless_samp ||
+          info.tex_base == info.samp_base) {
+         info.base = info.tex_base;
+      } else {
+         info.base = info.tex_base;
+         info.a1_val = info.samp_base;
+         info.flags |= IR3_INSTR_A1EN;
+      }
+
+      /* Note: the indirect source is now a vec2 instead of hvec2, and
+       * for some reason the texture and sampler are swapped.
+       */
+      struct ir3_instruction *texture, *sampler;
+
+      if (bindless_tex) {
+         texture = ir3_get_src(ctx, tex)[0];
+      } else {
+         texture = create_immed(b, 0);
+      }
+
+      if (bindless_samp) {
+         sampler = ir3_get_src(ctx, samp)[0];
+      } else {
+         sampler = create_immed(b, 0);
+      }
+      info.samp_tex = ir3_collect(b, texture, sampler);
+   }
+
+   return info;
+}
+
 /* src[] = { buffer_index, offset }. No const_index */
 static void
 emit_intrinsic_load_ssbo(struct ir3_context *ctx,
                          nir_intrinsic_instr *intr,
                          struct ir3_instruction **dst)
 {
-   /* Note: isam currently can't handle vectorized loads/stores */
+   /* Note: we can only use isam for vectorized loads/stores if isam.v is
+    * available.
+    * Note: isam also can't handle 8-bit loads.
+    */
    if (!(nir_intrinsic_access(intr) & ACCESS_CAN_REORDER) ||
-       intr->def.num_components > 1 ||
+       (intr->def.num_components > 1 && !ctx->compiler->has_isam_v) ||
+       (ctx->compiler->options.storage_8bit && intr->def.bit_size == 8) ||
        !ctx->compiler->has_isam_ssbo) {
       ctx->funcs->emit_intrinsic_load_ssbo(ctx, intr, dst);
       return;
    }
 
    struct ir3_block *b = ctx->block;
-   struct ir3_instruction *offset = ir3_get_src(ctx, &intr->src[2])[0];
-   struct ir3_instruction *coords = ir3_collect(b, offset, create_immed(b, 0));
+   nir_src *offset_src = &intr->src[2];
+   struct ir3_instruction *coords = NULL;
+   unsigned imm_offset = 0;
+
+   if (ctx->compiler->has_isam_v) {
+      ir3_lower_imm_offset(ctx, intr, offset_src, 8, &coords, &imm_offset);
+   } else {
+      coords =
+         ir3_collect(b, ir3_get_src(ctx, offset_src)[0], create_immed(b, 0));
+   }
+
    struct tex_src_info info = get_image_ssbo_samp_tex_src(ctx, &intr->src[0], false);
 
    unsigned num_components = intr->def.num_components;
+   assert(num_components == 1 || ctx->compiler->has_isam_v);
+
    struct ir3_instruction *sam =
       emit_sam(ctx, OPC_ISAM, info, utype_for_size(intr->def.bit_size),
-               MASK(num_components), coords, NULL);
+               MASK(num_components), coords, create_immed(b, imm_offset));
+
+   if (ctx->compiler->has_isam_v) {
+      sam->flags |= (IR3_INSTR_V | IR3_INSTR_INV_1D);
+
+      if (imm_offset) {
+         sam->flags |= IR3_INSTR_IMM_OFFSET;
+      }
+   }
 
    ir3_handle_nonuniform(sam, intr);
 
@@ -2616,16 +2799,13 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       }
       break;
    }
-   case nir_intrinsic_discard_if:
-   case nir_intrinsic_discard:
    case nir_intrinsic_demote:
    case nir_intrinsic_demote_if:
    case nir_intrinsic_terminate:
    case nir_intrinsic_terminate_if: {
       struct ir3_instruction *cond, *kill;
 
-      if (intr->intrinsic == nir_intrinsic_discard_if ||
-          intr->intrinsic == nir_intrinsic_demote_if ||
+      if (intr->intrinsic == nir_intrinsic_demote_if ||
           intr->intrinsic == nir_intrinsic_terminate_if) {
          /* conditional discard: */
          src = ir3_get_src(ctx, &intr->src[0]);
@@ -2678,6 +2858,10 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       break;
    }
    case nir_intrinsic_elect:
+      dst[0] = ir3_ELECT_MACRO(ctx->block);
+      dst[0]->flags |= IR3_INSTR_NEEDS_HELPERS;
+      break;
+   case nir_intrinsic_elect_any_ir3:
       dst[0] = ir3_ELECT_MACRO(ctx->block);
       break;
    case nir_intrinsic_preamble_start_ir3:
@@ -2835,6 +3019,11 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          ir3_instr_set_address(stc, a1);
          stc->flags |= IR3_INSTR_A1EN;
       }
+      /* The assembler isn't aware of what value a1.x has, so make sure that
+       * constlen includes the stc here.
+       */
+      ctx->so->constlen =
+         MAX2(ctx->so->constlen, DIV_ROUND_UP(dst + components, 4));
       array_insert(b, b->keeps, stc);
       break;
    }
@@ -2851,6 +3040,47 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          MAX2(ctx->so->constlen,
               DIV_ROUND_UP(
                  load->push_consts.dst_base + load->push_consts.src_size, 4));
+      break;
+   }
+   case nir_intrinsic_prefetch_sam_ir3: {
+      struct tex_src_info info =
+         get_bindless_samp_src(ctx, &intr->src[0], &intr->src[1]);
+      struct ir3_instruction *sam =
+         emit_sam(ctx, OPC_SAM, info, TYPE_F32, 0b1111, NULL, NULL);
+
+      sam->dsts_count = 0;
+      array_insert(ctx->block, ctx->block->keeps, sam);
+      break;
+   }
+   case nir_intrinsic_prefetch_tex_ir3: {
+      struct ir3_instruction *idx = ir3_get_src(ctx, &intr->src[0])[0];
+      struct ir3_instruction *resinfo = ir3_RESINFO(b, idx, 0);
+      resinfo->cat6.iim_val = 1;
+      resinfo->cat6.d = 1;
+      resinfo->cat6.type = TYPE_U32;
+      resinfo->cat6.typed = false;
+
+      ir3_handle_bindless_cat6(resinfo, intr->src[0]);
+      if (resinfo->flags & IR3_INSTR_B)
+         ctx->so->bindless_tex = true;
+
+      resinfo->dsts_count = 0;
+      array_insert(ctx->block, ctx->block->keeps, resinfo);
+      break;
+   }
+   case nir_intrinsic_prefetch_ubo_ir3: {
+      struct ir3_instruction *offset = create_immed(ctx->block, 0);
+      struct ir3_instruction *idx = ir3_get_src(ctx, &intr->src[0])[0];
+      struct ir3_instruction *ldc = ir3_LDC(b, idx, 0, offset, 0);
+      ldc->cat6.iim_val = 1;
+      ldc->cat6.type = TYPE_U32;
+
+      ir3_handle_bindless_cat6(ldc, intr->src[0]);
+      if (ldc->flags & IR3_INSTR_B)
+         ctx->so->bindless_ubo = true;
+
+      ldc->dsts_count = 0;
+      array_insert(ctx->block, ctx->block->keeps, ldc);
       break;
    }
    default:
@@ -2967,97 +3197,12 @@ get_tex_samp_tex_src(struct ir3_context *ctx, nir_tex_instr *tex)
 
    if (texture_idx >= 0 || sampler_idx >= 0) {
       /* Bindless case */
-      info.flags |= IR3_INSTR_B;
+      info = get_bindless_samp_src(ctx,
+                                   texture_idx >= 0 ? &tex->src[texture_idx].src : NULL,
+                                   sampler_idx >= 0 ? &tex->src[sampler_idx].src : NULL);
 
       if (tex->texture_non_uniform || tex->sampler_non_uniform)
          info.flags |= IR3_INSTR_NONUNIF;
-
-      /* Gather information required to determine which encoding to
-       * choose as well as for prefetch.
-       */
-      nir_intrinsic_instr *bindless_tex = NULL;
-      bool tex_const;
-      if (texture_idx >= 0) {
-         ctx->so->bindless_tex = true;
-         bindless_tex = ir3_bindless_resource(tex->src[texture_idx].src);
-         assert(bindless_tex);
-         info.tex_base = nir_intrinsic_desc_set(bindless_tex);
-         tex_const = nir_src_is_const(bindless_tex->src[0]);
-         if (tex_const)
-            info.tex_idx = nir_src_as_uint(bindless_tex->src[0]);
-      } else {
-         /* To simplify some of the logic below, assume the index is
-          * constant 0 when it's not enabled.
-          */
-         tex_const = true;
-         info.tex_idx = 0;
-      }
-      nir_intrinsic_instr *bindless_samp = NULL;
-      bool samp_const;
-      if (sampler_idx >= 0) {
-         ctx->so->bindless_samp = true;
-         bindless_samp = ir3_bindless_resource(tex->src[sampler_idx].src);
-         assert(bindless_samp);
-         info.samp_base = nir_intrinsic_desc_set(bindless_samp);
-         samp_const = nir_src_is_const(bindless_samp->src[0]);
-         if (samp_const)
-            info.samp_idx = nir_src_as_uint(bindless_samp->src[0]);
-      } else {
-         samp_const = true;
-         info.samp_idx = 0;
-      }
-
-      /* Choose encoding. */
-      if (tex_const && samp_const && info.tex_idx < 256 &&
-          info.samp_idx < 256) {
-         if (info.tex_idx < 16 && info.samp_idx < 16 &&
-             (!bindless_tex || !bindless_samp ||
-              info.tex_base == info.samp_base)) {
-            /* Everything fits within the instruction */
-            info.base = info.tex_base;
-         } else {
-            info.base = info.tex_base;
-            if (ctx->compiler->gen <= 6) {
-               info.a1_val = info.tex_idx << 3 | info.samp_base;
-            } else {
-               info.a1_val = info.samp_idx << 3 | info.samp_base;
-            }
-
-            info.flags |= IR3_INSTR_A1EN;
-         }
-         info.samp_tex = NULL;
-      } else {
-         info.flags |= IR3_INSTR_S2EN;
-         /* In the indirect case, we only use a1.x to store the sampler
-          * base if it differs from the texture base.
-          */
-         if (!bindless_tex || !bindless_samp ||
-             info.tex_base == info.samp_base) {
-            info.base = info.tex_base;
-         } else {
-            info.base = info.tex_base;
-            info.a1_val = info.samp_base;
-            info.flags |= IR3_INSTR_A1EN;
-         }
-
-         /* Note: the indirect source is now a vec2 instead of hvec2, and
-          * for some reason the texture and sampler are swapped.
-          */
-         struct ir3_instruction *texture, *sampler;
-
-         if (bindless_tex) {
-            texture = ir3_get_src(ctx, &tex->src[texture_idx].src)[0];
-         } else {
-            texture = create_immed(b, 0);
-         }
-
-         if (bindless_samp) {
-            sampler = ir3_get_src(ctx, &tex->src[sampler_idx].src)[0];
-         } else {
-            sampler = create_immed(b, 0);
-         }
-         info.samp_tex = ir3_collect(b, texture, sampler);
-      }
    } else {
       info.flags |= IR3_INSTR_S2EN;
       texture_idx = nir_tex_instr_src_index(tex, nir_tex_src_texture_offset);
@@ -3947,9 +4092,8 @@ instr_can_be_predicated(nir_instr *instr)
       case nir_intrinsic_brcst_active_ir3:
       case nir_intrinsic_ballot:
       case nir_intrinsic_elect:
+      case nir_intrinsic_elect_any_ir3:
       case nir_intrinsic_read_invocation_cond_ir3:
-      case nir_intrinsic_discard_if:
-      case nir_intrinsic_discard:
       case nir_intrinsic_demote:
       case nir_intrinsic_demote_if:
       case nir_intrinsic_terminate:
@@ -4088,7 +4232,8 @@ emit_if(struct ir3_context *ctx, nir_if *nif)
       ir3_BALL(ctx->block, pred, IR3_REG_PREDICATE);
    } else if (condition->opc == OPC_ELECT_MACRO &&
               condition->block == ctx->block) {
-      ir3_GETONE(ctx->block);
+      struct ir3_instruction *branch = ir3_GETONE(ctx->block);
+      branch->flags |= condition->flags & IR3_INSTR_NEEDS_HELPERS;
    } else if (condition->opc == OPC_SHPS_MACRO &&
               condition->block == ctx->block) {
       /* TODO: technically this only works if the block is the only user of the
@@ -4844,18 +4989,36 @@ emit_instructions(struct ir3_context *ctx)
       ir3_declare_array(ctx, decl);
    }
 
-   if (ctx->so->type == MESA_SHADER_TESS_CTRL &&
-       ctx->compiler->tess_use_shared) {
-      struct ir3_instruction *barrier = ir3_BAR(ctx->block);
-      barrier->flags = IR3_INSTR_SS | IR3_INSTR_SY;
-      barrier->barrier_class = IR3_BARRIER_EVERYTHING;
-      array_insert(ctx->block, ctx->block->keeps, barrier);
-      ctx->so->has_barrier = true;
-   }
-
    /* And emit the body: */
    ctx->impl = fxn;
    emit_function(ctx, fxn);
+
+   if (ctx->so->type == MESA_SHADER_TESS_CTRL &&
+       ctx->compiler->tess_use_shared) {
+      /* Anything before shpe seems to be ignored in the main shader when early
+       * preamble is enabled on a7xx, so we have to put the barrier after.
+       */
+      struct ir3_block *block = ir3_after_preamble(ctx->ir);
+
+      struct ir3_instruction *barrier = ir3_BAR(block);
+      barrier->flags = IR3_INSTR_SS | IR3_INSTR_SY;
+      barrier->barrier_class = IR3_BARRIER_EVERYTHING;
+      array_insert(block, block->keeps, barrier);
+      ctx->so->has_barrier = true;
+
+      /* Move the barrier to the beginning of the block but after any phi/input
+       * meta instructions that must be at the beginning. It must be before we
+       * load VS outputs.
+       */
+      foreach_instr (instr, &block->instr_list) {
+         if (instr->opc != OPC_META_INPUT &&
+             instr->opc != OPC_META_TEX_PREFETCH &&
+             instr->opc != OPC_META_PHI) {
+            ir3_instr_move_before(barrier, instr);
+            break;
+         }
+      }
+   }
 }
 
 /* Fixup tex sampler state for astc/srgb workaround instructions.  We
@@ -5478,6 +5641,11 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
       so->post_depth_coverage = true;
 
    ctx->so->per_samp = ctx->s->info.fs.uses_sample_shading;
+
+   if (ctx->so->type == MESA_SHADER_FRAGMENT &&
+       compiler->fs_must_have_non_zero_constlen_quirk) {
+      so->constlen = MAX2(so->constlen, 4);
+   }
 
 out:
    if (ret) {

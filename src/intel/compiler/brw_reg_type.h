@@ -151,6 +151,23 @@ brw_type_with_size(enum brw_reg_type ref_type, unsigned bit_size)
    return (enum brw_reg_type)(base_field | size_field);
 }
 
+/**
+ * Returns the larger of two types (i.e. W and D -> D).
+ *
+ * The base types must be identical.  Not usable on vector immediates.
+ */
+static inline enum brw_reg_type
+brw_type_larger_of(enum brw_reg_type a, enum brw_reg_type b)
+{
+   if (a == b)
+      return a;
+
+   assert((a & ~BRW_TYPE_SIZE_MASK) == (b & ~BRW_TYPE_SIZE_MASK));
+   assert(!brw_type_is_vector_imm(a) && !brw_type_is_vector_imm(b));
+   return (enum brw_reg_type) ((a & BRW_TYPE_BASE_MASK) |
+          MAX2((a & BRW_TYPE_SIZE_MASK), (b & BRW_TYPE_SIZE_MASK)));
+}
+
 /* -------------------------------------------------------------- */
 
 unsigned

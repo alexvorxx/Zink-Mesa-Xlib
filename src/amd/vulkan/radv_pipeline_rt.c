@@ -385,7 +385,7 @@ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
          .address_format = nir_address_format_32bit_offset,
          .stack_alignment = 16,
          .localized_loads = true,
-         .vectorizer_callback = radv_mem_vectorize_callback,
+         .vectorizer_callback = ac_nir_mem_vectorize_callback,
          .vectorizer_data = &pdev->info.gfx_level,
       };
       nir_lower_shader_calls(stage->nir, &opts, &resume_shaders, &num_resume_shaders, stage->nir);
@@ -666,8 +666,10 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
     * shaders.
     */
    bool traversal_needed = !library && (!monolithic || raygen_imported);
-   if (!traversal_needed)
-      return VK_SUCCESS;
+   if (!traversal_needed) {
+      result = VK_SUCCESS;
+      goto cleanup;
+   }
 
    struct radv_ray_tracing_stage_info traversal_info = {
       .set_flags = 0xFFFFFFFF,
@@ -1031,7 +1033,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkRayTra
       compute_rt_stack_size(pCreateInfo, pipeline);
       compile_rt_prolog(device, pipeline);
 
-      radv_compute_pipeline_init(device, &pipeline->base, pipeline_layout, pipeline->prolog);
+      radv_compute_pipeline_init(&pipeline->base, pipeline_layout, pipeline->prolog);
    }
 
    /* write shader VAs into group handles */
@@ -1159,8 +1161,12 @@ radv_GetRayTracingCaptureReplayShaderGroupHandlesKHR(VkDevice device, VkPipeline
       uint32_t recursive_shader = rt_pipeline->groups[firstGroup + i].recursive_shader;
       if (recursive_shader != VK_SHADER_UNUSED_KHR) {
          struct radv_shader *shader = rt_pipeline->stages[recursive_shader].shader;
-         if (shader)
-            data[i].recursive_shader_alloc = radv_serialize_shader_arena_block(shader->alloc);
+         if (shader) {
+            data[i].recursive_shader_alloc.offset = shader->alloc->offset;
+            data[i].recursive_shader_alloc.size = shader->alloc->size;
+            data[i].recursive_shader_alloc.arena_va = shader->alloc->arena->bo->va;
+            data[i].recursive_shader_alloc.arena_size = shader->alloc->arena->size;
+         }
       }
       data[i].non_recursive_idx = rt_pipeline->groups[firstGroup + i].handle.any_hit_index;
    }

@@ -26,7 +26,7 @@
 #include "tu_rmv.h"
 #include "redump.h"
 
-struct tu_queue_submit
+struct tu_msm_queue_submit
 {
    struct vk_queue_submit *vk_submit;
    struct tu_u_trace_submission_data *u_trace_submission_data;
@@ -322,43 +322,67 @@ tu_free_zombie_vma_locked(struct tu_device *dev, bool wait)
          last_signaled_fence = vma->fence;
       }
 
-      /* Ensure that internal kernel's vma is freed. */
-      struct drm_msm_gem_info req = {
-         .handle = vma->gem_handle,
-         .info = MSM_INFO_SET_IOVA,
-         .value = 0,
-      };
+      if (vma->gem_handle) {
+         /* Ensure that internal kernel's vma is freed. */
+         struct drm_msm_gem_info req = {
+            .handle = vma->gem_handle,
+            .info = MSM_INFO_SET_IOVA,
+            .value = 0,
+         };
 
-      int ret =
-         drmCommandWriteRead(dev->fd, DRM_MSM_GEM_INFO, &req, sizeof(req));
-      if (ret < 0) {
-         mesa_loge("MSM_INFO_SET_IOVA(0) failed! %d (%s)", ret,
-                   strerror(errno));
-         return VK_ERROR_UNKNOWN;
+         int ret =
+            drmCommandWriteRead(dev->fd, DRM_MSM_GEM_INFO, &req, sizeof(req));
+         if (ret < 0) {
+            mesa_loge("MSM_INFO_SET_IOVA(0) failed! %d (%s)", ret,
+                      strerror(errno));
+            return VK_ERROR_UNKNOWN;
+         }
+
+         tu_gem_close(dev, vma->gem_handle);
+
+         util_vma_heap_free(&dev->vma, vma->iova, vma->size);
       }
 
-      tu_gem_close(dev, vma->gem_handle);
-
-      util_vma_heap_free(&dev->vma, vma->iova, vma->size);
       u_vector_remove(&dev->zombie_vmas);
    }
 
    return VK_SUCCESS;
 }
 
+static bool
+tu_restore_from_zombie_vma_locked(struct tu_device *dev,
+                                  uint32_t gem_handle,
+                                  uint64_t *iova)
+{
+   struct tu_zombie_vma *vma;
+   u_vector_foreach (vma, &dev->zombie_vmas) {
+      if (vma->gem_handle == gem_handle) {
+         *iova = vma->iova;
+
+         /* mark to skip later gem and iova cleanup */
+         vma->gem_handle = 0;
+         return true;
+      }
+   }
+
+   return false;
+}
+
 static VkResult
-msm_allocate_userspace_iova(struct tu_device *dev,
-                            uint32_t gem_handle,
-                            uint64_t size,
-                            uint64_t client_iova,
-                            enum tu_bo_alloc_flags flags,
-                            uint64_t *iova)
+msm_allocate_userspace_iova_locked(struct tu_device *dev,
+                                   uint32_t gem_handle,
+                                   uint64_t size,
+                                   uint64_t client_iova,
+                                   enum tu_bo_alloc_flags flags,
+                                   uint64_t *iova)
 {
    VkResult result;
 
-   mtx_lock(&dev->vma_mutex);
-
    *iova = 0;
+
+   if ((flags & TU_BO_ALLOC_DMABUF) &&
+       tu_restore_from_zombie_vma_locked(dev, gem_handle, iova))
+      return VK_SUCCESS;
 
    tu_free_zombie_vma_locked(dev, false);
 
@@ -373,8 +397,6 @@ msm_allocate_userspace_iova(struct tu_device *dev,
       result = tu_allocate_userspace_iova(dev, size, client_iova, flags, iova);
    }
 
-   mtx_unlock(&dev->vma_mutex);
-
    if (result != VK_SUCCESS)
       return result;
 
@@ -387,6 +409,7 @@ msm_allocate_userspace_iova(struct tu_device *dev,
    int ret =
       drmCommandWriteRead(dev->fd, DRM_MSM_GEM_INFO, &req, sizeof(req));
    if (ret < 0) {
+      util_vma_heap_free(&dev->vma, *iova, size);
       mesa_loge("MSM_INFO_SET_IOVA failed! %d (%s)", ret, strerror(errno));
       return VK_ERROR_OUT_OF_HOST_MEMORY;
    }
@@ -408,6 +431,7 @@ tu_allocate_kernel_iova(struct tu_device *dev,
 
 static VkResult
 tu_bo_init(struct tu_device *dev,
+           struct vk_object_base *base,
            struct tu_bo *bo,
            uint32_t gem_handle,
            uint64_t size,
@@ -421,8 +445,8 @@ tu_bo_init(struct tu_device *dev,
    assert(!client_iova || dev->physical_device->has_set_iova);
 
    if (dev->physical_device->has_set_iova) {
-      result = msm_allocate_userspace_iova(dev, gem_handle, size, client_iova,
-                                           flags, &iova);
+      result = msm_allocate_userspace_iova_locked(dev, gem_handle, size,
+                                                  client_iova, flags, &iova);
    } else {
       result = tu_allocate_kernel_iova(dev, gem_handle, &iova);
    }
@@ -446,6 +470,8 @@ tu_bo_init(struct tu_device *dev,
       if (!new_ptr) {
          dev->bo_count--;
          mtx_unlock(&dev->bo_mutex);
+         if (dev->physical_device->has_set_iova)
+            util_vma_heap_free(&dev->vma, iova, size);
          tu_gem_close(dev, gem_handle);
          return VK_ERROR_OUT_OF_HOST_MEMORY;
       }
@@ -469,6 +495,7 @@ tu_bo_init(struct tu_device *dev,
       .name = name,
       .refcnt = 1,
       .bo_list_idx = idx,
+      .base = base,
    };
 
    mtx_unlock(&dev->bo_mutex);
@@ -509,8 +536,23 @@ tu_bo_set_kernel_name(struct tu_device *dev, struct tu_bo *bo, const char *name)
    }
 }
 
+static inline void
+msm_vma_lock(struct tu_device *dev)
+{
+   if (dev->physical_device->has_set_iova)
+      mtx_lock(&dev->vma_mutex);
+}
+
+static inline void
+msm_vma_unlock(struct tu_device *dev)
+{
+   if (dev->physical_device->has_set_iova)
+      mtx_unlock(&dev->vma_mutex);
+}
+
 static VkResult
 msm_bo_init(struct tu_device *dev,
+            struct vk_object_base *base,
             struct tu_bo **out_bo,
             uint64_t size,
             uint64_t client_iova,
@@ -544,8 +586,14 @@ msm_bo_init(struct tu_device *dev,
    struct tu_bo* bo = tu_device_lookup_bo(dev, req.handle);
    assert(bo && bo->gem_handle == 0);
 
+   assert(!(flags & TU_BO_ALLOC_DMABUF));
+
+   msm_vma_lock(dev);
+
    VkResult result =
-      tu_bo_init(dev, bo, req.handle, size, client_iova, flags, name);
+      tu_bo_init(dev, base, bo, req.handle, size, client_iova, flags, name);
+
+   msm_vma_unlock(dev);
 
    if (result == VK_SUCCESS) {
       *out_bo = bo;
@@ -562,7 +610,7 @@ msm_bo_init(struct tu_device *dev,
    if (result == VK_SUCCESS &&
        (mem_property & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
        !(mem_property & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      tu_bo_map(dev, bo);
+      tu_bo_map(dev, bo, NULL);
 
       /* Cached non-coherent memory may already have dirty cache lines,
        * we should clean the cache lines before GPU got the chance to
@@ -570,7 +618,7 @@ msm_bo_init(struct tu_device *dev,
        *
        * MSM already does this automatically for uncached (MSM_BO_WC) memory.
        */
-      tu_sync_cache_bo(dev, bo, 0, VK_WHOLE_SIZE, TU_MEM_SYNC_CACHE_TO_GPU);
+      tu_bo_sync_cache(dev, bo, 0, VK_WHOLE_SIZE, TU_MEM_SYNC_CACHE_TO_GPU);
    }
 
    return result;
@@ -598,11 +646,13 @@ msm_bo_init_dmabuf(struct tu_device *dev,
     * to happen in parallel.
     */
    u_rwlock_wrlock(&dev->dma_bo_lock);
+   msm_vma_lock(dev);
 
    uint32_t gem_handle;
    int ret = drmPrimeFDToHandle(dev->fd, prime_fd,
                                 &gem_handle);
    if (ret) {
+      msm_vma_unlock(dev);
       u_rwlock_wrunlock(&dev->dma_bo_lock);
       return vk_error(dev, VK_ERROR_INVALID_EXTERNAL_HANDLE);
    }
@@ -611,6 +661,7 @@ msm_bo_init_dmabuf(struct tu_device *dev,
 
    if (bo->refcnt != 0) {
       p_atomic_inc(&bo->refcnt);
+      msm_vma_unlock(dev);
       u_rwlock_wrunlock(&dev->dma_bo_lock);
 
       *out_bo = bo;
@@ -618,30 +669,29 @@ msm_bo_init_dmabuf(struct tu_device *dev,
    }
 
    VkResult result =
-      tu_bo_init(dev, bo, gem_handle, size, 0, TU_BO_ALLOC_NO_FLAGS, "dmabuf");
+      tu_bo_init(dev, NULL, bo, gem_handle, size, 0, TU_BO_ALLOC_DMABUF, "dmabuf");
 
    if (result != VK_SUCCESS)
       memset(bo, 0, sizeof(*bo));
    else
       *out_bo = bo;
 
+   msm_vma_unlock(dev);
    u_rwlock_wrunlock(&dev->dma_bo_lock);
 
    return result;
 }
 
 static VkResult
-msm_bo_map(struct tu_device *dev, struct tu_bo *bo)
+msm_bo_map(struct tu_device *dev, struct tu_bo *bo, void *placed_addr)
 {
-   if (bo->map)
-      return VK_SUCCESS;
-
    uint64_t offset = tu_gem_info(dev, bo->gem_handle, MSM_INFO_GET_OFFSET);
    if (!offset)
       return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
    /* TODO: Should we use the wrapper os_mmap() like Freedreno does? */
-   void *map = mmap(0, bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+   void *map = mmap(placed_addr, bo->size, PROT_READ | PROT_WRITE,
+                    MAP_SHARED | (placed_addr != NULL ? MAP_FIXED : 0),
                     dev->fd, offset);
    if (map == MAP_FAILED)
       return vk_error(dev, VK_ERROR_MEMORY_MAP_FAILED);
@@ -705,7 +755,7 @@ tu_queue_submit_create_locked(struct tu_queue *queue,
                               const uint32_t nr_in_syncobjs,
                               const uint32_t nr_out_syncobjs,
                               uint32_t perf_pass_index,
-                              struct tu_queue_submit *new_submit)
+                              struct tu_msm_queue_submit *new_submit)
 {
    VkResult result;
 
@@ -714,7 +764,7 @@ tu_queue_submit_create_locked(struct tu_queue *queue,
 
    struct vk_command_buffer **vk_cmd_buffers = vk_submit->command_buffers;
 
-   memset(new_submit, 0, sizeof(struct tu_queue_submit));
+   memset(new_submit, 0, sizeof(struct tu_msm_queue_submit));
 
    new_submit->cmd_buffers = (struct tu_cmd_buffer **) vk_cmd_buffers;
    new_submit->nr_cmd_buffers = vk_submit->command_buffer_count;
@@ -807,7 +857,7 @@ fail_cmds:
 }
 
 static void
-tu_queue_submit_finish(struct tu_queue *queue, struct tu_queue_submit *submit)
+tu_queue_submit_finish(struct tu_queue *queue, struct tu_msm_queue_submit *submit)
 {
    vk_free(&queue->device->vk.alloc, submit->cmds);
    vk_free(&queue->device->vk.alloc, submit->in_syncobjs);
@@ -832,7 +882,7 @@ tu_fill_msm_gem_submit(struct tu_device *dev,
 
 static void
 tu_queue_build_msm_gem_submit_cmds(struct tu_queue *queue,
-                                   struct tu_queue_submit *submit,
+                                   struct tu_msm_queue_submit *submit,
                                    struct tu_cs *autotune_cs)
 {
    struct tu_device *dev = queue->device;
@@ -874,7 +924,7 @@ tu_queue_build_msm_gem_submit_cmds(struct tu_queue *queue,
 }
 
 static VkResult
-tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
+tu_queue_submit_locked(struct tu_queue *queue, struct tu_msm_queue_submit *submit)
 {
    uint32_t submit_idx = queue->device->submit_count++;
 
@@ -919,7 +969,8 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
       .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
    };
 
-   if (FD_RD_DUMP(ENABLE) && fd_rd_output_begin(&queue->device->rd_output, submit_idx)) {
+   if (req.nr_cmds && FD_RD_DUMP(ENABLE) &&
+       fd_rd_output_begin(&queue->device->rd_output, submit_idx)) {
       struct tu_device *device = queue->device;
       struct fd_rd_output *rd_output = &device->rd_output;
 
@@ -942,7 +993,7 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
          uint32_t buf[3] = { iova, tu_bo->size, iova >> 32 };
          fd_rd_output_write_section(rd_output, RD_GPUADDR, buf, 12);
          if (bo.flags & MSM_SUBMIT_BO_DUMP || FD_RD_DUMP(FULL)) {
-            msm_bo_map(device, tu_bo); /* note: this would need locking to be safe */
+            tu_bo_map(device, tu_bo, NULL); /* note: this would need locking to be safe */
             fd_rd_output_write_section(rd_output, RD_BUFFER_CONTENTS, tu_bo->map, tu_bo->size);
          }
       }
@@ -996,7 +1047,8 @@ tu_queue_submit_locked(struct tu_queue *queue, struct tu_queue_submit *submit)
          bool free_data = i == submission_data->last_buffer_with_tracepoints;
          if (submission_data->cmd_trace_data[i].trace)
             u_trace_flush(submission_data->cmd_trace_data[i].trace,
-                          submission_data, free_data);
+                          submission_data, queue->device->vk.current_frame,
+                          free_data);
 
          if (!submission_data->cmd_trace_data[i].timestamp_copy_cs) {
             /* u_trace is owned by cmd_buffer */
@@ -1051,7 +1103,7 @@ msm_queue_submit(struct tu_queue *queue, struct vk_queue_submit *submit)
    MESA_TRACE_FUNC();
    uint32_t perf_pass_index = queue->device->perfcntrs_pass_cs ?
                               submit->perf_pass_index : ~0;
-   struct tu_queue_submit submit_req;
+   struct tu_msm_queue_submit submit_req;
 
    if (TU_DEBUG(LOG_SKIP_GMEM_OPS)) {
       tu_dbg_log_gmem_load_store_skips(queue->device);
@@ -1102,7 +1154,7 @@ msm_queue_submit(struct tu_queue *queue, struct vk_queue_submit *submit)
    if (ret != VK_SUCCESS)
        return ret;
 
-   u_trace_context_process(&queue->device->trace_context, true);
+   u_trace_context_process(&queue->device->trace_context, false);
 
    return VK_SUCCESS;
 }

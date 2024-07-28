@@ -920,6 +920,18 @@ nir_imin_imm(nir_builder *build, nir_def *x, int64_t y)
 }
 
 static inline nir_def *
+nir_umax_imm(nir_builder *build, nir_def *x, uint64_t y)
+{
+   return nir_umax(build, x, nir_imm_intN_t(build, y, x->bit_size));
+}
+
+static inline nir_def *
+nir_umin_imm(nir_builder *build, nir_def *x, uint64_t y)
+{
+   return nir_umin(build, x, nir_imm_intN_t(build, y, x->bit_size));
+}
+
+static inline nir_def *
 _nir_mul_imm(nir_builder *build, nir_def *x, uint64_t y, bool amul)
 {
    assert(x->bit_size <= 64);
@@ -2112,6 +2124,16 @@ nir_goto_if(nir_builder *build, struct nir_block *target, nir_def *cond,
 }
 
 static inline void
+nir_break_if(nir_builder *build, nir_def *cond)
+{
+   nir_if *nif = nir_push_if(build, cond);
+   {
+      nir_jump(build, nir_jump_break);
+   }
+   nir_pop_if(build, nif);
+}
+
+static inline void
 nir_build_call(nir_builder *build, nir_function *func, size_t count,
                nir_def **args)
 {
@@ -2123,6 +2145,24 @@ nir_build_call(nir_builder *build, nir_function *func, size_t count,
    }
 
    nir_builder_instr_insert(build, &call->instr);
+}
+
+static inline void
+nir_discard(nir_builder *build)
+{
+   if (build->shader->options->discard_is_demote)
+      nir_demote(build);
+   else
+      nir_terminate(build);
+}
+
+static inline void
+nir_discard_if(nir_builder *build, nir_def *src)
+{
+   if (build->shader->options->discard_is_demote)
+      nir_demote_if(build, src);
+   else
+      nir_terminate_if(build, src);
 }
 
 /*
@@ -2152,6 +2192,14 @@ nir_scoped_memory_barrier(nir_builder *b,
 
 nir_def *
 nir_gen_rect_vertices(nir_builder *b, nir_def *z, nir_def *w);
+
+/* Emits a printf in the same way nir_lower_printf(). Each of the variadic
+ * argument is a pointer to a nir_def value.
+ */
+void nir_printf_fmt(nir_builder *b,
+                    bool use_printf_base_identifier,
+                    unsigned ptr_bit_size,
+                    const char *fmt, ...);
 
 #ifdef __cplusplus
 } /* extern "C" */

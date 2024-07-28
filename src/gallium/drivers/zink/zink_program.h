@@ -386,7 +386,7 @@ zink_set_shader_key_base(struct zink_context *ctx, gl_shader_stage pstage)
 static inline void
 zink_set_zs_needs_shader_swizzle_key(struct zink_context *ctx, gl_shader_stage pstage, bool swizzle_update)
 {
-   if (!zink_screen(ctx->base.screen)->driver_workarounds.needs_zs_shader_swizzle) {
+   if (!zink_screen(ctx->base.screen)->driver_compiler_workarounds.needs_zs_shader_swizzle) {
       if (pstage != MESA_SHADER_FRAGMENT)
          return;
       const struct zink_fs_key_base *fs = zink_get_fs_base_key(ctx);
@@ -446,7 +446,7 @@ static inline bool
 zink_shader_uses_samples(const struct zink_shader *zs)
 {
    assert(zs->info.stage == MESA_SHADER_FRAGMENT);
-   return zs->uses_sample || zs->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
+   return zs->info.fs.uses_sample_qualifier || zs->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK);
 }
 
 static inline uint32_t

@@ -870,8 +870,9 @@ try_evict_regs(struct ra_ctx *ctx, struct ra_file *file,
          unsigned conflicting_size =
             conflicting->physreg_end - conflicting->physreg_start;
          if (size >= conflicting_size &&
-             !check_dst_overlap(ctx, file, reg, avail_start, avail_start +
-                                conflicting_size)) {
+             (is_source ||
+              !check_dst_overlap(ctx, file, reg, avail_start,
+                                 avail_start + conflicting_size))) {
             for (unsigned i = 0;
                  i < conflicting->physreg_end - conflicting->physreg_start; i++)
                BITSET_CLEAR(available_to_evict, avail_start + i);
@@ -2451,7 +2452,8 @@ calc_min_limit_pressure(struct ir3_shader_variant *v,
          cur_pressure = (struct ir3_pressure) {0};
 
          ra_foreach_dst (dst, instr) {
-            if (dst->tied && !(dst->tied->flags & IR3_REG_KILL))
+            if ((dst->tied && !(dst->tied->flags & IR3_REG_KILL)) ||
+                (dst->flags & IR3_REG_EARLY_CLOBBER))
                add_pressure(&cur_pressure, dst, v->mergedregs);
          }
 
@@ -2562,6 +2564,7 @@ ir3_ra(struct ir3_shader_variant *v)
 
    ir3_debug_print(v->ir, "AFTER: create_parallel_copies");
 
+   ir3_index_instrs_for_merge_sets(v->ir);
    ir3_merge_regs(live, v->ir);
 
    bool has_shared_vectors = false;
@@ -2606,6 +2609,11 @@ ir3_ra(struct ir3_shader_variant *v)
    if (ir3_shader_debug & IR3_DBG_SPILLALL)
       calc_min_limit_pressure(v, live, &limit_pressure);
 
+   d("limit pressure:");
+   d("\tfull: %u", limit_pressure.full);
+   d("\thalf: %u", limit_pressure.half);
+   d("\tshared: %u", limit_pressure.shared);
+
    /* In the worst case, each half register could block one full register, so
     * add shared_half in case of fragmentation. In addition, full registers can
     * block half registers so we have to consider the total pressure against the
@@ -2615,13 +2623,7 @@ ir3_ra(struct ir3_shader_variant *v)
    if (max_pressure.shared + max_pressure.shared_half > limit_pressure.shared ||
        (max_pressure.shared_half > 0 && max_pressure.shared > limit_pressure.shared_half) ||
        has_shared_vectors) {
-      ir3_ra_shared(v, live);
-
-      /* Recalculate liveness and register pressure now that additional values
-       * have been added.
-       */
-      ralloc_free(live);
-      live = ir3_calc_liveness(ctx, v->ir);
+      ir3_ra_shared(v, &live);
       ir3_calc_pressure(v, live, &max_pressure);
 
       ir3_debug_print(v->ir, "AFTER: shared register allocation");
@@ -2637,6 +2639,12 @@ ir3_ra(struct ir3_shader_variant *v)
       d("max pressure exceeded, spilling!");
       IR3_PASS(v->ir, ir3_spill, v, &live, &limit_pressure);
       ir3_calc_pressure(v, live, &max_pressure);
+
+      d("max pressure after spilling:");
+      d("\tfull: %u", max_pressure.full);
+      d("\thalf: %u", max_pressure.half);
+      d("\tshared: %u", max_pressure.shared);
+
       assert(max_pressure.full <= limit_pressure.full &&
              max_pressure.half <= limit_pressure.half);
       spilled = true;

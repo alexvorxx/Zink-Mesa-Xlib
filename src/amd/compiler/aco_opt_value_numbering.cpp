@@ -164,8 +164,7 @@ struct InstrPred {
       case Format::SMEM: {
          SMEM_instruction& aS = a->smem();
          SMEM_instruction& bS = b->smem();
-         return aS.sync == bS.sync && aS.glc == bS.glc && aS.dlc == bS.dlc && aS.nv == bS.nv &&
-                aS.disable_wqm == bS.disable_wqm;
+         return aS.sync == bS.sync && aS.cache.value == bS.cache.value;
       }
       case Format::VINTRP: {
          VINTRP_instruction& aI = a->vintrp();
@@ -203,21 +202,21 @@ struct InstrPred {
          MTBUF_instruction& bM = b->mtbuf();
          return aM.sync == bM.sync && aM.dfmt == bM.dfmt && aM.nfmt == bM.nfmt &&
                 aM.offset == bM.offset && aM.offen == bM.offen && aM.idxen == bM.idxen &&
-                aM.glc == bM.glc && aM.dlc == bM.dlc && aM.slc == bM.slc && aM.tfe == bM.tfe &&
+                aM.cache.value == bM.cache.value && aM.tfe == bM.tfe &&
                 aM.disable_wqm == bM.disable_wqm;
       }
       case Format::MUBUF: {
          MUBUF_instruction& aM = a->mubuf();
          MUBUF_instruction& bM = b->mubuf();
          return aM.sync == bM.sync && aM.offset == bM.offset && aM.offen == bM.offen &&
-                aM.idxen == bM.idxen && aM.glc == bM.glc && aM.dlc == bM.dlc && aM.slc == bM.slc &&
-                aM.tfe == bM.tfe && aM.lds == bM.lds && aM.disable_wqm == bM.disable_wqm;
+                aM.idxen == bM.idxen && aM.cache.value == bM.cache.value && aM.tfe == bM.tfe &&
+                aM.lds == bM.lds && aM.disable_wqm == bM.disable_wqm;
       }
       case Format::MIMG: {
          MIMG_instruction& aM = a->mimg();
          MIMG_instruction& bM = b->mimg();
          return aM.sync == bM.sync && aM.dmask == bM.dmask && aM.unrm == bM.unrm &&
-                aM.glc == bM.glc && aM.slc == bM.slc && aM.tfe == bM.tfe && aM.da == bM.da &&
+                aM.cache.value == bM.cache.value && aM.tfe == bM.tfe && aM.da == bM.da &&
                 aM.lwe == bM.lwe && aM.r128 == bM.r128 && aM.a16 == bM.a16 && aM.d16 == bM.d16 &&
                 aM.disable_wqm == bM.disable_wqm;
       }
